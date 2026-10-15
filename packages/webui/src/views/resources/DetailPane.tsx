@@ -42,6 +42,7 @@ import {
   kindLabel,
   localized,
   presetLabel,
+  presetSwitched,
   tagLabel,
   texLabel,
 } from "./display";
@@ -363,11 +364,13 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
               >
                 {busyInstall
                   ? t("resources.installingMod")
-                  : record
+                  : presetSwitched(entry, record, ctx.activePreset(entry))
+                    ? t("resources.presetApplyReinstall")
+                    : record
                     ? upToDate
                       ? t("resources.reinstallSame")
                       : t("resources.update")
-                    : foreignCopy
+                      : foreignCopy
                       ? t("resources.reinstall")
                       : t("resources.install")}
               </HkButton>
