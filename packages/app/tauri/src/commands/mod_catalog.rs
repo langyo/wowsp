@@ -8,6 +8,14 @@
 //! installer from [`super::mod_hub`], then record every written file in
 //! `mods/installed.json` for uninstall and (later) game-update migration.
 //!
+//! Trust chain: the index itself may arrive through a third-party mirror,
+//! so its bytes are checked against the official digest of the
+//! `mod-index.json` asset (the pairing relay's signed doc, cross-checked
+//! with `api.github.com` — see [`super::release_digest`]); only a
+//! verified index is cached, and only packages that the verified index
+//! pins with a sha256 and that live on this repo's release download tree
+//! are installable.
+//!
 //! Package downloads stream through the unified download hub (mirror
 //! ladder + resume + the global proxy-aware client), progress flows on
 //! `wowsp://download-progress` with kind "mod-package"; the disk-side
@@ -31,9 +39,19 @@ use super::download_hub::{self, DownloadRequest};
 use super::ingame_plugin;
 use super::mod_hub;
 use super::mod_hub::manifest::{self, WowspManifest};
+use super::release_digest;
 use crate::paths;
 
-const INDEX_CACHE_FILE: &str = "mod-catalog.json";
+/// The verified-index cache. Caches written before index verification
+/// (`mod-catalog.json`) may hold a mirror-forged index, so they are never
+/// read again and are removed after the next verified refresh.
+const INDEX_CACHE_FILE: &str = "mod-catalog-verified.json";
+const LEGACY_INDEX_CACHE_FILE: &str = "mod-catalog.json";
+/// Release tag + asset name of the published index, and the relay
+/// digest channel serving its official sha256.
+const INDEX_CHANNEL: &str = "mod-hub";
+const INDEX_TAG: &str = "mod-hub";
+const INDEX_ASSET: &str = "mod-index.json";
 const LEDGER_FILE: &str = "mods/installed.json";
 
 /// One install's progress tick on the unified `wowsp://download-progress`
@@ -65,24 +83,51 @@ fn emit_progress(
     );
 }
 
-/// How long a cached `mod-catalog.json` is served without a re-fetch. A
+/// How long the cached verified index is served without a re-fetch. A
 /// stale index whose package hashes drifted from the release is the classic
 /// "every install fails the SHA-256 check" trap; refetching keeps them in
-/// step while still working offline (a failed refresh falls back to cache).
+/// step while still working offline (a failed refresh — including an
+/// unreachable or rate-limited api.github.com — falls back to the last
+/// verified cache).
 const INDEX_CACHE_TTL_HOURS: i64 = 6;
 
 /// Index candidates: the shared GitHub mirror ladder (user mirror first,
-/// then the official route, then the built-in prefixes).
+/// then the official route, then the built-in prefixes). Every candidate's
+/// bytes are checked against the official digest in [`fetch_index`].
 fn index_urls() -> Vec<String> {
-    super::github_mirror::candidates(
-        "https://github.com/langyo/wowsp/releases/download/mod-hub/mod-index.json",
-    )
+    super::github_mirror::candidates(&release_digest::release_download_url(
+        INDEX_TAG,
+        INDEX_ASSET,
+    ))
 }
 
-/// Download candidates for a release asset: the same shared ladder. Non-
-/// GitHub URLs are returned unchanged (single candidate).
+/// Download candidates for a release asset: the same shared ladder.
+/// [`checked_package_sha256`] has already confined `url` to this repo's
+/// release download tree.
 fn download_candidates(url: &str) -> Vec<String> {
     super::github_mirror::candidates(url)
+}
+
+/// The sha256 a package download must match, or an error when the package
+/// is not installable: the (verified) index must pin its bytes with a
+/// well-formed sha256, and its URL must name an asset on this repo's
+/// release download tree — the mirror ladder may front that URL, but a
+/// catalog entry can never point the download at another host.
+fn checked_package_sha256(pkg: &CatalogPackage) -> anyhow::Result<String> {
+    if !release_digest::is_release_download_url(&pkg.url) {
+        return Err(anyhow!(
+            "{} is not hosted on the WoWSP release download tree ({}) — refusing to install it",
+            pkg.name,
+            pkg.url
+        ));
+    }
+    if !release_digest::is_sha256_hex(&pkg.sha256) {
+        return Err(anyhow!(
+            "{} has no valid SHA-256 in the catalog — refusing to install an unverifiable package",
+            pkg.name
+        ));
+    }
+    Ok(pkg.sha256.to_ascii_lowercase())
 }
 
 /// Serializes every mod-hub mutation (catalog install / uninstall, `.bak`
@@ -133,6 +178,9 @@ pub async fn mod_catalog_refresh(force: bool) -> CommandResult<CatalogIndex> {
             let tmp = path.with_extension("json.tmp");
             fs::write(&tmp, json).map_err(|e| anyhow!("write cache: {e}"))?;
             fs::rename(&tmp, &path).map_err(|e| anyhow!("rename cache: {e}"))?;
+            if let Ok(legacy) = data_file(LEGACY_INDEX_CACHE_FILE) {
+                let _ = fs::remove_file(legacy);
+            }
             Ok(index)
         },
         Err(e) => match cached {
@@ -161,11 +209,21 @@ pub(crate) fn load_cached_index() -> Option<CatalogIndex> {
 
 async fn fetch_index() -> anyhow::Result<CatalogIndex> {
     let client = super::network::build_http_client()?;
+    // The official digest comes first, over the two channels the payload
+    // mirrors can influence neither (the pairing relay's signed doc,
+    // cross-checked with api.github.com): a mirror could otherwise forge
+    // the index together with every package hash inside it. No digest →
+    // no refresh (the caller keeps serving the last verified cache).
+    let expected =
+        release_digest::fetch_official_sha256(&client, INDEX_CHANNEL, INDEX_TAG, INDEX_ASSET)
+            .await
+            .map_err(|e| anyhow!("catalog index cannot be verified: {e}"))?;
     let mut last_err = String::from("no index url attempted");
     for url in index_urls() {
         let resp = client
             .get(&url)
             .header("Accept", "application/json")
+            .header("Cache-Control", "no-cache")
             .send()
             .await;
         let resp = match resp {
@@ -180,6 +238,10 @@ async fn fetch_index() -> anyhow::Result<CatalogIndex> {
             },
         };
         match resp.bytes().await {
+            // A stale or tampered mirror copy fails over to the next one.
+            Ok(bytes) if release_digest::sha256_hex(&bytes) != expected => {
+                last_err = format!("{url}: index does not match the official sha256 digest");
+            },
             Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
                 Ok(raw) => {
                     let mut index = parse_index(&raw)?;
@@ -550,6 +612,13 @@ pub async fn mod_catalog_install(
     mod_hub::ensure_game_closed(&game_root)?;
     mod_hub::ensure_res_mods_active(&game_root)?;
 
+    // Every package must be pinned and officially hosted before the first
+    // byte moves (an unverifiable package must not half-install a mod).
+    let expected_sha256 = packages
+        .iter()
+        .map(checked_package_sha256)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
     let package_count = packages.len() as u32;
     let total = packages.iter().map(|p| p.size).sum::<u64>().max(1);
     emit_progress(&app, &entry.id, phase::DOWNLOAD, 0, package_count, 0, total);
@@ -569,7 +638,7 @@ pub async fn mod_catalog_install(
         let done = download_hub::transfer(
             Some(&app),
             DownloadRequest {
-                expected_sha256: (!pkg.sha256.is_empty()).then(|| pkg.sha256.to_ascii_lowercase()),
+                expected_sha256: Some(expected_sha256[i].clone()),
                 timeout: Some(std::time::Duration::from_secs(600)),
                 base_received: received_total,
                 // Actual byte counts accumulate over the pass; the total
@@ -848,8 +917,12 @@ fn unpack_and_install(
 }
 
 /// Files sitting at the zip root next to `res_mods/` (game-root payloads).
-/// Only native payloads are carried over — readme/log noise at the zip root
-/// is ignored rather than dumped into the game directory.
+/// Only native libraries are carried over (text mods ship
+/// `gettext_x64r.dll`) — readme/log noise at the zip root is ignored rather
+/// than dumped into the game directory, and so is any executable: no
+/// catalog package ships one, and a root `.exe` could replace the game's
+/// own binaries. The packages themselves are only installed after the
+/// index-pinned sha256 check (see [`checked_package_sha256`]).
 fn loose_root_files(extract_root: &Path) -> anyhow::Result<Vec<String>> {
     let mut loose = Vec::new();
     for ent in fs::read_dir(extract_root)
@@ -862,7 +935,7 @@ fn loose_root_files(extract_root: &Path) -> anyhow::Result<Vec<String>> {
         }
         let is_payload = path
             .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("dll") || ext.eq_ignore_ascii_case("exe"));
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"));
         if is_payload {
             loose.push(ent.file_name().to_string_lossy().into_owned());
         }
@@ -2443,5 +2516,71 @@ mod tests {
         let text = err.to_string();
         assert!(text.contains("Heal Assistant"), "{text}");
         assert!(text.contains("(id battle.heal.assistant)"), "{text}");
+    }
+
+    fn catalog_package(url: &str, sha256: &str) -> CatalogPackage {
+        CatalogPackage {
+            url: url.into(),
+            sha256: sha256.into(),
+            size: 1824,
+            name: "battle.cv.hp-center.zip".into(),
+        }
+    }
+
+    const PACKAGE_URL: &str =
+        "https://github.com/langyo/wowsp/releases/download/mod-hub/battle.cv.hp-center.zip";
+    const PACKAGE_SHA: &str = "5d2039e2e047042a8a52f110e99dd0dd5e6dc3a21981b87c44c4cf6833bac43a";
+
+    #[test]
+    fn official_pinned_package_yields_its_lowercase_sha() {
+        assert_eq!(
+            checked_package_sha256(&catalog_package(PACKAGE_URL, &PACKAGE_SHA.to_uppercase()))
+                .unwrap(),
+            PACKAGE_SHA
+        );
+    }
+
+    #[test]
+    fn package_without_a_valid_sha_is_refused() {
+        for sha in ["", "abc", &"z".repeat(64), &format!("{PACKAGE_SHA}0")] {
+            let err = checked_package_sha256(&catalog_package(PACKAGE_URL, sha)).unwrap_err();
+            assert!(
+                err.to_string().contains("no valid SHA-256"),
+                "{sha:?}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_root_dlls_reach_the_game_directory() {
+        let tmp = std::env::temp_dir().join("wowsp_catalog_loose_roots");
+        let _ = fs::remove_dir_all(&tmp);
+        for name in [
+            "gettext_x64r.dll",
+            "WorldOfWarships64.exe",
+            "readme.txt",
+            "res_mods/x.dll",
+        ] {
+            touch(&tmp.join(name));
+        }
+        assert_eq!(loose_root_files(&tmp).unwrap(), vec!["gettext_x64r.dll"]);
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn package_off_the_release_tree_is_refused() {
+        for url in [
+            "https://example.com/package.zip",
+            "http://github.com/langyo/wowsp/releases/download/mod-hub/battle.cv.hp-center.zip",
+            "https://github.com/attacker/wowsp/releases/download/mod-hub/battle.cv.hp-center.zip",
+            "https://ghfast.top/https://github.com/langyo/wowsp/releases/download/mod-hub/a.zip",
+            "https://github.com/langyo/wowsp/releases/download/mod-hub/../../../../x/y.zip",
+        ] {
+            let err = checked_package_sha256(&catalog_package(url, PACKAGE_SHA)).unwrap_err();
+            assert!(
+                err.to_string().contains("not hosted on the WoWSP release"),
+                "{url}: {err}"
+            );
+        }
     }
 }

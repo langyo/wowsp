@@ -4,7 +4,7 @@ This directory holds the PUBLIC half of the Ed25519 keypairs that sign
 the relay's release-digest docs (`/api/digests`, see
 `packages/pairing-relay/crates/relay-core/src/digests.rs`). The app
 embeds them at compile time (`PINNED_DIGEST_KEYS` in
-`packages/app/tauri/src/commands/update.rs` via `include_str!`), which
+`packages/app/tauri/src/commands/release_digest.rs` via `include_str!`), which
 is what makes the KV store and the worker itself unable to forge a doc.
 
 **Private seeds never enter this repository** (AGENTS.md §7).
@@ -33,7 +33,7 @@ Fresh keypair ceremony (for a new id):
 python scripts/catalog_signing.py genkey --key-id <id> \
     --out-pub packages/app/tauri/res/keys/digest-<id>.pub \
     --out-priv ~/.wowsp-signing/digest-<id>.key
-# pin the .pub in update.rs PINNED_DIGEST_KEYS, set/swap the secret,
+# pin the .pub in release_digest.rs PINNED_DIGEST_KEYS, set/swap the secret,
 # and land pin + secret in the same wave before the next release tag.
 ```
 

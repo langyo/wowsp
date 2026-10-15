@@ -28,6 +28,20 @@
 //! China networks can pin a working prefix instead of waiting out the dead
 //! direct attempt.
 //!
+//! Integrity anchors: the manifest is checked against the official
+//! digest of `wowsp-res.json`, the delta list and each delta archive's
+//! digest come from the official channels (the pairing relay's signed
+//! docs, cross-checked with `api.github.com` — see
+//! [`super::release_digest`]), and a patched tree is re-hashed and must
+//! reproduce the manifest's tree hash before it is published. An official
+//! digest that was obtained is binding. The manifest falls back to the
+//! mirror-served copy only when BOTH official channels are unreachable
+//! or rate limited (logged as a warning): the pack is content, never
+//! executed, and a first install must not depend on api.github.com. The
+//! delta list falls back to the mirror ladder only when the GitHub
+//! release API is unavailable, and every such edge's digest is then
+//! re-taken from the relay's signed per-tag doc when obtainable.
+//!
 //! Extraction and patch application prepare a separate `.res-staging`
 //! tree while the current pack keeps serving. Publishing backs up the old
 //! directories and version stamp, restoring them on an I/O failure. A
@@ -82,9 +96,13 @@ use wowsp_tauri_shared::{
 };
 
 use crate::commands::download_hub::{self, DownloadRequest};
+use crate::commands::release_digest::{ApiLookup, OfficialDigest};
 use crate::paths;
 
 const REPO: &str = "langyo/wowsp";
+/// The relay digest channel serving the resource pack's official
+/// sha256s (full release and every `res-delta-*` tag).
+const RES_CHANNEL: &str = "res";
 /// The fixed, single release tag the resource pack publishes under.
 const RES_TAG: &str = "res-latest";
 /// Full-pack asset name (top-level `models/` + `dogtags/` + optional
@@ -288,12 +306,15 @@ struct ResManifest {
 }
 
 /// One edge of the delta graph, parsed from a `res-delta-<from>-<to>` tag
-/// plus its patch asset.
+/// plus its patch asset. `url` is the official download URL rebuilt from
+/// the tag (never the API's `browser_download_url`), and `sha256` the
+/// digest GitHub computed for the archive.
 #[derive(Debug, Clone)]
 struct DeltaEdge {
     from: String,
     to: String,
     url: String,
+    sha256: String,
     size: u64,
 }
 
@@ -314,8 +335,31 @@ fn release_download_url(asset: &str) -> String {
 
 /// Download the manifest asset (a small JSON file) across the mirror
 /// ladder. `Cache-Control: no-cache` keeps mirror-cached copies from
-/// pinning an old version into the check.
+/// pinning an old version into the check. The body must match the
+/// official digest of `wowsp-res.json` (the pairing relay's signed doc
+/// first, cross-checked with api.github.com): the manifest carries the
+/// archive's sha256, so a mirror that could rewrite it could also swap
+/// the archive. Only when BOTH official channels are unreachable or
+/// rate-limited does the mirror-served manifest pass unverified.
 async fn fetch_manifest(client: &Client) -> anyhow::Result<ResManifest> {
+    let expected = match super::release_digest::lookup_official_sha256(
+        client,
+        RES_CHANNEL,
+        RES_TAG,
+        RES_MANIFEST,
+    )
+    .await
+    .map_err(|e| anyhow!("resource pack manifest cannot be verified: {e}"))?
+    {
+        OfficialDigest::Verified(sha) => Some(sha),
+        OfficialDigest::Unavailable(reason) => {
+            tracing::warn!(
+                %reason,
+                "official digest unavailable — accepting the mirror-served resource pack manifest unverified"
+            );
+            None
+        },
+    };
     let url = release_download_url(RES_MANIFEST);
     let mut last_err = format!("no mirror attempted for {RES_MANIFEST}");
     for candidate in super::github_mirror::candidates(&url) {
@@ -327,8 +371,15 @@ async fn fetch_manifest(client: &Client) -> anyhow::Result<ResManifest> {
             .send()
             .await
         {
-            Ok(resp) if resp.status().is_success() => match resp.text().await {
-                Ok(body) => match serde_json::from_str::<ResManifest>(&body) {
+            Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                Ok(body)
+                    if expected
+                        .as_ref()
+                        .is_some_and(|sha| super::release_digest::sha256_hex(&body) != *sha) =>
+                {
+                    last_err = format!("{candidate}: manifest does not match the official digest");
+                },
+                Ok(body) => match serde_json::from_slice::<ResManifest>(&body) {
                     Ok(m) => return Ok(m),
                     Err(e) => last_err = format!("parse manifest from {candidate}: {e}"),
                 },
@@ -354,14 +405,96 @@ fn parse_delta_tag(tag: &str) -> Option<(String, String)> {
     Some((from.to_string(), to.to_string()))
 }
 
+/// The release tag of one delta edge (the inverse of
+/// [`parse_delta_tag`]).
+fn delta_tag(from: &str, to: &str) -> String {
+    format!("{DELTA_TAG_PREFIX}{from}-{to}")
+}
+
 /// Query the repo's release list and collect every delta edge whose patch
 /// asset exists. The list API is paged; one page of 100 comfortably holds
-/// the app releases plus the three retained deltas.
+/// the app releases plus the three retained deltas. The list comes straight
+/// from api.github.com: it supplies each archive's official digest, which a
+/// mirror-served list could forge. An unreachable or rate-limited API
+/// falls back to the list through the mirror ladder (logged) — and then
+/// every edge whose digest the relay's signed per-tag doc can supply gets
+/// that digest instead (see [`harden_edges_against_the_relay`]); the
+/// patched tree must still reproduce the manifest's tree hash before it
+/// is used.
 async fn fetch_delta_edges(client: &Client) -> anyhow::Result<Vec<DeltaEdge>> {
-    let api_url = format!("https://api.github.com/repos/{REPO}/releases?per_page=100");
+    let api_url = super::release_digest::releases_api_url();
+    match super::release_digest::lookup_api_json(client, &api_url).await? {
+        ApiLookup::Found(releases) => Ok(delta_edges_from_releases(&releases)),
+        ApiLookup::Unavailable(reason) => {
+            tracing::warn!(
+                %reason,
+                "release API unavailable — reading the delta list through the mirror ladder"
+            );
+            let releases = fetch_release_list_via_mirrors(client, &api_url).await?;
+            let mut edges = delta_edges_from_releases(&releases);
+            harden_edges_against_the_relay(client, &mut edges).await?;
+            Ok(edges)
+        },
+    }
+}
+
+/// Replace mirror-served edge digests with the relay's signed ones. This
+/// runs only on the mirror-ladder fallback, where the release list — and
+/// every edge digest inside it — was supplied by a mirror: the relay's
+/// pinned per-tag docs are official, so each edge whose doc the relay can
+/// serve has its sha256 replaced outright (a mismatch with the mirror's
+/// spelling is expected — the mirror was never trusted). Edges the relay
+/// cannot serve right now keep the mirror digest, logged; the patched
+/// tree still has to reproduce the manifest's tree hash. A doc that DOES
+/// answer but fails its signature fails the whole discovery (the full
+/// archive is the fallback), never a silent downgrade.
+async fn harden_edges_against_the_relay(
+    client: &Client,
+    edges: &mut [DeltaEdge],
+) -> anyhow::Result<()> {
+    let lookups = edges
+        .iter()
+        .map(|edge| {
+            let tag = delta_tag(&edge.from, &edge.to);
+            async move {
+                super::release_digest::relay_pinned_sha256(client, RES_CHANNEL, &tag, DELTA_ARCHIVE)
+                    .await
+            }
+        })
+        .collect::<Vec<_>>();
+    let results = futures::future::join_all(lookups).await;
+    for (edge, result) in edges.iter_mut().zip(results) {
+        let tag = delta_tag(&edge.from, &edge.to);
+        match result? {
+            Some(official) => {
+                if edge.sha256 != official {
+                    tracing::warn!(
+                        %tag,
+                        "replacing the mirror-served delta digest with the relay's signed one"
+                    );
+                    edge.sha256 = official;
+                }
+            },
+            None => {
+                tracing::warn!(
+                    %tag,
+                    "relay digest unavailable — keeping the mirror-served delta digest"
+                );
+            },
+        }
+    }
+    Ok(())
+}
+
+/// The release list through the mirror ladder (the pre-digest route, kept
+/// as the fallback when api.github.com itself is unavailable).
+async fn fetch_release_list_via_mirrors(
+    client: &Client,
+    api_url: &str,
+) -> anyhow::Result<serde_json::Value> {
     let mut last_err = String::from("no mirror attempted for release list");
-    for candidate in super::github_mirror::candidates(&api_url) {
-        let resp: serde_json::Value = match client
+    for candidate in super::github_mirror::candidates(api_url) {
+        match client
             .get(&candidate)
             .header("User-Agent", "WoWSP-resource-pack/2.0")
             .header("Accept", "application/vnd.github+json")
@@ -370,45 +503,49 @@ async fn fetch_delta_edges(client: &Client) -> anyhow::Result<Vec<DeltaEdge>> {
             .await
         {
             Ok(r) if r.status().is_success() => match r.json().await {
-                Ok(v) => v,
-                Err(e) => {
-                    last_err = format!("parse release list from {candidate}: {e}");
-                    continue;
-                },
+                Ok(v) => return Ok(v),
+                Err(e) => last_err = format!("parse release list from {candidate}: {e}"),
             },
-            Ok(r) => {
-                last_err = format!("{candidate}: HTTP {}", r.status());
-                continue;
-            },
-            Err(e) => {
-                last_err = format!("{candidate}: {e}");
-                continue;
-            },
-        };
-        let mut edges = Vec::new();
-        for release in resp.as_array().into_iter().flatten() {
-            let Some(tag) = release["tag_name"].as_str() else {
-                continue;
-            };
-            let Some((from, to)) = parse_delta_tag(tag) else {
-                continue;
-            };
-            for asset in release["assets"].as_array().into_iter().flatten() {
-                if asset["name"].as_str() == Some(DELTA_ARCHIVE) {
-                    if let Some(url) = asset["browser_download_url"].as_str() {
-                        edges.push(DeltaEdge {
-                            from: from.clone(),
-                            to: to.clone(),
-                            url: url.to_string(),
-                            size: asset["size"].as_u64().unwrap_or(0),
-                        });
-                    }
-                }
-            }
+            Ok(r) => last_err = format!("{candidate}: HTTP {}", r.status()),
+            Err(e) => last_err = format!("{candidate}: {e}"),
         }
-        return Ok(edges);
     }
     Err(anyhow::Error::msg(last_err))
+}
+
+/// Delta edges of a release-list payload. An edge needs a well-formed
+/// `res-delta-<from>-<to>` tag AND an official sha256 digest on its patch
+/// asset — an unverifiable link is left out (the walk then falls back to
+/// the full archive). The download URL is rebuilt from the tag so the
+/// payload cannot steer the transfer elsewhere.
+fn delta_edges_from_releases(releases: &serde_json::Value) -> Vec<DeltaEdge> {
+    let mut edges = Vec::new();
+    for release in releases.as_array().into_iter().flatten() {
+        let Some(tag) = release["tag_name"].as_str() else {
+            continue;
+        };
+        let Some((from, to)) = parse_delta_tag(tag) else {
+            continue;
+        };
+        let Some(sha256) = super::release_digest::asset_sha256(release, DELTA_ARCHIVE) else {
+            continue;
+        };
+        let size = release["assets"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|asset| asset["name"].as_str() == Some(DELTA_ARCHIVE))
+            .and_then(|asset| asset["size"].as_u64())
+            .unwrap_or(0);
+        edges.push(DeltaEdge {
+            from,
+            to,
+            url: super::release_digest::release_download_url(tag, DELTA_ARCHIVE),
+            sha256,
+            size,
+        });
+    }
+    edges
 }
 
 /// Walk the delta graph from `local` to `latest` and return the shortest
@@ -720,17 +857,52 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Unpack a pack tar.gz into `dest`, accepting only regular files and
+/// directories. tar-rs keeps every write inside `dest`, but a symlink
+/// entry would still land as a link pointing anywhere (and a hard link
+/// aliases another file); the publisher never emits either, so any other
+/// entry type rejects the whole archive. Otherwise this is
+/// `Archive::unpack`'s own sequence: create + canonicalize `dest` (the
+/// `\\?\` long-path form on Windows), files first, directories last and
+/// deepest first.
+fn unpack_tar_gz(archive: &Path, dest: &Path) -> anyhow::Result<()> {
+    let file = File::open(archive).map_err(|e| anyhow!("open archive: {e}"))?;
+    let mut tar = Archive::new(GzDecoder::new(file));
+    tar.set_preserve_permissions(true);
+    fs::create_dir_all(dest).map_err(|e| anyhow!("create {}: {e}", dest.display()))?;
+    let dest = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
+    let mut directories = Vec::new();
+    for entry in tar.entries().map_err(|e| anyhow!("read archive: {e}"))? {
+        let mut entry = entry.map_err(|e| anyhow!("read archive entry: {e}"))?;
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_dir() {
+            directories.push(entry);
+            continue;
+        }
+        if !entry_type.is_file() {
+            return Err(anyhow!(
+                "archive entry {} is not a regular file or directory ({entry_type:?})",
+                entry.path_bytes().escape_ascii()
+            ));
+        }
+        entry
+            .unpack_in(&dest)
+            .map_err(|e| anyhow!("{}: {e}", entry.path_bytes().escape_ascii()))?;
+    }
+    directories.sort_by(|a, b| b.path_bytes().cmp(&a.path_bytes()));
+    for mut dir in directories {
+        dir.unpack_in(&dest)
+            .map_err(|e| anyhow!("{}: {e}", dir.path_bytes().escape_ascii()))?;
+    }
+    Ok(())
+}
+
 /// Unpack the full-pack tar.gz into `staging` (top-level `models/` +
 /// `dogtags/` + the optional `insights/`; only `models/` is required — a
 /// pack without the optional tree is valid). Runs on the blocking pool —
 /// a ~1.2 GB unpack must not stall the async runtime.
 fn unpack_full_blocking(archive: &Path, staging: &Path) -> anyhow::Result<()> {
-    let file = File::open(archive).map_err(|e| anyhow!("open archive: {e}"))?;
-    let gz = GzDecoder::new(file);
-    let mut tar = Archive::new(gz);
-    tar.set_preserve_permissions(true);
-    tar.unpack(staging)
-        .map_err(|e| anyhow!("extract resource pack: {e}"))?;
+    unpack_tar_gz(archive, staging).map_err(|e| anyhow!("extract resource pack: {e}"))?;
     if !staging.join("models").is_dir() {
         return Err(anyhow!("archive layout: no top-level models/ directory"));
     }
@@ -820,11 +992,78 @@ fn unpack_delta_blocking(archive: &Path, dest: &Path) -> anyhow::Result<()> {
         fs::remove_dir_all(dest).map_err(|e| anyhow!("clean delta staging: {e}"))?;
     }
     fs::create_dir_all(dest).map_err(|e| anyhow!("create delta staging: {e}"))?;
-    let file = File::open(archive).map_err(|e| anyhow!("open delta archive: {e}"))?;
-    let gz = GzDecoder::new(file);
-    let mut tar = Archive::new(gz);
-    tar.set_preserve_permissions(true);
-    tar.unpack(dest).map_err(|e| anyhow!("extract delta: {e}"))
+    unpack_tar_gz(archive, dest).map_err(|e| anyhow!("extract delta: {e}"))
+}
+
+/// Pack-relative files under `dir`, as (`models/…` path, absolute path).
+fn collect_pack_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<(String, PathBuf)>,
+) -> anyhow::Result<()> {
+    for entry in fs::read_dir(dir).map_err(|e| anyhow!("read {}: {e}", dir.display()))? {
+        let entry = entry.map_err(|e| anyhow!("read directory entry: {e}"))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|e| anyhow!("inspect {}: {e}", path.display()))?;
+        if file_type.is_dir() {
+            collect_pack_files(root, &path, out)?;
+        } else if file_type.is_file() {
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|e| anyhow!("{}: {e}", path.display()))?
+                .components()
+                .map(|c| c.as_os_str().to_str())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| anyhow!("non-UTF-8 path in resource pack: {}", path.display()))?
+                .join("/");
+            out.push((rel, path));
+        } else {
+            return Err(anyhow!(
+                "resource pack contains a non-file entry: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// The content tree hash of the pack rooted at `root`, exactly as the
+/// publisher computes it (`scripts/release_models.py::tree_hash`): sha256
+/// over `path\0sha256\n` lines of every file under `models/` + `dogtags/`,
+/// sorted by pack-relative path.
+fn tree_sha256(root: &Path) -> anyhow::Result<String> {
+    let mut files = Vec::new();
+    for subdir in SUBDIRS {
+        let dir = root.join(subdir);
+        if dir.is_dir() {
+            collect_pack_files(root, &dir, &mut files)?;
+        }
+    }
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut hasher = Sha256::new();
+    for (rel, path) in &files {
+        hasher.update(rel.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(file_sha256(path)?.as_bytes());
+        hasher.update(b"\n");
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+/// Whether a patched staging tree reproduces the published tree hash.
+fn patched_tree_matches(staging: &Path, expected: &str) -> anyhow::Result<bool> {
+    let got = tree_sha256(staging)?;
+    if got.eq_ignore_ascii_case(expected) {
+        return Ok(true);
+    }
+    tracing::warn!(
+        %expected,
+        %got,
+        "chain-patched resource pack does not match the published tree hash"
+    );
+    Ok(false)
 }
 
 // ── Install passes ────────────────────────────────────────────────────────
@@ -889,13 +1128,16 @@ async fn full_install(manifest: &ResManifest, app: Option<&AppHandle>) -> anyhow
 }
 
 /// Chain-patch install: stage the existing tree, download + verify + apply
-/// every delta link, swap back in, stamp the final hash. Caller holds the
-/// single-flight guard.
+/// every delta link, re-hash the patched tree, swap back in, stamp the
+/// final hash. `Ok(false)` means the patched tree did not reproduce the
+/// manifest's tree hash (a drifted local base or a bad link): staging is
+/// discarded, the serving pack is untouched, and the caller falls back to
+/// the full archive. Caller holds the single-flight guard.
 async fn delta_install(
     chain: &[DeltaEdge],
     manifest: &ResManifest,
     app: Option<&AppHandle>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let cache = cache_root()?;
     let staging = tokio::task::spawn_blocking({
         let cache = cache.clone();
@@ -912,15 +1154,16 @@ async fn delta_install(
         let segments = chain.len() as u32;
         for (idx, edge) in chain.iter().enumerate() {
             let segment = idx as u32 + 1;
-            // The delta archive itself is not pre-hashed on the wire;
-            // every file inside it IS, and apply verifies each one. The
-            // scratch part name is shared by every link of the chain, so
-            // no resume base is carried between segments.
+            // The archive streams against GitHub's own digest for it
+            // (from the API release list); apply additionally checks every
+            // file against the delta manifest. The scratch part name is
+            // shared by every link of the chain, so no resume base is
+            // carried between segments.
             download_archive(
                 app,
                 &edge.url,
                 &delta_tmp,
-                None,
+                Some(&edge.sha256),
                 edge.size,
                 false,
                 segment,
@@ -960,15 +1203,27 @@ async fn delta_install(
             let _ = fs::remove_file(&delta_tmp);
             let _ = fs::remove_dir_all(&delta_dir);
         }
+        // The stamp is only as good as the tree under it: re-hash the
+        // patched staging tree and require the published target hash.
+        let matches = tokio::task::spawn_blocking({
+            let staging = staging.clone();
+            let expected = manifest.tree_sha256.clone();
+            move || patched_tree_matches(&staging, &expected)
+        })
+        .await
+        .map_err(|e| anyhow!("hash task: {e}"))??;
+        if !matches {
+            return Ok(false);
+        }
         write_local_version(&staging, &manifest.tree_sha256, &manifest.version)?;
         swap_staging_in(&cache, &staging)?;
         let _ = fs::remove_dir_all(&staging);
         emit_progress(app, phase::DONE, 0, 0, segments, segments, None);
-        Ok::<_, anyhow::Error>(())
+        Ok::<_, anyhow::Error>(true)
     }
     .await;
 
-    if result.is_err() {
+    if !matches!(result, Ok(true)) {
         let _ = fs::remove_dir_all(&staging);
         let _ = fs::remove_file(cache.join(DELTA_TMP));
         let _ = fs::remove_dir_all(cache.join(DELTA_STAGING_DIR));
@@ -1002,9 +1257,9 @@ async fn install_latest(
     // Chain patches require a known local hash AND a healthy staged tree —
     // a missing models/ directory means the stamp is stale and the chain
     // would patch a ghost. A failed delta-tag lookup downgrades to the
-    // full archive (the manifest itself is clearly reachable here, so the
-    // full download is viable; rate-limited api.github.com must not block
-    // a download the mirrors could serve).
+    // full archive (the verified manifest pins its sha256, so the mirrors
+    // can still serve it), and so does a chain whose patched tree fails
+    // the tree-hash check.
     if prefer_delta && local.tree_sha256.is_some() && dir_populated(&cache.join("models")) {
         match fetch_delta_edges(client).await {
             Ok(edges) => {
@@ -1015,7 +1270,10 @@ async fn install_latest(
                 );
                 if !chain.is_empty() {
                     tracing::info!(steps = chain.len(), "applying resource-pack chain patches");
-                    return delta_install(&chain, &manifest, app).await;
+                    if delta_install(&chain, &manifest, app).await? {
+                        return Ok(());
+                    }
+                    tracing::warn!("chain patch rejected — falling back to the full archive");
                 }
             },
             Err(e) => tracing::warn!("delta discovery failed, falling back to full: {e}"),
@@ -1732,8 +1990,152 @@ mod tests {
             from: from.to_string(),
             to: to.to_string(),
             url: format!("https://example.invalid/{from}-{to}"),
+            sha256: hash(0),
             size: 10,
         }
+    }
+
+    /// Publisher-side tree hashes of the fixture (`release_models.py`'s
+    /// `tree_hash` over the same files), before and after `good-delta`.
+    const FIXTURE_OLD_TREE: &str =
+        "621d0cb2edb569a439ed1525756ae7428f3ca0af71b6c022c40e4147ae901f5f";
+    const FIXTURE_NEW_TREE: &str =
+        "91a28405ff3fa9e02779d30071bd499f9d3644fef8bc5f126f0ca9e4d99e1a05";
+
+    #[test]
+    fn tree_hash_matches_the_publisher_formula() {
+        let fixture = PackFixture::new();
+        // The root-level version stamp is not pack content.
+        assert!(fixture.0.join(VERSION_FILE).is_file());
+        assert_eq!(tree_sha256(&fixture.0).unwrap(), FIXTURE_OLD_TREE);
+    }
+
+    #[test]
+    fn patched_tree_must_reproduce_the_target_hash() {
+        let fixture = PackFixture::new();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        let delta = fixture.delta("good-delta", false);
+        apply_delta_blocking(&delta, &staging, &hash(1), &hash(2)).unwrap();
+        assert!(patched_tree_matches(&staging, FIXTURE_NEW_TREE).unwrap());
+        assert!(
+            !patched_tree_matches(&staging, FIXTURE_OLD_TREE).unwrap(),
+            "a tree that differs from the target must be rejected"
+        );
+        fs::remove_dir_all(staging).unwrap();
+        fixture.assert_original();
+    }
+
+    #[test]
+    fn drifted_base_fails_the_tree_hash_check() {
+        let fixture = PackFixture::new();
+        // A stray local file the published tree does not have: every delta
+        // link applies cleanly, yet the result is not the target tree.
+        fs::write(fixture.0.join("models/stray.glb"), b"local").unwrap();
+        let staging = stage_existing_pack(&fixture.0).unwrap();
+        let delta = fixture.delta("good-delta", false);
+        apply_delta_blocking(&delta, &staging, &hash(1), &hash(2)).unwrap();
+        assert!(!patched_tree_matches(&staging, FIXTURE_NEW_TREE).unwrap());
+        fs::remove_dir_all(staging).unwrap();
+    }
+
+    /// A gzip'd tar holding one directory, one regular file and, when
+    /// given, one link entry (`kind`, `name` → `target`).
+    fn tar_gz_fixture(path: &Path, link: Option<(tar::EntryType, &str, &str)>) {
+        let gz =
+            flate2::write::GzEncoder::new(File::create(path).unwrap(), flate2::Compression::fast());
+        let mut builder = tar::Builder::new(gz);
+        let mut dir = tar::Header::new_gnu();
+        dir.set_entry_type(tar::EntryType::Directory);
+        dir.set_mode(0o755);
+        dir.set_size(0);
+        builder
+            .append_data(&mut dir, "models/", std::io::empty())
+            .unwrap();
+        let mut file = tar::Header::new_gnu();
+        file.set_mode(0o644);
+        file.set_size(5);
+        builder
+            .append_data(&mut file, "models/a.glb", &b"new-a"[..])
+            .unwrap();
+        if let Some((kind, name, target)) = link {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(kind);
+            header.set_mode(0o644);
+            header.set_size(0);
+            builder.append_link(&mut header, name, target).unwrap();
+        }
+        builder.into_inner().unwrap().finish().unwrap();
+    }
+
+    #[test]
+    fn tar_unpack_accepts_plain_files_and_directories() {
+        let fixture = PackFixture::new();
+        let archive = fixture.0.join("plain.tar.gz");
+        tar_gz_fixture(&archive, None);
+        let dest = fixture.0.join("out");
+        unpack_tar_gz(&archive, &dest).unwrap();
+        assert_eq!(fs::read(dest.join("models/a.glb")).unwrap(), b"new-a");
+    }
+
+    #[test]
+    fn tar_unpack_rejects_symlink_and_hardlink_entries() {
+        let fixture = PackFixture::new();
+        for (kind, target) in [
+            (tar::EntryType::Symlink, "../../outside"),
+            (tar::EntryType::Link, "models/a.glb"),
+        ] {
+            let archive = fixture.0.join("linked.tar.gz");
+            tar_gz_fixture(&archive, Some((kind, "models/link.glb", target)));
+            let dest = fixture.0.join("linked-out");
+            let err = unpack_tar_gz(&archive, &dest).unwrap_err();
+            assert!(
+                err.to_string().contains("not a regular file or directory"),
+                "{kind:?}: {err}"
+            );
+            assert!(
+                fs::symlink_metadata(dest.join("models/link.glb")).is_err(),
+                "{kind:?} entry must not be created"
+            );
+            let _ = fs::remove_dir_all(&dest);
+        }
+    }
+
+    #[test]
+    fn delta_edges_need_an_official_digest_and_use_the_official_url() {
+        let tag = |from: u8, to: u8| format!("res-delta-{}-{}", hash(from), hash(to));
+        let digest = "c36f11e9e6fc3bc4c319f76b939925b6ea77f2bbdc6299eef947a442dec70826";
+        let releases = serde_json::json!([
+            { "tag_name": "v0.6.0", "assets": [
+                { "name": "WoWSP_0.6.0_x64-installer-lite.exe", "digest": format!("sha256:{}", hash(9)) }
+            ]},
+            { "tag_name": tag(1, 2), "assets": [{
+                "name": DELTA_ARCHIVE,
+                "size": 38_776_927,
+                "digest": format!("sha256:{digest}"),
+                "browser_download_url": "https://attacker.example/evil.tar.gz"
+            }]},
+            // No digest → not an edge (an unverifiable link is never walked).
+            { "tag_name": tag(2, 3), "assets": [{ "name": DELTA_ARCHIVE, "size": 10 }] },
+            { "tag_name": "res-delta-short-short", "assets": [
+                { "name": DELTA_ARCHIVE, "digest": format!("sha256:{digest}") }
+            ]}
+        ]);
+        let edges = delta_edges_from_releases(&releases);
+        assert_eq!(edges.len(), 1, "{edges:?}");
+        assert_eq!(edges[0].from, hash(1));
+        assert_eq!(edges[0].to, hash(2));
+        assert_eq!(edges[0].sha256, digest);
+        assert_eq!(edges[0].size, 38_776_927);
+        assert_eq!(
+            edges[0].url,
+            format!(
+                "https://github.com/langyo/wowsp/releases/download/{}/{DELTA_ARCHIVE}",
+                tag(1, 2)
+            )
+        );
+        assert!(super::super::release_digest::is_release_download_url(
+            &edges[0].url
+        ));
     }
 
     fn hash(n: u8) -> String {
@@ -1743,6 +2145,15 @@ mod tests {
     #[test]
     fn delta_tags_parse_into_hash_pairs() {
         let tag = format!("res-delta-{}-{}", hash(1), hash(2));
+        assert_eq!(parse_delta_tag(&tag), Some((hash(1), hash(2))));
+    }
+
+    #[test]
+    fn delta_tags_round_trip() {
+        // The relay hardening reconstructs a tag from an edge's hashes;
+        // the pair must survive both directions exactly.
+        let tag = delta_tag(&hash(1), &hash(2));
+        assert_eq!(tag, format!("res-delta-{}-{}", hash(1), hash(2)));
         assert_eq!(parse_delta_tag(&tag), Some((hash(1), hash(2))));
     }
 

@@ -23,7 +23,7 @@ Key ceremony (the private seed NEVER enters the repo — AGENTS.md §7):
         --out-priv ~/.wowsp-signing/digest-main.key
 
 Then: commit the `.pub`, wire it into `PINNED_DIGEST_KEYS` in
-`packages/app/tauri/src/commands/update.rs`, and export
+`packages/app/tauri/src/commands/release_digest.rs`, and export
 `WOWSP_DIGEST_SIGNING_KEY=<contents of the .key file>` wherever docs
 get published (locally, and as a repo secret for release.yml). A
 backup key (`--key-id backup`) provides rotation: pin both, sign with
@@ -124,7 +124,7 @@ def genkey(key_id: str, out_pub: Path, out_priv: Path) -> None:
     print(f"wrote private seed {out_priv}  (KEEP OUT OF THE REPO)")
     print(f"wrote public key   {out_pub}   (commit this)")
     print(
-        "next: pin the .pub in update.rs PINNED_DIGEST_KEYS and export "
+        "next: pin the .pub in release_digest.rs PINNED_DIGEST_KEYS and export "
         "WOWSP_DIGEST_SIGNING_KEY with the seed where docs get published"
     )
 

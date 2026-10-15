@@ -14,7 +14,12 @@
 //!   - [`refresh_data_pack`] walks the same mirror ladder as every other
 //!     GitHub fetch, compares the manifest sha against the locally cached
 //!     copy and downloads only on a real content change — republishing
-//!     identical content is a no-op for clients;
+//!     identical content is a no-op for clients. The manifest body must
+//!     match the official digest of `wowsp-data.json` (the pairing
+//!     relay's signed doc, cross-checked with `api.github.com` — see
+//!     [`super::release_digest`]); only when BOTH official channels are
+//!     unreachable or rate-limited does the mirror-served manifest pass
+//!     unverified (logged — the kit is data, never executed);
 //!   - [`get_ship_kit`] hands the webui the cached kit JSON,
 //!     hash-verified against the sidecar, to overlay onto its bundled
 //!     copy; a missing or corrupt cache simply means "keep the baked
@@ -33,14 +38,15 @@ use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
-use sha2::{Digest, Sha256};
-
 use wowsp_tauri_shared::CommandResult;
 
 use super::appdata;
 use super::download_hub::{self, DownloadRequest};
+use super::release_digest::{self, OfficialDigest, sha256_hex};
 
 const REPO: &str = "langyo/wowsp";
+/// The relay digest channel serving the data pack's official sha256s.
+const DATA_CHANNEL: &str = "data";
 const DATA_TAG: &str = "data-latest";
 const DATA_MANIFEST: &str = "wowsp-data.json";
 /// The one dataset this shell knows today: the Tab overlay's consumable
@@ -104,12 +110,6 @@ struct KitMeta {
     version: String,
 }
 
-fn sha256_hex(data: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hex::encode(hasher.finalize())
-}
-
 fn data_url(asset: &str) -> String {
     format!("https://github.com/{REPO}/releases/download/{DATA_TAG}/{asset}")
 }
@@ -119,8 +119,31 @@ fn data_url(asset: &str) -> String {
 /// ghproxy prefixes, `Cache-Control: no-cache` so mirrors cannot pin an
 /// old version into the check, and a 200-with-garbage answer — the
 /// ghproxy interstitial page — falls through to the next candidate
-/// instead of failing the pass).
+/// instead of failing the pass). The body must match the official digest
+/// of the manifest asset (the pairing relay's signed doc first,
+/// cross-checked with api.github.com) — it carries every dataset's
+/// sha256, so a mirror able to rewrite it could also swap the datasets.
+/// Only when BOTH official channels are unreachable or rate-limited does
+/// the mirror-served manifest pass unverified.
 async fn fetch_manifest(client: &reqwest::Client) -> anyhow::Result<DataManifest> {
+    let expected = match release_digest::lookup_official_sha256(
+        client,
+        DATA_CHANNEL,
+        DATA_TAG,
+        DATA_MANIFEST,
+    )
+    .await
+    .map_err(|e| anyhow!("data pack manifest cannot be verified: {e}"))?
+    {
+        OfficialDigest::Verified(sha) => Some(sha),
+        OfficialDigest::Unavailable(reason) => {
+            tracing::warn!(
+                %reason,
+                "official digest unavailable — accepting the mirror-served data pack manifest unverified"
+            );
+            None
+        },
+    };
     let url = data_url(DATA_MANIFEST);
     let mut last_err = format!("no mirror attempted for {url}");
     for candidate in super::github_mirror::candidates(&url) {
@@ -132,8 +155,15 @@ async fn fetch_manifest(client: &reqwest::Client) -> anyhow::Result<DataManifest
             .send()
             .await
         {
-            Ok(resp) if resp.status().is_success() => match resp.text().await {
-                Ok(body) => match serde_json::from_str::<DataManifest>(&body) {
+            Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                Ok(body)
+                    if expected
+                        .as_ref()
+                        .is_some_and(|sha| sha256_hex(&body) != *sha) =>
+                {
+                    last_err = format!("{candidate}: manifest does not match the official digest");
+                },
+                Ok(body) => match serde_json::from_slice::<DataManifest>(&body) {
                     Ok(m) => return Ok(m),
                     Err(e) => last_err = format!("parse manifest from {candidate}: {e}"),
                 },
@@ -254,6 +284,13 @@ async fn refresh_kit() -> anyhow::Result<bool> {
     };
     if kit_is_current(local_kit_sha()?.as_deref(), entry) {
         return Ok(false);
+    }
+    // The asset name becomes a URL path segment under data-latest.
+    if !release_digest::is_plain_segment(&entry.asset) {
+        bail!(
+            "data pack manifest names an invalid asset {:?}",
+            entry.asset
+        );
     }
     let url = data_url(&entry.asset);
     let part = appdata::appdata_dir_path()?.join(format!("{KIT_FILE}.part"));

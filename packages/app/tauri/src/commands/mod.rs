@@ -123,6 +123,7 @@ pub mod pairing_relay;
 pub mod playtime;
 pub mod probe_roster;
 pub mod ranked;
+pub mod release_digest;
 pub mod replay;
 pub mod res_mods;
 #[cfg(desktop)]

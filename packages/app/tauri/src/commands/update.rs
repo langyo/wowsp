@@ -74,6 +74,7 @@ use wowsp_tauri_shared::{DOWNLOAD_PROGRESS_EVENT, DownloadProgress};
 
 use crate::commands::download_hub::{self, DownloadRequest};
 use crate::commands::network::build_http_client;
+use crate::commands::release_digest::asset_sha256;
 
 /// Update-watch table embedded by `build.rs` from
 /// `[package.metadata.shun.update]` in this crate's Cargo.toml.
@@ -249,25 +250,13 @@ fn versioned_download_base(base: &str) -> String {
 /// published with `make_latest=false`.
 const LATEST_RELEASE_API: &str = "https://api.github.com/repos/langyo/wowsp/releases/latest";
 
-/// The relay worker's digest endpoint — the second official channel
-/// (see relay-core's `digests` module and scripts/publish_digests.py).
-/// The hostname is the app's own pairing gateway, reachable where
-/// api.github.com is not; the payload mirrors can influence neither
-/// channel. Root resolution rides the pairing module's helper so the
-/// undocumented `WOWSP_RELAY_URL` dev override (trim, scheme mapping,
-/// fallback) behaves exactly as it does for pairing.
-fn relay_digest_url() -> String {
-    format!(
-        "{}/api/digests/app",
-        super::pairing_relay::builtin_relay_root()
-    )
-}
-
-/// Per-attempt cap and attempts for the relay digest leg: the fast path
-/// gets two short tries — enough for one cold edge miss — before the
-/// GitHub budget takes over.
-const RELAY_DIGEST_TIMEOUT: Duration = Duration::from_secs(10);
-const RELAY_DIGEST_ATTEMPTS: usize = 2;
+/// The relay digest leg — doc fetch, signature verification, the seq
+/// ratchet and the channel combiner — lives in `super::release_digest`,
+/// shared with the content channels; only the app-specific doc→release
+/// mapping stays here. The single-attempt GitHub cross-check leg shares
+/// the relay leg's short cap (see `release_digest`) so a blackholed
+/// api.github.com costs one timeout, paid in parallel.
+const QUICK_LEG_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Per-attempt cap on the official release lookup (version + digest; the
 /// payload is a few KB).
@@ -275,20 +264,6 @@ const DIGEST_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Attempts at the official release lookup before the update is refused.
 const DIGEST_ATTEMPTS: usize = 3;
-
-/// The lowercase sha256 GitHub computed for asset `name` in a release-API
-/// payload (`"digest": "sha256:<hex>"`). `None` when the asset is missing,
-/// carries no digest, or the digest is not a well-formed sha256.
-fn asset_sha256(release: &serde_json::Value, name: &str) -> Option<String> {
-    let hex = release["assets"]
-        .as_array()?
-        .iter()
-        .find(|asset| asset["name"].as_str() == Some(name))?["digest"]
-        .as_str()?
-        .strip_prefix("sha256:")?;
-    (hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
-        .then(|| hex.to_ascii_lowercase())
-}
 
 /// The official latest release: the version to install and the sha256 of
 /// its lite installer.
@@ -363,222 +338,42 @@ struct RelayDigest {
     seq: u64,
 }
 
-/// Compile-time pinned Ed25519 public keys (standard base64 of the 32
-/// raw bytes) that relay digest docs may be signed with. The private
-/// seeds NEVER enter this repository (AGENTS.md §7) — see the ceremony
-/// in scripts/catalog_signing.py and res/keys/README.md (seeds live at
-/// ~/.wowsp-signing/ on the maintainer's machine; the WOWSP_DIGEST_
-/// SIGNING_KEY repo secret carries the `main` seed for release.yml).
-///
-/// With keys pinned, a valid signature by a listed key is REQUIRED —
-/// the KV store and the worker itself can no longer forge a doc, and a
-/// replayed old signed doc is all that remains (which the seq ratchet
-/// refuses). `backup` is pinned for rotation: publishes sign with
-/// `main` and may switch to `backup` with no app release in between.
-const PINNED_DIGEST_KEYS: &[(&str, &str)] = &[
-    ("main", include_str!("../../res/keys/digest-main.pub")),
-    ("backup", include_str!("../../res/keys/digest-backup.pub")),
-];
-
-/// Verify the doc's optional Ed25519 signature layer against `keys`.
-/// The signed bytes are the doc's JSON without the `sig` member,
-/// rendered with sorted keys and compact separators — byte-identical
-/// to scripts/catalog_signing.py's canonical form (serde_json's Map is
-/// sorted; every doc member that reaches the canonical form is ASCII).
-fn verify_doc_signature(doc: &serde_json::Value, keys: &[(&str, &str)]) -> Result<()> {
-    use base64::Engine as _;
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-
-    let key_id = doc.get("key_id").and_then(|v| v.as_str());
-    let sig_b64 = doc.get("sig").and_then(|v| v.as_str());
-    match (key_id, sig_b64) {
-        (None, None) => {
-            if keys.is_empty() {
-                return Ok(());
-            }
-            bail!("the relay digest doc is unsigned but the app pins signing keys");
-        },
-        (Some(_), None) | (None, Some(_)) => {
-            bail!("the relay digest doc is half-signed (key_id/sig must appear together)");
-        },
-        (Some(key_id), Some(sig_b64)) => {
-            let pub_b64 = keys
-                .iter()
-                .find(|(id, _)| *id == key_id)
-                .map(|(_, key)| *key)
-                .ok_or_else(|| {
-                    anyhow!("the relay digest doc is signed by unknown key {key_id:?}")
-                })?;
-            let key_bytes = base64::engine::general_purpose::STANDARD
-                .decode(pub_b64.trim())
-                .map_err(|e| anyhow!("pinned key {key_id:?} is not valid base64: {e}"))?;
-            let key_bytes: [u8; 32] = key_bytes
-                .try_into()
-                .map_err(|_| anyhow!("pinned key {key_id:?} is not 32 bytes"))?;
-            let sig_bytes = base64::engine::general_purpose::STANDARD
-                .decode(sig_b64)
-                .map_err(|e| anyhow!("the relay digest signature is not valid base64: {e}"))?;
-            let signature = Signature::from_slice(&sig_bytes)
-                .map_err(|e| anyhow!("the relay digest signature is malformed: {e}"))?;
-            let key = VerifyingKey::from_bytes(&key_bytes)
-                .map_err(|e| anyhow!("pinned key {key_id:?} is malformed: {e}"))?;
-
-            let mut unsigned = doc.clone();
-            unsigned
-                .as_object_mut()
-                .ok_or_else(|| anyhow!("the relay digest doc is not a JSON object"))?
-                .remove("sig");
-            let canonical = serde_json::to_vec(&unsigned)
-                .map_err(|e| anyhow!("canonicalizing the relay digest doc: {e}"))?;
-            key.verify(&canonical, &signature)
-                .map_err(|e| anyhow!("the relay digest signature does not verify: {e}"))?;
-            Ok(())
-        },
-    }
-}
-
-/// Read the relay's app-channel digest doc (relay_core::digests::
-/// DigestDoc) into the same [`OfficialRelease`] shape the GitHub leg
-/// produces, with the same strictness: v-tag, valid version, digest for
-/// exactly the artifact this version installs.
-fn parse_relay_digest(doc: &serde_json::Value) -> Result<RelayDigest> {
-    parse_relay_digest_with(doc, PINNED_DIGEST_KEYS)
-}
-
-/// [`parse_relay_digest`] with an explicit pinned-key table (tests pass
-/// their own; production passes [`PINNED_DIGEST_KEYS`]).
-fn parse_relay_digest_with(doc: &serde_json::Value, keys: &[(&str, &str)]) -> Result<RelayDigest> {
-    if doc["channel"].as_str() != Some("app") {
-        bail!("the relay digest doc is not the app channel");
-    }
-    verify_doc_signature(doc, keys)?;
-    let tag = doc["tag"]
-        .as_str()
-        .ok_or_else(|| anyhow!("the relay digest doc carries no tag"))?;
-    let version = tag
+/// Map one verified app-channel digest doc (relay_core::digests::
+/// DigestDoc — channel, field and signature checks are shared with the
+/// content channels in `super::release_digest`) onto the same
+/// [`OfficialRelease`] shape the GitHub leg produces, with the same
+/// strictness: v-tag, valid version, digest for exactly the artifact
+/// this version installs.
+fn app_relay_digest(parsed: super::release_digest::RelayDigestDoc) -> Result<RelayDigest> {
+    let version = parsed
+        .tag
         .strip_prefix('v')
         .filter(|version| is_valid_version(version))
-        .ok_or_else(|| anyhow!("the relay digest tag {tag:?} is not a release version"))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "the relay digest tag {:?} is not a release version",
+                parsed.tag
+            )
+        })?;
     let name = artifact_name(version);
-    let sha256 = doc["assets"]
-        .get(&name)
-        .and_then(|v| v.as_str())
-        .filter(|v| v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit()))
-        .map(str::to_ascii_lowercase)
-        .ok_or_else(|| anyhow!("relay digest carries no sha256 for {name}"))?;
-    let seq = doc["seq"]
-        .as_u64()
-        .filter(|seq| *seq >= 1)
-        .ok_or_else(|| anyhow!("the relay digest doc carries no publish sequence number"))?;
+    let sha256 = parsed
+        .asset(&name)
+        .map_err(|_| anyhow!("relay digest carries no sha256 for {name}"))?;
     Ok(RelayDigest {
         release: OfficialRelease {
             version: version.to_string(),
             sha256,
         },
-        seq,
+        seq: parsed.seq,
     })
 }
 
 /// Fetch the relay's app-channel digest doc. Any failure is an `Err`
-/// that [`choose_official`] turns into "fall back to GitHub".
+/// that the channel combiner turns into "fall back to GitHub".
 async fn fetch_relay_digest(client: &reqwest::Client) -> Result<RelayDigest> {
-    let url = relay_digest_url();
-    let mut last_err = String::new();
-    for _ in 0..RELAY_DIGEST_ATTEMPTS {
-        let response = client
-            .get(&url)
-            .header("User-Agent", "WoWSP-updater")
-            .timeout(RELAY_DIGEST_TIMEOUT)
-            .send()
-            .await;
-        let doc: serde_json::Value = match response {
-            Ok(r) if r.status().is_success() => match r.json().await {
-                Ok(v) => v,
-                Err(e) => {
-                    last_err = format!("parse {url}: {e}");
-                    continue;
-                },
-            },
-            Ok(r) => {
-                last_err = format!("{url}: HTTP {}", r.status());
-                continue;
-            },
-            Err(e) => {
-                last_err = format!("{url}: {e}");
-                continue;
-            },
-        };
-        return parse_relay_digest(&doc);
-    }
-    bail!("relay digest channel unavailable: {last_err}")
-}
-
-/// Persisted high-water mark of accepted relay digest docs — the
-/// rollback guard relay-core's digests module documents. It only
-/// REFUSES in the case where the relay doc decides the update (GitHub
-/// unreachable); when GitHub answered and agrees, a regressed seq is an
-/// ops artifact (a rebuilt KV namespace restarts the counter), not an
-/// attack, and the mark simply never lowers. Defense-in-depth, not
-/// tamper-proofing: without doc signatures a store-level attacker can
-/// raise seq arbitrarily.
-const RELAY_SEQ_FILE: &str = ".relay-digest-seq.json";
-
-async fn accepted_relay_seq() -> Option<u64> {
-    let dir = crate::paths::ensure_data_dir().ok()?;
-    tokio::fs::read_to_string(dir.join(RELAY_SEQ_FILE))
+    super::release_digest::fetch_relay_doc_latest(client, "app")
         .await
-        .ok()?
-        .trim()
-        .parse()
-        .ok()
-}
-
-/// Best-effort, monotone, and torn-write safe (tmp + rename): a failed
-/// or skipped mark only weakens the NEXT rollback check.
-async fn remember_relay_seq(seq: u64) {
-    let Ok(dir) = crate::paths::ensure_data_dir() else {
-        return;
-    };
-    let tmp = dir.join(format!("{RELAY_SEQ_FILE}.tmp"));
-    if tokio::fs::write(&tmp, seq.to_string()).await.is_ok() {
-        let _ = tokio::fs::rename(&tmp, dir.join(RELAY_SEQ_FILE)).await;
-    }
-}
-
-/// Pure core of the rollback check: a doc may only advance the mark
-/// (an equal seq is a replay, a lower one a revert).
-fn ensure_seq_advances(prev: Option<u64>, next: u64) -> Result<()> {
-    if prev.is_some_and(|prev| next <= prev) {
-        bail!(
-            "the relay digest regressed (seq {next} at/below the accepted {prev:?}) — refusing the update"
-        );
-    }
-    Ok(())
-}
-
-/// Combine the two official channels. Both answering must mean the same
-/// version+digest — a disagreement means one channel is lying, and the
-/// update is refused rather than guessed at. One channel answering is
-/// enough (the relay-only path is precisely the blocked-GitHub case the
-/// channel exists for); neither answering is an error the caller may
-/// still retry through GitHub's full budget.
-fn choose_official(
-    relay: Result<OfficialRelease>,
-    github: Result<OfficialRelease>,
-) -> Result<OfficialRelease> {
-    match (relay, github) {
-        (Ok(r), Err(_)) => Ok(r),
-        (Ok(r), Ok(g)) if r == g => Ok(r),
-        (Ok(r), Ok(g)) => bail!(
-            "the official digest channels disagree (relay says v{} {}, GitHub says v{} {}) — refusing to update",
-            r.version,
-            &r.sha256[..8],
-            g.version,
-            &g.sha256[..8]
-        ),
-        (Err(_), Ok(g)) => Ok(g),
-        (Err(relay_err), Err(_)) => Err(relay_err),
-    }
+        .and_then(app_relay_digest)
 }
 
 /// The official version + digest over both channels. The two legs run
@@ -590,7 +385,7 @@ fn choose_official(
 /// terminal and never retried past.
 async fn official_release(client: &reqwest::Client) -> Result<OfficialRelease> {
     let github_quick = async {
-        github_release_attempt(client, LATEST_RELEASE_API, RELAY_DIGEST_TIMEOUT)
+        github_release_attempt(client, LATEST_RELEASE_API, QUICK_LEG_TIMEOUT)
             .await
             .and_then(|release| parse_official_release(&release))
     };
@@ -606,19 +401,25 @@ async fn official_release(client: &reqwest::Client) -> Result<OfficialRelease> {
             })
         },
         (Ok(relay_doc), github_quick) => {
-            let prev = accepted_relay_seq().await;
+            let prev = super::release_digest::accepted_relay_seq("app").await;
             // The rollback refusal guards exactly the case where the
-            // relay doc DECIDES the update (GitHub unreachable). When
-            // GitHub answered, a regressed seq is an ops artifact —
-            // choosing below lets choose_official do the deciding
-            // (agreement passes, disagreement still refuses), and the
-            // monotone remember keeps the mark from ever lowering.
+            // relay doc DECIDES the update — GitHub silent, or GitHub
+            // answering without a usable version/digest. When GitHub
+            // named the same release, a regressed seq is an ops
+            // artifact — choosing below lets the channel combiner do
+            // the deciding (agreement passes, disagreement still
+            // refuses), and the monotone remember keeps the mark from
+            // ever lowering.
             if github_quick.is_err() {
-                ensure_seq_advances(prev, relay_doc.seq)?;
+                super::release_digest::ensure_seq_advances(prev, relay_doc.seq)?;
             }
-            let release = choose_official(Ok(relay_doc.release.clone()), github_quick)?;
+            let release = super::release_digest::choose_official(
+                Ok(relay_doc.release.clone()),
+                github_quick,
+                |r: &OfficialRelease| format!("v{} {}", r.version, &r.sha256[..8]),
+            )?;
             if relay_doc.seq > prev.unwrap_or(0) {
-                remember_relay_seq(relay_doc.seq).await;
+                super::release_digest::remember_relay_seq("app", relay_doc.seq).await;
             }
             Ok(release)
         },
@@ -1570,8 +1371,12 @@ mod tests {
         // Field parsing with the unsigned transition's key table; with
         // the production pins live, this exact doc is refused — which
         // the assertion after this one pins down.
+        let parse_with_keys = |keys: &[(&str, &str)]| {
+            crate::commands::release_digest::parse_relay_digest_with(&doc, keys, "app")
+                .and_then(app_relay_digest)
+        };
         assert_eq!(
-            parse_relay_digest_with(&doc, &[]).unwrap(),
+            parse_with_keys(&[]).unwrap(),
             RelayDigest {
                 release: OfficialRelease {
                     version: "0.6.0".to_string(),
@@ -1580,7 +1385,9 @@ mod tests {
                 seq: 3,
             }
         );
-        let refused = parse_relay_digest(&doc).unwrap_err().to_string();
+        let refused = parse_with_keys(crate::commands::release_digest::PINNED_DIGEST_KEYS)
+            .unwrap_err()
+            .to_string();
         assert!(
             refused.contains("unsigned"),
             "production pins are live: {refused}"
@@ -1600,7 +1407,10 @@ mod tests {
         };
         // Shape checks run against the unsigned transition's key table
         // so each refusal below is about the FIELD, not the signature.
-        let parse = |v: &serde_json::Value| parse_relay_digest_with(v, &[]);
+        let parse = |v: &serde_json::Value| {
+            crate::commands::release_digest::parse_relay_digest_with(v, &[], "app")
+                .and_then(app_relay_digest)
+        };
         // Foreign channel, non-v / malformed tags, missing digest entry.
         assert!(parse(&doc("res", "v0.6.0", hex.clone().into())).is_err());
         assert!(parse(&doc("app", "0.6.0", hex.clone().into())).is_err());
@@ -1630,102 +1440,9 @@ mod tests {
         assert!(parse(&zero_seq).is_err());
     }
 
-    #[test]
-    fn relay_seq_only_advances() {
-        assert!(ensure_seq_advances(None, 1).is_ok());
-        assert!(ensure_seq_advances(Some(4), 5).is_ok());
-        // Equal is a replay, lower is a revert — both refused.
-        assert!(ensure_seq_advances(Some(4), 4).is_err());
-        let reverted = ensure_seq_advances(Some(9), 2).unwrap_err().to_string();
-        assert!(reverted.contains("regressed"), "{reverted}");
-    }
-
-    /// A throwaway keypair (seed bytes 0..32) whose signature below was
-    /// produced by scripts/catalog_signing.py's canonical form — the
-    /// cross-language parity fixture. NOT a trust anchor; production
-    /// pins nothing yet (PINNED_DIGEST_KEYS is empty).
-    const TEST_DIGEST_KEY: (&str, &str) = ("test", "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=");
-
-    fn signed_digest_fixture() -> serde_json::Value {
-        serde_json::json!({
-            "channel": "app",
-            "tag": "v0.6.0",
-            "seq": 3,
-            "generated_at": "2026-10-14T12:00:00Z",
-            "assets": {
-                "WoWSP_0.6.0_x64-installer-lite.exe":
-                    "8d88e539c25d9b8a0705c9f858f616e68f6d8ef13af4de7a00af39fb10593927"
-            },
-            "key_id": "test",
-            "sig": "oX05q6v+4ScQSmS08ryM0/ptDB4a3pL7N+eodLZfs4MbMok9j6eK1+20XM2NvB7wCl97zg5hEzfv4E5qaWj7BQ=="
-        })
-    }
-
-    #[test]
-    fn relay_digest_signature_verifies_across_languages() {
-        let keys = [TEST_DIGEST_KEY];
-        // The python-signed fixture parses AND verifies: this is the
-        // canonical-bytes parity proof (sorted-key compact JSON).
-        let parsed = parse_relay_digest_with(&signed_digest_fixture(), &keys).unwrap();
-        assert_eq!(parsed.seq, 3);
-        assert_eq!(parsed.release.version, "0.6.0");
-
-        // Any tampering of a signed member breaks the signature.
-        let mut tampered_seq = signed_digest_fixture();
-        tampered_seq["seq"] = 4u64.into();
-        let err = parse_relay_digest_with(&tampered_seq, &keys)
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("does not verify"), "{err}");
-
-        // Unknown key ids are refused even with a valid signature.
-        let mut wrong_key = signed_digest_fixture();
-        wrong_key["key_id"] = "other".into();
-        assert!(parse_relay_digest_with(&wrong_key, &keys).is_err());
-
-        // Half-signed is refused.
-        let mut half = signed_digest_fixture();
-        half.as_object_mut().unwrap().remove("sig");
-        assert!(parse_relay_digest_with(&half, &keys).is_err());
-        let mut other_half = signed_digest_fixture();
-        other_half.as_object_mut().unwrap().remove("key_id");
-        assert!(parse_relay_digest_with(&other_half, &keys).is_err());
-
-        // Unsigned: refused while keys are pinned, accepted in the
-        // no-keys-pinned transition (production today).
-        let mut unsigned = signed_digest_fixture();
-        unsigned.as_object_mut().unwrap().remove("sig");
-        unsigned.as_object_mut().unwrap().remove("key_id");
-        let refused = parse_relay_digest_with(&unsigned, &keys)
-            .unwrap_err()
-            .to_string();
-        assert!(refused.contains("unsigned"), "{refused}");
-        assert!(parse_relay_digest_with(&unsigned, &[]).is_ok());
-    }
-
-    #[test]
-    fn choose_official_cross_checks_the_channels() {
-        let a = OfficialRelease {
-            version: "0.6.0".to_string(),
-            sha256: "a".repeat(64),
-        };
-        let b = OfficialRelease {
-            version: "0.6.1".to_string(),
-            sha256: "b".repeat(64),
-        };
-        let ok = |r: OfficialRelease| Ok(r);
-        let err = || Err(anyhow::anyhow!("unreachable"));
-
-        // Agreement passes; either channel alone suffices.
-        assert_eq!(choose_official(ok(a.clone()), ok(a.clone())).unwrap(), a);
-        assert_eq!(choose_official(ok(a.clone()), err()).unwrap(), a);
-        assert_eq!(choose_official(err(), ok(a.clone())).unwrap(), a);
-        // Disagreement is a hard refusal naming both sides.
-        let refused = choose_official(ok(a), ok(b)).unwrap_err().to_string();
-        assert!(refused.contains("disagree"), "{refused}");
-        // Neither channel leaves only the error to report/retry.
-        assert!(choose_official(err(), err()).is_err());
-    }
+    // The signature-parity proof (the python-signed fixture), the seq
+    // ratchet and the channel combiner are tested where they live now:
+    // commands/release_digest.rs.
 
     #[test]
     fn asset_sha256_picks_the_lite_installer_digest() {

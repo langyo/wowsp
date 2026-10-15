@@ -44,6 +44,34 @@ SIGNAL_RE = re.compile(r"\bgame\s+([0-9][\w.]*)\s+(ok|broken)\b", re.IGNORECASE)
 DOWNLOAD_RE = re.compile(
     r"-\s*\[`([^`]+)`\]\((https?://[^)]+)\)\s*[—-]\s*(\d+)\s*KB\s*[·.]\s*SHA-256\s*`([0-9a-fA-F]{64})`"
 )
+# The app installs only assets on this repo's release download tree
+# (`packages/app/tauri/src/commands/release_digest.rs`
+# `is_release_download_url`): exactly `<tag>/<asset>`, plain segments.
+# A package anywhere else would be listed but refused at install time, so
+# the indexer drops it (with a warning) instead.
+RELEASE_DOWNLOAD_RE = re.compile(
+    r"https://github\.com/langyo/wowsp/releases/download/([A-Za-z0-9._+-]+)/([A-Za-z0-9._+-]+)"
+)
+
+
+def installable_url(url: str) -> bool:
+    """Whether the app would accept `url` as a catalog package source."""
+    m = RELEASE_DOWNLOAD_RE.fullmatch(url)
+    return bool(m) and all(seg not in (".", "..") for seg in m.groups())
+
+
+def keep_installable(packages: list[dict], where: str) -> list[dict]:
+    """Drop packages the app would refuse, warning on stderr per drop."""
+    kept = []
+    for pkg in packages:
+        if installable_url(pkg["url"]):
+            kept.append(pkg)
+        else:
+            print(f"warning: {where}: dropping {pkg['url']} (not on the release download tree)",
+                  file=sys.stderr)
+    return kept
+
+
 # A download line additionally tagged as one named preset (scheme) of the
 # entry — same shape as DOWNLOAD_RE plus a trailing `· preset \`id\``:
 #   - [`asset.zip`](url) — 57 KB · SHA-256 `abc…` · preset `colorblind`
@@ -106,7 +134,7 @@ def parse_preview(body: str) -> str:
     return m.group(1) if m else ""
 
 
-def parse_presets(body: str) -> list[dict]:
+def parse_presets(body: str, where: str = "presets") -> list[dict]:
     r"""Ordered preset list from a thread body: package lines tagged
     `· preset `id`` joined with the wowsp:presets label block. A preset
     without a label falls back to the id itself as its label; a label
@@ -133,7 +161,7 @@ def parse_presets(body: str) -> list[dict]:
     for pid in order + [p for p in packages if p not in labels]:
         if pid in seen:
             continue
-        pkgs = packages.get(pid)
+        pkgs = keep_installable(packages.get(pid, []), f"{where} preset {pid}")
         if not pkgs:
             continue
         seen.add(pid)
@@ -221,13 +249,13 @@ def index_discussions(nodes: list[dict]) -> dict:
         )
         version = meta.get("version", "0")
         body = d.get("body") or ""
-        presets = parse_presets(body)
+        presets = parse_presets(body, f"{mod_id} {version}")
         # Preset lines must not double-count as the entry's plain packages —
         # sweep them out before the generic download scan.
-        packages = [
+        packages = keep_installable([
             {"url": url, "sha256": digest.lower(), "size": int(kb) * 1024, "name": name}
             for name, url, kb, digest in DOWNLOAD_RE.findall(PRESET_LINE_RE.sub("", body))
-        ]
+        ], f"{mod_id} {version}")
         if presets and not packages:
             # A fully preset-driven thread: the first declared scheme is the
             # default, so the entry's plain package list (what pre-preset
@@ -364,8 +392,8 @@ def main(argv: list[str] | None = None) -> int:
             "sasagcy: Sasagcy 配色 | Sasagcy palette\n"
             "classic: 经典配色 | Classic palette\n"
             "wowsp:presets\n-->\n"
-            f"- [`smi-v4.zip`](https://x/v4.zip) — 1 KB · SHA-256 `{sha}` · preset `sasagcy`\n"
-            f"- [`smi-v1.zip`](https://x/v1.zip) — 1 KB · SHA-256 `{sha2}` · preset `classic`\n"
+            f"- [`smi-v4.zip`](https://github.com/langyo/wowsp/releases/download/mod-hub/v4.zip) — 1 KB · SHA-256 `{sha}` · preset `sasagcy`\n"
+            f"- [`smi-v1.zip`](https://github.com/langyo/wowsp/releases/download/mod-hub/v1.zip) — 1 KB · SHA-256 `{sha2}` · preset `classic`\n"
         )
         idx = index_discussions([
             {"number": 1, "title": "t", "author": {"login": "a"}, "closed": False,
@@ -381,8 +409,8 @@ def main(argv: list[str] | None = None) -> int:
         # an unlabeled preset falls back to its id as the label.
         mixed_body = (
             "---\nwowsp-mod: mx\nversion: 1\ncategory: battle\n---\n"
-            f"- [`mx.zip`](https://x/mx.zip) — 1 KB · SHA-256 `{sha}`\n"
-            f"- [`mx-pct.zip`](https://x/pct.zip) — 1 KB · SHA-256 `{sha2}` · preset `percent`\n"
+            f"- [`mx.zip`](https://github.com/langyo/wowsp/releases/download/mod-hub/mx.zip) — 1 KB · SHA-256 `{sha}`\n"
+            f"- [`mx-pct.zip`](https://github.com/langyo/wowsp/releases/download/mod-hub/pct.zip) — 1 KB · SHA-256 `{sha2}` · preset `percent`\n"
         )
         idx2 = index_discussions([
             {"number": 2, "title": "t", "author": {"login": "a"}, "closed": False,
@@ -392,6 +420,31 @@ def main(argv: list[str] | None = None) -> int:
         assert [p["name"] for p in v2["packages"]] == ["mx.zip"]
         assert [p["id"] for p in v2["presets"]] == ["percent"]
         assert v2["presets"][0]["name_zh"] == "percent"
+        # Packages off the release download tree are dropped (the app would
+        # refuse to install them), plain and preset lines alike.
+        assert installable_url("https://github.com/langyo/wowsp/releases/download/mod-hub/a.zip")
+        for bad in (
+            "http://github.com/langyo/wowsp/releases/download/mod-hub/a.zip",
+            "https://example.com/a.zip",
+            "https://github.com/other/wowsp/releases/download/mod-hub/a.zip",
+            "https://github.com/langyo/wowsp/releases/download/mod-hub/sub/a.zip",
+            "https://github.com/langyo/wowsp/releases/download/../a.zip",
+            "https://github.com/langyo/wowsp/releases/download/mod-hub/a.zip?x=1",
+        ):
+            assert not installable_url(bad), bad
+        foreign_body = (
+            "---\nwowsp-mod: fx\nversion: 1\ncategory: battle\n---\n"
+            f"- [`fx.zip`](https://example.com/fx.zip) — 1 KB · SHA-256 `{sha}`\n"
+            f"- [`ok.zip`](https://github.com/langyo/wowsp/releases/download/mod-hub/ok.zip) — 1 KB · SHA-256 `{sha}`\n"
+            f"- [`fx-p.zip`](https://example.com/p.zip) — 1 KB · SHA-256 `{sha2}` · preset `only`\n"
+        )
+        idx3 = index_discussions([
+            {"number": 3, "title": "t", "author": {"login": "a"}, "closed": False,
+             "body": foreign_body, "comments": {"nodes": []}},
+        ])
+        v3 = idx3["mods"]["fx"]["versions"]["1"]
+        assert [p["name"] for p in v3["packages"]] == ["ok.zip"], v3
+        assert "presets" not in v3, v3
         print("selftest ok")
         return 0
 
