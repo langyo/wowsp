@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), loader: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
   adopt: vi.fn(), uninstall: vi.fn(), error: vi.fn(),
   migrationPlan: vi.fn(),
-  records: vi.fn(), catalog: vi.fn(),
+  records: vi.fn(), catalog: vi.fn(), preview: vi.fn(),
 }));
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("@/api", () => ({ api: {
@@ -17,6 +17,7 @@ vi.mock("@/api", () => ({ api: {
   modHubUninstallUnit: mocks.uninstall,
   modHubMigrationPlan: mocks.migrationPlan,
   modCatalogRefresh: mocks.catalog,
+  modCatalogPreviewFiles: mocks.preview,
   modHubRecords: mocks.records, modTags: async () => ({ tags: [] }),
 } }));
 vi.mock("@/stores/config", () => ({ useConfigStore: () => mocks.config }));
@@ -173,7 +174,7 @@ describe("mod inventory root ownership", () => {
     const pending = deferred<MigrationPlan>();
     mocks.migrationPlan.mockReturnValueOnce(pending.promise);
     const view = await mountInstalled();
-    view.findComponent({ name: "HMenu" }).vm.$emit("select", { key: "migrate" });
+    view.findComponent({ name: "HMenu" }).vm.$emit("select", "migrate");
     await flushPromises();
     const wizard = () => view.findComponent({ name: "HkModal" });
     wizard().props("footerActions")[1].onClick();
@@ -182,7 +183,7 @@ describe("mod inventory root ownership", () => {
     mocks.config.activeInstall = { path: "C:/TestGameB" };
     await flushPromises();
     expect(wizard().props("modelValue")).toBe(false);
-    view.findComponent({ name: "HMenu" }).vm.$emit("select", { key: "migrate" });
+    view.findComponent({ name: "HMenu" }).vm.$emit("select", "migrate");
     await flushPromises();
     pending.resolve({ fromVersion: "1", toVersion: "2", duplicate: [], superseded: [], decide: [{ path: "old.xml", size: 1 }] });
     await flushPromises();
@@ -233,5 +234,33 @@ describe("list filter chips & install lights", () => {
     expect(view.findAll(".mod-row__dot--yellow")).toHaveLength(1);
     expect(view.findAll(".mod-row__dot--blue")).toHaveLength(1);
     expect(view.findAll(".mod-row__dot--green")).toHaveLength(1);
+  });
+});
+
+describe("plugin file-list window", () => {
+  it("opens from the catalog detail menu and starts the preview right away", async () => {
+    mocks.catalog.mockResolvedValue({
+      mods: [{
+        id: "mod-a", version: "2", category: "text", nameEn: "Mod A",
+        game: ">=15.7", title: "Mod A", nameZh: "", description: "",
+        author: "", authorUrl: "", packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+        i18n: {}, aliases: [],
+      }],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    mocks.preview.mockResolvedValue({ binVersion: "1", packages: [] });
+    const view = await shallowMount(ResourcesView);
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    const menus = view.findAllComponents({ name: "HMenu" });
+    menus[menus.length - 1].vm.$emit("select", "files")
+    await flushPromises();
+    const open = view
+      .findAllComponents({ name: "HkModal" })
+      .find((m) => m.props("modelValue") === true);
+    expect(open).toBeTruthy();
+    expect(mocks.preview).toHaveBeenCalledExactlyOnceWith("mod-a", "C:/TestGameA", undefined);
   });
 });
