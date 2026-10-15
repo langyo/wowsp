@@ -4,6 +4,7 @@
  *  the Europe rail showed "no tech tree"). */
 import { describe, expect, it } from "vitest";
 
+import branchesRaw from "@/data/tech_tree_branch_features.json";
 import {
   allTechTreeNodes,
   nationCrossLinks,
@@ -11,6 +12,11 @@ import {
   nationTree,
   techTreeBranchHasContent,
   techTreeBranchInfo,
+  techTreeCardIcon,
+  techTreeCategoryIcon,
+  techTreeFeatureCategoryText,
+  techTreeFeatureNote,
+  techTreeFeatureTitle,
   techTreeFeatText,
   techTreeNode,
   techTreeShipBranch,
@@ -287,3 +293,38 @@ describe("branch features", () => {
     expect(techTreeFeatText("FEAT_KEY_NO_ONE_CURATED")).toBe("");
   });
 });
+
+describe("branch feature icons and official texts", () => {
+  it("resolves bundled card and category icon URLs", () => {
+    const url = techTreeCardIcon("MAIN_HIGHFIREPOWER");
+    expect(url).toMatch(/images\/tech-tree-features\/main_highfirepower(_small)?\.png$/);
+    expect(techTreeCategoryIcon("main_caliber")).toMatch(/category_main_caliber\.png$/);
+    expect(techTreeCardIcon("MAIN_KEY_WITH_NO_ICON")).toBeNull();
+  });
+
+  it("carries the official popup title, note and category labels", () => {
+    expect(techTreeFeatureTitle()).toBe("Warship characteristics");
+    expect(techTreeFeatureNote()).toContain("same-tier");
+    expect(techTreeFeatureCategoryText("main_caliber")).toBe("Main battery");
+    // Unknown categories degrade to the raw code, never blank.
+    expect(techTreeFeatureCategoryText("no_such_category")).toBe("no_such_category");
+  });
+
+  it("gives every branch with groups resolvable card icons or none, never broken URLs", () => {
+    for (const info of Object.values(techTreeBranchesForTest())) {
+      for (const key of info.card) {
+        const url = techTreeCardIcon(key);
+        expect(url === null || url.startsWith("images/") || url.includes("images/tech-tree-features/")).toBe(true);
+      }
+    }
+  });
+});
+
+function techTreeBranchesForTest(): Record<string, { card: string[]; groups: [string, string[]][] }> {
+  // Local import indirection keeps the data module single-sourced.
+  return (branchFeaturesForTest() as { branches: Record<string, { card: string[]; groups: [string, string[]][] }> }).branches;
+}
+
+function branchFeaturesForTest(): unknown {
+  return branchesRaw;
+}

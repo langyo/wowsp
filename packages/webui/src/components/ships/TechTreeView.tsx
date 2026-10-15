@@ -7,8 +7,11 @@ import {
   nationTree,
   techTreeBranchHasContent,
   techTreeBranchInfo,
+  techTreeCardIcon,
+  techTreeCategoryIcon,
   techTreeFeatText,
   techTreeFeatureCategoryText,
+  techTreeFeatureNote,
   techTreeFeatureTitle,
   techTreeNode,
   techTreeShipBranch,
@@ -46,16 +49,20 @@ import "./TechTreeView.scss";
  *     cross-type research links straight across the type-section gap (the
  *     cruiser→battleship, destroyer→carrier hand-offs the in-game tree also
  *     bridges).
+ *   - Every card carries its branch's feature icons overlaid on the ship
+ *     art (small variants of the client's gui/ships_tree_features set), and
+ *     the branch popup's texts are the client's own localization (official
+ *     zh-Hans + ru-RU, curated en-US), both bundled by
+ *     scripts/extract/build_branch_features.py.
  *   - Two kinds of links carry a small ⓘ button, mirroring the in-game
  *     tree: the cross-type research hand-offs carry the link info card (the
  *     client's ShipCrossResearchInfo: what the link changes — type hand-off,
  *     parallel branches, archetype hand-off), and every branch run's first
  *     ship carries the game's "warship characteristics" popup — the branch's
- *     start—end range plus its feature groups, decoded from the client's
- *     encrypted BranchesSettings module (bundled by
- *     scripts/extract/build_branch_features.py). Both hang on the incoming
- *     connector of the link's far ship, so a run that starts at its section
- *     root has no ⓘ — exactly the in-game placement.
+ *     start—end range, feature icons and per-category feature groups,
+ *     decoded from the client's encrypted BranchesSettings module. Both
+ *     hang on the incoming connector of the link's far ship, so a run that
+ *     starts at its section root has no ⓘ — exactly the in-game placement.
  */
 export default defineComponent({
   name: "TechTreeView",
@@ -246,13 +253,20 @@ export default defineComponent({
             .map((f) => techTreeFeatText(f))
             .filter((s) => s !== "")
             .join(" · "),
+          iconUrl: techTreeCategoryIcon(category) ?? undefined,
         }))
         .filter((row) => row.value.trim() !== "");
+      const icons = (info?.card ?? [])
+        .map((k) => techTreeCardIcon(k))
+        .filter((u): u is string => u !== null)
+        .slice(0, 3);
       return JSON.stringify({
         title: techTreeFeatureTitle() || branchName,
         badge: tierToRoman(startNode.tier),
         subtitle: `${labelOf(startNode.shipId)} — ${labelOf(endNode.shipId)}`,
+        icons,
         rows,
+        note: techTreeFeatureNote(),
       });
     }
 
@@ -524,6 +538,15 @@ export default defineComponent({
                       const top = PAD + (cell.tier - globalMinTier.value) * tierH;
                       const img = shipImg(cell);
                       const name = shipLabel(cell);
+                      // The branch's feature icons, overlaid on the ship art
+                      // exactly where the in-game cards carry them.
+                      const featIcons = (techTreeBranchInfo(
+                        techTreeShipBranch(cell.shipId),
+                        cell.node.type,
+                      )?.card ?? [])
+                        .map((k) => techTreeCardIcon(k))
+                        .filter((u): u is string => u !== null)
+                        .slice(0, 3);
                       return (
                         <div
                           class="tech-cell-v3"
@@ -556,6 +579,20 @@ export default defineComponent({
                                 fallbackTitle={t("common.imageUnavailable")}
                                 onError={() => recordShipImageFailure(cell.shipId)}
                               />
+                              {featIcons.length > 0 ? (
+                                <span class="tech-card-v3__feats">
+                                  {featIcons.map((u) => (
+                                    <img
+                                      class="tech-card-v3__feat-icon"
+                                      key={u}
+                                      src={u}
+                                      alt=""
+                                      loading="lazy"
+                                      draggable={false}
+                                    />
+                                  ))}
+                                </span>
+                              ) : null}
                             </div>
                             <span class="tech-card-v3__tier">{tierToRoman(cell.tier)}</span>
                             <span class="tech-card-v3__name">{name}</span>

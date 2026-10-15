@@ -134,12 +134,40 @@
   font-size: var(--text-2xs);
 }
 
+.global-tooltip__card-row-icon {
+  align-self: center;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+  margin-right: -6px;
+}
+
 .global-tooltip__card-row-label {
   color: #5c5c5c;
 }
 
 .global-tooltip__card-row-value {
   font-variant-numeric: tabular-nums;
+}
+
+.global-tooltip__card-icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.global-tooltip__card-feature-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.global-tooltip__card-note {
+  margin-top: 6px;
+  color: #5c5c5c;
+  font-size: var(--text-2-xs);
 }
 
 [data-mode="dark"] {
@@ -155,6 +183,10 @@
 
   .global-tooltip__card-row-label {
     color: #cfcfcf;
+  }
+
+  .global-tooltip__card-note {
+    color: #9a9a9a;
   }
 
   .global-tooltip__card-rows {
