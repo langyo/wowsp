@@ -40,10 +40,12 @@ import "./TechTreeView.scss";
  *     cross-type research links straight across the type-section gap (the
  *     cruiser→battleship, destroyer→carrier hand-offs the in-game tree also
  *     bridges).
- *   - Research links that change something — a fork or a cross-type hop —
- *     carry a small ⓘ button on the line whose hover card names the ship the
- *     link leads to and what changes (type hand-off, parallel branches,
- *     line-focus switch), mirroring the in-game link info.
+ *   - Only the cross-type research links carry a small ⓘ button on the line,
+ *     whose hover card names the ship the link leads to and what changes
+ *     (type hand-off, parallel branches, archetype hand-off) — the in-game
+ *     tree attaches its link info (the client's ShipCrossResearchInfo
+ *     component) to those hand-off lines only, never to in-line verticals
+ *     or same-type fork elbows.
  */
 export default defineComponent({
   name: "TechTreeView",
@@ -176,10 +178,10 @@ export default defineComponent({
 
     /**
      * Hover-card JSON for one research link (the ⓘ the in-game tree puts on
-     * lines that change something): what the link leads to, plus a row per
-     * change — the type hand-off, the parallel branch ships, the line-focus
-     * switch. Everything is pre-localized here; the global tooltip hook only
-     * parses and renders.
+     * cross-type research links): what the link leads to, plus a row per
+     * change — the type hand-off, the parallel branch ships, the archetype
+     * hand-off. Everything is pre-localized here; the global tooltip hook
+     * only parses and renders.
      */
     function linkHintCard(parentNode: TechTreeNode, childNode: TechTreeNode): string {
       const rows: { label: string; value: string }[] = [];
@@ -219,7 +221,7 @@ export default defineComponent({
     const containerRef = ref<HTMLElement | null>(null);
     interface DItem { key: string; d: string; cls: string; cx?: number; cy?: number }
     const drawItems = ref<DItem[]>([]);
-    /** ⓘ buttons on change-links, positioned by measure() next to the paths. */
+    /** ⓘ buttons on cross-type research links, positioned by measure(). */
     interface LinkIcon { key: string; x: number; y: number; card: string }
     const linkIcons = ref<LinkIcon[]>([]);
     const svgSize = ref({ w: 0, h: 0 });
@@ -289,18 +291,6 @@ export default defineComponent({
           dot(`dot-${c.shipId}-in`, cCX, cCY);
 
           out.push({ key: `v-${c.parentId}-${c.shipId}`, d: `M ${pCX} ${pCY} V ${cCY}`, cls: "conn" });
-
-          // ⓘ on links that change something: the parent forks into several
-          // research lines (the direct continuation included).
-          const parentNode = techTreeNode(c.parentId, props.realm);
-          if (parentNode && treeNextShipIds(parentNode, props.realm).length > 1) {
-            icons.push({
-              key: `i-${c.parentId}-${c.shipId}`,
-              x: pCX,
-              y: (pCY + cCY) / 2,
-              card: linkHintCard(parentNode, c.node),
-            });
-          }
         });
 
         // 2. Fork connectors: from forkFromId to first unique ship (right-angle path)
@@ -326,16 +316,6 @@ export default defineComponent({
 
           dot(`dot-${c.forkFromId}-fout`, pCX, pCY);
           dot(`dot-${c.shipId}-fin`, cCX, cCY);
-
-          const parentNode = techTreeNode(c.forkFromId, props.realm);
-          if (parentNode) {
-            icons.push({
-              key: `i-${c.forkFromId}-${c.shipId}`,
-              x: (pCX + cCX) / 2,
-              y: midY,
-              card: linkHintCard(parentNode, c.node),
-            });
-          }
         });
       });
 
@@ -502,7 +482,7 @@ export default defineComponent({
             })}
           </div>
 
-          {/* ⓘ buttons on change-links — geometry lands after measure() */}
+          {/* ⓘ buttons on cross-type research links — geometry lands after measure() */}
           {linkIcons.value.map((ic) => (
             <button
               key={ic.key}
