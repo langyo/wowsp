@@ -102,9 +102,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.103"
+version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
+checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "arboard"
@@ -7565,19 +7565,3 @@ dependencies = [
  "syn 3.0.6",
  "winnow 1.0.4",
 ]
-
-[[patch.unused]]
-name = "plana"
-version = "0.2.1"
-
-[[patch.unused]]
-name = "plana-celestia-config"
-version = "0.1.51"
-
-[[patch.unused]]
-name = "plana-rpc-client"
-version = "0.2.2"
-
-[[patch.unused]]
-name = "plana-rpc-server"
-version = "0.1.0"
