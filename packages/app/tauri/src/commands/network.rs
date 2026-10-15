@@ -122,6 +122,16 @@ fn looks_like_url(value: &str) -> bool {
     ) && !value.chars().any(char::is_whitespace)
 }
 
+/// Audit wowsp-R1-1 (residual hardening): the `github_mirror` setting
+/// fronts the installer download channel. The Ed25519-signed digest
+/// verification (#1076/#1079) already prevents a tampered installer
+/// from ever spawning; rejecting plaintext `http://` mirrors removes
+/// the remaining MITM DoS surface (garbage bytes → digest mismatch →
+/// blocked update with confusing errors).
+fn looks_like_https_mirror(value: &str) -> bool {
+    value.starts_with("https://") && !value.chars().any(char::is_whitespace)
+}
+
 /// The fallback layer proper: resolve every invalid field onto the
 /// current-version default. Runs on EVERY load and before EVERY save, so
 /// neither the on-disk file nor the webui can smuggle a broken config past
@@ -133,7 +143,23 @@ pub fn sanitize(mut config: NetworkConfig) -> NetworkConfig {
     }
     config.proxy = sanitize_url_field(config.proxy, "proxy", true);
     config.resource_cdn = sanitize_url_field(config.resource_cdn, "resourceCdn", true);
-    config.github_mirror = sanitize_url_field(config.github_mirror, "githubMirror", true);
+    // Audit wowsp-R1-1: the mirror fronts the installer channel —
+    // https only (see looks_like_https_mirror).
+    config.github_mirror = config
+        .github_mirror
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty() && looks_like_https_mirror(v))
+        .map(str::to_string)
+        .or_else(|| {
+            if let Some(v) = config.github_mirror.as_deref() {
+                tracing::warn!(
+                    "network config: ignoring non-https githubMirror {v:?} \
+                     (installer channel requires https)"
+                );
+            }
+            None
+        });
     // "manual" without a usable URL would silently mean "no proxy at all"
     // — the safest reading of a half-broken manual config is the default.
     if config.mode == ProxyMode::Manual && config.proxy.is_none() {
