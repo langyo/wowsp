@@ -158,6 +158,28 @@
    "de-DE": "Chat",
    "fr-FR": "Chat",
    "es-ES": "Chat"
+  },
+  "battle.panel.badobest": {
+   "en-US": "Team Panels (BADoBEST style)",
+   "zh-CN": "侧边面板（BADoBEST 风）",
+   "zh-TW": "側邊面板（BADoBEST 風）",
+   "ja-JP": "Teamパネル（BADoBEST 風）",
+   "ko-KR": "팀 패널(BADoBEST 스타일)",
+   "ru-RU": "Панель команд (стиль BADoBEST)",
+   "de-DE": "Team-Panels (BADoBEST-Stil)",
+   "fr-FR": "Panneaux d'équipe (style BADoBEST)",
+   "es-ES": "Paneles de equipo (estilo BADoBEST)"
+  },
+  "port.battlebutton.vito74m": {
+   "en-US": "BattleType Button (Vito74m style)",
+   "zh-CN": "开战按钮（Vito74m 样式）",
+   "zh-TW": "開戰按鈕（Vito74m 樣式）",
+   "ja-JP": "バトルボタン（Vito74m風）",
+   "ko-KR": "전투 버튼(Vito74m 스타일)",
+   "ru-RU": "Кнопка «В бой» (стиль Vito74m)",
+   "de-DE": "Gefecht-Button (Vito74m-Stil)",
+   "fr-FR": "Bouton de bataille (style Vito74m)",
+   "es-ES": "Botón de tipo de batalla (estilo Vito74m)"
   }
  },
  "battle.build.viewer": {
