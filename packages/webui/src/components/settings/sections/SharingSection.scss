@@ -23,6 +23,10 @@
     flex-wrap: wrap;
     align-items: flex-end;
     gap: var(--hi-space-8, 8px);
+
+    &--wizard {
+      margin-top: var(--hi-space-12, 12px);
+    }
   }
 
   &__identity-save {

@@ -318,6 +318,14 @@ export default defineComponent({
      *  verdict only, scarcity-ranked) the list shows pre-checked. */
     const matchRan = ref(false);
     const matchedItems = ref<PlanItem[]>([]);
+    /** The picker's layout state: with RESULTS the actions dock top-left
+     *  beside the filter; an empty result (or no run yet) falls back to
+     *  the centered hero — smart match AND manual pick both live there,
+     *  so a zero-match run never strands the visitor in an empty list.
+     */
+    const hasResults = computed(
+      () => matchRan.value && matchedItems.value.length > 0,
+    );
     /** MANUAL mode: the rows came from the visitor's own file pick, not
      *  the wanted-ruleset match — they render straight off the plan
      *  items (no store metas for folders outside the scanned ones). */
@@ -412,6 +420,8 @@ export default defineComponent({
         if (picked.length === 0) {
           toast.info(t("sharing.select.noMatchTitle"));
         }
+        // Zero picks: hasResults flips false and the hero (with its own
+        // manual-pick action) takes the step back over.
       } catch (e) {
         planError.value = (e as Error).message || String(e);
       } finally {
@@ -451,6 +461,10 @@ export default defineComponent({
           );
           const byPath = new Map(second.map((i) => [i.path, i]));
           items = items.map((i) => byPath.get(i.path) ?? i);
+        }
+        if (items.length === 0) {
+          toast.info(t("sharing.select.noMatchTitle"));
+          return;
         }
         matchedItems.value = items;
         manualMode.value = true;
@@ -558,6 +572,11 @@ export default defineComponent({
     }
 
     async function startUpload() {
+      if (state.value?.identity == null) {
+        step.value = "intro";
+        toast.error(t("sharing.wizard.identityMissing"));
+        return;
+      }
       const candidates = matchedItems.value
         .filter((i) => checked.value.has(i.path))
         .map((i) => ({
@@ -679,14 +698,37 @@ export default defineComponent({
       if (step.value === "upload") return t("sharing.wizard.doneLabel");
       return t("sharing.wizard.doneLabel");
     });
+    const identityReady = computed(() => {
+      const saved = state.value?.identity;
+      return (
+        saved != null &&
+        saved.realm === idRealm.value &&
+        saved.name === idName.value.trim()
+      );
+    });
     const primaryDisabled = computed(() => {
-      if (step.value === "intro") return !consentGiven.value;
+      if (step.value === "intro") {
+        const name = idName.value.trim();
+        return !consentGiven.value || name.length < 3 || name.length > 24;
+      }
       if (step.value === "select") return checked.value.size === 0;
       return false;
     });
-    function onPrimary() {
-      if (step.value === "intro") step.value = "select";
-      else if (step.value === "select") void startUpload();
+    async function onPrimary() {
+      if (step.value === "intro") {
+        // Persist the identity (or its edit) before leaving the step;
+        // identityReady keeps a no-op save off the happy path.
+        if (!identityReady.value) {
+          try {
+            await api.contributionSetIdentity(idRealm.value, idName.value.trim());
+            await refreshState();
+          } catch (e) {
+            toast.error((e as Error).message || String(e));
+            return;
+          }
+        }
+        step.value = "select";
+      } else if (step.value === "select") void startUpload();
       else if (step.value === "upload") step.value = "done";
       // The done step's primary closes the window — the contributors
       // list sits in the section right below the status card.
@@ -721,7 +763,7 @@ export default defineComponent({
         label: primaryLabel.value,
         variant: "primary",
         disabled: primaryDisabled.value,
-        onClick: onPrimary,
+        onClick: () => void onPrimary(),
       });
       return actions;
     });
@@ -1032,11 +1074,30 @@ export default defineComponent({
                     onUpdate:modelValue={(v: boolean) => (agree.value = v)}
                     label={t("sharing.consent.agree")}
                   />
+                  {/* The credited identity is REQUIRED before anything
+                   *  uploads (the Rust side refuses without one) — so it
+                   *  is captured here, on the consent step, instead of
+                   *  erroring two steps later at the upload door. */}
+                  <div class="sharing-sec__identity sharing-sec__identity--wizard">
+                    <HkSelect
+                      label={t("sharing.status.realm")}
+                      options={REALM_CODES.map((r) => ({ value: r, label: r.toUpperCase() }))}
+                      modelValue={idRealm.value}
+                      onUpdate:modelValue={(v: string) => (idRealm.value = v)}
+                    />
+                    <HkInput
+                      label={t("sharing.status.name")}
+                      placeholder={t("sharing.status.namePlaceholder")}
+                      modelValue={idName.value}
+                      onUpdate:modelValue={(v: string) => (idName.value = v)}
+                    />
+                  </div>
+                  <HkSettingsHint>{t("sharing.wizard.identityHint")}</HkSettingsHint>
                 </div>
               ),
               select: () => (
                 <div class="sharing-sec__step">
-                  {!matchRan.value ? (
+                  {!hasResults.value ? (
                     /* The hero: nothing lists until the visitor runs the
                      * match — one centered action, hikari's empty-state
                      * shell for the copy. */
@@ -1047,7 +1108,9 @@ export default defineComponent({
                         description={
                           allReplays.value.length === 0
                             ? t("sharing.select.empty")
-                            : t("sharing.select.heroDesc")
+                            : matchRan.value && matchedItems.value.length === 0
+                              ? t("sharing.select.noMatchDesc")
+                              : t("sharing.select.heroDesc")
                         }
                         v-slots={{
                           action: () => (
@@ -1060,6 +1123,13 @@ export default defineComponent({
                               >
                                 <Wand2 size={15} />
                                 {t("sharing.select.smart")}
+                              </HkButton>
+                              <HkButton
+                                variant="secondary"
+                                onClick={() => void pickManual()}
+                              >
+                                <FolderOpen size={15} />
+                                {t("sharing.select.manual")}
                               </HkButton>
                               {allReplays.value.length === 0 ? (
                                 <HkButton

@@ -47,7 +47,9 @@
     "prev": "戻る",
     "startUpload": "アップロード開始",
     "doneLabel": "完了",
-    "open": "リプレイを共有…"
+    "open": "リプレイを共有…",
+    "identityHint": "クレジット表記は共有パッケージとともにアップロードされ、貢献者一覧に掲載されます。",
+    "identityMissing": "先にクレジット表記(サーバーとゲーム ID)を設定してください"
   },
   "select": {
     "checkCard": "{name} のリプレイを選択",

@@ -47,7 +47,9 @@
     "prev": "Back",
     "startUpload": "Start upload",
     "doneLabel": "Finish",
-    "open": "Share replays…"
+    "open": "Share replays…",
+    "identityHint": "The credited identity uploads with your package and lands in the contributor list.",
+    "identityMissing": "Set your credited identity (server + game ID) first"
   },
   "select": {
     "checkCard": "Select the replay of {name}",

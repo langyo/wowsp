@@ -47,7 +47,9 @@
     "prev": "Atrás",
     "startUpload": "Iniciar subida",
     "doneLabel": "Finalizar",
-    "open": "Compartir repeticiones…"
+    "open": "Compartir repeticiones…",
+    "identityHint": "La identidad acreditada se sube con tu paquete y aparece en la lista de participantes.",
+    "identityMissing": "Configura primero la identidad acreditada (servidor + ID de juego)"
   },
   "select": {
     "checkCard": "Seleccionar la repetición de {name}",
