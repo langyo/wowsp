@@ -642,9 +642,19 @@ fn safe_rel_path(path: &str) -> bool {
 
 /// sha256 of one file, streaming.
 fn file_sha256(path: &Path) -> anyhow::Result<String> {
+    use std::io::Read;
     let mut file = File::open(path).map_err(|e| anyhow!("open {}: {e}", path.display()))?;
     let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher).map_err(|e| anyhow!("hash {}: {e}", path.display()))?;
+    let mut buf = vec![0u8; 256 * 1024];
+    loop {
+        let read = file
+            .read(&mut buf)
+            .map_err(|e| anyhow!("hash {}: {e}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
+    }
     Ok(hex::encode(hasher.finalize()))
 }
 

@@ -140,7 +140,7 @@ jobs:
           path: _site
 
       - name: Upload worker-site artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: worker-site
           path: packages/pairing-relay/assets
@@ -204,7 +204,7 @@ jobs:
         run: python scripts/export_feedback_theme.py
 
       - name: Fetch the site bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: worker-site
           path: packages/pairing-relay/assets
