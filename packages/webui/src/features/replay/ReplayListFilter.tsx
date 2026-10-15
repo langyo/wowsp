@@ -472,29 +472,31 @@ export default defineComponent({
             (unlike the date row, whose pickers have none). A pick rides
             out as the host-level update event; the FILTER_ANY sentinel is
             both the 全部 option's value and the "cleared" state. */}
-        <div class="replay-view__pop-select">
-          <HkSelect
-            label={t("replay.filter.client")}
-            options={[
-              { value: FILTER_ANY, label: t("replay.filter.allClients") },
-              ...props.clientOptions,
-            ]}
-            placeholder={t("replay.filter.allClients")}
-            modelValue={props.selectedClient}
-            onUpdate:modelValue={(v: string) => emit("update:selectedClient", v)}
-          />
-        </div>
-        <div class="replay-view__pop-select">
-          <HkSelect
-            label={t("replay.filter.player")}
-            options={[
-              { value: FILTER_ANY, label: t("replay.filter.allPlayers") },
-              ...props.playerOptions.map((n) => ({ value: n, label: n })),
-            ]}
-            placeholder={t("replay.filter.allPlayers")}
-            modelValue={props.selectedPlayer}
-            onUpdate:modelValue={(v: string) => emit("update:selectedPlayer", v)}
-          />
+        <div class="replay-view__pop-row">
+          <div class="replay-view__pop-select">
+            <HkSelect
+              label={t("replay.filter.client")}
+              options={[
+                { value: FILTER_ANY, label: t("replay.filter.allClients") },
+                ...props.clientOptions,
+              ]}
+              placeholder={t("replay.filter.allClients")}
+              modelValue={props.selectedClient}
+              onUpdate:modelValue={(v: string) => emit("update:selectedClient", v)}
+            />
+          </div>
+          <div class="replay-view__pop-select">
+            <HkSelect
+              label={t("replay.filter.player")}
+              options={[
+                { value: FILTER_ANY, label: t("replay.filter.allPlayers") },
+                ...props.playerOptions.map((n) => ({ value: n, label: n })),
+              ]}
+              placeholder={t("replay.filter.allPlayers")}
+              modelValue={props.selectedPlayer}
+              onUpdate:modelValue={(v: string) => emit("update:selectedPlayer", v)}
+            />
+          </div>
         </div>
         {/* The date-range pair — living INSIDE the mode popup (labeled row
             under the option strip) so the action row stays one square
@@ -505,24 +507,31 @@ export default defineComponent({
             contract), so the two never fight. min/max cross-link so an
             invalid from > to window can never form; each input clears
             itself. */}
-        <div class="replay-view__pop-dates">
-          <span class="replay-view__pop-dates-label">
-            {t("replay.filter.dateRange")}
-          </span>
-          <HkDatePicker
-            size="sm"
-            modelValue={props.dateFrom}
-            onUpdate:modelValue={(v: string | null) => emit("update:dateFrom", v)}
-            placeholder={t("replay.filter.dateFrom")}
-            max={props.dateTo ?? undefined}
-          />
-          <HkDatePicker
-            size="sm"
-            modelValue={props.dateTo}
-            onUpdate:modelValue={(v: string | null) => emit("update:dateTo", v)}
-            placeholder={t("replay.filter.dateTo")}
-            min={props.dateFrom ?? undefined}
-          />
+        <div class="replay-view__pop-row">
+          <div class="replay-view__pop-date">
+            <span class="replay-view__pop-field-label">
+              {t("replay.filter.dateFrom")}
+            </span>
+            <HkDatePicker
+              size="sm"
+              modelValue={props.dateFrom}
+              onUpdate:modelValue={(v: string | null) => emit("update:dateFrom", v)}
+              placeholder={t("replay.filter.dateFrom")}
+              max={props.dateTo ?? undefined}
+            />
+          </div>
+          <div class="replay-view__pop-date">
+            <span class="replay-view__pop-field-label">
+              {t("replay.filter.dateTo")}
+            </span>
+            <HkDatePicker
+              size="sm"
+              modelValue={props.dateTo}
+              onUpdate:modelValue={(v: string | null) => emit("update:dateTo", v)}
+              placeholder={t("replay.filter.dateTo")}
+              min={props.dateFrom ?? undefined}
+            />
+          </div>
         </div>
       </FilterCategoryChip>
     );

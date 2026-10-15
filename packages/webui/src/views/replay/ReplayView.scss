@@ -60,21 +60,29 @@
      The panel teleports to body level, but this stylesheet rides the lazy
      replay route chunk that renders the popup, so plain global classes
      are enough. */
-  &__pop-dates {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+  /* Two-up rows: the client/player select pair and the start/end date
+     pair share one rhythm — fields side by side, each carrying its own
+     caption in the same voice HkSelect renders for its label. */
+  &__pop-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
     margin-top: 8px;
 
-    .hk-dp {
-      flex: 1;
-      min-width: 0;
+    .replay-view__pop-select {
+      margin-top: 0;
     }
   }
 
-  &__pop-dates-label {
-    flex-shrink: 0;
-    margin-right: 4px;
+  &__pop-date {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__pop-field-label {
+    display: block;
+    margin-bottom: 2px;
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted) / 90%);
     white-space: nowrap;

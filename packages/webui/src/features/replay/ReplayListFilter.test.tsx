@@ -550,7 +550,7 @@ describe("ReplayListFilter trigger", () => {
     });
     const pickers = wrapper.findAllComponents(HkDatePicker);
     expect(pickers).toHaveLength(2);
-    expect(document.body.querySelectorAll(".replay-view__pop-dates .hk-dp")).toHaveLength(2);
+    expect(document.body.querySelectorAll(".replay-view__pop-row .replay-view__pop-date .hk-dp")).toHaveLength(2);
     expect(pickers[0]!.props("placeholder")).toBe(t("replay.filter.dateFrom"));
     expect(pickers[1]!.props("placeholder")).toBe(t("replay.filter.dateTo"));
     // The cross-link engages only while the opposite bound is set.
