@@ -23,7 +23,7 @@ import { api, type ArenaInfo, type PlayerShipStats, type PlayerStats, type Vehic
 import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
 import { useStatsQueryStore } from "@/stores/statsQuery";
-import { dimsNeedShipStats, rosterDimsOf, type RosterModeNumbers } from "@/utils/statView";
+import { columnsNeedShipStats, type RosterModeNumbers } from "@/utils/statView";
 import { AI_NAME, isAiName } from "@/utils/aiNames";
 
 // Re-exports keep the historical import paths (`AI_NAME` was defined here
@@ -422,14 +422,17 @@ export function useRosterStats(options: UseRosterStatsOptions) {
   }
 
   // ── Ship-scoped attachment (the live pipeline's share) ────────────────
-  // While the stats source needs per-ship data, every loaded human slot
-  // carries that player's full ship list: session-cache hits land
-  // synchronously, misses queue one debounced bounded batch. Flipping the
-  // source dimensions (the live head's mode popover) re-runs this — the
-  // already-attached lists are scope-independent, so only the misses move.
+  // While any configured column needs per-ship data (a ship/class/solo
+  // scope), every loaded human slot carries that player's full ship list:
+  // session-cache hits land synchronously, misses queue one debounced
+  // bounded batch. Editing the columns re-runs this — the already-attached
+  // lists are scope-independent, so only the misses move.
 
   function shipScopeActive(): boolean {
-    return dimsNeedShipStats(rosterDimsOf(statsPrefsState.value));
+    return columnsNeedShipStats(
+      statsPrefsState.value.overlayColumns,
+      statsPrefsState.value.prEnabled,
+    );
   }
 
   function ensureShipLists() {
@@ -937,7 +940,12 @@ export async function fetchRosterStatsByNames(
     // (the post-battle panel's dims watch, a second replay with overlapping
     // names) must re-attach or its ship-scoped columns dash. Warm
     // attachments answer from the session cache without new requests.
-    if (dimsNeedShipStats(rosterDimsOf(statsPrefsState.value))) {
+    if (
+      columnsNeedShipStats(
+        statsPrefsState.value.overlayColumns,
+        statsPrefsState.value.prEnabled,
+      )
+    ) {
       // One pipeline message per account — each list attaches (and its row
       // re-settles through `onArrive`) the moment it lands; a slow player
       // no longer delays the rest of the wave. Each entry carries its own

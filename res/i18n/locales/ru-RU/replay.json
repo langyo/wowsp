@@ -160,7 +160,18 @@
     "kills": "Потоплено",
     "sunkAt": "потоплен в {time}",
     "aliveCount": "Живых: {alive}/{total}",
-    "ship": "Корабль"
+    "ship": "Корабль",
+    "scopeGlobal": "Общая",
+    "scopeSolo": "Только соло",
+    "scopeShip": "Только этот корабль",
+    "scopeClass": "Только класс корабля",
+    "scopeTagSolo": "соло",
+    "scopeTagShip": "корабль",
+    "scopeTagClass": "класс",
+    "metricWinrate": "ВР",
+    "metricPr": "PR",
+    "metricBattles": "Боёв",
+    "metricDamage": "Ср. урон"
   },
   "minimap": {
     "zoom": "Увеличенная карта",

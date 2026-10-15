@@ -69,10 +69,9 @@ function mockShipList(): PlayerShipStats[] {
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.clearAllMocks();
-  // Ship scope on, so the one-shot attaches the per-ship lists.
-  statsPrefsState.value.overlayShipScope = "ship";
+  // A ship-scoped column on, so the one-shot attaches the per-ship lists.
+  statsPrefsState.value.overlayColumns = [{ scope: "ship", metric: "winrate" }];
   statsPrefsState.value.overlayBattleScope = "follow";
-  statsPrefsState.value.overlaySoloScope = "all";
 });
 
 describe("fetchRosterStatsByNames cache isolation", () => {
@@ -119,8 +118,11 @@ describe("fetchRosterStatsByNames cache isolation", () => {
 
 describe("fetchRosterStatsByNames progressive arrival", () => {
   it("sub-batches the misses and settles each chunk's names through onArrive", async () => {
-    // Ship scope off — this test exercises the name phase only.
-    statsPrefsState.value.overlayShipScope = "all";
+    // Every column global — this test exercises the name phase only.
+    statsPrefsState.value.overlayColumns = [
+      { scope: "global", metric: "winrate" },
+      { scope: "global", metric: "damage" },
+    ];
     const calls: string[][] = [];
     vi.mocked(api.lookupPlayersStatsBatch).mockImplementation(async (names: string[]) => {
       calls.push(names);
@@ -174,7 +176,7 @@ describe("fetchRosterStatsByNames progressive arrival", () => {
   });
 
   it("leaves a failed sub-batch's names absent from the result", async () => {
-    statsPrefsState.value.overlayShipScope = "all";
+    statsPrefsState.value.overlayColumns = [{ scope: "global", metric: "winrate" }];
     let call = 0;
     vi.mocked(api.lookupPlayersStatsBatch).mockImplementation(async (names: string[]) => {
       call += 1;

@@ -43,12 +43,12 @@ async function freshModule() {
 describe("loadStatsPrefs", () => {
   it("returns the defaults when nothing is stored", () => {
     expect(loadStatsPrefs()).toEqual(DEFAULT_STATS_PREFS);
-    // The PR rating and ALL FOUR stat columns ship on (the roster reads
-    // winrate/PR/battles together, each individually switchable); the fun
-    // wording, seals and the tier-weighted team winrate ship on. Team
-    // averages ship off (dense already). Both roster-density overrides ship
-    // off: full cards on the live panel and compact rows post-battle are
-    // the defaults. The PR-tier row wash ships on.
+    // The PR rating and the four shipped stat columns (global winrate /
+    // PR / battles / avg damage) ship on; the fun wording, seals and the
+    // tier-weighted team winrate ship on. Team averages ship off (dense
+    // already). Both roster-density overrides ship off: full cards on the
+    // live panel and compact rows post-battle are the defaults. The
+    // PR-tier row wash ships on.
     expect(DEFAULT_STATS_PREFS).toEqual({
       prEnabled: true,
       prAlgo: "winrate",
@@ -60,10 +60,13 @@ describe("loadStatsPrefs", () => {
       postbattleRosterFull: false,
       teamIntelEnabled: true,
       sealDisabled: {},
-      overlayChips: { winrate: true, pr: true, battles: true, damage: true },
-      overlayShipScope: "all",
+      overlayColumns: [
+        { scope: "global", metric: "winrate" },
+        { scope: "global", metric: "pr" },
+        { scope: "global", metric: "battles" },
+        { scope: "global", metric: "damage" },
+      ],
       overlayBattleScope: "follow",
-      overlaySoloScope: "all",
       overlayIntel: { radar: true, hydro: true, smoke: true },
       overlayTeamAvg: { winrate: false, pr: false, damage: false },
     });
@@ -93,9 +96,10 @@ describe("loadStatsPrefs", () => {
     );
   });
 
-  it("migrates the legacy avg-stats switch into the chip toggles", () => {
-    // A pre-overlayChips blob: avgStatsEnabled seeded winrate + damage, and
-    // the normalized rewrite drops the legacy key so it never comes back.
+  it("migrates the legacy avg-stats switch into empty columns when off", () => {
+    // A pre-overlayChips blob: avgStatsEnabled seeded the whole shipped
+    // chip set, and the normalized rewrite drops the legacy key so it
+    // never comes back.
     localStorage.setItem(
       STATS_PREFS_STORAGE_KEY,
       JSON.stringify({ prEnabled: true, avgStatsEnabled: false }),
@@ -103,32 +107,104 @@ describe("loadStatsPrefs", () => {
     expect(loadStatsPrefs()).toEqual({
       ...DEFAULT_STATS_PREFS,
       prEnabled: true,
-      overlayChips: { winrate: false, pr: false, battles: false, damage: false },
+      overlayColumns: [],
     });
     expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).not.toContain(
       "avgStatsEnabled",
     );
 
-    // The ON legacy value keeps the shipped chip content.
+    // The ON legacy value keeps the shipped columns.
     localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify({ avgStatsEnabled: true }));
-    expect(loadStatsPrefs().overlayChips).toEqual(
-      DEFAULT_STATS_PREFS.overlayChips,
+    expect(loadStatsPrefs().overlayColumns).toEqual(
+      DEFAULT_STATS_PREFS.overlayColumns,
     );
+  });
 
-    // An explicit overlayChips object always wins over the legacy seed.
+  it("migrates the retired chip toggles + ship/solo dims into scoped columns", () => {
+    // A pre-columns blob: every enabled chip becomes a column of the scope
+    // the retired dims mapped onto, in that build's render order.
     localStorage.setItem(
       STATS_PREFS_STORAGE_KEY,
       JSON.stringify({
-        avgStatsEnabled: false,
         overlayChips: { winrate: true, pr: true, battles: true, damage: false },
+        overlayShipScope: "ship",
+        overlaySoloScope: "all",
       }),
     );
-    expect(loadStatsPrefs().overlayChips).toEqual({
-      winrate: true,
-      pr: true,
-      battles: true,
-      damage: false,
-    });
+    expect(loadStatsPrefs().overlayColumns).toEqual([
+      { scope: "ship", metric: "winrate" },
+      { scope: "ship", metric: "pr" },
+      { scope: "ship", metric: "battles" },
+    ]);
+    // The normalized rewrite drops the retired keys so they never come
+    // back.
+    expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).not.toContain(
+      "overlayChips",
+    );
+
+    // Solo wins over the ship dim (the retired model's precedence, kept).
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        overlayChips: { winrate: true, pr: false, battles: false, damage: true },
+        overlayShipScope: "tier",
+        overlaySoloScope: "solo",
+      }),
+    );
+    expect(loadStatsPrefs().overlayColumns).toEqual([
+      { scope: "solo", metric: "winrate" },
+      { scope: "solo", metric: "damage" },
+    ]);
+
+    // "tier" has no column scope — it falls back to the account career.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ overlayChips: { battles: true } }),
+    );
+    expect(loadStatsPrefs().overlayColumns).toEqual([
+      { scope: "global", metric: "battles" },
+    ]);
+
+    // An explicit columns list always wins over the legacy seed.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        overlayChips: { winrate: true },
+        overlayColumns: [{ scope: "class", metric: "damage" }],
+      }),
+    );
+    expect(loadStatsPrefs().overlayColumns).toEqual([
+      { scope: "class", metric: "damage" },
+    ]);
+  });
+
+  it("drops junk entries, duplicates and over-limit tails in the column list", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        overlayColumns: [
+          { scope: "global", metric: "winrate" },
+          { scope: "voodoo", metric: "pr" },
+          { scope: "ship", metric: "bogus" },
+          "junk",
+          null,
+          { scope: "solo", metric: "winrate" },
+          { scope: "global", metric: "winrate" },
+          { scope: "ship", metric: "winrate" },
+          { scope: "class", metric: "winrate" },
+          { scope: "global", metric: "pr" },
+          { scope: "global", metric: "battles" },
+          { scope: "global", metric: "damage" },
+        ],
+      }),
+    );
+    expect(loadStatsPrefs().overlayColumns).toEqual([
+      { scope: "global", metric: "winrate" },
+      { scope: "solo", metric: "winrate" },
+      { scope: "ship", metric: "winrate" },
+      { scope: "class", metric: "winrate" },
+      { scope: "global", metric: "pr" },
+    ]);
   });
 
   it("fills missing fields with defaults instead of dropping the blob", () => {
@@ -141,10 +217,8 @@ describe("loadStatsPrefs", () => {
     expect(prefs.weightedTeamWr).toBe(true);
     expect(prefs.teamIntelEnabled).toBe(true);
     expect(prefs.sealDisabled).toEqual({});
-    expect(prefs.overlayChips).toEqual(DEFAULT_STATS_PREFS.overlayChips);
-    expect(prefs.overlayShipScope).toBe("all");
+    expect(prefs.overlayColumns).toEqual(DEFAULT_STATS_PREFS.overlayColumns);
     expect(prefs.overlayBattleScope).toBe("follow");
-    expect(prefs.overlaySoloScope).toBe("all");
     expect(prefs.overlayIntel).toEqual(DEFAULT_STATS_PREFS.overlayIntel);
     expect(prefs.overlayTeamAvg).toEqual(DEFAULT_STATS_PREFS.overlayTeamAvg);
   });
@@ -163,16 +237,11 @@ describe("loadStatsPrefs", () => {
     localStorage.setItem(
       STATS_PREFS_STORAGE_KEY,
       JSON.stringify({
-        overlayChips: { winrate: false, junk: true, pr: "yes" },
         overlayIntel: { radar: false, smoke: true, sonar: true },
         overlayTeamAvg: { pr: true, damage: true, karma: true },
       }),
     );
     const prefs = loadStatsPrefs();
-    expect(prefs.overlayChips).toEqual({
-      ...DEFAULT_STATS_PREFS.overlayChips,
-      winrate: false,
-    });
     expect(prefs.overlayIntel).toEqual({ radar: false, hydro: true, smoke: true });
     expect(prefs.overlayTeamAvg).toEqual({
       ...DEFAULT_STATS_PREFS.overlayTeamAvg,
@@ -197,22 +266,6 @@ describe("loadStatsPrefs", () => {
     expect(loadStatsPrefs().overlayBattleScope).toBe("follow");
   });
 
-  it("rejects an unknown ship-scope value", () => {
-    localStorage.setItem(
-      STATS_PREFS_STORAGE_KEY,
-      JSON.stringify({ overlayShipScope: "fleet" }),
-    );
-    expect(loadStatsPrefs().overlayShipScope).toBe("all");
-  });
-
-  it("rejects an unknown solo-scope value", () => {
-    localStorage.setItem(
-      STATS_PREFS_STORAGE_KEY,
-      JSON.stringify({ overlaySoloScope: "div2" }),
-    );
-    expect(loadStatsPrefs().overlaySoloScope).toBe("all");
-  });
-
   it("migrates the legacy single-enum stats mode onto the battle dimension", () => {
     // A pre-split blob carries only the retired `overlayStatsMode`; each
     // value seeds the battle scope, and the normalized rewrite drops the
@@ -230,8 +283,6 @@ describe("loadStatsPrefs", () => {
       );
       const prefs = loadStatsPrefs();
       expect(prefs.overlayBattleScope).toBe(battle);
-      expect(prefs.overlayShipScope).toBe("all");
-      expect(prefs.overlaySoloScope).toBe("all");
       expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).not.toContain(
         "overlayStatsMode",
       );
@@ -259,11 +310,12 @@ describe("statsPrefs store", () => {
     store.setLiveRosterPrTint(false);
     store.setPostbattleRosterFull(true);
     store.setTeamIntelEnabled(false);
-    store.setOverlayChip("winrate", false);
-    store.setOverlayChip("pr", true);
-    store.setOverlayShipScope("ship");
+    store.setOverlayColumns([
+      { scope: "solo", metric: "winrate" },
+      { scope: "ship", metric: "pr" },
+      { scope: "class", metric: "damage" },
+    ]);
     store.setOverlayBattleScope("ranked");
-    store.setOverlaySoloScope("solo");
     store.setOverlayIntel("radar", false);
     store.setOverlayTeamAvg("pr", true);
 
@@ -280,21 +332,27 @@ describe("statsPrefs store", () => {
       postbattleRosterFull: true,
       teamIntelEnabled: false,
       sealDisabled: {},
-      overlayChips: {
-        winrate: false,
-        pr: true,
-        battles: true,
-        damage: true,
-      },
-      overlayShipScope: "ship",
+      overlayColumns: [
+        { scope: "solo", metric: "winrate" },
+        { scope: "ship", metric: "pr" },
+        { scope: "class", metric: "damage" },
+      ],
       overlayBattleScope: "ranked",
-      overlaySoloScope: "solo",
       overlayIntel: { radar: false, hydro: true, smoke: true },
       overlayTeamAvg: { winrate: false, pr: true, damage: false },
     };
     expect(JSON.parse(raw!)).toEqual(expected);
     // Same values read back through the pure loader (the round trip).
     expect(loadStatsPrefs()).toEqual(expected);
+  });
+
+  it("silently rejects a duplicate or over-limit column write", async () => {
+    const store = useStatsPrefsStore();
+    const before = store.prefs.overlayColumns;
+    // A duplicate combo never lands (the editor prevents it; this is the
+    // hand-edited-state guard).
+    store.setOverlayColumns([...before, before[0]]);
+    expect(store.prefs.overlayColumns).toEqual(before);
   });
 
   it("persists a per-seal toggle and round-trips it", async () => {

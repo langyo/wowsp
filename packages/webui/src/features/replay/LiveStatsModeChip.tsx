@@ -1,10 +1,15 @@
 /**
- * LiveStatsModeChip — the stats-source tag: a pill that shows the CURRENT
- * three-dimension selection (ship scope / battle scope / solo filter) and
- * opens a filter-style popup hosting the very segmented groups the settings
- * page renders (OverlayContentControls) — identical option sets, reading
- * and writing the SAME statsPrefs store fields, so a flip here shows up in
- * the settings and vice versa, immediately.
+ * LiveStatsModeChip — the stats-source tag: a pill that shows the current
+ * battle-scope selection and opens a filter-style popup hosting the very
+ * segmented group the settings page renders (OverlayContentControls) —
+ * identical option set, reading and writing the SAME statsPrefs store
+ * field, so a flip here shows up in the settings and vice versa,
+ * immediately.
+ *
+ * The ship/solo scopes this chip used to carry moved INTO the roster
+ * columns themselves (settings' column editor — each column is a scope ×
+ * metric pair now); the battle-type career is the one dimension that
+ * stays panel-wide, and it is the one this chip flips.
  *
  * Mounted in two hosts: the live panel's head and the post-battle share
  * bar (PostBattleShareBar — riding the replay results modal and its
@@ -23,30 +28,15 @@ import { HkPopover, HkTabs, useBreakpoint } from "@celestia-island/hikari";
 import { ShipWheel } from "@lucide/vue";
 
 import { t } from "@/i18n";
-import {
-  useStatsPrefsStore,
-  type RosterBattleScope,
-  type RosterShipScope,
-  type RosterSoloScope,
-} from "@/stores/statsPrefs";
+import { useStatsPrefsStore, type RosterBattleScope } from "@/stores/statsPrefs";
 import "./LiveStatsModeChip.scss";
 
-/** scope value → its option label key (the settings rows use the same). */
-const SHIP_SCOPE_LABEL: Record<RosterShipScope, string> = {
-  all: "settings.overlayContent.shipScopeAll",
-  class: "settings.overlayContent.shipScopeClass",
-  tier: "settings.overlayContent.shipScopeTier",
-  ship: "settings.overlayContent.shipScopeShip",
-};
+/** scope value → its option label key (the settings row uses the same). */
 const BATTLE_SCOPE_LABEL: Record<RosterBattleScope, string> = {
   follow: "settings.overlayContent.battleFollow",
   random: "settings.overlayContent.battleRandom",
   ranked: "settings.overlayContent.battleRanked",
   all: "settings.overlayContent.battleAll",
-};
-const SOLO_SCOPE_LABEL: Record<RosterSoloScope, string> = {
-  all: "settings.overlayContent.soloAll",
-  solo: "settings.overlayContent.soloOnly",
 };
 
 export default defineComponent({
@@ -84,52 +74,19 @@ export default defineComponent({
       document.removeEventListener("pointerdown", onDocPointerDown, true);
     });
 
-    /** Any dimension off its default — the chip then wears its active
+    /** The battle scope off its default — the chip then wears its active
      *  face, exactly like the head's other toggles. */
     const customized = computed(
-      () =>
-        prefs.prefs.overlayShipScope !== "all" ||
-        prefs.prefs.overlayBattleScope !== "follow" ||
-        prefs.prefs.overlaySoloScope !== "all",
+      () => prefs.prefs.overlayBattleScope !== "follow",
     );
 
-    /** The non-default dimensions joined with " · "; the resting face is
-     *  the chip's own name ("战绩筛选") — never the battle scope's option
-     *  label, which would collide with the identically-named option inside
-     *  the popup. */
-    const label = computed(() => {
-      const parts: string[] = [];
-      if (prefs.prefs.overlayShipScope !== "all") {
-        parts.push(t(SHIP_SCOPE_LABEL[prefs.prefs.overlayShipScope]));
-      }
-      if (prefs.prefs.overlayBattleScope !== "follow") {
-        parts.push(t(BATTLE_SCOPE_LABEL[prefs.prefs.overlayBattleScope]));
-      }
-      if (prefs.prefs.overlaySoloScope === "solo") {
-        parts.push(t(SOLO_SCOPE_LABEL.solo));
-      }
-      return parts.length > 0
-        ? parts.join(" · ")
-        : t("replay.live.statsSourceTitle");
-    });
-
-    /** One labeled segmented group row — the same HkTabs control (and
-     *  option order) the settings page's stats-source rows render. */
-    const group = <T extends string>(
-      labelKey: string,
-      value: T,
-      set: (v: T) => void,
-      tabs: { key: T; label: string }[],
-    ) => (
-      <div class="live-battle__mode-group">
-        <span class="live-battle__mode-group-label">{t(labelKey)}</span>
-        <HkTabs
-          variant="segmented"
-          modelValue={value}
-          onUpdate:modelValue={(v: string) => set(v as T)}
-          tabs={tabs}
-        />
-      </div>
+    /** The non-default battle scope; the resting face is the chip's own
+     *  name ("战绩筛选") — never the option label, which would collide
+     *  with the identically-named option inside the popup. */
+    const label = computed(() =>
+      prefs.prefs.overlayBattleScope !== "follow"
+        ? t(BATTLE_SCOPE_LABEL[prefs.prefs.overlayBattleScope])
+        : t("replay.live.statsSourceTitle"),
     );
 
     return () => (
@@ -159,37 +116,24 @@ export default defineComponent({
           title={t("replay.live.statsSourceTitle")}
         >
           <div ref={panelEl} class="live-battle__mode-pop">
-            {group(
-              "settings.overlayContent.shipScope",
-              prefs.prefs.overlayShipScope,
-              (v) => prefs.setOverlayShipScope(v),
-              [
-                { key: "all" as RosterShipScope, label: t(SHIP_SCOPE_LABEL.all) },
-                { key: "class" as RosterShipScope, label: t(SHIP_SCOPE_LABEL.class) },
-                { key: "tier" as RosterShipScope, label: t(SHIP_SCOPE_LABEL.tier) },
-                { key: "ship" as RosterShipScope, label: t(SHIP_SCOPE_LABEL.ship) },
-              ],
-            )}
-            {group(
-              "settings.overlayContent.battleScope",
-              prefs.prefs.overlayBattleScope,
-              (v) => prefs.setOverlayBattleScope(v),
-              [
-                { key: "follow" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.follow) },
-                { key: "random" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.random) },
-                { key: "ranked" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.ranked) },
-                { key: "all" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.all) },
-              ],
-            )}
-            {group(
-              "settings.overlayContent.soloScope",
-              prefs.prefs.overlaySoloScope,
-              (v) => prefs.setOverlaySoloScope(v),
-              [
-                { key: "all" as RosterSoloScope, label: t(SOLO_SCOPE_LABEL.all) },
-                { key: "solo" as RosterSoloScope, label: t(SOLO_SCOPE_LABEL.solo) },
-              ],
-            )}
+            <div class="live-battle__mode-group">
+              <span class="live-battle__mode-group-label">
+                {t("settings.overlayContent.battleScope")}
+              </span>
+              <HkTabs
+                variant="segmented"
+                modelValue={prefs.prefs.overlayBattleScope}
+                onUpdate:modelValue={(v: string) =>
+                  prefs.setOverlayBattleScope(v as RosterBattleScope)
+                }
+                tabs={[
+                  { key: "follow" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.follow) },
+                  { key: "random" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.random) },
+                  { key: "ranked" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.ranked) },
+                  { key: "all" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.all) },
+                ]}
+              />
+            </div>
           </div>
         </HkPopover>
       </div>

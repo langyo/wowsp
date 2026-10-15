@@ -43,12 +43,12 @@ import { parsePostBattle, type PostBattleRibbon } from "@/features/replay/postBa
 import { applyDarkDeathInference, resolveMaxHp } from "@/features/holographic/shipHp";
 import PostBattlePanel from "@/features/replay/PostBattlePanel";
 import {
-  dimsNeedShipStats,
+  columnsNeedShipStats,
+  overlayColumnDims,
   resolveRosterBattleScope,
-  rosterDimsOf,
   type ResolvedStatsMode,
 } from "@/utils/statView";
-import { scopedViewOf } from "@/utils/shipStatsScope";
+import { scopedRosterView } from "@/utils/shipStatsScope";
 import {
   PostBattleShareBar,
   rosterShotCells,
@@ -91,7 +91,7 @@ import ReplayListFilter, {
   useReplayListFilter,
   type ReplaySortDir,
 } from "@/features/replay/ReplayListFilter";
-import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
+import { prAlgoForRequest, statsPrefsState, type OverlayColumnScope } from "@/stores/statsPrefs";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
@@ -199,17 +199,32 @@ const PostBattleFallbackPanel = defineComponent({
     // the fallback matrix leaks nicknames just the same).
     const masking = useNickMasking();
     const shot = useShareShot(buildShotModel, () => root.value);
+    /** One row's numbers for ONE column scope — the account career for
+     *  "global", the aggregated per-ship view otherwise, against the
+     *  replay's already-resolved battle scope. */
+    const colViewOf = (
+      scope: OverlayColumnScope,
+      st: RosterStat,
+      shipId: number | null,
+    ) =>
+      scopedRosterView(
+        st,
+        shipId,
+        overlayColumnDims(scope, statsPrefsState.value.overlayBattleScope),
+        props.statsMode,
+        prAlgoForRequest() ?? "winrate",
+      );
     function buildShotModel(): ShotModel {
       const mkCol = (list: typeof rows.value, enemy: boolean): ShotColumn => ({
         title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
         rows: list.map((r): ShotRow => {
           const ai = AI_NAME.test(r.vehicle.name);
           const st = ai ? undefined : nameStats.value.get(r.vehicle.name);
-          // The chip-gated columns of the SAME stats-source view the DOM
-          // matrix below renders — dashes for bots / misses.
+          // The configured columns of the per-scope views the DOM matrix
+          // below renders — dashes for bots / misses.
           const stats: ShotStat[] = !st
             ? rosterShotDashes()
-            : rosterShotCells(scopedViewOf(st, r.vehicle.shipId, props.statsMode));
+            : rosterShotCells((scope) => colViewOf(scope, st, r.vehicle.shipId));
           return {
             nick: masking.maskOf(r.vehicle.name),
             clanTag: st?.clanTag ?? null,
@@ -256,12 +271,18 @@ const PostBattleFallbackPanel = defineComponent({
         nameStatsLoading.value = false;
       }
     }
-    // Flipping the stats-source dimensions (or the PR algorithm) after the
-    // one-shot load re-runs it — the fetch only attaches the per-ship
-    // lists the dims in force at load time requested.
+    // Flipping any column past the account careers (or the PR algorithm)
+    // after the one-shot load re-runs it — the fetch only attaches the
+    // per-ship lists the columns in force at load time requested.
     watch(
       () =>
-        [dimsNeedShipStats(rosterDimsOf(statsPrefsState.value)), prAlgoForRequest()] as const,
+        [
+          columnsNeedShipStats(
+            statsPrefsState.value.overlayColumns,
+            statsPrefsState.value.prEnabled,
+          ),
+          prAlgoForRequest(),
+        ] as const,
       ([need]) => {
         if (need) void loadNameStats();
       },
@@ -524,7 +545,7 @@ const PostBattleFallbackPanel = defineComponent({
               r.vehicle.name,
               nameStats.value,
               nameStatsLoading.value,
-              (st) => scopedViewOf(st, r.vehicle.shipId, props.statsMode),
+              (st, scope) => colViewOf(scope, st, r.vehicle.shipId),
             )}
             <span class="replay-view__postbattle-cell-status">
               {!r.alive ? t("replay.legend.dead") : ""}

@@ -13,5 +13,8 @@
   "intelRange": "최장",
   "avgWinrate": "평균 승률",
   "avgPr": "평균 PR",
-  "avgDmg": "평균 딜"
+  "avgDmg": "평균 딜",
+  "colScopeSolo": "솔로",
+  "colScopeShip": "함선",
+  "colScopeClass": "함종"
 }

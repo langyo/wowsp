@@ -160,7 +160,18 @@
     "kills": "Kills",
     "sunkAt": "sunk at {time}",
     "aliveCount": "{alive}/{total} alive",
-    "ship": "Ship"
+    "ship": "Ship",
+    "scopeGlobal": "Global",
+    "scopeSolo": "Solo only",
+    "scopeShip": "This ship only",
+    "scopeClass": "Ship class only",
+    "scopeTagSolo": "Solo",
+    "scopeTagShip": "Ship",
+    "scopeTagClass": "Class",
+    "metricWinrate": "WR",
+    "metricPr": "PR",
+    "metricBattles": "Battles",
+    "metricDamage": "Avg dmg"
   },
   "minimap": {
     "zoom": "Zoomed map",

@@ -13,5 +13,8 @@
   "intelRange": "max",
   "avgWinrate": "Avg WR",
   "avgPr": "Avg PR",
-  "avgDmg": "Avg dmg"
+  "avgDmg": "Avg dmg",
+  "colScopeSolo": "Solo",
+  "colScopeShip": "Ship",
+  "colScopeClass": "Class"
 }

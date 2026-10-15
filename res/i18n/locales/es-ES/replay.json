@@ -160,7 +160,18 @@
     "kills": "Hundimientos",
     "sunkAt": "hundido a las {time}",
     "aliveCount": "{alive}/{total} vivos",
-    "ship": "Buque"
+    "ship": "Buque",
+    "scopeGlobal": "Global",
+    "scopeSolo": "Solo únicamente",
+    "scopeShip": "Solo este barco",
+    "scopeClass": "Solo la clase actual",
+    "scopeTagSolo": "solo",
+    "scopeTagShip": "barco",
+    "scopeTagClass": "clase",
+    "metricWinrate": "WR",
+    "metricPr": "PR",
+    "metricBattles": "Batallas",
+    "metricDamage": "Daño"
   },
   "minimap": {
     "zoom": "Mapa ampliado",

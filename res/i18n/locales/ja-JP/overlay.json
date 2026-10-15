@@ -13,5 +13,8 @@
   "intelRange": "最長",
   "avgWinrate": "平均勝率",
   "avgPr": "平均PR",
-  "avgDmg": "平均ダメ"
+  "avgDmg": "平均ダメ",
+  "colScopeSolo": "ソロ",
+  "colScopeShip": "その艦",
+  "colScopeClass": "艦種"
 }

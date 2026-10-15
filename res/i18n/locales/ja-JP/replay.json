@@ -160,7 +160,18 @@
     "kills": "撃沈",
     "sunkAt": "{time} に沈没",
     "aliveCount": "生存 {alive}/{total}",
-    "ship": "艦艇"
+    "ship": "艦艇",
+    "scopeGlobal": "グローバル",
+    "scopeSolo": "ソロのみ",
+    "scopeShip": "その艦のみ",
+    "scopeClass": "現在の艦種のみ",
+    "scopeTagSolo": "ソロ",
+    "scopeTagShip": "その艦",
+    "scopeTagClass": "艦種",
+    "metricWinrate": "勝率",
+    "metricPr": "PR",
+    "metricBattles": "戦闘数",
+    "metricDamage": "平均"
   },
   "minimap": {
     "zoom": "拡大マップ",

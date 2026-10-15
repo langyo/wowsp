@@ -176,6 +176,17 @@ html.overlay-hidden body {
   font-size: 0.85em;
 }
 
+/* A scoped column's tag (单人/单船/舰种 …) ahead of its figure: same
+   treatment as the battles unit — the text face, one size down, hanging
+   OUTSIDE the fixed-width figure cell so the digits alone define the
+   column. Global columns carry no tag: the unmarked figure IS the
+   account career. */
+.overlay-chip .overlay-scope {
+  font-family: var(--overlay-text-font);
+  font-size: 0.8em;
+  opacity: 0.72;
+}
+
 /* The ONE transient-status card — spinner + copy, centered over the table
    (both axes). Every settling notice renders as this card; it only ever
    crosses the table's own columns (chips live outside the left/right

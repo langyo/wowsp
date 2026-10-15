@@ -160,7 +160,18 @@
     "kills": "Coulés",
     "sunkAt": "coulé à {time}",
     "aliveCount": "{alive}/{total} en vie",
-    "ship": "Navire"
+    "ship": "Navire",
+    "scopeGlobal": "Global",
+    "scopeSolo": "Solo uniquement",
+    "scopeShip": "Ce navire uniquement",
+    "scopeClass": "Classe du navire",
+    "scopeTagSolo": "solo",
+    "scopeTagShip": "navire",
+    "scopeTagClass": "classe",
+    "metricWinrate": "WR",
+    "metricPr": "PR",
+    "metricBattles": "Batailles",
+    "metricDamage": "Dégâts"
   },
   "minimap": {
     "zoom": "Carte agrandie",

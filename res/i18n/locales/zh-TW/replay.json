@@ -160,7 +160,18 @@
     "kills": "擊殺",
     "sunkAt": "沉沒於 {time}",
     "aliveCount": "存活 {alive}/{total}",
-    "ship": "艦船"
+    "ship": "艦船",
+    "scopeGlobal": "全域",
+    "scopeSolo": "僅單人",
+    "scopeShip": "僅單船",
+    "scopeClass": "僅當前艦種",
+    "scopeTagSolo": "單人",
+    "scopeTagShip": "單船",
+    "scopeTagClass": "艦種",
+    "metricWinrate": "勝率",
+    "metricPr": "PR",
+    "metricBattles": "場次",
+    "metricDamage": "場均"
   },
   "minimap": {
     "zoom": "放大地圖",

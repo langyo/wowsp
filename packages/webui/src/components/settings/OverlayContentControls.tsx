@@ -5,29 +5,28 @@ import { HkSwitch, HkTabs } from "@celestia-island/hikari";
 import { t } from "@/i18n";
 import {
   useStatsPrefsStore,
-  type OverlayChipToggles,
   type OverlayIntelToggles,
   type OverlayTeamAvgToggles,
   type RosterBattleScope,
-  type RosterShipScope,
-  type RosterSoloScope,
 } from "@/stores/statsPrefs";
+import OverlayColumnsEditor from "@/components/settings/OverlayColumnsEditor";
 // Same row pattern as the stats section's preference controls (label +
 // description left, control right; the sub rail for dependent clusters).
 import "../stats/StatsPrefsControls.scss";
 
 /**
  * The water-table content-selection controls (settings → 游戏内水表):
- * what the per-row numbers show — on the in-game Tab overlay's chips AND
- * the roster panels' columns alike (winrate / PR / battles / avg damage,
- * any combination) — plus which battle-mode career feeds them (follow the
+ * WHAT the per-row numbers show — the draggable column cards (scope ×
+ * metric pairs, up to five — OverlayColumnsEditor; the very columns the
+ * live panel, the post-battle panels and the Tab overlay's chips all
+ * render), plus which battle-mode career feeds every column (follow the
  * current battle / fixed randoms / fixed ranked / the global merge), the
- * career seal stamps, the team-intel card's items (radar / hydro / smoke)
- * and the overlay's per-team average line. Everything reads/writes the
- * shared statsPrefs store, and every surface applies a flip immediately —
- * the panels through the store's reactivity, the overlay window through
- * the store's broadcast (it re-reads the blob live; see overlay/main.ts's
- * refreshPrefs).
+ * career seal stamps, the team-intel card's items (radar / hydro /
+ * smoke) and the overlay's per-team average line. Everything reads /
+ * writes the shared statsPrefs store, and every surface applies a flip
+ * immediately — the panels through the store's reactivity, the overlay
+ * window through the store's broadcast (it re-reads the blob live; see
+ * overlay/main.ts's refreshPrefs).
  */
 export default defineComponent({
   name: "OverlayContentControls",
@@ -48,8 +47,6 @@ export default defineComponent({
         <HkSwitch modelValue={on} onUpdate:modelValue={set} />
       </div>
     );
-    const chipRow = (key: keyof OverlayChipToggles, label: string, desc: string) =>
-      row(label, desc, prefs.prefs.overlayChips[key], (v) => prefs.setOverlayChip(key, v));
     const intelRow = (key: keyof OverlayIntelToggles, label: string, desc: string) =>
       row(label, desc, prefs.prefs.overlayIntel[key], (v) => prefs.setOverlayIntel(key, v));
     const avgRow = (key: keyof OverlayTeamAvgToggles, label: string, desc: string) =>
@@ -57,33 +54,14 @@ export default defineComponent({
 
     return () => (
       <div class="stats-prefs">
-        {chipRow("winrate", t("settings.overlayContent.chipsWinrate"), t("settings.overlayContent.chipsWinrateDesc"))}
-        {chipRow("pr", t("settings.overlayContent.chipsPr"), t("settings.overlayContent.chipsPrDesc"))}
-        {chipRow("battles", t("settings.overlayContent.chipsBattles"), t("settings.overlayContent.chipsBattlesDesc"))}
-        {chipRow("damage", t("settings.overlayContent.chipsDamage"), t("settings.overlayContent.chipsDamageDesc"))}
+        {/* The columns themselves — draggable cards + the add connector
+            (scope × metric). The column list IS the per-row content on
+            every water-table surface. */}
+        <OverlayColumnsEditor />
 
-        {/* The stats source is THREE orthogonal dimensions — ship scope /
-            battle scope / solo filter — the same groups the live panel
-            head's mode tag hosts (one shared store, both stay in sync). */}
-        <div class="stats-prefs__row">
-          <span class="stats-prefs__row-text">
-            <span class="stats-prefs__row-label">{t("settings.overlayContent.shipScope")}</span>
-            <span class="stats-prefs__row-desc">{t("settings.overlayContent.shipScopeDesc")}</span>
-          </span>
-          <HkTabs
-            variant="segmented"
-            modelValue={prefs.prefs.overlayShipScope}
-            onUpdate:modelValue={(v: string) =>
-              prefs.setOverlayShipScope(v as RosterShipScope)
-            }
-            tabs={[
-              { key: "all", label: t("settings.overlayContent.shipScopeAll") },
-              { key: "class", label: t("settings.overlayContent.shipScopeClass") },
-              { key: "tier", label: t("settings.overlayContent.shipScopeTier") },
-              { key: "ship", label: t("settings.overlayContent.shipScopeShip") },
-            ]}
-          />
-        </div>
+        {/* The battle-type career feeding every column — the one
+            panel-wide stats-source dimension left (each column carries
+            its own scope inside the cards above). */}
         <div class="stats-prefs__row">
           <span class="stats-prefs__row-text">
             <span class="stats-prefs__row-label">{t("settings.overlayContent.battleScope")}</span>
@@ -100,23 +78,6 @@ export default defineComponent({
               { key: "random", label: t("settings.overlayContent.battleRandom") },
               { key: "ranked", label: t("settings.overlayContent.battleRanked") },
               { key: "all", label: t("settings.overlayContent.battleAll") },
-            ]}
-          />
-        </div>
-        <div class="stats-prefs__row">
-          <span class="stats-prefs__row-text">
-            <span class="stats-prefs__row-label">{t("settings.overlayContent.soloScope")}</span>
-            <span class="stats-prefs__row-desc">{t("settings.overlayContent.soloScopeDesc")}</span>
-          </span>
-          <HkTabs
-            variant="segmented"
-            modelValue={prefs.prefs.overlaySoloScope}
-            onUpdate:modelValue={(v: string) =>
-              prefs.setOverlaySoloScope(v as RosterSoloScope)
-            }
-            tabs={[
-              { key: "all", label: t("settings.overlayContent.soloAll") },
-              { key: "solo", label: t("settings.overlayContent.soloOnly") },
             ]}
           />
         </div>

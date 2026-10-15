@@ -41,8 +41,13 @@ const RAW: RawStat = {
 describe("readOverlayDisplayPrefs", () => {
   it("answers the store defaults when nothing is stored", () => {
     expect(readOverlayDisplayPrefs()).toEqual({
-      chips: { winrate: true, pr: true, battles: true, damage: true },
-      statsDims: { battle: "follow", ship: "all", solo: "all" },
+      columns: [
+        { scope: "global", metric: "winrate" },
+        { scope: "global", metric: "pr" },
+        { scope: "global", metric: "battles" },
+        { scope: "global", metric: "damage" },
+      ],
+      battleScope: "follow",
       intel: { radar: true, hydro: true, smoke: true },
       teamIntel: true,
       teamAvg: { winrate: false, pr: false, damage: false },
@@ -64,22 +69,23 @@ describe("readOverlayDisplayPrefs", () => {
         sealDisabled: { rat: true, junk: true },
         weightedTeamWr: false,
         teamIntelEnabled: false,
-        overlayChips: { winrate: false, battles: true, voodoo: true },
-        overlayShipScope: "tier",
-        overlaySoloScope: "solo",
-        overlayStatsMode: "ranked",
+        overlayColumns: [
+          { scope: "global", metric: "winrate" },
+          { scope: "ship", metric: "damage" },
+          { scope: "voodoo", metric: "pr" },
+          "junk",
+        ],
+        overlayBattleScope: "ranked",
         overlayIntel: { radar: false },
         overlayTeamAvg: { winrate: true, pr: true, damage: true },
       }),
     );
     const p = readOverlayDisplayPrefs();
-    expect(p.chips).toEqual({ winrate: false, pr: true, battles: true, damage: true });
-    // The battle scope reads through (and migrates off the legacy enum);
-    // the ship/solo dimensions ride along for the page's per-ship
-    // pipeline (same aggregation module the main-window panels use).
-    expect(p.statsDims.battle).toBe("ranked");
-    expect(p.statsDims.ship).toBe("tier");
-    expect(p.statsDims.solo).toBe("solo");
+    expect(p.columns).toEqual([
+      { scope: "global", metric: "winrate" },
+      { scope: "ship", metric: "damage" },
+    ]);
+    expect(p.battleScope).toBe("ranked");
     expect(p.intel).toEqual({ radar: false, hydro: true, smoke: true });
     expect(p.teamIntel).toBe(false);
     expect(p.teamAvg).toEqual({ winrate: true, pr: true, damage: true });
@@ -89,12 +95,29 @@ describe("readOverlayDisplayPrefs", () => {
     expect(p.prAlgo).toBe("expected");
   });
 
+  it("migrates the retired chips + ship/solo dims into scoped columns", () => {
+    // Same migration the store's parsePrefs runs — the overlay agrees with
+    // the main window even before its heal-write lands.
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({
+        overlayChips: { winrate: false, battles: true, voodoo: true },
+        overlayShipScope: "tier",
+        overlaySoloScope: "solo",
+      }),
+    );
+    const p = readOverlayDisplayPrefs();
+    // Solo wins over the ship dim; "tier" has no column scope; the junk
+    // chip key drops; only the battles chip was on.
+    expect(p.columns).toEqual([{ scope: "solo", metric: "battles" }]);
+  });
+
   it("accepts the global battle scope and migrates the legacy enum", () => {
     localStorage.setItem(
       "wowsp-stats-prefs",
       JSON.stringify({ overlayBattleScope: "all" }),
     );
-    expect(readOverlayDisplayPrefs().statsDims.battle).toBe("all");
+    expect(readOverlayDisplayPrefs().battleScope).toBe("all");
 
     // A blob last written by a pre-split build: the retired enum seeds the
     // battle dimension ("global" WAS the merged career).
@@ -102,29 +125,19 @@ describe("readOverlayDisplayPrefs", () => {
       "wowsp-stats-prefs",
       JSON.stringify({ overlayStatsMode: "global" }),
     );
-    expect(readOverlayDisplayPrefs().statsDims.battle).toBe("all");
+    expect(readOverlayDisplayPrefs().battleScope).toBe("all");
     localStorage.setItem(
       "wowsp-stats-prefs",
       JSON.stringify({ overlayStatsMode: "auto" }),
     );
-    expect(readOverlayDisplayPrefs().statsDims.battle).toBe("follow");
-  });
-
-  it("rejects unknown ship/solo dimension values", () => {
-    localStorage.setItem(
-      "wowsp-stats-prefs",
-      JSON.stringify({ overlayShipScope: "fleet", overlaySoloScope: "div2" }),
-    );
-    const p = readOverlayDisplayPrefs();
-    expect(p.statsDims.ship).toBe("all");
-    expect(p.statsDims.solo).toBe("all");
+    expect(readOverlayDisplayPrefs().battleScope).toBe("follow");
   });
 
   it("falls back to defaults on a corrupt blob", () => {
     localStorage.setItem("wowsp-stats-prefs", "{not json");
     const p = readOverlayDisplayPrefs();
-    expect(p.chips.winrate).toBe(true);
-    expect(p.statsDims.battle).toBe("follow");
+    expect(p.columns).toHaveLength(4);
+    expect(p.battleScope).toBe("follow");
     expect(p.sealsOn).toBe(true);
     expect(p.prAlgo).toBe("winrate");
   });
