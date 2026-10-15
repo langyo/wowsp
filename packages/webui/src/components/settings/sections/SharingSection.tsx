@@ -401,6 +401,9 @@ export default defineComponent({
         matchedItems.value = picked;
         matchRan.value = true;
         checked.value = new Set(picked.map((i) => i.path));
+        if (picked.length === 0) {
+          toast.info(t("sharing.select.noMatchTitle"));
+        }
       } catch (e) {
         planError.value = (e as Error).message || String(e);
       } finally {
@@ -919,29 +922,32 @@ export default defineComponent({
                             ? t("sharing.select.empty")
                             : t("sharing.select.heroDesc")
                         }
-                      >
-                        <div class="sharing-sec__hero-actions">
-                          <HkButton
-                            variant="primary"
-                            loading={planning.value}
-                            disabled={allReplays.value.length === 0}
-                            onClick={() => void smartSelect()}
-                          >
-                            <Wand2 size={15} />
-                            {t("sharing.select.smart")}
-                          </HkButton>
-                          {allReplays.value.length === 0 ? (
-                            <HkButton
-                              variant="secondary"
-                              loading={listLoading.value}
-                              onClick={() => void refreshList()}
-                            >
-                              <RefreshCw size={14} />
-                              {t("sharing.select.rescan")}
-                            </HkButton>
-                          ) : null}
-                        </div>
-                      </HkEmptyState>
+                        v-slots={{
+                          action: () => (
+                            <div class="sharing-sec__hero-actions">
+                              <HkButton
+                                variant="primary"
+                                loading={planning.value}
+                                disabled={allReplays.value.length === 0}
+                                onClick={() => void smartSelect()}
+                              >
+                                <Wand2 size={15} />
+                                {t("sharing.select.smart")}
+                              </HkButton>
+                              {allReplays.value.length === 0 ? (
+                                <HkButton
+                                  variant="secondary"
+                                  loading={listLoading.value}
+                                  onClick={() => void refreshList()}
+                                >
+                                  <RefreshCw size={14} />
+                                  {t("sharing.select.rescan")}
+                                </HkButton>
+                              ) : null}
+                            </div>
+                          ),
+                        }}
+                      />
                       {planError.value ? (
                         <HkAlert variant="error" size="sm" message={planError.value} />
                       ) : null}
@@ -1127,8 +1133,12 @@ export default defineComponent({
 
       {/* ── contributors list (res-pack insights rail / bundled fallback) ── */}
       <HkSettingsGroup title={t("sharing.contributors.title")}>
-          <HkSettingsHint>{t("sharing.contributors.hint")}</HkSettingsHint>
-          <p class="sharing-sec__contrib-thanks">{t("sharing.contributors.thanks")}</p>
+          <HkAlert
+            variant="info"
+            size="sm"
+            title={t("sharing.contributors.thanks")}
+            message={t("sharing.contributors.hint")}
+          />
           {!hasContributors.value ? (
             <p class="sharing-sec__empty">{t("sharing.contributors.empty")}</p>
           ) : (
@@ -1161,7 +1171,11 @@ export default defineComponent({
               ))}
             </div>
           )}
-          <p class="sharing-sec__contrib-note">{t("sharing.contributors.note")}</p>
+          <HkAlert
+            variant="info"
+            size="sm"
+            message={t("sharing.contributors.note")}
+          />
         </HkSettingsGroup>
       </>
     );
