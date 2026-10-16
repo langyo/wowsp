@@ -56,13 +56,36 @@
     padding: 2rem 0;
   }
 
-  /* SortableList wrapper holding the bound-account cards — keeps the same
-     row rhythm as the outer list while the dashed add row stays outside
-     the reorderable region. */
+  /* HkDraggableList wrapper holding the bound-account cards — keeps the
+     same row rhythm as the outer list while the dashed add row stays
+     outside the reorderable region. Rows go bare (the card owns its
+     surface); the drag affordances are restated on the bare shape. */
   &__cards {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
+
+    .hk-draggable-list-item {
+      min-height: 0;
+      padding: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      transition: none;
+
+      &[data-dragging] {
+        opacity: 0.4;
+        transform: scale(0.98);
+      }
+
+      &[data-placeholder="before"] {
+        box-shadow: inset 0 2px 0 0 rgb(var(--color-primary) / 60%);
+      }
+
+      &[data-placeholder="after"] {
+        box-shadow: inset 0 -2px 0 0 rgb(var(--color-primary) / 60%);
+      }
+    }
   }
 
   /* Dashed add-player placeholder — the last row of the list; opens the
@@ -189,22 +212,6 @@
     color: rgb(var(--color-primary));
     /* Placeholder until WG portrait URLs are wired in. */
     overflow: hidden;
-  }
-
-  /* Drag handle for the SortableList row — quiet grip at the card's left
-     edge (mirrors the install card's), darkening when the card is hovered. */
-  &__handle {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    margin-left: -0.25rem;
-    color: rgb(var(--color-muted));
-    opacity: 0.4;
-    transition: opacity var(--duration-short) var(--ease-standard);
-
-    .acct-card:hover & {
-      opacity: 0.75;
-    }
   }
 
   &__body {

@@ -877,6 +877,33 @@
   }
 }
 
+/* HkDraggableList rows ship the library's bordered item chrome; the
+   install card owns its own surface, so the row goes bare. The drag
+   affordances (dim/scale on the source row, rails on the drop target)
+   are restated on the bare shape — the library's own [data-*] rules ride
+   the chrome removed here. */
+.hk-settings__pane .hk-draggable-list-item {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  transition: none;
+
+  &[data-dragging] {
+    opacity: 0.4;
+    transform: scale(0.98);
+  }
+
+  &[data-placeholder="before"] {
+    box-shadow: inset 0 2px 0 0 rgb(var(--color-primary) / 60%);
+  }
+
+  &[data-placeholder="after"] {
+    box-shadow: inset 0 -2px 0 0 rgb(var(--color-primary) / 60%);
+  }
+}
+
 .hk-settings__pane .install-card {
   display: flex;
   align-items: center;
@@ -912,21 +939,6 @@
     /* Extra right padding keeps the trailing 使用中 tag clear of the
        hover-revealed remove button anchored to the row's top-right. */
     padding-right: 2.2rem;
-  }
-
-  /* Drag handle for the SortableList row — a quiet grip at the card's left
-     edge that darkens when the card is hovered; the list swallows the click
-     a drag leaves behind, so a drop never activates the card under it.
-     (The card-hover darkening lives in a top-level rule below — nesting it
-     in here would expand `&` to the full compound and never match.) */
-  &__handle {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    margin-left: -0.25rem;
-    color: rgb(var(--color-muted));
-    opacity: 0.4;
-    transition: opacity var(--duration-short) var(--ease-standard);
   }
 
   &__body {
@@ -965,8 +977,4 @@
   }
 }
 
-/* Grip darkens when the card is hovered (top level so the selector stays
-   `.hk-settings__pane .install-card:hover .install-card__handle`). */
-.hk-settings__pane .install-card:hover .install-card__handle {
-  opacity: 0.75;
-}
+/* ── Install cards (HkDraggableList rows) ─────────────────────────── */

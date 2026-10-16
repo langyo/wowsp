@@ -1,9 +1,10 @@
 /** Game-path settings section: install cards, the running-client fallback
  *  row and the add-path dialog (detection / native folder picker). */
 import { defineComponent, type PropType } from "vue";
-import { Check, FolderOpen, GripVertical, MonitorPlay, Plus, RefreshCw, Trash2 } from "@lucide/vue";
+import { Check, FolderOpen, MonitorPlay, Plus, RefreshCw, Trash2 } from "@lucide/vue";
 import {
   HkButton,
+  HkDraggableList,
   HkModal,
   HkSettingsGroup,
   HkSettingsHint,
@@ -16,7 +17,6 @@ import type { GameInstall } from "@/api";
 import { useConfigStore } from "@/stores/config";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import PlatformIcon from "@/components/base/PlatformIcon";
-import SortableList from "@/components/base/SortableList";
 import { kindLabel } from "@/utils/installLabel";
 import { sameGamePath } from "@/utils/gamePath";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
@@ -50,36 +50,31 @@ export default defineComponent({
             {gamePaths.installRows.value.length === 0 ? (
               <HkSettingsHint>{t("common.gamePath.noneFound")}</HkSettingsHint>
             ) : (
-              // Rows reorder by dragging the card's grip handle; the custom
-              // order is remembered by the config store (localStorage) and
-              // re-applied on every scan.
-              <SortableList
+              // Rows reorder by dragging the shared grip lane
+              // (hikari's HkDraggableList — the tap-safe press model
+              // guards the card's click); the custom order is remembered
+              // by the config store (localStorage) and re-applied on
+              // every scan.
+              <HkDraggableList
                 class="settings-modal__installs"
-                items={gamePaths.installRows.value}
-                getKey={(i: GameInstall) => i.path}
+                items={gamePaths.installRows.value.map((i) => ({ ...i, key: i.path }))}
                 label={t("settings.gamePath")}
                 onReorder={(from: number, to: number) => configStore.reorderInstalls(from, to)}
               >
-                {(slot: { item: GameInstall }) => {
-                  const i = slot.item;
-                  const active = sameGamePath(i.path, gamePaths.activePath.value);
-                  // The card is a button and buttons don't nest — the delete
-                  // control lives on a positioned wrapper beside it (same
-                  // structure as the wallpaper tiles).
-                  return (
-                    <div class="settings-modal__install">
+                {{
+                  item: ({ item }: { item: GameInstall & { key: string } }) => {
+                    const i = item;
+                    const active = sameGamePath(i.path, gamePaths.activePath.value);
+                    // The card is a button and buttons don't nest — the delete
+                    // control lives on a positioned wrapper beside it (same
+                    // structure as the wallpaper tiles).
+                    return (
+                      <div class="settings-modal__install">
                       <button
                         type="button"
                         class={["install-card", active ? "install-card--active" : ""]}
                         onClick={() => void gamePaths.activateInstall(i)}
                       >
-                        <span
-                          class="install-card__handle"
-                          data-sortable-handle
-                          aria-hidden="true"
-                        >
-                          <GripVertical size={14} />
-                        </span>
                         <PlatformIcon kind={i.kind} size={38} />
                         <span class="install-card__body">
                           <span class="install-card__head">
@@ -123,8 +118,8 @@ export default defineComponent({
                       )}
                     </div>
                   );
-                }}
-              </SortableList>
+                  } }}
+              </HkDraggableList>
             )}
             {gamePaths.runningInstall.value ? (
               <div class="settings-modal__running">
