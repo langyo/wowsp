@@ -92,8 +92,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.176
-        version: 0.55.176(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.177
+        version: 0.55.177(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.55.0
         version: 1.57.0(vue@3.5.43(typescript@7.0.2))
@@ -282,8 +282,8 @@ packages:
       three: ^0.185
       vue: ^*
 
-  '@celestia-island/hikari@0.55.176':
-    resolution: {integrity: sha512-3vBMYnq7NHW/fgG2QLDC1NwtB6RVfhG9u6BygH378pesGwZMmuEcEYjz1KkxgCgj024Q0vXjcElTFWQD4YSlYg==}
+  '@celestia-island/hikari@0.55.177':
+    resolution: {integrity: sha512-dFjnN9+Bl7hlRaX+1VC71bODrekCcaZtLiogjTc8jXVKIlVkq1yNdYCHwZGZj+zIz69ES/FqZHUapc9bf/cuWw==}
     peerDependencies:
       '@types/three': ^*
       three: ^0.185
@@ -1827,8 +1827,16 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.304
 
+  '@xterm/addon-image@0.10.0-beta.310':
+    resolution: {integrity: sha512-8fzgYV7HC9iWlw8ChZgnPmCXeBoYkC3Kyo9C0vyOQWD7Cm/bebKNNWhzNlDt5Qxbv+UBPbgkcO4i3dTYnggkRw==}
+    peerDependencies:
+      '@xterm/xterm': ^6.1.0-beta.315
+
   '@xterm/xterm@6.1.0-beta.304':
     resolution: {integrity: sha512-Wq9d4qFYslYQBIan+riXotdyurtREc6v+HWdAwV6Y2JSDI9eJ1dkWm/fzYb2rCGgGnM3baiYuSK4Z6OLNKLzDw==}
+
+  '@xterm/xterm@6.1.0-beta.315':
+    resolution: {integrity: sha512-w7MeKxi6vbxE3IOFRiwgugkM6FZonE9gF9KyJ0OiE5HbYZOm38bz+CTGZg3+wqA6porJnHfjzX1KaihInP+iWg==}
 
   abbrev@5.0.0:
     resolution: {integrity: sha512-/XrFJgzQQQHpti1raDJC6m4ws6aNktmjBlhk8Fdlk7LwCEuDoieEJJY9OFHjfiFJFFRM2tK+Ky/IsfbbmlMu1w==}
@@ -1949,6 +1957,9 @@ packages:
 
   dompurify@3.4.15:
     resolution: {integrity: sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==}
+
+  dompurify@3.4.17:
+    resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
 
   duplexer@0.1.2:
     resolution: {integrity: sha512-jtD6YG370ZCIi/9GTaJKQxWTZD045+4R4hTk/x1UyoqadyJ9x9CgSi1RlVDQF8U2sxLLSnFkCaMihqljHIWgMg==}
@@ -2196,6 +2207,11 @@ packages:
 
   marked@18.0.13:
     resolution: {integrity: sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
+  marked@18.1.1:
+    resolution: {integrity: sha512-zEGgrtUG8crk+TrMacJSVABU4DYDDkS8uqgU3ohrn/2fW9C2AEfUrO3m6IhpIpQpl7YcVpiXXC9cSMWDANT3dg==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -2966,17 +2982,17 @@ snapshots:
       three: 0.185.1
       vue: 3.5.42(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.176(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.177(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@types/three': 0.185.4
       '@xterm/addon-fit': 0.11.0
-      '@xterm/addon-image': 0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304)
-      '@xterm/xterm': 6.1.0-beta.304
-      dompurify: 3.4.15
+      '@xterm/addon-image': 0.10.0-beta.310(@xterm/xterm@6.1.0-beta.315)
+      '@xterm/xterm': 6.1.0-beta.315
+      dompurify: 3.4.17
       echarts: 6.1.0
       highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
-      marked: 18.0.13
+      marked: 18.1.1
       three: 0.186.1
       vue: 3.5.43(typescript@7.0.2)
 
@@ -4148,7 +4164,13 @@ snapshots:
     dependencies:
       '@xterm/xterm': 6.1.0-beta.304
 
+  '@xterm/addon-image@0.10.0-beta.310(@xterm/xterm@6.1.0-beta.315)':
+    dependencies:
+      '@xterm/xterm': 6.1.0-beta.315
+
   '@xterm/xterm@6.1.0-beta.304': {}
+
+  '@xterm/xterm@6.1.0-beta.315': {}
 
   abbrev@5.0.0: {}
 
@@ -4240,6 +4262,10 @@ snapshots:
   detect-libc@2.1.2: {}
 
   dompurify@3.4.15:
+    optionalDependencies:
+      '@types/trusted-types': 2.0.7
+
+  dompurify@3.4.17:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
@@ -4503,6 +4529,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   marked@18.0.13: {}
+
+  marked@18.1.1: {}
 
   mdn-data@2.27.1: {}
 

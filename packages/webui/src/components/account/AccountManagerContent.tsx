@@ -1,10 +1,9 @@
 import { defineComponent, ref, watch, type PropType } from "vue";
-import { X, Trophy, Swords, Star, Plus, GripVertical } from "@lucide/vue";
+import { X, Trophy, Swords, Star, Plus } from "@lucide/vue";
 
-import { HkButton, HkInput, HkModal, HkScrollContainer, HkSelect, HkTag } from "@celestia-island/hikari";
+import { HkButton, HkDraggableList, HkInput, HkModal, HkScrollContainer, HkSelect, HkTag } from "@celestia-island/hikari";
 
 import PlayerBadge from "@/components/base/PlayerBadge";
-import SortableList from "@/components/base/SortableList";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { winrateColor } from "@/utils/winrate";
@@ -196,15 +195,15 @@ export default defineComponent({
           {accounts.accounts.length === 0 ? (
             <p class="acct-modal__empty">{t("account.noAccounts")}</p>
           ) : (
-            <SortableList
+            <HkDraggableList
               class="acct-modal__cards"
-              items={accounts.accounts}
-              getKey={(a: AccountProfile) => `${a.realm}_${a.accountId}`}
+              items={accounts.accounts.map((a) => ({ ...a, key: `${a.realm}_${a.accountId}` }))}
               label={t("account.switcherTitle")}
               onReorder={(from: number, to: number) => void accounts.reorderAccounts(from, to)}
             >
-              {(slot: { item: AccountProfile }) => {
-                const a = slot.item;
+              {{
+                item: ({ item }: { item: AccountProfile & { key: string } }) => {
+                const a = item;
                 const isActive =
                   accounts.activeAccountId === a.accountId &&
                   accounts.activeRealm === a.realm;
@@ -221,11 +220,6 @@ export default defineComponent({
                     ]}
                     onClick={() => void switchTo(a)}
                   >
-                    {/* Drag handle — reorders the card list (SortableList
-                        swallows the click a drag leaves behind). */}
-                    <span class="acct-card__handle" data-sortable-handle aria-hidden="true">
-                      <GripVertical size={14} />
-                    </span>
                     {/* Player service-record badge based on leveling tier.
                         Falls back to tier 0 (bronze "?") when stats not yet
                         loaded. Replaces the old pig-logo placeholder. */}
@@ -289,8 +283,8 @@ export default defineComponent({
                     </button>
                   </div>
                 );
-              }}
-            </SortableList>
+              } }}
+            </HkDraggableList>
           )}
           {/* dashed add placeholder — the last row of the list; opens the
               search → confirm-bind dialog instead of an inline search row. */}
