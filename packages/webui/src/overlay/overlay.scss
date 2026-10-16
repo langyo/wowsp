@@ -297,12 +297,13 @@ html.overlay-hidden body {
 }
 
 /* Seals flanking a chip's numbers (career verdict left, composition tags
-   right). The default face is PLAIN TEXT in cinnabar ink (a user-imported
-   custom picture keeps its <img>); sized in em so it scales with the row
-   pitch the chips already derive from the table geometry, and the chip's
-   left/right anchoring keeps working unchanged — a wider chip just grows
-   further away from the table. The drop shadow keeps the ink legible over
-   bright sea/sky. */
+   right). The default face is CINNABAR TEXT ON A TAG PLATE — a rounded
+   glass frame that reads as a badge instead of loose ink (a user-imported
+   custom picture keeps its bare <img>); sized in em so it scales with the
+   row pitch the chips already derive from the table geometry, and the
+   chip's left/right anchoring keeps working unchanged — a wider chip just
+   grows further away from the table. The drop shadow keeps the plate and
+   its ink legible over bright sea/sky. */
 .overlay-chip .overlay-stamp {
   align-self: center;
   vertical-align: middle;
@@ -314,6 +315,15 @@ html.overlay-hidden body {
   color: rgb(226 74 66);
   font-weight: 700;
   white-space: nowrap;
+  /* The tag plate: a faint cinnabar wash over the chip's own dark glass,
+     edged by a matching border — the seal then sits in its own rounded
+     box like the name strips do, instead of floating bare on the chip.
+     Padding is hairline (the plate hugs the ink); radius in em keeps the
+     rounding proportional at every row pitch. */
+  padding: 0.04em 0.4em;
+  border: 1px solid rgb(226 74 66 / 50%);
+  border-radius: 0.45em;
+  background: rgb(226 74 66 / 14%);
   /* Deliberately NO font-size bump here: the seal rides the chip's own
      text size (1em). The in-app seals carry the enlarged faces; the
      in-game chips sit inside the table's fixed row pitch, where a bigger
