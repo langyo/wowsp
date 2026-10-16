@@ -48,10 +48,8 @@
   flex-direction: column;
   gap: 0.55rem;
   width: min(24rem, calc(100vw - 2.5rem));
-  /* The popover chrome's own padding is a bare 4px (hikari
-     .hii-dropdown-content) — the slot content owns the real inset, the
-     same family voice as .ship-filter-bar__pop / .async-search-combo__panel. */
-  padding: 10px 12px 8px;
+  /* Content inset rides the popover's own `padding` prop (hikari
+     --hk-pad) since 0.55.176 — no hand-padded slot anymore. */
 
   /* The columns editor's add menu teleports to body level and anchors
      to the plus button, so it sizes itself outside this panel entirely;
