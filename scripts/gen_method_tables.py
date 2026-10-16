@@ -54,6 +54,9 @@ AVATAR_METHODS = [
     "receive_wardRemoved",
     "receiveShotKills",
     "receiveDamageStat",
+    "onChatMessage",
+    "onAchievementEarned",
+    "onArenaStateReceived",
 ]
 
 # Fields emitted as `Option<i32>`: the reference entity defs don't expose every
@@ -61,15 +64,13 @@ AVATAR_METHODS = [
 # decoder then leaves that stream empty) instead of a bogus id.
 OPTIONAL_FIELDS = {"avatar_receive_damage_stat"}
 
-# Doc comment emitted above the optional field in the generated struct.
-FIELD_DOCS = {
-    "avatar_receive_damage_stat": (
-        "Server-authoritative cumulative damage stats (receiveDamageStat).\n"
-        "`None` for versions whose exposed id hasn't been pinned yet — the\n"
-        "decoder then leaves the stream empty and the frontend falls back to\n"
-        "its HP-delta heuristic."
-    ),
-}
+# Fields whose def-derived id is NOT trusted yet: newer reference defs started
+# shipping `receiveDamageStat` (they used to be absent — hence the Option), but
+# the per-version ids have not been validated against real captures. Keep the
+# def-derived value suppressed (`None`) so regeneration stays stable and the
+# stream stays empty until each version is pinned empirically; the 15.8.0
+# empirical override below still carries its capture-verified id.
+DEF_ID_SUPPRESSED = {"avatar_receive_damage_stat"}
 
 # Rows for versions the reference entity definitions don't ship yet, derived
 # empirically from captured replays (decode a real 15.8 .wowsreplay, identify
@@ -107,9 +108,10 @@ EMPIRICAL_OVERRIDES: dict[tuple[int, int, int], dict[str, int]] = {
     # 15.8.0: three avatar methods inserted below the battle-effect cluster
     # shift it +3 (artillery 123→126, torpedoes 124→127, shotKills 127→130,
     # updateSquadron 142→145); squadron add/minimap ids keep their 15.7
-    # values; receiveDamageStat — absent from every shipped def table so far
-    # — sits at 163 (verified: 137 calls on the recorder's avatar in a
-    # full-battle capture).
+    # values; receiveDamageStat sits at 163 (verified: 137 calls on the
+    # recorder's avatar in a full-battle capture — newer reference defs also
+    # expose the method, but those ids are still suppressed pending
+    # per-version validation, see DEF_ID_SUPPRESSED).
     (15, 8, 0): {
         "avatar_receive_artillery_shots": 126,
         "avatar_receive_torpedoes": 127,
@@ -124,6 +126,9 @@ EMPIRICAL_OVERRIDES: dict[tuple[int, int, int], dict[str, int]] = {
         "avatar_receive_explosions": 131,
         "avatar_receive_ward_removed": 51,
         "avatar_receive_damage_stat": 163,
+        "avatar_on_chat_message": 151,
+        "avatar_on_achievement_earned": 58,
+        "avatar_on_arena_state_received": 153,
     },
 }
 
@@ -137,18 +142,15 @@ EMPIRICAL_NOTES = {
     // scripts/gen_method_tables.py): three avatar methods inserted below the
     // battle-effect cluster shift it +3 (artillery 123→126, torpedoes
     // 124→127, shotKills 127→130, updateSquadron 142→145), while the
-    // squadron add/minimap ids keep their 15.7 values; receiveDamageStat —
-    // absent from every shipped def table so far — sits at 163.
-    // E10 (2026-09-20): recomputed from the authoritative entity defs of
-    // game build 13187581 — 11/13 anchors reproduce exactly (incl.
-    // damageStat 163, whose verified 137-call count lands on the same id).
-    // Two pins are stale but deliberately kept (decode behaviour must not
-    // change silently): the defs say explosions=131 (the same +3 cluster
-    // shift as artillery/torps/shotKills; 128 is the unshifted 15.7
-    // carryover) and wardRemoved=51 (id 50 is receive_removeSquadron — it
-    // fires paired with removeMinimapSquadron@49 on identical PLANE_IDs,
-    // while wardAdded@112 never fires; the def-derived full table lives in
-    // the tests module with the evidence).""",
+    // squadron add/minimap ids keep their 15.7 values; receiveDamageStat
+    // sits at 163. onChatMessage sits at 151 (args decode as plaintext
+    // chat: `i32 playerId, STRING namespace, STRING message, STRING unk` —
+    // "battle_team" namespaces and real CJK/Latin text observed);
+    // onAchievementEarned stays at 58 with args `i32 playerId, u32
+    // achievementId` whose ids match the playersPublicInfo achievement
+    // list in the same capture. onArenaStateReceived sits at 153 (args
+    // `i64 arenaId, i8 teamBuildTypeId, BLOB×3` — the players blob pickles
+    // the full 24-player roster; shape-verified against the descriptor).""",
 }
 
 
@@ -533,16 +535,11 @@ def main() -> None:
                 continue
             names = {m.get_name(): idx for idx, m in enumerate(exposed)}
             for m in methods:
-                if m == "receiveDamageStat":
-                    # The reference defs DO resolve this id, but it is
-                    # deliberately left `None` for historical versions: no
-                    # capture has ever wire-verified those rows (the decoder
-                    # ignored the stream before 15.8.0), so populating them
-                    # would silently change decode behaviour on old replays.
-                    # 15.8.0's id comes from EMPIRICAL_OVERRIDES instead.
+                field = f"{entity.lower()}_{to_snake(m)}"
+                if field in DEF_ID_SUPPRESSED:
                     continue
                 if m in names:
-                    entry[f"{entity.lower()}_{to_snake(m)}"] = names[m]
+                    entry[field] = names[m]
         rows.append(entry)
 
     # Empirical rows for versions newer than the reference defs: merge each
@@ -567,6 +564,31 @@ def main() -> None:
 
     fields = [f"avatar_{to_snake(m)}" for m in AVATAR_METHODS]
 
+    # Per-field doc comments emitted into the struct. Keep the semantics of
+    # Option fields ("unpinned id → empty stream") visible at the use site.
+    FIELD_DOCS = {
+        "avatar_receive_damage_stat": [
+            "    /// Server-authoritative cumulative damage stats (receiveDamageStat).",
+            "    /// `None` for versions whose exposed id hasn't been pinned yet — the",
+            "    /// decoder then leaves the stream empty and the frontend falls back to",
+            "    /// its HP-delta heuristic.",
+        ],
+        "avatar_on_chat_message": [
+            "    /// Battle chat broadcast (onChatMessage): `i32 playerId, STRING",
+            "    /// namespace, STRING message, STRING unk`.",
+        ],
+        "avatar_on_achievement_earned": [
+            "    /// In-battle achievement award (onAchievementEarned): `i32 playerId,",
+            "    /// u32 achievementId` — ids join to GameParams Achievement entries.",
+        ],
+        "avatar_on_arena_state_received": [
+            "    /// The arena's initial state broadcast (onArenaStateReceived): `i64",
+            "    /// arenaId, i8 teamBuildTypeId, BLOB preBattlesInfo, BLOB playersData,",
+            "    /// BLOB botsData` — the authoritative per-player entity/team mapping",
+            "    /// the roster join is built from.",
+        ],
+    }
+
     out = sys.stdout
     w = out.write
     w("//! AUTO-GENERATED by `scripts/gen_method_tables.py` — do not edit by hand.\n")
@@ -581,9 +603,8 @@ def main() -> None:
     w("#[derive(Debug, Clone, Copy)]\n")
     w("pub struct MethodIds {\n")
     for f in fields:
-        if f in FIELD_DOCS:
-            for line in FIELD_DOCS[f].splitlines():
-                w(f"    /// {line}\n")
+        for line in FIELD_DOCS.get(f, []):
+            w(line + "\n")
         ty = "Option<i32>" if f in OPTIONAL_FIELDS else "i32"
         w(f"    pub {f}: {ty},\n")
     w("}\n\n")

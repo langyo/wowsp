@@ -3,8 +3,11 @@ import { createPinia } from "pinia";
 
 import App from "./App";
 import router from "@/router";
-import { i18n } from "@/i18n";
+import { i18n, initLocaleMessages } from "@/i18n";
+import { uiLocaleReady } from "@/i18n/useLanguage";
 import { bootstrap } from "./bootstrap";
+import { runStartupMigrations } from "./migrations";
+import { initAnalytics, trackPageView } from "@/utils/analytics";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
 import "@/styles/image-asset.scss";
@@ -19,12 +22,46 @@ import "virtual:uno.css";
  * bootstrap() runs the shared global hooks (viewport policy, brand themes +
  * hikari theme/font init, deep-link theme forcing, hikari i18n seeding).
  */
+// One-time app-version migrations (src/migrations): the gate + ledger live
+// in the Rust shell (hifumi scaffold); the delegated WebView bodies run
+// here. Fired BEFORE bootstrap() — bodies rewrite stored slots the
+// preference modules hydrate at import — while `wowsp-last-run-version`
+// still holds the previous run's version (the ledger seed hint), and
+// awaited in the mount gate below so a body's visual change never flashes.
+const migrationsReady = runStartupMigrations();
 bootstrap();
+// Google Analytics (Tauri shell + release only, see utils/analytics).
+initAnalytics();
+// Forward SPA route changes as page_views on the virtual canonical host.
+router.afterEach((to) => {
+  trackPageView(to.path);
+});
 const app = createApp(App);
 app.use(createPinia());
 app.use(router);
 app.use(i18n);
-router.isReady().then(() => {
+// Last-resort error sink for render/watcher/computed errors. With a
+// configured handler Vue routes every scheduler/component error here and
+// CONTAINS it at the callWithErrorHandling boundary; without one the
+// failure cascade is unbounded (observed 2026-10: opening the live
+// in-progress recording crashed the map's deep watcher with "reading
+// 'time'", and from then on no navigation — reload included — would
+// leave the page again). The app must degrade to one logged broken view,
+// never a frozen shell.
+app.config.errorHandler = (err, _instance, info) => {
+  console.error(`[wowsp] unhandled error during ${info}:`, err);
+};
+// Gate first paint on the lazy locale bundles: the fallback (en-US), the
+// detected initial locale, and the persisted UI locale's messages must all
+// be registered before mounting, or the shell renders with vue-i18n's
+// warnings / raw keys for a frame. A locale chunk that fails to fetch must
+// not brick the shell: mount anyway and let vue-i18n degrade to raw keys.
+void Promise.all([
+  router.isReady(),
+  initLocaleMessages().catch(() => undefined),
+  uiLocaleReady.catch(() => undefined),
+  migrationsReady,
+]).then(() => {
   app.mount("#app");
   if (typeof window.__loaderDismiss === "function") {
     window.__loaderDismiss();

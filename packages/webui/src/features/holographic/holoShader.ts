@@ -4,13 +4,54 @@
  * (`ReplayShipStage`). Extracted here so both surfaces share one look.
  *
  * Normals: baked GLBs ship without normals (merged + stripped during baking),
- * so callers that want smooth shading weld their geometries and add averaged
- * vertex normals first (see ShipStage.loadModel). When the `normal` attribute
- * is missing the attribute reads as (0,0,0) and the fragment shader falls back
+ * so callers that want smooth shading add crease-aware vertex normals first
+ * (`computeSmoothNormals` — the hulls are coarse meshes whose vertices sit on
+ * hard chines, so plain averaging shades as shards). When the `normal`
+ * attribute is missing it reads as (0,0,0) and the fragment shader falls back
  * to face normals from screen-space derivatives (dFdx/dFdy — WebGL2 default in
- * three r150+). Fresnel uses the normal vs. the view direction; scanlines
- * sweep vertically over time; a separate wireframe overlay mesh is drawn by
- * the caller.
+ * three r150+), as the replay's markers still do. Fresnel uses the normal vs.
+ * the view direction; both paths orient it by dot(n, viewDir) instead of
+ * gl_FrontFacing, whose winding test is unreliable on the baked hulls.
+ * Scanlines sweep vertically over time; a separate wireframe overlay mesh is
+ * drawn by the caller.
+ *
+ * Definition layer: the ship stage enables five extra terms that give large
+ * panels surface reading (a flat pastel fill with nothing between the
+ * silhouette and the rim reads as porridge on a broadside hull):
+ *   - `uLightGain` — a soft headlight (dot of the smooth normal with the view
+ *     direction, eased, multiplicative) so curvature and creases modulate the
+ *     fill instead of every facing fragment getting the same colour. Gated on
+ *     `vHasNormal`: markers and terrain build on normal-less geometry and
+ *     keep the flat look (their uniforms stay at the 0 defaults).
+ *   - `uLinesGain` — a faint world-space measuring grid (10-unit pitch,
+ *     fwidth-antialiased) so a broadside slab shows panel-scale structure
+ *     without a per-triangle wireframe. World space because the bake's local
+ *     units differ per ship while the stage normalizes every model to the
+ *     same 200-unit box.
+ *   - `uFacetGain` / `uFacetSat` / `uFacetDir` — a key light fixed in the
+ *     SHIP's frame (object space) that gives every plate orientation its own
+ *     brightness and saturation. Unlike the headlight it does not vanish at
+ *     grazing incidence, so a low broadside — the view that otherwise melts
+ *     into one flat fill — keeps its deck edge, chine and superstructure
+ *     corners. `abs(dot(n, dir))` because the bake's winding is arbitrary.
+ *     Off by default; the stage sets a low gain and a direction biased to the
+ *     vertical so the existing flank tone stays put.
+ * Texture layer: three more stage-only terms push the look from "moulded
+ * plastic" toward a transmitted projection —
+ *   - `uScanGain` — fine CRT-pitch scanline rows in SCREEN space (constant
+ *     density at any zoom), drifting slowly upward.
+ *   - `uSweepGain` — a soft gaussian band climbing the world-space Y axis
+ *     once every ~7.7 s, brightening and slightly densifying the hull as it
+ *     passes (a "materializing" wash).
+ *   - `uFlickerGain` — a single-digit-percent brightness flicker (two
+ *     incommensurate sines) so the surface feels transmitted.
+ * Translucency: the fill/rim alpha split moved into `uBaseAlpha` /
+ * `uRimAlpha` (legacy constants 0.72 / 0.28) so the stage can trade fill
+ * opacity for rim glow — a glassier shell whose broadsides show the
+ * background through them while the depth anchor still occludes the far
+ * side.
+ * All new terms default to 0 / legacy — `makeHoloMaterial()` alone still
+ * reproduces the legacy look.
  *
  * Usage:
  *   const mat = makeHoloMaterial();          // a ShaderMaterial (transparent)
@@ -42,6 +83,39 @@ export interface HoloUniforms {
   /** Multiplier for the output alpha — ghosts (unseen/spawned/ sunk ships)
    *  render at a fraction of the normal opacity. */
   ghostAlpha: { value: number };
+  /** Headlight gain — 0 keeps the flat legacy fill (markers, terrain). */
+  uLightGain: { value: number };
+  /** Measuring-grid gain — 0 draws no grid. */
+  uLinesGain: { value: number };
+  /** Fill opacity at zero fresnel — the legacy shell is 0.72; the ship stage
+   *  drops it well below so broadsides read as glass, not moulded plastic. */
+  uBaseAlpha: { value: number };
+  /** Fresnel-driven opacity added toward the rim (legacy 0.28). */
+  uRimAlpha: { value: number };
+  /** Fine screen-space scanline rows (CRT pitch, slow upward crawl) —
+   *  0 draws none. */
+  uScanGain: { value: number };
+  /** A soft bright band climbing the world-space Y axis — 0 draws none. */
+  uSweepGain: { value: number };
+  /** Subtle whole-surface brightness flicker — 0 stays steady. */
+  uFlickerGain: { value: number };
+  /** Fresnel exponent / gain — the legacy constants (2.5 / 1.2) by default so
+   *  markers keep the old rim; the stage raises the exponent to confine the
+   *  rim to the true silhouette (a coarse quantized hull at low incidence
+   *  otherwise turns the broad rim into a per-plate mosaic of bright wedges). */
+  uFresnelPow: { value: number };
+  uFresnelGain: { value: number };
+  /** Ship-fixed facet key: a brightness step per plate orientation (0 = the
+   *  legacy flat fill). The headlight above fades out at grazing angles, which
+   *  is exactly where a broadside melts into one fill — this term does not. */
+  uFacetGain: { value: number };
+  /** Saturation spread of the same key: differently-angled plates take
+   *  slightly different saturation, which is what makes the coarse bake read
+   *  as facets instead of one pastel wash (0 = off). */
+  uFacetSat: { value: number };
+  /** The facet key direction in OBJECT space (the ship's own frame: +Y up, bow
+   *  along ±Z) so the tone pattern is fixed to the hull, not to the camera. */
+  uFacetDir: { value: THREE.Vector3 };
 }
 
 export const HOLO_VERT = /* glsl */ `
@@ -49,6 +123,7 @@ export const HOLO_VERT = /* glsl */ `
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
   varying vec3 vNormal;
+  varying vec3 vObjNormal;
   varying float vHasNormal;
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
@@ -63,6 +138,10 @@ export const HOLO_VERT = /* glsl */ `
     // (0,0,0) — flagged via vHasNormal so the fragment shader can fall back
     // to derivative face normals.
     vNormal = normalize(mat3(modelMatrix) * normal);
+    // Object-space normal for the facet key (see uFacetDir): the mesh nodes
+    // carry no rotation, so this is the ship's own frame whatever the camera
+    // or the normalization group do.
+    vObjNormal = normal;
     vHasNormal = step(0.001, length(normal));
   }
 `;
@@ -78,10 +157,23 @@ export const HOLO_FRAG = /* glsl */ `
   uniform float focusRadius;
   uniform float focusBoost;
   uniform float ghostAlpha;
+  uniform float uLightGain;
+  uniform float uLinesGain;
+  uniform float uBaseAlpha;
+  uniform float uRimAlpha;
+  uniform float uScanGain;
+  uniform float uSweepGain;
+  uniform float uFlickerGain;
+  uniform float uFresnelPow;
+  uniform float uFresnelGain;
+  uniform float uFacetGain;
+  uniform float uFacetSat;
+  uniform vec3 uFacetDir;
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
   varying vec3 vNormal;
+  varying vec3 vObjNormal;
   varying float vHasNormal;
   void main() {
     vec3 n;
@@ -92,22 +184,95 @@ export const HOLO_FRAG = /* glsl */ `
       vec3 dy = dFdy(vWorldPos);
       n = normalize(cross(dx, dy));
     }
-    // Double-sided: flip toward the viewer so back faces shade like the
-    // front (derivative normals flip with winding; smooth normals point
-    // outward and need the flip when seen from inside).
-    if (!gl_FrontFacing) n = -n;
+    // Orient the normal toward the viewer by the geometric test, NOT by
+    // gl_FrontFacing: the baked hull is a coarse mesh of LARGE flat plates, and
+    // at a low camera its side plates sit at grazing incidence where a winding
+    // test flips whole plates at a time — the hull then reads as a mosaic of
+    // wedge patches that crawls as the camera moves. dot(n, viewDir) comes from
+    // the (smooth) normal, so it varies continuously across a plate and is
+    // independent of the exporter's triangle winding.
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 2.5);
+    float facing = dot(n, viewDir);
+    if (facing < 0.0) n = -n;
+    // Exponent/gain ride uniforms (legacy 2.5 / 1.2). A high exponent with a
+    // modest gain keeps the rim a silhouette light: the baked hull's quantized
+    // plates sit at slightly different incidences, and a broad rim turns those
+    // small differences into a mosaic of bright wedge patches and seam lines.
+    float fres = pow(1.0 - max(dot(n, viewDir), 0.0), uFresnelPow);
+    // With smooth normals the PRE-flip facing is trustworthy, and a plate whose
+    // normal leans slightly AWAY from the camera sits at |facing| ≈ 0 exactly
+    // like a true silhouette — the rim then paints it as a bright crumpled-foil
+    // seam over the whole flank. Fade the rim out across the leaning-away
+    // range. Gated to the smooth-normal path: derivative normals flip with the
+    // hull's random winding, where "negative facing" means nothing.
+    fres *= mix(1.0, smoothstep(-0.25, 0.05, facing), vHasNormal);
     float scan = sin((vLocalPos.y * 0.08 + scanOffset) * 6.2831) * 0.5 + 0.5;
     scan = smoothstep(0.82, 1.0, scan);
-    vec3 col = baseColor * (0.35 + 0.25 * fres);
-    col += fresnelColor * fres * 1.4;
-    col += fresnelColor * scan * 0.6;
-    // Interior surfaces seen through the hull read fainter than the near
-    // shell so the silhouette stays dominant (the depth anchor the caller
-    // renders does the occlusion; this keeps the layering legible).
-    float backFade = gl_FrontFacing ? 1.0 : 0.45;
-    float alpha = (0.62 + 0.28 * fres) * backFade;
+    vec3 col = baseColor * (0.75 + 0.45 * fres);
+    col += fresnelColor * fres * uFresnelGain;
+    col += fresnelColor * scan * 0.5;
+    // Headlight: ease the facing ratio so only surfaces square to the camera
+    // lift, while grazing panels stay dark toward the rim. Multiplicative —
+    // the hue stays the category's own instead of washing toward white.
+    if (uLightGain > 0.0 && vHasNormal > 0.5) {
+      float def = dot(n, viewDir);
+      col *= 1.0 + uLightGain * def * def;
+    }
+    // Facet definition: a key light FIXED IN THE SHIP'S FRAME. The headlight
+    // above fades out at grazing incidence — a low broadside has every plate
+    // nearly parallel to the view — which is exactly where the coarse bake
+    // melts into a single pastel fill. A ship-fixed key keeps deck, flank and
+    // end plates at stable, different tones, so the deck edge, the chine and
+    // every superstructure corner read as edges without a line overlay, and
+    // the pattern does not swim as the camera moves. abs() because the bake's
+    // winding is random: a plate's tone must not depend on which way its
+    // triangle happens to face. Centred on 0.5 so the ship's overall tone is
+    // unchanged.
+    if ((uFacetGain > 0.0 || uFacetSat > 0.0) && vHasNormal > 0.5) {
+      vec3 nObj = normalize(vObjNormal);
+      float key = abs(dot(nObj, uFacetDir)) - 0.5;
+      col *= 1.0 + uFacetGain * key;
+      float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col = mix(vec3(luma), col, clamp(1.0 + uFacetSat * key, 0.0, 2.0));
+    }
+    // Measuring grid, one line every 10 world units on each axis. Kept
+    // faint: it must read as panel structure, not as a cage over the ship.
+    if (uLinesGain > 0.0) {
+      vec3 g = abs(fract(vWorldPos / 10.0 - 0.5) - 0.5) / fwidth(vWorldPos);
+      float line = 1.0 - min(min(g.x, g.y), g.z);
+      col += fresnelColor * clamp(line, 0.0, 1.0) * uLinesGain;
+    }
+    // Fine scanline rows in SCREEN space: constant CRT pitch at any zoom,
+    // drifting slowly upward. Screen space because local-space rows change
+    // density with the ship's bake units while the effect wants to read as
+    // a property of the projector, not of the hull.
+    float sweep = 0.0;
+    if (uScanGain > 0.0 || uSweepGain > 0.0) {
+      float row = sin(gl_FragCoord.y * 1.7 - time * 3.0);
+      col += fresnelColor * smoothstep(0.55, 0.98, row) * uScanGain * 0.30;
+      // Sweep band: one soft gaussian wave climbing the world-space Y axis
+      // (the stage normalizes every model to the same 200-unit box, so the
+      // band crosses any ship in ~7.7 s). Lifts colour and a little alpha so
+      // the pass visibly "washes over" translucent hulls.
+      float yBand = -120.0 + 240.0 * fract(time * 0.13);
+      float d = vWorldPos.y - yBand;
+      sweep = exp(-d * d * 0.006);
+      col += fresnelColor * sweep * uSweepGain;
+    }
+    // Faint projector flicker — a beat of two incommensurate sines so the
+    // surface feels transmitted, never a steady paint job. Kept in single
+    // digits of gain: past that it reads as a rendering bug.
+    if (uFlickerGain > 0.0) {
+      col *= 1.0 + uFlickerGain * sin(time * 23.0) * sin(time * 7.3);
+    }
+    // No interior alpha fade: it would be another dot(n, viewDir) sign test at
+    // the same grazing incidence the plate mosaic comes from. Occlusion is the
+    // depth test's job (the stage writes depth); every fragment keeps one
+    // opacity, and a back face simply fades out through the Fresnel term.
+    // uBaseAlpha/uRimAlpha split the legacy 0.72 + 0.28 * fres so callers can
+    // trade fill opacity for rim glow (glassier hologram) without touching
+    // the shader.
+    float alpha = min(uBaseAlpha + uRimAlpha * fres + sweep * uSweepGain * 0.20, 1.0);
     // Focus highlight: brighten fragments near any focus point.
     for (int i = 0; i < 8; i++) {
       if (float(i) >= focusCount) break;
@@ -159,6 +324,23 @@ export function makeHoloMaterial(): THREE.ShaderMaterial {
       focusRadius: { value: 30.0 },
       focusBoost: { value: 0.8 },
       ghostAlpha: { value: 1.0 },
+      // Legacy look: every definition/texture term off and the alpha split at
+      // the historical constants. The ship stage turns the gains on per
+      // material after loading a model; markers and terrain keep these.
+      uLightGain: { value: 0.0 },
+      uLinesGain: { value: 0.0 },
+      uBaseAlpha: { value: 0.72 },
+      uRimAlpha: { value: 0.28 },
+      uScanGain: { value: 0.0 },
+      uSweepGain: { value: 0.0 },
+      uFlickerGain: { value: 0.0 },
+      uFresnelPow: { value: 2.5 },
+      uFresnelGain: { value: 1.2 },
+      // Facet key off (and its direction at a normalized default) so markers,
+      // terrain and the replay's ghost ships keep the legacy flat fill.
+      uFacetGain: { value: 0.0 },
+      uFacetSat: { value: 0.0 },
+      uFacetDir: { value: new THREE.Vector3(0.5, 0.78, 0.38).normalize() },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,

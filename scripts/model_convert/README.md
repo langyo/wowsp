@@ -41,6 +41,8 @@ The game install is auto-detected the same way WoWSP's desktop shell does it
 | `convert_ship.py` | `export-ship` | `GLB` under `packages/webui/src/res/models/ships/` |
 | `convert_map.py` | `export-map` | `GLB` under `packages/webui/src/res/models/maps/` |
 | `bake_planes.py` | `export-model` | `GLB` under `packages/webui/src/res/models/planes/` + `props/` |
+| `extract_lesta_planes.py` | — (GameParams → tables) | rows in `src/data/plane_types.json` + `plane_models.json` |
+| `bake_lesta_planes.py` | `export-model` (staged Lesta) | `GLB` under `packages/webui/src/res/models/planes/` (Lesta airframes) |
 | `bake_missing_ships.py` | (wows-gltf-exporter) | backfills specific ship GLBs under `ships/` |
 
 ## Battle-effect models (planes / shells / torpedoes)
@@ -56,6 +58,9 @@ python scripts/model_convert/bake_planes.py --from-dump dump.json
 python scripts/model_convert/bake_planes.py --planes PJAF206_Ryujo_top
 python scripts/model_convert/bake_planes.py --all
 
+# Re-bake planes whose output GLB already exists:
+python scripts/model_convert/bake_planes.py --all --force
+
 # Just the shared shell + torpedo props:
 python scripts/model_convert/bake_planes.py --props-only
 ```
@@ -66,20 +71,59 @@ python scripts/model_convert/bake_planes.py --props-only
   GameParams entry's `model` field — regenerate after a game update.
 - Props are shared game models: `props/shell.glb` (all gun shells),
   `props/torpedo.glb`.
+- The bake only assembles correctly when `export-model` resolves the airframe's
+  `.visual` — its node transforms place the bone-local render sets (propeller,
+  antenna wire, …). The in-tree `assets_bin.rs` normalizes the leading slash of
+  VFS-style paths before its suffix match; without that normalization every
+  leading-slash query misses and the export silently falls back to raw
+  geometry, scattering the unplaced sets around the airframe. Seeing
+  `No matching .visual found; exporting raw geometry` for a WG-client airframe
+  in the bake log means that resolution broke again.
 - Requires the in-tree patched `wowsunpack` (`target/release/wowsunpack.exe`):
   stock `export-model` pairs vertex/index mappings positionally, which corrupts
   multi-buffer raw exports (most planes). The vendored patch pairs them by the
   mappings' shared `packed_texel_density` render-set hash instead.
 
+### Lesta (Мир кораблей) airplanes
+
+The Lesta client's pkgs are Oodle-compressed, so `bake_planes.py` cannot read
+its airframes off the pkg VFS. Two Lesta-only steps cover them — the plane
+tables first, then the staged bake:
+
+```bash
+# 1. Merge the Lesta-only carriers' airframes into the plane tables
+#    (plane_types.json rows gain "lesta": true; idempotent).
+python scripts/model_convert/extract_lesta_planes.py   # needs GameParams_lesta.json
+
+# 2. Bake those airframes: lesta_extract.py stages the .geometry (Oodle),
+#    export-model --no-vfs converts, bake_model --dedup-lods decimates.
+python scripts/model_convert/bake_lesta_planes.py \
+    --game-dir "D:/WoWS_Korabli" --stage "C:/lesta-work/stage"
+```
+
+`just extract techtree` normally runs step 1 for you (it rides the same Lesta
+client snapshot as the tech tree and the encyclopedia overlay); step 2 runs
+by hand, like the Lesta hull bakes — the Oodle decoder (unoodle) it needs is
+shallow-cloned and built automatically on first use
+(`scripts/extract/fetch_oodle.py`, also `just build unoodle`;
+`WOWSP_OODLE_NO_BUILD=1` or `--ooz` to opt out/supply your own).
+The Lesta-only ships' **armor/ballistics** slices are a third piece of the
+same snapshot — `scripts/extract/build_lesta_shipdata.py` bundles them into
+The Lesta-only ships' **armor/ballistics** slices are a third piece of the
+same snapshot — `scripts/extract/build_lesta_shipdata.py` bundles them into
+the Rust tree (`packages/app/tauri/data/lesta_ship_gameparams.json.gz`,
+embedded via `include_bytes!` and inflated once per process — see
+`commands/gameparams.rs`), so those ids never depend on a game install.
+
 ## Usage
 
 ```bash
 # Convert one ship by display name (fuzzy-matched) or model dir name
-just convert-model ship --name Montana --output ships/
-just convert-model ship --name USA001_Montana_1945 --hull B
+just convert-ship --name Montana --output ships/
+just convert-ship --name USA001_Montana_1945 --hull B
 
 # Convert one map/space by its internal id
-just convert-model map --name 15_NE_north --output maps/
+just convert-map --name 15_NE_north --output maps/
 
 # Or run directly
 python scripts/model_convert/convert_ship.py --name Montana
@@ -176,11 +220,12 @@ from the official [`landaire/wows-toolkit`](https://github.com/landaire/wows-too
 repo. Build it once:
 
 ```bash
-just build-wowsunpack-patched
+just build wowsunpack
 ```
 
-This clones the official repo into `packages/tools/wowsunpack-vendor/` (gitignored)
-and compiles `wowsunpack` as a workspace member into `target/release/wowsunpack.exe`.
+The vendor tree is tracked in-tree (synced from upstream by hand — never a
+nested clone inside this checkout) and the build compiles the `wowsunpack`
+workspace member into `target/release/wowsunpack.exe`.
 `convert_map_holo.py` auto-detects and uses it. The script gracefully
 degrades without `--keep-submerged` (trenches flattened, contours still work).
 

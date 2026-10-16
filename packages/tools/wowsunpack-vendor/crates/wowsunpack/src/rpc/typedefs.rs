@@ -526,8 +526,12 @@ pub fn parse_type(arg: &roxmltree::Node, aliases: &HashMap<String, ArgType>) -> 
     } else if t == "FLOAT32" {
         ArgType::Primitive(PrimitiveType::Float32)
     } else if t == "FLOAT" {
-        // Note that "FLOAT64" is Float64
+        // BigWorld's `FLOAT` is the 32-bit float; `FLOAT64` is its 64-bit
+        // sibling (seen since the 25.x builds, e.g. the battle-starter's
+        // originalEnqueueTime).
         ArgType::Primitive(PrimitiveType::Float32)
+    } else if t == "FLOAT64" {
+        ArgType::Primitive(PrimitiveType::Float64)
     } else if t == "STRING" {
         ArgType::Primitive(PrimitiveType::String)
     } else if t == "UNICODE_STRING" {

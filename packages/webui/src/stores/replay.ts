@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api, type ReplayMeta, type ReplayMetaLite } from "@/api";
+import { isListedPlayer } from "@/utils/rosterSides";
 
 /** Project a parsed replay header into the list-card shape (same fields the
  *  Rust lite reader produces), so externally picked files render with the
@@ -17,9 +18,20 @@ function liteFromMeta(m: ReplayMeta): ReplayMetaLite {
     scenario: m.scenario,
     eventType: m.eventType,
     botCount: m.botCount,
+    scriptedUnitCount: m.scriptedUnitCount,
     ownShipId: own?.shipId ?? null,
-    ownShipName: own?.shipName ?? null,
-    playerCount: m.vehicles.length,
+    // The relation-0 roster entry's `name` IS the recorder's nickname —
+    // the same value the lite reader's playerName carries for scanned
+    // files (the descriptor's playerName in Rust).
+    playerName: own?.name ?? null,
+    // A picked file can sit anywhere on disk — it belongs to no DETECTED
+    // client, so the install tags stay null (the unowned-root state of the
+    // list shape) and the card omits its server tag.
+    installPath: null,
+    installKind: null,
+    installRealm: null,
+    // Listed players only — mirrors the Rust lite reader's count.
+    playerCount: m.vehicles.filter(isListedPlayer).length,
   };
 }
 
@@ -38,23 +50,41 @@ export const useReplayStore = defineStore("replay", () => {
   const list = ref<ReplayMetaLite[]>([]);
   const external = ref<ReplayMetaLite[]>([]);
   const current = ref<ReplayMeta | null>(null);
+  // Keep the pending/loaded selection in the store so a remounted view uses
+  // the same card and server realm even before its header has finished.
+  const selectedPath = ref<string | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  // IPC reads cannot be aborted, but only the latest selection may publish
+  // its result (including errors/loading). Clearing a card invalidates it too.
+  let openGeneration = 0;
 
-  async function refreshList(dir?: string) {
-    list.value = await api.listReplaysMeta(dir);
+  /** Refresh the rail's DEFAULT list: every detected install's `replays/`
+   *  folder in one scan, each entry tagged with its owning install
+   *  (installPath/installKind/installRealm; unowned roots stay null) so the
+   *  rail can tag cards and filter by client. */
+  async function refreshAll() {
+    list.value = await api.listReplaysMeta(undefined, undefined, true);
   }
 
   async function open(path: string) {
+    const generation = ++openGeneration;
+    selectedPath.value = path;
     loading.value = true;
     error.value = null;
+    current.value = null;
     try {
-      current.value = await api.readReplayHeader(path);
+      const meta = await api.readReplayHeader(path);
+      if (generation !== openGeneration) return;
+      current.value = meta;
     } catch (e) {
-      error.value = (e as Error).message;
+      if (generation !== openGeneration) return;
+      error.value = e instanceof Error ? e.message : String(e);
       current.value = null;
     } finally {
-      loading.value = false;
+      if (generation === openGeneration) {
+        loading.value = false;
+      }
     }
   }
 
@@ -73,7 +103,7 @@ export const useReplayStore = defineStore("replay", () => {
         external.value.push(liteFromMeta(await api.readReplayHeader(p)));
         added.push(p);
       } catch (e) {
-        failed.push({ path: p, error: (e as Error).message });
+        failed.push({ path: p, error: e instanceof Error ? e.message : String(e) });
       }
     }
     return { added, failed };
@@ -83,13 +113,13 @@ export const useReplayStore = defineStore("replay", () => {
    *  is the one currently open. */
   function removeExternal(path: string) {
     external.value = external.value.filter((e) => e.path !== path);
-    if (current.value?.path === path) {
-      current.value = null;
-      error.value = null;
-    }
+    if (current.value?.path === path || selectedPath.value === path) clear();
   }
 
   function clear() {
+    ++openGeneration;
+    selectedPath.value = null;
+    loading.value = false;
     current.value = null;
     error.value = null;
   }
@@ -98,9 +128,10 @@ export const useReplayStore = defineStore("replay", () => {
     list,
     external,
     current,
+    selectedPath,
     loading,
     error,
-    refreshList,
+    refreshAll,
     open,
     addExternal,
     removeExternal,

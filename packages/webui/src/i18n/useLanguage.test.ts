@@ -3,10 +3,27 @@
  *  亚服简体 option must map onto the API's single simplified-Chinese code
  *  "zh-cn", while the realm-distinct ship/nation names come from the offline
  *  game-file DBs. See fix/data-language-mismatch. */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { determineDataLanguage, gettextDir, wgApiLanguage } from "./useLanguage";
+import { transport } from "@/transport";
+
+import {
+  determineDataLanguage,
+  gettextDir,
+  installerLocaleToUi,
+  seedUiLocaleFromInstaller,
+  useLanguage,
+  wgApiLanguage,
+} from "./useLanguage";
+import { i18n, setLocale } from "./index";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
+
+// The seed's only external dependency is the transport's invoke; mock the
+// whole module so `installer_language` answers are scriptable per test.
+vi.mock("@/transport", () => ({
+  isTauri: () => true,
+  transport: { invoke: vi.fn() },
+}));
 
 describe("wgApiLanguage", () => {
   it("maps both simplified-Chinese options onto the API's zh-cn", () => {
@@ -48,6 +65,94 @@ describe("determineDataLanguage", () => {
     expect(determineDataLanguage("fr-FR", "asia")).toBe("fr-FR");
     expect(determineDataLanguage("es-ES", "asia")).toBe("es-ES");
     expect(determineDataLanguage("en-US", "asia")).toBe("en-US");
+  });
+});
+
+describe("installerLocaleToUi", () => {
+  it("maps the eight wizard locales that have a UI copy onto canonical UI locales", () => {
+    // The installer shell offers ten wizard locales; the eight with a
+    // matching webui UI copy each seed that locale.
+    expect(installerLocaleToUi("zh-Hans")).toBe("zh-CN");
+    expect(installerLocaleToUi("zh-Hant")).toBe("zh-TW");
+    expect(installerLocaleToUi("en")).toBe("en-US");
+    expect(installerLocaleToUi("ru")).toBe("ru-RU");
+    expect(installerLocaleToUi("ja")).toBe("ja-JP");
+    expect(installerLocaleToUi("ko")).toBe("ko-KR");
+    expect(installerLocaleToUi("fr")).toBe("fr-FR");
+    expect(installerLocaleToUi("es")).toBe("es-ES");
+  });
+
+  it("ignores anything the installer cannot send", () => {
+    expect(installerLocaleToUi("zh-TW")).toBeNull();
+    expect(installerLocaleToUi("zh-Hans-X")).toBeNull();
+    // de / pt exist in the installer but have no webui UI locale — the
+    // seed must ignore them rather than guess a copy.
+    expect(installerLocaleToUi("de")).toBeNull();
+    expect(installerLocaleToUi("de-DE")).toBeNull();
+    expect(installerLocaleToUi("pt")).toBeNull();
+    expect(installerLocaleToUi("pt-BR")).toBeNull();
+    expect(installerLocaleToUi("")).toBeNull();
+  });
+});
+
+describe("seedUiLocaleFromInstaller", () => {
+  const UI_KEY = "wowsp-ui-locale";
+  const invoke = vi.mocked(transport.invoke);
+
+  beforeEach(() => {
+    localStorage.clear();
+    invoke.mockReset();
+  });
+
+  it("seeds the installer's language on a true first startup", async () => {
+    const { uiLocale } = useLanguage();
+    // No saved choice; the system detection left en-US in the ref.
+    uiLocale.value = "en-US";
+    // setLocale is async now (lazy bundles) — await so the ref is settled
+    // before the seed switches it again.
+    await setLocale("en-US");
+    invoke.mockResolvedValue("zh-Hant");
+
+    await seedUiLocaleFromInstaller();
+
+    expect(invoke).toHaveBeenCalledWith("installer_language");
+    expect(uiLocale.value).toBe("zh-TW");
+    expect((i18n.global.locale as unknown as { value: string }).value).toBe("zh-TW");
+  });
+
+  it("never overrides a saved in-app choice", async () => {
+    localStorage.setItem(UI_KEY, "ru-RU");
+    const { uiLocale } = useLanguage();
+    uiLocale.value = "en-US";
+    invoke.mockResolvedValue("zh-Hant");
+
+    await seedUiLocaleFromInstaller();
+
+    // Gated before the IPC round-trip even starts.
+    expect(invoke).not.toHaveBeenCalled();
+    expect(uiLocale.value).toBe("en-US");
+  });
+
+  it("never persists the seed (or anything) to localStorage", async () => {
+    const { uiLocale } = useLanguage();
+    uiLocale.value = "en-US";
+    invoke.mockResolvedValue("zh-Hans");
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+    // The seed applies but is never written down.
+    await seedUiLocaleFromInstaller();
+    expect(uiLocale.value).toBe("zh-CN");
+    expect(setItem).not.toHaveBeenCalled();
+
+    // Once a choice exists the seed gates off — still no write.
+    localStorage.setItem(UI_KEY, "en-US");
+    setItem.mockClear();
+    invoke.mockResolvedValue("zh-Hant");
+    await seedUiLocaleFromInstaller();
+
+    expect(uiLocale.value).toBe("zh-CN");
+    expect(setItem).not.toHaveBeenCalledWith(UI_KEY, expect.any(String));
+    setItem.mockRestore();
   });
 });
 

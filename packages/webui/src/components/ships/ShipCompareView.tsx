@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref, watch } from "vue";
 import { X } from "@lucide/vue";
 
-import { HButton, HIconButton, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HkButton, HkIconButton, HkScrollContainer, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ShipPickerModal from "@/components/ships/ShipPickerModal";
@@ -21,9 +21,10 @@ import "./ShipCompareView.scss";
  * via the segmented tab strip — across the top.
  *
  * Ships are added through ShipPickerModal; the list dedupes and grows
- * unbounded. Ids the encyclopedia can no longer resolve (realm switch,
- * retired ships) are dropped on the next persist. Stat groups a hull can
- * never carry (no tubes, no ASW, no aircraft) collapse into one gray
+ * unbounded. Ids the current branch source cannot resolve (the other
+ * client's exclusive ships, retired hulls) persist but hide from the
+ * table until they resolve again. Stat groups a hull can never carry
+ * (no tubes, no ASW, no aircraft) collapse into one gray
  * "not applicable" cell instead of bare "—" gaps.
  */
 export default defineComponent({
@@ -59,14 +60,17 @@ export default defineComponent({
     }
     loadPersisted();
 
-    // Persist on every change, dropping ids the encyclopedia no longer
-    // resolves; a realm switch swaps in that realm's own list.
+    // Persist the full id list verbatim. Ids the current branch source
+    // cannot resolve — the other client's exclusive ships while its side
+    // of the WG/Lesta switch is off, retired hulls — only hide from the
+    // table (the `ships` computed drops unresolvable ids at render), so
+    // flipping the source back re-lights them instead of losing the
+    // picks; a data realm switch swaps in that realm's own list.
     watch(
       () => [...shipIds.value],
       () => {
-        const resolvable = shipIds.value.filter((id) => encyclopedia.byId.has(id));
         try {
-          localStorage.setItem(storageKey(), JSON.stringify(resolvable));
+          localStorage.setItem(storageKey(), JSON.stringify(shipIds.value));
         } catch {
           // Storage full/blocked — compare keeps working in-memory.
         }
@@ -115,23 +119,23 @@ export default defineComponent({
           {ships.value.length === 0 ? (
             <div class="ship-compare__empty">
               <p>{t("ships.compare.empty")}</p>
-              <HButton size="sm" onClick={() => (pickerOpen.value = true)}>
+              <HkButton size="sm" onClick={() => (pickerOpen.value = true)}>
                 {t("ships.compare.addShips")}
-              </HButton>
+              </HkButton>
             </div>
           ) : (
             <>
               <div class="ship-compare__toolbar">
-                <HButton size="sm" onClick={() => (pickerOpen.value = true)}>
+                <HkButton size="sm" onClick={() => (pickerOpen.value = true)}>
                   {t("ships.compare.addShips")}
-                </HButton>
-                <HButton variant="secondary" size="sm" onClick={() => (shipIds.value = [])}>
+                </HkButton>
+                <HkButton variant="secondary" size="sm" onClick={() => (shipIds.value = [])}>
                   {t("ships.compare.removeAll")}
-                </HButton>
-                <HTag variant="default" size="sm">
+                </HkButton>
+                <HkTag variant="default" size="sm">
                   {t("ships.compare.count", { n: shipIds.value.length })}
-                </HTag>
-                <HTabs
+                </HkTag>
+                <HkTabs
                   class="ship-compare__groups"
                   variant="segmented"
                   modelValue={groupKey.value}
@@ -141,8 +145,9 @@ export default defineComponent({
               </div>
 
               {/* ── the compare table: identity columns sticky left,
-                  header row sticky top ── */}
-              <div class="ship-compare__scroll">
+                  header row sticky top. Both axes scroll through hikari's
+                  scroll container (overlay thumbs; native bars hidden). ── */}
+              <HkScrollContainer class="ship-compare__scroll" axis="both">
                 <table class="ship-compare__table">
                   <thead>
                     <tr>
@@ -161,17 +166,17 @@ export default defineComponent({
                         <tr key={s.shipId}>
                           <td class="ship-compare__sticky ship-compare__sticky--remove">
                             {/* Slot content wins over the icon prop. */}
-                            <HIconButton
+                            <HkIconButton
                               size={24}
                               variant="ghost"
                               aria-label={t("ships.compare.remove")}
                               onClick={() => removeShip(s.shipId)}
                             >
                               <X size={16} />
-                            </HIconButton>
+                            </HkIconButton>
                           </td>
                           <td class="ship-compare__sticky ship-compare__sticky--tier">
-                            <HTag variant="primary" size="sm">{tierLabel(s.tier)}</HTag>
+                            <HkTag variant="primary" size="sm">{tierLabel(s.tier)}</HkTag>
                           </td>
                           {/* The td must stay a table-cell (a flex td breaks
                               table layout → detached white block); the inner
@@ -189,7 +194,7 @@ export default defineComponent({
                               })
                             : (
                               <td key="na" class="ship-compare__na" colspan={group.columns.length}>
-                                <HTag variant="default" size="sm">{t("ships.compare.notApplicable")}</HTag>
+                                <HkTag variant="default" size="sm">{t("ships.compare.notApplicable")}</HkTag>
                               </td>
                             )}
                         </tr>
@@ -197,7 +202,7 @@ export default defineComponent({
                     })}
                   </tbody>
                 </table>
-              </div>
+              </HkScrollContainer>
             </>
           )}
 

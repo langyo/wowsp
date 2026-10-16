@@ -18,6 +18,7 @@
   "game": {
     "online": "Jeu en cours",
     "offline": "Jeu non lancé",
+    "multiRunning": "{n} clients de jeu sont actuellement en cours d'exécution",
     "pid": "PID",
     "kind": {
       "steam": "Steam",
@@ -26,13 +27,15 @@
       "cn360": "CN (360)",
       "cnKongzhong": "CN (KongZhong)",
       "manual": "Manuel"
-    }
+    },
+    "versionLabel": "Version du client"
   },
   "search": {
     "fuzzy": "Recherche floue",
     "hint": "Saisissez un nom de navire, un pinyin ou un nom anglais"
   },
   "retry": "Réessayer",
+  "close": "Fermer",
   "gamePath": {
     "title": "Chemin du jeu",
     "desc": "WoWSP a besoin du dossier d'installation de World of Warships pour lire les données de blindage et de balistique des navires, les replays et les ressources de mods.",
@@ -41,12 +44,34 @@
     "detected": "Installations détectées",
     "browse": "Parcourir…",
     "redetect": "Relancer la détection",
+    "addAction": "Ajouter un chemin de jeu…",
+    "addTitle": "Ajouter un chemin de jeu",
+    "addDesc": "Détecter automatiquement les clients installés sur cette machine, ou parcourir manuellement pour sélectionner un dossier d'installation.",
     "runningHint": "Jeu en cours d'exécution détecté : {path}",
     "useRunning": "Utiliser ce chemin",
-    "noneFound": "Aucune installation du jeu détectée. Sélectionnez manuellement le dossier d'installation (il doit contenir WorldOfWarships.exe et un dossier bin/).",
+    "noneFound": "Aucune installation du jeu détectée. Sélectionnez manuellement le dossier d'installation (il doit contenir WorldOfWarships.exe — Korabli.exe pour le client Lesta RU — et un dossier bin/).",
     "applied": "Chemin du jeu mis à jour",
     "invalid": "Le dossier sélectionné n'est pas valide",
     "setAction": "Définir le chemin du jeu",
+    "removeAction": "Retirer ce chemin",
+    "removeConfirm": "Retirer ?",
+    "removed": "Chemin du jeu retiré",
     "inUse": "Utilisé"
+  },
+  "imageCrop": {
+    "choose": "Choisir une image…",
+    "requirement": "Une image carrée est idéale : petit côté d'au moins {min}px, côtés d'au plus {max}px ; les recadrages trop grands sont réduits automatiquement.",
+    "unsupported": "Format d'image non pris en charge (PNG / JPG / WebP / GIF / BMP / AVIF uniquement).",
+    "fileTooLarge": "Fichier trop volumineux — compressez-le d'abord.",
+    "tooSmall": "Image trop petite : le petit côté doit faire au moins {min}px.",
+    "tooLarge": "Image trop grande : les côtés ne doivent pas dépasser {max}px.",
+    "decodeFailed": "Impossible de décoder l'image — le fichier est peut-être corrompu.",
+    "dragHint": "Faites glisser pour positionner, molette ou curseur pour zoomer ; la sortie est toujours carrée.",
+    "zoom": "Zoom",
+    "dims": "{w}×{h} → {out}×{out}",
+    "rechoose": "Choisir une autre image",
+    "confirm": "Utiliser cette image",
+    "cancel": "Annuler",
+    "exportFailed": "Échec de l'export de l'image rognée"
   }
 }

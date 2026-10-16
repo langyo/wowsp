@@ -5,6 +5,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useTrendsStore } from "@/stores/trends";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { basicsToShipInfo, loadShipsBasics } from "@/utils/shipsBasics";
 import type { ShipInfo } from "@/api";
 
 /**
@@ -68,6 +69,20 @@ export function useShipDetail() {
       syntheticOpen.value = true;
       wantedRealm.value = realm;
       selectedShip.value = syntheticInfo(shipId, fallbackName);
+      // The bundled ship-basics asset can upgrade the synthetic entry even
+      // when the WG API never lands (offline / lite install): specs need a
+      // real defaultProfile.
+      void loadShipsBasics()
+        .then((basics) => {
+          const entry = basics.ships[String(shipId)];
+          if (!entry || !syntheticOpen.value) return;
+          const cur = selectedShip.value;
+          if (!cur || cur.shipId !== shipId) return;
+          // Keep the stats-row display name (already localized / tagged);
+          // the bundle only contributes the real defaultProfile.
+          selectedShip.value = { ...basicsToShipInfo(shipId, basics, entry), name: cur.name };
+        })
+        .catch(() => {});
     }
     // Preload community trend for the modal's "Server Trend" tab.
     void trends.loadCommunity(shipId);

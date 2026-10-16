@@ -1,7 +1,7 @@
 """WoWSP mock backend — FastAPI.
 
 Mirrors the Tauri command surface (see `packages/webui/src/rpc.ts`) over HTTP
-under `/api/<cmd>`, so the frontend can develop in a browser (`just dev --mock`)
+under `/api/<cmd>`, so the frontend can develop in a browser (`just dev mock`)
 without the game or the Tauri shell. The webui's `WebTransport` calls these
 endpoints; see `packages/webui/src/transport/web.ts`.
 
@@ -29,6 +29,25 @@ app.add_middleware(
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
+# The pretend game installs this mock "detects" — TWO clients, so the
+# multi-client surfaces (the playtime scope menu, the rail's client filter
+# and its per-card server tags) have more than one client to exercise in
+# `just dev mock`. Shared by detect_game_install and the list_replays_meta
+# fixtures so every replay the mock serves is tagged with a client the UI can
+# actually pick, and the paths match the client-side playtime_battles
+# fixture (packages/webui/src/transport/webMock.ts) so a picked client
+# answers that client's battles instead of an empty list.
+_MOCK_INSTALL = {"kind": "steam", "path": "D:/Games/World_of_Warships", "realm": "asia"}
+_MOCK_INSTALL_PATH = _MOCK_INSTALL["path"]
+_MOCK_INSTALL_LESTA = {"kind": "lesta", "path": "C:/MockGames/WoWS (Lesta)", "realm": "ru"}
+_MOCK_INSTALL_LESTA_PATH = _MOCK_INSTALL_LESTA["path"]
+# Fixture nicknames: `playerName` is the RECORDER's nickname (the card's
+# title and the rail's player dropdown), so the fixtures carry nicknames
+# rather than ship names — two different ones, which is exactly the
+# one-client-many-accounts case the player dimension exists for.
+_MOCK_PLAYER = "MockCaptain"
+_MOCK_PLAYER_LESTA = "MockAlt"
+
 
 def wg_to_short_code(wg: str) -> str:
     """Map a WG API language code to the app's internal locale short-code.
@@ -53,12 +72,12 @@ def wg_to_short_code(wg: str) -> str:
 # A sample roster matching tempArenaInfo.json shape. Enough to render both
 # teams in the overlay view during mock development.
 _SAMPLE_ROSTER = [
-    {"id": 1, "name": "Player1", "relation": "0", "shipId": "4183305088", "shipName": "Yamato"},
-    {"id": 2, "name": "Player2", "relation": "0", "shipId": "4273848496", "shipName": "Montana"},
-    {"id": 3, "name": "Player3", "relation": "0", "shipId": "4285609360", "shipName": "Gearing"},
-    {"id": 4, "name": "Enemy1", "relation": "2", "shipId": "4183305088", "shipName": "Yamato"},
-    {"id": 5, "name": "Enemy2", "relation": "2", "shipId": "4273848496", "shipName": "Montana"},
-    {"id": 6, "name": "Enemy3", "relation": "2", "shipId": "4285609360", "shipName": "Gearing"},
+    {"id": 1, "name": "Player1", "relation": "0", "shipId": "4276041424", "shipName": "Yamato"},
+    {"id": 2, "name": "Player2", "relation": "0", "shipId": "4277090288", "shipName": "Montana"},
+    {"id": 3, "name": "Player3", "relation": "0", "shipId": "4281219056", "shipName": "Gearing"},
+    {"id": 4, "name": "Enemy1", "relation": "2", "shipId": "4276041424", "shipName": "Yamato"},
+    {"id": 5, "name": "Enemy2", "relation": "2", "shipId": "4277090288", "shipName": "Montana"},
+    {"id": 6, "name": "Enemy3", "relation": "2", "shipId": "4281219056", "shipName": "Gearing"},
 ]
 
 
@@ -83,12 +102,19 @@ async def cmd_get_os_preferences() -> dict:
 
 @app.get("/api/detect_game_install")
 async def cmd_detect_game_install() -> list[dict]:
-    # Pretend a Steam install exists so the replay list loads in the browser.
-    return [{"kind": "steam", "path": "D:/Games/World_of_Warships", "realm": "asia"}]
+    # Pretend a Steam install (and its Lesta sibling) exists so the replay
+    # list and the client-scoped views have real clients to work with.
+    return [dict(_MOCK_INSTALL), dict(_MOCK_INSTALL_LESTA)]
 
 
 @app.post("/api/list_replays_meta")
 async def cmd_list_replays_meta(request: Request) -> list[dict]:
+    # The command's `all` flag only widens the RUST scan (every detected
+    # install's replays/ folder vs one explicit/default root) — it is
+    # accepted and ignored here. This mock pretends the same two installs
+    # detect_game_install reports, so both modes return the same tagged
+    # fixtures anyway; the tags give the rail's client filter real clients
+    # to exercise in `just dev mock`.
     dump = _load_replay_dump()
     if dump is not None:
         meta = dump["meta"]
@@ -98,9 +124,14 @@ async def cmd_list_replays_meta(request: Request) -> list[dict]:
             "matchGroup": meta.get("matchGroup"),
             "mapName": meta.get("mapName"),
             "mapId": meta.get("mapId"),
-            "ownShipId": 4183305088,
-            "ownShipName": "Yamato",
+            # Real Yamato index from webui's ship_names.json, so ship-id-driven
+            # UI (roster panels, the list card's own-ship tag) resolves.
+            "ownShipId": 4276041424,
+            "playerName": meta.get("playerName") or _MOCK_PLAYER,
             "playerCount": len(meta.get("vehicles", [])),
+            "installPath": _MOCK_INSTALL_PATH,
+            "installKind": "steam",
+            "installRealm": "asia",
         }]
     return [
         {
@@ -109,9 +140,29 @@ async def cmd_list_replays_meta(request: Request) -> list[dict]:
             "matchGroup": "pvp",
             "mapName": "17_NA_fault_line",
             "mapId": 17,
-            "ownShipId": 4183305088,
-            "ownShipName": "Yamato",
+            "ownShipId": 4276041424,
+            "playerName": _MOCK_PLAYER,
             "playerCount": 6,
+            "installPath": _MOCK_INSTALL_PATH,
+            "installKind": "steam",
+            "installRealm": "asia",
+        },
+        {
+            # The second client's replay: a Lesta .korablireplay recorded by
+            # a DIFFERENT nickname, so the rail's server tags, its client
+            # filter and its player dropdown all show two real options.
+            # Stalingrad's index is a real one from webui's ship_names.json.
+            "path": "fixtures/sample.korablireplay",
+            "dateTime": "20260710_201500",
+            "matchGroup": "pve",
+            "mapName": "28_naval_mission",
+            "mapId": 28,
+            "ownShipId": 3760109008,
+            "playerName": _MOCK_PLAYER_LESTA,
+            "playerCount": 8,
+            "installPath": _MOCK_INSTALL_LESTA_PATH,
+            "installKind": "lesta",
+            "installRealm": "ru",
         }
     ]
 
@@ -165,7 +216,27 @@ _MOCK_INSTALLED = [
      "disabled": False, "version": None},
     {"kind": "skin", "name": "Hina_Moskva", "detail": "RSC110_Pr_66_Moskva",
      "relPath": "PnFMods/Hina_Moskva", "paths": ["PnFMods/Hina_Moskva"],
-     "disabled": False, "version": None},
+     "disabled": False, "version": None,
+     "textureAnalysis": {"categories": ["skin"], "nations": ["ussr"],
+                          "species": [], "spaceNames": ["spaces/PJSC001_Moskva"],
+                          "ships": ["Moskva"], "fileCount": 12,
+                          "fileKinds": [{"ext": ".dds", "count": 12}],
+                          "truncated": False}},
+    # A second pack covering the SAME ship: the material list's component
+    # row (Moskva) aggregates both.
+    {"kind": "skin", "name": "Alt_Camo_Moskva", "detail": "RSC110_Pr_66_Moskva",
+     "relPath": "PnFMods/Alt_Camo_Moskva", "paths": ["PnFMods/Alt_Camo_Moskva"],
+     "disabled": False, "version": None,
+     "textureAnalysis": {"categories": ["skin"], "nations": ["ussr"],
+                          "species": [], "spaceNames": ["spaces/PJSC001_Moskva"],
+                          "ships": ["Moskva"], "fileCount": 8,
+                          "fileKinds": [{"ext": ".dds", "count": 8}],
+                          "truncated": False}},
+    # An Aslain-anchored row: same name as the mock's foreign aslain unit,
+    # so the installed list shows the provenance badge.
+    {"kind": "gui", "name": "Shot Timer", "detail": None,
+     "relPath": "PnFMods/ShotTimer", "paths": ["PnFMods/ShotTimer"],
+     "disabled": False, "version": "15.7.0"},
     {"kind": "script", "name": "SmokeMarker", "detail": None,
      "relPath": "PnFMods/SmokeMarkerPy", "paths": ["PnFMods/SmokeMarkerPy"],
      "disabled": False, "version": "1.4.0"},
@@ -177,6 +248,97 @@ _MOCK_INSTALLED = [
      "relPath": "ime_config.xml", "paths": ["ime_config.xml"],
      "disabled": False, "version": None},
 ]
+
+
+# 1x1 red PNG for the asset-preview mock.
+_MOCK_PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4"
+             "z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==")
+
+
+@app.post("/api/mod_tags")
+async def cmd_mod_tags(request: Request) -> dict:
+    return {
+        "schema": 1,
+        "tags": [
+            {"id": "licensed", "kind": "feature",
+             "i18n": {"en-US": "Licensed", "zh-CN": "已授权"}},
+            {"id": "ai-generated", "kind": "feature",
+             "i18n": {"en-US": "AI-generated", "zh-CN": "AI 合成"}},
+            {"id": "ip-blue-archive", "kind": "ip",
+             "i18n": {"en-US": "Blue Archive", "zh-CN": "蔚蓝档案"}},
+            {"id": "ip-azur-lane", "kind": "ip",
+             "i18n": {"en-US": "Azur Lane", "zh-CN": "碧蓝航线"}},
+        ],
+    }
+
+
+@app.post("/api/mod_hub_list_assets")
+async def cmd_mod_hub_list_assets(request: Request) -> list[dict]:
+    return [
+        {"rel": "spaces/PJSC001_Moskva/textures_a.png", "size": 2048,
+         "kind": "image", "ext": "png", "playable": True},
+        {"rel": "spaces/PJSC001_Moskva/textures_b.dds", "size": 13981016,
+         "kind": "image", "ext": "dds", "playable": True},
+        {"rel": "banks/mods/Hoshino/voice_line_01.ogg", "size": 51200,
+         "kind": "audio", "ext": "ogg", "playable": True},
+        # .wem is playable now — the read command decodes (Wwise Vorbis
+        # → WAV) and returns a playable payload; scene fields demo the
+        # mod.xml-derived titles (event / state / variation index).
+        {"rel": "banks/mods/Hoshino/voice_line_02.wem", "size": 66560,
+         "kind": "audio", "ext": "wem", "playable": True,
+         "sceneEvent": "Play_VO_Autopilot", "sceneState": "VO_Autopilot_Checkpoint",
+         "sceneIndex": 1},
+        {"rel": "banks/mods/Hoshino/voice_line_03.wem", "size": 51200,
+         "kind": "audio", "ext": "wem", "playable": True,
+         "sceneEvent": "Play_VO_Fire_Alarm", "sceneIndex": 2},
+        {"rel": "banks/mods/Hoshino/voice_line_04.wem", "size": 40960,
+         "kind": "audio", "ext": "wem", "playable": True},
+    ]
+
+
+def _silent_wav(seconds: float = 2.0) -> str:
+    """Mono 8kHz 8-bit silent WAV, long enough that the playback
+    controller card (progress bar, pause/stop) is exercisable against
+    the mock — a one-frame clip ends before the card can be touched."""
+    data = b"\x80" * int(8000 * seconds)  # 8-bit silence is the midpoint
+    header = (
+        b"RIFF" + (36 + len(data)).to_bytes(4, "little") + b"WAVE"
+        b"fmt " + (16).to_bytes(4, "little")
+        + (1).to_bytes(2, "little") + (1).to_bytes(2, "little")
+        + (8000).to_bytes(4, "little") + (8000).to_bytes(4, "little")
+        + (1).to_bytes(2, "little") + (8).to_bytes(2, "little")
+        + b"data" + len(data).to_bytes(4, "little")
+    )
+    return base64.b64encode(header + data).decode("ascii")
+
+
+_MOCK_WAV = _silent_wav()
+
+
+@app.post("/api/mod_hub_read_asset")
+async def cmd_mod_hub_read_asset(request: Request) -> dict:
+    body = await request.json()
+    rel = str(body.get("relPath", ""))
+    if rel.rsplit(".", 1)[-1].lower() in ("wem", "ogg", "mp3", "wav"):
+        return {"dataUrl": "data:audio/wav;base64," + _MOCK_WAV}
+    return {"dataUrl": "data:image/png;base64," + _MOCK_PNG}
+
+
+@app.post("/api/mod_hub_foreign_units")
+async def cmd_mod_hub_foreign_units(request: Request) -> list[dict]:
+    # Sample: an Aslain row that pairs with the mock catalog's shot-timer
+    # entry (drives the "another non-WoWSP copy" note on its detail pane),
+    # plus two ModStation units (one paired, one not) for the side strip.
+    return [
+        {"installer": "aslain", "key": "shot-timer", "name": "Shot Timer",
+         "version": "15.7.0", "identity": "ui-timers-shot-timer"},
+        {"installer": "aslain", "key": "hina-moskva", "name": "Hina_Moskva",
+         "version": "15.7.0", "identity": "port-mods-sessionstats-ollin"},
+        {"installer": "modstation", "key": "sessionstats", "name": "SessionStats",
+         "version": None, "identity": "port-mods-sessionstats-ollin"},
+        {"installer": "modstation", "key": "custom-crosshair", "name": "CustomCrosshair",
+         "version": None, "identity": None},
+    ]
 
 
 @app.post("/api/mod_hub_scan_installed")
@@ -266,6 +428,14 @@ _MOCK_CATALOG = {
             },
             "packages": [{"url": "https://example.com/a.zip", "sha256": "",
                           "size": 13312, "name": "a.zip"}],
+            "presets": [
+                {"id": "default", "nameZh": "标准", "nameEn": "Standard",
+                 "packages": [{"url": "https://example.com/a.zip", "sha256": "",
+                               "size": 13312, "name": "a.zip"}]},
+                {"id": "compact", "nameZh": "紧凑", "nameEn": "Compact",
+                 "packages": [{"url": "https://example.com/a-compact.zip", "sha256": "",
+                               "size": 8192, "name": "a-compact.zip"}]},
+            ],
         },
         {
             "id": "port-mods-sessionstats-ollin", "category": "port",
@@ -282,9 +452,70 @@ _MOCK_CATALOG = {
             "packages": [{"url": "https://example.com/b.zip", "sha256": "",
                           "size": 87040, "name": "b.zip"}],
         },
+        {
+            # Real community packs (discussions #799-#802): the ribbon skin
+            # and the Blue Archive AI voices, tags and all.
+            "id": "skin.ribbon.azur-lane", "category": "skin",
+            "tags": ["licensed", "ip-azur-lane"],
+            "discussion": 799, "version": "3.0",
+            "game": ">=13.0",
+            "title": "Azur Lane Ribbons",
+            "nameZh": "碧蓝航线主题勋带", "nameEn": "Azur Lane Ribbons",
+            "description": "Azur Lane-themed combat ribbon icons (SineLine, licensed).",
+            "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Azur Lane Ribbons", "description": "Azur Lane-themed combat ribbon icons."},
+                "zh-CN": {"name": "碧蓝航线主题勋带", "description": "碧蓝航线风格战斗勋带图标。"},
+            },
+            "packages": [{"url": "https://example.com/ribbon.zip", "sha256": "",
+                          "size": 362496, "name": "skin.ribbon.azur-lane.zip"}],
+        },
+        {
+            "id": "voice.ba.hoshino", "category": "voice",
+            "tags": ["ai-generated", "ip-blue-archive"],
+            "discussion": 800, "version": "1",
+            "game": ">=12.1",
+            "title": "Hoshino Crew Voice (AI)",
+            "nameZh": "星野舰员语音（AI 合成）", "nameEn": "Hoshino Crew Voice (AI)",
+            "description": "Blue Archive Hoshino crew voice, AI-synthesized.",
+            "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Hoshino Crew Voice (AI)", "description": "Blue Archive Hoshino voice, AI-synthesized."},
+                "zh-CN": {"name": "星野舰员语音（AI 合成）", "description": "蔚蓝档案星野语音，AI 合成。"},
+            },
+            "packages": [{"url": "https://example.com/hoshino.zip", "sha256": "",
+                          "size": 3450880, "name": "voice.ba.hoshino.zip"}],
+        },
+        {
+            # Withdrawn sample (closed discussion thread): exercises the
+            # delisting path — hidden from list/search, deep-link notice.
+            "id": "battle-marker-traffic", "category": "battle",
+            "discussion": 93, "version": "15.7.0.10",
+            "game": ">=15.7 <15.8", "delisted": True,
+            "title": "Ship Movement Indicator / 运动状态指示器",
+            "nameZh": "运动状态指示器（红绿灯）", "nameEn": "Ship Movement Indicator",
+            "description": "Superseded by SMI v4.",
+            "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Ship Movement Indicator", "description": "Superseded by SMI v4."},
+                "zh-CN": {"name": "运动状态指示器（红绿灯）", "description": "已被红绿灯 v4 取代。"},
+            },
+            "packages": [{"url": "https://example.com/c.zip", "sha256": "",
+                          "size": 1024, "name": "c.zip"}],
+        },
     ],
 }
-_MOCK_RECORDS: list[dict] = []
+_MOCK_RECORDS: list[dict] = [
+    # Stale on purpose: catalog says version "1", the record says "0.9" —
+    # the client-version selector's update marker + 一键更新 ride on this.
+    {
+        "id": "voice.ba.hoshino", "name": "Hoshino Crew Voice (AI)",
+        "version": "0.9", "category": "voice", "source": "mod-hub",
+        "discussion": 800, "preset": None, "binVersion": "13187581",
+        "installedAt": "2026-01-01T00:00:00Z", "files": [],
+        "restoreDir": None, "gameRoot": "",
+    },
+]
 
 
 @app.post("/api/mod_catalog_refresh")
@@ -322,6 +553,19 @@ async def cmd_mod_hub_records() -> list[dict]:
     return _MOCK_RECORDS
 
 
+# Probe plugin always "installed but outdated" against the mock: the
+# sidebar marker's second freshness source.
+@app.post("/api/ingame_plugin_status")
+async def cmd_ingame_plugin_status(request: Request) -> dict:
+    return {"installed": True, "outdated": True, "resMods": "bin/13187581/res_mods",
+            "discussion": 640}
+
+
+@app.post("/api/ingame_plugin_install")
+async def cmd_ingame_plugin_install(request: Request) -> str:
+    return "bin/13187581/res_mods/PnFMods/WoWSPProbe/Main.py"
+
+
 @app.get("/api/is_game_running")
 async def cmd_is_game_running() -> bool:
     return False
@@ -338,6 +582,12 @@ async def cmd_get_game_process() -> dict:
         "exePath": None,
         "matchedInstall": None,
     }
+
+
+@app.post("/api/get_game_processes")
+async def cmd_get_game_processes() -> dict:
+    # Mock: game not running — an empty multi-instance report.
+    return {"processes": [], "preferredPid": None}
 
 
 @app.post("/api/lookup_player_stats")
@@ -481,27 +731,55 @@ async def cmd_get_upgrade_prices(request: Request) -> dict:
     }
 
 
+# A full ranked history (newest first, mirrors RankedSeasonStats): season
+# ids follow the backend convention (1000 + season number), a few seasons
+# are missing (unplayed ones drop server-side), and the best ranks cover
+# all three league metals so the season-timeline modal shows its tints.
+_RANKED_FIXTURE: list[dict] = [
+    {"seasonId": 1030, "battles": 53, "wins": 33, "bestRank": 5, "bestRankDisplay": "Gold 5"},
+    {"seasonId": 1029, "battles": 108, "wins": 54, "bestRank": 5, "bestRankDisplay": "Silver 5"},
+    {"seasonId": 1028, "battles": 53, "wins": 31, "bestRank": 10, "bestRankDisplay": "Silver 10"},
+    {"seasonId": 1025, "battles": 6, "wins": 5, "bestRank": 6, "bestRankDisplay": "Bronze 6"},
+    {"seasonId": 1024, "battles": 104, "wins": 53, "bestRank": 7, "bestRankDisplay": "Silver 7"},
+    {"seasonId": 1023, "battles": 278, "wins": 136, "bestRank": 1, "bestRankDisplay": "Silver 1"},
+    {"seasonId": 1022, "battles": 218, "wins": 113, "bestRank": 2, "bestRankDisplay": "Silver 2"},
+    {"seasonId": 1021, "battles": 26, "wins": 12, "bestRank": 4, "bestRankDisplay": "Bronze 4"},
+    {"seasonId": 1020, "battles": 12, "wins": 6, "bestRank": 6, "bestRankDisplay": "Bronze 6"},
+    {"seasonId": 1019, "battles": 7, "wins": 4, "bestRank": 7, "bestRankDisplay": "Bronze 7"},
+    {"seasonId": 1017, "battles": 12, "wins": 7, "bestRank": 6, "bestRankDisplay": "Bronze 6"},
+    {"seasonId": 1016, "battles": 4, "wins": 0, "bestRank": 10, "bestRankDisplay": "Bronze 10"},
+    {"seasonId": 1015, "battles": 178, "wins": 107, "bestRank": 3, "bestRankDisplay": "Silver 3"},
+    {"seasonId": 1013, "battles": 117, "wins": 64, "bestRank": 1, "bestRankDisplay": "Bronze 1"},
+]
+
+
 @app.post("/api/get_ranked_stats")
 async def cmd_get_ranked_stats(request: Request) -> list[dict]:
-    """Three fake ranked seasons (mirrors RankedSeasonStats) so the stats
-    card's ranked split and the dashboard's season list have data in a
+    """A fake full ranked history (mirrors RankedSeasonStats) so the stats
+    card's ranked split and the season-timeline modal have data in a
     browser. The seasonCount arg is accepted but ignored."""
     body = await request.json()
     _ = body.get("accountId")
-    return [
-        {"seasonId": 511, "seasonName": "Ranked Sprint 5", "battles": 180, "wins": 101,
-         "losses": 79, "damageDealt": 15840000, "frags": 212, "maxDamage": 214500,
-         "maxXp": 2870, "survivedBattles": 74, "planesKilled": 88,
-         "currentRank": 10, "bestRank": 8, "bestRankDisplay": "8"},
-        {"seasonId": 505, "seasonName": "Ranked Sprint 4", "battles": 142, "wins": 68,
-         "losses": 74, "damageDealt": 11560000, "frags": 151, "maxDamage": 187300,
-         "maxXp": 2415, "survivedBattles": 52, "planesKilled": 63,
-         "currentRank": None, "bestRank": 12, "bestRankDisplay": "12"},
-        {"seasonId": 498, "seasonName": "Ranked Sprint 3", "battles": 95, "wins": 44,
-         "losses": 51, "damageDealt": 7410000, "frags": 97, "maxDamage": 162800,
-         "maxXp": 2120, "survivedBattles": 31, "planesKilled": 40,
-         "currentRank": None, "bestRank": 15, "bestRankDisplay": "15"},
-    ]
+    out = []
+    for f in _RANKED_FIXTURE:
+        losses = f["battles"] - f["wins"]
+        out.append({
+            "seasonId": f["seasonId"],
+            "seasonName": f"Season {f['seasonId'] - 1000}",
+            "battles": f["battles"],
+            "wins": f["wins"],
+            "losses": losses,
+            "damageDealt": f["battles"] * 61_000 + f["seasonId"] * 137,
+            "frags": round(f["battles"] * 0.87),
+            "maxDamage": 142_000 + (f["seasonId"] % 9) * 9_500,
+            "maxXp": 2_100 + (f["seasonId"] % 7) * 160,
+            "survivedBattles": round(f["battles"] * 0.34),
+            "planesKilled": round(f["battles"] * 1.6),
+            "currentRank": f["bestRank"],
+            "bestRank": f["bestRank"],
+            "bestRankDisplay": f["bestRankDisplay"],
+        })
+    return out
 
 
 @app.post("/api/read_ship_stats_history")
@@ -569,6 +847,16 @@ async def cmd_read_replay_positions(request: Request) -> dict:
             "wards": dump.get("wards", []),
             "wardRemoves": dump.get("wardRemoves", []),
             "shotKills": dump.get("shotKills", []),
+            "damageStats": dump.get("damageStats", []),
+            "chatMessages": dump.get("chatMessages", []),
+            "achievements": dump.get("achievements", []),
+            # The arena roster + the recorder's team drive the frontend's
+            # authoritative HP totals and the team/self joins — without them
+            # the dev player silently falls back to stream-peak totals.
+            "arenaPlayers": dump.get("arenaPlayers", []),
+            "selfTeam": dump.get("selfTeam"),
+            "weatherTransitions": dump.get("weatherTransitions", []),
+            "weatherNotifications": dump.get("weatherNotifications", []),
         }
     return {
         "trajectories": [],
@@ -593,6 +881,9 @@ async def cmd_read_replay_positions(request: Request) -> dict:
         "wards": [],
         "wardRemoves": [],
         "shotKills": [],
+        "damageStats": [],
+        "chatMessages": [],
+        "achievements": [],
     }
 
 
@@ -601,6 +892,9 @@ async def cmd_read_temp_arena_info() -> dict | None:
     return {
         "matchGroup": "pvp",
         "dateTime": "12.07.2026 21:45:00",
+        # Same map the replay fixture names — exercises the map-name tag's
+        # preview/jump affordances in mock dev and the e2e harness.
+        "mapName": "17_NA_fault_line",
         "vehicles": _SAMPLE_ROSTER,
         "raw": {"vehicles": _SAMPLE_ROSTER},
     }
@@ -687,6 +981,26 @@ _SHIP_NAMES_PATH = (
     / "packages" / "webui" / "src" / "data" / "ship_names.json"
 )
 
+# The two bundled data sources spell nations differently: tech_tree.json keeps
+# the WG-encyclopedia codes except its own "pan_europe" slot, while
+# ship_names.json keeps the raw game-file spellings ("united_kingdom",
+# "russia", "europe") plus an "events" bucket. The real encyclopedia API only
+# ever returns the 13 clean codes, so normalize everything to that set before
+# serving — otherwise the ships view's nation rail shows duplicates ("Europe"
+# twice, raw `ships.nation.united_kingdom` keys).
+_API_NATION_RENAMES = {
+    "pan_europe": "europe",
+    "united_kingdom": "uk",
+    "russia": "ussr",
+}
+
+
+def _api_nation(code: str | None) -> str:
+    c = (code or "").strip().lower()
+    if not c:
+        return "usa"
+    return _API_NATION_RENAMES.get(c, c)
+
 
 def _load_encyclopedia() -> list[dict[str, Any]]:
     import json
@@ -713,7 +1027,7 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
             "name": node.get("name", "").replace("IDS_", ""),
             "tier": node.get("tier", 1),
             "type": node.get("type", "Cruiser"),
-            "nation": node.get("nation", "usa"),
+            "nation": _api_nation(node.get("nation")),
             "isPremium": node.get("isPremium", False),
             "isSpecial": node.get("isSpecial", False),
             "description": "",
@@ -743,6 +1057,12 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 continue
             if sid in seen:
                 continue
+            nation = _api_nation(entry.get("nation"))
+            # The encyclopedia API carries no "events" nation — event ships
+            # stay out of the mock ship list (their replay labels resolve via
+            # the frontend's own ship_names.json overlay instead).
+            if nation == "events":
+                continue
             seen.add(sid)
             name = entry.get("names", {}).get("en") or next(iter(entry.get("names", {}).values()), "")
             hp = entry.get("hp") or 30000
@@ -751,7 +1071,7 @@ def _load_encyclopedia() -> list[dict[str, Any]]:
                 "name": name,
                 "tier": entry.get("tier") or 5,
                 "type": entry.get("type") or "Cruiser",
-                "nation": entry.get("nation") or "usa",
+                "nation": nation,
                 "isPremium": True,
                 "isSpecial": False,
                 "description": "",
@@ -862,70 +1182,130 @@ async def cmd_get_network_config() -> dict:
 
 
 @app.post("/api/set_network_config")
-async def cmd_set_network_config(payload: dict) -> None:
+async def cmd_set_network_config(payload: dict) -> dict:
     _MOCK_NETWORK["mode"] = payload.get("mode", "system")
     _MOCK_NETWORK["proxy"] = payload.get("proxy")
     _MOCK_NETWORK["resourceCdn"] = payload.get("resourceCdn")
     _MOCK_NETWORK["githubMirror"] = payload.get("githubMirror")
+    # The shell returns the SANITIZED config it persisted; the settings UI
+    # adopts that response, so the mock must return one too.
+    return {**_MOCK_NETWORK, "effectiveProxy": None}
+
+
+# --- Settings files the shell persists as TOML (in-memory mirrors) ----------
+
+_MOCK_OVERLAY_CONFIG = {"table": "detect", "roster": "ocr"}
+_MOCK_GAME_CONFIG = {"activePath": None, "replayDirs": []}
+
+
+@app.post("/api/get_overlay_config")
+async def cmd_get_overlay_config() -> dict:
+    return {**_MOCK_OVERLAY_CONFIG}
+
+
+@app.post("/api/set_overlay_config")
+async def cmd_set_overlay_config(payload: dict) -> dict:
+    _MOCK_OVERLAY_CONFIG["table"] = payload.get("table", "detect")
+    _MOCK_OVERLAY_CONFIG["roster"] = payload.get("roster", "ocr")
+    return {**_MOCK_OVERLAY_CONFIG}
+
+
+@app.post("/api/get_game_config")
+async def cmd_get_game_config() -> dict:
+    return {**_MOCK_GAME_CONFIG}
+
+
+@app.post("/api/set_game_config")
+async def cmd_set_game_config(payload: dict) -> dict:
+    _MOCK_GAME_CONFIG["activePath"] = payload.get("activePath")
+    return {**_MOCK_GAME_CONFIG}
+
+
+@app.post("/api/pick_replay_dir")
+async def cmd_pick_replay_dir() -> None:
+    # No native folder dialog exists in the browser mock — answer
+    # "cancelled" (null), same contract as the shell's cancelled picker.
     return None
 
 
-# --- Resource packs / caches (Settings -> Cache management) ----------------
+@app.post("/api/add_replay_dir")
+async def cmd_add_replay_dir(payload: dict) -> dict:
+    path = str(payload.get("path") or "").strip()
+    if path and path.lower() not in (d.lower() for d in _MOCK_GAME_CONFIG["replayDirs"]):
+        _MOCK_GAME_CONFIG["replayDirs"].append(path)
+    return {**_MOCK_GAME_CONFIG}
+
+
+@app.post("/api/remove_replay_dir")
+async def cmd_remove_replay_dir(payload: dict) -> dict:
+    path = str(payload.get("path") or "").strip().lower()
+    _MOCK_GAME_CONFIG["replayDirs"] = [
+        d for d in _MOCK_GAME_CONFIG["replayDirs"] if d.strip().lower() != path
+    ]
+    return {**_MOCK_GAME_CONFIG}
+
+
+# --- Resource pack / caches (Settings -> Updates) --------------------------
 # Static canned state: the browser mock has no pack downloads, but the panel
 # renders and its buttons round-trip like the desktop shell.
 
-_MOCK_PACKS: dict[str, dict[str, Any]] = {
-    "models": {
-        "id": "models",
-        "present": True,
-        "version": "2026-09-11T09:16:54Z",
-        "sizeBytes": 1_234_567_890,
-        "downloading": False,
-    },
-    "dogtags": {
-        "id": "dogtags",
-        "present": True,
-        "version": "2026-09-11T09:16:54Z",
-        "sizeBytes": 3_141_592,
-        "downloading": False,
-    },
+_MOCK_RES: dict[str, Any] = {
+    "present": True,
+    "treeSha256": "a1b2c3d4e5f6" + "0" * 58,
+    "version": "2026-09-11T09:16:54Z",
+    "legacyStamp": False,
+    "sizeBytes": 1_237_709_382,
+    "downloading": False,
 }
 
 
-@app.post("/api/get_pack_status")
-async def cmd_get_pack_status() -> list[dict]:
-    return list(_MOCK_PACKS.values())
+@app.post("/api/get_res_status")
+async def cmd_get_res_status() -> dict:
+    return dict(_MOCK_RES)
 
 
-@app.post("/api/check_pack_updates")
-async def cmd_check_pack_updates() -> list[dict]:
-    return [
-        {"id": pid, "remoteVersion": p["version"], "updateAvailable": False}
-        for pid, p in _MOCK_PACKS.items()
-    ]
+@app.post("/api/check_res_update")
+async def cmd_check_res_update() -> dict:
+    return {
+        "latestTreeSha256": _MOCK_RES["treeSha256"],
+        "latestVersion": _MOCK_RES["version"],
+        "updateAvailable": False,
+        "deltaSteps": None,
+    }
 
 
-@app.post("/api/pack_download")
-async def cmd_pack_download(payload: dict) -> None:
+@app.post("/api/res_download")
+async def cmd_res_download() -> None:
     # No real download in the mock; flip the flag briefly so the UI path runs.
-    pid = payload.get("id")
-    if pid in _MOCK_PACKS:
-        _MOCK_PACKS[pid]["present"] = True
+    _MOCK_RES["present"] = True
     return None
 
 
-@app.post("/api/pack_cancel")
-async def cmd_pack_cancel() -> None:
+@app.post("/api/res_cancel")
+async def cmd_res_cancel() -> None:
     return None
 
 
-@app.post("/api/clear_pack")
-async def cmd_clear_pack(payload: dict) -> None:
-    pid = payload.get("id")
-    if pid in _MOCK_PACKS:
-        _MOCK_PACKS[pid]["present"] = False
-        _MOCK_PACKS[pid]["version"] = None
-        _MOCK_PACKS[pid]["sizeBytes"] = 0
+@app.post("/api/clear_res")
+async def cmd_clear_res() -> None:
+    _MOCK_RES["present"] = False
+    _MOCK_RES["treeSha256"] = None
+    _MOCK_RES["version"] = None
+    _MOCK_RES["sizeBytes"] = 0
+    return None
+
+
+@app.post("/api/ensure_res_pack")
+async def cmd_ensure_res_pack() -> str:
+    return "C:/Users/mock/AppData/Local/WoWSP"
+
+
+@app.post("/api/res_cache_root")
+async def cmd_res_cache_root() -> str | None:
+    # The real command probes `models/` under the cache dir; the mock ties
+    # the root to the same presence flag the updates panel shows.
+    if _MOCK_RES["present"]:
+        return "C:/Users/mock/AppData/Local/WoWSP"
     return None
 
 

@@ -34,6 +34,7 @@
 //! the horizontal metres-per-unit factor; the vertical axis is used exactly
 //! as baked).
 
+use anyhow::{anyhow, bail};
 use std::io::Read;
 
 /// Grazing tolerance for blocking tests — same value as the E4 baker's `_EPS`.
@@ -61,19 +62,19 @@ impl LosGrid {
         min_z: f64,
         max_z: f64,
         heights: Vec<f32>,
-    ) -> Result<LosGrid, String> {
+    ) -> anyhow::Result<LosGrid> {
         // Checked: a crafted header can declare a res whose square overflows.
         let Some(expected) = res.checked_mul(res) else {
-            return Err(format!("grid res {res} overflows usize"));
+            bail!("grid res {res} overflows usize");
         };
         if res == 0 || heights.len() != expected {
-            return Err(format!(
+            bail!(
                 "grid shape mismatch: res {res} needs {expected} heights, got {}",
                 heights.len()
-            ));
+            );
         }
         if !(max_x > min_x && max_z > min_z) {
-            return Err("degenerate world bounds".to_string());
+            bail!("degenerate world bounds");
         }
         Ok(LosGrid {
             res,
@@ -87,27 +88,27 @@ impl LosGrid {
 
     /// Load the `terrain_los.npz` written by `bake_terrain_los.py`. Reads the
     /// `height` / `bounds` arrays (plus the `params` cross-check when present).
-    pub fn load_npz(path: &std::path::Path) -> Result<LosGrid, String> {
+    pub fn load_npz(path: &std::path::Path) -> anyhow::Result<LosGrid> {
         let file =
-            std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+            std::fs::File::open(path).map_err(|e| anyhow!("open {}: {e}", path.display()))?;
         let mut zip = zip::ZipArchive::new(std::io::BufReader::new(file))
-            .map_err(|e| format!("read {} as npz/zip: {e}", path.display()))?;
+            .map_err(|e| anyhow!("read {} as npz/zip: {e}", path.display()))?;
         let height_arr = read_npz_array(&mut zip, "height")?;
         let shape = height_arr.shape.clone();
         let heights = npy_to_f32("height", height_arr)?;
         let bounds = npy_to_f64("bounds", read_npz_array(&mut zip, "bounds")?)?;
         if bounds.len() != 4 {
-            return Err(format!(
+            bail!(
                 "bounds array must hold [minX, maxX, minZ, maxZ], got {} values",
                 bounds.len()
-            ));
+            );
         }
         let (res, res1) = match (shape.first(), shape.get(1)) {
             (Some(a), Some(b)) => (*a, *b),
-            _ => return Err("height array must be 2-dimensional".to_string()),
+            _ => bail!("height array must be 2-dimensional"),
         };
         if res != res1 || res == 0 {
-            return Err(format!("height raster must be square, shape {shape:?}"));
+            bail!("height raster must be square, shape {shape:?}");
         }
         // params carries [res, obs_grid]; cross-check only when the member
         // decodes — height/bounds alone define the grid, so a missing or
@@ -115,10 +116,10 @@ impl LosGrid {
         if let Ok(arr) = read_npz_array(&mut zip, "params") {
             if let Ok(params) = npy_to_i32("params", arr) {
                 if params.first() != Some(&(res as i32)) {
-                    return Err(format!(
+                    bail!(
                         "params res {} disagrees with height shape {res}",
                         params.first().unwrap_or(&0)
-                    ));
+                    );
                 }
             }
         }
@@ -293,54 +294,54 @@ struct NpyArray {
 fn read_npz_array<R: std::io::Read + std::io::Seek>(
     zip: &mut zip::ZipArchive<R>,
     name: &str,
-) -> Result<NpyArray, String> {
+) -> anyhow::Result<NpyArray> {
     let entry_name = format!("{name}.npy");
     let mut entry = zip
         .by_name(&entry_name)
-        .map_err(|e| format!("npz member {entry_name}: {e}"))?;
+        .map_err(|e| anyhow!("npz member {entry_name}: {e}"))?;
     let mut bytes = Vec::new();
     entry
         .read_to_end(&mut bytes)
-        .map_err(|e| format!("read npz member {entry_name}: {e}"))?;
+        .map_err(|e| anyhow!("read npz member {entry_name}: {e}"))?;
     parse_npy(&entry_name, &bytes)
 }
 
 /// Parse the `.npy` v1/v2/v3 format: `\\x93NUMPY` magic, version bytes, header
 /// length (u16 for v1, u32 for v2+), ASCII header dict, then raw data.
 /// Fortran-ordered arrays are rejected (the baker always writes C order).
-fn parse_npy(name: &str, bytes: &[u8]) -> Result<NpyArray, String> {
+fn parse_npy(name: &str, bytes: &[u8]) -> anyhow::Result<NpyArray> {
     const MAGIC: &[u8; 6] = b"\x93NUMPY";
     if bytes.len() < 10 || &bytes[..6] != MAGIC {
-        return Err(format!("{name}: not an npy payload"));
+        bail!("{name}: not an npy payload");
     }
     let (hlen, off) = match bytes[6] {
         1 => (u16::from_le_bytes([bytes[8], bytes[9]]) as usize, 10),
         2 | 3 => {
             if bytes.len() < 12 {
-                return Err(format!(
+                bail!(
                     "{name}: truncated npy v{} header (needs 12 bytes)",
                     bytes[6]
-                ));
+                );
             }
             (
                 u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as usize,
                 12,
             )
         },
-        v => return Err(format!("{name}: unsupported npy version {v}.0")),
+        v => bail!("{name}: unsupported npy version {v}.0"),
     };
     if bytes.len() < off + hlen {
-        return Err(format!("{name}: truncated npy header"));
+        bail!("{name}: truncated npy header");
     }
     let header = std::str::from_utf8(&bytes[off..off + hlen])
-        .map_err(|e| format!("{name}: npy header not UTF-8: {e}"))?;
+        .map_err(|e| anyhow!("{name}: npy header not UTF-8: {e}"))?;
     if header.contains("'fortran_order': True") {
-        return Err(format!("{name}: fortran order not supported"));
+        bail!("{name}: fortran order not supported");
     }
     let descr = quoted_header_value(header, "'descr'")
-        .ok_or_else(|| format!("{name}: npy header has no descr"))?;
+        .ok_or_else(|| anyhow!("{name}: npy header has no descr"))?;
     let shape =
-        shape_header_value(header).ok_or_else(|| format!("{name}: npy header has no shape"))?;
+        shape_header_value(header).ok_or_else(|| anyhow!("{name}: npy header has no shape"))?;
     Ok(NpyArray {
         descr,
         shape,
@@ -377,23 +378,23 @@ fn shape_header_value(header: &str) -> Option<Vec<usize>> {
 
 /// Element count implied by an npy shape, rejecting overflow (crafted
 /// headers can declare dims whose product exceeds usize).
-fn npy_elems(name: &str, shape: &[usize]) -> Result<usize, String> {
+fn npy_elems(name: &str, shape: &[usize]) -> anyhow::Result<usize> {
     shape
         .iter()
         .try_fold(1usize, |acc, &d| acc.checked_mul(d))
-        .ok_or_else(|| format!("{name}: shape element count overflows"))
+        .ok_or_else(|| anyhow!("{name}: shape element count overflows"))
 }
 
-fn npy_to_f32(name: &str, arr: NpyArray) -> Result<Vec<f32>, String> {
+fn npy_to_f32(name: &str, arr: NpyArray) -> anyhow::Result<Vec<f32>> {
     if arr.descr != "<f4" {
-        return Err(format!("{name}: expected dtype <f4, got {}", arr.descr));
+        bail!("{name}: expected dtype <f4, got {}", arr.descr);
     }
     let count = npy_elems(name, &arr.shape)?;
     let need = count
         .checked_mul(4)
-        .ok_or_else(|| format!("{name}: shape byte count overflows"))?;
+        .ok_or_else(|| anyhow!("{name}: shape byte count overflows"))?;
     if arr.data.len() < need {
-        return Err(format!("{name}: truncated {count} f32 values"));
+        bail!("{name}: truncated {count} f32 values");
     }
     Ok(arr
         .data
@@ -402,16 +403,16 @@ fn npy_to_f32(name: &str, arr: NpyArray) -> Result<Vec<f32>, String> {
         .collect())
 }
 
-fn npy_to_f64(name: &str, arr: NpyArray) -> Result<Vec<f64>, String> {
+fn npy_to_f64(name: &str, arr: NpyArray) -> anyhow::Result<Vec<f64>> {
     if arr.descr != "<f8" {
-        return Err(format!("{name}: expected dtype <f8, got {}", arr.descr));
+        bail!("{name}: expected dtype <f8, got {}", arr.descr);
     }
     let count = npy_elems(name, &arr.shape)?;
     let need = count
         .checked_mul(8)
-        .ok_or_else(|| format!("{name}: shape byte count overflows"))?;
+        .ok_or_else(|| anyhow!("{name}: shape byte count overflows"))?;
     if arr.data.len() < need {
-        return Err(format!("{name}: truncated {count} f64 values"));
+        bail!("{name}: truncated {count} f64 values");
     }
     Ok(arr
         .data
@@ -420,16 +421,16 @@ fn npy_to_f64(name: &str, arr: NpyArray) -> Result<Vec<f64>, String> {
         .collect())
 }
 
-fn npy_to_i32(name: &str, arr: NpyArray) -> Result<Vec<i32>, String> {
+fn npy_to_i32(name: &str, arr: NpyArray) -> anyhow::Result<Vec<i32>> {
     if arr.descr != "<i4" {
-        return Err(format!("{name}: expected dtype <i4, got {}", arr.descr));
+        bail!("{name}: expected dtype <i4, got {}", arr.descr);
     }
     let count = npy_elems(name, &arr.shape)?;
     let need = count
         .checked_mul(4)
-        .ok_or_else(|| format!("{name}: shape byte count overflows"))?;
+        .ok_or_else(|| anyhow!("{name}: shape byte count overflows"))?;
     if arr.data.len() < need {
-        return Err(format!("{name}: truncated {count} i32 values"));
+        bail!("{name}: truncated {count} i32 values");
     }
     Ok(arr
         .data

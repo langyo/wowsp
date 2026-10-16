@@ -3,52 +3,131 @@
 //! Stores the user's account profiles, stats cache, and replay history as
 //! plain JSON — no SQLite. The directory is created on first write.
 
+use anyhow::anyhow;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use wowsp_tauri_shared::CommandResult;
 
 use crate::paths;
 
-/// Resolve the writable data root (`%APPDATA%/WoWSP/` locally, `<exe>/data/`
+/// Resolve the writable data root (`%APPDATA%\WoWSP/` locally, `<exe>/data/`
 /// in portable mode), creating it if missing.
-fn appdata_dir() -> Result<PathBuf, String> {
+///
+/// Shared by every command module that touches AppData-backed caches
+/// directly (encyclopedia / gameparams / ship_stats / trends) so they
+/// always resolve the same root as the `appdata_*` commands below —
+/// never `dirs_next` on its own.
+pub(crate) fn appdata_dir_path() -> anyhow::Result<PathBuf> {
     paths::ensure_data_dir()
+}
+
+/// IPC names are relative data-file names, never arbitrary filesystem paths.
+/// Reject Windows aliases on every platform and links below the chosen root.
+pub(crate) fn data_file_path(dir: &Path, file: &str) -> anyhow::Result<PathBuf> {
+    let mut path = dir.to_path_buf();
+    for segment in file.split('/') {
+        let stem = segment.split('.').next().unwrap_or("").to_ascii_uppercase();
+        let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CLOCK$")
+            || ["COM", "LPT"].iter().any(|prefix| {
+                stem.strip_prefix(prefix).is_some_and(|suffix| {
+                    matches!(
+                        suffix,
+                        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                    )
+                })
+            });
+        if segment.is_empty()
+            || matches!(segment, "." | "..")
+            || segment.ends_with(['.', ' '])
+            || segment
+                .chars()
+                .any(|c| c.is_control() || "\\:<>\"|?*".contains(c))
+            || device
+        {
+            return Err(anyhow!("invalid app data file name: {file:?}"));
+        }
+        path.push(segment);
+        match fs::symlink_metadata(&path) {
+            Ok(meta) => {
+                let linked = meta.file_type().is_symlink();
+                #[cfg(windows)]
+                let linked = {
+                    use std::os::windows::fs::MetadataExt;
+                    linked || meta.file_attributes() & 0x400 != 0
+                };
+                if linked {
+                    return Err(anyhow!(
+                        "app data file path contains a filesystem link: {path:?}"
+                    ));
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(anyhow!("inspect {path:?}: {e}")),
+        }
+    }
+    Ok(path)
+}
+
+/// Read a file from the AppData root. Returns `None` when the file doesn't
+/// exist yet (the "no cache yet" state every consumer treats as empty).
+pub(crate) fn read_appdata_json(file: &str) -> anyhow::Result<Option<String>> {
+    read_json_in(&appdata_dir_path()?, file)
+}
+
+pub(crate) fn read_json_in(dir: &Path, file: &str) -> anyhow::Result<Option<String>> {
+    let path = data_file_path(dir, file)?;
+    match fs::read_to_string(&path) {
+        Ok(content) => Ok(Some(content)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(anyhow!("read {path:?}: {e}")),
+    }
+}
+
+/// Write a file under the AppData root (atomic: write to `.tmp` then
+/// rename). Creates intermediate subdirectories (e.g. `stats-cache/x.json`)
+/// as needed.
+pub(crate) fn write_appdata_json(file: &str, content: &str) -> anyhow::Result<()> {
+    write_json_in(&appdata_dir_path()?, file, content)
+}
+
+/// [`write_appdata_json`] against an explicit directory — the injectable
+/// form tests (and other command modules' install paths) run against a
+/// temp dir instead of the real AppData root. Same atomicity contract:
+/// tmp + rename, parent subdirectories created on demand.
+pub(crate) fn write_json_in(
+    dir: &std::path::Path,
+    file: &str,
+    content: &str,
+) -> anyhow::Result<()> {
+    crate::atomic_file::write(&data_file_path(dir, file)?, content)
 }
 
 /// Read a JSON file from AppData. Returns None if the file doesn't exist yet.
 #[tauri::command]
-pub fn appdata_read(file: String) -> Result<Option<String>, String> {
-    let path = appdata_dir()?.join(&file);
-    match fs::read_to_string(&path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("read {path:?}: {e}")),
-    }
+pub fn appdata_read(file: String) -> CommandResult<Option<String>> {
+    Ok(read_appdata_json(&file)?)
 }
 
 /// Write a JSON file to AppData (atomic: write to .tmp then rename).
 /// Creates intermediate subdirectories (e.g. `stats-cache/x.json`) as needed.
 #[tauri::command]
-pub fn appdata_write(file: String, content: String) -> Result<(), String> {
-    let dir = appdata_dir()?;
-    let path = dir.join(&file);
-    // Ensure any parent subdirectory (stats-cache/, snapshots/, ...) exists.
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
-    }
-    let tmp = dir.join(format!("{file}.tmp"));
-    fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
-    Ok(())
+pub fn appdata_write(file: String, content: String) -> CommandResult<()> {
+    Ok(write_appdata_json(&file, &content)?)
 }
 
 /// Delete a file from AppData. Idempotent (missing file is OK).
 #[tauri::command]
-pub fn appdata_delete(file: String) -> Result<(), String> {
-    let path = appdata_dir()?.join(&file);
+pub fn appdata_delete(file: String) -> CommandResult<()> {
+    Ok(delete_json_in(&appdata_dir_path()?, &file)?)
+}
+
+fn delete_json_in(dir: &Path, file: &str) -> anyhow::Result<()> {
+    let path = data_file_path(dir, file)?;
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("remove {path:?}: {e}")),
+        Err(e) => Err(anyhow!("remove {path:?}: {e}")),
     }
 }
 
@@ -73,41 +152,78 @@ pub async fn is_game_running() -> bool {
 ///
 /// This mirrors Starward's approach: enumerate processes by name, then resolve
 /// the running client by matching the exe's directory against known installs.
-/// `is_game_running` is the boolean projection of this.
+/// `is_game_running` is the boolean projection of this. With several clients
+/// running this reports the PREFERRED one only — the plural view is
+/// [`get_game_processes`].
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn get_game_process(
     installs: Vec<wowsp_tauri_shared::GameInstall>,
 ) -> wowsp_tauri_shared::GameProcessInfo {
+    compute_process_info(&installs)
+}
+
+/// Plural, multi-instance view of [`get_game_process`]: EVERY running game
+/// client as its own entry (same per-process matching — kind/realm/install
+/// resolved from the exe path), plus the pid of the preferred instance the
+/// single-process surfaces follow. The webui shows that preferred client as
+/// its one status card and counts the entries under the status dot when
+/// other clients run alongside it.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn get_game_processes(
+    installs: Vec<wowsp_tauri_shared::GameInstall>,
+) -> wowsp_tauri_shared::GameProcessReport {
+    compute_process_report(&installs)
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub async fn get_game_processes(
+    _installs: Vec<wowsp_tauri_shared::GameInstall>,
+) -> wowsp_tauri_shared::GameProcessReport {
+    wowsp_tauri_shared::GameProcessReport {
+        processes: Vec::new(),
+        preferred_pid: None,
+    }
+}
+
+/// The offline projection every non-running answer shares.
+fn offline_process() -> wowsp_tauri_shared::GameProcessInfo {
+    wowsp_tauri_shared::GameProcessInfo {
+        running: false,
+        pid: None,
+        kind: None,
+        realm: None,
+        exe_path: None,
+        matched_install: None,
+    }
+}
+
+/// Build one process's [`wowsp_tauri_shared::GameProcessInfo`] from its
+/// already-queried image path: match the exe against the known installs to
+/// decide which client (Steam / Wargaming / ...) is running. When detection
+/// came up empty (unusual Steam library layout, moved folder), synthesize
+/// an install from the exe's own path so downstream features (GameParams,
+/// replays, mods) still get a usable game root — the same unification the
+/// setup modal offers as its "use running game's path" action.
+#[cfg(target_os = "windows")]
+fn process_info_of(
+    pid: u32,
+    exe_path: Option<String>,
+    installs: &[wowsp_tauri_shared::GameInstall],
+) -> wowsp_tauri_shared::GameProcessInfo {
     use wowsp_tauri_shared::GameProcessInfo;
 
-    let Some(pid) = find_game_pid() else {
-        return GameProcessInfo {
-            running: false,
-            pid: None,
-            kind: None,
-            realm: None,
-            exe_path: None,
-            matched_install: None,
-        };
-    };
-
-    // Resolve the exe's full path, then match it against the known installs to
-    // decide which client (Steam / Wargaming / ...) is running. When detection
-    // came up empty (unusual Steam library layout, moved folder), synthesize
-    // an install from the exe's own path so downstream features (GameParams,
-    // replays, mods) still get a usable game root — the same unification the
-    // setup modal offers as its "use running game's path" action.
-    let exe_path = query_process_image_path(pid);
     let owned_matched = exe_path
         .as_deref()
-        .and_then(|exe| match_install(&installs, exe))
+        .and_then(|exe| match_install(installs, exe))
         .cloned()
         .or_else(|| exe_path.as_deref().and_then(infer_install_from_exe));
     let matched = owned_matched.as_ref();
 
     let (kind, realm) = match &matched {
-        Some(m) => (Some(m.kind.clone()), m.realm.clone()),
+        Some(m) => (Some(m.kind), m.realm.clone()),
         None => {
             // No exe path at all — nothing to infer from.
             (None, None)
@@ -124,40 +240,96 @@ pub async fn get_game_process(
     }
 }
 
+/// Shared core of [`get_game_process`] — also the session poller's per-tick
+/// body (it resolves the same preferred PID + install matching without a
+/// webui round-trip). Pure w.r.t. its inputs, so the poller and the command
+/// can never disagree about which client is running.
+#[cfg(target_os = "windows")]
+pub(crate) fn compute_process_info(
+    installs: &[wowsp_tauri_shared::GameInstall],
+) -> wowsp_tauri_shared::GameProcessInfo {
+    let Some(pid) = find_game_pid() else {
+        return offline_process();
+    };
+    process_info_of(pid, query_process_image_path(pid), installs)
+}
+
+/// Shared core of [`get_game_processes`]: every running instance from ONE
+/// process snapshot (the preferred flag resolves over that same snapshot, so
+/// it can never name a pid the report did not list).
+#[cfg(target_os = "windows")]
+pub(crate) fn compute_process_report(
+    installs: &[wowsp_tauri_shared::GameInstall],
+) -> wowsp_tauri_shared::GameProcessReport {
+    use wowsp_tauri_shared::GameProcessReport;
+
+    let running = super::game_context::running_processes();
+    let validated: Vec<(u32, String)> = running
+        .iter()
+        .filter_map(|p| p.validated_root.as_ref().map(|root| (p.pid, root.clone())))
+        .collect();
+    let preferred_pid = super::game_context::preferred_pid_in(&validated);
+    let processes = running
+        .into_iter()
+        .map(|p| process_info_of(p.pid, p.exe_path, installs))
+        .collect();
+    GameProcessReport {
+        processes,
+        preferred_pid,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn compute_process_info(
+    _installs: &[wowsp_tauri_shared::GameInstall],
+) -> wowsp_tauri_shared::GameProcessInfo {
+    offline_process()
+}
+
 /// Synthesize an install for a running exe that no detected install claims.
 /// The root is the segment above `bin\` (the 64-bit client lives in
 /// `bin/<build>/bin64/`), falling back to the exe's own directory for the
 /// root-level launcher stub.
 ///
-/// The kind is inferred from path markers: every distribution channel keeps
-/// the same on-disk layout, but their install roots are telling — Steam lives
-/// under `steamapps`, the CN clients under a KongZhong/空中网/360 folder, the
-/// Lesta client under "Lesta Game Center". Anything else is treated as the
-/// Wargaming international client (the historical behavior that mislabeled
-/// the legacy CN clients — user-reported).
+/// The kind is inferred from the exe name first (the Lesta client renamed
+/// its binaries to `Korabli(.64).exe` while install roots often carry no
+/// "lesta" marker — the default is a plain `D:\Korabli`), then from path
+/// markers: every distribution channel keeps the same on-disk layout, but
+/// their install roots are telling — Steam lives under `steamapps`, the CN
+/// clients under a KongZhong/空中网/360 folder, the Lesta client under
+/// "Lesta Game Center". Anything else is treated as the Wargaming
+/// international client (the historical behavior that mislabeled the legacy
+/// CN clients — user-reported).
 #[cfg(target_os = "windows")]
-fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> {
+pub(crate) fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> {
     use wowsp_tauri_shared::{GameInstall, GameInstallKind};
 
+    let root = super::game_context::exe_game_root(exe)?;
     let norm = exe.replace('/', "\\");
-    let root = match norm.rfind("\\bin\\") {
-        Some(i) => norm[..i].to_string(),
-        None => {
-            let i = norm.rfind('\\')?;
-            norm[..i].to_string()
-        },
-    };
-    if root.is_empty() {
-        return None;
-    }
     let lower = norm.to_lowercase();
-    let kind = if lower.contains("steamapps") {
+    let file = lower.rsplit('\\').next().unwrap_or_default();
+    // The per-family process-name hints first (only Lesta's rename is
+    // decisive — korabli(.64).exe → Lesta); checked before `steamapps`
+    // because RU/CIS Steam installs run the same Korabli binaries but need
+    // the Lesta realm. The WG family answers None (its exe names are shared
+    // by Steam and the CN clients), so those fall through to the path
+    // markers below exactly as before.
+    let hinted = super::game_client::CLIENTS
+        .iter()
+        .find_map(|client| client.process_kind_hint(file));
+    let kind = if let Some(kind) = hinted {
+        kind
+    } else if lower.contains("steamapps") {
         GameInstallKind::Steam
     } else if lower.contains("kongzhong") || norm.contains("空中网") {
         GameInstallKind::CnKongzhong
     } else if lower.contains("lesta") {
         GameInstallKind::Lesta
-    } else if lower.contains("360") {
+    } else if norm.contains("360游戏大厅") || lower.contains("\\360\\") {
+        // Match the 360 launcher's directory name or a dedicated `\360\`
+        // segment — a bare "360" substring also fires on unrelated digits
+        // (timestamps, "D:\360Downloads\…") and misclassified Wargaming
+        // installs as Cn360.
         GameInstallKind::Cn360
     } else {
         GameInstallKind::Wargaming
@@ -175,59 +347,34 @@ fn infer_install_from_exe(exe: &str) -> Option<wowsp_tauri_shared::GameInstall> 
 pub async fn get_game_process(
     _installs: Vec<wowsp_tauri_shared::GameInstall>,
 ) -> wowsp_tauri_shared::GameProcessInfo {
-    wowsp_tauri_shared::GameProcessInfo {
-        running: false,
-        pid: None,
-        kind: None,
-        realm: None,
-        exe_path: None,
-        matched_install: None,
-    }
+    offline_process()
 }
 
-/// Find the PID of any running `WorldOfWarships.exe` / `WorldOfWarships64.exe`.
-/// Returns the first match (matches Starward's "first process" semantics —
-/// running two clients simultaneously is rare and would share a replay dir
-/// only if they're the same install anyway).
+/// Non-Windows builds never see the client, so the game-running guard used
+/// by the mod hub passes through.
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn find_game_pid() -> Option<u32> {
+    None
+}
+
+/// Find the PID of the running client WoWSP should work with: the process
+/// backing the unified game context's live-monitoring root (see
+/// `commands::game_context`), falling back to the first
+/// `WorldOfWarships*.exe` in the snapshot. With several clients installed —
+/// or two running at once — capture, roster watching and the sidebar all
+/// follow the SAME client instead of diverging.
 #[cfg(target_os = "windows")]
 pub(crate) fn find_game_pid() -> Option<u32> {
-    use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
-        TH32CS_SNAPPROCESS,
-    };
-    unsafe {
-        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
-        let mut entry = PROCESSENTRY32W {
-            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
-            ..Default::default()
-        };
-        if Process32FirstW(snapshot, &mut entry).is_err() {
-            let _ = windows::Win32::Foundation::CloseHandle(snapshot);
-            return None;
-        }
-        loop {
-            let name = String::from_utf16_lossy(&entry.szExeFile[..])
-                .trim_end_matches('\0')
-                .to_lowercase();
-            if name == "worldofwarships.exe" || name == "worldofwarships64.exe" {
-                let pid = entry.th32ProcessID;
-                let _ = windows::Win32::Foundation::CloseHandle(snapshot);
-                return Some(pid);
-            }
-            if Process32NextW(snapshot, &mut entry).is_err() {
-                break;
-            }
-        }
-        let _ = windows::Win32::Foundation::CloseHandle(snapshot);
-    }
-    None
+    super::game_context::preferred_game_pid()
 }
 
 /// Query the full image path of a process by PID. Uses
 /// `PROCESS_QUERY_LIMITED_INFORMATION` (available without elevation for
 /// processes owned by other users in the same session) + `QueryFullProcessImageNameW`.
+/// Shared with the unified game context, which resolves every running
+/// client's install folder from these paths.
 #[cfg(target_os = "windows")]
-fn query_process_image_path(pid: u32) -> Option<String> {
+pub(crate) fn query_process_image_path(pid: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
         OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -252,6 +399,41 @@ fn query_process_image_path(pid: u32) -> Option<String> {
     }
 }
 
+/// The process's creation time as unix SECONDS (None when the handle or the
+/// time query fails). The session hub uses it to reject battle rosters that
+/// predate the running client — a `tempArenaInfo.json` left behind by a
+/// crashed session must never re-identify the player under the new one.
+#[cfg(target_os = "windows")]
+pub(crate) fn query_process_start_unix(pid: u32) -> Option<i64> {
+    use windows::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // FILETIME epoch (1601-01-01) vs unix epoch, in 100ns ticks.
+    const FILETIME_UNIX_EPOCH: u64 = 116_444_736_000_000_000;
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        let ok = GetProcessTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user);
+        let _ = CloseHandle(handle);
+        if ok.is_err() {
+            return None;
+        }
+        let ticks = (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+        ticks
+            .checked_sub(FILETIME_UNIX_EPOCH)
+            .map(|t| (t / 10_000_000) as i64)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn query_process_start_unix(_pid: u32) -> Option<i64> {
+    None
+}
+
 /// Match a running exe path against the known installs. An install matches
 /// when the exe path starts with the install's directory (case-insensitive,
 /// path-separator-agnostic) — i.e. the running game lives inside that install.
@@ -267,9 +449,8 @@ fn match_install<'a>(
     installs
         .iter()
         .filter(|i| {
-            let dir = normalize(&i.path);
-            !dir.is_empty()
-                && (exe_norm.starts_with(&dir) || exe_norm.starts_with(&format!("{dir}\\")))
+            let dir = normalize(&i.path).trim_end_matches('\\').to_string();
+            !dir.is_empty() && (exe_norm == dir || exe_norm.starts_with(&format!("{dir}\\")))
         })
         .max_by_key(|i| i.path.len())
 }
@@ -277,6 +458,164 @@ fn match_install<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let mut nonce = [0u8; 16];
+            getrandom::fill(&mut nonce).unwrap();
+            let dir = std::env::temp_dir().join(format!("wowsp-appdata-{}", hex::encode(nonce)));
+            fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn appdata_operations_reject_paths_outside_the_data_root_and_windows_aliases() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("data");
+        fs::create_dir_all(&root).unwrap();
+        let victim = fixture.0.join("victim.json");
+        fs::write(&victim, "existing").unwrap();
+        for name in [
+            "../victim.json",
+            "sub/../../victim.json",
+            "..\\victim.json",
+            "C:relative.json",
+            "/absolute.json",
+            "x.json:stream",
+            "CON.json",
+            "LPT¹.json",
+            "cache./x.json",
+            "cache /x.json",
+            "",
+            "./x.json",
+            "x//y.json",
+            "x.json/",
+        ] {
+            assert!(write_json_in(&root, name, "overwrite").is_err(), "{name}");
+            assert!(read_json_in(&root, name).is_err(), "{name}");
+            assert!(delete_json_in(&root, name).is_err(), "{name}");
+        }
+        let absolute = victim.to_string_lossy();
+        assert!(write_json_in(&root, &absolute, "overwrite").is_err());
+        assert_eq!(fs::read_to_string(victim).unwrap(), "existing");
+        assert_eq!(fs::read_dir(root).unwrap().count(), 0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn appdata_operations_do_not_follow_a_directory_junction() {
+        let fixture = Fixture::new();
+        let root = fixture.0.join("data");
+        let outside = fixture.0.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("victim.json"), "existing").unwrap();
+        let junction = root.join("linked");
+        let result = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(read_json_in(&root, "linked/victim.json").is_err());
+        assert!(write_json_in(&root, "linked/victim.json", "overwrite").is_err());
+        assert!(delete_json_in(&root, "linked/victim.json").is_err());
+        assert_eq!(
+            fs::read_to_string(outside.join("victim.json")).unwrap(),
+            "existing"
+        );
+        fs::remove_dir(junction).unwrap();
+    }
+
+    #[test]
+    fn concurrent_writes_use_distinct_temporary_files_and_publish_complete_payloads() {
+        let fixture = Fixture::new();
+        let barrier = std::sync::Barrier::new(8);
+        let payloads: Vec<_> = (0..8)
+            .map(|id| format!("{{\"id\":{id},\"data\":\"{}\"}}", "x".repeat(65536)))
+            .collect();
+        std::thread::scope(|scope| {
+            for payload in &payloads {
+                let root = &fixture.0;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    for _ in 0..20 {
+                        write_json_in(root, "accounts.json", payload).unwrap();
+                    }
+                });
+            }
+        });
+        let saved = read_json_in(&fixture.0, "accounts.json").unwrap().unwrap();
+        assert!(payloads.contains(&saved));
+        assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn failed_replacement_keeps_the_destination_and_leaves_no_temporary_file() {
+        let fixture = Fixture::new();
+        fs::create_dir(fixture.0.join("blocked.json")).unwrap();
+        fs::write(fixture.0.join("blocked.json/keep"), "existing").unwrap();
+        assert!(write_json_in(&fixture.0, "blocked.json", "new").is_err());
+        assert_eq!(
+            fs::read_to_string(fixture.0.join("blocked.json/keep")).unwrap(),
+            "existing"
+        );
+        assert_eq!(fs::read_dir(&fixture.0).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn atomic_replacement_does_not_truncate_a_hard_link_target() {
+        let fixture = Fixture::new();
+        let outside = fixture.0.join("outside.json");
+        fs::write(&outside, "existing").unwrap();
+        fs::hard_link(&outside, fixture.0.join("linked.json")).unwrap();
+        write_json_in(&fixture.0, "linked.json", "new").unwrap();
+        assert_eq!(fs::read_to_string(outside).unwrap(), "existing");
+        assert_eq!(
+            read_json_in(&fixture.0, "linked.json").unwrap().as_deref(),
+            Some("new")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn process_install_matching_requires_a_directory_boundary() {
+        use wowsp_tauri_shared::{GameInstall, GameInstallKind};
+        let install = |path: &str| GameInstall {
+            path: path.into(),
+            kind: GameInstallKind::Wargaming,
+            realm: None,
+        };
+        let installs = vec![install(r"C:\Games\WoWS"), install(r"C:\Games\WoWS\Nested\")];
+        assert!(
+            match_install(&installs, r"C:\Games\WoWS-backup\bin\WorldOfWarships64.exe").is_none()
+        );
+        assert_eq!(
+            match_install(&installs, "c:/games/wows/bin/WorldOfWarships64.exe")
+                .unwrap()
+                .path,
+            installs[0].path
+        );
+        assert_eq!(
+            match_install(&installs, r"C:\Games\WoWS\Nested\bin\WorldOfWarships64.exe")
+                .unwrap()
+                .path,
+            installs[1].path
+        );
+    }
 
     /// The running-exe fallback infers the client kind from path markers so a
     /// CN / Lesta client that no detected install claims is still labeled
@@ -302,6 +641,27 @@ mod tests {
         let cases: Vec<(String, wowsp_tauri_shared::GameInstallKind, Option<&str>)> = vec![
             (
                 wow("Lesta Game Center"),
+                wowsp_tauri_shared::GameInstallKind::Lesta,
+                Some("ru"),
+            ),
+            // The Lesta rename: the running client is Korabli(.64).exe even
+            // when the install root carries no "lesta" marker at all.
+            (
+                format!(r"{base}\WoWS_Korabli\bin\8821884\bin64\Korabli64.exe"),
+                wowsp_tauri_shared::GameInstallKind::Lesta,
+                Some("ru"),
+            ),
+            (
+                format!(r"{base}\Korabli\Korabli.exe"),
+                wowsp_tauri_shared::GameInstallKind::Lesta,
+                Some("ru"),
+            ),
+            // RU/CIS Steam installs run the Korabli binaries too — the exe
+            // name wins over the steamapps marker so the realm resolves.
+            (
+                format!(
+                    r"{base}\SteamLibrary\steamapps\common\World of Warships\bin\8821884\bin64\Korabli64.exe"
+                ),
                 wowsp_tauri_shared::GameInstallKind::Lesta,
                 Some("ru"),
             ),

@@ -1,0 +1,259 @@
+//! WoWSP pairing gateway — the Cloudflare Worker entry point
+//! (Rust → wasm32-unknown-unknown via worker-build).
+//!
+//! Structure:
+//! - [`relay_core`] carries every protocol/policy decision (pure, host
+//!   testable — `cargo test -p relay-core`).
+//! - this crate is routing + WebSocket glue only. The static site rides
+//!   the worker's `[assets]` layer; `run_worker_first` in
+//!   `wrangler.toml` sends only the paths listed below into this code:
+//!   - `GET /api/health` — the merged liveness + discovery document
+//!     (server version + minimum client version + relay endpoints;
+//!     forwarding-station switch via the `GATEWAY_UPSTREAM` var,
+//!     operator notes via `GATEWAY_NOTICE`).
+//!   - `WS  /api/relay/control`, `/api/relay/resolve?code=`,
+//!     `/api/relay/data/…` — forwarded to the two Durable Objects in
+//!     [`directory`] (the singleton code Directory) and [`room`]
+//!     (per-room rendezvous + byte pipes).
+//!   - `GET /feedback`, `GET /erp` — the two server-rendered pages
+//!     (the erp console logs in via Feishu OAuth — see src/erp.rs)
+//!     (the feedback form and the admin review console).
+
+pub mod digests;
+pub mod directory;
+pub mod erp;
+pub mod feedback;
+pub mod qqbot;
+pub mod replay;
+pub mod replay_index;
+pub mod room;
+
+pub use directory::Directory;
+pub use replay_index::ReplayIndex;
+pub use room::Room;
+
+use futures_util::StreamExt;
+use relay_core::manifest::{ManifestOverrides, gateway_manifest};
+use relay_core::protocol::{InboundFrame, OutboundFrame, error_codes, welcome};
+use relay_core::route::{Route, classify};
+use relay_core::{valid_code, valid_room};
+use worker::{WebsocketEvent, *};
+
+/// Singleton name of the code Directory DO.
+const DIRECTORY_NAME: &str = "codes";
+/// The resolve socket's server half is capped: the phone reads its
+/// answer and closes; anything still open after this is a leak.
+const RESOLVE_SOCKET_LIFETIME_MS: u32 = 10_000;
+
+#[event(fetch)]
+async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+    with_security_headers(route(req, env).await?).await
+}
+
+/// The request router (every response this worker answers itself).
+async fn route(req: Request, env: Env) -> Result<Response> {
+    let url = req.url()?;
+    let path = url.path().to_string();
+    let query = url.query().unwrap_or("").to_string();
+    let origin = url.origin().ascii_serialization();
+
+    match classify(&path, &query) {
+        Route::Health => {
+            let upstream = env.var("GATEWAY_UPSTREAM").ok().map(|v| v.to_string());
+            let notice = env.var("GATEWAY_NOTICE").ok().map(|v| v.to_string());
+            let health = gateway_manifest(&ManifestOverrides::from_raw(
+                upstream.as_deref(),
+                notice.as_deref(),
+            ));
+            let mut resp = Response::from_json(&health)?;
+            resp.headers_mut().set("cache-control", "no-store")?;
+            Ok(resp)
+        },
+
+        // ── release digests (see src/digests.rs) ────────────────────────
+        Route::Digests { channel, tag } => {
+            digests::handle(req, env, channel, tag).await
+        },
+
+        // ── feedback pipeline (see src/feedback.rs) ─────────────────────
+        Route::FeedbackPage => {
+            if req.method() != Method::Get {
+                return Response::error("method not allowed", 405);
+            }
+            // headers().get() -> Result<Option<String>, Error>
+            let ua = req.headers().get("User-Agent").ok().flatten();
+            feedback::page_feedback(&origin, &env, ua.as_deref())
+        },
+        Route::ErpPage => {
+            if req.method() != Method::Get {
+                return Response::error("method not allowed", 405);
+            }
+            feedback::page_erp(&origin)
+        },
+        Route::FeedbackSubmit => feedback::handle_submit(req, env).await,
+        Route::FeedbackList => feedback::handle_list(req, env).await,
+        Route::FeedbackHistory { contact: _ } => feedback::handle_history(req, env).await,
+        Route::FeedbackUpdate => feedback::handle_update(req, env).await,
+        Route::QqBotCallback => qqbot::handle_callback(req, &env).await,
+        Route::FeedbackAttachment { file_token: _ } => feedback::handle_attachment(req, env).await,
+
+        // ── replay share (see src/replay.rs) ─────────────────────────────
+        Route::ReplaysWanted => replay::handle_wanted(req, env).await,
+        Route::ReplaysCheck => replay::handle_check(req, env).await,
+        Route::ReplaysMine => replay::handle_mine(req, env).await,
+        Route::ReplaysArchive => replay::handle_archive(req, env).await,
+        Route::ReplaysUpload => replay::handle_upload(req, env).await,
+        Route::ReplaysAdminList => replay::handle_admin_list(req, env).await,
+        Route::ReplaysAdminCredits => replay::handle_admin_credits(req, env).await,
+        Route::ReplaysAdminWanted => replay::handle_admin_wanted(req, env).await,
+        Route::ReplaysAdminArchive { anon_id: _ } => replay::handle_admin_archive(req, env).await,
+        Route::ReplaysAdminDrain => replay::handle_admin_drain(req, env).await,
+
+        // ── erp console auth (see src/erp.rs) ────────────────────────────
+        Route::ErpLogin => erp::handle_login(req, env).await,
+        Route::ErpCallback => erp::handle_callback(req, env).await,
+        Route::ErpSession => erp::handle_session(req, env).await,
+        Route::ErpLogout => erp::handle_logout(req, env).await,
+
+        Route::Control { room, role } => {
+            let Some(room) = room.filter(|r| valid_room(r)) else {
+                return Response::error("bad room key", 400);
+            };
+            if !matches!(role, Some("host") | Some("client")) {
+                return Response::error("bad role", 400);
+            }
+            let stub = env.durable_object("ROOM")?.id_from_name(room)?.get_stub()?;
+            stub.fetch_with_request(req).await
+        },
+
+        Route::Resolve { code } => resolve(req, env, code).await,
+
+        Route::Data { room, .. } => {
+            if !valid_room(room) {
+                return Response::error("bad room key", 400);
+            }
+            let stub = env.durable_object("ROOM")?.id_from_name(room)?.get_stub()?;
+            stub.fetch_with_request(req).await
+        },
+
+        Route::NotFound => Response::error("not found", 404),
+    }
+}
+
+/// The phone's code → room handshake. Rate limiting and the once-claim
+/// rule live in the Directory DO; this handler completes the WebSocket
+/// handshake in the worker itself and answers with a single frame:
+///
+/// - success  → `{"type":"room","room":"<64hex>"}` then close
+/// - blocked  → `{"type":"error","code":"rate_limited"}` then close
+/// - unknown / expired / claimed-by-another-IP / malformed → the
+///   handshake is refused with 404/400 (v1 behavior — the phone maps
+///   any of these to the same friendly "check the code" state).
+async fn resolve(req: Request, env: Env, code: Option<&str>) -> Result<Response> {
+    let Some(code) = code.filter(|c| valid_code(c)) else {
+        return Response::error("bad code", 400);
+    };
+    let ip = req
+        .headers()
+        .get("CF-Connecting-IP")?
+        .unwrap_or_else(|| "local".to_string());
+
+    let stub = env
+        .durable_object("DIRECTORY")?
+        .id_from_name(DIRECTORY_NAME)?
+        .get_stub()?;
+    let mut lookup = stub
+        .fetch_with_str(&format!("https://directory/lookup?code={code}&ip={ip}"))
+        .await?;
+
+    let answer = match lookup.status_code() {
+        200 => {
+            let text = lookup.text().await?;
+            serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v.get("room").and_then(|r| r.as_str()).map(str::to_string))
+                .filter(|room| valid_room(room))
+                .map(|room| OutboundFrame::Room { room })
+        },
+        429 => Some(OutboundFrame::Error {
+            code: error_codes::RATE_LIMITED.to_string(),
+            size: None,
+        }),
+        _ => None,
+    };
+    let Some(answer) = answer else {
+        return Response::error("unknown code", 404);
+    };
+
+    // Complete the WS handshake here (the socket never touches a DO) and
+    // deliver the one frame. A v2 phone may have said hello first —
+    // answer welcomes on the same socket while it lives.
+    let pair = WebSocketPair::new()?;
+    let server = pair.server.clone();
+    server.accept()?;
+    server.send_with_str(answer.to_text())?;
+
+    let reader_socket = server.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        let mut events = match reader_socket.events() {
+            Ok(events) => events,
+            Err(_) => return,
+        };
+        while let Some(Ok(event)) = events.next().await {
+            let WebsocketEvent::Message(msg) = event else {
+                break;
+            };
+            if let Some(text) = msg.text() {
+                if matches!(InboundFrame::parse(&text), InboundFrame::Hello { .. }) {
+                    let _ = reader_socket.send_with_str(&welcome().to_text());
+                }
+            }
+        }
+    });
+
+    let closer = server.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        Delay::from(std::time::Duration::from_millis(
+            RESOLVE_SOCKET_LIFETIME_MS as u64,
+        ))
+        .await;
+        let _ = closer.close(Some(1000), Some("resolved"));
+    });
+
+    Ok(Response::from_websocket(pair.client)?)
+}
+
+/// The one response exit: every response this worker sends to a client
+/// is decorated here with the security header matrix from
+/// [`relay_core::headers`] (the policy itself — which headers on which
+/// kind, and why — is unit-tested there). WebSocket upgrades (101, the
+/// resolve/control/data handshakes) pass through byte-identical.
+///
+/// Header values from subrequests (the Durable Object stubs) carry
+/// workerd's immutable guard — a failed `set` falls back to rebuilding
+/// the response with a fresh, locally owned `Headers` object.
+async fn with_security_headers(resp: Response) -> Result<Response> {
+    let content_type = resp.headers().get("Content-Type").ok().flatten();
+    let kind = relay_core::headers::response_kind(resp.status_code(), content_type.as_deref());
+    let extra = relay_core::headers::security_headers(kind);
+    if extra.is_empty() {
+        return Ok(resp);
+    }
+
+    let mut out = resp;
+    for (name, value) in extra {
+        if out.headers_mut().set(name, value).is_err() {
+            // Immutable-guarded headers (DO-stub responses): rebuild.
+            // Only non-101 responses get here, so the body is small
+            // JSON/empty and buffering it is free.
+            let status = out.status_code();
+            let bytes = out.bytes().await?;
+            let headers = Headers::from_iter(out.headers().entries());
+            out = Response::from_bytes(bytes)?
+                .with_status(status)
+                .with_headers(headers);
+            out.headers_mut().set(name, value)?;
+        }
+    }
+    Ok(out)
+}

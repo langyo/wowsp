@@ -3,3 +3,166 @@
 .app-titlebar {
   display: contents;
 }
+
+/* App-level title-bar height token. hikari's HTitleBar sizes the bar and
+   every caption button off its own --hk-tb-height (default 32px, declared
+   on .hk-titlebar), while AppShell (content top inset, nav-drawer top)
+   and ReplayView's phone bottom sheets offset off this token — so the
+   phone raise below is a one-var change and the offsets can never drift
+   apart. Desktop keeps hikari's 32px. */
+:root {
+  --app-titlebar-h: 32px;
+}
+
+/* The debug build stamp (branch:hash7, see the get_build_identity command)
+   can run long on feature branches and the subtitle is nowrap; clamp it so
+   an extreme branch name never overlaps the dead-center view switch or
+   crowds the caption buttons on a narrow window. */
+.app-titlebar .hk-titlebar-subtitle {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* While the window is maximized the native frame is square (the shell
+   squares DWM's rounded corners in main.rs), so the close button's hover
+   fill must drop the windowed top-right radius hikari keeps on it —
+   otherwise the red fill rounds away from a now-square window corner.
+   display:contents still participates in the DOM tree, so the descendant
+   selector reaches the hikari bar despite producing no box. */
+.app-titlebar--maximized .hk-titlebar-btn-close {
+  border-radius: 0;
+}
+
+/* Phone-layout nav hamburger (rides ahead of the title inside HTitleBar's
+   left slot). Hidden on desktop — the persistent sidebar makes it dead
+   chrome there — and shown below 768px, where AppShell swaps the sidebar
+   for the nav drawer. It reuses hikari's caption-button chrome but must
+   opt out of the bar's drag region itself (the actions cluster carries
+   no-drag; the left area does not). */
+.app-titlebar__menu {
+  display: none;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  flex: none;
+}
+
+/* Dashboard section's view switch (我的水表 ↔ 游玩时间), dead-center on the
+   bar — hikari's own segmented HkTabs (the dashboard date-range control),
+   so the sliding indicator, tactile press feedback and keyboard handling
+   are the stock motion. `.hk-titlebar` is position:fixed, so the absolute
+   wrapper centers on the WINDOW, not on the title block it rides behind in
+   the left slot. The overrides below ONLY shrink the shared chrome for the
+   32px caption (hikari has no size prop): track padding, trigger height
+   and font step — every radius, border, color and transition stays
+   hikari's own, so the switch reads as the exact same control family as
+   the dashboard's date-range tabs. Hidden on the phone layout where the
+   bar hosts the hamburger drawer controls instead. */
+.app-titlebar__views {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  /* The hamburger carries this for engines that HONOR CSS app-region
+     (WKWebView/WebKitGTK drag the bar natively) — without it a switch
+     click would drag the window instead of navigating there. The JS drag
+     path (WebView2 ignores app-region) is cut off by the wrapper's
+     pointerdown stopPropagation in the TSX. */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  /* Shrink-wrap so the no-drag box hugs the track. */
+  width: max-content;
+}
+
+.app-titlebar__views .hk-tabs-list {
+  padding: 2px;
+}
+
+.app-titlebar__views .hk-tabs-trigger {
+  height: 22px;
+  padding: 0 9px;
+  font-size: var(--text-xs);
+  gap: var(--space-4);
+}
+
+/* The sliding indicator rides the same compact metrics: its stock offsets
+   are the track's --space-2 paddings, restated here against the 2px list
+   padding so the thumb and the track stay concentric. */
+.app-titlebar__views .hk-tabs-indicator {
+  top: 2px;
+  height: calc(100% - 4px);
+}
+
+@media (max-width: 767px) {
+  .app-titlebar__views {
+    display: none;
+  }
+}
+
+/* Desktop bar glass joins the UI-opacity dial (uiOpacityPreference.ts).
+   hikari ships the bar as an 80% surface color-mix — equal to plain
+   `rgb(surface / 80%)` — restated here at (0,2,0) with the multiplier so
+   one drag rescales the bar together with the rest of the chrome. Custom
+   properties never fail at parse time, so the scaled spelling sits in an
+   @supports math-in-color probe instead of behind a duplicate line; the
+   phone and no-backdrop-filter OPAQUE overrides further down the file
+   stay later in the cascade and keep winning in their lanes. */
+.app-titlebar .hk-titlebar {
+  --hk-tb-bg: color-mix(in srgb, rgb(var(--color-surface, 240 244 248)) 80%, transparent);
+}
+@supports (background: rgb(0 0 0 / min(100%, calc(1% * var(--ui-opacity, 1))))) {
+  .app-titlebar .hk-titlebar {
+    --hk-tb-bg: rgb(var(--color-surface, 240 244 248) / min(100%, calc(80% * var(--ui-opacity, 1))));
+  }
+}
+
+@media (max-width: 767px) {
+  .app-titlebar__menu {
+    display: flex;
+  }
+
+  /* Phone layout raises the bar: 32px is a desktop-caption height and
+     reads cramped under a status-bar cutout (and page headings start
+     uncomfortably close beneath it). 48px matches mobile app-bar
+     conventions while staying inside hikari's caption-button chrome
+     (buttons follow --hk-tb-height, so hamburger/gear re-center for
+     free). */
+  :root {
+    --app-titlebar-h: 48px;
+  }
+
+  /* Override hikari's own var at higher specificity (0,2,0 beats the
+     0,1,0 declaration on .hk-titlebar); every internal height follows. */
+  .app-titlebar .hk-titlebar {
+    --hk-tb-height: var(--app-titlebar-h);
+
+    /* Edge-to-edge phone webviews: push the fixed bar (and everything
+       offset to it) below the status-bar cutout. env() is 0 on desktop
+       webviews, so the rule is a no-op there. */
+    margin-top: env(safe-area-inset-top, 0px);
+
+    /* Phone app bar is OPAQUE — mobile app-bar convention, and the hard
+       guarantee behind the "content slides under a see-through bar" fix:
+       hikari's bar glass is an 80% translucent fill (--hk-tb-bg
+       color-mix) that only reads as frosted glass while backdrop-filter
+       works. On the device WebView it does not, so scrolled sheet and
+       page content showed raw through the bar band. The sheet family's
+       own mobile policy already drops its backdrop blur (flicker guard),
+       so a solid bar is the consistent pairing — nothing is ever visible
+       through it at any scroll position. Desktop (≥768px) keeps the
+       glass. */
+    --hk-tb-bg: rgb(var(--color-surface, 240 244 248));
+  }
+}
+
+/* Same failure without the width signal: an engine without backdrop-filter
+   support (desktop WebView2 with the GPU feature disabled, old engines)
+   renders the bar's 80% glass raw — the same @supports fallback pattern
+   OnboardingWizard.scss established for its glass sheet. Falls back to the
+   opaque surface at every width; engines that DO support the filter keep
+   the glass. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-titlebar .hk-titlebar {
+    --hk-tb-bg: rgb(var(--color-surface, 240 244 248));
+  }
+}

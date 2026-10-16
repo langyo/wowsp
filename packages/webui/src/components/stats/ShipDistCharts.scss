@@ -1,22 +1,322 @@
 .ship-dist-charts {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: stretch;
   width: 100%;
 }
 
+/* Tier histogram claims the larger share of the row; the container query
+   below makes row-vs-stacked an all-or-nothing choice — flex-wrap alone
+   would greedily keep bar + first donut on line 1 in a 452–741px band.
+   Flex bases 32 + 30 + 30 = 92% deliberately leave the remaining 8% for
+   the row's two 12px gaps, so all three blocks CAN share one line on wide
+   containers. One-row threshold (flex-wrap packs hypothetical sizes —
+   basis clamped up by min-width): the floors stop binding at 625px (bar
+   basis 0.32W ≥ 200px) and 800px (pie basis 0.30W ≥ 240px). In the
+   625–800px band the pies sit at their 240px floor, so the binding
+   constraint is 0.32W + 240 + 240 + 24 ≤ W (0.68W ≥ 504 → W ≥ 741.2);
+   above 800px all three bases are free and the 92% rule 0.92W + 24 ≤ W
+   holds automatically (any W ≥ 300); below 625px the sum of floors
+   200 + 240 + 240 + 24 = 704 never fits. One row therefore holds from
+   ≈741.2px up: the @container rule collapses straight to a single
+   column (three stacked rows) at ≤741px — skipping the old 2+1 band —
+   and the natural rules already fit one row from ≈741.2px, so the only
+   residual middle state is the 741–741.18px sub-pixel sliver (reachable
+   only via fractional zoom) where the legacy 2+1 packing can persist.
+
+   The query only matches an ancestor that is a size container NAMED
+   `ship-dist-host`, so ALL THREE hosts — `.lookup-view__dist`
+   (LookupView.scss), `.replay-view__postbattle-dist`
+   (PostBattlePanel.scss) and `.dashboard-view__dist`
+   (DashboardView.scss) — must keep the named
+   `container: ship-dist-host / inline-size` declaration. The name is
+   the contract: a future nesting refactor that re-parents the charts
+   under an unnamed (or differently named) container can no longer
+   silently re-bind the breakpoint to the wrong box. Content under a
+   host without that named container ancestor never matches the query
+   and falls back to the legacy wrapped-row packing below.
+
+   Column mode needs no overrides: `align-items: stretch` (the default
+   here) makes each block fill the full row, and the fixed heights and
+   min() caps are harmless stacked one per line. At the 240px pie floor
+   the block interior still works: the fixed 150px donut square plus the
+   8px pie-body gap leaves 82px for the legend — two ~30px CJK text
+   columns fit and ellipsis trims long names, while a FULL three-column
+   flag legend (three 26px dot+flag rows + two 10px column gaps ≈ 98px)
+   exceeds it and letterboxes the ring down a few px (break-even ≈ 256px,
+   reached only when 11+ nations split three columns). The min() caps
+   keep the fixed min-widths from overflowing phone-narrow containers
+   (lookup mobile content ≈ 280px, postbattle sheet ≈ 266px): there each
+   block simply fills the full row width. */
+
+/* Below the one-row threshold, skip the greedy 2+1 packing entirely:
+   collapse straight to a single column (three stacked rows). */
+@container ship-dist-host (max-width: 741px) {
+  .ship-dist-charts { flex-direction: column; }
+}
+
+/* Forced one-row variant (opt-in via the `forcedRow` prop — the lookup
+   screen): the three blocks NEVER stack, however narrow the host gets.
+   The root is a hikari horizontal scroll container (auto-hiding overlay
+   bar below the row); the row rhythm lives on __row INSIDE the viewport,
+   beyond the @container collapse's reach — that query still targets the
+   container element itself, where column is hikari's own root direction,
+   so a named `ship-dist-host` ancestor cannot stack this variant. Bases
+   drop to zero so the row packs proportionally at the wrapped mode's
+   32 : 30 : 30 ratio while flexing down to the min-width floors: one row
+   now holds from 704px (200 + 240 + 240 + two 12px gaps) up — below
+   ≈760px the pies' proportional share ((W−24)×30/92) dips under their
+   240px floor and they sit pinned there with the bar absorbing the
+   slack — and below 704px the floors bind, the row overflows and the
+   overlay scrollbar below the charts takes over. Overscroll containment
+   keeps a wheel-over-strip from chaining the page scroll once the row is
+   exhausted. */
+.ship-dist-charts--forced-row {
+  & > .hk-scroll-container-viewport {
+    overscroll-behavior-x: contain;
+  }
+}
+
+.ship-dist-charts__row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.ship-dist-charts--forced-row .ship-dist-charts__bar {
+  flex: 32 1 0%;
+}
+
+.ship-dist-charts--forced-row .ship-dist-charts__piewrap {
+  flex: 30 1 0%;
+}
+
 .ship-dist-charts__bar {
-  flex: 1 1 55%;
-  min-width: 0;
+  flex: 1 1 32%;
+  min-width: min(200px, 100%);
+  display: block;
+  height: 150px;
 }
 
 .ship-dist-charts__piewrap {
-  flex: 1 1 45%;
-  min-width: 0;
+  flex: 1 1 30%;
+  min-width: min(240px, 100%);
 }
 
 .ship-dist-charts__pie-title {
   color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
   margin-bottom: 4px;
+  /* Centered over the donut+legend group, which centers itself in the
+     block (see __pie-body): legend widths vary with the data, so a
+     left-aligned title would drift off the group's visual axis. */
+  text-align: center;
+}
+
+/* Donut svg and its DOM legend sit side by side, vertically centered.
+   The svg is a FIXED 150px square (see __pie below), so the legend only
+   ever shrinks (never grows) and the ring keeps a stable diameter. The
+   pair also centers horizontally in the block: legend widths differ per
+   data set (one CJK text column vs three flag columns), and left-packing
+   piled all the slack on the right — the narrow-legend donut hugged the
+   previous block while a wide gap yawned before the next one. `safe`
+   falls back to start alignment wherever the fixed square plus legend
+   overflow the block (phone-narrow hosts, or the 240px floor carrying a
+   full three-column flag legend); the plain `center` declaration keeps
+   older engines that drop `safe` at least centered. */
+.ship-dist-charts__pie-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  justify-content: safe center;
+  gap: 8px;
+}
+
+/* Fixed square canvas: both donuts render the identical 150×150 box (ring
+   ≈ 102px) no matter how wide each legend runs. The old flex-grow box
+   letterboxed the ring down whenever a wide legend (three nation text
+   columns) squeezed it, so the two rings could render at different
+   diameters side by side. Shrink permission stays (min-width 96px) as
+   the last resort: since the legend rows grew slice dots, a full
+   three-column flag legend (≈ 98px) plus the fixed square needs ≈ 256px,
+   so at the 240px floor (the ≈741–853px container band, or any host
+   narrower still) the ring letterboxes down a few px instead of the
+   row overflowing. */
+.ship-dist-charts__pie {
+  flex: 0 1 auto;
+  width: 150px;
+  min-width: 96px;
+  display: block;
+  height: 150px;
+}
+
+.ship-dist-charts__legend {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 10px;
+}
+
+/* One column of legend rows — fills top-to-bottom, the next column
+   continues to the right. A full 5-row column measures ≈ 104px (five
+   ~15px 2xs lines + 4 × 0.45rem gaps), which matches the donut RING, not
+   the whole svg: the 68% outer radius over the 150px-tall box paints
+   a ≈ 102px-diameter ring, so a filled column and the ring read as one
+   visual unit. */
+.ship-dist-charts__legend-col {
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.45rem;
+  min-width: 0;
+}
+
+.ship-dist-charts__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ship-dist-charts__legend-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.ship-dist-charts__legend-text {
+  color: rgb(var(--color-text) / 0.75);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Flag legend rows: the sm flag img is 12px tall while the missing-asset
+   letter badge is 16px — normalizing the row box to 16px keeps every row
+   in a column on the same rhythm when a letter badge (the "other" bucket)
+   shares a column with real flags. */
+.ship-dist-charts__legend .nation-flag {
+  height: 16px;
+}
+
+/* --- SVG ink: everything below styles through CSS variables, so light/
+   dark flips and brand-theme switches restyle the charts with no
+   re-render — the reason the old canvas ink-sampling code is gone. --- */
+
+/* Bar fill rides the brand primary (an upgrade over the retired ECharts
+   default blue): theme-aware for free. */
+.ship-dist-charts__bar-rect {
+  fill: rgb(var(--color-primary));
+}
+
+/* Bar text runs 10 viewBox units (not the canvas-era 9px): preserve-
+   aspect "meet" renders the 320-unit box at ~0.625x once the flex item
+   hits its 200px min-width, and the extra unit keeps the digits legible
+   at that scale. Headroom holds — the tallest bar's value label sits at
+   baseline y=17, a 10-unit ascent ≈ 8 keeps the glyph top at y≈9, and
+   the tier numbers' baseline y=144 plus ≈2.5 descent stays inside 150. */
+.ship-dist-charts__bar-value {
+  fill: rgb(var(--color-text) / 0.75);
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+.ship-dist-charts__tier-num {
+  fill: rgb(var(--color-text) / 0.6);
+  font-size: 10px;
+  text-anchor: middle;
+}
+
+/* Supership (tier 11) axis mark: the lucide Star icon the template
+   renders as a nested <svg>, riding the same 60% text ink as the
+   numerals — `color` feeds the icon's stroke="currentColor", and this
+   CSS fill beats the icon's fill="none" presentation attribute so the
+   star reads solid, matching the ★ glyph the ship table draws for
+   superships. The 10-unit box spans y≈135.5–145.5, inside the 150-unit
+   viewBox like the numerals' descent headroom above. */
+.ship-dist-charts__tier-star {
+  color: rgb(var(--color-text) / 0.6);
+  fill: currentColor;
+}
+
+.ship-dist-charts__axis {
+  stroke: rgb(var(--color-text) / 0.15);
+  stroke-width: 1;
+}
+
+/* Slices carry inline fills (palette colors, not theme variables); the
+   class exists as the hover/hint hook and keeps stroke paint out of the
+   ring gaps. */
+.ship-dist-charts__slice {
+  stroke: none;
+}
+
+/* --- Hover focus: hovering one shape (or its legend row) dims its
+   siblings within the same block and lifts the hovered one. Paint-only —
+   opacity/filter, geometry never scales or moves. Each block (bar, both
+   donuts + their legends) carries its own hover key, so focus never
+   leaks across blocks; a donut's slice and legend row share the key, so
+   hovering either side lights the pair up. --- */
+
+.ship-dist-charts__slice,
+.ship-dist-charts__bar-rect {
+  transition:
+    opacity 0.16s ease,
+    filter 0.16s ease;
+}
+
+/* The dimmed tier's value label fades with its bar (same key in the TSX);
+   tier numbers stay put — they belong to the axis, not to any bar. */
+.ship-dist-charts__bar-value,
+.ship-dist-charts__legend-item {
+  transition: opacity 0.16s ease;
+}
+
+.ship-dist-charts__slice.is-dim,
+.ship-dist-charts__bar-rect.is-dim,
+.ship-dist-charts__bar-value.is-dim,
+.ship-dist-charts__legend-item.is-dim {
+  opacity: 0.3;
+}
+
+/* The lift is a gentle brightness/saturation push — the hovered shape
+   keeps its exact footprint. */
+.ship-dist-charts__slice.is-hot,
+.ship-dist-charts__bar-rect.is-hot {
+  filter: brightness(1.07) saturate(1.2);
+}
+
+/* Hovered legend row: full ink instead of the resting 75%, and a soft
+   halo on the dot tying the row to its ring slice — box-shadow, so the
+   row's layout never shifts. The two paints transition on the elements
+   that carry them, so the row lights up on the same 0.16s beat the
+   sibling dimming fades on. */
+.ship-dist-charts__legend-item.is-hot .ship-dist-charts__legend-text {
+  color: rgb(var(--color-text));
+}
+
+.ship-dist-charts__legend-item.is-hot .ship-dist-charts__legend-dot {
+  box-shadow: 0 0 0 3px rgb(var(--color-text) / 0.14);
+}
+
+.ship-dist-charts__legend-text {
+  transition: color 0.16s ease;
+}
+
+.ship-dist-charts__legend-dot {
+  transition: box-shadow 0.16s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ship-dist-charts__slice,
+  .ship-dist-charts__bar-rect,
+  .ship-dist-charts__bar-value,
+  .ship-dist-charts__legend-item,
+  .ship-dist-charts__legend-text,
+  .ship-dist-charts__legend-dot {
+    transition: none;
+  }
 }

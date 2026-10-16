@@ -34,10 +34,15 @@ export default defineComponent({
     },
     /** When true, render the nation label text next to the flag. */
     showLabel: { type: Boolean, default: false },
+    /** Overrides the default data-hint (the nation label) — call sites that
+     *  embed the flag in a richer row (chart legends) pass the full hint so
+     *  hovering the flag speaks for the whole row. */
+    hint: { type: String, default: "" },
   },
   setup(props) {
     const initial = computed(() => nationInitial(props.nation, props.label));
     const title = computed(() => props.label || props.nation);
+    const hint = computed(() => props.hint || title.value);
     // Load lifecycle from the shared hook: empty/error → letter badge, and a
     // nation/variant swap resets the tracking automatically via the source.
     const img = useImage(() => resolveNationFlag(props.nation, props.variant));
@@ -45,7 +50,7 @@ export default defineComponent({
       const sz = props.size;
       const showImg = img.status.value === "loading" || img.status.value === "loaded";
       return (
-        <span class={["nation-flag", `nation-flag--${sz}`, `nation-flag--${props.variant}`]} data-hint={title.value} key={img.key.value}>
+        <span class={["nation-flag", `nation-flag--${sz}`, `nation-flag--${props.variant}`]} data-hint={hint.value} key={img.key.value}>
           {showImg ? (
             <img
               class={["nation-flag__img", "image-asset__img", img.status.value === "loaded" ? "is-loaded" : ""].join(" ")}

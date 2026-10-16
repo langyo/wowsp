@@ -1,0 +1,12 @@
+{
+  "copyShot": "スクリーンショットをコピー",
+  "copyShotDone": "スクリーンショットをクリップボードにコピーしました",
+  "copyShotFailed": "コピーに失敗しました",
+  "shotTagline": "World of Warships 戦闘分析ツール",
+  "shotDisclaimer1": "参考値です。長期的な実力を保証するものではありません。穏やかな議論を心がけましょう",
+  "shotDisclaimer2": "本ソフトは無料・オープンソースです。購入を求める詐欺にご注意ください",
+  "shotQqGroup": "QQグループ：{n}",
+  "topShips": "よく使う艦艇",
+  "moreShips": "他 {n} 隻",
+  "moreMembers": "他 {n} 名"
+}

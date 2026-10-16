@@ -58,7 +58,7 @@ def find_wowsunpack() -> Path:
     exe = REPO_ROOT / "target" / "model-tools" / "wowsunpack.exe"
     if exe.exists():
         return exe
-    raise FileNotFoundError("wowsunpack.exe not found — run just build-wowsunpack-patched")
+    raise FileNotFoundError("wowsunpack.exe not found — run just build wowsunpack")
 
 
 def export_and_bake(wowsunpack: Path, game: str, vfs_path: str, out_glb: Path,
@@ -75,7 +75,12 @@ def export_and_bake(wowsunpack: Path, game: str, vfs_path: str, out_glb: Path,
             return False
         rc = subprocess.call(
             [sys.executable, str(BAKE_SCRIPT), str(raw),
-             "-o", str(out_glb), "--triangles", str(triangles)],
+             "-o", str(out_glb), "--triangles", str(triangles),
+             # Plane .geometry files (and some props) carry every section at
+             # three LODs; keep only the top shell or the bake merges three
+             # overlapping copies and sheds the disagreement as detached
+             # debris in the stage.
+             "--dedup-lods"],
             timeout=60,
         )
         return rc == 0 and out_glb.exists()
@@ -103,6 +108,8 @@ def main() -> int:
     ap.add_argument("--from-dump", type=Path, default=None, help="replay dump JSON to take the plane set from")
     ap.add_argument("--planes", nargs="*", default=None, help="explicit GP plane names")
     ap.add_argument("--all", action="store_true", help="bake every plane in plane_types.json")
+    ap.add_argument("--force", action="store_true",
+                    help="re-bake planes/props whose output GLB already exists")
     ap.add_argument("--props-only", action="store_true", help="only bake shell + torpedo props")
     ap.add_argument("--game-dir", default=None)
     args = ap.parse_args()
@@ -121,7 +128,7 @@ def main() -> int:
     # Props first — tiny.
     for name, vfs in PROPS.items():
         out = PROPS_OUT / f"{name}.glb"
-        if out.exists():
+        if out.exists() and not args.force:
             continue
         print(f"[props] {name} ...")
         if export_and_bake(wowsunpack, game, vfs, out, PROP_TRIS[name], name):
@@ -136,9 +143,16 @@ def main() -> int:
     plane_types = json.loads((DATA_DIR / "plane_types.json").read_text(encoding="utf-8"))
     path_map = json.loads((DATA_DIR / "plane_models.json").read_text(encoding="utf-8"))
     index_of = {v["name"]: v["index"] for v in plane_types.values()}
+    # Lesta airframes ride the same tables but live in an Oodle-compressed
+    # client this pkg-VFS bake cannot read — bake_lesta_planes.py's staged
+    # route owns them, so --all (the WG sweep) leaves them out.
+    lesta_names = {v["name"] for v in plane_types.values() if v.get("lesta")}
 
     if args.all:
-        names = sorted(path_map.keys())
+        names = sorted(n for n in path_map if n not in lesta_names)
+        if lesta_names:
+            print(f"[planes] skipping {len(lesta_names)} Lesta airframes "
+                  "(bake with scripts/model_convert/bake_lesta_planes.py)")
     elif args.planes:
         names = args.planes
     elif args.from_dump:
@@ -156,7 +170,7 @@ def main() -> int:
             failed.append(n)
             continue
         out = PLANES_OUT / f"{index}.glb"
-        if out.exists():
+        if out.exists() and not args.force:
             done += 1
             continue
         print(f"[planes] {index} ({n}) ...")

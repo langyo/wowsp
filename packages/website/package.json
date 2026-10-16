@@ -1,19 +1,20 @@
 {
   "name": "@wowsp/website",
-  "version": "0.2.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "lint": "oxlint --fix .",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@celestia-island/hikari": "^0.52.0",
-    "@lucide/vue": "^1.38.0",
+    "@celestia-island/hikari": "^0.55.128",
+    "@lucide/vue": "^1.46.0",
     "@wowsp/holo": "workspace:*",
     "three": "^0.185.1",
     "vue": "^3.5.42",
@@ -25,6 +26,6 @@
     "@vitejs/plugin-vue-jsx": "^5.1.6",
     "sass": "^1.103.1",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2"
+    "vite": "^8.3.0"
   }
 }

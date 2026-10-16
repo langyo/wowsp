@@ -18,6 +18,7 @@
   "game": {
     "online": "게임 실행 중",
     "offline": "게임 꺼짐",
+    "multiRunning": "현재 {n}개의 게임 클라이언트가 실행 중입니다",
     "pid": "PID",
     "kind": {
       "steam": "Steam",
@@ -26,13 +27,15 @@
       "cn360": "중국 서버(360)",
       "cnKongzhong": "중국 서버(KongZhong)",
       "manual": "직접 지정"
-    }
+    },
+    "versionLabel": "클라이언트 버전"
   },
   "search": {
     "fuzzy": "퍼지 검색",
     "hint": "함선 이름, 병음 또는 영어 이름을 입력하세요"
   },
   "retry": "재시도",
+  "close": "닫기",
   "gamePath": {
     "title": "게임 경로",
     "desc": "WoWSP가 함선 장갑·탄도 데이터, 리플레이, MOD 리소스를 읽으려면 World of Warships 설치 폴더가 필요합니다.",
@@ -41,12 +44,34 @@
     "detected": "감지된 설치",
     "browse": "폴더 찾아보기…",
     "redetect": "다시 감지",
+    "addAction": "게임 경로 추가…",
+    "addTitle": "게임 경로 추가",
+    "addDesc": "이 컴퓨터에서 설치된 클라이언트를 자동으로 감지하거나, 설치 폴더를 직접 선택하세요.",
     "runningHint": "실행 중인 게임 감지됨: {path}",
     "useRunning": "이 경로 사용",
-    "noneFound": "게임 설치가 감지되지 않습니다. 설치 폴더를 직접 선택하세요(WorldOfWarships.exe와 bin/ 폴더 포함).",
+    "noneFound": "게임 설치가 감지되지 않습니다. 설치 폴더를 직접 선택하세요(WorldOfWarships.exe — Lesta 클라이언트는 Korabli.exe — 와 bin/ 폴더 포함).",
     "applied": "게임 경로가 업데이트되었습니다",
     "invalid": "선택한 폴더가 유효하지 않습니다",
     "setAction": "게임 경로 지정",
+    "removeAction": "이 경로 제거",
+    "removeConfirm": "제거할까요?",
+    "removed": "게임 경로가 제거되었습니다",
     "inUse": "사용 중"
+  },
+  "imageCrop": {
+    "choose": "이미지 선택…",
+    "requirement": "정사각형 이미지를 권장합니다: 짧은 변 {min}px 이상, 변 길이 {max}px 이하. 지나치게 큰 크롭은 자동으로 축소됩니다.",
+    "unsupported": "지원하지 않는 이미지 형식입니다 (PNG / JPG / WebP / GIF / BMP / AVIF만 가능).",
+    "fileTooLarge": "파일이 너무 큽니다. 압축 후 다시 시도해 주세요.",
+    "tooSmall": "이미지가 너무 작습니다: 짧은 변이 최소 {min}px이어야 합니다.",
+    "tooLarge": "이미지가 너무 큽니다: 변 길이는 {max}px를 초과할 수 없습니다.",
+    "decodeFailed": "이미지를 디코딩하지 못했습니다. 파일이 손상되었을 수 있습니다.",
+    "dragHint": "드래그로 위치를 조정하고 휠이나 슬라이더로 확대/축소하세요. 결과물은 항상 정사각형입니다.",
+    "zoom": "확대/축소",
+    "dims": "원본 {w}×{h} → 출력 {out}×{out}",
+    "rechoose": "다시 선택",
+    "confirm": "이 이미지 사용",
+    "cancel": "취소",
+    "exportFailed": "잘라낸 이미지 내보내기 실패"
   }
 }

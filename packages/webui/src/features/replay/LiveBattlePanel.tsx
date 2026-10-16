@@ -1,53 +1,157 @@
 /**
- * Live-battle panel (the first item in the replay rail while the game is
- * running). Shows the current battle's mode, map, roster with per-player
- * WR / PR (fetched via the shared roster batch pipeline — see
- * `composables/useRosterStats.ts`) and the elapsed battle clock.
+ * Live-battle panel (the /live page body). Shows the current battle's mode,
+ * map, roster with per-player WR / PR (fetched via the shared roster batch
+ * pipeline — see `composables/useRosterStats.ts`) and the elapsed battle
+ * clock. Every row's middle ground carries the ship's combat card
+ * (`LiveShipMeta` — tier, class, nation, parameter ranges, and on ally rows
+ * the consumable/module/flag summary); hovering it floats the condensed ship
+ * card. The ship name leads with the game's class battle icon, and — per a
+ * stats pref, default on — every row washes with its player's PR-tier color
+ * (red band red, purple band purple; see prTintVars). The full card's stat
+ * strip (`LiveStatLine`) spans the whole card bottom so the WR/PR/battles
+ * line reads in full instead of ellipsizing inside the name track. The
+ * panel's head title is the /live page title (the view itself has
+ * no header — it used to duplicate this one).
+ *
+ * The head's density toggle compresses the roster to the post-battle
+ * matrix's one-line rows (battle icon + the shared WR/PR/battles/
+ * avg-damage columns, ship-meta strip dropped) — a persisted stats pref, the mirror of
+ * the post-battle panel's own full-card expansion.
  *
  * Every human card is clickable and jumps to the lookup (水表) view for that
  * player; hidden profiles show a red notice instead of a fake "no data".
+ * Each column title additionally carries the team's aggregate per the
+ * chip toggles — all over the players whose stats landed, in the roster's
+ * resolved stats-source view. Compact mode aligns it onto the stat columns:
+ * the title becomes a two-line mini table header (a per-column label over a
+ * per-column mean — winrate / PR / battles / avg damage, exactly the shared
+ * rosterColumns() grid) so every average sits on its own column; the full
+ * cards have no aligned columns, so their aggregate rides the title's right
+ * end as inline text.
+ *
+ * The head also carries the share actions: a copy-share-shot button (the
+ * roster painted onto a watermarked PNG, same pipeline as the post-battle
+ * panels) and a hide-all-nicknames toggle. Masking is ephemeral share-time
+ * state, not a pref — masked nicks never reach the copied image either.
+ *
+ * Ships the offline bake predates (new releases / collaboration clones) are
+ * backfilled at runtime: every roster refresh resolves unknown shipIds
+ * against the player's own client GameParams (resolveRuntimeShips) and the
+ * registrations re-sort and re-render the rows through the epoch trigger —
+ * real tier/class/name in place of the unknown sentinel. A ship no database
+ * ever answers shows the localized placeholder instead of a blank name.
  */
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, type CSSProperties } from "vue";
+import {
+  computed,
+  defineComponent,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type CSSProperties,
+  type VNode,
+} from "vue";
 import { useRouter } from "vue-router";
+import {
+  BadgeCheck,
+  Camera,
+  Eye,
+  EyeOff,
+  LocateFixed,
+  Plug,
+  RefreshCw,
+  Rows2,
+  Rows3,
+  ScanEye,
+  Unplug,
+  X,
+} from "@lucide/vue";
+import { HkScrollContainer, useToast } from "@celestia-island/hikari";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
+import BattleIcon from "@/components/base/BattleIcon";
 import { useAccountStore } from "@/stores/account";
-import { useOverlayStore } from "@/stores/overlay";
+import { useConfigStore } from "@/stores/config";
+import { useGameStatusStore } from "@/stores/gameStatus";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
+import { useOverlayConfigStore } from "@/stores/overlayConfig";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
-import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
+import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { displayMapName } from "@/utils/mapNames";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
-import { modeColor, modeKey } from "@/utils/modeColors";
-import { careerStamp, prTier, winrateColor } from "@/utils/winrate";
-import { useRosterStats, isAiName } from "@/composables/useRosterStats";
+import LiveShipMeta from "./LiveShipMeta";
+import LiveStatLine from "./LiveStatLine";
+import LiveStatsModeChip from "./LiveStatsModeChip";
+import MapNameTag from "./MapNameTag";
+import PluginStatusCard from "./PluginStatusCard";
+import { telemetryGradeFor } from "./telemetryGrade";
+import { WaitingRadarArt } from "./liveGuideArt";
+import {
+  rosterColumns,
+  rosterShotCells,
+  rosterShotDashes,
+  rosterStatCols,
+  useNickMasking,
+  useShareShot,
+  type RosterColumnSpec,
+} from "./postBattleShare";
+import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
+import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
+import { realmUsesShipNameOrder } from "@/utils/realms";
+import { sameGamePath } from "@/utils/gamePath";
+import { splitLiveRosterSides } from "@/utils/rosterSides";
+import {
+  battlesColor,
+  careerStamp,
+  damageColor,
+  prTier,
+  winrateColor,
+} from "@/utils/winrate";
+import { shipTierOf } from "@/utils/shipClass";
+import {
+  columnsNeedShipStats,
+  overlayColumnDims,
+  resolveRosterBattleScope,
+  type ResolvedStatsMode,
+  type RosterModeNumbers,
+} from "@/utils/statView";
+import { scopedRosterView } from "@/utils/shipStatsScope";
+import { aggregateTeamStats } from "@/utils/teamAggregate";
+import {
+  prAlgoForRequest,
+  useStatsPrefsStore,
+  type OverlayColumnScope,
+} from "@/stores/statsPrefs";
+import { useManualLocateStore } from "@/stores/manualLocate";
+import { useRosterStats, isAiName, type RosterStat } from "@/composables/useRosterStats";
+import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
-import { HSpinner } from "@celestia-island/hikari";
-import mapNamesRaw from "@/data/map_names.json";
+import { HkSpinner } from "@celestia-island/hikari";
+import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
 import "./LiveBattlePanel.scss";
 
-const MAP_NAMES = mapNamesRaw as Record<string, Record<string, string>>;
-
-function displayMapName(spaceId?: string | null, lang?: string): string {
-  if (!spaceId) return t("replay.map.unknown");
-  const clean = spaceId.replace(/^spaces\//, "");
-  const names = MAP_NAMES[clean];
-  const official = names ? (names[lang ?? ""] ?? names["en"] ?? null) : null;
-  if (official) return official;
-  const key = "replay.map.names." + clean;
-  const lbl = t(key);
-  return lbl === key ? clean : lbl;
-}
+/** Stable refusal codes from `start_manual_locate` → the replay.live.*
+ *  copy toasted next to the button shake. Module-level: the mapping is
+ *  pure data, no per-instance state. */
+const MANUAL_REFUSAL_KEYS: Record<string, string> = {
+  "no-battle": "replay.live.manualNoBattle",
+  "no-game": "replay.live.manualNoGame",
+  "no-frame": "replay.live.manualNoFrame",
+};
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
- *  roster bots). */
+ *  battle script / roster bots). */
 function modeLabelOf(
   group?: string | null,
   scenario?: string | null,
+  eventType?: string | null,
   botCount = 0,
+  scriptedUnitCount = 0,
 ): string {
-  const key = modeKey(group, scenario, null, botCount);
+  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = "replay.mode." + key;
   const lbl = t(i18nKey);
@@ -62,6 +166,11 @@ export default defineComponent({
      *  (the game writes the file when the battle ends) — the battle is on
      *  the results screen, stats final but replay still settling. */
     settling: { type: Boolean, default: false },
+    /** The battle is over for good (the game deleted tempArenaInfo.json —
+     *  returned to port or quit): the roster on screen is the LAST battle's,
+     *  kept until the next one starts. Renders the "battle ended" badge in
+     *  place of LIVE/settling and retires the elapsed clock. */
+    ended: { type: Boolean, default: false },
     /** Realm the battle is played on (from the active client install);
      *  used for both the stats lookup and the lookup-view jump. */
     realm: { type: String, default: "" },
@@ -69,7 +178,43 @@ export default defineComponent({
   setup(props) {
     const accounts = useAccountStore();
     const router = useRouter();
-    const { dataLanguage, uiLocale } = useLanguage();
+    const prefs = useStatsPrefsStore();
+    /** Roster density: full cards (the default) or the post-battle matrix's
+     *  compact one-line rows — a persisted stats pref flipped from the
+     *  head's density toggle. */
+    const compact = computed(() => prefs.prefs.liveRosterCompact);
+    const manualLocate = useManualLocateStore();
+    const toast = useToast();
+    const { dataLanguage } = useLanguage();
+    // Declared BEFORE useRosterStats below: the composable's watches run
+    // their getters synchronously at registration, and the `realms` option
+    // closes over this store — a later declaration would be a TDZ throw
+    // that unmounts the whole panel.
+    const plugin = useIngamePluginStore();
+    const gameStatus = useGameStatusStore();
+    const config = useConfigStore();
+    // Armor/GameParams root for the runtime ship-identity backfill — the
+    // configured install, falling back to the running process's matched
+    // install (same unification as useShipDetail).
+    const gameRoot = computed(
+      () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
+    );
+    // Backfill ships the offline bake predates: on every roster (or game
+    // root) change, probe the unknown shipIds against the client's own
+    // GameParams. Fire-and-forget — the resolver dedupes, attempts once per
+    // (root, shipId) and registers whatever resolves; the epoch bump below
+    // then re-sorts and re-renders the affected rows.
+    watch(
+      [() => props.arena, gameRoot],
+      ([arena, root]) => {
+        if (!arena) return;
+        resolveRuntimeShips(
+          arena.vehicles.map((v) => v.shipId),
+          root,
+        );
+      },
+      { immediate: true },
+    );
     const { label: clockLabel } = useBattleClock(
       () => props.arena?.dateTime ?? null,
     );
@@ -78,70 +223,377 @@ export default defineComponent({
       () => props.realm || accounts.activeRealm || "asia",
     );
 
-    const { stats } = useRosterStats({
+    /** Clan Battles can be cross-server (军团战跨服): the live arena file
+     *  carries no realm per player, so the batch probes the other WG
+     *  clusters for names the home one cannot explain. Same semantics as
+     *  modeKey's clan bucket (utils/modeColors: matchGroup containing
+     *  "clan"). */
+    const crossRealm = () =>
+      (props.arena?.matchGroup ?? "").toLowerCase().includes("clan");
+
+    const { stats, forceRefresh } = useRosterStats({
       realm: () => realm.value,
       arena: () => props.arena,
+      crossRealm,
+      // The probe's ground-truth per-name realms (straight off the game's
+      // roster records): names found here resolve on THEIR cluster — the
+      // cross-realm pass only remains for rows the probe could not report
+      // (older build / roster mode without the plugin).
+      realms: () => (plugin.installed ? plugin.playerRealms : null),
     });
 
+    /** Localized realm label (replay.realm.*) with an uppercase-code
+     *  fallback for unknown codes. */
+    const realmLabelOf = (code: string): string => {
+      const r = code.toLowerCase();
+      const key = `replay.realm.${r}`;
+      return t(key) === key ? code.toUpperCase() : t(key);
+    };
+
+    /** Realm chip for a row whose stats resolved on ANOTHER cluster
+     *  (cross-server CW) — same vocabulary as the post-battle panels
+     *  (replay.realm.*). Null on same-realm / unresolved rows. */
+    const crossRealmTagOf = (
+      st: { realm: string | null } | null | undefined,
+    ): string | null => {
+      const r = st?.realm;
+      if (!r || r.toLowerCase() === realm.value.toLowerCase()) return null;
+      return realmLabelOf(r);
+    };
+
+    // ── Share-time privacy + copy-shot (head actions) ───────────────────
+    // The hide-nicknames toggle masks every roster nick on screen AND in
+    // the copied share shot (the shot model reads already-masked names,
+    // so a hidden nick cannot leak into the image). Like the post-battle
+    // panels, the state is ephemeral — a share-time privacy choice.
+    const masking = useNickMasking();
+    const root = ref<HTMLElement | null>(null);
+    const shot = useShareShot(buildShotModel, () => root.value);
+
     // Overlay detection state, streamed by the Rust Tab watcher as
-    // transition-only `wowsp://overlay-status` events. Rendered as a badge
-    // in the panel's head (right corner) and the base for the upcoming
-    // manual-locate flow. `null` = nothing received yet → show nothing
-    // (a panel that never used overlay mode stays badge-free).
+    // transition-only `wowsp://overlay-status` events. Rendered by the
+    // manual-locate button itself in the panel's head (right corner) — the
+    // locate state IS the button's voice. `null` = nothing received yet →
+    // the button reads plain "manual locate" (it is permanent — idle
+    // stretches between battles must not strand the entry point).
     const overlayStatus = ref<OverlayStatus | null>(null);
     let unlistenStatus: (() => void) | null = null;
-    // In-game Tab row order, streamed by the same watcher whenever a
-    // recognition pass over a held Tab frame matched the roster. Held in
-    // the overlay store (survives this panel unmounting mid-battle); the
-    // columns below reorder to mirror the on-screen table exactly,
-    // sunk-ship grouping included.
-    const overlay = useOverlayStore();
-    let unlistenTabOrder: (() => void) | null = null;
+    // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
+    // strip-fingerprint matching) — feed the predicted order below so the
+    // columns mirror the game's [alive] ++ [sunk] layout live.
+    const sunk = new SunkTracker();
+    // Per-battle game-true TAB sort keys (telemetry `sortKeys`, read off
+    // the avatars' ship components) — when they cover the live split, the
+    // predicted order below switches to the client's own comparison and
+    // the pill grades exact. Dropped on battle change (with the sunk set)
+    // and on a stale stream (the same 30 s freshness gate as the alive
+    // sets — a dead plugin must not keep pinning rows game-true).
+    let telemetrySortKeys: Record<string, string> | null = null;
+    // The probe's roster-order bridge (the records' own sequence) and the
+    // records' localized ship names — same lifecycle as the sort-key map:
+    // dropped on battle change and on a stale stream, and they re-derive
+    // the orders through the same sortKeyEpoch bumps.
+    let telemetryRosterOrder: string[] | null = null;
+    let telemetryShipNames: Record<string, string> | null = null;
+    watch(
+      () => props.arena?.dateTime ?? null,
+      (stamp) => {
+        sunk.reset(stamp);
+        if (telemetrySortKeys || telemetryRosterOrder || telemetryShipNames) {
+          telemetrySortKeys = null;
+          telemetryRosterOrder = null;
+          telemetryShipNames = null;
+          sortKeyEpoch.value += 1;
+        }
+      },
+      { immediate: true },
+    );
+    // The tracker is plain state, so `sinkEpoch` is its reactive trigger:
+    // every sink event bumps it and the computed orders below re-derive.
+    const sinkEpoch = ref(0);
+    // Same trick for the sort-key map: plain state + a bump on every
+    // fresh telemetry event.
+    const sortKeyEpoch = ref(0);
+    /** Predicted-order key inputs for one side: locale + per-vehicle clan
+     *  tag + that side's trusted sunk set (+ the game-true sort keys when
+     *  this battle's telemetry delivered them). */
+    const predictedOptionsFor = (side: "ally" | "enemy") => {
+      void sinkEpoch.value;
+      void sortKeyEpoch.value;
+      // Runtime GameParams registrations land after the first render — the
+      // bump re-derives the order once an unknown ship gains a real
+      // class/tier/name (until then it sits on the unknown sentinel).
+      void runtimeShipEpoch.value;
+      // The CN client follows the localized-ship-name row order
+      // (utils/shipClass's module docs) instead of the decompiled WG rule
+      // and never re-sorts the table mid-battle, so the static layout is
+      // CN-gated too; the Lesta client renders its own sort-key order
+      // (live 2026-10-10) with equal keys keeping the roster order. The
+      // offline permutation is superseded per battle when the telemetry's
+      // sort-key map covers the roster (sortKeyOf) — except on CN, whose
+      // HUD re-sorts by name and never renders the key order.
+      const cn = realm.value === "cn";
+      // The probe-bridged roster order (telemetry `rosterOrder`): the
+      // records' own sequence, pre-ordered so equal client keys (and
+      // equal offline segments) tie by the roster's own order.
+      const rankMap = telemetryRosterOrder
+        ? new Map(telemetryRosterOrder.map((n, i) => [n, i] as const))
+        : null;
+      // The client's own localized ship names, gated to FULL side
+      // coverage (a side mixing client names with DB names would
+      // misorder — the two sources collate differently): telemetry
+      // first, then the synthesized row's ship_name (the probe's record
+      // lift, present on the Lesta synthesis). Only the CN permutation
+      // consumes the segment.
+      const sideList =
+        side === "enemy" ? liveSides.value.enemies : liveSides.value.allies;
+      const clientShipName = (v: VehicleEntry): string | null =>
+        telemetryShipNames?.[v.name] ?? v.shipName ?? null;
+      const clientShipNameOf = sideList.every((v) => (clientShipName(v) ?? "") !== "")
+        ? clientShipName
+        : undefined;
+      return {
+        locale: dataLanguage.value,
+        clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
+        sunk: sunk.sunkNames(side),
+        shipNameOrder: realmUsesShipNameOrder(realm.value),
+        tieByRosterOrder: realm.value === "ru",
+        staticOrder: cn,
+        sortKeyOf: telemetrySortKeys ? (v: VehicleEntry) => telemetrySortKeys![v.name] : undefined,
+        rosterRankOf: rankMap ? (name: string) => rankMap.get(name) : undefined,
+        clientShipNameOf,
+      };
+    };
+    // True once plugin telemetry has replaced the inferred sets this
+    // battle: later luma attributions must not re-add names the plugin
+    // reports alive (the plugin outranks the solver).
+    let telemetryAuthoritative = false;
+    let unlistenSinkAttrib: (() => void) | null = null;
+    let unlistenTelemetry: (() => void) | null = null;
+    /** Manual stats-refresh button state (approximate: the composable
+     *  settles row spinners itself, the button just needs a cooldown). */
+    const rosterRefreshing = ref(false);
+    // Whether THIS battle is a real operation (行动) — PCVO*/_op_/_hl_
+    // fingerprints, minus the tutorial family (low_lvl_operation /
+    // first_battle / IDS_OP_15_*) that fields its scripted units as real
+    // team rows. Decides the live side split below.
+    const operation = computed(() =>
+      isOperationBattle(
+        props.arena?.matchGroup,
+        props.arena?.scenario,
+        props.arena?.eventType,
+        props.arena?.vehicles.map((v) => v.name),
+      ),
+    );
+    /** The battle's LIVE side split — scripted scenario NPCs (`IDS_*` /
+     *  `#Name`) drop out of the ally block iff this is a real operation:
+     *  the game's own Tab table renders the human team only there (the
+     *  PCVO011_OP_10 story capture shows 7 human rows while the roster
+     *  carries the 2 scripted allies `IDS_OP_10_09_GAMBLE` /
+     *  `IDS_OP_10_10_BREEZE` — they used to leak as untranslated-key rows
+     *  at the end of this panel's teammates column and mis-sliced the
+     *  overlay's Tab row blocks). Every other battle keeps the raw
+     *  relation split — the tutorial-family scripted fills really do render
+     *  as team rows in-game. The Rust sink solver keys its ally-row count
+     *  on the same rule (arena_info's note_arena_seen), so sink
+     *  attributions stay index-aligned with the orders below.
+     *  operations (行动) also empty the enemy side — all scripted spawns,
+     *  a list nobody reads. */
+    const liveSides = computed(() =>
+      splitLiveRosterSides(props.arena?.vehicles ?? [], operation.value),
+    );
+    /** True when this battle's telemetry sort-key map covers EVERY name
+     *  of the live split — the exact-order gate for the pill and the
+     *  orderForTab override alike. Partial coverage must not interleave
+     *  game-true rows with inferred ones, so anything less grades
+     *  partial. An empty roster (no battle) is never exact. */
+    const telemetryExactOrder = (): boolean => {
+      void sortKeyEpoch.value;
+      if (!telemetrySortKeys) return false;
+      // A ship-name-order client (CN) never renders the key order — its
+      // HUD re-sorts by the localized name — so even a covering map
+      // cannot grade exact there (the 2026-10-10 Lesta lesson, applied to
+      // the one realm that still re-sorts).
+      if (realmUsesShipNameOrder(realm.value)) return false;
+      const sides = liveSides.value;
+      if (sides.allies.length + sides.enemies.length === 0) return false;
+      for (const v of [...sides.allies, ...sides.enemies]) {
+        if (!telemetrySortKeys[v.name]) return false;
+      }
+      return true;
+    };
+    /** The side's believed alive order for resolving sink-attrib rows:
+     *  the predicted key order minus the trusted sunk set. */
+    const sideAliveOrder = (side: SunkSide): string[] => {
+      const list = side === "enemy" ? liveSides.value.enemies : liveSides.value.allies;
+      const order = orderForTab(list, predictedOptionsFor(side)).map(
+        (e) => e.vehicle.name,
+      );
+      const names = sunk.sunkNames(side);
+      return names ? order.filter((n) => !names.has(n)) : order;
+    };
     onMounted(async () => {
+      // The telemetry pill reads the persisted roster mode; the store is
+      // lazy elsewhere on this surface.
+      void overlayCfg.load();
       unlistenStatus = (await api.listenOverlayStatus((s) => {
         overlayStatus.value = s;
       })) as (() => void) | null;
-      unlistenTabOrder = (await api.listenTabOrder((o) => {
-        overlay.applyTabOrder(o);
+      unlistenSinkAttrib = (await api.listenSinkAttribution((a) => {
+        if (telemetryAuthoritative) return;
+        sunk.applyAttribution(
+          { ally: a.allyRows ?? [], enemy: a.enemyRows ?? [] },
+          sideAliveOrder,
+        );
+        sinkEpoch.value += 1;
+      })) as (() => void) | null;
+      // In-game plugin telemetry — the priority-chain top when the roster
+      // mode is "plugin": isAlive observed inside the client beats the
+      // luma solver, and its sets REPLACE the inferred ones. Events while
+      // the mode is off are ignored so the inference chain stays the sole
+      // owner there.
+      //
+      // The WATCHED stream carries EVERY running install's frames, each
+      // tagged with its `root` — on multi-client machines only the frames
+      // from the install this app serves (the client-version selection's
+      // running match) may steer this roster; the other clients' battles
+      // would poison identities and alive-sets. Frames without a root
+      // (older shell) describe the preferred install and pass unfiltered,
+      // matching the old single-stream behavior.
+      unlistenTelemetry = (await api.listenIngameTelemetryWatched((payload) => {
+        const servingRoot = gameStatus.process.matchedInstall?.path ?? null;
+        if (
+          payload.root &&
+          servingRoot &&
+          !sameGamePath(payload.root, servingRoot)
+        ) {
+          return;
+        }
+        // Ground truth first, in every roster mode: the probe's identity
+        // block (per-name realms + the local player's cluster) steers
+        // stats routing even when alive-sets come from another source.
+        plugin.applyTelemetryIdentity(payload);
+        if (overlayCfg.roster !== "plugin" || !plugin.installed) return;
+        if (!props.arena) return;
+        // Stale file from a previous battle (game closed without a quit
+        // event): the plugin clears players on quit, so an empty map IS a
+        // reset; a fresh timestamp is required either way.
+        if (Date.now() - payload.t > 30_000) {
+          // Stale stream (plugin died mid-battle): release the lock so the
+          // luma solver resumes instead of staying frozen forever. The
+          // sort-key map goes with it — a dead plugin must not keep
+          // pinning rows game-true.
+          telemetryAuthoritative = false;
+          if (telemetrySortKeys || telemetryRosterOrder || telemetryShipNames) {
+            telemetrySortKeys = null;
+            telemetryRosterOrder = null;
+            telemetryShipNames = null;
+            sortKeyEpoch.value += 1;
+          }
+          return;
+        }
+        const ally = new Set<string>();
+        const enemy = new Set<string>();
+        const rosterNames = new Set<string>();
+        // The live split's membership — the same convention as
+        // sideAliveOrder and the Rust sink solver: a scripted unit a real
+        // operation dropped never enters a side set here.
+        const sides = liveSides.value;
+        for (const [list, set] of [
+          [sides.allies, ally],
+          [sides.enemies, enemy],
+        ] as const) {
+          for (const v of list) {
+            rosterNames.add(v.name);
+            if (payload.players[v.name] === false) set.add(v.name);
+          }
+        }
+        telemetryAuthoritative = true;
+        sunk.applyNamedSunk({ ally, enemy }, rosterNames);
+        // The game-true sort keys ride the same freshness gate: store the
+        // map and let the orders + the pill re-derive (the Rust poller
+        // dedupes events on content, so this fires on change only; a probe
+        // build that cannot read the ship components omits the field — the
+        // map then stays null → the offline inference).
+        telemetrySortKeys = payload.sortKeys ?? null;
+        // The ordering raw material rides the same freshness gate: the
+        // roster's own record sequence (the Lesta equal-key tie base) and
+        // the records' localized ship names (the CN name-order segment).
+        // Empty values read as "probe build predates the field".
+        telemetryRosterOrder = payload.rosterOrder?.length ? payload.rosterOrder : null;
+        telemetryShipNames =
+          payload.shipNames && Object.keys(payload.shipNames).length > 0
+            ? payload.shipNames
+            : null;
+        sortKeyEpoch.value += 1;
+        sinkEpoch.value += 1;
       })) as (() => void) | null;
     });
     onBeforeUnmount(() => {
       unlistenStatus?.();
       unlistenStatus = null;
-      unlistenTabOrder?.();
-      unlistenTabOrder = null;
+      unlistenSinkAttrib?.();
+      unlistenSinkAttrib = null;
+      unlistenTelemetry?.();
+      unlistenTelemetry = null;
       if (shakeTimer) {
         clearTimeout(shakeTimer);
         shakeTimer = null;
       }
     });
 
-    const statusBadge = computed(() => {
+    const locateState = computed(() => {
       const s = overlayStatus.value;
       if (!s) return null;
       // A manual anchor stays ARMED across Idle/Searching (Rust marks every
-      // automatic report manual:true while it is stored): the badge — and
-      // with it the clear button — must survive those transitions too, since
-      // the anchor re-anchors on the same battle's next Tab hold.
+      // automatic report manual:true while it is stored): the button must
+      // survive those transitions too, since the anchor re-anchors on the
+      // same battle's next Tab hold.
       if (s.manual) {
-        return { cls: "manual", text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
+        return { cls: "manual", spin: false, text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
       }
       if (s.state === "idle") return null;
-      return s.state === "detected"
-        ? { cls: "detected", text: t("replay.live.detectedRows", { n: s.rows ?? 0 }) }
-        : { cls: "searching", text: t("replay.live.searching") };
+      if (s.state === "detected") {
+        return {
+          cls: "detected",
+          spin: false,
+          text: t("replay.live.detectedRows", { n: s.rows ?? 0 }),
+        };
+      }
+      // Searching/fallback are settling states — carry the same inline
+      // spinner the loading roster rows use (HkSpinner, currentcolor tone).
+      return { cls: "searching", spin: true, text: t("replay.live.searching") };
     });
 
-    /** A manual anchor is in force: the badge turns green and the button
-     *  flips from "manual locate" to "clear locate". */
+    /** A manual anchor is in force: the button turns green and its click
+     *  flips from opening the picker to clearing the anchor. */
     const manualActive = computed(() => overlayStatus.value?.manual === true);
 
-    /** Manual-locate entry point: opens the drag-box picker window over the
-     *  game rect, or (when a manual anchor is already in force) clears it
-     *  back to the automatic detection flow. */
+    // ── Telemetry-source grade (the head's state pill) ───────────────────
+    // Staged per the roster mode, the plugin's presence and the battle's
+    // sort-key coverage: a connected plugin whose telemetry carried the
+    // game's OWN TAB sort keys for the whole live split grades "exact"
+    // (the row order above IS the client's); without that map it grades
+    // "partial" — alive/sunk states authoritative, the TAB row ORDER
+    // still the offline per-realm inference (utils/shipClass — unstable
+    // per-client knowledge). The pill must never present the inferred
+    // order as game-truth — see telemetryGrade.ts.
+    const overlayCfg = useOverlayConfigStore();
+    const telemetryGrade = computed(() =>
+      telemetryGradeFor(overlayCfg.roster, plugin, telemetryExactOrder()),
+    );
+
+    /** Manual-locate entry point: opens the cached-frame picker layer inside
+     *  the main window (ManualLocateOverlay, after the backend gates pass),
+     *  or (when a manual anchor is already in force) clears it back to the
+     *  automatic detection flow. */
     const manualBusy = ref(false);
-    /** Short shake when the backend refuses to open the picker (no fresh
-     *  battle roster / no game window) — visible feedback, never silent. */
+    /** Short shake when the backend refuses to open the picker — visible
+     *  feedback, never silent. The refusal ALSO toasts the localized reason:
+     *  stable gate codes (see MANUAL_REFUSAL_KEYS) map onto replay.live.*,
+     *  anything else surfaces raw so nothing is ever swallowed. NOTE: the
+     *  transport wraps invoke rejections into an `RpcError` (message = the
+     *  backend string), so the code must be read off `.message`. */
     const manualShake = ref(false);
     let shakeTimer: ReturnType<typeof setTimeout> | null = null;
     async function onManualButton() {
@@ -151,9 +603,13 @@ export default defineComponent({
         if (manualActive.value) {
           await api.clearManualRosterRect();
         } else {
-          await api.startManualLocate(uiLocale.value);
+          await api.startManualLocate();
+          manualLocate.openPicker();
         }
       } catch (err) {
+        const code =
+          typeof err === "string" ? err : ((err as Error | null)?.message ?? String(err));
+        toast.warning(MANUAL_REFUSAL_KEYS[code] ? t(MANUAL_REFUSAL_KEYS[code]) : code);
         console.warn("[live-battle] manual locate refused:", err);
         manualShake.value = true;
         if (shakeTimer) clearTimeout(shakeTimer);
@@ -166,41 +622,500 @@ export default defineComponent({
       }
     }
 
-    // Column ordering mirrors the in-game Tab table: the recognized row
-    // order (when a Tab recognition pass exists for THIS battle) wins
-    // verbatim — sunk-ship regrouping included, with sunk players dimmed —
-    // and without one a predicted class-grouped order approximates the
-    // game's layout far better than tempArenaInfo.json's join order.
-    const tabRowsFor = (side: "allies" | "enemies") => {
-      const order = overlay.tabOrder;
-      if (!order || !props.arena?.dateTime || order.dateTime !== props.arena.dateTime) {
-        return null;
-      }
-      return side === "allies" ? order.allies : order.enemies;
-    };
-    const allies = computed(() =>
-      orderForTab(
-        props.arena?.vehicles.filter((v) => v.relation <= 1) ?? [],
-        tabRowsFor("allies"),
-      ),
+    // Column ordering mirrors the in-game Tab table: telemetry's
+    // game-true client keys win whenever they cover that side's rows
+    // (the exact concatenated string the client's own sort compares),
+    // and without them the predicted per-realm key approximates the
+    // game's layout — sunk players regrouped to their side's tail and
+    // dimmed — far better than tempArenaInfo.json's join order.
+    // The panel RENDERS one allies column for every operation-labeled
+    // battle (the mode pill says 行动) — wider than `operation` above: the
+    // new-account escort op keeps two-team relation semantics for the sink
+    // solver and the overlay's Tab anchor, but its enemy block is all
+    // scripted spawns (IDS_* dummies, escort waves) — an enemy list nobody
+    // reads. Those battles hide the enemy column and center the allies one
+    // (see the matrix SCSS); the share shot mirrors the same rule.
+    const operationLabeled = computed(
+      () =>
+        operation.value ||
+        modeKey(
+          props.arena?.matchGroup,
+          props.arena?.scenario,
+          props.arena?.eventType,
+          props.arena?.botCount ?? 0,
+          props.arena?.scriptedUnitCount ?? 0,
+        ) === "operation",
     );
+    // The ally side: the live split's allies (scripted NPCs filtered iff
+    // a real operation — see liveSides), ordered by the game's own Tab
+    // key. Inputs for the predicted order's full Tab key come from
+    // `predictedOptionsFor` above (locale + clan tag + that side's trusted
+    // sunk set) — the orders re-derive reactively when the WG batch lands a
+    // tag or a sink event bumps `sinkEpoch`.
+    const allies = computed(() =>
+      orderForTab(liveSides.value.allies, predictedOptionsFor("ally")),
+    );
+    // The enemy list: every operation-LABELED battle hides it (wider than
+    // `operation` — the pill says 行动 there too, and the enemy block is
+    // all scripted spawns nobody reads), while real two-team modes keep
+    // the live split's enemy side.
     const enemies = computed(() =>
       orderForTab(
-        props.arena?.vehicles.filter((v) => v.relation > 1) ?? [],
-        tabRowsFor("enemies"),
+        operationLabeled.value ? [] : liveSides.value.enemies,
+        predictedOptionsFor("enemy"),
       ),
     );
 
-    function openLookup(name: string) {
-      void router.push({ path: "/lookup", query: { name, realm: realm.value } });
+    /** Lookup jump for one roster player. The row's OWN resolved realm
+     *  wins when present (cross-server CW rows resolve on another
+     *  cluster — account ids are unique per realm, so the panel realm
+     *  would name a different player there); the panel realm (the
+     *  battle's own chain, latch included) is the fallback. */
+    function openLookup(name: string, rowRealm?: string | null) {
+      void router.push({
+        path: "/lookup",
+        query: { name, realm: rowRealm || realm.value },
+      });
     }
 
+    /** The stats-source battle scope — the one PANEL-WIDE dimension left
+     *  (each configured column carries its own scope, see rosterColumns)
+     *  — resolved for THIS battle: "follow" reads the battle's own mode
+     *  (ranked battles read the ranked careers, everything else
+     *  randoms). Every row number, the stat text lines, the team
+     *  aggregates and the share shot resolve per column scope through
+     *  the view resolver below. */
+    const battleScope = computed<ResolvedStatsMode>(() =>
+      resolveRosterBattleScope(prefs.prefs.overlayBattleScope, props.arena ?? {}),
+    );
+    /** Any configured column resolves past the account careers: rows then
+     *  read the per-ship lists (attached by the roster pipeline) and
+     *  their spinners additionally ride `shipsLoading`. */
+    const shipScopeOn = computed(() =>
+      columnsNeedShipStats(prefs.prefs.overlayColumns, prefs.prefs.prEnabled),
+    );
+    /** One row's display numbers for ONE column scope — the account-career
+     *  path for "global" (and the solo sweep), the aggregated per-ship
+     *  view otherwise (see utils/shipStatsScope). */
+    const colViewOf = (
+      scope: OverlayColumnScope,
+      st: RosterStat | null | undefined,
+      shipId: number | null,
+    ) =>
+      scopedRosterView(
+        st,
+        shipId,
+        overlayColumnDims(scope, prefs.prefs.overlayBattleScope),
+        battleScope.value,
+        prAlgoForRequest() ?? "winrate",
+      );
+
+    /** One team's header aggregate FOR ONE COLUMN SCOPE — tier-weighted
+     *  (per the stats prefs) mean winrate plus plain mean PR / battles /
+     *  avg damage over the players whose stats landed, each in that
+     *  scope's resolved view. AI names, hidden profiles and still-loading
+     *  rows sit out (per-ship lists only gate the scopes that read
+     *  them). */
+    const teamAggFor = (
+      scope: OverlayColumnScope,
+      entries: TabOrderedVehicle[],
+    ) =>
+      aggregateTeamStats(
+        entries.map((entry) => {
+          const v = entry.vehicle;
+          const st = stats.get(v.id);
+          if (
+            !st ||
+            st.loading ||
+            (scope !== "global" && st.shipsLoading) ||
+            st.hidden ||
+            isAiName(v.name)
+          ) {
+            return {
+              winrate: null,
+              pr: null,
+              battles: null,
+              damage: null,
+              tier: shipTierOf(v.shipId),
+            };
+          }
+          const view = colViewOf(scope, st, v.shipId);
+          return {
+            winrate: view.winrate,
+            pr: view.pr,
+            battles: view.battles,
+            damage: view.avgDamage,
+            tier: shipTierOf(v.shipId),
+          };
+        }),
+        prefs.prefs.weightedTeamWr,
+      );
+
+    /** The copy-shot model: the two-column roster as the share renderer
+     *  sees it — same stats voice as the panel (WR, plus PR while the
+     *  rating is on), nicks arriving already masked, ship parameters
+     *  never included. */
+    function buildShotModel(): ShotModel {
+      const arena = props.arena;
+      let mode: ShotModel["mode"] = null;
+      if (arena?.matchGroup) {
+        const c = modeColor(
+          arena.matchGroup,
+          arena.scenario,
+          arena.eventType,
+          arena.botCount ?? 0,
+          arena.scriptedUnitCount ?? 0,
+        );
+        mode = {
+          label: modeLabelOf(
+            arena.matchGroup,
+            arena.scenario,
+            arena.eventType,
+            arena.botCount ?? 0,
+            arena.scriptedUnitCount ?? 0,
+          ),
+          color: c.color,
+          background: c.background,
+        };
+      }
+      /** One row's shot cells: the configured columns of the row's
+       *  per-scope views — the exact columns the panel shows, dashes for
+       *  bots / misses / still-loading rows. The enemy column MIRRORS
+       *  the ally one (config order reads left→right on the allies,
+       *  reversed on the enemies), same as the DOM below. */
+      const shotCellsOf = (v: VehicleEntry, enemy: boolean): ShotStat[] => {
+        if (isAiName(v.name)) return rosterShotDashes();
+        const st = stats.get(v.id);
+        if (
+          !st ||
+          st.loading ||
+          (shipScopeOn.value && st.shipsLoading) ||
+          st.hidden
+        ) {
+          return rosterShotDashes();
+        }
+        const cells = rosterShotCells((scope) => colViewOf(scope, st, v.shipId));
+        return enemy ? [...cells].reverse() : cells;
+      };
+      const mkCol = (entries: TabOrderedVehicle[], enemy: boolean): ShotColumn => {
+        // Aggregate values carry their stat-column index so the shot's
+        // header numbers right-align onto the cells below them. The
+        // aggregate mirrors the panel's column title: one labeled team
+        // mean PER CONFIGURED COLUMN (each in its own scope's view), the
+        // mirrored enemy column flipping its origins to the reversed
+        // order.
+        let agg: ShotColumn["agg"];
+        {
+          const cols = rosterColumns();
+          const parts: NonNullable<ShotColumn["agg"]> = [];
+          cols.forEach((col, idx) => {
+            const a = teamAggFor(col.scope, entries);
+            // The winrate mean's label keeps the weighted/plain wording;
+            // scoped columns prefix their tag so same-metric columns of
+            // different scopes stay readable side by side.
+            const wrLabel = t(
+              prefs.prefs.weightedTeamWr
+                ? "replay.roster.teamWrWeighted"
+                : "replay.roster.teamWrPlain",
+            );
+            if (col.metric === "winrate") {
+              parts.push({
+                col: enemy ? cols.length - 1 - idx : idx,
+                label: col.scope === "global" ? wrLabel : col.head,
+                value: a.winrate != null ? `${a.winrate.toFixed(1)}%` : "—",
+                valueColor: a.winrate != null ? winrateColor(a.winrate) : undefined,
+              });
+            } else if (col.metric === "pr") {
+              parts.push({
+                col: enemy ? cols.length - 1 - idx : idx,
+                label: col.scope === "global" ? t("replay.roster.teamAvgPr") : col.head,
+                value: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
+                valueColor: a.avgPr != null ? prTier(a.avgPr).color : undefined,
+              });
+            } else if (col.metric === "battles") {
+              parts.push({
+                col: enemy ? cols.length - 1 - idx : idx,
+                label: col.scope === "global" ? t("replay.roster.battles") : col.head,
+                value: a.avgBattles != null
+                  ? Math.round(a.avgBattles).toLocaleString()
+                  : "—",
+                valueColor:
+                  a.avgBattles != null ? battlesColor(a.avgBattles) : undefined,
+              });
+            } else {
+              parts.push({
+                col: enemy ? cols.length - 1 - idx : idx,
+                label:
+                  col.scope === "global"
+                    ? t("replay.postbattle.avgDamage")
+                    : col.head,
+                value: a.avgDamage != null
+                  ? Math.round(a.avgDamage).toLocaleString()
+                  : "—",
+                valueColor: a.avgDamage != null ? damageColor(a.avgDamage) : undefined,
+              });
+            }
+          });
+          agg = parts.length > 0 ? parts : undefined;
+        }
+        return {
+          title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
+          agg,
+          rows: entries.map((entry): ShotRow => {
+            const v = entry.vehicle;
+            return {
+              nick: masking.maskOf(v.name),
+              clanTag: stats.get(v.id)?.clanTag ?? null,
+              shipName:
+                shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
+                  v.shipName ??
+                  t("replay.live.unknownShip"),
+              bot: isAiName(v.name),
+              dim: entry.sunk,
+              shipType:
+                v.shipId != null ? (shipOfflineEntry(v.shipId)?.type ?? null) : null,
+              iconVariant: entry.sunk
+                ? "sunk"
+                : v.relation === 0
+                  ? "white"
+                  : v.relation <= 1
+                    ? "ally"
+                    : "enemy",
+              stats: shotCellsOf(v, enemy),
+            };
+          }),
+        };
+      };
+      return {
+        title: t("replay.live.title"),
+        mode,
+        mapLabel: arena?.mapName ? displayMapName(arena.mapName, dataLanguage.value) : null,
+        botLabel: t("replay.bot"),
+        // Mirror the DOM's single-column rule (operations hide the enemy
+        // column, as does any single-sided roster edge).
+        columns:
+          enemies.value.length === 0
+            ? [mkCol(allies.value, false)]
+            : [mkCol(allies.value, false), mkCol(enemies.value, true)],
+      };
+    }
+
+    /** A column title (我方/敌方) with the team aggregate. Full cards have
+     *  no aligned stat columns, so the aggregate rides the title's right
+     *  end as inline text — one labeled mean per configured column, each
+     *  in its own scope's view. Compact rows ARE aligned columns, so the
+     *  title becomes the two-line mini table header: a per-column label
+     *  over a per-column team mean on a grid mirroring the row's stat
+     *  columns (rosterColumns()), every average landing exactly on its
+     *  own column. The ENEMY title mirrors the enemy rows' reversed
+     *  column order, so the two sides' headers face each other like the
+     *  rows do. Values carry their tier colors (winrateColor / prTier /
+     *  battlesColor / damageColor). */
+    const colTitle = (label: string, entries: TabOrderedVehicle[], enemy: boolean) => {
+      const title = <span class="live-battle__col-name">{label}</span>;
+      const cols = rosterColumns();
+      if (compact.value) {
+        // The aligned header needs stat columns to sit on — with every
+        // column removed the caption falls back to the bare title below.
+        if (cols.length > 0) {
+          const ordered = enemy ? [...cols].reverse() : cols;
+          const labelOf = (col: RosterColumnSpec): string => {
+            if (col.scope !== "global") return col.head;
+            if (col.metric === "winrate") {
+              return t(
+                prefs.prefs.weightedTeamWr
+                  ? "replay.roster.teamWrWeighted"
+                  : "replay.roster.teamWrPlain",
+              );
+            }
+            if (col.metric === "pr") return t("replay.roster.teamAvgPr");
+            if (col.metric === "battles") return t("replay.roster.battles");
+            return t("replay.postbattle.avgDamage");
+          };
+          const valueOf = (col: RosterColumnSpec): VNode => {
+            const agg = teamAggFor(col.scope, entries);
+            if (col.metric === "winrate") {
+              return (
+                <b
+                  class="live-battle__col-hval"
+                  style={
+                    agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined
+                  }
+                >
+                  {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+                </b>
+              );
+            }
+            if (col.metric === "pr") {
+              return (
+                <b
+                  class="live-battle__col-hval"
+                  style={{ color: prTier(agg.avgPr).color }}
+                >
+                  {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+                </b>
+              );
+            }
+            if (col.metric === "battles") {
+              return (
+                <b
+                  class="live-battle__col-hval"
+                  style={
+                    agg.avgBattles != null
+                      ? { color: battlesColor(agg.avgBattles) }
+                      : undefined
+                  }
+                >
+                  {agg.avgBattles != null
+                    ? Math.round(agg.avgBattles).toLocaleString()
+                    : "—"}
+                </b>
+              );
+            }
+            return (
+              <b
+                class="live-battle__col-hval"
+                style={
+                  agg.avgDamage != null ? { color: damageColor(agg.avgDamage) } : undefined
+                }
+              >
+                {agg.avgDamage != null
+                  ? Math.round(agg.avgDamage).toLocaleString()
+                  : "—"}
+              </b>
+            );
+          };
+          return (
+            <div
+              class={[
+                "live-battle__col-title",
+                "live-battle__col-title--agg",
+                // Right-edge compensation: compact rows spend width on the
+                // career-seal slot (44px + one flex gap) beyond the stat
+                // columns whenever seals show — the header reserves the
+                // same run so its columns land on the cells below.
+                {
+                  "live-battle__col-title--pad-seal":
+                    prefs.prefs.prEnabled && prefs.prefs.sealsEnabled,
+                },
+              ]}
+              style={{
+                gridTemplateColumns: `minmax(0, 1fr) ${ordered
+                  .map((c) => c.width)
+                  .join(" ")}`,
+              }}
+            >
+              {title}
+              {ordered.map((c) => (
+                <span class="live-battle__col-hlbl">{labelOf(c)}</span>
+              ))}
+              {ordered.map((c) => valueOf(c))}
+            </div>
+          );
+        }
+      }
+      if (cols.length === 0) {
+        return <div class="live-battle__col-title">{title}</div>;
+      }
+      // Full cards: the per-column means inline on the title's right end,
+      // in configured order on both sides (the cards themselves are not
+      // column-aligned, so the mirror does not apply here).
+      const inlineParts: VNode[] = [];
+      cols.forEach((col, i) => {
+        const agg = teamAggFor(col.scope, entries);
+        const label =
+          col.scope !== "global"
+            ? col.head
+            : col.metric === "winrate"
+              ? t(
+                  prefs.prefs.weightedTeamWr
+                    ? "replay.roster.teamWrWeighted"
+                    : "replay.roster.teamWrPlain",
+                )
+              : col.metric === "pr"
+                ? t("replay.roster.teamAvgPr")
+                : col.metric === "battles"
+                  ? t("replay.roster.battles")
+                  : t("replay.postbattle.avgDamage");
+        let value: VNode;
+        if (col.metric === "winrate") {
+          value = (
+            <b
+              style={
+                agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined
+              }
+            >
+              {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+            </b>
+          );
+        } else if (col.metric === "pr") {
+          const band = prTier(agg.avgPr);
+          value = (
+            <b
+              class={band.rainbow ? "rainbow-text" : undefined}
+              style={band.rainbow ? undefined : { color: band.color }}
+            >
+              {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+            </b>
+          );
+        } else if (col.metric === "battles") {
+          value = (
+            <b
+              style={
+                agg.avgBattles != null
+                  ? { color: battlesColor(agg.avgBattles) }
+                  : undefined
+              }
+            >
+              {agg.avgBattles != null ? Math.round(agg.avgBattles).toLocaleString() : "—"}
+            </b>
+          );
+        } else {
+          value = (
+            <b
+              style={
+                agg.avgDamage != null ? { color: damageColor(agg.avgDamage) } : undefined
+              }
+            >
+              {agg.avgDamage != null ? Math.round(agg.avgDamage).toLocaleString() : "—"}
+            </b>
+          );
+        }
+        if (i > 0) inlineParts.push(<>{" · "}</>);
+        inlineParts.push(
+          <>
+            {label} {value}
+          </>,
+        );
+      });
+      return (
+        <div class="live-battle__col-title">
+          {title}
+          <span class="live-battle__col-agg">{inlineParts}</span>
+        </div>
+      );
+    };
+
     return () => {
+      // Game running but no roster yet (or the roster just cleared): a
+      // radar-scope waiting state — the roster loads itself the moment the
+      // player enters a battle.
       if (!props.arena || props.arena.vehicles.length === 0) {
         return (
-          <div class="live-battle live-battle--empty">
-            <p class="live-battle__empty-text">{t("replay.live.notStarted")}</p>
-          </div>
+          <HkScrollContainer class="live-battle live-battle--empty">
+            {/* Waiting-state scroller: no head row, so the panel itself is
+                the hikari scroll region (auto-hiding overlay track); the
+                copy centers inside the inner wrapper. */}
+            <div class="live-battle__empty-inner">
+              <WaitingRadarArt class="live-battle__empty-art" />
+              <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
+              <p class="live-battle__empty-hint">{t("replay.live.waitingHint")}</p>
+              {/* Status-only plugin card: res_mods mutations are refused
+                  while the game runs, so no lifecycle buttons here — but the
+                  state (incl. the outdated warning) stays visible. */}
+              <PluginStatusCard actions={false} />
+            </div>
+          </HkScrollContainer>
         );
       }
 
@@ -211,163 +1126,533 @@ export default defineComponent({
             modeColor(
               props.arena.matchGroup,
               props.arena.scenario,
-              null,
+              props.arena.eventType,
               props.arena.botCount ?? 0,
+              props.arena.scriptedUnitCount ?? 0,
             ) as CSSProperties
           }
         >
-          {modeLabelOf(props.arena.matchGroup, props.arena.scenario, props.arena.botCount ?? 0)}
+          {modeLabelOf(
+            props.arena.matchGroup,
+            props.arena.scenario,
+            props.arena.eventType,
+            props.arena.botCount ?? 0,
+            props.arena.scriptedUnitCount ?? 0,
+          )}
         </span>
       ) : null;
 
-      const statLine = (v: VehicleEntry) => {
-        if (isAiName(v.name)) return "—";
-        const st = stats.get(v.id);
-        if (!st || st.loading) return <HSpinner size="xs" tone="current" />;
-        if (st.hidden) {
-          return (
-            <span class="live-battle__player-hidden">
-              {t("replay.live.hiddenProfile")}
-            </span>
-          );
+      /** PR-tier row wash (a persisted stats pref, default on): rows whose
+       *  resolved stats-source PR landed paint the whole entry with a
+       *  translucent wash of the tier's color — red band red, purple band
+       *  purple — in the SAME view the row's numbers read. The color rides
+       *  CSS custom properties (not an inline background) so the row's own
+       *  hover rule still brightens it; bots / loading / hidden / no-PR
+       *  rows stay neutral. */
+      const prTintVars = (
+        st: RosterStat | null | undefined,
+        shipId: number | null,
+      ): CSSProperties | undefined => {
+        if (!prefs.prefs.prEnabled || !prefs.prefs.liveRosterPrTint) return undefined;
+        if (!st || st.loading || st.hidden || (shipScopeOn.value && st.shipsLoading)) {
+          return undefined;
         }
-        if (st.winrate != null) {
-          const tier = prTier(st.pr);
-          return (
-            <span class="live-battle__player-statline">
-              <b style={{ color: winrateColor(st.winrate) }}>
-                {st.winrate.toFixed(1)}%
-              </b>{" "}
-              WR ·{" "}
-              <b
-                class={tier.rainbow ? "rainbow-text" : undefined}
-                style={tier.rainbow ? undefined : { color: tier.color }}
-              >
-                {st.pr ?? "—"}
-              </b>{" "}
-              PR
-            </span>
-          );
-        }
-        return "—";
+        // The tint follows the FIRST configured PR column's scope (the
+        // rating the user actually put on screen); the account career PR
+        // when no PR column is configured.
+        const prScope =
+          rosterColumns().find((c) => c.metric === "pr")?.scope ?? "global";
+        const pr = colViewOf(prScope, st, shipId).pr;
+        if (pr == null) return undefined;
+        // prTier colors are "rgb(R G B)" strings — hand the row SCSS the raw
+        // triplet plus the wash alpha it composes into rgb(… / a).
+        return {
+          "--row-tint": prTier(pr).color.slice(4, -1),
+          "--row-tint-a": "0.14",
+        } as CSSProperties;
       };
 
-      const cell = (entry: TabOrderedVehicle) => {
+      // Compact mode reuses the post-battle matrix's row look verbatim —
+      // including the shared rosterStatCols — so it needs a name-keyed view
+      // of this panel's id-keyed stats. Rows still loading drop out of the
+      // view (their columns then carry the spinner like every surface).
+      const nameStats = new Map<string, RosterStat>();
+      if (compact.value) {
+        for (const v of props.arena.vehicles) {
+          const st = stats.get(v.id);
+          if (st && !st.loading) nameStats.set(v.name, st);
+        }
+      }
+
+      /** One compact row: battle icon, nick/clan + ship stack, the shared
+       *  per-scope stat columns and the career seal — one line, no
+       *  ship-meta strip. The whole row is the lookup jump (hover and
+       *  clicks cover the seal), sunk rows dim like the full cards. The
+       *  ENEMY roster renders the columns mirrored (right-to-left), so
+       *  the two sides face each other — the issue-1082 water-table
+       *  layout; operations render the allies column only (left side). */
+      const compactCell = (entry: TabOrderedVehicle, enemy: boolean) => {
         const v = entry.vehicle;
+        const ai = isAiName(v.name);
+        const st = ai ? null : stats.get(v.id);
         const shipName =
-          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ?? v.shipName ?? "";
-        const clickable = !isAiName(v.name);
-        // The career seal is a card-level element pinned to the card's right
-        // edge (same "pressed onto the card" look as the account card), so it
-        // needs its own copy of the career guard statLine uses above.
-        const st = clickable ? stats.get(v.id) : null;
+          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
+            v.shipName ??
+            t("replay.live.unknownShip");
+        // Career seal — the full card's guard chain (verdict-pending hidden
+        // profiles hold their stamp).
         const stamp =
-          st && !st.loading && !st.hidden && st.winrate != null
-            ? careerStamp(st.pr, st.battles, st.winrate)
+          st &&
+          !st.loading &&
+          !(st.hidden && st.clanId != null && st.clanWinrate === undefined)
+            ? careerStamp(st.pr, st.battles, st.winrate, st.hidden, st.clanWinrate)
             : null;
-        const classes = [
-          "live-battle__player",
-          { "live-battle__player--link": clickable },
-          // Sunk mid-battle (recognized off the dim-gray Tab row): the card
-          // dims the same way the game grays the row.
-          { "live-battle__player--sunk": entry.sunk },
-        ];
+        const seal =
+          stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
+            <RatingStamp
+              kind={stamp}
+              size={34}
+              variant="mini"
+              class="live-battle__crow-stamp"
+            />
+          ) : null;
         const content = (
           <>
-            <span class="live-battle__player-main">
-              <span class="live-battle__player-name">
-                {v.name}
-                {isAiName(v.name) ? (
-                  <em class="live-battle__player-bot">{t("replay.bot")}</em>
-                ) : null}
-              </span>
-              <span class="live-battle__player-ship">{shipName}</span>
-              <span class="live-battle__player-stat">{statLine(v)}</span>
+            <span class="live-battle__crow-ico">
+              {v.shipId != null ? (
+                <BattleIcon
+                  type={shipOfflineEntry(v.shipId)?.type ?? ""}
+                  variant={
+                    entry.sunk
+                      ? "sunk"
+                      : v.relation === 0
+                        ? "white"
+                        : v.relation <= 1
+                          ? "ally"
+                          : "enemy"
+                  }
+                  size={20}
+                />
+              ) : null}
             </span>
-            {stamp ? (
-              <RatingStamp
-                kind={stamp}
-                size={26}
-                variant="mini"
-                class="live-battle__player-stamp"
-              />
+            <span class="live-battle__crow-main">
+              <span class="live-battle__crow-name">
+                <span class="live-battle__crow-nick">{masking.maskOf(v.name)}</span>
+                {crossRealmTagOf(st) ? (
+                  <span class="live-battle__cross-realm">{crossRealmTagOf(st)}</span>
+                ) : null}
+                {st?.clanTag ? (
+                  <span class="live-battle__crow-clan">[{st.clanTag}]</span>
+                ) : null}
+                {ai ? <em class="live-battle__crow-bot">{t("replay.bot")}</em> : null}
+              </span>
+              <span class="live-battle__crow-ship">{shipName}</span>
+            </span>
+            {rosterStatCols(
+              v.name,
+              nameStats,
+              Boolean(
+                stats.get(v.id)?.loading ||
+                  (shipScopeOn.value && stats.get(v.id)?.shipsLoading),
+              ),
+              (st, scope) => colViewOf(scope, st, v.shipId),
+              { mirror: enemy },
+            )}
+            {/* Seal slot reserved whenever seals show at all (PR + settings
+                master) — the matrix's own alignment rule: rows without a
+                stamp (bots, misses, verdict holds) keep the stat columns
+                at the same x as sealed rows instead of zigzagging. */}
+            {prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
+              <span class="live-battle__crow-stampslot">{seal}</span>
             ) : null}
           </>
         );
-        return clickable ? (
+        const classes = [
+          "live-battle__crow",
+          { "live-battle__crow--link": !ai },
+          { "live-battle__crow--sunk": entry.sunk },
+        ];
+        const tint = prTintVars(st, v.shipId);
+        return !ai ? (
           <button
             class={classes}
+            style={tint}
             key={v.id}
             type="button"
             data-hint={t("replay.live.viewProfile")}
-            onClick={() => openLookup(v.name)}
+            onClick={() => openLookup(v.name, st?.realm)}
           >
             {content}
           </button>
         ) : (
-          <div class={classes} key={v.id}>
+          <div class={classes} style={tint} key={v.id}>
+            {content}
+          </div>
+        );
+      };
+
+      const cell = (entry: TabOrderedVehicle, enemy: boolean) => {
+        if (compact.value) return compactCell(entry, enemy);
+        const v = entry.vehicle;
+        const shipName =
+          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
+            v.shipName ??
+            t("replay.live.unknownShip");
+        const clickable = !isAiName(v.name);
+        // The career seal is a card-level element pinned to the card's right
+        // edge (same "pressed onto the card" look as the account card), so it
+        // needs its own copy of the career guard statLine uses above. Both
+        // roster columns read left-to-right, so the seal rides the right edge
+        // for allies and enemies alike — only the in-game Tab overlay flakes
+        // its seals by team.
+        const st = clickable ? stats.get(v.id) : null;
+        // Hidden profiles earn the 过街老鼠 seal instead of a stat verdict —
+        // careerStamp's hidden branch handles that — but only once the clan
+        // gate has spoken: a hidden profile WITH a clan holds the seal while
+        // its clan verdict is still out (clanWinrate undefined), and
+        // careerStamp excuses a clan beating the 53% gate (a failed verdict
+        // arrives as null and stamps fail-open). Everything else grades from
+        // the numbers (unknown winrate → 猴 fallback).
+        const stamp =
+          st &&
+          !st.loading &&
+          !(st.hidden && st.clanId != null && st.clanWinrate === undefined)
+            ? careerStamp(st.pr, st.battles, st.winrate, st.hidden, st.clanWinrate)
+            : null;
+        const classes = [
+          "live-battle__player",
+          { "live-battle__player--link": clickable },
+          // Sunk mid-battle (recognized off the dim-gray Tab row): the
+          // card grays out like the game's row, save the seal track — it
+          // keeps the row's PR-tier tint (see the SCSS sunk rules).
+          { "live-battle__player--sunk": entry.sunk },
+        ];
+        const seal =
+          stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
+            <RatingStamp
+              kind={stamp}
+              size={34}
+              variant="mini"
+              class="live-battle__player-stamp"
+            />
+          ) : null;
+        // The row's per-scope resolvers for the bottom stat strip — null
+        // while any gate holds (loading / hidden); LiveStatLine owns those
+        // faces.
+        const statViews:
+          | ((scope: OverlayColumnScope) => RosterModeNumbers)
+          | undefined =
+          st && !st.loading && !st.hidden && !(shipScopeOn.value && st.shipsLoading)
+            ? (scope: OverlayColumnScope) => colViewOf(scope, st, v.shipId)
+            : undefined;
+        const main = (
+          <span class="live-battle__player-main">
+            <span class="live-battle__player-name">
+              <span class="live-battle__player-nick">{masking.maskOf(v.name)}</span>
+              {/* Cross-server Clan-Battles badge (欧服 etc.) — only on rows
+                  whose stats resolved on another cluster. */}
+              {crossRealmTagOf(st) ? (
+                <span class="live-battle__cross-realm">{crossRealmTagOf(st)}</span>
+              ) : null}
+              {/* Clan tag from the batch answer ([HOOD] etc.) — the same tag
+                  the in-game Tab panel prefixes nicknames with. It sits
+                  AFTER the nick so every card's nick starts at the same
+                  column. */}
+              {st?.clanTag ? (
+                <span class="live-battle__player-clan">[{st.clanTag}]</span>
+              ) : null}
+              {isAiName(v.name) ? (
+                <em class="live-battle__player-bot">{t("replay.bot")}</em>
+              ) : null}
+            </span>
+            <span class="live-battle__player-ship">
+              {/* Ship-type marker riding the ship name — the compact rows'
+                  lead icon in the same team/sunk variant vocabulary, so the
+                  class reads at a glance without the meta strip. */}
+              <span class="live-battle__player-ship-ico">
+                {v.shipId != null ? (
+                  <BattleIcon
+                    type={shipOfflineEntry(v.shipId)?.type ?? ""}
+                    variant={
+                      entry.sunk
+                        ? "sunk"
+                        : v.relation === 0
+                          ? "white"
+                          : v.relation <= 1
+                            ? "ally"
+                            : "enemy"
+                    }
+                    size={14}
+                  />
+                ) : null}
+              </span>
+              <span class="live-battle__player-ship-name">{shipName}</span>
+            </span>
+          </span>
+        );
+        const content = (
+          <>
+            {main}
+            {/* Ship identity + parameters ride the card's middle ground;
+                ally rows additionally carry the consumable/module/flag
+                summary. Enemies get parameters only — and operations have
+                no enemies at all. */}
+            <LiveShipMeta shipId={v.shipId} ally={v.relation <= 1} />
+            {seal}
+            {/* The stat strip is the card's SECOND row, spanning all three
+                tracks (see LiveStatLine): the one line long enough to matter
+                at full width, it borrows the middle ground's and the seal's
+                air instead of ellipsizing inside the fixed name track. */}
+            <LiveStatLine
+              ai={!clickable}
+              loading={Boolean(
+                !st || st.loading || (shipScopeOn.value && st.shipsLoading),
+              )}
+              hidden={Boolean(st?.hidden)}
+              views={statViews}
+            />
+          </>
+        );
+        const tint = prTintVars(st, v.shipId);
+        return clickable ? (
+          <button
+            class={classes}
+            style={tint}
+            key={v.id}
+            type="button"
+            data-hint={t("replay.live.viewProfile")}
+            onClick={() => openLookup(v.name, st?.realm)}
+          >
+            {content}
+          </button>
+        ) : (
+          <div class={classes} style={tint} key={v.id}>
             {content}
           </div>
         );
       };
 
       return (
-        <div class="live-battle">
+        <div class="live-battle" ref={root}>
           <div class="live-battle__head live-battle__head--status">
-            <span class="live-battle__title">{t("replay.live.title")}</span>
-            {props.settling ? (
+            {/* The page title — the only "实时对局" on screen (the view-level
+                duplicate was dropped; see LiveView). */}
+            <h1 class="live-battle__title">{t("replay.live.title")}</h1>
+            {props.ended ? (
+              <span class="live-battle__pill live-battle__pill--ended">
+                {t("replay.live.ended")}
+              </span>
+            ) : props.settling ? (
               <span class="live-battle__pill live-battle__pill--settling">
                 {t("replay.live.settling")}
               </span>
             ) : (
               <span class="live-battle__pill live-battle__pill--live">LIVE</span>
             )}
+            {/* The battle's own server (来源服务器): the roster's stats
+                resolve on THIS cluster for the roster's whole retention,
+                ended battles included. The value rides LiveView's chain —
+                the probe's and the running client's ground truth may still
+                refine it while fresh — but the bottom-left client-version
+                switcher cannot move it once latched (overlay.battleRealm). */}
+            {realm.value ? (
+              <span
+                class="live-battle__pill live-battle__pill--realm"
+                data-hint={t("replay.live.battleRealmHint")}
+              >
+                {realmLabelOf(realm.value)}
+              </span>
+            ) : null}
+            {/* The serving game window used to repeat here as its own pill
+                (kind · realm · PID) — dropped 2026-10-10: the realm pill
+                above already names the battle's server and the bottom-left
+                running-clients card already carries the window identity
+                (kind, realm, PID) for the multi-client question the pill
+                answered. */}
             {modePill}
-            {clockLabel.value ? (
+            {!props.ended && clockLabel.value ? (
               <span class="live-battle__clock">{clockLabel.value}</span>
             ) : null}
-            <span class="live-battle__map">
-              {displayMapName(props.arena.mapName, dataLanguage.value)}
+            {/* The map as a jump tag (shared with the replay-review head):
+                hover previews the map's bundled minimap, click opens the
+                map's tactical board — see MapNameTag. */}
+            <MapNameTag class="live-battle__map" spaceId={props.arena.mapName} lang={dataLanguage.value} />
+            {/* Stats-source mode tag: opens the very column editor the
+                settings page hosts (drag cards + the add connector) with
+                the panel-wide battle scope beneath — one shared store,
+                every surface stays in sync live. */}
+            <LiveStatsModeChip />
+            {/* Copy-share-shot: the roster as a watermarked PNG straight
+                onto the clipboard — the share path itself, no separate
+                post-battle window in between. Copy feedback rides the
+                app's toast surface. */}
+            <button
+              class="live-battle__shot-btn"
+              type="button"
+              disabled={shot.busy.value}
+              onClick={() => void shot.copyShot()}
+            >
+              {shot.busy.value ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
+              {t("share.copyShot")}
+            </button>
+            {/* Manual full stats refresh: wipes the backend session cache
+                and re-requests the WHOLE roster. Already-loaded rows keep
+                their values (a failed re-request must not blank the
+                panel); the spinner rides the button while in flight. */}
+            <button
+              class={[
+                "live-battle__mask-btn",
+                { "live-battle__mask-btn--on": rosterRefreshing.value },
+              ]}
+              type="button"
+              disabled={rosterRefreshing.value}
+              data-hint={t("replay.live.refreshStatsHint")}
+              onClick={() => {
+                rosterRefreshing.value = true;
+                void forceRefresh();
+                // The batch settles spinners itself; release the button on
+                // the next render tick after the request pipeline drains
+                // (the composable flips loading flags per row).
+                setTimeout(() => (rosterRefreshing.value = false), 4000);
+              }}
+            >
+              {rosterRefreshing.value ? <HkSpinner size="xs" tone="current" /> : <RefreshCw size={13} />}
+              {t("replay.live.refreshStats")}
+            </button>
+            {/* Roster density: the post-battle matrix's one-line rows ⇄ the
+                full cards (persisted stats pref). Icon and label both show
+                the mode a click switches TO — Rows2 = the compact two-line
+                row, Rows3 = the full three-line card. */}
+            <button
+              class={[
+                "live-battle__density-btn",
+                { "live-battle__density-btn--on": compact.value },
+              ]}
+              type="button"
+              onClick={() => prefs.setLiveRosterCompact(!compact.value)}
+            >
+              {compact.value ? <Rows3 size={13} /> : <Rows2 size={13} />}
+              {compact.value
+                ? t("replay.roster.fullMode")
+                : t("replay.roster.compactMode")}
+            </button>
+            {/* Hide-all-nicknames toggle — the post-battle share bar's
+                masking button, dressed in the head's pill voice. */}
+            <button
+              class={[
+                "live-battle__mask-btn",
+                { "live-battle__mask-btn--on": masking.hideAll.value },
+              ]}
+              type="button"
+              onClick={() => masking.toggleAll()}
+            >
+              {/* Icon = the action a click performs, matching the
+                  post-battle share bar's toggle exactly. */}
+              {masking.hideAll.value ? <Eye size={13} /> : <EyeOff size={13} />}
+              {masking.hideAll.value
+                ? t("replay.live.showNicks")
+                : t("replay.live.hideNicks")}
+            </button>
+            {/* Telemetry-source grade: staged per the roster mode, the
+                plugin's presence and this battle's sort-key coverage —
+                exact (connected AND the telemetry's game-true sort keys
+                cover the roster: the row order above IS the client's) >
+                partial (connected: alive/sunk states authoritative, but
+                the TAB row order is still the offline per-realm
+                inference) > incomplete (mode picked, plugin missing: the
+                capture inference still runs) > inference (default
+                pipeline). The pill is the honesty marker: the inferred
+                order is never presented as game-truth. */}
+            <span
+              class={[
+                "live-battle__pill",
+                `live-battle__pill--telemetry-${telemetryGrade.value}`,
+              ]}
+              data-hint={
+                t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}Hint`)
+              }
+            >
+              {telemetryGrade.value === "exact" ? (
+                <BadgeCheck size={12} />
+              ) : telemetryGrade.value === "partial" ? (
+                <Plug size={12} />
+              ) : telemetryGrade.value === "incomplete" ? (
+                <Unplug size={12} />
+              ) : (
+                <ScanEye size={12} />
+              )}
+              {t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}`)}
             </span>
-            {statusBadge.value ? (
-              <>
-                <span
-                  class={[
-                    "live-battle__pill",
-                    `live-battle__pill--status-${statusBadge.value.cls}`,
-                  ]}
-                >
-                  {statusBadge.value.text}
-                </span>
-                <button
-                  class={[
-                    "live-battle__manual-btn",
-                    {
-                      "live-battle__manual-btn--active": manualActive.value,
-                      "live-battle__manual-btn--shake": manualShake.value,
-                    },
-                  ]}
-                  type="button"
-                  disabled={manualBusy.value}
-                  onClick={() => void onManualButton()}
-                >
-                  {manualActive.value
-                    ? t("replay.live.manualClear")
-                    : t("replay.live.manualLocate")}
-                </button>
-              </>
-            ) : null}
+            {/* One widget, four voices: idle reads as the manual-locate
+                entry, searching/detected carry the automatic Tab-pass state,
+                and a live manual anchor reads the anchored state (its click
+                then clears it). This button absorbed the separate read-only
+                status pill that used to sit beside it — two widgets voicing
+                one locate state pushed the head onto a second line. The
+                entry itself stays PERMANENT: idle stretches between battles
+                (and battles where Tab was never held) leave no overlay
+                status at all, and stranding the region-picker entry on
+                those states is exactly what made it look flaky. */}
+            <button
+              class={[
+                "live-battle__manual-btn",
+                {
+                  "live-battle__manual-btn--active": manualActive.value,
+                  "live-battle__manual-btn--detected":
+                    locateState.value?.cls === "detected",
+                  "live-battle__manual-btn--searching":
+                    locateState.value?.cls === "searching",
+                  "live-battle__manual-btn--shake": manualShake.value,
+                },
+              ]}
+              type="button"
+              disabled={manualBusy.value}
+              data-hint={
+                manualActive.value ? t("replay.live.manualClearHint") : undefined
+              }
+              onClick={() => void onManualButton()}
+            >
+              {/* Icon = the action a click performs, matching the
+                  nickname/density toggles: crosshair while idle, X to
+                  clear an anchor that is live; the spinner only while the
+                  automatic Tab pass is still settling. */}
+              {locateState.value?.spin ? (
+                <HkSpinner size="xs" tone="current" />
+              ) : manualActive.value ? (
+                <X size={13} />
+              ) : (
+                <LocateFixed size={13} />
+              )}
+              {locateState.value
+                ? locateState.value.text
+                : t("replay.live.manualLocate")}
+            </button>
           </div>
-          <div class="live-battle__matrix">
-            <div class="live-battle__col">
-              <div class="live-battle__col-title">{t("replay.roster.allies")}</div>
-              {allies.value.map(cell)}
+          {/* Operations (行动) have no enemy list — the enemy side is all
+              scripted spawns — so the roster renders as one centered
+              allies column (single-sided roster edges included). */}
+          {/* Roster scroller: the hikari container owns the scrollbar
+              (auto-hiding overlay track over the panel's right edge); the
+              columns grid scrolls inside its viewport. */}
+          <HkScrollContainer
+            class={[
+              "live-battle__matrix",
+              { "live-battle__matrix--single": enemies.value.length === 0 },
+            ]}
+          >
+            <div class="live-battle__matrix__inner">
+              <div class="live-battle__col">
+                {colTitle(t("replay.roster.allies"), allies.value, false)}
+                {allies.value.map((e) => cell(e, false))}
+              </div>
+              {enemies.value.length > 0 ? (
+                <div class="live-battle__col">
+                  {colTitle(t("replay.roster.enemies"), enemies.value, true)}
+                  {enemies.value.map((e) => cell(e, true))}
+                </div>
+              ) : null}
             </div>
-            <div class="live-battle__col">
-              <div class="live-battle__col-title">{t("replay.roster.enemies")}</div>
-              {enemies.value.map(cell)}
-            </div>
-          </div>
+          </HkScrollContainer>
         </div>
       );
     };

@@ -8,9 +8,8 @@
  * behaviour as `sampleAt` in HolographicMap, expressed for whole paths.
  */
 import type { EntityTrajectory } from "@/api/client";
+import { UNSEEN_GAP_S } from "../trajectoryMath";
 import type { Vec2 } from "./types";
-
-export const UNSEEN_GAP_S = 4;
 
 /**
  * World-space polylines for a trajectory. `upTo` (match seconds) slices the

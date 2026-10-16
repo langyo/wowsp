@@ -34,6 +34,9 @@
  */
 import { computed, ref } from "vue";
 
+import { RPC } from "@/rpc";
+import { isTauri, transport } from "@/transport";
+
 import { i18n, setLocale, SUPPORTED_LOCALES, type Locale } from "./index";
 
 const UI_KEY = "wowsp-ui-locale";
@@ -126,7 +129,67 @@ function loadUiLocale(): Locale {
   if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved)) {
     return saved as Locale;
   }
-  return (i18n.global.locale as unknown as { value: Locale }).value as Locale;
+  const detected = (i18n.global.locale as unknown as { value: Locale }).value as Locale;
+  // Heal-write: a saved-but-unsupported locale (stale tag from an older
+  // build's locale list, hand edit) is forced back to the detected value so
+  // the correction sticks instead of re-detecting on every boot.
+  if (saved != null) {
+    try {
+      localStorage.setItem(UI_KEY, detected);
+    } catch {
+      // storage unavailable — the detected locale holds for the session
+    }
+  }
+  return detected;
+}
+
+/** Installer-wizard locale → canonical UI locale. The shun-built
+ *  installers offer ten wizard locales; the eight with a matching webui
+ *  seed that locale, while de / pt have no UI locale here and stay
+ *  unmapped — the seed ignores them. Anything else is unmappable and
+ *  ignored too. */
+const INSTALLER_LOCALE_TO_UI: Record<string, Locale> = {
+  "zh-Hans": "zh-CN",
+  "zh-Hant": "zh-TW",
+  en: "en-US",
+  ru: "ru-RU",
+  ja: "ja-JP",
+  ko: "ko-KR",
+  fr: "fr-FR",
+  es: "es-ES",
+};
+
+/** Map an installer-wizard locale onto a UI locale, or null when unknown. */
+export function installerLocaleToUi(locale: string): Locale | null {
+  return INSTALLER_LOCALE_TO_UI[locale] ?? null;
+}
+
+/**
+ * First-startup seed: when the user has never picked a UI locale in the
+ * app (no `wowsp-ui-locale` in localStorage), adopt the language the
+ * installer wizard ran under — the app reads it from the on-disk install
+ * manifest via the `installer_language` command. The seed NEVER overrides
+ * a user's own choice: it runs only while the key is absent (re-checked
+ * after the IPC round-trip) and is never persisted, so the system-locale
+ * fallback stays in charge the moment the user picks (or declines to pick)
+ * inside the app. Any failure — plain-browser build, older installer
+ * without the command — keeps the existing locale untouched.
+ */
+export async function seedUiLocaleFromInstaller(): Promise<void> {
+  if (localStorage.getItem(UI_KEY)) return;
+  if (!isTauri()) return;
+  try {
+    const raw = await transport.invoke<string | null>(RPC.installer_language);
+    if (localStorage.getItem(UI_KEY)) return;
+    const seeded = raw ? installerLocaleToUi(raw) : null;
+    if (seeded && seeded !== uiLocale.value) {
+      uiLocale.value = seeded;
+      // Await so callers observe the locale (and its messages) switched.
+      await setLocale(seeded);
+    }
+  } catch {
+    // Not available (mock backend / old installer) — keep the fallback.
+  }
 }
 
 function loadDataLanguage(): string {
@@ -144,8 +207,15 @@ function loadDataLanguage(): string {
 const uiLocale = ref<Locale>(loadUiLocale());
 const dataLanguage = ref<string>(loadDataLanguage());
 
-// Apply the persisted UI locale to the i18n instance on load.
-setLocale(uiLocale.value);
+// Apply the persisted UI locale to the i18n instance on load. setLocale is
+// async (the locale bundle loads on demand), so expose the in-flight apply:
+// the app entry awaits it before mounting, keeping first paint in the
+// persisted locale instead of flashing the detected one.
+export const uiLocaleReady = setLocale(uiLocale.value);
+
+// Consult the installer seed once, after the saved/system resolution ran:
+// it can only ever upgrade a truly-first startup, never a stored choice.
+void seedUiLocaleFromInstaller();
 
 /** The effective data language is always the explicitly selected one
  *  (or the auto-determined one from first startup). */
@@ -154,7 +224,10 @@ export const effectiveWgLanguage = computed(() => wgApiLanguage(dataLanguage.val
 function setUiLocale(locale: Locale): void {
   uiLocale.value = locale;
   localStorage.setItem(UI_KEY, locale);
-  setLocale(locale);
+  // Fire-and-forget: a settings-dropdown toggle. Nothing here reads
+  // messages synchronously after the switch, and reactive t() callers
+  // re-render once the bundle lands and the locale ref flips.
+  void setLocale(locale);
 }
 
 function setDataLanguage(code: string): void {

@@ -1,16 +1,20 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
-import { FolderOpen, Play, RefreshCw, X } from "@lucide/vue";
+import { computed, defineComponent, onMounted, onUnmounted, ref, watch, type CSSProperties } from "vue";
+import { Copy, Eye, EyeOff, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
+import { useReplayPositions } from "@/features/replay/useReplayPositions";
+import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
-import HolographicMap from "@/features/holographic/HolographicMap";
-import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
-import { useBattleClock } from "@/features/replay/useBattleClock";
+import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
+import PairingWizard from "@/features/replay/PairingWizard";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { useOverlayStore } from "@/stores/overlay";
+import { usePairingStore } from "@/stores/pairing";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
+  AchievementEvent,
+  ArenaPlayer,
   CameraSample,
+  ChatEvent,
   EntityTrajectory,
   ExplosionEvent,
   HpSample,
@@ -29,36 +33,70 @@ import type {
   TorpedoSteer,
   VehicleEntry,
   WeaponLockEvent,
+  WeatherNotification,
+  WeatherTransition,
 } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { isMobileApp } from "@/utils/platform";
 import { parsePostBattle, type PostBattleRibbon } from "@/features/replay/postBattle";
+import { applyDarkDeathInference, resolveMaxHp } from "@/features/holographic/shipHp";
+import PostBattlePanel from "@/features/replay/PostBattlePanel";
+import {
+  columnsNeedShipStats,
+  overlayColumnDims,
+  resolveRosterBattleScope,
+  type ResolvedStatsMode,
+} from "@/utils/statView";
+import { scopedRosterView } from "@/utils/shipStatsScope";
+import {
+  PostBattleShareBar,
+  rosterShotCells,
+  rosterShotDashes,
+  rosterStatCols,
+  useNickMasking,
+  useShareShot,
+} from "@/features/replay/postBattleShare";
+import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "@/features/replay/postBattleShot";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
-import { HButton, HSpinner, useToast } from "@celestia-island/hikari";
+import { HkButton, HkScrollContainer, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
-import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
-import { shipClassRank } from "@/utils/shipClass";
+import {
+  nationNameFromDb,
+  shipNameFromOfflineDb,
+  shipOfflineEntry,
+} from "@/features/holographic/modelLoader";
+import { gameTabRowCompare } from "@/utils/shipClass";
+import { realmUsesShipNameOrder } from "@/utils/realms";
+import { isListedPlayer, splitRosterSides } from "@/utils/rosterSides";
+import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
+import { shipIconUrl, shipTypeClass } from "@/features/holographic/shipIcons";
+import { tierToRoman } from "@wowsp/holo";
+import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import { modeColor, modeKey } from "@/utils/modeColors";
-import { damageColor, winrateColor } from "@/utils/winrate";
-import { fetchRosterStatsByNames, isAiName, type RosterStat } from "@/composables/useRosterStats";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
+import { useStatsStore } from "@/stores/stats";
+import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
+import { displayMapName } from "@/utils/mapNames";
+import { clientMenuOptions, installFolderName, serverTagOf } from "@/utils/installLabel";
+import { sameGamePath } from "@/utils/gamePath";
+import MapNameTag from "@/features/replay/MapNameTag";
+import ReplayListFilter, {
+  modeLabelOfKey,
+  useReplayListFilter,
+  type ReplaySortDir,
+} from "@/features/replay/ReplayListFilter";
+import { prAlgoForRequest, statsPrefsState, type OverlayColumnScope } from "@/stores/statsPrefs";
+import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
-import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import type { PlayerStats } from "@/api";
 import "./ReplayView.scss";
-
-/** The replays subfolder of a client install. WoWS writes replays under
- *  `<install>/replays/`. */
-function replaysDir(installPath: string): string {
-  const trimmed = installPath.replace(/[\\/]+$/, "");
-  return `${trimmed}/replays`;
-}
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
  *  eventType / roster bots) with a generic fallback. */
@@ -67,54 +105,25 @@ function modeLabel(
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
+  scriptedUnitCount = 0,
 ): string {
-  const key = modeKey(group, scenario, eventType, botCount);
-  if (!key) return t("replay.mode._fallback");
-  const i18nKey = `replay.mode.${key}`;
-  const lbl = t(i18nKey);
-  // t() returns the key when missing — fall back to the generic battle label.
-  return lbl === i18nKey ? t("replay.mode._fallback") : lbl;
+  return modeLabelOfKey(modeKey(group, scenario, eventType, botCount, scriptedUnitCount));
 }
 
 /** Player count label: team-vs-team modes show "12v12" (split by the roster
- *  relation), single-sided modes (PvE, ops) show the raw count. */
-function formatPlayerCount(vehicles: { relation: number }[]): string {
-  const ally = vehicles.filter((v) => v.relation <= 1).length;
-  const enemy = vehicles.filter((v) => v.relation > 1).length;
-  if (ally > 0 && enemy > 0) return `${ally}v${enemy}`;
-  return t("replay.players", { n: vehicles.length });
-}
-
-/** Official map display names extracted from the game's gettext catalogs
- *  (`scripts/model_convert/extract_map_names.py`): space id → {lang: name}.
- *  Space ids often DON'T match the display name (WG renamed maps but kept
- *  the internal id — "20_NE_two_brothers" is "双峰海峡"/"Two Brothers", not
- *  "两兄弟"), so the catalog is authoritative. */
-import mapNamesRaw from "@/data/map_names.json";
-
-const MAP_NAMES = mapNamesRaw as Record<string, Record<string, string>>;
-
-function mapNameForLang(spaceId: string, lang: string): string | null {
-  const names = MAP_NAMES[spaceId];
-  if (!names) return null;
-  // Take the exact server language first (国服 zh-cn and 亚服 zh-sg are
-  // different official translations, e.g. 断层线 vs 海神之击). Never fall
-  // back across servers — if the chosen language lacks an entry (e.g. the
-  // official zh-tw catalog keeps map names in English), use English, not
-  // the other server's name.
-  return names[lang] ?? names["en"] ?? null;
-}
-
-/** Resolve a map's localized display name from its internal space id. Falls
- *  back to the prettified id, then to the unknown-map label. */
-function displayMapName(spaceId?: string | null, lang?: string): string {
-  if (!spaceId) return t("replay.map.unknown");
-  const clean = spaceId.replace(/^spaces\//, "");
-  const official = mapNameForLang(clean, lang ?? "");
-  if (official) return official;
-  const key = `replay.map.names.${clean}`;
-  const lbl = t(key);
-  return lbl === key ? clean : lbl;
+ *  relation), single-sided modes (PvE, ops) show the raw count. Operations
+ *  keep the relation split available but render the raw count (their
+ *  scripted enemy block is nobody's "v" opponent). Scripted scenario NPCs
+ *  sit out the count — the label reads like the game's own team size. */
+function formatPlayerCount(
+  vehicles: { relation: number; name: string }[],
+  operation = false,
+): string {
+  const { allies, enemies } = splitRosterSides(vehicles, operation);
+  if (!operation && allies.length > 0 && enemies.length > 0) {
+    return `${allies.length}v${enemies.length}`;
+  }
+  return t("replay.players", { n: allies.length + enemies.length });
 }
 
 /** Format a `YYYYMMDD[_HHMMSS]` timestamp from the replay filename into a
@@ -128,407 +137,19 @@ function formatDateTime(dt?: string | null): string {
   return `${y}-${mo}-${d}${hhmm}`;
 }
 
-/** The two aligned roster-stat columns for one player name — overall winrate
- *  and avg damage, tier-colored (the XVM-style level coloring from
- *  utils/winrate). A tiny spinner rides while the batch lookup runs; bots /
- *  hidden profiles / lookup misses render a muted "—". Shared by both
- *  post-battle panels. */
-function rosterStatCols(
-  name: string,
-  stats: Map<string, RosterStat>,
-  loading: boolean,
-) {
-  const ai = isAiName(name);
-  const stat = ai ? undefined : stats.get(name);
-  const col = (
-    mod: string,
-    title: string,
-    pick: (s: RosterStat) => number | null,
-    colorOf: (v: number) => string,
-    fmt: (v: number) => string,
-  ) => {
-    let tip = title;
-    let body;
-    if (ai) {
-      tip = t("replay.botNote");
-      body = <em>—</em>;
-    } else if (!stat || loading) {
-      body = <HSpinner size="xs" tone="current" />;
-    } else {
-      const v = pick(stat);
-      if (v == null) {
-        if (stat.hidden) tip = t("replay.live.hiddenProfile");
-        body = <em>—</em>;
-      } else {
-        body = <b style={{ color: colorOf(v) }}>{fmt(v)}</b>;
-      }
-    }
-    return (
-      <span
-        class={`replay-view__postbattle-cell-stat ${mod}`}
-        data-hint={tip}
-      >
-        {body}
-      </span>
-    );
-  };
-  return (
-    <>
-      {col(
-        "replay-view__postbattle-cell-stat--wr",
-        t("replay.postbattle.winrate"),
-        (s) => s.winrate,
-        winrateColor,
-        (v) => `${v.toFixed(1)}%`,
-      )}
-      {col(
-        "replay-view__postbattle-cell-stat--dmg",
-        t("replay.postbattle.avgDamage"),
-        (s) => s.avgDamage,
-        damageColor,
-        (v) => Math.round(v).toLocaleString(),
-      )}
-    </>
-  );
+/** The replay descriptor's game version arrives comma-separated
+ *  ("14,1,0,1234567" from clientVersionFromExe); normalize to the dotted
+ *  "14.1.0" display form with the build hash dropped. Null when the
+ *  descriptor carries no parsable version. */
+function gameVersionOf(raw: unknown): string | null {
+  const v = (raw as { clientVersionFromExe?: unknown } | null)?.clientVersionFromExe;
+  if (typeof v !== "string") return null;
+  const parts = v
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^\d+$/.test(s));
+  return parts.length >= 2 ? parts.slice(0, 3).join(".") : null;
 }
-
-/** Post-battle modal: two-column team matrix (allies left, enemies right)
- *  sorted by settlement XP (real base exp from the results payload, with an
- *  estimate fallback on legacy short arrays). Clicking a player opens a real
- *  second-level modal with the match result + on-demand global stats (toast
- *  while loading) and a jump link into the lookup screen. */
-const PostBattlePanel = defineComponent({
-  name: "PostBattlePanel",
-  props: { raw: { type: String, required: true } },
-  emits: ["close"],
-  setup(props, { emit }) {
-    const parsed = computed(() => parsePostBattle(props.raw));
-    const { dataLanguage } = useLanguage();
-    const toast = useToast();
-    const router = useRouter();
-    const rows = computed(() => {
-      const pb = parsed.value;
-      if (!pb) return [];
-      const names = new Map(pb.players.map((p) => [p.accountId, p.name]));
-      return pb.players.map((p) => ({
-        ...p,
-        shipName:
-          (p.shipId != null ? shipNameFromOfflineDb(p.shipId, dataLanguage.value) : null) ??
-          "",
-        killerName: p.killerId != null ? names.get(p.killerId) ?? null : null,
-        // Settlement XP: the real base exp streamed per player (bots carry
-        // 0); falls back to a rough estimate for legacy short arrays only.
-        xp: p.exp ?? Math.round(p.damage * 0.1 + p.frags * 250 + (p.alive ? 100 : 0)),
-      }));
-    });
-    /** The recorder's own team. `playersPublicInfo[6]` is a 0/1 TEAM number
-     *  (12 vs 12), NOT a 0=self/1=ally/2=enemy relation — the recorder's
-     *  team is always the "allies" column. Falls back to team 0 when the
-     *  recorder isn't in the player list (watching someone else's replay). */
-    const selfTeam = computed(() => {
-      const pb = parsed.value;
-      if (!pb) return null;
-      return pb.players.find((p) => p.accountId === pb.selfId)?.team ?? null;
-    });
-    const allies = computed(() => {
-      const st = selfTeam.value;
-      return rows.value
-        .filter((p) => (st != null ? p.team === st : p.team !== 1))
-        .sort((a, b) => b.xp - a.xp);
-    });
-    const enemies = computed(() => {
-      const st = selfTeam.value;
-      return rows.value
-        .filter((p) => p.team !== null && (st != null ? p.team !== st : p.team === 1))
-        .sort((a, b) => b.xp - a.xp);
-    });
-    const detailOpen = ref(false);
-    const rawOpen = ref(false);
-    const selected = ref<(typeof rows.value)[number] | null>(null);
-    const globalStats = ref<PlayerStats | null>(null);
-    const globalLoading = ref(false);
-    const globalError = ref(false);
-    /** Battles per tier (index 1..10) and per ship type — for spotting
-     *  low-tier farmers / CV-SS specialists. */
-    const shipDistList = ref<DistDatum[]>([]);
-
-    /** Load the player's per-ship stats and aggregate tier/type distribution. */
-    async function loadShipDist(p: (typeof rows.value)[number]) {
-      shipDistList.value = [];
-      if (!p.realm) return;
-      try {
-        const list = await api.lookupPlayerShipStats(p.accountId, p.realm);
-        shipDistList.value = list.map((s) => ({ shipId: s.shipId, battles: s.battles }));
-      } catch {
-        /* distribution unavailable — hide */
-      }
-    }
-
-    /** AI/bot players have no WG account — skip the global-stats lookup.
-     *  In replays they appear as ":Name:" (colon-wrapped, e.g. ":Millo:"). */
-    const AI_NAME = /^:.*:$/;
-
-    /** Roster WR / avg-damage per player name for the matrix columns (one
-     *  batched lookup on mount, warm-served from the shared roster-stats
-     *  cache). Entries without a realm ride the roster's dominant one — a
-     *  battle is single-realm in practice. */
-    const nameStats = ref<Map<string, RosterStat>>(new Map());
-    const nameStatsLoading = ref(false);
-    async function loadNameStats() {
-      const pb = parsed.value;
-      if (!pb) return;
-      const dominant = pb.players.find((p) => p.realm)?.realm ?? null;
-      const byRealm = new Map<string, Set<string>>();
-      for (const p of pb.players) {
-        if (AI_NAME.test(p.name)) continue;
-        const realm = p.realm ?? dominant;
-        if (!realm) continue;
-        const set = byRealm.get(realm) ?? new Set<string>();
-        set.add(p.name);
-        byRealm.set(realm, set);
-      }
-      if (byRealm.size === 0) return;
-      nameStatsLoading.value = true;
-      try {
-        const maps = await Promise.all(
-          [...byRealm].map(([realm, names]) =>
-            fetchRosterStatsByNames([...names], realm),
-          ),
-        );
-        const merged = new Map<string, RosterStat>();
-        for (const m of maps) for (const [k, v] of m) merged.set(k, v);
-        nameStats.value = merged;
-      } finally {
-        nameStatsLoading.value = false;
-      }
-    }
-    onMounted(() => {
-      void loadNameStats();
-    });
-    /** Load the selected player's global stats on-demand (toast while
-     *  loading; the lookup API resolves by nickname + realm). Failures are
-     *  silent — AI names and rate-limited lookups are common, and an error
-     *  toast for every bot would be noise. */
-    async function loadGlobal(p: (typeof rows.value)[number]) {
-      globalStats.value = null;
-      globalLoading.value = false;
-      if (!p.realm || AI_NAME.test(p.name)) return;
-      globalLoading.value = true;
-      const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name: p.name }));
-      try {
-        globalStats.value = await api.lookupPlayerStats(p.name, p.realm);
-        toast.remove(tid);
-      } catch {
-        toast.remove(tid);
-        globalError.value = true;
-      } finally {
-        globalLoading.value = false;
-      }
-    }
-
-    function openDetail(p: (typeof rows.value)[number]) {
-      selected.value = p;
-      detailOpen.value = true;
-      void loadGlobal(p);
-      void loadShipDist(p);
-    }
-
-    /** Jump into the lookup screen for this player, closing both modals. */
-    function jumpToLookup() {
-      const p = selected.value;
-      detailOpen.value = false;
-      rawOpen.value = false;
-      emit("close");
-      if (p) {
-        void router.push({ path: "/lookup", query: { name: p.name, realm: p.realm ?? "asia" } });
-      }
-    }
-
-    return () => {
-      const pb = parsed.value;
-      if (!pb) return <pre>{props.raw}</pre>;
-      const st = selfTeam.value;
-      const isEnemy = (p: (typeof rows.value)[number]) =>
-        p.team !== null && (st != null ? p.team !== st : p.team === 1);
-      const cell = (p: (typeof allies.value)[number]) => (
-        <button
-          class={[
-            "replay-view__postbattle-cell",
-            p.alive ? "" : "replay-view__postbattle-cell--dead",
-            p.accountId === pb.selfId ? "replay-view__postbattle-cell--self" : "",
-          ]}
-          onClick={() => openDetail(p)}
-        >
-          <span class="replay-view__postbattle-cell-ico">
-            {p.shipId != null ? (
-              <BattleIcon
-                type={shipTypeOf(p.shipId)}
-                variant={p.alive ? (isEnemy(p) ? "enemy" : p.accountId === pb.selfId ? "white" : "ally") : "sunk"}
-                size={20}
-              />
-            ) : null}
-          </span>
-          <span class="replay-view__postbattle-cell-main">
-            <span class="replay-view__postbattle-cell-name">{p.name}</span>
-            <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
-          </span>
-          {rosterStatCols(p.name, nameStats.value, nameStatsLoading.value)}
-          <span class="replay-view__postbattle-cell-xp">{p.xp.toLocaleString()}</span>
-        </button>
-      );
-      const sel = selected.value;
-      return (
-        <div class="replay-view__postbattle">
-          <div class="replay-view__postbattle-matrix">
-            <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">{t("replay.roster.allies")}</div>
-              {allies.value.map(cell)}
-            </div>
-            <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">{t("replay.roster.enemies")}</div>
-              {enemies.value.map(cell)}
-            </div>
-          </div>
-          <button
-            class="replay-view__postbattle-rawbtn"
-            onClick={() => (rawOpen.value = true)}
-          >
-            {t("replay.postbattle.rawData")}
-          </button>
-
-          {/* Level-2 modal: raw payload */}
-          {rawOpen.value ? (
-            <div class="replay-view__postbattle-modal" onClick={() => (rawOpen.value = false)}>
-              <div
-                class="replay-view__postbattle-modal-panel"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div class="replay-view__postbattle-modal-head">
-                  <span>{t("replay.postbattle.rawData")}</span>
-                  <button onClick={() => (rawOpen.value = false)}>✕</button>
-                </div>
-                <pre class="replay-view__postbattle-modal-raw">{props.raw}</pre>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Level-2 modal: player detail */}
-          {detailOpen.value && sel ? (
-            <div
-              class="replay-view__postbattle-modal"
-              onClick={() => (detailOpen.value = false)}
-            >
-              <div
-                class="replay-view__postbattle-modal-panel"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div class="replay-view__postbattle-modal-head">
-                  <span class="replay-view__postbattle-detail-head">
-                    <span class="replay-view__postbattle-detail-ico">
-                      {sel.shipId != null ? (
-                        <BattleIcon
-                          type={shipTypeOf(sel.shipId)}
-                          variant={sel.alive ? (isEnemy(sel) ? "enemy" : "ally") : "sunk"}
-                          size={24}
-                        />
-                      ) : null}
-                    </span>
-                    <span class="replay-view__postbattle-detail-name">
-                      {sel.name}
-                      <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
-                    </span>
-                  </span>
-                  <button onClick={() => (detailOpen.value = false)}>✕</button>
-                </div>
-                {!sel.alive && sel.killerName ? (
-                  <div class="replay-view__postbattle-killed">
-                    {t("replay.postbattle.destroyedBy", { name: sel.killerName })}
-                  </div>
-                ) : null}
-                <div class="replay-view__postbattle-detail-body">
-                  <div class="replay-view__postbattle-detail-damage">
-                    <span class="replay-view__postbattle-detail-damage-num">
-                      {sel.damage.toLocaleString()}
-                      {sel.accountId !== pb.selfId ? (
-                        <em
-                          class="replay-view__postbattle-damage-unknown"
-                          data-hint={t("replay.postbattle.damageUnknownNote")}
-                        >
-                          *
-                        </em>
-                      ) : null}
-                    </span>
-                    <span class="replay-view__postbattle-detail-damage-label">
-                      {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
-                      {sel.hpRatio != null
-                        ? ` · ${t("replay.hpRemaining")} ${Math.round(sel.hpRatio)}%`
-                        : ""}
-                    </span>
-                  </div>
-                  <div class="replay-view__postbattle-detail-ribbons">
-                    {sel.ribbons.map((x) => {
-                      const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
-                      return (
-                        <span
-                          key={x.key}
-                          class="replay-view__postbattle-detail-ribbon"
-                          data-hint={`${name} ×${x.value}`}
-                        >
-                          <AssetImage src={bundledRibbonUrl(x.key)} width={40} height={15} alt="" />
-                          <em>{x.value}</em>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-                {/* Own full settlement data — the replay only streams the
-                    recorder's private results. */}
-                {sel.accountId === pb.selfId && (pb.selfExp != null || pb.selfCredits != null) ? (
-                  <div class="replay-view__postbattle-settlement">
-                    <span>{t("replay.postbattle.xp")} <b>{pb.selfExp?.toLocaleString() ?? "—"}</b></span>
-                    <span>{t("replay.postbattle.credits")} <b>{pb.selfCredits?.toLocaleString() ?? "—"}</b></span>
-                  </div>
-                ) : null}
-                {/* On-demand global stats (toast while loading) */}
-                <div class="replay-view__postbattle-global">
-                  {globalLoading.value ? (
-                    <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                      <HSpinner size="md" tone="current" />
-                    </span>
-                  ) : globalStats.value ? (
-                    <StatsCard stats={globalStats.value} />
-                  ) : globalError.value ? (
-                    <span class="replay-view__postbattle-global-note">
-                      {t("replay.postbattle.globalFailedAi")}
-                    </span>
-                  ) : (
-                    <span class="replay-view__postbattle-global-note">
-                      {t("replay.postbattle.globalUnavailable")}
-                      {sel.realm ? "" : t("replay.postbattle.noRealm")}
-                    </span>
-                  )}
-                </div>
-                {/* Ship distribution: tier histogram + class pie — spot
-                    low-tier farmers / CV-SS specialists. */}
-                {shipDistList.value.length > 0 ? (
-                  <div class="replay-view__postbattle-dist">
-                    <div class="replay-view__postbattle-dist-title">
-                      {t("replay.postbattle.tierDist")}
-                    </div>
-                    <ShipDistCharts ships={shipDistList.value} />
-                  </div>
-                ) : null}
-                <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
-                  {t("replay.postbattle.fullStats")}
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      );
-    };
-  },
-});
 
 /**
  * Fallback post-battle panel for replays whose BattleResults packet is missing
@@ -549,15 +170,90 @@ const PostBattleFallbackPanel = defineComponent({
     /** Query realm (shared with the parent view) — the replay belongs to
      *  the client install, not to the bound account. */
     realm: { type: String, default: "asia" },
+    /** Operation scenario (行动): the matrix renders a single allies
+     *  column — the scripted enemy block is a list nobody reads (the
+     *  ally rows themselves still split by relation). */
+    operation: { type: Boolean, default: false },
+    /** The arena's initial player state — the authoritative entity→roster
+     *  join for the per-row HP/death columns (mirror picks share one
+     *  shipId, so shipId-keyed maps overwrite each other). */
+    arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
+    /** Entity ids whose deathTime was inferred from the post-battle payload
+     *  (dark kills) — the self-frag heuristic must not credit them. */
+    inferredDeaths: { type: Object as () => Set<number>, default: () => new Set() },
+    /** Resolved stats-source battle scope (the parent resolves the pref
+     *  against the replayed battle's identity — the fallback sees no
+     *  head). The ship/solo dimensions ride the shared prefs directly. */
+    statsMode: { type: String as () => ResolvedStatsMode, default: "random" },
   },
   emits: ["close"],
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
     const router = useRouter();
-    const toast = useToast();
-    /** AI/bot players (":Name:") have no WG account. */
-    const AI_NAME = /^:.*:$/;
+    const loadingTasks = useLoadingTasksStore();
+    const stats = useStatsStore();
     const realm = computed(() => props.realm || "asia");
+    const root = ref<HTMLElement | null>(null);
+
+    // Share-time privacy + share shot (same controls as the results panel —
+    // the fallback matrix leaks nicknames just the same).
+    const masking = useNickMasking();
+    const shot = useShareShot(buildShotModel, () => root.value);
+    /** One row's numbers for ONE column scope — the account career for
+     *  "global", the aggregated per-ship view otherwise, against the
+     *  replay's already-resolved battle scope. */
+    const colViewOf = (
+      scope: OverlayColumnScope,
+      st: RosterStat,
+      shipId: number | null,
+    ) =>
+      scopedRosterView(
+        st,
+        shipId,
+        overlayColumnDims(scope, statsPrefsState.value.overlayBattleScope),
+        props.statsMode,
+        prAlgoForRequest() ?? "winrate",
+      );
+    function buildShotModel(): ShotModel {
+      const mkCol = (list: typeof rows.value, enemy: boolean): ShotColumn => ({
+        title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
+        rows: list.map((r): ShotRow => {
+          const ai = AI_NAME.test(r.vehicle.name);
+          const st = ai ? undefined : nameStats.value.get(r.vehicle.name);
+          // The configured columns of the per-scope views the DOM matrix
+          // below renders — dashes for bots / misses.
+          const stats: ShotStat[] = !st
+            ? rosterShotDashes()
+            : rosterShotCells((scope) => colViewOf(scope, st, r.vehicle.shipId));
+          return {
+            nick: masking.maskOf(r.vehicle.name),
+            clanTag: st?.clanTag ?? null,
+            shipName: r.shipName,
+            bot: ai,
+            dim: !r.alive,
+            shipType: r.vehicle.shipId != null ? shipOfflineEntry(r.vehicle.shipId)?.type ?? null : null,
+            iconVariant: !r.alive
+              ? "sunk"
+              : r.vehicle.relation === 0
+                ? "white"
+                : r.vehicle.relation <= 1
+                  ? "ally"
+                  : "enemy",
+            stats,
+          };
+        }),
+      });
+      return {
+        title: t("replay.results"),
+        botLabel: t("replay.bot"),
+        // Mirror the DOM's single-column rule (operations hide the enemy
+        // column, as does any single-sided roster edge).
+        columns:
+          enemies.value.length === 0
+            ? [mkCol(allies.value, false)]
+            : [mkCol(allies.value, false), mkCol(enemies.value, true)],
+      };
+    }
 
     /** Roster WR / avg-damage columns — same batched lookup as the main
      *  panel; the whole fallback roster lives on the query realm. */
@@ -575,11 +271,49 @@ const PostBattleFallbackPanel = defineComponent({
         nameStatsLoading.value = false;
       }
     }
+    // Flipping any column past the account careers (or the PR algorithm)
+    // after the one-shot load re-runs it — the fetch only attaches the
+    // per-ship lists the columns in force at load time requested.
+    watch(
+      () =>
+        [
+          columnsNeedShipStats(
+            statsPrefsState.value.overlayColumns,
+            statsPrefsState.value.prEnabled,
+          ),
+          prAlgoForRequest(),
+        ] as const,
+      ([need]) => {
+        if (need) void loadNameStats();
+      },
+    );
     onMounted(() => {
       void loadNameStats();
     });
 
-    /** Death time per shipId (same join the scorebar strip uses). */
+    /** Ship entity → roster player id, from the arena's initial state.
+     *  Lets the per-row joins key on the roster entry — mirror picks share
+     *  one shipId, so shipId-keyed maps overwrite each other. */
+    const entityByPlayerId = computed(() => {
+      const m = new Map<number, number>();
+      for (const p of props.arenaPlayers) {
+        if (p.playerId != null) m.set(p.playerId, p.entityId);
+      }
+      return m;
+    });
+    /** Death time per roster id when the arena join is available, else per
+     *  shipId (the pre-arena fallback, ambiguous on mirror picks). */
+    const deathByRosterId = computed(() => {
+      const m = new Map<number, number | null>();
+      if (entityByPlayerId.value.size === 0) return m;
+      for (const tr of props.trajectories) {
+        const playerId = [...entityByPlayerId.value].find(
+          ([, eid]) => eid === tr.entityId,
+        )?.[0];
+        if (playerId != null) m.set(playerId, tr.deathTime ?? null);
+      }
+      return m;
+    });
     const deathByShipId = computed(() => {
       const m = new Map<number, number | null>();
       for (const tr of props.trajectories) {
@@ -587,7 +321,20 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
-    /** HP timeline per shipId (same join; shared shipIds take the last stream). */
+    /** HP timeline per roster id when the arena join is available, else per
+     *  shipId (the pre-arena fallback, ambiguous on mirror picks). */
+    const hpByRosterId = computed(() => {
+      const m = new Map<number, HpSample[]>();
+      if (entityByPlayerId.value.size === 0) return m;
+      for (const tr of props.trajectories) {
+        if (!tr.hpSamples?.length) continue;
+        const playerId = [...entityByPlayerId.value].find(
+          ([, eid]) => eid === tr.entityId,
+        )?.[0];
+        if (playerId != null) m.set(playerId, tr.hpSamples);
+      }
+      return m;
+    });
     const hpByShipId = computed(() => {
       const m = new Map<number, HpSample[]>();
       for (const tr of props.trajectories) {
@@ -597,19 +344,44 @@ const PostBattleFallbackPanel = defineComponent({
       }
       return m;
     });
-    /** Recorder's own inferred damage dealt / frags / hits. */
+    /** Total HP per roster id from the arena's build health — the base-info
+     *  source the HP-percent column divides by (a stream-peak total
+     *  under-reports late-spotted ships and reads non-round in scaled
+     *  modes). */
+    const maxHpByRosterId = computed(() => {
+      const m = new Map<number, number>();
+      for (const p of props.arenaPlayers) {
+        if (p.playerId != null && p.maxHealth && p.maxHealth > 0) {
+          m.set(p.playerId, p.maxHealth);
+        }
+      }
+      return m;
+    });
+    /** Recorder's own inferred damage dealt / frags / hits. The self
+     *  trajectory is resolved through the arena join (by entity id) — the
+     *  shipId fallback can grab the enemy's mirror ship. */
     const selfStats = computed(() => {
       const self = props.vehicles.find((v) => v.relation === 0);
+      const selfEntityId = self
+        ? entityByPlayerId.value.get(self.id)
+        : undefined;
       return computeSelfStats(
         props.trajectories,
         props.shotKills ?? [],
         self?.shipId,
         props.damageStats,
+        selfEntityId,
+        props.inferredDeaths,
       );
     });
     const rows = computed(() =>
-      props.vehicles.map((v) => {
-        const hp = v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined;
+      // Scripted scenario NPCs (story-mode ally flagships, `IDS_*`/`#Name`)
+      // are not players — the fallback matrix lists players only, matching
+      // the Tab scoreboard.
+      props.vehicles.filter(isListedPlayer).map((v) => {
+        const hp =
+          (v.shipId != null ? hpByRosterId.value.get(v.id) : undefined) ??
+          (v.shipId != null ? hpByShipId.value.get(v.shipId) : undefined);
         const isSelf = v.relation === 0;
         const st = selfStats.value;
         const frags = isSelf ? st.frags : 0;
@@ -619,17 +391,23 @@ const PostBattleFallbackPanel = defineComponent({
           if (hits > 0) ribbons.push({ key: "main_caliber", value: hits });
           if (frags > 0) ribbons.push({ key: "frag", value: frags });
         }
+        const deathAt = deathByRosterId.value.has(v.id)
+          ? deathByRosterId.value.get(v.id)
+          : v.shipId != null
+            ? deathByShipId.value.get(v.shipId)
+            : undefined;
         return {
           vehicle: v,
-          alive: !(v.shipId != null && deathByShipId.value.get(v.shipId) != null),
+          alive: !(deathAt != null),
           shipName:
             (v.shipId != null
               ? shipNameFromOfflineDb(v.shipId, dataLanguage.value)
               : null) ?? v.shipName ?? "",
-          tier: v.shipId != null ? (shipOfflineEntry(v.shipId)?.tier ?? 0) : 0,
           damage: isSelf ? st.damage : 0,
           frags,
-          hpRatio: hpRatioOf(hp),
+          // A sunk ship reads 0 HP whatever its last observed sample said
+          // (dark kills freeze the stream at a stale value).
+          hpRatio: deathAt != null ? 0 : hpRatioOf(hp, maxHpByRosterId.value.get(v.id)),
           damageTaken: damageTaken(hp),
           ribbons,
           killerName: null as string | null,
@@ -637,23 +415,42 @@ const PostBattleFallbackPanel = defineComponent({
         };
       }),
     );
-    // Sort order: survivors first, then ship class (carrier > BB > CA > DD >
-    // SS), then tier, then human before bot, then name case-sensitive.
-    const sortRows = (
+    // Sort order: the client's Tab key (alive, class, tier desc, nation,
+    // ship name, '[tag]nick') — the verified WG-family base, with the OPEN
+    // REPLAY's realm picking the flavor: CN replays order the
+    // within-(class, tier) group by the localized ship name, everything
+    // else keeps the decompiled nation rank (Lesta included — the
+    // approximation, nation rank and name segment alike, is documented
+    // in utils/shipClass). The permutation is unstable
+    // per-client knowledge (utils/shipClass's module docs) — recalibrate
+    // against rendered captures.
+    const compareRows = (
       a: (typeof rows.value)[number],
       b: (typeof rows.value)[number],
     ) =>
-      Number(!a.alive) - Number(!b.alive) ||
-      shipClassRank(a.vehicle.shipId) - shipClassRank(b.vehicle.shipId) ||
-      b.tier - a.tier ||
-      Number(AI_NAME.test(a.vehicle.name)) -
-        Number(AI_NAME.test(b.vehicle.name)) ||
-      a.vehicle.name.localeCompare(b.vehicle.name);
+      gameTabRowCompare(
+        { shipId: a.vehicle.shipId, name: a.vehicle.name },
+        { shipId: b.vehicle.shipId, name: b.vehicle.name },
+        {
+          locale: dataLanguage.value,
+          clanTagOf: (v) => nameStats.value.get(v.name)?.clanTag ?? null,
+          shipNameOrder: realmUsesShipNameOrder(realm.value),
+        },
+      );
+    // The comparator skips the alive prefix on purpose (each sort orders
+    // one layout), so the game's [alive] ++ [sunk] split happens here.
+    const tabOrdered = (list: (typeof rows.value)[number][]) => {
+      const alive = list.filter((r) => r.alive).sort(compareRows);
+      const sunk = list.filter((r) => !r.alive).sort(compareRows);
+      return [...alive, ...sunk];
+    };
     const allies = computed(() =>
-      rows.value.filter((r) => r.vehicle.relation <= 1).sort(sortRows),
+      tabOrdered(rows.value.filter((r) => r.vehicle.relation <= 1)),
     );
     const enemies = computed(() =>
-      rows.value.filter((r) => r.vehicle.relation > 1).sort(sortRows),
+      props.operation
+        ? []
+        : tabOrdered(rows.value.filter((r) => r.vehicle.relation > 1)),
     );
 
     const selected = ref<null | (typeof rows.value)[number]>(null);
@@ -667,12 +464,12 @@ const PostBattleFallbackPanel = defineComponent({
       globalLoading.value = false;
       globalError.value = false;
       globalLoading.value = true;
-      const tid = toast.loading(t("replay.postbattle.loadingGlobal", { name }));
+      const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name }));
       try {
-        globalStats.value = await api.lookupPlayerStats(name, realm.value);
-        toast.remove(tid);
+        globalStats.value = await stats.lookup(name, realm.value);
+        loadingTasks.end(tid);
       } catch {
-        toast.remove(tid);
+        loadingTasks.end(tid);
         globalError.value = true;
       } finally {
         globalLoading.value = false;
@@ -702,59 +499,120 @@ const PostBattleFallbackPanel = defineComponent({
     return () => {
       const isBot = (r: (typeof rows.value)[number]) => AI_NAME.test(r.vehicle.name);
       const cell = (r: (typeof rows.value)[number]) => (
-        <button
+        <div
           class={[
             "replay-view__postbattle-cell",
             !r.alive ? "replay-view__postbattle-cell--dead" : "",
           ]}
-          onClick={() => openPlayer(r)}
         >
-          <span class="replay-view__postbattle-cell-ico">
-            <BattleIcon
-              type={shipTypeOf(r.vehicle.shipId)}
-              variant={
-                !r.alive
-                  ? "sunk"
-                  : r.vehicle.relation === 0
-                    ? "white"
-                    : r.vehicle.relation <= 1
-                      ? "ally"
-                      : "enemy"
-              }
-              size={20}
-            />
-          </span>
-          <span class="replay-view__postbattle-cell-main">
-            <span class="replay-view__postbattle-cell-name">
-              {r.vehicle.name}
-              {isBot(r) ? (
-                <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
-              ) : null}
+          <button
+            class="replay-view__postbattle-cell-btn"
+            type="button"
+            onClick={() => openPlayer(r)}
+          >
+            <span class="replay-view__postbattle-cell-ico">
+              <BattleIcon
+                type={shipTypeOf(r.vehicle.shipId)}
+                variant={
+                  !r.alive
+                    ? "sunk"
+                    : r.vehicle.relation === 0
+                      ? "white"
+                      : r.vehicle.relation <= 1
+                        ? "ally"
+                        : "enemy"
+                }
+                size={20}
+              />
             </span>
-            <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
-          </span>
-          {rosterStatCols(r.vehicle.name, nameStats.value, nameStatsLoading.value)}
-          <span class="replay-view__postbattle-cell-status">
-            {!r.alive ? t("replay.legend.dead") : ""}
-          </span>
-        </button>
+            <span class="replay-view__postbattle-cell-main">
+              <span class="replay-view__postbattle-cell-name">
+                <span class="replay-view__postbattle-cell-nick">
+                  {masking.maskOf(r.vehicle.name)}
+                </span>
+                {nameStats.value.get(r.vehicle.name)?.clanTag ? (
+                  <span class="replay-view__postbattle-cell-clan">
+                    [{nameStats.value.get(r.vehicle.name)?.clanTag}]
+                  </span>
+                ) : null}
+                {isBot(r) ? (
+                  <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+                ) : null}
+              </span>
+              <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
+            </span>
+            {rosterStatCols(
+              r.vehicle.name,
+              nameStats.value,
+              nameStatsLoading.value,
+              (st, scope) => colViewOf(scope, st, r.vehicle.shipId),
+            )}
+            <span class="replay-view__postbattle-cell-status">
+              {!r.alive ? t("replay.legend.dead") : ""}
+            </span>
+          </button>
+          {isBot(r) ? null : (
+            <button
+              class={[
+                "replay-view__postbattle-cell-eye",
+                { "replay-view__postbattle-cell-eye--on": masking.isHidden(r.vehicle.name) },
+              ]}
+              type="button"
+              data-hint={
+                masking.isHidden(r.vehicle.name)
+                  ? t("replay.postbattle.showName")
+                  : t("replay.postbattle.hideName")
+              }
+              aria-label={
+                masking.isHidden(r.vehicle.name)
+                  ? t("replay.postbattle.showName")
+                  : t("replay.postbattle.hideName")
+              }
+              onClick={() => masking.toggleOne(r.vehicle.name)}
+            >
+              {masking.isHidden(r.vehicle.name) ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
+          )}
+        </div>
       );
       const sel = selected.value;
       return (
-        <div class="replay-view__postbattle">
-          <div class="replay-view__postbattle-matrix">
-            <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">
-                {t("replay.roster.allies")}
+        <div class="replay-view__postbattle" ref={root}>
+          <PostBattleShareBar
+            hideAll={masking.hideAll.value}
+            shotBusy={shot.busy.value}
+            onToggleAll={() => masking.toggleAll()}
+            onShot={() => void shot.copyShot()}
+          />
+          <div
+            class={[
+              "replay-view__postbattle-matrix",
+              // Single-sided battle (operations): one full-width allies
+              // column, no enemy column at all.
+              { "replay-view__postbattle-matrix--single": enemies.value.length === 0 },
+            ]}
+          >
+            {/* Column scroller: the hikari container owns the scrollbar
+                (auto-hiding overlay track); the rows stack inside the
+                inner wrapper so the column-title scrolls with them. */}
+            <HkScrollContainer class="replay-view__postbattle-col">
+              <div class="replay-view__postbattle-col__inner">
+                <div class="replay-view__postbattle-col-title">
+                  {t("replay.roster.allies")}
+                </div>
+                {allies.value.map(cell)}
               </div>
-              {allies.value.map(cell)}
-            </div>
-            <div class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col-title">
-                {t("replay.roster.enemies")}
-              </div>
-              {enemies.value.map(cell)}
-            </div>
+            </HkScrollContainer>
+            {enemies.value.length > 0 ? (
+              <HkScrollContainer class="replay-view__postbattle-col">
+                <div class="replay-view__postbattle-col__inner">
+                  <div class="replay-view__postbattle-col-title">
+                    {t("replay.roster.enemies")}
+                  </div>
+                  {enemies.value.map(cell)}
+                </div>
+              </HkScrollContainer>
+            ) : null}
           </div>
 
           {detailOpen.value && sel ? (
@@ -782,74 +640,79 @@ const PostBattleFallbackPanel = defineComponent({
                       />
                     </span>
                     <span class="replay-view__postbattle-detail-name">
-                      {sel.vehicle.name}
+                      {masking.maskOf(sel.vehicle.name)}
                       {isBot(sel) ? (
                         <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
                       ) : null}
                       <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                     </span>
                   </span>
-                  <button onClick={() => (detailOpen.value = false)}>✕</button>
+                  <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
                 </div>
-                <div class="replay-view__postbattle-detail-body">
-                  <div class="replay-view__postbattle-detail-damage">
-                    <span class="replay-view__postbattle-detail-damage-num">
-                      {sel.damage.toLocaleString()}
-                    </span>
-                    <span class="replay-view__postbattle-detail-damage-label">
-                      {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
-                      {sel.hpRatio != null
-                        ? " · " + t("replay.hpRemaining") + " " + Math.round(sel.hpRatio) + "%"
-                        : ""}
-                    </span>
+                {/* Drill-down scroller: the hikari container owns the
+                    scrollbar; the body blocks stack directly in its
+                    viewport (no layout rules to preserve). */}
+                <HkScrollContainer class="replay-view__postbattle-modal-scroll">
+                  <div class="replay-view__postbattle-detail-body">
+                    <div class="replay-view__postbattle-detail-damage">
+                      <span class="replay-view__postbattle-detail-damage-num">
+                        {sel.damage.toLocaleString()}
+                      </span>
+                      <span class="replay-view__postbattle-detail-damage-label">
+                        {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
+                        {sel.hpRatio != null
+                          ? " · " + t("replay.hpRemaining") + " " + Math.round(sel.hpRatio) + "%"
+                          : ""}
+                      </span>
+                    </div>
+                    <div class="replay-view__postbattle-detail-ribbons">
+                      {sel.ribbons.map((x) => {
+                        const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
+                        return (
+                          <span
+                            key={x.key}
+                            class="replay-view__postbattle-detail-ribbon"
+                            data-hint={`${name} ×${x.value}`}
+                          >
+                            <AssetImage
+                              src={bundledRibbonUrl(x.key)}
+                              width={40}
+                              height={15}
+                              alt=""
+                            />
+                            <em>{x.value}</em>
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div class="replay-view__postbattle-detail-ribbons">
-                    {sel.ribbons.map((x) => {
-                      const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
-                      return (
-                        <span
-                          key={x.key}
-                          class="replay-view__postbattle-detail-ribbon"
-                          data-hint={`${name} ×${x.value}`}
-                        >
-                          <AssetImage
-                            src={bundledRibbonUrl(x.key)}
-                            width={40}
-                            height={15}
-                            alt=""
-                          />
-                          <em>{x.value}</em>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div class="replay-view__postbattle-global">
-                  <span class="replay-view__postbattle-global-note">
-                    {t("replay.noDamageData")}
-                  </span>
-                </div>
-                {isBot(sel) ? (
                   <div class="replay-view__postbattle-global">
                     <span class="replay-view__postbattle-global-note">
-                      {t("replay.botNote")}
+                      {t("replay.noDamageData")}
                     </span>
                   </div>
-                ) : (
-                  <div class="replay-view__postbattle-global">
-                    {globalLoading.value ? (
-                      <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                        <HSpinner size="md" tone="current" />
-                      </span>
-                    ) : globalStats.value ? (
-                      <StatsCard stats={globalStats.value} />
-                    ) : globalError.value ? (
+                  {isBot(sel) ? (
+                    <div class="replay-view__postbattle-global">
                       <span class="replay-view__postbattle-global-note">
-                        {t("replay.postbattle.globalFailed")}
+                        {t("replay.botNote")}
                       </span>
-                    ) : null}
-                  </div>
-                )}
+                    </div>
+                  ) : (
+                    <div class="replay-view__postbattle-global">
+                      {globalLoading.value ? (
+                        <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
+                          <HkSpinner size="md" tone="current" />
+                        </span>
+                      ) : globalStats.value ? (
+                        <StatsCard stats={globalStats.value} />
+                      ) : globalError.value ? (
+                        <span class="replay-view__postbattle-global-note">
+                          {t("replay.postbattle.globalFailed")}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                </HkScrollContainer>
                 {!isBot(sel) ? (
                   <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
                     {t("replay.postbattle.fullStats")}
@@ -871,6 +734,36 @@ function shipTypeOf(shipId: number): string {
   return shipOfflineEntry(shipId)?.type ?? "";
 }
 
+/** The `data-hint-card` JSON for a replay card's own-ship tag — identity +
+ *  basic parameters off the offline ship DB, pre-localized per the global
+ *  tooltip's string-only contract (the popup renders via DOM APIs). */
+function ownShipHintCard(
+  entry: NonNullable<ReturnType<typeof shipOfflineEntry>>,
+  name: string,
+  lang: string,
+): string {
+  // The offline DB spells nations GameParams-style (united_kingdom/russia/
+  // events); canonicalize first or the label/flag lookups miss entirely.
+  const nation = entry.nation ? canonicalNation(entry.nation) : "";
+  const nationLabel = nation
+    ? (nationNameFromDb(nation, lang) ?? (t(`ships.nation.${nation}`, {}) || nation))
+    : null;
+  const subtitle: string[] = [];
+  if (nationLabel) subtitle.push(nationLabel);
+  if (entry.type) subtitle.push(t(`ships.type.${entry.type}`, {}) || entry.type);
+  return JSON.stringify({
+    title: name,
+    badge: entry.tier != null ? tierToRoman(entry.tier) : undefined,
+    iconUrl: entry.type ? (shipIconUrl(entry.type, "plain") ?? undefined) : undefined,
+    subtitleFlagUrl: nation ? (resolveNationFlag(nation, "flag") ?? undefined) : undefined,
+    subtitle: subtitle.length > 0 ? subtitle.join(" · ") : undefined,
+    rows:
+      entry.hp != null
+        ? [{ label: t("ships.spec.hp", {}), value: entry.hp.toLocaleString() }]
+        : [],
+  });
+}
+
 /** Total HP lost across a ship's HP timeline (damage taken). */
 function damageTaken(hp: HpSample[] | undefined | null): number {
   if (!hp || hp.length < 2) return 0;
@@ -882,11 +775,18 @@ function damageTaken(hp: HpSample[] | undefined | null): number {
   return dmg;
 }
 
-/** Remaining-HP percent (0..100) from the last HP sample. */
-function hpRatioOf(hp: HpSample[] | undefined | null): number | null {
+/** Remaining-HP percent (0..100) from the last HP sample. `maxHp` is the
+ *  ship's base-info total (arena build health) when known — the stream's
+ *  own peak is only the fallback (it under-reports late-spotted ships). */
+function hpRatioOf(
+  hp: HpSample[] | undefined | null,
+  maxHp?: number,
+): number | null {
   if (!hp || hp.length === 0) return null;
-  let max = 0;
-  for (const s of hp) if (s.value > max) max = s.value;
+  let max = maxHp && maxHp > 0 ? maxHp : 0;
+  if (max <= 0) {
+    for (const s of hp) if (s.value > max) max = s.value;
+  }
   if (max <= 0) return null;
   return (hp[hp.length - 1].value / max) * 100;
 }
@@ -940,19 +840,29 @@ function hpAtTime(hp: HpSample[] | undefined, t: number): number | null {
  *  aircraft weapons — the HP-delta heuristic below over-counts multi-hit
  *  salvos and misses out-of-view DoT); the heuristic from the projectile-kill
  *  stream (receiveShotKills — server-confirmed hits carrying the firing
- *  vehicle id) remains the fallback for versions without damage stats. */
+ *  vehicle id) remains the fallback for versions without damage stats.
+ *  `inferredDeaths` lists sinks whose deathTime was inferred from the
+ *  post-battle payload (never observed sinking) — the ±1.2 s death-proximity
+ *  frag credit must not fire for them, or the recorder gains frags for kills
+ *  someone else landed while the ship sailed dark. */
 function computeSelfStats(
   trajectories: EntityTrajectory[],
   shotKills: ShotKillEvent[],
   selfShipId: number | undefined,
   damageStats?: DamageStatSample[] | null,
+  selfEntityId?: number,
+  inferredDeaths?: Set<number>,
 ): { damage: number; planeDamage: number; frags: number; hits: number } {
   const authoritative = damageStats?.length ? foldDamageStats(damageStats, Infinity) : null;
   const out = { damage: 0, planeDamage: 0, frags: 0, hits: 0 };
   if (selfShipId == null) return authoritative ? { ...out, ...authoritative } : out;
-  const selfTraj = trajectories.find(
-    (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
-  );
+  // The arena join (entity id) wins: mirror picks share the selfShipId, so
+  // the shipId find() can land on the enemy's ship and attribute its hits.
+  const selfTraj = selfEntityId != null
+    ? trajectories.find((tr) => tr.entityId === selfEntityId)
+    : trajectories.find(
+        (tr) => tr.kind?.entityType === 2 && tr.kind?.shipId === selfShipId,
+      );
   if (!selfTraj || selfTraj.samples.length === 0) {
     return authoritative ? { ...out, ...authoritative } : out;
   }
@@ -969,7 +879,7 @@ function computeSelfStats(
       if (hpBefore != null && hpAfter != null && hpBefore - hpAfter > 50) {
         out.damage += hpBefore - hpAfter;
       }
-      if (tr.deathTime != null && Math.abs(tr.deathTime - e.time) < 1.2) {
+      if (tr.deathTime != null && !inferredDeaths?.has(tr.entityId) && Math.abs(tr.deathTime - e.time) < 1.2) {
         out.frags++;
       }
     }
@@ -981,6 +891,477 @@ function computeSelfStats(
   }
   return out;
 }
+
+/** Match-time stamp (M:SS) for chat rows and timeline dot hints. */
+function formatClock(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Chat channels as the UI colours them: team (家里) green, all white,
+ *  division yellow, private purple. The wire side only ever carries real
+ *  namespace strings — `battle_common` (all chat), `battle_team` (team chat)
+ *  and `battle_prebattle` (division chat) are the audiences the game client's
+ *  BattleController understands; anything else (server-specific whisper-ish
+ *  namespaces) is presented as private. */
+type ChatChannelKey = "team" | "all" | "division" | "private";
+
+const CHANNEL_BY_NAMESPACE: Record<string, ChatChannelKey> = {
+  battle_common: "all",
+  battle_team: "team",
+  battle_prebattle: "division",
+};
+
+function chatChannelOf(namespace: string): ChatChannelKey {
+  return CHANNEL_BY_NAMESPACE[namespace] ?? "private";
+}
+
+const CHANNEL_KEYS: ChatChannelKey[] = ["team", "all", "division", "private"];
+
+/** Vehicle-id → ship-trajectory join for the chat tooltips. shipId is NOT
+ *  unique per match (mirror picks, bot lines), so a naive shipId lookup can
+ *  read another player's HP. Mirrors HolographicMap's
+ *  `resolveRosterAssignments`: unique shipIds join directly; each ambiguous
+ *  trajectory takes the same-side (nearest ally/enemy spawn centroid)
+ *  unclaimed roster entry, never stealing a claimed one. The relation side
+ *  split holds in operations (行动) too — their rosters carry real enemy
+ *  semantics. */
+function assignTrajectoriesByVehicle(
+  vehicles: VehicleEntry[],
+  trajectories: EntityTrajectory[],
+  arenaPlayers?: ArenaPlayer[],
+): Map<number, EntityTrajectory> {
+  const shipTrajs = trajectories.filter((tr) => tr.kind?.entityType === 2);
+  // Authoritative path: the arena's initial state maps each ship entity to
+  // its roster player id directly — mirror picks cannot cross.
+  if (arenaPlayers && arenaPlayers.length > 0) {
+    const out = new Map<number, EntityTrajectory>();
+    const byEntity = new Map(arenaPlayers.map((p) => [p.entityId, p]));
+    for (const traj of shipTrajs) {
+      const playerId = byEntity.get(traj.entityId)?.playerId;
+      if (playerId != null) out.set(playerId, traj);
+    }
+    if (out.size > 0) return out;
+  }
+  const byShipId = new Map<number, VehicleEntry[]>();
+  for (const v of vehicles) {
+    const arr = byShipId.get(v.shipId) ?? [];
+    arr.push(v);
+    byShipId.set(v.shipId, arr);
+  }
+  const spawnOf = (t: EntityTrajectory) => ({
+    x: t.kind?.initialX ?? t.samples[0]?.x ?? 0,
+    z: t.kind?.initialZ ?? t.samples[0]?.z ?? 0,
+  });
+  const out = new Map<number, EntityTrajectory>();
+  const ambiguous: { traj: EntityTrajectory; entries: VehicleEntry[] }[] = [];
+  for (const traj of shipTrajs) {
+    const sid = traj.kind?.shipId;
+    const entries = sid != null ? byShipId.get(sid) : undefined;
+    if (entries && entries.length === 1) {
+      out.set(entries[0].id, traj);
+    } else if (entries && entries.length > 1) {
+      ambiguous.push({ traj, entries });
+    }
+  }
+  if (ambiguous.length > 0) {
+    // Ally/enemy spawn centroids from the already-unambiguous joins.
+    let ax = 0, az = 0, an = 0, ex = 0, ez = 0, en = 0;
+    const claimed = new Set<number>();
+    for (const [vid, traj] of out) {
+      claimed.add(vid);
+      const v = vehicles.find((x) => x.id === vid);
+      if (!v) continue;
+      const s = spawnOf(traj);
+      if (v.relation <= 1) { ax += s.x; az += s.z; an++; }
+      else { ex += s.x; ez += s.z; en++; }
+    }
+    for (const { traj, entries } of ambiguous) {
+      const unclaimed = entries.filter((e) => !claimed.has(e.id));
+      let pick: VehicleEntry | undefined;
+      if (an > 0 && en > 0) {
+        const s = spawnOf(traj);
+        const dAlly = (s.x - ax / an) ** 2 + (s.z - az / an) ** 2;
+        const dEnemy = (s.x - ex / en) ** 2 + (s.z - ez / en) ** 2;
+        const wantAlly = dAlly < dEnemy;
+        pick =
+          unclaimed.find((e) => (wantAlly ? e.relation <= 1 : e.relation > 1)) ??
+          unclaimed[0];
+      } else {
+        pick = unclaimed[0];
+      }
+      if (pick) {
+        out.set(pick.id, traj);
+        claimed.add(pick.id);
+      }
+    }
+  }
+  return out;
+}
+
+/** One chat row joined to the roster + the sender's trajectory: everything
+ *  the timeline, the copy button and the sender tooltip need. */
+interface ChatRow {
+  time: number;
+  /** Display name — falls back to `#<playerId>` when the roster can't join. */
+  sender: string;
+  /** Raw roster name; empty when unjoinable (no stats lookup possible). */
+  name: string;
+  message: string;
+  channel: ChatChannelKey;
+  enemy: boolean;
+  shipId: number;
+  shipType: string;
+  shipName: string;
+  tier: number;
+  /** HP at the message time (null when the HP timeline is missing). */
+  hp: number | null;
+  maxHp: number | null;
+  /** Already sunk when the message was sent. */
+  sunk: boolean;
+  bot: boolean;
+}
+
+/** The chat-log modal body: a mini timeline up top (one channel-tinted dot
+ *  per message; a playhead tracks the map's battle clock; click dot/track =
+ *  seek), then the message grid — time | right-aligned sender | left-aligned
+ *  message | hover copy button. Hovering the sender shows ship + HP at that
+ *  moment; clicking opens the player-stats modal. */
+const ChatLogPanel = defineComponent({
+  name: "ChatLogPanel",
+  props: {
+    events: { type: Array as () => ChatEvent[], required: true },
+    vehicles: { type: Array as () => VehicleEntry[], required: true },
+    trajectories: { type: Array as () => EntityTrajectory[], required: true },
+    /** The arena's initial player state — the authoritative entity→roster
+     *  join for the sender tooltips (mirror picks share one shipId). */
+    arenaPlayers: { type: Array as () => ArenaPlayer[], default: () => [] },
+    /** Match duration (s) from the decoded stream — the timeline scale
+     *  before the map's own clock reports in. */
+    duration: { type: Number, default: 0 },
+    realm: { type: String, default: "asia" },
+    mapApi: { type: Object as () => HoloMapHandle | null, default: null },
+  },
+  setup(props) {
+    const { dataLanguage } = useLanguage();
+    const loadingTasks = useLoadingTasksStore();
+    const stats = useStatsStore();
+    const router = useRouter();
+    const { copy } = useClipboard();
+    const rows = computed<ChatRow[]>(() => {
+      // Resolve once per recompute — the shipId join is ambiguous for mirror
+      // picks, so the vehicle→trajectory mapping must go through the
+      // spawn-side assignment, not a naive shipId find().
+      const trajByVehicle = assignTrajectoriesByVehicle(
+        props.vehicles,
+        props.trajectories,
+        props.arenaPlayers,
+      );
+      return props.events
+        .filter((c) => c.playerId > 0)
+        .map((c) => {
+          const v = props.vehicles.find((x) => x.id === c.playerId);
+          const traj = v ? trajByVehicle.get(v.id) : undefined;
+          const sunk = traj?.deathTime != null && c.time >= traj.deathTime;
+          // Total HP from the ship's base info: the arena's build health
+          // first, stream peak / offline hull only as fallbacks (a
+          // stream-peak "total" showed damaged-in non-round values).
+          const arenaMax = traj
+            ? props.arenaPlayers.find((p) => p.entityId === traj.entityId)?.maxHealth
+            : undefined;
+          const maxHp = resolveMaxHp(
+            arenaMax,
+            traj?.hpSamples,
+            null,
+            v?.shipId != null ? shipOfflineEntry(v.shipId)?.hp ?? null : null,
+          );
+          return {
+            time: c.time,
+            sender: v?.name ?? `#${c.playerId}`,
+            name: v?.name ?? "",
+            message: c.message,
+            channel: chatChannelOf(c.namespace),
+            enemy: (v?.relation ?? 0) >= 2,
+            shipId: v?.shipId ?? 0,
+            shipType: v ? shipOfflineEntry(v.shipId)?.type ?? "" : "",
+            shipName:
+              (v ? shipNameFromOfflineDb(v.shipId, dataLanguage.value) : null) ??
+              v?.shipName ??
+              "",
+            tier: v ? shipOfflineEntry(v.shipId)?.tier ?? 0 : 0,
+            hp: sunk ? 0 : hpAtTime(traj?.hpSamples, c.time),
+            maxHp,
+            sunk,
+            bot: v ? AI_NAME.test(v.name) : false,
+          };
+        });
+    });
+
+    /** Sender hover hint: ship + tier/class + HP at the message time. Single
+     *  line (the global tooltip popup doesn't preserve newlines). */
+    function senderHint(r: ChatRow): string {
+      const bits: string[] = [r.shipName || "—"];
+      // The label keys off shipTypeClass's atlas class — an unknown type has
+      // none, and a missing label beats interpolating the bare i18n key path.
+      const clsKind = r.shipType ? shipTypeClass(r.shipType) : "";
+      const cls = clsKind ? t(`replay.classes.${clsKind}`) : "";
+      const label = [r.tier ? tierToRoman(r.tier) : "", cls].filter(Boolean).join(" ");
+      if (label) bits.push(label);
+      if (r.hp != null) {
+        const hp = `${t("replay.hpRemaining")} ${Math.round(r.hp).toLocaleString()}${
+          r.maxHp ? ` / ${Math.round(r.maxHp).toLocaleString()}` : ""
+        }`;
+        bits.push(hp);
+      }
+      if (r.sunk) bits.push(t("replay.legend.dead"));
+      return bits.join(" · ");
+    }
+
+    // ── Player stats drill-down (same shape as the post-battle level-2
+    //    modal: head with ship icon, on-demand global stats, jump link). ──
+    const selected = ref<ChatRow | null>(null);
+    const globalStats = ref<PlayerStats | null>(null);
+    const globalLoading = ref(false);
+    const globalError = ref(false);
+
+    async function loadGlobal(name: string) {
+      globalStats.value = null;
+      globalLoading.value = false;
+      globalError.value = false;
+      globalLoading.value = true;
+      const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name }));
+      try {
+        const row = await stats.lookup(name, props.realm || "asia");
+        loadingTasks.end(tid);
+        // Drop late responses for a player that is no longer selected.
+        if (selected.value?.name !== name) return;
+        globalStats.value = row;
+      } catch {
+        loadingTasks.end(tid);
+        if (selected.value?.name !== name) return;
+        globalError.value = true;
+      } finally {
+        globalLoading.value = false;
+      }
+    }
+
+    function openDetail(r: ChatRow) {
+      selected.value = r;
+      globalStats.value = null;
+      globalError.value = false;
+      if (!r.bot) void loadGlobal(r.name);
+    }
+
+    /** Jump into the lookup screen for this player (the chat modal stays
+     *  open behind — the route change tears the whole view down). */
+    function jumpToLookup() {
+      const r = selected.value;
+      if (r) {
+        void router.push({
+          path: "/lookup",
+          query: { name: r.name, realm: props.realm || "asia" },
+        });
+      }
+    }
+
+    return () => {
+      const sel = selected.value;
+      return (
+        <>
+          {/* Above the scroll: the timeline (and its legend) rides an
+              HkScrollPin header. The message list scrolls ITSELF (see
+              __chat-scroll in the SCSS), so the body never scrolls and the
+              sticky pin stays parked in the body's top gutter via the bleed
+              contract — the pin must stay the FIRST element of the body
+              (host class + pad var on __modal-body), and the timeline keeps
+              its gap as padding so the pin's painted box covers it. Rows
+              then clip at the scroller's own crisp top edge, never behind
+              the translucent pin. */}
+          <HkScrollPin side="top">
+            <ChatTimeline rows={rows.value} duration={props.duration} mapApi={props.mapApi} />
+          </HkScrollPin>
+          {/* Message-list scroller: the hikari container owns the scrollbar
+              (auto-hiding overlay track on the list's right edge); the grid
+              stays on the <ul> so the rows keep their shared subgrid axes. */}
+          <HkScrollContainer class="replay-view__chat-scroll">
+            <ul class="replay-view__chat-list">
+              {rows.value.map((r, i) => (
+                <li key={i} class={["replay-view__chat-row", `replay-view__chat-row--${r.channel}`]}>
+                  <span class="replay-view__chat-time">{formatClock(r.time)}</span>
+                  {r.name ? (
+                    <button
+                      class="replay-view__chat-sender"
+                      data-hint={senderHint(r)}
+                      onClick={() => openDetail(r)}
+                    >
+                      {r.sender}
+                    </button>
+                  ) : (
+                    <span class="replay-view__chat-sender replay-view__chat-sender--static">
+                      {r.sender}
+                    </span>
+                  )}
+                  <span class="replay-view__chat-text">{r.message}</span>
+                  <button
+                    class="replay-view__chat-copy"
+                    data-hint={t("replay.chat.copy")}
+                    aria-label={t("replay.chat.copy")}
+                    onClick={() => void copy(r.message)}
+                  >
+                    <Copy size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </HkScrollContainer>
+          {/* Level-2 modal: the sender's stats (reuses the post-battle
+              modal chrome; sits fixed above the chat panel). */}
+          {sel ? (
+            <div class="replay-view__postbattle-modal" onClick={() => (selected.value = null)}>
+              <div
+                class="replay-view__postbattle-modal-panel"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div class="replay-view__postbattle-modal-head">
+                  <span class="replay-view__postbattle-detail-head">
+                    <span class="replay-view__postbattle-detail-ico">
+                      {sel.shipId ? (
+                        <BattleIcon
+                          type={sel.shipType}
+                          variant={sel.enemy ? "enemy" : "ally"}
+                          size={24}
+                        />
+                      ) : null}
+                    </span>
+                    <span class="replay-view__postbattle-detail-name">
+                      {sel.sender}
+                      {sel.bot ? (
+                        <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+                      ) : null}
+                      <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
+                    </span>
+                  </span>
+                  <button onClick={() => (selected.value = null)}><X size={12} /></button>
+                </div>
+                {/* Drill-down scroller (hikari container owns the scrollbar;
+                    the note blocks stack directly in its viewport). */}
+                <HkScrollContainer class="replay-view__postbattle-modal-scroll">
+                  {sel.bot ? (
+                    <div class="replay-view__postbattle-global">
+                      <span class="replay-view__postbattle-global-note">
+                        {t("replay.botNote")}
+                      </span>
+                    </div>
+                  ) : (
+                    <div class="replay-view__postbattle-global">
+                      {globalLoading.value ? (
+                        <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
+                          <HkSpinner size="md" tone="current" />
+                        </span>
+                      ) : globalStats.value ? (
+                        <StatsCard stats={globalStats.value} />
+                      ) : globalError.value ? (
+                        <span class="replay-view__postbattle-global-note">
+                          {t("replay.postbattle.globalFailedAi")}
+                        </span>
+                      ) : (
+                        <span class="replay-view__postbattle-global-note">
+                          {t("replay.postbattle.globalUnavailable")}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </HkScrollContainer>
+                {!sel.bot ? (
+                  <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
+                    {t("replay.postbattle.fullStats")}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </>
+      );
+    };
+  },
+});
+
+/** The chat panel's mini timeline. Isolated in its own component so the
+ *  per-frame playhead updates re-render only this subtree, never the message
+ *  list. Clicking the track seeks proportionally; clicking a dot jumps to
+ *  that message's moment (both via the map's pausing seek). */
+const ChatTimeline = defineComponent({
+  name: "ChatTimeline",
+  props: {
+    rows: { type: Array as () => ChatRow[], required: true },
+    duration: { type: Number, default: 0 },
+    mapApi: { type: Object as () => HoloMapHandle | null, default: null },
+  },
+  setup(props) {
+    // The travel rail inset past the pill's rounded end caps — dots and the
+    // playhead map 0–100% onto THIS box, so the seek math must measure the
+    // same rectangle (clicks on the caps themselves clamp to 0 / 100%).
+    const rail = ref<HTMLSpanElement | null>(null);
+    // Prefer the map's own clock span (max−first sample) once it reports in —
+    // the playhead and the pausing seek both speak that clock; the stream-side
+    // duration prop (absolute last-sample time) is the pre-mount fallback.
+    const total = computed(() => props.mapApi?.duration || props.duration || 0);
+    const pctOf = (t: number) =>
+      total.value > 0 ? Math.min(100, Math.max(0, (t / total.value) * 100)) : 0;
+
+    function seekFromTrack(e: MouseEvent) {
+      const el = rail.value;
+      const api = props.mapApi;
+      if (!el || !api || total.value <= 0) return;
+      const rect = el.getBoundingClientRect();
+      const f = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+      api.seek(f * total.value);
+    }
+
+    return () => {
+      const api = props.mapApi;
+      return (
+        <div class="replay-view__chat-timeline">
+          <div
+            class={["replay-view__chat-track", api ? "" : "replay-view__chat-track--static"]}
+            onClick={seekFromTrack}
+          >
+            <span ref={rail} class="replay-view__chat-rail">
+              {props.rows.map((r, i) => (
+                <button
+                  key={i}
+                  class={["replay-view__chat-dot", `replay-view__chat-ch--${r.channel}`]}
+                  style={{ left: `${pctOf(r.time)}%` }}
+                  data-hint={`${formatClock(r.time)} ${r.sender}: ${r.message}`}
+                  aria-label={`${formatClock(r.time)} ${r.sender}: ${r.message}`}
+                  disabled={!api}
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    api?.seek(r.time);
+                  }}
+                />
+              ))}
+              {api ? (
+                <span
+                  class="replay-view__chat-playhead"
+                  style={{ left: `${pctOf(api.current)}%` }}
+                />
+              ) : null}
+            </span>
+          </div>
+          <div class="replay-view__chat-legend">
+            {CHANNEL_KEYS.map((k) => (
+              <span key={k} class="replay-view__chat-legend-item">
+                <i class={["replay-view__chat-dot", `replay-view__chat-ch--${k}`]} />
+                {t(`replay.chat.${k}`)}
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    };
+  },
+});
 
 /**
  * Standalone review view (Mode 1). The left rail lists replays as info cards
@@ -996,164 +1377,126 @@ export default defineComponent({
     const accounts = useAccountStore();
     const encyclopedia = useEncyclopediaStore();
     const toast = useToast();
+    const loadingTasks = useLoadingTasksStore();
     const { dataLanguage } = useLanguage();
     const mapLang = computed(() => dataLanguage.value);
     const gameStatus = useGameStatusStore();
-    const overlay = useOverlayStore();
-    /**
-     * What the main pane currently shows — a proper little state machine
-     * (Rust-flavoured: None | Live | Archive(Server, ID)). Invariant: exactly
-     * one pane renders, and every rail card click *transitions* the state
-     * instead of flipping independent booleans (the old liveOpen bug was a
-     * replay click forgetting to transition back).
-     */
-    type Pane =
-      | { kind: "none" }
-      | { kind: "live" }
-      | { kind: "archive"; path: string };
-    const pane = ref<Pane>({ kind: "none" });
-    /** Live battle clock (from tempArenaInfo's dateTime). */
-    const liveClock = useBattleClock(() => overlay.arenaInfo?.dateTime ?? null);
-    /** Hard end-of-battle fallback. A mid-battle quit writes no .wowsreplay
-     *  (the settling watcher never fires) and the game deletes
-     *  tempArenaInfo.json, which only the live-pane poll notices — so a
-     *  stale roster + ticking clock can survive forever. Cap every battle by
-     *  its clock: PvP modes end at 20 min, everything else (co-op /
-     *  operations / training rooms, which legitimately run long) at 30 min —
-     *  matching the Rust overlay window's ARENA_FRESHNESS_SECS. Past the cap
-     *  the roster is force-cleared and the live card falls back to "not
-     *  started" until the next arena-info event repopulates it. */
-    const PVP_BATTLE_CAP_SECS = 20 * 60;
-    const PVE_BATTLE_CAP_SECS = 30 * 60;
-    const battleCapHit = computed(() => {
-      const a = overlay.arenaInfo;
-      const elapsed = liveClock.elapsed.value;
-      if (!a || elapsed == null) return false;
-      const key = modeKey(a.matchGroup, a.scenario, null, a.botCount ?? 0);
-      const pvp =
-        key === "pvp" ||
-        key === "ranked" ||
-        key === "clan" ||
-        key === "brawl" ||
-        key === "squad" ||
-        key === "armsrace";
-      return elapsed >= (pvp ? PVP_BATTLE_CAP_SECS : PVE_BATTLE_CAP_SECS);
-    });
-    watch(battleCapHit, (hit) => {
-      if (hit) overlay.clearArenaInfo();
-    });
-    // While the live pane is open, poll the game's tempArenaInfo.json so the
-    // roster refreshes as players load in / the battle ends.
-    let arenaTimer: number | null = null;
-    watch(
-      pane,
-      (p, old) => {
-        if (p.kind === "live" && old.kind !== "live") {
-          void overlay.refreshArenaInfo();
-          arenaTimer = window.setInterval(() => void overlay.refreshArenaInfo(), 3000);
-        } else if (p.kind !== "live" && arenaTimer !== null) {
-          clearInterval(arenaTimer);
-          arenaTimer = null;
-        }
-      },
-      { deep: false },
+    // Rail filter — mode multi-select + match-time order (persisted) + a
+    // session-only date window; see ReplayListFilter for the interaction
+    // model.
+    // The rail lists what the user can act on: an install removed from the
+    // settings list takes its replays with it (the Rust all-clients scan
+    // keeps finding the folder — the ignore is presentation-level, webui
+    // only — and a card whose client no dropdown can pick is a dead end).
+    const scannedReplays = computed(() =>
+      parser.list.value.filter((r) => !gd.config.isIgnoredPath(r.installPath)),
     );
-
-    /** Battle lifecycle: while the game runs, watch the replays folder —
-     *  the game writes the .wowsreplay file when the battle ENDS, so a new
-     *  file is the direct "match over" signal. On detection: flip the live
-     *  panel to SETTLING (结算中 — stats screen, replay not yet final) and
-     *  refresh the replay list so the finished match appears immediately.
-     *  When the game process exits, do a final refresh (the file may grow
-     *  its post-battle block) and return to idle. */
-    const livePhase = ref<"idle" | "battle" | "settling">("idle");
-    let baselineFiles: Set<string> | null = null;
-    async function snapshotReplayDir(): Promise<Set<string> | null> {
-      const dir = activePath.value ? replaysDir(activePath.value) : undefined;
-      try {
-        const files = await api.listReplays(dir);
-        return new Set(files);
-      } catch {
-        return null;
-      }
-    }
+    const listFilter = useReplayListFilter(scannedReplays, parser.external);
+    // The live battle has its own page (/live) now; this view only refreshes
+    // the replay list when the game EXITS so the finished match appears
+    // without a manual refresh (the game writes the .wowsreplay at battle
+    // end — the final pass also catches late post-battle flushes).
     watch(
       () => gameStatus.process.running,
-      async (running) => {
-        if (running) {
-          livePhase.value = "battle";
-          baselineFiles = await snapshotReplayDir();
-        } else {
-          // Game exited: finalize whatever the battle produced.
-          if (livePhase.value !== "idle") void reload();
-          livePhase.value = "idle";
-          baselineFiles = null;
-        }
+      (running) => {
+        if (!running) void reload();
       },
     );
-    let endPoll: number | null = null;
-    watch(
-      livePhase,
-      (ph) => {
-        if (ph === "battle") {
-          if (endPoll === null) {
-            endPoll = window.setInterval(async () => {
-              if (baselineFiles == null) {
-                baselineFiles = await snapshotReplayDir();
-                return;
-              }
-              const now = await snapshotReplayDir();
-              if (!now) return;
-              const fresh = [...now].some((f) => !baselineFiles!.has(f));
-              if (fresh) {
-                livePhase.value = "settling";
-                void reload();
-              } else {
-                baselineFiles = now;
-              }
-            }, 3000);
-          }
-        } else if (endPoll !== null) {
-          clearInterval(endPoll);
-          endPoll = null;
-        }
-      },
-      { immediate: true },
-    );
-    onBeforeUnmount(() => {
-      if (endPoll !== null) clearInterval(endPoll);
-      if (arenaTimer !== null) clearInterval(arenaTimer);
-    });
 
-    // Auto-manage loading toast for replay operations.
-    let loadingToastId = 0;
+    // Persistent progress for replay operations rides the title-bar chip.
+    let loadingTaskId = 0;
     watch(() => parser.loading.value, (v) => {
       if (v) {
-        loadingToastId = toast.loading(t("replay.loading"));
-      } else if (loadingToastId) {
-        toast.remove(loadingToastId);
-        loadingToastId = 0;
+        loadingTaskId = loadingTasks.begin(t("replay.loading"));
+      } else if (loadingTaskId) {
+        loadingTasks.end(loadingTaskId);
+        loadingTaskId = 0;
+      }
+    });
+    // A mid-load unmount stops the watcher before the false transition —
+    // release the chip here or it would stick until the next load.
+    onUnmounted(() => {
+      if (loadingTaskId) {
+        loadingTasks.end(loadingTaskId);
+        loadingTaskId = 0;
       }
     });
 
-    const activePath = computed(() => gd.config.activeInstall?.path ?? "");
     const hasClient = computed(() => gd.config.installs.length > 0);
 
-    /** The realm to query player stats against. Prefer the client install's
-     *  realm, then the bound account's realm, else the UI default. */
+    /** The server tag of an entry — realm first ("ASIA"/"CN"/"RU"), else the
+     *  client kind's label, else empty for a file under no detected install.
+     *  One vocabulary for the cards, the count row and the client filter. */
+    function serverTagOfMeta(r: ReplayMetaLite): string {
+      return serverTagOf(r.installKind, r.installRealm);
+    }
+
+    /** The realm the OPEN replay's own client carries, when the scan tagged
+     *  it. The rail now mixes clients, so roster lookups must follow the
+     *  replay being reviewed rather than whatever install is active
+     *  app-wide (a CN replay opened while Steam is active would otherwise
+     *  query the ASIA stats API). */
+    const openReplayRealm = computed(() => {
+      const path = parser.selectedPath.value;
+      if (!path) return null;
+      const entry = [...scannedReplays.value, ...parser.external.value].find(
+        (r) => r.path === path,
+      );
+      return entry?.installRealm ?? null;
+    });
+
+    /** The realm to query player stats against: the open replay's client,
+     *  then the active install, then the bound account, else the UI
+     *  default. */
     const realm = computed(
       () =>
+        openReplayRealm.value ??
         gd.config.activeInstall?.realm ??
         accounts.activeAccount?.realm ??
         accounts.activeRealm ??
         "asia",
     );
 
-    /** Reload the replay list from the given (or active) client's replays dir. */
-    async function reload(path?: string) {
-      const dir = path ? replaysDir(path) : activePath.value ? replaysDir(activePath.value) : undefined;
+    /** The client (owning install) options of the rail's client dimension:
+     *  every detected install, labelled the way the sidebar/settings name it
+     *  (same-labelled installs disambiguated by folder — see
+     *  clientMenuOptions). A persisted pick whose install has since
+     *  disappeared is appended by its folder name so the stale selection
+     *  stays visible and clearable instead of silently filtering everything
+     *  out. */
+    const clientOptions = computed(() => {
+      const opts = clientMenuOptions(gd.config.installs);
+      const picked = listFilter.selectedClient.value;
+      if (picked && !opts.some((o) => sameGamePath(o.value, picked))) {
+        opts.push({ value: picked, label: installFolderName(picked) });
+      }
+      return opts;
+    });
+
+    /** Server tags present in the VISIBLE rail, with their entry counts, in
+     *  first-appearance order — under the default newest-first sort the
+     *  freshest client leads, and a sort flip just reorders the chips. This
+     *  is the count row's answer to "whose replays am I looking at": the
+     *  per-card tag says it for one entry, this says it for the whole list. */
+    const serverBreakdown = computed(() => {
+      const counts = new Map<string, number>();
+      for (const r of listFilter.visibleList.value) {
+        const tag = serverTagOfMeta(r);
+        if (!tag) continue;
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
+      return [...counts.entries()].map(([tag, count]) => ({ tag, count }));
+    });
+
+    /** Reload the rail: EVERY detected client's replays in one list, each
+     *  entry stamped with its owning install (see the Rust command's `all`
+     *  mode). The app-wide active install no longer decides what the rail
+     *  shows — it only decides which client the OTHER data reads (mods,
+     *  stats, live) follow — so a client that is not active is still
+     *  browsable here, filtered by the rail's client dimension. */
+    async function reload() {
       try {
-        await parser.refreshList(dir);
+        await parser.refreshAll();
       } catch {
         // surfaced via store.error; list stays empty
       }
@@ -1171,25 +1514,20 @@ export default defineComponent({
       // handy for sharing a match link and for headless render checks.
       const want = route.query.open;
       if (want != null && want !== "") {
-        const list = parser.list.value;
+        const list = scannedReplays.value;
         const idx = /^\d+$/.test(String(want))
           ? Number(want)
           : list.findIndex((r) => r.path.includes(String(want)));
         const hit = idx >= 0 ? list[idx] : undefined;
         if (hit) {
-          pane.value = { kind: "archive", path: hit.path };
           void parser.open(hit.path);
         }
       }
     });
 
-    watch(activePath, (p, prev) => {
-      if (p && p !== prev) void reload(p);
-    });
-
     /** Pick replays from anywhere on disk (shared files outside the game's
      *  replays folder). Each picked file header-parses into a temporary card
-     *  queued right after the live entry; the first pick opens immediately. */
+     *  queued above the scanned list; the first pick opens immediately. */
     const openingExternal = ref(false);
     async function onOpenExternal() {
       if (openingExternal.value) return;
@@ -1202,7 +1540,6 @@ export default defineComponent({
         }
         const first = added[0];
         if (first) {
-          pane.value = { kind: "archive", path: first };
           void parser.open(first);
         }
       } catch (e) {
@@ -1212,12 +1549,63 @@ export default defineComponent({
       }
     }
 
-    /** Drop an external entry; reset the pane if its replay was open. */
+    /** Drop an external entry; the store also clears its pending selection. */
     function onCloseExternal(path: string) {
       parser.removeExternal(path);
-      if (pane.value.kind === "archive" && pane.value.path === path) {
-        pane.value = { kind: "none" };
+    }
+
+    // ── mobile replay acquisition (phone app build) ─────────────────────
+    // pick_replay_files (the native dialog behind onOpenExternal) errors on
+    // mobile, so the phone surfaces its own pair of acquisition actions:
+    // an HTML file picker writing through importReplayFile, and the
+    // pairing wizard pulling from the user's desktop WoWSP.
+    const pairing = usePairingStore();
+    const wizardOpen = ref(false);
+    // Deep link: /replay?pairing=1 auto-opens the wizard — the phone
+    // settings' pairing section routes here (its primary button).
+    if (route.query.pairing === "1") wizardOpen.value = true;
+    const fileInput = ref<HTMLInputElement | null>(null);
+    const importing = ref(false);
+
+    /** Open the (hidden) HTML file input — on Android WebView this may open
+     *  the system file picker / SAF; in a browser it opens the normal
+     *  chooser. Multiple .wowsreplay selection allowed. */
+    function onPickFiles() {
+      fileInput.value?.click();
+    }
+
+    /** Read the picked Files and import each into the managed replays dir
+     *  (list refresh afterwards shows them; the backend dedupes names). */
+    async function onFilesChosen(e: Event) {
+      const input = e.target as HTMLInputElement;
+      const files = [...(input.files ?? [])];
+      // Reset so picking the same file again re-fires change.
+      input.value = "";
+      if (files.length === 0) return;
+      importing.value = true;
+      try {
+        const entries = await Promise.all(
+          files.map(async (f) => ({
+            name: f.name,
+            bytes: new Uint8Array(await f.arrayBuffer()),
+          })),
+        );
+        const { imported, failed } = await pairing.importFiles(entries);
+        for (const f of failed) {
+          toast.error(`${f.name}\n${f.error}`);
+        }
+        if (imported.length > 0) {
+          toast.success(t("replay.acquire.importedToast", { n: imported.length }));
+          await reload();
+        }
+      } finally {
+        importing.value = false;
       }
+    }
+
+    /** A remote pull finished — refresh so the landed files show locally. */
+    function onPairingImported() {
+      void reload();
     }
 
     // Decoded trajectories for the currently-open replay (M3). Loaded lazily on
@@ -1244,16 +1632,50 @@ export default defineComponent({
     const wardRemoves = ref<WardRemoveEvent[]>([]);
     const shotKills = ref<ShotKillEvent[]>([]);
     const damageStats = ref<DamageStatSample[]>([]);
+    const chatMessages = ref<ChatEvent[]>([]);
+    const achievements = ref<AchievementEvent[]>([]);
+    const arenaPlayers = ref<ArenaPlayer[]>([]);
+    /** Entity ids whose deathTime was inferred from the post-battle payload
+     *  (ships that sank while un-spotted) — heuristics crediting kills from
+     *  death-time proximity must stand down for them (shipHp.ts). */
+    const inferredDeaths = ref<Set<number>>(new Set());
+    /** Global-weather timeline (cyclone) — badge + minimap darkening. */
+    const weatherTransitions = ref<WeatherTransition[]>([]);
+    const weatherNotifications = ref<WeatherNotification[]>([]);
     const showResults = ref(false);
-    /** True while the packet stream is decoding (post-battle results pending). */
-    const resultsLoading = ref(false);
-    const trajectoryError = ref<string | null>(null);
+    const showChat = ref(false);
+    /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
+     *  chat panel reads its clock for the playhead and calls its pausing
+     *  seek when a timeline dot/track is clicked. Null while no map mounts
+     *  (decode error) — the panel then renders without the playhead. */
+    const mapRef = ref<HoloMapHandle | null>(null);
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
     const duration = ref(0);
-    watch(
-      () => parser.current.value?.path,
-      async (path) => {
+    /** Stats-source mode for the fallback matrix (the pref resolved
+     *  against the replayed battle's identity). */
+    const fallbackStatsMode = computed<ResolvedStatsMode>(() => {
+      const cur = parser.current.value;
+      return resolveRosterBattleScope(statsPrefsState.value.overlayBattleScope, {
+        matchGroup: cur?.matchGroup ?? null,
+        scenario: cur?.scenario ?? null,
+        eventType: cur?.eventType ?? null,
+      });
+    });
+    /** Operation scenario (行动): single-team battle — drives the single
+     *  allies column, the "N players" count and the icon variants. */
+    const isOperation = computed(() => {
+      const cur = parser.current.value;
+      if (!cur) return false;
+      return isOperationBattle(
+        cur.matchGroup,
+        cur.scenario,
+        cur.eventType,
+        cur.vehicles.map((v) => v.name),
+      );
+    });
+    const { loading: resultsLoading, error: trajectoryError } = useReplayPositions(parser.current, {
+      reset() {
         trajectories.value = [];
         shellLaunches.value = [];
         explosions.value = [];
@@ -1276,46 +1698,70 @@ export default defineComponent({
         wardRemoves.value = [];
         shotKills.value = [];
         damageStats.value = [];
-        trajectoryError.value = null;
+        chatMessages.value = [];
+        achievements.value = [];
+        arenaPlayers.value = [];
+        weatherTransitions.value = [];
+        weatherNotifications.value = [];
+        inferredDeaths.value = new Set();
+        showChat.value = false;
         duration.value = 0;
-        if (!path) return;
-        resultsLoading.value = true;
-        try {
-          const stream = await api.readReplayPositions(path);
-          trajectories.value = stream.trajectories;
-          shellLaunches.value = stream.shellLaunches ?? [];
-          explosions.value = stream.explosions ?? [];
-          torpedoes.value = stream.torpedoes ?? [];
-          torpedoSteers.value = stream.torpedoSteers ?? [];
-          weaponLocks.value = stream.weaponLocks ?? [];
-          battleResults.value = stream.battleResults ?? null;
-          replayVersion.value = stream.version ?? null;
-          mapNamePkt.value = stream.mapName ?? null;
-          cameraFrames.value = stream.camera ?? [];
-          netStats.value = stream.netStats ?? [];
-          leavesMap.value = stream.leaves ?? {};
-          cameraModes.value = stream.cameraModes ?? [];
-          squadronCreates.value = stream.squadronCreates ?? [];
-          squadronPlanes.value = stream.squadronPlanes ?? [];
-          minimapSquadronAdds.value = stream.minimapSquadronAdds ?? [];
-          minimapSquadronMoves.value = stream.minimapSquadronMoves ?? [];
-          minimapSquadronRemoves.value = stream.minimapSquadronRemoves ?? [];
-          wards.value = stream.wards ?? [];
-          wardRemoves.value = stream.wardRemoves ?? [];
-          shotKills.value = stream.shotKills ?? [];
-          damageStats.value = stream.damageStats ?? [];
-          let maxT = 0;
-          for (const tr of stream.trajectories) {
-            for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
-          }
-          duration.value = maxT;
-        } catch (e) {
-          trajectoryError.value = (e as Error).message;
-        } finally {
-          resultsLoading.value = false;
-        }
       },
-    );
+      apply(stream, replay) {
+        // Boundary normalization FIRST: a live in-progress recording (the
+        // temp container opened while the battle runs) decodes entity
+        // timelines that never received a position packet, and any nullish
+        // or non-finite sample slipping through would crash the map render
+        // with the "reading 'time'" class (#956). One pass here lets every
+        // downstream consumer trust dense, finite timelines.
+        sanitizeReplayStream(stream);
+        // Ships the stream never caught sinking — killed while un-spotted;
+        // modern clients emit no EntityDestroy and the HP stream only
+        // updates while observed, so they would keep sailing at their
+        // last (often full) HP reading. Patch the post-battle payload's
+        // authoritative sink list (killerId) into the trajectories once
+        // here, so the map, roster strip, tooltip and chat panel all
+        // read one uniform deathTime (see shipHp.ts for the caveats).
+        inferredDeaths.value = applyDarkDeathInference(
+          stream.trajectories,
+          parsePostBattle(stream.battleResults ?? null),
+          replay.vehicles,
+          stream.arenaPlayers,
+        );
+        trajectories.value = stream.trajectories;
+        shellLaunches.value = stream.shellLaunches ?? [];
+        explosions.value = stream.explosions ?? [];
+        torpedoes.value = stream.torpedoes ?? [];
+        torpedoSteers.value = stream.torpedoSteers ?? [];
+        weaponLocks.value = stream.weaponLocks ?? [];
+        battleResults.value = stream.battleResults ?? null;
+        replayVersion.value = stream.version ?? null;
+        mapNamePkt.value = stream.mapName ?? null;
+        cameraFrames.value = stream.camera ?? [];
+        netStats.value = stream.netStats ?? [];
+        leavesMap.value = stream.leaves ?? {};
+        cameraModes.value = stream.cameraModes ?? [];
+        squadronCreates.value = stream.squadronCreates ?? [];
+        squadronPlanes.value = stream.squadronPlanes ?? [];
+        minimapSquadronAdds.value = stream.minimapSquadronAdds ?? [];
+        minimapSquadronMoves.value = stream.minimapSquadronMoves ?? [];
+        minimapSquadronRemoves.value = stream.minimapSquadronRemoves ?? [];
+        wards.value = stream.wards ?? [];
+        wardRemoves.value = stream.wardRemoves ?? [];
+        shotKills.value = stream.shotKills ?? [];
+        damageStats.value = stream.damageStats ?? [];
+        chatMessages.value = stream.chatMessages ?? [];
+        achievements.value = stream.achievements ?? [];
+        arenaPlayers.value = stream.arenaPlayers ?? [];
+        weatherTransitions.value = stream.weatherTransitions ?? [];
+        weatherNotifications.value = stream.weatherNotifications ?? [];
+        let maxT = 0;
+        for (const tr of stream.trajectories) {
+          for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
+        }
+        duration.value = maxT;
+      },
+    });
 
     /** Format a match duration (seconds) as M:SS or H:MM:SS. */
     function formatDuration(sec: number): string {
@@ -1327,6 +1773,13 @@ export default defineComponent({
       const pad = (n: number) => String(n).padStart(2, "0");
       return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
     }
+
+    /** Human-sent chat count — gates the header pill. System rows
+     *  (playerId ≤ 0 — the client itself ignores those) don't count; the
+     *  row join itself lives in ChatLogPanel. */
+    const chatCount = computed(
+      () => chatMessages.value.filter((c) => c.playerId > 0).length,
+    );
 
     const refreshing = ref(false);
     async function onRefresh() {
@@ -1340,10 +1793,22 @@ export default defineComponent({
 
     /** One replay info card. `external` cards are session-temporary picks
      *  from outside the game folder — they carry an "external" pill and a
-     *  corner ✕ (a sibling of the card button, so no nested buttons). Their
+     *  corner X icon (a sibling of the card button, so no nested buttons). Their
      *  key is namespaced so a pick that also exists in the scanned folder
      *  can't collide with the regular card's key. */
     function renderReplayCard(r: ReplayMetaLite, external: boolean) {
+      // The lite scanner only carries the own ship's id — resolve the
+      // localized name + class off the offline DB (same pattern as the
+      // roster panels); cards without a resolvable ship keep the old foot.
+      const ownEntry = r.ownShipId != null ? shipOfflineEntry(r.ownShipId) : null;
+      const shipName =
+        r.ownShipId != null ? shipNameFromOfflineDb(r.ownShipId, dataLanguage.value) : null;
+      const ownShipType = ownEntry?.type ?? null;
+      // The card's title is the RECORDING PLAYER, not the hull: a client
+      // shared by several accounts (the same install played by different
+      // nicknames in turn) is told apart by exactly this line, and the
+      // player filter above the rail groups by it. The hull rides the foot.
+      const serverTag = serverTagOfMeta(r);
       return (
         <li key={external ? `ext_${r.path}` : r.path} class="replay-view__item">
           <button
@@ -1351,31 +1816,51 @@ export default defineComponent({
             class={[
               "replay-card",
               external ? "replay-card--external" : "",
-              pane.value.kind === "archive" && pane.value.path === r.path
+              parser.selectedPath.value === r.path
                 ? "replay-card--active"
                 : "",
             ]}
             onClick={() => {
-              // Transition the pane (closing any live view) BEFORE opening
-              // the archive — exactly one pane at a time.
-              pane.value = { kind: "archive", path: r.path };
               void parser.open(r.path);
             }}
           >
             <div class="replay-card__top">
-              <span class="replay-card__ship">{r.ownShipName ?? t("replay.ownShip")}</span>
+              <span class="replay-card__ship">{r.playerName ?? t("replay.list.unknownPlayer")}</span>
               <span class="replay-card__pills">
                 {external ? (
                   <span class="replay-card__pill replay-card__pill--external">
                     {t("replay.external.tag")}
                   </span>
                 ) : null}
+                {/* The replay's server — which client's folder it came from.
+                    The rail mixes every detected client now, so each card
+                    says where it belongs; entries under no known install
+                    (a picked file, the phone's managed dir) carry none. */}
+                {serverTag ? (
+                  <span class="replay-card__pill replay-card__pill--server">
+                    {serverTag}
+                  </span>
+                ) : null}
                 {r.matchGroup ? (
                   <span
                     class="replay-card__pill"
-                    style={modeColor(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0) as CSSProperties}
+                    style={
+                      modeColor(
+                        r.matchGroup,
+                        r.scenario,
+                        r.eventType,
+                        r.botCount ?? 0,
+                        r.scriptedUnitCount ?? 0,
+                      ) as CSSProperties
+                    }
                   >
-                    {modeLabel(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0)}
+                    {modeLabel(
+                      r.matchGroup,
+                      r.scenario,
+                      r.eventType,
+                      r.botCount ?? 0,
+                      r.scriptedUnitCount ?? 0,
+                    )}
                   </span>
                 ) : null}
               </span>
@@ -1389,6 +1874,17 @@ export default defineComponent({
               <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
             </div>
             <div class="replay-card__foot">
+              {shipName && ownEntry ? (
+                <span
+                  class="replay-card__vessel"
+                  data-hint-card={ownShipHintCard(ownEntry, shipName, dataLanguage.value)}
+                >
+                  {ownShipType ? (
+                    <BattleIcon type={ownShipType} variant="plain" size={17} />
+                  ) : null}
+                  <span class="replay-card__vessel-name">{shipName}</span>
+                </span>
+              ) : null}
               <span class="replay-card__players">
                 {t("replay.players", { n: r.playerCount })}
               </span>
@@ -1415,288 +1911,441 @@ export default defineComponent({
             <div class="replay-view__list-head-row">
               <h2 class="replay-view__list-title">{t("replay.list.title")}</h2>
               <span class="replay-view__list-head-actions">
-                <HButton
+                {/* The filter trigger leads the action row (the funnel, left
+                    of the open-external picker); it renders whenever ANYTHING
+                    can be filtered — external picks included — so a
+                    persisted selection is always inspectable and clearable;
+                    gated on the scanned list alone it would dead-end the
+                    no-match state below. */}
+                {scannedReplays.value.length + parser.external.value.length > 0 ? (
+                  <ReplayListFilter
+                    modeOptions={listFilter.modeOptions.value}
+                    selectedModes={listFilter.selectedModes.value}
+                    sortDir={listFilter.sortDir.value}
+                    onUpdate:selectedModes={(s: Set<string>) => (listFilter.selectedModes.value = s)}
+                    onUpdate:sortDir={(d: ReplaySortDir) => (listFilter.sortDir.value = d)}
+                    dateFrom={listFilter.dateFrom.value}
+                    dateTo={listFilter.dateTo.value}
+                    onUpdate:dateFrom={(v: string | null) => (listFilter.dateFrom.value = v)}
+                    onUpdate:dateTo={(v: string | null) => (listFilter.dateTo.value = v)}
+                    selectedClient={listFilter.selectedClient.value}
+                    clientOptions={clientOptions.value}
+                    onUpdate:selectedClient={(v: string) => (listFilter.selectedClient.value = v)}
+                    selectedPlayer={listFilter.selectedPlayer.value}
+                    playerOptions={listFilter.playerOptions.value}
+                    onUpdate:selectedPlayer={(v: string) => (listFilter.selectedPlayer.value = v)}
+                  />
+                ) : null}
+                {isMobileApp() ? (
+                  <>
+                    {/* Phone build: the native pick dialog is unavailable
+                        (pick_replay_files errors on mobile) — the HTML file
+                        input + pairing wizard take over. */}
+                    <HkButton
+                      size="sm"
+                      variant="ghost"
+                      loading={importing.value}
+                      onClick={onPickFiles}
+                      ariaLabel={t("replay.acquire.pickFiles")}
+                    >
+                      <FileUp size={14} />
+                    </HkButton>
+                    <HkButton
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => (wizardOpen.value = true)}
+                      ariaLabel={t("replay.acquire.fromDesktop")}
+                    >
+                      <Laptop size={14} />
+                    </HkButton>
+                  </>
+                ) : (
+                  <HkButton
+                    size="sm"
+                    variant="ghost"
+                    loading={openingExternal.value}
+                    onClick={() => void onOpenExternal()}
+                    ariaLabel={t("replay.list.openExternal")}
+                  >
+                    <FolderOpen size={14} />
+                  </HkButton>
+                )}
+                <HkButton
                   size="sm"
                   variant="ghost"
-                  loading={openingExternal.value}
-                  onClick={() => void onOpenExternal()}
-                  ariaLabel={t("replay.list.openExternal")}
-                >
-                  <FolderOpen size={14} />
-                </HButton>
-                <HButton
-                  size="sm"
-                  variant="ghost"
-                  disabled={!hasClient.value || refreshing.value}
+                  disabled={(!hasClient.value && !isMobileApp()) || refreshing.value}
                   onClick={() => void onRefresh()}
                   ariaLabel={t("replay.refresh")}
                 >
                   <RefreshCw size={14} class={refreshing.value ? "replay-view__spin" : ""} />
-                </HButton>
+                </HkButton>
               </span>
             </div>
 
-            {/* The client/server selector lives in the sidebar footer (shared
-                with plugin management + account switching); the replay list
-                just reads the active install. */}
-            {!hasClient.value ? (
+            {/* The rail scans EVERY detected client (no active-install
+                scoping — the sidebar footer's picker decides what the other
+                data reads follow, not what is listed here). No detected
+                install means nothing to scan on desktop; the phone build
+                reads its managed import dir instead. */}
+            {!hasClient.value && !isMobileApp() ? (
               <p class="replay-view__no-client">{t("replay.list.noClient")}</p>
             ) : null}
 
-            {parser.list.value.length > 0 ? (
+            {/* The count stays scoped to the scanned list (externals are
+                session-temporary picks), even though the filter above also
+                applies to them. */}
+            {scannedReplays.value.length > 0 ? (
               <span class="replay-view__count">
-                {t("replay.list.count", { n: parser.list.value.length })}
+                {listFilter.filterActive.value
+                  ? t("replay.list.countFiltered", {
+                      n: listFilter.visibleList.value.length,
+                      total: scannedReplays.value.length,
+                    })
+                  : t("replay.list.count", { n: scannedReplays.value.length })}
+                {/* Which servers the visible replays come from, with counts
+                    — the at-a-glance "is every client's history in here"
+                    answer the per-card tags give one entry at a time. */}
+                {serverBreakdown.value.length > 0 ? (
+                  <span class="replay-view__count-servers">
+                    {serverBreakdown.value.map((s) => (
+                      <span key={s.tag} class="replay-view__count-server">
+                        <span class="replay-view__count-server-tag">{s.tag}</span>
+                        {s.count}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
               </span>
             ) : null}
           </div>
 
-          <div class="replay-view__list-scroll">
-            {parser.external.value.length === 0 && !hasClient.value ? (
-              <p class="replay-view__empty">{t("replay.list.noClient")}</p>
-            ) : parser.external.value.length === 0 && parser.list.value.length === 0 ? (
-              <p class="replay-view__empty">{t("replay.list.empty")}</p>
-            ) : (
-              <ul class="replay-view__items">
-                {gameStatus.process.running ? (
-                  <li class="replay-view__item">
-                    <button
-                      type="button"
-                      class={[
-                        "replay-card",
-                        "replay-card--live",
-                        pane.value.kind === "live" ? "replay-card--active" : "",
-                      ]}
-                      onClick={() => {
-                        pane.value = { kind: "live" };
-                        parser.clear();
-                      }}
-                    >
-                      <div class="replay-card__top">
-                        <span class="replay-card__ship">
-                          <Play size={13} class="replay-card__live-ico" strokeWidth={2.4} />
-                          {t("replay.live.title")}
-                        </span>
-                        {/* Pills ride as ONE right-aligned group: __top is
-                            space-between, so loose children would each claim
-                            a spread-out slot (the mode pill used to end up
-                            centered between title and LIVE). */}
-                        <span class="replay-card__pills">
-                          {overlay.arenaInfo?.matchGroup ? (
-                            <span
-                              class="replay-card__pill"
-                              style={modeColor(
-                                overlay.arenaInfo.matchGroup,
-                                overlay.arenaInfo.scenario,
-                                null,
-                                overlay.arenaInfo.botCount ?? 0,
-                              ) as CSSProperties}
-                            >
-                              {modeLabel(
-                                overlay.arenaInfo.matchGroup,
-                                overlay.arenaInfo.scenario,
-                                null,
-                                overlay.arenaInfo.botCount ?? 0,
-                              )}
-                            </span>
-                          ) : null}
-                          {livePhase.value === "settling" ? (
-                            <span class="replay-card__pill replay-card__pill--settling">
-                              {t("replay.live.settling")}
-                            </span>
-                          ) : (
-                            <span class="replay-card__pill replay-card__pill--live">LIVE</span>
-                          )}
-                        </span>
-                      </div>
-                      <div class="replay-card__row">
-                        <span class="replay-card__label">{t("replay.mapLabel")}</span>
-                        <span class="replay-card__val">
-                          {overlay.arenaInfo?.mapName
-                            ? displayMapName(overlay.arenaInfo.mapName, mapLang.value)
-                            : t("replay.live.notStarted")}
-                        </span>
-                      </div>
-                      <div class="replay-card__foot">
-                        <span class="replay-card__players">
-                          {overlay.arenaInfo
-                            ? t("replay.players", { n: overlay.arenaInfo.vehicles.length })
-                            : "—"}
-                        </span>
-                        {liveClock.label.value ? (
-                          <span class="replay-card__clock">{liveClock.label.value}</span>
-                        ) : null}
-                      </div>
-                    </button>
-                  </li>
-                ) : null}
-                {/* Manually picked files queue-jump to right after the live
-                    entry — newest picks sit closest to the live card. */}
-                {parser.external.value.map((r) => renderReplayCard(r, true))}
-                {parser.list.value.map((r) => renderReplayCard(r, false))}
-              </ul>
-            )}
-          </div>
+          {/* Rail scroller: the hikari container owns the scrollbar
+              (auto-hiding overlay track over the rail's right edge); the
+              cards and empty states scroll inside its viewport. */}
+          <HkScrollContainer class="replay-view__list-scroll">
+            <div class="replay-view__list-scroll__inner">
+              {parser.external.value.length === 0 && scannedReplays.value.length === 0 ? (
+                isMobileApp() ? (
+                  /* Phone build's prominent acquisition empty state: pick
+                      local .wowsreplay files, or pair with the desktop. */
+                  <div class="replay-view__acquire">
+                    <p class="replay-view__acquire-title">{t("replay.acquire.emptyTitle")}</p>
+                    <p class="replay-view__acquire-hint">{t("replay.acquire.emptyHint")}</p>
+                    <div class="replay-view__acquire-actions">
+                      <HkButton
+                        variant="primary"
+                        loading={importing.value}
+                        onClick={onPickFiles}
+                      >
+                        <FileUp size={15} />
+                        {t("replay.acquire.pickFiles")}
+                      </HkButton>
+                      <HkButton
+                        variant="secondary"
+                        onClick={() => (wizardOpen.value = true)}
+                      >
+                        <Laptop size={15} />
+                        {t("replay.acquire.fromDesktop")}
+                      </HkButton>
+                    </div>
+                  </div>
+                ) : !hasClient.value ? (
+                  <p class="replay-view__empty">{t("replay.list.noClient")}</p>
+                ) : (
+                  <p class="replay-view__empty">{t("replay.list.empty")}</p>
+                )
+              ) : listFilter.visibleExternal.value.length === 0 &&
+                  listFilter.visibleList.value.length === 0 ? (
+                /* Everything is filtered out — the strip above stays reachable
+                   so the state is self-explanatory (and clearable). */
+                <p class="replay-view__empty">{t("replay.filter.noMatch")}</p>
+              ) : (
+                <ul class="replay-view__items">
+                  {/* Manually picked files (session-temporary) stay pinned
+                      above the scanned list; the filter and the sort apply to
+                      both blocks independently. */}
+                  {listFilter.visibleExternal.value.map((r) => renderReplayCard(r, true))}
+                  {listFilter.visibleList.value.map((r) => renderReplayCard(r, false))}
+                </ul>
+              )}
+            </div>
+          </HkScrollContainer>
         </aside>
 
         <section class="replay-view__main">
-          {pane.value.kind === "live" ? (
-            <LiveBattlePanel
-              arena={overlay.arenaInfo}
-              settling={livePhase.value === "settling"}
-              realm={realm.value}
-            />
-          ) : parser.current.value ? (
-            <div class="replay-view__content">
-              {parser.error.value ? (
-                <div class="replay-view__placeholder replay-view__placeholder--error">
-                  {parser.error.value}
-                </div>
-              ) : null}
-              <header class="replay-view__meta">
-                <strong class="replay-view__map">
-                  {displayMapName(parser.current.value.mapName, mapLang.value)}
-                </strong>
-                <span class="replay-view__meta-item">
-                  {formatDateTime(parser.current.value.dateTime)}
-                </span>
-                {parser.current.value.matchGroup ? (
-                  <span
-                    class="replay-view__meta-item replay-view__pill"
-                    style={
-                      modeColor(
-                        parser.current.value.matchGroup,
-                        parser.current.value.scenario,
-                        parser.current.value.eventType,
-                        parser.current.value.botCount ?? 0,
-                      ) as CSSProperties
-                    }
-                  >
-                    {modeLabel(
-                      parser.current.value.matchGroup,
-                      parser.current.value.scenario,
-                      parser.current.value.eventType,
-                      parser.current.value.botCount ?? 0,
-                    )}
-                  </span>
-                ) : null}
-                <span class="replay-view__meta-item replay-view__count">
-                  {formatPlayerCount(parser.current.value.vehicles)}
-                </span>
-                {duration.value > 0 ? (
-                  <span class="replay-view__meta-item">
-                    {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
-                  </span>
-                ) : null}
-                {resultsLoading.value ? (
-                  <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
-                    {t("replay.results")}
-                    <HSpinner size="xs" tone="current" />
-                  </span>
-                ) : battleResults.value || trajectories.value.length > 0 ? (
-                  <button
-                    class="replay-view__meta-item replay-view__pill replay-view__results"
-                    onClick={() => (showResults.value = !showResults.value)}
-                  >
-                    {t("replay.results")}
-                  </button>
-                ) : null}
-              </header>
-              {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
-                <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
-                  <div
-                    class="replay-view__modal-panel"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div class="replay-view__modal-head">
-                      <div class="replay-view__modal-title">
-                        <strong>{t("replay.results")}</strong>
-                        {!battleResults.value ? (
-                          <span class="replay-view__results-note">
-                            {t("replay.resultsIncomplete")}
-                          </span>
-                        ) : null}
-                      </div>
-                      <button
-                        class="replay-view__modal-close"
-                        onClick={() => (showResults.value = false)}
-                        aria-label="Close"
-                      >
-                        ✕
-                      </button>
+          {/* Phone-only page scroller (≤767px the stacked detail scrolls
+              here): the hikari container owns the scrollbar, and the inner
+              wrapper keeps the former direct-child flex chain (__content
+              flex:1 etc.) intact — on desktop nothing overflows, so the
+              roster/map keep managing their own scroll exactly as before. */}
+          <HkScrollContainer class="replay-view__main-scroll">
+            <div class="replay-view__main-inner">
+              {parser.current.value ? (
+                <div class="replay-view__content">
+                  {parser.error.value ? (
+                    <div class="replay-view__placeholder replay-view__placeholder--error">
+                      {parser.error.value}
                     </div>
-                    <div class="replay-view__modal-body">
-                      {battleResults.value ? (
-                        <PostBattlePanel
-                          raw={battleResults.value}
-                          onClose={() => (showResults.value = false)}
-                        />
+                  ) : null}
+                  <header class="replay-view__meta">
+                    {/* The map as a jump tag (shared with the live head): hover
+                        previews the map's bundled minimap, click opens the map's
+                        tactical board — see MapNameTag. */}
+                    <MapNameTag class="replay-view__map" spaceId={parser.current.value.mapName} lang={mapLang.value} />
+                    <span class="replay-view__meta-item">
+                      {formatDateTime(parser.current.value.dateTime)}
+                    </span>
+                    {parser.current.value.matchGroup ? (
+                      <span
+                        class="replay-view__meta-item replay-view__pill"
+                        style={
+                          modeColor(
+                            parser.current.value.matchGroup,
+                            parser.current.value.scenario,
+                            parser.current.value.eventType,
+                            parser.current.value.botCount ?? 0,
+                            parser.current.value.scriptedUnitCount ?? 0,
+                          ) as CSSProperties
+                        }
+                      >
+                        {modeLabel(
+                          parser.current.value.matchGroup,
+                          parser.current.value.scenario,
+                          parser.current.value.eventType,
+                          parser.current.value.botCount ?? 0,
+                          parser.current.value.scriptedUnitCount ?? 0,
+                        )}
+                      </span>
+                    ) : null}
+                    <span class="replay-view__meta-item replay-view__count">
+                      {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
+                    </span>
+                    {duration.value > 0 ? (
+                      <span class="replay-view__meta-item">
+                        {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
+                      </span>
+                    ) : null}
+                    {resultsLoading.value ? (
+                      <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
+                        {t("replay.results")}
+                        <HkSpinner size="xs" tone="current" />
+                      </span>
+                    ) : battleResults.value || trajectories.value.length > 0 ? (
+                      <button
+                        class="replay-view__meta-item replay-view__pill replay-view__results"
+                        onClick={() => (showResults.value = !showResults.value)}
+                      >
+                        {t("replay.results")}
+                      </button>
+                    ) : null}
+                    {chatCount.value > 0 ? (
+                      <button
+                        class="replay-view__meta-item replay-view__pill"
+                        onClick={() => (showChat.value = !showChat.value)}
+                      >
+                        {t("replay.chatLog")}
+                      </button>
+                    ) : null}
+                  </header>
+                  {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
+                    <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
+                      <div
+                        class="replay-view__modal-panel"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div class="replay-view__modal-head">
+                          <div class="replay-view__modal-title">
+                            <strong>{t("replay.results")}</strong>
+                            {!battleResults.value ? (
+                              <span class="replay-view__results-note">
+                                {t("replay.resultsIncomplete")}
+                              </span>
+                            ) : null}
+                          </div>
+                          <button
+                            class="replay-view__modal-close"
+                            onClick={() => (showResults.value = false)}
+                            aria-label="Close"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                        {/* Results-body scroller: the hikari container owns the
+                            scrollbar (auto-hiding overlay track); the panel
+                            scrolls inside its viewport. Nothing pins in here,
+                            so the pad var the base class carries stays inert
+                            (it only serves the chat body's timeline pin). */}
+                        <HkScrollContainer class="replay-view__modal-body">
+                          <div class="replay-view__modal-body__inner">
+                            {battleResults.value ? (
+                              <PostBattlePanel
+                                raw={battleResults.value}
+                                head={{
+                                  matchGroup: parser.current.value.matchGroup,
+                                  scenario: parser.current.value.scenario,
+                                  eventType: parser.current.value.eventType,
+                                  botCount: parser.current.value.botCount ?? null,
+                                  scriptedUnitCount: parser.current.value.scriptedUnitCount ?? null,
+                                  mapName: parser.current.value.mapName,
+                                  realm: realm.value,
+                                  gameVersion: gameVersionOf(parser.current.value.raw),
+                                  battleTime: parser.current.value.dateTime
+                                    ? formatDateTime(parser.current.value.dateTime)
+                                    : null,
+                                  durationSec: duration.value > 0 ? duration.value : null,
+                                }}
+                                operation={isOperation.value}
+                                stream={{
+                                  trajectories: trajectories.value,
+                                  shotKills: shotKills.value,
+                                  damageStats: damageStats.value,
+                                  achievements: achievements.value,
+                                  arenaPlayers: arenaPlayers.value,
+                                  shellLaunches: shellLaunches.value,
+                                  torpedoes: torpedoes.value,
+                                }}
+                                roster={parser.current.value.vehicles}
+                                onClose={() => (showResults.value = false)}
+                              />
+                            ) : (
+                              <PostBattleFallbackPanel
+                                vehicles={parser.current.value.vehicles}
+                                trajectories={trajectories.value}
+                                explosions={explosions.value}
+                                shotKills={shotKills.value}
+                                damageStats={damageStats.value}
+                                realm={realm.value}
+                                operation={isOperation.value}
+                                arenaPlayers={arenaPlayers.value}
+                                inferredDeaths={inferredDeaths.value}
+                                statsMode={fallbackStatsMode.value}
+                                onClose={() => (showResults.value = false)}
+                              />
+                            )}
+                          </div>
+                        </HkScrollContainer>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showChat.value && chatCount.value > 0 ? (
+                    <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
+                      <div
+                        class="replay-view__modal-panel replay-view__chat-panel"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div class="replay-view__modal-head">
+                          <div class="replay-view__modal-title">
+                            <strong>{t("replay.chatLog")}</strong>
+                          </div>
+                          <button
+                            class="replay-view__modal-close"
+                            onClick={() => (showChat.value = false)}
+                            aria-label="Close"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                        <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
+                          <ChatLogPanel
+                            events={chatMessages.value}
+                            vehicles={parser.current.value.vehicles}
+                            trajectories={trajectories.value}
+                            arenaPlayers={arenaPlayers.value}
+                            duration={duration.value}
+                            realm={realm.value}
+                            mapApi={mapRef.value}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div class="replay-view__detail">
+                    <div class="replay-view__map-wrap">
+                      {trajectoryError.value ? (
+                        <div class="replay-view__placeholder replay-view__placeholder--error">
+                          trajectory decode failed: {trajectoryError.value}
+                        </div>
                       ) : (
-                        <PostBattleFallbackPanel
-                          vehicles={parser.current.value.vehicles}
+                        <HolographicMap
+                          ref={mapRef}
+                          replayPath={parser.current.value.path}
                           trajectories={trajectories.value}
+                          shellLaunches={shellLaunches.value}
                           explosions={explosions.value}
+                          torpedoes={torpedoes.value}
+                          torpedoSteers={torpedoSteers.value}
+                          weaponLocks={weaponLocks.value}
+                          battleResults={battleResults.value ?? undefined}
+                          replayVersion={replayVersion.value ?? undefined}
+                          mapNamePkt={mapNamePkt.value ?? undefined}
+                          cameraFrames={cameraFrames.value}
+                          netStats={netStats.value}
+                          leavesMap={leavesMap.value}
+                          cameraModes={cameraModes.value}
+                          squadronCreates={squadronCreates.value}
+                          squadronPlanes={squadronPlanes.value}
+                          minimapSquadronAdds={minimapSquadronAdds.value}
+                          minimapSquadronMoves={minimapSquadronMoves.value}
+                          minimapSquadronRemoves={minimapSquadronRemoves.value}
+                          wards={wards.value}
+                          wardRemoves={wardRemoves.value}
                           shotKills={shotKills.value}
                           damageStats={damageStats.value}
+                          chatMessages={chatMessages.value}
+                          achievements={achievements.value}
+                          arenaPlayers={arenaPlayers.value}
+                          inferredDeaths={inferredDeaths.value}
+                          weatherTransitions={weatherTransitions.value}
+                          weatherNotifications={weatherNotifications.value}
+                          vehicles={parser.current.value.vehicles}
+                          operation={isOperation.value}
+                          encyclopedia={encyclopedia.byId}
+                          mapId={parser.current.value.mapName ?? ""}
+                          matchGroup={parser.current.value.matchGroup ?? ""}
+                          mapName={parser.current.value.mapName ?? ""}
+                          initialTime={initialSeek}
+                          initialMinimapZoom={route.query.mm === "1"}
                           realm={realm.value}
-                          onClose={() => (showResults.value = false)}
+                          statsMode={fallbackStatsMode.value}
                         />
                       )}
                     </div>
                   </div>
                 </div>
-              ) : null}
-
-              <div class="replay-view__detail">
-                <div class="replay-view__map-wrap">
-                  {trajectoryError.value ? (
-                    <div class="replay-view__placeholder replay-view__placeholder--error">
-                      trajectory decode failed: {trajectoryError.value}
-                    </div>
-                  ) : (
-                    <HolographicMap
-                      replayPath={parser.current.value.path}
-                      trajectories={trajectories.value}
-                      shellLaunches={shellLaunches.value}
-                      explosions={explosions.value}
-                      torpedoes={torpedoes.value}
-                      torpedoSteers={torpedoSteers.value}
-                      weaponLocks={weaponLocks.value}
-                      battleResults={battleResults.value ?? undefined}
-                      replayVersion={replayVersion.value ?? undefined}
-                      mapNamePkt={mapNamePkt.value ?? undefined}
-                      cameraFrames={cameraFrames.value}
-                      netStats={netStats.value}
-                      leavesMap={leavesMap.value}
-                      cameraModes={cameraModes.value}
-                      squadronCreates={squadronCreates.value}
-                      squadronPlanes={squadronPlanes.value}
-                      minimapSquadronAdds={minimapSquadronAdds.value}
-                      minimapSquadronMoves={minimapSquadronMoves.value}
-                      minimapSquadronRemoves={minimapSquadronRemoves.value}
-                      wards={wards.value}
-                      wardRemoves={wardRemoves.value}
-                      shotKills={shotKills.value}
-                      damageStats={damageStats.value}
-                      vehicles={parser.current.value.vehicles}
-                      encyclopedia={encyclopedia.byId}
-                      mapId={parser.current.value.mapName ?? ""}
-                      matchGroup={parser.current.value.matchGroup ?? ""}
-                      mapName={parser.current.value.mapName ?? ""}
-                      initialTime={initialSeek}
-                      initialMinimapZoom={route.query.mm === "1"}
-                    />
-                  )}
+              ) : parser.error.value ? (
+                <div class="replay-view__placeholder replay-view__placeholder--error">
+                  {parser.error.value}
                 </div>
-              </div>
+              ) : (
+                <div class="replay-view__placeholder">{t("replay.select")}</div>
+              )}
             </div>
-          ) : parser.error.value ? (
-            <div class="replay-view__placeholder replay-view__placeholder--error">
-              {parser.error.value}
-            </div>
-          ) : (
-            <div class="replay-view__placeholder">{t("replay.select")}</div>
-          )}
+          </HkScrollContainer>
         </section>
+
+        {/* Hidden HTML file picker backing the mobile import action (the
+            styled button clicks it). Multi-select .wowsreplay only. Rendered
+            only on the phone build — desktop uses the native picker. */}
+        {isMobileApp() ? (
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            accept=".wowsreplay,.korablireplay"
+            class="replay-view__file-input"
+            onChange={(e: Event) => void onFilesChosen(e)}
+          />
+        ) : null}
+
+        {/* Phone-build pairing wizard (sheet-driven; docks as a bottom sheet
+            on phone layout through hikari's HkModal). */}
+        <PairingWizard
+          open={wizardOpen.value}
+          onClose={() => (wizardOpen.value = false)}
+          onImported={onPairingImported}
+        />
       </main>
     );
   },

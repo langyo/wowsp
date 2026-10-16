@@ -1,6 +1,6 @@
 # 架构
 
-> **版本**：0.1.0 —— 脚手架开发中。
+> **版本**：0.6.0 —— M1–M9 已完成。
 
 ## 范围
 
@@ -8,12 +8,12 @@ WoWSP 是一个 Cargo + pnpm 大仓：Tauri 2 桌面壳（Rust）+ Vue 3 前端�
 
 | 组件 | 技术 | 职责 | 状态 |
 | --- | --- | --- | --- |
-| **tauri** | Rust + Tauri 2 | 桌面壳：游戏检测、录像解析、覆盖层截屏 | 🟡 骨架 |
+| **tauri** | Rust + Tauri 2 | 桌面壳：游戏检测、录像解析、覆盖层截屏 | 🟢 完成 |
 | **tauri_shared** | Rust | IPC 边界共享 DTO | 🟢 完成 |
-| **webui** | Vue 3 + Vite（TSX） | 前端：录像复盘、全息地图、覆盖层阵容 | 🟡 骨架 |
-| **mock** | Python + FastAPI | 供浏览器/e2e 开发的 mock 后端 | 🟡 骨架 |
-| **model_convert** | Python | 船只/地图原生资产 → GLB（three.js 用） | 🟡 骨架 |
-| **docs** | lagrange | 多语言文档站点 | 🟢 en + zhs |
+| **webui** | Vue 3 + Vite（TSX） | 前端：录像复盘、全息地图、覆盖层阵容 | 🟢 完成 |
+| **mock** | Python + FastAPI | 供浏览器/e2e 开发的 mock 后端 | 🟢 完成 |
+| **model_convert** | Python | 船只/地图原生资产 → GLB（three.js 用） | 🟢 完成 |
+| **docs** | lagrange | 多语言文档站点 | 🟢 9 种语言 |
 
 ## 架构图
 
@@ -25,7 +25,7 @@ flowchart TB
         shell --> Detect["game_detect.rs\n注册表 + Steam"]
         shell --> Replay["replay.rs\n.wowsreplay 头 + JSON"]
         shell --> Arena["arena_info.rs\ntempArenaInfo.json 轮询"]
-        shell --> Overlay["overlay.rs\n截屏 + 窗口控制"]
+        shell --> Overlay["overlay/\n截屏 + 窗口控制"]
     end
 
     subgraph game["战舰世界"]

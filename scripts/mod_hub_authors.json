@@ -1,0 +1,487 @@
+{
+ "authors": {
+  "Amatsukaze_need_kaini": "https://discord.com/channels/669128285527080961/1440689694592471154",
+  "Aslain": "https://aslain.com",
+  "AutoSpy": "https://forum.korabli.su/index.php?/topic/18278-",
+  "BADoBEST": "https://github.com/BADoBEST",
+  "Capt_Oveur": "https://aslain.com/index.php?/profile/21506-capt_oveur",
+  "DavisX": "",
+  "DeCease": "https://forum.korabli.su/topic/147441-all-%D0%B8%D0%BA%D0%BE%D0%BD%D0%BA%D0%B8-%D0%BA%D0%BE%D1%80%D0%B0%D0%B1%D0%BB%D0%B5%D0%B9-decease-dark/",
+  "DragonTM": "https://forum.korabli.su/topic/158198-1231-%D0%BD%D0%B5-%D0%B2-%D0%B1%D0%BE%D1%8E/",
+  "EternalParty": "https://aslain.com/index.php?/profile/49069-eternalparty",
+  "Hakabase": "https://hakamod.blogspot.com/",
+  "IsamuKondera": "https://github.com/MasaruKondera/BattleType-Button",
+  "LSOP": "https://discord.com/channels/435379560058716163/1431665166163906642",
+  "MegaDommagam": "https://aslain.com/index.php?/topic/23498-adjustable-division-window-wows-mod-world-of-warships-interface-modification",
+  "N2o": "https://discord.com/channels/669128285527080961/1344515620930064394",
+  "NotonAlcyone": "https://discord.com/channels/669128285527080961/1144666694019727370",
+  "Odo_Toothless": "https://www.reddit.com/user/Odo_Toothless/",
+  "OlliN": "https://forum.korabli.su/topic/150097-all-%D0%B1%D0%BE%D0%B5%D0%B2%D0%BE%D0%B9-%D1%8D%D0%BA%D1%81%D0%BF%D0%B5%D1%80%D1%82-battle-expert/",
+  "Phantom6905": "https://aslain.com/index.php?/topic/23789-another-all-ships-in-tech-tree-mod",
+  "Ren_Zotto_prpr": "",
+  "Roslich": "https://forum.korabli.su/topic/74477-0741-",
+  "TTaro": "https://github.com/AndrewTaro",
+  "Tenma_Saki": "https://discord.com/channels/669128285527080961/1232341933188321280",
+  "ancient": "https://discord.com/channels/669128285527080961/1140124505713422356",
+  "aurumf": "https://discord.com/channels/669128285527080961/1156185964717297666",
+  "garfield001": "https://aslain.com/index.php?/topic/23295-kantai-collection-ui-original-by-garfield-001",
+  "langyo": "https://github.com/langyo",
+  "qMBQx8GH_real": "https://github.com/qMBQx8GH",
+  "sasagcy": "https://discord.com/channels/669128285527080961/1149723186401915041",
+  "vito74m": "https://aslain.com/index.php?/profile/5514-vito74m"
+ },
+ "mods": {
+  "battle.build.viewer": [
+   "TTaro"
+  ],
+  "battle.calculator.penetration": [
+   "TTaro"
+  ],
+  "battle.campaign.companion": [
+   "Roslich"
+  ],
+  "battle.campaign.crew-skills": [
+   "OlliN",
+   "Roslich",
+   "BADoBEST"
+  ],
+  "battle.commands.compact": [],
+  "battle.cv.consumables": [
+   "TTaro"
+  ],
+  "battle.cv.hp-center": [
+   "TTaro"
+  ],
+  "battle.cv.hp-numeric": [
+   "TTaro"
+  ],
+  "battle.cv.poi-static": [
+   "Odo_Toothless"
+  ],
+  "battle.cv.telegraph": [
+   "Odo_Toothless"
+  ],
+  "battle.expert.core": [],
+  "battle.expert.v2-bottom-left": [
+   "OlliN"
+  ],
+  "battle.expert.v2-center": [
+   "OlliN"
+  ],
+  "battle.expert.v2-compass": [
+   "OlliN"
+  ],
+  "battle.expert.v2-right": [
+   "OlliN"
+  ],
+  "battle.heal.assistant": [
+   "TTaro"
+  ],
+  "battle.hitview.underwater": [
+   "TTaro"
+  ],
+  "battle.hydro.3d": [
+   "TTaro"
+  ],
+  "battle.impact-angle.all": [
+   "EternalParty"
+  ],
+  "battle.impact-angle.citadel": [
+   "EternalParty"
+  ],
+  "battle.impact-angle.torpedo": [
+   "EternalParty"
+  ],
+  "battle.info.self": [],
+  "battle.info.target-v1": [
+   "AutoSpy",
+   "Aslain"
+  ],
+  "battle.info.target-v2": [
+   "OlliN"
+  ],
+  "battle.ingame.stats": [
+   "langyo"
+  ],
+  "battle.marker.adjustable": [
+   "AutoSpy",
+   "Aslain"
+  ],
+  "battle.marker.adjustable-aslain": [
+   "Aslain",
+   "Capt_Oveur"
+  ],
+  "battle.marker.adjustable-oveur": [
+   "Capt_Oveur"
+  ],
+  "battle.marker.consumables": [
+   "TTaro"
+  ],
+  "battle.marker.depth-charge": [
+   "TTaro"
+  ],
+  "battle.marker.detection": [
+   "TTaro"
+  ],
+  "battle.marker.regen": [
+   "TTaro"
+  ],
+  "battle.marker.smoke": [
+   "TTaro"
+  ],
+  "battle.marker.speed": [
+   "sasagcy"
+  ],
+  "battle.marker.sub-battery": [
+   "TTaro"
+  ],
+  "battle.marker.sub-highlight": [
+   "TTaro"
+  ],
+  "battle.marker.torpedo-advanced": [
+   "TTaro"
+  ],
+  "battle.marker.torpedo-spotted": [],
+  "battle.marker.traffic": [
+   "AutoSpy"
+  ],
+  "battle.marker.traffic-v2": [
+   "AutoSpy"
+  ],
+  "battle.marker.traffic-v2-cb": [
+   "AutoSpy"
+  ],
+  "battle.marker.traffic-v3": [
+   "AutoSpy"
+  ],
+  "battle.marker.traffic-v4": [
+   "sasagcy"
+  ],
+  "battle.meter.damage": [
+   "TTaro"
+  ],
+  "battle.meter.damage-monitor": [
+   "TTaro"
+  ],
+  "battle.meter.mx": [
+   "qMBQx8GH_real"
+  ],
+  "battle.meter.mx-percent": [
+   "qMBQx8GH_real"
+  ],
+  "battle.meter.ping-fps": [
+   "TTaro"
+  ],
+  "battle.minipanel.autospy-v1": [
+   "AutoSpy"
+  ],
+  "battle.minipanel.autospy-v2": [
+   "AutoSpy"
+  ],
+  "battle.minipanel.team-hp": [
+   "TTaro"
+  ],
+  "battle.module.viewer": [
+   "TTaro"
+  ],
+  "battle.monitor.afk": [
+   "TTaro"
+  ],
+  "battle.panel.autospy": [
+   "AutoSpy"
+  ],
+  "battle.panel.badobest": [
+   "AutoSpy"
+  ],
+  "battle.panel.deceased": [
+   "DeCease",
+   "AutoSpy"
+  ],
+  "battle.panel.division-badges": [
+   "Aslain"
+  ],
+  "battle.panel.hakabase": [
+   "Hakabase"
+  ],
+  "battle.panel.roslich": [
+   "Roslich"
+  ],
+  "battle.panel.ttaro": [
+   "TTaro"
+  ],
+  "battle.parameters.compact": [
+   "OlliN"
+  ],
+  "battle.privacy.streamer": [
+   "TTaro"
+  ],
+  "battle.radar.3d": [
+   "TTaro"
+  ],
+  "battle.reaction.torpedo": [
+   "Tenma_Saki"
+  ],
+  "battle.results.task-numbers": [
+   "OlliN"
+  ],
+  "battle.rpf.3d": [
+   "TTaro"
+  ],
+  "battle.rpf.counter": [
+   "TTaro"
+  ],
+  "battle.secondary.status": [
+   "BADoBEST"
+  ],
+  "battle.social.invite": [
+   "TTaro"
+  ],
+  "battle.spectator.clean": [
+   "TTaro"
+  ],
+  "battle.statuspanel.advanced": [
+   "TTaro"
+  ],
+  "battle.timer.battle": [
+   "TTaro"
+  ],
+  "battle.timer.capture": [
+   "TTaro"
+  ],
+  "battle.timer.clock": [
+   "BADoBEST"
+  ],
+  "battle.timer.consumables": [
+   "LSOP"
+  ],
+  "battle.timer.hiding": [
+   "EternalParty"
+  ],
+  "battle.timer.orders": [
+   "Amatsukaze_need_kaini"
+  ],
+  "battle.timer.radar": [
+   "aurumf"
+  ],
+  "battle.timer.reload": [
+   "AutoSpy"
+  ],
+  "battle.timer.score": [
+   "ancient",
+   "TTaro"
+  ],
+  "battle.timer.shot": [
+   "TTaro"
+  ],
+  "battle.timer.smoke": [
+   "BADoBEST"
+  ],
+  "battle.timer.stopwatch": [
+   "AutoSpy"
+  ],
+  "battle.timer.travel": [
+   "TTaro"
+  ],
+  "minimap.attention.3d": [
+   "TTaro"
+  ],
+  "minimap.core.ttaro": [
+   "TTaro"
+  ],
+  "minimap.loadingscreen.preview": [
+   "OlliN"
+  ],
+  "minimap.names.large": [
+   "TTaro"
+  ],
+  "minimap.ping.submarine": [
+   "TTaro"
+  ],
+  "minimap.rpf.2d": [
+   "TTaro"
+  ],
+  "minimap.timer.last-spotted": [
+   "TTaro"
+  ],
+  "patch.ime.compat": [
+   "langyo"
+  ],
+  "port.battlebutton.default": [
+   "IsamuKondera",
+   "TTaro"
+  ],
+  "port.battlebutton.vito74m": [
+   "IsamuKondera"
+  ],
+  "port.carousel.3d-icons": [
+   "OlliN"
+  ],
+  "port.carousel.compact": [
+   "OlliN"
+  ],
+  "port.carousel.extended": [
+   "Capt_Oveur",
+   "Aslain"
+  ],
+  "port.carousel.fast-scroll": [
+   "OlliN"
+  ],
+  "port.carousel.filters": [
+   "OlliN"
+  ],
+  "port.carousel.hide-no-commander": [
+   "OlliN"
+  ],
+  "port.carousel.hide-rarity": [],
+  "port.carousel.next-xp": [
+   "OlliN"
+  ],
+  "port.carousel.random": [
+   "N2o"
+  ],
+  "port.carousel.skill-points": [
+   "OlliN"
+  ],
+  "port.carousel.winrate": [
+   "OlliN"
+  ],
+  "port.chat.div-window": [
+   "MegaDommagam",
+   "Aslain"
+  ],
+  "port.crew.assign": [
+   "OlliN"
+  ],
+  "port.crew.counter": [
+   "OlliN"
+  ],
+  "port.dock.navigation": [
+   "OlliN"
+  ],
+  "port.equipment.tab": [
+   "OlliN"
+  ],
+  "port.flags.price": [
+   "NotonAlcyone",
+   "Aslain"
+  ],
+  "port.info.overmatch": [
+   "OlliN"
+  ],
+  "port.karma.info": [
+   "OlliN"
+  ],
+  "port.lootbox.auto": [
+   "TTaro"
+  ],
+  "port.manager.ship": [
+   "OlliN"
+  ],
+  "port.missions.banner": [
+   "OlliN"
+  ],
+  "port.news.hide": [
+   "OlliN"
+  ],
+  "port.perks.framed": [
+   "AutoSpy"
+  ],
+  "port.perks.vito-v1": [
+   "vito74m"
+  ],
+  "port.perks.vito-v2": [
+   "vito74m"
+  ],
+  "port.population.server": [
+   "OlliN"
+  ],
+  "port.resources.display": [
+   "OlliN"
+  ],
+  "port.sessionstats.core": [
+   "langyo"
+  ],
+  "port.sessionstats.v1": [
+   "DragonTM",
+   "Capt_Oveur"
+  ],
+  "port.sessionstats.v2": [
+   "DragonTM",
+   "OlliN"
+  ],
+  "port.status.hide-battle": [
+   "DragonTM"
+  ],
+  "port.techtree.all-another": [
+   "Phantom6905"
+  ],
+  "port.techtree.all-ollin": [
+   "OlliN"
+  ],
+  "port.techtree.enhanced": [
+   "OlliN"
+  ],
+  "port.tournament.check": [
+   "TTaro"
+  ],
+  "port.training.all-ships": [
+   "TTaro"
+  ],
+  "port.training.crew": [
+   "OlliN"
+  ],
+  "port.training.customize": [
+   "TTaro"
+  ],
+  "port.updater.version-check": [
+   "Aslain"
+  ],
+  "skin.arp.atago-blue": [
+   "langyo"
+  ],
+  "skin.ribbon.azur-lane": [
+   "langyo"
+  ],
+  "text.caliber.mm-inch": [
+   "Capt_Oveur",
+   "Odo_Toothless"
+  ],
+  "text.chat.anti-censorship": [],
+  "text.chat.google-input": [
+   "TTaro"
+  ],
+  "text.chat.ttaro": [
+   "TTaro"
+  ],
+  "text.font.east-asia": [
+   "Ren_Zotto_prpr"
+  ],
+  "text.shipname.fanhexie": [],
+  "text.shipname.lowercase": [
+   "OlliN"
+  ],
+  "text.shipname.origin": [
+   "OlliN"
+  ],
+  "text.shipname.real": [
+   "Aslain",
+   "DavisX"
+  ],
+  "text.shipname.romanized": [
+   "Aslain",
+   "garfield001"
+  ],
+  "voice.ba.hoshino": [
+   "langyo"
+  ],
+  "voice.ba.miyako": [
+   "langyo"
+  ],
+  "voice.ba.yuuka": [
+   "langyo"
+  ],
+  "voice.crew.abathur": [
+   "langyo"
+  ]
+ }
+}

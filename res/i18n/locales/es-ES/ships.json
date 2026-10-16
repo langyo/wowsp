@@ -35,6 +35,7 @@
   "all": "Todos",
   "clear": "Limpiar",
   "reload": "Recargar",
+  "retry": "Reintentar",
   "loading": "Cargando enciclopedia...",
   "empty": "Ningún buque coincide con estos filtros.",
   "noData": "Aún no hay datos de la enciclopedia. Elige un servidor y carga.",
@@ -49,9 +50,35 @@
     "uncommon": "Poco común",
     "rare": "Raro",
     "epic": "Épico",
-    "legendary": "Legendario"
+    "legendary": "Legendario",
+    "event": "Evento"
   },
-  "rarityHint": "Rareza oficial de las cartas del juego (de RarityCategory en GameParams): común (blanco), poco común (verde), raro (azul), épico (rojo), legendario (naranja).",
+  "event": {
+    "_prefix": "Evento",
+    "halloween_2016": "Halloween 2016",
+    "halloween_2017": "Halloween 2017",
+    "halloween_2018": "Halloween 2018",
+    "halloween_2019": "Halloween 2019",
+    "halloween_2020": "Halloween 2020",
+    "halloween_2022": "Halloween 2022",
+    "space_battles": "Batallas espaciales",
+    "star_event": "STAR",
+    "postap_2022": "Postapocalipsis 2022",
+    "april_fools_2023": "Lío en la bañera",
+    "april_fools_2024": "Cacería de piñatas",
+    "modern_era": "Era moderna",
+    "collab_arp": "Arpeggio of Blue Steel -ARS NOVA-",
+    "collab_azur_lane": "Azur Lane",
+    "collab_hsf": "High School Fleet",
+    "collab_wh40k": "Warhammer 40,000",
+    "collab_blue_archive": "Blue Archive",
+    "collab_megadeth": "Megadeth",
+    "collab_star_trek": "Star Trek",
+    "lunar_new_year": "Año Nuevo Lunar",
+    "hunt_bismarck": "Caza del Bismarck",
+    "scarlet_future": "Futuro escarlata"
+  },
+  "rarityHint": "Rareza oficial de las cartas del juego (de RarityCategory en GameParams): común (blanco), poco común (verde), raro (azul), épico (rojo), legendario (naranja). Los barcos de evento (colaboraciones y modos limitados) muestran una etiqueta Evento·nombre en lugar de un nivel.",
   "card": {
     "hp": "PS",
     "concealment": "Detección",
@@ -62,7 +89,7 @@
     "title": "Detalles del buque",
     "tabSpecs": "Especificaciones",
     "tabArmor": "Blindaje y balística",
-    "tabMyStats": "Mis estadísticas",
+    "tabMyStats": "Estadísticas del buque",
     "tabCommunity": "Tendencia del servidor",
     "tabSkill": "Habilidades del capitán",
     "mainBattery": "Batería principal",
@@ -75,6 +102,7 @@
     "gameparamsMissing": "GameParams.data sin desempaquetar. Ejecuta wowsunpack para ver los esquemas de blindaje y las balísticas.",
     "gameparamsError": "Error al cargar: {error}",
     "gameparamsErrorTip": "No se pudo cargar el blindaje y la balística — haz clic para copiar el error:",
+    "gameparamsSyncAction": "Sincronizar datos del juego desde el PC",
     "gameparamsHint": "Sugerencia: coloca el GameParams.json desempaquetado en la raíz del juego (junto a bin/). Ver https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "No hay especificaciones disponibles para este buque.",
     "noImage": "No hay imagen disponible.",
@@ -84,9 +112,17 @@
     "noBallistics": "No se pudo extraer datos de blindaje / balística de GameParams para este buque.",
     "stage": {
       "hint3d": "Arrastra para rotar · rueda para hacer zoom · arrastra con botón derecho para desplazar",
+      "hint3dTouch": "Arrastra para rotar · pellizca para hacer zoom",
       "holo": "Holograma",
       "hide": "Ocultar vista previa",
-      "show": "Mostrar vista previa"
+      "show": "Mostrar vista previa",
+      "rotate": "Rotación automática",
+      "rotateOn": "Girando solo · clic para pausar",
+      "rotateOff": "En pausa · clic para reanudar",
+      "waterline": "Línea de flotación",
+      "draft": "Calado",
+      "hull": "Casco",
+      "modelPicker": "Elegir modelo"
     },
     "weapon": {
       "mainGun": "Batería principal",
@@ -108,9 +144,7 @@
     "armor": {
       "toggle": "Alternar la superposición del cinturón de blindaje",
       "short": "Blindaje",
-      "noData": "No hay datos de blindaje disponibles.",
       "legend": "Blindaje (mm)",
-      "estimated": "aproximado",
       "zone": {
         "bow": "Proa",
         "midship": "Centro",
@@ -127,17 +161,11 @@
         "bowBelt": "Cinturón de proa",
         "superstructure": "Superestructura"
       },
-      "overmatchThreshold": "El overmatch requiere un calibre de ≥{n} mm",
-      "outcome": {
-        "overmatch": "Overmatch",
-        "pen": "Penetración",
-        "overpen": "Sobrepenetración",
-        "bounce": "Rebote"
-      },
       "restore": "Restaurar",
-      "pickHint": "Pulsa el casco para ocultar una clase"
+      "solo": "Solo",
+      "pickHint": "Clic en una banda para aislar · clic en el modelo para ocultar"
     },
-    "openHint": "Haz clic para ver los detalles del barco",
+    "openHint": "Haz clic para ver los detalles del buque",
     "my": {
       "career": "Todas las batallas",
       "recent": "Rendimiento reciente",
@@ -146,7 +174,8 @@
       "range30d": "Últ. 30 días",
       "avgFrags": "Bajas medias",
       "noBaseline": "Aún no hay base histórica",
-      "divisionsHint": "Datos de toda la cuenta, no de este barco"
+      "divisionsHint": "Datos de toda la cuenta, no de este buque",
+      "modeNotPlayed": "Sin batallas en este modo con este buque"
     },
     "server": {
       "title": "Promedios del servidor",
@@ -156,7 +185,7 @@
       "source": "Fuente: muestra del servidor de wows-numbers",
       "updatedAt": "Muestra generada el {date}",
       "cached": "caché",
-      "notFound": "Aún no hay muestra del servidor para este barco.",
+      "notFound": "Aún no hay muestra del servidor para este buque.",
       "failed": "Error al obtener datos del servidor: {error}",
       "compareTitle": "Servidor vs. jugador",
       "colServer": "Servidor",
@@ -247,10 +276,17 @@
     "torpDetect": "Detectabilidad de los torpedos",
     "torpDetectHint": "Distancia a la que los torpedos se vuelven visibles para el enemigo. Cuanto menor, menos tiempo de reacción tiene.",
     "torpLaunchers": "Tubos lanzatorpedos",
-    "aaRating": "Puntuación de defensa antiaérea",
     "aaLongRange": "Aura de largo alcance",
     "aaMidRange": "Aura de medio alcance",
     "aaShortRange": "Aura de corto alcance",
+    "aaShortDps": "DPS AA de corto alcance",
+    "aaShortHitChance": "Probabilidad de acierto AA de corto alcance",
+    "aaMidDps": "DPS AA de medio alcance",
+    "aaMidHitChance": "Probabilidad de acierto AA de medio alcance",
+    "aaLongDps": "DPS AA de largo alcance",
+    "aaLongHitChance": "Probabilidad de acierto AA de largo alcance",
+    "aaFlakDamage": "Daño de nube negra",
+    "aaFlakCount": "Nubes negras por salva",
     "maxSpeed": "Velocidad máxima",
     "rudderShift": "Cambio de timón",
     "rudderShiftHint": "Tiempo en que el timón gira por completo. Menor = más ágil.",
@@ -268,7 +304,11 @@
     "depthChargeDamage": "Daño de cargas de profundidad",
     "depthChargePacks": "Lotes de cargas",
     "depthChargeBombs": "Bombas por lote",
-    "depthChargeReload": "Recarga de cargas"
+    "depthChargeReload": "Recarga de cargas",
+    "secondaryRange": "Alcance de la artillería secundaria",
+    "aswRange": "Alcance del ataque aéreo",
+    "aswCharges": "Cargas de ataque aéreo",
+    "aswReload": "Recarga del ataque aéreo"
   },
   "skills": {
     "title": "Editor de habilidades del capitán",
@@ -278,7 +318,9 @@
     "reset": "Restablecer",
     "tier": "Nivel {n}",
     "locked": "Bloqueado — requiere {n} puntos en niveles inferiores",
+    "tierEmptyWarning": "El juego obliga a seleccionar al menos una habilidad en este nivel",
     "notApplicable": "No disponible en este buque",
+    "noPoints": "Puntos insuficientes — esta habilidad cuesta {n} puntos",
     "maxed": "Máx.",
     "noTree": "Aún no hay árbol de habilidades para este tipo de buque.",
     "rank": "Rango {n}",
@@ -300,15 +342,17 @@
     "commanderInfoNote": "Los talentos del comandante son efectos activados; se muestran solo como referencia y no se incluyen en las estadísticas.",
     "talentTrigger": "Activación",
     "talentMax": "Hasta {n} activaciones",
-    "slotNone": "Vacío",
+    "slotClear": "Quitar",
     "legendaryCmd": "Legendario",
     "eliteCmd": "Élite",
     "uniqueMod": "Único",
     "noCommandersForNation": "No hay comandantes especiales disponibles para esta nación.",
     "slotEmpty": "No hay mejoras disponibles",
     "commanderLegend": "Insignia \"Legendario\" = comandante legendario con talentos únicos; \"Élite\" = comandante de élite/especial.",
-    "epicRibbon": "Mejorada por el comandante legendario",
+    "epicTag": "Mejorada por el comandante legendario",
     "epicLegend": "Cinta verde = habilidad que el comandante legendario seleccionado enseña con valores mejorados.",
+    "recTag": "Recomendada por el juego",
+    "recLegend": "Cinta ámbar = habilidad de la build recomendada por el juego para este buque.",
     "activator": {
       "DamageDoneActivator": "Daño infligido",
       "TargetsDamagedActivator": "Objetivos alcanzados",
@@ -456,16 +500,36 @@
     "showing": "Mostrando los primeros {shown} de {total}",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "Equipo de reparación",
+    "crashCrew": "Equipo de control de daños",
+    "spotter": "Avión de observación",
+    "fighter": "Caza catapultado",
+    "smoke": "Generador de humo",
+    "speedBoost": "Acelerador",
+    "hydro": "Búsqueda hidroacústica",
+    "radar": "Radar",
+    "hydrophone": "Hidrófono",
+    "subLocator": "Localizador de submarinos",
+    "torpReload": "Potenciador de torpedos",
+    "artyReload": "Potenciador de batería principal",
+    "defensiveAA": "Fuego AA defensivo"
+  },
   "techTree": {
+    "realmHint": "Fuente de las ramas del árbol técnico: topología de referencia de WG y líneas de investigación del propio cliente Lesta.",
     "title": "Árbol tecnológico",
     "branch": "Rama",
     "locked": "Se requiere nivel {n}",
     "premium": "Premium",
     "special": "Especial",
-    "empty": "No hay árbol tecnológico para esta nación."
+    "empty": "No hay árbol tecnológico para esta nación.",
+    "linkTypeChange": "Cambio de tipo",
+    "linkBranches": "Ramas paralelas",
+    "linkArchetype": "Perfil de rama",
+    "linkInfo": "Info de la línea de investigación"
   },
   "banner": {
-    "imageFailed": "No se pudieron cargar algunas imágenes de barcos",
+    "imageFailed": "No se pudieron cargar algunas imágenes de buques",
     "action": "Abrir ajustes de recursos"
   },
   "archetype": {
@@ -509,22 +573,132 @@
     "nationTitle": "Nación",
     "nationAll": "Todas las naciones",
     "hintMulti": "Selección múltiple · pulsa «Todo …» para restablecer",
+    "nationScrollHint": "Arrastra o usa la rueda del ratón para ver todas las naciones",
     "wrTitle": "Tasa de victorias",
     "wrAll": "Todas las tasas de victorias",
     "battlesTitle": "Batallas",
     "battlesAll": "Todas las batallas",
     "minBattles": "≥{n} batallas",
+    "modeTitle": "Modo",
+    "modeAll": "Todos los modos",
+    "modeSolo": "En solitario",
+    "modeDiv2": "Dúo",
+    "modeDiv3": "Trío",
+    "modeRanked": "Clasificatoria",
     "hintTypePop": "Selección múltiple · los tipos solo filtran (sin dirección de orden) · haz clic en «Todos los tipos» para ordenar por orden de clase",
     "hintSortPop": "Selección múltiple · haz clic de nuevo en una selección para alternar asc ↑ / desc ↓ · haz clic en «Todos…» para restablecer, u ordena por esta columna",
-    "hintTypeChip": "Haz clic para filtrar (selección múltiple) · arrastra a izquierda/derecha para cambiar la prioridad de orden",
+    "hintTypeChip": "Haz clic para filtrar (selección múltiple)",
     "hintSortChip": "Haz clic para filtrar (selección múltiple) · haz clic de nuevo en una selección para alternar asc/desc · arrastra a izquierda/derecha para cambiar la prioridad de orden",
     "hintSinglePop": "Selección única · haz clic de nuevo en una selección para alternar asc ↑ / desc ↓ · haz clic en «Todos…» para restablecer, u ordena por esta columna",
     "hintSingleChip": "Haz clic para filtrar (selección única) · haz clic de nuevo en una selección para alternar asc/desc · arrastra a izquierda/derecha para cambiar la prioridad de orden",
-    "summary": "{ships} buques · {battles} batallas"
+    "summary": "{ships} buques · {battles} batallas",
+    "sourceTitle": {
+      "en-US": "Source",
+      "zh-CN": "来源",
+      "zh-SG": "来源",
+      "zh-TW": "來源",
+      "ja-JP": "入手元",
+      "ko-KR": "획득처",
+      "ru-RU": "Источник",
+      "fr-FR": "Source",
+      "es-ES": "Fuente"
+    },
+    "sourceAll": {
+      "en-US": "All sources",
+      "zh-CN": "全部来源",
+      "zh-SG": "全部来源",
+      "zh-TW": "全部來源",
+      "ja-JP": "すべての入手元",
+      "ko-KR": "모든 획득처",
+      "ru-RU": "Все источники",
+      "fr-FR": "Toutes les sources",
+      "es-ES": "Todas las fuentes"
+    },
+    "source_tree": {
+      "en-US": "Tech tree",
+      "zh-CN": "仅银币线",
+      "zh-SG": "仅银币线",
+      "zh-TW": "僅銀幣線",
+      "ja-JP": "テックツリーのみ",
+      "ko-KR": "은화 트리만",
+      "ru-RU": "Только древо",
+      "fr-FR": "Arbre uniquement",
+      "es-ES": "Solo árbol"
+    },
+    "source_gold": {
+      "en-US": "Premium only",
+      "zh-CN": "仅金币特殊加值",
+      "zh-SG": "仅金币特殊加值",
+      "zh-TW": "僅金幣特殊加值",
+      "ja-JP": "プレミアムのみ",
+      "ko-KR": "프리미엄만",
+      "ru-RU": "Только прем.",
+      "fr-FR": "Premium uniquement",
+      "es-ES": "Solo premium"
+    },
+    "source_coal": {
+      "en-US": "Coal only",
+      "zh-CN": "仅煤炭可购",
+      "zh-SG": "仅煤炭可购",
+      "zh-TW": "僅煤炭可購",
+      "ja-JP": "石炭のみ",
+      "ko-KR": "석탄만",
+      "ru-RU": "Только уголь",
+      "fr-FR": "Charbon uniquement",
+      "es-ES": "Solo carbón"
+    },
+    "source_steel": {
+      "en-US": "Steel only",
+      "zh-CN": "仅钢铁可购",
+      "zh-SG": "仅钢铁可购",
+      "zh-TW": "僅鋼鐵可購",
+      "ja-JP": "鋼鉄のみ",
+      "ko-KR": "강철만",
+      "ru-RU": "Только сталь",
+      "fr-FR": "Acier uniquement",
+      "es-ES": "Solo acero"
+    },
+    "source_event": {
+      "en-US": "Event only",
+      "zh-CN": "仅活动",
+      "zh-SG": "仅活动",
+      "zh-TW": "僅活動",
+      "ja-JP": "イベントのみ",
+      "ko-KR": "이벤트만",
+      "ru-RU": "Только ивент",
+      "fr-FR": "Événement uniquement",
+      "es-ES": "Solo evento"
+    }
   },
   "model3d": {
     "downloadStart": "La vista 3D necesita el paquete de modelos (~1,2 GB) — descarga iniciada…",
     "ready": "Paquete de modelos listo",
     "failed": "Falló la descarga del paquete de modelos — inténtalo más tarde"
+  },
+  "module": {
+    "fireControl": "Control de tiro",
+    "sonar": "Sonar",
+    "fighter": "Caza",
+    "diveBomber": "Bombardero en picado",
+    "torpedoBomber": "Torpedero",
+    "skipBomber": "Bombardero de rebote",
+    "flightControl": "Control de vuelo"
+  },
+  "plane": {
+    "torpedo": "Torpedero",
+    "heBomber": "Bombardero HE",
+    "apBomber": "Bombardero AP",
+    "heSkip": "Bombardero de rebote HE",
+    "apSkip": "Bombardero de rebote AP",
+    "rocket": "Avión de cohetes",
+    "fighter": "Caza",
+    "interceptor": "Interceptor",
+    "scout": "Explorador",
+    "asw": "Avión antisubmarino",
+    "mine": "Avión minador",
+    "cfg": {
+      "stock": "stock",
+      "top": "top"
+    }
   }
 }

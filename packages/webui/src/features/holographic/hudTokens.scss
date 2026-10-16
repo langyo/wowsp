@@ -1,0 +1,45 @@
+/* HUD palette shared by every surface that hosts the tactical board.
+ *
+ * Dark (default): dark glass over the hologram sea. Light: white glass
+ * matching the paper-white sea — flipped via the root [data-mode] the theme
+ * manager maintains. Extracted from HolographicMap.scss so the standalone
+ * plan stage can paint the same chrome without duplicating the ramp. */
+
+@mixin holo-hud-dark {
+  /* Board accent (selection, hover, tween head). Lives HERE and not on
+     .tac-layer because the toolbar and timeline are teleported out of the
+     board's subtree into the host's dock — where a var() set on the layer
+     would no longer be inherited. */
+  --tac-accent-rgb: 0, 195, 255;
+  --holo-hud-bg: rgb(8 12 20 / 62%);
+  --holo-hud-chip: rgb(0 0 0 / 40%);
+  --holo-hud-menu: rgb(12 16 26 / 96%);
+  --holo-hud-glass: rgb(96 108 126 / 42%);
+  --holo-hud-soft: rgb(255 255 255 / 5%);
+  --holo-hud-hover: rgb(255 255 255 / 10%);
+  --holo-hud-border: rgb(255 255 255 / 14%);
+  --holo-hud-text: rgb(255 255 255 / 92%);
+  --holo-hud-dim: rgb(255 255 255 / 55%);
+  --holo-hud-strong: #ffffff;
+  --holo-hud-shadow: 0 4px 14px rgb(0 0 0 / 55%);
+  --holo-hud-scrim: rgb(5 8 15 / 85%);
+  --holo-hud-tshadow: 0 1px 2px rgb(0 0 0 / 80%);
+}
+
+@mixin holo-hud-light {
+  /* Ink tones are DARK GREY (gray-700 family), never near-black. */
+  --tac-accent-rgb: 0, 130, 190;
+  --holo-hud-bg: rgb(255 255 255 / 74%);
+  --holo-hud-chip: rgb(255 255 255 / 62%);
+  --holo-hud-menu: rgb(255 255 255 / 96%);
+  --holo-hud-glass: rgb(255 255 255 / 66%);
+  --holo-hud-soft: rgb(55 65 81 / 5%);
+  --holo-hud-hover: rgb(55 65 81 / 8%);
+  --holo-hud-border: rgb(55 65 81 / 16%);
+  --holo-hud-text: rgb(55 65 81 / 90%);
+  --holo-hud-dim: rgb(55 65 81 / 62%);
+  --holo-hud-strong: #374151;
+  --holo-hud-shadow: 0 4px 14px rgb(55 65 81 / 16%);
+  --holo-hud-scrim: rgb(236 240 246 / 88%);
+  --holo-hud-tshadow: none;
+}

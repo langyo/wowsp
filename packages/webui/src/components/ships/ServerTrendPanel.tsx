@@ -1,6 +1,6 @@
 import { computed, defineComponent, watch } from "vue";
 
-import { HButton, HSpinner } from "@celestia-island/hikari";
+import { HkButton, HkSpinner } from "@celestia-island/hikari";
 
 import { useTrendsStore } from "@/stores/trends";
 import { t } from "@/i18n";
@@ -61,7 +61,12 @@ export default defineComponent({
         {
           label: t("stats.avgDamage"),
           server: Math.round(s.avgDamage).toLocaleString(),
-          player: Math.round(p.avgDamage).toLocaleString(),
+          // compare only exists when the player has battles on this ship, so
+          // a zero here is broken snapshot data — same flag as the KPI tile.
+          player:
+            p.avgDamage <= 0
+              ? t("stats.dataAnomaly")
+              : Math.round(p.avgDamage).toLocaleString(),
           playerColor: damageColor(p.avgDamage),
         },
         {
@@ -78,16 +83,16 @@ export default defineComponent({
 
         {trends.serverLoading ? (
           <div class="server-trend__loading">
-            <HSpinner center size="md" />
+            <HkSpinner center size="md" />
           </div>
         ) : trends.serverError ? (
           <div class="server-trend__error">
             <span class="server-trend__error-msg">
               {t("ships.detail.server.failed", { error: trends.serverError })}
             </span>
-            <HButton size="sm" variant="secondary" onClick={() => void trends.loadServerStats(props.shipId)}>
+            <HkButton size="sm" variant="secondary" onClick={() => void trends.loadServerStats(props.shipId)}>
               {t("common.retry")}
-            </HButton>
+            </HkButton>
           </div>
         ) : trends.serverStats ? (
           <>

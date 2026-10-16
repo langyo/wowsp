@@ -1,27 +1,62 @@
-/* ShipFilterBar — inline filter strip meant to share a row with the view's
- * date-range tabs (the parent supplies the flex row). The chip styling
- * mirrors the hikari segmented button-group trigger so the strip reads as
- * part of the same control family. */
+/* ShipFilterBar — filter strip sharing the view's controls row with the
+ * date-range tabs (the parent supplies the flex row): internally it lays
+ * out as two fixed rows — the meta row (summary + search) pinned to the
+ * tabs row's right end, the chip row claiming a full line below — so the
+ * wrap point no longer drifts with the viewport. The chip styling mirrors
+ * the hikari segmented button-group trigger so the strip reads as part of
+ * the same control family. */
 .ship-filter-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  flex: 1 1 auto;
-  min-width: 0;
-
-  /* While a chip drag is live, keep text selection off so pointer moves
-     don't paint highlights across the strip. */
-  &[data-dragging] {
-    cursor: grabbing;
-    user-select: none;
-  }
+  /* Zero flex-basis is load-bearing: an `auto` basis resolves to the bar's
+     max-content size (the whole chip set on one hypothetical line), which
+     never fits beside the tabs, so the host row wrapped the ENTIRE bar
+     below them and the meta lost the tabs row. Basis 0 always fits there
+     and `flex-grow` fills the rest of the line. The min-width floor keeps
+     phones sane: once the tabs + meta genuinely cannot share a line, the
+     host wrap moves the whole bar below the tabs again (100% guards
+     against the floor exceeding a narrow host). */
+  flex: 1 1 0;
+  min-width: min(280px, 100%);
 }
 
-/* ── Filter chips: collapsed categories, drag-reorderable ──
-   Leftmost sorting chip = primary sort key. A chip purely sorting from its
-   全部… state (no filter) wears --sort; a chip with a concrete selection
-   wears --on; an inert chip is grayed --all and takes no part in anything. */
+/* Two fixed rows instead of one drifting wrap line. The meta group takes
+   the bar's first line — `order` lifts it above the chips in flex layout
+   while the DOM keeps chips first (tab order) — and `margin-left: auto`
+   pins it to that line's right end, beside the host's date tabs (the zero
+   flex-basis on the root keeps the bar itself on the tabs' line; see
+   above). The chip row's flex-basis then always claims an exclusive full
+   line below, so neither row's composition depends on the viewport width. */
+.ship-filter-bar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  /* A bare 100% basis wraps the chips inside the bar's box, which starts
+     one tabs-width in — the row read as centered in the leftover space.
+     The component measures that offset into `--sfb-indent` on the root;
+     the negative margin re-anchors the row at the host's left edge and the
+     matching basis extension restores the full content width (both collapse
+     to 0 when the host wraps the whole bar below the tabs). */
+  flex: 0 0 calc(100% + var(--sfb-indent, 0px));
+  margin-left: calc(-1 * var(--sfb-indent, 0px));
+  min-width: 0;
+}
+
+.ship-filter-bar__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  order: -1;
+  margin-left: auto;
+}
+
+/* ── Filter chips: collapsed categories in the fixed canonical order
+   (= the sort-priority order). A chip purely sorting from its 全部… state
+   (no filter) wears --sort; a chip with a concrete selection wears --on; an
+   inert chip is grayed --all and takes no part in anything. */
 .ship-filter-bar__chip-anchor {
   position: relative;
 }
@@ -30,18 +65,22 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-6, 6px);
+  /* The exact hikari segmented trigger box (same padding, type and weight):
+     the chips must read as the same size as the date-range buttons beside
+     them, not as the taller track chrome around those buttons. */
   padding: var(--space-4) var(--space-12);
   font-family: inherit;
   font-size: var(--text-sm);
   font-weight: 600;
   color: rgb(var(--color-muted));
   white-space: nowrap;
-  cursor: grab;
-  touch-action: none;
-  /* One-button echo of the hk-tabs track chrome. */
+  cursor: pointer;
+  /* Track-chrome border, but a solid HkButton-style surface fill: a lone
+     chip must carry its own opaque body — the track's 60% glass fill lets
+     the wallpaper bleed through and the chip reads as a hole in the strip. */
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
-  background: rgb(var(--color-surface) / 60%);
+  background: rgb(var(--color-surface));
   transition:
     color var(--duration-short) ease,
     background var(--duration-short) var(--ease-standard),
@@ -51,19 +90,15 @@
     color: rgb(var(--color-text));
   }
 
-  &:active:not([data-dragging]) {
+  &:active {
     transform: scale(0.96);
   }
 
-  &[data-dragging] {
-    cursor: grabbing;
-    box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
-  }
-
-  /* Concrete selection — the active trigger's primary ink + indicator tint. */
+  /* Concrete selection — the active trigger's primary ink + indicator tint,
+     mixed into the solid surface (a bare alpha tint would go translucent). */
   &--on {
     color: rgb(var(--color-primary));
-    background: rgb(var(--color-primary) / 12%);
+    background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
     border-color: rgb(var(--color-primary) / 25%);
 
     &:hover {
@@ -76,18 +111,38 @@
      faint primary chrome mark the engagement. */
   &--sort {
     color: rgb(var(--color-text));
-    background: rgb(var(--color-primary) / 6%);
+    background: color-mix(in srgb, rgb(var(--color-primary)) 6%, rgb(var(--color-surface)));
     border-color: rgb(var(--color-primary) / 25%);
 
     .ship-filter-bar__dir {
       color: rgb(var(--color-primary));
     }
   }
-}
 
-.ship-filter-bar__chip-grip {
-  opacity: 0.5;
-  flex: 0 0 auto;
+  /* Icon-only anchor — a ghost toolbar icon button (HkButton ghost sm
+     proportions) for hosts that keep the trigger inside a button row, not
+     a chip strip (the replay rail's funnel). */
+  &--icon {
+    justify-content: center;
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    padding: var(--space-6);
+    background: transparent;
+    border-color: transparent;
+
+    &:hover {
+      background: var(--c-primary-light);
+      color: rgb(var(--color-text));
+    }
+
+    /* A concrete selection still reads as active — the --on recipe wins
+       over the ghost chrome (compound selector beats the single class). */
+    &.ship-filter-bar__chip--on {
+      color: rgb(var(--color-primary));
+      background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
+      border-color: rgb(var(--color-primary) / 25%);
+    }
+  }
 }
 
 .ship-filter-bar__dir {
@@ -96,7 +151,7 @@
 }
 
 .ship-filter-bar__summary {
-  margin-left: auto;
+  /* Right-pinning is __meta's job now — the span just opens that group. */
   color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
   font-family: var(--font-mono);
@@ -108,26 +163,27 @@
    teleport, glass surface) so overflow ancestors can never clip it — the
    old absolute-position `.ship-filter-bar__pop` / `[data-edge]` rules died
    with that move. Only the panel's INNER content is styled here. */
+/* The panel's content inset rides HkPopover's `padding` prop (the
+   shared --hk-pad token) — every host of this slot passes "lg". */
+
+/* Hard width cap for the anchored (non-sheet) panels: a category popup
+   must never outrun the viewport, and the nation strip's 14 flags give
+   the max-content panel every excuse to try. Sheet form factors size
+   themselves (full-width, hikari's own geometry) — excluded here so the
+   phone layout stays untouched. NOTE: this reaches beyond this bar —
+   ShipPickerModal's FilterCategoryChip imports this SCSS and renders
+   `.ship-filter-bar__pop` too, so its popups are capped by the same
+   rule; a future selector change here silently alters the picker. */
+.hk-popover-panel:not(.hk-is-sheet) .ship-filter-bar__pop {
+  max-width: min(92vw, 640px);
+}
+
 .ship-filter-bar__pop-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* Title-only head — the panels close by tapping outside / re-clicking
+     the chip (the sheet chrome adds its own close on phones). */
   margin-bottom: 8px;
   font-size: var(--text-sm);
   font-weight: 600;
-}
-
-.ship-filter-bar__pop-close {
-  border: none;
-  background: transparent;
-  color: rgb(var(--color-muted));
-  font-size: 12px;
-  cursor: pointer;
-  padding: 2px 4px;
-
-  &:hover {
-    color: rgb(var(--color-text));
-  }
 }
 
 /* ── Chip popup option group ──
@@ -137,15 +193,45 @@
    directly instead of the sliding pill. */
 .ship-filter-bar__opts {
   display: inline-flex;
+  /* Wrap instead of overflow: with the type silhouettes the EN type row
+     rides the panel's 640px cap, and a capped inline-flex would let the
+     last option poke past the border. The pannable strip carries its own
+     nowrap row wrapper (__opts-track) inside the scroll container
+     (--scroll). */
+  flex-wrap: wrap;
   gap: 0;
   padding: 2px;
   border-radius: var(--radius-sm);
   border: 1px solid rgb(var(--color-border) / 25%);
   background: rgb(var(--color-surface) / 60%);
+  background: rgb(var(--color-surface) / min(100%, calc(60% * var(--ui-opacity, 1))));
+}
+
+/* The white battle-HUD ship-type silhouette preceding a type option's
+   label (the PR trend popup's type row shares the class): the white art is
+   the ally set's leftward facing, flipped to the enemy row's rightward —
+   the game's own minimap convention. A replaced element like the nation
+   flags: flex-shrink stays off via the option's rule, so give it a fixed
+   box. */
+.ship-filter-bar__type-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  object-fit: contain;
+  transform: scaleX(-1);
 }
 
 .ship-filter-bar__opt {
   display: flex;
+  /* An option never compresses: the nation strip runs as a flex row
+     capped by the panel (the 92vw/640px cap on `.ship-filter-bar__pop`
+     plus the track's own max-width: 100%), and shrink pressure there
+     would narrow each option toward its own min-content floor — a floor
+     that replaced-element icons (the nation flags; see NationFlag's
+     max-width note) contribute nothing to, so flag-bearing options collapsed one
+     icon-width and their labels spilled past the pill. The strip's
+     contract is overflow scrolls (optionStrip pans it), never squeeze. */
+  flex-shrink: 0;
   align-items: center;
   gap: var(--space-6);
   padding: var(--space-4) var(--space-12);
@@ -181,6 +267,65 @@
   }
 }
 
+/* ── Option strip: one line, panned — never wrapped ──
+   The #667 wrap never engaged: HkPopover sizes its panel to max-content,
+   so a wrapping track always measured as ONE long line that ran off the
+   screen. The track is a hikari HkScrollContainer now (axis horizontal,
+   fade): its viewport shrinks to the capped panel above and owns the
+   pan, its edge fades dissolve whichever inline sides still hide content
+   (the library senses data-h-overflow and paints the masks itself), and
+   its overlay chrome carries the scrollbar. optionStrip adds what hikari
+   lacks — the Firefox line-mode wheel normalization and the mouse
+   drag-pan (pointer capture, the 5px click/pan threshold, the one-shot
+   click swallow) — while touch pans the viewport natively. Shared by the
+   nation popup and every FilterCategoryChip popup. */
+.ship-filter-bar__opts--scroll {
+  /* The __opts chrome (border / padding / surface) stays on this root;
+     assert hikari's flex-column root display so the base track's
+     inline-flex cannot win by stylesheet load order. fit-content keeps
+     the legacy shrink-to-fit: the bordered strip hugs its pills and only
+     stretches to the panel cap when the line actually overflows (a bare
+     block-level flex would span the whole panel even for two options). */
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+
+  /* The whole strip drags (the hint line says so), so the grab
+     affordance rides over the option buttons too. Clicks still select:
+     the 5px pan threshold keeps plain clicks click-shaped. */
+  cursor: grab;
+
+  .ship-filter-bar__opt {
+    cursor: grab;
+  }
+
+  &[data-panning] {
+    cursor: grabbing;
+    user-select: none;
+
+    .ship-filter-bar__opt {
+      cursor: grabbing;
+    }
+  }
+
+  /* Native touch pans the viewport, and a horizontal drag must not chain
+     the gesture onward vertically — the viewport, not the root, is where
+     the pan happens. */
+  > .hk-scroll-container-viewport {
+    touch-action: pan-x;
+  }
+}
+
+/* The one-line row inside the strip's viewport: the track's own flex
+   layout (buttons side by side, never wrapping) — the root is hikari's
+   flex-column scroll container, so the row layout lives on this wrapper
+   and scrolls with the content. */
+.ship-filter-bar__opts-track {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
 .ship-filter-bar__pop-hint {
   margin-top: 8px;
   font-size: var(--text-2xs);
@@ -201,10 +346,13 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* The exact segmented trigger box, same as the chips: every button in
+     the bar family reads as one size beside the date tabs. */
   padding: var(--space-4) var(--space-12);
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
-  background: rgb(var(--color-surface) / 60%);
+  /* Same solid fill as the chips — no wallpaper bleed-through. */
+  background: rgb(var(--color-surface));
   color: rgb(var(--color-muted));
   font-size: var(--text-sm);
   font-weight: 600;
@@ -218,34 +366,129 @@
   &--on {
     color: rgb(var(--color-primary));
     border-color: rgb(var(--color-primary) / 25%);
-    background: rgb(var(--color-primary) / 12%);
+    background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
+  }
+}
+
+/* HPopover paints the panel chrome (glass surface, border, shadow) but no
+   inner spacing — the slot content owns it. This restores the padding AND
+   the roomy fixed width the pre-portal absolute-positioned panel carried,
+   both lost in the HPopover migration (content sat flush against the panel
+   edge; the input hugged its placeholder). The px width is position-
+   independent, so it cannot re-enter HkPopover's resize feedback loop. */
+.ship-filter-bar__search-panel {
+  width: min(360px, 70vw);
+}
+
+/* Fuzzy-match candidates under the input — same row-button spec as
+   AsyncSearchCombo's candidate list. The capped scroller is a hikari
+   HkScrollContainer (overlay bar); the column layout moved to
+   __candidates-inner so it scrolls with the rows. */
+.ship-filter-bar__candidates {
+  margin-top: 8px;
+  max-height: 280px;
+}
+
+.ship-filter-bar__candidates-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ship-filter-bar__candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: rgb(var(--color-text));
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: rgb(var(--color-primary) / 10%);
+  }
+
+  /* Secondary tag (the hull's tier, e.g. T10). */
+  em {
+    margin-left: auto;
+    font-style: normal;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
   }
 }
 
 .ship-filter-bar__search-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* Title-only head — the panel closes by re-clicking the search button
+     or tapping outside (the sheet chrome adds its own close on phones). */
   margin-bottom: 8px;
   font-size: var(--text-sm);
   font-weight: 600;
-}
-
-.ship-filter-bar__search-close {
-  border: none;
-  background: transparent;
-  color: rgb(var(--color-muted));
-  font-size: 12px;
-  cursor: pointer;
-  padding: 2px 4px;
-
-  &:hover {
-    color: rgb(var(--color-text));
-  }
 }
 
 .ship-filter-bar__search-hint {
   margin-top: 8px;
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted) / 90%);
+}
+
+/* ── Phone sheet mode (HPopover sheetOnMobile) ───────────────────────────
+   On <768px viewports every popup docks as a bottom sheet (hikari's
+   "phones never float anchored menus" convention). The sheet carries its
+   own title + close chrome (hk-popover-sheet-header), so the panels'
+   inner header rows would duplicate it — hidden below. The segmented
+   option tracks switch from one nowrap line to a wrapping group (six ship
+   types cannot fit 390px), and the search panel spans the sheet instead
+   of its fixed 360px desktop width. The sheet surface itself (full width,
+   opaque background, top rounding, safe-area bottom padding) is hikari's
+   .hk-is-sheet — nothing to re-paint here. Desktop anchored panels are
+   untouched. */
+.hk-popover-panel.hk-is-sheet {
+  .ship-filter-bar__pop-head,
+  .ship-filter-bar__search-panel-head {
+    display: none;
+  }
+
+  .ship-filter-bar__opts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  /* The nation strip relaxes back into the wrapping group on phones: the
+     sheet carries the full width, nothing pans there, and its gesture
+     hint would name an interaction the track does not have — hidden.
+     width: auto undoes the desktop strip's fit-content shrink (a short
+     option row must still span the sheet, as the old block strip did). */
+  .ship-filter-bar__opts--scroll {
+    width: auto;
+    cursor: default;
+
+    .ship-filter-bar__opt {
+      cursor: pointer;
+    }
+
+    > .hk-scroll-container-viewport {
+      overflow: visible;
+      touch-action: auto;
+    }
+  }
+
+  /* The track's desktop nowrap unlocks so the pills wrap in the sheet —
+     gap stays 0, matching every other category's plain __opts wrap. */
+  .ship-filter-bar__opts-track {
+    flex-wrap: wrap;
+  }
+
+  .ship-filter-bar__scroll-hint {
+    display: none;
+  }
+
+  .ship-filter-bar__search-panel {
+    width: auto;
+  }
 }

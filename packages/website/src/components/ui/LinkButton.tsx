@@ -1,6 +1,6 @@
 /**
  * LinkButton — an `<a>` styled with hikari's own button classes
- * (`hk-btn hk-btn-<variant> hk-btn-<size>`). HButton renders a real
+ * (`hk-btn hk-btn-<variant> hk-btn-<size>`). HkButton renders a real
  * `<button>`, but the site's download / GitHub CTAs are external links and
  * must stay anchors; this keeps the exact hikari look without forking the
  * styles.

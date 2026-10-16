@@ -29,12 +29,13 @@
 //! Incomplete-information discipline is inherited from E6/E7: every field
 //! is built from samples at or before `t` only.
 
+use anyhow::anyhow;
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Serialize;
 use wowsp_tauri_shared::{
-    EntityTrajectory, PositionSample, ReplayStream, ShellLaunchEvent, VehicleEntry,
+    CommandResult, EntityTrajectory, PositionSample, ReplayStream, ShellLaunchEvent, VehicleEntry,
 };
 
 use super::decision_ai::{DecisionModel, DecisionModelKind, shared_model};
@@ -811,7 +812,7 @@ fn model_kind_str(kind: &DecisionModelKind) -> &'static str {
 fn infer_one(
     model: &mut DecisionModel,
     point: &DecisionPoint,
-) -> Result<DecisionSuggestion, String> {
+) -> anyhow::Result<DecisionSuggestion> {
     let (can_fire_logit, fire_logit) = match model.kind() {
         DecisionModelKind::Fire24 { .. } => {
             let (entity, global, mask) = feature_tensors(point);
@@ -850,7 +851,7 @@ pub fn build_suggestions(
     los: Option<&LosGrid>,
     eye_height: f32,
     model: &mut DecisionModel,
-) -> Result<DecisionSuggestionReport, String> {
+) -> anyhow::Result<DecisionSuggestionReport> {
     let state = ServeState::build(stream, vehicles, FireSampleParams::default());
     let mut ordered: Vec<&ShipRow<'_>> = state.ships.iter().collect();
     ordered.sort_by_key(|s| s.traj.entity_id);
@@ -913,8 +914,8 @@ pub fn decision_fire_suggestions(
     replay_path: String,
     time_sec: f32,
     los_grid_dir: Option<String>,
-) -> Result<DecisionSuggestionReport, String> {
-    let stream = super::replay::read_replay_positions(replay_path.clone())?;
+) -> CommandResult<DecisionSuggestionReport> {
+    let stream = super::replay::decode_replay_stream_sync(&replay_path)?;
     let vehicles = super::replay_probe::read_roster(&replay_path)?;
     // LOS rasters: explicit directory, else the decisions pack cache when
     // installed (missing dirs degrade to feature-less rows, never an error).
@@ -930,15 +931,15 @@ pub fn decision_fire_suggestions(
     let shared = shared_model()?;
     let mut model = shared
         .lock()
-        .map_err(|_| "decision model mutex poisoned".to_string())?;
-    build_suggestions(
+        .map_err(|_| anyhow!("decision model mutex poisoned"))?;
+    Ok(build_suggestions(
         &stream,
         &vehicles,
         time_sec,
         los.as_ref(),
         DEFAULT_EYE_HEIGHT,
         &mut model,
-    )
+    )?)
 }
 
 #[cfg(test)]
@@ -970,6 +971,7 @@ mod tests {
             initial_z: 0.0,
             creation_time: 0.0,
             ship_id,
+            max_health: None,
             radius: None,
             control_point_index: None,
             initial_team: None,
@@ -1055,6 +1057,12 @@ mod tests {
             ward_removes: Vec::new(),
             shot_kills: Vec::new(),
             damage_stats: Vec::new(),
+            chat_messages: Vec::new(),
+            achievements: Vec::new(),
+            arena_players: Vec::new(),
+            weather_transitions: Vec::new(),
+            weather_notifications: Vec::new(),
+            self_team: None,
         }
     }
 
@@ -1286,8 +1294,7 @@ mod tests {
             return;
         };
         let t = 300.0f32;
-        let stream =
-            super::super::replay::read_replay_positions(path.clone()).expect("decode replay");
+        let stream = super::super::replay::decode_replay_stream_sync(&path).expect("decode replay");
         let vehicles = super::super::replay_probe::read_roster(&path).expect("roster");
         let params = FireSampleParams::default();
         // LOS rasters default to the experiments output layout.
@@ -1454,8 +1461,7 @@ mod tests {
         )
         .expect("export dataset");
         assert!(!rows.is_empty(), "export produced no rows");
-        let stream =
-            super::super::replay::read_replay_positions(path.clone()).expect("decode replay");
+        let stream = super::super::replay::decode_replay_stream_sync(&path).expect("decode replay");
         let vehicles = super::super::replay_probe::read_roster(&path).expect("roster");
         let los = los_dir
             .as_deref()

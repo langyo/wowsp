@@ -16,3 +16,9 @@
 
 - [架构设计](./designs/architecture.md)
 - [Mod Hub 插件管理](./designs/mod-hub.md)
+- [游戏内战绩插件](./designs/ingame-stats-plugin.md)
+
+# License
+
+- [Free & Open-Source Warning](./license/free-warning.md)
+- [Usage Telemetry Notice](./license/usage-telemetry.md)

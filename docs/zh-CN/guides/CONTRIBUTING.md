@@ -19,27 +19,27 @@ git clone https://github.com/langyo/wowsp.git
 cd wowsp
 cp .env.example .env
 just init
-just dev --mock      # 前端 + FastAPI mock，无需游戏
+just dev mock       # 前端 + FastAPI mock，无需游戏
 ```
 
 ## 代码风格
 
 ```bash
 just fmt     # Rust（cargo fmt + clippy）+ TS import 分组
-just lint    # fmt-check + clippy + pnpm lint
+just lint    # fmt-check + clippy + pnpm lint + i18n 一致性
 just test    # cargo test --workspace
 ```
 
 - Rust：函数 `snake_case`，类型 `CamelCase`，依赖用 `workspace = true`。
 - TypeScript：Vue 3 TSX（`defineComponent`），严格模式，Pinia store。
-- i18n：新增 UI 字符串需同时加到 `en` 和 `zhs`（`res/i18n/locales/`）。
+- i18n：新增 UI 字符串需同时加到 `en-US` 和 `zh-CN`（`res/i18n/locales/`）。
 
 ## PR 流程
 
-1. 从 `dev` 拉分支：`git checkout -b feat/my-feature dev`。
-2. 原子化提交，遵循 [Conventional Commits](https://www.conventionalcommits.org/)：`feat(replay): ...`、`fix(overlay): ...`、`docs: ...`。
+1. 从 `master` 拉分支：`git checkout -b feat/my-feature master`（`dev` 分支已弃用）。
+2. 原子化提交，提交标题用 gitmoji 格式（`✨ Add ...`、`🐛 Fix ...`），见 `AGENTS.md` §1 与 `scripts/commit_msg_lint.py`；CI 会拒绝 Conventional Commits 前缀。
 3. 推送前跑 `just lint && just test`。
-4. 向 `dev` 开 PR。
+4. 向 `master` 开 PR（squash 合并）。
 
 ## 授权与 CLA
 

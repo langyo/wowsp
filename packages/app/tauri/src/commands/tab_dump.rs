@@ -1,12 +1,10 @@
 //! Opt-in ground-truth dumps of the in-game Tab roster (debug aid).
 //!
-//! The overlay frontend currently maps `tempArenaInfo.json` players onto the
-//! detected table rows by array index, but the in-game Tab panel orders its
-//! rows with its own sort — so the chips can land on the wrong player. The
-//! planned fix ("row → name recognition") needs GROUND TRUTH: the exact Tab
-//! frame, the arena roster the frontend indexed, and the detector output, all
-//! captured at the same instant, so the REAL row order can be analysed
-//! offline.
+//! The overlay's row attribution is pixel-derived (the Tab sort key plus
+//! the sink solver's strip fingerprints), so its development needs GROUND
+//! TRUTH: the exact Tab frame, the arena roster of that instant, and the
+//! detector output, all captured together for offline analysis of the REAL
+//! row order and the strip fingerprints' behavior.
 //!
 //! The dump only runs when the developer sets `WOWSP_TAB_DUMP_DIR` to a
 //! non-empty path — it is a debugging feature, never a shipped behavior, and
@@ -24,16 +22,18 @@
 //! MOVES as a whole within one battle — the countdown "waiting players"
 //! layout sits ~190 px above the combat layout once the in-battle HUD
 //! appears — the first-row bucket changes and the new layout takes its own
-//! dump. Those per-layout frames are exactly the ground truth the
-//! row-recognition engine needs: the same battle captured under different
-//! panel layouts (row-order sampling across survival states is the
-//! recognition PR's own work). FAILED detections (the centered-fallback
+//! dump. Those per-layout frames are exactly the ground truth the strip
+//! fingerprinting needs: the same battle captured under different panel
+//! layouts (row-order sampling across survival states is the sink
+//! solver's own work). FAILED detections (the centered-fallback
 //! anchor behind the "table not found" hint) dump once per battle as
 //! `.miss.` artifacts — a scenario where the detector cannot find the table
 //! leaves its frame behind for offline analysis instead of vanishing. Every
 //! IO failure is logged and swallowed — a broken dump directory must never
 //! panic the watcher thread nor disturb the overlay pipeline this hook sits
 //! inside.
+
+use anyhow::{Result, anyhow};
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -163,10 +163,10 @@ fn first_dump_for_battle(seen: &mut Vec<u64>, signature: u64) -> bool {
 /// tempArenaInfo.json path with a new dateTime/roster, so every real battle
 /// hashes differently; the panel moving as a WHOLE inside one battle (the
 /// countdown → combat HUD phase shift) changes the bucket and takes its own
-/// dump — per-layout ground truth for the recognition engine. Row REORDERS
+/// dump — per-layout ground truth for the strip analysis. Row REORDERS
 /// at fixed slot positions (sunk ships) do not move the first row and are
-/// deliberately not part of this signature — sampling those is the
-/// recognition PR's own work.
+/// deliberately not part of this signature — sampling those is the sink
+/// solver tests' own work.
 fn battle_signature(info: &ArenaInfo, first_row_bucket: i64) -> u64 {
     let mut hasher = DefaultHasher::new();
     info.date_time.hash(&mut hasher);
@@ -219,18 +219,17 @@ fn encode_frame_png(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
     out.into_inner()
 }
 
-/// Write the three ground-truth artifacts for one detection:
+/// Write the ground-truth artifacts for one detection:
 ///
 /// - `tab-<stem><variant>.frame.png` — the game-window frame the detector
 ///   ran on;
 /// - `tab-<stem><variant>.arena.json` — tempArenaInfo.json's raw JSON text;
 /// - `tab-<stem><variant>.anchor.json` — the serialized [`OverlayAnchor`].
 ///
-/// All three share the timestamp stem; `variant` is `""` for a confirmed
-/// detection and `".miss"` for a failed one. File names carry no player
-/// name, but the arena.json artifact IS the roster text and contains every
-/// player's nickname — a dump directory must be sanitized before it is
-/// shared.
+/// All share the timestamp stem; `variant` is `""` for a confirmed detection
+/// and `".miss"` for a failed one. File names carry no player name, but the
+/// arena.json artifact IS the roster text and contains every player's
+/// nickname — a dump directory must be sanitized before it is shared.
 fn write_dump_files(
     dir: &Path,
     stem: &str,
@@ -238,25 +237,25 @@ fn write_dump_files(
     frame_png: &[u8],
     arena_json: &str,
     anchor: &OverlayAnchor,
-) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+) -> Result<()> {
+    std::fs::create_dir_all(dir).map_err(|e| anyhow!("create {}: {e}", dir.display()))?;
     let anchor_json =
-        serde_json::to_string_pretty(anchor).map_err(|e| format!("serialize anchor: {e}"))?;
+        serde_json::to_string_pretty(anchor).map_err(|e| anyhow!("serialize anchor: {e}"))?;
     std::fs::write(
         dir.join(format!("tab-{stem}{variant}.frame.png")),
         frame_png,
     )
-    .map_err(|e| format!("write frame png: {e}"))?;
+    .map_err(|e| anyhow!("write frame png: {e}"))?;
     std::fs::write(
         dir.join(format!("tab-{stem}{variant}.arena.json")),
         arena_json,
     )
-    .map_err(|e| format!("write arena json: {e}"))?;
+    .map_err(|e| anyhow!("write arena json: {e}"))?;
     std::fs::write(
         dir.join(format!("tab-{stem}{variant}.anchor.json")),
         anchor_json,
     )
-    .map_err(|e| format!("write anchor json: {e}"))?;
+    .map_err(|e| anyhow!("write anchor json: {e}"))?;
     Ok(())
 }
 
@@ -272,7 +271,9 @@ mod tests {
             date_time: Some(date_time.into()),
             map_name: None,
             scenario: None,
+            event_type: None,
             bot_count: 0,
+            scripted_unit_count: 0,
             vehicles: ids
                 .iter()
                 .map(|&id| VehicleEntry {
@@ -342,9 +343,8 @@ mod tests {
             row_centers: vec![first, first + 52, first + 104],
             team_split: 0.5,
             table_detected: true,
-            row_players: None,
             row_alive: None,
-            row_players_pending: false,
+            roster_mode: String::new(),
         }
     }
 
@@ -470,9 +470,8 @@ mod tests {
             row_centers: vec![50, 92, 134],
             team_split: 0.5,
             table_detected: true,
-            row_players: None,
             row_alive: None,
-            row_players_pending: false,
+            roster_mode: String::new(),
         };
         let arena_text = r#"{"dateTime":"20260917T120000","vehicles":[{"id":11}]}"#;
         write_dump_files(&dir, "20260917-120000", "", b"png", arena_text, &anchor)

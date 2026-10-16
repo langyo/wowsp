@@ -72,7 +72,7 @@ def list_spaces(game: str, wowsunpack: Path) -> list[str]:
     try:
         result = subprocess.run(
             [str(wowsunpack), "--game-dir", game, "metadata", str(meta_path)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
         )
         if result.returncode != 0:
             print(f"error: wowsunpack metadata: {result.stderr}", file=sys.stderr)

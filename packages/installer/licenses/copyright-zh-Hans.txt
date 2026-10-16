@@ -1,0 +1,16 @@
+**本软件完全免费，且开源发布**
+
+WoWSP 完全免费、开源，仅通过官方 GitHub Releases（github.com/langyo/wowsp）分发。任何渠道收费出售均与作者无关——请勿付款；如已付费，请尽快申请退款并举报卖家。
+
+---
+
+### 模型披露
+
+以下模型信息基于《合成源码协议》（SySL）的要求披露，协议全文见：[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
+
+- **GLM 5.3 / 5.3 Flash** — 智谱 AI — [zhipu.ai](https://zhipu.ai)
+- **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
+
+### 隐私与遥测
+
+WoWSP 会收集极少量使用量遥测（界面语言、打开的页面、国家级地区），仅用于指导开发；绝不收集任何个人数据、回放或账号数据。

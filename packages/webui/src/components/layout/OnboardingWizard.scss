@@ -1,0 +1,332 @@
+// First-launch onboarding wizard. The wizard rides the shared HModal
+// window shell (surface-machine open/close motion, delayed unmount,
+// content hold) so it folds in and out like every other window in the
+// app. What stays wizard-specific is the WINDOW TINT, overridden through
+// the modal's token hooks scoped to this one surface:
+//   - the scrim is a light translucent fill + backdrop blur, NOT the
+//     standard dark curtain — the theme/wallpaper steps preview their
+//     changes live through it;
+//   - the panel keeps its translucent glass surface.
+// The `:has` scope keys off the contentClass the wizard passes to HModal,
+// so no other modal in the app picks these up.
+
+.hk-modal-root:has(> .hk-modal-content.onboarding-wizard) {
+  --hk-modal-overlay-bg: rgb(var(--color-background) / 45%);
+  --hk-modal-overlay-blur: blur(var(--blur-sm));
+}
+
+.hk-modal-content.onboarding-wizard {
+  --hk-modal-bg: rgb(var(--color-surface) / 82%);
+  --hk-modal-border-color: rgb(var(--color-border) / 20%);
+}
+
+/* The 82% glass also rides the UI-opacity dial (uiOpacityPreference.ts).
+   A custom property never fails at parse time, so the scaled spelling is
+   gated behind an @supports math-in-color probe rather than a duplicate
+   line; the opaque phone / no-blur fallbacks below stay later in this
+   file and keep winning in their lanes. */
+@supports (background: rgb(0 0 0 / min(100%, calc(1% * var(--ui-opacity, 1))))) {
+  .hk-modal-content.onboarding-wizard {
+    --hk-modal-bg: rgb(var(--color-surface) / min(100%, calc(82% * var(--ui-opacity, 1))));
+  }
+}
+
+/* The 82% glass relies on the overlay's backdrop-filter to stay readable.
+   On phones hikari docks every modal as a bottom sheet and drops that
+   filter (--hk-modal-overlay-blur-mobile defaults to none — a per-frame
+   backdrop re-raster over a resizing sheet lags on phone GPUs), so the
+   translucent sheet goes see-through and the page bleeds between the
+   sections (real-device Android WebView report). The sheet's mobile
+   background token wins over the desktop glass there; the scrim keeps its
+   45% tint, so the appearance steps still preview the wallpaper live
+   AROUND the sheet. Desktop (≥768px) keeps the glass untouched. */
+@media (max-width: 767px) {
+  .hk-modal-content.onboarding-wizard {
+    --hk-modal-bg-mobile: rgb(var(--color-surface));
+  }
+}
+
+/* Same failure without the width signal: an engine without backdrop-filter
+   support (disabled WebView GPU feature, old engine) renders the 82% glass
+   raw. Fall back to the opaque surface — identical chrome, no bleed. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hk-modal-content.onboarding-wizard {
+    --hk-modal-bg: rgb(var(--color-surface));
+  }
+}
+
+/* Step bodies live inside the modal's scroll container; the tall notice
+   step keeps its own inner scroll region (nested on purpose: the step
+   must not grow the window every frame). */
+.onboarding {
+  &__body {
+    min-height: 14rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 0.25rem 0.25rem 0.5rem;
+
+    &--welcome {
+      min-height: 16rem;
+    }
+  }
+
+  /* The tall notice step's own scroll region (nested on purpose: the
+     step must not grow the window every frame) — hikari's scroll
+     container owns the scrollbar (auto-hiding overlay track); the
+     notice scrolls inside its viewport. */
+  &__announce {
+    max-height: 24rem;
+  }
+
+  /* Former scroller side clearance, moved inside the viewport so it
+     scrolls with the notice text. */
+  &__announce-inner {
+    padding: 0 0.25rem;
+  }
+
+  &__desc {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    color: rgb(var(--color-muted));
+  }
+
+  /* ── option card grid (theme + wallpaper steps) ──
+     Same card chrome as the settings appearance section: reserved border,
+     hover lift, primary border + check on selection. */
+
+  &__options {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+    gap: 0.6rem;
+
+    /* Theme modes read as one row of three — the fixed count keeps the
+       merged appearance step scannable. minmax(0, 1fr) (not bare 1fr) caps
+       the tracks at exactly 1/3: a bare fr track grows with the item's
+       min-content, so a long wallpaper file name would blow its card (and
+       the whole row) past the panel edge. */
+    &--three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    /* Wallpapers flow: the count varies (the built-in art pair and
+       pure-color preset, customs, plus the Tauri-only import tile), so
+       auto-fit collapses empty tracks and the row always fills — two
+       cards split the width, one spans it. The 9.5rem floor keeps a long
+       custom file name from over-shrinking its neighbors; on phone-width
+       modals it narrows to one column alone. */
+    &--auto {
+      grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    }
+
+    /* Color presets: two per row — a 3+1 wrap reads lopsided, and 4-up
+       squeezes each under the 9.5rem legibility floor. The count follows
+       hikari's preset table (four looks through 0.55.60, the single
+       `default` pair after its collapse), so this class name is the only
+       thing still counting to four. */
+    &--four {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    /* Phone widths: three-up tracks crush the labels into ellipsized
+       fragments (常黑 / 常白 / 根据… — real-device report; the option card
+       is icon + one label line, so a 103px track leaves ~19px of text).
+       One full-width card per row keeps every label readable; the preset
+       2×2 keeps two columns — its labels (Nord, Gruvbox…) fit at half
+       width. Desktop rows are unchanged; the wallpaper row's auto-fit
+       collapses by itself. */
+    @media (max-width: 767px) {
+      &--three {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  }
+
+  &__subtitle {
+    margin: 0.25rem 0 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__option {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    /* Allow shrinking below the label's min-content so the grid track caps
+       hold and the label ellipsizes instead of stretching the card. */
+    min-width: 0;
+    padding: 0.65rem 0.75rem;
+    background: rgb(var(--color-surface));
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color var(--duration-short) var(--ease-standard),
+      transform var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      transform: translateY(-1px);
+      border-color: rgb(var(--color-border) / 30%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    &--on {
+      border-color: rgb(var(--color-primary));
+    }
+
+    /* Import card while its dialog round-trip is in flight. */
+    &:disabled {
+      opacity: 0.6;
+      cursor: default;
+      transform: none;
+    }
+  }
+
+  &__option-icon {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--radius-xs);
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 10%);
+  }
+
+  &__option-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: rgb(var(--color-text));
+  }
+
+  &__option-check {
+    flex: none;
+    color: rgb(var(--color-primary));
+  }
+
+  /* Wallpaper cards swap the icon tile for a color swatch (same preview
+     logic as the settings wallpaper grid). */
+  &__option-swatch {
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--radius-xs);
+    border: 1px solid rgb(var(--color-border) / 25%);
+    overflow: hidden;
+  }
+
+  &__option-swatch-fill {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center;
+  }
+
+  /* ── game step: detection confirmation + plugin offer ── */
+
+  &__game-scan {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0.25rem;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted));
+  }
+
+  &__installs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  /* Install row — the game-path modal's pick list in wizard chrome: label
+     on top, mono path under it, reserved border + primary accent when the
+     row is the confirmed active install. */
+  &__install {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    background: rgb(var(--color-surface) / 45%);
+    background: rgb(var(--color-surface) / min(100%, calc(45% * var(--ui-opacity, 1))));
+    border: 2px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard),
+      background-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      background: rgb(var(--color-surface) / 70%);
+      background: rgb(var(--color-surface) / min(100%, calc(70% * var(--ui-opacity, 1))));
+      border-color: rgb(var(--color-border) / 35%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    &.is-active {
+      border-color: rgb(var(--color-primary));
+    }
+  }
+
+  &__install-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__install-check {
+    color: rgb(var(--color-primary));
+  }
+
+  &__install-path {
+    font-family: var(--font-mono, monospace);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    word-break: break-all;
+  }
+
+  &__game-actions,
+  &__plugin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  &__plugin {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
+  }
+
+  &__plugin-done {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-primary));
+  }
+}

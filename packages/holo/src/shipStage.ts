@@ -16,14 +16,14 @@
 import * as THREE from "three";
 import { createPlayhead } from "./playhead";
 import { buildArmorPlates, type ArmorZone } from "./armorPlates";
-import { makeShipHoloMaterial, tickHolo } from "./holoShader";
+import { makeShipHoloDepthMaterial, makeShipHoloMaterial, tickHolo } from "./holoShader";
 
 /** Semantic prefixes of the multi-mesh bake (bake_model.py instances keep
  *  names like `main_battery_249`, `secondary_battery_255`). */
 export const MESH_PREFIXES = [
   "main_battery", "secondary_battery", "aa_mount", "torpedo", "aircraft",
   "weapon", "turret_part", "hull_body", "hull_bow", "hull_mid", "hull_stern",
-  "deck_house", "superstructure", "funnel", "misc",
+  "deck_house", "superstructure", "funnel", "propeller", "misc",
 ] as const;
 
 export function meshCategory(name: string): string {
@@ -144,6 +144,10 @@ export function createShipStage(
     const turntable = new THREE.Group();
     turntable.add(model);
     turntable.updateMatrixWorld(true);
+    // Sweep-band traversal range for the holo shader (world-space Y across
+    // the normalized hull with margin; rotation about Y keeps extents stable).
+    const holoBox = new THREE.Box3().setFromObject(model);
+    const holoYSpan = Math.max(holoBox.max.y - holoBox.min.y, 0.5);
 
     // ── Geometry-derived helpers (bow detection, side heights) ──
     const verts: THREE.Vector3[] = [];
@@ -266,8 +270,34 @@ export function createShipStage(
     });
 
     // ── Materials: one holo shader for everything + a faint wire overlay ──
+    // Opt into the desktop stage's glass look: translucent fill with a
+    // rim-carried silhouette, the fine screen rows + climbing sweep band +
+    // faint flicker, and the rim exponent raised so the coarse quantized
+    // plates don't read as a mosaic (tuned against the app's holo lab).
+    // Replay ships keep the factory legacy defaults.
     const holo = makeShipHoloMaterial();
+    // The site runs both themes ("system"); the pale light-mode hero
+    // background washes a translucent fill out further, so it keeps a tenth
+    // more opacity there — same split as the desktop stage. Read once at
+    // creation; a mid-session theme flip takes effect on the next page view.
+    holo.uniforms.uBaseAlpha.value =
+      document.documentElement.dataset.mode === "dark" ? 0.45 : 0.55;
+    holo.uniforms.uRimAlpha.value = 0.55;
+    holo.uniforms.uFresnelPow.value = 5.0;
+    holo.uniforms.uFresnelGain.value = 1.0;
+    holo.uniforms.uScanGain.value = 0.50;
+    holo.uniforms.uSweepGain.value = 0.40;
+    holo.uniforms.uFlickerGain.value = 0.05;
+    holo.uniforms.uSweepLo.value = holoBox.min.y - holoYSpan * 0.3;
+    holo.uniforms.uSweepHi.value = holoBox.max.y + holoYSpan * 0.3;
     disposables.push(holo);
+    // Occlusion anchor: the holo material writes no depth, so a translucent
+    // hull would paint its own far side over the near shell. The colorWrite-
+    // off twin renders in the opaque queue first (same vertex shader, so the
+    // rasterized depth matches) and the transparent pass depth-tests against
+    // it — the desktop stage's exact arrangement.
+    const depth = makeShipHoloDepthMaterial();
+    disposables.push(depth);
     const wire = new THREE.MeshBasicMaterial({
       color: 0x33ccff, wireframe: true, transparent: true, opacity: 0.07, depthWrite: false,
     });
@@ -275,6 +305,7 @@ export function createShipStage(
     for (const mesh of meshes) {
       mesh.material = holo;
       mesh.renderOrder = 1;
+      mesh.add(new THREE.Mesh(mesh.geometry, depth));
       mesh.add(new THREE.Mesh(mesh.geometry, wire));
     }
 
@@ -293,10 +324,12 @@ export function createShipStage(
         b2mR: 0.35,
         m2sR: 0.68,
       };
-      const { group, fades } = buildArmorPlates(spec, opts.armorZones ?? []);
+      const { group, fades, geometries } = buildArmorPlates(spec, opts.armorZones ?? []);
       const armorScene = new THREE.Group();
       armorScene.add(group);
       armorFades.push(...fades);
+      disposables.push(...fades.map((f) => f.mat));
+      disposables.push(...geometries);
       const cloneMat = new THREE.MeshBasicMaterial({
         color: 0x0d4a6a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide,
       });
@@ -320,6 +353,7 @@ export function createShipStage(
     grid.position.y = ys[0] - 0.5;
     scene.add(grid);
     disposables.push(gridMat);
+    disposables.push(grid.geometry);
 
     scene.add(turntable);
     camera.position.set(0, 4.2, 13.5);

@@ -8,6 +8,7 @@
   padding: 16px;
   border-radius: 12px;
   background: rgb(var(--color-surface) / 85%);
+  background: rgb(var(--color-surface) / min(100%, calc(85% * var(--ui-opacity, 1))));
   border: 1px solid rgb(var(--color-border) / 18%);
 }
 
@@ -87,6 +88,7 @@
   padding: 8px 10px;
   border-radius: 8px;
   background: rgb(var(--color-surface) / 60%);
+  background: rgb(var(--color-surface) / min(100%, calc(60% * var(--ui-opacity, 1))));
   border: 1px solid rgb(var(--color-border) / 12%);
 }
 
@@ -122,6 +124,16 @@
   align-items: center;
   padding: 4px 8px;
   font-size: var(--text-2xs);
+}
+
+/* PR column hidden (rating off) — the name column re-absorbs its track
+   (every other column keeps its exact width, so toggling the pref does
+   not shift the surviving columns). */
+.clan-card__roster--no-pr {
+  .clan-card__roster-head,
+  .clan-card__member {
+    grid-template-columns: minmax(0, 1fr) 84px 64px 62px 74px;
+  }
 }
 
 .clan-card__roster-head {

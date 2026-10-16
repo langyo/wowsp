@@ -1,0 +1,231 @@
+/**
+ * Tray panel — the window is FRAMELESS but OPAQUE (see
+ * commands/tray_panel.rs): it is the card. An opaque surface is a hard
+ * requirement, not a style choice — WebView2 (wry ≥0.54) unconditionally
+ * enables non-client region support, and on a *transparent* window that
+ * combination composites a native ghost caption + tinted frame over the
+ * canvas (the "native window skin" reported twice), while backdrop-filter
+ * additionally tints the whole surface white. The DWM rounds the window's
+ * corners (DWMWCP_ROUND in post_create_setup) and draws its drop shadow,
+ * so the panel still reads as a floating popup — just without fighting
+ * the compositor.
+ */
+
+/* The window IS the card: theme.scss's body wallpaper-solid background is
+   overridden with the opaque surface so the whole viewport reads as one
+   panel (this file imports after theme.scss, so it wins the cascade).
+   --ui-opacity is deliberately NOT applied: a translucent popup canvas
+   reintroduces the transparent-composition bugs above. */
+html,
+body {
+  background: rgb(var(--color-surface));
+}
+
+.tray-panel {
+  width: 100vw;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow: hidden;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem 0.9rem 0.7rem;
+  color: rgb(var(--color-text));
+  font-size: var(--text-sm);
+  /* Hairline inner edge so the card reads against same-colored windows
+     behind it (the DWM border is the accent color, not a surface edge). */
+  box-shadow: inset 0 0 0 1px rgb(var(--color-border) / 25%);
+}
+
+
+.tray-panel__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Inset to the icon column the status pips and menu icons share below
+     (panel padding + the cards' 0.65rem inset), so the logo doesn't glue
+     to the window edge. */
+  padding-left: 0.65rem;
+  /* Literal rem, NOT var(--text-*): brand identity must not scale with the
+     font-size preference (same policy as the sidebar brand). */
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgb(var(--color-primary));
+  letter-spacing: 0.02em;
+}
+
+.tray-panel__brand-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+/* Session status block — same grammar as the sidebar footer's indicator.
+   The horizontal padding matches the menu rows' inset and the pip rides a
+   1.1rem icon slot, so the dot optically aligns with the menu icon column
+   and the status text shares the menu labels' left edge. */
+.tray-panel__status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-border) / 8%);
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+
+  &.is-running {
+    background: rgb(var(--color-success) / 8%);
+  }
+}
+
+.tray-panel__status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* The pip's icon slot: same 1.1rem column the menu icons occupy, circle
+   drawn centered inside it via ::before. */
+.tray-panel__status-dot {
+  width: 1.1rem;
+  height: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgb(var(--color-muted));
+  }
+
+  &--on::before {
+    background: rgb(var(--color-success));
+    box-shadow: 0 0 6px rgb(var(--color-success));
+  }
+  &--off::before {
+    background: rgb(var(--color-border));
+  }
+}
+
+.tray-panel__status-text {
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text));
+}
+
+.tray-panel__status-detail {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 0.45rem;
+  row-gap: 0.15rem;
+  /* 1.1rem icon slot + 0.55rem gap: under the status text, i.e. the same
+     edge the menu labels start at. */
+  padding-left: 1.65rem;
+  text-align: left;
+}
+
+.tray-panel__status-client {
+  color: rgb(var(--color-text));
+  /* Same truncation as the sidebar footer's client label: a long client
+     name must ellipsize, not wrap — the panel's height is sized to never
+     scroll, so a second detail line would clip the menu. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tray-panel__status-pid {
+  color: rgb(var(--color-muted));
+  flex-shrink: 0;
+}
+
+/* Player row — the resolved "who is playing" identity. */
+.tray-panel__player {
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-primary) / 6%);
+}
+
+.tray-panel__player-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.tray-panel__player-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: rgb(var(--color-text));
+}
+
+.tray-panel__player-none {
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+}
+
+/* Menu actions — the tray menu's Show / Quit as rows. Pinned to the
+   bottom edge: the window height (PANEL_LOGICAL in commands/tray_panel.rs)
+   is sized to the tallest content state, so the slack this auto margin
+   absorbs is a small offline-state separator, never a dead void. */
+.tray-panel__menu {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tray-panel__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.65rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-primary) / 10%);
+  }
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: 1px;
+  }
+
+  &--danger {
+    &:hover {
+      color: rgb(var(--color-error));
+      background: rgb(var(--color-error) / 10%);
+    }
+  }
+}
+
+.tray-panel__menu-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+}

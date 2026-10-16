@@ -65,9 +65,25 @@ export interface TextElement extends BaseElement {
 
 export type MarkerVariant = "ship" | "plane";
 
+/** What a plan-board marker DOES at its anchored second. `move` is the
+ *  interpolatable kind: it carries the unit from its own position to the
+ *  unit's NEXT action over the seconds between the two — the auto-tween the
+ *  timeline draws an arrow for. `attack` / `spot` are instantaneous events
+ *  parked at the unit's position for that moment. */
+export type TacticalActionKind = "move" | "attack" | "spot";
+
 /** Extra unit marker the author places on top of the replay. Static (at +
  *  heading) unless a `route` is scripted, in which case the marker sails the
- *  smoothed route from t0 over `moveDur` seconds, heading along the tangent. */
+ *  smoothed route from t0 over `moveDur` seconds, heading along the tangent.
+ *
+ *  On a plan board (`action` set) the marker becomes one keyframe of a unit's
+ *  timeline: markers sharing a variant and label are the same unit, and a
+ *  `move` action's position tweens toward the unit's next action (plan.ts).
+ *
+ *  Lineup-driven boards (the fleet planner) additionally stamp `shipId` +
+ *  `team` so a marker belongs to a concrete hull of the lineup instead of
+ *  the free "variant + label" identity — RTS orders then chain off the
+ *  marker that currently owns the unit (TacticalBoard). */
 export interface MarkerElement extends BaseElement {
   kind: "marker";
   at: Vec2;
@@ -79,10 +95,47 @@ export interface MarkerElement extends BaseElement {
   /** Glyph length in 760-unit logical map space. */
   size: number;
   /** Optional scripted route (world points, ≥2); rendered dashed while the
-   *  marker advances along its smoothed curve. */
+   *  marker advances along its smoothed curve. A scripted route wins over an
+   *  `action` tween — the hand-drawn path is the more specific instruction.
+   *  RTS orders store their kinematics-planned path here (kinematics.ts). */
   route?: Vec2[];
   /** Travel time in battle seconds (default 30). */
   moveDur?: number;
+  /** Plan-board action kind. Absent on the replay annotation board, whose
+   *  markers stay static unless a `route` is scripted. (A plan document
+   *  IMPORTED onto the replay board still animates — the renderer honors
+   *  `action` on every host; only the toolbar stops stamping it off-plan.) */
+  action?: TacticalActionKind;
+  /** Lineup hull this marker speaks for (fleet-planner boards only). */
+  shipId?: number;
+  /** Which side of the lineup the hull belongs to. */
+  team?: "ally" | "enemy";
+  /** The order decelerates to rest at its destination (a stop order) —
+   *  dragging the arrival knob then re-plans the terminal turn. */
+  stop?: boolean;
+}
+
+/** A torpedo spread or consumable range effect placed on the plan — see
+ *  zones.ts for the geometry (growth over time, fades, hit-testing). The
+ *  parameters are baked at commit time from the launching unit's lineup
+ *  stats, so the element stays truthful even if the lineup later changes.
+ *  `unit` is the launching unit's display label at commit time (reporting
+ *  only — the position/aim live here, not on the marker). */
+export interface ZoneElement extends BaseElement {
+  kind: "zone";
+  zoneType: import("./zones").ZoneType;
+  at: Vec2;
+  heading: number;
+  /** Full radius in world units. */
+  radius: number;
+  /** Sector half-angle in radians (torpedo spread); 0 = full circle. */
+  halfAngle: number;
+  /** World units per second (torpedo run speed; 0 = static ring). */
+  speed: number;
+  /** Seconds the ring stays up (static zones; 0 for torpedoes). */
+  durS: number;
+  unit: string;
+  team?: "ally" | "enemy";
 }
 
 /** A pinned REAL trajectory from the replay, restyled as an annotation.
@@ -94,7 +147,12 @@ export interface PathElement extends BaseElement, StrokeLook {
   upTo: "now" | "full";
 }
 
-export type TacticalElement = ShapeElement | TextElement | MarkerElement | PathElement;
+export type TacticalElement =
+  | ShapeElement
+  | TextElement
+  | MarkerElement
+  | PathElement
+  | ZoneElement;
 
 /** A presentation step: a battle-time bookmark the author uses to walk an
  *  audience through the fight (seek targets for prev/next + auto-advance

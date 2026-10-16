@@ -82,6 +82,25 @@ pub struct FileInfo {
     pub padding: u32,
 }
 
+impl FileInfo {
+    /// Whether the entry's payload is a raw-deflate stream.
+    ///
+    /// The low dword names the codec family and the high dword is the
+    /// actually-compressed flag: WG writes 0 (stored) and 0x1_0000_0005
+    /// (deflate); Lesta (Мир кораблей) writes a bare `6` codec id for stored
+    /// entries, which must be copied verbatim — sending them through the
+    /// deflate decoder fails with "corrupt deflate stream".
+    pub fn is_deflated(&self) -> bool {
+        compression_is_deflated(self.compression_info)
+    }
+}
+
+/// The deflate decision shared by every reader of an idx `compression_info`
+/// value (see [`FileInfo::is_deflated`] for the encoding).
+pub fn compression_is_deflated(compression_info: u64) -> bool {
+    compression_info >> 32 != 0 || compression_info == 5
+}
+
 /// Metadata about a `.pkg` volume file.
 #[derive(Debug, Clone)]
 pub struct Volume {
@@ -519,4 +538,25 @@ pub fn build_file_tree(idx_files: &[IdxFile]) -> HashMap<String, VfsEntry> {
     }
 
     entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compression_is_deflated;
+
+    /// WG encodings: 0 = stored, 0x1_0000_0005 = deflate (including the
+    /// equal-size stored-deflate streams that must still be inflated).
+    /// Lesta encodings: a bare `6` codec id marks STORED entries — those
+    /// were previously routed through the deflate decoder and failed with
+    /// "corrupt deflate stream". Only flag-marked entries are deflated.
+    #[test]
+    fn compression_is_deflated_covers_wg_and_lesta_encodings() {
+        // WG stored / deflate.
+        assert!(!compression_is_deflated(0));
+        assert!(compression_is_deflated(0x1_0000_0005));
+        assert!(compression_is_deflated(5)); // legacy bare codec id
+        // Lesta stored (`6`) vs compressed (flag dword 0x7 + codec 6).
+        assert!(!compression_is_deflated(6));
+        assert!(compression_is_deflated(0x7_0000_0006));
+    }
 }

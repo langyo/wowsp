@@ -1,0 +1,375 @@
+/* Overlay window — self-contained styles. This page does NOT load the app
+   theme (bare HTML), so colors are literal. The window is transparent and
+   click-through (WS_EX_TRANSPARENT + WS_EX_NOACTIVATE on the Win32 side);
+   nothing here may interact with the pointer either. */
+
+html,
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+  overflow: hidden;
+  pointer-events: none;
+  /* Two font roles for the whole Tab overlay, both picked to keep every
+     glyph on ONE vertical rhythm:
+     - TEXT (names, labels, unit words, seals — every run containing CJK):
+       Microsoft YaHei first. The fallback order used to let Segoe UI draw
+       the latin digits while YaHei drew the CJK, and the two fonts' glyphs
+       sat at visibly different heights on the shared baseline — the
+       CJK-complete face first keeps text harmonized everywhere.
+     - NUMBERS (winrate/PR/battles/damage, the intel counts and team
+       averages — pure-ASCII runs): a monospaced stack, so every digit
+       holds one width and the columns read as aligned figures. Consolas
+       ships with every Windows back to Vista; the rest of the chain is
+       there for the exotic hosts. The battles-count CJK unit (场/場/戦)
+       deliberately drops back to the text face (.overlay-unit below) — a
+       smaller counter word beside the figures reads as a unit, not as a
+       mixed-font accident. */
+  --overlay-text-font: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  --overlay-num-font: Consolas, "Cascadia Mono", "Courier New", monospace;
+  font-family: var(--overlay-text-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* HTML-level visibility: the Rust watcher toggles this class through the
+   wowsp://overlay-visibility event. visibility (not display) keeps layout
+   so the next reveal paints instantly. This is the load-bearing hide —
+   the event channel never crosses the main-thread queue that can delay
+   the native window hide. */
+html.overlay-hidden body {
+  visibility: hidden;
+}
+
+.overlay-chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: baseline;
+  /* Tight on purpose: the stats and name columns read as ONE block leaning
+     against the table's edge, not two loosely coupled strips. */
+  gap: 0.25em;
+  padding: 0.08em 0.55em;
+  border-radius: 0.5em;
+  background: rgb(10 14 20 / 62%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  color: rgb(236 241 246);
+  line-height: 1.25;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
+  transform: translateY(-50%);
+}
+
+.overlay-chip .muted {
+  color: rgb(165 175 185);
+}
+
+.overlay-chip .hidden {
+  color: rgb(220 80 80);
+  opacity: 0.9;
+}
+
+.overlay-chip .sep {
+  opacity: 0.45;
+}
+
+/* Sunk mid-battle (the row's name strip read dim gray): fade the chip the
+   same way the in-game Tab table grays the row. */
+.overlay-chip--sunk {
+  opacity: 0.45;
+  filter: grayscale(0.9);
+}
+
+/* The per-row two-column face (overlay-chip--ally / --enemy): every player
+   is ONE line — a stats cell against the table's edge and a name cell
+   outside it, with the seals on the outermost flank. The stats cell's
+   width is pinned per side by the alignStatColumns pass (the widest face on
+   that side) so the numbers hold a single alignment line and the name
+   column's near edge — its start for enemies, its end for allies — holds a
+   fixed x: enemies read [stats right-aligned][name left-aligned], allies
+   mirror it [name right-aligned][stats left-aligned].
+   The name cell caps its width and ellipsizes — the game's own table
+   truncates long names the same way. */
+.overlay-chip__stat {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.overlay-chip--enemy .overlay-chip__stat {
+  text-align: right;
+}
+
+.overlay-chip--ally .overlay-chip__stat {
+  text-align: left;
+}
+
+.overlay-chip__name {
+  /* Never shrinks under pressure: the NAME is the row's identity, so a
+     tight side pad must shed SEALS (chipFit's trim) or clamp the row's free
+     edge before it truncates a nickname — the 13-em cap is the only
+     truncation, sized for the reserve. (A shrinkable cell would ellipsize
+     first and steal the trim pass's job.) */
+  flex: 0 0 auto;
+  max-width: 13em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overlay-chip--enemy .overlay-chip__name {
+  text-align: left;
+}
+
+.overlay-chip--ally .overlay-chip__name {
+  text-align: right;
+}
+
+/* The NUMBER faces ride the monospaced stack (--overlay-num-font): every
+   figure one width wide, so a column of winrates / PRs / counts reads as
+   aligned digits instead of a ragged strip. These runs are pure ASCII by
+   construction (battlesText splits the CJK unit off into .overlay-unit),
+   so the stack never falls back mid-value. The per-column dashes ride the
+   same face (they are <b> cells too, right-aligned in their column); the
+   dots loader and the whole-cell dash/bot faces keep the chip's own font
+   — placeholders, not figures. */
+.overlay-chip__stat b,
+.overlay-chip--intel b,
+.overlay-intel-num {
+  font-family: var(--overlay-num-font);
+}
+
+/* Each metric is its own COLUMN: a fixed-width, right-aligned cell sized
+   in ch on the mono face, so the column boundaries hold across rows no
+   matter how many digits a value has — winrate one column, PR one,
+   battles one, damage one, exactly like a table. A missing value renders
+   its dash in the same cell, keeping the column. Widths cover the worst
+   formatted case of each metric (100.0% / 9999 PR / 100.0k / 999.9k);
+   the localized battles unit hangs OUTSIDE the cell (battlesText), so it
+   never shifts the figures. */
+.overlay-chip__stat .overlay-num {
+  display: inline-block;
+  text-align: right;
+}
+
+.overlay-chip__stat .n-wr {
+  width: 6ch;
+}
+
+.overlay-chip__stat .n-pr {
+  width: 4ch;
+}
+
+.overlay-chip__stat .n-battles {
+  width: 6ch;
+}
+
+.overlay-chip__stat .n-dmg {
+  width: 6ch;
+}
+
+/* A battles-count unit word (场/場/battles/회 …) split out of its mono
+   value: it keeps the TEXT face and steps down a size, so the smaller
+   counter glyph beside the figures reads as a deliberate unit — the one
+   place a chip mixes the two fonts, on purpose. Color is inherited from
+   the value it tails (the thin-sample red keeps covering the pair). */
+.overlay-chip .overlay-unit {
+  font-family: var(--overlay-text-font);
+  font-size: 0.85em;
+}
+
+/* A scoped column's tag (单人/单船/舰种 …) ahead of its figure: same
+   treatment as the battles unit — the text face, one size down, hanging
+   OUTSIDE the fixed-width figure cell so the digits alone define the
+   column. Global columns carry no tag: the unmarked figure IS the
+   account career. */
+.overlay-chip .overlay-scope {
+  font-family: var(--overlay-text-font);
+  font-size: 0.8em;
+  opacity: 0.72;
+}
+
+/* The ONE transient-status card — spinner + copy, centered over the table
+   (both axes). Every settling notice renders as this card; it only ever
+   crosses the table's own columns (chips live outside the left/right
+   edges) and vanishes with its trigger on the next event. DOM twin of
+   hikari's centered HkSpinner: same circle geometry, 0.7s rotation and
+   column stacking, re-toned for a bare page over a game frame — literal
+   colors (this page loads no theme), dark-glass plate for legibility. */
+.overlay-status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  max-width: 72%;
+  padding: 0.85em 1.5em;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 12px;
+  background: rgb(10 14 20 / 72%);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* The wheel: track = faded white, arc = near-white, 0.7s linear spin —
+   hk-spinner's exact shape and timing. */
+.overlay-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgb(255 255 255 / 22%);
+  border-top-color: rgb(255 255 255 / 92%);
+  border-radius: 50%;
+  animation: overlay-spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes overlay-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Reduced motion: the wheel rests as a static track + arc, still readable
+   as a loading mark (hikari's house pattern). */
+@media (prefers-reduced-motion: reduce) {
+  .overlay-spinner {
+    animation: none;
+  }
+}
+
+.overlay-status-text {
+  color: rgb(235 240 246);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  text-align: center;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
+  white-space: normal;
+}
+
+/* The chasing three-dot loading face (loadingDots in overlay/main.ts):
+   three beads whose brightness runs one after the other in an unbroken
+   loop while a stat lookup is still owed — a row's number block, or one
+   average value in the team summary card, renders this instead of a
+   settled dash. Beads take the surrounding text color (currentColor), so
+   the dots read as "these exact numbers are coming", and size in em like
+   everything else that scales with the row pitch. animation-delay arrives
+   INLINE per bead (phase-locked to the shared clock so render() rebuilds
+   never restart the chase — see loadingDots); this block only names the
+   animation. vertical-align: middle rides the text's visual center so the
+   beads sit centered against their neighbors instead of hanging on the
+   synthesized baseline. */
+.overlay-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24em;
+  height: 0.9em;
+  vertical-align: middle;
+}
+
+.overlay-dots i {
+  width: 0.3em;
+  height: 0.3em;
+  border-radius: 50%;
+  background: currentColor;
+  /* 1.2s = DOTS_PERIOD_MS in overlay/main.ts — the phase-lock math splits
+     the period into three beats; change the two together. */
+  animation: overlay-dots-chase 1.2s ease-in-out infinite;
+}
+
+@keyframes overlay-dots-chase {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion: the beads rest at mid brightness, still readable as a
+   loading mark (the same house pattern as the status spinner above). */
+@media (prefers-reduced-motion: reduce) {
+  .overlay-dots i {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/* Seals flanking a chip's numbers (career verdict left, composition tags
+   right). The default face is PLAIN TEXT in cinnabar ink (a user-imported
+   custom picture keeps its <img>); sized in em so it scales with the row
+   pitch the chips already derive from the table geometry, and the chip's
+   left/right anchoring keeps working unchanged — a wider chip just grows
+   further away from the table. The drop shadow keeps the ink legible over
+   bright sea/sky. */
+.overlay-chip .overlay-stamp {
+  align-self: center;
+  vertical-align: middle;
+  margin: 0 2px;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+}
+
+.overlay-chip span.overlay-stamp {
+  color: rgb(226 74 66);
+  font-weight: 700;
+  white-space: nowrap;
+  /* Deliberately NO font-size bump here: the seal rides the chip's own
+     text size (1em). The in-app seals carry the enlarged faces; the
+     in-game chips sit inside the table's fixed row pitch, where a bigger
+     face only widens the chip for no readability gain (chipFit's trim
+     pass still sheds seals first if a chip overflows). */
+  line-height: 1.2em;
+}
+
+.overlay-chip img.overlay-stamp {
+  /* Match the text seal's line box (1em font × 1.2 line height) so a
+     custom picture presses at the same visual size. */
+  height: 1.2em;
+  width: auto;
+}
+
+/* Team summary card — the consumable intel estimate and/or the team
+   averages flanking the table (one per side, at the blocks' outer ends).
+   Same dark-glass chip skin and side anchoring as the row chips, stacked
+   as lines so the card stays inside the window's reserved side pad; the
+   fit pass treats it as a chip of its side (no seals inside → straight to
+   the edge clamp). Unlike the row chips it is TOP-anchored (no centering
+   transform): its top edge parks a full row pitch under the last row's
+   center, and extra lines must grow downward, never straddle that anchor. */
+.overlay-chip--intel {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1em;
+  padding: 0.16em 0.6em;
+  transform: none;
+}
+
+.overlay-intel-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3em;
+  white-space: nowrap;
+}
+
+/* Side label + family names stay quiet so the counts read first. */
+.overlay-intel-team,
+.overlay-intel-k {
+  color: rgb(165 175 185);
+}
+
+.overlay-chip--intel b {
+  font-weight: 600;
+}
+
+/* The team-average numbers carry the same warm accent the radar range
+   does — they are the glance numbers of the card's third line. */
+.overlay-intel-line--avg b {
+  color: rgb(255 210 122);
+}
+
+/* The longest radar range is the load-bearing number of the card — the
+   distance the player must respect — so it alone gets the warm accent. */
+.overlay-intel-range {
+  color: rgb(255 210 122);
+}

@@ -35,6 +35,7 @@
   "all": "All",
   "clear": "Clear",
   "reload": "Reload",
+  "retry": "Retry",
   "loading": "Loading encyclopedia...",
   "empty": "No ships match these filters.",
   "noData": "No encyclopedia data yet. Pick a realm and load.",
@@ -49,9 +50,35 @@
     "uncommon": "Uncommon",
     "rare": "Rare",
     "epic": "Epic",
-    "legendary": "Legendary"
+    "legendary": "Legendary",
+    "event": "Event"
   },
-  "rarityHint": "Official in-game card rarity (from GameParams RarityCategory): Common (white), Uncommon (green), Rare (blue), Epic (red), Legendary (orange).",
+  "event": {
+    "_prefix": "Event",
+    "halloween_2016": "Halloween 2016",
+    "halloween_2017": "Halloween 2017",
+    "halloween_2018": "Halloween 2018",
+    "halloween_2019": "Halloween 2019",
+    "halloween_2020": "Halloween 2020",
+    "halloween_2022": "Halloween 2022",
+    "space_battles": "Space Battles",
+    "star_event": "STAR",
+    "postap_2022": "Post-Apocalypse 2022",
+    "april_fools_2023": "Trouble in the Hot Tub",
+    "april_fools_2024": "Piñata Hunt",
+    "modern_era": "Modern Era",
+    "collab_arp": "Arpeggio of Blue Steel -ARS NOVA-",
+    "collab_azur_lane": "Azur Lane",
+    "collab_hsf": "High School Fleet",
+    "collab_wh40k": "Warhammer 40,000",
+    "collab_blue_archive": "Blue Archive",
+    "collab_megadeth": "Megadeth",
+    "collab_star_trek": "Star Trek",
+    "lunar_new_year": "Lunar New Year",
+    "hunt_bismarck": "Hunt for Bismarck",
+    "scarlet_future": "Scarlet Future"
+  },
+  "rarityHint": "Official in-game card rarity (from GameParams RarityCategory): Common (white), Uncommon (green), Rare (blue), Epic (red), Legendary (orange). Event ships (collaborations & battle modes) show an Event·<name> tag instead of a band.",
   "card": {
     "hp": "HP",
     "concealment": "Concealment",
@@ -62,7 +89,7 @@
     "title": "Ship Details",
     "tabSpecs": "Specifications",
     "tabArmor": "Armor & Ballistics",
-    "tabMyStats": "My Stats",
+    "tabMyStats": "Ship Stats",
     "tabCommunity": "Server Trend",
     "tabSkill": "Captain Skills",
     "mainBattery": "Main Battery",
@@ -75,6 +102,7 @@
     "gameparamsMissing": "GameParams.data not unpacked. Run wowsunpack to see armor schemes and shell ballistics.",
     "gameparamsError": "Failed to load: {error}",
     "gameparamsErrorTip": "Failed to load armor & ballistics — click to copy error:",
+    "gameparamsSyncAction": "Sync game data from PC",
     "gameparamsHint": "Tip: place the unpacked GameParams.json at the game root (next to bin/). See https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "No specifications available for this ship.",
     "noImage": "No image available.",
@@ -84,9 +112,17 @@
     "noBallistics": "No armor / ballistics data could be extracted from GameParams for this ship.",
     "stage": {
       "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan",
+      "hint3dTouch": "Drag to rotate · pinch to zoom",
       "holo": "Hologram",
       "hide": "Hide preview",
-      "show": "Show preview"
+      "show": "Show preview",
+      "rotate": "Auto-rotate",
+      "rotateOn": "Auto-rotating · click to pause",
+      "rotateOff": "Paused · click to resume",
+      "waterline": "Waterline",
+      "draft": "Draft",
+      "hull": "Hull",
+      "modelPicker": "Choose model to view"
     },
     "weapon": {
       "mainGun": "Main Battery",
@@ -108,9 +144,7 @@
     "armor": {
       "toggle": "Toggle armor belt overlay",
       "short": "Armor",
-      "noData": "No armor data available.",
       "legend": "Armor (mm)",
-      "estimated": "approximate",
       "zone": {
         "bow": "Bow",
         "midship": "Midship",
@@ -127,15 +161,9 @@
         "bowBelt": "Bow belt",
         "superstructure": "Superstructure"
       },
-      "overmatchThreshold": "Overmatch needs ≥{n}mm caliber",
-      "outcome": {
-        "overmatch": "Overmatch",
-        "pen": "Pen",
-        "overpen": "Overpen",
-        "bounce": "Bounce"
-      },
       "restore": "Restore",
-      "pickHint": "Click the hull to hide a color class"
+      "solo": "Only",
+      "pickHint": "Click a swatch to isolate · click the model to hide"
     },
     "openHint": "Click to open the ship detail",
     "my": {
@@ -146,7 +174,8 @@
       "range30d": "Last 30 days",
       "avgFrags": "Avg. kills",
       "noBaseline": "No history baseline yet",
-      "divisionsHint": "Account-wide mode split, not this ship's own record"
+      "divisionsHint": "Account-wide mode split, not this ship's own record",
+      "modeNotPlayed": "No battles in this mode on this ship"
     },
     "server": {
       "title": "Server averages",
@@ -247,10 +276,17 @@
     "torpDetect": "Torpedo Detectability",
     "torpDetectHint": "Distance at which torpedoes become visible to the enemy. Lower gives less reaction time.",
     "torpLaunchers": "Torpedo Tubes",
-    "aaRating": "AA Defense Rating",
     "aaLongRange": "Long-Range Aura",
     "aaMidRange": "Mid-Range Aura",
     "aaShortRange": "Short-Range Aura",
+    "aaShortDps": "Short-range AA DPS",
+    "aaShortHitChance": "Short-range AA hit chance",
+    "aaMidDps": "Mid-range AA DPS",
+    "aaMidHitChance": "Mid-range AA hit chance",
+    "aaLongDps": "Long-range AA DPS",
+    "aaLongHitChance": "Long-range AA hit chance",
+    "aaFlakDamage": "Flak cloud damage",
+    "aaFlakCount": "Flak clouds per volley",
     "maxSpeed": "Maximum Speed",
     "rudderShift": "Rudder Shift",
     "rudderShiftHint": "Time for the rudder to fully deflect. Lower = more agile.",
@@ -268,7 +304,11 @@
     "depthChargeDamage": "Depth charge damage",
     "depthChargePacks": "Depth charge packs",
     "depthChargeBombs": "Bombs per pack",
-    "depthChargeReload": "Depth charge reload"
+    "depthChargeReload": "Depth charge reload",
+    "secondaryRange": "Secondary Range",
+    "aswRange": "Airstrike Range",
+    "aswCharges": "Airstrike Charges",
+    "aswReload": "Airstrike Reload"
   },
   "skills": {
     "title": "Captain Skill Builder",
@@ -278,7 +318,9 @@
     "reset": "Reset",
     "tier": "Tier {n}",
     "locked": "Locked — needs {n} points in lower tiers",
+    "tierEmptyWarning": "The game requires at least one skill in this tier",
     "notApplicable": "Not available on this ship",
+    "noPoints": "Not enough points left — this skill costs {n}",
     "maxed": "Max",
     "noTree": "No skill tree for this ship type yet.",
     "rank": "Rank {n}",
@@ -300,15 +342,17 @@
     "commanderInfoNote": "Commander talents are triggered effects shown for reference only; they are not included in the stats panel.",
     "talentTrigger": "Trigger",
     "talentMax": "Up to {n} activations",
-    "slotNone": "Empty",
+    "slotClear": "Remove",
     "legendaryCmd": "Legendary",
     "eliteCmd": "Elite",
     "uniqueMod": "Unique",
     "noCommandersForNation": "No special commanders available for this nation.",
     "slotEmpty": "No upgrades available",
     "commanderLegend": "\"Legendary\" badge = legendary commander with unique talents; \"Elite\" badge = elite/special commander.",
-    "epicRibbon": "Enhanced by the legendary commander",
+    "epicTag": "Enhanced by the legendary commander",
     "epicLegend": "Green corner ribbon = a skill the selected legendary commander teaches at enhanced values.",
+    "recTag": "Recommended by the game",
+    "recLegend": "Amber corner ribbon = part of the in-game recommended build for this ship.",
     "activator": {
       "DamageDoneActivator": "Damage dealt",
       "TargetsDamagedActivator": "Targets damaged",
@@ -456,13 +500,33 @@
     "showing": "Showing first {shown} of {total} ships",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "Repair Party",
+    "crashCrew": "Damage Control Party",
+    "spotter": "Spotting Aircraft",
+    "fighter": "Catapult Fighter",
+    "smoke": "Smoke Generator",
+    "speedBoost": "Engine Boost",
+    "hydro": "Hydroacoustic Search",
+    "radar": "Radar",
+    "hydrophone": "Hydrophone",
+    "subLocator": "Submarine Surveillance",
+    "torpReload": "Torpedo Reload Booster",
+    "artyReload": "Main Battery Reload Booster",
+    "defensiveAA": "Defensive AA Fire"
+  },
   "techTree": {
+    "realmHint": "Tech-tree branch source: the WG reference topology vs the Lesta client's own research lines.",
     "title": "Tech Tree",
     "branch": "Branch",
     "locked": "Tier {n} required",
     "premium": "Premium",
     "special": "Special",
-    "empty": "No tech tree for this nation."
+    "empty": "No tech tree for this nation.",
+    "linkTypeChange": "Type change",
+    "linkBranches": "Parallel lines",
+    "linkArchetype": "Line focus",
+    "linkInfo": "Research link info"
   },
   "banner": {
     "imageFailed": "Some ship portraits failed to load.",
@@ -509,22 +573,132 @@
     "nationTitle": "Nation",
     "nationAll": "All nations",
     "hintMulti": "Multi-select · click “All …” to reset",
+    "nationScrollHint": "Drag or use the mouse wheel to browse all nations",
     "wrTitle": "Win rate",
     "wrAll": "All win rates",
     "battlesTitle": "Battles",
     "battlesAll": "All battles",
     "minBattles": "≥{n} battles",
+    "modeTitle": "Mode",
+    "modeAll": "All modes",
+    "modeSolo": "Solo",
+    "modeDiv2": "Duo",
+    "modeDiv3": "Trio",
+    "modeRanked": "Ranked",
     "hintTypePop": "Multi-select · types only filter (no sort direction) · click \"All types\" to sort by class order",
     "hintSortPop": "Multi-select · click a selection again to flip asc ↑ / desc ↓ · click \"All…\" to reset, or sort by this column",
-    "hintTypeChip": "Click to filter (multi-select) · drag left/right to change sort priority",
+    "hintTypeChip": "Click to filter (multi-select)",
     "hintSortChip": "Click to filter (multi-select) · click a selection again to flip asc/desc · drag left/right to change sort priority",
     "hintSinglePop": "Single-select · click a selection again to flip asc ↑ / desc ↓ · click \"All…\" to reset, or sort by this column",
     "hintSingleChip": "Click to filter (single-select) · click a selection again to flip asc/desc · drag left/right to change sort priority",
-    "summary": "{ships} ships · {battles} battles"
+    "summary": "{ships} ships · {battles} battles",
+    "sourceTitle": {
+      "en-US": "Source",
+      "zh-CN": "来源",
+      "zh-SG": "来源",
+      "zh-TW": "來源",
+      "ja-JP": "入手元",
+      "ko-KR": "획득처",
+      "ru-RU": "Источник",
+      "fr-FR": "Source",
+      "es-ES": "Fuente"
+    },
+    "sourceAll": {
+      "en-US": "All sources",
+      "zh-CN": "全部来源",
+      "zh-SG": "全部来源",
+      "zh-TW": "全部來源",
+      "ja-JP": "すべての入手元",
+      "ko-KR": "모든 획득처",
+      "ru-RU": "Все источники",
+      "fr-FR": "Toutes les sources",
+      "es-ES": "Todas las fuentes"
+    },
+    "source_tree": {
+      "en-US": "Tech tree",
+      "zh-CN": "仅银币线",
+      "zh-SG": "仅银币线",
+      "zh-TW": "僅銀幣線",
+      "ja-JP": "テックツリーのみ",
+      "ko-KR": "은화 트리만",
+      "ru-RU": "Только древо",
+      "fr-FR": "Arbre uniquement",
+      "es-ES": "Solo árbol"
+    },
+    "source_gold": {
+      "en-US": "Premium only",
+      "zh-CN": "仅金币特殊加值",
+      "zh-SG": "仅金币特殊加值",
+      "zh-TW": "僅金幣特殊加值",
+      "ja-JP": "プレミアムのみ",
+      "ko-KR": "프리미엄만",
+      "ru-RU": "Только прем.",
+      "fr-FR": "Premium uniquement",
+      "es-ES": "Solo premium"
+    },
+    "source_coal": {
+      "en-US": "Coal only",
+      "zh-CN": "仅煤炭可购",
+      "zh-SG": "仅煤炭可购",
+      "zh-TW": "僅煤炭可購",
+      "ja-JP": "石炭のみ",
+      "ko-KR": "석탄만",
+      "ru-RU": "Только уголь",
+      "fr-FR": "Charbon uniquement",
+      "es-ES": "Solo carbón"
+    },
+    "source_steel": {
+      "en-US": "Steel only",
+      "zh-CN": "仅钢铁可购",
+      "zh-SG": "仅钢铁可购",
+      "zh-TW": "僅鋼鐵可購",
+      "ja-JP": "鋼鉄のみ",
+      "ko-KR": "강철만",
+      "ru-RU": "Только сталь",
+      "fr-FR": "Acier uniquement",
+      "es-ES": "Solo acero"
+    },
+    "source_event": {
+      "en-US": "Event only",
+      "zh-CN": "仅活动",
+      "zh-SG": "仅活动",
+      "zh-TW": "僅活動",
+      "ja-JP": "イベントのみ",
+      "ko-KR": "이벤트만",
+      "ru-RU": "Только ивент",
+      "fr-FR": "Événement uniquement",
+      "es-ES": "Solo evento"
+    }
   },
   "model3d": {
     "downloadStart": "The 3D view needs the model pack (~1.2 GB) — download started…",
     "ready": "Model pack ready",
     "failed": "Model pack download failed — try again later"
+  },
+  "module": {
+    "fireControl": "Fire Control",
+    "sonar": "Sonar",
+    "fighter": "Fighter",
+    "diveBomber": "Dive Bomber",
+    "torpedoBomber": "Torpedo Bomber",
+    "skipBomber": "Skip Bomber",
+    "flightControl": "Flight Control"
+  },
+  "plane": {
+    "torpedo": "Torpedo Bomber",
+    "heBomber": "HE Bomber",
+    "apBomber": "AP Bomber",
+    "heSkip": "HE Skip Bomber",
+    "apSkip": "AP Skip Bomber",
+    "rocket": "Rocket Plane",
+    "fighter": "Fighter",
+    "interceptor": "Interceptor",
+    "scout": "Scout",
+    "asw": "ASW Aircraft",
+    "mine": "Minelayer",
+    "cfg": {
+      "stock": "stock",
+      "top": "top"
+    }
   }
 }

@@ -1,19 +1,25 @@
-import { computed, defineComponent, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, ref, watch, type PropType, type VNode } from "vue";
 
-import { HButton, HCheckbox, HModal, HSearchInput, HTag } from "@celestia-island/hikari";
+import { HkButton, HkCheckbox, HkModal, HkScrollContainer, HkSearchInput, HkTag } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
+import {
+  SHIP_SOURCES,
+  shipSourcesOf,
+  type ShipSource,
+} from "@/utils/shipSources";
 import { tierLabel } from "@/utils/shipCompare";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
+import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
 import "./ShipPickerModal.scss";
 
 /** Render cap for the result list — a loose filter can match half the
- *  encyclopedia and the DOM (plus HCheckbox instances) must stay small.
+ *  encyclopedia and the DOM (plus HkCheckbox instances) must stay small.
  *  The truncation is display-only: "add all" still covers every match. */
 const RENDER_CAP = 150;
 const TIERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
@@ -58,6 +64,7 @@ export default defineComponent({
     const selectedTiers = ref<Set<string>>(new Set());
     const selectedTypes = ref<Set<string>>(new Set());
     const selectedNations = ref<Set<string>>(new Set());
+    const selectedSources = ref<Set<string>>(new Set());
     const checked = ref<Set<number>>(new Set());
     // Which category's popup is open — one at a time, owned here so opening
     // one chip closes the others (mirrors ShipFilterBar's single-open row).
@@ -82,11 +89,32 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
+    /** Option icons match the 水表 bar's popups: the white battle-HUD
+     *  silhouette for ship types, the nation flag for nations (NationFlag
+     *  swaps to a letter badge when the asset is missing). */
+    function typeOptionIcon(code: string): VNode {
+      return (
+        <img
+          class="ship-filter-bar__type-icon"
+          src={shipIconUrl(code, "white") ?? undefined}
+          alt=""
+          draggable={false}
+        />
+      );
+    }
+
+    function nationOptionIcon(code: string): VNode {
+      return <NationFlag nation={code} label={nationLabel(code)} variant="flag" size="sm" />;
+    }
+
     // Chip option lists — derived from the store so a realm switch re-derives
     // them; canonical order matches the old checkbox rows (tiers I–★).
     const tierOptions = computed(() => TIERS.map((n) => ({ value: String(n), label: tierLabel(n) })));
     const typeOptions = computed(() => encyclopedia.types.map((tp) => ({ value: tp, label: typeLabel(tp) })));
     const nationOptions = computed(() => encyclopedia.nations.map((n) => ({ value: n, label: nationLabel(n) })));
+    const sourceOptions = computed(() =>
+      SHIP_SOURCES.map((src) => ({ value: src, label: t(`ships.filter.source_${src}`) })),
+    );
 
     /** Names that exist WITHOUT the trailing "2" — a "X2" ship whose base "X"
      *  is also a ship is a WG data clone ("蒙大拿2"). Matching on the base's
@@ -103,6 +131,19 @@ export default defineComponent({
         if (selectedTiers.value.size > 0 && !selectedTiers.value.has(String(s.tier))) return false;
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
+        // Sources are additive sets (a coal ship can also be a gold
+        // premium): a selection matches when ANY picked tag is present.
+        if (selectedSources.value.size > 0) {
+          const sources = shipSourcesOf(s);
+          let hit = false;
+          for (const src of selectedSources.value) {
+            if (sources.has(src as ShipSource)) {
+              hit = true;
+              break;
+            }
+          }
+          if (!hit) return false;
+        }
         if (q && !s.name.toLowerCase().includes(q) && !encyclopedia.shipDisplayName(s).toLowerCase().includes(q)) return false;
         // Cheap checks first — the clone match only runs for survivors.
         const bare = encyclopedia.shipDisplayName(s);
@@ -150,11 +191,11 @@ export default defineComponent({
       checked.value = new Set();
     }
 
-    // Buttons live in HModal's named footer slot (a right-aligned strip
+    // Buttons live in HkModal's named footer slot (a right-aligned strip
     // OUTSIDE the scroll body) — inside the default slot the footer used to
     // get clipped by .hk-modal-body's overflow when the list grew tall.
     return () => (
-      <HModal
+      <HkModal
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("ships.compare.addShips")}
@@ -165,8 +206,11 @@ export default defineComponent({
             <div class="ship-picker">
               {/* Filter toolbar mirrors the 水表查询 bar: collapsed category
                   chips (single-open, state owned here) + a stretching search
-                  on the same row. The last chip opens leftwards so its popup
-                  never escapes the modal edge. */}
+                  on the same row. Type options lead with the white silhouette
+                  and nation options with the flag, matching the 水表 popups;
+                  the nation strip pans one line, so its popup names the
+                  gesture like the 水表 nation popup does. The last chip opens
+                  leftwards so its popup never escapes the modal edge. */}
               <div class="ship-picker__toolbar">
                 <FilterCategoryChip
                   title={t("ships.filter.tierTitle")}
@@ -176,7 +220,7 @@ export default defineComponent({
                   open={openCat.value === "tier"}
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "tier" : null)}
                   onToggle={(v: string) => (selectedTiers.value = toggleSet(selectedTiers.value, v))}
-                  onClear={() => (selectedTiers.value = new Set())}
+                  onAll={() => (selectedTiers.value = new Set())}
                 />
                 <FilterCategoryChip
                   title={t("ships.filter.typeTitle")}
@@ -186,7 +230,8 @@ export default defineComponent({
                   open={openCat.value === "type"}
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "type" : null)}
                   onToggle={(v: string) => (selectedTypes.value = toggleSet(selectedTypes.value, v))}
-                  onClear={() => (selectedTypes.value = new Set())}
+                  onAll={() => (selectedTypes.value = new Set())}
+                  renderOptionIcon={typeOptionIcon}
                 />
                 <FilterCategoryChip
                   title={t("ships.filter.nationTitle")}
@@ -196,10 +241,28 @@ export default defineComponent({
                   open={openCat.value === "nation"}
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "nation" : null)}
                   onToggle={(v: string) => (selectedNations.value = toggleSet(selectedNations.value, v))}
-                  onClear={() => (selectedNations.value = new Set())}
-                  edge
+                  onAll={() => (selectedNations.value = new Set())}
+                  renderOptionIcon={nationOptionIcon}
                 />
-                <HSearchInput
+                <FilterCategoryChip
+                  title={t("ships.filter.sourceTitle")}
+                  allLabel={t("ships.filter.sourceAll")}
+                  options={sourceOptions.value}
+                  selected={selectedSources.value}
+                  open={openCat.value === "source"}
+                  onUpdate:open={(v: boolean) => (openCat.value = v ? "source" : null)}
+                  onToggle={(v: string) => (selectedSources.value = toggleSet(selectedSources.value, v))}
+                  onAll={() => (selectedSources.value = new Set())}
+                  edge
+                >
+                  {/* Scroll-hint line ahead of the default multi-select hint,
+                      same pair of lines as the 水表 nation popup (the phone
+                      sheet hides it via the shared SCSS). */}
+                  <div class="ship-filter-bar__pop-hint ship-filter-bar__scroll-hint">
+                    {t("ships.filter.nationScrollHint")}
+                  </div>
+                </FilterCategoryChip>
+                <HkSearchInput
                   class="ship-picker__search"
                   size="sm"
                   modelValue={searchText.value}
@@ -208,7 +271,10 @@ export default defineComponent({
                 />
               </div>
 
-              <div class="ship-picker__list">
+              {/* Result list scrolls through hikari's scroll container
+                  (overlay thumb on the list's right edge). */}
+              <HkScrollContainer class="ship-picker__list">
+                <div class="ship-picker__list-inner">
                 {filteredShips.value.length === 0 ? (
                   <p class="ship-picker__empty">{t("ships.empty")}</p>
                 ) : (
@@ -226,24 +292,25 @@ export default defineComponent({
                           toggle(s.shipId);
                         }}
                       >
-                        <HCheckbox
+                        <HkCheckbox
                           size="sm"
                           modelValue={already || checked.value.has(s.shipId)}
                           disabled={already}
                           onUpdate:modelValue={() => toggle(s.shipId)}
                         />
-                        <HTag variant="primary" size="sm">{tierLabel(s.tier)}</HTag>
+                        <HkTag variant="primary" size="sm">{tierLabel(s.tier)}</HkTag>
                         <span class="ship-picker__name">{encyclopedia.shipDisplayName(s)}</span>
                         {already ? (
-                          <HTag variant="info" size="sm">{t("ships.compare.added")}</HTag>
+                          <HkTag variant="info" size="sm">{t("ships.compare.added")}</HkTag>
                         ) : null}
-                        <HTag variant="default" size="sm">{typeLabel(s.type)}</HTag>
+                        <HkTag variant="default" size="sm">{typeLabel(s.type)}</HkTag>
                         <NationFlag nation={s.nation} label={nationLabel(s.nation)} variant="flag" size="sm" />
                       </div>
                     );
                   })
                 )}
-              </div>
+                </div>
+              </HkScrollContainer>
               {isTruncated.value ? (
                 <p class="ship-picker__truncated">
                   {t("ships.compare.showing", {
@@ -256,25 +323,25 @@ export default defineComponent({
           ),
           footer: () => (
             <>
-              <HButton
+              <HkButton
                 variant="secondary"
                 size="sm"
                 disabled={addableShips.value.length === 0}
                 onClick={() => emitAdd(addableShips.value)}
               >
                 {t("ships.compare.addAll")}
-              </HButton>
-              <HButton
+              </HkButton>
+              <HkButton
                 size="sm"
                 disabled={checkedShips.value.length === 0}
                 onClick={() => emitAdd(checkedShips.value)}
               >
                 {t("ships.compare.addSelected", { n: checkedShips.value.length })}
-              </HButton>
+              </HkButton>
             </>
           ),
         }}
-      </HModal>
+      </HkModal>
     );
   },
 });

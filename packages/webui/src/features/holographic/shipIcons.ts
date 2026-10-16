@@ -89,7 +89,14 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
 
 export type ShipIconVariant = "ally" | "enemy" | "sunk" | "sunk-enemy" | "white" | "plain";
 
-/** Map a WG ShipInfo.type string to the icon-atlas class key. */
+/** Map a WG ShipInfo.type string to the icon-atlas class key. Unknown types
+ *  map to "" — they must NOT impersonate battleships (the old fallback drew
+ *  a BB icon for ships no database could classify); "" misses every atlas
+ *  row, so `shipIconUrl` answers null and the icon slots render their
+ *  empty placeholder instead (BattleIcon's bare span, the shots' skipped
+ *  image). Every caller already tolerates a null URL: the sunk/white
+ *  variants never had an auxiliary row, so null was always a possible
+ *  answer here. */
 export function shipTypeClass(type: string | null | undefined): string {
   const t = (type ?? "").toLowerCase();
   if (t.includes("battleship")) return "battleship";
@@ -98,7 +105,7 @@ export function shipTypeClass(type: string | null | undefined): string {
   if (t.includes("aircarrier") || t.includes("aircar")) return "aircarrier";
   if (t.includes("submarine")) return "submarine";
   if (t.includes("auxiliary")) return "auxiliary";
-  return "battleship";
+  return "";
 }
 
 /** Resolve the original game PNG URL for a ship, or null when unknown. */

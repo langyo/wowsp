@@ -161,5 +161,7 @@ SLUG_MAP = {
     "ime-config": "patch.ime.compat",
 }
 
-# front-matter category normalization (old -> new)
-CATEGORY_RENAME = {"texts": "text", "patches": "patch"}
+# front-matter category normalization (old -> new). The one-off `patch`
+# bucket was folded into `text` (patch.ime.compat lives there now); a legacy
+# `patches` front-matter value follows it.
+CATEGORY_RENAME = {"texts": "text", "patches": "text"}

@@ -1,0 +1,31 @@
+// SettingsShell — the wowsp-local grouped-rail extension of hikari's
+// settings grammar. Every rail/pane class comes from the shipped
+// HkSettingsDialog stylesheet (imported by SettingsShell.tsx, so it lands
+// in the bundle BEFORE this file and these rules win on equal
+// specificity); only the first-level cluster title is new here.
+//
+// The title speaks the pane's own sub-block vocabulary
+// (.hk-settings-sub-title: small caps, muted) so it reads as structure,
+// not content — and truncates like the rail labels it fronts.
+
+.hk-settings__rail-heading {
+  /* The rail is a fixed-height flex column; without this the shrink
+     phase crushes the (overflow-hidden) title to zero height whenever
+     the entries overflow — the rail must scroll, not eat its titles. */
+  flex: none;
+  margin: var(--space-10) 0 var(--space-2);
+  padding: 0 var(--space-12);
+  overflow: hidden;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: rgb(var(--color-muted) / 75%);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  user-select: none;
+
+  &:first-child {
+    margin-top: 0;
+  }
+}

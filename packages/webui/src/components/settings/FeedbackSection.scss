@@ -1,0 +1,151 @@
+// FeedbackSection — the settings' 问题反馈 pane: a diagnostics-log card
+// (newest file, folder, retention note) over the three quick actions
+// (reveal / copy tail / export bundle), plus the hand-off row that opens
+// the online feedback form. Surface colors come from the hikari tokens so
+// both theme modes read correctly (same idiom as ChangelogSection).
+
+.feedback {
+  &__state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--hi-space-12, 12px);
+    padding: var(--hi-space-24, 24px) 0;
+    color: var(--hi-color-text-secondary);
+  }
+
+  &__state-text {
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--hi-color-danger);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__empty {
+    margin: 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-8, 8px);
+    padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+    border: 1px solid var(--hi-color-border);
+    border-radius: var(--hi-radius-sm, 4px);
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    min-width: 0;
+  }
+
+  &__label {
+    flex: none;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    white-space: nowrap;
+  }
+
+  &__file {
+    color: var(--hi-color-text-primary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    overflow-wrap: anywhere;
+  }
+
+  &__meta {
+    margin-left: auto;
+    flex: none;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+    white-space: nowrap;
+  }
+
+  &__dir {
+    min-width: 0;
+    flex: 1;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__note {
+    margin: 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    margin-top: var(--hi-space-12, 12px);
+  }
+}
+
+// Hardware-consent dialog (the export flow's disclosure step): warning
+// lead + the collected-categories list + the privacy / UAC notes. Same
+// token-driven styling as the pane above so both themes read correctly.
+.feedback-hw {
+  &__lead {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: var(--hi-color-warning, #eed677);
+    background: color-mix(in srgb, var(--hi-color-warning, #eed677) 12%, transparent);
+  }
+
+  &__desc {
+    margin: 0;
+    color: var(--hi-color-text-primary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    line-height: 1.6;
+  }
+
+  &__items {
+    margin: var(--hi-space-12, 12px) 0 0;
+    padding: 0 0 0 var(--hi-space-16, 16px);
+    color: var(--hi-color-text-primary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    line-height: 1.6;
+
+    li + li {
+      margin-top: var(--hi-space-4, 4px);
+    }
+  }
+
+  &__note,
+  &__uac {
+    margin: var(--hi-space-12, 12px) 0 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+    line-height: 1.6;
+  }
+
+  &__uac {
+    padding: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
+    border: 1px solid var(--hi-color-border);
+    border-radius: var(--hi-radius-sm, 4px);
+  }
+}

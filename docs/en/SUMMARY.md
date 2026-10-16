@@ -16,3 +16,9 @@
 
 - [Architecture](./designs/architecture.md)
 - [Mod Hub](./designs/mod-hub.md)
+- [In-Game Stats Plugin](./designs/ingame-stats-plugin.md)
+
+# License
+
+- [Free & Open-Source Warning](./license/free-warning.md)
+- [Usage Telemetry Notice](./license/usage-telemetry.md)

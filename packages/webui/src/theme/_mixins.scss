@@ -4,6 +4,7 @@
 /// A glassy floating panel surface (holographic panels, overlay roster).
 @mixin glass-panel {
   background: rgb(var(--color-surface) / 85%);
+  background: rgb(var(--color-surface) / min(100%, calc(85% * var(--ui-opacity, 1))));
   backdrop-filter: blur(var(--blur-md));
   border: 1px solid rgb(var(--color-border) / 20%);
   border-radius: var(--radius-md);

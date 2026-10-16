@@ -1,0 +1,214 @@
+/**
+ * Manual-locate picker — an in-app HkModal sub-window (same window context
+ * as Settings). The modal frame owns header/footer; this file styles only
+ * the content: the metaline (guides toggle + frame age + hint) and the
+ * dark screenshot stage with its guide/selection overlay. The stage colors
+ * stay LITERAL dark (like the standalone picker page this surface
+ * replaced): it is a screenshot viewer, not a themed app surface.
+ *
+ * Zoom contract: the component neutralizes the shell's interface-scale zoom
+ * on the content root (compensating `zoom`, see ManualLocateOverlay.tsx), so
+ * every px below is a true CSS px and the physical↔CSS factor stays exact.
+ */
+
+.manual-locate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+// ── loading / no-frame states (modal content, no stage yet) ────────────────
+
+.manual-locate.ml-state {
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 240px;
+}
+
+.ml-state__msg {
+  max-width: 90%;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.ml-state__actions {
+  display: flex;
+  gap: 8px;
+}
+
+// ── metaline ───────────────────────────────────────────────────────────────
+
+// Literal dark strip on purpose: it sits on the THEMED modal surface (near
+// white under the light theme) and carries white text + the error note —
+// theme tokens would leave it unreadable exactly when it matters.
+.ml-metaline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgb(10 14 20 / 85%);
+}
+
+/* Guides toggle + frame age speak the app's compact pill voice (the live
+   head's action pills: --text-2xs / 600 / 1.5 / 0.1rem 0.55rem / full
+   radius) so the strip reads like every other panel head; only the
+   colors stay literal dark. */
+.ml-guide-toggle {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  background: transparent;
+  color: rgb(236 241 246);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.ml-guide-toggle[aria-pressed="true"] {
+  border-color: rgb(96 214 164 / 65%);
+  color: rgb(126 231 183);
+}
+
+.ml-guide-toggle:hover {
+  filter: brightness(1.15);
+}
+
+.ml-age {
+  flex: 0 0 auto;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  color: rgb(255 255 255 / 55%);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.ml-hint {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: rgb(255 255 255 / 60%);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ── stage / canvas ─────────────────────────────────────────────────────────
+
+.ml-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: clamp(320px, 58vh, 720px);
+  border-radius: 8px;
+  background: rgb(10 14 20);
+  overflow: hidden;
+}
+
+// Sized in px by the component from the physical frame's aspect — never by
+// CSS, so the physical↔CSS mapping factor stays exact.
+.ml-canvas {
+  position: relative;
+  cursor: crosshair;
+  background: rgb(0 0 0 / 35%);
+}
+
+.ml-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.ml-guide-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ml-guide-layer--hidden {
+  display: none;
+}
+
+// Detected table outline — a solid hairline so it reads as "the detector's
+// answer", distinct from the user's dashed selection.
+.ml-guide-rect {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgb(96 214 164 / 75%);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 45%);
+}
+
+.ml-guide-line {
+  position: absolute;
+  background: rgb(120 224 255 / 55%);
+}
+
+.ml-guide-line--h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.ml-guide-line--v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+// ── selection chrome ───────────────────────────────────────────────────────
+
+.ml-selection {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed rgb(255 255 255 / 72%);
+  background: rgb(255 255 255 / 6%);
+  pointer-events: none;
+}
+
+.ml-size {
+  position: absolute;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  background: rgb(10 14 20 / 85%);
+  border: 1px solid rgb(255 255 255 / 14%);
+  color: rgb(236 241 246);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+// ── fallback buttons (no-frame state) ──────────────────────────────────────
+
+.ml-btn {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 25%);
+  background: rgb(10 14 20 / 85%);
+  color: rgb(236 241 246);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.ml-btn--primary {
+  background: rgb(45 160 110 / 92%);
+  border-color: transparent;
+}
+
+.ml-btn:hover {
+  filter: brightness(1.15);
+}

@@ -2,7 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover: Android 15+ enforces edge-to-edge, so the page
+         lays out under the status/navigation bars; without the key the
+         WebView reports every env(safe-area-inset-*) as 0 and the phone
+         shell's top bar (hamburger/gear) ends up untouchable under the
+         status bar. The shell SCSS already pads by the insets.
+
+         interactive-widget=resizes-content: with the Chromium default
+         (resizes-visual) the soft keyboard leaves the LAYOUT viewport at
+         full height, so 100vh/100dvh keep their value and the phone's
+         docked bottom sheets — capped at 100dvh minus the top inset — stay
+         put while the field being typed into sits under the IME. Asking for
+         resizes-content makes the layout viewport follow the keyboard, which
+         is what those sheets measure against. Engines that do not implement
+         the key ignore it; inside the Android app they are covered anyway,
+         because the shell shrinks the webview by the IME inset itself
+         (MainActivity.applyBarInsets). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
@@ -49,22 +65,52 @@
     <div id="app"></div>
     <script>
       // Theme globals read by hikari's theme module at import time (before
-      // any bundle code runs): "ocean" is the WoWSP brand default. Also
-      // migrate the pre-hikari localStorage keys once so existing installs
-      // keep their mode/preset choice.
-      window.__celestiaThemes = { ocean: true };
-      window.__celestiaDefaultTheme = "ocean";
+      // any bundle code runs): a stored id that no longer resolves (e.g. the
+      // retired "ocean" brand preset) drops to __celestiaDefaultTheme at boot.
+      //
+      // "nord" is the boot look WoWSP has always shipped, and it holds on
+      // both sides of hikari's stock-preset collapse: the four-preset table
+      // (0.55.60 and earlier — 0.55.53 is what this package installs today)
+      // resolves it to Nord. The collapsed table (0.55.61, same 0.55.x minor
+      // and therefore already inside our ^0.55.53 range) retired the id, so
+      // there hikari falls back to its own `default`. That fallback is no
+      // regression in the DARK: `default.dark` IS Nord's palette, slot for
+      // slot (18/18 measured identical). It does change the LIGHT scheme —
+      // `default.light` is the retired Synthwave '84 light pair (11 of 18
+      // slots differ from nord.light) and the default mode is "system", so a
+      // daytime boot lands there; that palette is the library's own
+      // replacement and WoWSP cannot keep nord.light without re-shipping it.
+      // Naming "default" here instead would regress today's build: the
+      // four-preset table carries no such id and would drop to Synthwave '84
+      // (verified against the installed 0.55.53: it resolves synthwave84).
+      window.__celestiaDefaultTheme = "nord";
+      // One-shot migration of the pre-hikari localStorage keys so existing
+      // installs keep their mode/preset choice.
       (function () {
         try {
-          if (!localStorage.getItem("hikari-theme-mode") && localStorage.getItem("wowsp-theme-mode")) {
-            localStorage.setItem("hikari-theme-mode", localStorage.getItem("wowsp-theme-mode"));
+          // Seed hikari's own mode key from WoWSP's authoritative one. Only
+          // VALID values are copied — a corrupt value (e.g. left behind by
+          // an upgrade) must not propagate into hikari's key; "solar" is
+          // WoWSP's word for hikari's sun-following "system" mode, and the
+          // retired "system" value maps straight through.
+          if (!localStorage.getItem("hikari-theme-mode")) {
+            var mode = localStorage.getItem("wowsp-theme-mode");
+            if (mode === "dark" || mode === "light") {
+              localStorage.setItem("hikari-theme-mode", mode);
+            } else if (mode === "solar" || mode === "system") {
+              localStorage.setItem("hikari-theme-mode", "system");
+            }
           }
           if (!localStorage.getItem("hikari-theme")) {
             var preset = localStorage.getItem("wowsp-theme-preset");
-            if (preset === "ocean" || preset === "nord" || preset === "gruvbox" || preset === "tokyonight") {
+            if (preset === "nord" || preset === "gruvbox" || preset === "tokyonight" || preset === "synthwave84") {
               localStorage.setItem("hikari-theme", preset);
             }
           }
+          // The pre-hikari preset key is dead either way — its value now
+          // lives on in "hikari-theme" (or was invalid). Sweep it so stale
+          // state cannot accumulate across upgrades.
+          localStorage.removeItem("wowsp-theme-preset");
         } catch (e) { /* private mode etc. — fall back to defaults */ }
       })();
     </script>

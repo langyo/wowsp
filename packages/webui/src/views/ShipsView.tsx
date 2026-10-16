@@ -1,20 +1,23 @@
-import { computed, defineComponent, ref, Transition, watch } from "vue";
+import { computed, defineComponent, onUnmounted, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { AlertTriangle, RotateCcw, Ship } from "@lucide/vue";
+import { AlertTriangle, ArrowLeftRight, GitBranch, List, RotateCcw, Ship } from "@lucide/vue";
 
-import { HAlert, HButton, HInput, HSpinner, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HkAlert, HkButton, HkInput, HkScrollContainer, HkSpinner, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
 import TechTreeView from "@/components/ships/TechTreeView";
 import ShipCompareView from "@/components/ships/ShipCompareView";
+import { nationNodes } from "@/utils/techTreeData";
 import { resolveShipImage } from "@/utils/shipImages";
 import { recordShipImageFailure, shouldShowImageBanner } from "@/utils/shipImageFailures";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
+import { useShipsUiStore, type ShipsViewMode, type ShipsTreeRealm } from "@/stores/shipsUi";
 import { useTrendsStore } from "@/stores/trends";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
@@ -22,6 +25,8 @@ import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
 import { winrateColor } from "@/utils/winrate";
 import { shipRarity, RARITY_VARIANT, RARITY_CARD_MOD, RARITY_ORDER, type Rarity } from "@/utils/shipRarity";
+import { authoritativeEvent } from "@/utils/shipEventData";
+import { eventLabel, eventTooltip } from "@/utils/shipEvents";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import "./ShipsView.scss";
@@ -44,10 +49,14 @@ export default defineComponent({
     const accounts = useAccountStore();
     const config = useConfigStore();
     const gameStatus = useGameStatusStore();
+    const loadingTasks = useLoadingTasksStore();
+    const shipsUi = useShipsUiStore();
     const toast = useToast();
 
     // ── view mode (tech-tree vs list vs compare) ──────────────────────
-    const viewMode = ref<"tree" | "grid" | "compare">("tree");
+    // The mode itself lives in shipsUi: its switch sits in the app title
+    // bar on desktop (AppTitleBar) and in the page header on phones —
+    // both write the one shared state.
     const treeNation = ref<string>("japan");
     /** True once the first load attempt completes (success or fail). */
     const firstLoadDone = ref(false);
@@ -63,20 +72,29 @@ export default defineComponent({
       }
     }
 
-    // Show toast whenever encyclopedia is loading.
-    let loadToastId = 0;
+    // Persistent progress on the title-bar chip whenever the encyclopedia
+    // is loading.
+    let loadTaskId = 0;
     watch(
       () => encyclopedia.loading,
       (v) => {
         if (v) {
-          loadToastId = toast.loading(t("ships.loading"));
-        } else if (loadToastId) {
-          toast.remove(loadToastId);
-          loadToastId = 0;
+          loadTaskId = loadingTasks.begin(t("ships.loading"));
+        } else if (loadTaskId) {
+          loadingTasks.end(loadTaskId);
+          loadTaskId = 0;
         }
       },
       { immediate: true },
     );
+    // A mid-load unmount stops the watcher before the false transition —
+    // release the chip here or it would stick until the next load.
+    onUnmounted(() => {
+      if (loadTaskId) {
+        loadingTasks.end(loadTaskId);
+        loadTaskId = 0;
+      }
+    });
 
     // Auto-load on mount if not already loaded for this realm.
     if (encyclopedia.ships.length === 0) {
@@ -139,6 +157,22 @@ export default defineComponent({
         selectedTiers.value.size > 0 ||
         selectedRarities.value.size > 0,
     );
+
+    /** Nations the current realm's tree actually carries lines for — the
+     *  tree rail must not offer a nation whose whole branch set belongs to
+     *  the other client (the Commonwealth lines are WG-only, so Lesta mode
+     *  shows no tree there at all). The grid's nation filter chips keep the
+     *  full list: premium strays of either client stay listed there. */
+    const treeNations = computed(() =>
+      encyclopedia.nations.filter((n) => nationNodes(n, shipsUi.treeRealm).length > 0),
+    );
+
+    // A realm switch can retire the selected nation from the rail (selecting
+    // the Commonwealth, then flipping to Lesta) — fall back to the first
+    // nation the new realm grows instead of rendering its empty-tree state.
+    watch(treeNations, (list) => {
+      if (list.length > 0 && !list.includes(treeNation.value)) treeNation.value = list[0];
+    });
 
     const filteredShips = computed(() => {
       const q = searchText.value.trim().toLowerCase();
@@ -232,23 +266,51 @@ export default defineComponent({
         <header class="ships-view__header">
           <h1 class="ships-view__title">{t("ships.title")}</h1>
           <div class="ships-view__header-right">
-            <HTabs
-              variant="segmented"
-              modelValue={viewMode.value}
-              onUpdate:modelValue={(v: string) => (viewMode.value = v as "tree" | "grid" | "compare")}
-              tabs={[
-                { key: "tree", label: t("ships.viewMode.tree") },
-                { key: "grid", label: t("ships.viewMode.grid") },
-                { key: "compare", label: t("ships.viewMode.compare") },
-              ]}
-            />
-            {/* Passive badge: the realm is followed from the sidebar's app-wide
-                server selector, so it's shown here read-only. */}
-            <div class="ships-view__realm">
-              <HTag variant="info" size="sm">{accounts.activeRealm.toUpperCase()}</HTag>
-              <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+            {/* The view-mode switch rides the app title bar on desktop
+                (≥768px — AppTitleBar's centered pill); this header copy is
+                the phone-layout fallback, where the bar hosts the nav
+                drawer controls instead. Writes the shared shipsUi state. */}
+            <div class="ships-view__tabs">
+              <HkTabs
+                variant="segmented"
+                modelValue={shipsUi.viewMode}
+                onUpdate:modelValue={(v: string) => (shipsUi.viewMode = v as ShipsViewMode)}
+                tabs={[
+                  {
+                    key: "tree",
+                    label: t("ships.viewMode.tree"),
+                    icon: <GitBranch size={14} />,
+                  },
+                  {
+                    key: "grid",
+                    label: t("ships.viewMode.grid"),
+                    icon: <List size={14} />,
+                  },
+                  {
+                    key: "compare",
+                    label: t("ships.viewMode.compare"),
+                    icon: <ArrowLeftRight size={14} />,
+                  },
+                ]}
+              />
+            </div>
+            {/* Tech-tree branch source: WG (reference topology, wowsinfo
+                bridge) vs Lesta (the client's own research graph). Replaces
+                the old passive realm tag — the data realm still follows the
+                sidebar's app-wide server selector. */}
+            <div class="ships-view__realm" data-hint={t("ships.techTree.realmHint")}>
+              <HkTabs
+                variant="segmented"
+                modelValue={shipsUi.treeRealm}
+                onUpdate:modelValue={(v: string) => shipsUi.setTreeRealm(v as ShipsTreeRealm)}
+                tabs={[
+                  { key: "wg", label: "WG" },
+                  { key: "lesta", label: "Lesta" },
+                ]}
+              />
+              <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
                 <RotateCcw size={12} /> {t("ships.reload")}
-              </HButton>
+              </HkButton>
             </div>
           </div>
         </header>
@@ -267,15 +329,15 @@ export default defineComponent({
           <div class="ships-view__error-banner">
             <AlertTriangle size={16} />
             <span>{encyclopedia.error}</span>
-            <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+            <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
               <RotateCcw size={12} /> {t("ships.retry")}
-            </HButton>
+            </HkButton>
           </div>
         ) : null}
 
         {/* ── image banner (shown above content when portraits fail en masse) ── */}
         {showImageBanner.value ? (
-          <HAlert
+          <HkAlert
             class="ships-view__image-banner"
             variant="warning"
             size="sm"
@@ -291,25 +353,31 @@ export default defineComponent({
                 {t("ships.banner.action")}
               </RouterLink>
             </span>
-          </HAlert>
+          </HkAlert>
         ) : null}
 
         {/* ── scrollable content body ──
-            Tree mode strips the body's padding and scroll: the tree region
-            below becomes the single edge-to-edge scroller so its horizontal
-            scrollbar hugs the window's bottom/left/right edges. */}
-        <div class={["ships-view__body", viewMode.value === "tree" ? "ships-view__body--tree" : ""]}>
+            hikari's container owns the scrollbar (auto-hiding overlay
+            track); the page clearance rides on __body-inner so it scrolls
+            with the content, and the filter bar keeps pinning sticky to
+            the viewport top. Tree mode (--tree) stops this container from
+            scrolling at all — the tree body inside becomes the single
+            edge-to-edge scroller for both axes. */}
+        <HkScrollContainer
+          class={["ships-view__body", shipsUi.viewMode === "tree" ? "ships-view__body--tree" : ""]}
+        >
+        <div class="ships-view__body-inner">
 
         {/* ── loading state ── */}
         {encyclopedia.loading && encyclopedia.ships.length === 0 ? (
-          <div class="ships-view__status"><HSpinner center size="md" /></div>
+          <div class="ships-view__status"><HkSpinner center size="md" /></div>
         ) : null}
 
         {/* ── filter bar (grid mode only, sticky inside scroll body) ── */}
-        {viewMode.value === "grid" ? (
+        {shipsUi.viewMode === "grid" ? (
           <div class="ships-view__filters">
             <div class="ships-view__filter-top">
-              <HInput
+              <HkInput
                 modelValue={searchText.value}
                 onUpdate:modelValue={(v: string) => (searchText.value = v)}
                 placeholder={t("ships.search")}
@@ -399,42 +467,49 @@ export default defineComponent({
             <div class="ships-view__status ships-view__status--error" key="error">
               <AlertTriangle size={24} />
               <p>{encyclopedia.error}</p>
-              <HButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
+              <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
                 <RotateCcw size={12} /> {t("ships.reload")}
-              </HButton>
+              </HkButton>
             </div>
-          ) : viewMode.value === "tree" ? (
-            <div class="ships-view__tree-body" key="tree">
-              {/* nation rail — vertical list of faction crests */}
-              <aside class="ships-view__nation-rail">
-                {encyclopedia.nations.map((n) => (
-                  <button
-                    class={[
-                      "ships-view__nation-btn",
-                      treeNation.value === n ? "ships-view__nation-btn--on" : "",
-                    ]}
-                    data-hint={nationLabel(n)}
-                    onClick={() => (treeNation.value = n)}
-                  >
-                    <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />
-                    <span class="ships-view__nation-name">{nationLabel(n)}</span>
-                  </button>
-                ))}
-              </aside>
-              {/* the tree itself */}
-              <div class="ships-view__tree-canvas">
-                {treeNation.value ? (
-                  <TechTreeView
-                    nation={treeNation.value}
-                    byId={shipsById.value}
-                    onOpen={(ship: ShipInfo) => openDetail(ship)}
-                  />
-                ) : (
-                  <div class="ships-view__status">{t("ships.empty")}</div>
-                )}
+          ) : shipsUi.viewMode === "tree" ? (
+            /* The single both-axis scroller: hikari's overlay bars paint
+                over the scrollport's bottom/right edges; the row layout
+                (rail + canvas) lives on __tree-inner so the nation rail
+                keeps sticking to the viewport's top-left corner. */
+            <HkScrollContainer class="ships-view__tree-body" axis="both" key="tree">
+              <div class="ships-view__tree-inner">
+                {/* nation rail — vertical list of faction crests */}
+                <aside class="ships-view__nation-rail">
+                  {treeNations.value.map((n) => (
+                    <button
+                      class={[
+                        "ships-view__nation-btn",
+                        treeNation.value === n ? "ships-view__nation-btn--on" : "",
+                      ]}
+                      data-hint={nationLabel(n)}
+                      onClick={() => (treeNation.value = n)}
+                    >
+                      <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />
+                      <span class="ships-view__nation-name">{nationLabel(n)}</span>
+                    </button>
+                  ))}
+                </aside>
+                {/* the tree itself */}
+                <div class="ships-view__tree-canvas">
+                  {treeNation.value ? (
+                    <TechTreeView
+                      nation={treeNation.value}
+                      realm={shipsUi.treeRealm}
+                      byId={shipsById.value}
+                      onOpen={(ship: ShipInfo) => openDetail(ship)}
+                    />
+                  ) : (
+                    <div class="ships-view__status">{t("ships.empty")}</div>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : viewMode.value === "compare" ? (
+            </HkScrollContainer>
+          ) : shipsUi.viewMode === "compare" ? (
             <ShipCompareView key="compare" />
           ) : filteredShips.value.length === 0 ? (
             <div class="ships-view__status" key="empty">{t("ships.empty")}</div>
@@ -444,6 +519,7 @@ export default defineComponent({
                 const battles = shipBattles(ship.shipId);
                 const wr = shipWr(ship.shipId);
                 const rarity = shipRarity(ship); // RaritySignals fields present on ShipInfo
+                const eventId = authoritativeEvent(ship.shipId);
                 return (
                   <div
                     class={[
@@ -473,9 +549,15 @@ export default defineComponent({
                       <span class="ship-card__name">{encyclopedia.shipDisplayName(ship)}</span>
                     </div>
                   <div class="ship-card__tags">
-                    <HTag variant="default" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</HTag>
+                    <HkTag variant="default" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</HkTag>
                     <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} variant="flag" size="sm" />
-                    <HTag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</HTag>
+                    {eventId ? (
+                      <span class="ship-card__event-tag" title={eventTooltip(eventId)}>
+                        <HkTag variant={RARITY_VARIANT[rarity]} size="sm">{eventLabel(eventId)}</HkTag>
+                      </span>
+                    ) : (
+                      <HkTag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</HkTag>
+                    )}
                   </div>
                   <div class="ship-card__stats">
                     {hp(ship) != null ? (
@@ -516,6 +598,7 @@ export default defineComponent({
           )}
         </Transition>
         </div>
+        </HkScrollContainer>
 
         {/* ── detail modal ── */}
         <ShipDetailModal

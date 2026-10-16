@@ -4,7 +4,26 @@
  *  the Europe rail showed "no tech tree"). */
 import { describe, expect, it } from "vitest";
 
-import { nationNodes, nationTree } from "./techTreeData";
+import branchesRaw from "@/data/tech_tree_branch_features.json";
+import {
+  allTechTreeNodes,
+  nationCrossLinks,
+  nationNodes,
+  nationTree,
+  techTreeBranchHasContent,
+  techTreeBranchInfo,
+  techTreeCardIcon,
+  techTreeCategoryIcon,
+  techTreeFeatureCategoryText,
+  techTreeFeatureNote,
+  techTreeFeatureTitle,
+  techTreeFeatChips,
+  techTreeNode,
+  techTreeShipBranch,
+  treeNextShipIds,
+  WG_EXCLUSIVE_TREE_SHIP_IDS,
+  type TechTreeRealm,
+} from "./techTreeData";
 
 /** The 13 nation codes the encyclopedia rail passes down (WG API spelling). */
 const WG_NATIONS = [
@@ -49,3 +68,265 @@ describe("nationTree", () => {
     }
   });
 });
+
+describe("nationTree per realm (wg bridge vs lesta gameparams)", () => {
+  it("yields a Lesta tree for every nation the rail can select, save Commonwealth", () => {
+    // Lesta's client has no Commonwealth research line at all — the view
+    // renders its empty state there — every other nation carries lines.
+    for (const nation of WG_NATIONS) {
+      const groups = nationTree(nation, "lesta");
+      if (nation === "commonwealth") {
+        expect(groups.some((g) => g.branches.length > 0), nation).toBe(false);
+      } else {
+        expect(groups.some((g) => g.branches.length > 0), nation).toBe(true);
+      }
+    }
+  });
+
+  it("keeps the realms' divergent Pan-American lines mid-ladder", () => {
+    // The two clients split here: WG grows the Pan-Am battleships as a fork
+    // off tier VIII, Lesta instead runs a destroyer line that only starts at
+    // tier V. Both are mid-tree line starts, so the shared tier ladder must
+    // anchor them on their own row, never at the top of the section.
+    const wgBb = nationTree("pan_america", "wg").find((g) => g.type === "Battleship");
+    expect(wgBb).toBeDefined();
+    expect(wgBb!.branches.length).toBeGreaterThan(0);
+    for (const b of wgBb!.branches) {
+      const tiers = b.ships.map((sid) => techTreeNode(sid, "wg")!.tier);
+      expect(tiers[0]).toBe(8);
+      expect(tiers).toEqual([...tiers].sort((a, z) => a - z));
+    }
+
+    const lestaBb = nationTree("pan_america", "lesta").find((g) => g.type === "Battleship");
+    expect(lestaBb).toBeUndefined();
+    const lestaDd = nationTree("pan_america", "lesta").find((g) => g.type === "Destroyer");
+    expect(lestaDd).toBeDefined();
+    for (const b of lestaDd!.branches) {
+      const tiers = b.ships.map((sid) => techTreeNode(sid, "lesta")!.tier);
+      expect(tiers[0]).toBe(5);
+      expect(tiers).toEqual([...tiers].sort((a, z) => a - z));
+    }
+  });
+
+  it("keeps supership continuations on the Lesta tree", () => {
+    // gameparams mode must retain group "superShip" — the ★ tier-11 rows
+    // continue the tier-10 research chains on both realms.
+    const nodes = Object.values(allTechTreeNodes("lesta"));
+    const supers = nodes.filter((n) => n.tier >= 11);
+    expect(supers.length).toBeGreaterThan(0);
+    for (const s of supers) {
+      expect(
+        nodes.some((n) => n.nextShips.includes(s.shipId)),
+        `${s.index} has no research parent`,
+      ).toBe(true);
+    }
+  });
+
+  it("keeps the unknown realm on the WG default", () => {
+    expect(techTreeNode(4276041040, "wg")).toEqual(techTreeNode(4276041040));
+  });
+});
+
+describe("WG_EXCLUSIVE_TREE_SHIP_IDS (realm-exclusive branches)", () => {
+  it("flags whole WG-only lines, e.g. the Commonwealth cruisers", () => {
+    // The Lesta client never grew the Commonwealth tree — every one of its
+    // nodes must hide from the Lesta-mode list.
+    const cw = nationNodes("commonwealth", "wg");
+    expect(cw.length).toBeGreaterThan(0);
+    for (const n of cw) expect(WG_EXCLUSIVE_TREE_SHIP_IDS.has(n.shipId), n.index).toBe(true);
+  });
+
+  it("holds only researchable WG nodes the Lesta tree has no node for", () => {
+    // Contract pin for the encyclopedia filter: every id must resolve to a
+    // WG-tree node, that node must be researchable (premium/special side
+    // leaves are exempt — their Lesta availability is unknowable), and the
+    // Lesta tree must not carry it.
+    const lestaTree = allTechTreeNodes("lesta");
+    expect(WG_EXCLUSIVE_TREE_SHIP_IDS.size).toBeGreaterThan(0);
+    for (const id of WG_EXCLUSIVE_TREE_SHIP_IDS) {
+      const node = techTreeNode(id, "wg");
+      expect(node, String(id)).not.toBeNull();
+      expect(node!.isPremium || node!.isSpecial, node!.index).toBe(false);
+      expect(lestaTree[String(id)], node!.index).toBeUndefined();
+    }
+  });
+
+  it("never flags ships both clients share", () => {
+    // 河内 (PJSB001) is a shared low-tier hull present in both trees.
+    const kawachi = Object.values(allTechTreeNodes("wg")).find((n) => n.index === "PJSB001")!;
+    expect(kawachi).toBeDefined();
+    expect(WG_EXCLUSIVE_TREE_SHIP_IDS.has(kawachi.shipId)).toBe(false);
+  });
+});
+
+describe("nationTree section order", () => {
+  it("lays sections out as BB, CA, DD, SS, CV", () => {
+    // Carriers sit farthest right: their cross-type edges leave the DD
+    // section at tier IV, sailing over the SS section's empty upper rows
+    // (sub lines start at tier VI); submarines sit next to the DD section
+    // their lines come from. Locks the swap from the DD|CV|SS order that
+    // ran DD→SS runs behind the CV section's tier-VI cards.
+    const full = ["Battleship", "Cruiser", "Destroyer", "Submarine", "AirCarrier"];
+    const order = (nation: string, realm: TechTreeRealm = "wg"): string[] => {
+      const present = new Set(nationNodes(nation, realm).map((n) => n.type));
+      return nationTree(nation, realm)
+        .map((g) => g.type)
+        .filter((t) => present.has(t));
+    };
+    // Some nations have no submarine line at all (pan_asia) — the assertion
+    // is on the relative order of whatever sections the nation carries.
+    for (const nation of ["japan", "usa", "germany", "uk", "pan_asia"]) {
+      expect(order(nation), nation).toEqual(full.filter((t) => order(nation).includes(t)));
+    }
+  });
+});
+
+describe("nationTree fork column order", () => {
+  it("walks fork children in the game's nextShips order", () => {
+    // IJN DD: 矶风 (PJSD003) forks into two destroyer lines plus the CV
+    // hand-off. The first nextShips entry owns the leftmost column; the
+    // old LIFO branch walk rendered the lines in the opposite order.
+    const nodes = allTechTreeNodes("wg");
+    const isokaze = Object.values(nodes).find((n) => n.index === "PJSD003")!;
+    const firstLineId = Object.values(nodes).find((n) => n.index === "PJSD105")!.shipId;
+    const secondLineId = Object.values(nodes).find((n) => n.index === "PJSD004")!.shipId;
+    expect(treeNextShipIds(isokaze).indexOf(firstLineId))
+      .toBeLessThan(treeNextShipIds(isokaze).indexOf(secondLineId));
+
+    const dd = nationTree("japan").find((g) => g.type === "Destroyer")!;
+    const branchOf = (sid: number): number =>
+      dd.branches.findIndex((b) => b.ships.includes(sid));
+    const firstIdx = branchOf(firstLineId);
+    const secondIdx = branchOf(secondLineId);
+    expect(firstIdx).toBeGreaterThanOrEqual(0);
+    expect(secondIdx).toBeGreaterThanOrEqual(0);
+    expect(firstIdx).toBeLessThan(secondIdx);
+  });
+});
+
+describe("treeNextShipIds", () => {
+  it("drops premium/special side leaves from the research continuation", () => {
+    // Contract pin: the WG-tree pipeline (build_techtree.py second pass) CAN
+    // hang premium/special leaves off a node's nextShips, and the research
+    // continuations — fork counts, link hints, cross links — must never
+    // count them, whichever bundled tree carries one.
+    for (const realm of ["wg", "lesta"] as const) {
+      for (const n of Object.values(allTechTreeNodes(realm))) {
+        for (const id of treeNextShipIds(n, realm)) {
+          const child = techTreeNode(id, realm)!;
+          expect(child.isPremium, `${realm} ${n.index} -> ${child.index}`).toBe(false);
+          expect(child.isSpecial, `${realm} ${n.index} -> ${child.index}`).toBe(false);
+        }
+      }
+    }
+  });
+});
+
+describe("nationCrossLinks", () => {
+  it("surfaces the IJN cross-type hand-offs the sections need bridged", () => {
+    const links = nationCrossLinks("japan");
+    const byPair = (fromIdx: string, toIdx: string): boolean => {
+      const from = Object.values(allTechTreeNodes("wg")).find((n) => n.index === fromIdx)!;
+      const to = Object.values(allTechTreeNodes("wg")).find((n) => n.index === toIdx)!;
+      return links.some((l) => l.from === from.shipId && l.to === to.shipId);
+    };
+    // 筑摩 (II cruiser) → 海风 (II destroyer), 天龙 (III) → 河内 (III BB),
+    // 矶风 (IV DD) → 凤翔 (IV CV): the three links the tree view must draw
+    // across its type-section gap.
+    expect(byPair("PJSC035", "PJSD002")).toBe(true);
+    expect(byPair("PJSC015", "PJSB001")).toBe(true);
+    expect(byPair("PJSD003", "PJSA104")).toBe(true);
+  });
+
+  it("only links researchable ships of different types within the nation", () => {
+    for (const realm of ["wg", "lesta"] as const) {
+      for (const nation of WG_NATIONS) {
+        for (const l of nationCrossLinks(nation, realm)) {
+          const from = techTreeNode(l.from, realm)!;
+          const to = techTreeNode(l.to, realm)!;
+          expect(from.isPremium || from.isSpecial).toBe(false);
+          expect(to.isPremium || to.isSpecial).toBe(false);
+          expect(to.type, `${realm} ${from.index} -> ${to.index}`).not.toBe(from.type);
+          expect(to.nation).toBe(from.nation);
+        }
+      }
+    }
+  });
+});
+
+describe("branch features", () => {
+  it("maps the JP cruiser split onto distinct branches", () => {
+    const kuma = techTreeNode(
+      Number(Object.values(allTechTreeNodes()).find((n) => n.index === "PJSC013")!.shipId),
+    )!;
+    const agano = techTreeNode(
+      Number(Object.values(allTechTreeNodes()).find((n) => n.index === "PJSC205")!.shipId),
+    )!;
+    expect(techTreeShipBranch(kuma.shipId)).toBe("JP_CA");
+    expect(techTreeShipBranch(agano.shipId)).toBe("JP_CL");
+  });
+
+  it("splits a star-capped column into the line branch plus the supership branch", () => {
+    const seattle = techTreeNode(
+      Number(Object.values(allTechTreeNodes()).find((n) => n.index === "PASC109")!.shipId),
+    )!;
+    const annapolis = techTreeNode(
+      Number(Object.values(allTechTreeNodes()).find((n) => n.index === "PASC111")!.shipId),
+    )!;
+    expect(techTreeShipBranch(seattle.shipId)).toBe("US_CA_LIGHT");
+    expect(techTreeShipBranch(annapolis.shipId)).toBe("US_CA_ANNAPOLIS");
+  });
+
+  it("resolves branch records with a type-generic fallback and content checks", () => {
+    const light = techTreeBranchInfo("US_CA_LIGHT");
+    expect(light!.groups.length).toBeGreaterThan(0);
+    // The type-generic sets ship card icons only — never claim content.
+    expect(techTreeBranchHasContent("US_CA_EARLY", "Cruiser")).toBe(false);
+    expect(techTreeBranchInfo("US_CA_EARLY", "Cruiser")).not.toBeNull();
+    expect(techTreeBranchInfo("BRANCH_THAT_DOES_NOT_EXIST", "Cruiser")).not.toBeNull();
+    expect(techTreeBranchHasContent("BRANCH_THAT_DOES_NOT_EXIST", "Cruiser")).toBe(false);
+  });
+
+  it("marks feature sentences good/bad and keeps unknown keys blank", () => {
+    expect(techTreeFeatChips(["FEAT_GOOD_TORP_DMG", "FEAT_BAD_TORP_DMG"])).toEqual([
+      { text: "High torpedo damage", tone: "good" },
+      { text: "Low torpedo damage", tone: "bad" },
+    ]);
+    expect(techTreeFeatChips(["FEAT_KEY_NO_ONE_CURATED"])).toEqual([]);
+  });
+});
+
+describe("branch feature icons and official texts", () => {
+  it("resolves bundled card and category icon URLs", () => {
+    const url = techTreeCardIcon("MAIN_HIGHFIREPOWER");
+    expect(url).toMatch(/images\/tech-tree-features\/main_highfirepower(_small)?\.png$/);
+    expect(techTreeCategoryIcon("main_caliber")).toMatch(/category_main_caliber\.png$/);
+    expect(techTreeCardIcon("MAIN_KEY_WITH_NO_ICON")).toBeNull();
+  });
+
+  it("carries the official popup title, note and category labels", () => {
+    expect(techTreeFeatureTitle()).toBe("Warship characteristics");
+    expect(techTreeFeatureNote()).toContain("same-tier");
+    expect(techTreeFeatureCategoryText("main_caliber")).toBe("Main battery");
+    // Unknown categories degrade to the raw code, never blank.
+    expect(techTreeFeatureCategoryText("no_such_category")).toBe("no_such_category");
+  });
+
+  it("gives every branch with groups resolvable card icons or none, never broken URLs", () => {
+    for (const info of Object.values(techTreeBranchesForTest())) {
+      for (const key of info.card) {
+        const url = techTreeCardIcon(key);
+        expect(url === null || url.startsWith("images/") || url.includes("images/tech-tree-features/")).toBe(true);
+      }
+    }
+  });
+});
+
+function techTreeBranchesForTest(): Record<string, { card: string[]; groups: [string, string[]][] }> {
+  // Local import indirection keeps the data module single-sourced.
+  return (branchFeaturesForTest() as { branches: Record<string, { card: string[]; groups: [string, string[]][] }> }).branches;
+}
+
+function branchFeaturesForTest(): unknown {
+  return branchesRaw;
+}

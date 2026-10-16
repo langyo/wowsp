@@ -15,3 +15,9 @@
 # 설계
 
 - [아키텍처 설계](./designs/architecture.md)
+- [게임 내 전적 플러그인](./designs/ingame-stats-plugin.md)
+
+# License
+
+- [Free & Open-Source Warning](./license/free-warning.md)
+- [Usage Telemetry Notice](./license/usage-telemetry.md)

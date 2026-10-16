@@ -1,0 +1,244 @@
+@use "../../features/holographic/hudTokens" as hud;
+
+/* Tactics page - the plan board's full-bleed host. Top bar (map/mode,
+   lineup, profile) over a three-column workspace: branch tree | square plan
+   stage | side minimap. The flanking columns only exist on wide windows
+   (TacticsView mounts/unmounts them via matchMedia); under 1180px the
+   stage's teleported widgets fall back to their in-stage spots. */
+.tac-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  gap: 0.5rem;
+}
+
+/* -- Top bar ------------------------------------------------------------- */
+.tac-topbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 34px;
+
+  &__map {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0.8rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-text));
+    font-size: var(--text-sm);
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 45%);
+    }
+  }
+
+  &__map-name {
+    font-weight: 600;
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__map-mode {
+    padding: 0.05rem 0.5rem;
+    background: rgb(var(--color-primary) / 12%);
+    border-radius: var(--radius-full);
+    color: rgb(var(--color-primary));
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__profile-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  /* The archive tag: shows the formal (file-name-derived) profile label;
+     the dot marks a confirmed silent save target. Click = rename. */
+  &__profile-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 22rem;
+    padding: 0.3rem 0.75rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-full);
+    color: rgb(var(--color-text));
+    font-size: var(--text-sm);
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 45%);
+    }
+
+    svg {
+      flex-shrink: 0;
+      color: rgb(var(--color-muted));
+    }
+  }
+
+  &__profile-tag-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  &__profile-tag-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: rgb(var(--color-success));
+  }
+
+  /* Rename popover content. */
+  &__rename {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem;
+    min-width: 18rem;
+  }
+
+  &__rename-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.3rem 0.6rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-sm);
+    color: rgb(var(--color-text));
+    font-size: var(--text-sm);
+    font-family: inherit;
+    outline: none;
+
+    &::placeholder {
+      color: rgb(var(--color-muted));
+    }
+
+    &:focus {
+      border-color: rgb(var(--color-primary) / 60%);
+    }
+  }
+}
+
+/* -- Workspace (the flanked map row) -------------------------------------- */
+.tac-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0.6rem;
+  align-items: stretch;
+
+  /* Dock for the teleported branch tree (PlanSlotsBar's tree layout) —
+     the tree is itself the panel's hikari scroll container (auto-hiding
+     overlay track floating just inside this padding) and shrinks inside
+     the column when it overflows (a scroll container's automatic minimum
+     size is zero), so the dock keeps only its box framing. */
+  &__branch {
+    width: 216px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.65rem 0.6rem;
+    background: rgb(var(--color-surface) / 50%);
+    background: rgb(var(--color-surface) / min(100%, calc(50% * var(--ui-opacity, 1))));
+    border: 1px solid rgb(var(--color-border) / 18%);
+    border-radius: var(--radius-md);
+  }
+
+  &__stage {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* The teleported overview minimap lives here: a square card, vertically
+     bottom-aligned (it is a "where am I" instrument, not the main stage).
+     container-type lets the card cap its width against the panel HEIGHT —
+     on a short window an uncapped card would be flex-squashed and its
+     zoom bar clipped by the card's own overflow:hidden. */
+  &__side {
+    width: 216px;
+    flex-shrink: 0;
+    container-type: size;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding: 0.65rem 0.6rem;
+    background: rgb(var(--color-surface) / 50%);
+    background: rgb(var(--color-surface) / min(100%, calc(50% * var(--ui-opacity, 1))));
+    border: 1px solid rgb(var(--color-border) / 18%);
+    border-radius: var(--radius-md);
+
+    .plan-stage__minimap {
+      position: static;
+      /* Never flex-squash (the bar must stay visible); shrink by WIDTH
+         instead — the canvas keeps its square, the card just narrows until
+         square + bar fit the panel's inner height (2.4rem ≈ bar + borders). */
+      flex-shrink: 0;
+      width: min(100%, calc(100cqh - 2.4rem));
+      margin-inline: auto;
+    }
+  }
+}
+
+/* -- The board dock (toolbar + timeline), FULL WIDTH under the workspace:
+      the branch/minimap panels frame the map only. The teleported
+      .plan-stage__dock is the board's own landing element. */
+.tac-dock-row {
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.tac-dock-row .plan-stage__dock {
+  /* In-stage the dock sits under the square and inherits the stage's HUD
+     palette; teleported out here it must carry its own copy — the
+     toolbar/timeline tokens (--holo-hud-*, --tac-accent-rgb) otherwise
+     resolve to nothing. Same dark/light pair as .plan-stage. */
+  @include hud.holo-hud-dark;
+
+  padding: 0.45rem 0.6rem 0.5rem;
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-md);
+}
+
+:root[data-mode="light"] .tac-dock-row .plan-stage__dock {
+  @include hud.holo-hud-light;
+}
+
+/* Phone / narrow: no flanks (their docks are unmounted), the top bar wraps
+   and the profile name yields its width. */
+@media (max-width: 767px) {
+  .tac-topbar {
+    flex-wrap: wrap;
+
+    &__profile-tag {
+      max-width: 9rem;
+    }
+  }
+}

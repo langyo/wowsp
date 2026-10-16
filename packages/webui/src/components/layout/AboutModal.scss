@@ -120,8 +120,11 @@
 
   &__tech-tag {
     font-size: var(--text-2xs);
-    padding: 0.15rem 0.45rem;
-    border-radius: var(--radius-xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
     background: rgb(var(--color-primary) / 10%);
     color: rgb(var(--color-primary));
     border: none;
@@ -208,10 +211,21 @@
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
 
-    strong {
+    /* The group number opens the QQ join link through the backend. */
+    .about-modal__qq-number {
+      border: none;
+      background: transparent;
+      padding: 0;
       color: rgb(var(--color-primary));
       font-weight: 700;
       letter-spacing: 0.02em;
+      font-family: inherit;
+      font-size: inherit;
+      cursor: pointer;
+
+      &:hover {
+        text-decoration: underline;
+      }
     }
   }
 }

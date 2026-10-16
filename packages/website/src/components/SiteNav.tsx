@@ -3,7 +3,8 @@ import { useI18n } from "vue-i18n";
 import { RouterLink } from "vue-router";
 import { Languages, Download } from "@lucide/vue";
 import { LOCALE_OPTIONS, type Locale } from "@/locales";
-import { HButton, HMenu } from "@celestia-island/hikari";
+import { siteBase } from "@/composables/siteBase";
+import { HkButton, HkMenu } from "@celestia-island/hikari";
 import "./SiteNav.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -12,8 +13,8 @@ export default defineComponent({
   name: "SiteNav",
   setup() {
     const { t, locale } = useI18n();
-    const docsHref = `${import.meta.env.BASE_URL}docs/`;
-    const logoUrl = `${import.meta.env.BASE_URL}logo.webp`;
+    const docsHref = `${siteBase}docs/`;
+    const logoUrl = `${siteBase}logo.webp`;
 
     const scrolled = ref(false);
 
@@ -61,7 +62,7 @@ export default defineComponent({
           </RouterLink>
 
           <nav class="site-nav__links">
-            <a href={`${import.meta.env.BASE_URL}#features`} class="site-nav__link">{t("nav.features")}</a>
+            <a href={`${siteBase}#features`} class="site-nav__link">{t("nav.features")}</a>
             <RouterLink to="/mods" class="site-nav__link">{t("nav.mods")}</RouterLink>
             <RouterLink to="/download" class="site-nav__link">{t("nav.download")}</RouterLink>
             <a href={docsHref} class="site-nav__link">{t("nav.docs")}</a>
@@ -80,7 +81,7 @@ export default defineComponent({
                 <Languages size={14} />
                 <span class="site-nav__lang-code">{current.value.native}</span>
               </button>
-              <HMenu
+              <HkMenu
                 items={langItems.value}
                 open={langOpen.value}
                 anchorRef={langAnchor.value}
@@ -90,10 +91,10 @@ export default defineComponent({
             </span>
             <RouterLink to="/download" custom>
               {({ navigate }: { navigate: (e?: MouseEvent) => void }) => (
-                <HButton size="sm" class="site-nav__cta" onClick={navigate}>
+                <HkButton size="sm" class="site-nav__cta" onClick={navigate}>
                   <Download size={14} />
                   {t("nav.download")}
-                </HButton>
+                </HkButton>
               )}
             </RouterLink>
           </div>

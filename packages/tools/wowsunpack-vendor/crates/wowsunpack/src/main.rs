@@ -66,6 +66,16 @@ struct Args {
     #[clap(short, long)]
     idx_files: Vec<PathBuf>,
 
+    /// Mount a plain directory as the VFS root instead of the idx/pkg game
+    /// VFS. The directory must carry the already-extracted `content/...`
+    /// tree (plus `content/assets.bin` and a GameParams blob). This is the
+    /// Lesta (Мир кораблей) route: its vehicle packs are Oodle-compressed,
+    /// which the pkg reader cannot decode — extract the needed files first
+    /// (scripts/extract/lesta_extract.py + ooz) and point this at the
+    /// extraction. `--game-dir` still supplies translations when given.
+    #[clap(long)]
+    disk_root: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -484,7 +494,12 @@ fn run() -> Result<(), Report> {
 
     if args.idx_files.is_empty() {
         let bin_dir = game_dir.join("bin");
-        if game_dir.join("WorldOfWarships.exe").exists() {
+        // WG builds root their client at WorldOfWarships.exe; Lesta's Мир
+        // кораблей renamed the stub to Korabli.exe (the layout is otherwise
+        // identical).
+        let is_game_root =
+            game_dir.join("WorldOfWarships.exe").exists() || game_dir.join("Korabli.exe").exists();
+        if is_game_root {
             let paths = fs::read_dir(&bin_dir).ok();
             if let Some(paths) = paths {
                 for path in paths {
@@ -586,6 +601,14 @@ fn run() -> Result<(), Report> {
                 vfs = Some(pkg_vfs);
             }
         }
+    }
+
+    // --disk-root: a plain extracted tree replaces the idx/pkg VFS entirely.
+    // Used for clients whose packs the pkg reader cannot decode (Lesta's
+    // Oodle-compressed vehicles) — the needed files are extracted to disk
+    // first and mounted through PhysicalFS.
+    if let Some(disk_root) = args.disk_root.take() {
+        vfs = Some(VfsPath::new(vfs::PhysicalFS::new(disk_root)));
     }
 
     match args.command {
@@ -1235,15 +1258,39 @@ fn value_to_dict(value: pickled::Value) -> Option<pickled::Dict> {
 }
 
 fn read_game_params_bytes(vfs: &VfsPath) -> Result<Vec<u8>, Report> {
-    let mut game_params_data: Vec<u8> = Vec::new();
-    vfs.join("content/GameParams.data")
-        .context("VFS path error")?
-        .open_file()
-        .context("Could not find GameParams.data in WoWs package")?
-        .read_to_end(&mut game_params_data)
-        .context("Failed to read GameParams")?;
-
-    Ok(game_params_data)
+    // WG ships a single content/GameParams.data; Lesta (Мир кораблей) splits
+    // it into py2/py3 pickle variants — prefer the py2 one, which keeps the
+    // WG-compatible encoding the pickled crate decodes. A candidate that is
+    // merely absent (each client ships only its own variants) is skipped
+    // silently; candidates that exist but fail to read are all reported.
+    const CANDIDATES: [&str; 3] = [
+        "content/GameParams.data",
+        "content/GameParams_py2.data",
+        "content/GameParams_py3.data",
+    ];
+    let mut read_errors: Vec<String> = Vec::new();
+    for path in CANDIDATES {
+        let Ok(node) = vfs.join(path) else { continue };
+        let mut file = match node.open_file() {
+            Ok(file) => file,
+            Err(e) => {
+                if !matches!(e.kind(), vfs::error::VfsErrorKind::FileNotFound) {
+                    read_errors.push(format!("{path}: {e}"));
+                }
+                continue;
+            },
+        };
+        let mut buf = Vec::new();
+        match file.read_to_end(&mut buf) {
+            Ok(_) if !buf.is_empty() => return Ok(buf),
+            Ok(_) => read_errors.push(format!("{path}: empty")),
+            Err(e) => read_errors.push(format!("{path}: read failed: {e}")),
+        }
+    }
+    if read_errors.is_empty() {
+        bail!("Could not find GameParams.data in WoWs package")
+    }
+    bail!("Failed to read GameParams: {}", read_errors.join("; "))
 }
 
 fn load_game_params(vfs: &VfsPath) -> Result<pickled::Value, Report> {
@@ -2446,18 +2493,21 @@ fn write_armor_glb(path: &Path, positions: &[f32], colors: &[f32], indices: &[u3
     let idx_type: u32 = if n_verts <= 65535 { 5123 } else { 5125 };
     let is_u16 = idx_type == 5123;
 
-    fn pad4(mut data: Vec<u8>) -> Vec<u8> {
+    fn pad4(mut data: Vec<u8>, fill: u8) -> Vec<u8> {
         let pad = (4 - data.len() % 4) % 4;
-        data.resize(data.len() + pad, 0);
+        data.resize(data.len() + pad, fill);
         data
     }
 
-    let pos_bytes = pad4(positions.iter().flat_map(|x| x.to_le_bytes()).collect());
-    let col_bytes = pad4(colors.iter().flat_map(|x| x.to_le_bytes()).collect());
+    // Binary chunks pad with zeros; the JSON chunk MUST pad with spaces
+    // (glTF 2.0 GLB container rule) — NUL padding is rejected by strict JSON
+    // parsers and forced the loader-side `fixGlbPadding` workaround.
+    let pos_bytes = pad4(positions.iter().flat_map(|x| x.to_le_bytes()).collect(), 0);
+    let col_bytes = pad4(colors.iter().flat_map(|x| x.to_le_bytes()).collect(), 0);
     let idx_bytes = if is_u16 {
-        pad4(indices.iter().flat_map(|&i| (i as u16).to_le_bytes()).collect())
+        pad4(indices.iter().flat_map(|&i| (i as u16).to_le_bytes()).collect(), 0)
     } else {
-        pad4(indices.iter().flat_map(|i| i.to_le_bytes()).collect())
+        pad4(indices.iter().flat_map(|i| i.to_le_bytes()).collect(), 0)
     };
 
     let mut bin = Vec::new();
@@ -2484,7 +2534,7 @@ fn write_armor_glb(path: &Path, positions: &[f32], colors: &[f32], indices: &[u3
         ],
     });
     let json_str = serde_json::to_string(&json)?;
-    let json_bytes = pad4(json_str.as_bytes().to_vec());
+    let json_bytes = pad4(json_str.as_bytes().to_vec(), b' ');
     let total = 12 + 8 + json_bytes.len() + 8 + bin.len();
 
     let mut f = std::fs::File::create(path)?;
@@ -2798,4 +2848,53 @@ fn run_dump_uvs(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod glb_padding_tests {
+    use super::*;
+
+    /// The armor GLB's JSON chunk must parse as-is: the glTF 2.0 GLB container
+    /// rule pads it with
+    /// SPACES, and NUL padding is rejected by strict JSON parsers (it is what
+    /// forced the viewer's `fixGlbPadding` workaround on the shipped pack).
+    /// Several vertex counts are written so at least one run actually needs
+    /// padding (a single count may land 4-aligned by chance and pad nothing).
+    #[test]
+    fn armor_glb_json_chunk_parses_without_trimming() {
+        let mut saw_padding = false;
+        for n_verts in 1..=12usize {
+            let positions: Vec<f32> = (0..n_verts * 3).map(|i| i as f32 * 0.25).collect();
+            let colors: Vec<f32> = (0..n_verts * 4).map(|i| i as f32 * 0.125).collect();
+            let indices: Vec<u32> = (0..n_verts as u32).collect();
+            let path = std::env::temp_dir().join(format!("wowsp_armor_padding_{n_verts}.glb"));
+            write_armor_glb(&path, &positions, &colors, &indices).expect("write_armor_glb");
+
+            let data = std::fs::read(&path).expect("read back");
+            let _ = std::fs::remove_file(&path);
+            assert_eq!(&data[0..4], b"glTF", "magic");
+            let total = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
+            assert_eq!(total, data.len(), "declared length == file size");
+            let json_len = u32::from_le_bytes(data[12..16].try_into().unwrap()) as usize;
+            let chunk = &data[20..20 + json_len];
+            assert!(!chunk.is_empty(), "JSON chunk present");
+            assert!(
+                !chunk.contains(&0u8),
+                "JSON chunk must never contain NUL bytes (space padding per glTF 2.0)"
+            );
+            // The regression itself: a strict parser accepts the chunk verbatim.
+            let value: serde_json::Value =
+                serde_json::from_slice(chunk).expect("JSON chunk parses as-is");
+            // The JSON value's serialized length tells us whether this run padded.
+            let bare = serde_json::to_vec(&value).expect("re-serialize");
+            if bare.len() < json_len {
+                saw_padding = true;
+                assert!(
+                    chunk[bare.len()..].iter().all(|&b| b == b' '),
+                    "padding bytes must be spaces"
+                );
+            }
+        }
+        assert!(saw_padding, "the sample must include at least one padded run");
+    }
 }

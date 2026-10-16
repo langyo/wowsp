@@ -1,0 +1,1138 @@
+{
+  "vehicles": [
+    {
+      "id": 537037440,
+      "name": "Player09",
+      "relation": 2,
+      "shipId": 4076811984
+    },
+    {
+      "id": 671209731,
+      "name": "Player19",
+      "relation": 1,
+      "shipId": 4265588720
+    },
+    {
+      "id": 671137549,
+      "name": "Player15",
+      "relation": 1,
+      "shipId": 4181636912
+    },
+    {
+      "id": 536939153,
+      "name": "Player00",
+      "relation": 1,
+      "shipId": 3542005040
+    },
+    {
+      "id": 671194770,
+      "name": "Player18",
+      "relation": 2,
+      "shipId": 3751687984
+    },
+    {
+      "id": 537028765,
+      "name": "Player07",
+      "relation": 1,
+      "shipId": 4181669680
+    },
+    {
+      "id": 671271712,
+      "name": "Player22",
+      "relation": 2,
+      "shipId": 4276041040
+    },
+    {
+      "id": 536975027,
+      "name": "Player02",
+      "relation": 1,
+      "shipId": 4076746448
+    },
+    {
+      "id": 671269302,
+      "name": "Player21",
+      "relation": 0,
+      "shipId": 4076255216
+    },
+    {
+      "id": 536948025,
+      "name": "Player01",
+      "relation": 2,
+      "shipId": 4181636560
+    },
+    {
+      "id": 671123012,
+      "name": "Player13",
+      "relation": 2,
+      "shipId": 3762206480
+    },
+    {
+      "id": 671113292,
+      "name": "Player12",
+      "relation": 1,
+      "shipId": 4181669712
+    },
+    {
+      "id": 671182797,
+      "name": "Player17",
+      "relation": 1,
+      "shipId": 4181669840
+    },
+    {
+      "id": 537061070,
+      "name": "Player10",
+      "relation": 2,
+      "shipId": 4181669840
+    },
+    {
+      "id": 537015385,
+      "name": "Player05",
+      "relation": 1,
+      "shipId": 4281284304
+    },
+    {
+      "id": 537034588,
+      "name": "Player08",
+      "relation": 1,
+      "shipId": 4076779504
+    },
+    {
+      "id": 671146975,
+      "name": "Player16",
+      "relation": 2,
+      "shipId": 4281284304
+    },
+    {
+      "id": 671110881,
+      "name": "Player11",
+      "relation": 2,
+      "shipId": 3730782032
+    },
+    {
+      "id": 537003118,
+      "name": "Player04",
+      "relation": 2,
+      "shipId": 4276008240
+    },
+    {
+      "id": 671135220,
+      "name": "Player14",
+      "relation": 2,
+      "shipId": 4076255216
+    },
+    {
+      "id": 537025016,
+      "name": "Player06",
+      "relation": 1,
+      "shipId": 4076811984
+    },
+    {
+      "id": 671279225,
+      "name": "Player23",
+      "relation": 1,
+      "shipId": 4282333168
+    },
+    {
+      "id": 671242875,
+      "name": "Player20",
+      "relation": 2,
+      "shipId": 4281284304
+    },
+    {
+      "id": 536983804,
+      "name": "Player03",
+      "relation": 2,
+      "shipId": 4265588720
+    }
+  ],
+  "arenaPlayers": [
+    {
+      "avatarId": 756098,
+      "entityId": 756099,
+      "maxHealth": 65350,
+      "name": "Player09",
+      "playerId": 537037440,
+      "shipParamsId": 4076811984,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756100,
+      "entityId": 756101,
+      "maxHealth": 48200,
+      "name": "Player19",
+      "playerId": 671209731,
+      "shipParamsId": 4265588720,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756102,
+      "entityId": 756103,
+      "maxHealth": 37300,
+      "name": "Player15",
+      "playerId": 671137549,
+      "shipParamsId": 4181636912,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756104,
+      "entityId": 756105,
+      "maxHealth": 40450,
+      "name": "Player00",
+      "playerId": 536939153,
+      "shipParamsId": 3542005040,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756106,
+      "entityId": 756107,
+      "maxHealth": 21900,
+      "name": "Player18",
+      "playerId": 671194770,
+      "shipParamsId": 3751687984,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756108,
+      "entityId": 756109,
+      "maxHealth": 64500,
+      "name": "Player07",
+      "playerId": 537028765,
+      "shipParamsId": 4181669680,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756110,
+      "entityId": 756111,
+      "maxHealth": 59700,
+      "name": "Player22",
+      "playerId": 671271712,
+      "shipParamsId": 4276041040,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756112,
+      "entityId": 756113,
+      "maxHealth": 15100,
+      "name": "Player02",
+      "playerId": 536975027,
+      "shipParamsId": 4076746448,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756114,
+      "entityId": 756115,
+      "isSelf": true,
+      "maxHealth": 18700,
+      "name": "Player21",
+      "playerId": 671269302,
+      "shipParamsId": 4076255216,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756116,
+      "entityId": 756117,
+      "maxHealth": 38850,
+      "name": "Player01",
+      "playerId": 536948025,
+      "shipParamsId": 4181636560,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756118,
+      "entityId": 756119,
+      "maxHealth": 39300,
+      "name": "Player13",
+      "playerId": 671123012,
+      "shipParamsId": 3762206480,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756120,
+      "entityId": 756121,
+      "maxHealth": 66900,
+      "name": "Player12",
+      "playerId": 671113292,
+      "shipParamsId": 4181669712,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756122,
+      "entityId": 756123,
+      "maxHealth": 60500,
+      "name": "Player17",
+      "playerId": 671182797,
+      "shipParamsId": 4181669840,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756124,
+      "entityId": 756125,
+      "maxHealth": 60500,
+      "name": "Player10",
+      "playerId": 537061070,
+      "shipParamsId": 4181669840,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756126,
+      "entityId": 756127,
+      "maxHealth": 62300,
+      "name": "Player05",
+      "playerId": 537015385,
+      "shipParamsId": 4281284304,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756128,
+      "entityId": 756129,
+      "maxHealth": 38750,
+      "name": "Player08",
+      "playerId": 537034588,
+      "shipParamsId": 4076779504,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756130,
+      "entityId": 756131,
+      "maxHealth": 69650,
+      "name": "Player16",
+      "playerId": 671146975,
+      "shipParamsId": 4281284304,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756132,
+      "entityId": 756133,
+      "maxHealth": 79200,
+      "name": "Player11",
+      "playerId": 671110881,
+      "shipParamsId": 3730782032,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756134,
+      "entityId": 756135,
+      "maxHealth": 40450,
+      "name": "Player04",
+      "playerId": 537003118,
+      "shipParamsId": 4276008240,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756136,
+      "entityId": 756137,
+      "maxHealth": 14700,
+      "name": "Player14",
+      "playerId": 671135220,
+      "shipParamsId": 4076255216,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756138,
+      "entityId": 756139,
+      "maxHealth": 56200,
+      "name": "Player06",
+      "playerId": 537025016,
+      "shipParamsId": 4076811984,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756140,
+      "entityId": 756141,
+      "maxHealth": 56400,
+      "name": "Player23",
+      "playerId": 671279225,
+      "shipParamsId": 4282333168,
+      "teamId": 1
+    },
+    {
+      "avatarId": 756142,
+      "entityId": 756143,
+      "maxHealth": 69650,
+      "name": "Player20",
+      "playerId": 671242875,
+      "shipParamsId": 4281284304,
+      "teamId": 0
+    },
+    {
+      "avatarId": 756144,
+      "entityId": 756145,
+      "maxHealth": 48200,
+      "name": "Player03",
+      "playerId": 536983804,
+      "shipParamsId": 4265588720,
+      "teamId": 0
+    }
+  ],
+  "selfTeam": 1,
+  "ships": [
+    {
+      "entityId": 756099,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 138.01942443847656,
+        "initialY": 0,
+        "initialZ": 324.82635498046875,
+        "creationTime": 302.6800231933594,
+        "shipId": 4076811984
+      },
+      "samples": [
+        {
+          "time": 303.5220642089844,
+          "entityId": 756099,
+          "vehicleId": 0,
+          "x": 137.11614990234375,
+          "y": 0,
+          "z": 325.28802490234375,
+          "yaw": -1.1075341701507568
+        },
+        {
+          "time": 640.781982421875,
+          "entityId": 756099,
+          "vehicleId": 0,
+          "x": -143.30751037597656,
+          "y": 0,
+          "z": 106.50967407226562,
+          "yaw": -2.172116756439209
+        }
+      ]
+    },
+    {
+      "entityId": 756101,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -622.8671264648438,
+        "initialY": 0,
+        "initialZ": -137.8867645263672,
+        "creationTime": 831.22509765625,
+        "shipId": 4265588720
+      },
+      "samples": [
+        {
+          "time": 832.034423828125,
+          "entityId": 756101,
+          "vehicleId": 0,
+          "x": -622.8604125976562,
+          "y": 0,
+          "z": -137.9136962890625,
+          "yaw": -0.45712628960609436
+        },
+        {
+          "time": 930.2059936523438,
+          "entityId": 756101,
+          "vehicleId": 0,
+          "x": -622.89697265625,
+          "y": 0,
+          "z": -137.94219970703125,
+          "yaw": -0.45712628960609436
+        }
+      ]
+    },
+    {
+      "entityId": 756103,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -40.0,
+        "initialY": 0,
+        "initialZ": -450.0,
+        "creationTime": 0.0,
+        "shipId": 4181636912
+      },
+      "samples": [
+        {
+          "time": 0.0,
+          "entityId": 756103,
+          "vehicleId": 0,
+          "x": -39.94097900390625,
+          "y": 0,
+          "z": -450.0030517578125,
+          "yaw": 0.0
+        },
+        {
+          "time": 484.0779113769531,
+          "entityId": 756103,
+          "vehicleId": 0,
+          "x": 434.29266357421875,
+          "y": 0,
+          "z": -423.043212890625,
+          "yaw": 2.4973208904266357
+        }
+      ]
+    },
+    {
+      "entityId": 756105,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 163.3323974609375,
+        "initialY": 0,
+        "initialZ": -183.1489715576172,
+        "creationTime": 262.6743469238281,
+        "shipId": 3542005040
+      },
+      "samples": [
+        {
+          "time": 263.4884033203125,
+          "entityId": 756105,
+          "vehicleId": 0,
+          "x": 161.633056640625,
+          "y": 0,
+          "z": -182.65818786621094,
+          "yaw": -1.5278449058532715
+        },
+        {
+          "time": 751.4685668945312,
+          "entityId": 756105,
+          "vehicleId": 0,
+          "x": 81.40817260742188,
+          "y": 0,
+          "z": 202.05548095703125,
+          "yaw": -0.11351457983255386
+        }
+      ]
+    },
+    {
+      "entityId": 756107,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -360.82769775390625,
+        "initialY": 0,
+        "initialZ": -65.89533996582031,
+        "creationTime": 847.7574462890625,
+        "shipId": 3751687984
+      },
+      "samples": [
+        {
+          "time": 848.3414306640625,
+          "entityId": 756107,
+          "vehicleId": 0,
+          "x": -361.8497314453125,
+          "y": 0,
+          "z": -64.73068237304688,
+          "yaw": -0.4387185275554657
+        },
+        {
+          "time": 921.8987426757812,
+          "entityId": 756107,
+          "vehicleId": 0,
+          "x": -306.74151611328125,
+          "y": 0,
+          "z": 153.7463836669922,
+          "yaw": 0.16260196268558502
+        }
+      ]
+    },
+    {
+      "entityId": 756109,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 397.1910095214844,
+        "initialY": 0,
+        "initialZ": -266.6472473144531,
+        "creationTime": 380.9450988769531,
+        "shipId": 4181669680
+      },
+      "samples": [
+        {
+          "time": 382.0928039550781,
+          "entityId": 756109,
+          "vehicleId": 0,
+          "x": 397.173095703125,
+          "y": 0,
+          "z": -266.63311767578125,
+          "yaw": -2.9053597450256348
+        },
+        {
+          "time": 473.3617858886719,
+          "entityId": 756109,
+          "vehicleId": 0,
+          "x": 397.155029296875,
+          "y": 0,
+          "z": -266.6434326171875,
+          "yaw": -2.9053597450256348
+        }
+      ]
+    },
+    {
+      "entityId": 756111,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -357.6991271972656,
+        "initialY": 0,
+        "initialZ": 410.356689453125,
+        "creationTime": 139.2422637939453,
+        "shipId": 4276041040
+      },
+      "samples": [
+        {
+          "time": 139.92840576171875,
+          "entityId": 756111,
+          "vehicleId": 0,
+          "x": -355.784912109375,
+          "y": 0,
+          "z": 409.6396179199219,
+          "yaw": 1.9328157901763916
+        },
+        {
+          "time": 732.0431518554688,
+          "entityId": 756111,
+          "vehicleId": 0,
+          "x": 142.37368774414062,
+          "y": 0,
+          "z": 166.70553588867188,
+          "yaw": 2.899223804473877
+        }
+      ]
+    },
+    {
+      "entityId": 756113,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 391.8040466308594,
+        "initialY": 0,
+        "initialZ": -211.10342407226562,
+        "creationTime": 485.5026550292969,
+        "shipId": 4076746448
+      },
+      "samples": [
+        {
+          "time": 486.4963073730469,
+          "entityId": 756113,
+          "vehicleId": 0,
+          "x": 391.804443359375,
+          "y": 0,
+          "z": -211.04608154296875,
+          "yaw": -1.997243046760559
+        },
+        {
+          "time": 593.3399047851562,
+          "entityId": 756113,
+          "vehicleId": 0,
+          "x": 391.81744384765625,
+          "y": 0,
+          "z": -211.15509033203125,
+          "yaw": -1.997243046760559
+        }
+      ]
+    },
+    {
+      "entityId": 756115,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -591.0,
+        "initialY": 0,
+        "initialZ": -300.0,
+        "creationTime": 0.0,
+        "shipId": 4076255216
+      },
+      "samples": [
+        {
+          "time": 0.0,
+          "entityId": 756115,
+          "vehicleId": 0,
+          "x": -591.0,
+          "y": 0,
+          "z": -300.0,
+          "yaw": 0.0
+        },
+        {
+          "time": 976.0480346679688,
+          "entityId": 756115,
+          "vehicleId": 0,
+          "x": -336.9381408691406,
+          "y": 0,
+          "z": 360.9766845703125,
+          "yaw": -0.988288938999176
+        }
+      ]
+    },
+    {
+      "entityId": 756117,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 296.3326416015625,
+        "initialY": 0,
+        "initialZ": 72.6712646484375,
+        "creationTime": 654.660400390625,
+        "shipId": 4181636560
+      },
+      "samples": [
+        {
+          "time": 655.3699340820312,
+          "entityId": 756117,
+          "vehicleId": 0,
+          "x": 295.92022705078125,
+          "y": 0,
+          "z": 74.13677978515625,
+          "yaw": -0.3405437469482422
+        },
+        {
+          "time": 938.4710693359375,
+          "entityId": 756117,
+          "vehicleId": 0,
+          "x": 121.98516845703125,
+          "y": 0,
+          "z": 225.96087646484375,
+          "yaw": -0.6135923266410828
+        }
+      ]
+    },
+    {
+      "entityId": 756119,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -185.4254913330078,
+        "initialY": 0,
+        "initialZ": -102.49856567382812,
+        "creationTime": 807.7854614257812,
+        "shipId": 3762206480
+      },
+      "samples": [
+        {
+          "time": 808.3877563476562,
+          "entityId": 756119,
+          "vehicleId": 0,
+          "x": -186.8275604248047,
+          "y": 0,
+          "z": -102.22406005859375,
+          "yaw": -1.4879614114761353
+        },
+        {
+          "time": 925.8856201171875,
+          "entityId": 756119,
+          "vehicleId": 0,
+          "x": -264.1218566894531,
+          "y": 0,
+          "z": 172.2879180908203,
+          "yaw": -0.052155349403619766
+        }
+      ]
+    },
+    {
+      "entityId": 756121,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -80.0,
+        "initialY": 0,
+        "initialZ": -500.0,
+        "creationTime": 0.0,
+        "shipId": 4181669712
+      },
+      "samples": [
+        {
+          "time": 0.0,
+          "entityId": 756121,
+          "vehicleId": 0,
+          "x": -79.98248291015625,
+          "y": 0,
+          "z": -499.993896484375,
+          "yaw": 0.0
+        },
+        {
+          "time": 928.4698486328125,
+          "entityId": 756121,
+          "vehicleId": 0,
+          "x": 40.290496826171875,
+          "y": 0,
+          "z": 228.44369506835938,
+          "yaw": 1.5523885488510132
+        }
+      ]
+    },
+    {
+      "entityId": 756123,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -520.0,
+        "initialY": 0,
+        "initialZ": -500.0,
+        "creationTime": 0.0,
+        "shipId": 4181669840
+      },
+      "samples": [
+        {
+          "time": 0.0,
+          "entityId": 756123,
+          "vehicleId": 0,
+          "x": -519.9965209960938,
+          "y": 0,
+          "z": -499.993896484375,
+          "yaw": 0.0
+        },
+        {
+          "time": 975.6300659179688,
+          "entityId": 756123,
+          "vehicleId": 0,
+          "x": -7.551055908203125,
+          "y": 0,
+          "z": 318.84161376953125,
+          "yaw": 1.8683886528015137
+        }
+      ]
+    },
+    {
+      "entityId": 756125,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 305.2666320800781,
+        "initialY": 0,
+        "initialZ": 390.3277893066406,
+        "creationTime": 563.7758178710938,
+        "shipId": 4181669840
+      },
+      "samples": [
+        {
+          "time": 564.4837646484375,
+          "entityId": 756125,
+          "vehicleId": 0,
+          "x": 303.6720886230469,
+          "y": 0,
+          "z": 390.0755615234375,
+          "yaw": -1.5677284002304077
+        },
+        {
+          "time": 839.6276245117188,
+          "entityId": 756125,
+          "vehicleId": 0,
+          "x": 47.13287353515625,
+          "y": 0,
+          "z": 464.5400695800781,
+          "yaw": -1.2640001773834229
+        }
+      ]
+    },
+    {
+      "entityId": 756127,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 152.6610107421875,
+        "initialY": 0,
+        "initialZ": -196.7714385986328,
+        "creationTime": 526.0777587890625,
+        "shipId": 4281284304
+      },
+      "samples": [
+        {
+          "time": 526.9237060546875,
+          "entityId": 756127,
+          "vehicleId": 0,
+          "x": 152.68783569335938,
+          "y": 0,
+          "z": -196.79669189453125,
+          "yaw": 0.05522330850362778
+        },
+        {
+          "time": 574.8963012695312,
+          "entityId": 756127,
+          "vehicleId": 0,
+          "x": 152.66061401367188,
+          "y": 0,
+          "z": -196.74737548828125,
+          "yaw": 0.05522330850362778
+        }
+      ]
+    },
+    {
+      "entityId": 756129,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -560.0,
+        "initialY": 0,
+        "initialZ": -450.0,
+        "creationTime": 0.0,
+        "shipId": 4076779504
+      },
+      "samples": [
+        {
+          "time": 0.0,
+          "entityId": 756129,
+          "vehicleId": 0,
+          "x": -559.9998779296875,
+          "y": 0,
+          "z": -450.0030517578125,
+          "yaw": 0.0
+        },
+        {
+          "time": 787.48095703125,
+          "entityId": 756129,
+          "vehicleId": 0,
+          "x": -190.936279296875,
+          "y": 0,
+          "z": 210.39633178710938,
+          "yaw": 1.5523885488510132
+        }
+      ]
+    },
+    {
+      "entityId": 756131,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 353.64129638671875,
+        "initialY": 0,
+        "initialZ": 233.41860961914062,
+        "creationTime": 406.6496276855469,
+        "shipId": 4281284304
+      },
+      "samples": [
+        {
+          "time": 407.48431396484375,
+          "entityId": 756131,
+          "vehicleId": 0,
+          "x": 353.617431640625,
+          "y": 0,
+          "z": 233.36904907226562,
+          "yaw": 0.647339940071106
+        },
+        {
+          "time": 921.8987426757812,
+          "entityId": 756131,
+          "vehicleId": 0,
+          "x": 7.364593505859375,
+          "y": 0,
+          "z": 113.30812072753906,
+          "yaw": 0.20248547196388245
+        }
+      ]
+    },
+    {
+      "entityId": 756133,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -447.2648620605469,
+        "initialY": 0,
+        "initialZ": 442.4333190917969,
+        "creationTime": 140.2296600341797,
+        "shipId": 3730782032
+      },
+      "samples": [
+        {
+          "time": 140.9355010986328,
+          "entityId": 756133,
+          "vehicleId": 0,
+          "x": -446.74761962890625,
+          "y": 0,
+          "z": 440.99932861328125,
+          "yaw": 2.6599228382110596
+        },
+        {
+          "time": 786.356689453125,
+          "entityId": 756133,
+          "vehicleId": 0,
+          "x": 19.800460815429688,
+          "y": 0,
+          "z": 457.4817199707031,
+          "yaw": -0.9326603412628174
+        }
+      ]
+    },
+    {
+      "entityId": 756135,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -549.6994018554688,
+        "initialY": 0,
+        "initialZ": 189.7333221435547,
+        "creationTime": 132.22096252441406,
+        "shipId": 4276008240
+      },
+      "samples": [
+        {
+          "time": 132.63641357421875,
+          "entityId": 756135,
+          "vehicleId": 0,
+          "x": -549.97265625,
+          "y": 0,
+          "z": 188.58663940429688,
+          "yaw": -2.902291774749756
+        },
+        {
+          "time": 305.7845458984375,
+          "entityId": 756135,
+          "vehicleId": 0,
+          "x": -584.98095703125,
+          "y": 0,
+          "z": 69.60672760009766,
+          "yaw": 1.006291389465332
+        }
+      ]
+    },
+    {
+      "entityId": 756137,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -540.6367797851562,
+        "initialY": 0,
+        "initialZ": 188.70628356933594,
+        "creationTime": 278.2415771484375,
+        "shipId": 4076255216
+      },
+      "samples": [
+        {
+          "time": 278.3463439941406,
+          "entityId": 756137,
+          "vehicleId": 0,
+          "x": -540.5855712890625,
+          "y": 0,
+          "z": 189.088134765625,
+          "yaw": 0.11658254265785217
+        },
+        {
+          "time": 440.2176818847656,
+          "entityId": 756137,
+          "vehicleId": 0,
+          "x": -471.690673828125,
+          "y": 0,
+          "z": 259.99114990234375,
+          "yaw": 1.0246992111206055
+        }
+      ]
+    },
+    {
+      "entityId": 756139,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": -440.0,
+        "initialY": 0,
+        "initialZ": -500.0,
+        "creationTime": 0.0,
+        "shipId": 4076811984
+      },
+      "samples": [
+        {
+          "time": 0.0,
+          "entityId": 756139,
+          "vehicleId": 0,
+          "x": -439.98980712890625,
+          "y": 0,
+          "z": -499.993896484375,
+          "yaw": 0.0
+        },
+        {
+          "time": 516.6519165039062,
+          "entityId": 756139,
+          "vehicleId": 0,
+          "x": -152.61062622070312,
+          "y": 0,
+          "z": 228.0625,
+          "yaw": 0.475534051656723
+        }
+      ]
+    },
+    {
+      "entityId": 756141,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 326.6650695800781,
+        "initialY": 0,
+        "initialZ": -202.60475158691406,
+        "creationTime": 331.8106384277344,
+        "shipId": 4282333168
+      },
+      "samples": [
+        {
+          "time": 332.9416809082031,
+          "entityId": 756141,
+          "vehicleId": 0,
+          "x": 326.65625,
+          "y": 0,
+          "z": -202.61898803710938,
+          "yaw": -1.497165322303772
+        },
+        {
+          "time": 428.76446533203125,
+          "entityId": 756141,
+          "vehicleId": 0,
+          "x": 326.682373046875,
+          "y": 0,
+          "z": -202.57077026367188,
+          "yaw": -1.497165322303772
+        }
+      ]
+    },
+    {
+      "entityId": 756143,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 138.31068420410156,
+        "initialY": 0,
+        "initialZ": 291.2376403808594,
+        "creationTime": 277.57159423828125,
+        "shipId": 4281284304
+      },
+      "samples": [
+        {
+          "time": 278.3463439941406,
+          "entityId": 756143,
+          "vehicleId": 0,
+          "x": 137.73956298828125,
+          "y": 0,
+          "z": 290.29058837890625,
+          "yaw": -2.6261751651763916
+        },
+        {
+          "time": 908.2011108398438,
+          "entityId": 756143,
+          "vehicleId": 0,
+          "x": 228.31106567382812,
+          "y": 0,
+          "z": 274.82769775390625,
+          "yaw": -1.9481556415557861
+        }
+      ]
+    },
+    {
+      "entityId": 756145,
+      "kind": {
+        "entityType": 2,
+        "vehicleId": 4625,
+        "initialX": 249.95350646972656,
+        "initialY": 0,
+        "initialZ": 557.1480102539062,
+        "creationTime": 641.199462890625,
+        "shipId": 4265588720
+      },
+      "samples": [
+        {
+          "time": 641.3605346679688,
+          "entityId": 756145,
+          "vehicleId": 0,
+          "x": 249.96600341796875,
+          "y": 0,
+          "z": 557.3314208984375,
+          "yaw": 0.015339808538556099
+        },
+        {
+          "time": 656.485107421875,
+          "entityId": 756145,
+          "vehicleId": 0,
+          "x": 254.10858154296875,
+          "y": 0,
+          "z": 575.0523681640625,
+          "yaw": 0.475534051656723
+        }
+      ]
+    }
+  ]
+}

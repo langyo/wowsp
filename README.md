@@ -2,12 +2,13 @@
 
 <h1 align="center">WoWSP</h1>
 
-<p align="center"><strong>World of WarShip Panel — replay review &amp; in-game overlay</strong></p>
+<p align="center"><strong>Free, open-source battle panel for World of Warships — replay review, in-game overlay, live battle intel, and full stats, for Windows and Android.</strong></p>
 
 <div align="center">
 
 [![License](https://img.shields.io/badge/license-SySL--1.0-blue.svg)](https://github.com/langyo/wowsp/blob/master/LICENSE)
-[![GitHub](https://img.shields.io/badge/github-langyo%2Fwowsp-blue.svg)](https://github.com/langyo/wowsp)
+[![Release](https://img.shields.io/github/v/release/langyo/wowsp)](https://github.com/langyo/wowsp/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/langyo/wowsp/total)](https://github.com/langyo/wowsp/releases)
 
 </div>
 
@@ -25,31 +26,52 @@
 
 </div>
 
+![WoWSP dashboard](./docs/en/screenshots/dashboard.webp)
+
 > [!IMPORTANT]
-> **警告：本软件完全免费且开源，仅通过官方 [GitHub Releases](https://github.com/langyo/wowsp/releases) 分发。任何渠道收费出售均与作者无关——请勿付款；如已付费，请尽快申请退款并举报卖家。**
->
-> **Warning: this software is completely free and open source, distributed only via the official [GitHub Releases](https://github.com/langyo/wowsp/releases). Anyone charging for it is NOT the author — do not pay; if you already have, request a refund and report the seller as soon as possible.**
->
-> **Внимание: это ПО полностью бесплатно и с открытым кодом и распространяется только через официальный [GitHub Releases](https://github.com/langyo/wowsp/releases). Тот, кто его продаёт, — не автор: не платите; если уже заплатили, как можно скорее требуйте возврат средств и пожалуйтесь на продавца.**
+> **WoWSP is completely free and open source, distributed only via the official [GitHub Releases](https://github.com/langyo/wowsp/releases). Anyone charging money for it is not the author — do not pay; if you already have, request a refund and report the seller.**
 
-WoWSP is a next-generation battle analysis dashboard for **World of Warships**. It runs in two modes:
+WoWSP is a desktop panel for **World of Warships** on Windows, with an Android companion. It auto-detects your game install — Wargaming Game Center, Steam, Lesta, or 360 — and follows you through the whole loop: reviewing the match afterwards, watching it live, and reading the odds while you play.
 
-1. **Standalone review** — auto-detects your game install (official WG launcher, Steam, Lesta, or 360), parses `.wowsreplay` files, and renders every ship on a holographic 3D map so you can replay a match without ever launching the game. Built on three.js with model-conversion scripts so new maps and ships can be added without touching app code.
+## What's inside
 
-2. **In-game overlay** — installs as a mod that auto-launches WoWSP when the game starts. A transparent overlay window detects both teams at match start and renders a roster on top of the game, shown only while you hold `Tab`. On each Tab press WoWSP captures the screen, locates the team-list region, and re-anchors the overlay to the correct position.
+- **Replay review** — open any `.wowsreplay` and re-watch the match on a holographic 3D map: every ship's track, shells, torpedoes, and plane squadrons, range rings, cyclone weather, and cap-zone simulation. Free-orbit, original-recorder, and follow-a-ship cameras; map labels that keep themselves readable; and per-player battle results (ribbons, achievements, damage composition) beside the map. Every panel exports a share shot that can mask nicknames, and the library filters by mode, date, and archive state.
+- **In-game overlay** — hold `Tab` in battle to layer both teams' roster and stats over the match; it re-anchors on every press. Personal-rating tiers and winrate colors, seal stamps, sunk-row tinting, team summaries, and hold-Tab consumable intel. Stats render either in a transparent window over the detected table or inside the game itself through the bundled first-party plugin, with row matching tuned per client (Wargaming, Lesta, and the CN client).
+- **Live battle monitor** — from loading screen to results screen, watch the battle unfold: full rosters with PR tiers and clan tags, tier-weighted team winrate, combat cards, and a live personal battle report tracking your own damage, achievements, and kill attribution.
+- **Stats dashboard & playtime** — your own "water meter": personal rating, winrate, and average damage cards with date ranges, ship-distribution charts (tier histogram, class and nation donuts), ranked-season history, and multi-account switching. A dedicated playtime view turns your replay files into a battle-calendar heatmap with a year switcher.
+- **Player & clan lookup** — search any player or clan (pinyin-aware), read career cards and clan rosters with share shots, and cross-match Clan Battles rosters across servers.
+- **Ship encyclopedia & build planner** — the full tech tree with a Wargaming/Lesta branch switch, specs and armor views, per-ship server trends, 3D model stages for ships and planes, and a build planner that projects captain skills, commanders, signals, and upgrades into final specs with credit/XP cost math.
+- **Mod hub** — a curated marketplace of community mods across function, texture, and voice (ship skins, Wwise voice packs with previews), with install presets, one-click safe mode, conflict warnings, stale-mod migration, texture-override analysis, and batch updates.
+- **Tactics board** *(in development)* — a tactical plan editor over the bundled battle-map catalog: a 20-minute planning clock, unit tracks, action timelines, and shareable plan sets.
+- **Android companion** — pair your phone over Wi-Fi (auto-discovery) or from anywhere via a six-digit pairing code through the built-in relay, pull replays straight from your desktop, and review them on the go.
 
-The replay parsing, game-detection, and `tempArenaInfo.json` polling principles are adapted from [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); the frontend shell, build infrastructure, and licensing model are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
+Under the hood it stays a native citizen: mirror-racing auto-updates (portable installs supported), a tray panel, an onboarding wizard, in-app announcements, and a feedback form with log export; themes, wallpapers, UI opacity, font-size, and DPI controls; nine UI languages; minimal anonymous telemetry you can switch off; and a bundled WebView2 that degrades gracefully when missing.
+
+## Download
+
+Windows 10/11 — grab the latest `WoWSP_<version>_x64-installer-webview2.exe` from [GitHub Releases](https://github.com/langyo/wowsp/releases/latest) (WebView2 is bundled), or use the mirror-aware [download page](https://wowsp.langyo.xyz/download) if GitHub is slow where you are. The Android edition is built from source — see the [building guide](./docs/en/guides/building.md).
+
+Screenshots of every view, in every UI language, are on the [website gallery](https://wowsp.langyo.xyz/#gallery).
 
 ## Documentation
 
-Architecture, design, and guides live under [`docs/`](./docs) (English + 简体中文), built with [lagrange](https://github.com/celestia-island/lagrange).
+Architecture, design notes, and guides live in [`docs/`](./docs) in nine languages (English and 简体中文 fully translated), built with [lagrange](https://github.com/celestia-island/lagrange). WoWSP reports minimal anonymous usage telemetry — exactly what is collected (and never collected) is documented in the [telemetry notice](./docs/en/license/usage-telemetry.md).
 
-Source: [wowsp](https://github.com/langyo/wowsp).
+## Feedback & credits
 
-## Status
+Bugs and testing feedback: QQ group **[612331811](https://qm.qq.com/q/ExDBBawuLC)**, or the feedback form on the [website](https://wowsp.langyo.xyz). Replay parsing and game-detection principles are adapted from [ApeRadar (海猴雷达)](https://github.com/zylalx1/ApeRadar); the frontend shell and build infrastructure are adapted from [shittim-chest](https://github.com/celestia-island/shittim-chest).
 
-🎉 **Ready for the initial release** — all 9 feature milestones (M1–M9) are complete: game detection, replay decoding, holographic 3D review, model converters, mod installer, live roster, Tab-triggered re-anchoring, and WG stat lookups. See [`PLAN.md`](./PLAN.md) for the roadmap history and [`docs/`](./docs) for architecture details.
+## License
 
-## Feedback
+WoWSP is licensed under the **Synthetic Source License 1.0** ([full text](./LICENSE)) — Apache-2.0-equivalent grants for a substantially AI-generated codebase, whose only extra obligation is keeping the AI-generation disclosure notice on every copy and derivative. The vendored [wows-toolkit](./packages/tools/wowsunpack-vendor) snapshot keeps its upstream **MIT** license; everything else in this repository — including the standalone [pairing-relay](./packages/pairing-relay) worker — is covered by SySL-1.0.
 
-Testing feedback is collected in our QQ group — feel free to join: **1125770228**. Report bugs, share replays, and follow development there.
+## Support
+
+WoWSP is and stays free. If it has earned it and you want to help, visit **[the author's afdian page](https://afdian.com/a/langyo)** — **every donation goes entirely to the AI costs of developing WoWSP** (model calls and code-generation tooling).
+
+To keep the responsibilities clear:
+
+- Donating is completely optional and never required — every feature is free, and the app will never embed features that require a donation.
+- A donation is a voluntary gift: it creates no employment, commissioning, or other legal relationship, and carries no claim on specific features, delivery timelines, or refunds.
+- The project stays open source under the license above, for everyone — donors and non-donors alike.
+- WoWSP is an independent, unofficial project with no direct relationship with Wargaming, Lesta, or 360.

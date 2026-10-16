@@ -15,3 +15,9 @@
 # 設計
 
 - [架構設計](./designs/architecture.md)
+- [遊戲內戰績插件](./designs/ingame-stats-plugin.md)
+
+# License
+
+- [Free & Open-Source Warning](./license/free-warning.md)
+- [Usage Telemetry Notice](./license/usage-telemetry.md)

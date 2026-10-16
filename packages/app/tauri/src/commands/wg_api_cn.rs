@@ -9,7 +9,10 @@
 //!   suggest GET https://vortex.wowsgame.cn/api/accounts/search/autocomplete/<name>/
 //!   info    GET https://vortex.wowsgame.cn/api/accounts/<id>/
 //!   clan    GET https://vortex.wowsgame.cn/api/accounts/<id>/clans/   (404 = no clan)
-//!   ships   GET https://vortex.wowsgame.cn/api/accounts/<id>/ships/   (ship_stats.rs)
+//!   ships   GET https://vortex.wowsgame.cn/api/accounts/<id>/ships/<battle_type>/
+//!           (per-mode bulk endpoints — the bare /ships/ list serves
+//!           summary counters only since the 2026 service rework; see
+//!           ship_stats.rs)
 //!   clan    GET https://clans.wowsgame.cn/api/clanbase/<id>/claninfo/
 //!   roster  GET https://clans.wowsgame.cn/api/members/<id>/?battle_type=pvp
 //!   clans   GET https://clans.wowsgame.cn/api/search/autocomplete/?search=<q>&type=clans
@@ -24,10 +27,13 @@
 //! Server quirks handled here:
 //!   - queries shorter than 3 characters answer `{"status":"error","error":"Bad
 //!     Request"}` (the official profile site enforces the same 3–24 floor in
-//!     its own UI); they surface as "no account found",
+//!     its own UI); the interactive lookups surface them as a structured
+//!     account-not-found error (see `lookup_error`),
 //!   - the clan endpoint answers 404 for clanless accounts (the API realms
 //!     return an empty object instead),
 //!   - occasional 503s on autocomplete degrade to an empty suggestion list.
+
+use anyhow::{Result, anyhow};
 
 use std::time::Duration;
 
@@ -36,7 +42,8 @@ use wowsp_tauri_shared::{
     ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
 };
 
-use super::wg_api::{PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
+use super::lookup_error::LookupError;
+use super::wg_api::{PrAlgo, PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
 use super::wg_realm;
 
 /// Concurrency cap for the batch name→account resolution, mirroring the WG
@@ -55,29 +62,45 @@ const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 /// Shared CN vortex HTTP client (browser UA + the global proxy policy).
 /// Also used by `ship_stats` for its per-ship endpoint.
-pub(crate) fn vortex_client() -> Result<reqwest::Client, String> {
+pub(crate) fn vortex_client() -> Result<reqwest::Client> {
     crate::commands::network::http_client_builder()?
         .timeout(Duration::from_secs(15))
         .user_agent(BROWSER_UA)
         .build()
-        .map_err(|e| format!("http client: {e}"))
+        .map_err(|e| anyhow!("http client: {e}"))
+}
+
+/// The stall-tolerant sibling of [`vortex_client`] for the big per-ship
+/// documents: NO whole-request timeout (a degraded host serving hundreds
+/// of KB at a crawl must not die at a fixed deadline). The base builder's
+/// connect timeout bounds the handshake; this read timeout is a generous
+/// HANG guard over the response-header wait and any read gap reqwest sees
+/// before the body loop takes over — deliberately well above the observed
+/// 20-30s degraded TTFB (15s here would kill exactly the slow-but-flowing
+/// fetches this client exists for), while the body reader's own 15s
+/// no-bytes stall rule (`ship_stats::read_body_streamed`) governs the
+/// streamed chunks, and its 180s hard cap bounds the total.
+pub(crate) fn vortex_stream_client() -> Result<reqwest::Client> {
+    crate::commands::network::http_client_builder()?
+        .read_timeout(Duration::from_secs(60))
+        .user_agent(BROWSER_UA)
+        .build()
+        .map_err(|e| anyhow!("http client: {e}"))
 }
 
 /// GET one JSON document from the CN vortex/clans hosts. Non-2xx is an error
 /// (the clan endpoint's meaningful 404 is tolerated by its own caller).
-async fn get_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value, String> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("CN vortex request: {e}"))?;
+async fn get_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value> {
+    let host = super::upstream_health::host_of_url(url);
+    let resp =
+        super::upstream_health::recorded_get(client, host, "CN vortex", url.to_string()).await?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(format!("CN vortex: HTTP {status}"));
+        anyhow::bail!("CN vortex: HTTP {status}");
     }
     resp.json()
         .await
-        .map_err(|e| format!("CN vortex parse: {e}"))
+        .map_err(|e| anyhow!("CN vortex parse: {e}"))
 }
 
 fn vortex_status(v: &serde_json::Value) -> Option<&str> {
@@ -92,22 +115,46 @@ fn vortex_status(v: &serde_json::Value) -> Option<&str> {
 ///   name             → nickname
 ///   statistics.basic → leveling_tier / leveling_points (WG keeps them top-level)
 ///   statistics.pvp   → battles_count→battles, survived→survived_battles,
-///                      win_and_survived→survived_wins, exp→xp,
+///                      win_and_survived→survived_wins,
+///                      original_exp→xp (base XP — the vortex `exp` is the
+///                      boost-multiplied total, see `normalize_pvp`),
 ///                      shots_by_main/hits_by_main→main_battery.{shots,hits}
 ///   pvp_solo/div2/div3 battles_count→battles
 ///   statistics.seasons → same per-mode mapping (WG seasons API shape:
 ///                      seasons.<id>.<shipType>.<mode>) for `ranked`
 ///   statistics.rank_info → passed through (fields already match WG)
+///   statistics.pve   → co-op fallback: an account with NO pvp battles at
+///                      all maps its `pve` node (same vortex field shape)
+///                      into the pvp slot, tagged `coop_fallback: true`
 ///
-/// A hidden profile (`hidden_profile: true`) and an empty statistics node
-/// (fresh account) both normalize to `statistics: {pvp: null}` — the same
-/// "hidden" marker the WG path derives from null stats.
+/// A hidden profile (`hidden_profile: true`) normalizes to
+/// `statistics: null`; a PRESENT statistics node without `pvp` keeps the
+/// normalized object with `pvp: null` — a fresh account that simply never
+/// played that mode (the CN cluster omits the key instead of zero-filling,
+/// verified against live 360-server accounts). The distinction matters
+/// downstream: `player_stats_of` marks only the former hidden, so a
+/// zero-battle account renders "no data" instead of the hidden dot.
+///
+/// The pve fallback exists because on the CN cluster that case is the
+/// COMMON co-op player, not an edge: co-op mains (and every fresh 360
+/// account, which starts in 联合作战) carry `pvp: {}` with their whole
+/// record under `pve`, and without the fallback every roster they appear
+/// on — i.e. every co-op battle — reads them as permanent "no data". It
+/// is strictly a fallback: any pvp battles keep PvP numbers, so randoms
+/// players' stats are untouched. The `coop_fallback` marker lets
+/// `player_stats_of` withhold the career PR, which the extract's
+/// winrate-fallback path would otherwise distill out of the inflated
+/// co-op winrate.
 fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
     let name = node.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let hidden = node
         .get("hidden_profile")
         .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+        .unwrap_or(false)
+        // No service-side flag at all AND no statistics tree: nothing to
+        // show for any mode — treat it as hidden rather than inventing
+        // an empty profile.
+        || node.get("statistics").is_none_or(|s| s.is_null());
     let statistics = node.get("statistics").filter(|v| !v.is_null());
     let basic = statistics
         .and_then(|s| s.get("basic"))
@@ -117,10 +164,23 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
         .filter(|v| !v.is_null());
     let seasons = statistics.and_then(|s| s.get("seasons"));
     let stats_json = if hidden {
-        serde_json::json!({ "pvp": serde_json::Value::Null })
+        serde_json::Value::Null
     } else {
+        let mut coop_fallback = false;
+        let pvp = match normalize_pvp(statistics.and_then(|s| s.get("pvp"))) {
+            serde_json::Value::Null => {
+                let pve = normalize_pvp(statistics.and_then(|s| s.get("pve")));
+                if pve.is_null() {
+                    serde_json::Value::Null
+                } else {
+                    coop_fallback = true;
+                    pve
+                }
+            },
+            pvp => pvp,
+        };
         serde_json::json!({
-            "pvp": normalize_pvp(statistics.and_then(|s| s.get("pvp"))),
+            "pvp": pvp,
             "pvp_solo": normalize_div(statistics.and_then(|s| s.get("pvp_solo"))),
             "pvp_div2": normalize_div(statistics.and_then(|s| s.get("pvp_div2"))),
             "pvp_div3": normalize_div(statistics.and_then(|s| s.get("pvp_div3"))),
@@ -129,6 +189,7 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
             // through as-is: its rank/rank_best fields already match).
             "rank_info": rank_info.cloned().unwrap_or(serde_json::Value::Null),
             "seasons": normalize_seasons(seasons),
+            "coop_fallback": coop_fallback,
         })
     };
     serde_json::json!({
@@ -154,7 +215,15 @@ fn normalize_pvp(pvp: Option<&serde_json::Value>) -> serde_json::Value {
         "losses": get_i64(p, "losses"),
         "damage_dealt": get_i64(p, "damage_dealt"),
         "frags": get_i64(p, "frags"),
-        "xp": get_i64(p, "exp"),
+        // Base XP only. The vortex `exp` is the boost-multiplied total
+        // (premium account + economic bonuses): measured live, its
+        // per-battle average exceeds the node's own `max_exp` — impossible
+        // for a per-battle value — so dividing it by battles paints absurd
+        // average-XP figures for boost-heavy CN players. `original_exp` is
+        // the base-XP total the WG API realms serve as `xp` (every live
+        // battle-type node carries it); nodes without it yield no xp, which
+        // renders "--" instead of an inflated fantasy number.
+        "xp": get_i64(p, "original_exp"),
         "survived_battles": get_i64(p, "survived"),
         "survived_wins": get_i64(p, "win_and_survived"),
         "planes_killed": get_i64(p, "planes_killed"),
@@ -217,9 +286,10 @@ fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
 // ── account resolution ────────────────────────────────────────────────────
 
 /// One resolved CN account (vortex search result or a direct id hit).
-struct CnAccountRef {
-    account_id: i64,
-    nickname: String,
+/// Fields are crate-visible so `wg_composition` can reuse the resolver.
+pub(crate) struct CnAccountRef {
+    pub(crate) account_id: i64,
+    pub(crate) nickname: String,
 }
 
 /// Search one nickname on the CN vortex (limit=10) and resolve the EXACT
@@ -227,11 +297,12 @@ struct CnAccountRef {
 /// match", "no exact hit" and "unsearchable query" — the server rejects
 /// anything shorter than 3 characters with `Bad Request` (two-character
 /// Chinese nicknames cannot be searched on the official profile site either;
-/// they stay reachable by numeric id through `resolve_entry`).
-async fn account_list_one(
+/// they stay reachable by numeric id through `resolve_entry`). Shared with
+/// `wg_composition`'s batch resolution.
+pub(crate) async fn account_list_one(
     client: &reqwest::Client,
     name: &str,
-) -> Result<Option<CnAccountRef>, String> {
+) -> Result<Option<CnAccountRef>> {
     let host = wg_realm::vortex_host("cn")?;
     let url = format!(
         "https://{host}/api/accounts/search/{}/?limit=10",
@@ -243,7 +314,7 @@ async fn account_list_one(
         if err == "Bad Request" {
             return Ok(None);
         }
-        return Err(format!("CN account search: {err}"));
+        anyhow::bail!("CN account search: {err}");
     }
     let hit = v
         .get("data")
@@ -282,30 +353,30 @@ fn exact_hit(name: &str, entries: &[serde_json::Value]) -> Option<serde_json::Va
 async fn account_info(
     client: &reqwest::Client,
     account_id: i64,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>> {
     let host = wg_realm::vortex_host("cn")?;
     let url = format!("https://{host}/api/accounts/{account_id}/");
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("CN vortex request: {e}"))?;
+    let sent = client.get(&url).send().await;
+    // 404 = unknown account (business semantics, see record_transport) —
+    // a served answer still proves the host alive.
+    super::upstream_health::record_transport(host, &sent);
+    let resp = sent.map_err(|e| anyhow!("CN vortex request: {e}"))?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
     if !resp.status().is_success() {
-        return Err(format!("CN vortex: HTTP {}", resp.status()));
+        anyhow::bail!("CN vortex: HTTP {}", resp.status());
     }
     let v: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("CN vortex parse: {e}"))?;
+        .map_err(|e| anyhow!("CN vortex parse: {e}"))?;
     if vortex_status(&v) != Some("ok") {
         let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
         if err == "Not Found" {
             return Ok(None);
         }
-        return Err(format!("CN account info: {err}"));
+        anyhow::bail!("CN account info: {err}");
     }
     Ok(v.get("data")
         .and_then(|d| d.get(account_id.to_string()))
@@ -316,10 +387,7 @@ async fn account_info(
 /// Resolve a query (nickname or numeric id) to one account. Numeric queries
 /// hit the info endpoint directly and only fall back to the name search when
 /// the id doesn't resolve (numeric-looking nicknames are rare but exist).
-async fn resolve_entry(
-    client: &reqwest::Client,
-    name: &str,
-) -> Result<Option<CnAccountRef>, String> {
+async fn resolve_entry(client: &reqwest::Client, name: &str) -> Result<Option<CnAccountRef>> {
     let entry = match name.trim().parse::<i64>() {
         Ok(uid) if uid > 0 => match account_info(client, uid).await? {
             Some(node) => Some(CnAccountRef {
@@ -345,11 +413,13 @@ async fn clan_for_account(
     account_id: i64,
 ) -> Option<(String, Option<i64>)> {
     let host = wg_realm::vortex_host("cn").ok()?;
-    let resp = client
+    let sent = client
         .get(format!("https://{host}/api/accounts/{account_id}/clans/"))
         .send()
-        .await
-        .ok()?;
+        .await;
+    // 404 = clanless (business semantics — transport-only recording).
+    super::upstream_health::record_transport(host, &sent);
+    let resp = sent.ok()?;
     if !resp.status().is_success() {
         return None;
     }
@@ -378,7 +448,20 @@ fn player_stats_of(
 ) -> PlayerStats {
     let stats_node = node.get("statistics");
     let p = PvpStats::extract(stats_node);
-    let hidden = stats_node.is_none_or(|s| s.get("pvp").is_none_or(|p2| p2.is_null()));
+    // Hidden ONLY when the normalized node carries no statistics tree at
+    // all (see `normalize_player`): a fresh account's statistics object
+    // keeps `pvp: null`, which renders as "no data" — the WG realms' exact
+    // semantics for zero-battle accounts.
+    let hidden = stats_node.is_none_or(|s| s.is_null());
+    // See `normalize_player`: the pve fallback is tagged, and a co-op-only
+    // record must not breed a PR — the extract's career fallback distills
+    // one out of the overall winrate, and a co-op winrate (routinely 90%+)
+    // inflates it into fantasy territory. PR is a PvP metric; a pve-only
+    // account stays without one.
+    let coop_fallback = stats_node
+        .and_then(|s| s.get("coop_fallback"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     PlayerStats {
         account_id: entry.account_id,
         name: entry.nickname,
@@ -393,7 +476,7 @@ fn player_stats_of(
         kd_ratio: p.kd_ratio,
         survival_rate: p.survival_rate,
         hit_rate: p.hit_rate,
-        pr: p.pr,
+        pr: if coop_fallback { None } else { p.pr },
         ships_played: p.ships_played,
         leveling_tier: node
             .get("leveling_tier")
@@ -408,58 +491,147 @@ fn player_stats_of(
         solo_wr: p.solo_wr,
         div2_wr: p.div2_wr,
         div3_wr: p.div3_wr,
+        solo_battles: p.solo_battles,
+        div2_battles: p.div2_battles,
+        div3_battles: p.div3_battles,
+        // Ranked career comes off the normalized `seasons` tree (the extract
+        // reads it); the coop fallback never touches ranked counters, so the
+        // coop-only guard above does not apply here. The global view merges
+        // that with the pvp career the same extract produced.
+        ranked_battles: p.ranked.battles,
+        ranked_winrate: p.ranked.winrate,
+        ranked_avg_damage: p.ranked.avg_damage,
+        ranked_pr: p.ranked.pr,
+        global_battles: p.global.battles,
+        global_winrate: p.global.winrate,
+        global_avg_damage: p.global.avg_damage,
+        // Same co-op guard as `pr` above: the global blend would distill
+        // the same fantasy rating out of the co-op counters.
+        global_pr: if coop_fallback { None } else { p.global.pr },
+        // CN runs an isolated account pool — no cross-realm arbitration
+        // ever reads it (see wg_api's cross-server pass).
+        last_battle_time: None,
     }
 }
 
 /// Resolve + fully assemble one player. `Ok(None)` = not found (or an
-/// unsearchable short nickname); transport-level failures propagate.
-async fn lookup_one(client: &reqwest::Client, name: &str) -> Result<Option<PlayerStats>, String> {
-    let Some(entry) = resolve_entry(client, name).await? else {
+/// unsearchable short nickname); transport-level failures propagate. The
+/// edge case where the account vanishes between search hit and info fetch
+/// rejects with a structured account-not-found [`LookupError`] — shared
+/// with the batch path, which degrades it back to its message string
+/// (rosters render "no data", never a reason).
+async fn lookup_one(
+    client: &reqwest::Client,
+    name: &str,
+) -> Result<Option<PlayerStats>, LookupError> {
+    // anyhow→LookupError boundary: the structured rejection keeps its
+    // `From<String>` bridge, so the anyhow error renders through its
+    // Display (the historical message) on the way in.
+    let Some(entry) = resolve_entry(client, name)
+        .await
+        .map_err(|e| e.to_string())?
+    else {
         return Ok(None);
     };
     let (info, clan) = tokio::join!(
         account_info(client, entry.account_id),
         clan_for_account(client, entry.account_id)
     );
-    let node = info?.ok_or_else(|| format!("no account found for '{name}' on cn"))?;
+    let node = info
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| LookupError::not_found_account(name, "cn"))?;
     Ok(Some(player_stats_of(entry, &node, clan, true)))
 }
 
-/// CN arm of `wg_api::lookup_player_stats`.
-pub(crate) async fn lookup_player_stats(name: String) -> Result<PlayerStats, String> {
-    let client = vortex_client()?;
-    lookup_one(&client, &name)
+/// CN arm of `wg_api::lookup_player_stats`. The expected PR algorithm works
+/// here too: the vortex serves the per-ship endpoints
+/// (`fetch_expected_pr_rows` reads them on every realm), so the CN card aggregates
+/// the wows-numbers PR exactly like the API realms — one transport-agnostic
+/// code path. Rejects with a structured [`LookupError`] like the WG arm.
+pub(crate) async fn lookup_player_stats(
+    name: String,
+    algo: PrAlgo,
+) -> Result<PlayerStats, LookupError> {
+    // anyhow→LookupError boundary (see `lookup_one`).
+    let client = vortex_client().map_err(|e| e.to_string())?;
+    let mut stats = lookup_one(&client, &name)
         .await?
-        .ok_or_else(|| format!("no account found for '{name}' on cn"))
+        .ok_or_else(|| LookupError::not_found_account(name.clone(), "cn"))?;
+    // Unavailable inputs (expected table or ship rows) yield None — the card
+    // renders "--"; the lookup itself must not fail over a rating.
+    if algo == PrAlgo::Expected {
+        stats.pr = super::wg_api::account_expected_pr_for("cn", stats.account_id).await;
+        // Same school-consistency guard as the WG arm / the batch: no ranked
+        // per-ship path under the expected algorithm (the global blend
+        // builds on the winrate-proxy ratings, so it sits out too).
+        stats.ranked_pr = None;
+        stats.global_pr = None;
+    }
+    Ok(stats)
 }
 
-/// CN arm of `wg_api::lookup_players_stats_batch`. One full lookup per name
-/// with bounded parallelism (the vortex service has no multi-id batch
-/// endpoints). Any transport failure fails the whole batch — same contract
-/// as the WG path, so the frontend's retry backoff kicks in instead of
-/// caching "no data".
+/// CN arm of `wg_api::lookup_players_stats_batch`. The shared session cache
+/// answers the hits on the spot; each miss is one full lookup (search +
+/// info + clan round-trips — the vortex service has no multi-id batch
+/// endpoints) with bounded parallelism, so a roster that re-fires for the
+/// same names every battle window costs one resolution, not one per
+/// window. Any transport failure fails the whole batch — same contract as
+/// the WG path, so the frontend's retry backoff kicks in instead of
+/// caching "no data". Under the expected algorithm every entry answers
+/// PR=None for the same request-budget reason as the WG arm (see
+/// `wg_api::apply_batch_pr_algo`).
 pub(crate) async fn lookup_players_stats_batch(
     names: Vec<String>,
-) -> Result<Vec<Option<PlayerStats>>, String> {
+    algo: PrAlgo,
+) -> Result<Vec<Option<PlayerStats>>> {
+    let mut answers: Vec<Option<PlayerStats>> = vec![None; names.len()];
+    let mut misses: Vec<(usize, String)> = Vec::new();
+    for (slot, name) in names.iter().enumerate() {
+        match super::wg_api::roster_cache_get("cn", name) {
+            Some(cached) => {
+                let mut stats = cached;
+                if let Some(stats) = stats.as_mut() {
+                    super::wg_api::apply_batch_pr_algo(stats, algo);
+                }
+                answers[slot] = stats;
+            },
+            None => misses.push((slot, name.clone())),
+        }
+    }
+    if misses.is_empty() {
+        return Ok(answers);
+    }
     let client = vortex_client()?;
-    let results: Vec<Result<Option<PlayerStats>, String>> = {
+    let miss_names: Vec<String> = misses.iter().map(|(_, n)| n.clone()).collect();
+    let results: Vec<Result<Option<PlayerStats>, LookupError>> = {
         let client_ref = &client;
-        stream::iter(names)
+        stream::iter(miss_names)
             .map(|name| async move { lookup_one(client_ref, &name).await })
             .buffered(BATCH_CONCURRENCY)
             .collect()
             .await
     };
     if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
-        return Err(e.clone());
+        // The batch keeps the plain-message contract (its consumers render
+        // "no data", never a reason) — the structured error degrades to its
+        // historical message.
+        return Err(anyhow::Error::msg(e.to_string()));
     }
-    Ok(results.into_iter().map(|r| r.unwrap_or(None)).collect())
+    for (i, (slot, name)) in misses.into_iter().enumerate() {
+        let stats = results[i].clone().unwrap_or(None);
+        super::wg_api::roster_cache_insert("cn", &name, stats.clone());
+        if let Some(mut stats) = stats {
+            super::wg_api::apply_batch_pr_algo(&mut stats, algo);
+            answers[slot] = Some(stats);
+        }
+    }
+    Ok(answers)
 }
 
 /// CN arm of `wg_api::suggest_players`: prefix autocomplete over the vortex
 /// service. Short queries return an empty vec; an occasional 503 degrades to
 /// an empty list too (the popup renders a hint, not an error).
-pub(crate) async fn suggest_players(search: String) -> Result<Vec<PlayerSuggestion>, String> {
+pub(crate) async fn suggest_players(search: String) -> Result<Vec<PlayerSuggestion>> {
     let q = search.trim().to_string();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -521,7 +693,7 @@ pub(crate) async fn suggest_players(search: String) -> Result<Vec<PlayerSuggesti
 /// CN arm of `wg_api::suggest_clans`: the clans autocomplete endpoint. The
 /// CN response wraps the list in `search_autocomplete_result` (no
 /// status/data envelope) and carries no member count.
-pub(crate) async fn suggest_clans(search: String) -> Result<Vec<ClanSuggestion>, String> {
+pub(crate) async fn suggest_clans(search: String) -> Result<Vec<ClanSuggestion>> {
     let q = search.trim().to_string();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -571,24 +743,24 @@ pub(crate) async fn suggest_clans(search: String) -> Result<Vec<ClanSuggestion>,
 async fn clan_info_node(
     client: &reqwest::Client,
     clan_id: i64,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>> {
     let host = wg_realm::cn_clans_host();
     let url = format!("https://{host}/api/clanbase/{clan_id}/claninfo/");
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("CN clans request: {e}"))?;
+    let sent = client.get(&url).send().await;
+    // Unknown clans answer 200-with-nulls (occasionally a bare 404) —
+    // business semantics, so the status stays out of the registry.
+    super::upstream_health::record_transport(host, &sent);
+    let resp = sent.map_err(|e| anyhow!("CN clans request: {e}"))?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
     if !resp.status().is_success() {
-        return Err(format!("CN clans: HTTP {}", resp.status()));
+        anyhow::bail!("CN clans: HTTP {}", resp.status());
     }
     let v: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("CN clans parse: {e}"))?;
+        .map_err(|e| anyhow!("CN clans parse: {e}"))?;
     let node = v.get("clanview").and_then(|c| c.get("clan"));
     Ok(node
         .filter(|c| {
@@ -603,12 +775,15 @@ async fn clan_info_node(
 /// members endpoint for the roster. The members response carries pre-aggregated
 /// per-member stats (battles/wr/avg damage/avg xp/frags per battle) instead
 /// of raw WG counters — survival and K/D inputs aren't served, so those stay
-/// `None` rather than being approximated.
-pub(crate) async fn lookup_clan_info(clan_id: i64) -> Result<ClanInfo, String> {
-    let client = vortex_client()?;
+/// `None` rather than being approximated. Rejects with a structured
+/// [`LookupError`] like the WG arm.
+pub(crate) async fn lookup_clan_info(clan_id: i64, algo: PrAlgo) -> Result<ClanInfo, LookupError> {
+    // anyhow→LookupError boundary (see `lookup_one`).
+    let client = vortex_client().map_err(|e| e.to_string())?;
     let clan_node = clan_info_node(&client, clan_id)
-        .await?
-        .ok_or_else(|| format!("no clan found for id {clan_id} on cn"))?;
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| LookupError::not_found_clan(clan_id.to_string(), "cn"))?;
 
     // Roster (best-effort: a failed members fetch still renders the card).
     let host = wg_realm::cn_clans_host();
@@ -622,7 +797,7 @@ pub(crate) async fn lookup_clan_info(clan_id: i64) -> Result<ClanInfo, String> {
         Err(_) => Vec::new(),
     };
 
-    Ok(clan_info_from_cn(clan_id, &clan_node, &members))
+    Ok(clan_info_from_cn(clan_id, &clan_node, &members, algo))
 }
 
 // ── ranked ────────────────────────────────────────────────────────────────
@@ -634,15 +809,16 @@ pub(crate) async fn lookup_clan_info(clan_id: i64) -> Result<ClanInfo, String> {
 /// flatten consumes them verbatim. Season ids come from the player's own
 /// seasons map (there is no seasons/info metadata endpoint to list them);
 /// the id convention matches WG (1001 = Season 1), which the season naming
-/// in the flatten relies on.
+/// in the flatten relies on. `None` keeps every season the player's map
+/// carries; `Some(n)` truncates to the n most recent.
 pub(crate) async fn ranked_stats(
     account_id: i64,
-    season_count: usize,
-) -> Result<Vec<super::ranked::RankedSeasonStats>, String> {
+    season_count: Option<usize>,
+) -> Result<Vec<super::ranked::RankedSeasonStats>> {
     let client = vortex_client()?;
     let node = account_info(&client, account_id)
         .await?
-        .ok_or_else(|| format!("no account found for id {account_id} on cn"))?;
+        .ok_or_else(|| anyhow!("no account found for id {account_id} on cn"))?;
     let statistics = node.get("statistics");
     let seasons = statistics
         .and_then(|s| s.get("seasons"))
@@ -654,7 +830,9 @@ pub(crate) async fn ranked_stats(
         .map(|o| o.keys().filter_map(|k| k.parse::<i64>().ok()).collect())
         .unwrap_or_default();
     season_ids.sort_by(|a, b| b.cmp(a)); // descending = most recent first
-    season_ids.truncate(season_count);
+    if let Some(n) = season_count {
+        season_ids.truncate(n);
+    }
 
     let player = serde_json::json!({
         "seasons": seasons,
@@ -675,6 +853,7 @@ fn clan_info_from_cn(
     clan_id: i64,
     clan_node: &serde_json::Value,
     members: &[serde_json::Value],
+    pr_algo: PrAlgo,
 ) -> ClanInfo {
     let mut roster = Vec::with_capacity(members.len());
     let (mut total_battles, mut total_wins, mut total_damage) = (0i64, 0i64, 0f64);
@@ -713,6 +892,13 @@ fn clan_info_from_cn(
                 .get("damage_per_battle")
                 .and_then(|v| v.as_f64())
                 .map(|v| v as f32);
+            // `exp_per_battle` is pre-aggregated by the clans service and
+            // deliberately kept as served: measured live it equals the
+            // account's premium_exp/battles (i.e. premium-included, NOT the
+            // base-XP total the player card shows and NOT the boost total
+            // either) — the same caliber the official clan page itself
+            // displays. No UI renders this field today; do NOT "fix" it to
+            // another caliber without re-measuring.
             let avg_xp = m
                 .get("exp_per_battle")
                 .and_then(|v| v.as_f64())
@@ -721,9 +907,17 @@ fn clan_info_from_cn(
             // as the solo bucket (no division splits to blend). `battles`
             // is always Some in this branch (guarded above); zip keeps that
             // invariant explicit instead of papering over it with a default.
-            let pr = winrate
-                .zip(battles)
-                .and_then(|(wr, b)| compute_pr(Some((wr, b)), None, None));
+            // Under the expected algorithm the roster carries no per-ship
+            // rows to aggregate (the members endpoint serves pre-aggregated
+            // counters only; per-member expected PR would need one ships
+            // fetch per row) — PR stays None, mirroring the WG roster.
+            let pr = if pr_algo == PrAlgo::Expected {
+                None
+            } else {
+                winrate
+                    .zip(battles)
+                    .and_then(|(wr, b)| compute_pr(Some((wr, b)), None, None))
+            };
             if let Some(pr) = pr {
                 member_prs.push(pr);
             }
@@ -863,7 +1057,8 @@ mod tests {
                     "damage_dealt": 931503342, "frags": 10673,
                     "survived": 5000, "win_and_survived": 4000,
                     "shots_by_main": 2852109, "hits_by_main": 845434,
-                    "planes_killed": 28902, "exp": 37473902
+                    "planes_killed": 28902, "exp": 37473902,
+                    "premium_exp": 23674087, "original_exp": 16928121
                 },
                 "pvp_solo": { "battles_count": 16193, "wins": 8335, "damage_dealt": 931270926, "frags": 10671 },
                 "pvp_div2": { "battles_count": 3, "wins": 2, "damage_dealt": 232416, "frags": 2 },
@@ -880,6 +1075,9 @@ mod tests {
         assert_eq!(p.battles, Some(16196));
         assert!((p.winrate.unwrap() - 51.477).abs() < 0.01);
         assert!((p.avg_damage.unwrap() - 57514.4).abs() < 1.0);
+        // avg XP reads the base-XP total (original_exp / 16196 = 1045.20),
+        // never the boost-multiplied `exp` total (37473902 / 16196 = 2314).
+        assert!((p.avg_xp.unwrap() - 16928121.0 / 16196.0).abs() < 0.01);
         // 5000 survived / 16196 battles; 845434 hits / 2852109 main shots;
         // 10673 frags / (16196 - 5000) deaths; 8335 solo wins / 16193.
         assert!((p.survival_rate.unwrap() - 30.872).abs() < 0.01);
@@ -889,9 +1087,36 @@ mod tests {
         assert!((p.solo_wr.unwrap() - 51.4728).abs() < 0.01);
         assert!((p.div2_wr.unwrap() - 66.67).abs() < 0.01);
         assert_eq!(p.div3_wr, None);
+        assert_eq!(p.solo_battles, Some(16193));
+        assert_eq!(p.div2_battles, Some(3));
+        assert_eq!(p.div3_battles, None);
 
         // Dog tag parses through the shared helper.
         assert!(node.get("dog_tag").and_then(parse_dog_tag).is_some());
+    }
+
+    /// A node without `original_exp` (every live battle-type node serves it;
+    /// this pins the policy for a hypothetical future shape) yields NO xp —
+    /// the card renders "--" rather than falling back to the boost-
+    /// multiplied `exp`, which would resurrect the inflated average XP.
+    #[test]
+    fn normalize_player_without_original_exp_yields_no_avg_xp() {
+        let node = normalize_player(&serde_json::json!({
+            "name": "edge",
+            "statistics": {
+                "pvp": {
+                    "battles_count": 100, "wins": 50,
+                    "damage_dealt": 2000000, "exp": 900000
+                }
+            }
+        }));
+        let p = PvpStats::extract(node.get("statistics"));
+        assert_eq!(p.battles, Some(100));
+        assert!((p.avg_damage.unwrap() - 20000.0).abs() < 0.01);
+        assert_eq!(
+            p.avg_xp, None,
+            "no original_exp served means no avg XP, never exp/battles"
+        );
     }
 
     /// The vortex ranked trees must survive normalization in the WG seasons
@@ -912,7 +1137,7 @@ mod tests {
                     "1024": { "0": { "rank_solo": {
                         "battles_count": 6, "wins": 6, "losses": 0,
                         "damage_dealt": 31424, "frags": 1,
-                        "exp": 19922, "max_exp": 8831,
+                        "exp": 19922, "original_exp": 9500, "max_exp": 8831,
                         "max_damage_dealt": 11000, "survived": 1, "planes_killed": 1
                     } } },
                     // an unplayed season's empty mode node collapses to null
@@ -927,6 +1152,11 @@ mod tests {
         // seasons: vortex field names map onto the WG ones.
         assert_eq!(st.pointer("/seasons/1024/0/rank_solo/battles").unwrap(), 6);
         assert_eq!(st.pointer("/seasons/1024/0/rank_solo/wins").unwrap(), 6);
+        assert_eq!(
+            st.pointer("/seasons/1024/0/rank_solo/xp").unwrap(),
+            9500,
+            "base original_exp maps to xp, not the boosted exp total"
+        );
         assert_eq!(
             st.pointer("/seasons/1024/0/rank_solo/max_xp").unwrap(),
             8831
@@ -946,9 +1176,13 @@ mod tests {
     }
 
     /// Live-response fixture (player saber, id 7047835131): a never-played
-    /// account whose statistics only carries mastery_sign.
+    /// account whose statistics only carries mastery_sign. That is a ZERO-
+    /// BATTLE account, not a hidden profile — the statistics tree stays
+    /// present with `pvp: null`, so `player_stats_of` reports hidden=false
+    /// and the chips render "no data" (the same semantics the WG realms
+    /// give zero-battle accounts).
     #[test]
-    fn normalize_player_marks_empty_statistics_hidden() {
+    fn normalize_player_keeps_zero_battle_accounts_unhidden() {
         let vortex_node = serde_json::json!({
             "name": "saber",
             "created_at": 1590411566.0,
@@ -958,10 +1192,88 @@ mod tests {
         let node = normalize_player(&vortex_node);
         let p = PvpStats::extract(node.get("statistics"));
         assert_eq!(p.battles, None);
-        let hidden = node
-            .get("statistics")
-            .is_none_or(|s| s.get("pvp").is_none_or(|p2| p2.is_null()));
-        assert!(hidden);
+        let hidden = node.get("statistics").is_none_or(|s| s.is_null());
+        assert!(!hidden);
+    }
+
+    /// Same shape as the fresh 360-server accounts: statistics present,
+    /// `pvp` an empty object, the whole record under `pve`. The pve
+    /// fallback maps the co-op record into the pvp slot — the roster shows
+    /// the player's real (co-op) numbers instead of permanent "no data" —
+    /// while the PR stays None (a PvP metric that the inflated co-op
+    /// winrate would turn into fantasy).
+    #[test]
+    fn player_stats_of_coop_only_account_falls_back_to_pve() {
+        let node = normalize_player(&serde_json::json!({
+            "name": "用户_31078422399",
+            "statistics": {
+                "pvp": {},
+                "pve": {
+                    "battles_count": 50, "wins": 25, "damage_dealt": 400000,
+                    "exp": 200000, "original_exp": 35000, "survived": 10,
+                    "frags": 30, "shots_by_main": 1000, "hits_by_main": 300,
+                },
+            }
+        }));
+        assert_eq!(
+            node.get("statistics").and_then(|s| s.get("coop_fallback")),
+            Some(&serde_json::Value::Bool(true))
+        );
+        let stats = player_stats_of(
+            CnAccountRef {
+                account_id: 7068814419,
+                nickname: "用户_31078422399".into(),
+            },
+            &node,
+            None,
+            false,
+        );
+        assert!(!stats.hidden);
+        assert_eq!(stats.battles, Some(50));
+        assert_eq!(stats.winrate, Some(50.0));
+        assert_eq!(stats.avg_damage, Some(8000.0));
+        // Co-op avg XP reads the base total (700/battle), not the boosted
+        // `exp` (4,000/battle).
+        assert_eq!(stats.avg_xp, Some(700.0));
+        assert_eq!(stats.hit_rate, Some(30.0));
+        assert_eq!(stats.pr, None);
+    }
+
+    /// An account with pvp battles keeps its PvP numbers — the fallback is
+    /// strictly a fallback and never mixes modes.
+    #[test]
+    fn normalize_player_with_pvp_battles_skips_the_pve_fallback() {
+        let node = normalize_player(&serde_json::json!({
+            "name": "veteran",
+            "statistics": {
+                "pvp": { "battles_count": 5000, "wins": 2500 },
+                "pve": { "battles_count": 50, "wins": 49 },
+            }
+        }));
+        assert_eq!(
+            node.get("statistics").and_then(|s| s.get("coop_fallback")),
+            Some(&serde_json::Value::Bool(false))
+        );
+        let p = PvpStats::extract(node.get("statistics"));
+        assert_eq!(p.battles, Some(5000));
+        assert_eq!(p.winrate, Some(50.0));
+    }
+
+    /// No pvp AND no pve record: still "no data" (nothing was invented),
+    /// unhidden like any other zero-battle account.
+    #[test]
+    fn normalize_player_without_any_record_stays_no_data() {
+        let node = normalize_player(&serde_json::json!({
+            "name": "saber",
+            "statistics": { "pvp": {}, "pve": {} }
+        }));
+        assert_eq!(
+            node.get("statistics").and_then(|s| s.get("coop_fallback")),
+            Some(&serde_json::Value::Bool(false))
+        );
+        let p = PvpStats::extract(node.get("statistics"));
+        assert_eq!(p.battles, None);
+        assert_eq!(p.winrate, None);
     }
 
     #[test]
@@ -972,13 +1284,27 @@ mod tests {
             "statistics": { "pvp": { "battles_count": 10, "wins": 5 } }
         });
         let node = normalize_player(&vortex_node);
-        assert!(
-            node.get("statistics")
-                .unwrap()
-                .get("pvp")
-                .unwrap()
-                .is_null()
+        assert!(node.get("statistics").unwrap().is_null());
+        // And the stats assembly reads that as hidden.
+        let stats = player_stats_of(
+            CnAccountRef {
+                account_id: 1,
+                nickname: "ghost".into(),
+            },
+            &node,
+            None,
+            false,
         );
+        assert!(stats.hidden);
+        assert_eq!(stats.battles, None);
+    }
+
+    /// A node with no statistics tree at all also reads hidden (nothing to
+    /// show for any mode).
+    #[test]
+    fn normalize_player_missing_statistics_tree_is_hidden() {
+        let node = normalize_player(&serde_json::json!({ "name": "void" }));
+        assert!(node.get("statistics").unwrap().is_null());
     }
 
     #[test]
@@ -1007,7 +1333,12 @@ mod tests {
               "battles_count": null, "wins_percentage": null,
               "is_hidden_statistics": true }
         ]);
-        let info = clan_info_from_cn(7000008303, &clan_node, members.as_array().unwrap());
+        let info = clan_info_from_cn(
+            7000008303,
+            &clan_node,
+            members.as_array().unwrap(),
+            PrAlgo::Winrate,
+        );
         assert_eq!(info.clan_id, 7000008303);
         assert_eq!(info.tag, "海军");
         assert_eq!(info.name, "达州舰队");
@@ -1056,7 +1387,7 @@ mod tests {
               "battles_count": 100, "wins_percentage": 50.0,
               "damage_per_battle": 1000.0, "is_hidden_statistics": false }
         ]);
-        let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap());
+        let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap(), PrAlgo::Winrate);
         assert_eq!(info.hidden_count, 1);
         assert_eq!(info.total_battles, 100);
         let hidden = info.members.iter().find(|m| m.account_id == 1).unwrap();
@@ -1070,7 +1401,7 @@ mod tests {
         let clan_node = serde_json::json!({
             "tag": "CN", "name": "ChinaStar", "members_count": 1
         });
-        let info = clan_info_from_cn(7000004205, &clan_node, &[]);
+        let info = clan_info_from_cn(7000004205, &clan_node, &[], PrAlgo::Winrate);
         assert_eq!(info.members.len(), 0);
         assert_eq!(info.members_count, 1);
         assert_eq!(info.winrate, 0.0);
@@ -1086,5 +1417,23 @@ mod tests {
         );
         assert_eq!(parse_cn_timestamp("2020-10-21T03:45:18"), Some(1603251918));
         assert_eq!(parse_cn_timestamp("not-a-date"), None);
+    }
+
+    #[test]
+    fn clan_info_from_cn_expected_algo_yields_no_pr() {
+        // The members endpoint has no per-ship rows, so the expected
+        // algorithm answers None — same contract as the WG roster.
+        let clan_node = serde_json::json!({ "tag": "X", "name": "X", "members_count": 1 });
+        let members = serde_json::json!([
+            { "id": 1, "name": "a", "role": { "name": "private" },
+              "battles_count": 100, "wins_percentage": 50.0,
+              "damage_per_battle": 1000.0, "is_hidden_statistics": false }
+        ]);
+        let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap(), PrAlgo::Expected);
+        assert_eq!(info.members[0].stats.pr, None);
+        assert_eq!(info.avg_pr, None);
+        // The default algorithm keeps the winrate-mapped PR.
+        let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap(), PrAlgo::Winrate);
+        assert!(info.members[0].stats.pr.is_some());
     }
 }

@@ -1,0 +1,72 @@
+/* TitlebarUpstreamFault — the fault chip's disclosure card. The chip
+   itself is hikari's HkPersistentToast (error tone, glass-surface
+   styling rides its own scss); only the card layout lives here. The
+   tint palette mirrors PluginUpdateHint: red for the failing domains,
+   muted meta, all off --color-text/--color-error channels so both
+   glass and opaque title bars read. */
+
+.titlebar-upstream-fault {
+  margin-right: 4px;
+}
+
+/* Phone bar: no room for the label next to the caption buttons —
+   icon-only, same stand-down as the loading chip. */
+@media (max-width: 767px) {
+  .titlebar-upstream-fault .hk-persistent-toast__label {
+    display: none;
+  }
+
+  .titlebar-upstream-fault .hk-persistent-toast {
+    padding: 2px 8px;
+  }
+}
+
+.titlebar-upstream-fault__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 230px;
+}
+
+.titlebar-upstream-fault__title {
+  margin: 0;
+  font-weight: 600;
+  color: rgb(var(--color-error));
+}
+
+.titlebar-upstream-fault__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.titlebar-upstream-fault__host {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.titlebar-upstream-fault__domain {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs, 0.6875rem);
+  color: rgb(var(--color-text));
+}
+
+.titlebar-upstream-fault__use {
+  color: rgb(var(--color-text) / 72%);
+}
+
+.titlebar-upstream-fault__meta {
+  color: rgb(var(--color-text) / 55%);
+  font-variant-numeric: tabular-nums;
+}
+
+.titlebar-upstream-fault__hint {
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px solid rgb(var(--color-text) / 10%);
+  color: rgb(var(--color-text) / 60%);
+}

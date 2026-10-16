@@ -1,0 +1,313 @@
+/**
+ * Live-battle page (/live, desktop app only). Extracted from the old
+ * ReplayView live pane: while the game runs it watches the replays folder
+ * (a fresh .wowsreplay = battle over → SETTLING) and polls
+ * tempArenaInfo.json every 3s so LiveBattlePanel's roster stays fresh; the
+ * panel renders the LIVE/settling pill, the battle clock, the mode pill and
+ * the map name in its own head — this page only wraps the full-height body
+ * around it (no page title of its own: the panel's heading IS the title).
+ *
+ * While the game is off (and no roster lingers) the body shows the
+ * LiveIdleGuide two-step onboarding instead of the panel. The phone app
+ * build has no local game install to watch, so it renders a static
+ * placeholder and mounts none of the watchers (the nav link is hidden there
+ * too — this is belt-and-braces for direct URLs).
+ */
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+
+import { api } from "@/api";
+import { useGameDetect } from "@/features/gamedetect/useGameDetect";
+import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
+import LiveIdleGuide from "@/features/replay/LiveIdleGuide";
+import LiveSelfPanel from "@/features/replay/LiveSelfPanel";
+import { useBattleClock } from "@/features/replay/useBattleClock";
+import { useAccountStore } from "@/stores/account";
+import { useGameStatusStore } from "@/stores/gameStatus";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
+import { useLiveUiStore } from "@/stores/liveUi";
+import { useOverlayStore } from "@/stores/overlay";
+import { t } from "@/i18n";
+import { isMobileApp } from "@/utils/platform";
+import { modeKey } from "@/utils/modeColors";
+import { replaysDir } from "@/utils/mapNames";
+import "./LiveView.scss";
+
+/** Hard end-of-battle fallback (see LiveView's battleCap watcher): PvP
+ *  modes end at 20 min, everything else (co-op / operations / training
+ *  rooms, which legitimately run long) at 30 min — matching the Rust
+ *  overlay window's ARENA_FRESHNESS_SECS. */
+const PVP_BATTLE_CAP_SECS = 20 * 60;
+const PVE_BATTLE_CAP_SECS = 30 * 60;
+
+export default defineComponent({
+  name: "LiveView",
+  setup() {
+    if (isMobileApp()) {
+      return () => (
+        <main class="live-view">
+          <div class="live-view__placeholder">{t("replay.live.notStarted")}</div>
+        </main>
+      );
+    }
+
+    const gd = useGameDetect();
+    const accounts = useAccountStore();
+    const gameStatus = useGameStatusStore();
+    const overlay = useOverlayStore();
+    const plugin = useIngamePluginStore();
+    const liveUi = useLiveUiStore();
+
+    /** The replays dir every live read polls (arena roster + settling
+     *  replay snapshot): the WATCHED instance's folder (the sidebar's
+     *  instance cards pick it — see the gameStatus store). While a client
+     *  runs, ITS replays folder is the one receiving tempArenaInfo.json
+     *  and the settling .wowsreplay. Undefined = let the backend resolve —
+     *  its PreferRunning chain finds the validated running root, which
+     *  beats guessing from the active install when the watched entry has
+     *  no matched install. */
+    const arenaDir = computed(() => {
+      const root = gameStatus.process.matchedInstall?.path;
+      return root ? replaysDir(root) : undefined;
+    });
+
+    /** The selection-tier fallback: the battle's own LATCHED realm first
+     *  (frozen when this arena file first appeared — running client
+     *  first, selection tiers as the fallback — so the battle belongs to
+     *  the server it played on and the bottom-left client-version /
+     *  account switchers cannot retarget an ended battle's roster; see
+     *  the overlay store's battleRealm), then the current selection
+     *  tiers, else the default. */
+    const selectionRealm = computed(() => {
+      if (overlay.battleRealm) return overlay.battleRealm;
+      return (
+        gd.config.activeInstall?.realm ??
+        accounts.activeAccount?.realm ??
+        accounts.activeRealm ??
+        "asia"
+      );
+    });
+
+    /** The realm to query live-roster stats against. An ENDED battle's
+     *  roster is pinned to its latched battle realm first: the retained
+     *  review survives preferred-instance handovers (the session guard's
+     *  ended carve-out), and without this pin the next client's realm —
+     *  probe or process tier — would re-route the whole roster there and
+     *  overwrite correct rows with foreign-cluster answers (#926's bug
+     *  class, via the retention this guard carve-out enables). Otherwise:
+     *  the probe's ground truth while fresh, then the running client, then
+     *  the selection fallback above. */
+    const realm = computed(() => {
+      if (overlay.battleEnded && overlay.battleRealm) return overlay.battleRealm;
+      return (
+        plugin.liveSelfRealm ||
+        gameStatus.process.matchedInstall?.realm ||
+        selectionRealm.value
+      );
+    });
+
+    /** Live battle clock (from tempArenaInfo's dateTime) — feeds the
+     *  battle-duration cap below; the visible clock rides the panel. */
+    const liveClock = useBattleClock(() => overlay.arenaInfo?.dateTime ?? null);
+
+    /** Battle lifecycle: while the game runs, watch the replays folder —
+     *  the game writes the .wowsreplay file when the battle ENDS, so a new
+     *  file is the direct "match over" signal. On detection: flip to
+     *  SETTLING (结算中 — stats screen, replay not yet final). When the
+     *  game process exits, return to idle. A NEXT battle's roster (fresh
+     *  tempArenaInfo dateTime) re-arms the battle phase — without this the
+     *  settling pill would stick for every battle after the first in one
+     *  game session. */
+    const livePhase = ref<"idle" | "battle" | "settling">("idle");
+    /** The just-finished battle's replay file (a full path — listReplays
+     *  walks absolute), latched by the settling poller: the self-stats
+     *  panel's authoritative full parse reads it. Kept until the next
+     *  battle re-arms the phase. */
+    const settledReplay = ref<string | null>(null);
+    let baselineFiles: Set<string> | null = null;
+    async function snapshotReplayDir(): Promise<Set<string> | null> {
+      try {
+        const files = await api.listReplays(arenaDir.value);
+        return new Set(files);
+      } catch {
+        return null;
+      }
+    }
+    /** Arm the battle phase for a running game: flip to "battle" and
+     *  snapshot the replay-dir baseline. Shared by the running-transition
+     *  watcher and onMounted — opening /live after the battle already
+     *  started must land in the same state a mid-page game start would. */
+    async function armBattlePhase() {
+      livePhase.value = "battle";
+      settledReplay.value = null;
+      baselineFiles = await snapshotReplayDir();
+    }
+    watch(
+      () => gameStatus.process.running,
+      async (running) => {
+        if (running) {
+          await armBattlePhase();
+        } else {
+          livePhase.value = "idle";
+          baselineFiles = null;
+        }
+      },
+    );
+    watch(
+      () => overlay.arenaInfo?.dateTime ?? null,
+      (stamp, prev) => {
+        if (stamp != null && stamp !== prev && gameStatus.process.running) {
+          void armBattlePhase();
+        }
+      },
+    );
+
+    /** Session-identity clears (client switched / relaunched with another
+     *  account — the App-level useLiveSessionGuard) empty the roster store;
+     *  re-arm the battle phase here so the latched settled replay can't
+     *  resurrect the previous battle's parse on a later settle/remount, and
+     *  the settling poller restarts against a fresh replay-dir baseline for
+     *  the new session's first battle. */
+    watch(
+      () => overlay.arenaInfo == null,
+      (empty) => {
+        if (empty && gameStatus.process.running) void armBattlePhase();
+      },
+    );
+
+    /** Hard end-of-battle fallback. A mid-battle quit writes no .wowsreplay
+     *  (the settling watcher never fires) and the game deletes
+     *  tempArenaInfo.json — the poll then flags the battle ended and the
+     *  roster is retained on purpose, so the cap only guards a battle that
+     *  is still LIVE (roster present, not ended, page in the battle phase):
+     *  past the cap the roster is force-cleared until the next arena-info
+     *  event repopulates it. Declared after the lifecycle block above —
+     *  its getter reads `livePhase`, and `watch` evaluates the getter
+     *  synchronously. */
+    const battleCapHit = computed(() => {
+      if (livePhase.value !== "battle" || overlay.battleEnded) return false;
+      const a = overlay.arenaInfo;
+      const elapsed = liveClock.elapsed.value;
+      if (!a || elapsed == null) return false;
+      const key = modeKey(
+        a.matchGroup,
+        a.scenario,
+        null,
+        a.botCount ?? 0,
+        a.scriptedUnitCount ?? 0,
+      );
+      const pvp =
+        key === "pvp" ||
+        key === "ranked" ||
+        key === "clan" ||
+        key === "brawl" ||
+        key === "squad" ||
+        key === "armsrace";
+      return elapsed >= (pvp ? PVP_BATTLE_CAP_SECS : PVE_BATTLE_CAP_SECS);
+    });
+    watch(battleCapHit, (hit) => {
+      if (hit) overlay.clearArenaInfo();
+    });
+    let endPoll: number | null = null;
+    watch(
+      livePhase,
+      (ph) => {
+        if (ph === "battle") {
+          if (endPoll === null) {
+            endPoll = window.setInterval(async () => {
+              if (baselineFiles == null) {
+                baselineFiles = await snapshotReplayDir();
+                return;
+              }
+              const now = await snapshotReplayDir();
+              if (!now) return;
+              const fresh = [...now]
+                .filter((f) => !baselineFiles!.has(f))
+                .sort()
+                .at(-1);
+              if (fresh != null) {
+                settledReplay.value = fresh;
+                livePhase.value = "settling";
+              } else {
+                baselineFiles = now;
+              }
+            }, 3000);
+          }
+        } else if (endPoll !== null) {
+          clearInterval(endPoll);
+          endPoll = null;
+        }
+      },
+      { immediate: true },
+    );
+
+    // While the page is open, poll the game's tempArenaInfo.json so the
+    // roster refreshes as players load in / the battle ends (the game
+    // DELETES the file at battle end — an absent read flags the battle
+    // ended and keeps the last roster on screen). The dir is EXPLICIT —
+    // the WATCHED instance's replays folder (the sidebar's instance cards
+    // pick it; without a matched install the dir is undefined and the
+    // backend's PreferRunning chain resolves instead — see arenaDir) — so
+    // on multi-client machines the poll reads the instance the user
+    // selected, not the backend's preferred one.
+    let arenaTimer: number | null = null;
+    onMounted(async () => {
+      await gd.detect();
+      // The watcher above only sees running→true transitions while this page
+      // is mounted — a game that started BEFORE /live opened never fires it.
+      // Seed the phase directly so the SETTLING pill can show mid-battle.
+      if (gameStatus.process.running) {
+        await armBattlePhase();
+      }
+      void overlay.refreshArenaInfo(arenaDir.value);
+      arenaTimer = window.setInterval(
+        () => void overlay.refreshArenaInfo(arenaDir.value),
+        3000,
+      );
+    });
+    onBeforeUnmount(() => {
+      if (endPoll !== null) clearInterval(endPoll);
+      if (arenaTimer !== null) clearInterval(arenaTimer);
+    });
+
+    /** Panel body: mount it while the game runs or a roster exists. With
+     *  neither there is nothing live to watch — show the placeholder. A
+     *  finished battle keeps its roster in the store (battleEnded), so the
+     *  panel stays up with the "ended" badge instead of blanking. */
+    const battleLive = computed(
+      () => gameStatus.process.running || overlay.arenaInfo != null,
+    );
+
+    /** The two /live bodies share one mount point: the roster panel (全员
+     * 战绩) or the personal one (我的战绩), switched by the title-bar
+     *  segmented group (AppTitleBar) through the liveUi store. */
+    const panel = () =>
+      battleLive.value ? (
+        liveUi.viewMode === "mine" ? (
+          <LiveSelfPanel
+            arena={overlay.arenaInfo}
+            settling={livePhase.value === "settling"}
+            ended={overlay.battleEnded}
+            settledReplay={settledReplay.value ?? undefined}
+          />
+        ) : (
+          <LiveBattlePanel
+            arena={overlay.arenaInfo}
+            settling={livePhase.value === "settling"}
+            ended={overlay.battleEnded}
+            realm={realm.value}
+          />
+        )
+      ) : (
+        <LiveIdleGuide />
+      );
+
+    return () => (
+      <main class="live-view">
+        {/* No page-level header: the panel renders the page title itself
+            ("实时对局" used to appear twice — the slim eyebrow here plus the
+            panel's own heading), and the idle guide carries its own. */}
+        <div class="live-view__body">{panel()}</div>
+      </main>
+    );
+  },
+});

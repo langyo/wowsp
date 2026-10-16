@@ -1,12 +1,14 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
+import { useRouter } from "vue-router";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
-import { HButton, HModal, HTag, HTabs, useToast } from "@celestia-island/hikari";
+import { HkButton, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useRankedStore } from "@/stores/ranked";
 import { useTrendsStore } from "@/stores/trends";
@@ -14,18 +16,53 @@ import { api, type ShipInfo } from "@/api";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
+import { isMobileApp } from "@/utils/platform";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
 import BuildPlanner from "./BuildPlanner";
 import ShipMyStatsPanel from "./ShipMyStatsPanel";
 import ServerTrendPanel from "./ServerTrendPanel";
 import { emptyBuild, type PlannerBuild } from "./modifierPipeline";
-import ShipStage, { type FocusZone, type ArmorZone } from "./ShipStage";
+import { resolveShipParts } from "./shipParts";
+import ShipStage, { type FocusZone, type ArmorZone, type PlaneModelOption } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
+import { authoritativeEvent } from "@/utils/shipEventData";
+import { eventLabel, eventTooltip } from "@/utils/shipEvents";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
-import { tierToRoman } from "@/utils/tierRoman";
+import { tierToRoman } from "@wowsp/holo";
+import planeTypesDb from "@/data/plane_types.json";
 import "./ShipDetailModal.scss";
+
+// ── Plane picker role labels ──────────────────────────────────────────────
+// plane_types.json carries a `role` per airframe (derived from the carried
+// ammunition by scripts/model_convert/extract_plane_types.py): a GameParams
+// suffix like "Hakuryu stock" is a hull config, not an aircraft type, and
+// three squadrons of one ship share it. The order below also groups the
+// picker entries by role.
+const PLANE_ROLE_ORDER = [
+  "torpedo", "heBomber", "apBomber", "heSkip", "apSkip",
+  "rocket", "fighter", "scout", "asw", "mine",
+];
+
+const planeRoleByIndex = new Map<string, string>(
+  (Object.values(planeTypesDb) as Array<{ index: string; role?: string }>).map(
+    (m) => [m.index, m.role ?? ""],
+  ),
+);
+
+function planeRoleOf(index: string): string {
+  return planeRoleByIndex.get(index) ?? "";
+}
+
+/** Translated role name; unmapped roles (special airstrike planes etc.) fall
+ *  back to `fallback` — the raw entity suffix. */
+function planeRoleLabel(role: string, fallback: string): string {
+  if (!role) return fallback;
+  const key = `ships.plane.${role}`;
+  const msg = t(key, {});
+  return msg === key ? fallback : msg;
+}
 
 /**
  * Ship detail modal with tabs:
@@ -64,7 +101,14 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const ranked = useRankedStore();
     const trends = useTrendsStore();
+    const loadingTasks = useLoadingTasksStore();
     const toast = useToast();
+    const router = useRouter();
+    // Phone app build: there is no local game install to point the armor
+    // error's recovery action at (the game-path settings section and setup
+    // modal are desktop-only surfaces) — the banner's second action routes
+    // to the replay view's PC-pairing wizard instead (see the banner below).
+    const mobileApp = isMobileApp();
 
     const tab = ref<"specs" | "mystats" | "community" | "skill">("specs");
 
@@ -95,22 +139,28 @@ export default defineComponent({
       if (gpFetched.value || !props.ship) return;
       gpLoading.value = true;
       gpError.value = null;
-      const toastId = toast.loading(t("ships.detail.gameparamsLoading"));
+      const taskId = loadingTasks.begin(t("ships.detail.gameparamsLoading"));
       // First load per ship unpacks GameParams.data from the install (a few
-      // seconds even on release builds) — keep the loading toast up long
+      // seconds even on release builds) — keep the loading chip up long
       // enough to cover it; the finally block dismisses it on completion.
-      const timer = setTimeout(() => toast.remove(toastId), 90_000);
+      const timer = setTimeout(() => loadingTasks.end(taskId), 90_000);
+      // Guard the switch-ships-while-loading race: if the user moves to
+      // another ship while this fetch is in flight, the watch already reset
+      // the state — a late resolve for the OLD ship must not clobber the
+      // new ship's gameparams (armor tab, WeaponBar, AA spec rows).
+      const requestedId = props.ship.shipId;
       try {
-        gameparams.value = await api.getShipGameparams(props.ship.shipId, props.gameRoot);
+        const gp = await api.getShipGameparams(requestedId, props.gameRoot);
+        if (props.ship?.shipId === requestedId) gameparams.value = gp;
       } catch (e) {
         const msg = (e as Error).message || String(e);
-        gpError.value = msg;
+        if (props.ship?.shipId === requestedId) gpError.value = msg;
         toast.error(`${t("ships.detail.gameparamsErrorTip")}\n${msg}`);
       } finally {
         clearTimeout(timer);
         gpLoading.value = false;
         gpFetched.value = true;
-        toast.remove(toastId);
+        loadingTasks.end(taskId);
       }
     }
 
@@ -152,7 +202,7 @@ export default defineComponent({
       if (!acc || !props.ship) return;
       myStatsLoaded.value = true;
       void shipStats.load(acc.accountId, acc.realm).catch(() => {});
-      void ranked.load(acc.accountId, acc.realm, 5).catch(() => {});
+      void ranked.load(acc.accountId, acc.realm).catch(() => {});
       void trends.loadPlayer(acc.accountId, acc.realm).catch(() => {});
     }
 
@@ -161,6 +211,11 @@ export default defineComponent({
       (s) => {
         // Water-table opens land straight on My Stats with the hologram
         // collapsed; encyclopedia opens keep the specs-first full stage.
+        // Closing (ship → null) must NOT run this reset: the leave
+        // animation is still folding the old content, and re-seating the
+        // tab/stage mid-fold blanks what the user is looking at. Every
+        // meaningful open re-runs the reset anyway.
+        if (!s) return;
         const water = props.source === "water";
         tab.value = water ? "mystats" : "specs";
         stageHidden.value = water;
@@ -169,11 +224,9 @@ export default defineComponent({
         gpError.value = null;
         myStatsLoaded.value = false;
         build.value = emptyBuild();
-        if (s) {
-          void loadGameparams();
-          void trends.loadCommunity(s.shipId);
-          if (water) void loadMyStats();
-        }
+        void loadGameparams();
+        void trends.loadCommunity(s.shipId);
+        if (water) void loadMyStats();
       },
       { immediate: true },
     );
@@ -185,10 +238,28 @@ export default defineComponent({
 
     const open = computed(() => props.ship !== null);
 
+    // ── Leave-animation snapshot ─────────────────────────────────────────
+    // Views null the ship prop on the close edge (the `close` emit), so the
+    // live prop goes empty while the modal is still folding out. Render
+    // against the last non-null ship so the exit animation frames the real
+    // content instead of a blank shell — belt-and-braces on top of hikari's
+    // modal content hold (same discipline as shittim-chest's log windows,
+    // which never clear their payload on the close arm).
+    const heldShip = ref<ShipInfo | null>(null);
+    watch(
+      () => props.ship,
+      (s) => {
+        if (s) heldShip.value = s;
+      },
+      { immediate: true },
+    );
+    const viewShip = computed(() => props.ship ?? heldShip.value);
+
     const myShipStats = computed(() => {
       const acc = playerCtx.value;
-      if (!acc || !props.ship) return null;
-      return shipStats.getShip(acc.accountId, acc.realm, props.ship.shipId);
+      const ship = viewShip.value;
+      if (!acc || !ship) return null;
+      return shipStats.getShip(acc.accountId, acc.realm, ship.shipId);
     });
 
     /** Player-side numbers feeding the server-trend comparison table. */
@@ -203,11 +274,12 @@ export default defineComponent({
     });
 
     const relevantPatches = computed(() => {
-      if (!props.ship || !trends.playerTrend) return [];
-      return trends.playerTrend.patches.filter((p) => p.shipIds.includes(props.ship!.shipId));
+      const ship = viewShip.value;
+      if (!ship || !trends.playerTrend) return [];
+      return trends.playerTrend.patches.filter((p) => p.shipIds.includes(ship.shipId));
     });
 
-    const dp = computed(() => (props.ship?.defaultProfile ?? {}) as Record<string, unknown>);
+    const dp = computed(() => (viewShip.value?.defaultProfile ?? {}) as Record<string, unknown>);
 
     // ── Armor overlay data (from GameParams, passed to ShipStage) ──────────
     const armorZones = computed<ArmorZone[]>(() => {
@@ -230,7 +302,8 @@ export default defineComponent({
         }
         // Probe several possible GameParams layouts (varies by unpacker).
         const armor = (gp.ShipArmor ?? gp.Armor ?? gp.HullArmor ?? {}) as Record<string, unknown>;
-        const citadel = (armor.Citadel ?? gp.Citadel ?? (gp.A_Hull as any)?.Citadel) as Record<string, unknown> | undefined;
+        const gpHull = resolveShipParts(gp, "stock").hull as Record<string, unknown> | null;
+        const citadel = (armor.Citadel ?? gp.Citadel ?? gpHull?.Citadel) as Record<string, unknown> | undefined;
         const zones: ArmorZone[] = [];
         const add = (name: string, mm: number | undefined) => {
           if (mm != null && mm > 0) zones.push({ name, thickness: mm });
@@ -248,11 +321,11 @@ export default defineComponent({
         // Torpedo belt — reduction % converted to a representative value.
         const tb = (armor?.TorpedoBelt ?? armor?.TorpedoProtection) as Record<string,unknown> | undefined;
         if (tb?.factor != null) add("torpedoBelt", Math.round((1 - Number(tb.factor)) * 100));
-        // Fallback: read the flat per-part armour dict (A_Hull.armor).
+        // Fallback: read the flat per-part armour dict (stock hull.armor).
         // Use DISTINCT sorted thicknesses for zone assignment so each
         // zone gets a visibly different colour.
         if (zones.length === 0) {
-          const hull = (gp.A_Hull ?? gp.Hull ?? {}) as Record<string, unknown>;
+          const hull = (gpHull ?? {}) as Record<string, unknown>;
           const dict = (hull.armor ?? hull.Armor ?? null) as Record<string, number> | null;
           if (dict) {
             const vals = [...new Set(Object.values(dict).filter((v: number) => v > 0))]
@@ -283,8 +356,88 @@ export default defineComponent({
         const n = typeof v === "number" ? v : Number(v);
         return Number.isFinite(n) && n > 0 ? n : null;
       }
-      const hull = (gp.A_Hull ?? gp.Hull ?? {}) as Record<string, unknown>;
+      const hull = (resolveShipParts(gp, "stock").hull ?? {}) as Record<string, unknown>;
       return num(hull.draft) ?? num(hull.maxDraft) ?? num(hull.Draft) ?? num(hull.MaxDraft) ?? null;
+    });
+
+    // ── Baked plane models carried by this ship (carriers & hybrids) ──────
+    // Ships with embarked squadrons embed one top-level entry per squadron,
+    // shaped `{ planes: ["PAAB002_Grumman_TBF", …] }` — the entity name's
+    // index prefix ("PAAB002") is exactly the baked GLB stem under
+    // models/planes/. Several squadrons can field the same airframe, so
+    // dedupe by index. (Hybrid battleships like Kearsarge field planes too —
+    // data-driven, so they get the picker for free.)
+    //
+    // Entries are labelled by combat role and sorted into role groups; when
+    // a ship fields two airframes of the same role ("Hakuryu stock" vs
+    // "Hakuryu top" dive bombers), a qualifier distilled from the raw suffix
+    // (stock → 白板, B5N2 → B5N2) keeps the picker entries distinguishable.
+    const planeModels = computed<PlaneModelOption[]>(() => {
+      const gp = gameparams.value as Record<string, any> | null;
+      if (!gp) return [];
+      try {
+        const seen = new Set<string>();
+        const out: PlaneModelOption[] = [];
+        const rawTailOf = new Map<string, string>();
+        for (const v of Object.values(gp)) {
+          const planes = (v as { planes?: unknown })?.planes;
+          if (!Array.isArray(planes)) continue;
+          for (const name of planes) {
+            if (typeof name !== "string") continue;
+            const m = /^([A-Z]+\d+)_(.+)$/.exec(name);
+            if (!m || seen.has(m[1])) continue;
+            seen.add(m[1]);
+            out.push({ index: m[1], label: m[1] });
+            rawTailOf.set(m[1], m[2].replace(/_/g, " ").trim());
+          }
+        }
+        const fallbackRank = PLANE_ROLE_ORDER.length;
+        const roleRank = (p: PlaneModelOption): number => {
+          const i = PLANE_ROLE_ORDER.indexOf(planeRoleOf(p.index));
+          return i < 0 ? fallbackRank : i;
+        };
+        out.sort((a, b) => roleRank(a) - roleRank(b));
+        // Ship-name tokens (encyclopedia name + the GameParams entity name's
+        // "PJSA917_TST_Hakuryu" tail) are stripped from the raw suffix so the
+        // qualifier distills to stock/top-style residue.
+        const gpName = String(gp.name ?? "");
+        const gpTail = /^[A-Z]+\d+_(.*)$/.exec(gpName)?.[1] ?? gpName;
+        const shipTokens = `${viewShip.value?.name ?? ""} ${gpTail}`
+          .toLowerCase()
+          .split(/[\s_]+/)
+          .filter(Boolean);
+        const roleCounts = new Map<string, number>();
+        for (const p of out) {
+          const role = planeRoleOf(p.index);
+          roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1);
+        }
+        for (const p of out) {
+          const role = planeRoleOf(p.index);
+          const raw = rawTailOf.get(p.index) ?? "";
+          const key = `ships.plane.${role}`;
+          const translated = role && t(key, {}) !== key;
+          // Unmapped roles already fall back to the raw suffix, which then
+          // carries its own qualifier — appending another would duplicate it.
+          let label = planeRoleLabel(role, raw || p.index);
+          if (translated && (roleCounts.get(role) ?? 0) > 1 && raw) {
+            let qual = raw
+              .split(" ")
+              .filter((tok) => !shipTokens.includes(tok.toLowerCase()))
+              .join(" ");
+            const cfg = qual.toLowerCase();
+            if (cfg === "stock" || cfg === "top") {
+              const cfgKey = `ships.plane.cfg.${cfg}`;
+              const msg = t(cfgKey, {});
+              if (msg !== cfgKey) qual = msg;
+            }
+            if (qual && qual !== label) label += ` · ${qual}`;
+          }
+          p.label = label;
+        }
+        return out;
+      } catch {
+        return [];
+      }
     });
 
     function nationLabel(code: string): string {
@@ -298,21 +451,30 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
-    const rarity = computed(() =>
-      props.ship ? shipRarity(props.ship) : "common",
-    );
-    const typeShort = computed(() =>
-      props.ship ? SHIP_TYPE_SHORT[props.ship.type] ?? "?" : "?",
-    );
+    const rarity = computed(() => {
+      const ship = viewShip.value;
+      return ship ? shipRarity(ship) : "common";
+    });
+    // Event ships: the rarity slot shows the event tag ("活动·<official
+    // name>") instead of a band label, with the first-appearance as the
+    // tooltip.
+    const eventId = computed(() => {
+      const ship = viewShip.value;
+      return ship ? authoritativeEvent(ship.shipId) : null;
+    });
+    const typeShort = computed(() => {
+      const ship = viewShip.value;
+      return ship ? SHIP_TYPE_SHORT[ship.type] ?? "?" : "?";
+    });
 
     return () => (
-      <HModal
+      <HkModal
         modelValue={open.value}
         onUpdate:modelValue={(v: boolean) => !v && emit("close")}
-        title={props.ship ? `${tierToRoman(props.ship.tier)} ${useEncyclopediaStore().shipDisplayName(props.ship)}` : t("ships.detail.title")}
+        title={viewShip.value ? `${tierToRoman(viewShip.value.tier)} ${useEncyclopediaStore().shipDisplayName(viewShip.value)}` : t("ships.detail.title")}
         width="80vw"
       >
-        {!props.ship ? null : (
+        {!viewShip.value ? null : (
           <div class="ship-detail">
             {/* holographic stage: shown for all tabs except skill (where the
                 build planner replaces it). Water-table opens start with the
@@ -322,9 +484,10 @@ export default defineComponent({
               <>
                 <ShipStage
                   ref={stageRef}
-                  ship={props.ship}
+                  ship={viewShip.value}
                   armorZones={armorZones.value}
                   waterlineDraft={waterlineDraft.value}
+                  planeModels={planeModels.value}
                   hidden={stageHidden.value}
                   onUpdate:hidden={(v: boolean) => (stageHidden.value = v)}
                 />
@@ -336,41 +499,69 @@ export default defineComponent({
 
             {/* identity header */}
             <div class="ship-detail__id">
-              <HTag variant="primary">{tierToRoman(props.ship.tier)}</HTag>
-              <HTag variant="primary">{typeLabel(props.ship.type)} ({typeShort.value})</HTag>
+              <HkTag variant="primary">{tierToRoman(viewShip.value.tier)}</HkTag>
+              <HkTag variant="primary">{typeLabel(viewShip.value.type)} ({typeShort.value})</HkTag>
               <NationFlag
-                nation={props.ship.nation}
-                label={nationLabel(props.ship.nation)}
+                nation={viewShip.value.nation}
+                label={nationLabel(viewShip.value.nation)}
                 variant="flag"
                 size="md"
                 showLabel
               />
-              <HTag variant={RARITY_VARIANT[rarity.value]}>
-                {t(`ships.rarity.${rarity.value}`)}
-              </HTag>
+              {eventId.value ? (
+                <span class="ship-detail__event-tag" title={eventTooltip(eventId.value)}>
+                  <HkTag variant={RARITY_VARIANT[rarity.value]}>
+                    {eventLabel(eventId.value)}
+                  </HkTag>
+                </span>
+              ) : (
+                <HkTag variant={RARITY_VARIANT[rarity.value]}>
+                  {t(`ships.rarity.${rarity.value}`)}
+                </HkTag>
+              )}
             </div>
 
-            {props.ship.description ? (
-              <p class="ship-detail__desc">{props.ship.description}</p>
+            {viewShip.value.description ? (
+              <p class="ship-detail__desc">{viewShip.value.description}</p>
             ) : null}
 
             {/* Armor-data failure banner: shows the backend error plus the
-                two recovery paths — re-run the load (retry after a path
-                change or game update) or open the game-path setup modal. */}
+                two recovery paths — re-run the load (retry after a sync or
+                game update), then either the game-path setup modal (desktop
+                app: pick a local install) or, on the phone app where no
+                local install exists, the replay view's PC-pairing wizard
+                that syncs the gamedata cache to the phone. */}
             {gpError.value ? (
               <div class="ship-detail__gp-error">
                 <span class="ship-detail__gp-error-msg">{gpError.value}</span>
-                <HButton size="sm" variant="secondary" onClick={() => retryGameparams()}>
+                <HkButton size="sm" variant="secondary" onClick={() => retryGameparams()}>
                   {t("common.retry")}
-                </HButton>
-                <HButton size="sm" onClick={() => (showPathSetup.value = true)}>
-                  {t("common.gamePath.setAction")}
-                </HButton>
+                </HkButton>
+                {mobileApp ? (
+                  <HkButton
+                    size="sm"
+                    onClick={() => {
+                      emit("close");
+                      // The modal's hikari back guard rewinds its pushed
+                      // history entry on close (a deferred macrotask); a
+                      // same-tick router.push races that rewind and the
+                      // popstate strands the user on /ships. Let the close
+                      // settle (0.3s leave animation) before navigating.
+                      setTimeout(() => void router.push("/replay"), 350);
+                    }}
+                  >
+                    {t("ships.detail.gameparamsSyncAction")}
+                  </HkButton>
+                ) : (
+                  <HkButton size="sm" onClick={() => (showPathSetup.value = true)}>
+                    {t("common.gamePath.setAction")}
+                  </HkButton>
+                )}
               </div>
             ) : null}
 
             {/* tab bar — hikari pill tab strip */}
-            <HTabs
+            <HkTabs
               variant="pill"
               modelValue={tab.value}
               onUpdate:modelValue={(v: string) => selectTab(v as typeof tab.value)}
@@ -384,7 +575,7 @@ export default defineComponent({
             <div class="ship-detail__body">
               <Transition name="s-fade-slide" mode="out-in">
                 {tab.value === "specs" ? (
-                  <div key="specs"><SpecsPanel profile={dp.value} nation={props.ship.nation} /></div>
+                  <div key="specs"><SpecsPanel profile={dp.value} nation={viewShip.value.nation} gameparams={gameparams.value as Record<string, unknown> | null} /></div>
                 ) : tab.value === "mystats" ? (
                 <div class="ship-detail__mystats" key="mystats">
                   <ShipMyStatsPanel
@@ -394,7 +585,9 @@ export default defineComponent({
                     loading={shipStats.loading}
                   />
 
-                  {trends.playerTrend && trends.playerTrend.buckets.length > 0 ? (
+                  {/* A single version bucket is no trend — hide the chart
+                      until there are at least two versions to compare. */}
+                  {trends.playerTrend && trends.playerTrend.buckets.length > 1 ? (
                     <div class="ship-detail__trend">
                       <h4>{t("trend.winrateOverTime")}</h4>
                       <TrendBars
@@ -406,8 +599,9 @@ export default defineComponent({
                 </div>
               ) : tab.value === "community" ? (
                 <div class="ship-detail__community" key="community">
-                  <ServerTrendPanel shipId={props.ship.shipId} compare={serverCompare.value} />
-                  {trends.communityTrend?.available ? (
+                  <ServerTrendPanel shipId={viewShip.value.shipId} compare={serverCompare.value} />
+                  {trends.communityTrend?.available &&
+                  trends.communityTrend.buckets.length > 1 ? (
                     <div class="ship-detail__trend">
                       <h4>{t("trend.winrateOverTime")}</h4>
                       <TrendBars buckets={trends.communityTrend.buckets} patches={[]} />
@@ -417,9 +611,10 @@ export default defineComponent({
               ) : (
                 <div class="ship-detail__skill" key="skill">
                   <BuildPlanner
-                    ship={props.ship}
+                    ship={viewShip.value}
                     build={build.value}
                     gameRoot={props.gameRoot}
+                    gameparams={gameparams.value as Record<string, unknown> | null}
                     onUpdate:build={(b: PlannerBuild) => (build.value = b)}
                   />
                 </div>
@@ -429,12 +624,16 @@ export default defineComponent({
           </div>
         )}
 
-        {/* Nested game-path setup (opened from the armor-error banner). */}
-        <GamePathSetupModal
-          modelValue={showPathSetup.value}
-          onUpdate:modelValue={(v: boolean) => (showPathSetup.value = v)}
-        />
-      </HModal>
+        {/* Nested game-path setup (opened from the armor-error banner) —
+            desktop app only: the phone build has no local install to pick,
+            and its banner action routes to the replay pairing wizard. */}
+        {!mobileApp ? (
+          <GamePathSetupModal
+            modelValue={showPathSetup.value}
+            onUpdate:modelValue={(v: boolean) => (showPathSetup.value = v)}
+          />
+        ) : null}
+      </HkModal>
     );
   },
 });
@@ -445,10 +644,13 @@ const SpecsPanel = defineComponent({
   props: {
     profile: { type: Object as () => Record<string, unknown> | null, default: null },
     nation: { type: String, default: undefined },
+    /** Raw GameParams entry (lazy-fetched by the modal) — feeds the
+     *  per-band AA rows the WG profile cannot provide. */
+    gameparams: { type: Object as () => Record<string, unknown> | null, default: null },
   },
   setup(props) {
     const toast = useToast();
-    const groups = computed(() => buildShipSpecs(props.profile, props.nation));
+    const groups = computed(() => buildShipSpecs(props.profile, props.nation, props.gameparams));
     const iconFor = (name: string) => {
       switch (name) {
         case "Shield": return Shield;

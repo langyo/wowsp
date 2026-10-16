@@ -18,6 +18,18 @@ Usage:
   just extract all --path D:\\WoWS   # explicit game path
   just extract rarity,techtree       # only these modules (skip the slow ones)
   python scripts/extract/run.py --module assets --path "D:\\Steam\\...\\World of Warships"
+
+The techtree module also builds the Lesta tree from a Lesta client (Мир
+кораблей) install — point one out with --lesta-path / WOWSP_GAME_PATH_LESTA
+(or have one registered in the registry), or feed a pre-decoded Lesta
+GameParams.json via --lesta-gameparams (pullable without the client through
+OpenKorabli/lgc-download + `wowsunpack game-params`); without either the
+Lesta tree is skipped rather than faked from the WG client's dump. The same
+Lesta client snapshot feeds the app-carried ship data: the armor/ballistics
+slices bundled into the Rust tree (build_lesta_shipdata.py — read by
+commands/gameparams.rs so Lesta-only ids never touch an install) and the
+Lesta airplanes merged into the plane tables (model_convert's
+extract_lesta_planes.py; their GLBs bake via bake_lesta_planes.py).
 """
 from __future__ import annotations
 
@@ -33,6 +45,7 @@ sys.path.insert(0, str(HERE))
 
 from _common import (  # noqa: E402
     find_game_path,
+    find_lesta_game_path,
     find_wowsunpack,
     run_game_params,
     run_metadata,
@@ -49,10 +62,16 @@ RES_IMG = REPO / "packages" / "webui" / "src" / "res" / "images"
 # Shared intermediate artifacts cached across runs.
 CACHE_DIR = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/share"))) / "WoWSP-extract"
 GAMEPARAMS_JSON = CACHE_DIR / "GameParams.json"
+# The Lesta client's own GameParams — a separate dump from a separate game.
+# Never reuse GAMEPARAMS_JSON for it: that file comes from the WG client, and
+# WG's research graph is not Lesta's (the lines Lesta added — IJN CV line II,
+# US BB line IV — exist only in its own client files).
+GAMEPARAMS_LESTA_JSON = CACHE_DIR / "GameParams_lesta.json"
 WOWSINFO_JSON = CACHE_DIR / "wowsinfo.json"
 METADATA_JSON = CACHE_DIR / "wows_meta.json"
 RARITY_JSON = SRC_DATA / "ship_rarity.json"
 TECHTREE_JSON = SRC_DATA / "tech_tree.json"
+TECHTREE_LESTA_JSON = SRC_DATA / "tech_tree_lesta.json"
 SHIPMODELS_JSON = SRC_DATA / "ship_models.json"
 
 
@@ -61,6 +80,20 @@ def main() -> None:
     ap.add_argument("module_pos", nargs="?", help="modules (positional alt to --module)")
     ap.add_argument("--module", default="all", help="comma list of modules or 'all'")
     ap.add_argument("--path", default=None, help="game install path (default: auto-detect)")
+    ap.add_argument(
+        "--lesta-path",
+        default=None,
+        help="Lesta client (Мир кораблей) install path for the Lesta tech tree "
+        "(default: WOWSP_GAME_PATH_LESTA, then a registry scan for a Lesta install)",
+    )
+    ap.add_argument(
+        "--lesta-gameparams",
+        default=None,
+        help="pre-decoded Lesta GameParams.json for the Lesta tech tree — skips "
+        "the client step entirely (e.g. pulled remotely with OpenKorabli/"
+        "lgc-download and decoded with wowsunpack game-params); "
+        "WOWSP_LESTA_GAMEPARAMS env works too",
+    )
     ap.add_argument(
         "--bridge",
         default="https://raw.githubusercontent.com/wowsinfo/data/master/live/app/data/wowsinfo.json",
@@ -106,6 +139,7 @@ def main() -> None:
         _run_rarity()
     if "techtree" in modules:
         _run_techtree()
+        _run_techtree_lesta(args.lesta_path, args.lesta_gameparams, args.refresh)
     if "models" in modules:
         _run_shipmodels()
     if "dogtags" in modules:
@@ -210,14 +244,186 @@ def _run_techtree() -> None:
     )
 
 
+def _run_techtree_lesta(
+    explicit_lesta_path: str | None,
+    explicit_gameparams: str | None,
+    refresh: bool,
+) -> None:
+    """Lesta tree: the Lesta client's own research graph (no wowsinfo bridge).
+
+    Requires an actual Lesta (Мир кораблей) install — its GameParams is the
+    only source of the research lines Lesta diverged from WG with — or a
+    pre-decoded Lesta GameParams.json via --lesta-gameparams. Without either,
+    the bundled tech_tree_lesta.json is left untouched: generating it from
+    the WG client's dump would silently re-emit the WG tree under the Lesta
+    name, which is exactly the defect this separate path exists to prevent.
+    """
+    lesta_gp = explicit_gameparams or os.environ.get("WOWSP_LESTA_GAMEPARAMS")
+    if lesta_gp:
+        if not Path(lesta_gp).is_file():
+            _die(f"Lesta GameParams not found: {lesta_gp}")
+        print(f"[extract] lesta gameparams: {lesta_gp}")
+        _py(*_lesta_tree_cmd(lesta_gp))
+        stamp = _run_lesta_overlay(lesta_gp)
+        _run_wg_only_roster(Path(lesta_gp))
+        _run_lesta_shipdata(Path(lesta_gp), stamp)
+        return
+    lesta = find_lesta_game_path(explicit_lesta_path)
+    if not lesta:
+        print(
+            "[techtree] WARNING: no Lesta (Мир кораблей) client found — skipping the "
+            "Lesta tech tree. The bundled tech_tree_lesta.json is left as-is; pass "
+            "--lesta-path / --lesta-gameparams or set WOWSP_GAME_PATH_LESTA to "
+            "regenerate it.",
+            flush=True,
+        )
+        return
+    print(f"[extract] lesta game: {lesta}")
+    if not GAMEPARAMS_LESTA_JSON.exists() or refresh:
+        print("[extract] generating Lesta GameParams_lesta.json (one-time, ~350 MB) ...")
+        rc = run_game_params(GAMEPARAMS_LESTA_JSON, lesta)
+        if rc != 0:
+            _die(f"wowsunpack game-params failed for the Lesta client (rc={rc}).")
+    _py(*_lesta_tree_cmd(GAMEPARAMS_LESTA_JSON))
+    stamp = _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
+    _run_wg_only_roster(GAMEPARAMS_LESTA_JSON)
+    _run_lesta_shipdata(GAMEPARAMS_LESTA_JSON, stamp)
+
+
+def _run_wg_only_roster(lesta_gameparams: Path) -> None:
+    """The WG-only roster artifact (ships_wg_only.json): every WG client
+    ship whose index the Lesta client has never carried. The encyclopedia
+    list in Lesta mode hides these ids — the tree-derived
+    WG_EXCLUSIVE_TREE_SHIP_IDS covers researchable hulls only, while this
+    set-difference of the two full dumps also classifies the WG-only
+    premiums, collabs and event hulls no tree records. Needs the WG dump
+    (a shared cache built earlier in the same run); without it the step
+    skips and the bundled artifact stays untouched."""
+    if not GAMEPARAMS_JSON.exists():
+        print(
+            "[techtree] WARNING: no WG GameParams — skipping the "
+            "ships_wg_only.json roster build (the webui falls back to the "
+            "tree-derived WG-exclusive set).",
+            flush=True,
+        )
+        return
+    _py(
+        "build_wg_only_roster.py",
+        "--gameparams", str(GAMEPARAMS_JSON),
+        "--lesta-gameparams", str(lesta_gameparams),
+        "--version", "wg",
+        "--out", str(SRC_DATA / "ships_wg_only.json"),
+    )
+
+
+def _run_lesta_shipdata(gameparams: Path, version_stamp: str | None) -> None:
+    """The app-carried Lesta ship data: GameParams slices + the plane tables.
+
+    `build_lesta_shipdata.py` cuts the Lesta-only ships' armor/ballistics
+    slices out of the dump into the Rust tree (include_str!'d by
+    commands/gameparams.rs), so those ids resolve without any game install;
+    `extract_lesta_planes.py` merges the carriers' airframes into
+    plane_types.json / plane_models.json (labels, roles, geometry paths).
+    Both are cut from the same client snapshot as the tree and the overlay.
+    The carriers' plane GLBs are baked separately (bake_lesta_planes.py —
+    needs the Oodle decoder)."""
+    cmd = ["build_lesta_shipdata.py", "--gameparams", str(gameparams)]
+    if version_stamp:
+        cmd += ["--version", version_stamp]
+    _py(*cmd)
+    _py_model_convert("extract_lesta_planes.py", "--input", str(gameparams))
+
+
+def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> str | None:
+    """The encyclopedia overlay + offline-names merge for Lesta-only ships.
+
+    Needs the client's ru gettext catalog next to the dump (a full install
+    provides bin/<build>/res/texts/ru/LC_MESSAGES/global.mo); without one the
+    bundled ships_lesta.json / ship_names.json stay untouched. Portraits and
+    the plaque silhouettes are one-shot asset pulls off the same install —
+    see lesta_extract.py's docstring (gui/ship_previews → images/ships,
+    gui/ships_silhouettes → trace_silhouettes.py --merge-indexes).
+
+    Returns the version stamp the overlay was written under (None when the
+    overlay build was skipped) so the ship-data bundle shares it.
+    """
+    mo = None
+    version_stamp = "lesta"
+    if lesta_game:
+        bin_dir = Path(lesta_game, "bin")
+        builds = sorted(
+            (p for p in bin_dir.iterdir() if p.is_dir() and p.name.isdigit()),
+            key=lambda p: int(p.name),
+            reverse=True,
+        ) if bin_dir.is_dir() else []
+        for build in builds:
+            cand = build / "res" / "texts" / "ru" / "LC_MESSAGES" / "global.mo"
+            if cand.is_file():
+                mo = cand
+                version_stamp = f"lesta-{build.name}"
+                break
+    if mo is None:
+        print(
+            "[techtree] WARNING: no Lesta ru catalog found — skipping the "
+            "ships_lesta.json overlay build (names fall back to the "
+            "GameParams working names).",
+            flush=True,
+        )
+        return None
+    overlay_cmd = [
+        "build_lesta_overlay.py",
+        "--gameparams", str(gameparams),
+        "--mo", str(mo),
+        "--mo-lang", "ru-RU",
+        "--curated", str(HERE / "lesta_names_curated.json"),
+        "--curated-descr", str(HERE / "lesta_descriptions_curated.json"),
+        "--lesta-tree", str(TECHTREE_LESTA_JSON),
+        "--wg-tree", str(TECHTREE_JSON),
+        "--version", version_stamp,
+        "--out", str(SRC_DATA / "ships_lesta.json"),
+        "--merge-names", str(SRC_DATA / "ship_names.json"),
+    ]
+    # The non-tree port-fleet walk needs the WG dump's whole index set as
+    # its exclusion base (hundreds of WG premiums never appear as tree side
+    # leaves); the WG dump is a shared cache built earlier in the same run.
+    if GAMEPARAMS_JSON.exists():
+        overlay_cmd[1:1] = ["--wg-gameparams", str(GAMEPARAMS_JSON)]
+    _py(*overlay_cmd)
+    return version_stamp
+
+
+def _lesta_tree_cmd(gameparams: Path) -> list[str]:
+    """build_techtree.py invocation for the Lesta tree.
+
+    The Lesta dump carries no archetype field — borrow the codes for the
+    shared ships from the WG client's dump (generated earlier by the same
+    run whenever it exists) so branch labels survive on the Lesta tree.
+    """
+    cmd = [
+        "build_techtree.py",
+        "--source", "gameparams",
+        "--gameparams", str(gameparams),
+        "--rarity", str(RARITY_JSON),
+        "--out", str(TECHTREE_LESTA_JSON),
+    ]
+    if GAMEPARAMS_JSON.exists():
+        cmd[1:1] = ["--archetypes", str(GAMEPARAMS_JSON)]
+    return cmd
+
+
 def _run_shipmodels() -> None:
     """shipId → base model name map (skin→base dedup for the 3D viewer)."""
-    _py(
+    cmd = [
         "build_ship_models.py",
         "--gameparams", str(GAMEPARAMS_JSON),
         "--bridge", str(WOWSINFO_JSON),
         "--out", str(SHIPMODELS_JSON),
-    )
+    ]
+    # The Lesta-only ships ride along (name/silhouette resolution needs their
+    # entries even before their GLBs exist — see bake_lesta_ships.py).
+    if GAMEPARAMS_LESTA_JSON.exists():
+        cmd[1:1] = ["--extra-gameparams", str(GAMEPARAMS_LESTA_JSON)]
+    _py(*cmd)
 
 
 def _run_dogtags(game: str) -> None:
@@ -251,6 +457,15 @@ def _py(script: str, *args: str) -> None:
     rc = subprocess.call(cmd)
     if rc != 0:
         _die(f"{script} failed (rc={rc}).")
+
+
+def _py_model_convert(script: str, *args: str) -> None:
+    """Run a sibling model_convert script (plane tables / bakes live there)."""
+    cmd = [sys.executable, str(HERE.parent / "model_convert" / script), *args]
+    print(f"\n[extract] $ {' '.join(cmd)}")
+    rc = subprocess.call(cmd)
+    if rc != 0:
+        _die(f"model_convert/{script} failed (rc={rc}).")
 
 
 def _die(msg: str) -> None:

@@ -199,16 +199,18 @@ LANGS = [
     },
 ]
 
-# The full 9-language switcher. Order matches lagrange.toml `order`.
+# The full 9-language switcher. Order matches lagrange.toml `order`; codes are
+# the real docs/ directory names (what the relative links resolve against and
+# what `switcher_row` compares `lang["code"]` against for bolding).
 ALL_LANGS = [
-    ("en-US", "English"),
+    ("en", "English"),
     ("zh-CN", "简体中文"),
     ("zh-TW", "繁體中文"),
-    ("ja-JP", "日本語"),
-    ("ko-KR", "한국어"),
-    ("fr-FR", "Français"),
-    ("es-ES", "Español"),
-    ("ru-RU", "Русский"),
+    ("ja", "日本語"),
+    ("ko", "한국어"),
+    ("fr", "Français"),
+    ("es", "Español"),
+    ("ru", "Русский"),
     ("ar", "العربية"),
 ]
 

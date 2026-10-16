@@ -1,0 +1,447 @@
+// SharingSection — the settings' 录像共享计划 pane: a compact
+// participation status card (read-only identity + consent tags, my counts)
+// whose 共享录像… button opens the consent → select → upload wizard in its
+// own secondary HkModal window, plus the contributors list. Surface colors
+// come from the hikari tokens so both theme modes read correctly (same
+// idiom as FeedbackSection).
+
+.sharing-sec {
+  &__enroll {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--hi-space-12, 12px);
+  }
+
+  &__enroll-copy {
+    margin: 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  // Wizard-only row now (the intro step's realm/name picker); the status
+  // card displays identity as a read-only tag instead.
+  &__identity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--hi-space-8, 8px);
+
+    &--wizard {
+      margin-top: var(--hi-space-12, 12px);
+    }
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    flex-wrap: wrap;
+  }
+
+  &__meta-label {
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__consent {
+    margin: 0;
+    padding-left: 1.2em;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-4, 4px);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__counts {
+    display: flex;
+    gap: var(--hi-space-24, 24px);
+    flex-wrap: wrap;
+  }
+
+  &__count {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__count-num {
+    font-size: var(--hi-text-lg, 1.125rem);
+    font-weight: 600;
+  }
+
+  &__count-label {
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__sync-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--hi-space-8, 8px);
+    flex-wrap: wrap;
+  }
+
+  &__sync-label {
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__sync-actions {
+    display: flex;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  // ── wizard (body inside the secondary HkModal) ─────────────────────────
+
+  &__modal-hint {
+    margin: 0 0 var(--hi-space-12, 12px);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__step {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-12, 12px);
+    min-width: 0;
+  }
+
+  &__select-head {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    flex-wrap: wrap;
+  }
+
+  &__hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--hi-space-12, 12px);
+    padding: var(--hi-space-24, 24px) var(--hi-space-16, 16px);
+    min-height: 16rem;
+  }
+
+  &__hero-actions {
+    display: flex;
+    gap: var(--hi-space-8, 8px);
+    padding-top: var(--hi-space-4, 4px);
+  }
+
+  &__mode-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+
+  &__plan-note {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    margin: 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__empty {
+    margin: 0;
+    padding: var(--hi-space-24, 24px) 0;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    text-align: center;
+  }
+
+  /* Replay pick list: the capped window — hikari's scroll container
+     owns the scrollbar (auto-hiding overlay track); the cards scroll
+     inside its viewport. */
+  &__list {
+    max-height: 22rem;
+  }
+
+  /* Former list element, now inside the viewport — keeps the list
+     semantics and the card rhythm scrolling with the picks. */
+  &__list-inner {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__card {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--hi-space-12, 12px);
+    padding: var(--hi-space-10, 10px) var(--hi-space-14, 14px);
+    min-height: 3.5rem;
+    border: 1px solid var(--hi-color-border);
+    border-radius: var(--hi-radius-md, 6px);
+    background: var(--hi-color-surface, transparent);
+    transition: border-color 0.15s ease, background 0.15s ease;
+
+    &:hover {
+      border-color: color-mix(in srgb, var(--hi-color-primary) 55%, var(--hi-color-border));
+    }
+
+    &--on {
+      border-color: var(--hi-color-primary);
+      background: var(--hi-color-primary-bg, color-mix(in srgb, var(--hi-color-primary) 8%, transparent));
+    }
+  }
+
+  &__card-main {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-12, 12px);
+    min-width: 0;
+    cursor: pointer;
+  }
+
+  &__card-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__card-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--hi-space-8, 8px);
+    min-width: 0;
+  }
+
+  &__card-class {
+    flex: none;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__card-spacer {
+    flex: 1;
+  }
+
+  &__card-nick {
+    flex: none;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__card-tagrow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--hi-space-4, 4px);
+    min-width: 0;
+    margin-top: 2px;
+  }
+
+  &__card-map {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__card-title {
+    font-weight: 600;
+    font-size: var(--hi-text-sm, 0.8125rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+
+
+  &__card-tags {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--hi-space-4, 4px);
+    flex: none;
+  }
+
+  &__summary {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-16, 16px);
+    flex-wrap: wrap;
+    padding-top: var(--hi-space-4, 4px);
+    border-top: 1px solid var(--hi-color-border);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  &__stages {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-12, 12px);
+    flex-wrap: wrap;
+  }
+
+  &__stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--hi-color-border);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+
+    &--done {
+      color: var(--hi-color-success);
+      border-color: var(--hi-color-success-border, var(--hi-color-success));
+    }
+
+    &--active {
+      color: var(--hi-color-primary);
+      border-color: var(--hi-color-primary);
+    }
+  }
+
+  &__progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-4, 4px);
+  }
+
+  &__progress-note {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  /* Upload outcomes: the capped window — same scroller shape as the
+     pick list above (overlay scrollbar owned by hikari's scroll
+     container; rows scroll in the viewport). */
+  &__outcomes {
+    max-height: 14rem;
+  }
+
+  /* Former list element, now inside the viewport. */
+  &__outcomes-inner {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-4, 4px);
+  }
+
+  &__outcome {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--hi-space-8, 8px);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__outcome-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl; // long names trim from the left (the timestamp head)
+    text-align: left;
+  }
+
+  &__cancel {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__done-line {
+    margin: 0;
+    font-size: var(--hi-text-sm, 0.8125rem);
+  }
+
+  // ── contributors list ──────────────────────────────────────────────────
+
+  &__contrib-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-12, 12px);
+  }
+
+  &__contrib-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__contrib-realm {
+    font-size: var(--hi-text-xs, 0.75rem);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--hi-color-text-tertiary, var(--hi-color-text-secondary));
+  }
+
+  &__contrib-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--hi-space-8, 8px);
+  }
+
+  &__contrib-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    padding: 4px 10px;
+    border: 1px solid var(--hi-color-border);
+    border-radius: 999px;
+    background: var(--hi-color-fill-secondary, rgba(128, 128, 128, 0.1));
+    cursor: pointer;
+    font-size: var(--hi-text-sm, 0.8125rem);
+
+    &:hover {
+      border-color: var(--hi-color-primary);
+    }
+
+    &--self {
+      border-color: var(--hi-color-primary);
+      background: var(--hi-color-primary-bg, rgba(64, 128, 255, 0.1));
+    }
+  }
+
+  &__contrib-name {
+    max-width: 14em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__contrib-self {
+    color: var(--hi-color-primary);
+    font-size: var(--hi-text-xs, 0.75rem);
+  }
+
+  &__contrib-count {
+    flex: none;
+    min-width: 1.4em;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--hi-color-fill, rgba(128, 128, 128, 0.2));
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+}

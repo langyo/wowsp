@@ -22,6 +22,15 @@
     flex-wrap: wrap;
   }
 
+  // The view-mode switch rides the app title bar on desktop (AppTitleBar's
+  // centered pill); this header copy only exists for the phone layout
+  // (≤767px), where the bar hosts the nav drawer controls instead.
+  &__header-right .ships-view__tabs {
+    @media (min-width: 768px) {
+      display: none;
+    }
+  }
+
   &__title {
     font-size: var(--text-xl);
     font-weight: 700;
@@ -29,7 +38,7 @@
     color: rgb(var(--color-text));
   }
 
-  // Holds the passive followed-realm badge + the manual reload button.
+  // Holds the tech-tree WG/Lesta branch switch + the manual reload button.
   &__realm {
     display: flex;
     align-items: center;
@@ -96,22 +105,41 @@
   }
 
   // ── scrollable content body ──────────────────────────────────────────
+  // Grid/compare modes: hikari's HkScrollContainer owns the scrollbar
+  // (auto-hiding overlay track); the page clearance moved to __body-inner
+  // so it scrolls with the content, and the filter bar stays sticky
+  // against the viewport top.
   &__body {
     flex: 1 1 0%;
     min-height: 0;
-    overflow-y: auto;
-    padding: 0 1.5rem 1.25rem;
 
     // Tech-tree mode: the body hosts the tree region without padding and
-    // without scrolling itself; __tree-body below is the single scroller so
-    // its scrollbars hug the window's bottom/left/right edges (same
-    // edge-to-edge convention as LookupView / ReplayView).
+    // without scrolling itself — the viewport becomes a plain flex column
+    // (no scrollport) and __tree-body below is the single scroller, so its
+    // overlay bars span the window's edges edge-to-edge (same convention
+    // as LookupView / ReplayView).
     &--tree {
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      padding: 0;
+      > .hk-scroll-container-viewport {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      // The grid clearance dies here too: the tree spans edge-to-edge,
+      // and the inner wrapper turns into the flex column the tree body
+      // fills.
+      .ships-view__body-inner {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        padding: 0;
+      }
     }
+  }
+
+  &__body-inner {
+    padding: 0 1.5rem 1.25rem;
   }
 
   // ── filter bar (grid mode, sticky inside scroll body) ────────────────
@@ -249,6 +277,11 @@
       border-color: rgb(255 140 40 / 50%);
       color: rgb(255 160 60);
     }
+    &--event.ships-view__chip--on {
+      background: rgb(190 120 255 / 15%);
+      border-color: rgb(190 120 255 / 50%);
+      color: rgb(200 140 255);
+    }
   }
 
   &__grid {
@@ -269,17 +302,22 @@
   }
 
   // ── tech-tree view layout ──
-  // Header + meta are fixed at top. The tree body is the single scroll
-  // container for both axes and fills the view edge-to-edge (no wrapper
-  // padding), so its horizontal scrollbar sits flush with the window's
-  // bottom edge and spans the full content width; the nation rail is
-  // sticky inside it and the canvas carries the breathing-room padding.
+  // Header + meta are fixed at top. The tree body is a hikari
+  // HkScrollContainer (axis both) filling the view edge-to-edge (no
+  // wrapper padding) — its auto-hiding overlay bars paint over the
+  // scrollport's bottom/right edges; the nation rail is sticky inside it
+  // and the canvas carries the breathing-room padding.
   &__tree-body {
-    display: flex;
-    gap: 0;
     flex: 1 1 0%;
     min-height: 0;
-    overflow: auto;
+  }
+
+  // The tree's row layout (rail + canvas side by side) moved here from
+  // the old scroller: the scrollport is hikari's viewport above this
+  // wrapper, so the sticky rail keeps pinning while the tree pans.
+  &__tree-inner {
+    display: flex;
+    gap: 0;
   }
 
   &__nation-rail {
@@ -289,9 +327,10 @@
     gap: 0.15rem;
     padding: 0.3rem 0.4rem;
     background: rgb(var(--color-surface) / 92%);
+    background: rgb(var(--color-surface) / min(100%, calc(92% * var(--ui-opacity, 1))));
     border: 1px solid rgb(var(--color-border) / 25%);
     border-radius: var(--radius-md);
-    // Sticky within the scrolling tree body: pinned near the window's
+    // Sticky within the tree body's scrollport: pinned near the window's
     // top-left corner while the tree canvas scrolls underneath.
     position: sticky;
     top: 0.5rem;
@@ -334,11 +373,27 @@
   &__tree-canvas {
     // Grows to fill when the tree is narrower than the viewport and never
     // shrinks below the tree's intrinsic width — the scroll happens on the
-    // tree body, not here. Padding is content clearance only; the
-    // scrollbars ride on the tree body's border edge.
+    // tree body, not here. Padding is content clearance only; the overlay
+    // bars ride on the tree body's container, painting over the
+    // scrollport's edges.
     flex: 1 0 auto;
     padding: 0 0.75rem 1.25rem 0.6rem;
   }
+}
+
+/* Event ships: the rarity tag becomes the violet 活动·<event name> tag
+   (hikari ships no purple STag variant, so it rides default + this tint;
+   the compound selector outspecifies .hk-tag-default without !important). */
+.ship-card__event-tag .hk-tag {
+  background: rgb(190 120 255 / 15%);
+  border-color: rgb(190 120 255 / 50%);
+  color: rgb(200 140 255);
+  /* Official names can be long (Arpeggio of Blue Steel -ARS NOVA-); the
+     card column is narrow, so the tag clips with an ellipsis instead of
+     forcing the row wider. The tooltip keeps the full name. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ship-card {
@@ -382,6 +437,10 @@
 
   &--legendary {
     border-left: 3px solid rgb(255 140 40);
+  }
+
+  &--event {
+    border-left: 3px solid rgb(190 120 255);
   }
 
   &__image {
@@ -468,5 +527,20 @@
 
   &__wr {
     font-weight: 700;
+  }
+}
+
+/* ── Phone layout (≤767px): tighter page gutters ───────────────────────── */
+@media (max-width: 767px) {
+  .ships-view {
+    &__header {
+      padding: 0.9rem 0.9rem 0.4rem;
+      gap: 0.6rem;
+    }
+
+    &__meta {
+      padding: 0 0.9rem 0.3rem;
+      gap: 0.9rem;
+    }
   }
 }

@@ -20,5 +20,6 @@ WoWSP est un tableau de bord d'analyse de bataille de nouvelle génération pour
 | Index de la documentation | |
 |---|---|
 | [Conception de l'architecture](./designs/architecture.md) | Document de conception architecturale |
+| [Plugin de statistiques en jeu](./designs/ingame-stats-plugin.md) | Document de conception du plugin en jeu |
 
 Consultez la barre latérale pour l'index complet.

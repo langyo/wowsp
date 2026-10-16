@@ -8,6 +8,14 @@
   &__img {
     display: block;
     object-fit: contain;
+    /* The flag's box is the fixed px size picked by the variant below.
+       hikari's reset clamps every img to max-width: 100%, but on an
+       intrinsically-sized flex item that percentage cannot resolve and
+       reads as 0 in intrinsic sizing: the flag then contributes nothing
+       to the host's min-content width, and any flex-shrink pressure
+       (the 水表 nation strip) collapses every flag-bearing option one
+       flag-width, spilling the label out of the option pill. */
+    max-width: none;
     filter: drop-shadow(0 1px 2px rgb(0 0 0 / 35%));
   }
 
@@ -38,7 +46,7 @@
     .nation-flag__fallback {
       width: 16px;
       height: 16px;
-      font-size: 9px;
+      font-size: 0.5625rem;
     }
   }
 
@@ -50,7 +58,7 @@
     .nation-flag__fallback {
       width: 22px;
       height: 22px;
-      font-size: 10px;
+      font-size: 0.625rem;
     }
   }
 
@@ -62,7 +70,7 @@
     .nation-flag__fallback {
       width: 28px;
       height: 28px;
-      font-size: 12px;
+      font-size: 0.75rem;
     }
   }
 

@@ -46,6 +46,7 @@
 // the non-test build (the clippy gate runs --lib --bins without --tests).
 #![allow(dead_code)]
 
+use anyhow::bail;
 use std::collections::BTreeMap;
 
 use serde::Serialize;
@@ -1541,7 +1542,7 @@ pub fn ingest_replay_files<I, F>(
 ) -> (Vec<FireDatasetRow>, FireDatasetBatchSummary)
 where
     I: IntoIterator<Item = std::path::PathBuf>,
-    F: FnMut(&std::path::Path) -> Result<(Vec<FireDatasetRow>, FireDatasetExportStats), String>,
+    F: FnMut(&std::path::Path) -> anyhow::Result<(Vec<FireDatasetRow>, FireDatasetExportStats)>,
 {
     let mut summary = FireDatasetBatchSummary {
         root_dir: root.to_string_lossy().into_owned(),
@@ -1580,9 +1581,11 @@ where
                 rows.extend(file_rows);
                 FireDatasetBatchOutcome::Exported { stats }
             },
-            Err(reason) => {
+            Err(e) => {
                 summary.files_failed += 1;
-                FireDatasetBatchOutcome::Failed { reason }
+                FireDatasetBatchOutcome::Failed {
+                    reason: e.to_string(),
+                }
             },
         };
         summary.per_file.push(FireDatasetBatchFile {
@@ -1647,9 +1650,9 @@ pub fn export_replay_file(
     los_dir: Option<&std::path::Path>,
     eye_height: f32,
     params: &FireSampleParams,
-) -> Result<(Vec<FireDatasetRow>, FireDatasetExportStats), String> {
+) -> anyhow::Result<(Vec<FireDatasetRow>, FireDatasetExportStats)> {
     let path_str = path.to_string_lossy().into_owned();
-    let stream = super::replay::read_replay_positions(path_str.clone())?;
+    let stream = super::replay::decode_replay_stream_sync(&path_str)?;
     let vehicles = super::replay_probe::read_roster(&path_str)?;
     let ships = ship_infos(&stream, &vehicles);
     let los = los_for_replay(stream.map_name.as_deref(), los_dir);
@@ -1673,12 +1676,9 @@ pub fn export_decision_dataset_dir(
     los_dir: Option<&std::path::Path>,
     eye_height: f32,
     params: &FireSampleParams,
-) -> Result<(Vec<FireDatasetRow>, FireDatasetBatchSummary), String> {
+) -> anyhow::Result<(Vec<FireDatasetRow>, FireDatasetBatchSummary)> {
     if !dir.is_dir() {
-        return Err(format!(
-            "batch root {} is not a directory",
-            dir.to_string_lossy()
-        ));
+        bail!("batch root {} is not a directory", dir.to_string_lossy());
     }
     let mut files = Vec::new();
     collect_replay_files(dir, &mut files);
@@ -1716,6 +1716,7 @@ mod tests {
             initial_z: 0.0,
             creation_time: 0.0,
             ship_id,
+            max_health: None,
             radius: None,
             control_point_index: None,
             initial_team: None,
@@ -1801,6 +1802,12 @@ mod tests {
             ward_removes: Vec::new(),
             shot_kills: Vec::new(),
             damage_stats: Vec::new(),
+            chat_messages: Vec::new(),
+            achievements: Vec::new(),
+            arena_players: Vec::new(),
+            weather_transitions: Vec::new(),
+            weather_notifications: Vec::new(),
+            self_team: None,
         }
     }
 
@@ -2010,7 +2017,7 @@ mod tests {
         };
         let params = FireSampleParams::default();
         let stream =
-            super::super::replay::read_replay_positions(path.clone()).expect("decode real replay");
+            super::super::replay::decode_replay_stream_sync(&path).expect("decode real replay");
         let vehicles = read_roster(&path).expect("roster");
         let ships = ship_infos(&stream, &vehicles);
         let grid_path = match std::env::var("WOWSP_TEST_LOS_GRID") {
@@ -2413,7 +2420,7 @@ mod tests {
         };
         let params = FireSampleParams::default();
         let stream =
-            super::super::replay::read_replay_positions(path.clone()).expect("decode real replay");
+            super::super::replay::decode_replay_stream_sync(&path).expect("decode real replay");
         let vehicles = read_roster(&path).expect("roster");
         let ships = ship_infos(&stream, &vehicles);
         let grid_path = match std::env::var("WOWSP_TEST_LOS_GRID") {
@@ -2593,7 +2600,7 @@ mod tests {
             match path.file_name().and_then(|n| n.to_str()) {
                 Some("a_empty.wowsreplay") => Ok((Vec::new(), empty_stats.clone())),
                 Some("b_corrupt.wowsreplay") => {
-                    Err("not a valid wowsreplay (magic mismatch or truncated)".into())
+                    bail!("not a valid wowsreplay (magic mismatch or truncated)")
                 },
                 _ => Ok((mk_rows(), stats2.clone())),
             }

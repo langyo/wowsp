@@ -1,9 +1,10 @@
-# WoWSP ships Windows-only (tauri x86_64-pc-windows-msvc); restrict checks
-# to that target so tauri's Linux-only stack (gtk-rs etc.) stays out of
-# license/advisory scope.
+# WoWSP ships Windows desktop (tauri x86_64-pc-windows-msvc) + Android
+# (tauri aarch64-linux-android); restrict checks to those targets so tauri's
+# Linux-only stack (gtk-rs etc.) stays out of license/advisory scope.
 [graph]
 targets = [
     { triple = "x86_64-pc-windows-msvc" },
+    { triple = "aarch64-linux-android" },
 ]
 
 [advisories]
@@ -13,10 +14,6 @@ db-path = "~/.cargo/advisory-db"
 unmaintained = "workspace"
 unsound = "workspace"
 yanked = "warn"
-
-[[advisories.ignore]]
-id = "RUSTSEC-2026-0258"
-reason = "h2 unbounded empty DATA frames — low severity, server-side exposure. WoWSP uses h2 only as an HTTP/2 *client* through reqwest (WG API lookups, mod catalog + GitHub downloads) against fixed endpoints, so the attacker-controlled-stream precondition does not apply. Drop this ignore once a patched h2 (> 0.4.15) ships."
 
 [[advisories.ignore]]
 id = "RUSTSEC-2024-0436"

@@ -21,9 +21,18 @@ artifacts from the local install:
   2. `gui/dogTags/small/**` + `gui/dogTags/DT_Default.png` — the part images,
      sliced out of the gui_*.pkg blobs and mirrored into res/dogtags/ (stale
      files removed). wowsunpack's own `extract` subcommand is broken on the
-      Steam install layout ("Wrote 0 files"), so this walks the same
+     Steam install layout ("Wrote 0 files"), so this walks the same
      metadata path→size/crc map + PNG-slicing approach as
      extract_game_assets.py, across every gui_*.pkg.
+  3. Glossary backfill — entities whose textures never ship in the pkgs
+     come out as the game's 80x80 solid-white stand-ins (they rendered as
+     blank-white medals in the app). The glossary GraphQL backing
+     profile.wowsgame.cn serves the complete icon set as content-addressed
+     CDN URLs; the backfill swaps every placeholder-sized part for that
+     art (medium 190x190 — same artwork as the small parts; the badge CSS
+     scales). Parts the CDN also only knows as a white tile are left at
+     their stand-ins so a later run can retry once art exists. Best-effort
+     and idempotent: unreachable network keeps the placeholders too.
 
 Run via the orchestrator (`just extract dogtags`); publishing to the app is
 a separate step (`python scripts/release_models.py` uploads the dogtags pack
@@ -39,9 +48,12 @@ Inputs:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import shutil
+import struct
 import tempfile
+import urllib.request
 import zlib
 from pathlib import Path
 
@@ -56,6 +68,33 @@ DOG_TAG_SPECIES = {
     "BorderColor",
     "BackgroundTexture",
 }
+
+# A real dog-tag part never compresses anywhere near this small (the
+# tiniest official symbol is ~600 B; typical parts are 3–30 KB). The game
+# stages an 80x80 solid-white stand-in (~224–298 B) for entities whose
+# textures never ship in the gui pkgs, which is what this threshold hunts.
+PLACEHOLDER_MAX_BYTES = 512
+
+# The glossary GraphQL backing profile.wowsgame.cn serves every DogTag
+# component's icon as a content-addressed CDN URL — the complete set,
+# including the art the client pkgs never carry. Lang is cosmetic for
+# icons; zh-cn matches the CN host this defaults to.
+GLOSSARY_HOST_DEFAULT = "vortex.wowsgame.cn"
+GLOSSARY_QUERY = """
+  query getGlossData($lang: String) {
+    dogTagComponents(lang: $lang) {
+      id
+      icons {
+        medium
+      }
+    }
+  }
+"""
+# The CN hosts apply a basic browser check; a plain urllib UA risks
+# rejection or, on the CDN, surprise gzip responses.
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+              "AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/125.0.0.0 Safari/537.36")
 
 
 def build_map(gameparams_path: Path) -> dict[str, list[str]]:
@@ -184,6 +223,186 @@ def sync_images(extracted: Path, res_dir: Path) -> tuple[int, int, int]:
     return len(wanted), added, removed
 
 
+# ── glossary backfill ──────────────────────────────────────────────────────
+
+def _glossary_fetch(url: str) -> bytes:
+    """One CDN GET with the browser UA the CN hosts require."""
+    req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return resp.read()
+
+
+def _is_flat_png(data: bytes) -> bool:
+    """True when the decoded image is a single solid colour — the white
+    stand-in tile signature. Defilters scanlines rolling (PNG filters
+    reference the previous row) and compares each against the first,
+    exiting on the first difference, so real art costs two rows. Malformed
+    input counts as flat (callers treat that as "no art")."""
+    width = height = bit_depth = color_type = None
+    idat = b""
+    pos = 8
+    while pos + 8 <= len(data):
+        length, ctype = struct.unpack(">I4s", data[pos:pos + 8])
+        chunk = data[pos + 8:pos + 8 + length]
+        pos += 12 + length
+        if ctype == b"IHDR":
+            try:
+                width, height, bit_depth, color_type = struct.unpack(
+                    ">IIBB", chunk[:10])
+            except struct.error:  # truncated IHDR — malformed counts as flat
+                return True
+        elif ctype == b"IDAT":
+            idat += chunk
+        elif ctype == b"IEND":
+            break
+    if not width or not height or bit_depth != 8 or color_type is None:
+        return True
+    try:
+        raw = zlib.decompress(idat)
+    except zlib.error:
+        return True
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type)
+    if not channels:
+        return True
+    stride = width * channels
+    row_len = 1 + stride
+    if len(raw) < row_len * height:
+        return True
+
+    def defilter(ftype: int, line: bytearray, prev: bytes) -> None:
+        if ftype == 0:
+            return
+        if ftype == 1:  # Sub
+            for i in range(channels, stride):
+                line[i] = (line[i] + line[i - channels]) & 0xFF
+        elif ftype == 2:  # Up
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 0xFF
+        elif ftype == 3:  # Average
+            for i in range(stride):
+                left = line[i - channels] if i >= channels else 0
+                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 0xFF
+        elif ftype == 4:  # Paeth
+            for i in range(stride):
+                a = line[i - channels] if i >= channels else 0
+                b = prev[i]
+                c = prev[i - channels] if i >= channels else 0
+                # RFC 2083: p = a + b - c, then distance of p to each.
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                guess = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + guess) & 0xFF
+        else:
+            raise ValueError(f"bad filter type {ftype}")
+
+    first = bytearray(stride)
+    prev = bytes(stride)
+    for y in range(height):
+        offset = y * row_len
+        ftype = raw[offset]
+        line = bytearray(raw[offset + 1:offset + row_len])
+        try:
+            defilter(ftype, line, prev)
+        except ValueError:
+            return True
+        if y == 0:
+            first = line
+        elif line != first:
+            return False
+        prev = bytes(line)
+    return True
+
+
+def _http_json(url: str) -> dict:
+    """POST the glossary query and decode the JSON, transparently handling
+    the gzip the CN CDN occasionally answers a browser-UA request with
+    (urllib never advertises Accept-Encoding, so it is not automatic)."""
+    body = json.dumps({
+        "query": GLOSSARY_QUERY,
+        "variables": {"lang": "zh-cn"},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json", "User-Agent": BROWSER_UA},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read()
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    return json.loads(raw.decode("utf-8"))
+
+
+def glossary_icon_urls(host: str) -> dict[str, str]:
+    """Index (e.g. `PCNP162`) → absolute `icons.medium` CDN URL for every
+    DogTag component the glossary knows. Medium (190x190) carries the same
+    artwork as the 80x80 small parts the pkgs ship — the badge CSS scales
+    the canvas, so substituting one for the other renders identically."""
+    data = _http_json(f"https://{host}/api/graphql/glossary/")
+    urls: dict[str, str] = {}
+    for comp in (data.get("data") or {}).get("dogTagComponents") or []:
+        url = (comp.get("icons") or {}).get("medium") or ""
+        # …/dog_tags/medium/PCNP162_<sha256>.png — the hash pins the exact
+        # bytes, so re-downloads of unchanged art stay byte-identical (the
+        # skip itself comes from the placeholder-size predicate).
+        name = url.rsplit("/", 1)[-1]
+        if "_" not in name:
+            continue
+        index = name.split("_", 1)[0]
+        urls.setdefault(index, "https:" + url if url.startswith("//") else url)
+    return urls
+
+
+def backfill_placeholder_art(res_dir: Path, host: str) -> list[str]:
+    """Replace white stand-in PNGs with the official glossary art.
+
+    Some DogTag entities exist in GameParams but their textures never ship
+    in the client's gui pkgs (CN-collab patches and friends): the slicer
+    then matches the game's own blank 80x80 white stand-in, and the app
+    renders a white square where the medal should be. The glossary CDN
+    carries the real art for exactly those ids. Best-effort: network
+    failures leave the placeholders in place (the next run retries)."""
+    blanks = sorted(
+        p for p in res_dir.rglob("*.png")
+        if p.stat().st_size <= PLACEHOLDER_MAX_BYTES
+    )
+    if not blanks:
+        return []
+    print(f"[dogtags] {len(blanks)} placeholder-sized parts, querying the "
+          f"glossary for real art ...")
+    try:
+        urls = glossary_icon_urls(host)
+    except Exception as exc:  # noqa: BLE001 — best-effort by contract
+        print(f"[dogtags] warning: glossary unreachable ({exc}); "
+              f"placeholders kept")
+        return []
+    replaced: list[str] = []
+    for path in blanks:
+        url = urls.get(path.stem)
+        if not url:
+            print(f"[dogtags] no glossary art for {path.name}; placeholder kept")
+            continue
+        try:
+            art = _glossary_fetch(url)
+        except Exception as exc:  # noqa: BLE001 — best-effort by contract
+            print(f"[dogtags] warning: {path.name} fetch failed ({exc}); "
+                  f"placeholder kept")
+            continue
+        if not art.startswith(b"\x89PNG") or _is_flat_png(art):
+            # A flat (single-colour) answer means the CDN itself has no art
+            # for this id yet — keep the stand-in so a later run retries
+            # instead of pinning a white tile above the size threshold.
+            print(f"[dogtags] {path.name}: glossary serves no real art; "
+                  f"placeholder kept")
+            continue
+        path.write_bytes(art)
+        replaced.append(path.name)
+    if replaced:
+        print(f"[dogtags] backfilled {len(replaced)} parts from the "
+              f"glossary: {', '.join(replaced)}")
+    return replaced
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--gameparams", required=True)
@@ -191,6 +410,9 @@ def main() -> None:
     ap.add_argument("--game", required=True)
     ap.add_argument("--out-map", required=True)
     ap.add_argument("--res-dir", required=True)
+    ap.add_argument("--glossary-host", default=GLOSSARY_HOST_DEFAULT,
+                    help="glossary GraphQL host used to backfill placeholder "
+                         f"art (default: {GLOSSARY_HOST_DEFAULT})")
     args = ap.parse_args()
 
     gameparams = Path(args.gameparams)
@@ -217,6 +439,10 @@ def main() -> None:
             print(f"[dogtags] warning: matched {matched}/{wanted} wanted images")
         kept, added, removed = sync_images(staged, Path(args.res_dir))
     print(f"[dogtags] images: {kept} files (+{added} -{removed}) at {args.res_dir}")
+
+    # Textures the pkgs never carry come out as the game's white stand-ins;
+    # swap them for the glossary art before the snapshot is declared done.
+    backfill_placeholder_art(Path(args.res_dir), args.glossary_host)
 
     # The map goes down only once the images landed, so a crash mid-run can
     # never pair a refreshed map with stale PNGs.

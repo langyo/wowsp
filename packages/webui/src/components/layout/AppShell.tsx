@@ -1,30 +1,49 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import {
-  HBlockingToast,
-  HCheckbox,
-  HErrorBoundary,
-  HModal,
-  HScrollContainer,
-  HToast,
+  HkBlockingToast,
+  HkCheckbox,
+  HkDrawer,
+  HkErrorBoundary,
+  HkModal,
+  HkScrollContainer,
+  HkToast,
+  useBreakpoint,
+  useToast,
 } from "@celestia-island/hikari";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useSessionStore } from "@/stores/session";
 import { useUpdaterStore } from "@/stores/updater";
 import { useCacheStore } from "@/stores/cache";
+import { useNavUiStore } from "@/stores/navUi";
+import { useSettingsUiStore } from "@/stores/settingsUi";
+import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
+import { useCloseBehaviorStore } from "@/stores/closeBehavior";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
+import { usePluginPromptStore } from "@/stores/pluginPrompt";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
+import { peekLastRunVersion } from "@/utils/lastRunVersion";
+import { setRuntimeKit } from "@/overlay/teamIntel";
 import { api } from "@/api";
-import { isTauri } from "@/transport";
-import AnnouncementDialog from "./AnnouncementDialog";
+import { isMobileApp, isTauri } from "@/utils/platform";
+import OnboardingWizard from "./OnboardingWizard";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
+import PluginInstallPromptModal from "@/features/replay/PluginInstallPromptModal";
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
+import AudioPlayerToast from "./AudioPlayerToast";
+import ModUpdateToast from "./ModUpdateToast";
 import UpdateToast from "./UpdateToast";
+import UpdateAppliedToast from "./UpdateAppliedToast";
+import ManualLocateOverlay from "@/features/replay/ManualLocateOverlay";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "@/i18n";
@@ -33,37 +52,156 @@ import "./AppShell.scss";
 /**
  * Root layout shell: sidebar (left) + main content (right). Loads accounts +
  * starts the game-status poller on mount. Listens for the Rust close-requested
- * event to show a quit-vs-minimize confirm dialog (HModal with a footer
- * action group). On first launch (until acknowledged) it also forces the
- * free & open-source notice dialog. Mounts the shared hikari service
+ * event to show a quit-vs-minimize confirm dialog (HkModal with a footer
+ * action group), unless a choice was already remembered in the closeBehavior
+ * store (the same one the settings' closeBehavior section edits) — then that
+ * action runs straight away. On first launch (until completed) it also runs
+ * the four-step onboarding wizard, whose first step carries the mandatory
+ * free & open-source notice. Mounts the shared hikari service
  * containers: the toast host and an error boundary around the routed
  * content.
+ *
+ * Phone LAYOUT (viewport < 768px, hikari useBreakpoint): the persistent
+ * sidebar becomes a left nav DRAWER (hamburger in the title bar toggles
+ * it; hikari's back guard pushes a history entry so the Android back
+ * gesture closes it; route changes close it too) and the settings modal
+ * is not mounted — settingsUi.show() navigates to the /settings page
+ * instead. The phone APP build (isMobileApp) additionally skips the
+ * game-path setup prompt, the desktop updater and its toast surfaces.
  */
 export default defineComponent({
   name: "AppShell",
   setup() {
     const config = useConfigStore();
+    const pluginUpdates = usePluginUpdatesStore();
     const accounts = useAccountStore();
     const gameStatus = useGameStatusStore();
+    const session = useSessionStore();
+    const toast = useToast();
     const updater = useUpdaterStore();
     const cacheStore = useCacheStore();
+    const navUi = useNavUiStore();
+    const settingsUi = useSettingsUiStore();
+    const closeBehavior = useCloseBehaviorStore();
+    const ingamePlugin = useIngamePluginStore();
+    const pluginPrompt = usePluginPromptStore();
+    const route = useRoute();
+    const router = useRouter();
+    // Phone LAYOUT (viewport width — NOT the phone-app platform gate):
+    // drawer nav + settings page instead of sidebar + modal.
+    const { isMobile } = useBreakpoint();
+    // Phone APP build gate (see utils/platform): desktop-only features
+    // (game-path prompt, updater, its toasts) stay off there.
+    const mobileApp = isMobileApp();
+    // The previous run's recorded version, read synchronously in setup —
+    // BEFORE any child mounts: UpdateAppliedToast's mounted hook writes
+    // THIS run's version into the same slot, and the startup pack pass
+    // below must still see the pre-update value to know an app update
+    // just landed (parent setup always runs ahead of child mounted hooks).
+    const prevRunVersion = peekLastRunVersion();
 
     const showCloseDialog = ref(false);
     const rememberChoice = ref(false);
     const closing = ref<"quit" | "minimize" | null>(null);
-    // Mandatory free & open-source notice: pops until the user acknowledges
-    // it through the dialog's own (countdown-gated) button.
-    const showNotice = ref(false);
+    // First-launch setup wizard (notice ack → prefs → theme → wallpaper).
+    // Runs until completed — its absence includes pre-wizard installs, who
+    // walk it once to adopt the new preference system. The wizard itself
+    // also writes the legacy notice ack so older builds stay quiet.
+    const showOnboarding = ref(
+      localStorage.getItem("wowsp-onboarding-completed") === null,
+    );
     // Game-path setup: pops on any launch where detection ends without an
-    // active install (first launch, moved/unplugged library) so the user is
-    // asked to locate the game right away instead of discovering it through
-    // a failed armor load later.
+    // active install (moved/unplugged library) so the user is asked to
+    // locate the game right away instead of discovering it through a
+    // failed armor load later — but never while the onboarding wizard is
+    // up (it would cover the wizard), and never right after a wizard run:
+    // its game step IS the same ask (detection list + browse + redetect),
+    // so popping the modal again would double-prompt the question the user
+    // just consciously answered or skipped. The phone app build has no
+    // local game install to locate — never pops.
+    const gamePathMissing = ref(false);
     const showGamePathSetup = ref(false);
+    // True from the moment a wizard run completes this boot (starts true
+    // whenever the wizard is up) — see syncGamePathSetup below.
+    const wizardHandledGameSetup = ref(showOnboarding.value);
     let unlistenClose: UnlistenFn | null = null;
 
+    function syncGamePathSetup() {
+      showGamePathSetup.value =
+        gamePathMissing.value && !showOnboarding.value && !wizardHandledGameSetup.value;
+    }
+
+    watch(showOnboarding, () => syncGamePathSetup());
+
+    // Boot-time in-game plugin ask — the second chance for existing
+    // installs the wizard's plugin offer never covered (their onboarding
+    // predates it, or a game path only appeared later). Fires ONCE per
+    // boot, gated on the FIRST settled probe's snapshot — a mid-session
+    // uninstall or client switch must not pop the window over a user who
+    // just made that choice deliberately (the wizard's decline writes the
+    // dismissal marker for the same reason). Never while the wizard runs
+    // (its game step asks the same question), and never again once 不再提示
+    // is checked (the settings' closeBehavior section keeps the manual way
+    // back in).
+    const pluginPromptFired = ref(false);
+    let bootPluginAbsent: boolean | null = null;
+    watch(
+      () =>
+        [
+          showOnboarding.value,
+          wizardHandledGameSetup.value,
+          config.activeInstall?.path ?? "",
+          ingamePlugin.probed,
+          ingamePlugin.state,
+          pluginPrompt.dismissed,
+        ] as const,
+      ([onboarding, wizardRan, root, probed, state, dismissed]) => {
+        if (probed && bootPluginAbsent === null) {
+          bootPluginAbsent = state === "absent";
+        }
+        if (
+          pluginPromptFired.value ||
+          onboarding ||
+          wizardRan ||
+          mobileApp ||
+          dismissed ||
+          !root ||
+          !probed ||
+          bootPluginAbsent !== true
+        ) {
+          return;
+        }
+        pluginPromptFired.value = true;
+        pluginPrompt.open();
+      },
+      { immediate: true },
+    );
+
+    // Drawer hygiene: any navigation (nav link, footer button, settings
+    // gear) closes the phone-layout drawer.
+    watch(
+      () => route.fullPath,
+      () => navUi.close(),
+    );
+
+    // Layout flip while the desktop settings modal is open (e.g. a narrow
+    // desktop window squeezed under 768px): hand the surface over to the
+    // settings page instead of the modal vanishing mid-interaction.
+    watch(isMobile, (phone) => {
+      if (phone && settingsUi.visible) {
+        settingsUi.hide();
+        void router.push({
+          path: "/settings",
+          query: { section: settingsUi.section },
+        });
+      }
+    });
+
     async function handleCloseChoice(action: "quit" | "minimize") {
+      // "Remember my choice" writes the SAME slot the settings' closeBehavior
+      // radio edits, so a remembered close is always reversible there.
       if (rememberChoice.value) {
-        localStorage.setItem("wowsp-close-action", action);
+        closeBehavior.setAction(action);
       }
       closing.value = action;
       showCloseDialog.value = false;
@@ -79,6 +217,15 @@ export default defineComponent({
       closing.value = null;
     }
 
+    // Plugin freshness (client-version selector badge + one-click batch
+    // update): assessed at boot and whenever the active client switches;
+    // the mod hub and the batch pass itself poke refreshes after installs.
+    watch(
+      () => config.activeInstall?.path,
+      () => void pluginUpdates.refresh(),
+      { immediate: true },
+    );
+
     onMounted(async () => {
       // Production builds feel like a desktop app: no WebView2 context menu
       // on right-click. Editable elements keep the native menu (paste etc.),
@@ -92,40 +239,112 @@ export default defineComponent({
           if (!editable) event.preventDefault();
         });
       }
-      // Resource packs (production only; dev uses publicDir). The model pack
-      // auto-downloads ONLY when entirely missing (lite install / wiped
-      // cache) — an outdated-but-present pack is surfaced as an update in
-      // Settings → cache management instead of silently re-pulling ~1.2 GB
-      // on every launch. The dog-tag pack is tiny and still auto-refreshes.
+      // Resource pack (production only; dev uses publicDir). APP UPDATES
+      // GO FIRST: this pass waits for the updater's delayed probe, so a
+      // pending app update (whose installer restarts the app) always
+      // precedes a ~1.2 GB pack pull — the pack catches up after the
+      // restart, where the first boot of the new build PROMPTS for it
+      // (last-run version moved + manifest says outdated → blocking
+      // toast, see offerUpdatePrompt). The pack auto-downloads ONLY when
+      // entirely missing (lite install / wiped cache); an
+      // outdated-but-present pack is surfaced in Settings → updates
+      // instead of silently re-pulling. The phone app build skips the
+      // updater entirely (update commands are unsupported there —
+      // failures stay quiet); its pack ships INSIDE the APK, so it never
+      // downloads either — the updates panel is the only mobile download
+      // path.
       if (!import.meta.env.DEV) {
         void cacheStore.init();
+        // Ship-data hot updates (the `data-latest` release): a few KB,
+        // silent, fire-and-forget — the bundled assets serve until this
+        // lands and every failure (offline, mirror hiccup, older shell)
+        // just means "retry next boot". This window takes the fresh data
+        // when the pass updated something; overlay windows read the warmed
+        // cache themselves at creation.
+        void api
+          .refreshDataPack()
+          .then(async (updated) => {
+            if (!updated) return;
+            const kit = await api.getShipKit();
+            if (kit != null) setRuntimeKit(kit);
+          })
+          .catch(() => {});
         void (async () => {
+          // Phone build: bundled pack + optional downloaded update. Report
+          // the bundled baseline first (same-origin /wowsp-res.json → the
+          // shell's res commands), then wire the model/dogtag loaders to
+          // the cache ONLY when a downloaded update is serving — otherwise
+          // the loaders keep their default same-origin bundled URLs. No
+          // ensure/download on startup, ever.
+          if (mobileApp) {
+            try {
+              await cacheStore.reportBundledBaseline();
+              const root = await api.resCacheRoot();
+              if (root) {
+                void initDogtagPack(async () => root).catch(() => {});
+                void initModelPack(async () => root).catch(() => {});
+              }
+            } catch {
+              // Older shell — bundled same-origin assets serve.
+            }
+            return;
+          }
           try {
-            const status = await api.getPackStatus();
-            const models = status.find((p) => p.id === "models");
-            if (models && !models.present) {
-              await initModelPack(() => api.ensureModelPack());
+            await updater.init().then(() => updater.waitForCheck());
+            if (updater.available) {
+              // A newer build is pending and its prompt is up — the pack
+              // waits for the post-update restart.
               return;
             }
-            // Present (or status unavailable): refresh the remote stamps so
-            // the cache panel's update banner is ready when it opens.
+            // Dog-tag assets prefer the cached pack (models + dogtags ship
+            // as one content-addressed pack); the bundled snapshot serves
+            // while the pack is absent.
+            void initDogtagPack(() => api.ensureResPack()).catch(() => {});
+            const status = await api.getResStatus();
+            // Ship GLBs are pruned from the production dist, so every
+            // model URL resolves through the pack cache root — wire it
+            // even when the pack is present (local-only, no manifest
+            // fetch; missing packs wire through the ensure flow below).
+            void api
+              .resCacheRoot()
+              .then((root) => (root ? initModelPack(async () => root) : undefined))
+              .catch(() => {});
+            if (!status.present) {
+              await initModelPack(() => api.ensureResPack());
+              return;
+            }
+            // Present (or status unavailable): refresh the remote manifest
+            // so the updates panel's banner is ready when it opens.
             await cacheStore.refreshUpdates();
+            // First boot after an app update (the installer's relaunch —
+            // the last-run version moved): the pack stood down while the
+            // update was pending, so ask for its catch-up now instead of
+            // waiting for the user to find the panel. A normal boot (same
+            // version) stays silent — the updates-panel banner suffices;
+            // a first-ever boot has no previous version to compare.
+            const currentVersion = await getVersion().catch(() => null);
+            if (
+              currentVersion &&
+              prevRunVersion &&
+              prevRunVersion !== currentVersion &&
+              cacheStore.anyUpdateAvailable
+            ) {
+              void cacheStore.offerUpdatePrompt();
+            }
           } catch {
-            // Older shell without the status command — fall back to the
-            // historical unconditional ensure so the pack still wires up.
-            void initModelPack(() => api.ensureModelPack()).catch(() => {});
+            // Older shell / offline — fall back to the unconditional
+            // ensure so the pack still wires up (it serves whatever is on
+            // disk when the network is unreachable).
+            void initModelPack(() => api.ensureResPack()).catch(() => {});
           }
         })();
-        // Dog-tag pack overlays the bundled medals snapshot (small; its own
-        // release asset so it refreshes without re-downloading the models).
-        void initDogtagPack(() => api.ensureDogtagPack()).catch(() => {});
       }
       // Restore the previously-selected client path before detecting, so a
       // rescan keeps the user's choice instead of always picking installs[0].
-      // When detection completes WITHOUT an active install, immediately ask
-      // for a manual location (the armor/ballistics loader needs a game
-      // root). A transient detection failure does not pop the modal — only
-      // a resolved-but-empty scan does.
+      // When detection completes WITHOUT an active install, ask for a manual
+      // location once the onboarding wizard is out of the way (the armor /
+      // ballistics loader needs a game root). A transient detection failure
+      // does not pop the modal — only a resolved-but-empty scan does.
       void config
         .load()
         .then(async () => {
@@ -134,36 +353,75 @@ export default defineComponent({
             () => (detected = true),
             () => (detected = false),
           );
-          if (detected && !config.activeInstall) {
-            showGamePathSetup.value = true;
-          }
+          gamePathMissing.value = detected && !config.activeInstall && !mobileApp;
+          syncGamePathSetup();
         })
         .catch(() => {});
       void accounts.load();
       gameStatus.start();
-
-      // Forced notice on first launch (or any launch without a prior ack).
-      showNotice.value = localStorage.getItem("wowsp-oss-notice-acked") === null;
+      session.start();
+      // Follow the playing identity: when a battle roster identifies the
+      // account actually logged in (the Rust session hub's display, matched
+      // against the bound profiles), switch the active selection to it —
+      // realm-keyed autoSwitchRealm cannot tell same-realm alts apart, but
+      // the roster nickname can. Waits for the account registry to load
+      // (a switch before that would persist an empty list), and follows
+      // each identity only ONCE (per identity): a manual switch the user
+      // makes while that identity is current is never fought over — only
+      // the NEXT identity (the next alt's roster) follows.
+      let followedAccountId: number | null = null;
+      watch(
+        () => [session.display, accounts.loading] as const,
+        ([d, loading]) => {
+          if (loading || !d?.playing || !d.registered || d.accountId == null) return;
+          if (d.accountId === followedAccountId) return;
+          followedAccountId = d.accountId;
+          const cur = accounts.activeAccount;
+          if (cur && cur.realm === d.realm && cur.accountId === d.accountId) return;
+          void accounts
+            .setActive(d.realm, d.accountId)
+            .then(() => {
+              toast.info(t("account.autoSwitched", { name: d.nickname }));
+            })
+            .catch(() => undefined);
+        },
+      );
 
       // Shun auto-update: probe portable mode, then a delayed version check.
       // The check itself is silent — failures live in the store for
       // AboutModal only; a newer version raises the hikari blocking-toast
-      // prompt from the store. Browser dev mode has no updater.
-      if (isTauri()) {
+      // prompt from the store. Browser dev mode has no updater, and the
+      // phone app build has no desktop updater at all (updates ship through
+      // the store pipeline there — keep it quiet).
+      if (isTauri() && !mobileApp) {
         void updater.init().then(() => updater.scheduleAutoCheck());
       }
 
-      unlistenClose = await listen("close-requested", () => {
-        const saved = localStorage.getItem("wowsp-close-action");
-        if (saved === "quit" || saved === "minimize") {
-          void handleCloseChoice(saved);
-        } else {
-          showCloseDialog.value = true;
-        }
-      });
+      // The close-requested event only exists inside the Tauri shell; in a
+      // plain browser tab listen() would throw at mount, so guard it (the
+      // close dialog is desktop-app-only anyway).
+      if (isTauri()) {
+        unlistenClose = await listen("close-requested", () => {
+          // The remembered action (AppShell's dialog checkbox / the settings'
+          // closeBehavior radio — one store, one slot). "ask" is the stored
+          // absence of a choice, and the store's loader already swept any
+          // junk value on import, so no heal-write is needed here.
+          const saved = closeBehavior.action;
+          if (saved !== "ask") {
+            void handleCloseChoice(saved);
+          } else {
+            // Fresh ask: the checkbox writes the SAME slot the settings'
+            // closeBehavior radio edits, so a tick left over from an earlier
+            // close would silently re-arm an action the user just cleared.
+            rememberChoice.value = false;
+            showCloseDialog.value = true;
+          }
+        });
+      }
     });
     onBeforeUnmount(() => {
       gameStatus.stop();
+      session.stop();
       unlistenClose?.();
     });
 
@@ -174,13 +432,30 @@ export default defineComponent({
             the updater store raises a blocking toast prompt (立即更新 /
             稍后), then the dedicated UpdateToast pass card (spinner,
             progress bar, 取消); nothing renders inline here. */}
-        <Sidebar />
+        {isMobile.value ? (
+          // Phone-layout nav: the sidebar lives in a left drawer behind
+          // the title-bar hamburger. hikari's back guard pushes a history
+          // entry on open, so the Android back gesture (and the desktop
+          // browser's back) closes it before anything else; route changes
+          // close it via the watcher above.
+          <HkDrawer
+            modelValue={navUi.open}
+            onUpdate:modelValue={(v: boolean) => (navUi.open = v)}
+            side="left"
+            title={t("nav.menu")}
+            size="min(18.75rem, 84vw)"
+          >
+            <Sidebar variant="drawer" />
+          </HkDrawer>
+        ) : (
+          <Sidebar />
+        )}
         <main class="app-shell__main">
           {/* Shared page scroll region: the hikari scroll container owns the
               scrollbar (auto-hiding overlay track on the window's right edge)
               and every routed page scrolls inside its viewport. */}
-          <HScrollContainer class="app-shell__scroll">
-            <HErrorBoundary name="AppShell" retryLabel={t("common.reload")}>
+          <HkScrollContainer class="app-shell__scroll">
+            <HkErrorBoundary name="AppShell" retryLabel={t("common.reload")}>
               <router-view
                 v-slots={{
                   default: ({ Component, route }: { Component: unknown; route: { path: string } }) => (
@@ -190,21 +465,43 @@ export default defineComponent({
                   ),
                 }}
               />
-            </HErrorBoundary>
-          </HScrollContainer>
+            </HkErrorBoundary>
+          </HkScrollContainer>
         </main>
-        <HToast />
+        <HkToast />
         {/* Blocking-toast host: mounts right after the transient stack so
             the update prompt card paints above it (hikari's shell
             convention — the two share one top-right column). */}
-        <HBlockingToast />
+        <HkBlockingToast />
         {/* Updater pass card (download / install progress): renders nothing
             while the store is idle, so it mounts unconditionally next to
             the blocking host in the same top-right column. */}
         <UpdateToast />
+        {/* After-update success card (已更新到 v…): raises once on the
+            first boot following an installer pass — the version moved
+            since the last recorded run — and its 查看 action lands in
+            the settings' changelog section. Renders nothing outside the
+            desktop Tauri shell, so it mounts unconditionally here. */}
+        <UpdateAppliedToast />
+        {/* Preview-audio controller card (voice-line playback: play/pause,
+            seek, stop) — the update pass card's slot and surface. Renders
+            nothing while the audioPlayer store is idle, so it mounts
+            unconditionally in the same top-right toast column. */}
+        <AudioPlayerToast />
+        {/* Plugin batch-update pass card (一键更新 from the client-version
+            selector): renders nothing while the pluginUpdates store is
+            idle, so it mounts unconditionally in the same column. */}
+        <ModUpdateToast />
+
+        {/* In-game manual-locate picker (cached-frame drag box for the
+            live-battle panel's 手动定位 flow): renders nothing until the
+            manualLocate store opens it, then shows as a plain HkModal
+            sub-window — same window context as Settings. See
+            features/replay/ManualLocateOverlay. */}
+        <ManualLocateOverlay />
 
         {/* Close confirm dialog — footer carries the action button group. */}
-        <HModal
+        <HkModal
           modelValue={showCloseDialog.value}
           onUpdate:modelValue={(v: boolean) => (showCloseDialog.value = v)}
           title={t("tray.closeTitle")}
@@ -228,7 +525,7 @@ export default defineComponent({
             default: () => (
               <div class="close-dialog__body">
                 <p class="close-dialog__msg">{t("tray.closeMsg")}</p>
-                <HCheckbox
+                <HkCheckbox
                   modelValue={rememberChoice.value}
                   onUpdate:modelValue={(v: boolean) => (rememberChoice.value = v)}
                   label={t("tray.remember")}
@@ -236,27 +533,42 @@ export default defineComponent({
               </div>
             ),
           }}
-        </HModal>
+        </HkModal>
 
-        {/* Free & open-source notice — the only dismissal is its own ack
-            button (closable={false}: no X, no Escape, no backdrop click). */}
-        <AnnouncementDialog
-          modelValue={showNotice.value}
-          onUpdate:modelValue={(v: boolean) => (showNotice.value = v)}
+        {/* First-launch setup wizard — a non-closable window on the shared
+            modal shell; the only way forward is finishing it (its first step
+            carries the old notice's countdown-gated ack). */}
+        <OnboardingWizard
+          modelValue={showOnboarding.value}
+          onUpdate:modelValue={(v: boolean) => (showOnboarding.value = v)}
         />
 
         {/* Game-path first-launch prompt — fires whenever the detect pass
             ends without an active install; also reachable from the
-            ship-detail armor-error banner. */}
-        <GamePathSetupModal
-          modelValue={showGamePathSetup.value}
-          onUpdate:modelValue={(v: boolean) => (showGamePathSetup.value = v)}
-        />
+            ship-detail armor-error banner. Never on the phone app build
+            (no local game install to locate — the flag itself stays
+            false there, this is a belt-and-braces render guard). */}
+        {!mobileApp ? (
+          <GamePathSetupModal
+            modelValue={showGamePathSetup.value}
+            onUpdate:modelValue={(v: boolean) => (showGamePathSetup.value = v)}
+          />
+        ) : null}
 
-        {/* Settings modal — app-singleton, opened from the title-bar gear or
+        {/* In-game plugin install prompt — the boot-time second-chance ask
+            for existing installs (auto-raised above) and the settings'
+            manual re-check; visibility lives in the pluginPrompt store so
+            both entry points share one window. Desktop-app only: the
+            phone app has no game install to write the plugin into. */}
+        {!mobileApp ? <PluginInstallPromptModal /> : null}
+
+        {/* Settings modal — the DESKTOP-layout surface of the shared
+            settings body, app-singleton, opened from the title-bar gear or
             the sidebar's client / account buttons (optionally landing on a
-            section); state lives in the settingsUi store. */}
-        <SettingsModal />
+            section); state lives in the settingsUi store. Phone layout
+            never mounts it — settingsUi.show() routes to /settings there
+            (a full page with the same body). */}
+        {!isMobile.value ? <SettingsModal /> : null}
       </div>
     );
   },

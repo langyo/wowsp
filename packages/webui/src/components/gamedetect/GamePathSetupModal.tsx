@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref } from "vue";
 import { MonitorPlay } from "@lucide/vue";
 
-import { HButton, HModal, useToast } from "@celestia-island/hikari";
+import { HkButton, HkModal, useToast } from "@celestia-island/hikari";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
@@ -9,6 +9,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { api, type GameInstall } from "@/api";
 import { t } from "@/i18n";
 import { installLabelOf } from "@/utils/installLabel";
+import { sameGamePath } from "@/utils/gamePath";
 import "./GamePathSetupModal.scss";
 
 /**
@@ -51,8 +52,8 @@ export default defineComponent({
       if (!p.running || !p.matchedInstall) return null;
       // Only when it's NOT already one of the detected installs (those are
       // listed above) and not already active.
-      if (installs.value.some((i) => i.path === p.matchedInstall!.path)) return null;
-      if (p.matchedInstall.path === activePath.value) return null;
+      if (installs.value.some((i) => sameGamePath(i.path, p.matchedInstall!.path))) return null;
+      if (sameGamePath(p.matchedInstall.path, activePath.value)) return null;
       return p.matchedInstall;
     });
 
@@ -71,10 +72,14 @@ export default defineComponent({
     }
 
     async function pickInstall(i: GameInstall) {
-      await config.selectInstall(i.path);
-      await followRealm(i.realm);
-      toast.info(t("common.gamePath.applied"));
-      close();
+      try {
+        await config.selectInstall(i.path);
+        await followRealm(i.realm);
+        toast.info(t("common.gamePath.applied"));
+        close();
+      } catch (e) {
+        toast.error((e as Error).message || String(e));
+      }
     }
 
     async function useRunning() {
@@ -100,6 +105,7 @@ export default defineComponent({
     async function applyManual(path: string) {
       try {
         const resolved = await config.setManualPath(path);
+        if (!resolved) return;
         await followRealm(resolved?.realm);
         toast.info(t("common.gamePath.applied"));
         close();
@@ -113,7 +119,7 @@ export default defineComponent({
     }
 
     return () => (
-      <HModal
+      <HkModal
         modelValue={props.modelValue}
         onUpdate:modelValue={(v: boolean) => emit("update:modelValue", v)}
         title={t("common.gamePath.title")}
@@ -154,7 +160,7 @@ export default defineComponent({
                   type="button"
                   class={[
                     "game-path-modal__install",
-                    i.path === activePath.value ? "is-active" : "",
+                    sameGamePath(i.path, activePath.value) ? "is-active" : "",
                   ]}
                   onClick={() => void pickInstall(i)}
                 >
@@ -174,13 +180,13 @@ export default defineComponent({
               <span class="game-path-modal__running-text">
                 {t("common.gamePath.runningHint", { path: runningInstall.value.path })}
               </span>
-              <HButton size="sm" onClick={() => void useRunning()}>
+              <HkButton size="sm" onClick={() => void useRunning()}>
                 {t("common.gamePath.useRunning")}
-              </HButton>
+              </HkButton>
             </div>
           ) : null}
         </div>
-      </HModal>
+      </HkModal>
     );
   },
 });

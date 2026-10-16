@@ -11,6 +11,14 @@ export const router = createRouter({
       component: () => import("@/views/DashboardView"),
     },
     {
+      // 游玩时间 — the water-meter page's sibling view. No sidebar entry by
+      // design: it is switched from the title-bar's center button group,
+      // which only renders while the dashboard section is open.
+      path: "/playtime",
+      name: "playtime",
+      component: () => import("@/views/PlaytimeView"),
+    },
+    {
       path: "/lookup",
       name: "lookup",
       component: () => import("@/views/LookupView"),
@@ -21,14 +29,36 @@ export const router = createRouter({
       component: () => import("@/views/ShipsView"),
     },
     {
+      // Live battle watch (desktop app only — the phone has no local game;
+      // the sidebar hides the link there too).
+      path: "/live",
+      name: "live",
+      component: () => import("@/views/replay/LiveView"),
+    },
+    {
       path: "/replay",
       name: "replay",
       component: () => import("@/views/replay/ReplayView"),
     },
     {
+      // Map tactics analysis over the active install's full map inventory
+      // (desktop app only).
+      path: "/tactics",
+      name: "tactics",
+      component: () => import("@/views/replay/TacticsView"),
+    },
+    {
       path: "/resources",
       name: "resources",
       component: () => import("@/views/ResourcesView"),
+    },
+    {
+      // Phone-layout settings surface (full page with its own section
+      // rail). Desktop keeps the settings modal; the route stays reachable
+      // at any width and shares its body with the modal.
+      path: "/settings",
+      name: "settings",
+      component: () => import("@/views/SettingsView"),
     },
   ],
 });

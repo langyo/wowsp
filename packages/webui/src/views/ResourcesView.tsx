@@ -1,787 +1,526 @@
-import { computed, defineComponent, onMounted, onUnmounted, ref, watch } from "vue";
+import { defineComponent, watch } from "vue";
 import {
   AlertTriangle,
   AudioLines,
-  ExternalLink,
-  FileCode,
+  Ellipsis,
   FolderSearch,
-  Globe,
-  Hash,
   ImageIcon,
-  PackageCheck,
-  Palette,
   Puzzle,
   RefreshCw,
-  ScrollText,
-  Trash2,
+  ShieldCheck,
+  Undo2,
 } from "@lucide/vue";
 
 import {
-  HButton,
-  HConfirmDialog,
-  HSearchInput,
-  HSwitch,
-  HTabs,
-  useToast,
+  HkButton,
+  HkConfirmDialog,
+  HkIconButton,
+  HkScrollContainer,
+  HkTabs,
+  HMenu,
 } from "@celestia-island/hikari";
 
+import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
+import type { CatalogEntry, InstalledMod } from "@/api";
 import {
-  api,
-  type CatalogEntry,
-  type CatalogProgress,
-  type InstalledMod,
-  type ModInstallRecord,
-  type ModKind,
-  type PackagePlan,
-} from "@/api";
-import { openExternal } from "@/utils/openExternal";
-import { useConfigStore } from "@/stores/config";
+  CATALOG_CATS,
+  KIND_BIG,
+  KIND_META,
+  KIND_ORDER,
+  catBig,
+  catIcon,
+  type BigCat,
+} from "@/features/modhub/taxonomy";
+import { listedEntries } from "@/features/modhub/catalogListed";
+import ModOpDisclaimer from "@/features/modhub/ModOpDisclaimer";
 import { t } from "@/i18n";
-import { useLanguage } from "@/i18n/useLanguage";
+import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
-
-const KIND_ORDER: ModKind[] = ["voice", "skin", "script", "gui", "patch", "textures"];
-
-/** lucide glyph + accent hue per plugin category. */
-const KIND_META: Record<ModKind, { icon: typeof Puzzle; class: string }> = {
-  voice: { icon: AudioLines, class: "voice" },
-  skin: { icon: Palette, class: "skin" },
-  script: { icon: FileCode, class: "script" },
-  gui: { icon: ImageIcon, class: "gui" },
-  patch: { icon: ScrollText, class: "patch" },
-  textures: { icon: PackageCheck, class: "textures" },
-};
-
-type CatalogCat = "battle" | "minimap" | "port" | "text" | "patch";
-const CATALOG_CATS: CatalogCat[] = ["battle", "minimap", "port", "text", "patch"];
-
-/** Top-level tabs (VSCode-marketplace style): the three former stacked
- *  sections become switchable views, the online catalog first. */
-type HubTab = "catalog" | "installed" | "local";
-
-const REPO = "langyo/wowsp";
+import { useModHub } from "./resources/useModHub";
+import { useMigrateWizard } from "./resources/useMigrateWizard";
+import { useFileListWindow } from "./resources/useFileListWindow";
+import type { ResourcesCtx } from "./resources/context";
+import { renderPane } from "./resources/DetailPane";
+import { renderMigrateWizard } from "./resources/MigrateWizard";
+import { renderFileListWindow } from "./resources/FileListWindow";
+import {
+  renderCatalogRow,
+  renderComponentRow,
+  renderInstalledRow,
+  renderModstationStrip,
+} from "./resources/SidebarRows";
+import { kindLabel, localized } from "./resources/display";
 
 /**
- * Mod Hub (Resources page).
+ * Mod Hub (Resources page) — master/detail in the replay page's
+ * secondary-sidebar shape.
  *
- * Top-level tabs pick the surface first, VSCode-marketplace style:
- * - Online catalog: curated tool-type plugins from `mod-index.json` (built
- *   from GitHub Discussions by scripts/mod_hub_publish.py). Install downloads
- *   the release asset, verifies SHA-256 and unpacks through the same pipeline
- *   as local installs.
- * - Installed: scan what is already under the latest `bin/<version>/res_mods/`.
- * - From folder: unpacked-package classifier flow (local zips still manual).
+ * The flush left sidebar owns the title row (with the ⋯ tool menu), the
+ * condition strips, the count pill and the whole filter stack (big category,
+ * source + tool row, chips) above the scrolling row list; the right pane
+ * shows what the selected row is and carries every action for it — nothing is
+ * hidden behind a modal, and the pane keeps a placeholder until something is
+ * picked.
+ *
+ * Online catalog: curated tool-type mods from `mod-index.json` (built from
+ * GitHub Discussions by scripts/mod_hub_publish.py); install downloads the
+ * release asset, verifies SHA-256 and unpacks through the same pipeline as
+ * local installs. Installed: scan of the latest `bin/<version>/res_mods/`.
+ *
+ * The state machines live in views/resources/ (useModHub, useMigrateWizard,
+ * the display helpers); the pane/row/wizard markup lives in the sibling
+ * render modules as plain functions over the shared context, so every vnode
+ * below still renders in this component's own tree.
  */
 export default defineComponent({
   name: "ResourcesView",
   setup() {
-    const config = useConfigStore();
-    const toast = useToast();
-    const { uiLocale, dataLanguage } = useLanguage();
+    const hub = useModHub();
+    const wizard = useMigrateWizard(hub);
+    hub.bindMigrateWizard(wizard.openMigrateWizard);
+    const fileWindow = useFileListWindow(hub);
+    const ctx: ResourcesCtx = { ...hub, ...wizard, fileWindow };
 
-    const activeTab = ref<HubTab>("catalog");
-    const installed = ref<InstalledMod[]>([]);
-    const scanning = ref(false);
-    const filter = ref<"all" | ModKind>("all");
-
-    const sourcePath = ref("");
-    const analyzing = ref(false);
-    const plan = ref<PackagePlan | null>(null);
-    const planError = ref("");
-    const installing = ref(false);
-    const report = ref<{ name: string; count: number; version: string } | null>(null);
-
-    // ── Online catalog state ──
-    const catalog = ref<CatalogEntry[]>([]);
-    const catalogSource = ref("");
-    const catalogFetched = ref("");
-    const catalogLoading = ref(false);
-    const catalogError = ref("");
-    const catalogFilter = ref<"all" | CatalogCat>("all");
-    const catalogSearch = ref("");
-    const records = ref<ModInstallRecord[]>([]);
-    // Per-plugin busy/progress maps (Vue instruments collection mutations,
-    // so `.set`/`.delete` re-render). Only the plugins currently being
-    // processed appear here — every other card stays fully clickable while
-    // one download runs, and parallel installs each track their own state.
-    const busy = ref(new Map<string, "install" | "uninstall">());
-    const progresses = ref(new Map<string, CatalogProgress>());
-    const confirmTarget = ref<CatalogEntry | null>(null);
-
-    // Installed-tab unit actions: relPath → "toggle" | "uninstall".
-    const unitBusy = ref(new Map<string, "toggle" | "uninstall">());
-    const unitTarget = ref<InstalledMod | null>(null);
-
-    const gameRoot = computed(() => config.activeInstall?.path ?? "");
-
-    let unlisten: (() => void) | undefined;
-    onMounted(() => {
-      api
-        .listenCatalogProgress?.((p) => {
-          if (p.phase === "done") {
-            progresses.value.delete(p.id);
-          } else {
-            progresses.value.set(p.id, p);
-          }
-        })
-        ?.then((un) => (unlisten = un));
-    });
-    onUnmounted(() => unlisten?.());
-
-    async function loadCatalog(force: boolean) {
-      if (catalogLoading.value) return;
-      catalogLoading.value = true;
-      catalogError.value = "";
-      try {
-        const index = await api.modCatalogRefresh(force);
-        catalog.value = index.mods;
-        catalogSource.value = index.sourceVersion;
-        catalogFetched.value = index.fetchedAt;
-      } catch (e) {
-        catalogError.value = e instanceof Error ? e.message : String(e);
-      } finally {
-        catalogLoading.value = false;
-      }
-    }
-
-    async function loadRecords() {
-      try {
-        records.value = await api.modHubRecords();
-      } catch {
-        records.value = [];
-      }
-    }
-
-    const recordOf = (id: string) => records.value.find((r) => r.id === id);
-
-    /** Installed units are keyed by their primary path (unique per unit). */
-    const unitKey = (m: InstalledMod) => m.relPath;
-
-    async function installMod(entry: CatalogEntry) {
-      if (!gameRoot.value || busy.value.has(entry.id)) return;
-      busy.value.set(entry.id, "install");
-      try {
-        const r = await api.modCatalogInstall(entry.id, gameRoot.value);
-        toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
-        await Promise.all([scan(), loadRecords()]);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : String(e));
-      } finally {
-        busy.value.delete(entry.id);
-        progresses.value.delete(entry.id);
-      }
-    }
-
-    async function uninstallMod() {
-      const entry = confirmTarget.value;
-      if (!entry || !gameRoot.value || busy.value.has(entry.id)) return;
-      confirmTarget.value = null;
-      busy.value.set(entry.id, "uninstall");
-      try {
-        const r = await api.modCatalogUninstall(entry.id, gameRoot.value);
-        toast.success(
-          t("resources.uninstalledDone", {
-            name: r.name,
-            removed: r.removedFiles,
-            restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
-          }),
-        );
-        await Promise.all([scan(), loadRecords()]);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : String(e));
-      } finally {
-        busy.value.delete(entry.id);
-      }
-    }
-
-    // ── Installed-unit actions (temporary disable via `.bak`, uninstall) ──
-
-    async function toggleUnit(mod: InstalledMod, enabled: boolean) {
-      if (!gameRoot.value || unitBusy.value.has(unitKey(mod))) return;
-      unitBusy.value.set(unitKey(mod), "toggle");
-      try {
-        await api.modHubSetUnitEnabled(mod.relPath, gameRoot.value, enabled);
-        toast.success(
-          enabled
-            ? t("resources.unitEnabled", { name: mod.name })
-            : t("resources.unitDisabled", { name: mod.name }),
-        );
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : String(e));
-      } finally {
-        unitBusy.value.delete(unitKey(mod));
-        await scan();
-      }
-    }
-
-    async function uninstallUnit() {
-      const mod = unitTarget.value;
-      if (!mod || !gameRoot.value || unitBusy.value.has(unitKey(mod))) return;
-      unitTarget.value = null;
-      unitBusy.value.set(unitKey(mod), "uninstall");
-      try {
-        const r = await api.modHubUninstallUnit(mod.relPath, gameRoot.value);
-        toast.success(
-          t("resources.uninstalledDone", {
-            name: r.name,
-            removed: r.removedFiles,
-            restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
-          }),
-        );
-        await Promise.all([scan(), loadRecords()]);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : String(e));
-      } finally {
-        unitBusy.value.delete(unitKey(mod));
-      }
-    }
-
-    async function scan() {
-      if (!gameRoot.value || scanning.value) return;
-      scanning.value = true;
-      try {
-        installed.value = await api.modHubScanInstalled(gameRoot.value);
-      } finally {
-        scanning.value = false;
-      }
-    }
-
-    async function analyze() {
-      if (!sourcePath.value.trim() || analyzing.value) return;
-      analyzing.value = true;
-      plan.value = null;
-      planError.value = "";
-      report.value = null;
-      try {
-        plan.value = await api.modHubClassifyPath(sourcePath.value.trim());
-      } catch (e) {
-        planError.value = e instanceof Error ? e.message : String(e);
-      } finally {
-        analyzing.value = false;
-      }
-    }
-
-    async function confirmInstall() {
-      if (!plan.value || installing.value) return;
-      installing.value = true;
-      try {
-        const r = await api.modHubInstall(sourcePath.value.trim(), gameRoot.value, plan.value);
-        report.value = { name: r.name, count: r.wroteFiles, version: r.binVersion };
-        plan.value = null;
-        await scan();
-      } catch (e) {
-        planError.value = e instanceof Error ? e.message : String(e);
-      } finally {
-        installing.value = false;
-      }
-    }
-
-    const byKind = computed(() => {
-      const map = new Map<ModKind, number>();
-      for (const m of installed.value) map.set(m.kind, (map.get(m.kind) ?? 0) + 1);
-      return map;
-    });
-
-    const shown = computed(() =>
-      filter.value === "all"
-        ? installed.value
-        : installed.value.filter((m) => m.kind === filter.value),
-    );
-
-    const catCounts = computed(() => {
-      const map = new Map<string, number>();
-      for (const m of catalog.value) map.set(m.category, (map.get(m.category) ?? 0) + 1);
-      return map;
-    });
-
-    const catalogShown = computed(() => {
-      const q = catalogSearch.value.trim().toLowerCase();
-      return catalog.value.filter((m) => {
-        if (catalogFilter.value !== "all" && m.category !== catalogFilter.value) return false;
-        if (!q) return true;
-        return (
-          m.id.includes(q) ||
-          m.nameEn.toLowerCase().includes(q) ||
-          m.nameZh.toLowerCase().includes(q) ||
-          m.title.toLowerCase().includes(q)
-        );
-      });
-    });
-
-    /** Localized name/description from the thread's wowsp:i18n block:
-     *  UI locale first, then the game-data language, then en-US. Matching
-     *  falls back to the language subtag so `zh-SG` still finds `zh-CN`. */
-    function localized(entry: CatalogEntry): { name: string; desc: string } {
-      const table = entry.i18n ?? {};
-      const wanted = [uiLocale.value, dataLanguage.value, "en-US"];
-      for (const lang of wanted) {
-        const text = table[lang];
-        if (text?.name || text?.description) {
-          return { name: text.name, desc: text.description };
-        }
-      }
-      for (const lang of wanted) {
-        const base = lang.split("-")[0]?.toLowerCase();
-        const key = base && Object.keys(table).find((k) => k.split("-")[0].toLowerCase() === base);
-        const text = key ? table[key] : undefined;
-        if (text?.name || text?.description) {
-          return { name: text.name, desc: text.description };
-        }
-      }
-      return { name: entry.nameZh || entry.nameEn, desc: entry.description };
-    }
-
-    const catalogKb = (entry: CatalogEntry) =>
-      entry.packages.reduce((sum, p) => sum + p.size, 0) > 0
-        ? Math.max(1, Math.round(entry.packages.reduce((s, p) => s + p.size, 0) / 1024))
-        : 0;
-
-    const discussionUrl = (n?: number | null) =>
-      n ? `https://github.com/${REPO}/discussions/${n}` : "";
-
-    function kindLabel(kind: ModKind): string {
-      return t(`resources.kind.${kind}`);
-    }
-
-    // The config store hydrates the active install asynchronously — rescan
-    // once the game root shows up (the mount-time scan is a no-op before it).
+    // All installed rows, confirmations and migration plans belong to the
+    // selected install. Invalidate synchronously so an old row can never
+    // invoke an action against the newly selected root, even mid-scan.
+    const gameRoot = hub.gameRoot;
     watch(gameRoot, (root) => {
-      if (root && installed.value.length === 0) scan();
-    });
+      hub.invalidateRoot();
+      wizard.beginRootChange();
+      if (root) void hub.scan();
+    }, { flush: "sync" });
 
-    onMounted(() => {
-      scan();
-      loadCatalog(false);
-      loadRecords();
-    });
-
-    return () => (
-      <div class="resources-view">
-        <div class="resources-view__head">
-          <h1 class="resources-view__title">{t("resources.title")}</h1>
-        </div>
-        <p class="resources-view__subtitle">{t("resources.subtitle")}</p>
-
-        {!gameRoot.value && (
-          <div class="resources-banner resources-banner--warn">
-            <AlertTriangle size={16} />
-            {t("resources.noGame")}
-          </div>
-        )}
-
-        {/* ── Tab strip: pick the surface first, then work inside it ── */}
-        <HTabs
-          class="resources-view__tabs"
-          modelValue={activeTab.value}
-          onUpdate:modelValue={(v: string) => (activeTab.value = v as HubTab)}
-          tabs={[
-            { key: "catalog", label: t("resources.tab.catalog"), icon: <Globe size={14} /> },
-            { key: "installed", label: t("resources.tab.installed"), icon: <Puzzle size={14} /> },
-            { key: "local", label: t("resources.tab.local"), icon: <FolderSearch size={14} /> },
-          ]}
-          variant="pill"
-          scrollable={false}
-          renderPanels={false}
-        />
-
-        {/* Panels swap instantly (VSCode-style); the tab strip's sliding
-            indicator already carries the motion feedback. */}
-        <div key={activeTab.value}>
-            {/* ── Online catalog: curated tool plugins from the mod-hub release ── */}
-            {activeTab.value === "catalog" && (
-              <section class="resources-section">
-                <div class="resources-section__head">
-                  <Globe size={18} />
-                  <h2>{t("resources.catalogTitle")}</h2>
-                  <button
-                    class="resources-view__rescan resources-section__action"
-                    disabled={catalogLoading.value}
-                    onClick={() => loadCatalog(true)}
-                  >
-                    <RefreshCw size={14} class={catalogLoading.value ? "spin" : undefined} />
-                    {catalogLoading.value ? t("resources.refreshing") : t("resources.refresh")}
-                  </button>
-                </div>
-                <p class="resources-section__desc">{t("resources.catalogHint")}</p>
-
-                {catalogError.value && (
-                  <div class="resources-banner resources-banner--error">
-                    {t("resources.catalogError", { error: catalogError.value })}
-                  </div>
-                )}
-
-                {catalog.value.length > 0 && (
-                  <>
-                    <div class="resources-toolbar">
-                      <HSearchInput
-                        modelValue={catalogSearch.value}
-                        onUpdate:modelValue={(v: string) => (catalogSearch.value = v)}
-                        placeholder={t("resources.catalogSearch")}
-                      />
-                      <span class="resources-toolbar__meta">
-                        {t("resources.catalogSource", {
-                          count: catalog.value.length,
-                          source: catalogSource.value,
-                          time: catalogFetched.value.slice(0, 10),
-                        })}
-                      </span>
-                    </div>
-
-                    <div class="resources-chips">
-                      <button
-                        class={["chip", catalogFilter.value === "all" && "chip--on"]}
-                        onClick={() => (catalogFilter.value = "all")}
-                      >
-                        {t("resources.cat.all")} · {catalog.value.length}
-                      </button>
-                      {CATALOG_CATS.filter((c) => (catCounts.value.get(c) ?? 0) > 0).map((c) => (
-                        <button
-                          key={c}
-                          class={["chip", catalogFilter.value === c && "chip--on"]}
-                          onClick={() => (catalogFilter.value = c)}
-                        >
-                          {t(`resources.cat.${c}`)} · {catCounts.value.get(c)}
-                        </button>
-                      ))}
-                    </div>
-
-                    {catalogShown.value.length === 0 ? (
-                      <div class="resources-section__placeholder">{t("resources.empty")}</div>
-                    ) : (
-                      <div class="catalog-grid">
-                        {catalogShown.value.map((entry) => {
-                          const text = localized(entry);
-                          const record = recordOf(entry.id);
-                          const upToDate = record && record.version === entry.version;
-                          const busyState = busy.value.get(entry.id);
-                          const busyInstall = busyState === "install";
-                          const busyUninstall = busyState === "uninstall";
-                          const progressEntry = progresses.value.get(entry.id);
-                          const url = discussionUrl(entry.discussion);
-                          const kb = catalogKb(entry);
-                          return (
-                            <div key={entry.id} class="catalog-card">
-                              <div class="catalog-card__head">
-                                <span class="catalog-card__name">
-                                  {text.name || entry.title || entry.nameEn}
-                                </span>
-                                {upToDate && (
-                                  <span class="catalog-card__badge catalog-card__badge--ok">
-                                    {t("resources.installedBadge")}
-                                  </span>
-                                )}
-                              </div>
-                              {text.name && text.name !== entry.nameEn && (
-                                <div class="catalog-card__sub">{entry.nameEn}</div>
-                              )}
-                              {text.desc && (
-                                <div class="catalog-card__desc" data-hint={text.desc}>
-                                  {text.desc}
-                                </div>
-                              )}
-                              <div class="catalog-card__meta">
-                                <span class="catalog-card__ver">
-                                  <Hash size={11} />
-                                  {record && !upToDate
-                                    ? `${record.version} → ${entry.version}`
-                                    : entry.version}
-                                </span>
-                                {kb > 0 && (
-                                  <span>
-                                    {t("resources.pkgCount", {
-                                      count: entry.packages.length,
-                                      kb,
-                                    })}
-                                  </span>
-                                )}
-                                <span>{t("resources.gameRange", { game: entry.game })}</span>
-                              </div>
-                              <div class="catalog-card__actions">
-                                {!upToDate && (
-                                  <HButton
-                                    size="sm"
-                                    variant="primary"
-                                    disabled={!!busyState || !gameRoot.value}
-                                    loading={busyInstall}
-                                    onClick={() => installMod(entry)}
-                                  >
-                                    {busyInstall
-                                      ? t("resources.installingMod")
-                                      : record
-                                        ? t("resources.update")
-                                        : t("resources.install")}
-                                  </HButton>
-                                )}
-                                {record && (
-                                  <button
-                                    class="catalog-card__uninstall"
-                                    data-hint={t("resources.uninstall")}
-                                    aria-label={t("resources.uninstall")}
-                                    disabled={!!busyState}
-                                    onClick={() => (confirmTarget.value = entry)}
-                                  >
-                                    <Trash2 size={13} />
-                                    {busyUninstall ? t("resources.uninstalling") : ""}
-                                  </button>
-                                )}
-                                {url && (
-                                  <button
-                                    class="catalog-card__thread"
-                                    data-hint={t("resources.openDiscussion")}
-                                    onClick={() => openExternal(url)}
-                                  >
-                                    <ExternalLink size={13} />
-                                    {t("resources.discuss")}
-                                  </button>
-                                )}
-                              </div>
-                              {busyInstall && progressEntry && (
-                                <div class="catalog-card__progress">
-                                  <div
-                                    class="catalog-card__progress-bar"
-                                    style={{
-                                      width: `${Math.min(
-                                        100,
-                                        progressEntry.total > 0
-                                          ? (progressEntry.received / progressEntry.total) * 100
-                                          : 12,
-                                      )}%`,
-                                    }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {!catalogLoading.value && catalog.value.length === 0 && !catalogError.value && (
-                  <div class="resources-section__placeholder">{t("resources.catalogEmpty")}</div>
-                )}
-              </section>
+    function comboRenderItem(raw: unknown) {
+      if (hub.source.value === "installed") {
+        const mod = raw as InstalledMod;
+        const meta = KIND_META[mod.kind];
+        const Icon = meta.icon;
+        return (
+          <>
+            <span class={["mod-row__tile", `mod-row__tile--${meta.class}`, "mod-row__tile--sm"]}>
+              <Icon size={14} />
+            </span>
+            <span class="resources-view__combo-name">{hub.unitDisplayName(mod)}</span>
+            {mod.version && <span class="resources-view__combo-ver">{mod.version}</span>}
+          </>
+        );
+      }
+      const entry = raw as CatalogEntry;
+      const Icon = catIcon(entry.category);
+      const text = localized(entry);
+      return (
+        <>
+          <span
+            class={[
+              "mod-row__tile",
+              "mod-row__tile--cat",
+              "mod-row__tile--sm",
+              entry.preview && "mod-row__tile--preview",
+            ]}
+          >
+            {/* Same layering as the sidebar rows: glyph under the thumbnail
+                as placeholder and offline fallback. */}
+            <Icon size={14} />
+            {entry.preview && (
+              <img
+                class="mod-row__thumb"
+                src={mediaImageUrl(entry.preview)}
+                alt=""
+                loading="lazy"
+                draggable={false}
+              />
             )}
+          </span>
+          <span class="resources-view__combo-name">{text.name || entry.title || entry.nameEn}</span>
+        </>
+      );
+    }
 
-            {/* ── Installed plugins, browsable by category ─────────────────── */}
-            {activeTab.value === "installed" && (
-              <section class="resources-section">
-                <div class="resources-section__head">
-                  <Puzzle size={18} />
-                  <h2>{t("resources.installed")}</h2>
-                  <button
-                    class="resources-view__rescan resources-section__action"
-                    disabled={!gameRoot.value || scanning.value}
-                    onClick={scan}
-                  >
-                    <RefreshCw size={14} class={scanning.value ? "spin" : undefined} />
-                    {scanning.value ? t("resources.scanning") : t("resources.scan")}
-                  </button>
-                </div>
+    /** Empty-state text node — the list is a flex column of rows, so a bare
+     *  string would render flush and full-contrast instead of reading as a
+     *  placeholder. */
+    const emptyNote = (text: string) => <div class="resources-view__empty">{text}</div>;
 
-                <div class="resources-chips">
-                  <button
-                    class={["chip", filter.value === "all" && "chip--on"]}
-                    onClick={() => (filter.value = "all")}
-                  >
-                    {t("resources.filterAll")} · {installed.value.length}
-                  </button>
-                  {KIND_ORDER.filter((k) => (byKind.value.get(k) ?? 0) > 0).map((k) => (
-                    <button
-                      key={k}
-                      class={["chip", filter.value === k && "chip--on"]}
-                      onClick={() => (filter.value = k)}
+    /** What an empty online list means depends on WHY it is empty: mid-fetch
+     *  is not the same as "nothing matched", and a failed fetch is already
+     *  talking through the error banner above the list. */
+    const catalogEmptyNote = () => {
+      if (hub.catalogLoading.value) return emptyNote(t("resources.refreshing"));
+      if (hub.catalogError.value) return null;
+      const listed = listedEntries(hub.catalog.value);
+      return emptyNote(
+        listed.length === 0 ? t("resources.catalogEmpty") : t("resources.empty"),
+      );
+    };
+
+    const installedEmptyNote = () =>
+      emptyNote(hub.scanning.value ? t("resources.scanning") : t("resources.empty"));
+
+    return () => {
+      const sourceTabs = [
+        { key: "online", label: t("resources.source.online") },
+        { key: "installed", label: t("resources.source.installed") },
+      ];
+      const bigCatTabs = [
+        { key: "function", label: t("resources.big.function"), icon: <Puzzle size={14} /> },
+        { key: "texture", label: t("resources.big.texture"), icon: <ImageIcon size={14} /> },
+        { key: "voice", label: t("resources.big.voice"), icon: <AudioLines size={14} /> },
+      ];
+      const selKey = hub.selectedRowKey.value;
+      return (
+        <div class="resources-view">
+          {/* ── Master/detail in the replay page's secondary-sidebar shape:
+              the sidebar owns the title row, the condition strips, the count
+              pill and the whole filter stack above the scrolling list; the
+              pane shows what the selected row is. ── */}
+          <aside class="resources-view__side">
+            <div class="resources-view__side-head">
+              <div class="resources-view__side-head-row">
+                <h2 class="resources-view__side-title">{t("resources.title")}</h2>
+                <span class="resources-view__side-actions">
+                  {/* Tool menu: safe mode + the migration wizard — the ⋯
+                      button rides the title row like the replay list's head
+                      actions; refresh / folder-install ride the source row
+                      below as its trailing ghost pair. */}
+                  <span class="resources-view__tools" ref={hub.toolsAnchor}>
+                    <HkIconButton
+                      size={24}
+                      variant="ghost"
+                      data-hint={t("resources.toolsMenu")}
+                      onClick={() => (hub.toolsOpen.value = !hub.toolsOpen.value)}
                     >
-                      {kindLabel(k)} · {byKind.value.get(k)}
-                    </button>
-                  ))}
-                </div>
+                      <Ellipsis size={15} />
+                    </HkIconButton>
+                    <HMenu
+                      variant="popup"
+                      title={t("resources.toolsMenu")}
+                      open={hub.toolsOpen.value}
+                      anchorRef={hub.toolsAnchor.value}
+                      placement="bottom-end"
+                      items={[
+                        {
+                          key: "safe-enter",
+                          label: t("resources.safeModeEnter"),
+                          icon: ShieldCheck,
+                          disabled: !hub.gameRoot.value || hub.safeMode.value || hub.safeModeBusy.value,
+                        },
+                        {
+                          key: "safe-exit",
+                          label: t("resources.safeModeExit"),
+                          icon: Undo2,
+                          disabled: !hub.safeMode.value || hub.safeModeBusy.value,
+                        },
+                        {
+                          key: "migrate",
+                          label: t("resources.staleMigrate"),
+                          icon: RefreshCw,
+                          disabled:
+                            !hub.gameRoot.value || hub.staleBins.value.length === 0 || wizard.migrating.value,
+                        },
+                      ]}
+                      // HMenu select emits the item key itself as the first argument.
+                      onSelect={(key: string | number) => {
+                        hub.toolsOpen.value = false;
+                        if (key === "safe-enter") hub.safeModeAsk.value = "on";
+                        else if (key === "safe-exit") hub.safeModeAsk.value = "off";
+                        else if (key === "migrate") wizard.openMigrateWizard();
+                      }}
+                      onUpdate:open={(v: boolean) => (hub.toolsOpen.value = v)}
+                    />
+                  </span>
+                </span>
+              </div>
 
-                {shown.value.length === 0 ? (
-                  <div class="resources-section__placeholder">{t("resources.empty")}</div>
-                ) : (
-                  <div class="mod-grid">
-                    {shown.value.map((m) => {
-                      const meta = KIND_META[m.kind];
-                      const Icon = meta.icon;
-                      const state = unitBusy.value.get(m.relPath);
-                      const busyToggle = state === "toggle";
-                      return (
-                        <div
-                          key={m.relPath}
-                          class={[
-                            "mod-card",
-                            `mod-card--${meta.class}`,
-                            m.disabled && "mod-card--disabled",
-                          ]}
-                        >
-                          <div class="mod-card__main">
-                            <Icon size={20} />
-                            <div class="mod-card__body">
-                              <div class="mod-card__name">
-                                {m.name}
-                                {m.version && (
-                                  <span class="mod-card__version">{m.version}</span>
-                                )}
-                              </div>
-                              <div class="mod-card__kind">{kindLabel(m.kind)}</div>
-                              {m.detail && <div class="mod-card__detail">{m.detail}</div>}
-                              <div class="mod-card__path" title={m.paths.join("\n")}>
-                                {m.relPath}
-                                {m.paths.length > 1 && ` +${m.paths.length - 1}`}
-                              </div>
-                              {m.paths.length === 0 && (
-                                <div class="mod-card__detail">{t("resources.manifestOnly")}</div>
-                              )}
-                            </div>
-                            <button
-                              class="mod-card__uninstall"
-                              data-hint={t("resources.uninstall")}
-                              aria-label={t("resources.uninstall")}
-                              disabled={!!state}
-                              onClick={() => (unitTarget.value = m)}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                          <div class="mod-card__foot">
-                            {m.paths.length > 0 ? (
-                              <HSwitch
-                                size="sm"
-                                modelValue={!m.disabled}
-                                disabled={!!state}
-                                onUpdate:modelValue={(v: boolean) => toggleUnit(m, v)}
-                              >
-                                {m.disabled
-                                  ? t("resources.disabled")
-                                  : t("resources.enabled")}
-                              </HSwitch>
-                            ) : (
-                              <span class="mod-card__foot-note">
-                                {t("resources.manifestOnlyShort")}
-                              </span>
-                            )}
-                            {busyToggle && <span class="mod-card__spinner" />}
-                          </div>
-                        </div>
-                      );
-                    })}
+              {/* Compact condition strip: only what NEEDS attention stays a
+                  banner — a missing install speaks the replay list's quiet
+                  no-client note, while safe mode / stale bins keep the
+                  banner chrome (both carry an action). Tooling lives in the
+                  ⋯ menu. */}
+              {!hub.gameRoot.value && (
+                <p class="resources-view__side-note">{t("resources.noGame")}</p>
+              )}
+
+              {hub.safeMode.value && hub.gameRoot.value && (
+                <div class="resources-banner resources-banner--warn">
+                  <AlertTriangle size={16} />
+                  <span class="resources-banner__text">{t("resources.safeModeOn")}</span>
+                  <HkButton
+                    size="sm"
+                    disabled={hub.safeModeBusy.value}
+                    loading={hub.safeModeBusy.value}
+                    onClick={() => (hub.safeModeAsk.value = "off")}
+                  >
+                    {t("resources.safeModeExit")}
+                  </HkButton>
+                </div>
+              )}
+
+              {hub.loaderStatus.value?.pnfModsPresent &&
+                !hub.loaderStatus.value.markerPresent &&
+                hub.gameRoot.value &&
+                !hub.safeMode.value && (
+                  <div class="resources-banner resources-banner--warn">
+                    <AlertTriangle size={16} />
+                    <span class="resources-banner__text">
+                      {t("resources.pnfLoaderMissing")}
+                    </span>
+                    <HkButton
+                      size="sm"
+                      variant="primary"
+                      disabled={hub.restoringLoader.value}
+                      loading={hub.restoringLoader.value}
+                      onClick={hub.restoreLoaderMarker}
+                    >
+                      {t("resources.pnfLoaderRestore")}
+                    </HkButton>
                   </div>
                 )}
-              </section>
-            )}
 
-            {/* ── Install from an unpacked folder via the classifier ───────── */}
-            {activeTab.value === "local" && (
-              <section class="resources-section">
-                <div class="resources-section__head">
-                  <FolderSearch size={18} />
-                  <h2>{t("resources.installSection")}</h2>
+              {hub.staleBins.value.length > 0 && hub.gameRoot.value && !hub.safeMode.value && (
+                <div class="resources-banner resources-banner--warn">
+                  <AlertTriangle size={16} />
+                  <span class="resources-banner__text">
+                    {t("resources.staleBinBanner", {
+                      version: hub.staleBins.value.map((b) => b.binVersion).join(", "),
+                      count: hub.staleBins.value.reduce((n, b) => n + b.fileCount, 0),
+                    })}
+                  </span>
+                  <HkButton
+                    size="sm"
+                    variant="primary"
+                    disabled={wizard.migrating.value}
+                    loading={wizard.migrating.value}
+                    onClick={wizard.openMigrateWizard}
+                  >
+                    {t("resources.staleMigrate")}
+                  </HkButton>
                 </div>
-                <p class="resources-section__desc">{t("resources.installHint")}</p>
+              )}
 
-                <div class="resources-installrow">
-                  <input
-                    type="text"
-                    v-model={sourcePath.value}
-                    placeholder={t("resources.pathPlaceholder")}
-                    spellcheck={false}
+              {/* The count pill mirrors the replay list's count — scoped to
+                  the ACTIVE source AND big category, i.e. exactly what the
+                  "all" chip below counts; narrower chip/filter states show
+                  in the list itself. */}
+              <span class="resources-view__count">
+                {t("resources.countLine", {
+                  count:
+                    hub.source.value === "online"
+                      ? hub.catalogInCat.value.length
+                      : hub.installedInCat.value.length,
+                })}
+              </span>
+
+              {/* Big category — the row-filling segmented strip. */}
+              <HkTabs
+                variant="segmented"
+                block
+                modelValue={hub.bigCat.value}
+                onUpdate:modelValue={(v: string) => (hub.bigCat.value = v as BigCat)}
+                tabs={bigCatTabs}
+                renderPanels={false}
+              />
+
+              {/* Source switch + the three tool triggers (search popup,
+                  refresh/rescan, folder install) ride one row — all ghost
+                  icon-button sized, the segmented group carries the height. */}
+              <div class="resources-view__row">
+                <div class="resources-view__rowmain">
+                  <HkTabs
+                    variant="segmented"
+                    modelValue={hub.source.value}
+                    onUpdate:modelValue={(v: string) => hub.pickSource(v as "online" | "installed")}
+                    tabs={sourceTabs}
+                    renderPanels={false}
                   />
-                  <button
-                    disabled={!sourcePath.value.trim() || analyzing.value || !gameRoot.value}
-                    onClick={analyze}
-                  >
-                    {analyzing.value ? t("resources.analyzing") : t("resources.browse")}
-                  </button>
                 </div>
+                <AsyncSearchCombo
+                  key={hub.source.value}
+                  ghost
+                  search={hub.comboSearch}
+                  itemKey={(raw: unknown) =>
+                    hub.source.value === "installed"
+                      ? (raw as InstalledMod).relPath
+                      : (raw as CatalogEntry).id
+                  }
+                  renderItem={comboRenderItem}
+                  onSelect={hub.comboSelect}
+                  title={t("resources.searchMod")}
+                  placeholder={t("resources.listFilter")}
+                  searchingText={t("resources.searching")}
+                  minChars={1}
+                  align="right"
+                  noResultsText={t("resources.empty")}
+                />
+                <HkIconButton
+                  size={24}
+                  variant="ghost"
+                  disabled={hub.refreshDisabled.value}
+                  data-hint={hub.source.value === "online" ? t("resources.refresh") : t("resources.scan")}
+                  aria-label={
+                    hub.source.value === "online" ? t("resources.refresh") : t("resources.scan")
+                  }
+                  onClick={hub.refresh}
+                >
+                  <RefreshCw size={15} class={hub.refreshSpinning.value ? "spin" : undefined} />
+                </HkIconButton>
+                <HkIconButton
+                  size={24}
+                  variant="ghost"
+                  data-hint={t("resources.installSection")}
+                  aria-label={t("resources.installSection")}
+                  onClick={hub.openLocal}
+                >
+                  <FolderSearch size={15} />
+                </HkIconButton>
+              </div>
 
-                {planError.value && (
-                  <div class="resources-banner resources-banner--error">{planError.value}</div>
-                )}
-                {report.value && (
-                  <div class="resources-banner resources-banner--ok">
-                    {t("resources.installedOk", {
-                      name: report.value.name,
-                      count: report.value.count,
-                      version: report.value.version,
-                    })}
-                  </div>
-                )}
+              {hub.source.value === "online" && hub.catalogError.value && (
+                <div class="resources-banner resources-banner--error">
+                  {t("resources.catalogError", { error: hub.catalogError.value })}
+                </div>
+              )}
 
-                {plan.value && (
-                  <div class={`plan-card plan-card--${KIND_META[plan.value.kind].class}`}>
-                    <div class="plan-card__head">
-                      {(() => {
-                        const Icon = KIND_META[plan.value!.kind].icon;
-                        return <Icon size={18} />;
-                      })()}
-                      <strong>{plan.value.name}</strong>
-                      <span class="plan-card__badge">{kindLabel(plan.value.kind)}</span>
-                      {plan.value.detail && (
-                        <span class="plan-card__detail">{plan.value.detail}</span>
-                      )}
-                    </div>
-                    {plan.value.entries.length > 0 && (
-                      <table class="plan-card__files">
-                        <caption>{t("resources.planFiles")}</caption>
-                        <tbody>
-                          {plan.value.entries.map((e) => (
-                            <tr key={e.fromRel + e.toRel}>
-                              <td>{e.fromRel === "." ? "." : `${e.fromRel}/`}</td>
-                              <td>→</td>
-                              <td>{e.toRel}/</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                    {plan.value.warnings.length > 0 && (
-                      <ul class="plan-card__warnings">
-                        {plan.value.warnings.map((w) => (
-                          <li key={w}>
-                            <AlertTriangle size={12} /> {w}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <button
-                      class="plan-card__go"
-                      disabled={installing.value}
-                      onClick={confirmInstall}
-                    >
-                      {installing.value ? t("resources.installing") : t("resources.confirmInstall")}
-                    </button>
-                  </div>
-                )}
-              </section>
+              {/* Sub-division chips, scoped to the active big category.
+                  Multi-select toggles: no chips picked = show everything,
+                  each clicked chip narrows to its bucket (union). */}
+              <div class="resources-chips">
+                {hub.source.value === "online"
+                  ? CATALOG_CATS.filter(
+                      (c) =>
+                        catBig(c) === hub.bigCat.value && (hub.catCounts.value.get(c) ?? 0) > 0,
+                    ).map((c) => (
+                      <button
+                        key={c}
+                        class={["chip", hub.catalogCats.value.has(c) && "chip--on"]}
+                        aria-pressed={hub.catalogCats.value.has(c)}
+                        title={t("resources.chipsHint")}
+                        onClick={() => hub.toggleCatalogCat(c)}
+                      >
+                        {t(`resources.cat.${c}`)} · {hub.catCounts.value.get(c)}
+                      </button>
+                    ))
+                  : KIND_ORDER.filter(
+                      (k) => KIND_BIG[k] === hub.bigCat.value && (hub.kindCounts.value.get(k) ?? 0) > 0,
+                    ).map((k) => (
+                      <button
+                        key={k}
+                        class={["chip", hub.kindFilters.value.has(k) && "chip--on"]}
+                        aria-pressed={hub.kindFilters.value.has(k)}
+                        title={t("resources.chipsHint")}
+                        onClick={() => hub.toggleKindFilter(k)}
+                      >
+                        {kindLabel(k)} · {hub.kindCounts.value.get(k)}
+                      </button>
+                    ))}
+              </div>
+            </div>
+
+            {/* ── The compact list (the master half): the sidebar's
+                scroller — the filter stack above stays put; the hikari
+                scroll container owns the scrollbar (overlay track) and
+                the rows scroll inside its viewport ── */}
+            <HkScrollContainer class="resources-view__side-scroll">
+              <div class="resources-view__side-inner">
+                {hub.source.value === "online"
+                  ? hub.catalogShown.value.length === 0
+                    ? catalogEmptyNote()
+                    : hub.catalogShown.value.map((entry) => renderCatalogRow(ctx, entry, selKey))
+                  : hub.bigCat.value === "texture" && hub.textureComponents.value.length === 0
+                    ? installedEmptyNote()
+                    : hub.bigCat.value === "texture"
+                      ? hub.textureComponents.value.map((comp) => renderComponentRow(ctx, comp))
+                      : hub.shown.value.length === 0
+                        ? installedEmptyNote()
+                        : hub.shown.value.map((m) => renderInstalledRow(ctx, m, selKey))}
+              </div>
+            </HkScrollContainer>
+
+            {renderModstationStrip(ctx)}
+
+            {/* Catalog metadata rides a quiet footer (the count itself moved
+                into the pill above); the installed list has none — its count
+                IS the pill. */}
+            {hub.source.value === "online" && (
+              <div class="resources-view__side-foot">
+                {t("resources.catalogMeta", {
+                  source: hub.catalogSource.value,
+                  time: hub.catalogFetched.value.slice(0, 10),
+                })}
+              </div>
             )}
-          </div>
+          </aside>
 
-        <HConfirmDialog
-          open={!!confirmTarget.value}
-          title={t("resources.uninstall")}
-          message={t("resources.confirmUninstall", { name: confirmTarget.value?.nameZh || confirmTarget.value?.nameEn || "" })}
-          confirmLabel={t("resources.uninstall")}
-          onConfirm={uninstallMod}
-          onUpdate:open={(v: boolean) => {
-            if (!v) confirmTarget.value = null;
-          }}
-        />
+          {/* ── The detail half: what the selected row is, and every
+              action for it, with the actions pinned bottom-right ── */}
+          <section class="resources-view__main">{renderPane(ctx)}</section>
 
-        <HConfirmDialog
-          open={!!unitTarget.value}
-          title={t("resources.uninstall")}
-          message={t("resources.confirmUnitUninstall", {
-            name: unitTarget.value?.name || "",
-          })}
-          confirmLabel={t("resources.uninstall")}
-          onConfirm={uninstallUnit}
-          onUpdate:open={(v: boolean) => {
-            if (!v) unitTarget.value = null;
-          }}
-        />
-      </div>
-    );
+          <HkConfirmDialog
+            open={!!hub.confirmTarget.value}
+            title={t("resources.uninstall")}
+            message={t("resources.confirmUninstall", { name: hub.confirmTarget.value?.nameZh || hub.confirmTarget.value?.nameEn || "" })}
+            confirmLabel={t("resources.uninstall")}
+            onConfirm={hub.uninstallMod}
+            onUpdate:open={(v: boolean) => {
+              if (!v) hub.confirmTarget.value = null;
+            }}
+          />
+
+          <HkConfirmDialog
+            open={!!hub.safeModeAsk.value}
+            title={t(hub.safeModeAsk.value === "on" ? "resources.safeModeEnter" : "resources.safeModeExit")}
+            message={t(
+              hub.safeModeAsk.value === "on"
+                ? "resources.confirmSafeModeEnter"
+                : "resources.confirmSafeModeExit",
+            )}
+            confirmLabel={t(
+              hub.safeModeAsk.value === "on" ? "resources.safeModeEnter" : "resources.safeModeExit",
+            )}
+            onConfirm={hub.doSafeMode}
+            onUpdate:open={(v: boolean) => {
+              if (!v) hub.safeModeAsk.value = null;
+            }}
+          />
+
+          {/* Stale-bin migration wizard: plan → review → executing → done. */}
+          {renderMigrateWizard(ctx)}
+          {renderFileListWindow(ctx)}
+
+          <HkConfirmDialog
+            open={!!hub.unitTarget.value}
+            title={t("resources.uninstall")}
+            message={t("resources.confirmUnitUninstall", {
+              name: hub.unitTarget.value?.name || "",
+            })}
+            confirmLabel={t("resources.uninstall")}
+            onConfirm={hub.uninstallUnit}
+            onUpdate:open={(v: boolean) => {
+              if (!v) hub.unitTarget.value = null;
+            }}
+          />
+
+          {/* ModStation trees sit outside res_mods — their uninstall is a
+              whole-directory removal under bin/<version>/mods/, so the
+              confirm spells that out. */}
+          <HkConfirmDialog
+            open={!!hub.foreignTarget.value}
+            title={t("resources.uninstall")}
+            message={t("resources.modstationUninstallConfirm", {
+              name: hub.foreignTarget.value?.name || "",
+            })}
+            confirmLabel={t("resources.uninstall")}
+            onConfirm={() => void hub.uninstallModstation()}
+            onUpdate:open={(v: boolean) => {
+              if (!v) hub.foreignTarget.value = null;
+            }}
+          />
+
+          {/* One-time disclaimer gate — raised by the first mutating
+              operation (see requestModOpDisclaimer), never again after. */}
+          <ModOpDisclaimer />
+        </div>
+      );
+    };
   },
 });

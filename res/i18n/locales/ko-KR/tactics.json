@@ -1,0 +1,146 @@
+{
+  "title": "전술 분석",
+  "filter": {
+    "all": "전체",
+    "random": "랜덤",
+    "ranked": "랭크전",
+    "clan": "클랜전",
+    "pve": "시나리오"
+  },
+  "badge": {
+    "limited": "제한적 지원",
+    "legacy": "이전 버전",
+    "legacyTip": "‘{name}’(으)로 대체됨",
+    "current": "새 버전"
+  },
+  "list": {
+    "filterEmpty": "이 모드의 맵이 아직 없습니다——해당 모드의 리플레이가 있으면 여기에 표시됩니다."
+  },
+  "plan": {
+    "noBounds": "이 지도에는 월드 범위 데이터가 없어 플랜 보드를 만들 수 없습니다."
+  },
+  "slots": {
+    "slotN": "플랜 {n}",
+    "add": "새 플랜",
+    "duplicate": "현재 플랜 복제",
+    "branch": "현재 시점에서 분기",
+    "remove": "현재 플랜 삭제",
+    "removeConfirm": "다시 클릭하면 삭제됩니다",
+    "rename": "플랜 이름 바꾸기",
+    "exportBundle": "모든 플랜 내보내기",
+    "importBundle": "플랜 묶음 가져오기",
+    "exported": "플랜 묶음을 내보냈습니다",
+    "imported": "플랜 {n}개를 가져왔습니다",
+    "importBad": "올바른 플랜 묶음 파일이 아닙니다",
+    "mapMismatch": "다른 맵({map})의 플랜입니다. 위치가 어긋날 수 있습니다"
+  },
+  "setup": {
+    "title": "지도와 모드 선택",
+    "stepMap": "지도",
+    "stepMode": "모드",
+    "cancel": "취소",
+    "back": "이전",
+    "confirm": "계획 시작",
+    "capCount": "거점 {n}개",
+    "next": "다음",
+    "learnedSection": "리플레이 실측",
+    "measured": "실측",
+    "learning": "리플레이에서 거점 학습 중…",
+    "noLearned": "이 맵의 리플레이가 아직 없습니다. 한 판 플레이하면 실측 거점이 여기 표시됩니다.",
+    "learnedFrom": "리플레이 {date}에서",
+    "sampleCount": "{n}전투",
+    "corpusSource": "코퍼스 실측",
+    "corpusFrom": "코퍼스 {n}전투에서 집계",
+    "custom": "사용자 지정",
+    "customDesc": "거점 편집기를 엽니다: 직접 추가·이동·조정하거나, 템플릿에서 시작하거나, 임의의 리플레이를 가져와 정확히 맞춥니다."
+  },
+  "mode": {
+    "dom4": "랜덤 · 거점 4개",
+    "dom4Desc": "표준 4거점 제압전: 양 진영에 본거점 1개씩, 다툼 거점 2개.",
+    "dom3": "랜덤 · 거점 3개",
+    "dom3Desc": "3거점 제압전: 중앙 목표 1개와 양 측면에 거점 1개씩.",
+    "dom2": "랜덤 · 거점 2개",
+    "dom2Desc": "대칭인 거점 2개.",
+    "dom1": "랜덤 · 거점 1개",
+    "dom1Desc": "중앙에 목표 1개뿐입니다.",
+    "encounter": "랜덤 · 조우전",
+    "encounterDesc": "거점 없음, 표준 전투.",
+    "ranked": "랭크전",
+    "rankedDesc": "랭크전 배치는 시즌마다 달라집니다.",
+    "clan": "클랜전",
+    "clanDesc": "클랜전 7v7 표준 배치.",
+    "operation": "시나리오",
+    "operationDesc": "시나리오: 일부 거점은 조건을 충족해야 나타납니다. 관측소를 파괴하면 해당 거점을 점령할 수 있고, 관측소가 완전히 재생되면 거점은 다시 사라집니다."
+  },
+  "zone": {
+    "torpedo": "어뢰",
+    "radar": "레이더",
+    "hydro": "음향 탐지",
+    "smoke": "연막"
+  },
+  "ctx": {
+    "torp": "어뢰 발사 계산기",
+    "torpAt": "이 방향으로 어뢰 발사",
+    "radar": "레이더 사용",
+    "hydro": "음향 탐지 사용",
+    "smoke": "연막 살포",
+    "move": "여기로 이동",
+    "stop": "여기서 정지",
+    "prune": "이 시점 이후의 ‘{name}’ 행동 삭제",
+    "editLineup": "편성 편집"
+  },
+  "toolbar": {
+    "mirror": "자동 미러(양측 동시 편집)",
+    "caps": "거점 표시 / 숨기기",
+    "heat": "히트맵",
+    "heatOff": "끄기",
+    "heatTrack": "항적 히트맵",
+    "heatSpawn": "출발 위치 히트맵",
+    "heatNone": "이 모드에는 아직 리플레이 데이터가 없습니다"
+  },
+  "lineup": {
+    "title": "편성 편집",
+    "ally": "아군",
+    "enemy": "적군",
+    "add": "함선 추가",
+    "added": "함선 {n}척 추가됨",
+    "remove": "함선 제거",
+    "rename": "유닛 이름 바꾸기",
+    "clear": "이 진영 비우기",
+    "copyTo": "{side}쪽으로 복사",
+    "torpedo": "어뢰",
+    "torpKm": "{km} km",
+    "apply": "완료",
+    "hint": "먼저 양 팀의 편성을 지정하세요(대칭 여부 무관). 보드는 여기서 유닛을 생성합니다. 함선 선택기는 함선 비교에서 쓰는 것과 같은 컴포넌트입니다."
+  },
+  "profile": {
+    "namePlaceholder": "프로필 이름(기본값은 지도 이름)",
+    "save": "프로필 저장",
+    "open": "프로필 열기",
+    "saved": "프로필이 {path}에 저장되었습니다",
+    "opened": "플랜 {n}개를 불러왔습니다",
+    "openBad": "프로필을 열 수 없습니다: {detail}",
+    "unknownMap": "프로필의 지도({map})를 여기서 사용할 수 없습니다",
+    "untitled": "이름 없는 프로필",
+    "rename": "프로필 이름 바꾸기"
+  },
+  "cap": {
+    "section": "사용자 지정 거점",
+    "title": "거점 편집",
+    "hint": "빈 수면을 클릭해 추가하고, 드래그해 옮기고, 선택하면 오른쪽에서 반경과 소속을 조정합니다.",
+    "templates": "템플릿에서 시작",
+    "importReplay": "리플레이에서 가져오기…",
+    "imported": "{name}에서 거점 {n}개를 불러왔습니다",
+    "importBad": "이 리플레이에서 인식할 수 있는 거점이 없습니다",
+    "selected": "선택한 거점",
+    "none": "선택한 거점이 없습니다",
+    "team": "소속",
+    "neutral": "중립",
+    "ally": "아군",
+    "enemy": "적군",
+    "radius": "반경",
+    "station": "관측소 연동",
+    "delete": "이 거점 삭제",
+    "apply": "거점 적용"
+  }
+}

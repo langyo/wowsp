@@ -31,14 +31,21 @@
     color: rgb(var(--color-error));
   }
 
+  /* The account list's capped window: hikari's scroll container owns
+     the scrollbar (auto-hiding overlay track); the cards scroll inside
+     its viewport. */
   &__list {
+    /* Generous max-height so the list breathes; the strip scrolls if
+       there are many accounts. This replaces the old cramped 280px cap. */
+    max-height: 420px;
+  }
+
+  /* Former list layout + focus-ring clearance, moved inside the
+     viewport so they scroll with the cards. */
+  &__list-inner {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
-    /* Generous max-height so the list breathes; the modal body scrolls if
-       there are many accounts. This replaces the old cramped 280px cap. */
-    max-height: 420px;
-    overflow-y: auto;
     padding: 2px; /* avoid focus-ring clipping */
   }
 
@@ -48,13 +55,112 @@
     font-size: var(--text-sm);
     padding: 2rem 0;
   }
+
+  /* HkDraggableList wrapper holding the bound-account cards — keeps the
+     same row rhythm as the outer list while the dashed add row stays
+     outside the reorderable region. Rows go bare (the card owns its
+     surface); the drag affordances are restated on the bare shape. */
+  &__cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+
+    .hk-draggable-list-item {
+      min-height: 0;
+      padding: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      transition: none;
+
+      &[data-dragging] {
+        opacity: 0.4;
+        transform: scale(0.98);
+      }
+
+      &[data-placeholder="before"] {
+        box-shadow: inset 0 2px 0 0 rgb(var(--color-primary) / 60%);
+      }
+
+      &[data-placeholder="after"] {
+        box-shadow: inset 0 -2px 0 0 rgb(var(--color-primary) / 60%);
+      }
+    }
+  }
+
+  /* Dashed add-player placeholder — the last row of the list; opens the
+     bind dialog. Mirrors the settings running-row dashed style. */
+  &__add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    background: transparent;
+    border: 1px dashed rgb(var(--color-primary) / 40%);
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-primary));
+    font-family: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 70%);
+      background: rgb(var(--color-primary) / 5%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+  }
+
+  /* Confirm-bind row at the bottom of the add dialog. */
+  &__confirm {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+/* ── Add-player dialog frame (HModal `contentClass`) ───────────────────
+   Phone-only height floor. Below 768px hikari docks the modal as a
+   content-hugging bottom sheet, so the add dialog opened with nothing but
+   the search row in it and every staged lookup then GREW it — the row the
+   user was typing in (and the keyboard sitting under it) moved on each
+   result. Holding the frame at the height the result needs keeps the
+   search row still and gives the preview card + confirm row a space to
+   land in instead of pushing one open.
+
+   The min() against the sheet's own cap is load-bearing: min-height beats
+   max-height in CSS, so a flat floor would override hikari's
+   keyboard-aware `100dvh` cap and drop the sheet back under the IME. The
+   cap's terms are mirrored exactly (top inset AND bottom gap) so the floor
+   stays under it even if a host ever lifts the sheet via
+   --hk-sheet-bottom-gap. Plain-vh line first for dvh-less engines, same
+   fallback order hikari uses on the cap itself. */
+@media (max-width: 767px) {
+  .acct-add-modal {
+    min-height: min(
+      21rem,
+      calc(100vh - var(--hk-sheet-top-inset, 4.25rem) - var(--hk-sheet-bottom-gap, 0px))
+    );
+    min-height: min(
+      21rem,
+      calc(100dvh - var(--hk-sheet-top-inset, 4.25rem) - var(--hk-sheet-bottom-gap, 0px))
+    );
+  }
 }
 
 /* ── Account card ──────────────────────────────────────────────────────
-   Each bound account is a horizontal card: avatar circle + name/clan/meta
-   stats (winrate, battles) + remove button. Clicking the card switches the
-   active account (no separate check button). Active card gets a primary
-   border + tinted background. */
+   Each bound account is a horizontal card: drag grip + avatar circle +
+   name/clan/meta stats (winrate, battles) + remove button. Clicking the
+   card switches the active account (no separate check button); dragging
+   the grip reorders the list. Active card gets a primary border + tinted
+   background. */
 .acct-card {
   display: flex;
   align-items: center;
@@ -79,6 +185,19 @@
     border-color: rgb(var(--color-primary) / 50%);
     background: rgb(var(--color-primary) / 8%);
     box-shadow: inset 3px 0 0 rgb(var(--color-primary));
+  }
+
+  /* Inert preview variant shown in the add dialog while a looked-up player
+     awaits confirmation — same anatomy as a bound card, but it doesn't
+     react to hover like a clickable one. */
+  &--preview {
+    cursor: default;
+
+    &:hover {
+      border-color: rgb(var(--color-border) / 15%);
+      background: rgb(var(--color-bg));
+      transform: none;
+    }
   }
 
   &__avatar {
@@ -126,15 +245,6 @@
     white-space: nowrap;
   }
 
-  /* Preferred-account star beside the nickname (server switches land on the
-     preferred account of the matching realm). */
-  &__preferred {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    color: rgb(var(--color-warning));
-  }
-
   &__meta {
     display: flex;
     align-items: center;
@@ -177,6 +287,16 @@
 
   /* Promote-to-preferred star (offered only when the realm has several
      bound accounts and this one isn't the preferred). */
+  /* The realm's primary-account marker (filled star, primary ink). */
+  &__primary {
+    flex-shrink: 0;
+    padding: 0.35rem;
+    color: rgb(var(--color-primary));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
   &__promote {
     flex-shrink: 0;
     background: transparent;

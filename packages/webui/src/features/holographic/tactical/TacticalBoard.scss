@@ -7,6 +7,9 @@
   inset: 0;
   /* Above the base map canvas, below the mmzoom head (outside the stage). */
   z-index: 2;
+  /* --tac-accent-rgb comes from the HOST (hudTokens.scss): the toolbar and
+     timeline teleport out of this subtree into the dock, so the token has to
+     be defined where both the layer and the dock inherit it. */
 }
 
 .tac-layer__canvas {
@@ -36,6 +39,10 @@
 .tac-layer__text-input {
   position: absolute;
   transform: translateY(-0.35em);
+  /* Pivot on the top-left corner — the world anchor the box is parked on —
+     so the map-rotation tilt set from renderNow spins around the same
+     point the committed text does. */
+  transform-origin: 0 0;
   min-width: 140px;
   max-width: 60%;
   padding: 0.22rem 0.5rem;
@@ -51,7 +58,7 @@
     color: var(--holo-hud-dim);
   }
   &:focus {
-    border-color: rgba(0, 195, 255, 0.7);
+    border-color: rgb(var(--tac-accent-rgb) / 0.7);
   }
 }
 
@@ -130,111 +137,48 @@
   }
 }
 
-/* ── Presentation step strip ─────────────────────────────────────────── */
-.tac-steps {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
+/* ── Tactical dock: timeline + toolbar above the playback bar ────────── */
+/* The board teleports this stack into .holo-map__tac-dock (the playback
+ * bar's tall form) when editing; the map card itself stays clean. */
+.tac-dock {
   display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  max-width: calc(100% - 24px);
-  padding: 0.3rem 0.45rem;
-  background: var(--holo-hud-chip);
-  border: 1px solid var(--holo-hud-border);
-  border-radius: 999px;
-  backdrop-filter: blur(6px);
-  cursor: default;
-  z-index: 3;
-  /* During the offline render the strip must not fight the encoder's seek. */
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+  padding: 6px 8px 8px;
+  /* During the offline render the dock must not fight the encoder's seek. */
   &--busy {
     pointer-events: none;
     opacity: 0.55;
   }
-}
 
-.tac-steps__btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 0.3rem;
-  font-size: 14px;
-  line-height: 1;
-  color: var(--holo-hud-text);
-  background: transparent;
-  border: 1px solid var(--holo-hud-border);
-  border-radius: 999px;
-  cursor: pointer;
-  &:hover {
-    background: rgba(0, 195, 255, 0.14);
+  /* The toolbar row hugs its content. NOTE: no overflow-x here — a scroll
+     container would clip the upward-opening popovers (overflow-y computes
+     to auto alongside it). On very narrow maps the row may poke past the
+     dock instead, which is the lesser evil. */
+  .tac-bar {
+    align-self: flex-start;
+    max-width: none;
   }
-  &--on {
-    border-color: rgba(0, 195, 255, 0.9);
-    background: rgba(0, 195, 255, 0.2);
-  }
-  &--add {
-    color: #4ade80;
-    border-color: rgba(74, 222, 128, 0.5);
+
+  .tac-timeline {
+    /* Blend into the dock surface: no own chip/border here. */
+    background: transparent;
+    border: none;
+    backdrop-filter: none;
+    padding: 0 2px 2px;
   }
 }
 
-.tac-steps__chips {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  max-width: 46vw;
-  overflow-x: auto;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
-}
-
-.tac-steps__empty {
-  font-size: var(--text-xs);
-  color: var(--holo-hud-dim);
-  white-space: nowrap;
-}
-
-.tac-steps__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.15rem;
-  padding: 0 0.15rem 0 0;
-  font-size: var(--text-xs);
-  color: var(--holo-hud-text);
-  background: rgba(5, 8, 15, 0.55);
-  border: 1px solid var(--holo-hud-border);
-  border-radius: 999px;
-  white-space: nowrap;
-  &--on {
-    border-color: rgba(0, 195, 255, 0.9);
-    background: rgba(0, 195, 255, 0.16);
-  }
-}
-
-.tac-steps__jump {
-  padding: 0.15rem 0.55rem;
-  font-variant-numeric: tabular-nums;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.tac-steps__del {
-  padding: 0 0.4rem 0.1rem;
-  font-size: 12px;
-  color: var(--holo-hud-dim);
-  background: transparent;
-  border: 0;
-  border-radius: 999px;
-  cursor: pointer;
-  &:hover {
-    color: #ef4444;
+/* Phone widths: the desktop bar is a single ~400px row of tool chips —
+   on a 390px viewport it poked 70px+ past the right edge (the tradeoff
+   above is fine for a shrunken desktop window, not for a phone). Wrap
+   instead: the chips flow onto a second row inside the dock and every
+   chip stays reachable. No scroll container is introduced, so the
+   upward-opening popovers stay unclipped. Desktop ≥768px unchanged. */
+@media (max-width: 767px) {
+  .tac-dock .tac-bar {
+    flex-wrap: wrap;
+    max-width: 100%;
   }
 }

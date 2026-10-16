@@ -1,7 +1,7 @@
-import { defineComponent, onMounted, ref } from "vue";
+import { computed, defineComponent, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
-  HardDriveDownload, Usb, Download, ExternalLink, FileDown, Check,
+  HardDriveDownload, Usb, Download, ExternalLink, FileDown, Check, Zap,
 } from "@lucide/vue";
 import { LinkButton, Reveal } from "@/components/ui";
 import "./DownloadView.scss";
@@ -10,6 +10,18 @@ const GITHUB = "https://github.com/langyo/wowsp";
 const RELEASES = `${GITHUB}/releases/latest`;
 const API_LATEST = "https://api.github.com/repos/langyo/wowsp/releases/latest";
 const API_LIST = "https://api.github.com/repos/langyo/wowsp/releases?per_page=10";
+
+/* GitHub is commonly unreachable from mainland China. Every GitHub request
+ * rotates through the official endpoint first, then these ghproxy-style
+ * prefixes (the official URL appended verbatim) until one answers — the
+ * same ladder the desktop app walks, see
+ * packages/app/tauri/src/commands/github_mirror.rs. No configuration. */
+const MIRROR_PREFIXES = [
+  "https://ghp.ci/",
+  "https://gh-proxy.com/",
+  "https://ghfast.top/",
+  "https://ghproxy.net/",
+];
 
 interface ReleaseAsset {
   name: string;
@@ -50,29 +62,48 @@ function pickRelease(v: unknown): LatestRelease | null {
   return assets.length ? { tag, assets } : null;
 }
 
-async function ghJson(url: string): Promise<unknown> {
-  const res = await fetch(url, {
-    headers: { Accept: "application/vnd.github+json" },
-    signal: AbortSignal.timeout(8000),
-  });
-  return res.ok ? (res.json() as Promise<unknown>) : null;
-}
-
-async function fetchLatestRelease(): Promise<LatestRelease | null> {
+async function ghJson(url: string): Promise<unknown | null> {
   try {
-    const latest = pickRelease(await ghJson(API_LATEST));
-    if (latest) return latest;
-    const list = await ghJson(API_LIST);
-    if (Array.isArray(list)) {
-      for (const rel of list) {
-        const hit = pickRelease(rel);
-        if (hit) return hit;
-      }
-    }
-    return null;
+    const res = await fetch(url, {
+      headers: { Accept: "application/vnd.github+json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    return res.ok ? (res.json() as Promise<unknown>) : null;
   } catch {
     return null;
   }
+}
+
+/* Walks the official-first mirror ladder until an endpoint answers.
+ * Returns the payload plus the prefix that served it ("" = official) —
+ * that same prefix is then applied to the asset download links, so the
+ * route proven working for the API carries the downloads too. */
+async function ghJsonRotating(
+  path: string,
+): Promise<{ data: unknown; prefix: string } | null> {
+  for (const prefix of ["", ...MIRROR_PREFIXES]) {
+    const data = await ghJson(prefix + path);
+    if (data !== null) return { data, prefix };
+  }
+  return null;
+}
+
+async function fetchLatestRelease(): Promise<{
+  release: LatestRelease;
+  prefix: string;
+} | null> {
+  // `releases/latest` first; the list endpoint is the fallback for the
+  // rolling res-latest / mod-hub releases taking the endpoint over.
+  for (const path of [API_LATEST, API_LIST]) {
+    const hit = await ghJsonRotating(path);
+    if (!hit) continue;
+    const rows = Array.isArray(hit.data) ? hit.data : [hit.data];
+    for (const row of rows) {
+      const parsed = pickRelease(row);
+      if (parsed) return { release: parsed, prefix: hit.prefix };
+    }
+  }
+  return null;
 }
 
 function formatSize(bytes: number): string {
@@ -87,6 +118,18 @@ export default defineComponent({
   setup() {
     const { t } = useI18n();
 
+    // The mirror prefix that served the release info ("" = official).
+    // Asset links ride the same route; the pill below the assets heading
+    // names the mirror whenever one had to step in.
+    const mirrorPrefix = ref("");
+    const mirrorHost = computed(() => {
+      try {
+        return new URL(mirrorPrefix.value).host;
+      } catch {
+        return mirrorPrefix.value;
+      }
+    });
+
     // Latest release — fetched live so version numbers never go stale.
     // `phase` keeps the pending fetch (placeholder row) apart from a real
     // failure (fallback link to the Releases page).
@@ -95,17 +138,48 @@ export default defineComponent({
     onMounted(async () => {
       const hit = await fetchLatestRelease();
       if (hit) {
-        release.value = hit;
+        release.value = hit.release;
+        mirrorPrefix.value = hit.prefix;
         phase.value = "ready";
       } else {
         phase.value = "failed";
       }
     });
 
-    function assetLabel(name: string): string {
-      if (/\.msi$/.test(name)) return "MSI";
-      return /webview2/.test(name) ? t("download.assetInstallerWv2") : t("download.assetInstaller");
+    // The two published installer flavors, resolved against the latest
+    // release's assets. The raw file names never reach the page: a card
+    // carries an internationalized title + audience description, and its
+    // button downloads the matching asset directly. The legacy bare-name
+    // alias (the desktop updater's bridge) and every unrecognized asset
+    // stay invisible — novices see exactly two choices.
+    const FLAVORS = [
+      { key: "lite", icon: Zap },
+      { key: "full", icon: HardDriveDownload },
+    ] as const;
+
+    type FlavorKey = (typeof FLAVORS)[number]["key"];
+
+    function flavorOf(name: string): FlavorKey | null {
+      if (/x64-installer-lite\.exe$/.test(name)) return "lite";
+      if (/x64-installer-webview2\.exe$/.test(name)) return "full";
+      return null;
     }
+
+    const flavorCards = computed(() =>
+      FLAVORS.map((flavor) => {
+        const asset = release.value?.assets.find(
+          (a) => flavorOf(a.name) === flavor.key,
+        );
+        return asset
+          ? {
+              key: flavor.key,
+              icon: flavor.icon,
+              url: asset.url,
+              size: asset.size,
+            }
+          : null;
+      }).filter((card): card is NonNullable<typeof card> => card !== null),
+    );
 
     const modes = [
       { icon: HardDriveDownload, key: "modeInstall" },
@@ -167,42 +241,84 @@ export default defineComponent({
           </div>
         </section>
 
-        {/* ── assets ── */}
+        {/* ── flavors ── */}
         <section class="download__assets container">
           <Reveal>
-            <h2>{t("download.assets")}</h2>
+            <div class="download__assets-head">
+              <h2>{t("download.flavorsTitle")}</h2>
+              {/* Hidden when the official route served the release info
+               * (and on a failed fetch, when only the Releases-page link
+               * remains): the note only ever names a mirror in use. */}
+              {phase.value === "ready" && mirrorPrefix.value && (
+                <span
+                  class="accent-pill download__mirror"
+                  title={mirrorPrefix.value}
+                >
+                  <Zap size={12} />
+                  {t("download.mirrorNote", { host: mirrorHost.value })}
+                </span>
+              )}
+            </div>
           </Reveal>
           <Reveal delay={80}>
-            <ul class="download__list glass-panel">
-              {phase.value === "ready" && release.value
-                ? release.value.assets.map((a) => (
-                  <li key={a.name}>
-                    <a href={a.url} target="_blank" rel="noopener">
-                      <span class="download__file">
-                        <FileDown size={14} />
-                        {a.name}
-                      </span>
-                      <span class="download__label">
-                        {assetLabel(a.name)}
-                        {a.size ? ` · ${formatSize(a.size)}` : ""}
-                      </span>
-                    </a>
-                  </li>
-                ))
-                : phase.value === "loading" ? (
-                  <li class="download__placeholder">{t("download.loading")}</li>
-                ) : (
-                  <li>
-                    <a href={RELEASES} target="_blank" rel="noopener">
-                      <span class="download__file">
-                        <FileDown size={14} />
-                        GitHub Releases
-                      </span>
-                      <span class="download__label">{t("download.loadFailed")}</span>
-                    </a>
-                  </li>
-                )}
-            </ul>
+            {phase.value === "ready" && flavorCards.value.length ? (
+              <div class="download__flavors">
+                {flavorCards.value.map((card, i) => {
+                  const Icon = card.icon;
+                  return (
+                    <Reveal delay={i * 90} key={card.key}>
+                      <article
+                        class={`flavor-card glass-panel${card.key === "lite" ? " is-recommended" : ""}`}
+                      >
+                        {card.key === "lite" && (
+                          <span class="flavor-card__badge">
+                            <Zap size={11} />
+                            {t("download.flavorLiteBadge")}
+                          </span>
+                        )}
+                        <div class="flavor-card__icon">
+                          <Icon size={22} />
+                        </div>
+                        <h3>
+                          {t(`download.flavor${card.key === "lite" ? "Lite" : "Full"}Title`)}
+                        </h3>
+                        <p>
+                          {t(`download.flavor${card.key === "lite" ? "Lite" : "Full"}Desc`)}
+                        </p>
+                        {card.size ? (
+                          <span class="flavor-card__meta">
+                            ≈ {formatSize(card.size)}
+                          </span>
+                        ) : null}
+                        <LinkButton
+                          href={mirrorPrefix.value + card.url}
+                          external
+                        >
+                          <FileDown size={15} />
+                          {t("download.flavorDownload")}
+                        </LinkButton>
+                      </article>
+                    </Reveal>
+                  );
+                })}
+              </div>
+            ) : phase.value === "loading" ? (
+              <ul class="download__list glass-panel">
+                <li class="download__placeholder">{t("download.loading")}</li>
+              </ul>
+            ) : (
+              <ul class="download__list glass-panel">
+                <li>
+                  <a href={RELEASES} target="_blank" rel="noopener">
+                    <span class="download__file">
+                      <FileDown size={14} />
+                      GitHub Releases
+                    </span>
+                    <span class="download__label">{t("download.loadFailed")}</span>
+                  </a>
+                </li>
+              </ul>
+            )}
           </Reveal>
           <p class="download__notes">{t("download.notes")}</p>
         </section>

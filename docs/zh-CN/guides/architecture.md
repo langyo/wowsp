@@ -12,30 +12,30 @@ WoWSP 是一个 Tauri 2 桌面应用，配一个前端（Vue 3 + three.js），�
 
 ```mermaid
 flowchart TD
-    A[".wowsreplay 文件"] --> B["Rust：解析 8 字节 magic + JSON 描述块（commands/replay.rs）"]
-    B --> C["Rust：解码数据包流 → 各实体事件时间线（M3，TODO）"]
+    A[".wowsreplay 文件"] --> B["Rust：解析 8 字节 magic + JSON 描述块（commands/replay/）"]
+    B --> C["Rust：解码数据包流 → 各实体事件时间线（commands/packets/）"]
     C --> D["webui：three.js 全息地图按时间线播放（features/holographic）"]
 ```
 
-地图与船体几何由 `scripts/model_convert/`（`convert_map.py`、`convert_ship.py`）转成的 GLB 提供。新增地图或船只只需把源资产放入 `scripts/mock/fixtures/` 并重新跑转换器，无需改动应用代码。
+地图与船体几何由 `scripts/model_convert/`（`convert_map.py`、`convert_ship.py`）转成的 GLB 提供，源资产直接取自检测到的游戏安装目录（`just convert-map --name ...` / `just convert-ship --name ...`），新增地图或船只无需改动应用代码。
 
 ### 模式二 — 游戏内覆盖层
 
-游戏 `res_mods/` 里的一个 mod 文件会在游戏启动时拉起 WoWSP。一个透明、置顶的窗口覆盖显示双方阵容，仅在按住 `Tab` 时可见。
+WoWSP 与游戏并行运行：游戏运行且覆盖层设置开启时，一个透明、置顶的窗口覆盖显示双方阵容，仅在按住 `Tab` 时可见。安装到 `res_mods/` 的第一方探针 mod 为其桥接实时战斗数据（见 `designs/ingame-stats-plugin.md`）。
 
 ```mermaid
 flowchart TD
-    A["游戏启动"] --> B["mod 启动器拉起 WoWSP 透明覆盖窗口"]
+    A["游戏启动"] --> B["WoWSP 在游戏运行时创建透明覆盖窗口"]
     B --> C["Rust：轮询 &lt;game&gt;/replays/tempArenaInfo.json 获取实时阵容（commands/arena_info.rs）"]
     C --> D["用户按住 Tab"]
-    D --> E["Rust：截取游戏窗口 + 检测中央名单区域（commands/overlay.rs）"]
+    D --> E["Rust：截取游戏窗口 + 检测中央名单区域（commands/overlay/）"]
     E --> F["webui：将渲染的阵容重新锚定到检测到的矩形（features/overlay）"]
     F --> G["用户松开 Tab → 覆盖层隐藏"]
 ```
 
 ## 游戏安装检测
 
-`commands/game_detect.rs` 扫描 Windows 卸载注册表中的 Wargaming / Lesta / 360 发行商项（仿照 ApeRadar 的 `ConfigWindow.AutoDetectGamePath`），再额外遍历 Steam 游戏库目录寻找 `appmanifest_552990.acf`（Steam appid 552990 = 战舰世界）——这正是 ApeRadar 未覆盖的情况。用户也可手动指定路径。
+`commands/game_detect.rs` 扫描 Windows 卸载注册表中的 Wargaming / Lesta / 360 发行商项（仿照 ApeRadar 的 `ConfigWindow.AutoDetectGamePath`），再额外遍历 Steam 游戏库目录寻找 `appmanifest_552990.acf`（Steam appid 552990 = 战舰世界）——这正是 ApeRadar 未覆盖的情况；同时读取 Lesta Game Center 自身的游戏索引（`%ProgramData%\Lesta\GameCenter` 下的 preferences.xml `<working_dir>` 条目与 `apps\<game-id>\<hash>` 路径文件）。莱服（Мир кораблей）客户端根目录的引导程序已改名为 `Korabli.exe`，因此安装目录校验同时接受两种引导程序名，运行进程监视也跟踪 `Korabli(.64).exe`。用户也可手动指定路径。
 
 ## 录像文件格式
 
@@ -48,13 +48,15 @@ N 字节  json_block  = 对局描述（阵容、地图、对局类型）
 ...     packets     = 加密/zlib 数据包流
 ```
 
-`commands/replay.rs` 在第一阶段实现 magic 校验 + JSON 块抽取。数据包流解码在 M3 完成。
+莱服（Мир кораблей）客户端把录像容器改名为 `.korablireplay` 并更换了二进制帧结构——这类文件会被列出与导入，但头部分析/数据包解码会明确报告“格式暂不支持”，直到新布局被逆向出来。实时战斗的竞技场描述文件 `tempArenaInfo.json` 保留原名与原格式。
+
+`commands/replay/` 实现 magic 校验 + JSON 块抽取；数据包流解码器位于 `commands/packets/`（帧 → 载荷 → 各实体事件，按版本查方法表），为全息地图提供可拖动的事件时间线。
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 前端 | Vue 3（TSX）+ UnoCSS + 同目录 SCSS + Pinia + vue-i18n + three.js + echarts |
+| 前端 | Vue 3（TSX）+ UnoCSS + 同目录 SCSS + Pinia + vue-i18n + three.js |
 | 桌面壳 | Tauri 2（Rust） |
 | 后端 IPC | `packages/app/tauri/src/commands/` 中的 `#[tauri::command]` 处理器 |
 | Mock 后端 | FastAPI（`scripts/mock/`），供浏览器/e2e 开发 |

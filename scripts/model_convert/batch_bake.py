@@ -70,7 +70,7 @@ def get_ship_names(game: str) -> list[str]:
     print("[batch_bake] listing ships from GameParams ...")
     result = subprocess.run(
         [str(LIST_SHIPS_BIN), "-W", game],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
     )
     if result.returncode != 0:
         print(f"error: wows-list-ships failed: {result.stderr}", file=sys.stderr)

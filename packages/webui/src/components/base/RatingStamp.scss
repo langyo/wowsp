@@ -1,16 +1,24 @@
-/* Inked career-verdict seals (神了 / 海猴 / 蛆 / 空中小人 / 水下小人) — geometry
+/* Inked career-verdict seals (神了 / 猴 / 蛆 / 过街老鼠 / 空中小人 / 水下小人) — geometry
    lives in RatingStamp.tsx; the glyphs are bitmap assets (see
    scripts/gen_stamp_bitmaps.py), so this file only carries the ink color
    and the tilt. */
 
 .rating-stamp {
-  /* Cinnabar seal ink. */
+  /* Cinnabar seal ink. Full opacity — the old 0.9 press read as "hard to
+     see" at the 34–64px seal sizes (user feedback), and the ink texture
+     comes from the SVG weave/displacement, not transparency. */
   color: rgb(202 44 38);
-  opacity: 0.9;
+  opacity: 1;
   pointer-events: none;
   flex: none;
-  /* One shared −9° press for every seal — mixed tilts read as sloppiness. */
+  /* One shared −9° press for every seal — mixed tilts read as sloppiness.
+     Applies to the SVG face and to a user's custom image alike (the custom
+     branch renders a plain <img> with this same class). */
   transform: rotate(-9deg);
+
+  /* Custom-image branch: the user's picture replaces the whole face, so it
+     renders as a plain <img> carrying this same class — the SVG part
+     styles below simply don't apply to it, the tilt above does. */
 
   &__frame {
     fill: none;
@@ -22,8 +30,8 @@
   }
 
   &__ink image {
-    /* The glyph bitmaps are pre-inked cinnabar; blend their alpha the same
-       way the old stroked text sat on the weave. */
-    opacity: 0.92;
+    /* The glyph bitmaps are pre-inked cinnabar — no extra fading on top of
+       the ink roughening (the 0.92 blend muddied the 2x2 faces). */
+    opacity: 1;
   }
 }

@@ -6,9 +6,8 @@ import "./AuthorMark.scss";
 /**
  * Shared author/attribution mark: a clickable name chip (opens the linked
  * page through the external-browser helper) plus an optional muted role/note
- * line. One look everywhere an artist or partner is credited — the settings
- * attributions list and the desktop wallpaper corner mark are the same
- * component, so the styling can never drift apart.
+ * line. One look everywhere an artist or partner is credited (the settings
+ * attributions list), so the styling can never drift apart.
  */
 export default defineComponent({
   name: "AuthorMark",
@@ -18,15 +17,10 @@ export default defineComponent({
     url: { type: String, default: null },
     /** Role line under the name ("默认壁纸作者" etc.). */
     role: { type: String, default: null },
-    /** Small prefix before the name ("壁纸" etc.), muted. */
-    prefix: { type: String, default: null },
-    /** Corner-annotation sizing (wallpaper credit). */
-    compact: { type: Boolean, default: false },
   },
   setup(props) {
     return () => (
-      <span class={["author-mark", props.compact ? "author-mark--compact" : ""]}>
-        {props.prefix ? <span class="author-mark__prefix">{props.prefix}</span> : null}
+      <span class="author-mark">
         {props.url ? (
           <button
             type="button"

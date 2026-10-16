@@ -15,7 +15,6 @@ export * from "./tierRoman";
 export { drawHoloMinimap, setMinimapArtImage } from "./minimap";
 export { drawShipGlyph, SHIP_GLYPH_POLYS, glyphClassOf } from "./shipGlyph";
 export { default as HoloScorebar } from "./HoloScorebar";
-export { default as HoloClock } from "./HoloClock";
 export { default as HoloLabel } from "./HoloLabel";
 export { default as HoloShipCard } from "./HoloShipCard";
 export type { HoloShipCardData } from "./HoloShipCard";

@@ -1,0 +1,636 @@
+/**
+ * Per-ship combat status rows for the holographic map's below-hull chips
+ * (shown when the camera is close enough): row one tracks what a ship DOES
+ * — gunfire / torpedo launches with their reload countdown, smoke and repair
+ * windows — and row two what it SUFFERS — shell / torpedo hits with the
+ * damage they took, plus persistent fire / flooding dots with their
+ * remaining burn time.
+ *
+ * The decoded replay stream carries no consumable-activation events, so
+ * everything here is derived from the signals it DOES carry: artillery /
+ * torpedo launches (exact, replay lookahead makes the next salvo — and thus
+ * the reload end — knowable), joined shell-flight kills and torpedo
+ * detonations (impact points), smoke-screen entity spawns (attributed by
+ * proximity) and the HP step timeline (rises = repair ticks, small
+ * repeating drops = burn/flood dots). Pure data-in/data-out — no Vue, no
+ * DOM, no THREE — so the heuristics are unit-testable.
+ */
+import type { EntityTrajectory, ShellLaunchEvent, TorpedoLaunch } from "@/api";
+import { shellAmmoOf } from "./tactical/shellTypes";
+import { sampleAt } from "./trajectoryMath";
+
+// ── Public shape ────────────────────────────────────────────────────────
+
+export type ShipActionKey = "gun" | "torp" | "smoke" | "repair";
+
+/** One row-one chip: a square icon with an LoL-style progress bar under it.
+ *  `flash` = just fired (no reload info, brief highlight); `cooldown` =
+ *  draining reload bar with countdown; `active` = effect in progress
+ *  (smoke / repair), the bar shows the remaining effect time. */
+export interface ShipActionChip {
+  key: ShipActionKey;
+  phase: "flash" | "cooldown" | "active";
+  /** 0..1 remaining fraction of the current phase. */
+  frac: number;
+  /** Remaining seconds (fractional — the view renders sub-10 s values
+   *  with one decimal); null when the end is unknowable. */
+  secs: number | null;
+  /** Shell family of the gun chip's salvo (drives the game-art icon);
+   *  null for non-gun chips / unresolvable params ids. */
+  ammo?: string | null;
+}
+
+/** One row-two hit pill: shell ammo family (or torpedo) + damage taken. */
+export interface ShipHitChip {
+  key: string;
+  kind: "shell" | "torpedo";
+  /** HE / AP / SAP / CS for shells; null/unknown when the params id
+   *  didn't resolve (the pill then omits the sprite). */
+  ammo: string | null;
+  dmg: number;
+}
+
+/** One row-two damage-over-time chip: counts down from the class base
+ *  duration (fire 60/30 s, flood 40/30 s) while its ticks keep landing;
+ *  `frac` is the remaining fraction of that base. */
+export interface ShipDotChip {
+  key: "fire" | "flood";
+  secs: number;
+  frac: number;
+}
+
+export interface ShipStatusSnapshot {
+  actions: ShipActionChip[];
+  hits: ShipHitChip[];
+  dots: ShipDotChip[];
+}
+
+// ── Tuning constants ────────────────────────────────────────────────────
+
+/** Launch bursts inside this window count as one salvo (matches the
+ *  tactical timeline's grouping). */
+const SALVO_WINDOW_S = 2;
+/** The just-fired highlight lingers this long before the reload bar takes
+ *  over (torpedoes read longer — the launch itself is the spectacle). */
+const GUN_FLASH_S = 1.2;
+const TORP_FLASH_S = 2;
+/** Salvo gaps beyond this stop rendering as a reload bar — a 5-minute lull
+ *  draining a bar is noise, not information. */
+const MAX_RELOAD_S = 60;
+/** Impact positions within this distance of a ship count as hits on it
+ *  (hull + a little splash tolerance; far misses stay misses). */
+const HIT_RADIUS = 160;
+/** A shell impact only renders when HP actually dropped in this window
+ *  around it (filters joined kills that were water splashes / bounces). */
+const HIT_DAMAGE_WINDOW_S = 1.6;
+/** How long a hit pill stays on the row. */
+const HIT_TTL_S = 2.5;
+/** Max hit pills shown at once (newest wins). */
+const HIT_CAP = 3;
+/** HP rises merged with gaps up to this are one repair window. */
+const REPAIR_GAP_S = 1.5;
+/** Small-drop ticks merged with gaps up to this form one burn window. */
+const DOT_GAP_S = 2.5;
+/** A drop is a DoT tick (not a shell hit) when it takes at most this
+ *  fraction of max HP — HE pens / torps dwarf burn ticks. */
+const DOT_TICK_FRAC = 0.025;
+/** A burn window needs at least this many ticks to read as a dot. */
+const DOT_MIN_TICKS = 3;
+/** Flooding can only follow a torpedo hit this recently. */
+const FLOOD_ARM_S = 15;
+/** DoT base durations (live-game values): fires burn 60 s on battleships
+ *  and carriers, 30 s on everyone else; flooding lasts 40 s, 30 s on
+ *  carriers and submarines. The countdown counts down from these bases —
+ *  build modifiers (fire/flood-duration upgrades and skills, -15 %ish)
+ *  are unknowable from the replay, so the base is the best projection. */
+const FIRE_BASE_BB_CV_S = 60;
+const FIRE_BASE_OTHER_S = 30;
+const FLOOD_BASE_S = 40;
+const FLOOD_BASE_CV_SUB_S = 30;
+
+/** Fire countdown base for a ship's WG class string ("Battleship", …).
+ *  Hybrids carry the Auxiliary species in GameParams but burn like the
+ *  battleships they are built on (60 s). */
+function fireBaseS(type: string | null | undefined): number {
+  return type === "Battleship" || type === "AirCarrier" || type === "Auxiliary"
+    ? FIRE_BASE_BB_CV_S
+    : FIRE_BASE_OTHER_S;
+}
+
+/** Flooding countdown base for a ship's WG class string. */
+function floodBaseS(type: string | null | undefined): number {
+  return type === "AirCarrier" || type === "Submarine"
+    ? FLOOD_BASE_CV_SUB_S
+    : FLOOD_BASE_S;
+}
+
+// ── Build-time inputs ───────────────────────────────────────────────────
+
+/** Joined shell flight end (a receiveShotKills impact), pre-resolved to the
+ *  ammo family — derived from the map's ShellTraceStates at rebuild time. */
+export interface ShellImpact {
+  t: number;
+  x: number;
+  z: number;
+  ownerId: number;
+  ammo: string;
+}
+
+/** A short-lived torpedo (endT < launch + 240 = joined detonation). */
+export interface TorpedoImpact {
+  t: number;
+  x: number;
+  z: number;
+  ownerId: number;
+}
+
+/** A smoke-screen cluster with its owner-attribution still pending. */
+export interface SmokeCluster {
+  t0: number;
+  endT: number;
+  x: number;
+  z: number;
+}
+
+export interface ShipStatusSource {
+  trajectories: EntityTrajectory[];
+  shellLaunches: ShellLaunchEvent[];
+  torpedoes: TorpedoLaunch[];
+  shellImpacts: ShellImpact[];
+  torpImpacts: TorpedoImpact[];
+  smokes: SmokeCluster[];
+  /** entityId → WG class string ("Battleship"/"Cruiser"/…), driving the
+   *  per-class DoT countdown bases. Missing entries read as "other". */
+  shipTypes?: Map<number, string | null>;
+  /** entityId → authoritative total HP (the arena's build health; see
+   *  shipHp.ts). Preferred over the HP stream's peak for the DoT-tick
+   *  threshold — a late-spotted ship's peak is a fraction of its true
+   *  total and misclassifies every tick as a shell hit. */
+  maxHpByEntity?: Map<number, number>;
+}
+
+// ── Per-ship index ──────────────────────────────────────────────────────
+
+interface TimeWindow {
+  t0: number;
+  t1: number;
+}
+
+interface StoredHit {
+  t: number;
+  kind: "shell" | "torpedo";
+  ammo: string | null;
+  dmg: number;
+}
+
+/** One ignition: the first/last observed DoT ticks plus the countdown base
+ *  the chip counts down from (NOT the observed burn length — an early DCP
+ *  just cuts the countdown short; the display still starts at the base). */
+interface DotWindow {
+  kind: "fire" | "flood";
+  t0: number;
+  lastTick: number;
+  base: number;
+}
+
+/** One main-battery salvo: start time + the burst's shell family (first
+ *  resolvable shell of the burst, like the tactical timeline's grouping). */
+export interface GunSalvo {
+  t: number;
+  ammo: string | null;
+}
+
+export interface ShipStatusIndex {
+  /** Main-battery salvos, time-sorted. */
+  gun: GunSalvo[];
+  /** Torpedo-tube salvo starts, time-sorted (plane drops excluded). The
+   *  item shape mirrors GunSalvo so the shared weaponChip reads both
+   *  without per-frame adapter allocations. */
+  torp: { t: number }[];
+  repairs: TimeWindow[];
+  smokes: TimeWindow[];
+  hits: StoredHit[];
+  dots: DotWindow[];
+}
+
+/** Build the per-entity index consumed by `shipStatusAt`. Ships without any
+ *  signal get no entry (their rows simply never render). */
+export function buildShipStatusIndex(src: ShipStatusSource): Map<number, ShipStatusIndex> {
+  const shipTrajs = src.trajectories.filter(
+    (tr) => tr.kind?.entityType === 2 && tr.samples.length > 1,
+  );
+  const shipIds = new Set(shipTrajs.map((tr) => tr.entityId));
+  const out = new Map<number, ShipStatusIndex>();
+  for (const tr of shipTrajs) {
+    const maxHp = src.maxHpByEntity?.get(tr.entityId) || peakHp(tr);
+    const type = src.shipTypes?.get(tr.entityId) ?? null;
+    const idx: ShipStatusIndex = {
+      gun: gunSalvosFor(src.shellLaunches, tr.entityId),
+      torp: torpedoSalvosFor(src.torpedoes, tr.entityId, shipIds),
+      repairs: repairWindows(tr, maxHp),
+      smokes: [],
+      hits: [],
+      dots: dotWindows(tr, maxHp, src.torpImpacts, tr.entityId, type),
+    };
+    out.set(tr.entityId, idx);
+  }
+  attributeSmokes(src, out, shipTrajs);
+  attributeHits(src, out, shipTrajs);
+  return out;
+}
+
+/** Query one ship's rows at playhead `t`. Returns null when nothing is
+ *  showing — the common case, so callers can skip the DOM patch. */
+export function shipStatusAt(idx: ShipStatusIndex | undefined, t: number): ShipStatusSnapshot | null {
+  if (!idx) return null;
+  const actions: ShipActionChip[] = [];
+  const gun = weaponChip(idx.gun, t, GUN_FLASH_S, "gun", (s) => s.ammo);
+  if (gun) actions.push(gun);
+  const torp = weaponChip(idx.torp, t, TORP_FLASH_S, "torp", () => null);
+  if (torp) actions.push(torp);
+  for (const w of idx.smokes) {
+    if (t < w.t0 || t > w.t1) continue;
+    actions.push({
+      key: "smoke",
+      phase: "active",
+      frac: (w.t1 - t) / Math.max(0.001, w.t1 - w.t0),
+      secs: w.t1 - t,
+    });
+    break;
+  }
+  for (const w of idx.repairs) {
+    if (t < w.t0 || t > w.t1) continue;
+    actions.push({
+      key: "repair",
+      phase: "active",
+      frac: (w.t1 - t) / Math.max(0.001, w.t1 - w.t0),
+      secs: w.t1 - t,
+    });
+    break;
+  }
+  const hits: ShipHitChip[] = [];
+  for (let i = idx.hits.length - 1; i >= 0 && hits.length < HIT_CAP; i--) {
+    const h = idx.hits[i];
+    if (h.t < t - HIT_TTL_S || h.t > t) continue;
+    hits.push({ key: `${h.kind}-${h.t.toFixed(2)}-${i}`, kind: h.kind, ammo: h.ammo, dmg: h.dmg });
+  }
+  const dots: ShipDotChip[] = [];
+  for (const d of idx.dots) {
+    if (t < d.t0) continue;
+    // Countdown runs from the ignition + class base — NOT from the observed
+    // tick span (a 3-second DCP'd fire still starts its chip at 60/30 and
+    // then simply disappears once the ticks fall silent).
+    const rem = d.t0 + d.base - t;
+    if (rem <= 0) continue;
+    // Ticks stream continuously while the effect lives; silence longer than
+    // the tick gap means it was extinguished — end the chip there.
+    if (t - d.lastTick > DOT_GAP_S) continue;
+    dots.push({ key: d.kind, secs: rem, frac: rem / d.base });
+  }
+  if (actions.length === 0 && hits.length === 0 && dots.length === 0) return null;
+  return { actions, hits, dots };
+}
+
+// ── Row one: launches, reloads, smoke, repair ───────────────────────────
+
+function weaponChip<T extends { t: number }>(
+  salvos: T[],
+  t: number,
+  flashS: number,
+  key: "gun" | "torp",
+  ammoOf: (salvo: T) => string | null,
+): ShipActionChip | null {
+  // Last salvo at or before the playhead (arrays are tiny — tail scan wins
+  // over a binary search).
+  let last: T | null = null;
+  for (let i = salvos.length - 1; i >= 0; i--) {
+    if (salvos[i].t <= t) {
+      last = salvos[i];
+      break;
+    }
+  }
+  if (last == null) return null;
+  const ammo = ammoOf(last);
+  if (t - last.t <= flashS) {
+    return { key, phase: "flash", frac: 1, secs: null, ammo };
+  }
+  let next: T | null = null;
+  for (const s of salvos) {
+    if (s.t > last.t) {
+      next = s;
+      break;
+    }
+  }
+  if (next == null) return null;
+  const reload = next.t - last.t;
+  if (reload > MAX_RELOAD_S) return null;
+  return {
+    key,
+    phase: "cooldown",
+    frac: (next.t - t) / reload,
+    secs: next.t - t,
+    ammo,
+  };
+}
+
+/** Group one owner's launches into salvo start times (bursts within
+ *  SALVO_WINDOW_S collapse; each burst is timestamped at its first event). */
+function salvoTimesFor<T extends { time: number }>(events: T[]): number[] {
+  const times: number[] = [];
+  let lastT = -1e9;
+  for (const e of events) {
+    if (e.time < lastT) continue; // unsorted guard
+    if (e.time - lastT <= SALVO_WINDOW_S) continue;
+    times.push(e.time);
+    lastT = e.time;
+  }
+  return times;
+}
+
+/** Main-battery salvos with each burst's shell family — the first
+ *  resolvable shell of the burst (the same ammo rule the tactical timeline
+ *  uses). Grouping is a per-owner rolling window (each of THIS owner's
+ *  shells extends the burst by SALVO_WINDOW_S — an enemy firing inside the
+ *  burst doesn't split it), and the salvo is timestamped at its FIRST
+ *  shell: the flash highlights the moment the guns go off. */
+function gunSalvosFor(launches: ShellLaunchEvent[], ownerId: number): GunSalvo[] {
+  const salvos: GunSalvo[] = [];
+  let burstT0: number | null = null;
+  let lastT = -1e9;
+  let ammo: string | null = null;
+  const flush = (): void => {
+    if (burstT0 != null) salvos.push({ t: burstT0, ammo });
+  };
+  for (const e of launches) {
+    if (e.ownerId !== ownerId) continue;
+    if (burstT0 != null && e.time - lastT <= SALVO_WINDOW_S) {
+      // A later shell may resolve what the burst's first didn't.
+      if (ammo == null || ammo === "unknown") {
+        ammo = shellAmmoOf(e.paramsId).ammo;
+      }
+      lastT = e.time;
+      continue;
+    }
+    flush();
+    burstT0 = e.time;
+    lastT = e.time;
+    ammo = shellAmmoOf(e.paramsId).ammo;
+  }
+  flush();
+  return salvos;
+}
+
+/** Ship-tube salvos only — air-dropped fish belong to squadrons, not to
+ *  the below-hull action row. */
+function torpedoSalvosFor(
+  launches: TorpedoLaunch[],
+  ownerId: number,
+  shipIds: Set<number>,
+): { t: number }[] {
+  if (!shipIds.has(ownerId)) return [];
+  return salvoTimesFor(launches.filter((e) => e.ownerId === ownerId)).map((t) => ({ t }));
+}
+
+function repairWindows(tr: EntityTrajectory, maxHp: number): TimeWindow[] {
+  const hp = tr.hpSamples;
+  if (!hp || hp.length < 2 || maxHp <= 0) return [];
+  const wins: TimeWindow[] = [];
+  // A window spans the maximal run of rising samples with gaps ≤
+  // REPAIR_GAP_S. Small granularity: HP streams step per heal tick.
+  let open: TimeWindow | null = null;
+  let prevT = hp[0].time;
+  for (let i = 1; i < hp.length; i++) {
+    const gap = hp[i].time - prevT;
+    if (hp[i].value > hp[i - 1].value) {
+      if (open && gap <= REPAIR_GAP_S + 0.5) open.t1 = hp[i].time;
+      else {
+        if (open) wins.push(open);
+        open = { t0: prevT, t1: hp[i].time };
+      }
+    } else if (open && gap > REPAIR_GAP_S) {
+      wins.push(open);
+      open = null;
+    }
+    prevT = hp[i].time;
+  }
+  if (open) wins.push(open);
+  // Windows shorter than one heal tick of visibility are noise.
+  return wins.filter((w) => w.t1 - w.t0 >= 1);
+}
+
+// ── Row two: hits and damage-over-time ──────────────────────────────────
+
+interface HpDrop {
+  t: number;
+  amount: number;
+  small: boolean;
+}
+
+function hpDrops(tr: EntityTrajectory, maxHp: number): HpDrop[] {
+  const hp = tr.hpSamples;
+  if (!hp || hp.length < 2) return [];
+  const smallLimit = maxHp > 0 ? maxHp * DOT_TICK_FRAC : Infinity;
+  const drops: HpDrop[] = [];
+  for (let i = 1; i < hp.length; i++) {
+    const d = hp[i - 1].value - hp[i].value;
+    if (d > 0) drops.push({ t: hp[i].time, amount: d, small: d <= smallLimit });
+  }
+  return drops;
+}
+
+function peakHp(tr: EntityTrajectory): number {
+  const hp = tr.hpSamples;
+  if (!hp || hp.length === 0) return 0;
+  let m = 0;
+  for (const s of hp) if (s.value > m) m = s.value;
+  return m;
+}
+
+/** Ignition windows: maximal runs of SMALL hp drops with gaps ≤ DOT_GAP_S,
+ *  needing DOT_MIN_TICKS ticks. Each window keeps its LAST tick — the query
+ *  uses it to detect early extinguish (ticks fall silent) while the chip
+ *  countdown runs from the ignition + class base, not the observed span.
+ *  Classification: flooding can only exist when a torpedo detonated ON this
+ *  ship (within reach and FLOOD_ARM_S before the first tick); everything
+ *  else is fire. */
+function dotWindows(
+  tr: EntityTrajectory,
+  maxHp: number,
+  torpImpacts: TorpedoImpact[],
+  entityId: number,
+  type: string | null,
+): DotWindow[] {
+  const drops = hpDrops(tr, maxHp).filter((d) => d.small);
+  const wins: DotWindow[] = [];
+  let run: HpDrop[] = [];
+  const flush = (): void => {
+    // A run can outlive one base duration (chained fires: natural expiry +
+    // instant re-light never splits the run). Slice it into successive
+    // ignitions: ticks at/after t0 + base start the NEXT window, so the
+    // chip counts each fire's own full countdown instead of vanishing at
+    // the first boundary. A tail too short to read as its own ignition is
+    // dropped (no 1-tick phantom chips).
+    while (run.length >= DOT_MIN_TICKS) {
+      const t0 = run[0].t;
+      const flooded = torpImpacts.some(
+        (k) =>
+          k.ownerId !== entityId &&
+          k.t <= t0 &&
+          t0 - k.t <= FLOOD_ARM_S &&
+          landedOn(tr, k),
+      );
+      const base = flooded ? floodBaseS(type) : fireBaseS(type);
+      const expire = t0 + base;
+      let cut = run.length;
+      for (let i = 0; i < run.length; i++) {
+        if (run[i].t >= expire) {
+          cut = i;
+          break;
+        }
+      }
+      const chunk = run.slice(0, Math.max(cut, DOT_MIN_TICKS));
+      wins.push({
+        kind: flooded ? "flood" : "fire",
+        t0,
+        lastTick: chunk[chunk.length - 1].t,
+        base,
+      });
+      run = run.slice(chunk.length);
+    }
+    run = [];
+  };
+  for (const d of drops) {
+    if (run.length > 0 && d.t - run[run.length - 1].t > DOT_GAP_S) flush();
+    run.push(d);
+  }
+  flush();
+  // No window merging: an extinguished effect re-lit later is a NEW
+  // ignition (own 60/30 s countdown), and the query's silence rule already
+  // ends the previous chip at its last tick.
+  return wins;
+}
+
+/** Whether a torpedo detonation landed on this ship: the impact point must
+ *  sit within hull reach of the ship's own position at that instant — an
+ *  unrelated fish connecting across the map must not turn a fire into a
+ *  flood. */
+function landedOn(tr: EntityTrajectory, k: TorpedoImpact): boolean {
+  const s = sampleAt(tr, k.t);
+  if (!s) return false;
+  return Math.hypot(s.x - k.x, s.z - k.z) <= HIT_RADIUS;
+}
+
+/** Impacts become hit pills on the nearest ship within HIT_RADIUS; each HP
+ *  drop inside an impact's damage window is assigned to exactly ONE impact
+ *  — the nearest in time — so two near-simultaneous pens split the drops
+ *  instead of the first swallowing both. */
+function attributeHits(
+  src: ShipStatusSource,
+  out: Map<number, ShipStatusIndex>,
+  shipTrajs: EntityTrajectory[],
+): void {
+  type Impact = {
+    t: number;
+    x: number;
+    z: number;
+    ownerId: number;
+    kind: "shell" | "torpedo";
+    ammo: string | null;
+    victimId: number | null;
+  };
+  const impacts: Impact[] = [
+    ...src.shellImpacts.map((s) => ({ ...s, kind: "shell" as const, ammo: s.ammo })),
+    ...src.torpImpacts.map((s) => ({ ...s, kind: "torpedo" as const, ammo: null })),
+  ]
+    .map((im) => ({ ...im, victimId: victimOf(im, shipTrajs) }))
+    .filter((im) => im.victimId != null);
+  // Bucket by victim once, so each ship's drop scan only walks its own
+  // attackers — a full drops × impacts cross product is tens of millions
+  // of iterations on a heavy 12v12.
+  const byVictim = new Map<number, Impact[]>();
+  for (const im of impacts) {
+    const list = byVictim.get(im.victimId!);
+    if (list) list.push(im);
+    else byVictim.set(im.victimId!, [im]);
+  }
+  // Assign every drop to its nearest victim impact, then sum per impact.
+  const dmgByImpact = new Map<Impact, number>();
+  for (const tr of shipTrajs) {
+    const mine = byVictim.get(tr.entityId);
+    if (!mine || mine.length === 0) continue;
+    for (const drop of hpDrops(tr, peakHp(tr))) {
+      let best: Impact | null = null;
+      let bestDt = Infinity;
+      for (const im of mine) {
+        if (drop.t < im.t - 0.4 || drop.t > im.t + HIT_DAMAGE_WINDOW_S) continue;
+        const dt = Math.abs(drop.t - im.t);
+        if (dt < bestDt) {
+          bestDt = dt;
+          best = im;
+        }
+      }
+      if (best) dmgByImpact.set(best, (dmgByImpact.get(best) ?? 0) + drop.amount);
+    }
+  }
+  for (const im of impacts) {
+    const dmg = dmgByImpact.get(im);
+    if (dmg == null || im.victimId == null) continue; // splash / bounce / dud
+    out.get(im.victimId)?.hits.push({
+      t: im.t,
+      kind: im.kind,
+      ammo: im.kind === "shell" ? im.ammo : null,
+      dmg: Math.round(dmg),
+    });
+  }
+  for (const idx of out.values()) idx.hits.sort((a, b) => a.t - b.t);
+}
+
+/** Nearest alive-at-impact ship that is not the shooter, within reach. */
+function victimOf(
+  im: { t: number; x: number; z: number; ownerId: number },
+  shipTrajs: EntityTrajectory[],
+): number | null {
+  let victim: number | null = null;
+  let bestD = HIT_RADIUS;
+  for (const tr of shipTrajs) {
+    if (tr.entityId === im.ownerId) continue;
+    const s = sampleAt(tr, im.t);
+    if (!s) continue;
+    const death = tr.deathTime;
+    if (death != null && im.t > death + 1) continue;
+    const d = Math.hypot(s.x - im.x, s.z - im.z);
+    if (d < bestD) {
+      bestD = d;
+      victim = tr.entityId;
+    }
+  }
+  return victim;
+}
+
+/** Smoke clusters join to the ship nearest their first puff when it
+ *  appeared (smoke spawns at the generator's stern); no ship within
+ *  reach → unattributed, no chip. */
+function attributeSmokes(
+  src: ShipStatusSource,
+  out: Map<number, ShipStatusIndex>,
+  shipTrajs: EntityTrajectory[],
+): void {
+  for (const cl of src.smokes) {
+    let owner: number | null = null;
+    let bestD = 400;
+    for (const tr of shipTrajs) {
+      const s = sampleAt(tr, cl.t0);
+      if (!s) continue;
+      const death = tr.deathTime;
+      if (death != null && cl.t0 > death) continue;
+      const d = Math.hypot(s.x - cl.x, s.z - cl.z);
+      if (d < bestD) {
+        bestD = d;
+        owner = tr.entityId;
+      }
+    }
+    if (owner == null) continue;
+    out.get(owner)?.smokes.push({ t0: cl.t0, t1: cl.endT });
+  }
+  for (const idx of out.values()) idx.smokes.sort((a, b) => a.t0 - b.t0);
+}

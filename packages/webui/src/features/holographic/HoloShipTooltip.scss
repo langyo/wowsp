@@ -1,0 +1,331 @@
+/* HoloShipTooltip — the rich hover card for one scorebar ship slot.
+   Teleported to <body>, OUTSIDE .holo-map, so the HUD custom properties do
+   not resolve here: the card carries its own self-contained tokens (below)
+   and the team accents are the scorebar's green/red family. */
+.holo-ship-tip {
+  /* The card used to paint the scorebar's 42% grey glass + blur(14px) —
+     but the blur never samples the WebGL canvas behind it in WebView2
+     (Chromium mishandles backdrop roots under the app's CSS zoom), so the
+     sea, ship labels and event feed read straight through the panel, and
+     the light theme's dark ink sat on a mid-grey wash. The panel is now
+     near-opaque — the same 96% recipe the pop-up menus use via
+     --holo-hud-menu — with per-theme flips for every dark-biased inner
+     surface (chips, HP rail, accents). */
+  --tip-ally: #4ade80;
+  --tip-enemy: #f87171;
+  --tip-panel: rgb(12 16 26 / 96%);
+  --tip-chip: rgb(0 0 0 / 40%);
+  --tip-chip-border: rgb(255 255 255 / 12%);
+  --tip-tag: rgb(0 0 0 / 35%);
+  --tip-tag-ink: rgb(255 255 255 / 85%);
+  --tip-rail: rgb(9 13 22 / 65%);
+
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  /* Capped card: big CV spec sheets no longer tower over the map (they
+     used to flip ABOVE the anchor and cover the scorebar strip). The
+     card is a flex column so the scroll region below can shrink inside
+     the cap; the clipped rest scrolls inside it via hikari's overlay
+     bar riding the card's right edge. */
+  display: flex;
+  flex-direction: column;
+  max-height: min(58vh, 540px);
+  border-radius: 12px;
+  /* Near-opaque themed panel — see the token block above. The blur stays
+     as progressive enhancement for engines where backdrop sampling works. */
+  background: var(--tip-panel);
+  border: 1px solid rgb(255 255 255 / 22%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 35%), inset 0 1px 0 rgb(255 255 255 / 6%);
+  color: rgb(var(--color-text, 235 240 248));
+  font-size: 0.75rem;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+
+  /* Card scroll region: hikari's HkScrollContainer owns the scrollbar
+     (auto-hiding overlay track at the card edge) and fills the fixed
+     card; the native bar stays hidden. */
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior: contain;
+    }
+  }
+
+  /* Former card padding, moved inside the viewport so it scrolls with
+     the content. */
+  &__inner {
+    padding: 0.65rem 0.8rem 0.5rem;
+  }
+
+  /* Left rail picks the side tint so the card reads ally/enemy at a glance. */
+  &--enemy { border-left: 3px solid var(--tip-enemy); }
+  &:not(&--enemy) { border-left: 3px solid var(--tip-ally); }
+
+  &__head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 0.45rem;
+    border-bottom: 1px solid rgb(var(--color-border, 200 210 220) / 18%);
+  }
+
+  &__name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  &__name {
+    font-weight: 700;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__clan { opacity: 0.85; margin-right: 2px; }
+
+  &__tag {
+    flex: none;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--tip-tag);
+    color: var(--tip-tag-ink);
+    font-size: 0.625rem;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  &__ship-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: rgb(var(--color-text, 235 240 248) / 78%);
+    min-width: 0;
+
+    img { display: block; flex: none; }
+  }
+
+  &__tier {
+    color: var(--color-text, inherit);
+    font-weight: 800;
+  }
+
+  &__ship-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__type {
+    flex: none;
+    font-size: 0.625rem;
+    font-weight: 700;
+    opacity: 0.7;
+  }
+
+  &__section {
+    padding: 0.45rem 0 0.35rem;
+    border-bottom: 1px solid rgb(var(--color-border, 200 210 220) / 12%);
+
+    &:last-of-type { border-bottom: none; }
+  }
+
+  &__sec-title {
+    margin-bottom: 0.3rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(var(--color-text, 235 240 248) / 55%);
+  }
+
+  &__dim {
+    margin: 0;
+    color: rgb(var(--color-text, 235 240 248) / 55%);
+    font-size: 0.7rem;
+  }
+
+  &__note { margin-top: 0.35rem; font-size: 0.625rem; }
+
+  &__loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  /* Career metrics: a 4-up grid, value over label. */
+  &__metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.3rem 0.4rem;
+  }
+
+  &__metric {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+
+    b {
+      font-size: 0.8rem;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    > span {
+      font-size: 0.625rem;
+      color: rgb(var(--color-text, 235 240 248) / 50%);
+      white-space: nowrap;
+    }
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+
+    /* Dead ships stack two blocks (sunk-status + the pinned "0 / max"
+       readout) — keep the block seam on the same rhythm as the row gaps. */
+    & + & {
+      margin-top: 0.2rem;
+    }
+  }
+
+  &__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  &__row-label {
+    flex: none;
+    font-size: 0.7rem;
+    color: rgb(var(--color-text, 235 240 248) / 55%);
+  }
+
+  &__row-value {
+    font-weight: 700;
+    text-align: right;
+
+    &--dead { color: var(--tip-enemy); }
+    &--dim {
+      font-weight: 500;
+      color: rgb(var(--color-text, 235 240 248) / 55%);
+    }
+  }
+
+  /* Hull HP bar — themed rail so the team-coloured fill reads on either
+     panel, same recipe as the scorebar slot bar. */
+  &__hpbar {
+    position: relative;
+    height: 5px;
+    margin: 2px 0 3px;
+    border-radius: 3px;
+    background: var(--tip-rail);
+    overflow: hidden;
+  }
+
+  &__hpbar-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    transition: width 0.15s linear;
+
+    &--ally { background: var(--tip-ally); }
+    &--enemy { background: var(--tip-enemy); }
+  }
+
+  &__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  &__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--tip-chip);
+    border: 1px solid var(--tip-chip-border);
+    font-size: 0.625rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  /* No inner fold: the card-level scroll region owns the scrolling (capped
+     height + wheel), so the spec list renders full-length and scrolls with
+     the whole card. */
+  &__specs {
+    padding-right: 2px;
+  }
+
+  &__spec-group + &__spec-group {
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px dashed rgb(var(--color-border, 200 210 220) / 14%);
+  }
+
+  &__spec-title {
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: rgb(var(--color-text, 235 240 248) / 55%);
+    margin-bottom: 2px;
+  }
+
+  &__spec-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.7rem;
+
+    > span:first-child {
+      color: rgb(var(--color-text, 235 240 248) / 60%);
+    }
+    > span:last-child { font-weight: 600; }
+  }
+
+  &__foot {
+    padding-top: 0.4rem;
+    font-size: 0.625rem;
+    color: rgb(var(--color-text, 235 240 248) / 42%);
+    text-align: center;
+  }
+}
+
+/* Light theme: the card rides the app's root [data-mode] even teleported
+   to <body> — white 96% panel (the pop-up menus' recipe), grey-700 ink
+   from --color-text, darker team accents so the metrics and the left rail
+   keep their contrast on white, and every dark-biased inner surface flips
+   with the tokens above. */
+:root[data-mode="light"] .holo-ship-tip {
+  --tip-ally: #16a34a;
+  --tip-enemy: #dc2626;
+  --tip-panel: rgb(255 255 255 / 96%);
+  --tip-chip: rgb(55 65 81 / 8%);
+  --tip-chip-border: rgb(55 65 81 / 16%);
+  --tip-tag: rgb(55 65 81 / 12%);
+  --tip-tag-ink: rgb(55 65 81 / 85%);
+  --tip-rail: rgb(55 65 81 / 18%);
+
+  /* Only the three neutral sides — the left longhand stays owned by the
+     ally/enemy accent rail rules above (border-color here would grey the
+     team tint out). */
+  border-top-color: rgb(55 65 81 / 22%);
+  border-right-color: rgb(55 65 81 / 22%);
+  border-bottom-color: rgb(55 65 81 / 22%);
+  box-shadow: 0 6px 24px rgb(55 65 81 / 20%), inset 0 1px 0 rgb(255 255 255 / 60%);
+}

@@ -1,32 +1,37 @@
 .sidebar {
-  width: 240px;
+  width: var(--app-sidebar-w, 240px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: rgb(var(--color-surface));
+  /* Translucent glass instead of an opaque fill: the body wallpaper
+     (built-in art pair or custom image) must stay plainly visible behind
+     the nav. 55% is well
+     below the shared glass-panel mixin's 85% — that tint is meant for
+     floating cards, where a heavier fill aids contrast, but at full column
+     height it reads as a solid panel (the wallpaper's contribution also
+     shrinks further under theme.scss's readability scrim), so the rail
+     needs a lighter surface to actually read as glass. The blur is the
+     USER's background-blur dial now (theme/wallpaperBlur — 0–8px, 0 the
+     shipped default), taking over from the fixed --blur-md the rail used
+     to carry: the 55% fill already does the contrast work, and how much
+     the artwork smears behind the nav is a taste call, not a constant.
+     The var always carries a blur() VALUE (never none) — a backdrop-
+     filter has been on this element since the glass rework, and dropping
+     it to none at 0px would silently change positioned nav chrome's
+     containing-block geometry. */
+  background: rgb(var(--color-surface) / 55%);
+  background: rgb(var(--color-surface) / min(100%, calc(55% * var(--ui-opacity, 1))));
+  backdrop-filter: var(--wallpaper-blur-sidebar, blur(0px));
+  -webkit-backdrop-filter: var(--wallpaper-blur-sidebar, blur(0px));
   border-right: 1px solid rgb(var(--color-border) / 20%);
   user-select: none;
 
-  &__brand {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 1.25rem 1.25rem 1rem;
-    font-size: var(--text-lg);
-    font-weight: 700;
-    color: rgb(var(--color-primary));
-    letter-spacing: 0.02em;
-  }
-
-  &__brand-logo {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-sm);
-    flex-shrink: 0;
-  }
-
+  /* 1.25rem top (wider than the other sides): there is no brand row above
+     the nav — the title bar already carries the WoWSP identity — and
+     without the extra top padding the first link would hug the rail's
+     top edge. The drawer resets it (see .sidebar--drawer below). */
   &__nav {
-    padding: 0.5rem 0.75rem;
+    padding: 1.25rem 0.75rem 0.5rem;
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
@@ -78,17 +83,35 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+
+    /* HkTooltip wraps its trigger in an inline-flex span that shrink-wraps
+       to the content, which would collapse the client button to its label
+       width. Stretch the wrapper (class passed from Sidebar.tsx) so the
+       hosted button spans the footer like the account one. */
+    .sidebar__footer-slot {
+      display: flex;
+      width: 100%;
+
+      .hk-tooltip-trigger {
+        display: flex;
+        width: 100%;
+      }
+    }
   }
 
   /* Footer: status indicator + two same-style full-width buttons (active
      client / active account); management lives in the settings modal. */
 
   /* Full-width state button — the client and account buttons share this
-     chrome so the footer reads as one control family. */
+     chrome so the footer reads as one control family. Each is a small
+     key/value pair: muted key line ("客户端版本" / "账户"), then the
+     value row with the platform/avatar mark, name and realm tag. */
   &__footer-btn {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
     width: 100%;
-    padding: 0.5rem 0.6rem;
+    padding: 0.45rem 0.6rem;
     border: none;
     border-radius: var(--radius-sm);
     background: rgb(var(--color-primary) / 6%);
@@ -104,17 +127,55 @@
       outline: 2px solid rgb(var(--color-primary));
       outline-offset: 1px;
     }
+
+    /* The game-upgrade prompt wears the shared button chrome in a warning
+       tint: it is the one footer row that asks for a decision, not just
+       mirroring state. */
+    &--migrate {
+      background: rgb(var(--color-warning) / 10%);
+
+      &:hover {
+        background: rgb(var(--color-warning) / 18%);
+      }
+
+      &:focus-visible {
+        outline-color: rgb(var(--color-warning));
+      }
+    }
   }
 
-  &__footer-btn-label {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    word-break: break-word;
-    font-size: var(--text-xs);
+  &__migrate-icon {
+    flex-shrink: 0;
+    display: flex;
+    color: rgb(var(--color-warning));
+  }
+
+  &__footer-btn-key {
+    font-size: var(--text-2xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: rgb(var(--color-muted));
+  }
+
+  &__footer-btn-value {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+
+    .hk-tag {
+      flex-shrink: 0;
+    }
+  }
+
+  &__footer-btn-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text));
   }
 
   &__game-status {
@@ -143,7 +204,9 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 0.15rem;
-    padding-left: 1.05rem; /* align under the status text, past the 8px dot */
+    /* 22px icon slot + 0.4rem gap: under the status text — the same left
+       edge the footer buttons' text column starts at. */
+    padding-left: 1.775rem;
     text-align: left;
   }
 
@@ -177,24 +240,99 @@
     color: rgb(var(--color-primary));
   }
 
+  /* The pip rides a 22×22 icon slot — the same column the footer buttons'
+     platform/avatar marks occupy — with the circle drawn centered inside it
+     via ::before, so the pip optically aligns with the icons below and the
+     status text shares their text column's left edge. */
   &__status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: rgb(var(--color-muted));
+    position: relative;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
 
-    &--on {
+    &::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgb(var(--color-muted));
+    }
+
+    &--on::before {
       background: rgb(var(--color-success));
       box-shadow: 0 0 6px rgb(var(--color-success));
     }
-    &--off {
+    &--off::before {
       background: rgb(var(--color-border));
+    }
+
+    /* Multi-instance count badge: a small numeral hanging UNDER the green
+       pip (bottom-right of its 22×22 slot) — "other games are running
+       too, this many are up". The thin success-tinted outline ties it to
+       the pip without stealing its glow; the size matches the card's 2xs
+       text scale. */
+    .sidebar__status-count {
+      position: absolute;
+      right: -2px;
+      bottom: -4px;
+      min-width: 10px;
+      padding: 0 2px;
+      border-radius: 999px;
+      border: 1px solid rgb(var(--color-success) / 60%);
+      background: rgb(var(--color-success) / 14%);
+      color: rgb(var(--color-success));
+      font-family: var(--font-mono);
+      font-size: calc(var(--text-2xs) * 0.86);
+      font-weight: 700;
+      line-height: 1.25;
+      text-align: center;
     }
   }
 
   &__status-text {
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+}
+
+/* ── Drawer variant (phone-layout nav drawer) ─────────────────────────
+   Same nav re-hosted inside hikari's HDrawer panel: no side border (the
+   drawer panel owns its chrome) and the footer clears the gesture-bar
+   safe area so the account button stays tappable on edge-to-edge phones. */
+.sidebar--drawer {
+  border-right: none;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  /* Stretch to the drawer body's FULL height: hikari's .hk-drawer-body is
+     a plain scrolling block (not a flex container), so the flex:1 above is
+     inert — without an explicit height the sidebar collapses to content
+     height, the footer floats up right behind the nav, and the drawer's
+     lower half sits empty (which reads as a panel that stops well above
+     the screen bottom). min-height (not height) still lets tall navs
+     overflow into the body's scroll on short screens. */
+  min-height: 100%;
+  box-sizing: border-box;
+
+  /* The desktop rail's extra nav top padding is a stand-in for the removed
+     brand row — here the drawer header already separates the nav from the
+     chrome above, so keep the original tight gap. */
+  .sidebar__nav {
+    padding-top: 0.5rem;
+  }
+
+  .sidebar__footer {
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Phone widths: nav links carry 44px touch targets (the 32px-tall desktop
+   rows are below the comfortable tap floor). */
+@media (max-width: 767px) {
+  .sidebar__link {
+    min-height: 44px;
   }
 }

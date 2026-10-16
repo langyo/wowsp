@@ -20,5 +20,6 @@ WoWSP es un panel de análisis de batalla de nueva generación para World of War
 | Índice de documentación | |
 |---|---|
 | [Diseño de arquitectura](./designs/architecture.md) | Documento de diseño arquitectónico |
+| [Plugin de estadísticas dentro del juego](./designs/ingame-stats-plugin.md) | Documento de diseño del plugin de estadísticas |
 
 Consulte la barra lateral para el índice completo.

@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref, type PropType } from "vue";
 import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
 
-import { HIconButtonGroup } from "@celestia-island/hikari";
+import { HkIconButtonGroup, HkScrollContainer } from "@celestia-island/hikari";
 import { buildShipSpecs } from "./shipSpecs";
 import { recomputeStats, type ModifiedStats, type PlannerBuild } from "./modifierPipeline";
 import { t } from "@/i18n";
@@ -13,7 +13,7 @@ import "./DataObserver.scss";
  * ship's base specs change after applying the current build (skills + flags +
  * upgrades) at the selected HP level.
  *
- * One category is visible at a time, picked via an HIconButtonGroup strip —
+ * One category is visible at a time, picked via an HkIconButtonGroup strip —
  * the panel is only 300px wide, so stacking every group made it an endless
  * scroll. buildShipSpecs already omits empty groups (destroyers get no
  * Anti-Air block), so the selector only ever offers what THIS ship has.
@@ -48,6 +48,9 @@ export default defineComponent({
   props: {
     ship: { type: Object as PropType<ShipInfo>, required: true },
     build: { type: Object as PropType<PlannerBuild>, required: true },
+    /** Raw GameParams entry (lazy-fetched by the modal) — feeds the
+     *  per-band AA rows; null keeps the AA group absent. */
+    gameparams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
   },
   setup(props) {
     const profile = computed(() => (props.ship.defaultProfile ?? {}) as Record<string, any>);
@@ -61,7 +64,9 @@ export default defineComponent({
      * rows with modified values + delta formatting where applicable.
      */
     const observerGroups = computed(() => {
-      const groups = buildShipSpecs(profile.value, props.ship.nation);
+      // computeDelta has no cases for the new per-band AA row keys — those
+      // rows render statically, exactly like the old rating row did.
+      const groups = buildShipSpecs(profile.value, props.ship.nation, props.gameparams);
       if (groups.length === 0) return [];
       const { base, modified } = stats.value;
       return groups.map((g) => ({
@@ -118,9 +123,12 @@ export default defineComponent({
       const visible = visibleGroup.value;
       const VisibleIcon = visible ? iconFor(visible.icon) : null;
       return (
-        <div class="data-observer">
+        /* The card body scrolls through hikari's scroll container (overlay
+           thumb on the card's right edge; the native bar stays hidden). */
+        <HkScrollContainer class="data-observer">
+          <div class="data-observer__inner">
           {options.length > 0 ? (
-            <HIconButtonGroup
+            <HkIconButtonGroup
               mode="single"
               size="sm"
               options={options}
@@ -156,7 +164,8 @@ export default defineComponent({
               </dl>
             </section>
           ) : null}
-        </div>
+          </div>
+        </HkScrollContainer>
       );
     };
   },

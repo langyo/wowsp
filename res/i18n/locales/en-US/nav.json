@@ -1,9 +1,19 @@
 {
   "dashboard": "My stats",
+  "playtime": "Playtime",
+  "meterShort": "Meter",
+  "viewSwitch": "Switch view",
   "lookup": "Stats lookup",
   "ships": "Ships",
+  "live": "Live battle",
   "replay": "Replay review",
-  "resources": "Resources",
+  "tactics": "Tactics",
+  "resources": "Mods",
   "settings": "Settings",
-  "home": "Home"
+  "home": "Home",
+  "openMenu": "Open menu",
+  "menu": "Menu",
+  "back": "Back",
+  "liveRoster": "All Players",
+  "liveMine": "My Battle"
 }

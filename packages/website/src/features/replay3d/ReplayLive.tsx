@@ -8,10 +8,11 @@ import {
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
   type HoloLabelData,
 } from "@wowsp/holo";
-import { HSwitch } from "@celestia-island/hikari";
+import { HkSwitch } from "@celestia-island/hikari";
 import { loadGlb } from "./glb";
 import shipTypes from "@/data/shipTypes.json";
 import { ships as SHIP_DB, shipName } from "@/data/ships";
+import { siteBase } from "@/composables/siteBase";
 import "./ReplayLive.scss";
 
 /** Compact per-entity track baked by scripts/bake_site_replay.py (1 Hz). */
@@ -48,7 +49,7 @@ const MAP_BOUNDS: HoloBounds = { minX: -700, maxX: 700, minZ: -700, maxZ: 700 };
 const CAP_RING_R = 90;
 
 /** The game's own HUD ship icons (bundled with the site assets). */
-const ICON_BASE = `${import.meta.env.BASE_URL}icons/ships`;
+const ICON_BASE = `${siteBase}icons/ships`;
 const ICON_CLASSES = ["battleship", "cruiser", "destroyer", "aircarrier", "submarine"] as const;
 for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
   registerHoloShipIcons(
@@ -197,7 +198,12 @@ export default defineComponent({
     let minimapCtx: CanvasRenderingContext2D | null = null;
     let seaMat: THREE.MeshBasicMaterial | null = null;
     let gridMat: THREE.LineBasicMaterial | null = null;
-    let themeMq: MediaQueryList | null = null;
+    /** Light/dark follows the site theme (hikari's root data-mode attr),
+     *  not the OS preference — watch the attribute, not a media query. */
+    let themeObs: MutationObserver | null = null;
+    function siteModeIsLight(): boolean {
+      return document.documentElement.dataset.mode === "light";
+    }
 
     interface ShipNode {
       root: THREE.Group; rel: number; track: Track; die?: number;
@@ -229,7 +235,7 @@ export default defineComponent({
     }
 
     function applyTheme() {
-      const light = themeMq?.matches ?? false;
+      const light = siteModeIsLight();
       // Sea + grid follow the site theme: light frosted sea in light mode,
       // deep abyss in dark mode — never a black pool on a white page.
       if (seaMat) {
@@ -599,8 +605,8 @@ export default defineComponent({
     async function boot() {
       if (!host.value) return;
       reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      themeMq = window.matchMedia("(prefers-color-scheme: light)");
-      themeMq.addEventListener("change", applyTheme);
+      themeObs = new MutationObserver(applyTheme);
+      themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode"] });
 
       let bundle: BattleBundle;
       try {
@@ -816,7 +822,8 @@ export default defineComponent({
       ro?.disconnect();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      themeMq?.removeEventListener("change", applyTheme);
+      themeObs?.disconnect();
+      themeObs = null;
       for (const m of materials) m.dispose();
       for (const g of geometries) g.dispose();
       for (const tx of textures) tx.dispose();
@@ -964,12 +971,12 @@ export default defineComponent({
                 <div class="replay-live__mmzoom-head">
                   <span>{t("showcase.replay.live.zoom")}</span>
                   <span class="replay-live__mmzoom-switch" onClick={(e: MouseEvent) => e.stopPropagation()}>
-                    <HSwitch
+                    <HkSwitch
                       modelValue={mmTrails.value}
                       onUpdate:modelValue={(v: boolean) => { mmTrails.value = v; }}
                     >
                       {t("showcase.replay.live.trails")}
-                    </HSwitch>
+                    </HkSwitch>
                   </span>
                 </div>
                 <canvas ref={zoomCanvas} class="replay-live__mmzoom-canvas" />

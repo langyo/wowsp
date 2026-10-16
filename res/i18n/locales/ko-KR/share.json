@@ -1,0 +1,12 @@
+{
+  "copyShot": "스크린샷 복사",
+  "copyShotDone": "스크린샷이 클립보드에 복사되었습니다",
+  "copyShotFailed": "복사 실패",
+  "shotTagline": "World of Warships 전투 분석 도구",
+  "shotDisclaimer1": "참고용 수치이며 장기적인 실력을 보증하지 않습니다. 상호 존중하며 토론해 주세요",
+  "shotDisclaimer2": "본 소프트웨어는 무료 오픈소스입니다. 구매를 요구하는 사기에 주의하세요",
+  "shotQqGroup": "QQ 그룹: {n}",
+  "topShips": "주력 함선",
+  "moreShips": "외 {n}척",
+  "moreMembers": "외 {n}명"
+}

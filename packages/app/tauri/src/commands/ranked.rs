@@ -9,8 +9,12 @@
 //! is deeply nested (seasons → shipType → pvp_solo/pvp_div3 → stats). The
 //! frontend extracts what it needs; we just fetch + cache.
 
+use anyhow::{Result, anyhow};
+
 use serde::Deserialize;
 use std::collections::HashMap;
+
+use wowsp_tauri_shared::CommandResult;
 
 /// Minimal WG API response envelope (status + data + optional error).
 #[derive(Deserialize)]
@@ -27,11 +31,11 @@ struct WgError {
 }
 
 /// Build a reqwest client for WG API calls (proxy-aware via network.rs).
-fn wg_client() -> Result<reqwest::Client, String> {
+fn wg_client() -> Result<reqwest::Client> {
     crate::commands::network::http_client_builder()?
         .timeout(std::time::Duration::from_secs(15))
         .build()
-        .map_err(|e| format!("build reqwest client: {e}"))
+        .map_err(|e| anyhow!("build reqwest client: {e}"))
 }
 
 /// A player's ranked stats across seasons. The `seasons` map is keyed by
@@ -77,23 +81,27 @@ fn format_rank_display(league: i32, rank: i32) -> String {
     format!("{} {}", league_name(league), rank)
 }
 
-/// Fetch a player's ranked stats for the most recent N seasons.
+/// Fetch a player's ranked stats (every listed season unless a window is
+/// given).
 ///
 /// Calls `/wows/seasons/info/` to get the season IDs, then
 /// `/wows/seasons/accountinfo/` for the player's data. Returns a flat list
-/// of per-season summaries (most recent first).
+/// of per-season summaries (most recent first). `season_count = None`
+/// covers EVERY season the API lists — the flatten drops the unplayed
+/// ones — so a long ranked history stays complete; `Some(n)` keeps the
+/// old "n most recent" window (clamped to 1..=30).
 #[tauri::command]
 pub async fn get_ranked_stats(
     account_id: i64,
     realm: String,
     season_count: Option<i64>,
-) -> Result<Vec<RankedSeasonStats>, String> {
-    let n = season_count.unwrap_or(5).min(30) as usize;
+) -> CommandResult<Vec<RankedSeasonStats>> {
+    let window = season_count.map(|c| c.clamp(1, 30) as usize);
     // The CN cluster has no seasons API, but its vortex detail endpoint
     // embeds the same seasons/rank_info trees — `wg_api_cn::ranked_stats`
     // normalizes and flattens them through the shared path below.
     if realm == "cn" {
-        return super::wg_api_cn::ranked_stats(account_id, n).await;
+        return Ok(super::wg_api_cn::ranked_stats(account_id, window).await?);
     }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
@@ -101,22 +109,21 @@ pub async fn get_ranked_stats(
 
     // 1. Get season IDs (sorted descending = most recent first).
     let seasons_url = format!("https://{host}/wows/seasons/info/?application_id={app_id}");
-    let seasons_resp: WgResponse<HashMap<i64, serde_json::Value>> = client
-        .get(&seasons_url)
-        .send()
-        .await
-        .map_err(|e| format!("seasons/info request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("seasons/info parse: {e}"))?;
+    let seasons_resp: WgResponse<HashMap<i64, serde_json::Value>> =
+        super::upstream_health::recorded_get(&client, host, "seasons/info", seasons_url)
+            .await?
+            .json()
+            .await
+            .map_err(|e| anyhow!("seasons/info parse: {e}"))?;
     if seasons_resp.status != "ok" {
-        return Err(format!(
+        return Err(anyhow!(
             "seasons/info: {}",
             seasons_resp
                 .error
                 .and_then(|e| e.message)
                 .unwrap_or_default()
-        ));
+        )
+        .into());
     }
     let mut season_ids: Vec<i64> = seasons_resp
         .data
@@ -124,7 +131,10 @@ pub async fn get_ranked_stats(
         .map(|d| d.keys().copied().collect())
         .unwrap_or_default();
     season_ids.sort_by(|a, b| b.cmp(a)); // descending
-    let recent_ids: Vec<i64> = season_ids.into_iter().take(n).collect();
+    let recent_ids: Vec<i64> = match window {
+        Some(n) => season_ids.into_iter().take(n).collect(),
+        None => season_ids, // every listed season; unplayed ones drop in the flatten
+    };
     if recent_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -135,19 +145,18 @@ pub async fn get_ranked_stats(
         "https://{host}/wows/seasons/accountinfo/?application_id={app_id}&account_id={account_id}&season_id={}",
         id_str.join(",")
     );
-    let stats_resp: WgResponse<serde_json::Value> = client
-        .get(&stats_url)
-        .send()
-        .await
-        .map_err(|e| format!("seasons/accountinfo request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("seasons/accountinfo parse: {e}"))?;
+    let stats_resp: WgResponse<serde_json::Value> =
+        super::upstream_health::recorded_get(&client, host, "seasons/accountinfo", stats_url)
+            .await?
+            .json()
+            .await
+            .map_err(|e| anyhow!("seasons/accountinfo parse: {e}"))?;
     if stats_resp.status != "ok" {
-        return Err(format!(
+        return Err(anyhow!(
             "seasons/accountinfo: {}",
             stats_resp.error.and_then(|e| e.message).unwrap_or_default()
-        ));
+        )
+        .into());
     }
 
     // 3. Flatten the nested response into per-season summaries.

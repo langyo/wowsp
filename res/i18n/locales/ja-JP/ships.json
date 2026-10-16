@@ -35,6 +35,7 @@
   "all": "すべて",
   "clear": "クリア",
   "reload": "再読み込み",
+  "retry": "再試行",
   "loading": "図鑑データを読み込み中...",
   "empty": "この条件に一致する艦艇はありません。",
   "noData": "図鑑データはまだありません。サーバーを選択して読み込んでください。",
@@ -49,9 +50,35 @@
     "uncommon": "アンコモン",
     "rare": "レア",
     "epic": "エピック",
-    "legendary": "レジェンダリー"
+    "legendary": "レジェンダリー",
+    "event": "イベント"
   },
-  "rarityHint": "ゲーム内の公式カードレアリティ（GameParams の RarityCategory から取得）：コモン（白）、アンコモン（緑）、レア（青）、エピック（赤）、レジェンダリー（オレンジ）。",
+  "event": {
+    "_prefix": "イベント",
+    "halloween_2016": "ハロウィン 2016",
+    "halloween_2017": "ハロウィン 2017",
+    "halloween_2018": "ハロウィン 2018",
+    "halloween_2019": "ハロウィン 2019",
+    "halloween_2020": "ハロウィン 2020",
+    "halloween_2022": "ハロウィン 2022",
+    "space_battles": "宇宙戦",
+    "star_event": "STAR イベント艦",
+    "postap_2022": "ポストアポカリプス 2022",
+    "april_fools_2023": "バスタブ大作戦",
+    "april_fools_2024": "ピニャータハント",
+    "modern_era": "モダン・エラ",
+    "collab_arp": "蒼き鋼のアルペジオ -ARS NOVA-",
+    "collab_azur_lane": "アズールレーン",
+    "collab_hsf": "ハイスクール・フリート",
+    "collab_wh40k": "ウォーハンマー40,000",
+    "collab_blue_archive": "ブルーアーカイブ",
+    "collab_megadeth": "メガデス",
+    "collab_star_trek": "スター・トレック",
+    "lunar_new_year": "旧正月",
+    "hunt_bismarck": "ビスマルクを追え",
+    "scarlet_future": "スカーレット・フューチャー"
+  },
+  "rarityHint": "ゲーム内の公式カードレアリティ（GameParams の RarityCategory から取得）：コモン（白）、アンコモン（緑）、レア（青）、エピック（赤）、レジェンダリー（オレンジ）。イベント艦（コラボ・期間限定モード船体）はバンドの代わりに「イベント・名称」タグを表示します。",
   "card": {
     "hp": "耐久",
     "concealment": "隠蔽",
@@ -62,7 +89,7 @@
     "title": "艦艇詳細",
     "tabSpecs": "諸元",
     "tabArmor": "装甲と弾道",
-    "tabMyStats": "マイ戦績",
+    "tabMyStats": "艦別戦績",
     "tabCommunity": "サーバートレンド",
     "tabSkill": "艦長スキル",
     "mainBattery": "主砲",
@@ -75,6 +102,7 @@
     "gameparamsMissing": "GameParams.data が未解凍です。wowsunpack を実行すると装甲配置と弾道を確認できます。",
     "gameparamsError": "読み込みに失敗しました：{error}",
     "gameparamsErrorTip": "装甲と弾道の読み込みに失敗しました — クリックでエラーをコピー：",
+    "gameparamsSyncAction": "PCからゲームデータを同期",
     "gameparamsHint": "ヒント：解凍した GameParams.json をゲームのルート（bin/ と同じ階層）に置いてください。詳細は https://github.com/wowsinfo/wowsunpack を参照。",
     "noSpecs": "この艦艇の諸元データはありません。",
     "noImage": "画像はありません。",
@@ -84,9 +112,17 @@
     "noBallistics": "この艦艇の装甲 / 弾道データを GameParams から抽出できませんでした。",
     "stage": {
       "hint3d": "ドラッグで回転 · ホイールでズーム · 右ドラッグで移動",
+      "hint3dTouch": "ドラッグで回転 · ピンチでズーム",
       "holo": "ホログラム",
       "hide": "プレビューを隠す",
-      "show": "プレビューを表示"
+      "show": "プレビューを表示",
+      "rotate": "自動回転",
+      "rotateOn": "自動回転中 · クリックで一時停止",
+      "rotateOff": "停止中 · クリックで再開",
+      "waterline": "喫水線",
+      "draft": "喫水",
+      "hull": "本体",
+      "modelPicker": "表示するモデルを選択"
     },
     "weapon": {
       "mainGun": "主砲",
@@ -108,9 +144,7 @@
     "armor": {
       "toggle": "装甲帯オーバーレイの表示を切り替え",
       "short": "装甲",
-      "noData": "装甲データはありません。",
       "legend": "装甲 (mm)",
-      "estimated": "推定",
       "zone": {
         "bow": "艦首",
         "midship": "船体中央",
@@ -127,15 +161,9 @@
         "bowBelt": "艦首装甲帯",
         "superstructure": "上部構造物"
       },
-      "overmatchThreshold": "オーバーマッチには {n}mm 以上の口径が必要",
-      "outcome": {
-        "overmatch": "オーバーマッチ",
-        "pen": "貫通",
-        "overpen": "過貫通",
-        "bounce": "跳弾"
-      },
       "restore": "元に戻す",
-      "pickHint": "同じ色の装甲をクリックで非表示"
+      "solo": "表示のみ",
+      "pickHint": "色帯クリックでその厚さのみ表示 · モデルクリックで非表示"
     },
     "openHint": "クリックで艦艇詳細を開く",
     "my": {
@@ -146,7 +174,8 @@
       "range30d": "過去30日",
       "avgFrags": "平均撃沈",
       "noBaseline": "基準となる履歴がまだありません",
-      "divisionsHint": "アカウント全体のモード別勝率（艦艇単位ではない）"
+      "divisionsHint": "アカウント全体のモード別勝率（艦艇単位ではない）",
+      "modeNotPlayed": "この艦艇はこのモードで未出撃"
     },
     "server": {
       "title": "サーバー平均レポート",
@@ -247,10 +276,17 @@
     "torpDetect": "魚雷被発見距離",
     "torpDetectHint": "魚雷が敵に発見される距離。短いほど相手の反応時間を減らせます。",
     "torpLaunchers": "魚雷発射管",
-    "aaRating": "対空防御評価値",
     "aaLongRange": "長距離対空圏",
     "aaMidRange": "中距離対空圏",
     "aaShortRange": "短距離対空圏",
+    "aaShortDps": "近距離対空DPS",
+    "aaShortHitChance": "近距離対空命中率",
+    "aaMidDps": "中距離対空DPS",
+    "aaMidHitChance": "中距離対空命中率",
+    "aaLongDps": "遠距離対空DPS",
+    "aaLongHitChance": "遠距離対空命中率",
+    "aaFlakDamage": "黒雲ダメージ",
+    "aaFlakCount": "一斉射あたりの黒雲数",
     "maxSpeed": "最大速度",
     "rudderShift": "転舵時間",
     "rudderShiftHint": "舵が完全に切れるまでの時間。短いほど機敏に動けます。",
@@ -268,7 +304,11 @@
     "depthChargeDamage": "爆雷ダメージ",
     "depthChargePacks": "爆雷セット数",
     "depthChargeBombs": "セットあたりの爆雷数",
-    "depthChargeReload": "爆雷装填"
+    "depthChargeReload": "爆雷装填",
+    "secondaryRange": "副砲射程",
+    "aswRange": "空襲距離",
+    "aswCharges": "空襲回数",
+    "aswReload": "空襲装填"
   },
   "skills": {
     "title": "艦長スキルビルダー",
@@ -278,7 +318,9 @@
     "reset": "リセット",
     "tier": "ティア {n}",
     "locked": "ロック中 — 下位ティアに {n} ポイントの投入が必要",
+    "tierEmptyWarning": "ゲームでは各ティアで少なくとも 1 つのスキルの選択が必須です",
     "notApplicable": "この艦には使用不可",
+    "noPoints": "ポイント不足 — このスキルは {n} ポイントが必要",
     "maxed": "最大",
     "noTree": "この艦種のスキルツリーはまだありません。",
     "rank": "ランク {n}",
@@ -300,15 +342,17 @@
     "commanderInfoNote": "艦長の才能は発動型効果のため参考表示であり、右側の性能には含まれません。",
     "talentTrigger": "発動",
     "talentMax": "最大 {n} 回発動",
-    "slotNone": "空",
+    "slotClear": "解除",
     "legendaryCmd": "伝説",
     "eliteCmd": "精鋭",
     "uniqueMod": "研究局",
     "noCommandersForNation": "この国の特殊艦長はまだありません。",
     "slotEmpty": "選択できる改装はありません",
     "commanderLegend": "「伝説」バッジ = 固有の才能を持つ伝説の艦長、「精鋭」バッジ = 精鋭/特殊艦長。",
-    "epicRibbon": "伝説の指揮官が強化したスキル",
+    "epicTag": "伝説の指揮官強化",
     "epicLegend": "緑の角リボン = 選択中の伝説の指揮官が強化値で教えるスキル。",
+    "recTag": "ゲーム推奨スキル",
+    "recLegend": "黄色の角リボン = ゲーム内でこの艦に推奨されるビルドのスキル。",
     "activator": {
       "DamageDoneActivator": "ダメージを与えたとき",
       "TargetsDamagedActivator": "目標に命中したとき",
@@ -456,13 +500,33 @@
     "showing": "先頭 {shown} 艘を表示 / 全 {total} 艘",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "修理班",
+    "crashCrew": "応急修理班",
+    "spotter": "偵察機",
+    "fighter": "戦闘機",
+    "smoke": "煙幕発生器",
+    "speedBoost": "エンジンブースト",
+    "hydro": "水中聴音",
+    "radar": "レーダー",
+    "hydrophone": "ハイドロフォン",
+    "subLocator": "潜水艦探知機",
+    "torpReload": "魚雷装填ブースター",
+    "artyReload": "主砲装填ブースター",
+    "defensiveAA": "対空弾幕"
+  },
   "techTree": {
+    "realmHint": "テックツリーの分岐ソース：WG 基準トポロジと Lesta クライアント自身の研究ライン。",
     "title": "テックツリー",
     "branch": "分岐",
     "locked": "ティア {n} が必要",
     "premium": "プレミアム",
     "special": "特殊",
-    "empty": "この国のテックツリーはありません。"
+    "empty": "この国のテックツリーはありません。",
+    "linkTypeChange": "艦種の変更",
+    "linkBranches": "並行する分岐",
+    "linkArchetype": "系統の特徴",
+    "linkInfo": "研究ラインの情報"
   },
   "banner": {
     "imageFailed": "一部の艦艇画像を読み込めませんでした",
@@ -509,22 +573,132 @@
     "nationTitle": "国",
     "nationAll": "すべての国",
     "hintMulti": "複数選択可 · 「すべて…」でリセット",
+    "nationScrollHint": "ドラッグまたはホイールですべての国を閲覧できます",
     "wrTitle": "勝率",
     "wrAll": "すべての勝率",
     "battlesTitle": "対戦数",
     "battlesAll": "すべての対戦数",
     "minBattles": "≥{n} 戦",
+    "modeTitle": "モード",
+    "modeAll": "すべてのモード",
+    "modeSolo": "ソロ",
+    "modeDiv2": "2人分隊",
+    "modeDiv3": "3人分隊",
+    "modeRanked": "ランク戦",
     "hintTypePop": "複数選択可 · 艦種は絞り込みのみで昇順/降順には対応しません · 「すべての艦種」をクリックすると艦種順に並び替えできます",
     "hintSortPop": "複数選択可 · 選択済みの項目を再度クリックすると昇順 ↑ / 降順 ↓ を切り替え · 「すべて…」をクリックするとリセット、またはこの列で並び替え",
-    "hintTypeChip": "クリックで絞り込み（複数選択可） · 左右にドラッグで並び替えの優先度を変更",
+    "hintTypeChip": "クリックで絞り込み（複数選択可）",
     "hintSortChip": "クリックで絞り込み（複数選択可） · 選択済みの項目を再度クリックで昇順/降順を切り替え · 左右にドラッグで並び替えの優先度を変更",
     "hintSinglePop": "単一選択 · 選択済みの項目を再度クリックすると昇順 ↑ / 降順 ↓ を切り替え · 「すべて…」をクリックするとリセット、またはこの列で並び替え",
     "hintSingleChip": "クリックで絞り込み（単一選択） · 選択済みの項目を再度クリックで昇順/降順を切り替え · 左右にドラッグで並び替えの優先度を変更",
-    "summary": "{ships} 隻 · {battles} 戦"
+    "summary": "{ships} 隻 · {battles} 戦",
+    "sourceTitle": {
+      "en-US": "Source",
+      "zh-CN": "来源",
+      "zh-SG": "来源",
+      "zh-TW": "來源",
+      "ja-JP": "入手元",
+      "ko-KR": "획득처",
+      "ru-RU": "Источник",
+      "fr-FR": "Source",
+      "es-ES": "Fuente"
+    },
+    "sourceAll": {
+      "en-US": "All sources",
+      "zh-CN": "全部来源",
+      "zh-SG": "全部来源",
+      "zh-TW": "全部來源",
+      "ja-JP": "すべての入手元",
+      "ko-KR": "모든 획득처",
+      "ru-RU": "Все источники",
+      "fr-FR": "Toutes les sources",
+      "es-ES": "Todas las fuentes"
+    },
+    "source_tree": {
+      "en-US": "Tech tree",
+      "zh-CN": "仅银币线",
+      "zh-SG": "仅银币线",
+      "zh-TW": "僅銀幣線",
+      "ja-JP": "テックツリーのみ",
+      "ko-KR": "은화 트리만",
+      "ru-RU": "Только древо",
+      "fr-FR": "Arbre uniquement",
+      "es-ES": "Solo árbol"
+    },
+    "source_gold": {
+      "en-US": "Premium only",
+      "zh-CN": "仅金币特殊加值",
+      "zh-SG": "仅金币特殊加值",
+      "zh-TW": "僅金幣特殊加值",
+      "ja-JP": "プレミアムのみ",
+      "ko-KR": "프리미엄만",
+      "ru-RU": "Только прем.",
+      "fr-FR": "Premium uniquement",
+      "es-ES": "Solo premium"
+    },
+    "source_coal": {
+      "en-US": "Coal only",
+      "zh-CN": "仅煤炭可购",
+      "zh-SG": "仅煤炭可购",
+      "zh-TW": "僅煤炭可購",
+      "ja-JP": "石炭のみ",
+      "ko-KR": "석탄만",
+      "ru-RU": "Только уголь",
+      "fr-FR": "Charbon uniquement",
+      "es-ES": "Solo carbón"
+    },
+    "source_steel": {
+      "en-US": "Steel only",
+      "zh-CN": "仅钢铁可购",
+      "zh-SG": "仅钢铁可购",
+      "zh-TW": "僅鋼鐵可購",
+      "ja-JP": "鋼鉄のみ",
+      "ko-KR": "강철만",
+      "ru-RU": "Только сталь",
+      "fr-FR": "Acier uniquement",
+      "es-ES": "Solo acero"
+    },
+    "source_event": {
+      "en-US": "Event only",
+      "zh-CN": "仅活动",
+      "zh-SG": "仅活动",
+      "zh-TW": "僅活動",
+      "ja-JP": "イベントのみ",
+      "ko-KR": "이벤트만",
+      "ru-RU": "Только ивент",
+      "fr-FR": "Événement uniquement",
+      "es-ES": "Solo evento"
+    }
   },
   "model3d": {
     "downloadStart": "3D 表示にはモデルパック（約 1.2 GB）が必要です。ダウンロードを開始しました…",
     "ready": "モデルパックの準備ができました",
     "failed": "モデルパックのダウンロードに失敗しました。後でもう一度お試しください"
+  },
+  "module": {
+    "fireControl": "射撃管制装置",
+    "sonar": "ソナー",
+    "fighter": "戦闘機",
+    "diveBomber": "急降下爆撃機",
+    "torpedoBomber": "雷撃機",
+    "skipBomber": "反跳爆撃機",
+    "flightControl": "航空管制"
+  },
+  "plane": {
+    "torpedo": "雷撃機",
+    "heBomber": "HE爆撃機",
+    "apBomber": "AP爆撃機",
+    "heSkip": "HE反跳爆撃機",
+    "apSkip": "AP反跳爆撃機",
+    "rocket": "攻撃機",
+    "fighter": "戦闘機",
+    "interceptor": "迎撃機",
+    "scout": "偵察機",
+    "asw": "対潜機",
+    "mine": "機雷敷設機",
+    "cfg": {
+      "stock": "初期",
+      "top": "最終"
+    }
   }
 }

@@ -1,19 +1,31 @@
 //! Live `tempArenaInfo.json` polling for overlay mode (milestone M7).
 //!
-//! When a battle loads, the game writes `<game_path>/replays/tempArenaInfo.json`
-//! with the full roster for that match. In overlay mode WoWSP watches that file
-//! and emits a `wowsp://arena-info` Tauri event whenever a fresh battle starts
-//! — same mechanic as ApeRadar's `FileUtils.GetLatestTempArenaInfoFile(
-//! requireFileToBeNewer=true)`, but event-driven via the `notify` crate instead
-//! of a 1-second poll, so idle cost is near zero.
+//! When a battle loads, the game writes `tempArenaInfo.json` with the full
+//! roster for that match. The WG-family clients put it in
+//! `<game_path>/replays/`; the 360 CN client puts it in the GAME ROOT, next
+//! to the executable, and deletes it when the battle ends (its `replays/`
+//! copy — when it has one at all — is not the live one; 2026-10-11 国服 log:
+//! a months-old `replays/` leftover shadowed every live battle, so holding
+//! Tab never satisfied the battle gate). In overlay mode WoWSP watches both
+//! locations and emits a `wowsp://arena-info` Tauri event whenever a fresh
+//! battle starts — same mechanic as ApeRadar's
+//! `FileUtils.GetLatestTempArenaInfoFile(requireFileToBeNewer=true)`, but
+//! event-driven via the `notify` crate instead of a 1-second poll, so idle
+//! cost is near zero.
+//!
+//! Serving is GATED: a leftover that predates the dir's owning client (or
+//! this dir's freshest already-served battle, or — with no client running
+//! — more than a day) reads as "no battle" instead of rendering as the
+//! live one (see [`arena_read_served`]).
 
-use std::path::PathBuf;
+use anyhow::anyhow;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::SystemTime;
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher, event::EventKind};
 use tauri::{AppHandle, Emitter};
-use wowsp_tauri_shared::ArenaInfo;
+use wowsp_tauri_shared::{ArenaInfo, CommandResult};
 
 use crate::commands::replay;
 
@@ -31,22 +43,148 @@ static LAST_TEAM_SIZES: std::sync::atomic::AtomicUsize = std::sync::atomic::Atom
 /// its modification stamp says when the battle actually started.
 static LAST_ARENA_MTIME: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
+/// mtime (unix secs) of the freshest roster `read_temp_arena_info` ever
+/// SERVED, per replays dir (normalized install-path key) — the read gate's
+/// regression rule. Per-DIR, not the global [`LAST_ARENA_MTIME`]: the /live
+/// page follows ONE install on multi-client machines, and a fresher battle
+/// on ANOTHER client must not suppress this dir's own (slightly older)
+/// live roster. Bounded by the install count — a handful of keys.
+static SERVED_ARENA_MTIME: std::sync::LazyLock<Mutex<std::collections::HashMap<String, i64>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Clock skew absorbed when comparing the arena file's mtime against the
+/// owning client's process creation time (different clocks/file systems
+/// round differently — mirrors the session hub's
+/// `ARENA_FRESHNESS_SKEW_SECS`).
+const ARENA_READ_SKEW_SECS: i64 = 5;
+
+/// How long a lone arena file may outlive its battle with NO client
+/// running before reads stop serving it as the live roster: today's crash
+/// leftover still renders (the ended-battle UX keeps the last roster), a
+/// months-old ghost never again does.
+const ARENA_ORPHAN_CAP_SECS: i64 = 24 * 60 * 60;
+
+/// Serve decision for one polled arena read — the ghost gate. A leftover
+/// `tempArenaInfo.json` that no live battle wrote must never render as the
+/// CURRENT battle (the 2026-10-13 国服 report: a months-old `replays/`
+/// leftover parsed fine on every 3 s poll, so the /live page showed
+/// January's roster as a live battle while the client sat in port — and
+/// after a real battle ended, the CN360 client deletes its root-level live
+/// file and the poll fell straight back to that ghost). Three rules:
+///
+/// * older than the freshest roster this DIR already served → drop (the
+///   poll must never regress to a battle the page has moved past);
+/// * the dir's owning client started AFTER the file's mtime → drop (the
+///   roster predates this client session — the same freshness rule the
+///   session hub's identity gate enforces);
+/// * no client running → drop once the file outlives its battle by more
+///   than [`ARENA_ORPHAN_CAP_SECS`].
+fn arena_read_served(mtime: i64, served_before: i64, owner_start: Option<i64>, now: i64) -> bool {
+    if served_before > 0 && mtime < served_before {
+        return false;
+    }
+    match owner_start {
+        Some(start) => mtime + ARENA_READ_SKEW_SECS >= start,
+        None => now - mtime <= ARENA_ORPHAN_CAP_SECS,
+    }
+}
+
+/// [`arena_read_served`] over the real world: this dir's last-served stamp
+/// plus the owning client's process start. The regression rule decides
+/// without the process walk (the poll cadence's cheap path); every other
+/// case walks the process list to resolve the owning client.
+fn arena_read_allowed(dir: &Path, mtime: i64) -> bool {
+    let key = super::game_detect::install_path_key(&dir.to_string_lossy());
+    let served = SERVED_ARENA_MTIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(&key)
+        .copied()
+        .unwrap_or(0);
+    if served > 0 && mtime < served {
+        return false;
+    }
+    let owner_start =
+        super::session::arena_dir_owner_pid(dir).and_then(super::appdata::query_process_start_unix);
+    arena_read_served(mtime, served, owner_start, unix_secs(SystemTime::now()))
+}
+
+/// Record this dir's freshest SERVED roster stamp (call only after a
+/// successful parse — a half-written file must not pin the regression
+/// gate before its good rewrite lands).
+fn note_arena_served(dir: &Path, mtime: i64) {
+    let key = super::game_detect::install_path_key(&dir.to_string_lossy());
+    SERVED_ARENA_MTIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(key, mtime);
+}
+
 fn unix_secs(t: SystemTime) -> i64 {
     t.duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
 }
 
-/// Record both team sizes (allies = relation ≤ 1) and the battle's start
-/// stamp (the arena file's mtime).
-fn note_arena_seen(vehicles: &[wowsp_tauri_shared::VehicleEntry], file_mtime: SystemTime) {
-    let allies = vehicles.iter().filter(|v| v.relation <= 1).count();
-    let enemies = vehicles.len() - allies;
+/// Record both team sizes and the battle's start stamp (the arena file's
+/// mtime). In REAL operations (行动, [`replay::is_operation_battle`]) the
+/// game's own Tab table renders the human team only — the scripted allies
+/// (`IDS_*` / `#Name`) never draw table rows (verified against the
+/// PCVO011_OP_10 story-table capture: 7 human rows, single column, while
+/// the roster carries the 2 scripted allies) — so the ally block the sink
+/// solver and the strip split key on counts LISTED players only, and the
+/// enemy side reads zero (all scripted spawns; rows grow mid-battle past
+/// the roster anyway). Every other battle keeps the plain relation split:
+/// their rosters carry real side semantics (allied escort waves ≤ 1, enemy
+/// warships at > 1 — verified against the operation replay fixtures), and
+/// the tutorial-family scripted battles field their units as real team
+/// rows. The frontend mirrors this exact rule
+/// (utils/rosterSides.ts `splitLiveRosterSides`).
+///
+/// The record only moves FORWARD: a file OLDER than the battle already
+/// recorded must not shadow it. The 360 CN client deletes its root-level
+/// arena file when the battle ends, and the next scan would fall back to a
+/// months-old `replays/` leftover — without this guard that ghost would
+/// instantly age the Tab gate out (`arena_seen_within`) and clobber the
+/// live battle's team sizes until the next battle rewrote the file.
+///
+/// Guard and stores sit under one mutex: a poll thread reading the ghost
+/// must not interleave with the notify watcher recording the new battle —
+/// the older stores landing last would pin the stamp backward with no
+/// later event to correct it for the rest of that battle.
+fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime) {
+    static RECORD_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = RECORD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let stamp = unix_secs(file_mtime);
+    if LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed) > stamp {
+        return;
+    }
+    let operation = replay::is_operation_battle(
+        info.match_group.as_deref(),
+        info.scenario.as_deref(),
+        info.event_type.as_deref(),
+        &info.vehicles,
+    );
+    let allies = if operation {
+        info.vehicles
+            .iter()
+            .filter(|v| v.relation <= 1 && !replay::is_scripted_unit_nickname(&v.name))
+            .count()
+    } else {
+        info.vehicles.iter().filter(|v| v.relation <= 1).count()
+    };
+    let enemies = if operation {
+        0
+    } else {
+        info.vehicles.len() - allies
+    };
     LAST_TEAM_SIZES.store(
         (allies << 16) | enemies,
         std::sync::atomic::Ordering::Relaxed,
     );
-    LAST_ARENA_MTIME.store(unix_secs(file_mtime), std::sync::atomic::Ordering::Relaxed);
+    LAST_ARENA_MTIME.store(stamp, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Latest known per-team player counts (allies, enemies) — (0, 0) before
@@ -76,11 +214,34 @@ pub(crate) fn last_arena_stamp() -> i64 {
 /// parse, when newer) `<replays>/tempArenaInfo.json` directly. Returns
 /// whether a fresh roster is now known. A partially written file fails to
 /// parse and is simply not recorded — the next press retries.
-pub(crate) fn refresh_battle_state() -> bool {
+///
+/// This path is also the ROSTER-EVENT HEALER — two ways a battle can end
+/// up recorded without its roster event ever delivering players:
+///
+/// - the notify watcher read the file mid-write and got exactly one broken
+///   read per battle (the write-completion event lands inside the scan
+///   debounce and is swallowed — the 2026-10-08 Lesta battle lost its
+///   arena-info event this way);
+/// - the Lesta shape: the arena file carries NO vehicles at all, so the
+///   event that DID fire delivered an empty roster; the in-game probe's
+///   roster file (the Lesta roster source — see `probe_roster`) warms up
+///   seconds later and this path re-reads until the synthesis fills in.
+///
+/// In both cases, when THIS parse succeeds where the recorded state is
+/// empty — a stamp NEWER than anything recorded, or a roster that went
+/// from zero players to some — the roster event the page is missing is
+/// (re-)emitted from here, with the same pin-void the watcher's Ok branch
+/// performs. While the roster stays empty (probe not yet answering), the
+/// Tab watcher keeps calling here on its refresh cadence.
+pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
     let Ok(dir) = resolve_arena_dir(None) else {
         return false;
     };
     let Some(path) = find_latest_arena_info(&dir) else {
+        tracing::debug!(
+            dir = %dir.display(),
+            "battle-state refresh: no tempArenaInfo.json in the replay dir or the game root"
+        );
         return false;
     };
     let Ok(meta) = path.metadata() else {
@@ -89,14 +250,58 @@ pub(crate) fn refresh_battle_state() -> bool {
     let Ok(mtime) = meta.modified() else {
         return false;
     };
+    // The same ghost gate as the poll path, BEFORE any parse: a leftover
+    // that predates the owning client (or this dir's freshest served
+    // battle) is no battle at all. Without this the healer was the one
+    // hole left open — a fresh app run's first held-Tab refresh would
+    // parse the months-old `replays/` ghost, record it, and EMIT it as
+    // the live battle (the 2026-10-13 国服 shape), and the roster-pending
+    // heal could emit a ghost in place of a Lesta battle that never
+    // delivered its roster.
+    if !arena_read_allowed(&dir, unix_secs(mtime)) {
+        tracing::debug!(
+            file = %path.display(),
+            mtime = unix_secs(mtime),
+            "battle-state refresh gated — stale leftover, no battle"
+        );
+        return false;
+    }
     let at = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
-    if at > 0 && unix_secs(mtime) <= at {
+    // A recorded battle whose roster never arrived (Lesta's empty
+    // vehicles, or a synthesized roster the probe had not written yet):
+    // the mtime gate must not pin that empty state — keep re-reading.
+    let roster_pending = at > 0 && last_known_team_sizes() == (0, 0);
+    if at > 0 && unix_secs(mtime) <= at && !roster_pending {
         // Nothing newer than what we already recorded.
+        tracing::debug!(
+            file = %path.display(),
+            mtime = unix_secs(mtime),
+            recorded = at,
+            "battle-state refresh: arena file not newer than the recorded battle"
+        );
         return arena_seen_within(1);
     }
     match read_arena_file(&path) {
         Ok(info) => {
-            note_arena_seen(&info.vehicles, mtime);
+            note_arena_seen(&info, mtime);
+            let after = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
+            if after > at || (roster_pending && !info.vehicles.is_empty()) {
+                // A stamp or roster THIS path discovered: heal the page
+                // (same emit + BattleChanged the watcher's Ok branch does).
+                if let Some(name) = super::session::local_player_of(&info.vehicles) {
+                    super::session::note_playing_from_arena(
+                        app,
+                        name,
+                        Some(unix_secs(mtime)),
+                        Some(&dir),
+                    );
+                }
+                #[cfg(desktop)]
+                super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
+                if let Err(e) = app.emit(ARENA_INFO_EVENT, &info) {
+                    tracing::warn!(error = %e, "emit arena-info event failed");
+                }
+            }
             true
         },
         Err(e) => {
@@ -114,15 +319,50 @@ pub(crate) fn refresh_battle_state() -> bool {
 // tree and is polled every 3 s, and a sync command would inline that walk
 // on the webview IPC (main) thread, stalling every queued request.
 #[tauri::command]
-pub async fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInfo>, String> {
-    let dir = resolve_arena_dir(dir)?;
+pub async fn read_temp_arena_info(
+    app: AppHandle,
+    dir: Option<String>,
+) -> CommandResult<Option<ArenaInfo>> {
+    // Follow the running client: resolve once, re-point the background
+    // watcher when the dir drifted (the user launched a different install
+    // than the one being watched), then read from that same dir.
+    let dir = match dir {
+        Some(d) => PathBuf::from(d),
+        None => {
+            let dir = resolve_arena_dir(None)?;
+            retarget_watcher_if_stale(&app, &dir);
+            dir
+        },
+    };
     let Some(path) = find_latest_arena_info(&dir) else {
         return Ok(None);
     };
     let mtime = path.metadata().and_then(|m| m.modified()).ok();
+    // The ghost gate BEFORE parsing: a leftover that predates the owning
+    // client (or this dir's freshest served battle) must read as "no
+    // battle" — the /live page's absent-read branch then keeps its honest
+    // waiting/ended states instead of rendering the ghost as a live one.
+    if let Some(mtime) = mtime {
+        if !arena_read_allowed(&dir, unix_secs(mtime)) {
+            tracing::debug!(
+                file = %path.display(),
+                mtime = unix_secs(mtime),
+                "arena read gated — stale leftover served as no battle"
+            );
+            return Ok(None);
+        }
+    }
     let info = read_arena_file(&path)?;
     if let Some(mtime) = mtime {
-        note_arena_seen(&info.vehicles, mtime);
+        note_arena_seen(&info, mtime);
+        note_arena_served(&dir, unix_secs(mtime));
+    }
+    // Same identity feed as the watcher path above — the poll covers the
+    // window where the notify watcher is not yet (re)targeted. The mtime
+    // feeds the session hub's freshness gate (crash leftovers must not
+    // re-identify the player under a relaunched client).
+    if let Some(name) = super::session::local_player_of(&info.vehicles) {
+        super::session::note_playing_from_arena(&app, name, mtime.map(unix_secs), Some(&dir));
     }
     Ok(Some(info))
 }
@@ -132,23 +372,23 @@ pub async fn read_temp_arena_info(dir: Option<String>) -> Result<Option<ArenaInf
 /// thread; the watcher is killed when the app shuts down (malkuth drain). Safe
 /// to call repeatedly — a second call stops the previous watcher first.
 #[tauri::command]
-pub async fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> Result<(), String> {
+pub async fn start_arena_watcher(app: AppHandle, dir: Option<String>) -> CommandResult<()> {
     // Replace any existing watcher handle.
     let target = resolve_arena_dir(dir)?;
-    let watcher = spawn_watcher(app.clone(), target)?;
+    let watcher = spawn_watcher(app.clone(), target.clone())?;
     *ACTIVE_WATCHER
         .lock()
-        .map_err(|e| format!("watcher lock: {e}"))? = Some(watcher);
+        .map_err(|e| anyhow!("watcher lock: {e}"))? = Some((target, watcher));
     tracing::info!("arena watcher started");
     Ok(())
 }
 
 /// Stop the background arena watcher.
 #[tauri::command]
-pub async fn stop_arena_watcher() -> Result<(), String> {
-    if let Some(w) = ACTIVE_WATCHER
+pub async fn stop_arena_watcher() -> CommandResult<()> {
+    if let Some((_, w)) = ACTIVE_WATCHER
         .lock()
-        .map_err(|e| format!("watcher lock: {e}"))?
+        .map_err(|e| anyhow!("watcher lock: {e}"))?
         .take()
     {
         // Drop kills the watcher (RecommendedWatcher stops its thread on drop).
@@ -158,31 +398,104 @@ pub async fn stop_arena_watcher() -> Result<(), String> {
     Ok(())
 }
 
-static ACTIVE_WATCHER: Mutex<Option<RecommendedWatcher>> = Mutex::new(None);
+static ACTIVE_WATCHER: Mutex<Option<(PathBuf, RecommendedWatcher)>> = Mutex::new(None);
+
+/// Resolve the live arena dir and re-point a live watcher when it drifted.
+/// Watch-tick entry (throttled to `WATCH_DIR_REFRESH` by the caller).
+pub(crate) fn refresh_watcher_target(app: &AppHandle) {
+    let Ok(target) = resolve_arena_dir(None) else {
+        return;
+    };
+    retarget_watcher_if_stale(app, &target);
+}
+
+/// Re-point the background watcher when the already-resolved `target` dir
+/// differs from the one being watched — the running client switched, the
+/// persisted active install changed, or an install appeared/disappeared.
+/// Only an ALIVE watcher is retargeted: this never starts one (the overlay
+/// page owns the watcher's lifecycle), it just keeps an existing one from
+/// staring at a folder no client writes to.
+fn retarget_watcher_if_stale(app: &AppHandle, target: &Path) {
+    let mut guard = match ACTIVE_WATCHER.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    // No alive watcher → nothing to re-point (its lifecycle belongs to the
+    // overlay page's start/stop commands, not to this check). Checked
+    // before any heavy work, but the caller has already resolved `target`.
+    let Some((watched, _)) = guard.as_ref() else {
+        return;
+    };
+    if super::game_context::same_folder(&watched.to_string_lossy(), &target.to_string_lossy()) {
+        return;
+    }
+    let target = target.to_path_buf();
+    match spawn_watcher(app.clone(), target.clone()) {
+        Ok(watcher) => {
+            *guard = Some((target, watcher));
+            tracing::info!("arena watcher re-targeted to the resolved replay dir");
+        },
+        Err(e) => tracing::warn!(error = %e, "re-target arena watcher failed"),
+    }
+}
 
 /// Read + parse one `tempArenaInfo.json` file into [`ArenaInfo`].
-fn read_arena_file(path: &PathBuf) -> Result<ArenaInfo, String> {
+fn read_arena_file(path: &PathBuf) -> anyhow::Result<ArenaInfo> {
     read_arena_file_with_raw(path).map(|(info, _)| info)
 }
 
 /// Read + parse one `tempArenaInfo.json`, returning the parsed [`ArenaInfo`]
 /// AND the raw descriptor JSON text exactly as extracted from the file (NOT
 /// re-serialized, so consumers keep the game's own bytes).
-fn read_arena_file_with_raw(path: &PathBuf) -> Result<(ArenaInfo, String), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+fn read_arena_file_with_raw(path: &PathBuf) -> anyhow::Result<(ArenaInfo, String)> {
+    let bytes = std::fs::read(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
     let json = replay::extract_descriptor_json_pub(&bytes)
-        .ok_or_else(|| "tempArenaInfo.json: malformed".to_string())?;
+        .ok_or_else(|| anyhow!("tempArenaInfo.json: malformed"))?;
     let raw: serde_json::Value =
-        serde_json::from_str(&json).map_err(|e| format!("parse arena JSON: {e}"))?;
+        serde_json::from_str(&json).map_err(|e| anyhow!("parse arena JSON: {e}"))?;
     let meta = replay::meta_from_raw_pub(path.to_string_lossy().into_owned(), raw.clone());
+    let mut vehicles = meta.vehicles;
+    let mut bot_count = meta.bot_count;
+    let mut scripted_unit_count = meta.scripted_unit_count;
+    if vehicles.is_empty() {
+        // The Lesta shape: its tempArenaInfo.json carries metadata only
+        // (no vehicles array — verified 2026-10-08). The in-game probe's
+        // roster file is the one live-roster source for that client; when
+        // it has warmed up (a few seconds into the battle), its records
+        // stand in for the missing array. No probe answer keeps the empty
+        // roster — the Tab watcher's refresh retries while held.
+        if let Some(synth) = super::probe_roster::synthesize_for_arena(
+            path,
+            raw.get("playerName").and_then(|v| v.as_str()),
+        ) {
+            tracing::info!(
+                players = synth.len(),
+                "arena file carried no vehicles — roster synthesized from the in-game probe"
+            );
+            // The mode classifiers (frontend bot-fold labels, operation
+            // gates) key on these counts; the probe's records carry the
+            // same `:Name:` / IDS_* markers the arena file would have.
+            bot_count = synth
+                .iter()
+                .filter(|v| replay::is_bot_nickname(&v.name))
+                .count() as u32;
+            scripted_unit_count = synth
+                .iter()
+                .filter(|v| replay::is_scripted_unit_nickname(&v.name))
+                .count() as u32;
+            vehicles = synth;
+        }
+    }
     Ok((
         ArenaInfo {
             match_group: meta.match_group,
             date_time: meta.date_time,
             map_name: meta.map_name,
             scenario: meta.scenario,
-            bot_count: meta.bot_count,
-            vehicles: meta.vehicles,
+            event_type: meta.event_type,
+            bot_count,
+            scripted_unit_count,
+            vehicles,
             raw,
         },
         json,
@@ -199,12 +512,29 @@ pub(crate) fn read_arena_snapshot() -> Option<(ArenaInfo, String)> {
     read_arena_file_with_raw(&path).ok()
 }
 
+/// The session poller's identity feed: the latest roster's LOCAL player
+/// (relation 0) plus the file's mtime, but only when that mtime (unix secs)
+/// is NEWER than `since`. `None` covers every skip case — no dir resolved,
+/// no file, not newer, unparseable, or no real player row — so the poller
+/// stays a cheap stat on the fast path and only parses on a fresh battle.
+pub(crate) fn newer_arena_local_player(since: i64) -> Option<(String, i64)> {
+    let dir = resolve_arena_dir(None).ok()?;
+    let path = find_latest_arena_info(&dir)?;
+    let mtime = unix_secs(path.metadata().and_then(|m| m.modified()).ok()?);
+    if mtime <= since {
+        return None;
+    }
+    let info = read_arena_file(&path).ok()?;
+    let name = super::session::local_player_of(&info.vehicles)?.to_string();
+    Some((name, mtime))
+}
+
 /// Build + spawn the notify watcher. The watcher runs on its own thread (notify
 /// is callback-based); the callback captures the AppHandle to emit Tauri events
 /// and tracks the last-seen mtime so only *newer* files trigger (ApeRadar's
 /// `requireFileToBeNewer` semantic — the game rewrites the same path each
 /// battle, so without this every touch would fire).
-fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatcher, String> {
+fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> anyhow::Result<RecommendedWatcher> {
     // Snapshot the last-seen mtime BEFORE moving target_dir into the closure.
     let last_mtime = find_latest_arena_info(&target_dir)
         .and_then(|p| p.metadata().and_then(|m| m.modified()).ok())
@@ -212,9 +542,16 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
     let state = Mutex::new(WatchState {
         last_mtime,
         last_scan: std::time::Instant::now(),
+        retry_pending: false,
     });
     let app_for_cb = app.clone();
     let watch_root = target_dir.clone();
+    // The 360 CN client's live arena file sits in the GAME ROOT, one level
+    // above the replays dir (see the module docs) — watch that level too,
+    // NON-recursively (a recursive watch would see the whole bin/ tree churn
+    // for nothing). A failure here only costs promptness: the 3 s polls and
+    // the Tab-held refresh still find the root-level file.
+    let root_watch = target_dir.parent().map(std::path::Path::to_path_buf);
 
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<notify::Event, notify::Error>| {
@@ -222,20 +559,34 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> Result<RecommendedWatch
         },
         notify::Config::default(),
     )
-    .map_err(|e| format!("create watcher: {e}"))?;
+    .map_err(|e| anyhow!("create watcher: {e}"))?;
 
     // Watch the replay dir recursively — the file lives directly under it but
     // versioned subfolders can appear too.
     watcher
         .watch(&watch_root, RecursiveMode::Recursive)
-        .map_err(|e| format!("watch {watch_root:?}: {e}"))?;
+        .map_err(|e| anyhow!("watch {watch_root:?}: {e}"))?;
+    if let Some(root) = root_watch {
+        if let Err(e) = watcher.watch(&root, RecursiveMode::NonRecursive) {
+            tracing::warn!(root = %root.display(), error = %e, "watch the game root for the arena file failed");
+        }
+    }
     Ok(watcher)
 }
 
-/// Watcher bookkeeping: the last-emitted arena mtime plus a scan debouncer.
+/// Watcher bookkeeping: the last-emitted arena mtime, a scan debouncer,
+/// and the mid-write retry flag (see [`handle_watch_event`]).
 struct WatchState {
     last_mtime: SystemTime,
     last_scan: std::time::Instant,
+    /// A read just failed on a half-written file: the game is still
+    /// streaming it, and its write-COMPLETION event — the one the failed
+    /// read was waiting for — lands inside the debounce window. When set,
+    /// the next touching event skips the debounce AND the mtime gate once
+    /// (a same-mtime completion is possible on coarse-stamp filesystems),
+    /// giving the battle's roster exactly one prompt second chance instead
+    /// of losing the whole fight's arena-info event.
+    retry_pending: bool,
 }
 
 /// Minimum spacing between directory scans in the notify callback. During a
@@ -267,16 +618,24 @@ fn handle_watch_event(
     }
     // Debounce: a write typically arrives as a create+modify pair; one scan
     // per window is plenty and the mtime compare keeps the semantics exact.
-    {
+    // A PENDING RETRY bypasses it once — the previous scan read the file
+    // mid-write, and the event this callback is now serving is the
+    // write-completion notification that read was waiting for. The retry
+    // is only good for that immediate completion: past the debounce window
+    // an armed flag expires and the ordinary gates apply again.
+    let retry = {
         let mut guard = match state.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
-        if guard.last_scan.elapsed() < ARENA_SCAN_DEBOUNCE {
+        let retry = guard.retry_pending && guard.last_scan.elapsed() <= ARENA_SCAN_DEBOUNCE;
+        if !retry && guard.last_scan.elapsed() < ARENA_SCAN_DEBOUNCE {
             return;
         }
+        guard.retry_pending = false;
         guard.last_scan = std::time::Instant::now();
-    }
+        retry
+    };
     let Some(path) = find_latest_arena_info(target_dir) else {
         return;
     };
@@ -287,34 +646,73 @@ fn handle_watch_event(
         Ok(g) => g,
         Err(_) => return,
     };
-    if mtime <= guard.last_mtime {
+    if !retry && mtime <= guard.last_mtime {
         return; // not newer — skip (requireFileToBeNewer)
     }
+    let prev_mtime = guard.last_mtime;
     guard.last_mtime = mtime;
     drop(guard);
 
     match read_arena_file(&path) {
         Ok(info) => {
+            // The heal path in `refresh_battle_state` may have recorded (and
+            // emitted) THIS battle already — a Tab press that raced the write
+            // completion parses the same file first. The atomic then carries
+            // this file's own stamp: skip the duplicate emit + pin-void, the
+            // page already has the roster.
+            let already_recorded =
+                unix_secs(mtime) <= LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
+            if already_recorded {
+                tracing::debug!("arena file already recorded — another path delivered the roster");
+                return;
+            }
             tracing::info!(
                 players = info.vehicles.len(),
                 "fresh tempArenaInfo.json — emitting arena-info event"
             );
-            note_arena_seen(&info.vehicles, mtime);
+            note_arena_seen(&info, mtime);
+            // The local player (relation 0) is the one observable moment the
+            // logged-in ACCOUNT becomes identifiable — the session hub
+            // matches it against the bound profiles so multi-account
+            // machines follow the alt actually playing (commands/session.rs).
+            if let Some(name) = super::session::local_player_of(&info.vehicles) {
+                super::session::note_playing_from_arena(
+                    app,
+                    name,
+                    Some(unix_secs(mtime)),
+                    Some(target_dir),
+                );
+            }
+            // A NEW battle voids the Tab watcher's pinned anchor for the
+            // PREVIOUS one. Pushed as a FIFO command (not applied here) so
+            // the watcher applies it in-order with the manual-anchor
+            // commands — the loop is the single owner of that state, and the
+            // atomics above stay as-is for the other consumers. Desktop
+            // only: the Tab watcher is part of the overlay stack.
+            #[cfg(desktop)]
+            super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
             if let Err(e) = app.emit(ARENA_INFO_EVENT, &info) {
                 tracing::warn!(error = %e, "emit arena-info event failed");
             }
         },
-        Err(e) => tracing::warn!(error = %e, "re-read tempArenaInfo.json after change failed"),
+        Err(e) => {
+            // The read raced the game's write and caught a half-written
+            // file. Do NOT let this consume the battle's roster: restore
+            // the stamp the failed read claimed and arm the retry so the
+            // write-completion event (typically milliseconds away, INSIDE
+            // the debounce window) re-scans at once. Without this, the
+            // failed read was the only scan the file ever got and the
+            // whole battle ran without an arena-info event.
+            if let Ok(mut g) = state.lock() {
+                g.last_mtime = prev_mtime;
+                g.retry_pending = true;
+            }
+            tracing::warn!(error = %e, "re-read tempArenaInfo.json after change failed");
+        },
     }
 }
 
-/// Cached auto-detected install (game root + its replays dir). The detection
-/// scans the registry and Steam libraries; `read_temp_arena_info` is polled
-/// every 3 s WITHOUT an explicit dir, so an uncached miss would re-scan all
-/// of that per poll. Invalidated when the game root disappears.
-static DETECTED_DIR_CACHE: Mutex<Option<(PathBuf, PathBuf)>> = Mutex::new(None);
-
-fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
+fn resolve_arena_dir(dir: Option<String>) -> anyhow::Result<PathBuf> {
     if let Some(d) = dir {
         return Ok(PathBuf::from(d));
     }
@@ -324,36 +722,53 @@ fn resolve_arena_dir(dir: Option<String>) -> Result<PathBuf, String> {
     if let Ok(game) = std::env::var("WOWSP_GAME_PATH") {
         return Ok(PathBuf::from(game).join("replays"));
     }
-    // Last resort: auto-detect the install (registry + Steam) and use its
-    // `replays/` folder. Mirrors `replay::resolve_replay_dir`. The frontend
-    // normally passes the active install's path explicitly.
-    if let Some((root, replays)) = DETECTED_DIR_CACHE.lock().ok().and_then(|g| g.clone()) {
-        if root.is_dir() {
-            return Ok(replays);
-        }
+    // Live roster data is written by the client that is RUNNING right now —
+    // its folder wins, then the persisted active install, then the first
+    // detected install (the unified game context's live order; the /live
+    // page passes its WATCHED instance's dir explicitly on multi-client
+    // machines, so this chain answers for the backend-side reads — the
+    // session poller, the overlay healer — and dir-less callers).
+    match super::game_context::resolve_root(super::game_context::RootPreference::PreferRunning) {
+        Some(ctx) => Ok(super::game_context::replays_dir(&ctx.root)),
+        None => Err(anyhow!(
+            "no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH"
+        )),
     }
-    if let Some(detected) = super::game_detect::scan_game_installs().into_iter().next() {
-        let root = PathBuf::from(&detected.path);
-        let replays = root.join("replays");
-        if let Ok(mut cache) = DETECTED_DIR_CACHE.lock() {
-            *cache = Some((root.clone(), replays.clone()));
-        }
-        return Ok(replays);
-    }
-    Err("no replay dir: pass `dir`, or set WOWSP_REPLAY_DIR / WOWSP_GAME_PATH".into())
 }
 
 fn find_latest_arena_info(dir: &PathBuf) -> Option<PathBuf> {
     // Fast path: the game writes the file directly into <replays>/ — only
     // fall back to the recursive walk (versioned subfolders) when it is not
     // there. The walk stats every file in the tree and runs on a 3 s poll.
+    let mut best: Option<(PathBuf, SystemTime)> = None;
     let direct = dir.join("tempArenaInfo.json");
     if direct.is_file() {
-        return Some(direct);
+        consider_arena_candidate(&mut best, direct);
+    } else {
+        walk_for_arena(dir, &mut best);
     }
-    let mut best: Option<(PathBuf, SystemTime)> = None;
-    walk_for_arena(dir, &mut best);
+    // The 360 CN client's live arena file sits in the GAME ROOT, one level
+    // above replays/ (see the module docs) — whichever location carries the
+    // NEWEST stamp is the live battle. A root drive (an env-pinned replay
+    // dir with no parent) simply has no root-level candidate.
+    if let Some(root_file) = dir.parent().map(|p| p.join("tempArenaInfo.json")) {
+        consider_arena_candidate(&mut best, root_file);
+    }
     best.map(|(p, _)| p)
+}
+
+/// Track the newest tempArenaInfo.json candidate by mtime. Ties keep the
+/// first-seen candidate (the replays-dir file — the WG-family location).
+fn consider_arena_candidate(best: &mut Option<(PathBuf, SystemTime)>, path: PathBuf) {
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return;
+    };
+    let Ok(mtime) = meta.modified() else {
+        return;
+    };
+    if best.as_ref().is_none_or(|(_, t)| mtime > *t) {
+        *best = Some((path, mtime));
+    }
 }
 
 fn walk_for_arena(dir: &PathBuf, best: &mut Option<(PathBuf, SystemTime)>) {
@@ -375,9 +790,25 @@ fn walk_for_arena(dir: &PathBuf, best: &mut Option<(PathBuf, SystemTime)>) {
     }
 }
 
+/// The current battle's `matchGroup` off the live arena file of the given
+/// game root — the in-game bridge's cheap cross-server Clan-Battles
+/// detector (the plugin's request carries no battle type). `None` when no
+/// arena file is present (out of battle) or it fails to parse.
+pub(crate) fn current_match_group(root: &std::path::Path) -> Option<String> {
+    let dir = super::game_context::replays_dir(root);
+    let path = find_latest_arena_info(&dir)?;
+    read_arena_file(&path)
+        .ok()
+        .and_then(|meta| meta.match_group)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serializes the tests that touch the process-global arena state —
+    /// cargo runs test functions on parallel threads.
+    static GLOBALS_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     /// Write a fake tempArenaInfo.json into a temp dir, confirm it parses.
     #[test]
@@ -394,6 +825,133 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// note_arena_seen's team sizes follow the game's own Tab rendering,
+    /// verified against real captures (all three scenarios share the
+    /// process-global LAST_TEAM_SIZES, so they run serialized inside ONE
+    /// test):
+    ///
+    /// - real operations (行动) render the human team only — the scripted
+    ///   allies never draw table rows (the PCVO011_OP_10 story-table
+    ///   capture shows 7 human rows, single column, while the roster
+    ///   carries the 2 scripted allies) — so the ally block counts LISTED
+    ///   players only and the enemy side reads zero (all scripted spawns;
+    ///   the sink solver's strip split and the frontend's
+    ///   splitLiveRosterSides mirror the same rule);
+    /// - the tutorial family (low_lvl_operation / first_battle /
+    ///   IDS_OP_15_*) fields its scripted units as real localized-name
+    ///   team rows — the plain relation split stays, keeping the solver's
+    ///   blocks aligned with the rows the game actually draws.
+    #[test]
+    fn team_sizes_follow_the_games_tab_rendering() {
+        let _globals = GLOBALS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let vehicle = |id: i64, name: &str, relation: i64| wowsp_tauri_shared::VehicleEntry {
+            id,
+            name: name.to_string(),
+            relation,
+            ship_id: 4_180_000_000 + id.abs(),
+            ship_name: None,
+        };
+        let info_of = |match_group: &str,
+                       scenario: Option<&str>,
+                       vehicles: Vec<wowsp_tauri_shared::VehicleEntry>| {
+            wowsp_tauri_shared::ArenaInfo {
+                match_group: Some(match_group.into()),
+                date_time: None,
+                map_name: None,
+                scenario: scenario.map(Into::into),
+                event_type: None,
+                bot_count: 0,
+                scripted_unit_count: vehicles
+                    .iter()
+                    .filter(|v| replay::is_scripted_unit_nickname(&v.name))
+                    .count() as u32,
+                vehicles,
+                raw: serde_json::Value::Null,
+            }
+        };
+
+        // The classic op shape (PCVO009_OP_02 Atoll): 2 humans + the
+        // scripted escort ally + 2 scripted enemy warships.
+        let classic = info_of(
+            "pve",
+            Some("PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL"),
+            vec![
+                vehicle(1, "langyo", 0),
+                vehicle(2, "teammate", 1),
+                vehicle(-1, "IDS_OP_02_03_AT_TRANSPORT_A_1", 1),
+                vehicle(-2, "IDS_OP_02_03_AT_ATTAKA_US_A1", 2),
+                vehicle(-3, "IDS_OP_02_03_AT_TRANSPORT_E_5", 2),
+            ],
+        );
+        note_arena_seen(&classic, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (2, 0));
+
+        // The 20261006_225650_PZSC107-Chumphon_s10_USS_CL.wowsreplay shape
+        // (PCVO011_OP_10_s10_USS_CL): 7 humans, the `IDS_OP_10_09_GAMBLE`
+        // / `IDS_OP_10_10_BREEZE` scripted pair at relation 1 and the
+        // `IDS_OP_10_EN_*` wave at relation 2. The game's story table
+        // draws exactly the 7 human rows — the ally block must read 7,
+        // not 9 (the 9-count used to leak the two scripted units into the
+        // live teammates list and mis-slice the overlay's Tab row blocks).
+        let humans = [
+            "89757_hero",
+            "ftgfgfbifgu1223",
+            "SoulV_Silverlory",
+            "ShigureKira",
+            "Forever_418",
+            "waitanchenhu",
+            "Lesi",
+        ];
+        let mut story: Vec<_> = humans
+            .iter()
+            .enumerate()
+            .map(|(i, name)| vehicle(500_000_000 + i as i64, name, if i == 3 { 0 } else { 1 }))
+            .collect();
+        for (id, name) in [(1, "IDS_OP_10_09_GAMBLE"), (2, "IDS_OP_10_10_BREEZE")] {
+            story.push(vehicle(id, name, 1));
+        }
+        for id in 3..=6 {
+            story.push(vehicle(id, &format!("IDS_OP_10_EN_01{:02}", id - 2), 2));
+        }
+        let story = info_of("pve", Some("PCVO011_OP_10_s10_USS_CL"), story);
+        note_arena_seen(&story, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (7, 0));
+
+        // The tutorial family: scripted units ARE team rows — the plain
+        // relation split (allies 3 including the flagship pair, enemy 1).
+        let tutorial = info_of(
+            "pve",
+            Some("LOW_LVL_OPERATION_3_LVL_5A"),
+            vec![
+                vehicle(1, "ShigureKira", 0),
+                vehicle(-1, "IDS_OP_17_ALLY_FLAGSHIP", 1),
+                vehicle(-2, "IDS_OP_17_ALLY_FLAGSHIP_CV", 1),
+                vehicle(-3, "IDS_EN_01", 2),
+            ],
+        );
+        note_arena_seen(&tutorial, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (3, 1));
+
+        // Plain PvP keeps the raw relation split (no scripted units).
+        let pvp = info_of(
+            "pvp",
+            None,
+            vec![
+                vehicle(1, "langyo", 0),
+                vehicle(2, "teammate", 1),
+                vehicle(3, "foe", 2),
+            ],
+        );
+        note_arena_seen(&pvp, SystemTime::UNIX_EPOCH);
+        assert_eq!(last_known_team_sizes(), (2, 1));
+
+        // Restore the process-global the sink solver keys on (other tests
+        // in this binary may run after this one).
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// find_latest_arena_info picks the only tempArenaInfo.json in a dir tree.
     #[test]
     fn finds_arena_info_in_subdir() {
@@ -406,5 +964,218 @@ mod tests {
         let found = find_latest_arena_info(&root).expect("must find");
         assert!(found.ends_with("tempArenaInfo.json"));
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Pin a file's mtime so candidate ordering is deterministic.
+    fn set_mtime(path: &std::path::Path, stamp: SystemTime) {
+        let file = std::fs::File::options().write(true).open(path).unwrap();
+        file.set_times(std::fs::FileTimes::new().set_modified(stamp))
+            .unwrap();
+    }
+
+    fn arena_test_tree(name: &str) -> std::path::PathBuf {
+        let game_root = std::env::temp_dir().join(name);
+        let replays = game_root.join("replays");
+        std::fs::create_dir_all(&replays).unwrap();
+        game_root
+    }
+
+    /// The 360 CN shape: the live arena file sits in the game root while
+    /// replays/ holds nothing (the client deletes the root file after the
+    /// battle, and a months-old replays leftover may not even exist).
+    #[test]
+    fn finds_the_root_level_arena_file() {
+        let game_root = arena_test_tree("wowsp_arena_root_only_test");
+        let replays = game_root.join("replays");
+        let root_file = game_root.join("tempArenaInfo.json");
+        std::fs::write(&root_file, b"{}").unwrap();
+        let found = find_latest_arena_info(&replays).expect("root file must be found");
+        assert_eq!(found, root_file);
+        std::fs::remove_dir_all(&game_root).ok();
+    }
+
+    /// Whichever location carries the NEWEST stamp is the live battle: a
+    /// fresh root file beats a stale replays leftover (the 国服 case), and a
+    /// fresh replays file beats a stale root leftover (the WG case after a
+    /// copied/moved install). Ties keep the replays-dir file.
+    #[test]
+    fn newest_arena_candidate_wins_across_locations() {
+        let older = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000);
+        let newer = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2_000);
+        let game_root = arena_test_tree("wowsp_arena_newest_test");
+        let replays = game_root.join("replays");
+        let replays_file = replays.join("tempArenaInfo.json");
+        let root_file = game_root.join("tempArenaInfo.json");
+        std::fs::write(&replays_file, b"{}").unwrap();
+        std::fs::write(&root_file, b"{}").unwrap();
+
+        set_mtime(&replays_file, older);
+        set_mtime(&root_file, newer);
+        assert_eq!(
+            find_latest_arena_info(&replays).as_ref(),
+            Some(&root_file),
+            "the fresh root file is the live battle"
+        );
+
+        set_mtime(&replays_file, newer);
+        set_mtime(&root_file, older);
+        assert_eq!(
+            find_latest_arena_info(&replays).as_ref(),
+            Some(&replays_file),
+            "the fresh replays file is the live battle"
+        );
+        std::fs::remove_dir_all(&game_root).ok();
+    }
+
+    /// The ghost gate's pure core — the three drop rules and their passes
+    /// (see [`arena_read_served`]). Numbers are unix seconds; the 270-day
+    /// ghost is the 2026-10-13 国服 report's January leftover.
+    #[test]
+    fn arena_read_gate_rules() {
+        const NOW: i64 = 1_800_000_000;
+        // Fresh battle on a client that started before it: served.
+        assert!(arena_read_served(NOW - 60, 0, Some(NOW - 600), NOW));
+        // A months-old leftover predating the running client — dropped.
+        assert!(!arena_read_served(
+            NOW - 270 * 24 * 3600,
+            0,
+            Some(NOW - 600),
+            NOW
+        ));
+        // Same ghost with no client running at all: the orphan cap drops it.
+        assert!(!arena_read_served(NOW - 270 * 24 * 3600, 0, None, NOW));
+        // Today's crash leftover (game closed, battle hours ago): served.
+        assert!(arena_read_served(NOW - 3 * 3600, 0, None, NOW));
+        // The CN360 battle-end shape: this dir already served today's
+        // battle; the older ghost must not resurrect once the live file
+        // is deleted — regardless of any client still running.
+        assert!(!arena_read_served(
+            NOW - 270 * 24 * 3600,
+            NOW - 600,
+            Some(NOW - 600),
+            NOW
+        ));
+        // A client up for DAYS may still serve its own day-old battle (the
+        // file predates nothing this client session did).
+        assert!(arena_read_served(
+            NOW - 26 * 3600,
+            0,
+            Some(NOW - 3 * 24 * 3600),
+            NOW
+        ));
+        // The skew window: a battle written a hair before the OS reported
+        // the client's start still counts as this client's battle.
+        assert!(arena_read_served(NOW - 604, 0, Some(NOW - 600), NOW));
+        assert!(!arena_read_served(NOW - 606, 0, Some(NOW - 600), NOW));
+    }
+
+    /// The served-stamp regression rule keys by DIR (any spelling of the
+    /// same folder), and gates only candidates older than what that dir
+    /// already served. No process claims a temp tree, so the owner branch
+    /// stays out of the way.
+    #[test]
+    fn served_stamp_regression_is_per_dir() {
+        let _globals = GLOBALS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let game_root = arena_test_tree("wowsp_arena_served_map_test");
+        let replays = game_root.join("replays");
+        let now = unix_secs(SystemTime::now());
+        note_arena_served(&replays, now - 60);
+        assert!(
+            !arena_read_allowed(&replays, now - 120),
+            "older than the served battle — a regression must gate"
+        );
+        assert!(
+            arena_read_allowed(&game_root.join(r"Replays\"), now - 60),
+            "the same battle re-serves under another spelling of the dir"
+        );
+        std::fs::remove_dir_all(&game_root).ok();
+    }
+
+    /// A versioned-subfolder file (the walk path) still loses to a fresher
+    /// root-level file.
+    #[test]
+    fn fresher_root_file_beats_the_subdir_walk() {
+        let older = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000);
+        let newer = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2_000);
+        let game_root = arena_test_tree("wowsp_arena_walk_vs_root_test");
+        let replays = game_root.join("replays");
+        let sub = replays.join("13357822");
+        std::fs::create_dir_all(&sub).unwrap();
+        let sub_file = sub.join("tempArenaInfo.json");
+        let root_file = game_root.join("tempArenaInfo.json");
+        std::fs::write(&sub_file, b"{}").unwrap();
+        std::fs::write(&root_file, b"{}").unwrap();
+        set_mtime(&sub_file, older);
+        set_mtime(&root_file, newer);
+        assert_eq!(
+            find_latest_arena_info(&replays).as_ref(),
+            Some(&root_file),
+            "the fresh root file beats the stale versioned-subfolder file"
+        );
+        std::fs::remove_dir_all(&game_root).ok();
+    }
+
+    /// note_arena_seen only moves forward: after the 360 CN client deletes
+    /// its root file post-battle, the next poll falls back to a months-old
+    /// replays leftover, which must NOT age the recorded battle out of the
+    /// Tab gate nor clobber its team sizes (the pre-fix behavior would have
+    /// both). A same-stamp re-read still records (it is the same battle).
+    #[test]
+    fn older_arena_file_never_shadows_the_recorded_battle() {
+        let _globals = GLOBALS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
+
+        let mk_info = |allies: usize, enemies: usize| wowsp_tauri_shared::ArenaInfo {
+            match_group: Some("pvp".into()),
+            date_time: None,
+            map_name: None,
+            scenario: None,
+            event_type: None,
+            bot_count: 0,
+            scripted_unit_count: 0,
+            vehicles: (0..allies + enemies)
+                .map(|i| wowsp_tauri_shared::VehicleEntry {
+                    id: i as i64,
+                    name: format!("p{i}"),
+                    relation: if i < allies { 0 } else { 2 },
+                    ship_id: 4_180_000_000 + i as i64,
+                    ship_name: None,
+                })
+                .collect(),
+            raw: serde_json::Value::Null,
+        };
+        let t = |secs: u64| SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+
+        note_arena_seen(&mk_info(2, 1), t(2_000));
+        assert_eq!(last_known_team_sizes(), (2, 1));
+        assert_eq!(last_arena_stamp(), 2_000);
+
+        // The ghost: an OLDER file re-read after the battle's file vanished.
+        note_arena_seen(&mk_info(9, 9), t(1_000));
+        assert_eq!(last_arena_stamp(), 2_000, "the stamp never moves backward");
+        assert_eq!(
+            last_known_team_sizes(),
+            (2, 1),
+            "the ghost roster must not clobber the live battle's team sizes"
+        );
+
+        // Same stamp (the same battle re-read) is not a backward move.
+        note_arena_seen(&mk_info(2, 1), t(2_000));
+        assert_eq!(last_arena_stamp(), 2_000);
+        assert_eq!(last_known_team_sizes(), (2, 1));
+
+        // The next battle (a NEWER file) advances the record normally.
+        note_arena_seen(&mk_info(7, 7), t(3_000));
+        assert_eq!(last_arena_stamp(), 3_000);
+        assert_eq!(last_known_team_sizes(), (7, 7));
+
+        // Restore the process-globals the sink solver keys on.
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 }

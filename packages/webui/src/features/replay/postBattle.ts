@@ -9,7 +9,10 @@
  * 15.8: `damage` (426) equals the summed damage_* family, `remained_hp`
  * (20) is 0 exactly for sunk ships, planes killed (280+281) stays ≤ ~40.
  * Arrays shorter than 427 entries (older clients) simply lack the late
- * fields — they surface as null/0 instead of wrong numbers.
+ * fields — they surface as null/0 instead of wrong numbers. A second,
+ * subtler drift needs its own handling: 14.x-era replays carry a 485-entry
+ * array where the SAME fields sit 15 positions earlier (the 15.2 client
+ * inserted a field block before `exp`) — see LEGACY_LAYOUT_MAX_LEN below.
  *
  *   [1]  player name          [6]  team number
  *   [7]  ship GameParams id   [9]  realm code
@@ -54,6 +57,17 @@ export interface PostBattlePlayer {
    * authoritative counter are emitted; zero values are dropped. */
   ribbons: PostBattleRibbon[];
 }
+
+/** 14.x-era arrays (485 entries on client 14.5) vs the 15.2+ ones (538 on
+ *  15.8): anything shorter than this cap is a legacy layout whose late
+ *  fields sit LATE_INDEX_SHIFT positions earlier. The 500 cap sits in the
+ *  485..538 gap — no intermediate layout is known, and one landing in
+ *  486..499 would misread as legacy (shifted-late, values likely null/0). */
+const LEGACY_LAYOUT_MAX_LEN = 500;
+/** First NEW-table index the 15-field insertion affects (exp at 404). */
+const LATE_SHIFT_MIN_INDEX = 404;
+/** Width of the block the 15.2 client inserted before `exp`. */
+const LATE_INDEX_SHIFT = 15;
 
 /**
  * Ribbon kind → the CLIENT_PUBLIC_RESULTS indices summed for that counter.
@@ -115,6 +129,17 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         typeof arr[i] === "number" && Number.isFinite(arr[i] as number)
           ? (arr[i] as number)
           : null;
+      // 14.x-era replays carry the pre-15.2 array layout: the client
+      // inserted a 15-field block before `exp`, shifting every later index
+      // up by 15 (base exp 389→404, damage 411→426, killer 393→408; arrays
+      // grew 485→538 — ground truth from 14.5 / 15.8 replays). Reading the
+      // new indices on a legacy array lands on inserted zero fields, which
+      // surfaced as an all-zero XP / damage column. Detect by length and
+      // shift the late fields back; everything below the block (name,
+      // team, ship, HP, frags, ribbons) keeps its index either way.
+      const legacyLayout = arr.length < LEGACY_LAYOUT_MAX_LEN;
+      const late = (i: number): number =>
+        legacyLayout && i >= LATE_SHIFT_MIN_INDEX ? i - LATE_INDEX_SHIFT : i;
       const sum = (idx: readonly number[]): number => {
         let acc = 0;
         for (const i of idx) {
@@ -140,12 +165,12 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         shipId: shipId != null && shipId > 0 ? shipId : null,
         team: team === 0 || team === 1 || team === 2 ? team : null,
         alive: arr[21] === true,
-        damage: num(426) ?? 0,
+        damage: num(late(426)) ?? 0,
         damageTaken,
         frags: num(32) ?? 0,
         hpRatio,
-        killerId: num(408) ?? null,
-        exp: num(404),
+        killerId: num(late(408)) ?? null,
+        exp: num(late(404)),
         ribbons: RIBBON_SOURCES.map(
           ([key, idx]): PostBattleRibbon => ({ key, value: sum(idx) }),
         ).filter((x) => x.value > 0),

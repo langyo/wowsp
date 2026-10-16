@@ -16,7 +16,10 @@
   align-self: stretch;
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
-  background: rgb(var(--color-surface) / 60%);
+  /* Solid HkButton-style surface fill — the 60% glass fill let the
+     wallpaper bleed through and the lone icon read as a hole in the row
+     (same treatment as ShipFilterBar's chips). */
+  background: rgb(var(--color-surface));
   color: rgb(var(--color-muted));
   cursor: pointer;
   transition:
@@ -37,7 +40,9 @@
   &--on {
     color: rgb(var(--color-primary));
     border-color: rgb(var(--color-primary) / 25%);
-    background: rgb(var(--color-primary) / 12%);
+    /* Active tint mixed into the solid surface — a bare alpha tint would
+       go translucent over the wallpaper. */
+    background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
   }
 }
 
@@ -46,6 +51,9 @@
    position `.async-search-combo__panel` rule (and its --left/--right edge
    modifiers, now HPopover placements) died with that move. Only the
    panel's INNER content is styled below. */
+/* The panel's content inset rides HkPopover's `padding` prop (the
+   shared --hk-pad token). */
+
 .async-search-combo__panel-head {
   display: flex;
   align-items: center;
@@ -82,13 +90,19 @@
   }
 }
 
+/* Scroll region (hikari's HkScrollContainer owns the scrollbar): the
+   desktop cap keeps long candidate lists inside the anchored panel. */
 .async-search-combo__candidates {
   margin-top: 8px;
+  max-height: 280px;
+}
+
+/* Former list layout, moved inside the viewport so the rows keep
+   scrolling with their rhythm. */
+.async-search-combo__candidates-inner {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 280px;
-  overflow-y: auto;
 }
 
 .async-search-combo__candidate {
@@ -107,5 +121,26 @@
 
   &:hover {
     background: rgb(var(--color-primary) / 10%);
+  }
+}
+
+/* ── Phone sheet mode (HPopover sheetOnMobile) ───────────────────────────
+   On <768px viewports the combo popup docks as a bottom sheet (hikari's
+   "phones never float anchored menus" convention — same contract as
+   ShipFilterBar's chips). The sheet carries its own title + close chrome
+   (hk-popover-sheet-header), so the panel's inner header row would
+   duplicate it — hidden below; the candidate list drops its fixed 280px
+   desktop cap and rides the sheet's own scroll envelope (with no cap the
+   scroll viewport never overflows, so the sheet is the scroller). The
+   sheet surface itself (full width, top rounding, safe-area bottom
+   padding, scroll containment, top-inset cap) is hikari's .hk-is-sheet —
+   nothing to re-paint. Desktop anchored panels are untouched. */
+.hk-popover-panel.hk-is-sheet {
+  .async-search-combo__panel-head {
+    display: none;
+  }
+
+  .async-search-combo__candidates {
+    max-height: none;
   }
 }

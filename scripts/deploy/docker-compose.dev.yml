@@ -2,7 +2,7 @@
 # Usage: docker compose -f scripts/deploy/docker-compose.dev.yml up
 #
 # This is NOT a production compose (WoWSP is a desktop app, not a service).
-# It exists so `just dev --mock` can run inside a clean container if the host
+# It exists so `just dev mock` can run inside a clean container if the host
 # Python environment is unavailable.
 
 services:

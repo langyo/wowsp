@@ -1,6 +1,24 @@
 /* HoloLabel — floating ship label shared by the app and the marketing site.
-   Verbatim port of the app's holo-map label styles (HolographicMap.scss). */
+   Verbatim port of the app's holo-map label styles (HolographicMap.scss).
+
+   All ink colors hang off --label-ink* custom properties so the host can
+   flip a single label's palette at runtime (OSD auto-contrast: the app
+   samples the rendered backdrop under the label and pins light/dark ink
+   via inline style — see HoloLabel.tsx's TONE_INK_VARS). The defaults and
+   the light-theme block below reproduce the historical palette exactly;
+   with no tone pinned, nothing changes visually. */
 .holo-label {
+  --label-ink: rgba(255, 255, 255, 0.92);
+  --label-ink-name: rgba(255, 255, 255, 0.95);
+  --label-ink-ship: rgba(255, 255, 255, 0.7);
+  --label-ink-tier: rgba(100, 200, 255, 0.85);
+  --label-ink-hp: rgba(100, 255, 150, 0.9);
+  --label-ink-hp-bar-bg: rgba(5, 8, 15, 0.55);
+  --label-ink-hp-text: #fff;
+  --label-ink-hp-text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+  --label-ink-ghost-bg: rgba(5, 8, 15, 0.55);
+  --label-ink-ghost: rgba(255, 255, 255, 0.75);
+
   position: absolute;
   translate: -50% -100%;
   display: flex;
@@ -12,7 +30,7 @@
   padding: 0.1rem 0.25rem;
   font-size: var(--text-2xs, 0.625rem);
   line-height: 1.3;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--label-ink);
   /* No background by default — labels may overlap; each carries a thin role
      border so the team colour stays readable over the sea. */
   background: transparent;
@@ -49,7 +67,7 @@
   &__name {
     font-weight: 600;
     font-size: 0.7em;
-    color: rgba(255, 255, 255, 0.95);
+    color: var(--label-ink-name);
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -59,7 +77,7 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--label-ink-ship);
     font-size: 0.72em;
   }
 
@@ -72,7 +90,7 @@
 
   &__tier {
     font-weight: 700;
-    color: rgba(100, 200, 255, 0.85);
+    color: var(--label-ink-tier);
     margin-right: 0.05rem;
   }
 
@@ -89,7 +107,7 @@
     align-items: center;
     gap: 0.3rem;
     width: 100%;
-    color: rgba(100, 255, 150, 0.9);
+    color: var(--label-ink-hp);
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: 0.7em;
     font-weight: 600;
@@ -100,7 +118,7 @@
     flex: 1 1 auto;
     width: 100%;
     height: 1rem;
-    background: rgba(5, 8, 15, 0.55);
+    background: var(--label-ink-hp-bar-bg);
     border-radius: 2px;
     overflow: hidden;
   }
@@ -121,17 +139,17 @@
     justify-content: center;
     font-size: 0.95em;
     font-weight: 700;
-    color: #fff;
-    text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+    color: var(--label-ink-hp-text);
+    text-shadow: var(--label-ink-hp-text-shadow);
     white-space: nowrap;
   }
 
   &__ghost-time {
     width: 100%;
     padding: 0.1rem 0.25rem;
-    background: rgba(5, 8, 15, 0.55);
+    background: var(--label-ink-ghost-bg);
     border-radius: 2px;
-    color: rgba(255, 255, 255, 0.75);
+    color: var(--label-ink-ghost);
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: 0.75em;
     text-align: center;
@@ -141,23 +159,19 @@
 
 /* Light theme: the sea is paper white, so labels flip to DARK GREY text
    (gray-700 ink — never near-black). Team borders and the HP/tier accents
-   darken one step to stay legible. */
+   darken one step to stay legible. Only the default ink vars flip — a
+   label with an OSD-pinned tone keeps its inline palette. */
 :root[data-mode="light"] .holo-label {
-  color: rgb(55 65 81 / 92%);
+  --label-ink: rgb(55 65 81 / 92%);
+  --label-ink-name: rgb(55 65 81 / 96%);
+  --label-ink-ship: rgb(55 65 81 / 72%);
+  --label-ink-tier: rgb(23 100 170 / 0.95);
+  --label-ink-hp: rgb(20 130 80 / 0.95);
+  --label-ink-hp-bar-bg: rgb(55 65 81 / 10%);
+  --label-ink-hp-text: #374151;
+  --label-ink-hp-text-shadow: 0 0 2px rgb(255 255 255 / 80%);
+  --label-ink-ghost-bg: rgb(255 255 255 / 55%);
+  --label-ink-ghost: rgb(55 65 81 / 78%);
 
   &--self { border-color: #374151; }
-
-  &__name { color: rgb(55 65 81 / 96%); }
-  &__ship { color: rgb(55 65 81 / 72%); }
-  &__tier { color: rgb(23 100 170 / 0.95); }
-  &__hp { color: rgb(20 130 80 / 0.95); }
-  &__hp-bar { background: rgb(55 65 81 / 10%); }
-  &__hp-text {
-    color: #374151;
-    text-shadow: 0 0 2px rgb(255 255 255 / 80%);
-  }
-  &__ghost-time {
-    background: rgb(255 255 255 / 55%);
-    color: rgb(55 65 81 / 78%);
-  }
 }

@@ -12,23 +12,48 @@
   "updateNow": "Update now",
   "updateLater": "Later",
   "upToDate": "Up to date",
+  "updateAppliedTitle": "WoWSP updated to v{version}",
+  "updateAppliedView": "View changelog",
   "checking": "Checking...",
   "downloading": "Downloading...",
   "issues": "Report an issue",
   "license": "License",
   "qqGroupNotice": "For testing feedback, join our QQ group:",
-  "qqGroupNumber": "1125770228",
+  "qqGroupNumber": "612331811",
+  "qqGroupHint": "Click to join the group chat",
+  "links": {
+    "repo": "https://github.com/langyo/wowsp",
+    "issues": "https://github.com/langyo/wowsp/issues",
+    "license": "https://github.com/celestia-island/sysl",
+    "author": "https://github.com/langyo",
+    "qqGroup": "https://qm.qq.com/q/ExDBBawuLC",
+    "techRust": "https://www.rust-lang.org",
+    "techVue3": "https://vuejs.org",
+    "techTauri2": "https://tauri.app",
+    "techThreejs": "https://threejs.org",
+    "techPinia": "https://pinia.vuejs.org",
+    "techUnocss": "https://unocss.dev"
+  },
   "attribution": {
     "fontMaoRole": "Glyphs of the “神了” seal",
-    "fontLuxunRole": "Glyphs of the “海猴” / “空中小人” / “水下小人” seals",
+    "fontLuxunRole": "Glyphs of the “猴” / “空中小人” / “水下小人” / “空中神人” / “水下神人” / “空中小猴” / “水下小猴” / “空中奶龙” / “水下奶蛙” seals",
     "bitmapNote": "Used as rendered bitmaps (graphic use) — the font files are not distributed with the app.",
-    "wallpaperRole": "Default wallpaper artist",
+    "wallpaperRole": "Wallpaper artist",
     "wallpaperNote": "The wallpaper artwork remains the property of its author.",
-    "wallpaperMark": "Wallpaper",
     "aperadarRole": "Primary source of the lookup logic and rating conventions",
+    "aperadarAuthorRole": "Author of ApeRadar (海猴雷达)",
     "wowsunpackRole": "Game-data unpacking (vendored)",
     "wowscoreRole": "Game-data model (vendored)",
     "hikariRole": "UI component library",
-    "devtoolsRole": "Agent-discipline infrastructure (workspace rules and toolchain)"
+    "devtoolsRole": "Agent-discipline infrastructure (workspace rules and toolchain)",
+    "shittimRole": "Frontend shell & build infrastructure"
+  },
+  "sponsor": {
+    "cardName": "afdian · langyo",
+    "lead": "Every donation goes entirely to the AI costs of developing this app.",
+    "voluntary": "Donating is completely optional.",
+    "noHire": "A donation does not create any employment, commissioning, or other legal relationship.",
+    "openSource": "The project stays open source — the app itself will never embed features that require a donation to use.",
+    "noAffiliation": "This software has no direct relationship with Wargaming, Lesta, or 360."
   }
 }

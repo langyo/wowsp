@@ -29,13 +29,21 @@ import { holoColorsFor, type TeamRole } from "./teamColors";
  *  HolographicMap keeps a single local import point. */
 export { SHIP_CLASS_LEN, shipClassTargetLen };
 
-/** Cache of decoded GLB root groups, keyed by resolved model URL. Cloning a
- *  cached group is far cheaper than re-parsing the GLB; identical ships in a
- *  match (common for mirror matchmaking) share one entry here. */
+/** Cache of decoded GLB root groups, keyed by the requested model URL (or
+ *  the URL candidate chain joined). Cloning a cached group is far cheaper
+ *  than re-parsing the GLB; identical ships in a match (common for mirror
+ *  matchmaking) share one entry here. */
 const glbCache = new Map<string, THREE.Group>();
 
+/** GLB cache key for a single URL or an ordered candidate chain. */
+function glbCacheKey(url: string | string[]): string {
+  return Array.isArray(url) ? url.join("\u0000") : url;
+}
+
 interface BuildShipMarkerOpts {
-  url: string;
+  /** Single model URL, or an ordered candidate chain walked by
+   *  `loadGlbModel` until one candidate fetches and parses. */
+  url: string | string[];
   role: TeamRole;
   /** WG ship-type string — picks the class target length the model is scaled to. */
   type?: string | null;
@@ -65,13 +73,14 @@ function applyTrueScale(model: THREE.Group, type: string | null | undefined): vo
 }
 
 /** Build a holographic ship marker for the map. Loads (or clones from cache)
- *  the GLB at `url`, applies class-scaled true-size and role-tinted holographic
- *  shader. */
+ *  the GLB at `url` (single URL or candidate chain), applies class-scaled
+ *  true-size and role-tinted holographic shader. */
 export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.Group> {
   const { url, role, type } = opts;
+  const cacheKey = glbCacheKey(url);
 
   // Load (or reuse) the decoded scene graph.
-  let source = glbCache.get(url);
+  let source = glbCache.get(cacheKey);
   if (!source) {
     source = await loadGlbModel(url);
     // Baked GLBs drop POSITION min/max — recompute so bounds logic works.
@@ -82,7 +91,7 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
         mesh.geometry.computeBoundingSphere();
       }
     });
-    glbCache.set(url, source);
+    glbCache.set(cacheKey, source);
   }
 
   // Clone the cached graph: geometry is shared, but we need our own materials
@@ -225,10 +234,13 @@ export function clearShipMarkerCache(): void {
   glbCache.clear();
 }
 
-/** Prefetch a model URL into the cache without building a marker. Useful for
- *  warming common ships; failures are swallowed (caller degrades to a cone). */
-export function prefetchShipModel(url: string): Promise<void> {
-  if (glbCache.has(url)) return Promise.resolve();
+/** Prefetch a model URL (or an ordered candidate chain — the winning
+ *  candidate is cached under the whole chain's key) into the cache without
+ *  building a marker. Useful for warming common ships; failures are
+ *  swallowed (caller degrades to a cone). */
+export function prefetchShipModel(url: string | string[]): Promise<void> {
+  const cacheKey = glbCacheKey(url);
+  if (glbCache.has(cacheKey)) return Promise.resolve();
   return loadGlbModel(url)
     .then((g) => {
       g.traverse((child) => {
@@ -238,7 +250,7 @@ export function prefetchShipModel(url: string): Promise<void> {
           mesh.geometry.computeBoundingSphere();
         }
       });
-      glbCache.set(url, g);
+      glbCache.set(cacheKey, g);
     })
     .catch(() => {
       /* swallowed — marker build will retry/fallback */

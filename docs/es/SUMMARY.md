@@ -15,3 +15,9 @@
 # Diseño
 
 - [Diseño de arquitectura](./designs/architecture.md)
+- [Plugin de estadísticas dentro del juego](./designs/ingame-stats-plugin.md)
+
+# License
+
+- [Free & Open-Source Warning](./license/free-warning.md)
+- [Usage Telemetry Notice](./license/usage-telemetry.md)

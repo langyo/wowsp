@@ -14,27 +14,30 @@ without launching the game.
 
 ```mermaid
 flowchart TD
-    A[".wowsreplay file"] --> B["Rust: parse 8-byte magic + JSON descriptor block (commands/replay.rs)"]
-    B --> C["Rust: decode packet stream → per-entity event timeline (M3, TODO)"]
+    A[".wowsreplay file"] --> B["Rust: parse 8-byte magic + JSON descriptor block (commands/replay/)"]
+    B --> C["Rust: decode packet stream → per-entity event timeline (commands/packets/)"]
     C --> D["webui: three.js holographic map scrubs the timeline (features/holographic)"]
 ```
 
 Map and ship geometry come from GLB produced by `scripts/model_convert/`
-(`convert_map.py`, `convert_ship.py`). Adding a new map or ship = drop the source
-asset in `scripts/mock/fixtures/` and re-run the converter — no app change.
+(`convert_map.py`, `convert_ship.py`), which pull the source assets straight
+from the detected game install (`just convert-map --name ...` /
+`just convert-ship --name ...`) — no app change needed for new maps or ships.
 
 ### Mode 2 — In-game overlay
 
-A mod file in the game's `res_mods/` launches WoWSP when the game starts. A
-transparent always-on-top window overlays both teams' rosters, visible only
-while `Tab` is held.
+WoWSP runs alongside the game: while the game runs and the in-game overlay
+setting is on, a transparent always-on-top window overlays both teams'
+rosters, visible only while `Tab` is held. The first-party probe mod installed
+into `res_mods/` bridges live battle data to it (see
+`designs/ingame-stats-plugin.md`).
 
 ```mermaid
 flowchart TD
-    A["game starts"] --> B["mod launcher starts WoWSP transparent overlay window"]
+    A["game starts"] --> B["WoWSP creates the transparent overlay window while the game runs"]
     B --> C["Rust: poll &lt;game&gt;/replays/tempArenaInfo.json for live roster (commands/arena_info.rs)"]
     C --> D["user holds Tab"]
-    D --> E["Rust: capture game window + detect team-list region (commands/overlay.rs)"]
+    D --> E["Rust: capture game window + detect team-list region (commands/overlay/)"]
     E --> F["webui: re-anchor rendered roster to detected rect (features/overlay)"]
     F --> G["user releases Tab → overlay hides"]
 ```
@@ -44,8 +47,13 @@ flowchart TD
 `commands/game_detect.rs` scans the Windows Uninstall registry for Wargaming /
 Lesta / 360 publishers (mirroring ApeRadar's `ConfigWindow.AutoDetectGamePath`),
 then additionally walks Steam library folders for `appmanifest_552990.acf`
-(Steam appid 552990 = World of Warships) — the case ApeRadar misses. A manual
-path can always be pinned.
+(Steam appid 552990 = World of Warships) — the case ApeRadar misses — and
+reads Lesta Game Center's own game index under `%ProgramData%\Lesta\GameCenter`
+(preferences.xml `<working_dir>` entries + `apps\<game-id>\<hash>` path
+files). The Lesta (Мир кораблей) client renamed its root stub to
+`Korabli.exe`, so install-folder validation accepts either stub name and the
+running-process watcher tracks `Korabli(.64).exe` as well. A manual path can
+always be pinned.
 
 ## Replay file format
 
@@ -58,14 +66,22 @@ N bytes  json_block  = match descriptor (roster, map, match type)
 ...      packets     = encrypted/zlib packet stream
 ```
 
-`commands/replay.rs` implements the magic check + JSON block extraction in
-Phase 1. The packet-stream decode lands in M3.
+The Lesta (Мир кораблей) client renamed the container to `.korablireplay` and
+switched to a different binary framing — those files are listed and imported
+but header/packet parsing reports an explicit unsupported-format error until
+the new layout is reverse-engineered. `tempArenaInfo.json`, the live-battle
+arena descriptor, keeps its WG name and format.
+
+`commands/replay/` implements the magic check + JSON block extraction; the
+packet-stream decoder lives in `commands/packets/` (frames → payloads →
+per-entity events, with per-version method tables) and feeds the event
+timeline the holographic map scrubs.
 
 ## Tech stack
 
 | Layer | Tech |
 |---|---|
-| Frontend | Vue 3 (TSX) + UnoCSS + co-located SCSS + Pinia + vue-i18n + three.js + echarts |
+| Frontend | Vue 3 (TSX) + UnoCSS + co-located SCSS + Pinia + vue-i18n + three.js |
 | Desktop shell | Tauri 2 (Rust) |
 | Backend IPC | `#[tauri::command]` handlers in `packages/app/tauri/src/commands/` |
 | Mock backend | FastAPI (`scripts/mock/`) for browser/e2e development |

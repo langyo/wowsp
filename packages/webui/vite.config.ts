@@ -19,6 +19,11 @@ const pkgDir = resolve(__dirname);
 
 const mockTarget = process.env.WOWSP_MOCK_URL || 'http://localhost:8787';
 
+// Mobile-bundle builds (justfile android recipes) keep the baked GLBs and
+// the offline gameparams pack in dist so they embed into the APK's assets;
+// every other build prunes both (see pruneBakedGlb / pruneGameparams).
+const mobileBundle = process.env.WOWSP_MOBILE_BUNDLE === '1';
+
 // hikari imports highlight.js through its CJS `lib/` deep paths. With hikari
 // excluded from optimizeDeps those files are served raw in dev, and a raw CJS
 // module has no default export. Alias the whole `lib/` tree onto the package's
@@ -62,8 +67,7 @@ function cleanOutDirContents(outDir: string): Plugin {
 function vendorChunks(id: string): string | undefined {
   if (!id.includes('node_modules')) return;
   if (/[\\/]node_modules[\\/](three|@types[\\/]three)[\\/]/.test(id)) return 'three';
-  if (/[\\/]node_modules[\\/](echarts|zrender)[\\/]/.test(id)) return 'echarts';
-  if (/[\\/]node_modules[\\/]lucide-vue-next[\\/]/.test(id)) return 'icons';
+  if (/[\\/]node_modules[\\/](lucide-vue-next)[\\/]/.test(id)) return 'icons';
   return;
 }
 
@@ -76,7 +80,17 @@ function vendorChunks(id: string): string | undefined {
 // serves src/res directly and this plugin never runs. So the build prunes
 // every .glb from outDir and keeps the git-tracked 2D subset (~27 MB of
 // silhouettes/minimaps — the exact set a fresh CI checkout carries), making
-// local builds byte-equivalent to release CI's dist.
+// local builds byte-equivalent to release CI's dist. The ship preview
+// portraits (images/ships/[0-9]*.png) are ALSO gitignored derived files, but
+// unlike the GLBs they are wanted in the shipped binary: release CI fetches
+// them from the res-latest wowsp-images archive before the webui build
+// (scripts/build_installers.py --images), so they embed on every side.
+//
+// MOBILE BUNDLE exception (WOWSP_MOBILE_BUNDLE=1): the Android build embeds
+// dist into the APK's read-only assets and the app loads GLBs SAME-ORIGIN
+// from there (see modelLoader.ts / commands/model_pack.rs mobile paths), so
+// the GLBs must survive the build. The env flag is exported by the justfile
+// android recipes only — desktop builds keep pruning.
 function pruneBakedGlb(outDir: string): Plugin {
   return {
     name: 'prune-baked-glb',
@@ -122,12 +136,133 @@ function pruneBakedGlb(outDir: string): Plugin {
   };
 }
 
+// The offline GameParams ship-data pack (src/res/data/gameparams/*.json —
+// untracked extraction output from scripts/extract_gameparams.py, ~135 MB raw
+// / ~13 MB compressed, one armed-ship subtree per file + upgrade prices +
+// build marker) rides publicDir into outDir like every other res asset.
+// Desktop never reads it (ship data comes from the install, and a stale
+// bundled copy would lag the client), so desktop builds prune the whole
+// directory to keep dist — and the embedded desktop binary — free of dead
+// weight; WOWSP_MOBILE_BUNDLE=1 keeps it for the APK assets where the
+// mobile gameparams fallback reads it (commands/gameparams.rs). Same gating
+// shape as pruneBakedGlb above.
+function pruneGameparams(outDir: string): Plugin {
+  return {
+    name: 'prune-gameparams',
+    apply: 'build',
+    closeBundle() {
+      const packDir = resolve(outDir, 'data/gameparams');
+      let freed = 0;
+      let removed = 0;
+      const visit = (dir: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const path = resolve(dir, entry.name);
+          if (entry.isDirectory()) {
+            visit(path);
+          } else {
+            freed += statSync(path).size;
+            rmSync(path);
+            removed += 1;
+          }
+        }
+      };
+      try {
+        visit(packDir);
+      } catch {
+        return; // no gameparams pack was copied — nothing to prune
+      }
+      rmSync(packDir, { recursive: true, force: true });
+      if (removed > 0) {
+        console.log(
+          `[prune-gameparams] removed ${removed} offline gameparams files ` +
+            `(${(freed / 1024 / 1024).toFixed(0)} MB) from ${packDir}`,
+        );
+      }
+    },
+  };
+}
+
+// The res-pack insights rail source (src/res/insights/* — the untracked
+// FULL map-insights corpus from `replay-corpus insights` plus the
+// `replay-drain credits` envelope, dropped there by the maintainer or
+// extracted by scripts/fetch_models.py) rides publicDir into outDir like
+// every other res asset — but NOTHING serves it same-origin on any
+// platform: the insights loaders (features/holographic/insightsLoader.ts)
+// read the DOWNLOADED res-pack cache and fall back to the JS-bundled lite
+// doc (src/res/map-insights.json / contributors.json placeholders), so a
+// same-origin copy would only bloat the embedded binary/APK with the
+// 96×96 heat grids the JS bundle deliberately omits. Pruned from EVERY
+// build — desktop and mobile alike, unlike the two gates above.
+function pruneResInsights(outDir: string): Plugin {
+  return {
+    name: 'prune-res-insights',
+    apply: 'build',
+    closeBundle() {
+      const railDir = resolve(outDir, 'insights');
+      let freed = 0;
+      let removed = 0;
+      const visit = (dir: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const path = resolve(dir, entry.name);
+          if (entry.isDirectory()) {
+            visit(path);
+          } else {
+            freed += statSync(path).size;
+            rmSync(path);
+            removed += 1;
+          }
+        }
+      };
+      try {
+        visit(railDir);
+      } catch {
+        return; // no insights dir was copied — nothing to prune
+      }
+      rmSync(railDir, { recursive: true, force: true });
+      if (removed > 0) {
+        console.log(
+          `[prune-res-insights] removed ${removed} insights rail file(s) ` +
+            `(${(freed / 1024 / 1024).toFixed(1)} MB) from ${railDir}`,
+        );
+      }
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     cleanOutDirContents(resolve(pkgDir, '../../dist/webui')),
-    pruneBakedGlb(resolve(pkgDir, '../../dist/webui')),
+    // See pruneResInsights above — the full corpus doc never ships inside a
+    // binary; the res-pack update channel is its only rail.
+    pruneResInsights(resolve(pkgDir, '../../dist/webui')),
+    // Desktop/dev builds prune the baked GLBs (the pack serves from the
+    // cache dir) and the offline gameparams pack (ship data reads the
+    // install); WOWSP_MOBILE_BUNDLE=1 keeps both for the APK assets.
+    ...(mobileBundle
+      ? []
+      : [pruneBakedGlb(resolve(pkgDir, '../../dist/webui')), pruneGameparams(resolve(pkgDir, '../../dist/webui'))]),
     vueSfc(),
     vueJsx(),
+    // @vitejs/plugin-vue-jsx (rolldown-vite mode) injects
+    // optimizeDeps.rolldownOptions.transform.jsx = "preserve" so the
+    // dep-scanner keeps JSX in its transform output. The scanner's
+    // import.meta.glob rewriter matches that string as a SUBSTRING of the
+    // code, so any module merely mentioning it (even in a comment) takes
+    // the rewriter path, which emits the preserved-JSX code tagged as
+    // plain js — and the scan parser then dies with "JSX syntax is
+    // disabled", silently skipping dependency pre-bundling on cold dev
+    // starts. Override the scanner transform to compile JSX with vue's
+    // import source so its output stays parseable; the real dev/build
+    // transform (babel via vueJsx above) is unaffected.
+    {
+      name: "wowsp:scan-jsx-compile",
+      config(config) {
+        const optimizeDeps = (config.optimizeDeps ??= {});
+        const rolldownOptions = (optimizeDeps.rolldownOptions ??= {});
+        const transform = (rolldownOptions.transform ??= {});
+        transform.jsx = { runtime: "automatic", importSource: "vue" };
+      },
+    },
     UnoCSS(),
   ],
   resolve: {
@@ -165,11 +300,14 @@ export default defineConfig({
     rollupOptions: {
       // Three entries: the main shell (Vue app), the pre-rendered overlay
       // page (bare DOM) the Rust Tab watcher loads — see src/overlay/main.ts
-      // — and the manual-locate drag-box picker (bare DOM as well).
+      // — and the tray panel (mini Vue app) the tray left click loads — see
+      // src/tray/main.ts. (The manual-locate drag-box picker used to be an
+      // extra entry rendered in a dedicated window; it now lives inside the
+      // main app as features/replay/ManualLocateOverlay.)
       input: {
         main: resolve(pkgDir, "index.html"),
         overlay: resolve(pkgDir, "overlay.html"),
-        "manual-locate": resolve(pkgDir, "manual-locate.html"),
+        tray: resolve(pkgDir, "tray.html"),
       },
       output: {
         manualChunks: vendorChunks,

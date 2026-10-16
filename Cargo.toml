@@ -8,21 +8,37 @@ default-members = [
 members = [
     "packages/app/tauri",
     "packages/app/tauri_shared",
-    "packages/installer-shell",
+    "packages/app/replay_core",
+    "packages/tools/replay-corpus",
+    "packages/tools/replay-drain",
     "packages/tools/wowsunpack-vendor/crates/wowsunpack",
     "packages/tools/wowsunpack-vendor/crates/wows-core",
 ]
 
 exclude = [
     "packages/webui",
+    # Standalone Rust workspace compiled to wasm for Cloudflare Workers —
+    # keeps its own Cargo.lock (gitignored) and its worker/wasm-bindgen
+    # dependency tree out of the app crates' builds. Entry points:
+    # `just check-relay`, or `cargo check --target wasm32-unknown-unknown`
+    # / `cargo test -p relay-core` inside packages/pairing-relay (both
+    # need `just feedback-theme` first — relay-core embeds a gitignored
+    # generated token sheet via include_str!).
+    "packages/pairing-relay",
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.6.1"
 edition = "2024"
 rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
-license = "MIT"
+license = "MIT"  # inherited ONLY by the vendored wowsunpack/wows-core members
+# (upstream wows-toolkit is MIT — their own workspace root declares the
+# same). Every first-party crate in this workspace pins `license = "SySL-1.0"`
+# in its own manifest, so nothing first-party can inherit this field
+# (the standalone pairing-relay workspace likewise pins `license = "SySL-1.0"`
+# in its own manifest); removing it breaks the vendored members'
+# `license.workspace = true` resolution.
 description = "World of WarShip Panel — replay review & in-game overlay"
 repository = "https://github.com/langyo/wowsp"
 
@@ -30,31 +46,63 @@ repository = "https://github.com/langyo/wowsp"
 
 # Workspace internal crate aliases
 wowsp_tauri_shared = { path = "packages/app/tauri_shared" }
+# Reusable replay decoding core (header + packet stream) — shared by the app
+# shell and the replay-corpus maintainer CLI (wave 4a).
+wowsp_replay_core = { path = "packages/app/replay_core" }
 
 # Core language and utilities
 anyhow = "^1"
 async-trait = "^0.1"
-thiserror = "^2"
+# Not used by first-party crates, but inherited via `thiserror.workspace`
+# by the vendored wowsunpack member (root-workspace inheritance — the
+# vendor's own [workspace.dependencies] only applies when building from
+# inside packages/tools/wowsunpack-vendor), so it must stay declared here.
+thiserror = "^2.0.21"
 # Data and serialization
 chrono = { version = "^0.4", features = ["serde", "clock"] }
 serde = { version = "^1", features = ["derive"] }
-serde_json = "^1"
+serde_json = "^1.0.151"
 toml = "1.1"
-uuid = { version = "^1", features = ["v4", "serde"] }
+uuid = { version = "^1.28.0", features = ["v4", "serde"] }
+
+# OS randomness for the pairing server's PIN/token minting. Already in the
+# lockfile via tempfile/uuid; a direct dependency adds no new crate.
+getrandom = "^0.4"
+
+# Pairing relay transport (mobile client + desktop host bridge): WebSocket
+# tunnel to the Cloudflare Worker in packages/pairing-relay. rustls carries
+# the wss:// legs; the ring provider (installed process-wide where needed)
+# keeps aws-lc-rs off every build machine.
+tokio-tungstenite = { version = "^0.30", default-features = false, features = [
+    "connect",
+    "handshake",
+    "url",
+    "rustls-tls-webpki-roots",
+] }
+rustls = { version = "^0.23", default-features = false, features = [
+    "ring",
+    "logging",
+    "std",
+    "tls12",
+] }
 
 # Logging and tracing
 tracing = { version = "^0.1", features = ["log"] }
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
+# Daily-rotating file sink for the diagnostics log the settings' 问题反馈
+# section ships (UTF-8 `wowsp.<date>.log` under `<data>/logs`).
+tracing-appender = "^0.2"
 
 # Async / concurrent runtime
 futures = "^0.3"
 tokio = { version = "^1", features = ["rt", "rt-multi-thread", "macros", "time", "net", "io-util", "fs", "sync", "signal"] }
 
-# Networking (optional WG API lookups)
-# Networking (optional WG API lookups). native-tls = SChannel on Windows:
-# reqwest 0.13 renamed `rustls-tls` → `rustls`, which now pins aws-lc-rs
-# (needs NASM/CMake on every build machine) — not worth it for a
-# Windows-only app.
+# Networking (WG API lookups, mod catalog + model pack downloads).
+# native-tls = SChannel on Windows: reqwest 0.13 renamed `rustls-tls` →
+# `rustls`, which now pins aws-lc-rs (needs NASM/CMake on every build
+# machine) — not worth it for the Windows desktop build. Android cannot use
+# native-tls (no system OpenSSL), so the app crate swaps in a ring-provider
+# rustls build via a per-target dependency table (see packages/app/tauri).
 reqwest = { version = "^0.13", default-features = false, features = [
     "json",
     "native-tls",
@@ -75,42 +123,63 @@ blowfish = "^0.10"
 byteorder = "^1"
 flate2 = { version = "^1", features = ["zlib-rs"] }
 tar = "^0.4"
+# Replay-share contribution packages (commands/contribution/): the wire
+# format is tar.zstd (contract §8). Already in the lockfile transitively;
+# zstd-sys prebuilt CC builds keep every platform's compile painless.
+zstd = "^0.13"
 
-# Mod Hub package unpacking (catalog zips); tauri's updater already pulls zip 8
+# Mod Hub package unpacking (catalog zips) — direct dep of the app crate
 zip = { version = "^8", default-features = false, features = ["deflate"] }
 
 # Service supervision — graceful shutdown / signal handling (same usage as
 # shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /
 # window-close lifecycle). Published to crates.io.
-malkuth = { version = "^0.2", default-features = false, features = ["signals"] }
+malkuth = { version = "^0.3", default-features = false, features = ["signals"] }
+
+# App-version one-time action scaffold (#[app_migrations] + the hifumi::app
+# ledger/engine) — see commands/app_migrations.rs. Published to crates.io.
+hifumi = "^0.2"
 
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg = "^0.56"
 
-# Windows screen capture for overlay roster positioning; Media_Ocr and its
-# support namespaces power the on-device tab row OCR (row_ocr_windows).
+# WMI queries for the feedback bundle's consented hardware report (see
+# commands/hardware_info.rs): CPU / board / BIOS / GPU+driver / disk serials /
+# NIC MACs / antivirus inventory. MIT OR Apache-2.0, crates.io-only — passes
+# cargo-deny; its `chrono` default reuses the chrono already in the tree.
+wmi = "^0.18"
+
+# Windows screen capture for overlay roster positioning.
 windows = { version = "^0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
+    # GetDpiForWindow: the overlay's side-pad reserve converts the chip
+    # layer's CSS px through the game window's monitor scale.
+    "Win32_UI_HiDpi",
+    # ShellExecuteExW (runas self-relaunch for the feedback bundle's
+    # elevated hardware snapshot; its SHELLEXECUTEINFOW Default impl lives
+    # behind this feature) + open_external's retired ShellExecuteW path.
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Registry",
     "Win32_System_Threading",
     "Win32_Storage_Xps",
-    # Row OCR (Windows.Media.Ocr): pixel write access into a SoftwareBitmap
-    # (Win32_System_WinRT's IMemoryBufferByteAccess), the bitmap itself
-    # (Graphics_Imaging), recognizer-language selection (Globalization) and
-    # the user-language-list fallback (System_UserProfile).
-    "Win32_System_WinRT",
-    "Graphics_Imaging",
-    "Globalization",
-    "System_UserProfile",
-    "Media_Ocr",
 ] }
 
 # Image handling for capture analysis
 image = { version = "^0.25", default-features = false, features = ["png"] }
+ww2ogg = "0.1"
+# Full-stream decode gate for the wem transcode fallback (already in the
+# tree via ww2ogg, so this adds no new crate).
+lewton = "0.10"
+
+# System clipboard image copy for the post-battle share shot (desktop only;
+# already in the lockfile via egui-winit, so this adds no new crate). Only the
+# image-data path is needed — Wayland/other default features stay off.
+arboard = { version = "^3.6", default-features = false, features = ["image-data"] }
 
 # ONNX Runtime bindings for the built-in decision model (experiment E1).
 # Pinned exactly: the 2.0.0-rc line shifts API between RCs, so a caret would
@@ -123,10 +192,11 @@ ort = "=2.0.0-rc.13"
 base64 = "^0.23"
 hex = "^0.4"
 
-# Tauri desktop shell — with tray-icon + image-png for the system tray.
-tauri = { version = "^2", features = ["tray-icon", "image-png"] }
+# Tauri shell. tray-icon + image-png are desktop-only features and are added
+# by the app crate's desktop target table (no system tray on Android), so the
+# shared definition stays feature-free apart from what every shell needs.
+tauri = { version = "^2" }
 tauri-build = "^2"
-tauri-plugin-updater = "^2"
 
 # AppData directory resolution (cross-platform %APPDATA%)
 dirs-next = "^2"
@@ -134,15 +204,18 @@ dirs-next = "^2"
 # wowsunpack / wows-core vendor deps (inherited via workspace = true)
 wows-core = { path = "packages/tools/wowsunpack-vendor/crates/wows-core", default-features = false }
 # In-app GameParams unpacking: vfs-mmap = idx/pkg VFS over the game install
-# (parsing + arc come in transitively). The `bin` CLI feature stays off.
+# (parsing + arc come in transitively). `models` additionally compiles the
+# geometry/gltf exporters the mod-hub custom-model preview parses loose
+# res_mods `.geometry` files with. The `bin` CLI feature stays off.
 wowsunpack = { path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", default-features = false, features = [
     "vfs-mmap",
+    "models",
 ] }
 # Native folder picker for manual game-path selection (Windows IFileDialog).
-rfd = { version = "0.16", default-features = false }
+rfd = { version = "0.17", default-features = false }
 clap = { version = "4.6.0", features = ["derive"] }
 rootcause = "0.12"
-glob = "0.3"
+glob = "0.3.4"
 pickled = { version = "2.0.0-alpha9" }
 winnow = "1.0"
 paste = "1"
@@ -156,7 +229,10 @@ bon = "3.9.1"
 image_dds = { version = "0.7", default-features = false }
 ciborium = "0.2"
 insta = { version = "1.47", features = ["yaml"] }
-sha2 = "0.10"
+sha2 = "0.11"
+# Ed25519 verification of the relay digest docs' signature layer (the
+# seeds live outside the repo — see scripts/catalog_signing.py).
+ed25519-dalek = "2"
 
 # ── Build profiles ──────────────────────────────────────────
 

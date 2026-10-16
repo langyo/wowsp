@@ -12,13 +12,14 @@
  */
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 
-import { HTag } from "@celestia-island/hikari";
+import { HkTag } from "@celestia-island/hikari";
 import { ArrowDown, ArrowUp } from "@lucide/vue";
 
 import IdentityHead from "@/components/stats/IdentityHead";
 import type { ClanInfo, ClanMember } from "@/api";
 import { t } from "@/i18n";
-import { prTier, winrateColor } from "@/utils/winrate";
+import { prTier, prTierLabel, winrateColor } from "@/utils/winrate";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import "./ClanCard.scss";
 
 /** Roster sort keys; null = role-ordered default (officers, battles desc). */
@@ -42,12 +43,25 @@ function roleRank(role: string): number {
   return i === -1 ? ROLE_ORDER.length : i;
 }
 
-function roleLabel(role: string): string {
+/** Localized roster role label (falls back to the raw WG role string when
+ *  the i18n table has no entry). Exported for the clan share shot, which
+ *  labels its roster rows the same way. */
+export function roleLabel(role: string): string {
   const key = `lookup.role.${role}`;
   const label = t(key);
   // vue-i18n returns the key itself for missing entries — fall back to the
   // raw WG role string.
   return label === key ? role : label;
+}
+
+/** The roster's default order (officers first, battles desc) — exported for
+ *  the clan share shot, which mirrors the card's initial sort. */
+export function defaultRosterOrder(members: ClanMember[]): ClanMember[] {
+  return [...members].sort(
+    (a, b) =>
+      roleRank(a.role) - roleRank(b.role) ||
+      (b.stats.battles ?? 0) - (a.stats.battles ?? 0),
+  );
 }
 
 /** Numeric sort value for the active sort key; missing values and hidden
@@ -73,7 +87,8 @@ export default defineComponent({
     /** Roster row clicked → jump to that player's lookup. */
     onMemberClick: Function as PropType<(member: ClanMember) => void>,
   },
-  setup(props) {
+  setup(props, { slots }) {
+    const prefs = useStatsPrefsStore();
     const sortKey = ref<SortKey | null>(null);
     const sortDir = ref<"desc" | "asc">("desc");
 
@@ -91,30 +106,23 @@ export default defineComponent({
     }
 
     const members = computed(() => {
+      if (sortKey.value == null) return defaultRosterOrder(props.clan.members);
       const list = [...props.clan.members];
-      if (sortKey.value == null) {
-        list.sort(
-          (a, b) =>
-            roleRank(a.role) - roleRank(b.role) ||
-            (b.stats.battles ?? 0) - (a.stats.battles ?? 0),
-        );
-      } else {
-        const k = sortKey.value;
-        const d = sortDir.value === "desc" ? -1 : 1;
-        list.sort((a, b) => {
-          // Hidden members AND missing sort values sink in BOTH directions
-          // (a fixed -Infinity would float them in asc order), then the key
-          // decides; officers break ties.
-          const byHidden = Number(a.stats.hidden) - Number(b.stats.hidden);
-          if (byHidden !== 0) return byHidden;
-          const va = sortValue(a, k);
-          const vb = sortValue(b, k);
-          const byMissing =
-            Number(va === Number.NEGATIVE_INFINITY) - Number(vb === Number.NEGATIVE_INFINITY);
-          if (byMissing !== 0) return byMissing;
-          return d * (va - vb) || roleRank(a.role) - roleRank(b.role);
-        });
-      }
+      const k = sortKey.value;
+      const d = sortDir.value === "desc" ? -1 : 1;
+      list.sort((a, b) => {
+        // Hidden members AND missing sort values sink in BOTH directions
+        // (a fixed -Infinity would float them in asc order), then the key
+        // decides; officers break ties.
+        const byHidden = Number(a.stats.hidden) - Number(b.stats.hidden);
+        if (byHidden !== 0) return byHidden;
+        const va = sortValue(a, k);
+        const vb = sortValue(b, k);
+        const byMissing =
+          Number(va === Number.NEGATIVE_INFINITY) - Number(vb === Number.NEGATIVE_INFINITY);
+        if (byMissing !== 0) return byMissing;
+        return d * (va - vb) || roleRank(a.role) - roleRank(b.role);
+      });
       return list;
     });
 
@@ -128,10 +136,11 @@ export default defineComponent({
       },
     );
 
+    // Average member PR — same tier scale/color as the player card. The
+    // label is PR-tier wording (prTierLabel honors the localized-tiers
+    // pref); the roster rows below show PR numbers, not tier labels.
     const avgPrTier = computed(() => prTier(props.clan.avgPr ?? null));
-    const avgPrLabel = computed(() =>
-      avgPrTier.value.key === "unknown" ? "—" : t(`stats.${avgPrTier.value.key}`),
-    );
+    const avgPrLabel = computed(() => prTierLabel(avgPrTier.value.key));
 
     const kpis = computed(() => [
       {
@@ -185,8 +194,9 @@ export default defineComponent({
           tag={props.clan.tag}
           v-slots={{
             badges: () => (
-              <HTag variant="default" size="sm">{props.clan.realm.toUpperCase()}</HTag>
+              <HkTag variant="default" size="sm">{props.clan.realm.toUpperCase()}</HkTag>
             ),
+            actions: () => slots.actions?.(),
           }}
         />
         {props.clan.description ? (
@@ -208,16 +218,19 @@ export default defineComponent({
                 : "—"}
             </span>
           </div>
-          {/* Average member PR — same tier scale/color as the player card. */}
-          <div
-            class={["clan-card__pr-block", avgPrTier.value.rainbow ? "rainbow-text" : null]}
-            style={avgPrTier.value.rainbow ? undefined : { color: avgPrTier.value.color }}
-          >
-            <span class="clan-card__pr-num">
-              {props.clan.avgPr != null ? props.clan.avgPr.toLocaleString() : "—"}
-            </span>
-            <span class="clan-card__pr-label">{avgPrLabel.value}</span>
-          </div>
+          {/* Average member PR — hidden while the rating is off; the hero
+              keeps the clan-wide winrate layout. */}
+          {prefs.prefs.prEnabled ? (
+            <div
+              class={["clan-card__pr-block", avgPrTier.value.rainbow ? "rainbow-text" : null]}
+              style={avgPrTier.value.rainbow ? undefined : { color: avgPrTier.value.color }}
+            >
+              <span class="clan-card__pr-num">
+                {props.clan.avgPr != null ? props.clan.avgPr.toLocaleString() : "—"}
+              </span>
+              <span class="clan-card__pr-label">{avgPrLabel.value}</span>
+            </div>
+          ) : null}
         </div>
 
         <div class="clan-card__kpis">
@@ -229,14 +242,22 @@ export default defineComponent({
           ))}
         </div>
 
-        <div class="clan-card__roster">
+        <div
+          class={[
+            "clan-card__roster",
+            // The PR column hides with the rating (the pref's master switch
+            // covers every PR surface on the card, roster rows included) —
+            // the grid collapses to five columns (see ClanCard.scss).
+            prefs.prefs.prEnabled ? "" : "clan-card__roster--no-pr",
+          ]}
+        >
           <div class="clan-card__roster-title">{t("lookup.clanMembers")}</div>
           <div class="clan-card__roster-head">
             <span class="clan-card__col clan-card__col--name">{t("lookup.memberName")}</span>
             <span class="clan-card__col clan-card__col--role">{t("lookup.roleLabel")}</span>
             {headCell("battles", t("stats.battles"))}
             {headCell("winrate", t("stats.winrate"))}
-            {headCell("pr", t("stats.pr"))}
+            {prefs.prefs.prEnabled ? headCell("pr", t("stats.pr")) : null}
             {headCell("avgDamage", t("stats.avgDamage"))}
           </div>
           {members.value.map((m) => {
@@ -271,16 +292,22 @@ export default defineComponent({
                 >
                   {m.stats.winrate != null ? `${m.stats.winrate.toFixed(1)}%` : "—"}
                 </span>
-                <span
-                  class={["clan-card__col", "clan-card__col--num", memberPrTier.rainbow ? "rainbow-text" : null]}
-                  style={
-                    m.stats.pr != null && !memberPrTier.rainbow
-                      ? { color: memberPrTier.color, fontWeight: 600 }
-                      : undefined
-                  }
-                >
-                  {m.stats.pr != null ? m.stats.pr.toLocaleString() : "—"}
-                </span>
+                {prefs.prefs.prEnabled ? (
+                  <span
+                    class={[
+                      "clan-card__col",
+                      "clan-card__col--num",
+                      memberPrTier.rainbow ? "rainbow-text" : null,
+                    ]}
+                    style={
+                      m.stats.pr != null && !memberPrTier.rainbow
+                        ? { color: memberPrTier.color, fontWeight: 600 }
+                        : undefined
+                    }
+                  >
+                    {m.stats.pr != null ? m.stats.pr.toLocaleString() : "—"}
+                  </span>
+                ) : null}
                 <span class="clan-card__col clan-card__col--num">
                   {m.stats.avgDamage != null
                     ? Math.round(m.stats.avgDamage).toLocaleString()

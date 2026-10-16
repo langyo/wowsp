@@ -35,6 +35,7 @@
   "all": "전체",
   "clear": "지우기",
   "reload": "새로고침",
+  "retry": "재시도",
   "loading": "도감을 불러오는 중...",
   "empty": "필터 조건에 맞는 함선이 없습니다.",
   "noData": "아직 도감 데이터가 없습니다. 서버를 선택하고 불러오세요.",
@@ -49,9 +50,35 @@
     "uncommon": "언커먼",
     "rare": "레어",
     "epic": "에픽",
-    "legendary": "레전더리"
+    "legendary": "레전더리",
+    "event": "이벤트"
   },
-  "rarityHint": "게임 내 공식 카드 희귀도(GameParams의 RarityCategory 기준): 커먼(흰색), 언커먼(초록), 레어(파랑), 에픽(빨강), 레전더리(주황).",
+  "event": {
+    "_prefix": "이벤트",
+    "halloween_2016": "할로윈 2016",
+    "halloween_2017": "할로윈 2017",
+    "halloween_2018": "할로윈 2018",
+    "halloween_2019": "할로윈 2019",
+    "halloween_2020": "할로윈 2020",
+    "halloween_2022": "할로윈 2022",
+    "space_battles": "우주 해전",
+    "star_event": "STAR 이벤트함",
+    "postap_2022": "포스트 아포칼립스 2022",
+    "april_fools_2023": "욕조 대작전",
+    "april_fools_2024": "피냐타 사냥",
+    "modern_era": "모던 에라",
+    "collab_arp": "푸른 강철의 아르페지오 -ARS NOVA-",
+    "collab_azur_lane": "벽람항로",
+    "collab_hsf": "하이스쿨 플릿",
+    "collab_wh40k": "워해머 40,000",
+    "collab_blue_archive": "블루 아카이브",
+    "collab_megadeth": "메가데스",
+    "collab_star_trek": "스타 트렉",
+    "lunar_new_year": "설날",
+    "hunt_bismarck": "비스마르크 추격",
+    "scarlet_future": "스칼렛 퓨처"
+  },
+  "rarityHint": "게임 내 공식 카드 희귀도(GameParams의 RarityCategory 기준): 커먼(흰색), 언커먼(초록), 레어(파랑), 에픽(빨강), 레전더리(주황).이벤트 함선(콜라보·한정 모드 선체)은 등급 대신 「이벤트·이름」 태그를 표시합니다.",
   "card": {
     "hp": "HP",
     "concealment": "은폐",
@@ -62,7 +89,7 @@
     "title": "함선 상세",
     "tabSpecs": "제원",
     "tabArmor": "장갑 및 탄도",
-    "tabMyStats": "내 전적",
+    "tabMyStats": "함선 전적",
     "tabCommunity": "서버 추이",
     "tabSkill": "함장 스킬",
     "mainBattery": "주포",
@@ -75,6 +102,7 @@
     "gameparamsMissing": "GameParams.data가 아직 언팩되지 않았습니다. wowsunpack을 실행하면 장갑 배치와 포탄 탄도를 볼 수 있습니다.",
     "gameparamsError": "불러오지 못했습니다: {error}",
     "gameparamsErrorTip": "장갑 및 탄도를 불러오지 못했습니다 — 클릭하면 오류를 복사합니다:",
+    "gameparamsSyncAction": "PC에서 게임 데이터 동기화",
     "gameparamsHint": "팁: 언팩한 GameParams.json을 게임 루트(bin/ 옆)에 두세요. https://github.com/wowsinfo/wowsunpack 참고",
     "noSpecs": "이 함선에는 제원 데이터가 없습니다.",
     "noImage": "이미지가 없습니다.",
@@ -84,9 +112,17 @@
     "noBallistics": "GameParams에서 이 함선의 장갑 / 탄도 데이터를 추출할 수 없습니다.",
     "stage": {
       "hint3d": "드래그하여 회전 · 스크롤로 확대/축소 · 우클릭 드래그로 이동",
+      "hint3dTouch": "드래그하여 회전 · 핀치로 확대/축소",
       "holo": "홀로그램",
       "hide": "미리보기 숨기기",
-      "show": "미리보기 표시"
+      "show": "미리보기 표시",
+      "rotate": "자동 회전",
+      "rotateOn": "자동 회전 중 · 클릭하여 일시정지",
+      "rotateOff": "일시정지됨 · 클릭하여 재개",
+      "waterline": "수선",
+      "draft": "흘수",
+      "hull": "선체",
+      "modelPicker": "볼 모델 선택"
     },
     "weapon": {
       "mainGun": "주포",
@@ -108,9 +144,7 @@
     "armor": {
       "toggle": "장갑대 오버레이 전환",
       "short": "장갑",
-      "noData": "장갑 데이터가 없습니다.",
       "legend": "장갑 (mm)",
-      "estimated": "추정치",
       "zone": {
         "bow": "함수",
         "midship": "중앙부",
@@ -127,15 +161,9 @@
         "bowBelt": "함수 장갑대",
         "superstructure": "상부 구조물"
       },
-      "overmatchThreshold": "오버매치에는 ≥{n}mm 구경 필요",
-      "outcome": {
-        "overmatch": "오버매치",
-        "pen": "관통",
-        "overpen": "과관통",
-        "bounce": "튕김"
-      },
       "restore": "복원",
-      "pickHint": "같은 색 장갑을 클릭해 숨기기"
+      "solo": "표시만",
+      "pickHint": "색 띠 클릭 시 해당 두께만 표시 · 모델 클릭 시 숨김"
     },
     "openHint": "클릭하여 함선 상세 보기",
     "my": {
@@ -146,7 +174,8 @@
       "range30d": "최근 30일",
       "avgFrags": "평균 격침",
       "noBaseline": "기준 데이터가 아직 없음",
-      "divisionsHint": "계정 전체 모드별 승률 (함선 단위 아님)"
+      "divisionsHint": "계정 전체 모드별 승률 (함선 단위 아님)",
+      "modeNotPlayed": "이 함선은 이 모드에 출격 기록 없음"
     },
     "server": {
       "title": "서버 평균 리포트",
@@ -247,10 +276,17 @@
     "torpDetect": "어뢰 발견 거리",
     "torpDetectHint": "어뢰가 적에게 발견되는 거리입니다. 짧을수록 상대의 반응 시간이 줄어듭니다.",
     "torpLaunchers": "어뢰 발사관",
-    "aaRating": "대공 방어 평점",
     "aaLongRange": "장거리 대공망",
     "aaMidRange": "중거리 대공망",
     "aaShortRange": "근거리 대공망",
+    "aaShortDps": "근거리 대공 DPS",
+    "aaShortHitChance": "근거리 대공 명중률",
+    "aaMidDps": "중거리 대공 DPS",
+    "aaMidHitChance": "중거리 대공 명중률",
+    "aaLongDps": "장거리 대공 DPS",
+    "aaLongHitChance": "장거리 대공 명중률",
+    "aaFlakDamage": "흑구 피해",
+    "aaFlakCount": "1회 발사당 흑구 수",
     "maxSpeed": "최대 속력",
     "rudderShift": "타 전환 시간",
     "rudderShiftHint": "타가 완전히 꺾이는 데 걸리는 시간입니다. 짧을수록 민첩합니다.",
@@ -268,7 +304,11 @@
     "depthChargeDamage": "폭뢰 피해",
     "depthChargePacks": "폭뢰 세트 수",
     "depthChargeBombs": "세트당 폭뢰 수",
-    "depthChargeReload": "폭뢰 장전"
+    "depthChargeReload": "폭뢰 장전",
+    "secondaryRange": "부포 사거리",
+    "aswRange": "공습 사거리",
+    "aswCharges": "공습 횟수",
+    "aswReload": "공습 재장전"
   },
   "skills": {
     "title": "함장 스킬 시뮬레이터",
@@ -278,7 +318,9 @@
     "reset": "초기화",
     "tier": "티어 {n}",
     "locked": "잠김 — 하위 티어에 {n}포인트 필요",
+    "tierEmptyWarning": "게임에서는 각 티어에 최소 1개의 스킬을 선택해야 합니다",
     "notApplicable": "이 함선에는 사용 불가",
+    "noPoints": "포인트 부족 — 이 스킬은 {n}포인트 필요",
     "maxed": "최대",
     "noTree": "이 함종에는 아직 스킬 트리가 없습니다.",
     "rank": "랭크 {n}",
@@ -300,15 +342,17 @@
     "commanderInfoNote": "함장 특성은 발동형 효과로 참고용이며 우측 능력치에 포함되지 않습니다.",
     "talentTrigger": "발동",
     "talentMax": "최대 {n}회 발동",
-    "slotNone": "없음",
+    "slotClear": "해제",
     "legendaryCmd": "전설",
     "eliteCmd": "정예",
     "uniqueMod": "연구국",
     "noCommandersForNation": "이 국가에서 사용 가능한 특수 함장이 없습니다.",
     "slotEmpty": "사용 가능한 장비 없음",
     "commanderLegend": "\"전설\" 배지 = 고유 특성을 가진 전설 함장, \"정예\" 배지 = 정예/특수 함장.",
-    "epicRibbon": "전설 함장의 강화 스킬",
+    "epicTag": "전설 함장 강화",
     "epicLegend": "녹색 리본 = 선택한 전설 함장이 강화된 수치로 가르치는 스킬입니다.",
+    "recTag": "게임 추천 스킬",
+    "recLegend": "노란 리본 = 게임 내에서 이 함선에 추천하는 빌드의 스킬입니다.",
     "activator": {
       "DamageDoneActivator": "피해를 가할 때",
       "TargetsDamagedActivator": "목표 명중 시",
@@ -456,13 +500,33 @@
     "showing": "처음 {shown}척 표시 / 총 {total}척",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "수리반",
+    "crashCrew": "손상 관리팀",
+    "spotter": "정찰기",
+    "fighter": "전투기",
+    "smoke": "연막 발생기",
+    "speedBoost": "엔진 부스트",
+    "hydro": "수중 음파 탐지",
+    "radar": "레이더",
+    "hydrophone": "수중청음기",
+    "subLocator": "잠수함 탐지기",
+    "torpReload": "어뢰 재장전 부스터",
+    "artyReload": "주포 재장전 부스터",
+    "defensiveAA": "대공 탄막"
+  },
   "techTree": {
+    "realmHint": "테크 트리 분기 소스: WG 기준 토폴로지와 Lesta 클라이언트 자체 연구 라인.",
     "title": "테크 트리",
     "branch": "분기",
     "locked": "티어 {n} 필요",
     "premium": "프리미엄",
     "special": "특수",
-    "empty": "이 국가에는 테크 트리가 없습니다."
+    "empty": "이 국가에는 테크 트리가 없습니다.",
+    "linkTypeChange": "함종 변경",
+    "linkBranches": "병렬 분기",
+    "linkArchetype": "계열 특성",
+    "linkInfo": "연구 라인 정보"
   },
   "banner": {
     "imageFailed": "일부 함선 이미지를 불러오지 못했습니다",
@@ -509,22 +573,132 @@
     "nationTitle": "국가",
     "nationAll": "모든 국가",
     "hintMulti": "다중 선택 · 「전체…」 클릭 시 초기화",
+    "nationScrollHint": "드래그하거나 마우스 휠로 모든 국가를 탐색할 수 있습니다",
     "wrTitle": "승률",
     "wrAll": "전체 승률",
     "battlesTitle": "전투 수",
     "battlesAll": "전체 전투 수",
     "minBattles": "{n}전 이상",
+    "modeTitle": "모드",
+    "modeAll": "전체 모드",
+    "modeSolo": "솔로",
+    "modeDiv2": "2인 분대",
+    "modeDiv3": "3인 분대",
+    "modeRanked": "랭크전",
     "hintTypePop": "다중 선택 · 함종은 필터 전용(정렬 방향 없음) · \"전체 함종\" 클릭 시 함종 순서대로 정렬",
     "hintSortPop": "다중 선택 · 선택 항목을 다시 클릭하면 오름차순 ↑ / 내림차순 ↓ 전환 · \"전체…\" 클릭 시 초기화하거나 이 열 기준으로 정렬",
-    "hintTypeChip": "클릭하여 필터 선택(다중 선택) · 좌우 드래그로 정렬 우선순위 변경",
+    "hintTypeChip": "클릭하여 필터 선택(다중 선택)",
     "hintSortChip": "클릭하여 필터 선택(다중 선택) · 선택 항목을 다시 클릭하면 오름차순/내림차순 전환 · 좌우 드래그로 정렬 우선순위 변경",
     "hintSinglePop": "단일 선택 · 선택 항목을 다시 클릭하면 오름차순 ↑ / 내림차순 ↓ 전환 · \"전체…\" 클릭 시 초기화하거나 이 열 기준으로 정렬",
     "hintSingleChip": "클릭하여 필터 선택(단일 선택) · 선택 항목을 다시 클릭하면 오름차순/내림차순 전환 · 좌우 드래그로 정렬 우선순위 변경",
-    "summary": "함선 {ships}척 · 전투 {battles}회"
+    "summary": "함선 {ships}척 · 전투 {battles}회",
+    "sourceTitle": {
+      "en-US": "Source",
+      "zh-CN": "来源",
+      "zh-SG": "来源",
+      "zh-TW": "來源",
+      "ja-JP": "入手元",
+      "ko-KR": "획득처",
+      "ru-RU": "Источник",
+      "fr-FR": "Source",
+      "es-ES": "Fuente"
+    },
+    "sourceAll": {
+      "en-US": "All sources",
+      "zh-CN": "全部来源",
+      "zh-SG": "全部来源",
+      "zh-TW": "全部來源",
+      "ja-JP": "すべての入手元",
+      "ko-KR": "모든 획득처",
+      "ru-RU": "Все источники",
+      "fr-FR": "Toutes les sources",
+      "es-ES": "Todas las fuentes"
+    },
+    "source_tree": {
+      "en-US": "Tech tree",
+      "zh-CN": "仅银币线",
+      "zh-SG": "仅银币线",
+      "zh-TW": "僅銀幣線",
+      "ja-JP": "テックツリーのみ",
+      "ko-KR": "은화 트리만",
+      "ru-RU": "Только древо",
+      "fr-FR": "Arbre uniquement",
+      "es-ES": "Solo árbol"
+    },
+    "source_gold": {
+      "en-US": "Premium only",
+      "zh-CN": "仅金币特殊加值",
+      "zh-SG": "仅金币特殊加值",
+      "zh-TW": "僅金幣特殊加值",
+      "ja-JP": "プレミアムのみ",
+      "ko-KR": "프리미엄만",
+      "ru-RU": "Только прем.",
+      "fr-FR": "Premium uniquement",
+      "es-ES": "Solo premium"
+    },
+    "source_coal": {
+      "en-US": "Coal only",
+      "zh-CN": "仅煤炭可购",
+      "zh-SG": "仅煤炭可购",
+      "zh-TW": "僅煤炭可購",
+      "ja-JP": "石炭のみ",
+      "ko-KR": "석탄만",
+      "ru-RU": "Только уголь",
+      "fr-FR": "Charbon uniquement",
+      "es-ES": "Solo carbón"
+    },
+    "source_steel": {
+      "en-US": "Steel only",
+      "zh-CN": "仅钢铁可购",
+      "zh-SG": "仅钢铁可购",
+      "zh-TW": "僅鋼鐵可購",
+      "ja-JP": "鋼鉄のみ",
+      "ko-KR": "강철만",
+      "ru-RU": "Только сталь",
+      "fr-FR": "Acier uniquement",
+      "es-ES": "Solo acero"
+    },
+    "source_event": {
+      "en-US": "Event only",
+      "zh-CN": "仅活动",
+      "zh-SG": "仅活动",
+      "zh-TW": "僅活動",
+      "ja-JP": "イベントのみ",
+      "ko-KR": "이벤트만",
+      "ru-RU": "Только ивент",
+      "fr-FR": "Événement uniquement",
+      "es-ES": "Solo evento"
+    }
   },
   "model3d": {
     "downloadStart": "3D 보기에는 모델 팩(약 1.2 GB)이 필요합니다 — 다운로드를 시작했습니다…",
     "ready": "모델 팩 준비 완료",
     "failed": "모델 팩 다운로드 실패 — 나중에 다시 시도하세요"
+  },
+  "module": {
+    "fireControl": "사격 통제 장치",
+    "sonar": "소나",
+    "fighter": "전투기",
+    "diveBomber": "급강하 폭격기",
+    "torpedoBomber": "뇌격기",
+    "skipBomber": "도탄 폭격기",
+    "flightControl": "항공 통제"
+  },
+  "plane": {
+    "torpedo": "뇌격기",
+    "heBomber": "HE폭격기",
+    "apBomber": "AP폭격기",
+    "heSkip": "HE도탄 폭격기",
+    "apSkip": "AP도탄 폭격기",
+    "rocket": "로켓기",
+    "fighter": "전투기",
+    "interceptor": "요격기",
+    "scout": "정찰기",
+    "asw": "대잠기",
+    "mine": "기뢰부설기",
+    "cfg": {
+      "stock": "초기",
+      "top": "최종"
+    }
   }
 }

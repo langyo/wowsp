@@ -3,32 +3,104 @@
   flex-direction: column;
   gap: 0.75rem;
   height: 100%;
-  overflow-y: auto;
-  /* The panel reaches the window's right edge, so this native scrollbar
-     hugs it; the wider right padding keeps the content clear of the bar. */
-  padding: 1rem 1.5rem 1rem 1rem;
+  /* The head row pins and the roster matrix scrolls beneath it (ShipsView's
+     split): a long roster must not scroll the title / mode pills / share
+     actions out of reach. Right/bottom breathing room rides on the head and
+     the matrix instead — the panel itself only pads top + left. */
+  overflow: hidden;
+  padding: 1rem 0 0 1rem;
   color: rgb(var(--color-text));
 
+  /* Query container for the head's width budget (the tiers at the bottom
+     of this sheet). The head's real budget is THIS panel's width — the
+     shell's sidebar is the layout's business, not the head's — so the
+     tiers read the panel instead of the viewport and hold no matter what
+     the app shell puts beside it. Inline-size containment is safe here:
+     every popup riding this panel (the ship cards', the map tag's, the
+     mode chip's popover, the locate overlay) teleports to <body>, so the
+     forced layout containment re-anchors nothing; the panel's own width
+     is decided by the shell grid, never by its contents. */
+  container-type: inline-size;
+
+  /* Waiting for the battle to start (radar scope + copy). No head row
+     here, so the variant itself is the page's hikari scroll region (the
+     whole panel scrolls); the copy centers inside the inner wrapper. */
   &--empty {
+    /* Neutralizes the base panel padding — the variant's clearance scrolls
+       with the copy inside the wrapper instead. */
+    padding: 0;
+  }
+
+  &__empty-inner {
+    display: flex;
+    flex-direction: column;
+    /* The panel's own stacking rhythm (the base gap), carried inside the
+       wrapper now that the panel is the scroll container. */
+    gap: 0.75rem;
     align-items: center;
     justify-content: center;
+    /* Keeps the waiting copy centered while the panel is taller than it,
+       and grows past it (scrolling) on short windows. */
+    min-height: 100%;
+    padding: 1rem 1.5rem 1rem 1rem;
+    text-align: center;
   }
 
-  &__empty-text {
+  &__empty-art {
+    width: 72px;
+    height: 72px;
+    margin-bottom: 0.4rem;
+  }
+
+  &__empty-title {
+    margin: 0;
+    color: rgb(var(--color-text));
+    font-size: var(--text-md);
+    font-weight: 600;
+  }
+
+  &__empty-hint {
+    margin: 0.3rem 0 0;
+    max-width: 26rem;
     color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
+    font-size: var(--text-xs);
+    line-height: 1.6;
   }
 
+  /* One row, one alignment: every head item — title, status/mode pills,
+     clock, map label, share actions, locate button — centers on the
+     same flex line. Text-baseline alignment looked right for plain text
+     pills but sat crooked for icon/spinner-led ones (their baseline is the
+     icon's bottom edge, not the text's), which is exactly how buttons in
+     this head ended up tilted against their neighbors.
+
+     The line is also WRAP-FREE: the locate button's state texts grow the
+     moment a Tab pass anchors the roster (已定位 · n 行), and a wrapping
+     head let that last widget drop onto a second line of its own. The
+     right action cluster shares the title's line, right-aligned by the
+     copy-shot button's auto margin, at every width the head can hold it —
+     the panel-width tiers at the bottom of this sheet reclaim the width
+     below that, and only re-enable wrapping past the last resort. */
   &__head {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.6rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    /* Fixed above the roster: never squeezed by it, and it carries the
+       right inset the panel gave up (the roster scroller's overlay track
+       owns that edge, floating over it as it hugs the window). */
+    flex-shrink: 0;
+    padding-right: 1.5rem;
   }
 
   &__title {
+    margin: 0;
     font-size: var(--text-lg);
     font-weight: 700;
+    /* CJK breaks between any two glyphs — under flex pressure the four
+       glyphs would wrap inside the h1 and grow the head a second line
+       anyway. The pills and buttons already carry nowrap of their own. */
+    white-space: nowrap;
   }
 
   &__pill {
@@ -58,47 +130,74 @@
     color: rgb(var(--color-warning, 251 191 36));
   }
 
-  &__clock {
-    display: inline-flex;
-    align-items: baseline;
-    padding: 0.1rem 0.5rem;
-    border-radius: 999px;
-    background: rgb(var(--color-text) / 8%);
-    color: rgb(var(--color-text) / 85%);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: var(--text-xs);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  &__map {
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
-    margin-left: auto;
-  }
-
-  /* Detection-status badge + the manual-locate button ride the head's right
-     corner, after the map label. */
-  .live-battle__pill--status-detected {
-    border-color: rgb(var(--color-success, 74 222 128) / 55%);
-    background: rgb(var(--color-success, 74 222 128) / 16%);
-    color: rgb(var(--color-success, 74 222 128));
-  }
-
-  .live-battle__pill--status-searching {
+  /* Plugin connected, row order inferred: its alive/sunk states are
+     authoritative while the TAB row order is still the offline per-realm
+     inference (this battle's telemetry carried no covering sort-key map —
+     see features/replay/telemetryGrade.ts). Warning voice, the settling
+     pill's recipe. */
+  &__pill--telemetry-partial {
     border-color: rgb(var(--color-warning, 251 191 36) / 55%);
     background: rgb(var(--color-warning, 251 191 36) / 16%);
     color: rgb(var(--color-warning, 251 191 36));
   }
 
-  /* Manual anchor in force — same green family as the detected badge. */
-  .live-battle__pill--status-manual {
+  /* Plugin connected AND the telemetry's game-true sort keys cover the
+     roster: the row order IS the client's (read off the avatars' ship
+     components — the same string the game's own Tab sort compares).
+     Success green, the manual-locate anchored pill's recipe. */
+  &__pill--telemetry-exact {
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
   }
 
+  /* Battle over for good — the roster on screen is the last battle's,
+     kept until the next one starts. Muted: nothing is live here. */
+  &__pill--ended {
+    border-color: rgb(var(--color-text) / 30%);
+    background: rgb(var(--color-text) / 8%);
+    color: rgb(var(--color-muted));
+  }
+
+  /* Data labels (来源服务器) — not states: the quiet primary voice,
+     distinct from LIVE/settling/ended. (The serving-window focus pill
+     that used to sit here was dropped 2026-10-10: the realm pill plus
+     the bottom-left running-clients card already carry that data.) */
+  &__pill--realm {
+    border-color: rgb(var(--color-primary) / 40%);
+    background: rgb(var(--color-primary) / 10%);
+    color: rgb(var(--color-text) / 75%);
+  }
+
+  &__clock {
+    display: inline-flex;
+    align-items: baseline;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    background: rgb(var(--color-text) / 8%);
+    color: rgb(var(--color-text) / 85%);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* The map tag rides with the head's left info group (title, status and
+     mode pills, clock): no auto margin, it just follows the row gap. Its
+     compact pill voice is MapNameTag.scss's own base — no override needed. */
+
+  /* Head action pills (copy-shot / hide-nicknames / density / manual-locate)
+     share one voice: a quiet neutral pill; the nicknames and density
+     toggles flip green while their mode is on, and the locate button picks
+     up its own locate-state voices below. (The stats-source mode tag keeps
+     the same voice from its own sheet — LiveStatsModeChip.scss.) */
+  &__shot-btn,
+  &__mask-btn,
+  &__density-btn,
   &__manual-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     padding: 0.1rem 0.55rem;
     border-radius: 999px;
     border: 1px solid rgb(var(--color-text) / 20%);
@@ -116,10 +215,42 @@
     }
   }
 
-  /* A manual anchor is live: the button now reads "clear locate". */
-  &__manual-btn--active {
+  /* The head's right-corner action cluster starts at the copy-shot button
+     and runs to the manual-locate button — the auto margin pulls the whole
+     group to the right end of the line. */
+  &__shot-btn {
+    margin-left: auto;
+  }
+
+  /* Nicknames are masked: the toggle reads "show nicknames" in the same
+     success green as the locate button's located/anchored states. */
+  &__mask-btn--on {
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     color: rgb(var(--color-success, 74 222 128));
+  }
+
+  /* Compact rows are on: the density toggle reads "full mode" in the same
+     green. */
+  &__density-btn--on {
+    border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    color: rgb(var(--color-success, 74 222 128));
+  }
+
+  /* The locate button's state voices, inherited from the status pills this
+     button absorbed: an anchored or automatically located roster fills the
+     pill in the success green, a settling Tab pass in the warning amber —
+     the whole locate story now reads off one widget. */
+  &__manual-btn--active,
+  &__manual-btn--detected {
+    border-color: rgb(var(--color-success, 74 222 128) / 55%);
+    background: rgb(var(--color-success, 74 222 128) / 16%);
+    color: rgb(var(--color-success, 74 222 128));
+  }
+
+  &__manual-btn--searching {
+    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
+    background: rgb(var(--color-warning, 251 191 36) / 16%);
+    color: rgb(var(--color-warning, 251 191 36));
   }
 
   /* Backend refused the manual-locate request (no battle / no game window):
@@ -128,10 +259,33 @@
     animation: live-battle-manual-shake 0.4s ease;
   }
 
+  /* Roster scroller — the hikari container owns the scrollbar (auto-hiding
+     overlay track over the panel's right edge); the two-column grid and
+     its clearance moved to the inner wrapper so they scroll with the
+     cards. */
   &__matrix {
+    min-height: 0;
+  }
+
+  &__matrix__inner {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+    padding: 0 1.5rem 1rem 0;
+
+    /* Single-sided battle (operations): the enemy list hides (its side is
+       all scripted spawns) and the allies column keeps the two-column
+       layout's column width, centered on the page — a full-width roster of
+       stretched cards reads looser than the game's own compact team block.
+       The modifier rides the container root above (see the tsx). */
+    .live-battle__matrix--single & {
+      grid-template-columns: minmax(0, 1fr);
+
+      .live-battle__col {
+        width: 50%;
+        margin-inline: auto;
+      }
+    }
   }
 
   &__col {
@@ -141,6 +295,10 @@
   }
 
   &__col-title {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
     color: rgb(var(--color-text) / 0.55);
     font-size: var(--text-2xs);
     letter-spacing: 0.08em;
@@ -148,20 +306,107 @@
     border-bottom: 1px solid rgb(var(--color-text) / 0.1);
   }
 
-  &__player {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 9px;
-    border-radius: 6px;
-    background: rgb(var(--color-text) / 0.04);
+  &__col-name {
+    white-space: nowrap;
   }
 
-  /* Text stack (name / ship / stat line). `min-width: 0` lets it give way to
-     the career seal instead of pushing it out of the card. */
+  /* Team aggregate (weighted WR + mean PR) riding the column title's right
+     end — the caption voice without the caption letter-spacing (numbers
+     read poorly tracked); values carry their tier colors inline. Clipping
+     keeps a narrow window from pushing it into the sibling column. */
+  &__col-agg {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: normal;
+    white-space: nowrap;
+
+    b {
+      font-weight: 600;
+    }
+  }
+
+  /* Compact mode's team aggregate: the title becomes a two-line mini table
+     header (tiny label over a mono value) on a grid mirroring the compact
+     rows' stat columns — [name][enabled rosterColumns() widths], the exact
+     template set INLINE per render (the chip toggles decide which columns
+     exist) so every team average lands exactly on its own column. The grid
+     element carries the cells' mono face at the cells' xs size so its ch
+     matches theirs; the caption name keeps the plain title's voice and
+     spans both rows. Right-edge compensation: compact rows spend width on
+     the career-seal slot (44px + one flex gap) beyond the stat columns
+     whenever seals show, plus the row's own 8px padding either way — the
+     modifiers reserve that same run in place of the base 2px. */
+  &__col-title--agg {
+    display: grid;
+    /* Fallback only — the real template rides inline per render. */
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 1px;
+    align-items: end;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: normal;
+    padding-right: 8px;
+  }
+
+  /* Seal-slot compensation — AFTER --agg so it wins the padding-right. */
+  &__col-title--pad-seal {
+    padding-right: 60px;
+  }
+
+  &__col-title--agg &__col-name {
+    grid-row: 1 / 3;
+    font-family: var(--font-sans, inherit);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.08em;
+  }
+
+  /* The agg header's two rows: per-column label over the per-column team
+     mean. Labels may outgrow their narrow ch track — justify-self: end
+     anchors them to the column's right edge so the overflow spills into
+     the wide name track, never into the neighbor column. */
+  &__col-hlbl {
+    min-width: 0;
+    justify-self: end;
+    overflow: visible;
+    white-space: nowrap;
+    font-size: var(--text-2xs);
+    line-height: 1.2;
+    color: rgb(var(--color-text) / 0.5);
+  }
+
+  &__col-hval {
+    justify-self: end;
+    text-align: right;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  /* Strict three-track card: a fixed name column, an elastic-but-clipping
+     middle for the ship-meta strip, and a fixed seal column. Every card in
+     both rosters shares the same tracks, so the left/middle/right grounds
+     line up across the whole panel and no content can push them around.
+     The PR-tier wash rides custom properties (set inline by the panel):
+     tinted rows set --row-tint (an "R G B" triplet) plus --row-tint-a;
+     untinted rows fall back to the neutral 4% text wash. */
+  &__player {
+    display: grid;
+    grid-template-columns: 10rem minmax(0, 1fr) 2.5rem;
+    column-gap: 10px;
+    align-items: center;
+    padding: 7px 9px;
+    border-radius: 6px;
+    background: rgb(var(--row-tint, var(--color-text)) / var(--row-tint-a, 0.04));
+  }
+
+  /* Text stack (name / ship), first grid track. `min-width: 0` keeps long
+     names ellipsizing inside the fixed track. Explicit placement keeps every
+     card's geometry identical even when a middle piece renders nothing (ship
+     missing from the offline DBs) — auto-placement would then slide the seal
+     into the middle track. */
   &__player-main {
-    flex: 1;
+    grid-column: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -169,11 +414,12 @@
   }
 
   /* Career seal pinned to the card's right edge, vertically centered — the
-     same "pressed onto the card" look as the account card's stamp. A flex
-     sibling (not inline text) can never wrap onto its own line. */
+     same "pressed onto the card" look as the account card's stamp. Its grid
+     track stays reserved even for cards without a seal (hidden stats, prefs
+     off), so both rosters keep identical column geometry. */
   &__player-stamp {
-    flex: none;
-    align-self: center;
+    grid-column: 3;
+    justify-self: center;
   }
 
   /* Human players: the whole card jumps to the lookup view. */
@@ -185,8 +431,14 @@
     cursor: pointer;
     transition: background 0.15s;
 
-    &:hover {
-      background: rgb(var(--color-text) / 0.1);
+    /* The hover brightens whichever wash the row carries (tinted or
+       neutral) by the same step — calc() keeps one rule for both. Sunk
+       cards sit this out: their gray veil is the point, and this rule's
+       tint would repaint band color over the whole drained row. */
+    &:not(.live-battle__player--sunk):hover {
+      background: rgb(
+        var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.06)
+      );
     }
 
     &:focus-visible {
@@ -194,19 +446,56 @@
     }
   }
 
-  /* Sunk mid-battle (recognized off the dim-gray in-game Tab row): the card
-     fades and drains to gray, mirroring how the game's own Tab table grays
-     the row — same rule the replay roster's survivor-first sort uses. */
+  /* Sunk mid-battle (recognized off the dim-gray in-game Tab row): the
+     game's own Tab table grays the row — but draining the WHOLE card would
+     swallow the PR-tier wash with it, and a sunk red meter must keep
+     reading as one at a glance. The card itself swaps to a neutral gray
+     wash; the dim-and-drain (same 0.45 + grayscale the game shows) rides
+     every child EXCEPT the seal, whose track re-presses the row's PR-tier
+     tint as a placard under the stamp — the right edge keeps its band
+     color after the sink. */
   &__player--sunk {
-    opacity: 0.45;
-    filter: grayscale(0.9);
+    background: rgb(var(--color-text) / 0.055);
+
+    > :not(.live-battle__player-stamp) {
+      opacity: 0.45;
+      filter: grayscale(0.9);
+    }
   }
 
+  /* The placard: the row's own tint variables at a stronger alpha (0.14 →
+     0.22 for a tinted row) so the patch reads as band color, not as a
+     smudge; untinted sunk rows (bots, hidden profiles) fall back to a
+     faint neutral chip. Co-rotates with the pressed stamp — the tilt is
+     shared, it reads as one inked card. */
+  &__player--sunk &__player-stamp {
+    /* content-box: the global border-box reset would fold the padding into
+       the SVG's 34px face and shrink the seal on exactly the rows this
+       rule exists for — grow the placard AROUND the stamp instead. */
+    box-sizing: content-box;
+    padding: 3px;
+    border-radius: 5px;
+    background: rgb(
+      var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.08)
+    );
+  }
+
+  /* Player-entry text runs ONE step up the --text-* scale (xs→sm,
+     2xs→xs) so the live roster reads slightly larger than the chrome
+     around it — head title, pills and column titles stay untouched. */
   &__player-name {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: var(--text-xs);
+    min-width: 0;
+    font-size: var(--text-sm);
+  }
+
+  /* The name itself: a real ellipsis inside the fixed track (the flex
+     container above cannot ellipsize its anonymous text node). */
+  &__player-nick {
+    flex: 0 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -215,6 +504,7 @@
   &__player-bot {
     display: inline-flex;
     align-items: center;
+    flex: none;
     height: 1.2em;
     padding: 0 5px;
     border-radius: 4px;
@@ -225,18 +515,75 @@
     line-height: 1;
   }
 
+  /* Clan tag ([HOOD] etc.) riding the nickname — quiet identity metadata,
+     not a badge: muted text, no pill, so a roster where most players have
+     clans stays calm. */
+  &__player-clan {
+    flex: none;
+    color: rgb(var(--color-text) / 0.5);
+    font-size: 0.78em;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  /* Cross-server Clan-Battles chip (欧服 etc.) — unlike the clan tag this
+     IS a badge: it flags that the row's numbers came from another
+     cluster's API, which only cross-server CW rows ever show. */
+  &__cross-realm {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    height: 1.25em;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: rgb(var(--color-accent) / 0.16);
+    color: rgb(var(--color-accent));
+    font-size: 0.68em;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  /* Ship line: class marker (BattleIcon, team/sunk variant) + the name.
+     The icon pins left; only the name ellipsizes when the fixed track runs
+     out. */
   &__player-ship {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
     color: rgb(var(--color-text) / 0.45);
-    font-size: var(--text-2xs);
+    font-size: var(--text-xs);
+  }
+
+  &__player-ship-ico {
+    flex: 0 0 auto;
+    display: inline-flex;
+  }
+
+  &__player-ship-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  /* The stat strip (LiveStatLine): the card's second row, spanning ALL
+     three tracks — the one line long enough to outgrow the 10rem name
+     track, so it reaches across the middle ground and the seal's air to
+     read in full instead of ellipsizing. A hairline top border separates
+     it from the identity row above. */
   &__player-stat {
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
-    font-size: var(--text-2xs);
+    min-width: 0;
+    margin-top: 4px;
+    padding-top: 5px;
+    border-top: 1px solid rgb(var(--color-text) / 0.08);
+    font-size: var(--text-xs);
     color: rgb(var(--color-text) / 0.7);
 
     /* WR / PR values carry their tier color inline (winrateColor / prTier). */
@@ -260,6 +607,213 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: rgb(var(--color-error));
+  }
+
+  /* ── Compact rows (the post-battle matrix's one-line look) ──────────
+     Mirrors .replay-view__postbattle-cell / -cell-btn in
+     PostBattlePanel.scss: battle icon, nick/clan + ship stack, the shared
+     rosterStatCols columns (their own SCSS) and the career seal — one
+     line, no ship-meta strip. The whole row is the lookup jump, so hover
+     and clicks cover the seal too. */
+  &__crow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 6px;
+    /* PR-tier wash, same variables as the full cards (see &__player). */
+    background: rgb(var(--row-tint, var(--color-text)) / var(--row-tint-a, 0.04));
+    color: rgb(var(--color-text));
+    /* Kill the UA button font, then re-apply the compact size — one rule
+       covers the button and the plain-div (bot) variants alike. */
+    font: inherit;
+    font-size: var(--text-xs);
+    text-align: left;
+  }
+
+  &__crow-ico {
+    flex: 0 0 auto;
+    display: inline-flex;
+  }
+
+  &__crow-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__crow-name {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  &__crow-nick {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__crow-clan {
+    flex: none;
+    color: rgb(var(--color-text) / 0.5);
+    font-size: 0.78em;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  &__crow-ship {
+    color: rgb(var(--color-text) / 0.45);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__crow-bot {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    height: 1.2em;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: rgb(var(--color-text) / 0.14);
+    color: rgb(var(--color-text) / 0.62);
+    font-size: 0.72em;
+    font-style: normal;
+    line-height: 1;
+  }
+
+  /* Career seal slot: reserved whenever seals show at all (mirroring the
+     post-battle matrix's own rule), so the shared stat columns keep their
+     x position on every row — sealed or not — and the seal keeps air on
+     both sides. */
+  &__crow-stampslot {
+    flex: 0 0 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+  }
+
+  &__crow-stamp {
+    flex: 0 0 auto;
+  }
+
+  &__crow--link {
+    color: rgb(var(--color-text));
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:not(.live-battle__crow--sunk):hover {
+      background: rgb(
+        var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.06)
+      );
+    }
+
+    &:focus-visible {
+      outline: 1px solid rgb(var(--color-text) / 0.4);
+    }
+  }
+
+  /* Sunk mid-battle: the compact row's split of the full card's rule —
+     the body dims and drains to gray, the seal slot keeps a PR-tint lane
+     at the row's right end so the band color survives the sink. */
+  &__crow--sunk {
+    background: rgb(var(--color-text) / 0.055);
+
+    > :not(.live-battle__crow-stampslot) {
+      opacity: 0.45;
+      filter: grayscale(0.9);
+    }
+  }
+
+  /* The lane: the slot already stretches the row's full height, so the
+     tint paints a proper color block behind the seal (rounded to sit
+     inside the row's own 6px radius). */
+  &__crow--sunk &__crow-stampslot:has(.rating-stamp) {
+    border-radius: 4px;
+    background: rgb(
+      var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.08)
+    );
+  }
+
+  /* ── The head's one-line width budget (panel-width tiers) ─────────────
+     The nowrap head (__head above) at its widest honest state — the
+     telemetry pill (插件（精确行序）) beside the manual button's anchored
+     text (已手动定位 · 12 行) — measures ~885px of panel content width
+     (measured against the built stylesheet, headless Chromium, the app's
+     own font stack). When the panel can no longer hold a state, info
+     gives up before actions, least-valuable pill first — the map tag
+     (its minimap preview and tactics jump stay reachable on wider
+     panels), then the clock; the right-aligned action cluster never
+     moves. The thresholds are panel-content px (the query reads this
+     panel's own box), tuned to the measured widest need of the tier
+     below plus a pixel or two:
+       ≤886px — tighter head gap and pill paddings, map tag hidden
+                (widest state then needs ~805px)
+       ≤807px — the clock hidden too (needs ~755px)
+       ≤757px — no single line fits any state: wrapping returns as the
+                honest fallback (flex-end keeps every overflow line
+                parked on the right, under the cluster).
+     A container query, not @media, on purpose: the head's budget is
+     THIS panel's width — how the shell splits the window (its sidebar,
+     insets) is the layout's business, and the tiers would drift the
+     moment that changed. Inline-size containment is safe here: every
+     popup riding this panel (the ship cards', the map tag's, the mode
+     chip's popover, the locate overlay) teleports to <body>, so the
+     forced layout containment re-anchors nothing; the panel's own width
+     is decided by the shell grid, never by its contents. */
+  @container (max-width: 886.98px) {
+    &__head {
+      gap: 0.4rem;
+
+      /* The stats-source chip wears the same pill voice from its own
+         sheet (LiveStatsModeChip.scss) and gets the same narrow-width
+         padding — head-descendant scope on purpose: the chip also rides
+         the post-battle share bar (postBattleShare.tsx), a different
+         host with its own width budget this rule must not reach. */
+      .live-battle__mode-btn {
+        padding-inline: 0.45rem;
+      }
+    }
+
+    &__pill,
+    &__clock,
+    &__shot-btn,
+    &__mask-btn,
+    &__density-btn,
+    &__manual-btn {
+      padding-inline: 0.45rem;
+    }
+
+    &__map {
+      display: none;
+    }
+  }
+
+  @container (max-width: 806.98px) {
+    &__clock {
+      display: none;
+    }
+  }
+
+  @container (max-width: 756.98px) {
+    &__head {
+      flex-wrap: wrap;
+      /* The auto margin only right-aligns the cluster on ITS line — a
+         wrapped tail would otherwise start the second row from the left
+         edge. flex-end parks every overflow line on the right, under the
+         cluster's normal position. */
+      justify-content: flex-end;
+    }
   }
 }
 

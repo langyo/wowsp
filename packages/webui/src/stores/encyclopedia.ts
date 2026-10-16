@@ -2,25 +2,35 @@ import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
+import { basicsToShipInfo, loadShipsBasics } from "@/utils/shipsBasics";
+import { withLestaOverlay } from "@/utils/shipsLesta";
 import { useAccountStore } from "@/stores/account";
+import { useShipsUiStore } from "@/stores/shipsUi";
 import { useLanguage, wgApiLanguage } from "@/i18n/useLanguage";
-import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
+import { shipDescriptionFromOfflineDb, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 
-/** Replace API names with localized names from the offline game-file DB
- *  (ship_names.json, extracted from res/texts/<lang> gettext catalogs).
- *  The WG API serves the same harmonized simplified Chinese on every realm,
- *  so the 亚服/国服 distinction the user picks cannot be sourced from it —
- *  the game client files are the only realm-distinct source. Ships missing
- *  from the offline DB keep their API name. Event-ship bracket tags
+/** Replace API names AND descriptions with localized ones from the offline
+ *  game-file DBs (ship_names.json / ship_descriptions.json, extracted from
+ *  res/texts/<lang> gettext catalogs). The WG API serves the same harmonized
+ *  simplified Chinese on every realm, so the 亚服/国服 distinction the user
+ *  picks cannot be sourced from it — the game client files are the only
+ *  realm-distinct source. Descriptions follow the same overlay: zh-CN mode
+ *  gets the 国服 zoo text, zh-SG/zh-TW the 亚服 formal one; ships missing
+ *  from the offline DB keep their API text. Event-ship bracket tags
  *  ("[TS] Yamato") are carried over unchanged so `displayShips` filtering
  *  and `isEventShip` keep working. */
-function localizeShipNames(list: ShipInfo[], lang: string): ShipInfo[] {
+function localizeShips(list: ShipInfo[], lang: string): ShipInfo[] {
   return list.map((s) => {
     const localized = shipNameFromOfflineDb(s.shipId, lang);
-    if (!localized || localized === s.name) return s;
+    const desc = shipDescriptionFromOfflineDb(s.shipId, lang);
+    if ((!localized || localized === s.name) && (!desc || desc === s.description)) return s;
     const tags = s.name.match(/\[[^\]]*\]/g)?.join(" ") ?? "";
-    return { ...s, name: tags ? `${localized} ${tags}` : localized };
+    return {
+      ...s,
+      name: localized ? (tags ? `${localized} ${tags}` : localized) : s.name,
+      description: desc ?? s.description,
+    };
   });
 }
 
@@ -30,10 +40,11 @@ function localizeShipNames(list: ShipInfo[], lang: string): ShipInfo[] {
  *
  *  Language: the data-language setting determines which WG API language code
  *  to use (zh-cn, zh-tw, en, ...). Switching realm or language triggers a
- *  re-load. Display names are then overlaid from the offline game-file DB
- *  (ship_names.json) — the WG API only carries one simplified Chinese (the
- *  harmonized CN translation) on every realm, so the 亚服简体 original names
- *  can only come from the game client files. */
+ *  re-load. Display names and descriptions are then overlaid from the
+ *  offline game-file DBs (ship_names.json / ship_descriptions.json) — the WG
+ *  API only carries one simplified Chinese (the harmonized CN translation)
+ *  on every realm, so the 亚服简体 original names/texts can only come from
+ *  the game client files. */
 export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   const ships = ref<ShipInfo[]>([]);
   const version = ref<GameVersionInfo | null>(null);
@@ -47,6 +58,13 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
    *  previous `if (loading) return` silently DROPPED the switch instead, so
    *  the UI kept showing the previous language's names under the new setting. */
   let loadSeq = 0;
+  let pendingLoad: { realm: string; lang: string } | null = null;
+
+  /** The last WG-sourced list before any Lesta overlay, with its language —
+   *  kept so the WG/Lesta branch switch can re-derive `ships` locally,
+   *  without a network round-trip through the (unchanged) WG cache. */
+  let baseShips: ShipInfo[] | null = null;
+  let baseLang: string | null = null;
 
   /** In-game nation order (matching the port tech-tree panel left-to-right). */
   const NATION_ORDER: Record<string, number> = {
@@ -62,11 +80,20 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     return [...set].sort((a, b) => (NATION_ORDER[a] ?? 99) - (NATION_ORDER[b] ?? 99));
   });
 
-  /** Ships grouped by type → for the type filter (BB/CA/DD/CV/SS). */
+  /** In-game ship-type order (the 水表 bar's reading order) — every filter
+   *  surface fed by `types` reads its options in this order. */
+  const TYPE_ORDER: Record<string, number> = {
+    Battleship: 0, AirCarrier: 1, Cruiser: 2, Destroyer: 3, Submarine: 4,
+  };
+
+  /** Ships grouped by type → for the type filter (BB/CV/CA/DD/SS). */
   const types = computed(() => {
     const set = new Set<string>();
     for (const s of ships.value) if (s.type) set.add(s.type);
-    return [...set].sort();
+    // Code-point tiebreak (not localeCompare): deterministic across hosts.
+    return [...set].sort(
+      (a, b) => (TYPE_ORDER[a] ?? 99) - (TYPE_ORDER[b] ?? 99) || (a < b ? -1 : a > b ? 1 : 0),
+    );
   });
 
   /** Lookup map: shipId → ShipInfo (for back-filling names in stats).
@@ -114,18 +141,30 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     // The WG API takes lowercase codes ("zh-cn"); the store keys caches by
     // the canonical lang-loc ("zh-CN").
     const apiLang = wgApiLanguage(lang);
-    if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) return;
+    if (!forceRefresh && loadedRealm.value === realm && loadedLanguage.value === lang && ships.value.length > 0) {
+      // Passive consumers of the same cache must not cancel an explicit
+      // refresh already fetching that realm/language.
+      if (pendingLoad?.realm === realm && pendingLoad.lang === lang) return;
+      // Reusing the current realm is still a new selection: a pending
+      // request for another realm must no longer own this shared slot.
+      loadSeq += 1;
+      pendingLoad = null;
+      loading.value = false;
+      error.value = null;
+      return;
+    }
     const seq = ++loadSeq;
+    pendingLoad = { realm, lang };
     loading.value = true;
     error.value = null;
     try {
       const ver = await api.getGameVersion();
       const fresh = await api.getShipEncyclopedia(realm, forceRefresh, apiLang);
-      if (seq !== loadSeq) return; // a newer realm/language load took over
-      version.value = ver;
-      ships.value = localizeShipNames(fresh, lang);
-      loadedRealm.value = realm;
-      loadedLanguage.value = lang;
+      if (await finalize(fresh, lang, seq)) {
+        version.value = ver;
+        loadedRealm.value = realm;
+        loadedLanguage.value = lang;
+      }
     } catch (e) {
       if (seq !== loadSeq) return;
       const msg = (e as Error).message || String(e);
@@ -136,20 +175,75 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
         try {
           const ver = await api.getGameVersion();
           const fresh = await api.getShipEncyclopedia(realm, true, "en");
-          if (seq !== loadSeq) return;
-          version.value = ver;
-          ships.value = localizeShipNames(fresh, lang);
-          loadedRealm.value = realm;
-          loadedLanguage.value = lang; // stay as user's preference
+          if (await finalize(fresh, lang, seq)) {
+            version.value = ver;
+            loadedRealm.value = realm;
+            loadedLanguage.value = lang; // stay as user's preference
+          }
           console.warn("[encyclopedia] INVALID_LANGUAGE for %s, fell back to en", lang);
         } catch (e2) {
-          error.value = ((e2 as Error).message || String(e2)).slice(0, 300);
+          if (seq !== loadSeq) return;
+          if (!(await loadBundled(realm, lang, seq)) && seq === loadSeq) {
+            error.value = ((e2 as Error).message || String(e2)).slice(0, 300);
+          }
         }
-      } else {
+      } else if (await loadBundled(realm, lang, seq)) {
+        // Bundled basics took over — no error surface, the UI is fully
+        // populated (just without the online-only realm cache semantics).
+      } else if (seq === loadSeq) {
         error.value = msg.length > 300 ? msg.slice(0, 300) + "…" : msg;
       }
     } finally {
-      if (seq === loadSeq) loading.value = false;
+      if (seq === loadSeq) {
+        loading.value = false;
+        pendingLoad = null;
+      }
+    }
+  }
+
+  /** Localize + apply the Lesta overlay to a fresh WG-sourced list and adopt
+   *  it. Returns false when a newer load took over mid-await (caller skips
+   *  its bookkeeping); remembers the pre-overlay list for the treeRealm
+   *  watcher's local re-derivation. A WG/Lesta flip racing the overlay's
+   *  await would otherwise commit a list for the realm that just stopped
+   *  being selected (the watcher ran against the OLD base, or had no base
+   *  yet) — so the overlay is redone with the now-current realm until the
+   *  selection holds still across one await. */
+  async function finalize(fresh: ShipInfo[], lang: string, seq: number): Promise<boolean> {
+    for (;;) {
+      const realmAtStart = useShipsUiStore().treeRealm;
+      const overlaid = await withLestaOverlay(fresh, lang);
+      if (seq !== loadSeq) return false;
+      if (useShipsUiStore().treeRealm !== realmAtStart) continue;
+      baseShips = fresh;
+      baseLang = lang;
+      ships.value = localizeShips(overlaid, lang);
+      return true;
+    }
+  }
+
+  /** Offline fallback: build the roster from the bundled ship-basics asset
+   *  (shipped with every install, lite included). Used when the WG API is
+   *  unreachable so 舰艇百科 / specs / the planner keep working; returns
+   *  false when even the bundle is unavailable. Note the bundle satisfies
+   *  the loadedRealm/loadedLanguage early-return, so the store stays on
+   *  offline data until a realm/language switch re-kicks the online load. */
+  async function loadBundled(realm: string, lang: string, seq: number): Promise<boolean> {
+    try {
+      const basics = await loadShipsBasics();
+      if (seq !== loadSeq) return true;
+      const list = Object.entries(basics.ships).map(([shipId, entry]) =>
+        basicsToShipInfo(Number(shipId), basics, entry),
+      );
+      if (await finalize(list, lang, seq)) {
+        version.value = { gameVersion: basics.gameVersion, shipsTotal: list.length, timestamp: 0 };
+        loadedRealm.value = realm;
+        loadedLanguage.value = lang;
+      }
+      console.warn("[encyclopedia] WG API unreachable — bundled ship basics in use");
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -159,6 +253,27 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     ([lang, realm], [oldLang, oldRealm]) => {
       if (oldLang && (lang !== oldLang || realm !== oldRealm)) {
         load(realm, true);
+      }
+    },
+  );
+
+  // The WG/Lesta branch switch changes only WHICH ships exist — the WG cache
+  // is untouched — so re-derive the list from the last base instead of a
+  // network round-trip. (Until a first load lands there is nothing to
+  // re-derive; the mounting view's load() covers it.) The identity re-check
+  // after the await drops derivations made stale by a newer load finalizing
+  // while the overlay chunk was still importing; the realm re-check drops
+  // ones made stale by a further flip, whose own watcher run commits the
+  // newer realm's list.
+  watch(
+    () => useShipsUiStore().treeRealm,
+    async (realm) => {
+      const base = baseShips;
+      const lang = baseLang;
+      if (!base || !lang) return;
+      const overlaid = await withLestaOverlay(base, lang);
+      if (baseShips === base && baseLang === lang && useShipsUiStore().treeRealm === realm) {
+        ships.value = localizeShips(overlaid, lang);
       }
     },
   );

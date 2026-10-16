@@ -1,0 +1,420 @@
+//! Per-room connection accounting and the binary frame cap — the pure
+//! half of the Room Durable Object's policy.
+//!
+//! The DO keeps the actual `WebSocket` handles in its own map keyed
+//! identically to this one and consults [`RoomConns`] for every
+//! decision, which keeps the cap logic testable on the host.
+
+/// Maximum concurrent data connections per room. The phone client is
+/// strictly sequential (one request tunnel at a time); 4 covers a
+/// reconnect overlap and an aggressive parallel client, and bounds the
+/// DO's held-open socket pairs on the free tier.
+pub const MAX_DATA_CONNECTIONS: usize = 4;
+
+/// Hard cap on a single BINARY frame crossing a data socket. The
+/// protocol mandates ≤ 256 KiB — far under Cloudflare's 32 MiB
+/// WebSocket message ceiling (the cap is a design choice bounding
+/// per-frame buffering in the DO, not a platform workaround), and far
+/// above any HTTP request/response chunk the pairing exchange produces.
+pub const MAX_FRAME_BYTES: usize = 256 * 1024;
+
+/// Which half of a conn a socket belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    /// The phone (the side that dialed the resolved code's room).
+    Client,
+    /// The desktop bridge (the room's host).
+    Host,
+}
+
+impl Side {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Side::Client => "client",
+            Side::Host => "host",
+        }
+    }
+
+    /// Parse the `role`/`side` query value (`host` | `client`).
+    pub fn parse(raw: Option<&str>) -> Option<Side> {
+        match raw {
+            Some("host") => Some(Side::Host),
+            Some("client") => Some(Side::Client),
+            _ => None,
+        }
+    }
+}
+
+/// Why a client's `open` request was refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpenError {
+    /// Malformed connId (must be 8–64 of `[A-Za-z0-9_-]`).
+    InvalidId,
+    /// A connection with this connId already exists.
+    Duplicate,
+    /// The room already holds [`MAX_DATA_CONNECTIONS`] connections.
+    ConnLimit,
+}
+
+/// What happened when a data socket attached to a conn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttachOutcome {
+    /// Both halves are in — start piping bytes.
+    Paired,
+    /// Only one half so far — hold until the peer arrives.
+    HalfOpen,
+    /// No such connId was ever opened (or it already finished).
+    UnknownId,
+    /// This half attached twice (client dial retry after success).
+    SideTaken,
+}
+
+/// Live connection table for one room.
+#[derive(Debug, Default)]
+pub struct RoomConns {
+    conns: Vec<(String, Halves)>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+struct Halves {
+    owner: u64,
+    client: bool,
+    host: bool,
+}
+
+impl Halves {
+    fn count(self) -> usize {
+        usize::from(self.client) + usize::from(self.host)
+    }
+}
+
+impl RoomConns {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Number of tracked connections (open OR paired).
+    pub fn len(&self) -> usize {
+        self.conns.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.conns.is_empty()
+    }
+
+    /// A client asked to open `connId`. Reserves a slot owned by its control
+    /// socket; the actual data sockets attach later by id.
+    pub fn open(&mut self, conn_id: &str, owner: u64) -> Result<(), OpenError> {
+        if !crate::valid_conn_id(conn_id) {
+            return Err(OpenError::InvalidId);
+        }
+        if self.conns.iter().any(|(id, _)| id == conn_id) {
+            return Err(OpenError::Duplicate);
+        }
+        if self.conns.len() >= MAX_DATA_CONNECTIONS {
+            return Err(OpenError::ConnLimit);
+        }
+        self.conns.push((
+            conn_id.to_string(),
+            Halves {
+                owner,
+                ..Halves::default()
+            },
+        ));
+        Ok(())
+    }
+
+    /// Release a departing control socket's opens that have not started a
+    /// data handshake. Attached streams outlive their control socket.
+    pub fn release_reservations(&mut self, owner: u64) -> Vec<String> {
+        let mut removed = Vec::new();
+        self.conns.retain(|(id, halves)| {
+            if halves.owner == owner && halves.count() == 0 {
+                removed.push(id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        removed
+    }
+
+    /// A data socket arrived for `connId` on `side`.
+    pub fn attach(&mut self, conn_id: &str, side: Side) -> AttachOutcome {
+        let Some((_, halves)) = self.conns.iter_mut().find(|(id, _)| id == conn_id) else {
+            return AttachOutcome::UnknownId;
+        };
+        let taken = match side {
+            Side::Client => halves.client,
+            Side::Host => halves.host,
+        };
+        if taken {
+            return AttachOutcome::SideTaken;
+        }
+        match side {
+            Side::Client => halves.client = true,
+            Side::Host => halves.host = true,
+        }
+        if halves.client && halves.host {
+            AttachOutcome::Paired
+        } else {
+            AttachOutcome::HalfOpen
+        }
+    }
+
+    /// One half went away (close or error). The connection dies with
+    /// its FIRST departing half — a pipe is useless without both ends —
+    /// and the caller closes the surviving peer. Returns `true` when a
+    /// tracked conn was actually dropped.
+    pub fn detach(&mut self, conn_id: &str) -> bool {
+        let idx = self.conns.iter().position(|(id, _)| id == conn_id);
+        let Some(idx) = idx else {
+            return false;
+        };
+        self.conns.remove(idx);
+        true
+    }
+
+    /// Whether both halves of `conn_id` are attached.
+    pub fn is_paired(&self, conn_id: &str) -> bool {
+        self.conns
+            .iter()
+            .any(|(id, h)| id == conn_id && h.count() == 2)
+    }
+
+    /// Drop every connection (room teardown / idle alarm).
+    pub fn clear(&mut self) {
+        self.conns.clear();
+    }
+}
+
+/// Verdict on one inbound binary frame by size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameVerdict {
+    /// Forward it verbatim.
+    Ok,
+    /// Oversized — error-close THAT connection after a text notice.
+    TooLarge { size: usize, cap: usize },
+}
+
+/// Judge one binary frame.
+pub fn frame_verdict(size: usize) -> FrameVerdict {
+    if size > MAX_FRAME_BYTES {
+        FrameVerdict::TooLarge {
+            size,
+            cap: MAX_FRAME_BYTES,
+        }
+    } else {
+        FrameVerdict::Ok
+    }
+}
+
+/// Handshake state of ONE host control socket. A socket says `hello`
+/// at most once, so the identity its allocations are keyed by is fixed
+/// for the socket's life — re-sending `hello` with a fresh hostId to
+/// mint code after code is refused (the worker closes the socket).
+#[derive(Debug, Default)]
+pub struct HostControl {
+    greeted: bool,
+    host_id: Option<String>,
+}
+
+/// What to do with a host's `hello`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelloVerdict {
+    /// First hello: answer `welcome`.
+    Welcome,
+    /// This socket already said hello: refuse (close the socket).
+    Duplicate,
+}
+
+impl HostControl {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// A `hello` arrived. Only the first one counts; a malformed hostId
+    /// is still a hello (v1 parity: welcomed, allocations fall back to
+    /// the room key).
+    pub fn hello(&mut self, host_id: &str) -> HelloVerdict {
+        if self.greeted {
+            return HelloVerdict::Duplicate;
+        }
+        self.greeted = true;
+        if crate::valid_host_id(host_id) {
+            self.host_id = Some(host_id.to_string());
+        }
+        HelloVerdict::Welcome
+    }
+
+    /// The hostId this socket's allocations are keyed by, if any.
+    pub fn host_id(&self) -> Option<&str> {
+        self.host_id.as_deref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CID: &str = "conn0001";
+
+    #[test]
+    fn open_tracks_and_enforces_the_connection_cap() {
+        let mut conns = RoomConns::new();
+        for n in 0..MAX_DATA_CONNECTIONS {
+            conns.open(&format!("conn{n:04}"), 0).unwrap();
+        }
+        assert_eq!(
+            conns.open("conn9999", 0).unwrap_err(),
+            OpenError::ConnLimit,
+            "the 5th concurrent data connection is refused"
+        );
+        // Freeing one slot lets a new conn in.
+        assert!(conns.detach("conn0000"));
+        conns.open("conn9999", 0).unwrap();
+        assert_eq!(conns.len(), MAX_DATA_CONNECTIONS);
+    }
+
+    #[test]
+    fn open_validates_and_deduplicates_ids() {
+        let mut conns = RoomConns::new();
+        assert_eq!(conns.open("short", 0).unwrap_err(), OpenError::InvalidId);
+        assert_eq!(
+            conns.open(&"x".repeat(65), 0).unwrap_err(),
+            OpenError::InvalidId
+        );
+        assert_eq!(
+            conns.open("has space", 0).unwrap_err(),
+            OpenError::InvalidId
+        );
+        conns.open(CID, 0).unwrap();
+        assert_eq!(conns.open(CID, 0).unwrap_err(), OpenError::Duplicate);
+    }
+
+    #[test]
+    fn attach_pairs_only_when_both_halves_arrive() {
+        let mut conns = RoomConns::new();
+        conns.open(CID, 0).unwrap();
+        assert_eq!(conns.attach(CID, Side::Client), AttachOutcome::HalfOpen);
+        assert!(!conns.is_paired(CID));
+        assert_eq!(conns.attach(CID, Side::Host), AttachOutcome::Paired);
+        assert!(conns.is_paired(CID));
+        // A retried half on a paired conn is a conflict, not a re-pair.
+        assert_eq!(conns.attach(CID, Side::Client), AttachOutcome::SideTaken);
+        // Unknown ids never grow the table.
+        assert_eq!(
+            conns.attach("nope0001", Side::Client),
+            AttachOutcome::UnknownId
+        );
+    }
+
+    #[test]
+    fn first_detach_kills_the_whole_connection() {
+        let mut conns = RoomConns::new();
+        conns.open(CID, 0).unwrap();
+        conns.attach(CID, Side::Client);
+        conns.attach(CID, Side::Host);
+        assert!(conns.detach(CID));
+        assert_eq!(conns.attach(CID, Side::Host), AttachOutcome::UnknownId);
+        assert!(conns.is_empty());
+        assert!(!conns.detach(CID));
+    }
+
+    #[test]
+    fn disconnect_releases_only_its_own_reservations() {
+        let mut conns = RoomConns::new();
+        conns.open("phone_a1", 1).unwrap();
+        conns.open("phone_b1", 2).unwrap();
+        assert_eq!(conns.release_reservations(1), vec!["phone_a1"]);
+        assert_eq!(
+            conns.attach("phone_a1", Side::Client),
+            AttachOutcome::UnknownId
+        );
+        assert_eq!(
+            conns.attach("phone_b1", Side::Client),
+            AttachOutcome::HalfOpen
+        );
+    }
+
+    #[test]
+    fn disconnect_preserves_handshakes_and_active_streams() {
+        let mut conns = RoomConns::new();
+        conns.open("pending1", 1).unwrap();
+        conns.open("paired01", 1).unwrap();
+        // Accounting attaches before the worker awaits TTL storage and
+        // installs the actual WebSocket; this half is already in flight.
+        conns.attach("pending1", Side::Client);
+        conns.attach("paired01", Side::Client);
+        conns.attach("paired01", Side::Host);
+        assert!(conns.release_reservations(1).is_empty());
+        assert_eq!(conns.attach("pending1", Side::Host), AttachOutcome::Paired);
+        assert!(conns.is_paired("paired01"));
+    }
+
+    #[test]
+    fn rejected_duplicate_open_does_not_take_reservation_ownership() {
+        let mut conns = RoomConns::new();
+        conns.open(CID, 1).unwrap();
+        assert_eq!(conns.open(CID, 2), Err(OpenError::Duplicate));
+        assert!(conns.release_reservations(2).is_empty());
+        assert_eq!(conns.attach(CID, Side::Client), AttachOutcome::HalfOpen);
+    }
+
+    #[test]
+    fn frame_cap_is_256_kib_exclusive() {
+        assert_eq!(MAX_FRAME_BYTES, 262_144, "the cap is exactly 256 KiB");
+        assert_eq!(frame_verdict(0), FrameVerdict::Ok);
+        assert_eq!(frame_verdict(65_536), FrameVerdict::Ok);
+        // Exactly at the cap passes…
+        assert_eq!(frame_verdict(262_144), FrameVerdict::Ok);
+        // …one byte over error-closes the connection.
+        assert_eq!(
+            frame_verdict(262_145),
+            FrameVerdict::TooLarge {
+                size: 262_145,
+                cap: 262_144
+            }
+        );
+        // Far beyond the 256 KiB tunnel cap too (and still far under
+        // the platform's 32 MiB message ceiling — the verdict stays
+        // well-defined for any size a client throws at us).
+        assert!(matches!(
+            frame_verdict(2 * 1024 * 1024),
+            FrameVerdict::TooLarge { .. }
+        ));
+    }
+
+    #[test]
+    fn side_parses_role_and_side_query_spellings() {
+        assert_eq!(Side::parse(Some("host")), Some(Side::Host));
+        assert_eq!(Side::parse(Some("client")), Some(Side::Client));
+        assert_eq!(Side::parse(None), None);
+        assert_eq!(Side::parse(Some("sidekick")), None);
+        assert_eq!(Side::Host.as_str(), "host");
+        assert_eq!(Side::Client.as_str(), "client");
+    }
+
+    #[test]
+    fn host_socket_accepts_exactly_one_hello() {
+        let mut ctl = HostControl::new();
+        assert_eq!(ctl.host_id(), None, "v1 hosts never say hello");
+        assert_eq!(ctl.hello("deadbeef00112233"), HelloVerdict::Welcome);
+        assert_eq!(ctl.host_id(), Some("deadbeef00112233"));
+        // A second hello — fresh hostId or the same one — is refused
+        // and does not change the socket's identity.
+        assert_eq!(ctl.hello("deadbeef00112244"), HelloVerdict::Duplicate);
+        assert_eq!(ctl.hello("deadbeef00112233"), HelloVerdict::Duplicate);
+        assert_eq!(ctl.host_id(), Some("deadbeef00112233"));
+    }
+
+    #[test]
+    fn malformed_host_id_still_spends_the_one_hello() {
+        let mut ctl = HostControl::new();
+        assert_eq!(ctl.hello("NOT-HEX"), HelloVerdict::Welcome);
+        assert_eq!(ctl.host_id(), None);
+        assert_eq!(ctl.hello("deadbeef00112233"), HelloVerdict::Duplicate);
+        assert_eq!(ctl.host_id(), None);
+    }
+}

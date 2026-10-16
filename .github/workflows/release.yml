@@ -13,15 +13,40 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The shun tag the installers build from (checked out into `shun/`
+  # by the release job). v0.6.3 is the minimum: the shell statically
+  # links the CRT there (no VC++ Redistributable needed).
+  SHUN_TAG: v0.6.23
+
+# One release flow per ref, never cancelled mid-flight: a cancelled run can
+# leave a half-uploaded draft; a re-push of the same tag queues behind this
+# group instead.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     name: Build & publish Windows release
     runs-on: windows-latest
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+
+      - name: Check out the shun tag
+        # The installers build from shun's own checkout (the pinned
+        # tag) via the shun CLI — packages/installer carries the
+        # manifest only, no installer code lives in this repo. SHUN_REPO
+        # is what build_installers.py resolves.
+        uses: actions/checkout@v7
+        with:
+          repository: celestia-island/shun
+          # env context expansion — a bare $SHUN_TAG does NOT expand
+          # inside a step's with: block.
+          ref: ${{ env.SHUN_TAG }}
+          path: shun
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -51,10 +76,10 @@ jobs:
           python scripts/glsl_bundle.py --verbose
           python scripts/ensure_tauri_icons.py
 
-      - name: Prepare model-pack release assets
+      - name: Prepare resource-pack release assets
         # If a `res-latest` tag already exists, nothing to do (the release
-        # workflow only uploads the app artifacts). The model pack is
-        # published by scripts/publish_models.py separately.
+        # workflow only uploads the app artifacts). The resource pack is
+        # published by scripts/release_models.py separately.
         shell: bash
         run: |
           if gh release view res-latest >/dev/null 2>&1; then
@@ -69,13 +94,36 @@ jobs:
         # --models fetch: the runner's checkout holds only the tracked 2D
         # model subset — force-fetch the published res-latest pack so the
         # full flavors embed the complete 2D/3D payload (fresh installs
-        # never touch the network for resources). The default flavor set
-        # also builds the lite artifact (no pack; downloaded on demand).
-        run: python scripts/build_installers.py --models fetch
+        # never touch the network for resources). --images fetch: the ship
+        # preview portraits are gitignored derived downloads, absent from
+        # every checkout — without the pack the app binary ships without
+        # them (~21 MB lighter than a machine that ran download_ship_images).
+        # The default flavor set also builds the lite artifact (no pack;
+        # downloaded on demand). The rm clears installer exes restored by
+        # the cargo cache from a PREVIOUS release build — without it the
+        # upload glob below sweeps the stale artifacts into the new release
+        # (observed on v0.3.0, which initially carried both 0.2.0 and 0.3.0
+        # installers).
+        shell: bash
+        # GH_TOKEN lets build_installers fetch the res-latest manifest via
+        # gh — without it the installers build with no res stamp AND the
+        # size/sha checks silently accept a stale cargo-cached pack.
+        # SHUN_REPO points at the checked-out shun tag (see the checkout
+        # step); the CLI builds shun's shell with our manifest embedded.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHUN_REPO: ${{ github.workspace }}/shun
+        run: |
+          rm -rf target/release/bundle/installer
+          python scripts/build_installers.py --models fetch --images fetch
 
       - name: Upload release artifacts (draft)
         # Only tag pushes publish: a workflow_dispatch on a branch has no
         # release to upload to (parity with the old tauri-action flow).
+        # The `latest` marker file rides along for pre-0.3.1 clients whose
+        # updater only reads the marker; clients that resolve the release
+        # tag from the `releases/latest` redirect no longer need it, and the
+        # marker upload can be dropped once those builds age out.
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,8 +131,73 @@ jobs:
           ref="${{ github.ref_name }}"
           case "$ref" in
             v*)
-              gh release create "$ref" --draft --title "WoWSP $ref" || true
-              gh release upload "$ref" target/release/bundle/installer/* --clobber
+              # GitHub files a draft created for an already-pushed tag under
+              # an `untagged-<hash>` slug instead of the tag name (observed
+              # on v0.3.1, v0.4.3 and v0.4.4); publishing such a draft mints
+              # a literal `untagged-…` tag and orphans the real one. Resolve
+              # the run's release — by the unique slug from the create URL
+              # when we just made it, else by the tag so a re-run after a
+              # crashed create still repairs the orphaned draft. A tag push
+              # with no resolvable release fails the run instead of
+              # green-lighting a draft that publishes into a bogus tag.
+              url="$(gh release create "$ref" --draft --title "WoWSP $ref")" || true
+              rel_id=""
+              if [ -n "$url" ]; then
+                rel_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/${url##*/}" --jq .id)" || rel_id=""
+              fi
+              if [ -z "$rel_id" ]; then
+                rel_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$ref" --jq .id)" || rel_id=""
+              fi
+              if [ -z "$rel_id" ]; then
+                echo "::error::no release resolvable for $ref — refusing to upload"
+                exit 1
+              fi
+              # On v0.4.4 a re-point PATCH issued in the same second as the
+              # create returned 200 yet the draft later reverted to its
+              # untagged slug, and the run stayed green — a silent landmine
+              # for publish time. Every re-point is therefore verified by a
+              # fresh read (drafts resolve by tag only when tag_name really
+              # equals it — the same resolution `gh release upload` below
+              # depends on), retried across a settle delay.
+              ensure_draft_tag() {
+                cur_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/$rel_id" --jq .tag_name)"
+                if [ "$cur_tag" != "$ref" ]; then
+                  echo "note: draft $rel_id filed under '$cur_tag' — re-pointing at $ref"
+                  gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$rel_id" -f tag_name="$ref" >/dev/null
+                  cur_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/$rel_id" --jq .tag_name)"
+                fi
+                [ "$cur_tag" = "$ref" ]
+              }
+              tag_ok=""
+              for attempt in 1 2 3; do
+                if ensure_draft_tag; then tag_ok=1; break; fi
+                echo "note: tag re-point not settled (attempt $attempt) — waiting 15s"
+                sleep 15
+              done
+              if [ -z "$tag_ok" ]; then
+                echo "::error::draft for $ref never settled on tag $ref — refusing to upload"
+                exit 1
+              fi
+              printf '%s' "${ref#v}" > target/release/bundle/installer/latest
+              if ! gh release upload "$ref" target/release/bundle/installer/* --clobber; then
+                echo "::error::asset upload for $ref failed — see gh output above"
+                exit 1
+              fi
+              # The v0.4.4 revert landed minutes AFTER a 200-PATCH, so
+              # settle once more post-upload: a draft left on its untagged
+              # slug fails the run here — while it can still be repaired —
+              # instead of publishing into a bogus tag.
+              sleep 20
+              tag_ok=""
+              for attempt in 1 2 3; do
+                if ensure_draft_tag; then tag_ok=1; break; fi
+                echo "note: draft tag flipped back after upload (attempt $attempt) — waiting 20s"
+                sleep 20
+              done
+              if [ -z "$tag_ok" ]; then
+                echo "::error::draft for $ref kept reverting to its untagged slug — repair the tag before publishing"
+                exit 1
+              fi
               ;;
             *) echo "not a tag push ($ref) — skipping release upload" ;;
           esac
@@ -97,3 +210,159 @@ jobs:
     permissions:
       contents: write
     uses: celestia-island/celestia-devtools/.github/workflows/release-notes.yml@master
+
+  publish:
+    # The draft's tag association is the fragile part. GitHub files — or
+    # asynchronously reverts — a draft's tag_name to an `untagged-<hash>`
+    # slug (v0.3.1, v0.4.3, v0.4.4, v0.4.8). On v0.4.8 the draft read back
+    # as v0.4.8 through every in-run check: the create, the upload step's
+    # settle loop, and even the release-notes job's by-tag lookup. The
+    # notes job then patched only the release body — and within ~60s the
+    # tag_name silently reverted to the untagged slug, AFTER the run went
+    # green. Reads taken right after our own writes therefore prove
+    # nothing; the clobber lands late.
+    #
+    # This job is the last writer. Once every other writer (upload, notes)
+    # has gone quiet it waits out the observed clobber window, repairs the
+    # tag if the revert already landed, verifies the assets, and publishes.
+    # Publishing is what actually freezes the association: the untagged
+    # phenomenon is draft-only, a published release owns its tag binding.
+    # It also removes the manual `gh release edit` step, where publishing
+    # a dangling draft would mint a literal `untagged-…` git tag and
+    # orphan the real one.
+    needs: release-notes
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      # Optional second official digest channel (wowsp.langyo.xyz —
+      # reachable where api.github.com is not; see
+      # scripts/publish_digests.py). The push step below is skipped
+      # cleanly while the repo secrets are unset.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Optional Ed25519 signing of the pushed digest docs (the app
+      # accepts unsigned docs while no key is pinned — see
+      # packages/app/tauri/res/keys/README.md for the ceremony).
+      WOWSP_DIGEST_SIGNING_KEY: ${{ secrets.WOWSP_DIGEST_SIGNING_KEY }}
+      WOWSP_DIGEST_SIGNING_KEY_ID: ${{ vars.WOWSP_DIGEST_SIGNING_KEY_ID }}
+    steps:
+      - name: Settle, guard the tag, publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # This step needs no checkout — `gh release edit` below resolves
+          # the repo from this (gh api calls spell their path out instead;
+          # only the optional digest-push step below adds one).
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ref="${{ github.ref_name }}"
+          ver="${ref#v}"
+          api_base="repos/$GITHUB_REPOSITORY"
+
+          echo "note: settling 180s — observed tag reverts land ~1 min after a write"
+          sleep 180
+
+          # Resolve the run's release: by tag first (works once tag_name is
+          # right, and for a re-run after a previous publish), else page the
+          # release list for OUR draft by its deterministic title — the only
+          # release ever named "WoWSP $ref" (a reverted draft is invisible
+          # by tag: its tag_name IS the untagged slug).
+          rel_id="$(gh api "$api_base/releases/tags/$ref" --jq .id 2>/dev/null)" || rel_id=""
+          if [ -z "$rel_id" ] || [ "$rel_id" = "null" ]; then
+            echo "note: $ref not resolvable by tag — paging for the draft by title"
+            for page in 1 2 3 4 5; do
+              rel_id="$(gh api "$api_base/releases?per_page=100&page=$page" \
+                --jq "[.[] | select(.name == \"WoWSP $ref\")][0].id" 2>/dev/null)" || rel_id=""
+              [ -n "$rel_id" ] && [ "$rel_id" != "null" ] && break
+            done
+          fi
+          if [ -z "$rel_id" ] || [ "$rel_id" = "null" ]; then
+            echo "::error::no release found for $ref — refusing to publish"
+            exit 1
+          fi
+
+          tag="$(gh api "$api_base/releases/$rel_id" --jq .tag_name)"
+          echo "note: release $rel_id currently tagged '$tag'"
+          if [ "$tag" != "$ref" ]; then
+            echo "note: re-pointing release $rel_id at $ref (with target_commitish)"
+            obj="$(gh api "$api_base/git/ref/tags/$ref")"
+            obj_sha="$(echo "$obj" | jq -r .object.sha)"
+            # Release tags here are annotated: deref the tag object to the
+            # commit SHA — target_commitish wants a commitish, not a tag SHA
+            # (ignored while the tag exists, but kept semantically right).
+            if [ "$(echo "$obj" | jq -r .object.type)" = "tag" ]; then
+              obj_sha="$(gh api "$api_base/git/tags/$obj_sha" --jq .object.sha)"
+            fi
+            gh api -X PATCH "$api_base/releases/$rel_id" \
+              -f tag_name="$ref" -f target_commitish="$obj_sha" --silent
+          fi
+
+          # Re-verify only after a quiet period: reads immediately after a
+          # PATCH agreed on v0.4.4/v0.4.8 while the revert was still in
+          # flight. On a flip, re-point and wait out another window.
+          tag_ok=""
+          for attempt in 1 2 3; do
+            sleep 90
+            cur="$(gh api "$api_base/releases/$rel_id" --jq .tag_name)"
+            if [ "$cur" = "$ref" ]; then tag_ok=1; break; fi
+            echo "note: tag reads '$cur' (attempt $attempt) — re-pointing"
+            gh api -X PATCH "$api_base/releases/$rel_id" -f tag_name="$ref" --silent
+          done
+          if [ -z "$tag_ok" ]; then
+            echo "::error::release $rel_id never settled on tag $ref — refusing to publish"
+            exit 1
+          fi
+
+          # Never publish a half-uploaded release.
+          assets="$(gh api "$api_base/releases/$rel_id" --jq '.assets[].name')"
+          # The bare -installer.exe is no longer a build flavor (the
+          # materials-only plain installer is retired), but the NAME must
+          # ride every release: it is a byte-identical copy of the lite
+          # installer and the only artifact pre-v0.3.1 updaters ever fetch
+          # (see scripts/build_installers.py).
+          for want in \
+            "WoWSP_${ver}_x64-installer.exe" \
+            "WoWSP_${ver}_x64-installer-lite.exe" \
+            "WoWSP_${ver}_x64-installer-webview2.exe" \
+            latest; do
+            echo "$assets" | grep -qxF "$want" || {
+              echo "::error::asset '$want' missing from release $rel_id — refusing to publish"
+              exit 1
+            }
+          done
+
+          gh release edit "$ref" --draft=false --latest
+
+          # A revert racing the publish would leave a published release on
+          # the untagged slug — the one unrecoverable-by-retry state, so
+          # fail loudly for manual repair instead of dying silently. The
+          # publish is itself a write, hence the full clobber-window wait.
+          sleep 90
+          state="$(gh api "$api_base/releases/$rel_id" \
+            --jq '"\(.tag_name) draft=\(.draft)"')"
+          if [ "$state" != "$ref draft=false" ]; then
+            echo "::error::post-publish state is '$state' (wanted '$ref draft=false') — manual repair needed"
+            exit 1
+          fi
+          echo "note: published $ref ($state)"
+
+      # Second official digest channel: push the installer digests to
+      # the pairing relay worker's /api/digests store. Skipped cleanly
+      # until the CLOUDFLARE_* secrets exist; once configured, a failing
+      # push fails the job (a stale digest channel must never pass
+      # silently after the release itself is public).
+      - uses: actions/checkout@v7
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+      - name: Push installer digests to the relay worker
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          pip install --quiet toml cryptography
+          python scripts/publish_digests.py --channel app \
+            --tag "${{ github.ref_name }}" --from-gh-release --latest

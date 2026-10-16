@@ -8,9 +8,22 @@
  * Tauri shell downloads from GitHub Releases (`res-latest`) into
  * `%LOCALAPPDATA%/WoWSP/models/` on first launch. When the pack cache is
  * wired, URLs are constructed OPTIMISTICALLY for any stem — a build without
- * bundled GLBs must still serve models from the runtime cache; a stem the
- * pack doesn't have 404s into the per-ship fallback chain (substitute hull →
- * placeholder), exactly like any other load failure.
+ * bundled GLBs must still serve models from the runtime cache. A ship never
+ * resolves to a single optimistic URL: it expands into an ORDERED CANDIDATE
+ * CHAIN of stems (`ship_models.json` index → baseName → display name →
+ * offline-DB English name → CLR-suffix-stripped base), and `loadGlbModel`
+ * walks the chain until one candidate fetches AND parses; only when every
+ * candidate fails does the caller's per-ship fallback take over (substitute
+ * hull → placeholder), exactly like any other load failure.
+ *
+ * MOBILE (phone app build): the pack ships inside the APK's assets, and the
+ * webui build keeps the GLBs (WOWSP_MOBILE_BUNDLE=1 skips prune-baked-glb).
+ * Startup wires the pack cache ONLY when a downloaded update is serving
+ * (AppShell → res_cache_root); otherwise initModelPack stays unwired and
+ * every URL below resolves SAME-ORIGIN (`/models/...`) straight out of the
+ * read-only APK assets — the exact fallback the unwired state already
+ * produces. `fetchModelResource`'s GLB-magic validation keeps the WebView's
+ * SPA-fallback answers from poisoning loads there too.
  *
  * ## Skin → base model dedup
  * `src/data/ship_models.json` maps each shipId to a `baseName`.
@@ -18,7 +31,11 @@
 
 import shipModelNames from "../../data/ship_models.json";
 import shipNamesDbRaw from "../../data/ship_names.json";
+import shipDescriptionsDbRaw from "../../data/ship_descriptions.json";
 import nationNamesDbRaw from "../../data/nation_names.json";
+import { runtimeShipEntry } from "@/utils/runtimeShipDb";
+import { isTauri } from "@/utils/platform";
+import { wireInsightsPack } from "./insightsLoader";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
@@ -30,16 +47,23 @@ let _convertFileSrc: ((path: string) => string) | null = null;
  *  multiple times — only the first invocation actually fetches. */
 export async function initModelPack(fetch: () => Promise<string>): Promise<void> {
   if (_modelCacheRoot) return;
-  // Lazy-load convertFileSrc — only available in Tauri context.
+  // Lazy-load convertFileSrc. The npm module resolves in plain browsers
+  // too, but the call itself needs the Tauri internals — unwired here (null)
+  // every URL below falls back to the same-origin /models/... paths, which
+  // is exactly what `?mobileApp=1` browser emulation wants.
   try {
     const mod = await import("@tauri-apps/api/core");
-    _convertFileSrc = mod.convertFileSrc;
+    _convertFileSrc = isTauri() ? mod.convertFileSrc : null;
   } catch {
     _convertFileSrc = null;
   }
   try {
     _modelCacheRoot = await fetch();
-    console.log("[modelLoader] using cache:", _modelCacheRoot);
+    // The insights rail (insightsLoader.ts) rides the same pack — hand it
+    // the wiring so its loaders can read <cacheRoot>/insights/*, falling
+    // back to the bundled docs while unwired.
+    wireInsightsPack(_convertFileSrc, _modelCacheRoot);
+    if (import.meta.env.DEV) console.log("[modelLoader] using cache:", _modelCacheRoot);
   } catch {
     console.warn("[modelLoader] model pack unavailable, falling back to publicDir");
   }
@@ -110,9 +134,10 @@ function toUrl(
   cased: string,
 ): string {
   // The Tauri asset protocol also works under `tauri dev` (the vite origin
-  // runs inside the tauri webview), and `fetchModelResource` prefers the
-  // embedded copy first for asset URLs — so the cache only wins when the
-  // build has no bundled file, which is exactly the desired precedence.
+  // runs inside the tauri webview), and fetchModelResource prefers the pack
+  // cache for asset URLs (the dist only carries the 2D subset since the
+  // prune-baked-glb step) — so the embedded rung only wins for files the
+  // cache lacks, which is exactly the desired precedence.
   if (cacheRoot && _convertFileSrc) {
     return _convertFileSrc(`${cacheRoot}/models/${kind}/${cased}.glb`);
   }
@@ -166,36 +191,73 @@ export function resolveShipModelUrl(
   return null;
 }
 
-export function resolveShipModelByShipId(
+/**
+ * Ordered model-stem candidates for a ship: the `ship_models.json` index →
+ * baseName → the (possibly localized) display name → the offline DB's
+ * English name — then, last, the base behind a Lesta "CLR" suffix. Lesta's
+ * colour/clone series names ships "<Base Ship> CLR" ("Schlieffen CLR") while
+ * the model pack bakes only the base hull, so the suffix-stripped stem
+ * closes the chain. Pure data function (no model-pack wiring) so it stays
+ * unit-testable; dedupes case-insensitively, preserving first-seen casing.
+ */
+export function shipModelStemCandidates(
   shipId: number | string | undefined,
   fallbackName?: string,
-): string | null {
+): string[] {
+  const stems: string[] = [];
+  const push = (stem: string | null | undefined): void => {
+    const s = stem?.trim();
+    if (!s) return;
+    if (stems.some((x) => x.toLowerCase() === s.toLowerCase())) return;
+    stems.push(s);
+  };
   if (shipId != null) {
     const entry = shipModelMap[String(shipId)];
-    if (entry?.index) {
-      const url = shipModelUrl(entry.index);
-      if (url) return url;
-    }
-    if (entry?.baseName) {
-      const url = shipModelUrl(entry.baseName);
-      if (url) return url;
-    }
+    push(entry?.index);
+    push(entry?.baseName);
   }
   // Direct name lookup bypasses ship_models.json (handles ships not yet
   // mapped, or custom skins whose GLB filename matches the ship name).
-  if (fallbackName) {
-    const url = shipModelUrl(fallbackName);
-    if (url) return url;
-  }
+  push(fallbackName);
   // GLB filenames are English stems — a localized display name (the
   // encyclopedia store overlays names per the data-language setting) never
   // matches. Try the offline DB's English name before giving up.
   const english = shipNameFromOfflineDb(shipId, "en-US");
-  if (english) {
-    const url = shipModelUrl(english);
-    if (url) return url;
+  push(english);
+  for (const name of [fallbackName, english]) {
+    const trimmed = name?.trim();
+    if (trimmed && /\s+clr$/i.test(trimmed)) push(trimmed.replace(/\s+clr$/i, ""));
   }
-  return null;
+  return stems;
+}
+
+/** Model URL for every stem candidate, in order. Optimistic pack-cache URLs
+ *  are included per stem — availability is settled at LOAD time by the
+ *  chain-walking `loadGlbModel`, not here. */
+export function shipModelUrlCandidates(
+  shipId: number | string | undefined,
+  fallbackName?: string,
+): string[] {
+  const urls: string[] = [];
+  for (const stem of shipModelStemCandidates(shipId, fallbackName)) {
+    const url = shipModelUrl(stem);
+    if (url) urls.push(url);
+  }
+  return urls;
+}
+
+/** Armor GLB chain: the `*_armor.glb` sibling of every hull candidate. */
+export function shipArmorUrlCandidates(
+  shipId: number | string | undefined,
+): string[] {
+  return shipModelUrlCandidates(shipId).map((url) => url.replace(/\.glb$/, "_armor.glb"));
+}
+
+export function resolveShipModelByShipId(
+  shipId: number | string | undefined,
+  fallbackName?: string,
+): string | null {
+  return shipModelUrlCandidates(shipId, fallbackName)[0] ?? null;
 }
 
 /** Ship display name from the baked model DB (ship_models.json). `baseName`
@@ -260,12 +322,30 @@ interface ShipNameEntry {
 const shipNameMap =
   (shipNamesDbRaw as Record<string, ShipNameEntry>) ?? {};
 
-/** Full offline DB entry for a shipId, if present. */
+/** Full offline DB entry for a shipId, if present. The baked DB is consulted
+ *  first; ships it predates (new releases / collaboration clones) fall
+ *  through to the runtime GameParams registrations
+ *  (`utils/runtimeShipDb`, fed by features/replay/runtimeShipIdentity),
+ *  wrapped into this file's `ShipNameEntry` shape so callers need no second
+ *  code path. Runtime entries carry no bake-grade fields (hp, the WG
+ *  language catalog) — those stay null/empty and the consumers already
+ *  tolerate that. */
 export function shipOfflineEntry(
   shipId: number | string | undefined,
 ): ShipNameEntry | null {
   if (shipId == null) return null;
-  return shipNameMap[String(shipId)] ?? null;
+  const baked = shipNameMap[String(shipId)];
+  if (baked) return baked;
+  const rt = runtimeShipEntry(shipId);
+  if (!rt) return null;
+  return {
+    index: rt.index ?? "",
+    tier: rt.tier ?? null,
+    type: rt.type ?? null,
+    nation: rt.nation ?? null,
+    hp: null,
+    names: rt.names ?? {},
+  };
 }
 
 /** Localized ship name from the complete offline DB. `lang` is the WG
@@ -277,8 +357,42 @@ export function shipNameFromOfflineDb(
   const entry = shipOfflineEntry(shipId);
   if (!entry) return null;
   if (lang && entry.names[lang]) return entry.names[lang];
+  // Cross-language fallback: en-US (the GLB-stem spelling and the only
+  // language every entry carries — the Lesta merge writes ru-RU + en-US,
+  // with zh/ja only where curated), then a bare "en", then any value. The
+  // first-value rung used to hand back ru-RU for every un-curated Lesta
+  // ship in a zh-CN UI — English is the lesser wrong.
   const values = Object.values(entry.names);
-  return entry.names["en"] ?? (values.length > 0 ? values[0] : null);
+  return entry.names["en-US"] ?? entry.names["en"] ?? (values.length > 0 ? values[0] : null);
+}
+
+// ── Offline ship-description DB (zh zoo/formal split) ───────────────────
+// `ship_descriptions.json` is produced by
+// `scripts/model_convert/extract_ship_descriptions.py` from the game gettext
+// catalogs. The WG encyclopedia API serves the same harmonized CN
+// simplified-Chinese description (IJN ships as animals, Yamato = 鲸) on every
+// realm; the 国服 zoo text and the 亚服 formal 简/繁 texts live ONLY in the
+// client catalogs, so the Chinese trio is baked here for the overlay.
+
+interface ShipDescriptionEntry {
+  descriptions: Record<string, string>;
+}
+const shipDescriptionMap =
+  (shipDescriptionsDbRaw as Record<string, ShipDescriptionEntry>) ?? {};
+
+/** Localized ship description from the offline DB, EXACT language only —
+ *  unlike shipNameFromOfflineDb there is no cross-language fallback: when the
+ *  entry (or its translation for `lang`) is missing, null is returned and the
+ *  caller keeps the WG API description, which is already language-appropriate
+ *  (only the zh-CN/zh-SG/zh-TW realm split needs this overlay at all). */
+export function shipDescriptionFromOfflineDb(
+  shipId: number | string | undefined,
+  lang?: string,
+): string | null {
+  if (shipId == null) return null;
+  const entry = shipDescriptionMap[String(shipId)];
+  const text = lang ? entry?.descriptions[lang] : undefined;
+  return text ?? null;
 }
 
 /** Localized nation label from the baked game-file DB (nation_names.json,
@@ -466,22 +580,43 @@ export function resolveFallbackModel(
   return firstUrl(match(8, "usa", "cruiser"));
 }
 
+/**
+ * Ordered model-URL candidates for a holographic-map entry: the ship's own
+ * chain, then the tier/nation/type substitute hull, then up to four
+ * encyclopedia hulls as the last resort. The marker loader walks the chain;
+ * only when every candidate fails does the same-role clone pool take over.
+ */
+export function resolveShipModelCandidatesForEntry(
+  ship: ShipModelSpec | null | undefined,
+  encyclopedia: ShipModelSpec[],
+): string[] {
+  const urls: string[] = [];
+  const push = (url: string | null): void => {
+    if (url && !urls.includes(url)) urls.push(url);
+  };
+  if (ship) {
+    for (const url of shipModelUrlCandidates(ship.shipId)) push(url);
+    push(resolveFallbackModel(ship, encyclopedia));
+  }
+  // Ultimate fallback: any model in the encyclopedia (capped — these are
+  // arbitrary hulls and a handful of attempts already beat a bare cone).
+  let extra = 0;
+  for (const s of encyclopedia) {
+    if (extra >= 4) break;
+    const url = resolveExact(s);
+    if (url) {
+      push(url);
+      extra++;
+    }
+  }
+  return urls;
+}
+
 export function resolveShipModelForEntry(
   ship: ShipModelSpec | null | undefined,
   encyclopedia: ShipModelSpec[],
 ): string | null {
-  if (ship) {
-    const exact = resolveExact(ship);
-    if (exact) return exact;
-    const fallback = resolveFallbackModel(ship, encyclopedia);
-    if (fallback) return fallback;
-  }
-  // Ultimate fallback: any model in the encyclopedia.
-  for (const s of encyclopedia) {
-    const url = resolveExact(s);
-    if (url) return url;
-  }
-  return null;
+  return resolveShipModelCandidatesForEntry(ship, encyclopedia)[0] ?? null;
 }
 
 // ── GLTF loading ──────────────────────────────────────────────────────────
@@ -497,36 +632,90 @@ function getLoader(): GLTFLoader {
 
 /**
  * Fetch a model-pack resource with an automatic fallback to the embedded
- * copy. The pack ships twice: inside the binary (frontendDist, always
- * complete, served from the app origin at `/models/...`) and in the cache
- * directory (served via the asset protocol). The cache path is preferred
- * because it tracks the published pack, but its `asset.localhost` fetch can
- * die at the transport level on machines whose system proxy/PAC routes
- * `*.localhost` pseudo-hosts through the proxy (Clash-style PACs only
- * bypass bare `localhost`) — those failures surface as raw "Failed to
- * fetch" TypeErrors, and non-404 responses cover an incomplete cache.
- * Either way the embedded copy has the same file, so retry against it.
+ * copy. The pack ships twice: inside the binary (frontendDist, a 2D-only
+ * snapshot served from the app origin at `/models/...`) and in the cache
+ * directory (served via the asset protocol). The CACHE copy is the primary
+ * source — it tracks the published (possibly updated) content-addressed
+ * pack, and an older embedded snapshot must never shadow a newer cached
+ * file (the pre-0.4 embedded-first order caused exactly that staleness).
+ * The embedded copy stays the fallback: for files the cache does not carry
+ * and for machines whose system proxy/PAC routes `*.localhost`
+ * pseudo-hosts through the proxy (Clash-style PACs only bypass bare
+ * `localhost`) — those failures surface as raw "Failed to fetch"
+ * TypeErrors; non-ok responses cover an incomplete cache.
+ *
+ * A miss can never be detected via the status code alone: Tauri's asset
+ * resolver answers ANY unknown frontendDist path with the index.html SPA
+ * fallback under HTTP 200 (`get_asset`'s `{path}.html` → `{path}/index.html`
+ * → `index.html` ladder). The dist hasn't carried the GLBs since the
+ * prune-baked-glb build step, so every embedded rung (and every plain
+ * `/models/...` URL built while the pack cache is unwired) "succeeds" with
+ * the app's own HTML — which then dies inside GLTFLoader as
+ * `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`. Each candidate
+ * is therefore validated by its payload before it counts as a hit (GLB
+ * magic / JSON value start / non-HTML), and anything else — a non-2xx, a
+ * poisoned 200, or a transport-level failure — falls through to the next
+ * candidate instead of poisoning the caller.
  */
+function payloadMatches(url: string, resp: Response, bytes: ArrayBuffer): boolean {
+  // Order matters: Tauri's asset protocol labels REAL .glb files text/html
+  // (its mime table has no .glb entry and the content sniff can't match one
+  // either, so the Html fallback kicks in), so the content-type gate must
+  // only arbitrate extensions whose payload we cannot sniff ourselves.
+  const path = (decodeURIComponent(url).split(/[?#]/)[0] ?? url).toLowerCase();
+  if (path.endsWith(".glb")) {
+    if (bytes.byteLength < 4) return false;
+    const head = new Uint8Array(bytes, 0, 4);
+    // "glTF" — the binary container magic every baked model starts with.
+    return head[0] === 0x67 && head[1] === 0x6c && head[2] === 0x54 && head[3] === 0x46;
+  }
+  if (path.endsWith(".json")) {
+    const head = new TextDecoder().decode(bytes.slice(0, 64));
+    return /^\s*[[{]/.test(head);
+  }
+  return !(resp.headers.get("content-type") ?? "").includes("text/html");
+}
+
+/** One fetch attempt: a validated hit, or the human-readable reason it
+ *  missed (status / SPA fallback / transport error) for the caller to log
+ *  and step past. */
+async function fetchCandidate(
+  url: string,
+): Promise<{ resp: Response; bytes: ArrayBuffer } | string> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return `HTTP ${resp.status} fetching ${url}`;
+    const bytes = await resp.arrayBuffer();
+    if (!payloadMatches(url, resp, bytes)) {
+      return `${url}: missing file answered by the index.html SPA fallback`;
+    }
+    return { resp, bytes };
+  } catch (e) {
+    return `${url}: ${(e as Error).message ?? String(e)}`;
+  }
+}
+
 export async function fetchModelResource(url: string): Promise<Response> {
+  const isAsset = url.startsWith("http://asset.localhost/");
   // The asset URL is percent-encoded (backslashes and slashes alike), so
   // the cache-relative tail must be recovered from the DECODED form.
-  const isAsset = url.startsWith("http://asset.localhost/");
   const embedded = isAsset
     ? "/models/" + (decodeURIComponent(url).split("/models/")[1] ?? "")
     : url;
-  // The embedded copy (frontendDist, served from the app origin) is the
-  // primary source: same-origin, untouched by system proxies/PACs that
-  // route `*.localhost` pseudo-hosts through the proxy. The cache copy is
-  // the fallback for packs published after this binary was built (files
-  // the origin 404s on).
-  if (isAsset) {
-    const fromOrigin = await fetch(embedded);
-    if (fromOrigin.ok) return fromOrigin;
-    console.warn(
-      `[modelLoader] embedded fetch ${fromOrigin.status}, trying pack cache: ${url}`,
-    );
+  const candidates = isAsset ? [url, embedded] : [url];
+  const misses: string[] = [];
+  for (const candidate of candidates) {
+    const attempt = await fetchCandidate(candidate);
+    if (typeof attempt !== "string") {
+      return new Response(attempt.bytes, {
+        status: attempt.resp.status,
+        headers: attempt.resp.headers,
+      });
+    }
+    misses.push(attempt);
+    console.warn(`[modelLoader] ${attempt}, trying next source`);
   }
-  return fetch(url);
+  throw new Error(`no usable source for ${url} (${misses.join("; ")})`);
 }
 
 function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
@@ -549,38 +738,64 @@ function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
     bytes[i] = 0x20; // space
     fixed = true;
   }
-  if (fixed) console.log("[modelLoader] fixed GLB JSON-chunk NUL padding");
+  if (fixed && import.meta.env.DEV) console.log("[modelLoader] fixed GLB JSON-chunk NUL padding");
   return buffer;
 }
 
-export function loadGlbModel(url: string): Promise<THREE.Group> {
-  console.log("[modelLoader] loading:", url);
-  return fetchModelResource(url)
-    .then((resp) => {
-      if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
-      return resp.arrayBuffer();
-    })
-    .then((raw) => {
-      const fixed = fixGlbPadding(raw);
-      const blob = new Blob([fixed], { type: "model/gltf-binary" });
-      const blobUrl = URL.createObjectURL(blob);
-      return new Promise<THREE.Group>((resolve, reject) => {
-        getLoader().load(
-          blobUrl,
-          (gltf) => {
-            URL.revokeObjectURL(blobUrl);
-            console.log("[modelLoader] loaded:", url);
-            resolve(gltf.scene);
-          },
-          undefined,
-          (err) => {
-            URL.revokeObjectURL(blobUrl);
-            console.error("[modelLoader] failed:", url, err);
-            reject(err);
-          },
-        );
-      });
-    });
+/** One chain step: fetch (with the embedded-copy fallback and payload
+ *  validation) → NUL-padding fix → GLTFLoader parse. Throws with the
+ *  candidate-specific reason so the chain wrapper can aggregate the misses. */
+async function loadGlbFromUrl(url: string): Promise<THREE.Group> {
+  if (import.meta.env.DEV) console.log("[modelLoader] loading:", url);
+  const resp = await fetchModelResource(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
+  const raw = await resp.arrayBuffer();
+  const fixed = fixGlbPadding(raw);
+  const blob = new Blob([fixed], { type: "model/gltf-binary" });
+  const blobUrl = URL.createObjectURL(blob);
+  return new Promise<THREE.Group>((resolve, reject) => {
+    getLoader().load(
+      blobUrl,
+      (gltf) => {
+        URL.revokeObjectURL(blobUrl);
+        if (import.meta.env.DEV) console.log("[modelLoader] loaded:", url);
+        resolve(gltf.scene);
+      },
+      undefined,
+      (err) => {
+        URL.revokeObjectURL(blobUrl);
+        console.error("[modelLoader] failed:", url, err);
+        reject(err);
+      },
+    );
+  });
+}
+
+/**
+ * Load a GLB from a single URL, or walk an ordered candidate chain: the
+ * first candidate that fetches AND parses into a THREE.Group wins; a fetch
+ * miss (404 / SPA-fallback HTML / transport error) or a GLTF parse failure
+ * steps to the next candidate. Only when every candidate fails does this
+ * throw one aggregated error listing each miss. A single-string input keeps
+ * its previous behavior (including the error message) unchanged.
+ */
+export async function loadGlbModel(url: string | string[]): Promise<THREE.Group> {
+  if (typeof url === "string") return loadGlbFromUrl(url);
+  if (url.length === 0) {
+    throw new Error("no usable source for an empty model URL chain");
+  }
+  if (url.length === 1) return loadGlbFromUrl(url[0]);
+  const misses: string[] = [];
+  for (const candidate of url) {
+    try {
+      return await loadGlbFromUrl(candidate);
+    } catch (e) {
+      const reason = (e as Error)?.message ?? String(e);
+      misses.push(`${candidate}: ${reason}`);
+      console.warn(`[modelLoader] ${candidate} failed (${reason}), trying next candidate`);
+    }
+  }
+  throw new Error(`no usable source for ${url.join(", ")} (${misses.join("; ")})`);
 }
 
 export function hasShipModels(): boolean {

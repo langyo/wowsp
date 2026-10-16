@@ -1,11 +1,13 @@
-import { computed, defineComponent, onMounted, ref, Transition } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, ref, Transition, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import StatsCard from "@/components/stats/StatsCard";
-import ClanCard from "@/components/stats/ClanCard";
+import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
+import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/ClanCard";
+import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HTabs, useToast } from "@celestia-island/hikari";
+import { HkDatePicker, HkPopover, HkScrollContainer, HkSpinner, HkTabs, useBreakpoint } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
@@ -13,24 +15,42 @@ import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useStatsStore } from "@/stores/stats";
-import { useClanStatsStore } from "@/stores/clanStats";
+import { useLoadingTasksStore } from "@/stores/loadingTasks";
+import { useClanStatsStore, clanCacheKey } from "@/stores/clanStats";
 import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
+import { useLanguage } from "@/i18n/useLanguage";
+import { useCareerStamp } from "@/composables/useCareerStamp";
+import { useCompositionStamps } from "@/composables/useCompositionStamps";
+import ShareShotButton from "@/features/share/ShareShotButton";
+import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot";
+import { renderClanShot, type ClanShotModel } from "@/features/share/clanShot";
+import { useShareImage } from "@/features/share/useShareImage";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
-import { winrateColor } from "@/utils/winrate";
+import { tierToRoman } from "@wowsp/holo";
+import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import {
   computeRecentDelta,
   dateRangeCutoff,
   filterByDateRange,
+  filterByDateWindow,
+  isoDayWindowSec,
   type DateRange,
 } from "@/utils/shipAggregation";
 import { api, type ClanInfo, type ClanSuggestion, type PlayerShipStats, type PlayerSuggestion, type PlayerStats } from "@/api";
+import { LookupError, type LookupErrorPayload } from "@/transport/types";
 import { t } from "@/i18n";
 import "./LookupView.scss";
 
 /** Lookup target — the second sidebar row's segmented group. */
 type LookupKind = "player" | "clan";
+
+/** This view's date-range mode — the shared presets plus the picker-chosen
+ *  custom window (the 自定义 segment; see `customWindow`). DashboardView
+ *  keeps the plain preset-only DateRange. */
+type RangeMode = DateRange | "custom";
 
 interface HistoryEntry {
   kind: LookupKind;
@@ -61,7 +81,12 @@ function loadHistory(): HistoryEntry[] {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
     const arr = JSON.parse(raw) as (HistoryEntry & { kind?: LookupKind })[];
-    if (!Array.isArray(arr)) return [];
+    // Heal-write: a corrupt blob (non-array, unparseable) is swept —
+    // absence means "no history", which is exactly what it degrades to.
+    if (!Array.isArray(arr)) {
+      localStorage.removeItem(HISTORY_KEY);
+      return [];
+    }
     // Entries written before clan lookup existed carry no kind — they are
     // player lookups by definition.
     return arr
@@ -74,6 +99,7 @@ function loadHistory(): HistoryEntry[] {
         time: e.time,
       }));
   } catch {
+    localStorage.removeItem(HISTORY_KEY);
     return [];
   }
 }
@@ -106,7 +132,7 @@ export default defineComponent({
     const clanStats = useClanStatsStore();
     const shipStats = useShipStatsStore();
     const ranked = useRankedStore();
-    const toast = useToast();
+    const loadingTasks = useLoadingTasksStore();
     const route = useRoute();
     const mode = ref<LookupKind>(lastLookup.value?.kind ?? "player");
     const realm = ref(lastLookup.value?.realm ?? "asia");
@@ -118,15 +144,75 @@ export default defineComponent({
     );
     const clanResult = ref<ClanInfo | null>(
       lastLookup.value?.kind === "clan"
-        ? (clanStats.cache.get(`${lastLookup.value.realm}_${lastLookup.value.id}`) ?? null)
+        ? (clanStats.cache.get(clanCacheKey(lastLookup.value.realm, lastLookup.value.id)) ?? null)
         : null,
     );
     const history = ref<HistoryEntry[]>(loadHistory());
     const encyclopedia = useEncyclopediaStore();
 
+    // Stores cache all callers' requests. This view owns its selection,
+    // pending row and error: another surface's request must not change them.
+    let lookupGeneration = 0;
+    const lookupFailure = ref<{
+      kind: LookupKind;
+      realm: string;
+      query: string;
+      raw: string;
+      payload: LookupErrorPayload | null;
+    } | null>(null);
+    onBeforeUnmount(() => { lookupGeneration++; });
+
+    /** Display name shown by the pending row while the WG request is in
+     *  flight — set right before the request starts: the submitted
+     *  nickname/UID for players, the clan tag in brackets when it is known
+     *  up front (suggestions, history, the card's clan jump), `#<id>`
+     *  otherwise (deep links only carry the numeric clan id). */
+    const pendingQuery = ref("");
+    const pendingRealm = ref(realm.value);
+
+    function beginLookup(rl: string, query: string) {
+      pendingQuery.value = query;
+      pendingRealm.value = rl;
+      lookupFailure.value = null;
+      return ++lookupGeneration;
+    }
+
+    function changeMode(next: LookupKind) {
+      if (next === mode.value) return;
+      lookupGeneration++;
+      pendingQuery.value = "";
+      lookupFailure.value = null;
+      mode.value = next;
+    }
+
+    function failLookup(e: unknown, kind: LookupKind, rl: string, query: string) {
+      lookupFailure.value = {
+        kind, realm: rl, query,
+        raw: e instanceof Error ? e.message : String(e),
+        payload: e instanceof LookupError ? e.payload : null,
+      };
+    }
+
+    /** Whether this exact target was looked up successfully before —
+     *  matched by displayed name (case-insensitive) or numeric id. */
+    function seenInHistory(kind: LookupKind, query: string, rlm: string): boolean {
+      const q = query.toLowerCase();
+      return history.value.some(
+        (h) =>
+          h.kind === kind &&
+          h.realm === rlm &&
+          (h.name.toLowerCase() === q || String(h.id) === query),
+      );
+    }
+
     // Ship detail popup (opened from the per-ship table rows). The player
     // context is the LOOKED-UP account, not the bound one.
     const shipDetail = useShipDetail();
+
+    // Ranked season-timeline modal — opened from the StatsCard's ranked
+    // split; shows the LOOKED-UP player's seasons (the ranked store slot
+    // doSearch fills is theirs).
+    const rankedModal = ref(false);
 
     /** Unified ship metadata: encyclopedia first, offline DB fallback. */
     const infoOf = (shipId: number) => {
@@ -139,7 +225,7 @@ export default defineComponent({
     };
 
     /** Filtered + multi-key-sorted ships and search-hit names, from
-     *  ShipFilterBar (the chip drag order defines the sort priority). */
+     *  ShipFilterBar (the fixed canonical chip order defines the sort priority). */
     const filterState = ref<{
       ships: PlayerShipStats[];
       hits: Map<number, string>;
@@ -157,30 +243,114 @@ export default defineComponent({
     /** Date range — same semantics as Dashboard's: real per-ship deltas
      *  against the latest locally recorded baseline at or before the range
      *  cutoff (WG has no per-battle data), with the labeled career
-     *  fallback while no old-enough baseline exists. */
-    const dateRange = ref<DateRange>("all");
+     *  fallback while no old-enough baseline exists. The "custom" mode adds
+     *  a picker-chosen [from, to] day window whose end bound also closes at
+     *  a local snapshot (see `computeRecentDelta`). */
+    const dateRange = ref<RangeMode>("all");
+    /** Custom window picker state (ISO YYYY-MM-DD, session-only like the
+     *  replay filter's pair). The pickers cross-link min/max so an
+     *  inverted pair can never form. */
+    const customFrom = ref<string | null>(null);
+    const customTo = ref<string | null>(null);
+    const customOpen = ref(false);
+    /** Armed once both ends are picked — while the pair is incomplete the
+     *  view stays unfiltered (the "all" semantics) instead of thrashing. */
+    const customWindow = computed(() =>
+      customFrom.value && customTo.value
+        ? isoDayWindowSec(customFrom.value, customTo.value)
+        : null,
+    );
     const recentDelta = computed(() => {
       if (dateRange.value === "all") return null;
       const acc = result.value;
       if (!acc) return null;
-      const hist = shipStats.history.get(`${realm.value}_${acc.accountId}`) ?? [];
+      const hist = shipStats.history.get(`${acc.realm}_${acc.accountId}`) ?? [];
+      if (dateRange.value === "custom") {
+        const w = customWindow.value;
+        return w ? computeRecentDelta(shipRows.value, hist, w.fromSec, w.toSec) : null;
+      }
       return computeRecentDelta(shipRows.value, hist, dateRangeCutoff(dateRange.value));
     });
-    const dateFiltered = computed(
-      () => recentDelta.value?.ships ?? filterByDateRange(shipRows.value, dateRange.value),
-    );
+    const dateFiltered = computed(() => {
+      if (dateRange.value === "custom") {
+        const w = customWindow.value;
+        if (!w) return shipRows.value;
+        return recentDelta.value?.ships ?? filterByDateWindow(shipRows.value, w.fromSec, w.toSec);
+      }
+      return recentDelta.value?.ships ?? filterByDateRange(shipRows.value, dateRange.value);
+    });
     const rangeOptions = [
       { value: "1d", label: t("dashboard.range1d") },
       { value: "7d", label: t("dashboard.range7d") },
       { value: "30d", label: t("dashboard.range30d") },
+      { value: "90d", label: t("dashboard.range90d") },
       { value: "all", label: t("dashboard.rangeAll") },
+      { value: "custom", label: t("dashboard.rangeCustom") },
     ];
+
+    // ── Custom range popover ──────────────────────────────────────────
+    // Selecting the 自定义 segment opens a small HkPopover anchored under
+    // the tabs; two hikari date pickers (the replay filter's cross-linked
+    // pair pattern) choose the window. Outside-close mirrors
+    // FilterCategoryChip's: the teleported panel and the pickers' own
+    // body-level calendar popups count as inside presses.
+    const { isMobile } = useBreakpoint();
+    const rangeTabsRef = ref<HTMLElement | null>(null);
+    const rangePanelRef = ref<HTMLElement | null>(null);
+
+    function closeCustomPop() {
+      customOpen.value = false;
+    }
+
+    function onRangeTabUpdate(v: string) {
+      dateRange.value = v as RangeMode;
+      customOpen.value = v === "custom";
+    }
+
+    /** HkTabs suppresses the update emit when the clicked segment is
+     *  already active, so after the popover closed while 自定义 stayed
+     *  selected, re-clicking that segment would be a dead press — yet it's
+     *  the natural "reopen" gesture. Catch it on the wrapper: while custom
+     *  is the active radio, a click on the checked segment is exactly that
+     *  re-click (a differing segment first flips the mode via the emit, so
+     *  the early return skips it). */
+    function onRangeTabsClick(e: MouseEvent) {
+      if (dateRange.value !== "custom") return;
+      const seg = (e.target as HTMLElement).closest?.("[role='radio']");
+      if (seg instanceof HTMLElement && seg.getAttribute("aria-checked") === "true") {
+        customOpen.value = true;
+      }
+    }
+
+    function onRangeDocPointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (rangeTabsRef.value?.contains(target)) return;
+      if (rangePanelRef.value?.contains(target)) return;
+      // The date pickers' calendars teleport to body level as
+      // .hk-popover-panel — presses there belong to this popover's own
+      // nested content (same reasoning as FilterCategoryChip's test).
+      for (const panel of document.querySelectorAll<HTMLElement>(".hk-popover-panel")) {
+        if (panel.contains(target)) return;
+      }
+      closeCustomPop();
+    }
+
+    watch(customOpen, (open) => {
+      if (open) {
+        document.addEventListener("pointerdown", onRangeDocPointerDown, true);
+      } else {
+        document.removeEventListener("pointerdown", onRangeDocPointerDown, true);
+      }
+    });
+    onBeforeUnmount(() => {
+      document.removeEventListener("pointerdown", onRangeDocPointerDown, true);
+    });
 
     /** Per-ship rows enriched with offline tier/type for grouping. */
     const shipRows = computed<PlayerShipStats[]>(() => {
       const acc = result.value;
       if (!acc) return [];
-      return shipStats.cache.get(`${realm.value}_${acc.accountId}`) ?? [];
+      return shipStats.cache.get(`${acc.realm}_${acc.accountId}`) ?? [];
     });
     /** Per-type summary cards (battles + winrate), matching the Dashboard. */
     const typeSummary = computed(() => {
@@ -222,47 +392,60 @@ export default defineComponent({
       realm.value = rl;
       result.value = null;
       ranked.reset();
-      const toastId = toast.loading(t("account.searching"));
+      const generation = beginLookup(rl, nm);
+      const taskId = loadingTasks.begin(t("account.searching"));
       try {
         // Explicit user query — always re-pull from the WG API. `nm` may be
         // a nickname or a numeric account id (both resolve server-side).
         const acc = await stats.lookup(nm, rl, { force: true });
+        if (generation !== lookupGeneration) return;
+        pendingQuery.value = "";
         result.value = acc;
         lastLookup.value = { kind: "player", name: acc.name, realm: rl, id: acc.accountId };
         pushHistory({ kind: "player", name: acc.name, realm: rl, id: acc.accountId });
-        // Ranked seasons load in parallel (last 5, feeds the card's ranked
-        // split); per-ship stats load in the background (toast stays until
-        // done).
-        void ranked.load(acc.accountId, rl, 5);
+        // Ranked seasons load in parallel (every listed season, unplayed
+        // ones dropped server-side — feeds the card's ranked split);
+        // per-ship stats load in the background (the loading chip
+        // stays until done).
+        void ranked.load(acc.accountId, rl);
         await shipStats.load(acc.accountId, rl).catch(() => {});
-      } catch {
-        // error surfaced via stats.error
+      } catch (e) {
+        if (generation === lookupGeneration) failLookup(e, "player", rl, nm);
       } finally {
-        toast.remove(toastId);
+        if (generation === lookupGeneration) pendingQuery.value = "";
+        loadingTasks.end(taskId);
       }
     }
 
-    async function doClanLookup(clanId: number, r?: string) {
+    /** `label` is the clan's display tag when the caller knows it up front
+     *  (suggestions / history / the card's clan jump); deep links only
+     *  carry the numeric id, so the pending row falls back to `#<id>`. */
+    async function doClanLookup(clanId: number, r?: string, label?: string) {
       const rl = r ?? realm.value;
       mode.value = "clan";
       realm.value = rl;
       clanResult.value = null;
-      const toastId = toast.loading(t("account.searching"));
+      const generation = beginLookup(rl, label || `#${clanId}`);
+      const taskId = loadingTasks.begin(t("account.searching"));
       try {
         const clan = await clanStats.lookup(clanId, rl, { force: true });
+        if (generation !== lookupGeneration) return;
         clanResult.value = clan;
         lastLookup.value = { kind: "clan", name: clan.tag, realm: rl, id: clan.clanId };
         pushHistory({ kind: "clan", name: clan.tag, realm: rl, id: clan.clanId });
-      } catch {
-        // error surfaced via clanStats.error
+      } catch (e) {
+        if (generation === lookupGeneration) failLookup(e, "clan", rl, String(clanId));
       } finally {
-        toast.remove(toastId);
+        if (generation === lookupGeneration) pendingQuery.value = "";
+        loadingTasks.end(taskId);
       }
     }
 
     function replayHistory(h: HistoryEntry) {
       if (h.kind === "clan") {
-        if (h.id != null) void doClanLookup(h.id, h.realm);
+        // History stores the tag as the clan's display name — reuse it for
+        // the pending row.
+        if (h.id != null) void doClanLookup(h.id, h.realm, `[${h.name}]`);
       } else {
         void doSearch(h.id != null ? String(h.id) : h.name, h.realm);
       }
@@ -277,7 +460,7 @@ export default defineComponent({
     const comboSelect = (item: unknown) => {
       if (mode.value === "clan") {
         const c = item as ClanSuggestion;
-        if (c.clanId != null) void doClanLookup(c.clanId, realm.value);
+        if (c.clanId != null) void doClanLookup(c.clanId, realm.value, `[${c.tag}]`);
       } else {
         const p = item as PlayerSuggestion;
         void doSearch(String(p.accountId), realm.value);
@@ -328,13 +511,237 @@ export default defineComponent({
       void doSearch(name, r);
     });
 
+    // ── Share shots ───────────────────────────────────────────────────
+    // One per lookup mode, mirroring the result the user currently sees.
+    // Root element feeds the live theme palette.
+    const root = ref<HTMLElement | null>(null);
+    const prefs = useStatsPrefsStore();
+    const { uiLocale } = useLanguage();
+    const stampKind = useCareerStamp(() => result.value);
+    const composition = useCompositionStamps(
+      () => result.value?.accountId ?? null,
+      // Keyed on the RESULT's realm (what the live card shows), not the
+      // realm picker, so a picker flip without a re-search cannot skew the
+      // shot's composition verdicts.
+      () => result.value?.realm ?? null,
+    );
+    const SHOT_SHIP_LIMIT = 8;
+    // Clan roster cap: the shot draws two side-by-side columns (13 rows),
+    // so 25 members fit without stretching the poster's height.
+    const SHOT_MEMBER_LIMIT = 25;
+
+    function buildPlayerShotModel(): StatsShotModel {
+      const s = result.value;
+      if (!s) throw new Error("no player result for the share shot");
+      const rangeText =
+        dateRange.value === "custom"
+          ? customWindow.value
+            ? `${new Date(customWindow.value.fromSec * 1000).toLocaleDateString()} – ${new Date(customWindow.value.toSec * 1000).toLocaleDateString()}`
+            : // An incomplete pair leaves the view unfiltered — the shot
+              // must claim the coverage it actually shows, not the mode.
+              t("dashboard.rangeAll")
+          : {
+              "1d": t("dashboard.range1d"),
+              "7d": t("dashboard.range7d"),
+              "30d": t("dashboard.range30d"),
+              "90d": t("dashboard.range90d"),
+              all: t("dashboard.rangeAll"),
+            }[dateRange.value];
+      // The custom window's own dates already say what it covers, so the
+      // baseline-date suffix stays a preset-range decoration.
+      const rangeLabel =
+        dateRange.value !== "all" && dateRange.value !== "custom" && recentDelta.value
+          ? `${rangeText} · ${new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString()}`
+          : rangeText;
+      const pr = prTier(s.pr);
+      const damageAnomaly =
+        s.battles != null && s.battles > 0 && s.avgDamage != null && s.avgDamage <= 0;
+      const sealsOn =
+        uiLocale.value.startsWith("zh") &&
+        prefs.prefs.prEnabled &&
+        prefs.prefs.sealsEnabled;
+      const fmtWr = (wr: number | null | undefined) =>
+        wr != null ? `${wr.toFixed(1)}%` : "—";
+      const ships = filteredShips.value.slice(0, SHOT_SHIP_LIMIT);
+      return {
+        title: t("nav.lookup"),
+        rangeLabel,
+        realm: s.realm,
+        name: s.name,
+        clanTag: s.clanTag,
+        hidden: !!s.hidden,
+        hiddenLabel: t("stats.hidden"),
+        stamp: sealsOn ? stampKind.value : null,
+        airSub: sealsOn ? composition.value : null,
+        prOn: prefs.prefs.prEnabled,
+        hero: {
+          winrate: s.winrate != null ? `${s.winrate.toFixed(1)}%` : "—",
+          winrateColor: winrateColor(s.winrate),
+          winrateLabel: t("stats.winrate"),
+          battlesText:
+            s.battles != null ? `${s.battles.toLocaleString()} ${t("stats.battles")}` : "—",
+          pr: s.pr != null ? s.pr.toLocaleString() : null,
+          prColor: pr.rainbow ? undefined : pr.color,
+          prRainbow: pr.rainbow,
+          prLabel: prTierLabel(pr.key),
+        },
+        // The live card hides the strip when every split is unknown —
+        // the shot keeps the same gate.
+        divisions:
+          [s.soloWr, s.div2Wr, s.div3Wr, ranked.winrate].some((wr) => wr != null)
+            ? [
+                { label: t("stats.solo"), value: fmtWr(s.soloWr), color: winrateColor(s.soloWr) },
+                { label: t("stats.div2"), value: fmtWr(s.div2Wr), color: winrateColor(s.div2Wr) },
+                { label: t("stats.div3"), value: fmtWr(s.div3Wr), color: winrateColor(s.div3Wr) },
+                { label: t("stats.ranked"), value: fmtWr(ranked.winrate), color: winrateColor(ranked.winrate) },
+              ]
+            : [],
+        kpis: [
+          { label: t("stats.battles"), value: s.battles != null ? s.battles.toLocaleString() : "—" },
+          {
+            label: t("stats.avgDamage"),
+            value: damageAnomaly
+              ? t("stats.dataAnomaly")
+              : s.avgDamage != null
+                ? Math.round(s.avgDamage).toLocaleString()
+                : "—",
+            color: damageAnomaly ? damageColor(0) : undefined,
+          },
+          { label: t("stats.avgExp"), value: s.avgXp != null ? Math.round(s.avgXp).toLocaleString() : "—" },
+          { label: t("stats.kdRatio"), value: s.kdRatio != null ? s.kdRatio.toFixed(2) : "—" },
+          { label: t("stats.survivalRate"), value: s.survivalRate != null ? `${s.survivalRate.toFixed(0)}%` : "—" },
+          { label: t("stats.hitRate"), value: s.hitRate != null ? `${s.hitRate.toFixed(0)}%` : "—" },
+        ],
+        typeChips: typeSummary.value.map((ts) => ({
+          code: ts.code,
+          battles: ts.battles.toLocaleString(),
+          value: `${ts.winrate.toFixed(1)}%`,
+          color: winrateColor(ts.winrate),
+        })),
+        shipsTitle: t("share.topShips"),
+        shipsHead: [
+          t("stats.battles"),
+          t("stats.winrate"),
+          t("stats.avgDamage"),
+          t("stats.kdRatio"),
+        ],
+        ships: ships.map((ship) => ({
+          name: displayName(ship),
+          shipType: infoOf(ship.shipId)?.type ?? null,
+          cells: [
+            { text: ship.battles.toLocaleString() },
+            { text: `${ship.winrate.toFixed(1)}%`, color: winrateColor(ship.winrate) },
+            {
+              text:
+                ship.battles > 0 && ship.avgDamage <= 0
+                  ? t("stats.dataAnomaly")
+                  : Math.round(ship.avgDamage).toLocaleString(),
+            },
+            { text: (ship.frags / Math.max(1, ship.battles)).toFixed(2) },
+          ],
+        })),
+        moreShips:
+          filteredShips.value.length > SHOT_SHIP_LIMIT
+            ? t("share.moreShips", { n: filteredShips.value.length - SHOT_SHIP_LIMIT })
+            : null,
+      };
+    }
+
+    function buildClanShotModel(): ClanShotModel {
+      const clan = clanResult.value;
+      if (!clan) throw new Error("no clan result for the share shot");
+      const prOn = prefs.prefs.prEnabled;
+      const avgPr = prTier(clan.avgPr ?? null);
+      const top = defaultRosterOrder(clan.members).slice(0, SHOT_MEMBER_LIMIT);
+      return {
+        title: t("nav.lookup"),
+        realm: clan.realm,
+        name: clan.name,
+        tag: clan.tag,
+        description: clan.description || null,
+        prOn,
+        hero: {
+          winrate: clan.winrate > 0 ? `${clan.winrate.toFixed(1)}%` : "—",
+          winrateColor: winrateColor(clan.winrate),
+          winrateLabel: t("stats.winrate"),
+          battlesText:
+            clan.totalBattles > 0
+              ? `${clan.totalBattles.toLocaleString()} ${t("stats.battles")}`
+              : "—",
+          pr: prOn && clan.avgPr != null ? clan.avgPr.toLocaleString() : null,
+          prColor: avgPr.rainbow ? undefined : avgPr.color,
+          prRainbow: avgPr.rainbow,
+          prLabel: prTierLabel(avgPr.key),
+        },
+        kpis: [
+          { label: t("lookup.membersCount"), value: clan.membersCount.toLocaleString() },
+          {
+            label: t("stats.avgDamage"),
+            value: clan.avgDamage > 0 ? Math.round(clan.avgDamage).toLocaleString() : "—",
+          },
+          {
+            label: t("stats.hidden"),
+            value: clan.hiddenCount > 0 ? clan.hiddenCount.toLocaleString() : "0",
+          },
+          {
+            label: t("lookup.createdAt"),
+            value: clan.createdAt
+              ? new Date(clan.createdAt * 1000).toLocaleDateString()
+              : "—",
+          },
+        ],
+        membersTitle: t("lookup.clanMembers"),
+        membersHead: prOn
+          ? [t("stats.battles"), t("stats.winrate"), t("stats.pr"), t("stats.avgDamage")]
+          : [t("stats.battles"), t("stats.winrate"), t("stats.avgDamage")],
+        members: top.map((m) => {
+          const tier = prTier(m.stats.pr);
+          const cells: { text: string; color?: string; rainbow?: boolean }[] = [
+            { text: m.stats.battles != null ? m.stats.battles.toLocaleString() : "—" },
+            m.stats.winrate != null
+              ? { text: `${m.stats.winrate.toFixed(1)}%`, color: winrateColor(m.stats.winrate) }
+              : { text: "—" },
+          ];
+          if (prOn) {
+            cells.push(
+              m.stats.pr != null
+                ? {
+                    text: m.stats.pr.toLocaleString(),
+                    color: tier.rainbow ? undefined : tier.color,
+                    rainbow: tier.rainbow,
+                  }
+                : { text: "—" },
+            );
+          }
+          cells.push({
+            text:
+              m.stats.avgDamage != null
+                ? Math.round(m.stats.avgDamage).toLocaleString()
+                : "—",
+          });
+          return { name: m.name, role: roleLabel(m.role), dim: !!m.stats.hidden, cells };
+        }),
+        moreMembers:
+          clan.members.length > SHOT_MEMBER_LIMIT
+            ? t("share.moreMembers", { n: clan.members.length - SHOT_MEMBER_LIMIT })
+            : null,
+      };
+    }
+
+    const playerShot = useShareImage(() =>
+      renderStatsShot(buildPlayerShotModel(), { el: root.value }),
+    );
+    const clanShot = useShareImage(() =>
+      renderClanShot(buildClanShotModel(), { el: root.value }),
+    );
+
     return () => (
-      <div class="lookup-view">
+      <div class="lookup-view" ref={root}>
         {/* Level-2 sidebar: search on top, query history below */}
         <aside class="lookup-view__sidebar">
           <div class="lookup-view__search">
             {/* Row 1 — realm picker as a segmented button group */}
-            <HTabs
+            <HkTabs
               variant="segmented"
               block
               modelValue={realm.value}
@@ -343,11 +750,11 @@ export default defineComponent({
             />
             {/* Row 2 — player/clan target picker + live search trigger */}
             <div class="lookup-view__row2">
-              <HTabs
+              <HkTabs
                 variant="segmented"
                 block
                 modelValue={mode.value}
-                onUpdate:modelValue={(v: string) => (mode.value = v as LookupKind)}
+                onUpdate:modelValue={(v: string) => changeMode(v as LookupKind)}
                 tabs={[
                   { key: "player", label: t("lookup.player") },
                   { key: "clan", label: t("lookup.clan") },
@@ -374,56 +781,89 @@ export default defineComponent({
               />
             </div>
           </div>
-          <div class="lookup-view__history">
-            <div class="lookup-view__history-title">{t("lookup.history")}</div>
-            {history.value.length === 0 ? (
-              <div class="lookup-view__history-empty">{t("lookup.historyEmpty")}</div>
-            ) : (
-              history.value.map((h) => (
-                <button
-                  key={`${h.realm}_${h.kind}_${h.name}`}
-                  class={[
-                    "lookup-view__history-item",
-                    mode.value === h.kind &&
-                      h.realm === realm.value &&
-                      ((h.kind === "player" && h.name === result.value?.name) ||
-                        (h.kind === "clan" && h.name === clanResult.value?.tag))
-                      ? "lookup-view__history-item--active"
-                      : "",
-                  ]}
-                  onClick={() => replayHistory(h)}
-                >
-                  <span
+          {/* Query history — the sidebar's own capped scroller (hikari's
+              HkScrollContainer owns the scrollbar: auto-hiding overlay
+              track); the row layout + clearance moved to __history-inner
+              so they scroll with the entries. */}
+          <HkScrollContainer class="lookup-view__history">
+            <div class="lookup-view__history-inner">
+              <div class="lookup-view__history-title">{t("lookup.history")}</div>
+              {history.value.length === 0 ? (
+                <div class="lookup-view__history-empty">{t("lookup.historyEmpty")}</div>
+              ) : (
+                history.value.map((h) => (
+                  <button
+                    key={`${h.realm}_${h.kind}_${h.name}`}
                     class={[
-                      "lookup-view__history-kind",
-                      h.kind === "clan" ? "lookup-view__history-kind--clan" : "",
+                      "lookup-view__history-item",
+                      mode.value === h.kind &&
+                        h.realm === (h.kind === "player" ? result.value?.realm : clanResult.value?.realm) &&
+                        ((h.kind === "player" && h.name === result.value?.name) ||
+                          (h.kind === "clan" && h.name === clanResult.value?.tag))
+                        ? "lookup-view__history-item--active"
+                        : "",
                     ]}
+                    onClick={() => replayHistory(h)}
                   >
-                    {h.kind === "clan" ? <Users size={11} /> : <User size={11} />}
-                  </span>
-                  <span class="lookup-view__history-name">{h.name}</span>
-                  <span class="lookup-view__history-realm">{h.realm.toUpperCase()}</span>
-                </button>
-              ))
-            )}
-          </div>
+                    <span
+                      class={[
+                        "lookup-view__history-kind",
+                        h.kind === "clan" ? "lookup-view__history-kind--clan" : "",
+                      ]}
+                    >
+                      {h.kind === "clan" ? <Users size={11} /> : <User size={11} />}
+                    </span>
+                    <span class="lookup-view__history-name">{h.name}</span>
+                    <span class="lookup-view__history-realm">{h.realm.toUpperCase()}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </HkScrollContainer>
         </aside>
 
-        {/* Main content: overview card + per-ship list (player) or clan card */}
+        {/* Main content: overview card + per-ship list (player) or clan card.
+            The title row pins above __scroll — a long ship table must not
+            scroll the page title out of view; the scroll region itself is
+            a hikari HkScrollContainer (auto-hiding overlay track), with
+            the column layout + clearance on __scroll-inner so they scroll
+            with the content. */}
         <div class="lookup-view__main">
           <h1 class="lookup-view__title">{t("nav.lookup")}</h1>
-          {mode.value === "player" && stats.error ? (
-            <div class="lookup-view__error">{stats.error}</div>
+          <HkScrollContainer class="lookup-view__scroll">
+          <div class="lookup-view__scroll-inner">
+          {lookupFailure.value?.kind === mode.value ? (
+            <LookupErrorNotice
+              payload={lookupFailure.value.payload}
+              raw={lookupFailure.value.raw}
+              seenBefore={mode.value === "player" && seenInHistory("player", lookupFailure.value.query, lookupFailure.value.realm)}
+            />
           ) : null}
-          {mode.value === "clan" && clanStats.error ? (
-            <div class="lookup-view__error">{clanStats.error}</div>
+          {/* Pending identity belongs to the submitted query; the picker
+              only chooses the realm for the next search. */}
+          {pendingQuery.value !== "" ? (
+            <div class="lookup-view__pending" key="pending">
+              <HkSpinner size="sm" />
+              <span class="lookup-view__pending-text">
+                {t("lookup.searchingWho", { name: pendingQuery.value })}
+              </span>
+              <span class="lookup-view__pending-realm">{pendingRealm.value.toUpperCase()}</span>
+            </div>
           ) : null}
           <Transition name="s-fade-slide" mode="out-in">
             {mode.value === "clan" && clanResult.value ? (
               <div class="lookup-view__result" key="clan">
                 <ClanCard
                   clan={clanResult.value}
-                  onMemberClick={(m) => void doSearch(String(m.accountId), realm.value)}
+                  onMemberClick={(m) => void doSearch(String(m.accountId), clanResult.value!.realm)}
+                  v-slots={{
+                    actions: () => (
+                      <ShareShotButton
+                        busy={clanShot.busy.value}
+                        onShot={() => void clanShot.copyShot()}
+                      />
+                    ),
+                  }}
                 />
               </div>
             ) : mode.value === "player" && result.value ? (
@@ -431,44 +871,127 @@ export default defineComponent({
                 <StatsCard
                   stats={result.value}
                   rankedWr={ranked.winrate}
+                  rankedBattles={ranked.battles}
+                  onRankedClick={() => (rankedModal.value = true)}
                   onClanClick={
                     result.value.clanId != null
-                      ? () => void doClanLookup(result.value!.clanId!, realm.value)
+                      ? () => {
+                          // The player card carries the clan's tag — name
+                          // the pending row after it when present.
+                          const tag = result.value!.clanTag;
+                          void doClanLookup(
+                            result.value!.clanId!,
+                            result.value!.realm,
+                            tag ? `[${tag}]` : undefined,
+                          );
+                        }
                       : undefined
                   }
+                  v-slots={{
+                    actions: () => (
+                      <ShareShotButton
+                        busy={playerShot.busy.value}
+                        onShot={() => void playerShot.copyShot()}
+                      />
+                    ),
+                  }}
                 />
-                {/* Ship distribution charts */}
+                {/* Ship distribution charts — fed the UNFILTERED career list
+                    (shipRows): the tier histogram and both donuts must never
+                    react to the date-range tabs or the filter bar below;
+                    everything else (type cards, ship table, share shot)
+                    keeps the filtered view. */}
                 {shipRows.value.length > 0 ? (
                   <div class="lookup-view__dist">
                     <div class="lookup-view__dist-title">{t("lookup.distTitle")}</div>
+                    {/* forcedRow keeps the histogram + both donuts on one
+                        row at low window resolutions — the blocks shrink
+                        to their floors and a horizontal scrollbar appears
+                        below them instead of stacking one per row. */}
                     <ShipDistCharts
-                      ships={filteredShips.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
+                      ships={shipRows.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
+                      forcedRow
                     />
                   </div>
                 ) : null}
                 <div class="lookup-view__controls">
-                  <HTabs
-                    variant="segmented"
-                    modelValue={dateRange.value}
-                    onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
-                    tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
-                  />
+                  {/* The wrapper anchors the custom-range popover and
+                      carries the reopen click test; the tabs inside remain
+                      a plain flex child of the row. */}
+                  <div class="lookup-view__range-tabs" ref={rangeTabsRef} onClick={onRangeTabsClick}>
+                    <HkTabs
+                      variant="segmented"
+                      modelValue={dateRange.value}
+                      onUpdate:modelValue={onRangeTabUpdate}
+                      tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
+                    />
+                  </div>
+                  {/* Desktop keeps closeOnBackdrop off — the document-level
+                      pointerdown test above is the outside-close and Escape
+                      rides closeOnEscape; phones dock as a bottom sheet
+                      whose scrim then closes (same contract as the filter
+                      chips' popups one row over). */}
+                  <HkPopover
+                    modelValue={customOpen.value}
+                    onUpdate:modelValue={(v: boolean) => {
+                      if (!v) closeCustomPop();
+                    }}
+                    anchorRef={rangeTabsRef.value}
+                    placement="bottom-end"
+                    closeOnBackdrop={isMobile.value}
+                    sheetOnMobile
+                    padding="lg"
+                    title={t("dashboard.rangeCustom")}
+                  >
+                    <div ref={rangePanelRef} class="lookup-view__range-pop">
+                      <div class="lookup-view__range-pop-head">
+                        <span>{t("dashboard.rangeCustom")}</span>
+                      </div>
+                      <div class="lookup-view__range-pop-dates">
+                        <HkDatePicker
+                          size="sm"
+                          modelValue={customFrom.value}
+                          onUpdate:modelValue={(v: string | null) => (customFrom.value = v)}
+                          placeholder={t("dashboard.rangeFrom")}
+                          max={customTo.value ?? undefined}
+                        />
+                        <HkDatePicker
+                          size="sm"
+                          modelValue={customTo.value}
+                          onUpdate:modelValue={(v: string | null) => (customTo.value = v)}
+                          placeholder={t("dashboard.rangeTo")}
+                          min={customFrom.value ?? undefined}
+                        />
+                      </div>
+                      <div class="lookup-view__range-pop-hint">
+                        {t("dashboard.rangeCustomHint")}
+                      </div>
+                    </div>
+                  </HkPopover>
                   {/* Filter chips share the date-range row's height */}
                   <ShipFilterBar
                     ships={dateFiltered.value}
-                    realm={realm.value}
+                    realm={result.value.realm}
                     onChange={(v) => (filterState.value = v)}
                   />
                 </div>
                 {/* What the selected range actually covers — WG only serves
-                    career totals, so deltas need a local baseline. */}
-                {dateRange.value !== "all" ? (
+                    career totals, so deltas need a local baseline. The
+                    custom window's note spans the baseline actually used
+                    through the snapshot that closed the end bound. */}
+                {dateRange.value !== "all" &&
+                (dateRange.value !== "custom" || customWindow.value) ? (
                   <p class="lookup-view__range-note">
-                    {recentDelta.value
-                      ? t("dashboard.rangeSince", {
-                          date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                    {dateRange.value === "custom" && recentDelta.value
+                      ? t("dashboard.rangeWindow", {
+                          from: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                          to: new Date(recentDelta.value.endTs * 1000).toLocaleDateString(),
                         })
-                      : t("dashboard.rangeNoHistory")}
+                      : recentDelta.value
+                        ? t("dashboard.rangeSince", {
+                            date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                          })
+                        : t("dashboard.rangeNoHistory")}
                   </p>
                 ) : null}
                 {/* Per-type summary cards */}
@@ -484,9 +1007,17 @@ export default defineComponent({
                   </div>
                 ) : null}
                 {/* Flat ship table — multi-key sorted by the filter chips'
-                    drag order (leftmost active chip = primary key). */}
+                    fixed canonical order (earlier sorting category = primary key). Two
+                    empty states: the range itself played nothing vs. the
+                    range has ships that the filters/search all exclude. */}
                 <div class="lookup-view__ships">
-                  {filteredShips.value.length > 0 ? (
+                  {filteredShips.value.length === 0 ? (
+                    <p class="lookup-view__ships-empty">
+                      {dateFiltered.value.length === 0
+                        ? t("dashboard.noShipsInRange")
+                        : t("dashboard.noShipsMatchFilter")}
+                    </p>
+                  ) : (
                     <div class="lookup-view__shiplist">
                       {filteredShips.value.map((s) => {
                         const off = shipOfflineEntry(s.shipId);
@@ -499,11 +1030,11 @@ export default defineComponent({
                             role="button"
                             tabindex={0}
                             data-hint={t("ships.detail.openHint")}
-                            onClick={() => shipDetail.openShip(s.shipId, displayName(s), realm.value)}
+                            onClick={() => shipDetail.openShip(s.shipId, displayName(s), result.value!.realm)}
                             onKeydown={(e: KeyboardEvent) => {
                               if (e.key !== "Enter" && e.key !== " ") return;
                               e.preventDefault();
-                              shipDetail.openShip(s.shipId, displayName(s), realm.value);
+                              shipDetail.openShip(s.shipId, displayName(s), result.value!.realm);
                             }}
                           >
                             <span class="lookup-view__ship-ico">
@@ -512,12 +1043,10 @@ export default defineComponent({
                               ) : null}
                             </span>
                             <span class="lookup-view__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
-                            <span class="lookup-view__ship-name">
-                              {displayName(s)}
-                              {off?.tier != null ? (
-                                <em class="lookup-view__ship-tier">{off.tier}</em>
-                              ) : null}
-                            </span>
+                            <em class="lookup-view__ship-tier">
+                              {off?.tier != null ? tierToRoman(off.tier) : ""}
+                            </em>
+                            <span class="lookup-view__ship-name">{displayName(s)}</span>
                             <span class="lookup-view__ship-battles">{s.battles.toLocaleString()}</span>
                             <span
                               class="lookup-view__ship-wr"
@@ -525,7 +1054,13 @@ export default defineComponent({
                             >
                               {s.winrate.toFixed(1)}%
                             </span>
-                            <span class="lookup-view__ship-dmg">{Math.round(s.avgDamage).toLocaleString()}</span>
+                            <span class="lookup-view__ship-dmg">
+                              {/* Battles with zero damage are broken snapshot
+                                  data — same anomaly flag as the ship modal. */}
+                              {s.battles > 0 && s.avgDamage <= 0
+                                ? t("stats.dataAnomaly")
+                                : Math.round(s.avgDamage).toLocaleString()}
+                            </span>
                             <span class="lookup-view__ship-kd">
                               {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                             </span>
@@ -538,11 +1073,13 @@ export default defineComponent({
                         );
                       })}
                     </div>
-                  ) : null}
+                  )}
                 </div>
               </div>
             ) : null}
           </Transition>
+          </div>
+          </HkScrollContainer>
         </div>
 
         {/* Ship detail popup — water-table context on the looked-up player:
@@ -551,9 +1088,17 @@ export default defineComponent({
           ship={shipDetail.selectedShip.value}
           source="water"
           accountId={result.value?.accountId ?? null}
-          realm={result.value ? realm.value : null}
+          realm={result.value?.realm ?? null}
           gameRoot={shipDetail.gameRoot.value}
           onClose={() => shipDetail.closeShip()}
+        />
+
+        {/* Ranked season timeline for the LOOKED-UP player — the ranked
+            store slot doSearch fills is theirs; the modal presents it. */}
+        <RankedSeasonModal
+          modelValue={rankedModal.value}
+          onUpdate:modelValue={(v: boolean) => (rankedModal.value = v)}
+          playerName={result.value?.name ?? ""}
         />
       </div>
     );

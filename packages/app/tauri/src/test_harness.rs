@@ -21,6 +21,7 @@
 
 #![cfg(feature = "test-harness")]
 
+use anyhow::{Result, anyhow};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
@@ -206,12 +207,12 @@ fn handle_capture(app: &tauri::AppHandle, body: &str) -> (&'static str, String) 
     }
 }
 
-fn screenshots_dir() -> Result<PathBuf, String> {
+fn screenshots_dir() -> Result<PathBuf> {
     let dir = dirs_next::data_dir()
-        .ok_or_else(|| "cannot resolve data dir".to_string())?
+        .ok_or_else(|| anyhow!("cannot resolve data dir"))?
         .join("WoWSP")
         .join("screenshots");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir)
 }
 

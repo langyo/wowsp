@@ -14,10 +14,18 @@ import type {
   TacticalStep,
   TextElement,
   Vec2,
+  ZoneElement,
 } from "./types";
 import {
+  ZONE_TYPES,
+  zoneHitTest,
+  zoneRadiusAt,
+  zoneSectorPoints,
+  type ZoneLike,
+} from "./zones";
+import { TACTICAL_DOC_VERSION } from "./types";
+import {
   TACTICAL_MAX_SCALE,
-  boundsOf,
   distToPolyline,
   distToSegment,
   pointInEllipse,
@@ -28,6 +36,7 @@ import {
   simplifyRDP,
   smoothPolyline,
 } from "./geometry";
+import { ACTION_KINDS } from "./plan";
 
 let _idSeq = 0;
 
@@ -88,8 +97,20 @@ export function commitMarker(
   color: string,
   t0: number,
   label = "",
+  action?: MarkerElement["action"],
 ): MarkerElement {
-  return { id: newElementId(), kind: "marker", t0, at, heading, variant, color, label, size: 40 };
+  return {
+    id: newElementId(),
+    kind: "marker",
+    t0,
+    at,
+    heading,
+    variant,
+    color,
+    label,
+    size: 40,
+    ...(action ? { action } : {}),
+  };
 }
 
 /** A scripted route marker: sails the (simplified) route from `t0` over
@@ -120,13 +141,31 @@ export function commitRouteMarker(
   };
 }
 
-/** Where a marker sits at battle time t (route interpolation included). */
-export function markerPoseAt(el: MarkerElement, t: number): { at: Vec2; heading: number } {
-  if (!el.route || el.route.length < 2 || !el.moveDur || el.moveDur <= 0) {
-    return { at: el.at, heading: el.heading };
+/** Where a marker sits at battle time t. Explicit motion wins over plan
+ *  tweening: a scripted route interpolates along its smoothed polyline — the
+ *  hand-drawn path being the more specific instruction — else a leg target
+ *  sails the hull straight to the unit's next action (arriving exactly on its
+ *  second) and holds there afterwards. */
+export function markerPoseAt(
+  el: MarkerElement,
+  t: number,
+  tween?: { at: Vec2; t: number } | null,
+): { at: Vec2; heading: number } {
+  if (el.route && el.route.length >= 2 && el.moveDur && el.moveDur > 0) {
+    const frac = Math.max(0, Math.min(1, (t - el.t0) / el.moveDur));
+    return pointAlongPolyline(el.route, frac);
   }
-  const frac = Math.max(0, Math.min(1, (t - el.t0) / el.moveDur));
-  return pointAlongPolyline(el.route, frac);
+  if (tween && tween.t > el.t0 && el.action != null) {
+    const frac = Math.max(0, Math.min(1, (t - el.t0) / (tween.t - el.t0)));
+    const dx = tween.at.x - el.at.x;
+    const dz = tween.at.z - el.at.z;
+    return {
+      at: { x: el.at.x + dx * frac, z: el.at.z + dz * frac },
+      // Keep the authored heading when there is nowhere to travel.
+      heading: Math.hypot(dx, dz) > 1e-6 ? Math.atan2(dx, dz) : el.heading,
+    };
+  }
+  return { at: el.at, heading: el.heading };
 }
 
 export function commitPath(
@@ -167,7 +206,7 @@ export function visibleAt(el: TacticalElement, t: number): boolean {
 
 /** Element reveal progress at time t: 0 → 1 over its draw-in window. */
 export function elementProgress(el: TacticalElement, t: number): number {
-  if (el.kind === "text" || el.kind === "marker") {
+  if (el.kind === "text" || el.kind === "marker" || el.kind === "zone") {
     return Math.max(0, Math.min(1, (t - el.t0) / 0.35));
   }
   if (el.kind === "replayPath") return t >= el.t0 ? 1 : 0;
@@ -176,11 +215,32 @@ export function elementProgress(el: TacticalElement, t: number): number {
   return Math.max(0, Math.min(1, (t - el.t0) / drawIn));
 }
 
+/** Full-progress smoothed freehand cache — hit-tests and the selection
+ *  outline re-derive the polyline far more often than the render loop, so
+ *  they share one memo per immutable element (edits replace the object,
+ *  which invalidates naturally). */
+const smoothHitCache = new WeakMap<object, Vec2[]>();
+
+function smoothedFreehand(el: ShapeElement): Vec2[] {
+  let out = smoothHitCache.get(el);
+  if (!out) {
+    out = smoothPolyline(el.points);
+    smoothHitCache.set(el, out);
+  }
+  return out;
+}
+
 /** World points an element occupies at time t (for hit-tests + selection
- *  outline). Freehand returns the SMOOTHED polyline (what the user sees). */
-export function elementPoints(el: TacticalElement, t: number): Vec2[] {
+ *  outline). Freehand returns the SMOOTHED polyline (what the user sees).
+ *  `tween` is the plan action's tween target, when it has one. */
+export function elementPoints(
+  el: TacticalElement,
+  t: number,
+  tween?: { at: Vec2; t: number } | null,
+): Vec2[] {
   switch (el.kind) {
     case "freehand": {
+      if (elementProgress(el, t) >= 1) return smoothedFreehand(el);
       const partial = slicePolylineByFraction(el.points, elementProgress(el, t));
       return partial.length >= 2 ? smoothPolyline(partial) : partial;
     }
@@ -196,7 +256,7 @@ export function elementPoints(el: TacticalElement, t: number): Vec2[] {
     case "text":
       return [el.at];
     case "marker": {
-      const pose = markerPoseAt(el, t);
+      const pose = markerPoseAt(el, t, tween);
       // Selection outline spans the whole scripted route, not just the
       // marker's current position.
       if (el.route && el.route.length >= 2) {
@@ -204,14 +264,31 @@ export function elementPoints(el: TacticalElement, t: number): Vec2[] {
       }
       return [pose.at];
     }
+    case "zone":
+      return zoneSectorPointsOf(el, t);
     case "replayPath":
       return [];
   }
 }
 
+/** World points a zone occupies at time t (selection outline): the sector
+ *  triangle/arc at its current sweep radius, or the ring's centre. */
+function zoneSectorPointsOf(el: ZoneElement, t: number): Vec2[] {
+  if (el.halfAngle > 0) {
+    return zoneSectorPoints(el as unknown as ZoneLike, zoneRadiusAt(el as unknown as ZoneLike, t));
+  }
+  return [el.at];
+}
+
 /** Hit-test an element at world point p with `padWorld` slack (top-most
  *  wins in the caller by iterating in reverse). */
-export function hitTestElement(el: TacticalElement, p: Vec2, padWorld: number, t: number): boolean {
+export function hitTestElement(
+  el: TacticalElement,
+  p: Vec2,
+  padWorld: number,
+  t: number,
+  tween?: { at: Vec2; t: number } | null,
+): boolean {
   if (!visibleAt(el, t)) return false;
   switch (el.kind) {
     case "freehand":
@@ -226,7 +303,7 @@ export function hitTestElement(el: TacticalElement, p: Vec2, padWorld: number, t
     case "text":
       return Math.hypot(p.x - el.at.x, p.z - el.at.z) <= padWorld * 2.2;
     case "marker": {
-      const pose = markerPoseAt(el, t);
+      const pose = markerPoseAt(el, t, tween);
       if (
         Math.hypot(p.x - pose.at.x, p.z - pose.at.z) <= padWorld * 2.2 ||
         // The scripted route line is clickable too (select/move the marker
@@ -239,6 +316,8 @@ export function hitTestElement(el: TacticalElement, p: Vec2, padWorld: number, t
       }
       return false;
     }
+    case "zone":
+      return zoneHitTest(el as unknown as ZoneLike, p, t, padWorld);
     case "replayPath":
       return false; // not directly selectable in wave 1
   }
@@ -262,15 +341,11 @@ export function moveElement<T extends TacticalElement>(el: T, dx: number, dz: nu
         at: { x: el.at.x + dx, z: el.at.z + dz },
         route: el.route?.map((p) => ({ x: p.x + dx, z: p.z + dz })),
       };
+    case "zone":
+      return { ...el, at: { x: el.at.x + dx, z: el.at.z + dz } };
     case "replayPath":
       return el;
   }
-}
-
-/** Bounding box for the selection outline (world coords). */
-export function elementBounds(el: TacticalElement, t: number) {
-  if (el.kind === "replayPath") return null;
-  return boundsOf(elementPoints(el, t));
 }
 
 // ── Persistence ─────────────────────────────────────────────────────────
@@ -286,13 +361,13 @@ export function docStorageKey(replayPath: string): string {
 }
 
 export function serializeDoc(doc: TacticalDoc): string {
-  return JSON.stringify(doc);
+  return JSON.stringify({ ...doc, version: TACTICAL_DOC_VERSION });
 }
 
 export function parseDoc(json: string): TacticalDoc | null {
   try {
     const d = JSON.parse(json) as Partial<TacticalDoc>;
-    if (d && d.version === 1 && Array.isArray(d.elements)) {
+    if (d && d.version === TACTICAL_DOC_VERSION && Array.isArray(d.elements)) {
       // Sanitize + normalize: a corrupted/hand-edited localStorage entry
       // must neither brick the render loop nor degrade silently — drop
       // malformed elements and backfill safe defaults for optional fields.
@@ -343,6 +418,7 @@ const ELEMENT_KINDS = new Set([
   "text",
   "marker",
   "replayPath",
+  "zone",
 ]);
 const DASH_KINDS = new Set(["solid", "dashed", "dotted"]);
 
@@ -410,6 +486,7 @@ function normalizeElement(el: unknown): TacticalElement[] {
       if (!isFiniteVec(e.at) || (e.variant !== "ship" && e.variant !== "plane")) return [];
       const route = (Array.isArray(e.route) ? e.route : []).filter(isFiniteVec);
       const moveDur = fin(e.moveDur, Number.NaN);
+      const action = ACTION_KINDS.find((k) => k === e.action);
       return [
         {
           ...base,
@@ -421,6 +498,12 @@ function normalizeElement(el: unknown): TacticalElement[] {
           label: typeof e.label === "string" ? e.label : "",
           size: fin(e.size, 40),
           ...(route.length >= 2 && moveDur > 0 ? { route, moveDur } : {}),
+          ...(action ? { action } : {}),
+          ...(typeof e.shipId === "number" && Number.isFinite(e.shipId)
+            ? { shipId: e.shipId }
+            : {}),
+          ...(e.team === "ally" || e.team === "enemy" ? { team: e.team } : {}),
+          ...(e.stop === true ? { stop: true } : {}),
         },
       ];
     }
@@ -441,6 +524,26 @@ function normalizeElement(el: unknown): TacticalElement[] {
           color: str(e.color, "#4ade80"),
           width: fin(e.width, 4),
           dash: normDash(e.dash),
+        },
+      ];
+    }
+    case "zone": {
+      if (!isFiniteVec(e.at)) return [];
+      const zoneType = ZONE_TYPES.find((z) => z === e.zoneType);
+      if (!zoneType) return [];
+      return [
+        {
+          ...base,
+          kind: "zone",
+          zoneType,
+          at: e.at,
+          heading: fin(e.heading, 0),
+          radius: Math.max(1, fin(e.radius, 100)),
+          halfAngle: Math.max(0, fin(e.halfAngle, 0)),
+          speed: Math.max(0, fin(e.speed, 0)),
+          durS: Math.max(0, fin(e.durS, 0)),
+          unit: typeof e.unit === "string" ? e.unit : "",
+          ...(e.team === "ally" || e.team === "enemy" ? { team: e.team } : {}),
         },
       ];
     }

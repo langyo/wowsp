@@ -227,7 +227,7 @@
   }
 
   &__label {
-    font-size: 9px;
+    font-size: 0.5625rem;
     color: rgb(var(--color-muted));
     margin-top: 0.25rem;
     white-space: nowrap;
@@ -280,4 +280,13 @@
   line-height: 1.5;
   color: rgb(var(--color-text));
   word-break: break-all;
+}
+
+/* Event ships: the rarity slot shows the violet 活动·<event name> tag
+   (hikari ships no purple STag variant — default + this tint; the compound
+   selector outspecifies .hk-tag-default without !important). */
+.ship-detail__event-tag .hk-tag {
+  background: rgb(190 120 255 / 15%);
+  border-color: rgb(190 120 255 / 50%);
+  color: rgb(200 140 255);
 }

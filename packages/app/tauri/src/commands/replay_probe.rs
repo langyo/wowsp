@@ -17,9 +17,10 @@
 //! same ship — mirror lineups leave those entities unattributed rather than
 //! guessed (`ship_id_ambiguous`).
 
+use anyhow::anyhow;
 use wowsp_tauri_shared::{
-    AmbiguousShipId, EntityVisibilityStats, PositionSample, ReplayProbeReport, VehicleEntry,
-    VisibilityGap,
+    AmbiguousShipId, CommandResult, EntityVisibilityStats, PositionSample, ReplayProbeReport,
+    VehicleEntry, VisibilityGap,
 };
 
 /// Sample-gap threshold (seconds) separating "continuously observed" from
@@ -253,24 +254,25 @@ pub fn build_report(
 }
 
 /// Visibility statistics for one `.wowsreplay` — the E3 probe surface.
-/// Reuses the full decode pipeline ([`super::replay::read_replay_positions`])
-/// plus the roster from the descriptor JSON for team attribution.
+/// Reuses the full decode pipeline
+/// ([`super::replay::decode_replay_stream_sync`]) plus the roster from the
+/// descriptor JSON for team attribution.
 #[tauri::command]
-pub fn replay_visibility_probe(path: String) -> Result<ReplayProbeReport, String> {
-    let stream = super::replay::read_replay_positions(path.clone())?;
+pub fn replay_visibility_probe(path: String) -> CommandResult<ReplayProbeReport> {
+    let stream = super::replay::decode_replay_stream_sync(&path)?;
     let vehicles = read_roster(&path)?;
     Ok(build_report(&path, &stream, &vehicles))
 }
 
 /// Read the roster out of a replay's descriptor JSON block (empty on any
 /// structural problem — the report degrades to team-less stats).
-pub(crate) fn read_roster(path: &str) -> Result<Vec<VehicleEntry>, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("read {path}: {e}"))?;
+pub(crate) fn read_roster(path: &str) -> anyhow::Result<Vec<VehicleEntry>> {
+    let bytes = std::fs::read(path).map_err(|e| anyhow!("read {path}: {e}"))?;
     let Some(json) = super::replay::extract_descriptor_json_pub(&bytes) else {
         return Ok(Vec::new());
     };
     let raw: serde_json::Value =
-        serde_json::from_str(&json).map_err(|e| format!("parse descriptor JSON: {e}"))?;
+        serde_json::from_str(&json).map_err(|e| anyhow!("parse descriptor JSON: {e}"))?;
     Ok(raw
         .get("vehicles")
         .and_then(|v| v.as_array())
@@ -324,6 +326,7 @@ mod tests {
             initial_z: 0.0,
             creation_time: creation,
             ship_id,
+            max_health: None,
             radius: None,
             control_point_index: None,
             initial_team: None,
@@ -428,6 +431,12 @@ mod tests {
             ward_removes: Vec::new(),
             shot_kills: Vec::new(),
             damage_stats: Vec::new(),
+            chat_messages: Vec::new(),
+            achievements: Vec::new(),
+            arena_players: Vec::new(),
+            weather_transitions: Vec::new(),
+            weather_notifications: Vec::new(),
+            self_team: None,
         };
         let vehicles = vec![
             VehicleEntry {

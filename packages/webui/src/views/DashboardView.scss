@@ -2,12 +2,24 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  /* This element is the page scroller. Padding here is content clearance
-     only — native scrollbars render at the border edge, so the vertical
-     bar still hugs the window's right edge (same rule as LookupView
-     __main); no ancestor may carry padding on that side. */
-  padding: 1.5rem 2rem;
-  overflow-y: auto;
+
+  /* Page scroll region: hikari's HkScrollContainer owns the scrollbar
+     (auto-hiding overlay track on the region's right edge; the native
+     bar stays hidden), so no ancestor-padding constraint applies. */
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Former scroller layout + clearance, moved inside the viewport so
+     they keep scrolling with the content. min-height: 100% keeps the
+     empty state vertically centered even when content is short. */
+  &__inner {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding: 1.5rem 2rem;
+  }
 
   &__empty {
     flex: 1;
@@ -91,7 +103,10 @@
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
-    align-items: center;
+    /* flex-start (not center): the ship-filter strip is two lines tall
+       (meta line + chip line); centering would drop the date tabs halfway
+       into the chip row instead of keeping them on the meta line. */
+    align-items: flex-start;
   }
 }
 
@@ -101,42 +116,11 @@
   flex: 0 0 auto;
 }
 
-/* ── Ranked history cards ────────────────────────────────────────────── */
-.dash-ranked {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 0.5rem;
-}
-
-.dash-ranked__card {
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 12%);
-  border-radius: var(--radius-md);
-  padding: 0.6rem 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.dash-ranked__season {
-  font-size: var(--text-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: rgb(var(--color-muted));
-}
-
-.dash-ranked__rank {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: rgb(var(--color-primary));
-}
-
-.dash-ranked__stats {
-  display: flex;
-  gap: 0.6rem;
-  font-size: var(--text-xs);
-  color: rgb(var(--color-text));
-  font-variant-numeric: tabular-nums;
+/* Full-width block host for the dist charts; the named inline-size
+   container `ship-dist-host` is what the chart-row collapse query in
+   ShipDistCharts.scss binds to. */
+.dashboard-view__dist {
+  container: ship-dist-host / inline-size;
 }
 
 .dash-empty {
@@ -266,5 +250,12 @@
       gap: 0.3rem 0.5rem;
       padding: 0.6rem 0.75rem;
     }
+  }
+}
+
+/* ── Phone layout (≤767px): tighter page gutters ───────────────────────── */
+@media (max-width: 767px) {
+  .dashboard-view {
+    padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
   }
 }

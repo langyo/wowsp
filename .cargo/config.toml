@@ -4,3 +4,20 @@
 
 [net]
 git-fetch-with-cli = true
+
+# Statically link the CRT into every msvc-target build of this workspace
+# (the shipped wowsp.exe above all). A dynamically linked Rust/MSVC binary
+# imports VCRUNTIME140.dll, and a stock Windows machine without the VC++
+# Redistributable dies on a "VCRUNTIME140.dll missing" loader dialog
+# before any code runs - the installer (statically linked on the shun
+# side since 0.6.3) would deliver an app that cannot start. The
+# wasm/cloudflare workspaces under packages/ are excluded from this
+# workspace and target wasm32 (these msvc sections are inert for them).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

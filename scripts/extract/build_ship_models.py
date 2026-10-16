@@ -33,6 +33,36 @@ import re
 from pathlib import Path
 
 
+def _params_root(raw: object) -> dict:
+    """Same normalization as build_techtree: accept list- and namespace-
+    wrapped GameParams roots (the Lesta dump ships as a list)."""
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            if isinstance(item, dict) and item:
+                return _params_root(item)
+        return {}
+    if isinstance(raw, dict):
+        head = raw.get("")
+        if isinstance(head, dict):
+            return head
+    return raw if isinstance(raw, dict) else {}
+
+
+def _hull_model(entry: dict, fallback: bool) -> str | None:
+    hull = entry.get("A_Hull")
+    if isinstance(hull, dict) and isinstance(hull.get("model"), str):
+        return hull["model"]
+    if not fallback:
+        return None
+    # Researchable ships name hull upgrades A_Hull_<year>/B_Hull_<year> —
+    # the Lesta-only walkers must still find a model path. (Kept behind the
+    # fallback flag so the WG pass's output stays byte-identical.)
+    for key, val in entry.items():
+        if isinstance(val, dict) and "Hull" in key and isinstance(val.get("model"), str):
+            return val["model"]
+    return None
+
+
 def _readable_name(gp_key: str) -> str:
     """PJSB018_Yamato_1944 → 'Yamato'; PASB017_Montana_1945 → 'Montana'.
 
@@ -60,6 +90,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--gameparams", required=True, type=Path)
     ap.add_argument("--bridge", required=True, type=Path, help="wowsinfo.json (ship_id↔index)")
+    ap.add_argument(
+        "--extra-gameparams", type=Path, action="append", default=[],
+        help="additional GameParams dumps (e.g. the decoded Lesta client dump) "
+             "whose ships merge in when their shipId is absent — Lesta-only "
+             "entries ride along without touching the WG output",
+    )
     ap.add_argument("--out", required=True, type=Path)
     args = ap.parse_args()
 
@@ -90,10 +126,7 @@ def main() -> int:
         if not isinstance(ship_id, int):
             continue
         origin = obj.get("originShipName")
-        hull = obj.get("A_Hull")
-        hull_model = None
-        if isinstance(hull, dict):
-            hull_model = hull.get("model")
+        hull_model = _hull_model(obj, fallback=False)
         idx = key.split("_", 1)[0]
         key_info[key] = {
             "shipId": ship_id,
@@ -126,11 +159,42 @@ def main() -> int:
         }
         resolved += 1
 
+    # Extra dumps (the Lesta client's): same walk with the hull-model
+    # fallback (researchable hulls are A_Hull_<year>), merged by shipId only
+    # when absent — shared ships keep the WG entry, Lesta-only ships ride in.
+    extra_added = 0
+    for extra_path in args.extra_gameparams:
+        print(f"[ship_models] parsing extra dump {extra_path} ...", flush=True)
+        extra_gp = _params_root(json.loads(extra_path.read_text(encoding="utf-8")))
+        for key, obj in extra_gp.items():
+            if not isinstance(obj, dict):
+                continue
+            ti = obj.get("typeinfo")
+            if not isinstance(ti, dict) or ti.get("type") != "Ship":
+                continue
+            ship_id = obj.get("id")
+            if not isinstance(ship_id, int) or str(ship_id) in out:
+                continue
+            origin = obj.get("originShipName")
+            base_name = _readable_name(key)
+            if origin and origin in extra_gp and origin != key:
+                base_name = _readable_name(origin)
+            out[str(ship_id)] = {
+                "index": key.split("_", 1)[0],
+                "name": "",
+                "baseName": base_name,
+                # None would surface as JSON null, which the webui's
+                # ShipModelEntry type (originShipName: string) rejects.
+                "originShipName": origin or "",
+                "hullModel": _hull_model(obj, fallback=True),
+            }
+            extra_added += 1
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"[ship_models] wrote {args.out} ({args.out.stat().st_size // 1024} KB)")
-    print(f"[ship_models] {resolved} ships, {deduped} redirect to a base model, "
-          f"{skin_count} skin ships detected.")
+    print(f"[ship_models] {resolved} ships (+{extra_added} from extra dumps), "
+          f"{deduped} redirect to a base model, {skin_count} skin ships detected.")
     return 0
 
 

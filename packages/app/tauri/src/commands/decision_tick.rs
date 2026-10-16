@@ -40,10 +40,12 @@
 //! so pre-gap velocity is preserved but never extrapolated across the gap).
 //! Only ships (entity type 2) are listed in `entities` in this first version.
 
+use anyhow::anyhow;
 use serde::Serialize;
 use wowsp_tauri_shared::{
-    CruiseSample, DecisionTickEntity, DecisionTickEvents, DecisionTickRecorder, DecisionTickState,
-    DecisionTickZone, HpSample, PositionSample, ReplayStream, SmokeScreenEvent, VehicleEntry,
+    CommandResult, CruiseSample, DecisionTickEntity, DecisionTickEvents, DecisionTickRecorder,
+    DecisionTickState, DecisionTickZone, HpSample, PositionSample, ReplayStream, SmokeScreenEvent,
+    VehicleEntry,
 };
 
 use super::replay_probe::{
@@ -403,17 +405,17 @@ pub fn build_tick_state(
     time_sec: f32,
     los: Option<&LosGrid>,
     eye_height: f32,
-) -> Result<DecisionTickState, String> {
-    let rec_id = stream.recorder_vehicle_id.ok_or_else(|| {
-        "replay carries no recorder vehicle join (modern replays only)".to_string()
-    })?;
+) -> anyhow::Result<DecisionTickState> {
+    let rec_id = stream
+        .recorder_vehicle_id
+        .ok_or_else(|| anyhow!("replay carries no recorder vehicle join (modern replays only)"))?;
     let rec_traj = stream
         .trajectories
         .iter()
         .find(|t| t.entity_id == rec_id)
-        .ok_or_else(|| format!("recorder entity {rec_id} has no trajectory"))?;
+        .ok_or_else(|| anyhow!("recorder entity {rec_id} has no trajectory"))?;
     let rec_sample = last_sample_at(&rec_traj.samples, time_sec)
-        .ok_or_else(|| format!("no recorder position at or before t={time_sec}"))?;
+        .ok_or_else(|| anyhow!("no recorder position at or before t={time_sec}"))?;
     let sides = roster_sides(vehicles);
     let conflicts = battle_results_conflicts(stream.battle_results.as_deref());
 
@@ -556,8 +558,8 @@ pub fn build_tick_state(
 /// lets the webui (or a CLI caller) re-derive [`METERS_PER_UNIT`] on any
 /// reference capture whose recorder's ship spec is known.
 #[tauri::command]
-pub fn decision_scale_calibration(replay_path: String) -> Result<ScaleCalibration, String> {
-    let stream = super::replay::read_replay_positions(replay_path)?;
+pub fn decision_scale_calibration(replay_path: String) -> CommandResult<ScaleCalibration> {
+    let stream = super::replay::decode_replay_stream_sync(&replay_path)?;
     Ok(calibrate_meters_per_unit(&stream))
 }
 
@@ -568,7 +570,7 @@ pub fn decision_scale_calibration(replay_path: String) -> Result<ScaleCalibratio
 /// smoke clouds and per-entity inside-smoke flags (see
 /// [`build_tick_state_with_smokes`]) — additive JSON keys, so existing
 /// consumers keep working. COST NOTE: the smoke lifecycles live behind
-/// [`super::replay::read_replay_smoke_screens`], which decodes the replay a
+/// [`super::replay::read_smoke_screens_sync`], which decodes the replay a
 /// SECOND time (the smoke events cannot ride `ReplayStream` while the shared
 /// DTOs are frozen); unify the two decodes when `replay.rs` unfreezes.
 #[tauri::command]
@@ -577,22 +579,22 @@ pub fn decision_tick_state(
     time_sec: f32,
     los_grid_path: Option<String>,
     eye_height: Option<f32>,
-) -> Result<DecisionTickSmokeState, String> {
-    let stream = super::replay::read_replay_positions(replay_path.clone())?;
+) -> CommandResult<DecisionTickSmokeState> {
+    let stream = super::replay::decode_replay_stream_sync(&replay_path)?;
     let vehicles = read_roster(&replay_path)?;
     let grid = match los_grid_path {
         Some(p) => Some(LosGrid::load_npz(std::path::Path::new(&p))?),
         None => None,
     };
-    let smokes = super::replay::read_replay_smoke_screens(replay_path)?;
-    build_tick_state_with_smokes(
+    let smokes = super::replay::read_smoke_screens_sync(&replay_path)?;
+    Ok(build_tick_state_with_smokes(
         &stream,
         &vehicles,
         &smokes,
         time_sec,
         grid.as_ref(),
         eye_height.unwrap_or(DEFAULT_EYE_HEIGHT),
-    )
+    )?)
 }
 
 // ── E12 / G1: smoke geometry in the tick snapshot ───────────────────────────
@@ -659,7 +661,7 @@ pub struct DecisionTickSmokeState {
 /// Build the tick state WITH smoke geometry (E12 / G1): every cloud active at
 /// `t` (creation ≤ t < observed dissipation; no observed end ⇒ still active)
 /// and, for every ship row of the tick, whether its last-known position sits
-/// inside one. `smokes` comes from [`super::replay::read_replay_smoke_screens`].
+/// inside one. `smokes` comes from [`super::replay::read_smoke_screens_sync`].
 /// Smoke entities themselves (entityType 4) stay out of the ship list — they
 /// are reported through `smokes`.
 pub fn build_tick_state_with_smokes(
@@ -669,7 +671,7 @@ pub fn build_tick_state_with_smokes(
     time_sec: f32,
     los: Option<&LosGrid>,
     eye_height: f32,
-) -> Result<DecisionTickSmokeState, String> {
+) -> anyhow::Result<DecisionTickSmokeState> {
     let tick = build_tick_state(stream, vehicles, time_sec, los, eye_height)?;
     let mut active = Vec::new();
     for ev in smokes {
@@ -744,6 +746,7 @@ mod tests {
             initial_z: 0.0,
             creation_time: 0.0,
             ship_id,
+            max_health: None,
             radius: None,
             control_point_index: None,
             initial_team: None,
@@ -1209,6 +1212,12 @@ mod tests {
             ward_removes: Vec::new(),
             shot_kills: Vec::new(),
             damage_stats: Vec::new(),
+            chat_messages: Vec::new(),
+            achievements: Vec::new(),
+            arena_players: Vec::new(),
+            weather_transitions: Vec::new(),
+            weather_notifications: Vec::new(),
+            self_team: None,
         }
     }
 
@@ -1223,7 +1232,7 @@ mod tests {
             return;
         };
         let stream =
-            super::super::replay::read_replay_positions(path.clone()).expect("decode real replay");
+            super::super::replay::decode_replay_stream_sync(&path).expect("decode real replay");
         let cal = calibrate_meters_per_unit(&stream);
         eprintln!(
             "[e5] recorder={:?} world extent x[{:.0},{:.0}] z[{:.0},{:.0}]",
@@ -1280,7 +1289,7 @@ mod tests {
             return;
         };
         let stream =
-            super::super::replay::read_replay_positions(path.clone()).expect("decode real replay");
+            super::super::replay::decode_replay_stream_sync(&path).expect("decode real replay");
         let vehicles = read_roster(&path).expect("roster");
         let state = build_tick_state(&stream, &vehicles, 300.0, None, DEFAULT_EYE_HEIGHT)
             .expect("tick at t=300");
@@ -1388,7 +1397,7 @@ mod tests {
         };
         let grid = LosGrid::load_npz(&grid_path).expect("load LOS raster");
         let stream =
-            super::super::replay::read_replay_positions(path.clone()).expect("decode real replay");
+            super::super::replay::decode_replay_stream_sync(&path).expect("decode real replay");
         let vehicles = read_roster(&path).expect("roster");
         let state = build_tick_state(&stream, &vehicles, 300.0, Some(&grid), DEFAULT_EYE_HEIGHT)
             .expect("tick with LOS");
@@ -1621,10 +1630,10 @@ mod tests {
             return;
         };
         let stream =
-            super::super::replay::read_replay_positions(path.clone()).expect("decode real replay");
+            super::super::replay::decode_replay_stream_sync(&path).expect("decode real replay");
         let vehicles = read_roster(&path).expect("roster");
         let smokes =
-            super::super::replay::read_replay_smoke_screens(path).expect("smoke lifecycles");
+            super::super::replay::read_smoke_screens_sync(&path).expect("smoke lifecycles");
         eprintln!("[e12-smoke] full E8 table: {} smoke screens", smokes.len());
         for s in &smokes {
             eprintln!(

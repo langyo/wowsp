@@ -174,12 +174,39 @@ def main() -> int:
     )
     ap.add_argument("--models", default=str(SHIP_MODELS))
     ap.add_argument("-o", "--output", default=str(DEFAULT_OUT))
+    ap.add_argument(
+        "--merge-indexes",
+        help="comma list of ship indexes to ADD to the existing silhouettes.json "
+        "(keyed directly by index — the app resolves index-first) instead of "
+        "regenerating the whole GLB-stem-keyed file. Used for Lesta-only ships, "
+        "which have client silhouettes but no baked GLB yet.",
+    )
     args = ap.parse_args()
 
     png_dir = Path(args.png)
     if not png_dir.is_dir():
         print(f"[trace] not a directory: {png_dir}", file=sys.stderr)
         return 1
+
+    if args.merge_indexes:
+        wanted = {s.strip() for s in args.merge_indexes.split(",") if s.strip()}
+        out_path = Path(args.output)
+        out = json.loads(out_path.read_text(encoding="utf-8"))
+        added = 0
+        for idx in sorted(wanted):
+            png = png_dir / f"{idx}.png"
+            if not png.is_file():
+                print(f"[trace] WARN no silhouette PNG for {idx}")
+                continue
+            path = trace_png(png.read_bytes())
+            if path:
+                out[idx] = {"path": path}
+                added += 1
+            else:
+                print(f"[trace] WARN trace failed for {idx}")
+        out_path.write_text(json.dumps(out, separators=(",", ":")), encoding="utf-8")
+        print(f"[trace] merged {added} index-keyed silhouettes -> {out_path}")
+        return 0
 
     # index -> traced path
     index_path: dict[str, str] = {}

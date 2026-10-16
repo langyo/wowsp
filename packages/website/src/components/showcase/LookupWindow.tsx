@@ -1,7 +1,7 @@
 import { computed, defineComponent, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { Search, Database, Ship } from "@lucide/vue";
-import { HTag } from "@celestia-island/hikari";
+import { HkTag } from "@celestia-island/hikari";
 import { ships, shipName, nationFlag } from "@/data/ships";
 import "./WindowFrames.scss";
 
@@ -38,7 +38,7 @@ export default defineComponent({
           <span class="mod-win__title">
             <Ship size={13} />
             {t("showcase.lookup.win.title")}
-            <HTag variant="primary">{t("showcase.lookup.win.count", { n: ships.length })}</HTag>
+            <HkTag variant="primary">{t("showcase.lookup.win.count", { n: ships.length })}</HkTag>
           </span>
           <span class="mod-win__search">
             <Database size={12} />

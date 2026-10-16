@@ -695,7 +695,7 @@ fn parse_replay_data_in_background(
                                         #[cfg(not(feature = "shipbuilds_debugging"))]
                                         let url = "https://shipbuilds.com/api/ship_builds";
                                         #[cfg(feature = "shipbuilds_debugging")]
-                                        let url = "http://192.168.1.215:3000/api/ship_builds";
+                                        let url = "http://192.0.2.215:3000/api/ship_builds";
 
                                         if let Some(payload) = build_tracker::BuildTrackerPayload::build_from(
                                             player,

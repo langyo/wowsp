@@ -1,7 +1,8 @@
 /* WoWSP global theme tokens. Adapted from shittim-chest's theme.scss.
    Structural tokens (radius, font, spacing, duration, motion, shadow,
-   z-index, scrollbar) live here; color RGB-channel tokens are seeded by
-   os_prefs + a future presets.ts. */
+   z-index) live here; color RGB-channel tokens are seeded by
+   os_prefs + a future presets.ts. Scrollbar chrome is hikari's
+   overlay system (see the Scrollbars note below), not a token here. */
 
 /* === Theme Transition === */
 html.s-theme-transitioning,
@@ -46,6 +47,13 @@ html.s-theme-transitioning *::after {
   --blur-sm: 8px;
   --blur-md: 16px;
   --blur-lg: 24px;
+  /* UI surface opacity dial (uiOpacityPreference.ts writes the inline
+     override on <html>): one multiplier over every translucent surface in
+     the app. 0.95 = the shipped default — a hair clearer than the
+     fully-solid paint, so the wallpaper still ghosts under every UI
+     element; the glass family rescales together around it. See the bridge
+     section below the scrim rule. */
+  --ui-opacity: 0.95;
 
   /* Z-index hierarchy */
   --z-base: 0;
@@ -58,6 +66,11 @@ html.s-theme-transitioning *::after {
 
   /* Sizing */
   --s-header-height: 3rem;
+  /* Desktop nav-rail width (Sidebar.scss consumes it; the main-column
+     blur band below offsets by it so the two never disagree). Phones
+     re-host the nav in a drawer and the band spans the full width
+     there — see the band rule. */
+  --app-sidebar-w: 240px;
 
   /* Rainbow text — the 战舰仙人 (彩表) tier. Uses the full wows-numbers band
      palette so every tier color of `utils/winrate.ts` appears in the sweep. */
@@ -148,35 +161,268 @@ body {
 #app {
   width: 100%;
   height: 100%;
+  /* Above the wallpaper scrim (html[data-wallpaper-art] body::before,
+     z-index 0 — below): the dim applies to the wallpaper layer (z -1) only,
+     so chrome and content sample the scrim-adjusted image instead of
+     sitting under the tint themselves. Harmless in the overlay and
+     manual-locate windows, which render no wallpaper layer. */
+  position: relative;
+  z-index: 1;
 }
 body {
   font-family: var(--font-sans);
   font-size: var(--text-base);
   line-height: 1.5;
   color: rgb(var(--color-text));
-  /* Wallpaper: solid color base (defaults to theme background), with an
-     optional image layer + overlay tint for readability. The CSS vars are
-     seeded by WallpaperRenderer.tsx from the active wallpaper preset. */
+  /* Wallpaper base color (defaults to the theme background). Image
+     wallpapers paint as a dedicated fixed <img.wallpaper-layer> prepended
+     to <body> by WallpaperRenderer — NOT as a background-image here: a body
+     background paints at the canvas level, where any opaque surface in the
+     chrome would hide it. */
   background-color: var(--wallpaper-solid-color, rgb(var(--color-background)));
-  background-image: var(--wallpaper-image, none);
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   position: relative;
 }
-/* Overlay tint on top of the background image — darkens/brightens for text
-   readability without affecting the theme color tokens. */
-body::before {
-  content: "";
+
+/* === Text selection policy ============================================
+   The app is not a document: UI text (menus, buttons, labels, settings
+   rows, table cells) must never pick up accidental drag selections, so
+   `none` is the app-wide default ON BODY. It used to live on .app-shell,
+   but every modal, toast, popover and tooltip is a Teleport portal
+   mounted as a direct child of <body> — outside .app-shell entirely,
+   and so is the custom title bar. Descendants resolve their `auto` to
+   the ancestor's `none`, so one body-level rule covers the whole tree.
+
+   Selection is re-enabled explicitly, only where reading stops and
+   copying starts; the whitelist below is the single auditable policy —
+   add copyable content here, not in per-component sheets. The one
+   sanctioned component-level exception is ShipDetailModal's spec values
+   (`user-select: all` + click-to-copy — the selection IS the affordance
+   there). Toasts stay unselectable by design (ephemeral — hikari
+   suppresses them, and the same facts always exist in-page in copyable
+   form). */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* Editing surfaces always accept selection — a parent's `none` is not
+   reliably healed by the UA default in every engine. */
+input,
+textarea,
+select,
+[contenteditable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Copyable content: paths, raw errors, release notes, about text. */
+.install-card__path,
+.game-path-modal__current-path,
+.game-path-modal__install-path,
+.feedback__dir,
+/* Pairing address + PIN get copied by hand into the phone. */
+.settings-modal__pairing-value,
+.acct-modal__error,
+.settings-modal__pack-error,
+.changelog__release-version,
+.changelog__error,
+.release-md,
+.announce-content__body,
+/* Raw English backend message behind the collapsed summary. */
+.lookup-error-notice__raw code,
+.about-modal__version,
+.about-modal__subtitle,
+.about-modal__desc,
+.about-modal__notice,
+.about-modal__qq,
+/* The QQ number itself is a bare <button> — whitelist it directly rather
+   than leaning on the UA's appearance-dependent button behavior. */
+.about-modal__qq-number,
+.replay-view__placeholder--error,
+.replay-card__ship,
+.replay-card__val,
+.replay-card__players,
+.replay-view__map,
+.replay-view__meta-item:not(button),
+.replay-view__chat-text,
+.mod-detail__id,
+/* File-list window: package rows and tree labels are paths worth copying. */
+.file-window__pkg-name,
+.file-window .hk-tree-row,
+.plan-card__detail,
+.plan-card__files,
+.mig-wizard__files {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* The wallpaper media layer: fixed, BELOW every app surface (z -1). */
+.wallpaper-layer {
   position: fixed;
   inset: 0;
   z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* Readability scrim over image wallpapers — sits ABOVE the wallpaper layer
+   (z -1) and BELOW #app (z 1, above), so the dim only ever applies to
+   the wallpaper while translucent chrome (sidebar, cards, modals) samples
+   the scrim-adjusted image. Gated by the renderer: solid backgrounds never
+   draw one. Strength is the user's overlay preference
+   (--wallpaper-overlay-opacity, WallpaperRenderer); the 0.8 fallback is
+   wallpaperOverlay.ts's shipped default, restated for the pre-render
+   frame. */
+html[data-wallpaper-art="true"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
   background: rgb(var(--color-background));
-  opacity: var(--wallpaper-overlay-opacity, 0);
+  opacity: var(--wallpaper-overlay-opacity, 0.8);
   pointer-events: none;
 }
+
+/* Main-column blur band — the content side of the background-blur dial
+   (theme/wallpaperBlur; the sidebar side lives on the rail's own
+   backdrop-filter, Sidebar.scss). A body-level fixed layer, NOT a
+   backdrop-filter on .app-shell__main itself: a backdrop-filter creates
+   a containing block for fixed/absolute descendants, and the content
+   column is full of viewport-anchored fixed chrome (replay post-battle
+   modal, hover cards, …) whose geometry would shift by the sidebar and
+   title-bar insets the moment the dial left zero. As a sibling pseudo
+   it blurs the same backdrop the translucent wash above it samples,
+   with zero containing-block fallout. Sits above the scrim (::before,
+   same z-level, later in paint order) and below #app (z 1), so it
+   blurs wallpaper + dim exactly as the user sees the background.
+   Geometry mirrors the main column's box: below the title bar, right
+   of the nav rail, to the bottom-right corners — full-width on phones
+   where the nav becomes a drawer. The band shares the scrim's
+   data-wallpaper-art gate (a solid background has nothing to blur) and
+   its value var is `none` at the 0 default, so the shipped no-blur
+   paint never pays the backdrop composite. */
+html[data-wallpaper-art="true"] body::after {
+  content: "";
+  position: fixed;
+  top: var(--app-titlebar-h, 32px);
+  bottom: 0;
+  left: var(--app-sidebar-w, 240px);
+  right: 0;
+  z-index: 0;
+  backdrop-filter: var(--wallpaper-blur-main, none);
+  -webkit-backdrop-filter: var(--wallpaper-blur-main, none);
+  pointer-events: none;
+}
+
+@media (max-width: 767px) {
+  /* The nav re-hosts in the drawer at phone widths and the main column
+     spans the viewport; the band follows it under the (taller) phone
+     title bar + status-bar cutout, same offsets .app-shell uses. */
+  html[data-wallpaper-art="true"] body::after {
+    top: calc(var(--app-titlebar-h, 48px) + env(safe-area-inset-top, 0px));
+    left: 0;
+  }
+}
+
+/* === UI surface opacity dial — hikari bridge ==============================
+   The chrome-side twin of the wallpaper overlay scrim above: every
+   translucent surface multiplies its shipped alpha by --ui-opacity
+   (default 0.95 — the shipped glass sits a hair clearer than fully
+   solid; min-capped at fully opaque), restated here for the hikari-owned
+   surfaces wowsp has no SCSS of its own for. Hikari's aggregate loads
+   BEFORE theme.scss (main.ts import order), so an equal-specificity
+   rule in this file wins the cascade. Fully opaque surfaces (stats
+   tables, inputs, phone bottom sheets) are deliberately outside the
+   dial: they are content chrome, not wallpaper-adaptive glass.
+
+   Every scaled spelling is guarded: a plain declaration keeps today's
+   value on engines without math-in-color support (invalid declarations
+   drop at parse time and the earlier line wins), while custom-property
+   spellings fail at the USAGE site instead — those are gated behind an
+   @supports probe rather than a duplicate line. */
+
+/* Settings "cards" (hikari ships 55% glass) and the shared tab-strip
+   track (60%) — the latter hosts the font-size segmented control right
+   under the dial itself, so it must follow it. */
+.hk-settings-group {
+  background: rgb(var(--color-surface) / 55%);
+  background: rgb(var(--color-surface) / min(100%, calc(55% * var(--ui-opacity, 1))));
+}
+.hk-tabs-list {
+  background: rgb(var(--color-surface) / 60%);
+  background: rgb(var(--color-surface) / min(100%, calc(60% * var(--ui-opacity, 1))));
+}
+
+/* Desktop modals: hikari's default is the OPAQUE --hi-color-surface with
+   no backdrop blur. Restated at base 100% so the dial rescales them like
+   every other glass surface — at the 95% default the panel rests as
+   95%-alpha glass (no blur); dragging below the default turns it clearer,
+   and the blur token (a no-op behind an opaque fill) kicks in there to
+   keep that glass readable. The blur is keyed to the [data-ui-glass]
+   marker uiOpacityPreference.ts sets only below the default percent, so
+   the shipped look never allocates a backdrop layer. Scoped to ≥768px;
+   below that hikari docks modals as opaque phone bottom sheets and
+   deliberately drops mobile backdrop blur (see OnboardingWizard.scss). */
+@media (min-width: 768px) {
+  :root {
+    --hk-modal-bg: var(--hi-color-surface);
+    /* HkModal paints fixed 1.5rem "gutter covers" over the body's top and
+       bottom padding (HkScrollPin's mask, defaulting to --hk-modal-bg) so
+       scrolled content never slides through the whitespace. That default
+       assumes an OPAQUE frame: over this glass the cover re-paints the
+       same translucent fill ON TOP of the already-painted body, and the
+       stacked alpha (0.95 over 0.95 ≈ 0.998) surfaces as two visibly
+       denser 24px bands above and below the settings shell. The settings
+       body never scrolls anyway (the host contract keeps the shell
+       fitting), and no wowsp modal relies on the mask — let the padding
+       read as the plain glass it is. Scoped beside the bg re-theme; phone
+       sheets stay opaque, so their covers are invisible either way. */
+    --hk-scroll-pin-cover-bg: transparent;
+  }
+  :root[data-ui-glass] {
+    --hk-modal-blur: blur(var(--blur-md));
+  }
+  @supports (background: rgb(0 0 0 / min(100%, calc(1% * var(--ui-opacity, 1))))) {
+    :root {
+      --hk-modal-bg: rgb(var(--color-surface) / min(100%, calc(100% * var(--ui-opacity, 1))));
+    }
+  }
+}
+
+/* Toast solid surfaces: white ink in BOTH color schemes. Hikari's stock
+   default preset pins the shared on-solid slot to near-black Nord ink in
+   its dark scheme — the ink its PALE primary fills need (white is ~1.9:1
+   there) — but the same slot also feeds the toast column's error/success/
+   info fills, so dark-mode toasts came out near-black on solid color
+   (user direction 2026-10-08: toasts follow shittim-chest's
+   always-white-on-solid convention, day and night). Redefined on the
+   toast container so every item, the icon and the copy/close buttons
+   inherit white again. Warning joins the convention per user direction
+   2026-10-16 (every yellow-background surface in the project carries
+   white ink): hikari pins literal dark-amber ink on the warning toast —
+   that rule is not var-driven, so it is overridden by selector, and the
+   copy/close buttons ride along. */
+.hk-toast-container {
+  --hi-color-text-on-solid: #fff;
+  --hi-color-icon-on-solid: #fff;
+
+  .hk-toast-warning,
+  .hk-toast-warning .hk-toast-copy-btn,
+  .hk-toast-warning .hk-toast-close {
+    color: #fff;
+  }
+}
+
+/* Same convention on the blocking toast's warning variant (hikari pins
+   the identical literal dark-amber ink there). */
+.hk-blocking-toast-warning {
+  color: #fff;
+}
+
 a {
   color: rgb(var(--color-primary));
 }
@@ -184,28 +430,43 @@ button {
   font: inherit;
 }
 
-/* === Custom scrollbars (replace ugly native Windows bars) === */
-* {
+/* === Scrollbars ===
+   Every scroll region renders through hikari's HkScrollContainer: the
+   viewport hides its native bar and the shared overlay chrome
+   (.hk-scrollbar-track/.hk-scrollbar-thumb from hikari's stylesheet)
+   draws the app-wide bar. The one exception is hikari's own settings
+   shell: HkSettingsDialog ships .hk-settings__pane/.hk-settings__rail
+   as bare native scrollers — its flush-edge geometry is sized for a
+   thin bar, and the pane cannot be restructured from the consumer
+   side — so the thin themed bar is scoped to exactly those two
+   selectors. Textareas keep the OS bar too (native input chrome, not
+   content-scroll chrome). */
+.hk-settings__pane,
+.hk-settings__rail {
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--color-border) / 40%) transparent;
-}
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb {
-  background: rgb(var(--color-border) / 35%);
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--color-primary) / 40%);
-  background-clip: padding-box;
-  border: 2px solid transparent;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgb(var(--color-border) / 35%);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--color-primary) / 40%);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
 }
 
 /* === Styled form controls (replace native select/input appearance) === */

@@ -1,0 +1,16 @@
+**Diese Software ist völlig kostenlos und Open Source**
+
+WoWSP ist kostenlose Open-Source-Software und wird ausschließlich über die offiziellen GitHub Releases (github.com/langyo/wowsp) vertrieben. Wer sie verkauft, ist NICHT der Autor — zahlen Sie nicht; falls schon geschehen, fordern Sie so bald wie möglich eine Rückerstattung und melden Sie den Verkäufer.
+
+---
+
+### Modelloffenlegung
+
+Die unten stehenden Modellinformationen werden offengelegt, wie es die „Synthetische-Quellcode-Lizenz“ (SySL) verlangt; der vollständige Lizenztext steht hier: [https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
+
+- **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
+- **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
+
+### Datenschutz und Telemetrie
+
+WoWSP erfasst minimale Nutzungstelemetrie (Oberflächensprache, geöffnete Seiten, Region auf Länderebene), ausschließlich zur Orientierung für die Entwicklung. Persönliche Daten sowie Replay- oder Kontodaten werden niemals erfasst.

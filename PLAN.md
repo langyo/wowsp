@@ -63,7 +63,7 @@ visible only while `Tab` is held.
 
 ## Feature milestones
 
-All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in pre-release hardening for the initial public release.
+All milestones (M1–M9) are complete and merged on `master`.
 
 - [x] M1 — Real game-detection (registry + Steam + Lesta + 360), cached to AppData
 - [x] M2 — Replay header parser (8-byte magic + JSON descriptor) end-to-end
@@ -79,19 +79,19 @@ All milestones (M1–M9) are complete and merged on `master` — WoWSP is now in
 
 - [x] Consolidated unmerged PRs; closed bot PRs
 - [x] Repo references corrected (celestia-island → langyo), updater endpoints + mirrors
-- [x] Docs site (lagrange) builds clean for all 9 languages; CNAME wowsp.langyo.xyz
+- [x] Docs site (lagrange) builds clean for all 9 languages; Pages serves CNAME-less at `langyo.github.io/wowsp/` (site.yml strips `_site/CNAME` by design)
 - [x] Official website (vue3 tsx + scss + vite, `packages/website`) + GitHub Pages deploy
-- [x] Auto-update: GitHub + mirror endpoints, release workflow signs `latest.json`
+- [x] Auto-update: shun resolver with GitHub + mirror endpoints (`[package.metadata.shun.update]` in `packages/app/tauri/Cargo.toml`, `files = ["latest"]`); the release workflow uploads a plain `latest` version-marker file — no signed manifest
 - [x] Installer: WebView2 bootstrapper embedded; NSIS three-mode install (local / USB / green)
 - [x] GitHub Pages provisioned (`langyo.github.io/wowsp`); website + docs live
-- [ ] DNS: point `wowsp.langyo.xyz` at GitHub Pages (`langyo.github.io`) and set the custom domain in repo Pages settings; then flip `WOWSP_SITE_BASE` back to `/` in site.yml
-- [ ] First tagged release + model-pack `res-latest` assets
+- [x] DNS: `wowsp.langyo.xyz` bound to the Cloudflare Worker (site shell + pairing relay); Pages stays the CNAME-less asset mirror at `langyo.github.io/wowsp/` (see `site.yml`)
+- [x] First tagged release + model-pack `res-latest` assets
 
 ## Post-1.0 milestones
 
 ### M10 — Mod Hub (plugin/mod management)
 
-Full design: `docs/<lang>/designs/mod-hub.md`. Skin & voice packs are the
+Full design: `docs/en/designs/mod-hub.md`. Skin & voice packs are the
 bulk of the ecosystem and are first-class citizens; auxiliary mods and
 official mini-patches (IME fix, fonts) are the foundation.
 
@@ -100,14 +100,20 @@ official mini-patches (IME fix, fonts) are the foundation.
 - [ ] M10.3 — Discussions indexer (scheduled Actions workflow → `mod-index.json` on `gh-pages`), shared by the website catalog and the in-app browser
 - [ ] M10.4 — Version-migration engine: game-update detection, classified auto-migration / community-confirmed / unverified flow, one-click rollback
 - [ ] M10.5 — Content browser: skin/voice categories with previews & audition, batch install, resumable downloads; CC0-only index
-- [ ] M10.6 — Aslain migration assistant: adopt Aslain-installed entries into the install record
+- [x] M10.6 — Aslain migration assistant: DONE via tiered pairing + register-and-reinstall takeover (install cuts the pack's manifest rows)
 
-> **WebView2 note:** the installer never ships or silently installs the
-> runtime (`webviewInstallMode: skip`). `installer.nsi` gates `.onInit` on a
-> registry check instead: a machine without WebView2 gets a dialog pointing at
-> the bundled-WebView2 release build and the installer exits. Silent/unattended
-> runs (updater flow) log and continue — the app surfaces the same guidance on
-> launch.
+> **WebView2 note:** the installers ARE shun-built now (the custom
+> installer shell is retired; `packages/installer/shun.toml.template` is
+> the whole configuration). The `-webview2` flavor carries the Evergreen
+> offline runtime: shun's shell silently installs it on runtime-less
+> machines and, failing that, degrades to its egui face with the
+> missing-runtime warnings and Microsoft's official download link
+> (`[webview2] evergreen-installer`, both knobs default on). The lite
+> flavor carries nothing — discovery no-ops, the same egui degrade
+> covers it. The app publishes the shipped resource pack into its cache
+> root on first launch (`resource_pack.rs`), and silent/unattended runs
+> (updater flow) stay fully headless: explicit `--shortcut-*` answers
+> honored, `launch-after-install = "always"` puts the app back.
 
 ## Release notes history
 

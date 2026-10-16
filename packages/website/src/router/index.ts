@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import { siteBase as routeBase } from "@/composables/siteBase";
+
 export const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL || "/"),
+  history: createWebHistory(routeBase),
   routes: [
     {
       path: "/",
@@ -28,3 +30,15 @@ export const router = createRouter({
     },
   ],
 });
+
+// SPA page-view tracking: gtag.js in index.html only records the initial
+// load, so forward every client-side navigation to Analytics as well.
+router.afterEach((to) => {
+  const gtag = (window as { gtag?: (...args: unknown[]) => void }).gtag;
+  gtag?.("event", "page_view", {
+    page_title: String(to.name ?? to.path),
+    page_path: to.fullPath,
+  });
+});
+
+export default router;

@@ -5,7 +5,13 @@
  * composable is the single source of truth for "what is on the board".
  */
 import { computed, ref, watch, type Ref } from "vue";
-import type { DashStyle, TacticalElement, TacticalStep, TacticalToolId } from "./types";
+import type {
+  DashStyle,
+  TacticalActionKind,
+  TacticalElement,
+  TacticalStep,
+  TacticalToolId,
+} from "./types";
 import { commitStep, docStorageKey, parseDoc, serializeDoc } from "./model";
 
 export interface TacticalStyleState {
@@ -41,6 +47,8 @@ export function useTactical(replayPath: Ref<string>) {
   const tool = ref<TacticalToolId>("select");
   const style = ref<TacticalStyleState>({ color: "#f43f5e", width: 4, dash: "solid" });
   const selectedId = ref<string | null>(null);
+  /** Action kind stamped on markers placed on a plan board (see types.ts). */
+  const actionKind = ref<TacticalActionKind>("move");
   /** New elements get t0 = current replay time (slide-deck anchoring). */
   const anchorToTime = ref(true);
   /** Reveal not-yet-reached elements as faint ghosts while scrubbing. */
@@ -185,12 +193,17 @@ export function useTactical(replayPath: Ref<string>) {
       writePending();
     }, 400);
   }
-  function load(): void {
+  /** Write any debounced edit out NOW (the plan-slot duplicator calls this
+   *  before reading the source document from storage). */
+  function flush(): void {
     if (saveTimer != null) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
     writePending();
+  }
+  function load(): void {
+    flush();
     try {
       const raw = window.localStorage.getItem(docStorageKey(replayPath.value));
       const doc = raw ? parseDoc(raw) : null;
@@ -215,6 +228,7 @@ export function useTactical(replayPath: Ref<string>) {
     stepsSorted,
     tool,
     style,
+    actionKind,
     selectedId,
     selected,
     anchorToTime,
@@ -224,6 +238,10 @@ export function useTactical(replayPath: Ref<string>) {
     pushHistory,
     undo,
     redo,
+    flush,
+    /** Re-read the current key from storage (flushes first) — the plan-slot
+     *  importer calls this after overwriting the documents underneath. */
+    reloadDoc: load,
     commit,
     replaceElement,
     removeElement,

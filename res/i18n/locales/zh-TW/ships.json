@@ -35,6 +35,7 @@
   "all": "全部",
   "clear": "清除",
   "reload": "重新載入",
+  "retry": "重試",
   "loading": "載入百科中...",
   "empty": "沒有符合篩選條件的艦艇。",
   "noData": "尚無百科資料。請選擇伺服器並載入。",
@@ -49,9 +50,35 @@
     "uncommon": "罕見",
     "rare": "稀有",
     "epic": "史詩",
-    "legendary": "傳奇"
+    "legendary": "傳奇",
+    "event": "活動"
   },
-  "rarityHint": "遊戲內的官方卡牌稀有度（取自 GameParams 的 RarityCategory）：普通（白）、罕見（綠）、稀有（藍）、史詩（紅）、傳奇（橙）。",
+  "event": {
+    "_prefix": "活動",
+    "halloween_2016": "萬聖節 2016",
+    "halloween_2017": "萬聖節 2017",
+    "halloween_2018": "萬聖節 2018",
+    "halloween_2019": "萬聖節 2019",
+    "halloween_2020": "萬聖節 2020",
+    "halloween_2022": "萬聖節 2022",
+    "space_battles": "太空戰",
+    "star_event": "STAR 活動艦",
+    "postap_2022": "末日廢土 2022",
+    "april_fools_2023": "浴缸大作戰",
+    "april_fools_2024": "彩罐獵手",
+    "modern_era": "現代紀元",
+    "collab_arp": "蒼藍鋼鐵的琶音 -ARS NOVA-",
+    "collab_azur_lane": "碧藍航線",
+    "collab_hsf": "高校艦隊",
+    "collab_wh40k": "戰鎚40,000",
+    "collab_blue_archive": "蔚藍檔案",
+    "collab_megadeth": "Megadeth",
+    "collab_star_trek": "星際迷航",
+    "lunar_new_year": "農曆新年",
+    "hunt_bismarck": "獵殺俾斯麥",
+    "scarlet_future": "緋紅未來"
+  },
+  "rarityHint": "遊戲內的官方卡牌稀有度（取自 GameParams 的 RarityCategory）：普通（白）、罕見（綠）、稀有（藍）、史詩（紅）、傳奇（橙）。活動船（聯動與限時玩法船體）在此顯示「活動·名稱」標籤，不佔用稀有度檔位。",
   "card": {
     "hp": "血量",
     "concealment": "隱蔽",
@@ -62,7 +89,7 @@
     "title": "艦艇詳情",
     "tabSpecs": "規格參數",
     "tabArmor": "裝甲與彈道",
-    "tabMyStats": "我的戰績",
+    "tabMyStats": "單艦戰績",
     "tabCommunity": "全服趨勢",
     "tabSkill": "艦長技能",
     "mainBattery": "主砲",
@@ -75,6 +102,7 @@
     "gameparamsMissing": "GameParams.data 尚未解包。請執行 wowsunpack 以查看裝甲方案與彈道曲線。",
     "gameparamsError": "載入失敗：{error}",
     "gameparamsErrorTip": "載入裝甲與彈道失敗 — 點擊可複製錯誤訊息：",
+    "gameparamsSyncAction": "從電腦同步遊戲資料",
     "gameparamsHint": "提示：將解包後的 GameParams.json 放在遊戲根目錄（與 bin/ 同層）。參見 https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "此艦艇暫無規格資料。",
     "noImage": "無圖片。",
@@ -84,9 +112,17 @@
     "noBallistics": "無法從 GameParams 擷取此艦艇的裝甲 / 彈道資料。",
     "stage": {
       "hint3d": "拖曳旋轉 · 滾輪縮放 · 右鍵拖曳平移",
+      "hint3dTouch": "拖曳旋轉 · 雙指縮放",
       "holo": "全像",
       "hide": "隱藏預覽",
-      "show": "展示預覽"
+      "show": "展示預覽",
+      "rotate": "自動旋轉",
+      "rotateOn": "自動旋轉中 · 點擊暫停",
+      "rotateOff": "已暫停 · 點擊繼續自動旋轉",
+      "waterline": "水線",
+      "draft": "吃水",
+      "hull": "本體",
+      "modelPicker": "選擇查看的模型"
     },
     "weapon": {
       "mainGun": "主砲組",
@@ -108,9 +144,7 @@
     "armor": {
       "toggle": "切換裝甲帶覆蓋檢視",
       "short": "裝甲",
-      "noData": "無裝甲資料。",
       "legend": "裝甲 (mm)",
-      "estimated": "估算",
       "zone": {
         "bow": "艦首",
         "midship": "中段",
@@ -127,15 +161,9 @@
         "bowBelt": "艦首裝甲帶",
         "superstructure": "上層建築"
       },
-      "overmatchThreshold": "碾壓需 ≥{n}mm 口徑",
-      "outcome": {
-        "overmatch": "碾壓",
-        "pen": "穿透",
-        "overpen": "過穿",
-        "bounce": "跳彈"
-      },
       "restore": "還原",
-      "pickHint": "點擊模型隱藏同色裝甲"
+      "solo": "只看",
+      "pickHint": "點擊色帶只看該厚度 · 點擊模型隱藏"
     },
     "openHint": "點擊查看艦艇詳情",
     "my": {
@@ -146,7 +174,8 @@
       "range30d": "近30天",
       "avgFrags": "場均擊殺",
       "noBaseline": "尚無足夠歷史基線",
-      "divisionsHint": "帳號整體分模式資料，非該艦單船成績"
+      "divisionsHint": "帳號整體分模式資料，非該艦單船成績",
+      "modeNotPlayed": "該艦在此模式未出戰"
     },
     "server": {
       "title": "全服均值報告",
@@ -247,10 +276,17 @@
     "torpDetect": "魚雷被偵測距離",
     "torpDetectHint": "魚雷被敵方偵測到的距離。越短對方反應時間越少。",
     "torpLaunchers": "魚雷發射管",
-    "aaRating": "防空評分",
     "aaLongRange": "遠程防空圈",
     "aaMidRange": "中程防空圈",
     "aaShortRange": "近程防空圈",
+    "aaShortDps": "近程防空秒傷",
+    "aaShortHitChance": "近程防空命中率",
+    "aaMidDps": "中程防空秒傷",
+    "aaMidHitChance": "中程防空命中率",
+    "aaLongDps": "遠程防空秒傷",
+    "aaLongHitChance": "遠程防空命中率",
+    "aaFlakDamage": "黑雲傷害",
+    "aaFlakCount": "單輪黑雲數",
     "maxSpeed": "最大航速",
     "rudderShift": "方向舵換檔",
     "rudderShiftHint": "方向舵完全打滿所需時間。越短越靈活。",
@@ -268,7 +304,11 @@
     "depthChargeDamage": "深彈傷害",
     "depthChargePacks": "深彈組數",
     "depthChargeBombs": "每組深彈數",
-    "depthChargeReload": "深彈裝填"
+    "depthChargeReload": "深彈裝填",
+    "secondaryRange": "副砲射程",
+    "aswRange": "空襲距離",
+    "aswCharges": "空襲次數",
+    "aswReload": "空襲裝填"
   },
   "skills": {
     "title": "艦長技能模擬",
@@ -278,7 +318,9 @@
     "reset": "重置",
     "tier": "第 {n} 層",
     "locked": "未解鎖 — 需在低層投入 {n} 點",
+    "tierEmptyWarning": "遊戲強制要求本層至少點選 1 個技能",
     "notApplicable": "該艦不適用",
+    "noPoints": "剩餘點數不足 — 該技能需要 {n} 點",
     "maxed": "滿級",
     "noTree": "此艦種尚無技能樹。",
     "rank": "階級 {n}",
@@ -300,15 +342,17 @@
     "commanderInfoNote": "艦長天賦為觸發式效果，僅供參考，未計入右側屬性。",
     "talentTrigger": "觸發",
     "talentMax": "最多觸發 {n} 次",
-    "slotNone": "空",
+    "slotClear": "卸下",
     "legendaryCmd": "傳奇",
     "eliteCmd": "精英",
     "uniqueMod": "研發局",
     "noCommandersForNation": "該國別暫無可用特殊艦長。",
     "slotEmpty": "無可選升級",
     "commanderLegend": "「傳奇」徽章 = 擁有專屬天賦的傳奇艦長；「精英」徽章 = 精英/特種艦長。",
-    "epicRibbon": "傳奇艦長強化技能",
+    "epicTag": "傳奇艦長強化",
     "epicLegend": "綠色角帶 = 當前傳奇艦長以強化數值教授的技能。",
+    "recTag": "遊戲推薦加點",
+    "recLegend": "黃色角帶 = 遊戲內為該艦推薦的加點，按推薦順序排列。",
     "activator": {
       "DamageDoneActivator": "造成損傷時",
       "TargetsDamagedActivator": "命中目標時",
@@ -456,13 +500,33 @@
     "showing": "顯示前 {shown} 艘 / 共 {total} 艘",
     "count": "{n}"
   },
+  "consumable": {
+    "regenCrew": "維修小組",
+    "crashCrew": "損管小組",
+    "spotter": "偵察機",
+    "fighter": "戰鬥機",
+    "smoke": "發煙器",
+    "speedBoost": "引擎增壓",
+    "hydro": "水聽器",
+    "radar": "雷達",
+    "hydrophone": "水聽器（潛艦）",
+    "subLocator": "潛艦探測",
+    "torpReload": "魚雷裝填助推器",
+    "artyReload": "主砲裝填助推器",
+    "defensiveAA": "防空彈幕"
+  },
   "techTree": {
+    "realmHint": "科技樹分支來源：WG 為基準拓撲，Lesta 為用戶端自身研究線。",
     "title": "科技樹",
     "branch": "分支",
     "locked": "需達到 {n} 階",
     "premium": "金幣",
     "special": "特種",
-    "empty": "該陣營暫無科技樹。"
+    "empty": "該陣營暫無科技樹。",
+    "linkTypeChange": "艦種變更",
+    "linkBranches": "並行分支",
+    "linkArchetype": "線路定位",
+    "linkInfo": "研發線路資訊"
   },
   "banner": {
     "imageFailed": "部分艦艇圖片載入失敗",
@@ -509,22 +573,132 @@
     "nationTitle": "國家",
     "nationAll": "全部國家",
     "hintMulti": "可多選 · 點擊「全部…」重置",
+    "nationScrollHint": "按住拖動或滾動滾輪可查看全部國家",
     "wrTitle": "勝率",
     "wrAll": "全部勝率",
     "battlesTitle": "場次",
     "battlesAll": "全部場次",
     "minBattles": "≥{n} 場",
+    "modeTitle": "組隊模式",
+    "modeAll": "全部組隊模式",
+    "modeSolo": "單人",
+    "modeDiv2": "雙人",
+    "modeDiv3": "三人",
+    "modeRanked": "排位",
     "hintTypePop": "可多選 · 艦種僅用於篩選，不參與正倒序 · 點擊「全部艦種」可按艦種順序排序",
     "hintSortPop": "可多選 · 再次點擊已選項切換 正序 ↑ / 倒序 ↓ · 點擊「全部…」重設，或按此欄排序",
-    "hintTypeChip": "點擊選擇篩選（可多選） · 左右拖曳調整排序優先順序",
+    "hintTypeChip": "點擊選擇篩選（可多選）",
     "hintSortChip": "點擊選擇篩選（可多選） · 再次點擊已選項切換正序/倒序 · 左右拖曳調整排序優先順序",
     "hintSinglePop": "單選 · 再次點擊已選項切換 正序 ↑ / 倒序 ↓ · 點擊「全部…」重設，或按此欄排序",
     "hintSingleChip": "點擊選擇篩選（單選） · 再次點擊已選項切換正序/倒序 · 左右拖曳調整排序優先順序",
-    "summary": "{ships} 艘 · {battles} 場"
+    "summary": "{ships} 艘 · {battles} 場",
+    "sourceTitle": {
+      "en-US": "Source",
+      "zh-CN": "来源",
+      "zh-SG": "来源",
+      "zh-TW": "來源",
+      "ja-JP": "入手元",
+      "ko-KR": "획득처",
+      "ru-RU": "Источник",
+      "fr-FR": "Source",
+      "es-ES": "Fuente"
+    },
+    "sourceAll": {
+      "en-US": "All sources",
+      "zh-CN": "全部来源",
+      "zh-SG": "全部来源",
+      "zh-TW": "全部來源",
+      "ja-JP": "すべての入手元",
+      "ko-KR": "모든 획득처",
+      "ru-RU": "Все источники",
+      "fr-FR": "Toutes les sources",
+      "es-ES": "Todas las fuentes"
+    },
+    "source_tree": {
+      "en-US": "Tech tree",
+      "zh-CN": "仅银币线",
+      "zh-SG": "仅银币线",
+      "zh-TW": "僅銀幣線",
+      "ja-JP": "テックツリーのみ",
+      "ko-KR": "은화 트리만",
+      "ru-RU": "Только древо",
+      "fr-FR": "Arbre uniquement",
+      "es-ES": "Solo árbol"
+    },
+    "source_gold": {
+      "en-US": "Premium only",
+      "zh-CN": "仅金币特殊加值",
+      "zh-SG": "仅金币特殊加值",
+      "zh-TW": "僅金幣特殊加值",
+      "ja-JP": "プレミアムのみ",
+      "ko-KR": "프리미엄만",
+      "ru-RU": "Только прем.",
+      "fr-FR": "Premium uniquement",
+      "es-ES": "Solo premium"
+    },
+    "source_coal": {
+      "en-US": "Coal only",
+      "zh-CN": "仅煤炭可购",
+      "zh-SG": "仅煤炭可购",
+      "zh-TW": "僅煤炭可購",
+      "ja-JP": "石炭のみ",
+      "ko-KR": "석탄만",
+      "ru-RU": "Только уголь",
+      "fr-FR": "Charbon uniquement",
+      "es-ES": "Solo carbón"
+    },
+    "source_steel": {
+      "en-US": "Steel only",
+      "zh-CN": "仅钢铁可购",
+      "zh-SG": "仅钢铁可购",
+      "zh-TW": "僅鋼鐵可購",
+      "ja-JP": "鋼鉄のみ",
+      "ko-KR": "강철만",
+      "ru-RU": "Только сталь",
+      "fr-FR": "Acier uniquement",
+      "es-ES": "Solo acero"
+    },
+    "source_event": {
+      "en-US": "Event only",
+      "zh-CN": "仅活动",
+      "zh-SG": "仅活动",
+      "zh-TW": "僅活動",
+      "ja-JP": "イベントのみ",
+      "ko-KR": "이벤트만",
+      "ru-RU": "Только ивент",
+      "fr-FR": "Événement uniquement",
+      "es-ES": "Solo evento"
+    }
   },
   "model3d": {
     "downloadStart": "3D 檢視需要下載模型資源包（約 1.2 GB），已開始下載…",
     "ready": "模型資源包就緒",
     "failed": "模型資源包下載失敗，請稍後重試"
+  },
+  "module": {
+    "fireControl": "射擊系統",
+    "sonar": "聲納",
+    "fighter": "戰鬥機",
+    "diveBomber": "俯衝轟炸機",
+    "torpedoBomber": "魚雷機",
+    "skipBomber": "跳彈轟炸機",
+    "flightControl": "飛行控制"
+  },
+  "plane": {
+    "torpedo": "魚雷機",
+    "heBomber": "HE轟炸機",
+    "apBomber": "AP轟炸機",
+    "heSkip": "HE跳彈轟炸機",
+    "apSkip": "AP跳彈轟炸機",
+    "rocket": "火箭機",
+    "fighter": "戰鬥機",
+    "interceptor": "攔截機",
+    "scout": "偵察機",
+    "asw": "反潛機",
+    "mine": "佈雷機",
+    "cfg": {
+      "stock": "白板",
+      "top": "頂級"
+    }
   }
 }

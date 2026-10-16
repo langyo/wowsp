@@ -1,6 +1,6 @@
 import { dirname, resolve } from "path";
 import { defineConfig, type Plugin } from "vite";
-import { copyFileSync, readdirSync, rmSync } from "fs";
+import { copyFileSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 
 import vueSfc from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
@@ -57,6 +57,8 @@ export default defineConfig({
         } catch { /* index.html missing — nothing to mirror */ }
       },
     },
+    // LAST: runs after the 404 mirror so both files get the rewritten URLs.
+    htmlAssetBase(),
     vueSfc(),
     vueJsx(),
   ],
@@ -73,10 +75,12 @@ export default defineConfig({
     },
   },
   publicDir: resolve(pkgDir, "src/res"),
-  // The deploy workflow sets WOWSP_SITE_BASE for GitHub Pages project-site
-  // serving (`/wowsp/`); the custom domain wowsp.langyo.xyz serves from the
-  // root and should use `/` (the default). vue-router reads the same base
-  // via import.meta.env.BASE_URL.
+  // The deploy workflow sets WOWSP_SITE_BASE=/wowsp/ for BOTH hosts:
+  // GitHub Pages serves the project URL at /wowsp/, and the worker
+  // serves the shell at / referencing its own /wowsp/** copy (same
+  // build, same hashes — see scripts/build_worker_site.py). The default
+  // `/` is local dev only. vue-router reads the same base via
+  // import.meta.env.BASE_URL.
   base: process.env.WOWSP_SITE_BASE || "/",
   server: {
     port: 5174,
@@ -87,3 +91,38 @@ export default defineConfig({
     target: "es2020",
   },
 });
+
+// WOWSP_SITE_ASSET_BASE (absolute URL, e.g. the GitHub Pages mirror
+// langyo.github.io/wowsp) rewrites every STATIC FILE reference in the
+// built HTML (entry JS/CSS, favicon, manifest, …) to that origin.
+// NOT used by current deploys — the runtime candidate-chain loader
+// injected by scripts/build_worker_site.py supersedes this build-time
+// rewrite — but the knob stays for a future absolute-asset-origin
+// build. Chunk-to-chunk imports are relative to the entry URL and
+// follow automatically; navigation links (no file extension) stay on
+// the worker so routing keeps working. Runs in closeBundle so it sees
+// the FINAL html — after Vite injects the entry tags. (Vite
+// 8/rolldown ignores experimental.renderBuiltUrl, hence the manual
+// rewrite.)
+function htmlAssetBase(): Plugin {
+  const origin = process.env.WOWSP_SITE_ASSET_BASE;
+  return {
+    name: "site-html-asset-base",
+    apply: "build",
+    closeBundle() {
+      if (!origin) return;
+      const outDir = resolve(pkgDir, "../../dist/website");
+      for (const file of ["index.html", "404.html"]) {
+        try {
+          const p = resolve(outDir, file);
+          const html = readFileSync(p, "utf-8");
+          const rewritten = html.replace(
+            /((?:src|href)=")\/([^"#?]+\.[a-zA-Z0-9]+)([#?][^"]*)?"/g,
+            `$1${origin}/$2$3"`,
+          );
+          if (rewritten !== html) writeFileSync(p, rewritten);
+        } catch { /* file missing — nothing to rewrite */ }
+      }
+    },
+  };
+}

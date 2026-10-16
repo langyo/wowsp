@@ -120,7 +120,7 @@ def _port_occupied_by(port: int) -> str | None:
     pid = None
     try:
         out = subprocess.run(
-            ["netstat", "-ano"], capture_output=True, text=True, timeout=10
+            ["netstat", "-ano"], capture_output=True, text=True, errors="replace", timeout=10
         ).stdout
         for line in out.splitlines():
             parts = line.split()

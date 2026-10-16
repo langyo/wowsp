@@ -1,7 +1,7 @@
 /** Document-model unit tests: time gating, draw-on progress, hit tests,
  *  edits and persistence helpers (pure, no DOM). */
 import { describe, expect, it } from "vitest";
-import type { TacticalDoc, TacticalElement } from "./types";
+import type { MarkerElement, TacticalActionKind, TacticalDoc, TacticalElement } from "./types";
 import {
   commitFreehand,
   commitMarker,
@@ -85,6 +85,17 @@ describe("hitTestElement", () => {
     };
     expect(hitTestElement(path, p(0, 0), 100, 100)).toBe(false);
   });
+
+  it("hits a tweened marker at its tweened position, not its authored one", () => {
+    const move = commitMarker(p(0, 0), 0, "ship", "#fff", 0, "Yamato", "move");
+    const tween = { at: p(200, 0), t: 20 };
+    // At the arrival second the hull sits on the target, 200 units east.
+    expect(hitTestElement(move, p(200, 0), 10, 20, tween)).toBe(true);
+    expect(hitTestElement(move, p(0, 0), 10, 20, tween)).toBe(false);
+    // Without the tween (replay-annotation board) the authored spot hits instead.
+    expect(hitTestElement(move, p(0, 0), 10, 20)).toBe(true);
+    expect(hitTestElement(move, p(200, 0), 10, 20)).toBe(false);
+  });
 });
 
 describe("moveElement", () => {
@@ -127,6 +138,50 @@ describe("commitRouteMarker / markerPoseAt", () => {
     const m = moveElement(commitRouteMarker(route, "#fff", 0, 0.5, 30)!, 10, -5);
     expect(m.kind === "marker" && m.route?.[0]).toEqual(p(10, -5));
     expect(m.kind === "marker" && m.route?.[2]).toEqual(p(110, 95));
+  });
+});
+
+describe("markerPoseAt plan tween", () => {
+  const move = commitMarker(p(0, 0), 0.75, "ship", "#fff", 10, "Yamato", "move");
+  const tween = { at: p(100, 40), t: 20 };
+
+  it("clamps to the authored position before and at t0", () => {
+    expect(markerPoseAt(move, 5, tween).at).toEqual(p(0, 0));
+    expect(markerPoseAt(move, 10, tween).at).toEqual(p(0, 0));
+  });
+
+  it("sails the straight line to the target and faces the way it travels", () => {
+    const pose = markerPoseAt(move, 15, tween);
+    expect(pose.at).toEqual(p(50, 20));
+    expect(pose.heading).toBeCloseTo(Math.atan2(100, 40));
+  });
+
+  it("arrives at the target second and holds there", () => {
+    expect(markerPoseAt(move, 20, tween).at).toEqual(p(100, 40));
+    expect(markerPoseAt(move, 90, tween).at).toEqual(p(100, 40));
+  });
+
+  it("keeps the authored heading when the tween has nowhere to travel", () => {
+    const parked = commitMarker(p(7, 7), 1.25, "ship", "#fff", 10, "Yamato", "move");
+    expect(markerPoseAt(parked, 15, { at: p(7, 7), t: 20 })).toEqual({ at: p(7, 7), heading: 1.25 });
+  });
+
+  it("applies a leg target whatever the action kind, but never to an actionless marker", () => {
+    // The caller only passes a target when a leg exists — which an attack can
+    // start (attack → move pulls the hull off the mark).
+    const strike = commitMarker(p(0, 0), 2, "ship", "#fff", 10, "Yamato", "attack");
+    expect(markerPoseAt(strike, 15, tween).at).toEqual(p(50, 20));
+    const annotation = commitMarker(p(5, 5), 1, "ship", "#fff", 10, "Yamato");
+    expect(markerPoseAt(annotation, 15, tween)).toEqual({ at: p(5, 5), heading: 1 });
+  });
+
+  it("lets a scripted route win over the tween", () => {
+    // Route sails north over 20 s; the tween would sail east to (100, 40).
+    const routed: MarkerElement = {
+      ...commitRouteMarker([p(0, 0), p(0, 100)], "#fff", 10, 0.5, 20)!,
+      action: "move",
+    };
+    expect(markerPoseAt(routed, 20, tween)).toEqual({ at: p(0, 50), heading: 0 });
   });
 });
 
@@ -249,5 +304,46 @@ describe("persistence helpers", () => {
     expect(a).toBe(docStorageKey("D:\\replays\\源代码.wowsreplay"));
     expect(a).not.toBe(docStorageKey("D:\\replays\\other.wowsreplay"));
     expect(a).toMatch(/^wowsp:tactical:v1:[0-9a-z]+$/);
+  });
+
+  it("round-trips every plan action kind", () => {
+    const kinds: TacticalActionKind[] = ["move", "attack", "spot"];
+    const elements = kinds.map((action, i) =>
+      commitMarker(p(i, 0), 0, "ship", "#fff", i, `U${i}`, action),
+    );
+    const doc = parseDoc(serializeDoc({ version: 1, elements, steps: [] }))!;
+    expect(doc.elements.map((el) => (el.kind === "marker" ? el.action : null))).toEqual(kinds);
+  });
+
+  it("drops a bogus action value but keeps the marker", () => {
+    const marker = (id: string, action: unknown) => ({
+      id,
+      kind: "marker",
+      t0: 0,
+      at: p(1, 2),
+      heading: 0.5,
+      variant: "ship",
+      color: "#fff",
+      label: id,
+      size: 40,
+      action,
+    });
+    const doc = parseDoc(
+      JSON.stringify({
+        version: 1,
+        elements: [
+          marker("a", "teleport"),
+          marker("b", "MOVE"),
+          marker("c", 7),
+          marker("d", null),
+        ],
+      }),
+    )!;
+    expect(doc.elements.map((el) => el.id)).toEqual(["a", "b", "c", "d"]);
+    for (const el of doc.elements) {
+      expect(el.kind).toBe("marker");
+      expect(el.kind === "marker" && el.action).toBeUndefined();
+      expect(el.kind === "marker" && el.at).toEqual(p(1, 2));
+    }
   });
 });

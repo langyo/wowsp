@@ -4,7 +4,7 @@
  * `packages/app/tauri/src/commands/`.
  */
 import type { Transport } from "./types";
-import { RpcError } from "./types";
+import { LookupError, RpcError } from "./types";
 
 interface TauriGlobal {
   core?: {
@@ -32,6 +32,11 @@ export class TauriTransport implements Transport {
     try {
       return (await this.invokeFn(cmd, args)) as T;
     } catch (e) {
+      // The interactive lookup commands reject with a structured payload —
+      // wrap it so stores can branch on kind. Everything else keeps the
+      // plain-string → RpcError path.
+      const lookup = LookupError.from(e, cmd);
+      if (lookup) throw lookup;
       const msg = typeof e === "string" ? e : (e as { message?: string })?.message ?? String(e);
       throw new RpcError(msg, cmd);
     }

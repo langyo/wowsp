@@ -50,7 +50,8 @@ export function drawTimestampChip(
 
 /** Compose base map + annotations into a fresh export canvas. `crop` is in
  *  logical 760 units; output size is per-axis (a non-square crop exports at
- *  its TRUE aspect, not squashed into a square). */
+ *  its TRUE aspect, not squashed into a square). `minimap` (the host's
+ *  overview canvas) burns into the bottom-right corner. */
 export function composeExportCanvas(
   base: HTMLCanvasElement,
   overlay: HTMLCanvasElement | null,
@@ -58,6 +59,7 @@ export function composeExportCanvas(
   outWidth: number,
   outHeight: number,
   timeText: string | null,
+  minimap?: HTMLCanvasElement | null,
 ): HTMLCanvasElement {
   const out = document.createElement("canvas");
   out.width = outWidth;
@@ -77,7 +79,33 @@ export function composeExportCanvas(
   ctx.drawImage(base, sx, sy, sw, sh, 0, 0, outWidth, outHeight);
   if (overlay) ctx.drawImage(overlay, sx, sy, sw, sh, 0, 0, outWidth, outHeight);
   if (timeText) drawTimestampChip(ctx, Math.min(outWidth, outHeight), timeText);
+  if (minimap) drawMinimapChip(ctx, outWidth, outHeight, minimap);
   return out;
+}
+
+/** Burn the host's overview minimap into an export frame's bottom-right
+ *  corner — with the view window boxed by the host, viewers of a recorded
+ *  walkthrough always know where on the map the camera is looking. */
+export function drawMinimapChip(
+  ctx: CanvasRenderingContext2D,
+  outWidth: number,
+  outHeight: number,
+  minimap: HTMLCanvasElement,
+): void {
+  if (minimap.width === 0 || minimap.height === 0) return;
+  const edge = Math.min(outWidth, outHeight);
+  const size = Math.round(edge * 0.2);
+  const pad = Math.round(edge * 0.02);
+  const x = outWidth - size - pad;
+  const y = outHeight - size - pad;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(minimap, 0, 0, minimap.width, minimap.height, x, y, size, size);
+  ctx.strokeStyle = "rgba(203, 213, 225, 0.55)";
+  ctx.lineWidth = Math.max(1, Math.round(size * 0.014));
+  ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+  ctx.restore();
 }
 
 export function canvasToBlob(

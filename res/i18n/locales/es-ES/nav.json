@@ -1,9 +1,19 @@
 {
   "dashboard": "Mis estadísticas",
+  "playtime": "Tiempo de juego",
+  "meterShort": "Stats",
+  "viewSwitch": "Cambiar vista",
   "lookup": "Consulta de estadísticas",
   "ships": "Buques",
+  "live": "Batalla en directo",
   "replay": "Revisión de repeticiones",
-  "resources": "Recursos",
+  "tactics": "Análisis táctico",
+  "resources": "Mods",
   "settings": "Ajustes",
-  "home": "Inicio"
+  "home": "Inicio",
+  "openMenu": "Abrir el menú",
+  "menu": "Menú",
+  "back": "Atrás",
+  "liveRoster": "Todos",
+  "liveMine": "Mi batalla"
 }

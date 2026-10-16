@@ -18,6 +18,7 @@
   "game": {
     "online": "Juego en ejecución",
     "offline": "Juego no iniciado",
+    "multiRunning": "Hay {n} clientes de juego en ejecución",
     "pid": "PID",
     "kind": {
       "steam": "Steam",
@@ -26,27 +27,51 @@
       "cn360": "CN (360)",
       "cnKongzhong": "CN (KongZhong)",
       "manual": "Manual"
-    }
+    },
+    "versionLabel": "Versión del cliente"
   },
   "search": {
     "fuzzy": "Búsqueda difusa",
     "hint": "Escribe un nombre de buque, pinyin o nombre en inglés"
   },
   "retry": "Reintentar",
+  "close": "Cerrar",
   "gamePath": {
     "title": "Ruta del juego",
-    "desc": "WoWSP necesita la carpeta de instalación de World of Warships para leer los datos de blindaje y balística de los barcos, las repeticiones y los recursos de mods.",
+    "desc": "WoWSP necesita la carpeta de instalación de World of Warships para leer los datos de blindaje y balística de los buques, las repeticiones y los recursos de mods.",
     "current": "Ruta actual",
     "unset": "Sin establecer",
     "detected": "Instalaciones detectadas",
     "browse": "Examinar carpeta…",
     "redetect": "Volver a detectar",
+    "addAction": "Añadir ruta del juego…",
+    "addTitle": "Añadir ruta del juego",
+    "addDesc": "Detectar automáticamente los clientes instalados en este equipo, o buscar manualmente una carpeta de instalación.",
     "runningHint": "Juego en ejecución detectado: {path}",
     "useRunning": "Usar esta ruta",
-    "noneFound": "No se detectó ninguna instalación del juego. Selecciona manualmente la carpeta de instalación (debe contener WorldOfWarships.exe y una carpeta bin/).",
+    "noneFound": "No se detectó ninguna instalación del juego. Selecciona manualmente la carpeta de instalación (debe contener WorldOfWarships.exe — o Korabli.exe para el cliente Lesta RU — y una carpeta bin/).",
     "applied": "Ruta del juego actualizada",
     "invalid": "La carpeta seleccionada no es válida",
     "setAction": "Establecer ruta del juego",
+    "removeAction": "Quitar esta ruta",
+    "removeConfirm": "¿Quitar?",
+    "removed": "Ruta del juego eliminada",
     "inUse": "En uso"
+  },
+  "imageCrop": {
+    "choose": "Elegir imagen…",
+    "requirement": "Lo ideal es una imagen cuadrada: lado corto de al menos {min}px y lados de hasta {max}px; los recortes demasiado grandes se reducen automáticamente.",
+    "unsupported": "Formato de imagen no compatible (solo PNG / JPG / WebP / GIF / BMP / AVIF).",
+    "fileTooLarge": "El archivo es demasiado grande: comprímelo primero.",
+    "tooSmall": "Imagen demasiado pequeña: el lado corto debe medir al menos {min}px.",
+    "tooLarge": "Imagen demasiado grande: los lados no pueden superar {max}px.",
+    "decodeFailed": "No se pudo decodificar la imagen; el archivo puede estar dañado.",
+    "dragHint": "Arrastra para posicionar, rueda o control deslizante para el zoom; la salida siempre es cuadrada.",
+    "zoom": "Zoom",
+    "dims": "{w}×{h} → {out}×{out}",
+    "rechoose": "Elegir otra",
+    "confirm": "Usar esta imagen",
+    "cancel": "Cancelar",
+    "exportFailed": "Error al exportar la imagen recortada"
   }
 }

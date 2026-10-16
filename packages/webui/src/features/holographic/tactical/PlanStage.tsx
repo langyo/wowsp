@@ -1,0 +1,776 @@
+/**
+ * Standalone tactical plan stage: the replay review's board facilities
+ * (TacticalBoard + toolbar + timeline) hosted over a bare map instead of a
+ * replay. Used by the tactics-analysis page, and the place every future
+ * plan-mode change belongs — the replay host (HolographicMap) and this one
+ * share the same components, styles and document model, differing only in
+ * what feeds the clock and the base canvas:
+ *
+ *   replay host  → battle clock, ships/shells/caps painted onto the art
+ *   plan stage   → a fixed 20-minute planning clock, minimap art only
+ *
+ * The map art is painted onto the SAME canvas the annotation layer exports
+ * from, so image/video export and recording keep working on a plan.
+ */
+import {
+  computed,
+  defineComponent,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  Teleport,
+  watch,
+  type PropType,
+} from "vue";
+import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "../modelLoader";
+import { useToast } from "@celestia-island/hikari";
+import OverviewPanel from "./OverviewPanel";
+import { t as i18nT } from "@/i18n";
+import TacticalBoard from "./TacticalBoard";
+import PlanSlotsBar from "./PlanSlotsBar";
+import {
+  DEFAULT_SLOT_ID,
+  deleteSlotDoc,
+  duplicateSlotDoc,
+  duplicateSlotDocAt,
+  exportBundle,
+  importBundle,
+  loadSlots,
+  nextSlotId,
+  parseBundle,
+  saveSlots,
+  slotDocPath,
+  type PlanSlot,
+} from "./planSlots";
+import type { CapSpec } from "./modes";
+import type { HeatLayerMode, HeatOverlayData } from "./heatLayer";
+import type { PlanUnit } from "./lineup";
+import { saveExportBlob } from "./exporters";
+import { TACTICAL_SIZE, viewWindow, type TacticalView } from "./render";
+import { MAP_GRID_COLUMNS, gridEdgeLabels } from "./mapGrid";
+import { TACTICAL_MAX_SCALE } from "./geometry";
+import "./PlanStage.scss";
+
+/** A plan is always a full 20-minute battle — the timeline's "fully loaded"
+ *  default, independent of how much of it has been annotated. */
+export const PLAN_DURATION_S = 20 * 60;
+
+/** Teleport target for the board's toolbar + timeline dock. */
+export const PLAN_DOCK_ID = "tactics-tac-dock";
+
+export default defineComponent({
+  name: "TacticalPlanStage",
+  props: {
+    /** Space id the plan is authored for (also the doc's storage key). */
+    spaceId: { type: String, required: true },
+    /** Display name, used for export filenames. */
+    mapName: { type: String, default: "" },
+    durationS: { type: Number, default: PLAN_DURATION_S },
+    /** Fleet-planner units (lineup.ts) — the board's unit mode + spawns. */
+    planUnits: { type: Array as () => PlanUnit[], default: () => [] },
+    mirror: { type: Boolean, default: false },
+    onToggleMirror: { type: Function as PropType<(() => void) | undefined>, default: undefined },
+    /** Open the lineup editor (the board's context-menu item). */
+    onEditLineup: { type: Function as PropType<(() => void) | undefined>, default: undefined },
+    /** Capture points of the selected battle mode (modes.ts, world coords). */
+    caps: { type: Array as () => CapSpec[], default: () => [] },
+    /** Corpus heat overlay (heatLayer.ts) resolved for the current
+     *  (map, mode): null = no corpus coverage (the toolbar's button shows
+     *  the no-data hint). */
+    heat: { type: Object as PropType<HeatOverlayData | null>, default: null },
+    /** Which corpus grid is shown (off / track / spawn). */
+    heatMode: { type: String as PropType<HeatLayerMode>, default: "off" },
+    /** Ask the host to switch the overlay state (the toolbar's flyout). */
+    onSetHeat: {
+      type: Function as PropType<(mode: HeatLayerMode) => void>,
+      default: undefined,
+    },
+    /** CSS selector the plan-slot tree teleports into (the tactics page's
+     *  left branch panel); absent keeps the chips row above the stage. */
+    slotsTeleport: { type: String, default: undefined },
+    /** CSS selector the overview minimap teleports into (the tactics page's
+     *  right side panel); absent keeps the in-stage corner card. */
+    minimapTeleport: { type: String, default: undefined },
+    /** CSS selector the board dock (toolbar + timeline) teleports into —
+     *  the tactics page's FULL-WIDTH row under the workspace, so the side
+     *  panels frame the map only and the timeline spans everything.
+     *  Absent keeps the dock in-stage under the square (replay host). */
+    dockTeleport: { type: String, default: undefined },
+  },
+  setup(props, { expose }) {
+    const artCanvas = ref<HTMLCanvasElement | null>(null);
+    const stageRef = ref<HTMLDivElement | null>(null);
+    /** Live stage width (ResizeObserver) — sizes the overview card. */
+    const stageW = ref(0);
+    /** Typed by the exposed surface only (defineExpose types don't
+     *  propagate through InstanceType in TSX). */
+    const boardRef = ref<{
+      flushDoc: () => void;
+      reloadDoc: () => void;
+      unitPoses: () => { x: number; z: number; team?: "ally" | "enemy"; color: string }[];
+    } | null>(null);
+
+    /** Host-facing surface for the profile actions (the page's save/open
+     *  read and write this stage's documents): flush the board's debounced
+     *  save, re-read the current document, and re-read the whole slot
+     *  inventory (an imported profile rewrote every key underneath us). */
+    function reloadSlots(): void {
+      boardRef.value?.flushDoc?.();
+      slots.value = loadSlots(props.spaceId);
+      activeSlot.value = DEFAULT_SLOT_ID;
+      // The replayPath watch reloads the board when the slot CHANGES; when
+      // the default slot was already active it stays silent — drive it.
+      boardRef.value?.reloadDoc?.();
+      time.value = 0;
+      playing.value = false;
+    }
+    expose({
+      flushDoc: () => boardRef.value?.flushDoc?.(),
+      reloadDoc: () => boardRef.value?.reloadDoc?.(),
+      reloadSlots,
+    });
+
+    // ── Map art + world bounds ───────────────────────────────────────────
+    let artImage: HTMLImageElement | null = null;
+    const fullBounds = ref<MapBounds | null>(null);
+    const boundsReady = ref(false);
+    /** Minimap art URL (the overview card's background); null until loaded. */
+    const mapArtUrl = ref<string | null>(null);
+    /** Cancels stale loads when the selected map switches mid-flight. */
+    let loadEpoch = 0;
+    const dirty = ref(true);
+
+    function loadMap() {
+      const epoch = ++loadEpoch;
+      artImage = null;
+      fullBounds.value = null;
+      boundsReady.value = false;
+      mapArtUrl.value = null;
+      const url = resolveMapMinimapUrl(props.spaceId);
+      if (url) {
+        mapArtUrl.value = url;
+        const img = new Image();
+        img.onload = () => {
+          if (epoch !== loadEpoch) return;
+          artImage = img;
+          dirty.value = true;
+        };
+        img.src = url;
+      }
+      void loadMapBounds().then((all) => {
+        if (epoch !== loadEpoch) return;
+        const key = props.spaceId.replace(/^spaces\//, "");
+        fullBounds.value =
+          all.get(key) ??
+          all.get(key.toLowerCase()) ??
+          [...all.entries()].find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1] ??
+          null;
+        boundsReady.value = true;
+        dirty.value = true;
+      });
+    }
+
+    // ── Viewport (pan / zoom / camera tweens). Same window math as the
+    //    replay host, so annotations and terrain can never drift apart. ───
+    const view = ref<TacticalView>({ cx: 0, cz: 0, scale: 1 });
+    let viewTween: {
+      from: TacticalView;
+      to: TacticalView;
+      startedAt: number;
+      durMs: number;
+    } | null = null;
+
+    function viewBounds(full: MapBounds): MapBounds {
+      return viewWindow(view.value, full);
+    }
+    function tacticalBounds(): MapBounds | null {
+      const full = fullBounds.value;
+      return full ? viewBounds(full) : null;
+    }
+    /** Advance an in-flight camera tween; true while it moved this frame. */
+    function advanceViewTween(): boolean {
+      const tw = viewTween;
+      if (!tw) return false;
+      const p = Math.min(1, (performance.now() - tw.startedAt) / tw.durMs);
+      if (p >= 1) {
+        // Land exactly on the captured view (no 1-ulp float drift).
+        view.value = { ...tw.to };
+        viewTween = null;
+      } else {
+        const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
+        view.value = {
+          cx: tw.from.cx + (tw.to.cx - tw.from.cx) * e,
+          cz: tw.from.cz + (tw.to.cz - tw.from.cz) * e,
+          scale: tw.from.scale + (tw.to.scale - tw.from.scale) * e,
+        };
+      }
+      return true;
+    }
+
+    /** Viewport handle handed to the tactical board (pan/zoom/wheel/tweens). */
+    const viewApi = {
+      snapshot(): TacticalView {
+        const full = fullBounds.value ?? { minX: 0, maxX: 1, minZ: 0, maxZ: 1 };
+        const v = viewBounds(full);
+        return { cx: (v.minX + v.maxX) / 2, cz: (v.minZ + v.maxZ) / 2, scale: view.value.scale };
+      },
+      zoomAt(lx: number, ly: number, factor: number): void {
+        viewTween = null;
+        const full = fullBounds.value;
+        if (!full) return;
+        const vb = viewBounds(full);
+        // Resync the raw centre to the effective clamped one first, so the
+        // cursor anchor cannot carry drift from an over-pan the clamp ate.
+        const s0 = view.value.scale;
+        const cx = (vb.minX + vb.maxX) / 2;
+        const cz = (vb.minZ + vb.maxZ) / 2;
+        const wx = vb.minX + (lx / TACTICAL_SIZE) * (vb.maxX - vb.minX);
+        const wz = vb.maxZ - (ly / TACTICAL_SIZE) * (vb.maxZ - vb.minZ);
+        const s1 = Math.min(TACTICAL_MAX_SCALE, Math.max(1, s0 * factor));
+        if (s1 === s0) {
+          view.value = { cx, cz, scale: s0 };
+          return;
+        }
+        // Keep the world point under the cursor at the same logical px: the
+        // window shrinks around the cursor, so the centre moves toward it by
+        // the zoom ratio.
+        view.value = {
+          scale: s1,
+          cx: wx - (wx - cx) * (s0 / s1),
+          cz: wz - (wz - cz) * (s0 / s1),
+        };
+      },
+      panByLogical(dxL: number, dyL: number): void {
+        viewTween = null;
+        const full = fullBounds.value;
+        if (!full) return;
+        const vb = viewBounds(full);
+        const wxPerL = (vb.maxX - vb.minX) / TACTICAL_SIZE;
+        const wzPerL = (vb.maxZ - vb.minZ) / TACTICAL_SIZE;
+        view.value = {
+          scale: view.value.scale,
+          cx: (vb.minX + vb.maxX) / 2 - dxL * wxPerL,
+          cz: (vb.minZ + vb.maxZ) / 2 + dyL * wzPerL,
+        };
+      },
+      reset(): void {
+        viewTween = null;
+        view.value = { cx: 0, cz: 0, scale: 1 };
+      },
+      /** Eased camera move to a captured view (presentation "运镜"). */
+      tweenTo(target: TacticalView, durMs = 450): void {
+        viewTween = {
+          from: viewApi.snapshot(),
+          to: {
+            cx: target.cx,
+            cz: target.cz,
+            scale: Math.min(TACTICAL_MAX_SCALE, Math.max(1, target.scale)),
+          },
+          startedAt: performance.now(),
+          durMs: Math.max(60, durMs),
+        };
+      },
+    };
+
+    /** Overview snapshot for the owned panel: full-map art, the battle
+     *  mode's capture points, the live unit poses out of the board, the
+     *  current view window and the clock (appearT ghosting). */
+    const overview = computed<import("./OverviewPanel").OverviewHandle | null>(() => {
+      const full = fullBounds.value;
+      if (!full) return null;
+      return {
+        artUrl: mapArtUrl.value,
+        full,
+        view: viewBounds(full),
+        caps: props.caps,
+        poses: boardRef.value?.unitPoses?.() ?? [],
+        time: time.value,
+      };
+    });
+
+    /** Zoom step (panel bar): one wheel-notch rung, centre unchanged. */
+    function overviewZoomStep(factor: number): void {
+      const full = fullBounds.value;
+      if (!full) return;
+      const vb = viewBounds(full);
+      viewTween = null;
+      view.value = {
+        cx: (vb.minX + vb.maxX) / 2,
+        cz: (vb.minZ + vb.maxZ) / 2,
+        scale: Math.min(TACTICAL_MAX_SCALE, Math.max(1, view.value.scale * factor)),
+      };
+    }
+
+    /** Absolute percent rung (percent button semantics shared with the bar). */
+    function overviewZoomTo(percent: number): void {
+      viewTween = null;
+      view.value = {
+        cx: view.value.cx,
+        cz: view.value.cz,
+        scale: Math.min(TACTICAL_MAX_SCALE, Math.max(1, percent / 100)),
+      };
+    }
+
+    /** Overview drag: fractions of the FULL map the pointer moved — content
+     *  follows the pointer (drag right shows terrain to the left of where
+     *  you were). */
+    function overviewPanBy(fracDX: number, fracDY: number): void {
+      const full = fullBounds.value;
+      if (!full) return;
+      const vb = viewBounds(full);
+      const w = full.maxX - full.minX || 1;
+      const h = full.maxZ - full.minZ || 1;
+      viewTween = null;
+      view.value = {
+        cx: (vb.minX + vb.maxX) / 2 - fracDX * w,
+        cz: (vb.minZ + vb.maxZ) / 2 + fracDY * h,
+        scale: view.value.scale,
+      };
+    }
+
+    function overviewReset(): void {
+      viewApi.reset();
+    }
+
+    // ── Planning clock: realtime playback over a fixed-length plan ───────
+    const time = ref(0);
+    const playing = ref(false);
+    const duration = computed(() => Math.max(1, props.durationS));
+
+    function seekTo(t: number): void {
+      playing.value = false;
+      time.value = Math.max(0, Math.min(duration.value, t));
+    }
+    function play(): void {
+      if (time.value >= duration.value) time.value = 0;
+      playing.value = true;
+    }
+    function pause(): void {
+      playing.value = false;
+    }
+
+    // ── Base canvas: the map art through the view window plus the game's own
+    //    A–J/1–10 grid. This is also the export/record base layer. ─────────
+    function paintArt(): void {
+      const cvs = artCanvas.value;
+      const full = fullBounds.value;
+      if (!cvs || !full) return;
+      const rect = cvs.getBoundingClientRect();
+      if (rect.width === 0) return;
+      const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+      const px = Math.max(1, Math.round(rect.width * dpr));
+      if (cvs.width !== px || cvs.height !== px) {
+        cvs.width = px;
+        cvs.height = px;
+      }
+      const ctx = cvs.getContext("2d");
+      if (!ctx) return;
+      ctx.setTransform(px / TACTICAL_SIZE, 0, 0, px / TACTICAL_SIZE, 0, 0);
+      const vl = viewBounds(full);
+      ctx.clearRect(0, 0, TACTICAL_SIZE, TACTICAL_SIZE);
+      if (artImage) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        const img = artImage;
+        const fullW = full.maxX - full.minX || 1;
+        const fullH = full.maxZ - full.minZ || 1;
+        // Crop the art to the view window (source rect in image px).
+        const fx = ((vl.minX - full.minX) / fullW) * img.width;
+        const fw = ((vl.maxX - vl.minX) / fullW) * img.width;
+        const fy = ((full.maxZ - vl.maxZ) / fullH) * img.height;
+        const fh = ((vl.maxZ - vl.minZ) / fullH) * img.height;
+        ctx.drawImage(img, fx, fy, fw, fh, 0, 0, TACTICAL_SIZE, TACTICAL_SIZE);
+      } else {
+        ctx.fillStyle = "rgba(5, 8, 15, 0.9)";
+        ctx.fillRect(0, 0, TACTICAL_SIZE, TACTICAL_SIZE);
+      }
+      // Grid: the game's own 10×10 columns over the FULL map rect, so it is
+      // world-anchored under pan/zoom exactly like the replay 2D map.
+      const gx = (x: number): number =>
+        ((x - vl.minX) / (vl.maxX - vl.minX || 1)) * TACTICAL_SIZE;
+      const gz = (z: number): number =>
+        ((vl.maxZ - z) / (vl.maxZ - vl.minZ || 1)) * TACTICAL_SIZE;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 1; i < MAP_GRID_COLUMNS; i++) {
+        const x = gx(full.minX + ((full.maxX - full.minX) * i) / MAP_GRID_COLUMNS);
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, TACTICAL_SIZE);
+        const z = gz(full.minZ + ((full.maxZ - full.minZ) * i) / MAP_GRID_COLUMNS);
+        ctx.moveTo(0, z);
+        ctx.lineTo(TACTICAL_SIZE, z);
+      }
+      ctx.stroke();
+      // Edge rulers (screen-frame, always upright) — the same A–J/1–10
+      // coordinate language the replay's enlarged map shows. Each label is
+      // projected through the view window like the grid lines it names, so
+      // it rides its square under pan/zoom instead of sitting at a fixed
+      // decile slot (which decoupled from the lines on first zoom).
+      const colCenters: number[] = [];
+      const rowCenters: number[] = [];
+      for (let i = 0; i < MAP_GRID_COLUMNS; i++) {
+        colCenters.push(
+          gx(full.minX + ((full.maxX - full.minX) * (i + 0.5)) / MAP_GRID_COLUMNS),
+        );
+        // Row 1 is the NORTHERNMOST band (+worldZ is up), so count the row
+        // centres off maxZ — minZ-first would mirror 1–10 onto the south.
+        rowCenters.push(
+          gz(full.maxZ - ((full.maxZ - full.minZ) * (i + 0.5)) / MAP_GRID_COLUMNS),
+        );
+      }
+      const layout = gridEdgeLabels(TACTICAL_SIZE, colCenters, rowCenters);
+      ctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      for (const l of layout.top) {
+        // Clamped = its square is off-canvas (deep zoom); it names the
+        // nearest square THAT way, so it steps back visually.
+        ctx.fillStyle = l.clamped ? "rgba(203, 213, 225, 0.38)" : "rgba(203, 213, 225, 0.72)";
+        ctx.fillText(l.text, l.x, 3);
+      }
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      for (const l of layout.left) {
+        ctx.fillStyle = l.clamped ? "rgba(203, 213, 225, 0.38)" : "rgba(203, 213, 225, 0.72)";
+        ctx.fillText(l.text, 4, l.y);
+      }
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+      ctx.strokeRect(0.5, 0.5, TACTICAL_SIZE - 1, TACTICAL_SIZE - 1);
+    }
+
+    /** Offscreen overview for exports/recordings: the FULL map art with the
+     *  current view window boxed — burned into the frame corner by the
+     *  exporters, so a zoomed-in recording always says where it is looking.
+     *  Repainted in the same dirty cycle as the art (it shares view/bounds). */
+    const OVERVIEW_PX = 256;
+    const overviewCanvas = document.createElement("canvas");
+    overviewCanvas.width = OVERVIEW_PX;
+    overviewCanvas.height = OVERVIEW_PX;
+
+    function paintOverview(): void {
+      const ctx = overviewCanvas.getContext("2d");
+      if (!ctx) return;
+      // Clear FIRST: while bounds reload (map switch) the overview must go
+      // blank, never keep the previous map's art to be burned into exports.
+      ctx.clearRect(0, 0, OVERVIEW_PX, OVERVIEW_PX);
+      const full = fullBounds.value;
+      if (!full) return;
+      const w = full.maxX - full.minX || 1;
+      const h = full.maxZ - full.minZ || 1;
+      if (artImage) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(artImage, 0, 0, OVERVIEW_PX, OVERVIEW_PX);
+      } else {
+        ctx.fillStyle = "rgba(5, 8, 15, 0.9)";
+        ctx.fillRect(0, 0, OVERVIEW_PX, OVERVIEW_PX);
+      }
+      const vb = viewBounds(full);
+      const x = ((vb.minX - full.minX) / w) * OVERVIEW_PX;
+      const y = ((full.maxZ - vb.maxZ) / h) * OVERVIEW_PX;
+      const bw = ((vb.maxX - vb.minX) / w) * OVERVIEW_PX;
+      const bh = ((vb.maxZ - vb.minZ) / h) * OVERVIEW_PX;
+      ctx.strokeStyle = "rgba(0, 195, 255, 0.95)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(x + 1, y + 1, Math.max(2, bw - 2), Math.max(2, bh - 2));
+      ctx.setLineDash([]);
+    }
+
+    // ── Frame loop: advance the plan clock, tween the camera, repaint the
+    //    art only when one of them actually changed. ─────────────────────
+    let raf = 0;
+    let last = 0;
+    let lastDpr = 0;
+    function frame(now: number): void {
+      raf = requestAnimationFrame(frame);
+      const dt = last ? Math.min(0.25, (now - last) / 1000) : 0;
+      last = now;
+      if (playing.value) {
+        const next = time.value + dt;
+        if (next >= duration.value) {
+          time.value = duration.value;
+          playing.value = false;
+        } else {
+          time.value = next;
+        }
+      }
+      if (advanceViewTween()) dirty.value = true;
+      // The backing store is sized in DEVICE px: dragging the window onto a
+      // different-DPR monitor changes no CSS size, so the art would stay at
+      // the old resolution unless the ratio itself invalidates the paint.
+      const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+      if (dpr !== lastDpr) {
+        lastDpr = dpr;
+        dirty.value = true;
+      }
+      if (dirty.value) {
+        dirty.value = false;
+        paintArt();
+        paintOverview();
+      }
+    }
+
+    let ro: ResizeObserver | null = null;
+    onMounted(() => {
+      loadMap();
+      raf = requestAnimationFrame(frame);
+      if (stageRef.value) {
+        ro = new ResizeObserver((entries) => {
+          const w = entries[0]?.contentRect.width ?? 0;
+          if (w > 0) stageW.value = w;
+          dirty.value = true;
+        });
+        ro.observe(stageRef.value);
+      }
+    });
+    onBeforeUnmount(() => {
+      cancelAnimationFrame(raf);
+      ro?.disconnect();
+    });
+    watch(
+      () => props.spaceId,
+      () => {
+        loadMap();
+        view.value = { cx: 0, cz: 0, scale: 1 };
+        time.value = 0;
+        playing.value = false;
+        dirty.value = true;
+      },
+    );
+    watch(
+      view,
+      () => {
+        dirty.value = true;
+      },
+      { deep: true },
+    );
+
+    /** The clock closure shared by the dock and the board, so the two can
+     *  never disagree about "now". */
+    const boardProps = {
+      replayPath: computed(() => slotDocPath(props.spaceId, activeSlot.value)),
+      getTime: () => time.value,
+      getDuration: () => duration.value,
+      getPlaying: () => playing.value,
+      play,
+      pause,
+      seekTo,
+    };
+
+    // ── Plan slots: several plans per map, switched by replayPath (the
+    //    board's store flushes/loads per key, so a switch is atomic). Slot
+    //    "0" is the legacy unsuffixed document — old boards upgrade in place.
+    const slots = ref<PlanSlot[]>(loadSlots(props.spaceId));
+    const activeSlot = ref<string>(DEFAULT_SLOT_ID);
+    const slotNames = computed(() =>
+      slots.value.map((s, i) => s.name || i18nT("tactics.slots.slotN", { n: i + 1 })),
+    );
+
+    function selectSlot(id: string): void {
+      if (id === activeSlot.value) return;
+      activeSlot.value = id;
+      time.value = 0;
+      playing.value = false;
+    }
+    function addSlot(copyCurrent: boolean): void {
+      const id = nextSlotId(slots.value);
+      // Flush the board's debounced save first, or the duplicate copies a
+      // document up to 400 ms stale (edits from the last moments).
+      if (copyCurrent) {
+        boardRef.value?.flushDoc?.();
+        duplicateSlotDoc(props.spaceId, activeSlot.value, id);
+      }
+      slots.value = [...slots.value, { id, name: "" }];
+      saveSlots(props.spaceId, slots.value);
+      selectSlot(id);
+    }
+
+    /** Fork the current plan AT THE PLAYHEAD: the copy keeps everything up
+     *  to the playhead second and records the fork point, so the branch
+     *  panel can show "方案二 · T+03:00" — the tree's whole point. */
+    function addBranch(): void {
+      const id = nextSlotId(slots.value);
+      boardRef.value?.flushDoc?.();
+      duplicateSlotDocAt(props.spaceId, activeSlot.value, id, time.value);
+      slots.value = [
+        ...slots.value,
+        { id, name: "", parent: activeSlot.value, branchT: Math.round(time.value) },
+      ];
+      saveSlots(props.spaceId, slots.value);
+      selectSlot(id);
+    }
+    function renameSlot(id: string, name: string): void {
+      const value = name.trim();
+      if (slots.value.some((s) => s.id === id && s.name === value)) return;
+      slots.value = slots.value.map((s) => (s.id === id ? { ...s, name: value } : s));
+      saveSlots(props.spaceId, slots.value);
+    }
+    function removeSlot(id: string): void {
+      if (slots.value.length <= 1) return;
+      const fallback = slots.value.find((s) => s.id !== id);
+      if (!fallback) return;
+      // Switch AWAY first: the board's debounced save then flushes under the
+      // departing key before the next tick removes it (watch flush is async).
+      selectSlot(fallback.id);
+      // The tree survives a node's death: children re-parent onto the
+      // removed node's parent (a root child becomes a root itself).
+      const doomed = slots.value.find((s) => s.id === id);
+      const grand = doomed?.parent;
+      slots.value = slots.value
+        .filter((s) => s.id !== id)
+        .map((s) => (s.parent === id ? { ...s, parent: grand } : s));
+      saveSlots(props.spaceId, slots.value);
+      void nextTick(() => deleteSlotDoc(props.spaceId, id));
+    }
+    watch(
+      () => props.spaceId,
+      () => {
+        slots.value = loadSlots(props.spaceId);
+        activeSlot.value = DEFAULT_SLOT_ID;
+      },
+    );
+
+    // ── Bundle share: every plan of this map in one file ─────────────────
+    const toast = useToast();
+    const bundleInput = ref<HTMLInputElement | null>(null);
+
+    async function exportPlansBundle(): Promise<void> {
+      const bundle = exportBundle(props.spaceId);
+      const blob = new Blob([JSON.stringify(bundle)], { type: "application/json" });
+      const tag = (props.mapName || props.spaceId).replace(/[^\w-]+/g, "_");
+      const saved = await saveExportBlob(blob, `wowsp-tactics-${tag}-plans`, "JSON", "json");
+      if (saved) toast.info(i18nT("tactics.slots.exported"));
+    }
+
+    function importPlansBundle(e: Event): void {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      input.value = "";
+      if (!file) return;
+      void file
+        .text()
+        .then((text) => {
+          const bundle = parseBundle(text);
+          if (!bundle) {
+            toast.error(i18nT("tactics.slots.importBad"));
+            return;
+          }
+          // Flush the debounced save FIRST: a pending pre-import document
+          // would otherwise be written back by the reload below, silently
+          // overwriting the slot the bundle just landed in.
+          boardRef.value?.flushDoc?.();
+          importBundle(props.spaceId, bundle);
+          slots.value = loadSlots(props.spaceId);
+          const switching = activeSlot.value !== DEFAULT_SLOT_ID;
+          activeSlot.value = DEFAULT_SLOT_ID;
+          // The replayPath watch does the (single) reload when the slot
+          // changes; when it was already the default, drive it by hand —
+          // reading any other key in between would resurrect a deleted one.
+          if (!switching) boardRef.value?.reloadDoc?.();
+          time.value = 0;
+          playing.value = false;
+          if (bundle.spaceId && bundle.spaceId !== props.spaceId) {
+            toast.info(i18nT("tactics.slots.mapMismatch", { map: bundle.spaceId }));
+          }
+          toast.info(i18nT("tactics.slots.imported", { n: bundle.slots.length }));
+        })
+        .catch(() => toast.error(i18nT("tactics.slots.importBad")));
+    }
+
+    return () => (
+      <div class="plan-stage">
+        {boundsReady.value && !fullBounds.value ? (
+          // Art without world bounds (a space the bounds extractor has no row
+          // for): there is no rect to project actions onto.
+          <div class="plan-stage__notice">{i18nT("tactics.plan.noBounds")}</div>
+        ) : (
+          <>
+            <Teleport defer to={props.slotsTeleport ?? "body"} disabled={!props.slotsTeleport}>
+              <PlanSlotsBar
+                slots={slots.value}
+                names={slotNames.value}
+                activeId={activeSlot.value}
+                onSelect={selectSlot}
+                onAdd={() => addSlot(false)}
+                onDuplicate={() => addSlot(true)}
+                onBranch={addBranch}
+                layout={props.slotsTeleport ? "tree" : "chips"}
+                onRename={renameSlot}
+                onRemove={removeSlot}
+                onExport={() => void exportPlansBundle()}
+                onImport={() => bundleInput.value?.click()}
+              />
+            </Teleport>
+            {/* The dock's landing element mounts BEFORE the board: the
+                board's own deferred teleport into #tactics-tac-dock queues
+                its post-render mount during this same patch, and deferred
+                teleports resolve in queue order — landing first is what
+                makes the nested target exist in time. */}
+            <Teleport defer to={props.dockTeleport ?? "body"} disabled={!props.dockTeleport}>
+              <div class="plan-stage__dock" id={PLAN_DOCK_ID} />
+            </Teleport>
+            <div class="plan-stage__viewport">
+              <div ref={stageRef} class="plan-stage__stage">
+                <canvas ref={artCanvas} class="plan-stage__art" />
+                <TacticalBoard
+                  ref={boardRef}
+                  replayPath={boardProps.replayPath.value}
+                  mapTag={props.mapName || props.spaceId}
+                  editMode
+                  planMode
+                  planUnits={props.planUnits}
+                  mirror={props.mirror}
+                  onToggleMirror={props.onToggleMirror}
+                  onEditLineup={props.onEditLineup}
+                  caps={props.caps}
+                  heat={props.heat}
+                  heatMode={props.heatMode}
+                  onSetHeat={props.onSetHeat}
+                  dockSelector={`#${PLAN_DOCK_ID}`}
+                  getBounds={tacticalBounds}
+                  getFullBounds={() => fullBounds.value}
+                  getTime={boardProps.getTime}
+                  getDuration={boardProps.getDuration}
+                  getPlaying={boardProps.getPlaying}
+                  play={boardProps.play}
+                  pause={boardProps.pause}
+                  seekTo={boardProps.seekTo}
+                  viewApi={viewApi}
+                  // A plan has no replay behind it: nothing to pin, nothing to
+                  // pick, no trajectories to draw.
+                  trajectories={() => []}
+                  actions={[]}
+                  pickShipAt={() => null}
+                  baseCanvas={() => artCanvas.value}
+                  overlayCanvas={() => overviewCanvas}
+                />
+                {overview.value ? (
+                  <Teleport defer to={props.minimapTeleport ?? "body"} disabled={!props.minimapTeleport}>
+                    <OverviewPanel
+                      class="plan-stage__minimap"
+                      snapshot={() => overview.value}
+                      onZoomStep={overviewZoomStep}
+                      onZoomTo={overviewZoomTo}
+                      onReset={overviewReset}
+                      onPanBy={overviewPanBy}
+                    />
+                  </Teleport>
+                ) : null}
+              </div>
+            </div>
+            <input
+              ref={bundleInput}
+              class="plan-stage__file-input"
+              type="file"
+              accept=".json,application/json"
+              onChange={importPlansBundle}
+            />
+          </>
+        )}
+      </div>
+    );
+  },
+});

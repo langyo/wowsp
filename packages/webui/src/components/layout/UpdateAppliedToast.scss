@@ -1,0 +1,131 @@
+// UpdateAppliedToast — the after-update success card. Sits in hikari's
+// toast column (same fixed top-right slot and z-band as HkToast /
+// HBlockingToast / UpdateToast) so all four surfaces read as one stack;
+// copies the pass card's grammar in the success variant (green, white
+// text, blur) with a filled 查看 action instead of the progress bar.
+
+.update-applied {
+  position: fixed;
+  top: 4rem;
+  right: 1rem;
+  z-index: var(--hk-z-toast, 4000);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hi-space-8, 8px);
+  width: 22rem;
+  max-width: calc(100vw - 2rem);
+  padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+  border-radius: var(--hi-radius-sm, 4px);
+  background: var(--hi-color-success, #3fb950);
+  color: #fff;
+  font-size: var(--hi-text-base, 0.875rem);
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+  animation: update-applied-in var(--hi-duration-normal, 0.3s)
+    cubic-bezier(0.22, 0.61, 0.36, 1);
+  // Leave counterpart of the enter keyframe (delayed unmount in the
+  // component keeps the card alive for the fold-out).
+  transition: opacity 260ms ease, transform 260ms ease;
+
+  &--leave {
+    opacity: 0;
+    transform: translateX(12px);
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-applied {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes update-applied-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.update-applied__row {
+  display: flex;
+  align-items: center;
+  gap: var(--hi-space-8, 8px);
+}
+
+.update-applied__icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.update-applied__message {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+// Quiet × next to the title — same translucent outline grammar as the
+// pass card's 取消 control.
+.update-applied__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: var(--hi-radius-sm, 4px);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color var(--hi-duration-fast, 0.15s) ease;
+
+  &:hover {
+    background: rgb(255 255 255 / 18%);
+  }
+
+  &:active {
+    background: rgb(255 255 255 / 28%);
+  }
+}
+
+.update-applied__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+// The 查看 update-log action: a filled white pill that reads as the
+// card's primary move (the hikari secondary variant would sink into the
+// green surface like it does on the pass card's blue).
+.update-applied__view {
+  padding: 0.25rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--hi-color-success, #2da43e);
+  font-size: var(--hi-text-base, 0.8125rem);
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: opacity var(--hi-duration-fast, 0.15s) ease;
+
+  &:hover {
+    opacity: 0.88;
+  }
+
+  &:active {
+    opacity: 0.78;
+  }
+}

@@ -1,20 +1,22 @@
 import { computed, defineComponent } from "vue";
 
-import { HSpinner } from "@celestia-island/hikari";
+import { HkSpinner } from "@celestia-island/hikari";
 
 import RatingStamp from "@/components/base/RatingStamp";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useStatsStore } from "@/stores/stats";
 import { useRankedStore } from "@/stores/ranked";
-import type { PlayerShipStats } from "@/api";
+import type { PlayerShipStats, ShipModeStats } from "@/api";
 import { t } from "@/i18n";
 import {
   careerStamp,
   damageColor,
   prTier,
+  prTierLabel,
   winrateColor,
   type StampKind,
 } from "@/utils/winrate";
+import { useStatsPrefsStore } from "@/stores/statsPrefs";
 import { dateRangeCutoff, shipRecentDelta, type DateRange } from "@/utils/shipAggregation";
 import { useClipboard } from "@/composables/useClipboard";
 import "./ShipMyStatsPanel.scss";
@@ -22,11 +24,12 @@ import "./ShipMyStatsPanel.scss";
 /**
  * "My Stats" tab of the ship detail modal — the water-table header (StatsCard)
  * re-cut for a single ship, mirroring the account card's layout: centered hero
- * winrate with the PR block behind a divider, the per-ship 神了/海猴/蛆 PR
- * verdict stamp, the account-wide four-division winrate row, the KPI strip,
- * and the 1/7/30-day recent windows against the locally recorded per-ship
- * history baselines. Works for any viewed player (the modal passes the
- * accountId of whoever's water table opened it), not just the bound account.
+ * winrate with the PR block behind a divider, the per-ship 神了/猴/蛆 PR
+ * verdict stamp, the four-mode winrate row (this ship's own splits, with the
+ * account-wide row as fallback), the KPI strip, and the 1/7/30-day recent
+ * windows against the locally recorded per-ship history baselines. Works for
+ * any viewed player (the modal passes the accountId of whoever's water table
+ * opened it), not just the bound account.
  */
 export default defineComponent({
   name: "ShipMyStatsPanel",
@@ -43,6 +46,7 @@ export default defineComponent({
     const shipStats = useShipStatsStore();
     const stats = useStatsStore();
     const ranked = useRankedStore();
+    const prefs = useStatsPrefsStore();
     const { copy } = useClipboard();
 
     const history = computed(() => {
@@ -50,7 +54,8 @@ export default defineComponent({
       return shipStats.history.get(`${props.realm}_${props.accountId}`) ?? [];
     });
 
-    /** The viewed player's account-level card (feeds the division row). */
+    /** The viewed player's account-level card (feeds the fallback division
+     *  row when the per-ship mode breakdown is absent). */
     const accountStats = computed(() => {
       if (props.accountId == null || !props.realm) return null;
       return stats.cache.get(`${props.realm}_${props.accountId}`) ?? null;
@@ -62,7 +67,12 @@ export default defineComponent({
       ranked.accountId != null && ranked.accountId === props.accountId ? ranked.winrate : null,
     );
 
-    /** Stamp: the ship's own PR verdict (神了 / 海猴 / 蛆). The career composition
+    /** Ranked battles, under the same slot-ownership guard as `rankedWr`. */
+    const rankedBattles = computed(() =>
+      ranked.accountId != null && ranked.accountId === props.accountId ? ranked.battles : null,
+    );
+
+    /** Stamp: the ship's own PR verdict (神了 / 猴 / 蛆). The career composition
      *  tags (空中小人 / 水下小人) stay on the account card — they describe the
      *  player's career, not this ship, and read as a ship verdict here. */
     const stamps = computed<StampKind[]>(() => {
@@ -76,15 +86,62 @@ export default defineComponent({
 
     const pr = computed(() => prTier(props.stats?.pr ?? null));
 
-    /** The account-wide four-division winrates (same numbers as the account
-     *  card). WG's per-ship endpoint serves no battle-type split, so this row
-     *  is context, not per-ship — hinted as such. */
-    const divisions = computed<{ label: string; wr: number | null }[]>(() => [
-      { label: t("stats.solo"), wr: accountStats.value?.soloWr ?? null },
-      { label: t("stats.div2"), wr: accountStats.value?.div2Wr ?? null },
-      { label: t("stats.div3"), wr: accountStats.value?.div3Wr ?? null },
-      { label: t("stats.ranked"), wr: rankedWr.value },
-    ]);
+    /** "场次: 12,345" tooltip body for a split (null = count unknown — the
+     *  slot then falls back to the shared context hint in the JSX). */
+    const battlesHint = (battles: number | null | undefined) =>
+      battles != null ? `${t("stats.battles")}: ${battles.toLocaleString()}` : null;
+
+    /** The four-mode winrate row, this ship's own splits whenever the
+     *  backend serves the battle-type breakdown (both transports fetch
+     *  pvp_solo/div2/div3 plus the rank_* trio per ship). A mode this ship
+     *  never played shows "—" with a not-played hint — it must not borrow
+     *  the account's number, which would repeat the old bug of the same
+     *  four winrates under every ship. Rows without a breakdown (caches
+     *  written before the field existed, or a transport that served no
+     *  splits) fall back to the account-wide row, hinted as such. */
+    const divisions = computed<{ label: string; wr: number | null; hint: string | null }[]>(() => {
+      const m = props.stats?.modes ?? null;
+      if (m) {
+        const slot = (mode: ShipModeStats | null | undefined, label: string) => ({
+          label,
+          wr: mode != null ? mode.winrate : null,
+          hint:
+            mode != null
+              ? battlesHint(mode.battles)
+              : t("ships.detail.my.modeNotPlayed"),
+        });
+        return [
+          slot(m.solo, t("stats.solo")),
+          slot(m.div2, t("stats.div2")),
+          slot(m.div3, t("stats.div3")),
+          slot(m.ranked, t("stats.ranked")),
+        ];
+      }
+      return [
+        {
+          label: t("stats.solo"),
+          wr: accountStats.value?.soloWr ?? null,
+          hint: battlesHint(accountStats.value?.soloBattles),
+        },
+        {
+          label: t("stats.div2"),
+          wr: accountStats.value?.div2Wr ?? null,
+          hint: battlesHint(accountStats.value?.div2Battles),
+        },
+        {
+          label: t("stats.div3"),
+          wr: accountStats.value?.div3Wr ?? null,
+          hint: battlesHint(accountStats.value?.div3Battles),
+        },
+        {
+          label: t("stats.ranked"),
+          wr: rankedWr.value,
+          hint: [t("stats.rankedHint"), battlesHint(rankedBattles.value)]
+            .filter(Boolean)
+            .join(" · "),
+        },
+      ];
+    });
 
     /** Career KPIs — the per-ship slice of the account card's KPI strip. */
     const kpis = computed(() => {
@@ -97,7 +154,12 @@ export default defineComponent({
         { label: t("stats.battles"), value: s.battles.toLocaleString() },
         {
           label: t("stats.avgDamage"),
-          value: Math.round(s.avgDamage).toLocaleString(),
+          // Any real battle deals damage — a zero here means the snapshot
+          // slice is broken, so flag it instead of showing a red 0.
+          value:
+            s.battles > 0 && s.avgDamage <= 0
+              ? t("stats.dataAnomaly")
+              : Math.round(s.avgDamage).toLocaleString(),
           color: damageColor(s.avgDamage),
         },
         {
@@ -129,7 +191,7 @@ export default defineComponent({
       if (!s) {
         return props.loading ? (
           <div class="ship-my-stats ship-my-stats--loading">
-            <HSpinner center size="md" />
+            <HkSpinner center size="md" />
           </div>
         ) : (
           <p class="ship-detail__empty">{t("ships.detail.noMyStats")}</p>
@@ -159,36 +221,40 @@ export default defineComponent({
                   {s.battles.toLocaleString()} {t("stats.battles")}
                 </span>
               </div>
-              {stamps.value.length > 0 ? (
+              {stamps.value.length > 0 &&
+              prefs.prefs.prEnabled &&
+              prefs.prefs.sealsEnabled ? (
                 <div class="ship-my-stats__stamps">
                   {stamps.value.map((kind) => (
-                    <RatingStamp key={kind} kind={kind} size={46} />
+                    <RatingStamp key={kind} kind={kind} size={56} />
                   ))}
                 </div>
               ) : null}
-              <div
-                class={["ship-my-stats__pr", pr.value.rainbow ? "rainbow-text" : null]}
-                style={pr.value.rainbow ? undefined : { color: pr.value.color }}
-                data-hint={`PR: ${s.pr ?? "—"} · ${t("common.clickToCopy")}`}
-                onClick={() => copy(String(s.pr ?? "—"), t("common.copied"))}
-              >
-                <span class="ship-my-stats__pr-num">
-                  {s.pr != null ? s.pr.toLocaleString() : "—"}
-                </span>
-                <span class="ship-my-stats__pr-label">
-                  {pr.value.key === "unknown" ? "—" : t(`stats.${pr.value.key}`)}
-                </span>
-              </div>
+              {/* Per-ship PR block — hidden while the rating is off; the
+                  hero keeps winrate (+ seals) without collapsing. */}
+              {prefs.prefs.prEnabled ? (
+                <div
+                  class={["ship-my-stats__pr", pr.value.rainbow ? "rainbow-text" : null]}
+                  style={pr.value.rainbow ? undefined : { color: pr.value.color }}
+                  data-hint={`PR: ${s.pr ?? "—"} · ${t("common.clickToCopy")}`}
+                  onClick={() => copy(String(s.pr ?? "—"), t("common.copied"))}
+                >
+                  <span class="ship-my-stats__pr-num">
+                    {s.pr != null ? s.pr.toLocaleString() : "—"}
+                  </span>
+                  <span class="ship-my-stats__pr-label">{prTierLabel(pr.value.key)}</span>
+                </div>
+              ) : null}
             </div>
 
-            {/* Account-wide division winrates — always four slots to mirror
-                the account card (per-ship mode splits aren't served by WG). */}
+            {/* Four-mode winrates — this ship's own splits; the account-wide
+                row renders only when no breakdown was served. */}
             <div class="ship-my-stats__divisions">
               {divisions.value.map((d) => (
                 <div
                   class="ship-my-stats__division"
                   key={d.label}
-                  data-hint={t("ships.detail.my.divisionsHint")}
+                  data-hint={d.hint ?? t("ships.detail.my.divisionsHint")}
                 >
                   <span
                     class="ship-my-stats__division-wr"
@@ -217,39 +283,43 @@ export default defineComponent({
             </div>
           </section>
 
-          {/* ── Recent windows (近1/7/30天) ── */}
-          <section class="ship-my-stats__section">
-            <h4 class="ship-my-stats__title">{t("ships.detail.my.recent")}</h4>
-            <div class="ship-my-stats__ranges">
-              {ranges.value.map((r) => (
-                <div class="ship-my-stats__range" key={r.key}>
-                  <div class="ship-my-stats__range-head">
-                    <span class="ship-my-stats__range-label">{r.label}</span>
+          {/* ── Recent windows (近1/7/30天) — hidden entirely until at least
+              one window has a history baseline; a row of "no baseline"
+              placeholders says nothing. ── */}
+          {ranges.value.some((r) => r.delta) ? (
+            <section class="ship-my-stats__section">
+              <h4 class="ship-my-stats__title">{t("ships.detail.my.recent")}</h4>
+              <div class="ship-my-stats__ranges">
+                {ranges.value.map((r) => (
+                  <div class="ship-my-stats__range" key={r.key}>
+                    <div class="ship-my-stats__range-head">
+                      <span class="ship-my-stats__range-label">{r.label}</span>
+                      {r.delta ? (
+                        <span
+                          class="ship-my-stats__range-wr"
+                          style={{ color: winrateColor(r.delta.winrate) }}
+                        >
+                          {r.delta.winrate.toFixed(1)}%
+                        </span>
+                      ) : null}
+                    </div>
                     {r.delta ? (
-                      <span
-                        class="ship-my-stats__range-wr"
-                        style={{ color: winrateColor(r.delta.winrate) }}
-                      >
-                        {r.delta.winrate.toFixed(1)}%
-                      </span>
-                    ) : null}
+                      <div class="ship-my-stats__range-rows">
+                        <span>{`${r.delta.battles.toLocaleString()} ${t("stats.battles")}`}</span>
+                        <span>{`${t("stats.avgDamage")} ${Math.round(r.delta.avgDamage).toLocaleString()}`}</span>
+                        <span>{`${t("ships.detail.my.avgFrags")} ${r.delta.avgFrags.toFixed(2)}`}</span>
+                      </div>
+                    ) : (
+                      <div class="ship-my-stats__range-empty">
+                        {t("ships.detail.my.noBaseline")}
+                      </div>
+                    )}
                   </div>
-                  {r.delta ? (
-                    <div class="ship-my-stats__range-rows">
-                      <span>{`${r.delta.battles.toLocaleString()} ${t("stats.battles")}`}</span>
-                      <span>{`${t("stats.avgDamage")} ${Math.round(r.delta.avgDamage).toLocaleString()}`}</span>
-                      <span>{`${t("ships.detail.my.avgFrags")} ${r.delta.avgFrags.toFixed(2)}`}</span>
-                    </div>
-                  ) : (
-                    <div class="ship-my-stats__range-empty">
-                      {t("ships.detail.my.noBaseline")}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p class="ship-my-stats__note">{t("dashboard.rangeNoHistory")}</p>
-          </section>
+                ))}
+              </div>
+              <p class="ship-my-stats__note">{t("dashboard.rangeNoHistory")}</p>
+            </section>
+          ) : null}
         </div>
       );
     };

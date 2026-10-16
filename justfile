@@ -39,10 +39,11 @@ import? "./.just/git-bash-interop.just"
 import? "./.just/celestia-devtools.just"
 
 # ── dev ───────────────────────────────────────────────────────────────
-# Usage: just dev [tauri] [--mock]
+# Usage: just dev [target] [flags]
 #   just dev          → cargo tauri dev (default)
 #   just dev tauri    → same as above
 #   just dev webui    → Vite dev server
+#   just dev mock     → FastAPI mock backend + Vite (browser-only, no game)
 #   just dev site     → site dev server (landing page)
 #   just dev test     → tauri dev with test-harness feature
 
@@ -51,6 +52,9 @@ _dev-tauri *FLAGS='':
 
 _dev-webui *FLAGS='':
     python scripts/dev.py webui {{FLAGS}}
+
+_dev-mock *FLAGS='':
+    python scripts/dev.py webui --mock {{FLAGS}}
 
 _dev-site port='4173':
     @command -v lagrange >/dev/null 2>&1 || cargo install lagrange-library
@@ -63,12 +67,14 @@ dev target='tauri' *FLAGS='':
     @just _dev-{{target}} {{FLAGS}}
 
 # ── build ─────────────────────────────────────────────────────────────
+#   just build                   → webui + Rust shell (release by default)
 #   just build app [--release]   → cargo build (release by default)
 #   just build webui             → pnpm build @wowsp/webui
 #   just build site              → site + lagrange docs → dist/
 #   just build package           → cargo tauri build (app only, no install bundles)
-#   just build installers [--flavors ...] → shun installers (full ± webview2)
-#   just build wowsunpack        → clone + compile vendored wowsunpack
+#   just build installers [--flavors ...] → shun installers (webview2 / lite)
+#   just build wowsunpack        → compile the vendored wowsunpack
+#   just build unoodle           → fetch + build the Lesta Oodle decoder
 #   just build all               → webui + site + app
 
 _build-all *FLAGS='':
@@ -86,6 +92,7 @@ _build-webui:
     {{PM}} --filter @wowsp/webui build
 
 _build-site:
+    @python scripts/check_docs.py
     @command -v lagrange >/dev/null 2>&1 || cargo install lagrange-library
     lagrange build --src docs --out dist
 
@@ -96,17 +103,27 @@ _build-installers *FLAGS='':
     python scripts/build_installers.py {{FLAGS}}
 
 _build-wowsunpack:
-    @echo "Cloning/building wowsunpack (landaire/wows-toolkit)..."
-    -git -C packages/tools/wowsunpack-vendor pull --rebase 2>/dev/null || git clone https://github.com/landaire/wows-toolkit.git packages/tools/wowsunpack-vendor
+    @# The vendor tree is TRACKED IN-TREE (packages/tools/wowsunpack-vendor),
+    @# never a nested clone: it is updated by explicitly syncing from upstream
+    @# (landaire/wows-toolkit) — never by a pull from inside this checkout.
+    @echo "Building vendored wowsunpack (landaire/wows-toolkit, tracked in-tree)..."
     cargo build --release -p wowsunpack
 
-build target *FLAGS='':
+_build-unoodle:
+    @# The Lesta Oodle decoder (github.com/lvlvllvlvllvlvl/oozextract, MIT):
+    @# shallow-clone + cargo build + install to target/release/. The Lesta
+    @# extraction routes also run this automatically when no decoder is
+    @# found (see scripts/extract/fetch_oodle.py).
+    python scripts/extract/fetch_oodle.py
+
+build target='app' *FLAGS='':
     @just _build-{{target}} {{FLAGS}}
 
 # ── test ──────────────────────────────────────────────────────────────
-#   just test unit      → cargo test
-#   just test visual    → visual regression (needs dev-test running)
-#   just test e2e       → Playwright browser tests
+#   just test          → cargo test --workspace (default)
+#   just test unit     → same as above
+#   just test visual   → visual regression (needs dev-test running)
+#   just test e2e      → Playwright browser tests
 
 _test-unit *FLAGS='':
     cargo test --workspace {{FLAGS}}
@@ -117,11 +134,12 @@ _test-visual *FLAGS='':
 _test-e2e *FLAGS='':
     python -m pytest scripts/e2e -c scripts/pyproject.toml {{FLAGS}} -m ui
 
-test target *FLAGS='':
+test target='unit' *FLAGS='':
     @just _test-{{target}} {{FLAGS}}
 
 # ── lint ──────────────────────────────────────────────────────────────
-#   just lint           → full: fmt-check + clippy + pnpm lint + i18n
+#   just lint           → full: fmt-check + clippy + anyhow policy +
+#                         pnpm lint + i18n
 #   just lint rust      → fmt-check + clippy
 #   just lint webui     → pnpm lint
 #   just lint i18n      → i18n parity check
@@ -134,6 +152,7 @@ test target *FLAGS='':
 _lint-full:
     cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
     cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+    @python scripts/check_anyhow.py
     {{PM}} -r lint
     @python scripts/check_i18n.py
 
@@ -147,11 +166,177 @@ _lint-webui:
 _lint-i18n *FLAGS='':
     @python scripts/check_i18n.py {{FLAGS}}
 
+# Generate the /feedback page's hikari token sheet (channels + scale
+# tokens + the default preset's light/dark palettes) from the installed
+# hikari package, into the gitignored
+# packages/pairing-relay/crates/relay-core/.generated/ — relay-core embeds
+# it via include_str!, and the source tree tracks no CSS. Prerequisite of
+# every relay-core build (`just check-relay` runs it for you); needs
+# `pnpm install` for the webui's hikari + sass.
+feedback-theme:
+    @python scripts/export_feedback_theme.py
+
 lint target='full' *FLAGS='':
     @just _lint-{{target}} {{FLAGS}}
 
+# Standalone i18n parity check (same script as `just lint i18n`).
+#   just i18n-check          → i18n parity check
+#   just i18n-check --quiet  → suppress per-key detail
+i18n-check *FLAGS='':
+    @python scripts/check_i18n.py {{FLAGS}}
+
 check:
     cargo check --workspace
+
+# Offline sandbox-conformance harness for the in-game probe (Main.py):
+# execs it under a deliberately crippled builtins set and drives a full
+# battle, asserting the bridge artifacts the app consumes. Run on every
+# Main.py change — the Lesta ModsAPI whitelist cost too many field
+# restart cycles to rediscover.
+check-ingame-plugin:
+    python scripts/check_ingame_plugin.py
+
+# ── pairing relay ─────────────────────────────────────────────────────
+# The pairing gateway (packages/pairing-relay) is a STANDALONE Rust
+# workspace compiled to wasm32 for Cloudflare Workers (excluded from the
+# root workspace — own gitignored Cargo.lock). One recipe covers both
+# halves of its verification; wasm32 check is quick and holds no shared
+# target-dir lock (the package has its own target/). feedback-theme runs
+# first: relay-core's include_str! of the token sheet fails without the
+# generated artifact.
+check-relay: feedback-theme
+    cd packages/pairing-relay && cargo test -p relay-core
+    cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
+
+# Maintainer replay-share drain CLI (packages/tools/replay-drain):
+#   just drain-replays                → pull + verify + drain every staged shard
+#   just drain-replays -- --dry-run   → verify + archive only
+#   just drain-credits                → export contributors.json
+# Auth: --key or WOWSP_REPLAY_ADMIN_KEY (the worker's REPLAY_ADMIN_KEY).
+drain-replays *FLAGS='':
+    cargo run -p replay-drain -- pull {{FLAGS}}
+
+drain-credits *FLAGS='':
+    cargo run -p replay-drain -- credits {{FLAGS}}
+
+# Bundles the WEBSITE-ONLY site into packages/pairing-relay/assets —
+# the worker's [assets] layer (worker-primary hosting; see
+# packages/pairing-relay/README.md ▶ Site hosting model). The full
+# deploy bundle is built by the Deploy Site workflow from the merged
+# docs+website artifact; this is the quick local path for `wrangler
+# dev` or a site-only manual `wrangler deploy`.
+bundle-site:
+    #!/bin/sh
+    set -e
+    # Two-origin layout (see the script's docstring): Pages at /wowsp/
+    # (first resource candidate) and the worker's nested copy at
+    # /wowsp/** (fallback). MSYS2_ENV_CONV_EXCL: Git Bash would
+    # otherwise rewrite the /wowsp/ env value into a Windows path on
+    # its way to node.
+    MSYS2_ENV_CONV_EXCL="WOWSP_SITE_BASE" WOWSP_SITE_BASE=/wowsp/ pnpm --filter @wowsp/website build
+    python scripts/build_worker_site.py dist/website packages/pairing-relay/assets
+# ── android ───────────────────────────────────────────────────────────
+# Android cross-support (Tauri 2 mobile). The NDK toolchain provides the
+# clang wrappers cargo's CC/AR env (and later the target linker) point at;
+# `cargo check` itself needs no linker, only the C-compiler env for build
+# scripts (ring, cc-based crates). gen/android is scaffolded and tracked —
+# `just build android --debug --apk --target aarch64` produces the APK.
+#
+#   just check-android              → cargo check --target aarch64-linux-android
+#   just dev android [--release]    → cargo tauri android dev
+#   just build android *FLAGS       → cargo tauri android build
+#   just build android-apk          → one-ABI APK (canonical flags baked in)
+#
+# The APK BUNDLES the resource pack: the recipes run fetch_models + the
+# offline GameParams extraction first (both idempotent — the model pull
+# skips the ~1.3 GB download when the local wowsp-res.json tree hash
+# already matches res-latest; the gameparams pack re-extracts only when
+# build.txt lags the installed game) and export WOWSP_MOBILE_BUNDLE=1 so
+# the webui build's prune steps keep models/*.glb + dogtags +
+# data/gameparams in dist (see packages/webui/vite.config.ts); the app
+# then serves them same-origin from the read-only APK assets — gameparams
+# through commands/gameparams.rs's bundled-asset fallback. Desktop `just
+# build tauri`/`package` is untouched — no env var, pruning stays on.
+#
+# NDK note: tauri-cli 2.11.x ignores NDK_HOME and always picks the NEWEST
+# NDK under $ANDROID_HOME/ndk — make sure 26.1 is the only/newest installed
+# one (a stray newer NDK silently wins toolchain selection). If a newer
+# NDK (e.g. 29.x) IS installed, temporarily move its directory aside for
+# the build and restore it afterwards, exactly like the R2 scaffold run.
+
+# Machine-local SDK/JDK locations as OVERRIDABLE defaults:
+# `env_var_or_default` picks up ANDROID_HOME / NDK_HOME / JAVA_HOME from the
+# environment when present, so CI or another workstation only needs to
+# export the vars — no file edits. NDK_HOME still derives from ANDROID_HOME
+# by default so the 26.1 pin below stays the source of truth.
+ANDROID_HOME := env_var_or_default("ANDROID_HOME", "C:/Users/langy/AppData/Local/Android/Sdk")
+NDK_HOME     := env_var_or_default("NDK_HOME", ANDROID_HOME / "ndk/26.1.10909125")
+NDK_TOOLCHAIN_BIN := NDK_HOME / "toolchains/llvm/prebuilt/windows-x86_64/bin"
+JAVA_HOME    := env_var_or_default("JAVA_HOME", "C:/Program Files/Amazon Corretto/jdk17.0.19_10")
+ANDROID_TARGET := "aarch64-linux-android"
+
+# Cross-compile check for Android. The env var names carry dashes (cargo's
+# per-target CC convention), which bash cannot `export` — `env` takes them
+# fine. `cargo check` needs the C-compiler env for build scripts (ring & cc
+# based crates); linking env is included for reuse but unused by check.
+check-android:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    env \
+        ANDROID_HOME={{ANDROID_HOME}} \
+        NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_ROOT={{NDK_HOME}} \
+        CC_aarch64-linux-android={{NDK_TOOLCHAIN_BIN}}/aarch64-linux-android24-clang.cmd \
+        CXX_aarch64-linux-android={{NDK_TOOLCHAIN_BIN}}/aarch64-linux-android24-clang++.cmd \
+        AR_aarch64-linux-android={{NDK_TOOLCHAIN_BIN}}/llvm-ar.exe \
+        RANLIB_aarch64-linux-android={{NDK_TOOLCHAIN_BIN}}/llvm-ranlib.exe \
+        CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER={{NDK_TOOLCHAIN_BIN}}/aarch64-linux-android24-clang.cmd \
+        cargo check --target {{ANDROID_TARGET}} -p wowsp_tauri -p wowsp_tauri_shared
+
+# Wrappers around `cargo tauri android` with the same NDK env plus the JDK
+# gradle needs (AGP 8.x requires JDK 17). cargo-tauri configures the
+# per-target CC/linker env itself from the resolved NDK. Both export
+# WOWSP_MOBILE_BUNDLE=1 — it must reach tauri.conf.json's beforeBuildCommand
+# (`pnpm --filter @wowsp/webui build`) so the webui build keeps the GLBs and
+# the offline gameparams pack. The extract_gameparams step is idempotent:
+# it refreshes packages/webui/src/res/data/gameparams/ only when build.txt
+# lags the installed game (or the pack is missing/partial) and FAILS the
+# build when neither the cached GameParams.json nor a game install to
+# generate it from is available — an android APK without offline tech data
+# is a defect, not a degraded mode.
+_dev-android *FLAGS='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    python scripts/fetch_models.py
+    python scripts/extract_gameparams.py
+    export ANDROID_HOME={{ANDROID_HOME}} NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_HOME={{NDK_HOME}} ANDROID_NDK_ROOT={{NDK_HOME}} \
+        JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=1
+    cargo tauri android dev {{FLAGS}}
+
+_build-android *FLAGS='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Skip-if-present fetches of the packs that ride into the APK assets:
+    # the GLB model pack (res-latest release) and the offline GameParams
+    # ship-data pack (re-extracted when the game build changed).
+    python scripts/fetch_models.py
+    python scripts/extract_gameparams.py
+    export ANDROID_HOME={{ANDROID_HOME}} NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_HOME={{NDK_HOME}} ANDROID_NDK_ROOT={{NDK_HOME}} \
+        JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=1
+    cargo tauri android build {{FLAGS}}
+
+# Single-ABI APK shortcut: the canonical `--debug --apk --target aarch64`
+# from the section note above. Without an explicit --target, cargo tauri
+# android build compiles ALL FOUR ABIs (aarch64/armv7/i686/x86_64) — slow,
+# and the extra Rust targets are usually not even installed. Debug output
+# is signed with the local debug keystore automatically; a RELEASE APK
+# (pass --release as FLAGS) comes out unsigned until a signingConfig +
+# gen/android/key.properties (gitignored) is wired into the gradle project.
+_build-android-apk *FLAGS='--debug':
+    just _build-android --apk --target aarch64 {{FLAGS}}
 
 # ── lint-msg ──────────────────────────────────────────────────────────
 #   just lint-msg              → check commit subjects on master..HEAD (AGENTS.md §1)
@@ -214,9 +399,9 @@ gen-icons:
     python scripts/ensure_tauri_icons.py
 
 # ── convert ───────────────────────────────────────────────────────────
-#   just convert ship --name Yamato       → ship → GLB
-#   just convert map --name 18_NE_ice_islands  → map → GLB
-#   just convert map-holo --name 18_NE_ice_islands → contour holomap
+#   just convert-ship --name Yamato            → ship → GLB
+#   just convert-map --name 18_NE_ice_islands  → map → GLB
+#   just convert-map-holo --name 18_NE_ice_islands → contour holomap
 
 convert-ship *ARGS:
     python scripts/model_convert/convert_ship.py {{ARGS}}
@@ -228,9 +413,9 @@ convert-map-holo *ARGS:
     WOWSP_WOWSUNPACK="target/release/wowsunpack.exe" python scripts/model_convert/convert_map_holo.py {{ARGS}}
 
 # ── bake ──────────────────────────────────────────────────────────────
-#   just bake model raw.glb -o ship.glb --triangles 2000
-#   just bake ships
-#   just bake maps
+#   just bake-model raw.glb -o ship.glb --triangles 2000
+#   just bake-ships
+#   just bake-maps
 
 bake-model *ARGS:
     python scripts/model_convert/bake_model.py {{ARGS}}
@@ -278,6 +463,16 @@ ci:
 package *FLAGS:
     cargo tauri build {{FLAGS}}
 
+# ── publish-data ────────────────────────────────────────────────────────
+# Publish the baked ship-data assets to the fixed `data-latest` release —
+# the hot-update channel `commands/data_pack.rs` refreshes on every app
+# boot. Run after re-baking data (extract_ship_consumable_kit.py & co.);
+# identical content is a client-side no-op (content-addressed assets).
+# Idempotent; --dry-run shows the upload/prune plan.
+
+publish-data *ARGS:
+    python scripts/publish_data_pack.py {{ARGS}}
+
 # ── e2e ───────────────────────────────────────────────────────────────
 
 e2e-setup:
@@ -285,7 +480,7 @@ e2e-setup:
 
 # ── release-models ─────────────────────────────────────────────────────
 # Package baked GLB models as a GitHub Release asset and prune old releases
-# (keeps the 3 most recent model packs). Requires `gh` CLI.
+# (keeps the 3 most recent chain patches). Requires `gh` CLI.
 #   just release-models 0.14.1
 #   just release-models 0.14.1 --dry-run
 release-models *ARGS:

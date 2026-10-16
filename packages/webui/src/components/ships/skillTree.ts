@@ -7,9 +7,10 @@
  * carries:
  *   - `code`   — the GameParams skill code (e.g. `GmShellReload`); doubles as
  *                the key into `data/skills.json` for numeric effects.
- *   - `tier`   — 1..4, the row it sits on. Unlock rules: tier-2 needs ≥1 pt
- *                spent in tier-1; tier-3 needs ≥2 pts in tiers 1..2; tier-4
- *                needs ≥3 pts in tiers 1..3.
+ *   - `tier`   — 1..4, the row it sits on. A skill costs as many points as
+ *                its row (1–4 pts). Unlock rules: tier-2 needs ≥1 pt spent
+ *                in tier-1; tier-3 needs ≥2 pts in tiers 1..2; tier-4 needs
+ *                ≥3 pts in tiers 1..3.
  *   - `column` — horizontal position within the tier row.
  *   - `name` / `desc` — localized display strings keyed by language
  *                (`en` / `ja` / `zh` / `tw`); either may be blank.
@@ -19,6 +20,7 @@
  * The commander budget is 21 pts, matching the in-game system.
  */
 import skilltreeData from "../../data/skilltree.json";
+import crewPresetsData from "../../data/crew_presets.json";
 
 export type SkillClass = "BB" | "CA" | "DD" | "CV" | "SS";
 
@@ -57,6 +59,110 @@ export const TIER_UNLOCK: Record<2 | 3 | 4, number> = { 2: 1, 3: 2, 4: 3 };
 
 /** Total commander budget. */
 export const SKILL_BUDGET = 21;
+
+/** Points one skill costs — its tier row (tier-1 → 1 pt … tier-4 → 4 pts),
+ *  matching the in-game system. */
+export function skillCost(tier: number): number {
+  return tier;
+}
+
+/** Whether a skill still fits the points left — the game greys out every
+ *  UNPICKED skill this answers false for (remaining 3/2/1/0 pts locks the
+ *  unpicked side of tiers 4/3/2/1); picked skills stay clickable so their
+ *  points can be refunded. */
+export function skillAffordable(tier: number, remaining: number): boolean {
+  return remaining >= skillCost(tier);
+}
+
+/** Total points a selection consumes. Each picked skill costs its tier row;
+ *  codes outside `tree` (a build restored onto a ship of another class —
+ *  codes are not unique across classes) fall back to 1 pt, the floor for
+ *  any real skill, so stale codes still count toward the budget. */
+export function skillPointsSpent(
+  picked: Readonly<Record<string, 1>>,
+  tree: readonly Skill[],
+): number {
+  const tierOf = new Map(tree.map((s) => [s.code, s.tier] as const));
+  let spent = 0;
+  for (const code of Object.keys(picked)) spent += tierOf.get(code) ?? 1;
+  return spent;
+}
+
+/** Points spent in tiers strictly below `tier`, weighting each picked skill
+ *  by its tier row — the sum the `TIER_UNLOCK` row gates compare against. */
+export function skillPointsBelow(
+  picked: Readonly<Record<string, 1>>,
+  tree: readonly Skill[],
+  tier: number,
+): number {
+  let spent = 0;
+  for (const s of tree) {
+    if (s.tier < tier && picked[s.code]) spent += skillCost(s.tier);
+  }
+  return spent;
+}
+
+/** Tier rows the in-game builder would refuse: no pick in the row while
+ *  some higher row carries at least one — the game forces every tier below
+ *  the highest pick to own a skill. This planner's point-based unlock is
+ *  looser (two tier-1 skills open tier 3 with tier 2 left empty), so such
+ *  builds get a per-row warning instead. */
+export function skillTierGaps(
+  picked: Readonly<Record<string, 1>>,
+  tree: readonly Skill[],
+): Set<number> {
+  const pickedByTier = new Map<number, boolean>();
+  for (const s of tree) {
+    pickedByTier.set(s.tier, (pickedByTier.get(s.tier) ?? false) || !!picked[s.code]);
+  }
+  const gaps = new Set<number>();
+  let anyHigher = false;
+  for (const tier of [...pickedByTier.keys()].sort((a, b) => b - a)) {
+    if (anyHigher && !pickedByTier.get(tier)) gaps.add(tier);
+    if (pickedByTier.get(tier)) anyHigher = true;
+  }
+  return gaps;
+}
+
+// ── In-game recommended builds (yellow corner ribbon) ─────────────────────
+// `crew_presets.json` mirrors the client's CrewSkillRecomendationPresets
+// table: ordered build steps keyed by exact GameParams ship name, ship-group
+// name or ship class. Resolution is most-specific-wins (exact ship → group →
+// class), matching the in-game cascade; the ribbon marks every skill the
+// winning preset teaches.
+interface CrewPresetData {
+  presets: Record<string, string[][]>;
+  groups: Record<string, string[]>;
+}
+const CREW_PRESETS = crewPresetsData as CrewPresetData;
+
+const GP_CLASS_BY_SKILL_CLASS: Record<SkillClass, string> = {
+  BB: "Battleship",
+  CA: "Cruiser",
+  DD: "Destroyer",
+  CV: "AirCarrier",
+  SS: "Submarine",
+};
+
+/** Most specific preset key naming this ship, or null. GameParams names and
+ *  group members match by leading tech-tree index token. */
+function presetKeyFor(index: string, cls: SkillClass): string | null {
+  for (const name of Object.keys(CREW_PRESETS.presets)) {
+    if (name.split("_")[0] === index) return name;
+  }
+  for (const [group, members] of Object.entries(CREW_PRESETS.groups)) {
+    if (members.some((m) => m.split("_")[0] === index)) return group;
+  }
+  const byClass = GP_CLASS_BY_SKILL_CLASS[cls];
+  return byClass in CREW_PRESETS.presets ? byClass : null;
+}
+
+/** Skill codes taught by the ship's in-game recommended build. */
+export function recommendedSkills(index: string | null, shipType: string): Set<string> {
+  const key = index ? presetKeyFor(index, skillClassFor(shipType)) : null;
+  if (!key) return new Set();
+  return new Set((CREW_PRESETS.presets[key] ?? []).flat());
+}
 
 /** Per-class skill list from skilltree.json (tier-ascending, stable order). */
 const CLASS_SKILLS = skilltreeData as Record<SkillClass, Skill[]>;

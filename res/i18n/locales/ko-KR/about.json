@@ -12,23 +12,35 @@
   "updateNow": "지금 업데이트",
   "updateLater": "나중에",
   "upToDate": "최신 버전입니다",
+  "updateAppliedTitle": "WoWSP가 v{version}(으)로 업데이트되었습니다",
+  "updateAppliedView": "업데이트 기록 보기",
   "checking": "확인 중...",
   "downloading": "다운로드 중...",
   "issues": "문제 보고",
   "license": "라이선스",
   "qqGroupNotice": "테스트 피드백은 QQ 그룹에서:",
-  "qqGroupNumber": "1125770228",
+  "qqGroupNumber": "612331811",
+  "qqGroupHint": "클릭하여 그룹 채팅에 참여",
   "attribution": {
     "fontMaoRole": "「神了」인장 글리프",
-    "fontLuxunRole": "「海猴」「空中小人」「水下小人」인장 글리프",
+    "fontLuxunRole": "「猴」「空中小人」「水下小人」「空中神人」「水下神人」「空中小猴」「水下小猴」「空中奶龙」「水下奶蛙」인장 글리프",
     "bitmapNote": "비트맵(그래픽) 형태로만 사용되며 폰트 파일은 앱에 포함되지 않습니다.",
-    "wallpaperRole": "기본 배경화면 작가",
+    "wallpaperRole": "배경화면 화가",
     "wallpaperNote": "배경화면 이미지의 저작권은 작가에게 있습니다.",
-    "wallpaperMark": "배경",
     "aperadarRole": "조회 로직 및 평가 기준의 주요 출처",
+    "aperadarAuthorRole": "ApeRadar(海猴雷达) 제작자",
     "wowsunpackRole": "게임 데이터 언패킹 (vendored)",
     "wowscoreRole": "게임 데이터 모델 (vendored)",
     "hikariRole": "UI 컴포넌트 라이브러리",
-    "devtoolsRole": "에이전트 규율 인프라 (워크스페이스 규칙 및 툴체인)"
+    "devtoolsRole": "에이전트 규율 인프라 (워크스페이스 규칙 및 툴체인)",
+    "shittimRole": "프런트엔드 셸 및 빌드 인프라"
+  },
+  "sponsor": {
+    "cardName": "afdian · langyo",
+    "lead": "모든 후원금은 이 소프트웨어 개발에 필요한 AI 비용에 전액 사용됩니다.",
+    "voluntary": "후원은 완전히 자발적입니다.",
+    "noHire": "후원은 고용·위탁 등 어떠한 법적 관계도 성립시키지 않습니다.",
+    "openSource": "프로젝트는 항상 오픈소스로 유지되며, 앱 본체에 후원해야 사용할 수 있는 기능은 결코 포함되지 않습니다.",
+    "noAffiliation": "이 소프트웨어는 Wargaming·Lesta·360 공식과 직접적인 관계가 없습니다."
   }
 }

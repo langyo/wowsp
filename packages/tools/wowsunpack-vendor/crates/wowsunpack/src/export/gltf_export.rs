@@ -94,7 +94,8 @@ pub fn export_glb(
 
     // Collect render sets for this LOD by matching LOD render_set_names to RS name_ids.
     let self_id_index = db.build_self_id_index();
-    let primitives = collect_primitives(visual, geometry, Some(db), Some(&self_id_index), lod_entry, damaged, None)?;
+    let primitives =
+        collect_primitives(visual, geometry, Some(db), Some(&self_id_index), lod_entry, damaged, None, true)?;
 
     if primitives.is_empty() {
         eprintln!("Warning: no primitives found for LOD {lod}");
@@ -369,7 +370,8 @@ pub fn build_map_scene(params: &BuildMapSceneParams<'_>) -> Result<MapScene, Rep
         }
 
         let lod_entry = &vp.lods[lod];
-        let primitives = match collect_primitives(vp, geometry, db, self_id_index.as_ref(), lod_entry, false, None) {
+        let primitives =
+            match collect_primitives(vp, geometry, db, self_id_index.as_ref(), lod_entry, false, None, false) {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("Warning: model[{model_idx}]: {e}");
@@ -1301,7 +1303,8 @@ pub fn export_merged_models_glb(
         }
 
         let lod_entry = &vp.lods[lod];
-        let primitives = match collect_primitives(vp, geometry, db, self_id_index.as_ref(), lod_entry, false, None) {
+        let primitives =
+            match collect_primitives(vp, geometry, db, self_id_index.as_ref(), lod_entry, false, None, false) {
             Ok(p) => p,
             Err(e) => {
                 eprintln!("Warning: model[{model_idx}]: {e}");
@@ -1665,10 +1668,26 @@ const INTACT_EXCLUDE: &[&str] = &["_crack_"];
 /// In the damaged state, patch geometry is hidden and crack geometry is shown.
 const DAMAGED_EXCLUDE: &[&str] = &["_patch_", "_hide"];
 
+/// Render set name substrings for parts the game places through animated
+/// attach nodes (landing-gear fold states, weapon pylons and their slung
+/// ordnance). Their stored bind poses don't survive static assembly, so the
+/// standalone-model export drops them (see collect_primitives).
+const ATTACH_NODE_EXCLUDE: &[&str] = &[
+    "chassis_off", "chassis_on", "pylon_bomb", "pylon_torpedo", "pylon_rocket",
+];
+
 /// Collect and decode all render set primitives for a given LOD.
 ///
 /// When `damaged` is false, crack and hide geometry is excluded (intact hull).
 /// When `damaged` is true, patch and hide geometry is excluded (destroyed look).
+///
+/// `apply_node_transforms` places each render set through its visual node's
+/// world transform. Vehicle visuals author some sets (propeller, antenna
+/// wire, slung payload) in bone-local space and rely on the node hierarchy
+/// to assemble them; the standalone-model export needs that transform baked
+/// in. The ship/map pipelines place sub-models through their own glTF node
+/// matrices instead and must pass `false`, or mount-local geometry would be
+/// transformed twice.
 fn collect_primitives(
     visual: &VisualPrototype,
     geometry: &MergedGeometry,
@@ -1677,6 +1696,7 @@ fn collect_primitives(
     lod: &crate::models::visual::Lod,
     damaged: bool,
     barrel_pitch: Option<&BarrelPitch>,
+    apply_node_transforms: bool,
 ) -> Result<Vec<DecodedPrimitive>, Report<ExportError>> {
     let mut result = Vec::new();
     let exclude = if damaged { DAMAGED_EXCLUDE } else { INTACT_EXCLUDE };
@@ -1690,11 +1710,20 @@ fn collect_primitives(
             .ok_or_else(|| Report::new(ExportError::RenderSetNotFound(rs_name_id)))?;
 
         // Skip render sets based on damage state (requires string table).
-        if let Some(db) = db
-            && let Some(rs_name) = db.strings.get_string_by_id(rs_name_id)
-            && exclude.iter().any(|sub| rs_name.contains(sub))
-        {
-            continue;
+        // The standalone-model export additionally drops the landing-gear
+        // state sets (chassis_off/on): both retracted and extended variants
+        // are listed in every LOD, their parts are authored per-hinge in
+        // bone-local space, and the static bind pose assembles them into an
+        // exploded pile — a gearless airframe reads cleaner in the holo
+        // viewer than a double-exported gear.
+        let rs_name = db.and_then(|db| db.strings.get_string_by_id(rs_name_id));
+        if let Some(rs_name) = rs_name {
+            if exclude.iter().any(|sub| rs_name.contains(sub)) {
+                continue;
+            }
+            if apply_node_transforms && ATTACH_NODE_EXCLUDE.iter().any(|sub| rs_name.contains(sub)) {
+                continue;
+            }
         }
 
         let vertices_mapping_id = rs.vertices_mapping_id;
@@ -1806,6 +1835,21 @@ fn collect_primitives(
             apply_barrel_pitch(&mut verts.positions, &mut verts.normals, vert_slice, stride, &format, bp);
         }
 
+        // Assemble bone-local render sets into model space. Skinned sets are
+        // deformed by their skeleton at runtime (stored in bind-pose model
+        // space) — transforming those would double-apply the placement.
+        if apply_node_transforms && !rs.skinned {
+            apply_node_world_transforms(
+                &mut verts.positions,
+                &mut verts.normals,
+                vert_slice,
+                stride,
+                &format,
+                visual,
+                &rs.node_name_ids,
+            );
+        }
+
         // Material name for this render set.
         let material_name = db
             .and_then(|db| db.strings.get_string_by_id(rs.material_name_id))
@@ -1905,6 +1949,122 @@ pub(super) fn negate_z_transform(m: [f32; 16]) -> [f32; 16] {
         -m[8], -m[9], m[10], m[11], // col 2: negate col 2, but row 2 double-negates
         m[12], m[13], -m[14], m[15], // col 3: negate Z translation
     ]
+}
+
+/// Transform a point by a column-major 4×4 (w=1).
+fn transform_point(m: [f32; 16], p: [f32; 3]) -> [f32; 3] {
+    [
+        m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+        m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+        m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14],
+    ]
+}
+
+/// Transform a direction by a column-major 4×4's upper 3×3, renormalized.
+fn transform_direction(m: [f32; 16], n: [f32; 3]) -> [f32; 3] {
+    let out = [
+        m[0] * n[0] + m[4] * n[1] + m[8] * n[2],
+        m[1] * n[0] + m[5] * n[1] + m[9] * n[2],
+        m[2] * n[0] + m[6] * n[1] + m[10] * n[2],
+    ];
+    let len = (out[0] * out[0] + out[1] * out[1] + out[2] * out[2]).sqrt();
+    if len > 1e-9 {
+        [out[0] / len, out[1] / len, out[2] / len]
+    } else {
+        n
+    }
+}
+
+/// Place a render set's vertices in model space via its blend-bone nodes.
+///
+/// Render sets bound to a single node (propeller, antenna) move as a unit.
+/// BlendBone sets (landing gear, folding gear doors) carry a per-vertex
+/// dominant-bone index into `node_name_ids` — each vertex follows its own
+/// bone's world transform, which assembles the articulated parts exactly
+/// like the engine's bind pose.
+fn apply_node_world_transforms(
+    positions: &mut [[f32; 3]],
+    normals: &mut [[f32; 3]],
+    vert_data: &[u8],
+    stride: usize,
+    format: &VertexFormat,
+    visual: &VisualPrototype,
+    node_name_ids: &[u32],
+) {
+    use crate::models::vertex_format::AttributeSemantic;
+
+    let world: Vec<Option<[f32; 16]>> = node_name_ids
+        .iter()
+        .map(|&nid| visual.node_world_transform_by_name_id(nid))
+        .collect();
+    if world.iter().all(|w| w.is_none()) {
+        return;
+    }
+
+    let bone_attr = format
+        .attributes
+        .iter()
+        .find(|a| a.semantic == AttributeSemantic::BoneIndices);
+    if std::env::var("WOWSUNPACK_DEBUG_NODES").is_ok() {
+        let mut hist = std::collections::HashMap::new();
+        if let Some(a) = bone_attr {
+            for i in 0..positions.len() {
+                *hist.entry(vert_data[i * stride + a.offset] as usize).or_insert(0) += 1;
+            }
+        }
+        eprintln!(
+            "[bonedebug] nodes={} bone_attr={} world_resolved={} hist={:?}",
+            node_name_ids.len(),
+            bone_attr.is_some(),
+            world.iter().filter(|w| w.is_some()).count(),
+            { let mut v: Vec<_> = hist.into_iter().collect(); v.sort_by_key(|_| 0); v.truncate(8); v },
+        );
+    }
+
+    let bone_attr = match bone_attr {
+        Some(a) => {
+            if world.iter().filter(|w| w.is_some()).count() == 1 {
+                // Single bound node: one transform for the whole set (the
+                // per-vertex indices would all resolve to the same place).
+                if let Some(Some(m)) = world.iter().find(|w| w.is_some()) {
+                    let m = *m;
+                    for p in positions.iter_mut() {
+                        *p = transform_point(m, *p);
+                    }
+                    for n in normals.iter_mut() {
+                        *n = transform_direction(m, *n);
+                    }
+                }
+                return;
+            }
+            a
+        }
+        None => {
+            // No per-vertex bones: apply the first resolvable transform.
+            if let Some(Some(m)) = world.first() {
+                let m = *m;
+                for p in positions.iter_mut() {
+                    *p = transform_point(m, *p);
+                }
+                for n in normals.iter_mut() {
+                    *n = transform_direction(m, *n);
+                }
+            }
+            return;
+        }
+    };
+
+    // BlendBone set: each vertex follows its dominant bone.
+    for i in 0..positions.len() {
+        let dominant = vert_data[i * stride + bone_attr.offset] as usize;
+        let Some(Some(m)) = world.get(dominant) else {
+            continue;
+        };
+        positions[i] = transform_point(*m, positions[i]);
+        if i < normals.len() {
+            normals[i] = transform_direction(*m, normals[i]);
+        }
+    }
 }
 
 /// Apply a pitch rotation to vertices whose dominant bone is a barrel bone.
@@ -3283,6 +3443,7 @@ pub fn export_ship_glb(
             lod_entry,
             damaged,
             sub.barrel_pitch.as_ref(),
+            false,
         )?;
 
         if primitives.is_empty() {

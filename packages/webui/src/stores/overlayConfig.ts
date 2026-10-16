@@ -1,100 +1,115 @@
 /**
- * In-game overlay (Mode 2) user settings, persisted to AppData as
- * `overlay-config.json` (schema v2) — TWO independent switches, each with
- * its own off state:
+ * In-game overlay (Mode 2) user settings, persisted by the shell as
+ * `overlay-config.toml` (schema v2) through the typed get/set commands —
+ * TWO independent switches, each with its own off state:
  *
- * - `table` — table anchoring: "detect" (pixel detection, the default)
- *   anchors the chips to the detected team table; "off" disables the WHOLE
- *   Tab overlay (no overlay window, no watcher — `useOverlayLifecycle`
- *   never creates it, and the Rust watcher suppresses shows too).
- * - `roster` — roster recognition: "ocr" (the default pipeline: Windows
- *   OCR row→name matching) or "off" (chips follow roster/index order, the
- *   historical fallback, with no "recognizing…" pending hints).
+ * - `table` — the live-battle view mode: "detect" (the transparent window
+ *   overlay on the pixel-detected team table, the default), "ingame" (the
+ *   stats render INSIDE the game through the first-party plugin's unbound
+ *   view — no overlay window; `useOverlayLifecycle` starts the stats
+ *   bridge instead, and the Rust watcher suppresses shows too), or "off"
+ *   (the WHOLE Tab overlay is disabled: no window, no watcher shows, no
+ *   bridge).
+ * - `roster` — roster attribution: "plugin" (the default and preferred:
+ *   the in-game plugin's telemetry is the primary detector) or "passive"
+ *   (the screen-capture pipeline; a stored "off" pick lands here — the
+ *   table switch owns the overlay's off state). Stored "inferred"/"ocr"
+ *   picks (the retired pixel-comparison pipeline) migrate to "plugin".
  *
- * Both value sets are open enums on purpose: a future third option (e.g.
- * "plugin") can be added without schema churn, and unknown/legacy values
- * fall back to each field's safe default. Schema v1 (`{enabled: boolean}` —
- * a single master switch) migrates on load: enabled → detect + ocr,
- * disabled → off + ocr; the file is always written back in the v2 shape.
+ * The Rust side owns every on-disk concern: the flat TOML file, the
+ * one-shot migration of the pre-TOML `overlay-config.json`, the v1
+ * `{enabled: boolean}` shape (enabled → detect + plugin, disabled →
+ * off + plugin), and the fallback that resets an unknown value to the
+ * field's safe default and FORCES the corrected value back to disk (see
+ * commands/overlay_config.rs). This store keeps a thin client-side guard
+ * as defense in depth: values arriving from an older shell still land on
+ * the defaults without ever throwing.
  */
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api } from "@/api";
 
-const OVERLAY_CONFIG_FILE = "overlay-config.json";
-
-/** Table anchoring modes (schema v2 `table` field). */
-export type TableAnchorMode = "detect" | "off";
-/** Roster recognition modes (schema v2 `roster` field). */
-export type RosterRecognitionMode = "ocr" | "off";
+/** Live-battle view modes (schema v2 `table` field). */
+export type TableAnchorMode = "detect" | "ingame" | "off";
+/** Roster attribution modes (schema v2 `roster` field): "plugin" = the
+ *  in-game plugin is the primary detector; "passive" = the screen-capture
+ *  pipeline (a stored "off" pick lands here — the table switch owns the
+ *  overlay's off state). */
+export type RosterRecognitionMode = "plugin" | "passive";
 
 const DEFAULT_TABLE: TableAnchorMode = "detect";
-const DEFAULT_ROSTER: RosterRecognitionMode = "ocr";
+const DEFAULT_ROSTER: RosterRecognitionMode = "plugin";
 
-/** Unknown values (incl. future ones like "plugin") → the safe default. */
+/** Unknown values (incl. future ones) → the safe default. */
 function parseTable(raw: unknown): TableAnchorMode {
-  return raw === "off" ? "off" : DEFAULT_TABLE;
+  if (raw === "off") return "off";
+  if (raw === "ingame") return "ingame";
+  return DEFAULT_TABLE;
 }
 
 function parseRoster(raw: unknown): RosterRecognitionMode {
-  return raw === "off" ? "off" : DEFAULT_ROSTER;
-}
-
-/** Shape a v1 or v2 file may carry; parsed defensively on load. */
-interface OverlayConfigFile {
-  enabled?: unknown;
-  table?: unknown;
-  roster?: unknown;
+  // Migration: stored "inferred"/"ocr" picks — the retired pixel-
+  // comparison pipeline — move to the plugin as the primary; a stored
+  // "off" lands on passive (the table switch owns the overlay's off).
+  if (raw === "passive") return "passive";
+  if (raw === "plugin") return "plugin";
+  if (raw === "off") return "passive";
+  return DEFAULT_ROSTER;
 }
 
 export const useOverlayConfigStore = defineStore("overlayConfig", () => {
   const table = ref<TableAnchorMode>(DEFAULT_TABLE);
   const roster = ref<RosterRecognitionMode>(DEFAULT_ROSTER);
   const loaded = ref(false);
+  let pendingLoad: Promise<void> | null = null;
+  let pendingSave = Promise.resolve();
+  let saveSequence = 0;
 
-  async function load() {
-    if (loaded.value) return;
-    loaded.value = true;
-    try {
-      const raw = await api.appdataRead(OVERLAY_CONFIG_FILE);
-      if (raw) {
-        const parsed = JSON.parse(raw) as OverlayConfigFile;
-        table.value =
-          parsed.table !== undefined
-            ? parseTable(parsed.table)
-            : // v1 migration: the legacy master switch was the table
-              // overlay's on/off — enabled (or missing entirely) maps onto
-              // the default, disabled onto "off".
-              parsed.enabled === false
-              ? "off"
-              : DEFAULT_TABLE;
-        // v1 had no roster switch — recognition keeps its default.
-        roster.value = parseRoster(parsed.roster);
-      }
-    } catch {
-      // missing file / parse error — keep the defaults
+  function load(): Promise<void> {
+    if (!pendingLoad) {
+      pendingLoad = (async () => {
+        try {
+          const cfg = await api.getOverlayConfig();
+          table.value = parseTable(cfg?.table);
+          roster.value = parseRoster(cfg?.roster);
+        } catch {
+          // missing command / mock backend — keep the defaults
+        } finally {
+          loaded.value = true;
+        }
+      })();
     }
+    return pendingLoad;
   }
 
-  /** Best-effort persistence in the v2 shape; in-memory state applies regardless. */
-  async function persist() {
-    try {
-      await api.appdataWrite(
-        OVERLAY_CONFIG_FILE,
-        JSON.stringify({ table: table.value, roster: roster.value }),
-      );
-    } catch {
-      // best-effort persistence; the in-memory flag still applies
-    }
+  /** Persist through the typed command; the shell sanitizes and writes the
+   *  TOML file. Captured writes stay ordered, and an older reply cannot
+   *  roll back a choice the user made while that write was pending. */
+  function persist(): Promise<void> {
+    const sequence = ++saveSequence;
+    const snapshot = { table: table.value, roster: roster.value };
+    pendingSave = pendingSave.then(async () => {
+      try {
+        const saved = await api.setOverlayConfig(snapshot.table, snapshot.roster);
+        if (sequence !== saveSequence) return;
+        table.value = parseTable(saved?.table);
+        roster.value = parseRoster(saved?.roster);
+      } catch {
+        // best-effort persistence; the in-memory flag still applies
+      }
+    });
+    return pendingSave;
   }
 
   async function setTable(v: TableAnchorMode) {
+    await load();
     table.value = v;
     await persist();
   }
 
   async function setRoster(v: RosterRecognitionMode) {
+    await load();
     roster.value = v;
     await persist();
   }

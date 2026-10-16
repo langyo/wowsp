@@ -1,0 +1,707 @@
+# wowsp-pairing-relay
+
+A Cloudflare Worker that is the WoWSP **internet pairing gateway** (a
+phone app pairs with a WoWSP desktop from outside the desktop's local
+network — cellular / another Wi-Fi), plus the site's two dynamic pages
+(`/feedback`, `/erp`). It serves the pairing API under `/api/*` and
+those two pages; the static website + docs are served by this SAME
+worker through **Workers static assets** (`[assets]` in
+`wrangler.toml`), with the GitHub Pages mirror as backup and as the
+first-choice origin for the heavy entry assets (see "Site hosting
+model" below). The gateway is a rendezvous + raw byte
+tunnel: both ends dial OUTBOUND, the worker never dials anything, and
+the tunneled traffic is the desktop pairing server's ordinary HTTP
+protocol, byte-for-byte.
+
+The worker is **Rust compiled to WebAssembly** (the
+[`workers-rs`](https://github.com/cloudflare/workers-rs) `worker` crate,
+target `wasm32-unknown-unknown`). Two crates:
+
+- `crates/relay-core` — the pure protocol/policy core (message types,
+  code directory state machine, room connection accounting, manifest,
+  route classification). No Cloudflare types, no wasm-bindgen; every
+  TTL / rate-limit / one-code-per-host / cap rule is a plain state
+  machine over an injected clock and RNG, unit-tested on the host.
+- `crates/relay-worker` — the thin wasm shell: routing, the two
+  Durable Objects, WebSocket glue. Every decision delegates to
+  relay-core.
+
+> This is a **hidden built-in service**, not something users configure. The
+> production deployment is reachable at **`wowsp.langyo.xyz`** and both
+> apps hardcode the host (desktop:
+> `BUILTIN_RELAY_ROOT_URL` in `packages/app/tauri/src/commands/pairing_relay/`,
+> an `https://` root the v2 manifest and WebSocket base derive from; webui:
+> the `wss://` spelling in `stores/pairing.ts` `PAIRING_GATEWAY_WS`).
+> The only supported development override is the undocumented
+> `WOWSP_RELAY_URL` environment variable on the DESKTOP (e.g.
+> `WOWSP_RELAY_URL=ws://127.0.0.1:8787` against `wrangler dev`); there is no
+> UI field anywhere.
+
+## How it works (v2 — code-coordinated, manifest-discovered)
+
+```
+phone ──wss control/data ──▶ WORKER (this package) ◀──wss── desktop bridge
+  │                                                            │
+  └─ raw HTTP request bytes ──▶ [byte pipe] ──▶ 127.0.0.1:58041┘
+```
+
+1. **Discovery** — `GET /api/health` is the merged liveness + discovery
+   document (like the celestia services): provider id, the gateway's
+   `version`, the `minClientVersion` it demands, protocol versions, the
+   relay base path (`/api/relay`), the feature list, an optional operator
+   `notice`, and `upstream` (see
+   [Forwarding station](#forwarding-station-mode-gateway_upstream) below).
+2. **Host** — the desktop mints a random 64-hex **room key** and connects
+   `WS /api/relay/control?room=<key>&role=host`. It may open with a
+   `{"type":"hello","protocol":"v1","hostId":"<hex>"}` handshake (answered
+   with `{"type":"welcome",…,"capabilities":["pin-allocation","byte-tunnel"]}`;
+   clients that skip hello keep working — v1 compatibility). It then sends
+   `{"type":"allocate"}`; the Room DO asks the singleton **Directory** to
+   mint a CSPRNG 6-digit code bound to `{room, hostId}` and the reply
+   `{"type":"code","code":"XXXXXX","room":"<key>"}` is what the desktop
+   displays. The bridge keepalives every **30 s** (any inbound text also
+   refreshes the room's 15-minute idle TTL).
+3. **Client** — the phone resolves its code via
+   `WS /api/relay/resolve?code=NNNNNN` → `{"type":"room","room":"<key>"}`, joins
+   the room's control channel as `role=client` (greeted
+   `{"type":"ready"}` / `{"type":"waiting"}`), then per request:
+   `{"type":"open","connId":"…"}` → the host is signaled
+   `{"type":"conn","connId":"…"}` → both sides dial
+   `WS /api/relay/data/<room>/<connId>` (`?role=host` on the desktop leg) —
+   from there bytes are piped opaquely and the flow is IDENTICAL to the
+   LAN protocol: `POST /pair`, `GET /api/replays`,
+   `GET /api/replay/<name>`, `GET /api/gamedata`.
+
+### Server-side pairing policy (all in `relay-core`, all unit-tested)
+
+- **One active code per host and per room** — allocation keys by the
+  `hello` hostId (v1 fallback: the room key). Regenerating, or a desktop
+  restart with the same hostId, kills the previous code instantly; so
+  does any new allocation for the same room. A host control socket may
+  say `hello` only once — a second one closes the socket (1008) — so one
+  socket can never hold more than one live code.
+- **Live-code caps** — a source may hold at most 32 live codes per
+  IPv4 address (generous for carrier NAT) and 8 / 16 / 32 per IPv6 /64 /
+  /56 / /48. A replacement retires a code as it mints one, so
+  regenerating never counts; the caps are rebuilt from the stored code
+  rows after an eviction. A capped `allocate` is answered
+  `{"type":"allocFailed"}` only after a 45 s hold, which paces the
+  desktop's reconnect-and-retry loop without a client change.
+- **10-minute code TTL**, alarm-swept in the Directory DO; bindings and
+  the resolved-IP claim are persisted in DO storage so they survive
+  eviction.
+- **Resolve-once claiming** — the first successful resolve stamps the
+  client IP (from `CF-Connecting-IP`); the SAME IP may re-resolve to
+  reconnect within the TTL, any other IP is refused (and is
+  indistinguishable from an unknown code, so it leaks nothing).
+- **Tiered brute-force guard** — failed resolves are counted per tier in
+  a sliding minute: an IPv4 address or an IPv6 /64 may miss 10 times, an
+  IPv6 /56 20 times and a /48 30 times; the next miss blocks that tier
+  for 60 s with `{"type":"error","code":"rate_limited"}` (even for
+  valid codes). IPv4 has no /24 tier: carrier NAT neighbours are
+  unrelated users. There is no global gate — a gateway-wide count of
+  120 misses per minute only logs a warning for the operator.
+- **Deployment note** — the per-prefix tiers read `CF-Connecting-IP`.
+  Keep the zone's *Network → Pseudo IPv4* setting **Off** or **Add
+  Header**: *Overwrite Headers* replaces IPv6 client addresses with
+  per-address Class E IPv4s, which silently turns every IPv6 /128 into
+  its own tier.
+- **Room limits** — max **4 concurrent data connections** per room
+  (5th `open` gets `{"type":"error","code":"conn_limit"}`); binary
+  frames are capped at **256 KiB** (`{"type":"error","code":"frame_too_large","size":N}`
+  + close 1009); rooms idle >15 min are torn down by alarm; a second
+  host on a room is refused (409).
+- **Pre-pairing buffering** — data frames that arrive before the peer's
+  socket finishes its handshake are buffered (≤256 KiB per direction)
+  instead of dropped, closing the race where the phone's request beats
+  the desktop's data dial.
+
+### Route surface
+
+| Route | Meaning |
+| --- | --- |
+| everything outside the rows below | the WEBSITE + docs — served by this worker's `[assets]` layer (static files; the shell loads heavy entry JS/CSS from the GitHub Pages mirror first) |
+| `GET /feedback` | the embedded feedback form (see the feedback section above) |
+| `GET /erp` | the embedded admin review console page |
+| `GET /api/health` | merged liveness + discovery document (see below), `cache-control: no-store` |
+| `GET /api/digests/<channel>` | the channel's latest release-digest doc (see the release-digests section), `cache-control: public, max-age=300` |
+| `GET /api/digests/<channel>/<tag>` | the digest doc pinned to one tag |
+| `WS /api/relay/control?room=<64hex>&role=host\|client` | presence + open-request signaling + code allocation |
+| `WS /api/relay/resolve?code=NNNNNN` | phone: code → room handshake (`{"type":"room",…}` / rate-limited error / 404) |
+| `WS /api/relay/data/<room>/<connId>[?role=host\|client]` | the raw byte pipe |
+
+The pre-unification spellings (`/v1/*`, `/health`, bare `/control` …) are
+**retired** — the only consumers were the unreleased 0.5.0 apps, updated in
+the same change.
+
+`/api/health` (default deployment):
+
+```json
+{
+  "ok": true,
+  "provider": "wowsp-gateway",
+  "name": "WoWSP Pairing Gateway",
+  "version": "0.5.0",
+  "minClientVersion": "0.5.0",
+  "protocol": ["v1"],
+  "endpoints": { "relay": "/api/relay" },
+  "upstream": null,
+  "features": ["pin-allocation", "byte-tunnel"],
+  "notice": null
+}
+```
+
+Clients below `minClientVersion` get a distinct update-the-app error
+(`relay-core::MIN_CLIENT_VERSION` is the knob to turn when a wire change
+old clients cannot talk to lands).
+
+## Feedback pipeline (`/feedback`, `/erp`)
+
+### QQ 通知机器人（自报绑定 + 受理/结果回访）
+
+提交反馈**不要求任何验证**；机器人只负责回访通知与进度查询。QQ 官方
+机器人平台不给 QQ 号 ↔ openid 的互换接口，普通群也没有成员查询 API，
+所以“绑定”是用户**自报联系方式**：
+
+1. 用户在通知群里 @机器人 或私聊发送「绑定 12345678」（旧口令
+   「验证」同样接受）。回调 `POST /api/qqbot/callback`（Ed25519 验签，
+   URL 配置走 op 13/14；op 13 只为纯数字 `event_ts` + 英数字
+   `plain_token` 签名，防止被当成事件签名工具）把该号码与
+   member/group openid（群内）或 c2c openid（私聊）合并进绑定记录
+   （KV `qqbind:*`，长期）。
+2. 回访：受理成功 → C2C 私聊（自限额 3 条/人/月，留平台配额余量）；
+   `/erp` 状态改到「已开PR」→ 群内 markdown `<@member_openid>` 单独
+   @（群主动消息配额珍贵，只留给这个场景）。全部尽力而为，失败静默。
+3. 用户随时可在群里 @机器人 发「查询」被动拉取自己的最新处理状态；
+   未绑定时机器人会提示先绑定。表单里 QQ 联系方式旁的 ? 弹窗只给出
+   加群建议与“管理员可私聊跟进”的说明。
+
+控制台配置（q.qq.com → 机器人 → 开发设置）：回调地址填
+`https://wowsp.langyo.xyz/api/qqbot/callback` 即可——回调校验的
+Ed25519 密钥按官方方案从 `QQBOT_SECRET` 直接派生（Secret 翻倍到
+32 字节作种子，见 wiki event-emit.html / sign.html），不需要也从
+不存在控制台下发的密钥对；secrets 只需 `QQBOT_APPID` 与
+`QQBOT_SECRET` 两项。
+
+
+The same worker also hosts WoWSP's self-service feedback flow. `/feedback`
+and `/erp` are answered by this worker itself — they sit in
+`run_worker_first` ahead of the static-assets layer, alongside `/api*`:
+
+- **`GET /feedback`** — an embedded, dependency-free form localized in the
+  same nine locales as the app's `res/i18n` files (language selector with
+  `?lang=`/localStorage/browser resolution) and styled with hikari's design
+  tokens: the token sheet under `crates/relay-core/.generated/` is
+  generated from the webui's `@celestia-island/hikari` dependency by
+  `scripts/export_feedback_theme.py` (channels + scale tokens plus the
+  default preset's light/dark palettes) — a gitignored build-time artifact
+  (the source tree tracks no CSS; run the exporter before any relay-core
+  build, `just check-relay` does it for you), embedded at compile time,
+  and flipped between schemes via the same
+  `data-mode` attribute the app's `useTheme` sets. A Cloudflare Turnstile
+  widget guards submissions. The WoWSP desktop app's 设置 ▸ 问题反馈 pane
+  links here with `?version=…&sysinfo=…&channel=desktop&lang=…` prefill
+  (plus `server`/`game_id` when an account is bound; the history lookup
+  link adds `focus=history`); the form itself mints a localStorage
+  anonymous id and remembers the contact, server and game-ID fields.
+- **`POST /api/feedback/submit`** (multipart, multi-file) — normalize →
+  Turnstile siteverify (every channel — `channel` is client-supplied, and
+  desktop users submit through this same form in their browser) → KV
+  rate limits (5/h per IP, 10/day per anonymous id, 300/day global) → a
+  record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on first
+  use; see below) → optional log-bundle upload via
+  `drive/v1/medias/upload_all` attached to the record's 日志包 field.
+- **`GET /erp`** — the maintainer's review console (Feishu-OAuth
+  gated): lists records, flips 处理状态, writes PR links, downloads
+  attachments through `/api/feedback/attachment` (302 to a Feishu
+  temporary URL). Login is the app's own Feishu OAuth — the callback
+  mints an HMAC-signed session cookie (7 days) for open_ids on the
+  console allowlist (`ERP_ALLOWED_OPEN_IDS` ∪ `FEEDBACK_ADMIN_OPEN_ID`,
+  see [Console access](#console-access-erp_allowed_open_ids)); everyone
+  else lands back on the login page with `reason=denied`.
+- **`GET /api/feedback/list` / `POST /api/feedback/update`** — the JSON
+  surface behind the console, also what fix-agents consume (the same
+  session cookie; the old `X-Admin-Key` header gate is retired). There
+  is no separate agent credential: a fix-agent replays an `erp_session`
+  cookie copied from a maintainer's logged-in browser, so it carries
+  that maintainer's open_id and lives or dies with it on the allowlist.
+  `update` additionally refuses browser requests that are not
+  same-origin (`Origin` / `Sec-Fetch-Site`); header-less clients such as
+  fix-agents are unaffected.
+
+Anti-abuse is layered: Turnstile (human check) → KV counters (speed) →
+every record starts as 待审查 and only matters once a human flips it.
+
+### Configuration (secrets & vars)
+
+```
+npx wrangler secret put FEISHU_APP_ID        # 飞书自建应用 app_id (cli_…)
+npx wrangler secret put FEISHU_APP_SECRET    # … its app_secret
+npx wrangler secret put TURNSTILE_SECRET     # Turnstile widget secret key
+npx wrangler secret put ERP_ALLOWED_OPEN_IDS # /erp allowlist: ou_…,ou_… (see below)
+# FEEDBACK_ADMIN_KEY is retired — /erp now logs in via Feishu OAuth.
+# The app's 开放平台 安全设置 must list <origin>/api/erp/callback as a
+# 重定向 URL for the login round trip to land.
+# dashboard ▶ Settings ▶ Variables (plaintext vars):
+#   TURNSTILE_SITEKEY        — Turnstile sitekey (public; form shows a
+#                              maintenance notice until it is set)
+#   FEEDBACK_ADMIN_OPEN_ID   — optional; granted full_access on the
+#                              bootstrapped Bitable so a human can open it,
+#                              and always on the /erp allowlist (a secret
+#                              works too, and survives deploys — see below)
+#   FEEDBACK_BITABLE_APP_TOKEN / FEEDBACK_BITABLE_TABLE_ID — optional pin
+#                              to a pre-existing base instead of bootstrap
+```
+
+The optional settings (`ERP_ALLOWED_OPEN_IDS`, `FEEDBACK_*`) are read
+with workers-rs `env.var`, which sees plaintext vars and secrets alike.
+Note that `wrangler deploy` (and therefore the Deploy
+Site workflow) **deletes dashboard-set plaintext vars** that are not in
+`wrangler.toml` (no `keep_vars` here) — secrets are never touched by a
+deploy, which is why the allowlist goes in as a secret.
+
+#### Console access (`ERP_ALLOWED_OPEN_IDS`)
+
+The Feishu app being 自建 only limits login to the tenant members inside
+its 可用范围; the console narrows that further to an explicit allowlist:
+
+- **Allowed** = `ERP_ALLOWED_OPEN_IDS` (open_ids separated by commas or
+  whitespace) ∪ `FEEDBACK_ADMIN_OPEN_ID`. The open_ids are THIS app's
+  (`ou_…`, app-scoped — the same id `FEEDBACK_ADMIN_OPEN_ID` already
+  uses for the Bitable grant).
+- **Checked twice** — at the OAuth callback (not listed → redirected to
+  `/erp?login=failed&reason=denied`, no cookie) and on every console
+  request against the open_id inside the signed cookie, so deleting an
+  open_id from the list revokes that person's (and any fix-agent's
+  copy of their) unexpired cookies on the very next request instead of
+  after the 7-day TTL.
+- **Set it as a secret.** Do not rely on a dashboard-only
+  `FEEDBACK_ADMIN_OPEN_ID` var to close the gate: the next deploy deletes
+  it and the console silently falls back to the open mode below.
+- **Neither set** — the legacy gate stays: anyone the Feishu app lets in
+  gets the console. This keeps an upgrade from locking the owner out
+  (failing closed would shut the console on deploy, before anyone has
+  configured the list). Every such login writes a `console.warn` to the
+  worker log, and every console page load shows an error toast with the
+  logged-in open_id — paste it into the secret to close the gate. A
+  refused login is logged too (`erp: denied open_id …`, visible in
+  `npx wrangler tail`), which is the easy way to learn a new
+  maintainer's open_id before adding it:
+
+```sh
+npx wrangler secret put ERP_ALLOWED_OPEN_IDS   # e.g. ou_xxx,ou_yyy
+# remove someone: put the list again without them (takes effect at once)
+# back to the legacy open gate (not recommended):
+npx wrangler secret delete ERP_ALLOWED_OPEN_IDS
+```
+
+Fix-agents need no change as long as the open_id their copied cookie
+was minted for stays allowlisted; a cookie minted for anyone else stops
+working the moment the list is set.
+
+The Bitable is bootstrapped by the worker on first submission: it creates
+the base「WoWSP 反馈」+ the 反馈 table (schema in
+`crates/relay-core/src/feedback.rs`, verified live against the Feishu
+OpenAPI), caches the ids in `FEEDBACK_KV`, and — when
+`FEEDBACK_ADMIN_OPEN_ID` is set — grants that user `full_access` so they
+can review records in the Feishu app. The Feishu app needs the Bitable
+read/write + drive upload + permission-member scopes.
+
+A `FEEDBACK_TURNSTILE_BYPASS` **secret** exists purely for post-deploy
+smoke tests: a submission whose `_bypass` field equals the secret skips
+siteverify. Set it, curl a submission through, then `npx wrangler secret
+delete FEEDBACK_TURNSTILE_BYPASS` — never leave it in place.
+
+The `FEEDBACK_KV` namespace is bound in `wrangler.toml` (rate-limit
+counters + the tenant-token and base-id caches; create it once with
+`npx wrangler kv namespace create FEEDBACK_KV`).
+
+## Release digests (`/api/digests`)
+
+The app updater's **second official channel** for "which version, and
+which sha256 does it install against" (the first being api.github.com —
+`packages/app/tauri/src/commands/update.rs` prefers this endpoint,
+cross-checks the two, and refuses on disagreement). The hostname is
+reachable where api.github.com is not, which is the whole point; a
+payload mirror can influence neither channel.
+
+Served shape (`relay-core::digests::DigestDoc`):
+
+```json
+{
+  "channel": "app",
+  "tag": "v0.6.1",
+  "seq": 12,
+  "generated_at": "2026-10-14T12:00:00Z",
+  "assets": { "WoWSP_0.6.1_x64-installer-lite.exe": "<64-hex>" }
+}
+```
+
+Docs may carry an optional Ed25519 signature layer (`key_id` +
+`sig`, see `scripts/catalog_signing.py` and
+`packages/app/tauri/res/keys/README.md`): this worker only transports
+the fields; the app verifies them against compile-time pinned public
+keys, at which point neither the KV store nor the worker can forge a
+doc (an old signed doc can still be replayed — the `seq` ratchet
+refuses that).
+
+Channels and their publishers: `app` ← release.yml, `mod-hub` ←
+mod_hub_publish.py, `res` ← release_models.py, `data` ←
+publish_data_pack.py — all through `scripts/publish_digests.py`, which
+maintains the KV keys (`digest:<channel>:<tag>` per tag plus the
+`digest-latest:<channel>` pointer) with a per-channel strictly
+increasing `seq`.
+
+**Enabled since 2026-10-14** (namespace `DIGESTS`, id in
+`wrangler.toml`; before that the route answered 503 and the updater
+fell back to api.github.com):
+
+```sh
+cd packages/pairing-relay
+npx wrangler kv namespace create DIGESTS   # paste the id into wrangler.toml
+# (uncomment the [[kv_namespaces]] DIGESTS block there, then deploy)
+npx wrangler deploy
+```
+
+Publish-side credentials (env, never committed; a token scoped to
+Workers KV Storage ▶ Edit on the one namespace is enough):
+`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` locally, and the same
+two as repo secrets for release.yml's push step (which skips cleanly
+while unset). A doc failing the worker's shape validation answers 500 —
+that is store corruption or tampering, never something to serve.
+
+**Ops notes**: the channel must keep moving with GitHub — once digests
+are enabled, a release published without its digest push makes the app
+updater refuse (the two official channels disagreeing is fail-closed by
+design, and release.yml fails loudly while the secrets are set). If the
+KV namespace is ever rebuilt from scratch, the per-channel `seq`
+counters restart at 1: harmless (a GitHub-reachable client accepts the
+reset and re-climbs; the rollback refusal only applies when the relay
+doc is the sole decider), but avoid deleting the namespace casually.
+## Replay share (`/api/replays/*`)
+
+The replay-collection program: players who opt in ship whole-replay
+packages to the gateway; the maintainer periodically drains them for
+map/position analysis. No accounts — each app generates and persists an
+`anonId` (uuid v4) + `uploadToken` (32 chars) pair and sends them as
+`x-anon-id` / `x-upload-token` headers; the FIRST successful upload
+registers sha256(token) in the ledger and every later call must match.
+All policy lives in `crates/relay-core/src/replay.rs` (pure, host
+tested); `crates/relay-worker/src/replay.rs` is the plumbing and
+`src/replay_index.rs` the ledger Durable Object.
+
+| Route | Meaning |
+| --- | --- |
+| `GET /api/replays/wanted` | the wanted ruleset + live watermark/counters, `max-age=300` |
+| `POST /api/replays/check` | per-replay verdicts `accept\|own_staged\|duplicate\|unwanted` (≤400 facts, no auth) |
+| `GET /api/replays/mine` (auth) | the caller's staged set; 404 = unknown contributor |
+| `GET /api/replays/archive` (auth) | the caller's `shards/<anonId>.tar.zstd` streamed from R2 |
+| `POST /api/replays/upload` (auth) | RAW tar.zst body + `x-manifest` (base64url JSON) header; Content-Length required |
+| `GET /api/replays/admin/list` | contributor rows + watermark (erp session) |
+| `GET /api/replays/admin/archive?anon_id=…` | one contributor's shard (erp session) |
+| `POST /api/replays/admin/drain` | `{anonIds}` → mark drained, free space (erp session) |
+
+What the server accepts is **server-authoritative**: the maintainer
+writes ONE KV value — `FEEDBACK_KV` key `replays:wanted` — holding the
+ruleset (`{rulesetVersion, updatedAt, rules:[{id, maxCount, maps, modes,
+realms, shipClasses, shipIds, tiers, playerCountMin/Max, botMax,
+clientVersionMin}]}`; absent or empty rules = collection CLOSED. Rules
+are matched against client-claimed, plausibility-checked facts.
+Edit the ruleset either directly in KV or from the /erp console's
+录像征集 view (编辑需求单 — a strict server-side validation, the
+canonical form is stored with a server-stamped updatedAt); 关闭征集
+is the one-click empty-ruleset save. A GET/POST pair backs the editor
+at /api/replays/admin/wanted (admin session or x-admin-key).
+(`crates/relay-core/src/replay.rs` carries every bound); verdict
+precedence is duplicate > own_staged > accept > unwanted, and `accept`
+additionally needs an open rule (`collected < maxCount`) plus watermark
+headroom. An upload must be a SUPERSET of the contributor's staged set
+(dropping staged members → 422 `dropped_members`), every member must be
+`accept`/`own_staged` NOW (else 422 `rejected`), and the new blob must
+keep the global staged total under the 8 GiB watermark (503 `watermark`,
+retry-after). Archives are capped at 256 MiB / 400 members (413).
+
+Storage layout:
+
+- **R2 bucket `wowsp-replay-shards`** (binding `REPLAY_R2`) — one
+  `shards/<anonId>.tar.zstd` blob per contributor. Create it once
+  before the first deploy: `npx wrangler r2 bucket create
+  wowsp-replay-shards`. The upload streams through the worker into R2
+  (never buffered); `/archive` streams it back out.
+- **`ReplayIndex` Durable Object** (singleton `idFromName("index")`,
+  SQLite-backed, migration `v3`) — the ledger: `h:<sha256>` rows
+  (`{contributor, status: staged|drained, ruleId, size, fileName, at}`),
+  `c:<anonId>:<sha256>` mirrors, `tok:<anonId>` token hashes,
+  `meta:<anonId>` (`creditedName, realm, archiveBytes, creditCount`),
+  `rule:<ruleId>` collected counters (drain never decrements them — a
+  closed rule stays closed) and `wm` (staged-bytes total). Alarm-free:
+  drained rows persist forever so duplicate detection survives.
+- **FEEDBACK_KV counters** (prefix `replays:rl:`) — the quotas: uploads
+  8/day per anonId + 24/day per IP, archive fetches 20/day per anonId,
+  checks 60/day per IP; 429s carry `Retry-After`.
+
+**Maintainer drain flow** — two equivalent faces:
+
+- The CLI (preferred, `packages/tools/replay-drain`, root-workspace
+  member): `just drain-replays` (= `cargo run -p replay-drain -- pull`)
+  lists contributors, streams every staged shard, re-hashes each member
+  against its `<sha256>.<ext>` name while storing it content-addressed
+  under `replay-archive/raw/`, and — only when a shard verified clean —
+  drains it. Flags: `--relay`, `--key`, `--out`, `--only <anon>`,
+  `--min-staged <n>`, `--dry-run`. Set the key via
+  `WOWSP_REPLAY_ADMIN_KEY` or `--key`; the relay URL defaults to
+  https://wowsp.langyo.xyz (env `WOWSP_RELAY_URL`).
+- The `/erp` console's 录像征集 view: the wanted ruleset with live
+  progress, the contributor table with per-row shard downloads, and
+  two-step-armed drain buttons (browser session auth).
+
+`replay-drain credits [--out contributors.json]` exports the
+per-identity lifetime counts (`GET /api/replays/admin/credits`) as the
+webui's `contributors.json` envelope (auto-incrementing `version`,
+RFC3339 `generatedAt`) — copy it to
+`packages/webui/src/res/contributors.json` before building a release.
+
+The admin routes accept EITHER a logged-in erp session OR an
+`x-admin-key` header matching the `REPLAY_ADMIN_KEY` secret
+(`wrangler secret put REPLAY_ADMIN_KEY`; a high-entropy random value).
+While the secret is unset the routes answer to the browser flow only.
+
+## Deploy
+
+**CI is the deploy path** (opt-in): the Deploy Site workflow
+(`.github/workflows/site.yml`) builds the site artifact (docs +
+website), bundles it into `packages/pairing-relay/assets` via
+`scripts/build_worker_site.py`, and runs `npx wrangler deploy` — the
+wasm worker and the site assets ship TOGETHER (a worker without a
+current asset bundle would serve a stale site). Its `deploy-worker`
+job stays **skipped** until the repo carries:
+
+```sh
+gh secret   set CLOUDFLARE_API_TOKEN -b "<token>"
+gh variable set DEPLOY_CF_WORKER --body true
+```
+
+The token (dashboard ▶ My Profile ▶ API Tokens ▶ Create Token ▶
+"Edit Cloudflare Workers" template, plus Zone ▶ Workers Routes ▶ Edit
+for the `langyo.xyz` zone — the deploy re-asserts the Custom Domain
+binding). Until then the owner's manual step below is the deploy, and
+it must run from a tree whose `packages/pairing-relay/assets` matches
+the live Pages artifact (`just bundle-site` + the docs build — or
+simply wait for CI).
+
+Prerequisites: Rust (rustup with the `wasm32-unknown-unknown` target:
+`rustup target add wasm32-unknown-unknown`), the webui deps
+(`pnpm install` from the repo root — the feedback theme exporter
+compiles the token sheet relay-core embeds), and a one-time install of
+the build tool:
+
+```sh
+cargo install worker-build
+```
+
+Then:
+
+```sh
+pnpm install              # once, from the repo root (deps + wrangler)
+just feedback-theme       # relay-core include_str! input (gitignored)
+just bundle-site          # website → packages/pairing-relay/assets
+cd packages/pairing-relay
+npx wrangler login        # once
+npx wrangler deploy
+```
+
+`just bundle-site` bundles the website ONLY (no docs — fine for a
+quick site-only refresh or `wrangler dev`); the workflow's merged
+docs+website bundle is the full artifact.
+
+`[build] command = "worker-build --release crates/relay-worker"` in
+`wrangler.toml` compiles the Rust workspace to
+`crates/relay-worker/build/worker/shim.mjs` + wasm automatically
+(wasm-opt is disabled via crate metadata — see the note in
+`crates/relay-worker/Cargo.toml`; the bundle is ~0.9 MB raw / ~0.27 MB
+gzipped, far under the Workers free-plan size limit).
+
+**Network-restricted builds** — worker-build downloads a matching
+`wasm-bindgen-cli` from GitHub releases on first use. If that download
+fails on your network, install it from crates.io and point worker-build
+at it (the version must match the `wasm-bindgen` crate version pinned in
+this package's `Cargo.lock`, currently 0.2.128):
+
+```sh
+cargo install wasm-bindgen-cli --version 0.2.128
+export WASM_BINDGEN_BIN="$(cygpath -m "$HOME")/.cargo/bin/wasm-bindgen.exe"  # Git Bash
+# (plain Windows: set WASM_BINDGEN_BIN=C:\Users\<you>\.cargo\bin\wasm-bindgen.exe)
+npx wrangler deploy
+```
+
+The env override is only consulted when set and resolvable; unset, it
+falls back to the normal download.
+
+Site hosting model: `wowsp.langyo.xyz` is bound to this worker as a
+**Workers Custom Domain** — the worker owns every path. The static site
+(website + docs) rides the worker's **static assets** (`[assets]` in
+`wrangler.toml`, served before any worker code), with
+`not_found_handling = "single-page-application"` so unknown paths serve
+the SPA shell; the dynamic paths (`/api*`, `/feedback`, `/erp`) are
+pulled in front of the assets via `run_worker_first` (they MUST be:
+with `compatibility_date ≥ 2025-04-01` a browser navigation that
+matches no asset serves the SPA shell directly and never reaches worker
+code). The assets are laid out by `scripts/build_worker_site.py`:
+
+- `/` and every non-asset path → the loader-injected **shell**
+  `index.html`: its inline loader pulls the entry JS/CSS from the
+  GitHub Pages mirror `https://langyo.github.io/wowsp` FIRST and falls
+  back to this worker's own `/wowsp/**` copy — the heavy app bundle
+  stays on the Pages mirror; the worker carries the shell, the public
+  files and the docs;
+- `/wowsp/**` → the full-build fallback copy (same build, same hashes
+  as the Pages artifact — both are published by the same Deploy Site
+  workflow run).
+
+GitHub Pages stays the **backup host**: the same artifact is deployed
+to `langyo.github.io/wowsp/` on every site build, so if the worker (or
+the whole Cloudflare account) is ever unavailable, pointing DNS at
+Pages restores the site — only `/api*`, `/feedback` and `/erp` would be
+missing until the worker is back.
+
+The pre-#1029 model (Pages as the primary host through zone routes +
+a proxied CNAME) left the then-existing Workers Custom Domain
+capturing the hostname with no `[assets]` layer attached — the worker
+404'd everything outside its routes and the site was unreachable at
+`wowsp.langyo.xyz` from 2026-10-09 until this model landed. The three
+stale zone routes (`wowsp.langyo.xyz/{api,feedback,erp}*`) are inert
+under the Custom Domain — they point at the same script — and can be
+deleted in the dashboard (zone `langyo.xyz` ▶ Workers Routes); the
+wrangler OAuth token carries no zone-routes delete scope.
+
+Smoke checks: `curl https://wowsp.langyo.xyz/api/health` (the JSON
+above) and `curl -I https://wowsp.langyo.xyz/` (the site's shell
+`index.html`, HTTP 200).
+
+**Migrations note** — the Durable Object classes are unchanged from the
+TypeScript deployment (`Room` v1 + `Directory` v2, both SQLite-backed),
+so this rewrite ships **no new migration tag**: the Rust worker deploys
+cleanly over the live one. Storage rows in the old v1 key format are
+garbage-collected lazily on the Directory's first load
+(`crates/relay-worker/src/directory.rs`, `ensure_loaded`).
+
+## Local development
+
+```sh
+pnpm --filter @wowsp/pairing-relay dev        # wrangler dev on :8787
+```
+
+Point the desktop at it with the undocumented override
+(`WOWSP_RELAY_URL=ws://127.0.0.1:8787`, see
+`packages/app/tauri/src/commands/pairing_relay/`).
+
+Rust-side checks (no Cloudflare account needed):
+
+```sh
+cargo test -p relay-core                            # host unit tests
+cargo check --target wasm32-unknown-unknown         # both crates, wasm
+just check-relay                                    # both, from repo root
+```
+
+## Forwarding-station mode (`GATEWAY_UPSTREAM`)
+
+The gateway is a stable, hardcoded address; the exchange behind it does
+not have to be. Setting the `GATEWAY_UPSTREAM` variable (dashboard →
+Settings → Variables, or `[vars]` in wrangler.toml) to an absolute
+`https://`/`wss://` URL switches `/api/health` to
+
+```json
+"upstream": "https://exchange.example.org/…"
+```
+
+Clients that honor the manifest then follow the upstream and stop
+pairing through this gateway — a hand-off with **no app redeploy**: the
+address clients dial stays `wowsp.langyo.xyz`, and if WoWSP ever
+runs an official exchange (or a 360/Lesta-run one) it can take over by
+flipping this one variable. Clearing the variable flips it back. Values
+that are not absolute https/wss URLs are ignored (a typo must not strand
+clients). `GATEWAY_NOTICE` optionally surfaces an operator message
+(e.g. maintenance windows) in the same document.
+
+## Cloudflare facts this design is built on
+
+- **WebSockets on every plan** — outbound and inbound WebSocket support
+  is available on all Workers plans, including Free.
+  Source: developers.cloudflare.com/workers/runtime-apis/websockets/ and
+  the Workers pricing page.
+- **~100 s proxy idle cutoff** — proxied connections without traffic are
+  dropped after roughly 100 s, so the desktop bridge sends keepalive
+  text frames every **30 s**. Source:
+  developers.cloudflare.com/workers/platform/limits/ (WebSockets).
+- **32 MiB max WebSocket message** — a single message may be up to
+  32 MiB on Cloudflare's edge. Our protocol keeps its own **256 KiB**
+  binary-frame cap anyway (enforced server-side with an error-close
+  notice): the cap is a design choice bounding per-frame buffering in
+  the Room DO and keeping every tunneled write cheap, not a workaround
+  for a 1 MiB platform ceiling (an earlier draft of this document
+  claimed one — the real limit is 32 MiB). Source: same limits page.
+- **Durable Objects on Free** — the free plan provisions SQLite-backed
+  DO classes ONLY (no KV-backed classes), with 100 000 DO requests/day,
+  ~13 000 GB-s duration/day, 5 M row reads + 100 k row writes/day, and
+  5 GB storage per account. The $5/month minimum spend applies to the
+  Workers Paid plan only — Free has no minimum. Sources:
+  developers.cloudflare.com/durable-objects/platform/pricing/ and the
+  Workers pricing page.
+- **No hard duration cap while active** — DO duration is not capped by
+  a per-invocation wall clock while the object stays active with I/O in
+  flight (an open WebSocket counts); the constraint that matters is the
+  GB-s/day allowance above, and SQLite-backed duration billing only
+  accrues while the object is actually running. The alarm-swept
+  15-minute idle TTL below is OUR bound, not a platform one.
+- **~6 simultaneous outbound connections per invocation** — a Worker is
+  limited to about 6 connections awaiting response headers at once.
+  This gateway dials at most one subrequest at a time (the Room DO →
+  Directory bind), so the cap is never in play. Source: the same
+  limits page (simultaneous open connections).
+
+### Free-tier budget math
+
+A pairing session costs, roughly:
+
+- resolve + 3–5 WS handshakes + ~6 DO requests per tunneled request → a
+  full pairing (pair + list + pull one replay) is on the order of **a
+  few dozen DO requests**;
+- duration: the Directory DO lives in millisecond bursts (alarm sweeps
+  + lookups); a Room DO holds sockets while a room is paired but is
+  **wall-clock idle between frames** — SQLite-backed DO duration
+  billing only accrues while the object is actively running, and the
+  15-minute idle TTL bounds how long an abandoned room lingers.
+
+So 100 k DO requests/day comfortably covers hundreds of pairing sessions
+per day; the thing to respect is **bandwidth, not DO budget**: a replay
+is a few MB (fine), the full game-data zip can be hundreds of MB (do
+that sync on the LAN, not through the relay). The Workers Free request
+limit (100 k HTTP requests/day, no WebSocket-message counting on the
+free tier's WS support) similarly covers the phone's low request counts.
+
+## Caveats
+
+- **Trust**: the worker's operator sees every code→room binding and could
+  join any room as a fake host and MITM the pairing exchange. This is why
+  the endpoint is a first-party deployment — don't point the apps at a
+  third-party worker. (Forwarding-station mode is the escape hatch.)
+- **Volume**: the tunnel streams through Workers' request/DO pipelines;
+  see the budget math above.
+- **Eviction**: a DO eviction mid-transfer fails that transfer (the app
+  surfaces it as a normal pull error — retry). Plain (non-hibernating)
+  DO WebSockets keep the Room DO pinned while any socket is open, which
+  the free tier's duration accounting tolerates at these session
+  lengths; the hibernation API remains an option if usage ever grows.
+
+## Repository integration
+
+- `packages/pairing-relay` is its OWN Cargo workspace (the repo root
+  `Cargo.toml` `exclude`s it) with its own gitignored `Cargo.lock`, so
+  the wasm/worker dependency tree never touches the app crates' builds.
+- `just check-relay` (repo root) runs both the host tests and the
+  wasm32 check.
+- The Rust clients (desktop bridge + phone transport) live in
+  `packages/app/tauri/src/commands/pairing_relay/`; their test suite
+  runs an in-process mock of this protocol.
+- No TypeScript sources remain in this package (the `typecheck` script is
+  gone with them; `pnpm -r typecheck` skips this package naturally).

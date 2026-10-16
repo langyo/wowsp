@@ -18,6 +18,7 @@
   "game": {
     "online": "ゲーム起動中",
     "offline": "ゲーム未起動",
+    "multiRunning": "現在 {n} 個のゲームクライアントが起動しています",
     "pid": "PID",
     "kind": {
       "steam": "Steam",
@@ -26,13 +27,15 @@
       "cn360": "中国サーバー（360）",
       "cnKongzhong": "中国サーバー（KongZhong）",
       "manual": "手動設定"
-    }
+    },
+    "versionLabel": "クライアントバージョン"
   },
   "search": {
     "fuzzy": "あいまい検索",
     "hint": "艦名、よみがな、または英語名を入力してください"
   },
   "retry": "再試行",
+  "close": "閉じる",
   "gamePath": {
     "title": "ゲームパス",
     "desc": "WoWSP が艦の装甲・弾道データ、リプレイ、MOD リソースを読み込むには、World of Warships のインストールフォルダーが必要です。",
@@ -41,12 +44,34 @@
     "detected": "検出されたインストール",
     "browse": "フォルダーを選択…",
     "redetect": "再検出",
+    "addAction": "ゲームパスを追加…",
+    "addTitle": "ゲームパスを追加",
+    "addDesc": "このマシンにインストールされたクライアントを自動で検出するか、インストールフォルダーを手動で選択してください。",
     "runningHint": "実行中のゲームを検出しました：{path}",
     "useRunning": "このパスを使用",
-    "noneFound": "ゲームのインストールが検出されませんでした。インストールフォルダーを手動で選択してください（WorldOfWarships.exe と bin/ フォルダーを含む必要があります）。",
+    "noneFound": "ゲームのインストールが検出されませんでした。インストールフォルダーを手動で選択してください（WorldOfWarships.exe（Lesta版は Korabli.exe）と bin/ フォルダーを含む必要があります）。",
     "applied": "ゲームパスを更新しました",
     "invalid": "選択されたフォルダーは無効です",
     "setAction": "ゲームパスを設定",
+    "removeAction": "このパスを削除",
+    "removeConfirm": "削除しますか？",
+    "removed": "ゲームパスを削除しました",
     "inUse": "使用中"
+  },
+  "imageCrop": {
+    "choose": "画像を選択…",
+    "requirement": "正方形の画像が最適です。短辺 {min}px 以上、辺の長さ {max}px 以内。大きすぎる切り抜きは自動的に縮小されます。",
+    "unsupported": "サポートされていない画像形式です（PNG / JPG / WebP / GIF / BMP / AVIF のみ）。",
+    "fileTooLarge": "ファイルが大きすぎます。圧縮してからお試しください。",
+    "tooSmall": "画像が小さすぎます：短辺は {min}px 以上必要です。",
+    "tooLarge": "画像が大きすぎます：辺の長さは {max}px 以内にしてください。",
+    "decodeFailed": "画像をデコードできませんでした。ファイルが破損している可能性があります。",
+    "dragHint": "ドラッグで位置調整、ホイールまたはスライダーで拡大縮小。出力は常に正方形になります。",
+    "zoom": "拡大縮小",
+    "dims": "元 {w}×{h} → 出力 {out}×{out}",
+    "rechoose": "選び直す",
+    "confirm": "この画像を使う",
+    "cancel": "キャンセル",
+    "exportFailed": "切り抜き画像の書き出しに失敗しました"
   }
 }

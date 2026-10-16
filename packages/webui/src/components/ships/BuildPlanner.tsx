@@ -1,25 +1,35 @@
 import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
-import { Ban, Coins, Lock, RotateCcw } from "@lucide/vue";
+import { AlertTriangle, Ban, Coins, Lock, RotateCcw, X } from "@lucide/vue";
 
-import { HButton } from "@celestia-island/hikari";
+import { HkButton } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import type { HintTag } from "@/composables/globalTooltip";
 import { AssetImage } from "@/components/base/AssetImage";
 import { techTreeNode } from "@/utils/techTreeData";
+import { useShipsUiStore } from "@/stores/shipsUi";
 import type { ShipInfo } from "@/api";
 import {
   classSkills,
+  recommendedSkills,
   SKILL_BUDGET,
-  TIER_UNLOCK,
+  skillAffordable,
   skillClassFor,
+  skillCost,
   skillIconUrl,
+  skillPointsBelow,
+  skillPointsSpent,
+  skillTierGaps,
   skillUnavailable,
+  TIER_UNLOCK,
   type Skill,
   type SkillRequirement,
 } from "./skillTree";
 import { type PlannerBuild } from "./modifierPipeline";
 import { cxpForPoints, priceOf, retrainCredits } from "./costs";
 import { api, type UpgradePrice } from "@/api";
+import { isMobileApp } from "@/utils/platform";
+import { gameNationOf } from "@/utils/nationCodes";
 import DataObserver from "./DataObserver";
 import signalsData from "../../data/signals.json";
 import modernizationsData from "../../data/modernizations.json";
@@ -140,30 +150,6 @@ const COMMANDERS = (commandersData as CommanderEntry[])
  *  backs the consumable-gated skill bans. */
 const SHIP_CONSUMABLES = shipConsumablesData as Record<string, string[]>;
 
-/** WG lowercase nation code → GameParams nation name used by modernizations. */
-const GP_NATION: Record<string, string> = {
-  usa: "USA",
-  japan: "Japan",
-  germany: "Germany",
-  uk: "United_Kingdom",
-  ussr: "Russia",
-  france: "France",
-  italy: "Italy",
-  netherlands: "Netherlands",
-  spain: "Spain",
-  pan_asia: "Pan_Asia",
-  pan_america: "Pan_America",
-  commonwealth: "Commonwealth",
-  europe: "Europe",
-  // WG mixes both spellings for the pan-European faction (tech tree ships
-  // carry "pan_europe", GameParams mods/commanders say "Europe").
-  pan_europe: "Europe",
-  // ship_names.json keeps the raw game-file spellings; synthetic ShipInfo
-  // entries (event ships outside the encyclopedia) carry them verbatim.
-  united_kingdom: "United_Kingdom",
-  russia: "Russia",
-};
-
 /** skilltree.json / signals.json / modernizations.json language key for the
  *  current data-language setting (falls back to en). */
 const DATA_KEY_BY_LANG: Record<string, string> = {
@@ -243,15 +229,27 @@ export default defineComponent({
     build: { type: Object as PropType<PlannerBuild>, required: true },
     /** Install root — feeds the GameParams price walk for cost calc. */
     gameRoot: { type: String, default: "" },
+    /** Raw GameParams entry the modal unpacked — forwarded to DataObserver
+     *  for the per-band AA rows (WG's profile carries no usable AA data). */
+    gameparams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
   },
   emits: {
     "update:build": (_v: PlannerBuild) => true,
   },
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
+    const shipsUi = useShipsUiStore();
     const section = ref<Section>("skills");
 
     const dataLangKey = computed(() => DATA_KEY_BY_LANG[dataLanguage.value] ?? "en");
+
+    /** Tree node of the planned ship in the selected branch source — a
+     *  Lesta-only hull must resolve against the Lesta tree, not the WG
+     *  default, or its index (consumables gate, recommended skills, unique
+     *  upgrades) reads as null in Lesta mode. */
+    function treeIndexOf(shipId: number): string | null {
+      return techTreeNode(shipId, shipsUi.treeRealm)?.index ?? null;
+    }
 
     function setBuild(patch: Partial<PlannerBuild>): void {
       emit("update:build", { ...props.build, ...patch });
@@ -262,13 +260,14 @@ export default defineComponent({
       return dict?.[dataLangKey.value] || dict?.en || fallback;
     }
 
-    // ── Top bar ────────────────────────────────────────────────────────────
-    const usedPoints = computed(() => Object.keys(props.build.skills).length);
-    const remaining = computed(() => SKILL_BUDGET - usedPoints.value);
-
     // ── Skills section ─────────────────────────────────────────────────────
     const cls = computed(() => skillClassFor(props.ship.type));
     const tree = computed(() => classSkills(cls.value));
+
+    // ── Top bar ────────────────────────────────────────────────────────────
+    // Weighted by tier row: a tier-2 skill costs 2 pts, tier-3 → 3, tier-4 → 4.
+    const usedPoints = computed(() => skillPointsSpent(props.build.skills, tree.value));
+    const remaining = computed(() => SKILL_BUDGET - usedPoints.value);
 
     const tiers = computed(() => {
       const out: Record<number, Skill[]> = { 1: [], 2: [], 3: [], 4: [] };
@@ -277,9 +276,14 @@ export default defineComponent({
       return out;
     });
 
+    /** Rows the in-game builder refuses: no pick here while a higher row
+     *  carries one — the game forces ≥1 skill per tier. */
+    const tierGaps = computed(() => skillTierGaps(props.build.skills, tree.value));
+
     /** Column count of this class's tree = max(column) + 1 (BB/CA/DD/CV → 6,
-     *  SS → 15). Fixed per class — not per tier — so tier rows stay aligned
-     *  even where a tier has fewer skills (gaps render as placeholders). */
+     *  SS → 5, the only five-column tree). Fixed per class — not per tier —
+     *  so tier rows stay aligned even where a tier has fewer skills (gaps
+     *  render as placeholders). */
     const skillColumns = computed(() => {
       let n = 0;
       for (const s of tree.value) n = Math.max(n, s.column + 1);
@@ -290,7 +294,7 @@ export default defineComponent({
      *  index; null when the hull is missing from ship_consumables.json —
      *  the consumable-skill gate then never bans (conservative). */
     const consumableFamilies = computed<ReadonlySet<string> | null>(() => {
-      const idx = techTreeNode(props.ship.shipId)?.index;
+      const idx = treeIndexOf(props.ship.shipId);
       const fams = idx ? SHIP_CONSUMABLES[idx] : undefined;
       return fams ? new Set(fams) : null;
     });
@@ -319,7 +323,7 @@ export default defineComponent({
     );
 
     function pointsBelowTier(tier: number): number {
-      return tree.value.filter((s) => s.tier < tier && props.build.skills[s.code]).length;
+      return skillPointsBelow(props.build.skills, tree.value, tier);
     }
     function tierUnlocked(tier: number): boolean {
       if (tier === 1) return true;
@@ -332,7 +336,7 @@ export default defineComponent({
         setBuild({ skills });
       } else if (
         !skillBan(skill) &&
-        remaining.value > 0 &&
+        skillAffordable(skill.tier, remaining.value) &&
         tierUnlocked(skill.tier)
       ) {
         setBuild({ skills: { ...props.build.skills, [skill.code]: 1 } });
@@ -349,7 +353,7 @@ export default defineComponent({
     // ── Commanders section ─────────────────────────────────────────────────
     /** WG lowercase nation → GameParams nation of the current ship (drives
      *  both the commander pool and modernization gating). */
-    const gpNation = computed(() => GP_NATION[props.ship.nation] ?? props.ship.nation);
+    const gpNation = computed(() => gameNationOf(props.ship.nation));
     /** Commanders usable on THIS ship. Filtering by nation also drops the
      *  7 event-bound commanders (empty nations). COMMANDERS is pre-sorted
      *  legendary-first then by person — the filter preserves that order. */
@@ -379,6 +383,12 @@ export default defineComponent({
       const codes = new Set(tree.value.map((s) => s.code));
       return new Set(epic.filter((c) => codes.has(c)));
     });
+    /** Skills the game itself recommends for THIS ship (crew-presets table,
+     *  most specific of exact ship / group / class) — the amber corner
+     *  ribbon. */
+    const recommended = computed(() =>
+      recommendedSkills(treeIndexOf(props.ship.shipId), props.ship.type),
+    );
     /** Numeric key:value pairs of one modifier dict, with plain keys hidden
      *  when their *UI twin is present, internal enums and activation
      *  plumbing (tier-scaling / regen-cap switches, the dead GSMShotDelay)
@@ -457,14 +467,36 @@ export default defineComponent({
     const flagTip = ref<{ sig: SignalEntry; cx: number; bottom: number } | null>(null);
     const flagTipEl = ref<HTMLElement | null>(null);
     const flagTipPos = ref<Record<string, string>>({ left: "0px", top: "0px", visibility: "hidden" });
+    // Faded hover card: the DOM stays through a short leave transition
+    // (delayed unmount) instead of snapping; `mounted` drives the leave
+    // class while `flagTip` keeps serving the frozen content.
+    const flagTipMounted = ref(false);
+    let flagTipHideTimer: number | undefined;
 
     function hideFlagTip(): void {
-      flagTip.value = null;
       window.removeEventListener("scroll", hideFlagTip, true);
+      if (flagTipHideTimer !== undefined) {
+        window.clearTimeout(flagTipHideTimer);
+        flagTipHideTimer = undefined;
+      }
+      if (!flagTipMounted.value) {
+        flagTip.value = null;
+        return;
+      }
+      flagTipMounted.value = false;
+      flagTipHideTimer = window.setTimeout(() => {
+        flagTipHideTimer = undefined;
+        flagTip.value = null;
+      }, 180);
     }
     function showFlagTip(sig: SignalEntry, el: HTMLElement): void {
+      if (flagTipHideTimer !== undefined) {
+        window.clearTimeout(flagTipHideTimer);
+        flagTipHideTimer = undefined;
+      }
       const r = el.getBoundingClientRect();
       flagTip.value = { sig, cx: r.left + r.width / 2, bottom: r.bottom };
+      flagTipMounted.value = true;
       // Any scroll (capture: the modal body scrolls, not the window) moves a
       // fixed card off its anchor — hide, same trade the global hint makes.
       window.addEventListener("scroll", hideFlagTip, true);
@@ -487,7 +519,14 @@ export default defineComponent({
       { flush: "post" },
     );
     watch(section, hideFlagTip);
-    onScopeDispose(hideFlagTip);
+    onScopeDispose(() => {
+      window.removeEventListener("scroll", hideFlagTip, true);
+      if (flagTipHideTimer !== undefined) {
+        window.clearTimeout(flagTipHideTimer);
+        flagTipHideTimer = undefined;
+      }
+      flagTip.value = null;
+    });
 
     /** Signed percent text, game-style: "+5%" / "−5%" / "+0.5%". */
     function signedPct(v: number): string {
@@ -545,7 +584,7 @@ export default defineComponent({
      *  them on exactly those hybrid-art carriers). */
     function shipMatches(m: ModernizationEntry): boolean {
       if (!m.ships?.length) return true;
-      const index = techTreeNode(props.ship.shipId)?.index ?? null;
+      const index = treeIndexOf(props.ship.shipId);
       const hit = index != null && m.ships.some((s) => s.split("_")[0] === index);
       const whitelist =
         m.tags?.includes("unique") ||
@@ -575,16 +614,28 @@ export default defineComponent({
       else upgrades[slot] = name;
       setBuild({ upgrades });
     }
+    /** Localized display name of a modernization by its catalog name —
+     *  shared by the slot-title "mounted" readout and the cost rows. */
+    function modLabel(name: string): string {
+      const mod = MODERNIZATIONS.find((m) => m.name === name);
+      return (mod?.names && dataText(mod.names, name)) || name;
+    }
 
     // ── Cost panel data: GameParams price walk (loaded per game root,
-    //    the first time the 成本计算 section opens) ──
+    //    the first time the 成本计算 section opens; on the phone app the
+    //    root stays empty and the backend resolves prices from the bundled
+    //    offline pack) ──
     const prices = ref<Record<string, UpgradePrice> | null>(null);
     const pricesError = ref(false);
     let pricesLoadedFor = "";
     watch(
       () => [props.gameRoot, section.value] as const,
       ([root, sec]) => {
-        if (sec !== "costs" || !root || pricesLoadedFor === root) return;
+        // Desktop keeps the empty-root short-circuit (no install picked →
+        // nothing to read); on the phone app the empty root is the NORMAL
+        // state and the Rust side must decide (appdata cache → bundled
+        // pack), so only the section gate applies there.
+        if (sec !== "costs" || (!root && !isMobileApp()) || pricesLoadedFor === root) return;
         pricesLoadedFor = root;
         api
           .getUpgradePrices(root)
@@ -620,16 +671,27 @@ export default defineComponent({
       }
       const columns = skillColumns.value;
       const legend =
-        epicSkills.value.size > 0 ? (
-          <p class="planner-v__note" key="epic-legend">
-            {t("ships.skills.epicLegend")}
-          </p>
+        epicSkills.value.size > 0 || recommended.value.size > 0 ? (
+          <div key="ribbon-legend" class="skill-legend-v">
+            {epicSkills.value.size > 0 ? (
+              <span class="skill-legend-v__chip" data-hint={t("ships.skills.epicLegend")}>
+                <span class="skill-legend-v__swatch skill-legend-v__swatch--epic" />
+                {t("ships.skills.epicTag")}
+              </span>
+            ) : null}
+            {recommended.value.size > 0 ? (
+              <span class="skill-legend-v__chip" data-hint={t("ships.skills.recLegend")}>
+                <span class="skill-legend-v__swatch skill-legend-v__swatch--rec" />
+                {t("ships.skills.recTag")}
+              </span>
+            ) : null}
+          </div>
         ) : null;
       const tierRows = [1, 2, 3, 4].map((tier) => {
         const unlocked = tierUnlocked(tier);
         const need = tier === 1 ? 0 : TIER_UNLOCK[tier as 2 | 3 | 4];
-        // Dense column map — sparse tiers (DD tier-4, the SS tree) carry
-        // intentional gaps that must hold their column position.
+        // Dense column map — a sparse tier (CV tier-2) carries intentional
+        // gaps that must hold their column position.
         const byColumn = new Map(tiers.value[tier].map((s) => [s.column, s]));
         const cells = [];
         for (let col = 0; col < columns; col++) {
@@ -642,11 +704,19 @@ export default defineComponent({
           }
           const picked = !!props.build.skills[skill.code];
           const banned = skillBan(skill);
+          // Game-style affordance: with the points left, every unpicked
+          // skill the row costs more than greys out — picked ones stay lit
+          // so their points stay refundable.
+          const affordable = skillAffordable(skill.tier, remaining.value);
+          const pickable = unlocked && !banned && (picked || affordable);
           const enhanced = epicSkills.value.has(skill.code);
+          const rec = recommended.value.has(skill.code);
           const name = skillName(skill);
-          const hint = enhanced
-            ? `${skillHint(skill)} — ${t("ships.skills.epicRibbon")}`
-            : skillHint(skill);
+          // Ribbon meanings ride the tooltip as tag chips (data-hint-tags,
+          // rendered by the global hint) instead of a bolted-on sentence.
+          const tags: HintTag[] = [];
+          if (enhanced) tags.push({ tone: "epic", text: t("ships.skills.epicTag") });
+          if (rec) tags.push({ tone: "rec", text: t("ships.skills.recTag") });
           cells.push(
             <div
               class={[
@@ -659,9 +729,16 @@ export default defineComponent({
               <button
                 type="button"
                 class="skill-tile-v__btn"
-                disabled={!unlocked || !!banned}
-                onClick={() => (unlocked && !banned ? toggleSkill(skill) : null)}
-                data-hint={banned ? t("ships.skills.notApplicable") : hint}
+                disabled={!pickable}
+                onClick={() => (pickable ? toggleSkill(skill) : null)}
+                data-hint={
+                  banned
+                    ? t("ships.skills.notApplicable")
+                    : unlocked && !picked && !affordable
+                      ? t("ships.skills.noPoints", { n: skillCost(skill.tier) })
+                      : skillHint(skill)
+                }
+                data-hint-tags={tags.length > 0 ? JSON.stringify(tags) : undefined}
               >
                 <span class="skill-tile-v__icon">
                   <AssetImage
@@ -672,10 +749,15 @@ export default defineComponent({
                   />
                 </span>
               </button>
-              {/* Sibling of the button so the active/banned filters never
-                  wash the ribbon out. */}
-              {enhanced ? (
-                <span class="skill-tile-v__ribbon skill-tile-v__ribbon--epic" />
+              {/* Sibling of the button (inside the clip host) so the
+                  active/banned filters never wash the ribbons out. */}
+              {enhanced || rec ? (
+                <span class="skill-tile-v__ribbon-host">
+                  {enhanced ? (
+                    <span class="skill-tile-v__ribbon skill-tile-v__ribbon--epic" />
+                  ) : null}
+                  {rec ? <span class="skill-tile-v__ribbon skill-tile-v__ribbon--rec" /> : null}
+                </span>
               ) : null}
               {banned ? (
                 <span class="skill-tile-v__ban">
@@ -704,6 +786,12 @@ export default defineComponent({
             >
               {cells}
             </div>
+            {tierGaps.value.has(tier) ? (
+              <span class="skill-tier-v__warn">
+                <AlertTriangle size={12} />
+                {t("ships.skills.tierEmptyWarning")}
+              </span>
+            ) : null}
           </div>
         );
       });
@@ -821,7 +909,11 @@ export default defineComponent({
                transform, which would re-anchor a plain fixed card and its
                overflow:hidden would clip it away entirely. */
             <Teleport to="body">
-              <div class="flag-card" ref={flagTipEl} style={flagTipPos.value}>
+              <div
+                class={["flag-card", !flagTipMounted.value ? "flag-card--leave" : ""]}
+                ref={flagTipEl}
+                style={flagTipPos.value}
+              >
                 <div class="flag-card__name">{signalName(tip.sig)}</div>
                 <div class="flag-card__flavor">{dataText(tip.sig.desc, "")}</div>
                 <div class="flag-card__effects">
@@ -856,13 +948,20 @@ export default defineComponent({
                 <div class="planner-v__slot-title">
                   {t("ships.skills.slot", { n: slot + 1 })}
                   {props.build.upgrades[slot] ? (
-                    <button
-                      type="button"
-                      class="planner-v__slot-clear"
-                      onClick={() => toggleUpgrade(slot, props.build.upgrades[slot])}
-                    >
-                      {t("ships.skills.slotNone")}
-                    </button>
+                    <>
+                      {/* Read back what is mounted, so the header never reads
+                          as a bare state; the trailing control UNMOUNTS it. */}
+                      <span class="planner-v__slot-mounted">
+                        {modLabel(props.build.upgrades[slot])}
+                      </span>
+                      <button
+                        type="button"
+                        class="planner-v__slot-clear"
+                        onClick={() => toggleUpgrade(slot, props.build.upgrades[slot])}
+                      >
+                        <X size={10} /> {t("ships.skills.slotClear")}
+                      </button>
+                    </>
                   ) : null}
                 </div>
                 <div class="planner-v__slot-grid">
@@ -913,11 +1012,10 @@ export default defineComponent({
     /** The selected build's shopping list with per-item credit prices. */
     const costRows = computed(() =>
       Object.entries(props.build.upgrades).map(([slot, name]) => {
-        const mod = MODERNIZATIONS.find((m) => m.name === name);
         return {
           slot,
           name,
-          label: (mod?.names && dataText(mod.names, name)) || name,
+          label: modLabel(name),
           price: priceOf(prices.value, name),
         };
       }),
@@ -1041,7 +1139,7 @@ export default defineComponent({
                 ? t("ships.skills.remaining", { n: remaining.value })
                 : t("ships.skills.overBudget")}
             </span>
-            <HButton
+            <HkButton
               variant="ghost"
               size="sm"
               onClick={() =>
@@ -1049,7 +1147,7 @@ export default defineComponent({
               }
             >
               <RotateCcw size={12} /> {t("ships.skills.reset")}
-            </HButton>
+            </HkButton>
           </div>
 
           <div class="planner-v__body">
@@ -1100,7 +1198,7 @@ export default defineComponent({
                   onInput={(e) => setBuild({ healthPct: Number((e.target as HTMLInputElement).value) / 100 })}
                 />
               </div>
-              <DataObserver ship={props.ship} build={b} />
+              <DataObserver ship={props.ship} build={b} gameparams={props.gameparams} />
             </aside>
           </div>
         </div>

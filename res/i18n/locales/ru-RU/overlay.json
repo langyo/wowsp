@@ -1,6 +1,20 @@
 {
   "hint": "Удерживайте Tab в бою, чтобы показать статистику команд.",
   "locateHint": "Обнаружение активно, но таблица команд пока не найдена — войдите в бой и попробуйте снова.",
-  "locatingHint": "Удерживайте Tab — распознаём составы команд…",
-  "recognizingBadge": "Распознаём составы…"
+  "locatingHint": "Удерживайте Tab — ищем таблицу составов",
+  "queryingBadge": "Запрос статистики",
+  "botLabel": "бот",
+  "battlesCount": "{n} боёв",
+  "intelAlly": "Свои",
+  "intelEnemy": "Враги",
+  "intelRadar": "Радар",
+  "intelHydro": "ГАС",
+  "intelSmoke": "Дымы",
+  "intelRange": "макс",
+  "avgWinrate": "Ср. винрейт",
+  "avgPr": "Ср. PR",
+  "avgDmg": "Ср. урон",
+  "colScopeSolo": "соло",
+  "colScopeShip": "корабль",
+  "colScopeClass": "класс"
 }

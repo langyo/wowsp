@@ -1,0 +1,243 @@
+/* The water-table column editor (OverlayColumnsEditor): draggable cards
+   in one auto-splitting row + the plus-connector's add menu. Visual voice
+   follows the stats settings' row pattern (StatsPrefsControls.scss) and
+   hikari's surface tokens; the drag states mirror HkDraggableList.scss —
+   source dims to a dashed placeholder, the drop target wears a 2px inset
+   primary line, the ghost rides fixed under the pointer. */
+
+.overlay-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Cluster header — label left, add connector pinned to the RIGHT end. */
+.overlay-columns__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.overlay-columns__label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: rgb(var(--color-text) / 0.85);
+}
+
+.overlay-columns__count {
+  font-size: var(--text-2xs);
+  font-weight: 400;
+  color: rgb(var(--color-text) / 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The cards row — every card an EQUAL slice of the full width (flex: 1 1
+   0), 1 to 5 of them; the empty hint stretches across the same row. */
+.overlay-columns__row {
+  display: flex;
+  gap: 8px;
+  min-height: 56px;
+  align-items: stretch;
+}
+
+.overlay-columns__card {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 8px 8px;
+  border: 1px solid rgb(var(--color-text) / 0.12);
+  border-radius: 8px;
+  background: rgb(var(--color-text) / 0.04);
+  cursor: grab;
+  touch-action: none;
+  transition:
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 150ms ease,
+    background 150ms ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.overlay-columns__card:hover {
+  border-color: rgb(var(--color-primary) / 0.5);
+}
+
+/* The dragged card's ORIGIN slot — hikari's data-dragging face: dimmed,
+   slightly shrunk, dashed primary outline (a ghost of the card stays
+   visible in place while the pointer carries the clone). */
+.overlay-columns__card[data-dragging] {
+  opacity: 0.35;
+  transform: scale(0.96);
+  border-style: dashed;
+  border-color: rgb(var(--color-primary));
+  background: rgb(var(--color-primary) / 0.04);
+  cursor: grabbing;
+}
+
+/* The drop target's edge line — inset primary, on the edge the dragged
+   card will land against (before = it moves leftward onto this slot,
+   after = rightward), mirroring HkDraggableList's placeholder rule. */
+.overlay-columns__card[data-placeholder="before"] {
+  box-shadow: inset 2px 0 0 0 rgb(var(--color-primary));
+}
+
+.overlay-columns__card[data-placeholder="after"] {
+  box-shadow: inset -2px 0 0 0 rgb(var(--color-primary));
+}
+
+/* While a drag is live the row's hover cue stands down (hikari's
+   data-dragging list rule): hover borders would read as targets. */
+.overlay-columns__row[data-dragging] .overlay-columns__card:hover {
+  border-color: rgb(var(--color-text) / 0.12);
+}
+
+.overlay-columns__card-grip {
+  display: inline-flex;
+  color: rgb(var(--color-text) / 0.4);
+  flex: 0 0 auto;
+}
+
+.overlay-columns__card-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 0;
+}
+
+.overlay-columns__card-metric {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: rgb(var(--color-text) / 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overlay-columns__card-scope {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text) / 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Empty state — the same row, one dashed slab inviting the plus. */
+.overlay-columns__empty {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border: 1px dashed rgb(var(--color-text) / 0.2);
+  border-radius: 8px;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text) / 0.5);
+}
+
+/* The drag GHOST — hikari's list-drag ghost, horizontal edition: the
+   pressed card's clone teleported to <body>, following the pointer via
+   the inline translate3d the tsx writes, translucent over an elevated
+   plate. No transform here: the tsx always writes the full translate3d
+   before the ghost paints — a class transform could never win the
+   cascade against it. Above page chrome but below every popup band, so
+   a drag never buries toasts or open popovers (hikari's --hk-z-drag). */
+.overlay-columns__ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  margin: 0;
+  opacity: 0.85;
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 28%),
+    0 2px 6px rgb(0 0 0 / 18%);
+  border-radius: 8px;
+  background: var(--color-bg-elevated, #161b22);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  z-index: var(--hk-z-drag, 950);
+  will-change: transform;
+
+  > .overlay-columns__card {
+    margin: 0;
+    width: 100%;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* The add menu inside the popover: two labeled segmented groups + the
+   bottom-right confirm. The content inset rides the popover's own
+   `padding` prop (hikari --hk-pad) since 0.55.176. */
+.overlay-columns__menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 300px;
+  max-width: min(92vw, 380px);
+
+  /* HkTabs' scroll wrapper centers its shrink-wrapped strip by default;
+     inside this menu the groups read as a form — pin every strip to the
+     inline start under its label, so both rows share one alignment. */
+  .hk-scroll-container-aligner {
+    margin-inline: 0;
+  }
+}
+
+.overlay-columns__menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.overlay-columns__menu-label {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text) / 0.55);
+}
+
+.overlay-columns__menu-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.overlay-columns__menu-hint {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text) / 0.5);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  /* Phones: the menu's segmented groups scroll horizontally instead of
+     wrapping mid-group (HkTabs segmented keeps one line). */
+  .overlay-columns__menu {
+    min-width: 0;
+    width: min(88vw, 340px);
+  }
+}
+
+/* Reduced motion: the dragging press cue (scale + dim) must snap instead
+   of animating; the ghost itself is pointer-positioned — 1:1 direct
+   manipulation, not autonomous motion — so it is left alone (the same
+   guard HkDraggableList.scss carries). */
+@media (prefers-reduced-motion: reduce) {
+  .overlay-columns__card {
+    transition: border-color 150ms ease, background 150ms ease;
+  }
+}

@@ -4,26 +4,68 @@
  * shell and to a fetch-based shim against the mock backend in the browser.
  *
  * Keep these strings in lock-step with the `#[tauri::command]` functions in
- * `packages/app/tauri/src/commands/`.
+ * `packages/app/tauri/src/commands/` — CI enforces it via
+ * `scripts/check_rpc_parity.py`.
  */
 export const RPC = {
   get_os_preferences: "get_os_preferences",
+  // Debug-build git identity stamp (`branch:hash7`) for the title bar's
+  // version subtitle — "" in release builds.
+  get_build_identity: "get_build_identity",
+  is_portable: "is_portable",
+  app_migrations_pending: "app_migrations_pending",
+  app_migration_completed: "app_migration_completed",
+  quit_app: "quit_app",
+  open_external: "open_external",
   appdata_read: "appdata_read",
   appdata_write: "appdata_write",
   appdata_delete: "appdata_delete",
   is_game_running: "is_game_running",
   get_game_process: "get_game_process",
+  get_game_processes: "get_game_processes",
+  // Playtime ledger (commands/playtime.rs) — the 游玩时间 view's data.
+  playtime_overview: "playtime_overview",
+  // Lists replay-derived battles (one row per .wowsreplay, across every
+  // detected install) for the 游玩时间 view's battle ledger.
+  playtime_battles: "playtime_battles",
+  // Drop the battle ledger's disk cache and rescan from whatever is on
+  // disk right now (the replay-sources manager's rebuild action).
+  playtime_battles_reset: "playtime_battles_reset",
+  // Rust session hub (commands/session.rs) + the tray panel actions.
+  get_session_state: "get_session_state",
+  sync_active_account: "sync_active_account",
+  tray_panel_action: "tray_panel_action",
   detect_game_install: "detect_game_install",
   set_game_path: "set_game_path",
   pick_game_folder: "pick_game_folder",
+  // Extra replay folders pinned by the 游玩时间 view's replay-sources
+  // manager (commands/game_config.rs) — scanned alongside each client's.
+  pick_replay_dir: "pick_replay_dir",
+  add_replay_dir: "add_replay_dir",
+  remove_replay_dir: "remove_replay_dir",
   ribbon_skin_dir: "ribbon_skin_dir",
   read_replay_header: "read_replay_header",
   read_replay_positions: "read_replay_positions",
+  read_live_replay_snapshot: "read_live_replay_snapshot",
+  live_temp_replay: "live_temp_replay",
   list_replays: "list_replays",
   list_replays_meta: "list_replays_meta",
+  list_game_maps: "list_game_maps",
   pick_replay_files: "pick_replay_files",
   pick_export_path: "pick_export_path",
   write_export_bytes: "write_export_bytes",
+  // Plan-profile archive (commands/tactics_profile.rs): the tactics page's
+  // shareable 档案 — a zip of profile.toml + per-branch plan JSON.
+  tactics_profile_save: "tactics_profile_save",
+  tactics_profile_open: "tactics_profile_open",
+  // Per-(map, scenario) capture layouts learned from the local replay
+  // history (commands/replay/cap_layouts.rs) — the map wizard's measured
+  // layouts.
+  get_map_cap_layouts: "get_map_cap_layouts",
+  // One explicitly picked replay's capture layout (the cap editor's manual
+  // import path).
+  get_replay_cap_layout: "get_replay_cap_layout",
+  copy_image_to_clipboard: "copy_image_to_clipboard",
   read_temp_arena_info: "read_temp_arena_info",
   start_arena_watcher: "start_arena_watcher",
   stop_arena_watcher: "stop_arena_watcher",
@@ -37,8 +79,11 @@ export const RPC = {
   cancel_manual_locate: "cancel_manual_locate",
   set_manual_roster_rect: "set_manual_roster_rect",
   clear_manual_roster_rect: "clear_manual_roster_rect",
+  manual_locate_context: "manual_locate_context",
   lookup_player_stats: "lookup_player_stats",
   lookup_players_stats_batch: "lookup_players_stats_batch",
+  clear_roster_stats_cache: "clear_roster_stats_cache",
+  lookup_players_composition: "lookup_players_composition",
   suggest_players: "suggest_players",
   suggest_clans: "suggest_clans",
   lookup_clan_info: "lookup_clan_info",
@@ -46,6 +91,7 @@ export const RPC = {
   get_ship_encyclopedia: "get_ship_encyclopedia",
   lookup_player_ship_stats: "lookup_player_ship_stats",
   read_ship_stats_history: "read_ship_stats_history",
+  upstream_health: "upstream_health",
   snapshot_player_stats: "snapshot_player_stats",
   get_ship_gameparams: "get_ship_gameparams",
   get_upgrade_prices: "get_upgrade_prices",
@@ -53,35 +99,120 @@ export const RPC = {
   get_patches: "get_patches",
   get_community_ship_trend: "get_community_ship_trend",
   get_ship_server_stats: "get_ship_server_stats",
+  get_expected_pr_table: "get_expected_pr_table",
   capture_main_window: "capture_main_window",
   install_overlay_mod: "install_overlay_mod",
   uninstall_overlay_mod: "uninstall_overlay_mod",
   is_overlay_mod_installed: "is_overlay_mod_installed",
   get_ranked_stats: "get_ranked_stats",
-  ensure_model_pack: "ensure_model_pack",
-  ensure_dogtag_pack: "ensure_dogtag_pack",
-  get_pack_status: "get_pack_status",
-  check_pack_updates: "check_pack_updates",
-  pack_download: "pack_download",
-  pack_cancel: "pack_cancel",
-  clear_pack: "clear_pack",
+  data_pack_info: "data_pack_info",
+  get_ship_kit: "get_ship_kit",
+  refresh_data_pack: "refresh_data_pack",
+  ensure_res_pack: "ensure_res_pack",
+  res_cache_root: "res_cache_root",
+  res_report_bundled: "res_report_bundled",
+  get_res_status: "get_res_status",
+  check_res_update: "check_res_update",
+  res_download: "res_download",
+  res_cancel: "res_cancel",
+  clear_res: "clear_res",
   aux_cache_overview: "aux_cache_overview",
   clear_aux_cache: "clear_aux_cache",
   get_network_config: "get_network_config",
   set_network_config: "set_network_config",
+  get_overlay_config: "get_overlay_config",
+  set_overlay_config: "set_overlay_config",
+  ingame_bridge_start: "ingame_bridge_start",
+  ingame_bridge_stop: "ingame_bridge_stop",
+  ingame_plugin_status: "ingame_plugin_status",
+  ingame_plugin_install: "ingame_plugin_install",
+  ingame_plugin_uninstall: "ingame_plugin_uninstall",
+  get_game_config: "get_game_config",
+  set_game_config: "set_game_config",
   update_check: "update_check",
   update_download: "update_download",
   update_cancel: "update_cancel",
+  changelog_list: "changelog_list",
+  logs_overview: "logs_overview",
+  logs_reveal_latest: "logs_reveal_latest",
+  logs_read_tail: "logs_read_tail",
+  logs_export_bundle: "logs_export_bundle",
   mod_hub_scan_installed: "mod_hub_scan_installed",
+  mod_hub_foreign_units: "mod_hub_foreign_units",
+  mod_hub_list_assets: "mod_hub_list_assets",
+  mod_hub_read_asset: "mod_hub_read_asset",
+  mod_hub_read_model: "mod_hub_read_model",
   mod_hub_classify_path: "mod_hub_classify_path",
   mod_hub_install: "mod_hub_install",
   mod_hub_set_unit_enabled: "mod_hub_set_unit_enabled",
   mod_hub_uninstall_unit: "mod_hub_uninstall_unit",
+  mod_hub_uninstall_modstation_unit: "mod_hub_uninstall_modstation_unit",
+  mod_hub_stale_versions: "mod_hub_stale_versions",
+  mod_hub_pnf_loader_status: "mod_hub_pnf_loader_status",
+  mod_hub_restore_pnf_loader_marker: "mod_hub_restore_pnf_loader_marker",
+  mod_hub_migrate_stale_bin: "mod_hub_migrate_stale_bin",
+  mod_hub_migration_plan: "mod_hub_migration_plan",
+  mod_hub_migration_execute: "mod_hub_migration_execute",
+  mod_hub_safe_mode: "mod_hub_safe_mode",
+  mod_hub_set_safe_mode: "mod_hub_set_safe_mode",
+  mod_hub_reconcile: "mod_hub_reconcile",
+  mod_tags: "mod_tags",
   mod_catalog_refresh: "mod_catalog_refresh",
   mod_catalog_install: "mod_catalog_install",
+  mod_catalog_preview_files: "mod_catalog_preview_files",
+  mod_hub_reveal_path: "mod_hub_reveal_path",
   mod_catalog_uninstall: "mod_catalog_uninstall",
   mod_hub_records: "mod_hub_records",
+
+  wallpaper_list: "wallpaper_list",
+  wallpaper_import: "wallpaper_import",
+  wallpaper_remove: "wallpaper_remove",
+  stamp_list: "stamp_list",
+  get_supporter_avatars: "get_supporter_avatars",
+  stamp_import_bytes: "stamp_import_bytes",
+  stamp_reset: "stamp_reset",
+  installer_language: "installer_language",
+  // ── Mobile replay acquisition + desktop pairing (Rust handlers in
+  //    commands/pairing.rs; the web transport mocks them for browser dev) ──
+  import_replay_file: "import_replay_file",
+  pairing_start: "pairing_start",
+  pairing_stop: "pairing_stop",
+  pairing_get_status: "pairing_get_status",
+  pairing_pair: "pairing_pair",
+  pairing_list_remote: "pairing_list_remote",
+  pairing_pull_replay: "pairing_pull_replay",
+  pairing_pull_gamedata: "pairing_pull_gamedata",
+  // LAN auto-discovery (phone listener; see commands/pairing_discovery.rs).
+  pairing_discovery_start: "pairing_discovery_start",
+  pairing_discovery_stop: "pairing_discovery_stop",
+  // Internet relay configuration (hidden setting — see
+  // commands/pairing_relay/) + pairing-code regeneration.
+  pairing_get_relay_config: "pairing_get_relay_config",
+  pairing_set_relay: "pairing_set_relay",
+  pairing_reallocate_code: "pairing_reallocate_code",
+  // ── Replay share (录像共享计划) — commands/contribution/ (see
+  //    CONTRACT-replay-share.md §9): local identity/consent state, the
+  //    wanted-ruleset cache, the wizard planner and the single-flight
+  //    upload pipeline. ──
+  contribution_state: "contribution_state",
+  contribution_set_identity: "contribution_set_identity",
+  contribution_save_consent: "contribution_save_consent",
+  contribution_forget_identity: "contribution_forget_identity",
+  contribution_fetch_wanted: "contribution_fetch_wanted",
+  contribution_sync_mine: "contribution_sync_mine",
+  contribution_plan: "contribution_plan",
+  contribution_start: "contribution_start",
+  contribution_cancel: "contribution_cancel",
+  contribution_queue: "contribution_queue",
+  // ── Decision-AI experiment commands (G4; the webui surface starts with
+  //    the fire-suggestion layer — the rest serve scripts/tests for now). ──
   decision_fire_suggestions: "decision_fire_suggestions",
+  decision_ai_status: "decision_ai_status",
+  decision_ai_suggest: "decision_ai_suggest",
+  decision_scale_calibration: "decision_scale_calibration",
+  decision_tick_state: "decision_tick_state",
+  replay_visibility_probe: "replay_visibility_probe",
+  read_replay_smoke_screens: "read_replay_smoke_screens",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

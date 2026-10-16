@@ -1,0 +1,12 @@
+{
+  "copyShot": "Copy share shot",
+  "copyShotDone": "Share shot copied to clipboard",
+  "copyShotFailed": "Copy failed",
+  "shotTagline": "World of Warships battle analysis",
+  "shotDisclaimer1": "For reference only — not a measure of long-term skill. Please discuss kindly.",
+  "shotDisclaimer2": "This software is free and open source — never pay anyone for it.",
+  "shotQqGroup": "QQ Group: {n}",
+  "topShips": "Most played ships",
+  "moreShips": "+{n} more ships",
+  "moreMembers": "+{n} more members"
+}

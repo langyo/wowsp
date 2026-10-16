@@ -27,7 +27,10 @@ def _ver(cmd: str) -> str | None:
     exe = shutil.which(cmd)
     if exe:
         try:
-            out = subprocess.run([cmd, "--version"], capture_output=True, text=True, timeout=5)
+            out = subprocess.run(
+                [cmd, "--version"], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=5,
+            )
             if out.returncode == 0:
                 return (out.stdout or out.stderr).strip().splitlines()[0]
         except Exception:
@@ -38,7 +41,7 @@ def _ver(cmd: str) -> str | None:
         out = subprocess.run(
             f'"{cmd}" --version',
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=5,
             shell=True,
         )

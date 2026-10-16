@@ -1,0 +1,71 @@
+/**
+ * Live self-stats panel (我的战绩) — the .live-self panel-shell additions
+ * on top of the shared .live-battle shell (LiveBattlePanel.scss, imported
+ * by the component too, supplies the head/pill/button vocabulary). The
+ * report body's own classes live in SelfReportBody.scss (shared with the
+ * replay results modal's self view); what remains here is the body's
+ * hikari scroll region, the sync pill and the pending states.
+ */
+.live-self {
+  /* The scrollable body under the pinned head: the hikari container owns
+     the scrollbar (auto-hiding overlay track over the body's right edge);
+     the shell keeps overflow hidden and the head flex-shrink:0, and the
+     report's stacking rhythm rides on the inner wrapper. */
+  &__body {
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__body__inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0 1.5rem 1rem 0;
+  }
+
+  /* Snapshot-sync pill (同步至 M:SS): the neutral voice of the clock chip. */
+  &__sync {
+    border-color: rgb(var(--color-text) / 22%);
+    background: rgb(var(--color-text) / 8%);
+    color: rgb(var(--color-text) / 80%);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Battle on, stream not readable yet — the radar-scope interim state. */
+  &__pending {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    text-align: center;
+    gap: 0.2rem;
+  }
+
+  &__pending-art {
+    width: 72px;
+    height: 72px;
+    margin-bottom: 0.4rem;
+  }
+
+  &__pending-title {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  &__pending-hint {
+    margin: 0;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    line-height: 1.6;
+  }
+
+  &__pending-err {
+    margin: 0.4rem 0 0;
+    max-width: 46ch;
+    color: rgb(var(--color-error) / 85%);
+    font-size: var(--text-2xs);
+    word-break: break-all;
+  }
+}

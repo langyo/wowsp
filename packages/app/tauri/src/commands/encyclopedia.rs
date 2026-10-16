@@ -8,24 +8,45 @@
 //! one big fetch on first use and then serves from disk until the game
 //! patches. Version detection drives cache invalidation AND trend bucketing.
 
-use std::fs;
-
+use anyhow::anyhow;
 use serde::Deserialize;
-use wowsp_tauri_shared::{GameVersionInfo, ShipInfo};
+use wowsp_tauri_shared::{CommandResult, GameVersionInfo, ShipInfo};
+
+use super::appdata::{read_appdata_json, write_appdata_json};
 
 const INFO_CACHE: &str = "encyclopedia/info.json";
 
+/// Hard ceiling on the parallel page fan-out below. `page_total` is REMOTE
+/// data and the spawn loop trusts it blindly: a degraded/broken mirror
+/// answering a garbage (or hostile) meta would otherwise spawn one do-nothing
+/// task per phantom page in a single burst and take the whole process down —
+/// an allocation-failure abort kills the app outright with no panic and no
+/// log line. Real fleets stay around ~1100 ships ≈ 11 pages at the
+/// endpoint's 100/page limit, so 64 leaves wide headroom before a meta is
+/// declared implausible and the refresh fails into its cache fallback.
+const ENCYCLOPEDIA_MAX_PAGES: i64 = 64;
+
+/// Reject a page_total the fan-out must never act on. Pure — unit-tested.
+fn validate_page_total(page_total: i64) -> anyhow::Result<()> {
+    if page_total > ENCYCLOPEDIA_MAX_PAGES {
+        return Err(anyhow!(
+            "encyclopedia/ships: implausible page_total {page_total} (limit {ENCYCLOPEDIA_MAX_PAGES}) — upstream pathology, refusing the page fan-out"
+        ));
+    }
+    Ok(())
+}
+
 /// Fetch (and cache) the current WG game version + total ship count.
 #[tauri::command]
-pub async fn get_game_version() -> Result<GameVersionInfo, String> {
-    get_game_version_pub().await
+pub async fn get_game_version() -> CommandResult<GameVersionInfo> {
+    Ok(get_game_version_pub().await?)
 }
 
 /// Non-#[tauri::command] entry point so sibling modules (ship_stats) can call
 /// the version fetch without going through the command dispatcher.
-pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
+pub async fn get_game_version_pub() -> anyhow::Result<GameVersionInfo> {
     // Cache hit?
-    if let Ok(Some(raw)) = appdata_read(INFO_CACHE.into()) {
+    if let Ok(Some(raw)) = read_appdata_json(INFO_CACHE) {
         if let Ok(info) = serde_json::from_str::<GameVersionInfo>(&raw) {
             return Ok(info);
         }
@@ -37,16 +58,18 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
     let url = format!(
         "https://api.worldofwarships.asia/wows/encyclopedia/info/?application_id={app_id}&language=en"
     );
-    let resp: WgResponse<serde_json::Value> = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("encyclopedia/info request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("encyclopedia/info parse: {e}"))?;
+    let resp: WgResponse<serde_json::Value> = super::upstream_health::recorded_get(
+        &client,
+        "api.worldofwarships.asia",
+        "encyclopedia/info",
+        url,
+    )
+    .await?
+    .json()
+    .await
+    .map_err(|e| anyhow!("encyclopedia/info parse: {e}"))?;
     if resp.status != "ok" {
-        return Err(format!(
+        return Err(anyhow!(
             "encyclopedia/info: {}",
             resp.error.message.unwrap_or_default()
         ));
@@ -67,9 +90,9 @@ pub async fn get_game_version_pub() -> Result<GameVersionInfo, String> {
         timestamp: now_ts(),
     };
     // Persist (best-effort).
-    let _ = appdata_write(
-        INFO_CACHE.into(),
-        serde_json::to_string(&info).unwrap_or_default(),
+    let _ = write_appdata_json(
+        INFO_CACHE,
+        &serde_json::to_string(&info).unwrap_or_default(),
     );
     Ok(info)
 }
@@ -88,7 +111,7 @@ pub async fn get_ship_encyclopedia(
     realm: String,
     force_refresh: bool,
     language: Option<String>,
-) -> Result<Vec<ShipInfo>, String> {
+) -> CommandResult<Vec<ShipInfo>> {
     let version = get_game_version().await?.game_version;
     let (compound, wg_lang) = resolve_encyclopedia_language(&realm, language);
     // Schema version: bump when the cached ShipInfo shape changes (e.g. adding
@@ -98,7 +121,7 @@ pub async fn get_ship_encyclopedia(
     let cache_file = format!("encyclopedia/ships-{version}-{compound}-s{CACHE_SCHEMA}.json");
 
     if !force_refresh {
-        if let Ok(Some(raw)) = appdata_read(cache_file.clone()) {
+        if let Ok(Some(raw)) = read_appdata_json(&cache_file) {
             if let Ok(cached) = serde_json::from_str::<CachedShips>(&raw) {
                 if cached.game_version == version {
                     return Ok(cached.ships);
@@ -119,19 +142,18 @@ pub async fn get_ship_encyclopedia(
 
     // Fetch page 1 first to get page_total, then fetch remaining pages in parallel.
     let page1_url = format!("{base_url}&page_no=1");
-    let page1_resp: WgResponse<serde_json::Map<String, serde_json::Value>> = client
-        .get(&page1_url)
-        .send()
-        .await
-        .map_err(|e| format!("encyclopedia/ships page 1 request: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("encyclopedia/ships page 1 parse: {e}"))?;
+    let page1_resp: WgResponse<serde_json::Map<String, serde_json::Value>> =
+        super::upstream_health::recorded_get(&client, host, "encyclopedia/ships page 1", page1_url)
+            .await?
+            .json()
+            .await
+            .map_err(|e| anyhow!("encyclopedia/ships page 1 parse: {e}"))?;
     if page1_resp.status != "ok" {
-        return Err(format!(
+        return Err(anyhow!(
             "encyclopedia/ships: {}",
             page1_resp.error.message.unwrap_or_default()
-        ));
+        )
+        .into());
     }
     let page_total = page1_resp
         .meta
@@ -139,6 +161,7 @@ pub async fn get_ship_encyclopedia(
         .and_then(|m| m.get("page_total"))
         .and_then(|v| v.as_i64())
         .unwrap_or(1);
+    validate_page_total(page_total)?;
 
     // Spawn concurrent requests for pages 2..page_total.
     let mut handles = Vec::new();
@@ -146,8 +169,12 @@ pub async fn get_ship_encyclopedia(
         let url = format!("{base_url}&page_no={pn}");
         let c = client.clone();
         handles.push(tokio::spawn(async move {
-            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> =
-                c.get(&url).send().await?.json().await?;
+            // Driven by hand (not recorded_get) so the raw reqwest::Error
+            // flows into this anyhow context exactly as it did before the
+            // health registry existed — only the outcome is recorded.
+            let sent = c.get(&url).send().await;
+            super::upstream_health::record_response(host, &sent);
+            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = sent?.json().await?;
             if resp.status != "ok" {
                 anyhow::bail!("{}", resp.error.message.unwrap_or_default());
             }
@@ -162,8 +189,8 @@ pub async fn get_ship_encyclopedia(
     for h in handles {
         match h.await {
             Ok(Ok((pn, data))) => page_data.push((pn, data)),
-            Ok(Err(e)) => return Err(format!("encyclopedia/ships page fetch: {e}")),
-            Err(e) => return Err(format!("encyclopedia/ships task panic: {e}")),
+            Ok(Err(e)) => return Err(anyhow!("encyclopedia/ships page fetch: {e}").into()),
+            Err(e) => return Err(anyhow!("encyclopedia/ships task panic: {e}").into()),
         }
     }
     page_data.sort_by_key(|(pn, _)| *pn);
@@ -184,19 +211,19 @@ pub async fn get_ship_encyclopedia(
         timestamp: now_ts(),
         ships: all.clone(),
     };
-    let _ = appdata_write(
-        cache_file,
-        serde_json::to_string(&cached).unwrap_or_default(),
+    let _ = write_appdata_json(
+        &cache_file,
+        &serde_json::to_string(&cached).unwrap_or_default(),
     );
     Ok(all)
 }
 
-fn parse_ship(value: &serde_json::Value, version: &str) -> Result<ShipInfo, String> {
+fn parse_ship(value: &serde_json::Value, version: &str) -> anyhow::Result<ShipInfo> {
     Ok(ShipInfo {
         ship_id: value
             .get("ship_id")
             .and_then(|v| v.as_i64())
-            .ok_or("missing ship_id")?,
+            .ok_or_else(|| anyhow!("missing ship_id"))?,
         name: value
             .get("name")
             .and_then(|v| v.as_str())
@@ -276,7 +303,7 @@ fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> 
 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
 
-fn wg_client() -> Result<reqwest::Client, String> {
+fn wg_client() -> anyhow::Result<reqwest::Client> {
     crate::commands::network::build_http_client()
 }
 
@@ -285,34 +312,6 @@ fn now_ts() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
-}
-
-// Reuse the appdata persistence (same logic as appdata.rs commands, but called
-// internally — we can't call the #[tauri::command] fn directly without the
-// invoke glue, so we read/write the same paths).
-fn appdata_dir() -> Result<std::path::PathBuf, String> {
-    crate::paths::ensure_data_dir()
-}
-
-fn appdata_read(file: String) -> Result<Option<String>, String> {
-    let path = appdata_dir()?.join(&file);
-    match fs::read_to_string(&path) {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("read {path:?}: {e}")),
-    }
-}
-
-fn appdata_write(file: String, content: String) -> Result<(), String> {
-    let dir = appdata_dir()?;
-    let path = dir.join(&file);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create {parent:?}: {e}"))?;
-    }
-    let tmp = dir.join(format!("{file}.tmp"));
-    fs::write(&tmp, &content).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    fs::rename(&tmp, &path).map_err(|e| format!("rename {tmp:?} → {path:?}: {e}"))?;
-    Ok(())
 }
 
 // ── WG response envelope ────────────────────────────────────────────────
@@ -440,5 +439,27 @@ mod tests {
         let (compound3, _) = resolve_encyclopedia_language("asia", Some("zh-tw".into()));
         let cache3 = format!("encyclopedia/ships-{v}-{compound3}-s{SCHEMA}.json");
         assert_eq!(cache3, "encyclopedia/ships-15.5.0-zh-tw-asia-s2.json");
+    }
+
+    #[test]
+    fn page_total_validation_caps_the_fan_out() {
+        // Real fleets: single page up to the current ~11-page shipopedia.
+        for total in [1, 10, 11, ENCYCLOPEDIA_MAX_PAGES] {
+            assert!(validate_page_total(total).is_ok(), "{total} must pass");
+        }
+        // A zero/negative meta yields an empty fan-out (page 1 still serves)
+        // — tolerated, same as before the guard.
+        for total in [0, -5] {
+            assert!(validate_page_total(total).is_ok(), "{total} must pass");
+        }
+        // Anything beyond the ceiling is declared implausible: the spawn
+        // bomb guard must fail the refresh, not spawn the tasks.
+        for total in [ENCYCLOPEDIA_MAX_PAGES + 1, 1000, 1_000_000, i64::MAX] {
+            let err = validate_page_total(total).expect_err("{total} must fail");
+            assert!(
+                err.to_string().contains("page_total"),
+                "error names the field: {err}"
+            );
+        }
     }
 }

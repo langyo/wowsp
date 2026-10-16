@@ -19,10 +19,13 @@
 //! serialized. Fine for an E1 shell; a real model will shard per-thread
 //! sessions or batch requests.
 
+use anyhow::{anyhow, bail};
 use std::sync::{Mutex, OnceLock};
 
 use ort::{session::Session, value::Tensor};
-use wowsp_tauri_shared::{DecisionAiStatus, DecisionDummyState, DecisionDummySuggestion};
+use wowsp_tauri_shared::{
+    CommandResult, DecisionAiStatus, DecisionDummyState, DecisionDummySuggestion,
+};
 
 /// The `ort` crate pin from the root Cargo.toml. Dependency versions are not
 /// exposed through `env!` at compile time and ort publishes no public
@@ -41,25 +44,25 @@ pub(crate) const FIXTURE_MODEL: &[u8] = include_bytes!("fixtures/decision_ai_tin
 /// 8 fields of [`DecisionDummyState`].
 const STATE_DIM: usize = 8;
 
-static FIXTURE_SESSION: OnceLock<Result<Mutex<Session>, String>> = OnceLock::new();
+static FIXTURE_SESSION: OnceLock<anyhow::Result<Mutex<Session>>> = OnceLock::new();
 
 /// Build a session from raw ONNX bytes. Isolated so tests can spin up their
 /// own session instead of going through the process-global fixture.
 /// (`commit_from_memory` — this ort RC renamed the rc.9-era
 /// `commit_from_bytes`.)
-fn session_from_bytes(bytes: &[u8]) -> Result<Session, String> {
-    let mut builder = Session::builder().map_err(|e| format!("create session builder: {e}"))?;
+fn session_from_bytes(bytes: &[u8]) -> anyhow::Result<Session> {
+    let mut builder = Session::builder().map_err(|e| anyhow!("create session builder: {e}"))?;
     builder
         .commit_from_memory(bytes)
-        .map_err(|e| format!("load ONNX model: {e}"))
+        .map_err(|e| anyhow!("load ONNX model: {e}"))
 }
 
 /// The process-global fixture session, created on first use.
-fn fixture_session() -> Result<&'static Mutex<Session>, String> {
+fn fixture_session() -> anyhow::Result<&'static Mutex<Session>> {
     FIXTURE_SESSION
         .get_or_init(|| session_from_bytes(FIXTURE_MODEL).map(Mutex::new))
         .as_ref()
-        .map_err(Clone::clone)
+        .map_err(|e| anyhow!("{e}"))
 }
 
 /// Flatten the dummy state into the model's input row, in
@@ -79,24 +82,24 @@ fn state_to_input(state: &DecisionDummyState) -> [f32; STATE_DIM] {
 
 /// Run one forward pass of `session` and return the flat output row.
 /// Shape-checked: the fixture must answer float32[1, STATE_DIM].
-fn forward(session: &mut Session, input: &[f32; STATE_DIM]) -> Result<[f32; STATE_DIM], String> {
+fn forward(session: &mut Session, input: &[f32; STATE_DIM]) -> anyhow::Result<[f32; STATE_DIM]> {
     let tensor = Tensor::from_array(([1usize, STATE_DIM], input.to_vec()))
-        .map_err(|e| format!("build input tensor: {e}"))?;
+        .map_err(|e| anyhow!("build input tensor: {e}"))?;
     let outputs = session
         .run(ort::inputs!["x" => tensor])
-        .map_err(|e| format!("run inference: {e}"))?;
+        .map_err(|e| anyhow!("run inference: {e}"))?;
     let view = outputs["y"]
         .try_extract_array::<f32>()
-        .map_err(|e| format!("extract output: {e}"))?;
+        .map_err(|e| anyhow!("extract output: {e}"))?;
     if view.shape() != [1, STATE_DIM].as_slice() {
-        return Err(format!(
+        bail!(
             "unexpected output shape {:?}, expected [1, {STATE_DIM}]",
             view.shape()
-        ));
+        );
     }
     let flat: Vec<f32> = view.iter().copied().collect();
     flat.try_into()
-        .map_err(|v: Vec<f32>| format!("expected {STATE_DIM} outputs, got {}", v.len()))
+        .map_err(|v: Vec<f32>| anyhow!("expected {STATE_DIM} outputs, got {}", v.len()))
 }
 
 // ── G4: session-source ladder + metadata-driven schema ─────────────────────
@@ -165,7 +168,7 @@ impl DecisionModel {
         source: DecisionModelSource,
         detail: impl Into<String>,
         bytes: &[u8],
-    ) -> Result<Self, String> {
+    ) -> anyhow::Result<Self> {
         let session = session_from_bytes(bytes)?;
         let kind = detect_kind(&session)?;
         Ok(Self {
@@ -184,9 +187,9 @@ impl DecisionModel {
     /// A load ERROR is sticky the same way: a corrupt pack model disables
     /// suggestions (with the error surfaced) until restart rather than
     /// silently falling back to the fixture.
-    pub fn load_pack_or_fixture() -> Result<Self, String> {
+    pub fn load_pack_or_fixture() -> anyhow::Result<Self> {
         let pack_path = crate::paths::cache_dir()
-            .map_err(|e| format!("resolve cache dir: {e}"))?
+            .map_err(|e| anyhow!("resolve cache dir: {e}"))?
             .join("decisions")
             .join("fire_model.onnx");
         match std::fs::read(&pack_path) {
@@ -206,7 +209,7 @@ impl DecisionModel {
                     FIXTURE_MODEL,
                 )
             },
-            Err(e) => Err(format!("read {}: {e}", pack_path.to_string_lossy())),
+            Err(e) => Err(anyhow!("read {}: {e}", pack_path.to_string_lossy())),
         }
     }
 
@@ -224,7 +227,7 @@ impl DecisionModel {
     }
 
     /// E1 fixture inference: one [1,8] row in, one [1,8] row out.
-    pub fn infer_fixture(&mut self, input: &[f32; STATE_DIM]) -> Result<[f32; STATE_DIM], String> {
+    pub fn infer_fixture(&mut self, input: &[f32; STATE_DIM]) -> anyhow::Result<[f32; STATE_DIM]> {
         forward(&mut self.session, input)
     }
 
@@ -236,17 +239,17 @@ impl DecisionModel {
         entity: &[f32],
         global: &[f32],
         mask: &[f32],
-    ) -> Result<(f32, f32), String> {
+    ) -> anyhow::Result<(f32, f32)> {
         let DecisionModelKind::Fire24 {
             slots,
             entity_dim,
             global_dim,
         } = self.kind
         else {
-            return Err("infer_fire on a non-fire-schema session".into());
+            bail!("infer_fire on a non-fire-schema session");
         };
         if entity.len() != slots * entity_dim || global.len() != global_dim || mask.len() != slots {
-            return Err(format!(
+            bail!(
                 "feature width mismatch: entity {} (want {}), global {} (want {}), mask {} (want {})",
                 entity.len(),
                 slots * entity_dim,
@@ -254,14 +257,14 @@ impl DecisionModel {
                 global_dim,
                 mask.len(),
                 slots
-            ));
+            );
         }
         let entity_t = Tensor::from_array(([1usize, slots, entity_dim], entity.to_vec()))
-            .map_err(|e| format!("build entity tensor: {e}"))?;
+            .map_err(|e| anyhow!("build entity tensor: {e}"))?;
         let global_t = Tensor::from_array(([1usize, global_dim], global.to_vec()))
-            .map_err(|e| format!("build global tensor: {e}"))?;
+            .map_err(|e| anyhow!("build global tensor: {e}"))?;
         let mask_t = Tensor::from_array(([1usize, slots], mask.to_vec()))
-            .map_err(|e| format!("build mask tensor: {e}"))?;
+            .map_err(|e| anyhow!("build mask tensor: {e}"))?;
         let outputs = self
             .session
             .run(ort::inputs![
@@ -269,25 +272,25 @@ impl DecisionModel {
                 "global_feat" => global_t,
                 "mask" => mask_t,
             ])
-            .map_err(|e| format!("run inference: {e}"))?;
+            .map_err(|e| anyhow!("run inference: {e}"))?;
         let mut logits = [0.0f32; 2];
         for (idx, name) in ["logitA", "logitB"].iter().enumerate() {
             let v = outputs
                 .get(name)
-                .ok_or_else(|| format!("output '{name}' missing"))?;
+                .ok_or_else(|| anyhow!("output '{name}' missing"))?;
             let view = v
                 .try_extract_array::<f32>()
-                .map_err(|e| format!("extract {name}: {e}"))?;
+                .map_err(|e| anyhow!("extract {name}: {e}"))?;
             let flat: Vec<f32> = view.iter().copied().collect();
             // The exported heads squeeze to [1]; accept [1] or [1,1]. A bad
             // pack model must error, never panic (a panic here would poison
             // the shared session mutex for the rest of the process).
             if flat.len() != 1 {
-                return Err(format!(
+                bail!(
                     "output {name} has {} values, expected 1 (shape {:?})",
                     flat.len(),
                     view.shape()
-                ));
+                );
             }
             logits[idx] = flat[0];
         }
@@ -306,7 +309,7 @@ fn declared_dim(shape: &[i64], idx: usize, default: usize) -> usize {
 
 /// Classify a live session by its input/output metadata. Unknown schemas are
 /// a hard error (better than running a wrong-shaped forward).
-fn detect_kind(session: &Session) -> Result<DecisionModelKind, String> {
+fn detect_kind(session: &Session) -> anyhow::Result<DecisionModelKind> {
     let inputs = session.inputs();
     let names: Vec<&str> = inputs.iter().map(|i| i.name()).collect();
     let describe = || -> String {
@@ -333,9 +336,7 @@ fn detect_kind(session: &Session) -> Result<DecisionModelKind, String> {
         };
         let outputs: Vec<&str> = session.outputs().iter().map(|o| o.name()).collect();
         if !outputs.contains(&"logitA") || !outputs.contains(&"logitB") {
-            return Err(format!(
-                "fire model is missing its logitA/logitB heads (outputs: {outputs:?})"
-            ));
+            bail!("fire model is missing its logitA/logitB heads (outputs: {outputs:?})");
         }
         return Ok(kind);
     }
@@ -349,26 +350,21 @@ fn detect_kind(session: &Session) -> Result<DecisionModelKind, String> {
         if width == STATE_DIM {
             return Ok(DecisionModelKind::Fixture8);
         }
-        return Err(format!(
-            "fixture-like input x has width {width}, expected {STATE_DIM}"
-        ));
+        bail!("fixture-like input x has width {width}, expected {STATE_DIM}");
     }
-    Err(format!(
-        "unsupported decision model schema: [{}]",
-        describe()
-    ))
+    bail!("unsupported decision model schema: [{}]", describe())
 }
 
 /// The process-global shared model (pack → fixture ladder), created on first
 /// use. Tests build their own sessions instead of touching this cache.
-static SHARED_MODEL: OnceLock<Result<Mutex<DecisionModel>, String>> = OnceLock::new();
+static SHARED_MODEL: OnceLock<anyhow::Result<Mutex<DecisionModel>>> = OnceLock::new();
 
 /// The shared [`DecisionModel`] behind the standard ladder.
-pub fn shared_model() -> Result<&'static Mutex<DecisionModel>, String> {
+pub fn shared_model() -> anyhow::Result<&'static Mutex<DecisionModel>> {
     SHARED_MODEL
         .get_or_init(|| DecisionModel::load_pack_or_fixture().map(Mutex::new))
         .as_ref()
-        .map_err(Clone::clone)
+        .map_err(|e| anyhow!("{e}"))
 }
 
 /// Index of the largest element (first one on ties — deterministic).
@@ -398,7 +394,7 @@ fn map_logits(y: &[f32; STATE_DIM]) -> DecisionDummySuggestion {
 /// Decision-AI runtime status: `ort` crate version, native ONNX Runtime
 /// build info, and whether the embedded fixture loaded into a live session.
 #[tauri::command]
-pub fn decision_ai_status() -> Result<DecisionAiStatus, String> {
+pub fn decision_ai_status() -> CommandResult<DecisionAiStatus> {
     Ok(DecisionAiStatus {
         ort_version: ORT_CRATE_VERSION.to_string(),
         runtime_info: ort::info().to_string(),
@@ -409,12 +405,12 @@ pub fn decision_ai_status() -> Result<DecisionAiStatus, String> {
 /// One forward pass of the fixture model over a dummy battle state — the
 /// end-to-end E1 chain: embedded bytes → session → inference → suggestion.
 #[tauri::command]
-pub fn decision_ai_suggest(state: DecisionDummyState) -> Result<DecisionDummySuggestion, String> {
+pub fn decision_ai_suggest(state: DecisionDummyState) -> CommandResult<DecisionDummySuggestion> {
     let input = state_to_input(&state);
     let session = fixture_session()?;
     let mut session = session
         .lock()
-        .map_err(|_| "fixture session mutex poisoned")?;
+        .map_err(|_| anyhow!("fixture session mutex poisoned"))?;
     let y = forward(&mut session, &input)?;
     Ok(map_logits(&y))
 }
@@ -620,68 +616,63 @@ mod tests {
     fn e9_run_real_model(
         model_path: &std::path::Path,
         sample_path: &std::path::Path,
-    ) -> Result<(f32, f32, u128, u128), String> {
-        let bytes = std::fs::read(model_path).map_err(|e| format!("read model: {e}"))?;
+    ) -> anyhow::Result<(f32, f32, u128, u128)> {
+        let bytes = std::fs::read(model_path).map_err(|e| anyhow!("read model: {e}"))?;
         let mut session = session_from_bytes(&bytes)?;
         let sample: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(sample_path).map_err(|e| {
-                format!(
+                anyhow!(
                     "read {} (regenerate via train_fire_model.py): {e}",
                     sample_path.display()
                 )
             })?)
-            .map_err(|e| format!("parse sample_input.json: {e}"))?;
-        let nums = |key: &str, want: usize| -> Result<Vec<f32>, String> {
+            .map_err(|e| anyhow!("parse sample_input.json: {e}"))?;
+        let nums = |key: &str, want: usize| -> anyhow::Result<Vec<f32>> {
             serde_json::from_value::<Vec<f32>>(sample[key].clone())
-                .map_err(|e| format!("parse sample '{key}' as f32 array: {e}"))
+                .map_err(|e| anyhow!("parse sample '{key}' as f32 array: {e}"))
                 .and_then(|v| {
                     if v.len() == want {
                         Ok(v)
                     } else {
-                        Err(format!(
-                            "sample '{key}' has {} entries, expected {want}",
-                            v.len()
-                        ))
+                        bail!("sample '{key}' has {} entries, expected {want}", v.len())
                     }
                 })
         };
         // entity is serialized nested [SLOTS][ENTITY_DIM] (self-documenting);
         // global/mask are flat.
         let entity: Vec<f32> = serde_json::from_value::<Vec<Vec<f32>>>(sample["entity"].clone())
-            .map_err(|e| format!("parse sample 'entity' as f32 matrix: {e}"))
+            .map_err(|e| anyhow!("parse sample 'entity' as f32 matrix: {e}"))
             .and_then(|rows| {
                 if rows.len() == E9_SLOTS && rows.iter().all(|r| r.len() == E9_ENTITY_DIM) {
                     Ok(rows.into_iter().flatten().collect())
                 } else {
-                    Err(format!(
-                        "sample 'entity' is not [{E9_SLOTS}][{E9_ENTITY_DIM}]"
-                    ))
+                    bail!("sample 'entity' is not [{E9_SLOTS}][{E9_ENTITY_DIM}]")
                 }
             })?;
         let global = nums("global", E9_GLOBAL_DIM)?;
         let mask = nums("mask", E9_SLOTS)?;
         let entity_t = ort::value::Tensor::from_array(([1usize, E9_SLOTS, E9_ENTITY_DIM], entity))
-            .map_err(|e| format!("build entity tensor: {e}"))?;
+            .map_err(|e| anyhow!("build entity tensor: {e}"))?;
         let global_t = ort::value::Tensor::from_array(([1usize, E9_GLOBAL_DIM], global))
-            .map_err(|e| format!("build global tensor: {e}"))?;
+            .map_err(|e| anyhow!("build global tensor: {e}"))?;
         let mask_t = ort::value::Tensor::from_array(([1usize, E9_SLOTS], mask))
-            .map_err(|e| format!("build mask tensor: {e}"))?;
-        let run_once = |session: &mut Session| -> Result<(f32, f32), String> {
+            .map_err(|e| anyhow!("build mask tensor: {e}"))?;
+        let run_once = |session: &mut Session| -> anyhow::Result<(f32, f32)> {
             let outputs = session
                 .run(ort::inputs![
                     "entity" => entity_t.view(),
                     "global_feat" => global_t.view(),
                     "mask" => mask_t.view(),
                 ])
-                .map_err(|e| format!("run inference: {e}"))?;
+                .map_err(|e| anyhow!("run inference: {e}"))?;
             let mut logits = [0.0f32; 2];
             for (idx, name) in ["logitA", "logitB"].iter().enumerate() {
                 let v = outputs
                     .get(name)
-                    .ok_or_else(|| format!("output '{name}' missing"))?;
+                    .ok_or_else(|| anyhow!("output '{name}' missing"))?;
                 let view = v
                     .try_extract_array::<f32>()
-                    .map_err(|e| format!("extract {name}: {e}"))?;
+                    .map_err(|e| anyhow!("extract {name}: {e}"))?;
                 let flat: Vec<f32> = view.iter().copied().collect();
                 // The exported heads squeeze to [1]; accept [1] or [1,1].
                 assert_eq!(flat.len(), 1, "output {name} shape {:?}", view.shape());

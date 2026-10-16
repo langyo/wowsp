@@ -5,9 +5,10 @@
   height: 100%;
   min-height: 0;
   /* Only left padding at the grid level: __main is the scroll column and
-     its scrollbar must hug the window's right edge across the full height
-     (like the other pages that scroll in the app shell's hikari scroll
-     viewport). Vertical breathing room rides on the two columns instead. */
+     its hikari overlay bar paints over the window's right edge across the
+     full height (like the other pages that scroll in the app shell's
+     hikari scroll viewport — no gutter to reserve). Vertical breathing
+     room rides on the two columns instead. */
   padding-left: 16px;
   overflow: hidden;
 }
@@ -17,9 +18,9 @@
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid rgb(var(--color-text) / 8%);
-  /* No right padding: __history is this column's scroller and its scrollbar
-     must hug the sidebar's right border (same edge-to-edge rule as __main).
-     Breathing room rides on the children instead. */
+  /* No right padding: __history is this column's scroller and its hikari
+     overlay bar paints over the sidebar's right border (same edge rule as
+     __main). Breathing room rides on the children instead. */
   padding: 16px 0;
 }
 
@@ -88,15 +89,19 @@
   }
 }
 
+/* Sidebar history scroller — hikari's HkScrollContainer owns the scrollbar
+   (auto-hiding overlay track over the sidebar's right border); the row
+   layout + right clearance moved to __history-inner so they scroll with
+   the entries. */
 .lookup-view__history {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+}
+
+.lookup-view__history-inner {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  /* Content clearance from the scrollbar; the scrollbar itself sits at this
-     scroller's border edge — flush with the sidebar's right border. */
   padding-right: 14px;
 }
 
@@ -152,15 +157,16 @@
 
 .lookup-view__history-realm {
   color: rgb(var(--color-muted) / 80%);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 .lookup-view__main {
   min-height: 0;
-  overflow-y: auto;
-  /* Content clearance from the scrollbar; the scrollbar itself sits at this
-     column's border edge — flush with the window. */
-  padding: 16px 16px 16px 0;
+  /* The title row pins above __scroll (a long ship table must not scroll
+     the page title away); this column only pads the top. Still no right
+     padding here: __scroll's hikari overlay bar paints over the window's
+     right edge. */
+  padding: 16px 0 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -170,11 +176,24 @@
   font-size: 1.05rem;
   font-weight: 700;
   margin: 0;
+  /* Right inset keeping the pinned title clear of __scroll's overlay bar. */
+  padding-right: 16px;
 }
 
-.lookup-view__error {
-  color: #ff6b6b;
-  font-size: var(--text-sm);
+/* Main results scroller — hikari's HkScrollContainer owns the scrollbar
+   (auto-hiding overlay track over the region's right edge); the column
+   layout + right/bottom clearance moved to __scroll-inner so they scroll
+   with the content. */
+.lookup-view__scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.lookup-view__scroll-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 16px 16px 0;
 }
 
 .lookup-view__result {
@@ -183,17 +202,53 @@
   gap: 14px;
 }
 
+/* Pending lookup: while a WG query is in flight the result area would
+   otherwise stay blank — a muted centered row (same idiom as
+   __ships-empty) names the target being queried, spinner leading. */
+.lookup-view__pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 2rem;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+}
+
+.lookup-view__pending-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Realm tag mirrors the history rows' realm chip. */
+.lookup-view__pending-realm {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted) / 80%);
+  font-size: 0.625rem;
+}
+
+/* Full-width block host for the dist charts; the named inline-size
+   container `ship-dist-host` is what the chart-row collapse query in
+   ShipDistCharts.scss binds to. */
+.lookup-view__dist {
+  container: ship-dist-host / inline-size;
+}
+
 .lookup-view__dist-title {
   color: rgb(var(--color-muted));
   font-size: var(--text-2xs);
   margin-bottom: 6px;
 }
 
-/* Date-range tabs + inline ship-filter strip share one row. */
+/* Date-range tabs + inline ship-filter strip share one row. `flex-start`
+   (not center) keeps the tabs on the strip's FIRST line — the meta line
+   (summary + search) — instead of centered against the strip's two-line
+   height, which would drop the tabs halfway into the chip row. */
 .lookup-view__controls {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   flex-wrap: wrap;
 }
@@ -204,6 +259,47 @@
   margin: 6px 0 0;
   color: rgb(var(--color-muted));
   font-size: var(--text-xs);
+}
+
+/* ── Custom range popover (the 自定义 segment) ──
+   Content inset rides HkPopover's `padding` prop (the shared --hk-pad
+   token), mirroring ShipFilterBar's popups and the replay rail's
+   cross-linked date pair. */
+
+/* Anchored (non-sheet) panel: a fixed comfortable width for the two pickers
+   — max-content would collapse them to their placeholder floors. The phone
+   sheet sizes itself full-width and is excluded. */
+.hk-popover-panel:not(.hk-is-sheet) .lookup-view__range-pop {
+  width: 280px;
+}
+
+.lookup-view__range-pop-head {
+  margin-bottom: 8px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* The sheet chrome already carries the title, so the in-panel head is
+   desktop-only (same as ShipFilterBar's popup heads). */
+.hk-popover-panel.hk-is-sheet .lookup-view__range-pop-head {
+  display: none;
+}
+
+.lookup-view__range-pop-dates {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .hk-dp {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.lookup-view__range-pop-hint {
+  margin-top: 8px;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted) / 90%);
 }
 
 .lookup-view__controlrow {
@@ -263,6 +359,16 @@
   gap: 14px;
 }
 
+/* Filters/search excluded everything the range did play — same muted
+   centered note as the dashboard's .dash-empty. */
+.lookup-view__ships-empty {
+  margin: 0;
+  padding: 2rem;
+  text-align: center;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+}
+
 .lookup-view__shiplist {
   display: flex;
   flex-direction: column;
@@ -295,16 +401,17 @@
 }
 
 .lookup-view__ship-tier {
+  flex: 0 0 32px;
+  text-align: center;
   font-style: normal;
-  margin-left: 6px;
-  color: #ffd93d;
+  color: rgb(var(--color-text));
   font-family: var(--font-mono);
 }
 
 .lookup-view__ship-type {
   flex: 0 0 24px;
   color: rgb(var(--color-muted));
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
 }
 
@@ -339,5 +446,47 @@
   flex: 0 0 84px;
   text-align: right;
   color: rgb(var(--color-muted) / 80%);
-  font-size: 10px;
+  font-size: 0.625rem;
+}
+
+/* ── Phone layout (≤767px): search rail stacks above the results ────────
+   The 240px sidebar becomes a capped block on top (search + history),
+   the results column keeps the internal scroll; the page stays within
+   one viewport. Desktop rules above are untouched. */
+@media (max-width: 767px) {
+  .lookup-view {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0;
+    padding: 0 0.75rem;
+  }
+
+  .lookup-view__sidebar {
+    border-right: none;
+    border-bottom: 1px solid rgb(var(--color-text) / 8%);
+    padding: 0.75rem 0 0.5rem;
+  }
+
+  .lookup-view__history {
+    flex: none;
+    max-height: 24vh;
+    /* Capped inner scroller above the results: hitting its end must not
+       chain the touch gesture onward (phone sheet-family containment —
+       see AppShell.scss). */
+    & > .hk-scroll-container-viewport {
+      overscroll-behavior: contain;
+    }
+  }
+
+  .lookup-view__history-item {
+    min-height: 40px;
+  }
+
+  .lookup-view__main {
+    padding: 0.75rem 0 0;
+  }
+
+  .lookup-view__scroll-inner {
+    padding: 0 0 calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
 }

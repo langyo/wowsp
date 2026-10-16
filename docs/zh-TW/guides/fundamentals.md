@@ -6,8 +6,9 @@
 
 WoWSP is one Tauri desktop app. The same executable runs in standalone review
 mode (open a replay, watch the holographic map) or in overlay mode (transparent
-window over the running game). The frontend selects the mode by route: `/replay`
-vs `/overlay`.
+window over the running game). The main shell is the Vue app; the overlay
+window loads a separate pre-rendered page (`overlay.html`) instead of a Vue
+view.
 
 ## Data sources
 
@@ -28,9 +29,12 @@ three.js. The game's native asset formats are converted by Python scripts under
 - `convert_map.py` — map space data → GLB
 - `convert_ship.py` — ship hull → GLB
 
-Adding a new map or ship is a data-only operation: drop the source asset into
-`scripts/mock/fixtures/`, run `just convert-model map` (or `ship`), and the
-frontend picks it up. No Rust or TS changes required.
+Both pull their source assets straight from the (auto-detected or
+`--game-dir`-overridden) game install and write the GLB into
+`packages/webui/src/res/models/`. Adding a new map or ship is a data-only
+operation: run `just convert-map --name <space_id>` (or
+`just convert-ship --name <ship>`), and the frontend picks it up. No Rust or
+TS changes required.
 
 ## Overlay interaction model
 

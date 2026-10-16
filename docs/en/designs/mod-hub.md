@@ -115,10 +115,28 @@ Discussions resource post template (excerpt):
     version: 1.4.0
     game: ">=14.3 <14.6"
     category: skins
+    author: Someone
+    author_url: https://github.com/someone
+    aliases: SMO_HazeSkins, SeaHazeSkinsPy
     license: CC0-1.0
     ---
     Body (Markdown, with preview images)…
     Attachment: sea-haze-skins-1.4.0.zip (SHA-256: …)
+
+`aliases` (optional, comma-separated) lists the foreign-installer names the
+entry answers to — the Aslain modpack's manifest row ids and on-disk
+directory names. The indexer harvests them into `mod-index.json`, and the
+app's pairing treats them as exact identity, so a raw directory name that
+shares no words with the display name (`TeamHP` vs "Team HP by TTaro")
+still resolves to the right entry.
+
+`author` (optional) is the mod author's display name and `author_url`
+(optional) their official page. Both live ONLY here — localized display
+names never carry the attribution ("Team Panels", not "Team Panels by
+AutoSpy"): the indexer copies the pair into `mod-index.json` and the
+catalog renders them as the author tag, clickable when the URL is
+verified. The registry backing these lines lives in
+`scripts/mod_hub_authors.json`.
 
 #### Slug taxonomy (`category.genus.species`)
 
@@ -128,10 +146,12 @@ biological nomenclature:
     battle.timer.shot        port.carousel.filters
     battle.marker.regen      port.sessionstats.v2
     minimap.rpf.2d           text.shipname.real
-    patch.ime.compat
+    patch.ime.compat         battle.ingame.stats
 
-- `category` is a closed whitelist: `battle` / `minimap` / `port` / `text` /
-  `patch` (new categories are maintainer-gated);
+- `category` is a closed whitelist: `battle` / `minimap` / `port` / `text`
+  (new categories are maintainer-gated; the one-off `patch` bucket was folded
+  into `text` — `patch.ime.compat` keeps its permanent id but is filed under
+  `text`);
 - `genus` is the functional family (`timer`, `meter`, `marker`, `panel`,
   `carousel`, `techtree`, `crew`, `chat`, `shipname`, `font`, …);
 - `species` carries the specifics, hyphenated modifiers and variant tails
@@ -181,6 +201,31 @@ Why Discussions and not Releases: the comment thread *is* the feedback and
 compatibility channel ("works on 14.6" reports get absorbed by the indexer
 as compatibility signals), Watch = subscription, zero backend cost.
 
+#### Install-time schemes (`wowsp:presets`)
+
+Mods that ship several prebuilt configurations (a marker's color palette, a
+panel's position) declare them as named presets instead of splitting into
+`-v1`/`-v2` listings — plugins roll forward, versions are not variants. A
+thread carries a hidden label block plus preset-tagged download lines:
+
+    <!--
+    wowsp:presets
+    sasagcy: Sasagcy 配色 | Sasagcy palette
+    classic: 经典配色 | Classic palette
+    wowsp:presets
+    -->
+
+    - [`smi-sasagcy.zip`](url) — 1 KB · SHA-256 `…` · preset `sasagcy`
+    - [`smi-classic.zip`](url) — 1 KB · SHA-256 `…` · preset `classic`
+
+Rules: one label line per preset, `id: <zh> | <en>` (ids are
+`[a-z0-9-]`, declaration order is catalog order); a preset line is a normal
+download line plus a trailing `· preset `id``; a fully preset-driven
+thread backfills its plain package list from the first (default) preset, so
+pre-preset app builds keep installing something sane. The app renders the
+schemes as a segmented picker on the detail pane and installs the chosen
+preset's packages; a label without packages is dropped by the indexer.
+
 ### 3. Installer
 
 Writes strictly follow the Aslain convention:
@@ -194,10 +239,25 @@ detection (same-path entries) → restore point → atomic write → install
 record`.
 
 - **Restore points**: paths about to be overwritten are snapshotted to
-  `%AppData%/wowsp/restore/<ts>/`; rollback = reverse copy;
+  `%AppData%/wowsp/mods/restore/<ts>-<name>/`; the snapshot is mandatory —
+  a failure aborts the install instead of clobbering an unrestorable
+  original (nested snapshot directories are created, which the old
+  best-effort copy silently skipped);
+- **Atomic write + rollback**: every file lands via
+  `<dest>.wowsp-part` → rename, journaled; any failure rewinds the whole
+  install (restored snapshots, new files removed, emptied dirs pruned) so
+  a half-copied mod tree never reaches the client;
 - **Install record**: `%AppData%/wowsp/mods/installed.json` stores each mod's
   manifest, source, install time and written-file list — uninstall and
-  migration both rely on it;
+  migration both rely on it. Local-folder installs are recorded too
+  (source `local`), so their uninstall restores overwritten originals;
+  reinstalling the same mod (same id, or same plan name for local
+  installs) first rewinds the previous record — snapshots always point at
+  VANILLA files and files dropped by the new version don't linger;
+- **Game guard**: every mutating command (catalog/local install, uninstall,
+  unit toggle, overlay stub) refuses to run while the game client process
+  is live, the same way Aslain's installer warns — mid-session writes tear
+  half-loaded mods;
 - **Conflict policy**: later installs win, but the UI explicitly warns
   "this will overwrite N files from mod X".
 
@@ -213,6 +273,20 @@ shared prefix), so the app shows what the installer actually installed
 instead of raw directories. Rows without matched files stay listed as
 manifest-only entries; groups no row claims keep their heuristic identity.
 
+Texture-override units (the `content/`, `particles/`, `spaces/`, … catch-all
+groups, including ones merged under a claimed manifest row) carry a
+**structured content analysis** (`textureAnalysis`, bounded walk ≤ 20k
+files): paths classify by signature (`content/gameplay/<nation>/<class>/…`
+ship & component textures, `content/unlocks/…` camo icons,
+`spaces/<map>/…` scenes, particles/texts/system), and the covered model
+units are parsed out of texture file names (`JSB039_Yamato_1945_Hull_a.dds`
+→ `JSB039 Yamato 1945`; the first `_` segment is a 2–6 capitals + 2–4
+digits unit code, the readable name stops at component words like
+Hull/Gun). Nations/classes/categories stay language-neutral codes the
+frontend localizes; the local-folder install plan reuses the same analyzer,
+and `particles`/`spaces`-style override roots are recognized package-layout
+signatures too.
+
 Each unit supports two operations:
 
 - **Temporary disable** — every file of the unit is renamed with a `.bak`
@@ -220,19 +294,131 @@ Each unit supports two operations:
   (`mod.xml.bak`, `Main.py.bak`, `x.xml.bak`), so disabled units stay
   visible and toggleable. Directory names are never touched — the game
   stops loading the files, PnF's loader finds no `Main.py` to import.
-- **Uninstall** — ledger records overlapping the unit restore their
-  vanilla snapshots first, then the whole unit (including `.bak` twins)
-  is deleted, emptied parent dirs are pruned up to `res_mods`, and a
-  manifest-backed unit's row is removed from `installed_mods.xml`.
+  Disabling a shared catch-all group (all of `content/`, loose gui files)
+  that also carries files of a ledger-recorded mod living elsewhere is
+  refused: a PnF payload whose textures or unbound fragments just
+  vanished is a load-time crash, so the toggle points at that mod's own
+  entry instead.
+- **Uninstall** — the unit (including `.bak` twins) is deleted, emptied
+  parent dirs are pruned up to `res_mods`, and a manifest-backed unit's
+  row is removed from `installed_mods.xml` (rewritten atomically). Ledger
+  records the unit covers *completely* get the full uninstall — snapshot
+  restore plus record drop; a record that also owns files outside the
+  unit (another mod sharing the tree) is trimmed instead: only its
+  covered files and their snapshots are removed, so deleting one plugin
+  never silently uninstalls a neighbor. Ledger uninstalls also remove
+  `.bak` twins of recorded files so disabled mods cannot survive as
+  ghosts.
 
-All mutations (install / uninstall / toggle) serialize through an async
-gate so parallel catalog installs can download simultaneously without
-interleaving ledger writes or file renames.
+**Safe mode** quarantines the whole current `res_mods` in one atomic
+rename (`res_mods` → `res_mods.wowsp-disabled`) — WG's "safe mode"
+support move: run the game with every res_mods mod bypassed, without
+deleting anything — the fastest way to bisect "is it the mods or the
+game?". (A few text mods also drop a DLL into the game root itself;
+those files are not part of res_mods and stay in place.) One click
+brings the exact pre-quarantine state back — including a twin stranded
+in an old version dir by a game update that happened while safe mode
+was on. While active, every mutating command
+(install/uninstall/toggle/migrate/overlay) refuses to run — writes
+would land in a fresh `res_mods` and drift from the quarantined tree.
+
+**Unit warnings**: the scan flags two installed skins overriding the same
+`registerShipMod` ship id — exactly one can take effect, so both units
+carry a warning in their detail pane.
+
+**Ledger reconciliation** runs alongside the installed scan: records
+whose files are all gone from disk (manual cleanup, lost bin dir —
+`.bak` twins and the safe-mode quarantine still count as alive) are
+dropped so the "installed" badges stay truthful. Records carry the game
+install they belong to (`gameRoot`); reconciling one install never
+touches another install's records. Snapshot dirs no record references
+anymore are garbage-collected after a 24h grace window, so a just-
+failed install's snapshots survive a retry.
+
+All mutations (catalog install/uninstall, unit toggle/uninstall, and the
+overlay stub's install/uninstall) serialize through an async gate so
+parallel catalog installs can download simultaneously without interleaving
+ledger writes or file renames.
+
+#### 3.2 The shared manifest (`res_mods/wowsp.toml`)
+
+Next to the mods it manages, WoWSP maintains `bin/<version>/res_mods/wowsp.toml`
+(schema 1) — the shared half of the app-data ledger: tool plugins read their
+config from it, and anyone inspecting the game folder can see what WoWSP
+installed and with which scheme. WoWSP rewrites the file on every install,
+uninstall and unit toggle; `[tools.*]` tables belong to their tools and are
+carried over untouched by rewrites (hand edits there are safe).
+
+    version = 1
+
+    [managed."battle.marker.traffic-v4"]
+    name = "Ship Movement Indicator"
+    version = "15.7.0.10"
+    category = "battle"          # catalog category, "local" for folder installs
+    source = "mod-hub"           # mod-hub | local | bundled
+    preset = "sasagcy"           # chosen scheme, when installed with one
+    enabled = true               # kept in step with the `.bak` toggles
+    installed_at = "2026-10-05T00:00:00+00:00"
+
+    [tools."battle.ingame.stats"]
+    panel_fade_ticks = 3         # tool-defined keys — WoWSP seeds defaults,
+    journal_limit = 300          # existing keys are never overwritten
+
+Contract: `version` gates the schema (a build that sees a NEWER version
+leaves the file untouched); an unparseable file is quarantined as
+`wowsp.toml.invalid` and maintenance restarts from scratch; an emptied
+manifest deletes itself. Stale-bin migrations never transplant the file —
+its surviving content (toggle states, tool configs) merges into the current
+bin's manifest. The first consumer is the bundled in-game stats plugin,
+which reads `panel_fade_ticks` and `journal_limit` from its `[tools]` table
+with the values above as fallbacks.
+
+Inside the process the file has exactly ONE writer context: every mutation
+ships a `ManifestOp` down an mpsc pipe to a dedicated writer thread and
+waits for its receipt, while reads parse an atomic (tmp+rename) snapshot —
+many-read/one-write, no parallel copy of the file can drift. The sections:
+
+- `[managed.*]` — units WoWSP installed and owns (rewritten on every
+  install / uninstall / toggle / reconcile / migration);
+- `[tools.*]` — tool-plugin configs (owned by their tools; WoWSP only
+  seeds missing defaults and never overwrites existing keys);
+- `[foreign.<installer>.<key>]` — recognition of units FOREIGN installers
+  put on disk: `aslain` rows come from the modpack's own
+  `installed_mods.xml` ledger, `modstation` units from WG's official
+  station's `bin/<version>/mods/` tree (wiped by every game update, which
+  is why it is re-scanned rather than remembered). Each row carries a
+  best-effort `identity` — the catalog id its name pairs against — so
+  every surface can read the pairing verdict from this one file instead
+  of re-deriving it. The scan refreshes these rows on every installed-list
+  sweep. Pairing is tiered (exact name > containment > character-bigram
+  similarity, stopwords stripped on both sides) so CamelCase modpack names
+  reach the catalog's prose names. WoWSP describes foreign units by
+  default, and manages them on explicit demand: the foreign pane offers
+  disable/uninstall (Aslain rows through the same unit ops — the pack's
+  manifest row is cut in sync; ModStation trees through a dedicated
+  whole-directory uninstall), and installing a catalog entry over a
+  paired foreign copy is a REGISTRATION — the entry's manifest rows are
+  cut, the files snapshotted, and the unit lands under WoWSP's ledger.
 
 ### 4. Version migration & compatibility confirmation
 
-After a game update (a new `bin/<version>/` directory appears), the
-migration wizard runs automatically:
+**Landed (detection + one-click migrate)**: the scan reports every older
+`bin/<version>/res_mods` that still carries files (`mod_hub_stale_versions`)
+and the resources page shows a warning banner;
+`mod_hub_migrate_stale_bin` moves the stranded files into the current
+version's `res_mods` (same-volume per-file renames; **keep-new** on
+conflicts — a stranded file is dropped when the current tree has it live
+or as a disabled twin, and a stranded twin is dropped when its live
+counterpart exists, so nothing is ever overwritten; disabled twins carry
+over when the current tree lacks the live file; the stranded Aslain
+`installed_mods.xml` dies with the old directory instead of
+transplanting ghost rows; the old directory is emptied afterwards and
+ledger records re-pointed at the current version; guarded by the mod-hub
+gate and the game-running check).
+
+**Planned (compatibility-graded migration wizard)**: after a game update
+(a new `bin/<version>/` directory appears), the migration wizard runs
+automatically:
 
 1. **Scan**: read the old `res_mods/<old>/` and the install record;
 2. **Classify**:
@@ -279,7 +465,7 @@ A scheduled GitHub Actions workflow (also manually triggerable):
 | M10.3 Indexer | Actions workflow emitting `mod-index.json`; website catalog page | M10.1 |
 | M10.4 Migration engine | version-drift detection, classified migration, rollback, compat UI | M10.2 |
 | M10.5 Content browser | categorized browsing, previews & audition, batch install, resumable downloads | M10.3 |
-| M10.6 Aslain migration assistant | recognize Aslain-installed entries into the install record | M10.2 |
+| M10.6 Aslain migration assistant | recognize Aslain-installed entries into the install record — DONE via tiered pairing + register-and-reinstall takeover (install cuts the pack's manifest rows) | M10.2 |
 
 ## Security & compliance
 

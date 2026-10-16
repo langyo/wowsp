@@ -60,6 +60,18 @@ WOWSFT_SKILLS_URL = (
     "WoWSFT-App/src/main/resources/json/live/skills.json"
 )
 WOWSINFO_LANG_URL = "https://raw.githubusercontent.com/wowsinfo/data/master/live/app/lang/lang.json"
+# WG online encyclopedia (ship basics for the offline fallback bundle) —
+# application id mirrors wg_realm.rs (asia realm; CN is served from ASIA).
+# WG public API application_id — a client-side public identifier issued by
+# Wargaming for their open API, designed to be embedded in client
+# applications; NOT a credential/secret. See
+# https://developers.wargaming.net/ for registration.
+WG_SHIPS_URL = (
+    "https://api.worldofwarships.asia/wows/encyclopedia/ships/"
+    "?application_id=447ec579e994976e39dec0e7d0bac644&language=en&limit=100"
+    "&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,"
+    "default_profile,images"
+)
 # Real square skill/flag icons (the live client ships unusable 122×22 strips
 # at gui/crew_commander/skills — the square art lives in the UI pak).
 SHIPBUILDER_RAW = "https://raw.githubusercontent.com/WoWs-Builder-Team/WoWs-ShipBuilder/master/src/WoWsShipBuilder.Common/wwwroot/assets"
@@ -270,9 +282,18 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
     """Player-facing 4-tier skill tree per class with tier + column positions.
 
     Surface classes use the WoWSFT in-game layout (tier + column); Submarine
-    is absent there, so its layout derives from the Crew table's per-class
-    `tier` field (learnable skills only), columns assigned in the crew
-    table's own ordering.
+    is absent there, so its layout is the curated SS_LAYOUT table below —
+    the live sub tree is the one 4-tier × 5-column grid (every other class
+    has six columns). Its cell placement is cross-checked against the live
+    client three ways: the crew table's per-skill `tier.Submarine` agrees
+    with every row, the client's own recommended sub builds
+    (CrewSkillRecomendationPresets — see crew_presets.json) teach
+    TorpedoFloodingProbability / DefenseCritProbability / DetectionAiming,
+    and the wiki's submarine tree (Ship:List_of_Commander_Skills) matches
+    cell for cell. Note the crew table alone cannot derive the tree: it
+    over-offers Submarine-tiered skills the live sub UI does not carry
+    (Combat Maneuver Specialist, Basics of Survivability, Radio Location,
+    Fire Prevention Expert, Fearless Brawler, Concealment Expert).
     """
     crew = None
     for _name, e in entries_of(txt, '"CrewPersonality"',
@@ -308,21 +329,44 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
                 flat.append(named(s["name"], s["tier"], s["column"]))
         out[cls] = flat
 
-    # Submarine: WoWSFT predates subs, so derive the layout from the crew
-    # table — every sub-exclusive skill (no surface class offers it) plus a
-    # short curated list of surface skills the live sub tree also carries.
-    surface_codes = {s["name"] for gp, rows in wowsft.items() for tier in rows for s in tier}
-    sub_exclusive = [code for code, tiers in sorted(gp_tiers.items()) if "SS" in tiers and code not in surface_codes]
-    sub_shared = [
-        "DetectionDirection",        # Priority Target
-        "DefenceFireProbability",    # Incoming Fire Alert
-        "TriggerGmReload",           # Adrenaline Rush
-        "ConsumablesAdditional",     # Superintendent
-        "DefenceCritFireFlooding",   # Fire Prevention
-        "DetectionVisibilityRange",  # Concealment Expert
-    ]
-    ss_codes = sub_exclusive + [c for c in sub_shared if c in gp_tiers and "SS" in gp_tiers[c]]
-    out["SS"] = [named(code, gp_tiers[code]["SS"], i) for i, code in enumerate(ss_codes)]
+    # Submarine: the live tree as a full 4-tier × 5-column grid (tier,
+    # column) — see the docstring for how the placement is corroborated.
+    # Tiers still come from the crew table; a layout row that disagrees with
+    # it is reported and skipped rather than emitted with the stale tier.
+    SS_LAYOUT: dict[str, tuple[int, int]] = {
+        "TriggerPingerReloadBuff":      (1, 0),  # Enhanced Sonar
+        "TorpedoFloodingProbability":   (1, 1),  # Liquidator
+        "TriggerConsRudderTimeCoeff":   (1, 2),  # Helmsman
+        "DetectionAiming":              (1, 3),  # Priority Target
+        "DetectionAlert":               (1, 4),  # Incoming Fire Alert
+        "SubmarineBatteryCapacity":     (2, 0),  # Improved Battery Capacity
+        "TriggerSeenTorpedoReload":     (2, 1),  # Torpedo Crew Training
+        "SubmarineConsumablesDuration": (2, 2),  # Consumables Enhancements
+        "DefenseCritProbability":       (2, 3),  # Preventive Maintenance
+        "Maneuverability":              (2, 4),  # Last Stand
+        "TriggerPingerSpeedBuff":       (3, 0),  # Enhanced Impulse Generator
+        "SubmarineHoldSectors":         (3, 1),  # Sonarman
+        "SubmarineConsumablesReload":   (3, 2),  # Consumables Specialist
+        "SubmarineDangerAlert":         (3, 3),  # Watchful
+        "ConsumablesAdditional":        (3, 4),  # Superintendent
+        "ArmamentReloadSubmarine":      (4, 0),  # Adrenaline Rush
+        "SubmarineTorpedoPingDamage":   (4, 1),  # Torpedo Aiming Master
+        "TriggerConsSonarTimeCoeff":    (4, 2),  # Sonarman Expert
+        "SubmarineBatteryBurnDown":     (4, 3),  # Improved Battery Efficiency
+        "SubmarineSpeed":               (4, 4),  # Enlarged Propeller Shaft
+    }
+    out["SS"] = []
+    for code, (tier, column) in SS_LAYOUT.items():
+        ss_tier = (gp_tiers.get(code) or {}).get("SS")
+        if ss_tier is None:
+            print(f"!! skilltree: SS layout code {code} is not learnable by "
+                  "Submarine in the crew table — skipped", file=sys.stderr)
+            continue
+        if ss_tier != tier:
+            print(f"!! skilltree: SS layout tier for {code} ({tier}) disagrees "
+                  f"with the crew table ({ss_tier}) — skipped", file=sys.stderr)
+            continue
+        out["SS"].append(named(code, tier, column))
     for rows in out.values():
         rows.sort(key=lambda r: (r["tier"], r["column"], r["code"]))
     return out
@@ -405,7 +449,7 @@ def main() -> int:
     ap.add_argument("--no-icons", action="store_true", help="data only, skip icon downloads/scan")
     ap.add_argument("--no-net", action="store_true", help="data only from GameParams (skip upstream names/layout)")
     ap.add_argument("--only", choices=("signals", "modernizations", "commanders", "skilltree",
-                                       "consumables"),
+                                       "consumables", "crew-presets", "ship-basics"),
                     help="regenerate a single dataset (skip the rest and all icon work)")
     args = ap.parse_args()
 
@@ -450,6 +494,80 @@ def main() -> int:
         (OUT_DATA / "skilltree.json").write_text(
             json.dumps(skilltree, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
         print(f"[planner] skilltree.json: " + ", ".join(f"{c}={len(v)}" for c, v in skilltree.items()))
+
+    if args.only in (None, "crew-presets"):
+        # The committed crew-presets bundle was decoded from the client's
+        # scripts.zip with the pyc_deob reference toolchain (see
+        # scripts/pyc_deob/crew_presets.py — the mini-VM validates but does
+        # not regenerate the constructor-built step values). Re-validate it
+        # against the current GameParams on every extraction pass.
+        sys.path.insert(0, str(HERE.parent / "pyc_deob"))
+        import crew_presets
+
+        presets_path = OUT_DATA / "crew_presets.json"
+        if not presets_path.exists():
+            if args.only == "crew-presets":
+                print("error: %s not found" % presets_path, file=sys.stderr)
+                return 1
+            print("[planner] no crew_presets.json — skipping validation", flush=True)
+        else:
+            presets = json.loads(presets_path.read_text(encoding="utf-8"))
+            problems = crew_presets.validate(txt, presets)
+            for problem in problems:
+                print("!! %s" % problem, file=sys.stderr)
+            if problems:
+                return 1
+            print("[planner] crew_presets.json validated: %d presets, %d groups"
+                  % (len(presets["presets"]), len(presets["groups"])))
+
+    if args.only in (None, "ship-basics"):
+        # Full WG-API ship basics (default_profile included) as the offline
+        # fallback bundle: ~4 MB covering every ship, shipped with lite
+        # installs so the encyclopedia works without the WG API reachable.
+        def wg_get(url: str):
+            import time
+            import urllib.request
+
+            for attempt in range(4):
+                try:
+                    with urllib.request.urlopen(url, timeout=120) as r:
+                        return json.load(r)
+                except Exception:
+                    if attempt == 3:
+                        raise
+                    time.sleep(2 * (attempt + 1))
+
+        # Version-stamped: a game patch changes ship data, so the cache must
+        # not serve a stale bundle to the next extraction.
+        # Same WG public API application_id as WG_SHIPS_URL above (and
+        # WG_APP_ID in wg_realm.rs) — a client-side public identifier
+        # designed to be embedded in client applications, NOT a
+        # credential/secret; the three copies must stay in sync.
+        version = wg_get(
+            "https://api.worldofwarships.asia/wows/encyclopedia/info/"
+            "?application_id=447ec579e994976e39dec0e7d0bac644&language=en"
+        )["data"]["game_version"]
+        basics_cache = GAMEPARAMS_JSON.parent / ("ships_basics_en_%s.json" % version)
+        if basics_cache.exists():
+            basics = json.loads(basics_cache.read_text(encoding="utf-8"))
+        else:
+            page1 = wg_get(WG_SHIPS_URL + "&page_no=1")
+            pages = page1["meta"]["page_total"]
+            ships = dict(page1["data"])
+            for p in range(2, pages + 1):
+                print("[planner] ships page %d/%d" % (p, pages), flush=True)
+                ships.update(wg_get(WG_SHIPS_URL + "&page_no=%d" % p)["data"])
+            basics = {"gameVersion": version, "ships": ships}
+            basics_cache.write_text(json.dumps(basics, ensure_ascii=False), encoding="utf-8")
+        res_data = WEBUI / "res" / "data"
+        res_data.mkdir(parents=True, exist_ok=True)
+        (res_data / "ships_basics.json").write_text(
+            json.dumps(basics, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print("[planner] ships_basics.json: %d ships (%.1f MB)"
+              % (len(basics["ships"]),
+                 (res_data / "ships_basics.json").stat().st_size / 1e6))
+        if args.only == "ship-basics":
+            return 0
 
     if args.only in (None, "consumables"):
         consumables = extract_ship_consumables(txt)

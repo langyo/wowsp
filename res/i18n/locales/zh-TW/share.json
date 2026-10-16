@@ -1,0 +1,12 @@
+{
+  "copyShot": "複製截圖",
+  "copyShotDone": "截圖已複製到剪貼簿",
+  "copyShotFailed": "複製失敗",
+  "shotTagline": "戰艦世界對局分析工具",
+  "shotDisclaimer1": "僅供參考，不代表玩家長期水準，請友善討論",
+  "shotDisclaimer2": "本軟體免費開源，請勿上當受騙，不要為購買該軟體付費",
+  "shotQqGroup": "QQ群：{n}",
+  "topShips": "常用艦船",
+  "moreShips": "另有 {n} 艘艦船",
+  "moreMembers": "另有 {n} 名成員"
+}

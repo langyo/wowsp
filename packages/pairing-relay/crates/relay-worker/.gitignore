@@ -1,0 +1,3 @@
+# Build output of worker-build (wrangler [build] command) and cargo
+target/
+build/

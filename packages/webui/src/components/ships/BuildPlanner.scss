@@ -258,12 +258,29 @@
   &__row {
     /* Fixed 56px tracks with one track per class-tree column — the template
        is set inline by BuildPlanner (auto-fill let short rows drift out of
-       alignment with the tier above). */
+       alignment with the tier above). No flex-grow: the empty tail of the
+       row stays free for the missing-pick warning (margin-left: auto). */
     display: grid;
     justify-content: start;
     gap: 0.45rem 0.35rem;
     align-content: start;
-    flex: 1;
+  }
+
+  /* The game refuses a build that skips a tier row while a higher row is
+     picked; this planner's looser point-based unlocking can produce one,
+     so the offending row carries an amber note in its empty tail. */
+  &__warn {
+    margin-left: auto;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding-right: 0.35rem;
+    max-width: 240px;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.35;
+    color: rgb(var(--color-warning));
   }
 }
 
@@ -344,23 +361,47 @@
     pointer-events: none;
   }
 
-  /* Enhanced-by-legendary-commander marker (game-style corner ribbon): an
-     angled band across the top-left corner of the plate. Sibling of the
-     button so active/banned filters never wash it out. */
+  /* Corner ribbons (game-style): an angled band across the plate corner.
+     Green top-left = taught at enhanced values by the selected legendary
+     commander; amber bottom-right = part of the in-game recommended build
+     for this ship. Sibling of the button so active/banned filters never
+     wash it out — but sized to the 56px plate only: anchoring to the tile
+     would drop the lower band onto the name label below the plate.
+     overflow:hidden clips the band ends flush with the plate edges. */
+  &__ribbon-host {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    width: 56px;
+    height: 56px;
+    border-radius: 4px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   &__ribbon {
     position: absolute;
-    z-index: 1;
     width: 26px;
-    height: 7px;
-    border-radius: 1px;
+    height: 8px;
     box-shadow: 0 0 3px rgb(0 0 0 / 45%);
-    pointer-events: none;
 
+    /* The band's outer long edge runs through the plate corner itself, so
+       no bare plate shows between the band and the corner (centre sits
+       8/2 = 4px ⊥ inside it, i.e. at 53.2/53.2 on both axes). Both 45°
+       ends land past the host edges and clip into clean miters. */
     &--epic {
-      top: 7px;
-      left: -4px;
+      top: -1.2px;
+      left: -10.2px;
       transform: rotate(-45deg);
       background: linear-gradient(180deg, #7ce8a9, #2ea05d);
+    }
+
+    &--rec {
+      bottom: -1.2px;
+      right: -10.2px;
+      transform: rotate(-45deg);
+      background: linear-gradient(180deg, #ffe08a, #e0a72e);
     }
   }
 
@@ -371,7 +412,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    font-size: 8px;
+    font-size: 0.5rem;
     font-weight: 700;
     color: #f2f3f4;
   }
@@ -384,7 +425,7 @@
   }
 
   &__name {
-    font-size: 8px;
+    font-size: 0.5rem;
     color: rgb(var(--color-text));
     text-align: center;
     line-height: 1.15;
@@ -396,6 +437,60 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     word-break: break-word;
+  }
+}
+
+/* Ribbon legend above the tier rows: one chip per ribbon meaning — a
+   miniature plate corner carrying the band, plus the short tag label.
+   The full sentence rides the chip as a global data-hint tooltip. */
+.skill-legend-v {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.75rem;
+  padding: 0.1rem 0;
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  /* Miniature of the skill plate: grey square + clipped corner band. */
+  &__swatch {
+    position: relative;
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: #7d8085;
+    flex: none;
+
+    &::after {
+      content: "";
+      position: absolute;
+      width: 13px;
+      height: 4px;
+      /* Same corner-hug as the plate band: outer edge through the corner
+         (4px band → centre ≈ 1.4px inside it on both axes), ends clipped
+         off the 13px host edges. Thicker than plate scale so the wedge
+         stays legible at 13px. */
+      transform: rotate(-45deg);
+    }
+
+    &--epic::after {
+      top: -0.59px;
+      left: -5.09px;
+      background: linear-gradient(180deg, #7ce8a9, #2ea05d);
+    }
+
+    &--rec::after {
+      bottom: -0.59px;
+      right: -5.09px;
+      background: linear-gradient(180deg, #ffe08a, #e0a72e);
+    }
   }
 }
 
@@ -446,7 +541,7 @@
   z-index: 1;
   padding: 0 4px;
   border-radius: 999px;
-  font-size: 8px;
+  font-size: 0.5rem;
   font-weight: 700;
   line-height: 1.5;
   color: rgb(0 0 0 / 75%);
@@ -495,7 +590,7 @@
 }
 
 .planner-v__cmd-nation {
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: rgb(var(--color-muted) / 70%);
   white-space: nowrap;
   overflow: hidden;
@@ -543,7 +638,7 @@
   align-items: baseline;
   gap: 0.35rem;
   flex-wrap: wrap;
-  font-size: 10px;
+  font-size: 0.625rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -633,6 +728,15 @@
   line-height: 1.45;
   box-shadow: 0 6px 24px rgb(0 0 0 / 40%);
   pointer-events: none;
+  // Fade in on show; the fade-out rides the transition below with the
+  // component holding the DOM through the 0.18s leave (delayed unmount).
+  animation: flag-card-in 0.16s ease-out;
+  transition: opacity 0.18s ease-in;
+
+  &--leave {
+    opacity: 0;
+  }
+
 
   &__name {
     font-weight: 700;
@@ -679,6 +783,25 @@
   }
 }
 
+@keyframes flag-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flag-card {
+    animation: none;
+    transition: none;
+  }
+}
+
 /* ── Center: modernization slots ───────────────────────────────────────── */
 .planner-v__slots {
   display: flex;
@@ -707,7 +830,24 @@
   margin-bottom: 0.4rem;
 }
 
+/* The mounted modernization's name, echoed next to the slot number —
+   reads as a fact ("what is installed"), never as a bare state word.
+   Ellipsizes instead of wrapping so the header stays a single line;
+   the full name remains on the highlighted tile below. */
+.planner-v__slot-mounted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: rgb(var(--color-primary));
+}
+
 .planner-v__slot-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
   border: none;
   background: transparent;
   color: rgb(var(--color-muted) / 70%);
@@ -772,7 +912,7 @@
   right: 4px;
   padding: 0 4px;
   border-radius: 999px;
-  font-size: 8px;
+  font-size: 0.5rem;
   font-weight: 700;
   line-height: 1.4;
   color: rgb(0 0 0 / 75%);
@@ -787,7 +927,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 8px;
+  font-size: 0.5rem;
   font-weight: 700;
   color: rgb(var(--color-muted));
 }
@@ -800,7 +940,7 @@
 }
 
 .planner-v__mod-name {
-  font-size: 9px;
+  font-size: 0.5625rem;
   color: rgb(var(--color-text));
   line-height: 1.2;
   max-width: 100%;

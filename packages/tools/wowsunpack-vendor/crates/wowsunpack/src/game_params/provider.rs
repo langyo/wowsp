@@ -1654,8 +1654,40 @@ impl GameMetadataProvider {
     pub fn from_vfs(vfs: &vfs::VfsPath) -> Result<GameMetadataProvider, GameDataError> {
         debug!("deserializing gameparams");
 
+        // WG ships one content/GameParams.data; the Lesta (Мир кораблей)
+        // client splits it into py2/py3 pickle variants (py2 decodes through
+        // the same reverse+zlib pipeline — see game_data's read_game_params
+        // candidates). Try the canonical name first, then the Lesta spellings.
         let mut game_params_data = Vec::new();
-        vfs.join("content/GameParams.data")?.open_file()?.read_to_end(&mut game_params_data)?;
+        let mut loaded = false;
+        let mut last_err: Option<GameDataError> = None;
+        for name in ["content/GameParams.data", "content/GameParams_py2.data", "content/GameParams_py3.data"] {
+            match vfs.join(name).and_then(|p| p.open_file()) {
+                Ok(mut file) => {
+                    game_params_data.clear();
+                    match file.read_to_end(&mut game_params_data) {
+                        Ok(_) if !game_params_data.is_empty() => {
+                            loaded = true;
+                            break;
+                        }
+                        Ok(_) => {
+                            last_err = Some(GameDataError::Io(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("{name} is empty"),
+                            )));
+                        }
+                        Err(e) => last_err = Some(e.into()),
+                    }
+                }
+                Err(e) => last_err = Some(e.into()),
+            }
+        }
+        if !loaded {
+            return Err(last_err.unwrap_or(GameDataError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no GameParams blob found",
+            ))));
+        }
 
         let params = Self::params_from_data(game_params_data)?;
 

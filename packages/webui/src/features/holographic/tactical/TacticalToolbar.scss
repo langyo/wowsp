@@ -1,61 +1,211 @@
-/* Tactical-board rail: the floating toolbar beside the enlarged 2D map.
- * hikari buttons render on the chip surface so both themes read correctly
- * over the dark map scrim. */
+/* Tactical-board bar: the compact horizontal toolbar in the board dock.
+ * The bar itself keeps the HUD chip chrome (it sits on the stage palette);
+ * every flyout is hikari's HkPopover/HkMenuPanel — only the
+ * panel CONTENT layout (swatches, width/dash pickers, toggle stacks, the
+ * export grid) is styled here. */
 
-.tac-rail {
-  position: absolute;
-  top: 0;
-  /* Sits in the gutter the mmzoom stage reserves to the right of the map. */
-  left: calc(100% + 10px);
-  /* Wide enough for the 5-column tool grid (5×32px buttons + gaps). */
-  width: 204px;
-  max-height: 100%;
-  overflow-y: auto;
+.tac-bar {
   display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.6rem 0.6rem 0.5rem;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
   background: var(--holo-hud-chip);
   border: 1px solid var(--holo-hud-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   backdrop-filter: blur(8px);
   color: var(--holo-hud-text);
   cursor: default;
   z-index: 5;
-  scrollbar-width: thin;
 }
 
-.tac-rail__group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
+/* A flyout trigger: wrapper span around the button (HkPopover anchors to
+   it) + the active-group underline. */
+.tac-bar__group {
+  position: relative;
+  display: inline-flex;
+
+  &--on::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: -3px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgb(var(--tac-accent-rgb) / 0.95);
+  }
+}
+
+.tac-bar__sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--holo-hud-border);
+}
+
+/* Zoom percent between the −/＋ buttons; click = reset to fit. */
+.tac-bar__zoom-pct {
+  min-width: 42px;
+  padding: 0 6px;
+  height: 24px;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--holo-hud-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  cursor: pointer;
+
+  &:hover {
+    background: rgb(var(--tac-accent-rgb) / 16%);
+  }
+}
+
+/* Colour chip on the bar (opens the style sheet). */
+.tac-bar__color {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.08s ease;
+  &:hover {
+    transform: scale(1.06);
+  }
+  &--on {
+    outline: 2px solid rgb(var(--tac-accent-rgb) / 0.95);
+    outline-offset: 1px;
+  }
 }
 
-/* Tool buttons keep an even 5-wide grid; the other groups (history, export)
- * size to their content instead of stretching 2–3 buttons across 5 slots. */
-.tac-rail__tools {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0.3rem;
-  justify-items: stretch;
+.tac-bar__color-ico {
+  color: rgba(0, 0, 0, 0.55);
+  mix-blend-mode: plus-lighter;
 }
 
-.tac-rail__sep {
+/* ── Popover content (hosted by hikari HkPopover) ─────────────────────── */
+
+/* Body wrapper: HkPopover's panel already carries its own padding and the
+   glass surface, so the content only brings spacing + a readable width. */
+.tac-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 176px;
+  font-size: var(--text-sm);
+
+  &--wide {
+    width: 248px;
+  }
+}
+
+/* Plan extras under a marker menu list — the horizontal inset matches the
+   menu panel's own row inset so the picker aligns with the rows above. */
+.tac-pop__extras {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 2px var(--hk-menu-panel-inset, 12px) 4px;
+}
+
+.tac-pop__sep {
   height: 1px;
-  background: var(--holo-hud-border);
-  margin: 0.1rem 0;
+  margin: 1px 0;
+  background: rgb(var(--color-border) / 22%);
 }
 
-.tac-rail__swatches {
+.tac-pop__label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(var(--color-muted));
+}
+
+.tac-pop__row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+
+  &--actions {
+    flex-wrap: wrap;
+    margin-top: 2px;
+  }
+}
+
+/* Shortcut chip in a menu row's suffix slot. */
+.tac-pop__kbd {
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.6;
+  color: rgb(var(--color-muted));
+  border: 1px solid rgb(var(--color-border) / 35%);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* The ACTIVE tool row: HkMenuActionItem owns its resting look; the host
+   marks the row that is currently engaged (its own component has no
+   checked state — HkMenu's data rows do, but these lists carry custom
+   onPick behaviour and suffix hints). */
+.hk-popover-panel .hk-menu-action-item.is-active {
+  background: rgb(var(--color-primary) / 14%);
+  color: rgb(var(--color-primary));
+
+  .hk-menu-action-item__label {
+    color: rgb(var(--color-primary));
+    font-weight: 600;
+  }
+}
+
+/* Plan-board action-kind picker row (stays a compact segmented trio). */
+.tac-bar__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  padding: 5px 8px;
+  font-size: var(--text-sm);
+  color: rgb(var(--color-text));
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  > span {
+    flex: 1;
+  }
+  &:hover {
+    background: rgb(var(--color-primary) / 12%);
+  }
+  &--on {
+    background: rgb(var(--color-primary) / 16%);
+    color: rgb(var(--color-primary));
+  }
+}
+
+/* Plan-board hint under the action-kind picker. */
+.tac-bar__note {
+  margin: 2px 0 0;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  color: rgb(var(--color-muted));
+}
+
+/* Style sheet: palette + widths + dashes. */
+.tac-bar__swatches {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 0.35rem;
+  gap: 5px;
 }
 
-.tac-rail__swatch {
-  height: 18px;
+.tac-bar__swatch {
+  height: 20px;
   border-radius: 5px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   cursor: pointer;
@@ -65,42 +215,38 @@
     transform: scale(1.08);
   }
   &--on {
-    outline: 2px solid rgba(0, 195, 255, 0.95);
+    outline: 2px solid rgb(var(--tac-accent-rgb) / 0.95);
     outline-offset: 1px;
   }
 }
 
-.tac-rail__widths {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.35rem;
-}
-
-.tac-rail__width {
+.tac-bar__width {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 22px;
+  flex: 1;
   background: transparent;
-  border: 1px solid var(--holo-hud-border);
+  border: 1px solid rgb(var(--color-border) / 35%);
   border-radius: 5px;
   cursor: pointer;
   padding: 0;
   > span {
     display: block;
     border-radius: 999px;
-    background: var(--holo-hud-text);
+    background: rgb(var(--color-text));
   }
   &--on {
-    border-color: rgba(0, 195, 255, 0.9);
-    background: rgba(0, 195, 255, 0.12);
+    border-color: rgb(var(--color-primary) / 0.9);
+    background: rgb(var(--color-primary) / 0.12);
   }
 }
 
-.tac-rail__dash {
+.tac-bar__dash {
   height: 22px;
+  flex: 1;
   background: transparent;
-  border: 1px solid var(--holo-hud-border);
+  border: 1px solid rgb(var(--color-border) / 35%);
   border-radius: 5px;
   cursor: pointer;
   padding: 0;
@@ -108,7 +254,7 @@
     content: "";
     display: block;
     margin: 0 6px;
-    border-top: 2px solid var(--holo-hud-text);
+    border-top: 2px solid rgb(var(--color-text));
   }
   &--solid::after {
     border-top-style: solid;
@@ -120,60 +266,42 @@
     border-top-style: dotted;
   }
   &--on {
-    border-color: rgba(0, 195, 255, 0.9);
-    background: rgba(0, 195, 255, 0.12);
+    border-color: rgb(var(--color-primary) / 0.9);
+    background: rgb(var(--color-primary) / 0.12);
   }
 }
 
-.tac-rail__toggles {
+/* More-panel internals. */
+.tac-bar__toggles {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.4rem;
-  label {
-    /* The rail sits on a dark chip — keep switch labels light in both themes
-       (same override as the mmzoom head). */
-    color: var(--holo-hud-text);
-    font-size: var(--text-xs);
-  }
+  gap: 6px;
 }
 
-.tac-rail__export {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.3rem;
-  align-items: center;
-  label {
-    /* HSwitch renders a <label>; keep it readable on the dark chip. */
-    color: var(--holo-hud-text);
-    font-size: var(--text-xs);
-  }
-}
-
-.tac-rail__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.tac-rail__field-label {
+.tac-bar__count {
   font-size: var(--text-xs);
-  color: var(--holo-hud-dim);
-}
-
-.tac-rail__select {
-  width: 100%;
-  padding: 0.22rem 0.35rem;
-  font-size: var(--text-xs);
-  color: var(--holo-hud-text);
-  background: rgba(5, 8, 15, 0.7);
-  border: 1px solid var(--holo-hud-border);
-  border-radius: 5px;
-  outline: none;
-}
-
-.tac-rail__count {
-  font-size: var(--text-xs);
-  color: var(--holo-hud-dim);
+  color: rgb(var(--color-muted));
   text-align: center;
+}
+
+/* Phone layout: the keyboard-shortcut chips beside popover menu items are
+   desktop-only affordances — no keyboard can press them on a touch screen,
+   and each chip only steals label width. */
+@media (max-width: 767px) {
+  .tac-pop__kbd {
+    display: none;
+  }
+
+  /* The bar outgrows a 390px viewport — wrap onto a second row (flyouts
+     are hikari popovers now, so no clipping concern). */
+  .tac-bar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  /* The flyout panels go full-width on the sheet. */
+  .tac-pop--wide {
+    width: 100%;
+  }
 }

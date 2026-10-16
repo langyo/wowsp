@@ -4,14 +4,16 @@
  * handling, and disposal. Returns the scene/camera/renderer so callers can add
  * meshes (map plane, ship markers, trajectory lines).
  *
- * The render loop runs continuously; callers mutate the scene and the next
- * frame picks it up. M4: ship markers + trajectories are added by
- * `HolographicMap.tsx` from the decoded `EntityTrajectory[]`.
+ * The render loop runs while the page is visible (paused when the tab is
+ * hidden); callers mutate the scene and the next frame picks it up. M4:
+ * ship markers + trajectories are added by `HolographicMap.tsx` from the
+ * decoded `EntityTrajectory[]`.
  */
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from "vue";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useTheme } from "@/theme";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 
 export interface ThreeScene {
   scene: THREE.Scene;
@@ -47,6 +49,14 @@ export function useThreeScene(
   let rafId = 0;
   let resizeObs: ResizeObserver | null = null;
   let stopThemeWatch: (() => void) | null = null;
+  let stopDpiWatch: (() => void) | null = null;
+  /** Removes the visibilitychange listener (which owns the loop's paused
+   *  state) — unmount stops the loop for good, so nothing restarts it. */
+  let stopVisibilityWatch: (() => void) | null = null;
+  /** The live GridHelper, tracked so unmount can dispose its geometry and
+   *  material — the theme watch already disposes the grid it replaces, but
+   *  without this the CURRENT grid's GPU buffers leak on teardown. */
+  let grid: THREE.GridHelper | null = null;
 
   onMounted(() => {
     const el = container.value;
@@ -63,7 +73,22 @@ export function useThreeScene(
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // The root's CSS `zoom` (theme/dpiPrefs DPI preference) enlarges the
+    // canvas element visually WITHOUT adding backing-store pixels — scale
+    // the pixel ratio by the applied zoom so the map stays crisp at
+    // non-Auto scales; stopDpiWatch below re-runs this on changes
+    // (setPixelRatio re-applies the current buffer size internally).
+    // The product is clamped at 2: a 1.5× DPR with 1.5× DPI zoom asked the
+    // GPU for 9× the CSS pixels every frame (the single biggest lag source
+    // on hi-dpi screens), while everything past 2× is imperceptible here —
+    // the scene is flat-shaded holo art, not fine text.
+    const dpiZoom = useAppliedDpiScale();
+    const applyPixelRatio = (zoom: number) =>
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio * zoom, 2));
+    applyPixelRatio(dpiZoom.value);
+    stopDpiWatch = watch(dpiZoom, (zoom) => {
+      applyPixelRatio(zoom);
+    });
     renderer.setSize(width, height, true);
     el.appendChild(renderer.domElement);
 
@@ -92,17 +117,19 @@ export function useThreeScene(
       (g.material as THREE.Material).opacity = p.gridOpacity;
       return g;
     };
-    let grid = buildGrid(scenePalette());
-    scene.add(grid);
+    let gridLocal = buildGrid(scenePalette());
+    grid = gridLocal;
+    scene.add(gridLocal);
     // Follow live theme switches (settings toggle / solar system mode).
     stopThemeWatch = watch(effectiveMode, () => {
       const p = scenePalette();
       scene.background = new THREE.Color(p.bg);
-      scene.remove(grid);
-      grid.geometry.dispose();
-      (grid.material as THREE.Material).dispose();
-      grid = buildGrid(p);
-      scene.add(grid);
+      scene.remove(gridLocal);
+      gridLocal.geometry.dispose();
+      (gridLocal.material as THREE.Material).dispose();
+      gridLocal = buildGrid(p);
+      grid = gridLocal;
+      scene.add(gridLocal);
     });
 
     api.value = { scene, camera, renderer, controls };
@@ -115,7 +142,35 @@ export function useThreeScene(
       renderer.render(scene, camera);
       rafId = requestAnimationFrame(tick);
     };
-    tick();
+
+    // Render-loop pause on hidden tabs (phone / Android edition keeps
+    // rAF-alikes burning otherwise): stop scheduling frames while
+    // document.hidden, resume on visible. Mirrors shipStage's visibility
+    // gating but with page visibility instead of IntersectionObserver.
+    let loopRunning = false;
+    const startLoop = () => {
+      if (loopRunning) return;
+      loopRunning = true;
+      // Drop the delta accumulated while paused so the first resumed
+      // frame does not hand a giant dt to onFrame.
+      clock.getDelta();
+      tick();
+    };
+    const stopLoop = () => {
+      if (!loopRunning) return;
+      loopRunning = false;
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") stopLoop();
+      else startLoop();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    stopVisibilityWatch = () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+    if (document.visibilityState !== "hidden") startLoop();
 
     resizeObs = new ResizeObserver(() => {
       const w = el.clientWidth;
@@ -129,14 +184,24 @@ export function useThreeScene(
   });
 
   onBeforeUnmount(() => {
+    stopVisibilityWatch?.();
     cancelAnimationFrame(rafId);
     stopThemeWatch?.();
+    stopDpiWatch?.();
     resizeObs?.disconnect();
     const a = api.value;
     if (a) {
       a.controls.dispose();
       a.renderer.dispose();
       a.renderer.domElement.remove();
+    }
+    // The theme watch disposes each grid it replaces; the CURRENT grid's
+    // geometry and material are per-mount GPU resources — release them here
+    // too or they leak on teardown.
+    if (grid) {
+      grid.geometry.dispose();
+      (grid.material as THREE.Material).dispose();
+      grid = null;
     }
     api.value = null;
     ready.value = false;

@@ -12,23 +12,35 @@
   "updateNow": "今すぐ更新",
   "updateLater": "後で",
   "upToDate": "最新です",
+  "updateAppliedTitle": "WoWSP は v{version} に更新されました",
+  "updateAppliedView": "更新履歴を見る",
   "checking": "確認中...",
   "downloading": "ダウンロード中...",
   "issues": "問題を報告",
   "license": "ライセンス",
   "qqGroupNotice": "テストのフィードバックは QQ グループまで：",
-  "qqGroupNumber": "1125770228",
+  "qqGroupNumber": "612331811",
+  "qqGroupHint": "クリックでグループチャットに参加",
   "attribution": {
     "fontMaoRole": "「神了」印章の文字",
-    "fontLuxunRole": "「海猴」「空中小人」「水下小人」印章の文字",
+    "fontLuxunRole": "「猴」「空中小人」「水下小人」「空中神人」「水下神人」「空中小猴」「水下小猴」「空中奶龙」「水下奶蛙」印章の文字",
     "bitmapNote": "ビットマップ（図形化）としてのみ使用し、フォントファイルはアプリに同梱していません。",
-    "wallpaperRole": "デフォルト壁紙の作者",
+    "wallpaperRole": "壁紙イラスト作者",
     "wallpaperNote": "壁紙の著作権は作者に帰属します。",
-    "wallpaperMark": "壁紙",
     "aperadarRole": "照会ロジックと評価基準の主な出典",
+    "aperadarAuthorRole": "ApeRadar（海猴雷达）の作者",
     "wowsunpackRole": "ゲームデータの展開（vendored）",
     "wowscoreRole": "ゲームデータモデル（vendored）",
     "hikariRole": "UI コンポーネントライブラリ",
-    "devtoolsRole": "エージェント規律インフラ（ワークスペース規約とツールチェーン）"
+    "devtoolsRole": "エージェント規律インフラ（ワークスペース規約とツールチェーン）",
+    "shittimRole": "フロントエンド外装とビルド基盤"
+  },
+  "sponsor": {
+    "cardName": "afdian · langyo",
+    "lead": "いただいた支援はすべて、本ソフトウェア開発にかかる AI コストに使われます。",
+    "voluntary": "支援は完全に任意です。",
+    "noHire": "支援によって雇用・委託などの法的関係が生じることはありません。",
+    "openSource": "本プロジェクトは常にオープンソースであり、ソフトウェア本体に支援者限定の特別な機能を組み込むことはありません。",
+    "noAffiliation": "本ソフトウェアは Wargaming・Lesta・360 の公式とは直接の関係がありません。"
   }
 }

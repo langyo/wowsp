@@ -1,6 +1,9 @@
 /** Winrate color tiers — mirrors ApeRadar / competitive WoWS community convention.
  *  Red < 47% → yellow 47-50% → green 50-55% → purple > 55%. */
 
+import { t } from "@/i18n";
+import { statsPrefsState } from "@/stores/statsPrefs";
+
 export type WinrateTier = "red" | "yellow" | "green" | "purple";
 
 export function winrateTier(wr: number | null | undefined): WinrateTier {
@@ -42,28 +45,150 @@ export function prTier(pr: number | null | undefined): PrTier {
   return { key: "tierBad", color: "rgb(254 14 0)" };
 }
 
-export type CareerStamp = "miracle" | "ape" | "maggot";
+/** Standard English tier wording for `localizedTiers: false` — the
+ *  wows-numbers band vocabulary instead of the fun localized flavor
+ *  (拉完了/夯/战舰仙人…) that lives in res/i18n `stats.json`. Front-end
+ *  constants by design: the wording must NOT follow the UI locale when the
+ *  user asked for the neutral scale. `unknown` renders the same "—" the
+ *  localized path uses (there is no `stats.unknown` key — every consumer
+ *  hardcodes the em dash for a missing rating). */
+export const PR_TIER_STANDARD_LABELS: Record<string, string> = {
+  tierBad: "Bad",
+  tierBelowAvg: "Below Average",
+  tierAvg: "Average",
+  tierGood: "Good",
+  tierGreat: "Great",
+  tierUnicum: "Unicum",
+  unknown: "—",
+};
+
+/** Display label for a PR tier key: the localized flavor wording or the
+ *  standard English band word, per the stats prefs. Reads the prefs ref
+ *  directly so a settings toggle re-renders every consumer, and routes
+ *  through `t` inside the caller's render context so locale switches do
+ *  too. Colors/rainbow stay tied to prTier() and never follow this knob. */
+export function prTierLabel(key: string): string {
+  if (!statsPrefsState.value.localizedTiers) {
+    return PR_TIER_STANDARD_LABELS[key] ?? PR_TIER_STANDARD_LABELS.unknown;
+  }
+  return key === "unknown" ? "—" : t(`stats.${key}`);
+}
+
+/** Clan aggregate winrate above which a hidden profile is EXCUSED from the
+ *  过街老鼠 stamp (percent 0–100, same scale as `ClanInfo.winrate`): a clan
+ *  this strong makes the hidden profile read as privacy, not as hiding a
+ *  bad career. Below or at the threshold — or with no verdict at all — the
+ *  stamp stays on (fail-open). */
+export const RAT_CLAN_WINRATE_MAX = 53;
+
+export type CareerStamp = "miracle" | "ape" | "maggot" | "rat";
 
 /** Composition stamps (ApeRadar's 成分 tags): 空中小人 marks CV mains, 水下小人
  *  marks submarine mains. Independent of the PR verdicts — a player can carry
  *  both a career stamp and a composition stamp. */
 export type CompositionStamp = "air" | "sub";
 
-export type StampKind = CareerStamp | CompositionStamp;
+/** Veteran composition stamps (奶龙 / 奶蛙章): a class share over 50% upgrades the
+ *  tag to 空中奶龙 / 水下奶蛙, which REPLACES the minor (小人) seal for that
+ *  class — the veteran implies the >20% tag, so only the stronger face shows.
+ *  Still composition seals (they render at comp size); unlike the minor tags
+ *  they never merge with career verdicts. */
+export type VeteranStamp = "airVeteran" | "subVeteran";
 
-/** Career verdict stamps: a red-tier career earns the 海猴 mark — or the 蛆
+/** Merged seals (合并勋章): 空中神人 / 水下神人 (神了 merges) and 空中小猴 /
+ *  水下小猴 (猴 merges) fire when a player qualifies for BOTH a composition
+ *  tag AND that career verdict. The merge CONSUMES its constituents — the
+ *  merged seal replaces (and suppresses) both the composition tag (veteran
+ *  tier included; the merged face is not tier-distinguished) and the career
+ *  verdict — while 蛆 and 过街老鼠 each suppress the composition tags
+ *  entirely (no merged maggot or rat seal exists: a hidden profile's stats
+ *  are invisible, so a rat holder's composition cannot be graded either). */
+export type MergedStamp = "airMiracle" | "subMiracle" | "airApe" | "subApe";
+
+export type StampKind = CareerStamp | CompositionStamp | MergedStamp | VeteranStamp;
+
+/** Whether `kind` is one of the merged composition+career seals. Consumers
+ *  with merged-kind-specific behavior (the share shots' seal sizing, and
+ *  anything else that used to hardcode the miracle equalities) route through
+ *  this guard so a new merge can never be missed. */
+export function isMergedStamp(kind: StampKind): boolean {
+  return (
+    kind === "airMiracle" || kind === "subMiracle" || kind === "airApe" || kind === "subApe"
+  );
+}
+
+/** The one merge rule, shared by every seal surface (account StatsCard,
+ *  share shots, the Tab overlay chips — all route through here so the
+ *  merge can never disagree between surfaces):
+ *   - miracle + sub → 水下神人; miracle + air → 空中神人; ape likewise
+ *     merges into 水下小猴 / 空中小猴 (both orders normalized sub-first).
+ *   - Any merged kind CONSUMES its constituents: the return carries ONLY
+ *     the merged kinds — the standalone verdict and both composition tags
+ *     (minor or veteran tier alike; the merged face is not tier-distin-
+ *     guished, per the user-confirmed 照常合并) are suppressed. Both merges
+ *     at once → exactly [subX, airX].
+ *   - maggot SUPPRESSES composition entirely: air and/or sub reduce the
+ *     return to just [maggot] (no merged maggot seal exists).
+ *   - rat likewise returns [rat] alone — a hidden profile's stats are
+ *     invisible, so its composition tags carry nothing gradeable; the rat
+ *     suppression has the same shape as the maggot floor.
+ *   - Otherwise the legacy order [career?, air-tier?, sub-tier?] stands:
+ *     each class shows its stronger face, the veteran seal (奶龙 / 奶蛙) when the
+ *     share is over 50%, the minor seal (小人) when only over 20%.
+ *  `career` null and `comp` null/undefined degrade to the legacy pass-through
+ *  with nothing to add. */
+export function resolveStamps(
+  career: CareerStamp | null,
+  comp: CompositionStamps | null | undefined,
+): StampKind[] {
+  // 蛆 is the floor verdict — it never merges and nothing rides beside it.
+  if (career === "maggot") return ["maggot"];
+  // 过街老鼠 is a second floor of the same shape: hiding the stats makes the
+  // composition unknowable, so the rat verdict stands alone too.
+  if (career === "rat") return ["rat"];
+  const merged: MergedStamp[] = [];
+  if (career === "miracle" || career === "ape") {
+    if (comp?.sub) merged.push(career === "miracle" ? "subMiracle" : "subApe");
+    if (comp?.air) merged.push(career === "miracle" ? "airMiracle" : "airApe");
+  }
+  if (merged.length > 0) return merged;
+  return [
+    career,
+    comp?.air ? (comp.airVeteran ? "airVeteran" : "air") : null,
+    comp?.sub ? (comp.subVeteran ? "subVeteran" : "sub") : null,
+  ].filter((k): k is StampKind => k != null);
+}
+
+/** Career verdict stamps: a red-tier career earns the 猴 mark — or the 蛆
  *  mark when the winrate is also sub-40% (a red-tier red-WR career is a
  *  different beast); a sustained purple-tier+ career earns 神了 — gated on
  *  500+ battles, ApeRadar's unicum battle-count threshold ("长期" 紫表, not a
- *  short hot streak). An unknown winrate falls back to 海猴. Null when no
- *  stamp applies. */
+ *  short hot streak). A hidden profile earns the 过街老鼠 mark — there are
+ *  no stats to grade, and hiding is the tell — except when 神了 qualifies
+ *  (checked first, see below) or the clan gate excuses it: when `clanWinrate`
+ *  carries the player's clan's aggregate winrate and it beats
+ *  RAT_CLAN_WINRATE_MAX, the clan is strong
+ *  enough that the hidden profile is not read as hiding a bad career and no
+ *  stamp is earned. Fail-open: a missing (`undefined`) or failed (`null`)
+ *  clan verdict never suppresses the stamp — only a RESOLVED strong-clan
+ *  verdict does. An unknown winrate falls back to 猴. Null when no stamp
+ *  applies.
+ *
+ *  Exactly ONE stamp comes back — priority: 神了 outranks everything (a
+ *  qualifying purple career is the loudest verdict, even over 过街老鼠 on a
+ *  hidden profile); when it doesn't qualify, the hidden / red-tier verdicts
+ *  apply in their own mutually-exclusive PR bands. */
 export function careerStamp(
   pr: number | null | undefined,
   battles: number | null | undefined,
   winrate: number | null | undefined,
+  hidden = false,
+  clanWinrate?: number | null,
 ): CareerStamp | null {
+  if (pr != null && pr >= 2100 && battles != null && battles >= 500) return "miracle";
+  if (hidden && clanWinrate != null && clanWinrate > RAT_CLAN_WINRATE_MAX) return null;
+  if (hidden) return "rat";
   if (pr == null) return null;
-  if (pr >= 2100) return battles != null && battles >= 500 ? "miracle" : null;
   if (pr < 750) return winrate != null && winrate < 40 ? "maggot" : "ape";
   return null;
 }
@@ -71,19 +196,26 @@ export function careerStamp(
 export interface CompositionStamps {
   air: boolean;
   sub: boolean;
+  /** >50% career share tiers (奶龙 / 奶蛙章) — each implies its base flag above by
+   *  construction (0.5 > 0.2), so only the stronger face ever shows. */
+  airVeteran: boolean;
+  subVeteran: boolean;
 }
 
 /** 空中小人 / 水下小人 criteria (user-defined): CV (resp. SS) battles must
  *  exceed 20% of the player's career battles, with a career total above 200
- *  battles so a fresh account's first CV foray doesn't earn the mark.
- *  `ships` is the player's full per-ship stat list; `typeOf` resolves the
- *  ship type (encyclopedia first, offline DB fallback). Career-level tags:
- *  they render on the account card only, never on a single ship's page. */
+ *  battles so a fresh account's first CV foray doesn't earn the mark; over
+ *  50% the tag upgrades to the veteran seal (空中奶龙 / 水下奶蛙), which
+ *  replaces the minor (小人) face for that class. `ships` is the player's
+ *  full per-ship stat list; `typeOf` resolves the ship type (encyclopedia
+ *  first, offline DB fallback). Career-level tags: they render on the
+ *  account card only, never on a single ship's page. */
 export function compositionStamps(
   ships: { shipId: number; battles: number }[],
   typeOf: (shipId: number) => string | null | undefined,
   minBattles = 200,
   minShare = 0.2,
+  minVeteranShare = 0.5,
 ): CompositionStamps {
   let career = 0;
   let air = 0;
@@ -94,8 +226,15 @@ export function compositionStamps(
     if (t === "AirCarrier") air += s.battles;
     else if (t === "Submarine") sub += s.battles;
   }
-  if (career <= minBattles) return { air: false, sub: false };
-  return { air: air / career > minShare, sub: sub / career > minShare };
+  if (career <= minBattles) {
+    return { air: false, sub: false, airVeteran: false, subVeteran: false };
+  }
+  return {
+    air: air / career > minShare,
+    sub: sub / career > minShare,
+    airVeteran: air / career > minVeteranShare,
+    subVeteran: sub / career > minVeteranShare,
+  };
 }
 
 /** Average-damage color tiers — rough absolute buckets for overall account
@@ -107,4 +246,17 @@ export function damageColor(avg: number | null | undefined): string {
   if (avg >= 50000) return "rgb(71 227 165)";
   if (avg >= 25000) return "rgb(230 170 50)";
   return "rgb(220 80 80)";
+}
+
+/** Low-volume career threshold for the battles column: below it the
+ *  numbers are too thin to trust, so the count renders red (winrate's red
+ *  tone). At or above it the count keeps the PLAIN text color — a battle
+ *  count carries no tier, and coloring it would pretend one. Mirrors
+ *  `compositionStamps`' career floor. */
+export const LOW_BATTLES = 200;
+
+/** Battles-column color: red while the career is under [`LOW_BATTLES`]
+ *  battles (an unreliable-stats flag), otherwise none (plain text). */
+export function battlesColor(battles: number | null | undefined): string | undefined {
+  return battles != null && battles < LOW_BATTLES ? "rgb(220 80 80)" : undefined;
 }

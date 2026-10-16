@@ -1,79 +1,35 @@
-// Settings modal. A left rail (same visual language as the main sidebar's
-// nav) picks the active section; the right pane renders that section's
-// titled card. The modal is wide enough for the two-column layout while
-// form controls keep a sane size.
+// wowsp settings CONTENT styling — the shell (rail / pane / group / sub /
+// hint) is hikari's HSettingsBody vocabulary (.hk-settings*) since
+// 2026-09-23; this file keeps only the section-specific styles (language
+// rows, presets, wallpapers, DPI, network, pairing, packs, installs).
+// Shared by BOTH surfaces of the settings body
+// (components/settings/SettingsBody): the desktop MODAL (layout/
+// SettingsModal, host class `hk-settings-host`) and the phone-layout
+// PAGE (views/SettingsView, which re-anchors the shell under
+// `.settings-page__body .hk-settings`).
+//
+// Scroll ownership: the modal host contract (stable frame, idle body
+// scroller, flush pane scrollbar) ships with hikari's own
+// HkSettingsDialog.scss under `.hk-settings-host`; on the page the app
+// shell scrolls and SettingsView.scss neutralizes the host assumptions.
 
 .settings-modal {
-  display: flex;
-  align-items: stretch;
-  gap: 1.25rem;
-  /* Fixed tall height — must fit inside HkModal's body scroller (70vh cap
-     minus 1.5rem body padding top+bottom, with slack). If it ever exceeded
-     the scroller, the OUTER region would scroll first (dragging the rail
-     with it) before the pane's own scrollbar engages. Fixed height also
-     keeps the window from resizing when switching sections. No min-height
-     guard: at very short window sizes the pane just scrolls internally. */
-  height: calc(70vh - 4.5rem);
-
-  /* ── section rail (mirrors the main sidebar nav) ── */
-  &__rail {
-    flex: none;
-    width: 10.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    padding: 0.25rem 0.75rem 0.25rem 0;
-    border-right: 1px solid rgb(var(--color-border) / 15%);
-    overflow-y: auto;
-  }
-
-  &__rail-item {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.5rem 0.75rem;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    text-align: left;
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
-    cursor: pointer;
-    transition: color var(--duration-short) var(--ease-standard),
-      background var(--duration-short) var(--ease-standard);
-
-    &:hover {
-      color: rgb(var(--color-text));
-      background: rgb(var(--color-primary) / 8%);
-    }
-
-    &.is-active {
-      color: rgb(var(--color-primary));
-      background: rgb(var(--color-primary) / 12%);
-      font-weight: 500;
-    }
-  }
-
-  &__rail-icon {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-
-  /* ── content pane: one section card at a time ── */
-  &__pane {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    overflow-y: auto;
-    padding-right: 0.25rem;
-  }
-
+  /* Shell framing (flex row, rail width, pane scroll, stable frame) is
+     hikari's .hk-settings* now; this block remains as the BEM namespace
+     for wowsp's flat content classes only. */
+  /* Constant shell height applies to the MODAL surface only (the page
+     variant sizes from content instead): sized under the body scroller's
+     inner padding (1.5rem top + bottom) with slack, the shell ALWAYS
+     fits, so HkModal's floating overlay scrollbar stays idle and the
+     pane's own edge bar is the only scrollbar — at a stable frame
+     height, whatever the section. See the host rule at the file end. */
+  /* ── content pane: one section card at a time ──
+     The pane is the scroll container, so its scrollbar renders at the
+     pane's border edge. Cancelling the modal body's right padding
+     (hikari's fixed 1.5rem --hk-modal-padding-body) with a negative
+     margin puts that edge — and therefore the scrollbar — flush with
+     the modal window's right edge; the padding-right then re-applies
+     the content inset BETWEEN the scrollbar and the cards. */
   /* Attributions (版权信息): one AuthorMark row + note per partner. */
   &__attributions {
     display: flex;
@@ -96,47 +52,6 @@
 
   /* One titled card per settings area. Slightly translucent so the cards
      sit quietly on image wallpapers. */
-  &__group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
-    background: rgb(var(--color-surface) / 55%);
-    border: 1px solid rgb(var(--color-border) / 15%);
-    border-radius: var(--radius-md);
-  }
-
-  &__group-title {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: rgb(var(--color-text));
-  }
-
-  /* Titled sub-block inside a card (color presets, wallpaper). */
-  &__sub {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.25rem;
-  }
-
-  &__sub-title {
-    margin: 0;
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: rgb(var(--color-muted));
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  &__hint {
-    margin: 0;
-    font-size: var(--text-xs);
-    line-height: 1.5;
-    color: rgb(var(--color-muted));
-  }
-
   /* ── language ─────────────────────────────────────────────────────────── */
 
   &__langs {
@@ -159,111 +74,328 @@
     font-weight: 500;
   }
 
-  /* ── color presets ──────────────────────────────────────────────────────
-     Uniform card chrome; each theme only peeks through a small preview
-     chip, so the unselected cards no longer read as random colored slabs. */
+  /* ── color schemes ──────────────────────────────────────────────────────
+     A wrapping tile grid, one tile per theme — hikari's built-ins plus the
+     user's custom schemes, the same list the shittim-chest picker shows (a
+     custom shadowing a builtin id dedupes to ONE tile flagged custom, so
+     its delete doubles as "restore the factory preset"). Tiles select live;
+     the pencil affordance opens the full scheme-editor window; the dashed
+     tile starts a blank custom scheme. The swatch ball rides the tile's
+     leading cell (cut diagonally into the scheme's primary/secondary
+     halves, like chest's iconless theme rows). auto-fill columns keep one
+     scheme per row on a phone-width rail and pack four-plus across a wide
+     desktop modal — the old single-column list wasted the width. */
 
-  &__presets {
+  &__themes {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+    gap: 0.3rem;
   }
 
-  &__preset {
+  &__theme {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.6rem;
     background: rgb(var(--color-surface));
-    /* Reserved border — selection never shifts the grid. */
+    /* Reserved border — selection never shifts the list. */
     border: 2px solid transparent;
     border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: border-color var(--duration-short) var(--ease-standard),
-                transform var(--duration-short) var(--ease-standard);
-
-    &:hover {
-      transform: translateY(-1px);
-      border-color: rgb(var(--color-border) / 30%);
-    }
-
-    &:focus-visible {
-      outline: 2px solid rgb(var(--color-primary));
-      outline-offset: 1px;
-    }
-
-    &--on {
-      border-color: rgb(var(--color-primary));
-    }
-  }
-
-  &__preset-preview {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    flex: none;
-    width: 2.4rem;
-    height: 1.5rem;
-    border-radius: var(--radius-xs);
-    border: 1px solid rgb(var(--color-border) / 25%);
-  }
-
-  &__preset-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-  }
-
-  &__preset-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: left;
-    font-size: var(--text-xs);
-    font-weight: 500;
-    color: rgb(var(--color-text));
-  }
-
-  &__preset-check {
-    flex: none;
-    color: rgb(var(--color-primary));
-  }
-
-  /* ── wallpaper ────────────────────────────────────────────────────────── */
-
-  &__wallpapers {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 0.5rem;
-  }
-
-  &__wallpaper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.5rem;
-    background: rgb(var(--color-surface));
-    border: 2px solid transparent;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
     transition: border-color var(--duration-short) var(--ease-standard);
 
     &:hover {
       border-color: rgb(var(--color-border) / 30%);
     }
 
+    &--on {
+      border-color: rgb(var(--color-primary));
+    }
+  }
+
+  &__theme-pick {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.5rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+
     &:focus-visible {
       outline: 2px solid rgb(var(--color-primary));
       outline-offset: 1px;
+    }
+  }
+
+  &__theme-swatch {
+    flex: none;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    border: 1px solid rgb(var(--color-border) / 25%);
+  }
+
+  &__theme-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: rgb(var(--color-text));
+  }
+
+  &__theme-check {
+    flex: none;
+    color: rgb(var(--color-primary));
+  }
+
+  /* Trailing affordance column — the standard hikari functional icon
+     buttons (ghost/24) for edit (every tile) and delete (custom tiles,
+     where "delete" on an overridden builtin restores the factory preset).
+     On a narrow tile the name truncates first; the row controls always
+     stay reachable. */
+  &__theme-actions {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    padding-right: 0.25rem;
+  }
+
+  /* Dashed "new scheme" tile — the grid's last cell; opens the scheme
+     editor on a blank canvas (seeded from the stock default preset). */
+  &__theme-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.5rem;
+    background: none;
+    border: 1px dashed rgb(var(--color-primary) / 40%);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: rgb(var(--color-muted));
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+
+    &:hover,
+    &:focus-visible {
+      border-color: rgb(var(--color-primary) / 70%);
+      background: rgb(var(--color-primary) / 5%);
+      color: rgb(var(--color-primary));
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+  }
+
+  /* ── scheme editor window footnotes (ThemeSchemeDialog — teleported
+     outside the settings shell, so they style as standalone flat classes) */
+
+  &__theme-editor-hint {
+    margin: 0.6rem 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+  }
+
+  /* The ship-palette line under the editor hint: the picker block itself
+     is hikari's "extended colors" group (the group is registered onto
+     hikari's registry — theme/shipTypeTokenGroup), so only the per-line
+     hint + its reset affordance live here. */
+  &__theme-editor-ship {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    margin: 0.35rem 0 0;
+  }
+
+  &__theme-editor-ship-hint {
+    flex: 1;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+  }
+
+  /* ── wallpaper ────────────────────────────────────────────────────────── */
+
+  /* Horizontal, never-wrapping wallpaper strip — a hikari scroll
+     container (axis "horizontal") owns the scrollbar: an auto-hiding
+     overlay track on the strip's bottom edge, the native bar hidden.
+     The dashed add tile rides at the far end. No box rules of its own —
+     the strip root stretches its settings row (the container's own
+     flex column); the layout lives on the inner wrapper. */
+  &__wallpapers {
+    /* intentionally empty — the root is sized entirely by the hikari
+       scroll container's own chrome */
+  }
+
+  /* Former strip layout + focus-ring clearance, moved inside the
+     viewport so they scroll with the cards. */
+  &__wallpapers-inner {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.5rem;
+    /* Keep focus rings (2px outline + 1px offset) from clipping at the
+       edges of the scroll container. */
+    padding: 3px;
+  }
+
+  &__wallpaper {
+    position: relative;
+    /* Fixed footprint — cards neither shrink nor grow in the strip.
+       min-width: 0 is the load-bearing half of that contract: a flex
+       item's automatic minimum size tracks its min-content, so a long
+       unbroken wallpaper filename would otherwise stretch its card well
+       past the basis while the neighbours stay at 120px. */
+    flex: 0 0 120px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: rgb(var(--color-surface));
+    border: 2px solid transparent;
+    border-radius: var(--radius-sm);
+    transition: border-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-border) / 30%);
     }
 
     &--on {
       border-color: rgb(var(--color-primary));
     }
+  }
+
+  /* Clickable body of a wallpaper card (select as active). Buttons carry
+     the same automatic-minimum-size trap as their card parent, so the
+     shrink allowance repeats here for the ellipsis to actually bite. */
+  &__wallpaper-pick {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    border-radius: var(--radius-sm);
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+  }
+
+  &__wallpaper-check {
+    flex: none;
+    color: rgb(var(--color-primary));
+  }
+
+  /* Delete affordance on custom cards — quiet icon, flips into a text
+     confirm when armed (two-step, same contract as the cache clears). */
+  &__wallpaper-delete {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.3rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+
+    &:hover {
+      color: rgb(var(--color-error));
+      border-color: rgb(var(--color-error) / 50%);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    &--confirm {
+      width: auto;
+      color: rgb(var(--color-error));
+      font-weight: 600;
+    }
+  }
+
+  /* Dashed import tile — the wallpaper strip's last item. Mirrors the
+     account / game-path dashed add rows. */
+  &__wallpaper-add {
+    flex: 0 0 120px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.5rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    &--busy {
+      cursor: default;
+      opacity: 0.6;
+    }
+  }
+
+  &__wallpaper-add-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    color: rgb(var(--color-primary));
+    border: 1px dashed rgb(var(--color-primary) / 40%);
+    border-radius: var(--radius-xs);
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+  }
+
+  &__wallpaper-add:hover &__wallpaper-add-frame,
+  &__wallpaper-add:focus-visible &__wallpaper-add-frame {
+    border-color: rgb(var(--color-primary) / 70%);
+    background: rgb(var(--color-primary) / 5%);
+  }
+
+  &__wallpaper-add-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
   }
 
   &__wallpaper-preview {
@@ -289,8 +421,61 @@
   }
 
   &__wallpaper-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: var(--text-2xs);
     color: rgb(var(--color-muted));
+  }
+
+  /* ── interface scale (DPI) ─────────────────────────────────────────────
+     Staged slider + value readout in one row; the Auto/Apply buttons live
+     in their own row underneath (the reference window's footer grammar,
+     rendered inline). The risk warning tints with the danger color so an
+     overshooting notch is caught before Apply. */
+
+  &__dpi-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  &__dpi-slider {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__dpi-value {
+    flex: none;
+    min-width: 3.5rem;
+    text-align: right;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--color-text));
+  }
+
+  /* Overlay-strength slider row (wallpaper transparency): the same slider
+     grammar as the DPI row, with a leading label instead of a trailing
+     Auto action. */
+  &__overlay-label {
+    flex: none;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+  }
+
+  &__dpi-warning {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-error));
+  }
+
+  &__dpi-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   /* ── solar status (appearance card footer) ────────────────────────────── */
@@ -399,7 +584,121 @@
 
   &__pack-error {
     font-size: var(--text-2xs);
-    color: rgb(var(--color-danger, 220 60 60));
+    color: rgb(var(--color-error));
+  }
+
+  /* ── phone pairing (desktop server side) ── */
+  &__pairing-busy {
+    display: flex;
+    justify-content: center;
+    margin: 0.4rem 0 0;
+  }
+
+  &__pairing-live {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.7rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid rgb(var(--color-primary) / 35%);
+    border-radius: var(--radius-sm, 6px);
+    background: rgb(var(--color-primary) / 6%);
+  }
+
+  &__pairing-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  &__pairing-label {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__pairing-value {
+    font-family: var(--font-mono);
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    /* Selectable via theme.scss's copyable-content whitelist — the user
+       copies these by hand into the phone. */
+    white-space: nowrap;
+  }
+
+  /* The PIN display is a readonly hikari OTP grid (the same component the
+     phone types into) plus its action row (copy + regenerate) — the address
+     below is auxiliary small print now that discovery does the addressing. */
+  &__pairing-pin {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+    margin: 0.3rem 0 0.4rem;
+  }
+
+  &__pairing-pin-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  /* Gateway status line under the code (relay mode tag). */
+  &__pairing-mode {
+    display: flex;
+    align-items: center;
+    margin: 0.35rem 0 0;
+  }
+
+  /* ── phone-build CLIENT pairing section: primary open action + the
+        paired-computer list (label + last-synced + forget) ── */
+  &__pairing-open {
+    display: flex;
+    align-items: center;
+    margin-top: 0.4rem;
+  }
+
+  &__paired-hosts {
+    list-style: none;
+    margin: 0.45rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__paired-host {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: 10px;
+    background: rgb(var(--color-surface-variant, var(--color-surface)) / 30%);
+  }
+
+  &__paired-host-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+  }
+
+  &__paired-host-label {
+    font-size: var(--text-sm, 0.875rem);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__paired-host-meta {
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-text-secondary));
   }
 
   /* Thin progress track (same visual language as the mod-catalog rows). */
@@ -455,100 +754,227 @@
     padding: 2px; /* avoid focus-ring clipping */
   }
 
-  /* Install card — mirrors the account card's anatomy (round badge + body +
-     trailing state), so the 游戏路径 and 账户 lists read as one family.
-     Clicking a card activates that client. */
-  .install-card {
+  /* Positioned row around each install card — the card is a button and
+     buttons don't nest, so the two-step delete control hangs off this
+     wrapper instead (same structure as the wallpaper tiles). */
+  &__install {
+    position: relative;
+  }
+
+  &__install-remove {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.6rem 0.7rem;
-    background: rgb(var(--color-bg));
-    border: 1px solid rgb(var(--color-border) / 15%);
-    border-radius: var(--radius-md);
+    justify-content: center;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    padding: 0 0.3rem;
+    background: rgb(var(--color-surface));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-xs);
     cursor: pointer;
-    text-align: left;
-    width: 100%;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
     font-family: inherit;
+    white-space: nowrap;
+    opacity: 0;
     transition:
-      border-color var(--duration-short) var(--ease-standard),
-      background var(--duration-short) var(--ease-standard),
-      transform var(--duration-short) var(--ease-standard);
+      opacity var(--duration-short) var(--ease-standard),
+      color var(--duration-short) var(--ease-standard),
+      border-color var(--duration-short) var(--ease-standard);
+
+    .settings-modal__install:hover &,
+    .settings-modal__install:focus-within & {
+      opacity: 1;
+    }
 
     &:hover {
-      border-color: rgb(var(--color-primary) / 35%);
-      background: rgb(var(--color-primary) / 4%);
-      transform: translateY(-1px);
+      color: rgb(var(--color-error));
+      border-color: rgb(var(--color-error) / 50%);
+    }
+
+    &:focus-visible {
+      opacity: 1;
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: 1px;
+    }
+
+    /* Armed second step — an inline "Remove?" label in place of the icon. */
+    &--confirm {
+      width: auto;
+      color: rgb(var(--color-error));
+      border-color: rgb(var(--color-error) / 50%);
+      font-weight: 600;
+    }
+  }
+
+  /* Install card — mirrors the account card's anatomy (round badge + body +
+     trailing state), so the 游戏路径 and 账户 lists read as one family.
+     Clicking a card activates that client. Its rules live at the file's
+     top level (`.hk-settings__pane .install-card`) — the pane, not this
+     BEM block, is the surviving ancestor after the shell moved to
+     hikari's HSettingsBody. */
+
+  /* Dashed add-path placeholder — the last row of the section; opens the
+     dialog hosting the detection / browse actions. Mirrors the running-row
+     dashed style (and the account list's add row). */
+  &__install-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    background: transparent;
+    border: 1px dashed rgb(var(--color-primary) / 40%);
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-primary));
+    font-family: inherit;
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition:
+      border-color var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      border-color: rgb(var(--color-primary) / 70%);
+      background: rgb(var(--color-primary) / 5%);
     }
 
     &:focus-visible {
       outline: 2px solid rgb(var(--color-primary));
       outline-offset: 1px;
     }
-
-    &--active {
-      border-color: rgb(var(--color-primary) / 50%);
-      background: rgb(var(--color-primary) / 8%);
-      box-shadow: inset 3px 0 0 rgb(var(--color-primary));
-    }
-
-    &__body {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 0.2rem;
-    }
-
-    &__head {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      min-width: 0;
-    }
-
-    &__name {
-      font-size: var(--text-sm);
-      font-weight: 600;
-      color: rgb(var(--color-text));
-    }
-
-    &__check {
-      flex-shrink: 0;
-      color: rgb(var(--color-primary));
-    }
-
-    &__path {
-      font-family: var(--font-mono);
-      font-size: var(--text-2xs);
-      color: rgb(var(--color-muted));
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
   }
 
-  /* Running-game shortcut row above the actions. */
-  &__running {
+  /* Stacked full-width actions inside the add-path dialog. */
+  &__addpath-actions {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    border: 1px dashed rgb(var(--color-primary) / 35%);
-    border-radius: var(--radius-sm);
-    color: rgb(var(--color-primary));
-
-    .settings-modal__hint {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-  }
-
-  &__install-actions {
-    display: flex;
-    gap: 0.6rem;
+    align-items: stretch;
+    margin-top: 0.75rem;
   }
 }
+
+.settings-modal__running {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed rgb(var(--color-primary) / 35%);
+  border-radius: var(--radius-sm);
+  color: rgb(var(--color-primary));
+
+  .hk-settings-hint {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* HkDraggableList rows ship the library's bordered item chrome; the
+   install card owns its own surface, so the row goes bare. The drag
+   affordances (dim/scale on the source row, rails on the drop target)
+   are restated on the bare shape — the library's own [data-*] rules ride
+   the chrome removed here. */
+.hk-settings__pane .hk-draggable-list-item {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  transition: none;
+
+  &[data-dragging] {
+    opacity: 0.4;
+    transform: scale(0.98);
+  }
+
+  &[data-placeholder="before"] {
+    box-shadow: inset 0 2px 0 0 rgb(var(--color-primary) / 60%);
+  }
+
+  &[data-placeholder="after"] {
+    box-shadow: inset 0 -2px 0 0 rgb(var(--color-primary) / 60%);
+  }
+}
+
+.hk-settings__pane .install-card {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  transition:
+    border-color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard),
+    transform var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 35%);
+    background: rgb(var(--color-primary) / 4%);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: 1px;
+  }
+
+  &--active {
+    border-color: rgb(var(--color-primary) / 50%);
+    background: rgb(var(--color-primary) / 8%);
+    box-shadow: inset 3px 0 0 rgb(var(--color-primary));
+    /* Extra right padding keeps the trailing 使用中 tag clear of the
+       hover-revealed remove button anchored to the row's top-right. */
+    padding-right: 2.2rem;
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+
+  &__name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__check {
+    flex-shrink: 0;
+    color: rgb(var(--color-primary));
+  }
+
+  &__path {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* ── Install cards (HkDraggableList rows) ─────────────────────────── */

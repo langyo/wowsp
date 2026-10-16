@@ -12,23 +12,35 @@
   "updateNow": "Actualizar ahora",
   "updateLater": "Más tarde",
   "upToDate": "Ya está actualizado",
+  "updateAppliedTitle": "WoWSP se ha actualizado a v{version}",
+  "updateAppliedView": "Ver el historial de cambios",
   "checking": "Comprobando...",
   "downloading": "Descargando...",
   "issues": "Informar de un problema",
   "license": "Licencia",
   "qqGroupNotice": "Para comentarios de pruebas, únete a nuestro grupo de QQ:",
-  "qqGroupNumber": "1125770228",
+  "qqGroupNumber": "612331811",
+  "qqGroupHint": "Haz clic para unirte al chat de grupo",
   "attribution": {
     "fontMaoRole": "Glifos del sello «神了»",
-    "fontLuxunRole": "Glifos de los sellos «海猴», «空中小人», «水下小人»",
+    "fontLuxunRole": "Glifos de los sellos «猴», «空中小人», «水下小人», «空中神人», «水下神人», «空中小猴», «水下小猴», «空中奶龙», «水下奶蛙»",
     "bitmapNote": "Se usan como mapas de bits (uso gráfico); los archivos de fuente no se distribuyen con la aplicación.",
-    "wallpaperRole": "Autor del fondo de pantalla predeterminado",
+    "wallpaperRole": "Artista de los fondos",
     "wallpaperNote": "La obra del fondo de pantalla sigue siendo propiedad de su autor.",
-    "wallpaperMark": "Fondo",
     "aperadarRole": "Fuente principal de la lógica de consulta y los criterios de valoración",
+    "aperadarAuthorRole": "Autor de ApeRadar (海猴雷达)",
     "wowsunpackRole": "Extracción de datos del juego (vendored)",
     "wowscoreRole": "Modelo de datos del juego (vendored)",
     "hikariRole": "Biblioteca de componentes de UI",
-    "devtoolsRole": "Infraestructura de disciplina para agentes (reglas de workspace y toolchain)"
+    "devtoolsRole": "Infraestructura de disciplina para agentes (reglas de workspace y toolchain)",
+    "shittimRole": "Shell del frontend e infraestructura de build"
+  },
+  "sponsor": {
+    "cardName": "afdian · langyo",
+    "lead": "Cada donación se destina íntegramente a los costes de IA necesarios para desarrollar este software.",
+    "voluntary": "Donar es completamente opcional.",
+    "noHire": "Una donación no crea ninguna relación laboral, de encargo ni ningún otro tipo de relación jurídica.",
+    "openSource": "El proyecto sigue siendo de código abierto: la aplicación nunca incluirá funciones que requieran una donación.",
+    "noAffiliation": "Este software no tiene relación directa con Wargaming, Lesta ni 360."
   }
 }

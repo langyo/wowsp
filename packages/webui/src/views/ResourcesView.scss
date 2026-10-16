@@ -1,104 +1,207 @@
-// Mod Hub (Resources page). Category accents follow the plugin taxonomy from
-// docs/<lang>/designs/mod-formats.md — hue per kind, neutral chrome otherwise.
+// Mod Hub (Resources page) — master/detail in the replay page's shape: a
+// flush secondary sidebar owns the title row, the condition strips and the
+// filter stack above the scrolling row list; the right pane shows the
+// selected mod and carries its actions. Category accents follow the mod
+// taxonomy from docs/<lang>/designs/mod-formats.md — hue per kind on the
+// row tiles, neutral chrome otherwise.
 
 .resources-view {
-  padding: 1.5rem 2rem;
-  max-width: 88rem;
-  margin: 0 auto;
+  /* Full-height flex row (the replay page's chain): the shell's page
+     wrapper hands the root a definite height, so the two columns size from
+     it and scroll internally instead of dragging the page. The sidebar
+     hugs the shell's edges — no page padding, the tint IS the page. */
+  display: flex;
+  height: 100%;
+  min-height: 0;
 
-  &__head {
+  &__side {
+    width: 320px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-right: 1px solid rgb(var(--color-border) / 20%);
+    background: rgb(var(--color-surface) / 50%);
+    background: rgb(var(--color-surface) / min(100%, calc(50% * var(--ui-opacity, 1))));
+    overflow: hidden;
+  }
+
+  &__side-head {
+    flex: none;
+    padding: 1.1rem 1rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    /* In-head extras sit flush: the page-level margins would double-pad. */
+    .resources-chips,
+    .resources-banner {
+      flex: none;
+      margin: 0;
+    }
+  }
+
+  &__side-head-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 0.5rem;
   }
 
-  &__title {
+  /* The sidebar title speaks the replay list's quiet small-caps voice —
+     the page identity lives in the app shell's nav, not a banner. */
+  &__side-title {
     margin: 0;
-    font-size: var(--text-xl);
-    font-weight: 700;
-    color: rgb(var(--color-text));
-  }
-
-  &__subtitle {
-    margin: 0.25rem 0 1.25rem;
     font-size: var(--text-sm);
+    font-weight: 600;
     color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
-  &__rescan {
+  &__side-actions {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    font-size: var(--text-sm);
+    gap: 0.15rem;
+    flex-shrink: 0;
+  }
+
+  /* The ⋯ tool menu's anchor (the popup mounts against it). */
+  &__tools {
+    position: relative;
+    display: inline-flex;
+  }
+
+  /* A missing install speaks the replay list's quiet no-client voice —
+     the safe-mode / stale-bin strips keep the banner chrome instead (both
+     carry an action button). */
+  &__side-note {
+    margin: 0;
+    padding: 0.5rem 0.6rem;
+    background: rgb(var(--color-warning, var(--color-accent)) / 12%);
+    border-radius: var(--radius-xs);
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-warning, var(--color-accent)));
+    line-height: 1.4;
+  }
+
+  /* The count pill — the replay list's count voice, scoped to the active
+     source AND big category (exactly what the "all" chip counts). */
+  &__count {
+    align-self: flex-start;
+    padding: 0.1rem 0.55rem;
+    background: rgb(var(--color-primary) / 12%);
+    border-radius: var(--radius-full);
     color: rgb(var(--color-primary));
-    background: rgb(var(--color-surface));
-    border: 1px solid rgb(var(--color-border) / 25%);
-    border-radius: 6px;
-    cursor: pointer;
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-
-    .spin {
-      animation: resources-spin 0.9s linear infinite;
-    }
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
   }
 
-  /* Top-level tab strip (online catalog / installed / from folder). */
-  &__tabs {
-    margin-bottom: 1rem;
+  /* Filter-stack row: the source strip with its trailing ghost tools —
+     the segmented group defines the height, the icon buttons stay fixed
+     and single-line. */
+  &__row {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: nowrap;
+    min-width: 0;
   }
+
+  /* The source strip's grow slot (HTabs shrink-wraps itself). */
+  &__rowmain {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  /* The list is the sidebar's scroller: the filter stack above stays put
+     and the rows take whatever height is left. HkScrollContainer owns
+     the scrollbar (auto-hiding overlay track on the sidebar's right
+     edge); the rows scroll inside its viewport. */
+  &__side-scroll {
+    flex: 1;
+    min-height: 4rem;
+  }
+
+  /* Former scroller padding + row-column layout, moved inside the
+     viewport so they keep scrolling with the rows. */
+  &__side-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.25rem 0.75rem 1rem;
+  }
+
+  &__empty {
+    padding: 1.25rem 0.75rem;
+    text-align: center;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted) / 80%);
+  }
+
+  /* Foreign-installer units the res_mods scan cannot see (ModStation):
+     a quiet strip under the installed list, same row voice. An
+     HkScrollContainer capped at 30% of the sidebar — many foreign units
+     must not crowd out the installed list above; the hikari overlay bar
+     scrolls the strip inside that cap. */
+  &__foreign-strip {
+    margin-top: 0.5rem;
+    border-top: 1px dashed rgb(var(--color-border) / 25%);
+    max-height: 30%;
+  }
+
+  /* Former strip padding + column layout, moved inside the viewport so
+     they scroll with the units. */
+  &__foreign-strip-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0.75rem 0;
+  }
+
+  &__foreign-strip-title {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* One quiet metadata line (the online catalog's source + fetch date);
+     the count itself lives in the pill above. */
+  &__side-foot {
+    flex: none;
+    padding: 0.5rem 1rem 0.75rem;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted) / 75%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The detail half: what the selected row is, and every action for it. */
+  &__main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    padding: 1.25rem 1.25rem 1.25rem 1.5rem;
+  }
+}
+
+/* Shared spinner glyph class (refresh icon, list rows). */
+.spin {
+  animation: resources-spin 0.9s linear infinite;
 }
 
 @keyframes resources-spin {
   to { transform: rotate(360deg); }
-}
-
-.resources-section {
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 15%);
-  border-radius: var(--radius-md);
-  padding: 1.25rem;
-  margin-bottom: 1rem;
-
-  &__head {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: rgb(var(--color-primary));
-
-    h2 {
-      margin: 0;
-      font-size: var(--text-md);
-      font-weight: 600;
-      color: rgb(var(--color-text));
-    }
-  }
-
-  /* Head action (refresh / rescan) rides the row's far end. */
-  &__action {
-    margin-left: auto;
-  }
-
-  &__desc {
-    margin: 0.5rem 0 1rem;
-    font-size: var(--text-sm);
-    color: rgb(var(--color-muted));
-    line-height: 1.5;
-  }
-
-  &__placeholder {
-    text-align: center;
-    padding: 2rem;
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
-    background: rgb(var(--color-bg));
-    border-radius: var(--radius-sm);
-  }
 }
 
 // ── Category filter chips ───────────────────────────────────────────────────
@@ -107,7 +210,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
-  margin: 0.875rem 0 1rem;
 
   .chip {
     padding: 0.25rem 0.625rem;
@@ -126,57 +228,52 @@
   }
 }
 
-// ── Installed-plugin cards ──────────────────────────────────────────────────
+// ── Compact mod rows (list + search-combo tiles) ────────────────────────────
 
-.mod-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
-  gap: 0.625rem;
-}
-
-.mod-card {
-  --accent: var(--color-primary);
+.mod-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: rgb(var(--color-bg));
-  border: 1px solid rgb(var(--color-border) / 12%);
-  border-left: 3px solid rgb(var(--accent) / 70%);
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  text-align: left;
+  font-size: inherit;
+  background: transparent;
+  border: none;
   border-radius: var(--radius-sm);
-  transition: opacity 0.2s ease;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 
-  &--voice     { --accent: 48, 148, 245; }   // blue — audio waves
-  &--skin      { --accent: 168, 85, 247; }   // violet — paint
-  &--script    { --accent: 20, 184, 166; }   // teal — python scripts
-  &--gui       { --accent: 234, 179, 8; }    // amber — icons
-  &--patch     { --accent: 16, 185, 129; }   // green — patch note
-  &--textures  { --accent: 148, 163, 184; }  // grey — raw overrides
+  &:hover {
+    background: rgb(var(--color-bg));
+  }
 
-  // Temporarily disabled via `.bak` — dim the whole card so the state
-  // reads at a glance, the switch stays the obvious way back.
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: -2px;
+  }
+
+  /* The row whose detail is on the right: a tint plus a left accent bar —
+     the dense-list reading of the replay cards' --active border. */
+  &--active {
+    background: rgb(var(--color-primary) / 10%);
+    box-shadow: inset 2px 0 0 rgb(var(--color-primary));
+  }
+
+  // Disabled via `.bak` — dim the whole row, the pane switch is the
+  // obvious way back.
   &--disabled {
     opacity: 0.55;
-
-    .mod-card__name {
-      text-decoration: line-through;
-      text-decoration-color: rgb(var(--color-muted) / 60%);
-    }
   }
 
-  &__main {
-    display: flex;
-    gap: 0.625rem;
+  &__body {
+    flex: 1;
     min-width: 0;
-
-    > svg {
-      flex: none;
-      margin-top: 0.125rem;
-      color: rgb(var(--accent));
-    }
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
   }
-
-  &__body { min-width: 0; flex: 1; }
 
   &__name {
     display: flex;
@@ -190,94 +287,228 @@
     white-space: nowrap;
   }
 
-  &__version {
+  &__ver {
     flex: none;
     max-width: 50%;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: 0.6875rem;
+    font-size: var(--text-2xs);
     font-weight: 500;
-    color: rgb(var(--accent));
-    background: rgb(var(--accent) / 10%);
-    border-radius: var(--radius-sm);
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-border) / 14%);
+    border-radius: 999px;
     padding: 0 0.25rem;
   }
 
-  &__kind {
-    font-size: var(--text-xs);
-    color: rgb(var(--accent));
-    margin-top: 0.125rem;
-  }
-
-  &__detail {
+  &__sub {
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
-    margin-top: 0.125rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  &__path {
-    font-family: var(--font-mono, monospace);
-    font-size: 0.6875rem;
-    color: rgb(var(--color-muted) / 75%);
-    margin-top: 0.375rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__uninstall {
+  &__tail {
     flex: none;
-    align-self: flex-start;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 1.625rem;
-    height: 1.625rem;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: rgb(var(--color-muted));
-    cursor: pointer;
-    transition: color 0.15s ease, background-color 0.15s ease;
+  }
 
-    &:hover:not(:disabled) {
-      color: rgb(239, 68, 68);
-      background: rgb(239 68 68 / 10%);
+  &__badge {
+    padding: 0.0625rem 0.375rem;
+    font-size: var(--text-xs);
+    border-radius: 999px;
+    white-space: nowrap;
+
+    &--ok {
+      color: rgb(var(--color-success));
+      background: rgb(var(--color-success) / 12%);
+      border: 1px solid rgb(var(--color-success) / 30%);
     }
 
-    &:disabled { opacity: 0.4; cursor: not-allowed; }
-  }
+    &--up {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 10%);
+      border: 1px solid rgb(var(--color-primary) / 35%);
+    }
 
-  // Bottom strip: the per-plugin enable switch sits at the left edge.
-  &__foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px dashed rgb(var(--color-border) / 25%);
-  }
+    &--off {
+      color: rgb(var(--color-muted));
+      background: rgb(var(--color-border) / 14%);
+      border: 1px solid rgb(var(--color-border) / 25%);
+    }
 
-  &__foot-note {
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted) / 70%);
+    // Provenance (e.g. the Aslain modpack) — neutral, informational.
+    &--src {
+      color: rgb(var(--color-muted));
+      background: rgb(var(--color-border) / 10%);
+      border: 1px solid rgb(var(--color-border) / 20%);
+    }
   }
 
   &__spinner {
-    width: 0.75rem;
-    height: 0.75rem;
+    width: 0.875rem;
+    height: 0.875rem;
     flex: none;
-    border: 2px solid rgb(var(--accent) / 25%);
-    border-top-color: rgb(var(--accent));
+    border: 2px solid rgb(var(--color-primary) / 25%);
+    border-top-color: rgb(var(--color-primary));
     border-radius: 50%;
     animation: resources-spin 0.9s linear infinite;
   }
 }
 
-// ── Install row + plan preview ──────────────────────────────────────────────
+// ── Row tiles: 40×40 rounded icon block, hue per kind ───────────────────────
+
+.mod-row__tile {
+  --accent: var(--color-muted);
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  color: rgb(var(--accent));
+  background: rgb(var(--accent) / 12%);
+
+  /* Online catalog rows stay neutral: their category is curated browsing
+     metadata (battle / minimap / port / text / patch), not the on-disk kind
+     taxonomy the hue system below encodes — the glyph carries the category,
+     the neutral tile keeps the two sources' rows visually distinct. */
+  &--cat       { --accent: var(--color-muted); }
+
+  &--voice     { --accent: 48, 148, 245; }   // blue — audio waves
+  &--skin      { --accent: 168, 85, 247; }   // violet — paint
+  &--script    { --accent: 20, 184, 166; }   // teal — python scripts
+  &--gui       { --accent: 234, 179, 8; }    // amber — icons
+  &--patch     { --accent: 16, 185, 129; }   // green — patch note
+  &--textures  { --accent: 148, 163, 184; }  // grey — raw overrides
+
+  /* Online-catalog preview thumbnails (list rows + search-combo items):
+     the entry's screenshot overlays the tile in place of the category
+     glyph — for skins/voices the screenshot is the product. The glyph
+     stays underneath (placeholder while loading, fallback when the media
+     proxy cannot fetch the shot); the corner light keeps its surface ring
+     and its DOM-after position, so it stays on top of any image. */
+  &--preview {
+    overflow: hidden;
+
+    .mod-row__thumb {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: inherit;
+    }
+  }
+
+  &--sm {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+  }
+
+  &--lg {
+    width: 56px;
+    height: 56px;
+  }
+}
+
+// ── Row-tile corner lights: green = installed & current, yellow = update
+// available, blue = a third-party (Aslain/ModStation) copy. Punched into
+// the tile's lower-right corner; the surface ring keeps the light legible
+// on every tile hue.
+.mod-row__dot {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgb(var(--color-surface, 255 255 255));
+
+  &--green  { background: rgb(var(--color-success, 14 184 64)); }
+  &--yellow { background: rgb(var(--color-warning, 238 214 119)); }
+  &--blue   { background: rgb(var(--color-info, 106 190 214)); }
+}
+
+// ── Search-combo candidate innards (row chrome lives in the combo) ──────────
+
+.resources-view__combo-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resources-view__combo-ver {
+  flex: none;
+  font-size: var(--text-xs);
+  color: rgb(var(--color-muted));
+}
+
+// ── Texture-override analysis breakdown (detail pane & plan card) ───────────
+
+.tex-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+  min-width: 0;
+
+  &__tags,
+  &__ships {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  &__meta {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted) / 75%);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.tex-tag {
+  padding: 0.0625rem 0.375rem;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  color: rgb(var(--color-muted));
+  background: rgb(var(--color-border) / 12%);
+  border-radius: 999px;
+
+  &--cat {
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 10%);
+  }
+}
+
+.tex-ship {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.0625rem 0.375rem;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text) / 85%);
+  background: rgb(var(--color-border) / 18%);
+  border-radius: 999px;
+
+  &--more {
+    flex: none;
+    color: rgb(var(--color-muted));
+    background: transparent;
+  }
+}
+
+// ── Install row + plan preview (folder-install pane flow) ───────────────────
 
 .resources-installrow {
   display: flex;
@@ -396,24 +627,293 @@
       margin-top: 0.25rem;
     }
   }
+}
 
-  &__go {
-    margin-top: 0.875rem;
-    width: 100%;
-    padding: 0.5rem;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: rgb(var(--color-bg));
-    background: rgb(var(--accent));
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
+// Positive pre-release mirror notes inside the install OK banner: the same
+// list layout as the warnings above, but in the banner's success tone —
+// a check icon in warning amber would read as mixed intent.
+.resources-report-mirrored {
+  color: rgb(var(--color-success));
+}
 
-    &:disabled {
-      opacity: 0.45;
-      cursor: default;
-    }
+// ── Installed-unit asset previews ────────────────────────────────────────────
+
+.asset-preview__note {
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-xs);
+  background: rgb(var(--color-border) / 10%);
+  font-size: var(--text-xs);
+  color: rgb(var(--color-muted));
+}
+
+// The combined material section: thumbnail grid above, model stage + rows
+// below — one preview area per pack, one visual rhythm between them.
+.asset-preview__texture {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.asset-preview__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.5rem;
+}
+
+.asset-preview__tile {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.asset-preview__tile img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: var(--radius-xs);
+  background:
+    linear-gradient(45deg, rgb(var(--color-border) / 18%) 25%, transparent 25%, transparent 75%, rgb(var(--color-border) / 18%) 75%),
+    linear-gradient(45deg, rgb(var(--color-border) / 18%) 25%, transparent 25%, transparent 75%, rgb(var(--color-border) / 18%) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+
+.asset-preview__tile-fallback {
+  width: 100%;
+  aspect-ratio: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border-radius: var(--radius-xs);
+  background: rgb(var(--color-border) / 10%);
+  color: rgb(var(--color-muted));
+
+  em {
+    font-size: var(--text-2xs);
+    font-style: normal;
   }
+
+  &--loading {
+    animation: asset-preview-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+.asset-preview__tile figcaption {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The voice list's capped window: hikari's overlay scrollbar owns the
+   overflow (auto-hiding track); the list itself scrolls inside the
+   viewport. */
+.asset-preview__audio {
+  max-height: 22rem;
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-xs);
+}
+
+/* The former list element, now inside the viewport — keeps the list
+   semantics and the row-column rhythm that scrolls with the content. */
+.asset-preview__audio-inner {
+  list-style: none;
+  margin: 0;
+  padding: 0.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.asset-preview__audio-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text));
+  text-align: left;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: rgb(var(--color-primary) / 8%);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+}
+
+// Two-line voice rows: localized scenario title over the raw hash name.
+.asset-preview__audio-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+
+.asset-preview__audio-title {
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-preview__audio-state {
+  margin-left: 0.4rem;
+  font-style: normal;
+  font-size: var(--text-3xs);
+  color: rgb(var(--color-primary) / 85%);
+}
+
+.asset-preview__audio-idx {
+  margin-left: 0.35rem;
+  font-style: normal;
+  font-size: var(--text-3xs);
+  color: rgb(var(--color-muted));
+}
+
+.asset-preview__audio-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-3xs);
+  color: rgb(var(--color-muted));
+}
+
+.asset-preview__audio-size {
+  flex: none;
+  color: rgb(var(--color-muted));
+}
+
+// ── Model rows + 3D stage ──────────────────────────────────────────────────
+
+.asset-preview__model {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+// The stage canvas: fixed height so the pane doesn't jump per model; the
+// renderer sizes its backing store through a ResizeObserver.
+.model-stage {
+  position: relative;
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  background: #0b1220;
+}
+
+.model-stage__canvas {
+  height: 20rem;
+}
+
+.model-stage__canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.model-stage__note {
+  position: absolute;
+  inset-inline: 0;
+  top: 0.5rem;
+  margin-inline: auto;
+  width: fit-content;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-xs);
+  background: rgb(11 18 32 / 80%);
+  font-size: var(--text-xs);
+  color: rgb(var(--color-muted));
+  pointer-events: none;
+
+  &--err {
+    color: rgb(var(--color-danger, 240 80 80));
+  }
+}
+
+.model-stage__hint {
+  font-size: var(--text-3xs);
+  color: rgb(var(--color-muted));
+  text-align: center;
+}
+
+/* The mesh-row strip's capped window (hikari overlay scrollbar; the
+   wrapped chip row scrolls inside the viewport). */
+.asset-preview__model-rows {
+  max-height: 10rem;
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-xs);
+}
+
+/* Former list element, now inside the viewport — keeps the wrapped chip
+   layout scrolling with the rows. */
+.asset-preview__model-rows-inner {
+  list-style: none;
+  margin: 0;
+  padding: 0.375rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.asset-preview__model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 1px solid rgb(var(--color-border) / 25%);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text));
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: rgb(var(--color-primary) / 8%);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  &--active {
+    border-color: rgb(var(--color-primary) / 55%);
+    background: rgb(var(--color-primary) / 12%);
+  }
+}
+
+.asset-preview__model-name {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-3xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22rem;
+}
+
+.asset-preview__model-size {
+  flex: none;
+  color: rgb(var(--color-muted));
+}
+
+@keyframes asset-preview-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
 
 // ── Status banners ──────────────────────────────────────────────────────────
@@ -422,15 +922,13 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  flex: none;
   padding: 0.625rem 0.875rem;
   font-size: var(--text-sm);
   border-radius: var(--radius-sm);
   line-height: 1.45;
 
   &--warn {
-    margin-top: 0;
-    margin-bottom: 1rem;
     color: rgba(202, 138, 4, 1);
     background: rgba(234, 179, 8, 0.12);
     border: 1px solid rgba(234, 179, 8, 0.35);
@@ -450,75 +948,300 @@
   }
 }
 
-// ── Online catalog ──────────────────────────────────────────────────────────
+// ── Detail pane (the right half, inside __main's padding) ───────────────────
 
-.resources-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-
-  &__meta {
-    margin-left: auto;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-    white-space: nowrap;
-  }
-}
-
-.catalog-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
-  gap: 0.625rem;
-}
-
-.catalog-card {
+.mod-detail {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.75rem;
-  background: rgb(var(--color-bg));
-  border: 1px solid rgb(var(--color-border) / 20%);
-  border-radius: var(--radius-sm);
+  padding: 1.125rem 1.25rem 1rem;
+  background: rgb(var(--color-surface));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  overflow: hidden;
+
+  /* Nothing picked yet — the pane keeps its chrome and says so. */
+  &--empty {
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Head / foot stay put; the body in between is the scroller. HkScroll-
+     Container owns the scrollbar (auto-hiding overlay track); the pane
+     body scrolls inside its viewport. */
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Former scroller column layout + clearance, moved inside the viewport
+     so they keep scrolling with the pane body. */
+  &__inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-top: 0.75rem;
+
+    /* Children carry top margins for the card contexts they also serve
+       (plan card, tex analysis); inside the pane the column gap is the only
+       spacing. */
+    > * {
+      margin-top: 0;
+    }
+  }
+
+  &__placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 1rem;
+    text-align: center;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-muted) / 80%);
+
+    svg {
+      opacity: 0.45;
+    }
+
+    p {
+      margin: 0;
+    }
+  }
+
+  /* The delisted notice's heading line (the placeholder body stays muted). */
+  &__placeholder-title {
+    font-size: var(--text-md);
+    color: rgb(var(--color-text));
+  }
 
   &__head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  &__id {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__name {
     display: flex;
     align-items: baseline;
+    gap: 0.375rem;
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__en {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Material component sections: one pack's footprint inside a covered
+     part — name (registered pack when paired) + replace jump, previews
+     underneath. */
+  &__component {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    background: rgb(var(--color-border) / 8%);
+    border-radius: var(--radius-sm);
+
+    & + & {
+      margin-top: 0.25rem;
+    }
+  }
+
+  &__component-head {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
   }
 
-  &__name {
+  &__component-name {
     font-size: var(--text-sm);
     font-weight: 600;
     color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  &__badge {
-    flex-shrink: 0;
-    padding: 0.0625rem 0.375rem;
-    font-size: var(--text-xs);
-    border-radius: 999px;
-    color: rgb(var(--color-success));
+  /* The "another copy exists, installed by someone else" note — leads
+     the scroll body so the reinstall decision it suggests reads first. */
+  &__foreign-copy {
+    padding: 0.55rem 0.75rem;
+    border-left: 3px solid rgb(var(--color-primary) / 60%);
+    background: rgb(var(--color-primary) / 8%);
+    border-radius: var(--radius-xs);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    color: rgb(var(--color-text) / 88%);
+  }
 
-    &--ok {
-      background: rgb(var(--color-success) / 12%);
-      border: 1px solid rgb(var(--color-success) / 30%);
+  /* The installed unit ↔ online-entry pairing card: which registered mod
+     this directory copy is, its raw name, and who installed what. */
+  &__paired {
+    padding: 0.55rem 0.75rem;
+    border-left: 3px solid rgb(var(--color-primary) / 45%);
+    background: rgb(var(--color-primary) / 5%);
+    border-radius: var(--radius-xs);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  &__paired-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__paired-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  &__paired-raw {
+    font-size: var(--text-xs);
+    font-weight: 400;
+    color: rgb(var(--color-muted));
+    font-family: var(--font-mono, monospace);
+  }
+
+  &__paired-note {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-text) / 75%);
+  }
+
+  /* Install-time scheme selector (palette / position / display mode):
+     a quiet label above the segmented strip, mirroring the sidebar's
+     filter-stack voice. */
+  &__presets {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  &__presets-label {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  /* Registry tags (licensed / AI 合成 / IP origins…) — kind-tinted. */
+  &__tag {
+    padding: 0.0625rem 0.5rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-border) / 12%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: 999px;
+    white-space: nowrap;
+
+    &--ip {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 10%);
+      border-color: rgb(var(--color-primary) / 35%);
+    }
+
+    /* AI 合成 deserves a louder voice — the provenance matters. */
+    &--ai {
+      color: rgb(168 85 247);
+      background: rgb(168 85 247 / 10%);
+      border-color: rgb(168 85 247 / 40%);
+    }
+
+    /* The clickable author tag — a button reset to the pill look, with an
+       inline icon row and the same hover voice as the footer link. */
+    &--link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font: inherit;
+      cursor: pointer;
+      transition:
+        color 0.15s ease,
+        border-color 0.15s ease,
+        background-color 0.15s ease;
+
+      &:hover {
+        color: rgb(var(--color-primary));
+        border-color: rgb(var(--color-primary) / 45%);
+        background: rgb(var(--color-primary) / 8%);
+      }
     }
   }
 
-  &__sub {
+  &__badge {
+    padding: 0.0625rem 0.5rem;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: 999px;
+
+    &--ok {
+      color: rgb(var(--color-success));
+      background: rgb(var(--color-success) / 12%);
+      border-color: rgb(var(--color-success) / 30%);
+    }
+
+    &--warn {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 10%);
+      border-color: rgb(var(--color-primary) / 35%);
+    }
   }
 
   &__desc {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    color: rgb(var(--color-text) / 85%);
+    white-space: pre-line;
+  }
+
+  &__hint {
+    margin: 0;
     font-size: var(--text-xs);
-    line-height: 1.45;
+    line-height: 1.5;
     color: rgb(var(--color-muted));
   }
 
@@ -528,26 +1251,57 @@
     gap: 0.375rem 0.625rem;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
-
-    span {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.1875rem;
-    }
   }
 
-  &__ver {
-    color: rgb(var(--color-primary));
+  /* The head's ⋯ cluster (open path / online page / file list): pinned
+     right by the flex head — __id above owns the flexible middle. */
+  &__menu {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Action band: the pane's decision row, pinned under the scrolling body —
+     state and secondary entry points at the left edge, decisions at the
+     right. */
+  &__foot {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgb(var(--color-border) / 20%);
+  }
+
+  &__foot-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
   }
 
   &__actions {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 0.25rem;
+    /* Hugs the right edge whether or not the discussion link shares the
+       row with it. */
+    margin-left: auto;
   }
 
-  &__uninstall {
+  /* Save-&-reinstall (the preset drifted from the installed scheme): the
+     action rewrites an installed config, so it speaks the warning voice —
+     hikari's primary button reads its fill and ink from CSS vars, so a
+     scoped retint beats a bespoke button style. */
+  &__action-warn {
+    --color-primary: rgb(var(--color-warning));
+    --color-on-solid: 255 255 255;
+    --color-on-solid-icon: 255 255 255;
+  }
+
+  &__danger {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -569,13 +1323,19 @@
     }
   }
 
+  // Bundled-with-app marker: listed first-party plugin that has no
+  // download packages (the in-game stats plugin).
+  &__bundled {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
   // Opens through open_external (default browser) — a <button> in the Tauri
   // shell, where target="_blank" anchors are swallowed by the webview.
-  &__thread {
+  &__link {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    margin-left: auto;
     padding: 0;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
@@ -600,5 +1360,441 @@
     background: rgb(var(--color-primary));
     border-radius: 999px;
     transition: width 0.2s ease;
+  }
+}
+
+/* ── Stale-bin migration wizard (inside HkModal) ───────────────────────────── */
+
+.mig-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: var(--text-sm);
+
+  &__status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.5rem 0;
+    color: rgb(var(--color-muted));
+  }
+
+  &__status--muted {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+  }
+
+  &__empty {
+    margin: 0;
+    padding: 0.5rem 0;
+    color: rgb(var(--color-muted) / 80%);
+  }
+
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  &__group-head {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+    text-align: left;
+    cursor: pointer;
+
+    /* The decide header is not a toggle — it carries the master checkbox,
+       the kept count, and the ignore-all escape hatch (pushed right). */
+    &--static {
+      cursor: default;
+
+      .hk-btn {
+        margin-left: auto;
+      }
+    }
+  }
+
+  &__chevron {
+    flex: none;
+    opacity: 0.7;
+    transition: transform 0.15s ease;
+
+    &.open {
+      transform: rotate(180deg);
+    }
+  }
+
+  &__count {
+    padding: 0 0.375rem;
+    border-radius: 999px;
+    background: rgb(var(--color-border) / 20%);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__hint {
+    margin: 0;
+    padding-left: 1.25rem;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-muted) / 85%);
+
+    &--foot {
+      padding-left: 0;
+      border-top: 1px solid rgb(var(--color-border) / 20%);
+      padding-top: 0.5rem;
+    }
+  }
+
+  /* The raw file list's capped window: hikari's overlay scrollbar owns
+     the overflow; the lines scroll inside the viewport. Text styling
+     stays here (inherited down), and the theme's selectable-text
+     whitelist (theme.scss) keys on this class. */
+  &__files {
+    max-height: 8rem;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono, monospace);
+    color: rgb(var(--color-muted));
+    word-break: break-all;
+  }
+
+  /* Former list element, now inside the viewport — keeps the list
+     semantics, the indent and the line rhythm scrolling with the
+     content. */
+  &__files-inner {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0 0 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  /* The decide/ignored row stack's capped window (hikari overlay
+     scrollbar; the rows scroll inside the viewport). */
+  &__rows {
+    max-height: 17rem;
+    border: 1px solid rgb(var(--color-border) / 20%);
+    border-radius: var(--radius-sm);
+  }
+
+  /* Former stack layout, moved inside the viewport. */
+  &__rows-inner {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* A decide/ignored row: div wrapper so the row-end ignore button never
+     lands inside the checkbox label; the label covers checkbox + text. */
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4375rem 0.5rem;
+
+    & + & {
+      border-top: 1px solid rgb(var(--color-border) / 15%);
+    }
+
+    &:hover {
+      background: rgb(var(--color-border) / 10%);
+    }
+  }
+
+  /* The clickable (label) part of a decide row: clicking the text toggles
+     the checkbox without swallowing the ignore button's clicks. */
+  &__row-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+
+    .mig-wizard__row--ignored & {
+      cursor: default;
+    }
+  }
+
+  &__row--ignored {
+    .mig-wizard__row-name,
+    .mig-wizard__row-path {
+      color: rgb(var(--color-muted) / 70%);
+    }
+  }
+
+  &__group-foot {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 0.25rem;
+  }
+
+  &__row-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.0625rem;
+  }
+
+  &__row-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__row-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono, monospace);
+    color: rgb(var(--color-muted) / 85%);
+  }
+
+  &__row-size {
+    flex: none;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+}
+
+/* ── Phone layout (≤767px): the pair stacks — the sidebar (its own tinted
+   band, list capped) above the pane — and the page scrolls as one; the
+   filter stack keeps its natural height. ── */
+@media (max-width: 767px) {
+  .resources-view {
+    flex-direction: column;
+    /* The page scrolls in the shell's viewport; the root grows past the
+       wrapper's definite height instead of squeezing both columns. */
+    height: auto;
+    min-height: 100%;
+  }
+
+  .resources-view__side {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid rgb(var(--color-border) / 20%);
+  }
+
+  /* Bounded so a long list can't push the pane out of reach. */
+  .resources-view__side-scroll {
+    max-height: 46vh;
+  }
+
+  .resources-view__main {
+    padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mod-detail {
+    min-height: 22rem;
+  }
+
+  .mod-row {
+    padding: 0.4375rem 0.5rem;
+  }
+}
+
+// ── Plugin file-list window (secondary HkModal over the Resources view) ────
+
+.file-window {
+  display: flex;
+  gap: 0.875rem;
+  min-height: 0;
+  max-height: min(62vh, 34rem);
+
+  /* Left: the narrow archive list with the dual-root scope toggle pinned
+     beneath it. hikari's scroll container owns the scrollbar (auto-hiding
+     overlay track); the rows scroll in the inner wrapper while the toggle
+     stays put. */
+  &__side {
+    flex: none;
+    width: 15rem;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: rgb(var(--color-border) / 8%);
+    border-radius: var(--radius-sm);
+  }
+
+  &__side-scroll {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* res_mods ↔ game-root switcher — only rendered when the payload spans
+     both trees. */
+  &__scope {
+    flex: none;
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.5rem 0.625rem 0.625rem;
+    border-top: 1px solid rgb(var(--color-border) / 25%);
+  }
+
+  &__scope-btn {
+    flex: 1;
+    padding: 0.25rem 0.375rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-border) / 10%);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    border-radius: var(--radius-sm);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease,
+      background-color 0.15s ease;
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+
+    &--active {
+      color: rgb(var(--color-primary));
+      border-color: rgb(var(--color-primary) / 45%);
+      background: rgb(var(--color-primary) / 10%);
+    }
+  }
+
+  &__side-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.625rem;
+  }
+
+  &__side-title {
+    flex: none;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    padding: 0 0.25rem 0.25rem;
+  }
+
+  &__side-empty,
+  &__side-note {
+    margin: 0;
+    padding: 0.25rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__pkg {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    width: 100%;
+    padding: 0.3125rem 0.5rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: rgb(var(--color-text) / 90%);
+    font-size: var(--text-xs);
+    text-align: left;
+    cursor: pointer;
+
+    svg {
+      flex: none;
+      color: rgb(var(--color-muted));
+    }
+
+    &:hover:not(:disabled) {
+      background: rgb(var(--color-primary) / 10%);
+    }
+
+    &:disabled {
+      cursor: default;
+      color: rgb(var(--color-muted));
+    }
+
+    &--active {
+      background: rgb(var(--color-primary) / 14%);
+      color: rgb(var(--color-text));
+    }
+  }
+
+  &__pkg-name {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono, monospace);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__pkg-size {
+    flex: none;
+    color: rgb(var(--color-muted));
+  }
+
+  /* Right: the path tree (or its pending/CTA states). hikari's scroll
+     container owns the scrollbar; the blocks scroll in the inner wrapper. */
+  &__main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__main-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.25rem;
+  }
+
+  &__state {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 1.25rem 0.75rem;
+  }
+
+  &__state-title {
+    margin: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__state-sub {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__progress {
+    width: 100%;
+    height: 4px;
+    border-radius: 999px;
+    background: rgb(var(--color-border) / 20%);
+    overflow: hidden;
+  }
+
+  &__progress-bar {
+    height: 100%;
+    border-radius: inherit;
+    background: rgb(var(--color-primary));
+    transition: width 0.2s ease;
+  }
+
+  &__warnings {
+    list-style: none;
+    margin: 0;
+    padding: 0.375rem 0.5rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-warning, 238 214 119));
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
   }
 }

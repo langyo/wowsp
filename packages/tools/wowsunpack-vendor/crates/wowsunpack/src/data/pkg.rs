@@ -73,7 +73,7 @@ impl PkgFileLoader {
         let end_offset = start_offset + (file_info.size as usize);
 
         let mut cursor = Cursor::new(&mmap[start_offset..end_offset]);
-        if file_info.compression_info != 0 {
+        if file_info.is_deflated() {
             let mut decoder = DeflateDecoder::new(cursor);
             std::io::copy(&mut decoder, out_data)?;
         } else {

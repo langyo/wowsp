@@ -76,15 +76,19 @@ def parse_bounds(settings_xml: str) -> dict[str, float] | None:
     min_y, max_y = val("minY"), val("maxY")
     if None in (min_x, max_x, min_y, max_y):
         return None
-    # Symmetric crop: the minimap covers the central (chunks-4) chunk band,
-    # i.e. 2 chunks cropped on EVERY side of the settings rect. The previous
-    # +2/-1 asymmetry shifted the window one chunk north — the art's top
-    # strip rendered off-canvas.
+    # Central (chunks-4)-chunk band: 2 chunks cropped on EVERY side of the
+    # settings rect. Bounds are INCLUSIVE chunk indices (chunk c covers
+    # [c*100, (c+1)*100]) — verified against spaces/23_Shards/space.settings
+    # (minX=-9, maxX=8 → space [-900,900], minimap band [-700,+700]). The max
+    # side therefore crops to (max+1-2)*100; a plain (max-2)*100 loses a
+    # whole chunk, shrinking every map's projection rect by 100 m and
+    # shifting every drawn dot up-right onto the islands (the b80e303
+    # regression).
     out = {
         "minX": (min_x + 2.0) * 100.0,
-        "maxX": (max_x - 2.0) * 100.0,
+        "maxX": (max_x - 1.0) * 100.0,
         "minZ": (min_y + 2.0) * 100.0,
-        "maxZ": (max_y - 2.0) * 100.0,
+        "maxZ": (max_y - 1.0) * 100.0,
     }
     if out["maxX"] <= out["minX"] or out["maxZ"] <= out["minZ"]:
         return None
@@ -188,9 +192,9 @@ def main() -> int:
             for k, v in bounds_map.items()
             if v["maxX"] > v["minX"] and v["maxZ"] > v["minZ"]
         }
-        json_path.write_text(
-            json.dumps(bounds_map, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        # Compact single line (the committed file's format) — an indent=2
+        # rewrite would churn every line of the diff without changing data.
+        json_path.write_text(json.dumps(bounds_map, sort_keys=True), encoding="utf-8")
 
     print(f"[extract_minimaps] done: {ok} extracted, {len(skipped)} without art; "
           f"bounds for {len(bounds_map)} maps in minimaps.json")

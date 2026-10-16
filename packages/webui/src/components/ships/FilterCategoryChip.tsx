@@ -1,8 +1,14 @@
 /**
  * FilterCategoryChip — one collapsed filter category rendered as a chip that
- * opens a small popup of pill-style multi-select options. A PURE filter: no
- * sorting and no drag reorder, so — unlike ShipFilterBar's own chips — there
- * is no grip icon and no `--sort` state.
+ * opens a small popup of pill-style multi-select options. A PURE filter by
+ * default: no sorting of its own — hosts whose category DOES carry a
+ * direction (the replay rail's mode chip) pass `dir`, and an allSort-engaged
+ * chip wears the intermediate `--sort` style. The popup then shows the ↑/↓
+ * arrow after the 全部… pill and after picked concrete options (unless
+ * `pure`), exactly like the 水表 bar's popups — the arrow itself stays dumb,
+ * the host owns the semantics behind the `all` event. An `icon` anchor
+ * swaps the collapsed text chip for a ghost toolbar icon button (hosts that
+ * keep the trigger inside a button row instead of a chip strip).
  *
  * The markup reuses ShipFilterBar's FLAT global classes so the chips look
  * identical to the 水表查询 filter bar. This module imports that SCSS itself:
@@ -10,15 +16,36 @@
  * chunk cannot rely on the LookupView chunk to carry the styles (Vite
  * dedupes the CSS module, so both surfaces stay in lockstep).
  *
- * The popup renders through hikari HPopover: it teleports to body level and
+ * The option track is the shared one-line pannable strip (`__opts--scroll`):
+ * HkPopover sizes its panel to max-content, so a wrapping track always
+ * measured as ONE long line that ran off-screen — the strip is a hikari
+ * HkScrollContainer (axis horizontal + fade) that caps the panel instead
+ * and pans the overflow (wheel / mouse drag / native touch), its edges
+ * fading while content hides (the library senses data-h-overflow itself;
+ * optionStrip adds the wheel normalization and the drag pan). The phone
+ * sheet relaxes the track back into a wrapping group (SCSS).
+ *
+ * The popup renders through hikari HkPopover: it teleports to body level and
  * positions against the chip button, so an overflow ancestor (the ship
- * picker's HModal body is a scroll container) can never clip it.
+ * picker's HkModal body is a scroll container) can never clip it.
+ *
+ * Hosts that need more controls inside the popup render them through the
+ * DEFAULT SLOT (between the option strip and the hint line — the replay
+ * rail's client/player selects and its date-range pair live there). A nested
+ * popup opened from slot content (an embedded HkDatePicker's calendar, an
+ * embedded HkSelect's option popout — both teleport to body level) survives
+ * the outside-close: presses inside any open surface of those families other
+ * than this panel's own count as inside, which is safe — an unrelated popup
+ * can never be open alongside, its opening press would have closed this
+ * panel first.
  */
-import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType, type VNode } from "vue";
 
-import { HPopover } from "@celestia-island/hikari";
+import { HkPopover, HkScrollContainer, useBreakpoint } from "@celestia-island/hikari";
+import { ArrowDown, ArrowUp } from "@lucide/vue";
 
 import { t } from "@/i18n";
+import { useOptionStrip } from "./optionStrip";
 import "./ShipFilterBar.scss";
 
 export default defineComponent({
@@ -37,23 +64,66 @@ export default defineComponent({
     open: { type: Boolean, default: false },
     /** Right-most chip in a row — the popup opens leftwards (bottom-end). */
     edge: { type: Boolean, default: false },
+    /** Optional leading icon per option value (e.g. a nation flag before
+     *  the nation name). Undefined (default) keeps the text-only rows, so
+     *  existing callers are unaffected. */
+    renderOptionIcon: {
+      type: Function as PropType<(value: string) => VNode>,
+      default: undefined,
+    },
+    /** Icon-only anchor: the collapsed chip renders this glyph instead of
+     *  the label text, styled as a ghost toolbar icon button (the replay
+     *  rail's funnel). `title` doubles as the button's aria-label. */
+    icon: {
+      type: Object as PropType<VNode>,
+      default: undefined,
+    },
+    /** Bottom hint line. Defaults to the ships filter's multi-select hint;
+     *  hosts with other semantics (e.g. the replay sort chip's radio)
+     *  override it. */
+    hint: { type: String, default: undefined },
+    /** The category's shared sort direction. Undefined (default) renders a
+     *  direction-free popup; set, the 全部… pill and picked concrete
+     *  options carry the ↑/↓ arrow (picked options skip it when `pure`). */
+    dir: {
+      type: String as PropType<"asc" | "desc">,
+      default: undefined,
+    },
+    /** Pure-filter categories (types/nations/modes): a concrete pick carries
+     *  no direction, so only the 全部… pill shows the arrow. */
+    pure: { type: Boolean, default: false },
+    /** 全部…-sort engaged while nothing is picked — the chip wears the
+     *  intermediate `--sort` style (sorting without filtering). */
+    allSort: { type: Boolean, default: false },
+    /** Engaged look with an empty selection: hosts whose slot content adds
+     *  filter state of its own (the replay date-range pair) report it here
+     *  — the icon anchor must not read idle while a window is set. */
+    engaged: { type: Boolean, default: false },
   },
   emits: {
     "update:open": (_v: boolean) => true,
     toggle: (_value: string) => true,
-    clear: () => true,
+    /** The 全部… pill was clicked — the HOST decides what it means (reset,
+     *  or engage/flip the 全部…-sort; the ships-bar contract). */
+    all: () => true,
   },
-  setup(props, { emit }) {
+  setup(props, { emit, slots }) {
+    // Phone layout signal for the HkPopover sheet dock (sheetOnMobile +
+    // scrim-rendering closeOnBackdrop — hikari convention: on phones
+    // nothing floats anchored, not even popups over a modal sheet).
+    const { isMobile } = useBreakpoint();
     // Root element for the outside-click test — NOT a class-based closest()
     // check: several chip anchors coexist on one page and each must close
     // only for events landing outside itself.
     const root = ref<HTMLElement | null>(null);
-    // The chip BUTTON anchors the teleported HPopover panel. The panel
+    // The chip BUTTON anchors the teleported HkPopover panel. The panel
     // content element rides along in the outside-close test: it renders at
     // body level, outside `root`, so a press on an option must not count as
     // an outside press (it would kill the panel before the option's click).
     const chipBtn = ref<HTMLButtonElement | null>(null);
     const panelEl = ref<HTMLElement | null>(null);
+    // The pannable option track (wheel / drag / touch + edge fades).
+    const strip = useOptionStrip();
 
     function close() {
       emit("update:open", false);
@@ -63,12 +133,30 @@ export default defineComponent({
       const target = e.target as Node;
       if (root.value?.contains(target)) return;
       if (panelEl.value?.contains(target)) return;
+      // A popup nested in the default slot teleports to body level — visible
+      // to neither `root` nor `panelEl` — and each family carries its own
+      // surface class. A press inside any OTHER open surface of those
+      // families therefore belongs to this panel's own nested content: the
+      // only way a second surface can be open at all is opened from inside
+      // this one (an unrelated popup's opening press would have landed
+      // outside and closed this panel first).
+      //   - `.hk-popover-panel`: HkPopover — the embedded date pickers'
+      //     calendars, popup selects, menus.
+      //   - `.hk-select-popout-host` / `.hk-select-sheet-panel`: HkSelect's
+      //     option list (desktop popout / phone sheet). Without these, a
+      //     press on an option read as an outside press and closed the
+      //     panel mid-pick, losing the selection.
+      for (const panel of document.querySelectorAll<HTMLElement>(
+        ".hk-popover-panel, .hk-select-popout-host, .hk-select-sheet-panel",
+      )) {
+        if (panel !== panelEl.value && panel.contains(target)) return;
+      }
       close();
     }
 
     // The outside-close listener lives exactly while the popup is open — a
     // closed chip must not intercept document events, and sibling chips each
-    // attach their own. Escape close is HPopover's own (closeOnEscape).
+    // attach their own. Escape close is HkPopover's own (closeOnEscape).
     watch(
       () => props.open,
       (open) => {
@@ -77,6 +165,10 @@ export default defineComponent({
         } else {
           document.removeEventListener("pointerdown", onDocPointerDown, true);
         }
+        // A popup that closed before a pan's trailing click (window blur
+        // mid-drag — pointerup lost) must not carry the swallow flag into
+        // the reopened panel.
+        strip.resetDragged();
       },
     );
     onBeforeUnmount(() => {
@@ -92,6 +184,13 @@ export default defineComponent({
       return labels.length > 0 ? labels.join("·") : props.allLabel;
     });
 
+    const dirIcon = (d: "asc" | "desc") =>
+      d === "desc" ? (
+        <ArrowDown size={11} class="ship-filter-bar__dir" />
+      ) : (
+        <ArrowUp size={11} class="ship-filter-bar__dir" />
+      );
+
     return () => (
       <div ref={root} class="ship-filter-bar__chip-anchor">
         <button
@@ -99,63 +198,92 @@ export default defineComponent({
           ref={chipBtn}
           class={[
             "ship-filter-bar__chip",
-            props.selected.size ? "ship-filter-bar__chip--on" : "ship-filter-bar__chip--all",
+            props.icon ? "ship-filter-bar__chip--icon" : "",
+            props.selected.size || props.engaged
+              ? "ship-filter-bar__chip--on"
+              : props.allSort
+                ? "ship-filter-bar__chip--sort"
+                : "ship-filter-bar__chip--all",
           ]}
+          aria-label={props.icon ? props.title : undefined}
           onClick={() => emit("update:open", !props.open)}
         >
-          <span>{chipLabel.value}</span>
+          {props.icon ?? <span>{chipLabel.value}</span>}
         </button>
-        {/* closeOnBackdrop stays off: HPopover's own document listener would
-            close on the re-click of the open chip before that click re-opens
-            it, making the open chip impossible to dismiss. The pointerdown
-            listener above is the outside-close; Escape rides closeOnEscape. */}
-        <HPopover
+        {/* Desktop keeps closeOnBackdrop off: HkPopover's own document
+            listener would close on the re-click of the open chip before
+            that click re-opens it, making the open chip impossible to
+            dismiss; the pointerdown listener above is the outside-close and
+            Escape rides closeOnEscape. Phones dock the panel as a bottom
+            sheet (sheetOnMobile), where the sheet branch renders its
+            dismissal scrim from closeOnBackdrop; tapping the scrim also
+            trips the listener above (same close, one path). Sheet-mode
+            chrome reuse comes free: the panel reuses ShipFilterBar's flat
+            classes, and ShipFilterBar.scss already restyles
+            .hk-popover-panel.hk-is-sheet for this exact markup. */}
+        <HkPopover
           modelValue={props.open}
           onUpdate:modelValue={(v: boolean) => {
             if (!v) close();
           }}
           anchorRef={chipBtn.value}
           placement={props.edge ? "bottom-end" : "bottom-start"}
-          closeOnBackdrop={false}
+          closeOnBackdrop={isMobile.value}
+          sheetOnMobile
+          padding="lg"
           title={props.title}
         >
           <div ref={panelEl} class="ship-filter-bar__pop">
             <div class="ship-filter-bar__pop-head">
               <span>{props.title}</span>
-              <button type="button" class="ship-filter-bar__pop-close" onClick={close}>
-                ✕
-              </button>
             </div>
-            {/* Wrap unconditionally: this component may host long option
-                lists (13 nations) inside a narrow modal, unlike the short
-                categories ShipFilterBar styles the track for. */}
-            <div
-              class="ship-filter-bar__opts"
-              style={{ flexWrap: "wrap", justifyContent: "flex-start" }}
+            {/* One-line pannable strip, shared with the 水表 bar's nation
+                popup: a hikari HkScrollContainer (axis horizontal + fade)
+                capped by the panel and panned by wheel / drag / touch, its
+                edges fading where content still hides (the library senses
+                data-h-overflow; optionStrip normalizes the wheel and owns
+                the drag pan). The phone sheet relaxes the track back into
+                a wrapping group (SCSS). */}
+            <HkScrollContainer
+              ref={strip.attach}
+              class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
+              axis="horizontal"
+              fade
+              data-panning={strip.panning.value || undefined}
             >
-              <button
-                type="button"
-                class="ship-filter-bar__opt"
-                data-active={props.selected.size === 0 || undefined}
-                onClick={() => emit("clear")}
-              >
-                <span>{props.allLabel}</span>
-              </button>
-              {props.options.map((o) => (
+              <div class="ship-filter-bar__opts-track">
                 <button
-                  key={o.value}
                   type="button"
                   class="ship-filter-bar__opt"
-                  data-active={props.selected.has(o.value) || undefined}
-                  onClick={() => emit("toggle", o.value)}
+                  data-active={props.selected.size === 0 || undefined}
+                  onClick={() => emit("all")}
                 >
-                  <span>{o.label}</span>
+                  <span>{props.allLabel}</span>
+                  {props.dir ? dirIcon(props.dir) : null}
                 </button>
-              ))}
-            </div>
-            <div class="ship-filter-bar__pop-hint">{t("ships.filter.hintMulti")}</div>
+                {props.options.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    class="ship-filter-bar__opt"
+                    data-active={props.selected.has(o.value) || undefined}
+                    onClick={() => emit("toggle", o.value)}
+                  >
+                    {props.renderOptionIcon ? props.renderOptionIcon(o.value) : null}
+                    <span>{o.label}</span>
+                    {props.dir && !props.pure && props.selected.has(o.value)
+                      ? dirIcon(props.dir)
+                      : null}
+                  </button>
+                ))}
+              </div>
+            </HkScrollContainer>
+            {/* Slot content rides between the strip and the hint — the
+                replay rail's date-range pair lives here. */}
+            {slots.default?.()}
+            <div class="ship-filter-bar__pop-hint">{props.hint ?? t("ships.filter.hintMulti")}</div>
           </div>
-        </HPopover>
+        </HkPopover>
       </div>
     );
   },

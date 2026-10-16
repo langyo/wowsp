@@ -19,8 +19,16 @@
 //! original copies coexist), and misses are fetched through
 //! [`crate::commands::network::build_http_client`] so the Settings → Network
 //! proxy choice applies here too, like every other outbound request.
+//!
+//! Mod-hub catalog previews (`github.com/user-attachments/…` and the legacy
+//! `*.githubusercontent.com` hosts) ride the same scheme: GitHub is commonly
+//! unreachable from mainland China and the raw URL is not even inside the
+//! webview's CSP `img-src`, so a direct `<img>` fails silently. GitHub-hosted
+//! images walk the standard mirror ladder (see
+//! [`crate::commands::github_mirror`]) instead of the Resource CDN rewrite.
 
-use std::path::PathBuf;
+use anyhow::anyhow;
+use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
@@ -30,9 +38,18 @@ use crate::paths;
 /// Official host served when no Resource CDN mirror is configured.
 const DEFAULT_CDN_HOST: &str = "wows-gloss-icons.wgcdn.co";
 
-/// Only Wargaming's CDN (and its subdomains) may be fetched through the
-/// scheme (plus the configured Resource CDN mirror host, see [`is_allowed`]).
+/// Hosts whose images may be fetched through the scheme: Wargaming's CDN
+/// (and its subdomains) plus the configured Resource CDN mirror host, and
+/// Bilibili's avatar CDN for the About page's supporter cards (see
+/// [`is_allowed`]).
 const MEDIA_HOST_SUFFIX: &str = "wgcdn.co";
+/// Bilibili's static CDN (`i0/i1/i2.hdslb.com` — avatars).
+const BILIBILI_HOST_SUFFIX: &str = "hdslb.com";
+/// GitHub's user-attachment uploads (`github.com/user-attachments/assets/…`,
+/// extension-less) — what `uploads.github.com` hands the mod-hub publisher.
+const GITHUB_ATTACHMENTS_PATH: &str = "/user-attachments/";
+/// Legacy GitHub media hosts (`user-images.githubusercontent.com` & co.).
+const GITHUB_MEDIA_HOST_SUFFIX: &str = "githubusercontent.com";
 
 /// Subdirectory of the app cache root holding the fetched images.
 const IMAGE_CACHE_DIR: &str = "image-cache";
@@ -42,30 +59,47 @@ const OCTET_STREAM: &str = "application/octet-stream";
 
 /// Normalized host of an HTTPS URL: scheme must be https (case-insensitive,
 /// as URLs are per RFC 3986 §3.1), port and trailing FQDN dot stripped, case
-/// normalized. Parsed manually (the `url` crate is not a direct dependency)
-/// — pure and unit-tested. Any userinfo (`user@host`) stays inside the host
-/// chunk and simply fails exact/suffix comparisons, which is the safe
-/// direction (rejection).
+/// normalized. Use the same URL parser as the HTTP client: an allowlisted
+/// name inside userinfo must never stand in for the actual destination.
+/// Credentials are not supported in image URLs.
 fn https_host(url: &str) -> Option<String> {
-    let (scheme, rest) = url.split_once("://")?;
-    if !scheme.eq_ignore_ascii_case("https") {
+    let url = reqwest::Url::parse(url).ok()?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return None;
     }
-    // Host = everything up to the first path/query/fragment separator.
-    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-    let host = host.split(':').next().unwrap_or("");
-    Some(host.trim_end_matches('.').to_ascii_lowercase())
+    Some(url.host_str()?.trim_end_matches('.').to_ascii_lowercase())
+}
+
+/// GitHub-hosted mod-hub preview images: the current user-attachment uploads
+/// (path-scoped — `github.com` serves much more than images) and the legacy
+/// `*.githubusercontent.com` media hosts. These walk the mirror ladder, not
+/// the Resource CDN rewrite. Pure and unit-tested.
+fn is_github_media(url: &str) -> bool {
+    let Some(host) = https_host(url) else {
+        return false;
+    };
+    if host == "github.com" {
+        return original_path(url).starts_with(GITHUB_ATTACHMENTS_PATH);
+    }
+    host.ends_with(&format!(".{GITHUB_MEDIA_HOST_SUFFIX}"))
 }
 
 /// Whether `url` may be fetched through the scheme: HTTPS only, and the host
-/// is the official Wargaming CDN, a subdomain of it, or — exact match — the
-/// host of the configured Resource CDN mirror base (empty/absent base →
-/// official CDN only). Pure and unit-tested.
+/// is the official Wargaming CDN, a subdomain of it, a GitHub media host
+/// (path-scoped for the bare `github.com`), or — exact match — the host of
+/// the configured Resource CDN mirror base (empty/absent base → official CDN
+/// only). Pure and unit-tested.
 pub fn is_allowed(url: &str, resource_cdn: Option<&str>) -> bool {
+    if is_github_media(url) {
+        return true;
+    }
     let Some(host) = https_host(url) else {
         return false;
     };
     if host == DEFAULT_CDN_HOST || host.ends_with(&format!(".{MEDIA_HOST_SUFFIX}")) {
+        return true;
+    }
+    if host.ends_with(&format!(".{BILIBILI_HOST_SUFFIX}")) {
         return true;
     }
     let base = resource_cdn.map(str::trim).filter(|b| !b.is_empty());
@@ -111,9 +145,9 @@ fn cache_key(url: &str) -> String {
 }
 
 /// Resolve `<cache>/image-cache/<key>` for a URL, creating the directory.
-fn cache_path(url: &str) -> Result<PathBuf, String> {
+fn cache_path(url: &str) -> anyhow::Result<PathBuf> {
     let dir = paths::ensure_cache_dir()?.join(IMAGE_CACHE_DIR);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {dir:?}: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| anyhow!("create {dir:?}: {e}"))?;
     Ok(dir.join(cache_key(url)))
 }
 
@@ -166,28 +200,20 @@ fn extract_url_param(query: &str) -> Option<String> {
         .map(percent_decode)
 }
 
-/// Serve a cache hit or fetch a miss. Returns the bytes plus the content type
-/// to report: magic-byte sniff when recognizable, else the response's own
-/// `image/*` content type. Any failure (network, non-200, non-image) is an
-/// `Err` — the handler turns it into a 404 so the frontend's AssetImage
-/// placeholder flow kicks in.
-async fn load(url: &str) -> Result<(Vec<u8>, String), String> {
-    // Cache hit: serve straight from disk.
-    let path = cache_path(url)?;
-    if let Ok(bytes) = std::fs::read(&path) {
-        let content_type = sniff_image_type(&bytes).to_string();
-        return Ok((bytes, content_type));
-    }
-
-    // Miss: fetch through the proxy-aware client (Settings → Network applies).
-    let client = network::build_http_client()?;
+/// Fetch one URL through the proxy-aware client (Settings → Network
+/// applies) and validate the response is an image. No cache logic. The
+/// per-request timeout matters for the mirror ladder: a connected-but-
+/// stalled candidate must not hold the ladder (up to ~6 serial tries)
+/// hostage — the shared client only bounds the CONNECT phase.
+async fn fetch_image(client: &reqwest::Client, url: &str) -> anyhow::Result<(Vec<u8>, String)> {
     let response = client
         .get(url)
+        .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| format!("fetch {url}: {e}"))?;
+        .map_err(|e| anyhow!("fetch {url}: {e}"))?;
     if response.status() != reqwest::StatusCode::OK {
-        return Err(format!("fetch {url}: status {}", response.status()));
+        return Err(anyhow!("fetch {url}: status {}", response.status()));
     }
     let response_type = response
         .headers()
@@ -196,12 +222,12 @@ async fn load(url: &str) -> Result<(Vec<u8>, String), String> {
         .unwrap_or("")
         .to_string();
     if !response_type.starts_with("image/") {
-        return Err(format!("fetch {url}: not an image ({response_type})"));
+        return Err(anyhow!("fetch {url}: not an image ({response_type})"));
     }
     let bytes = response
         .bytes()
         .await
-        .map_err(|e| format!("read {url}: {e}"))?
+        .map_err(|e| anyhow!("read {url}: {e}"))?
         .to_vec();
 
     let content_type = match sniff_image_type(&bytes) {
@@ -213,12 +239,71 @@ async fn load(url: &str) -> Result<(Vec<u8>, String), String> {
             .to_string(),
         sniffed => sniffed.to_string(),
     };
-    // Cache-write failures are tolerated: the fetch already succeeded, so the
-    // caller still gets a 200 (the next request just refetches).
-    if let Err(e) = std::fs::write(&path, &bytes) {
+    Ok((bytes, content_type))
+}
+
+/// Cache-write helper: failures are tolerated — the fetch already
+/// succeeded, so the caller still gets its bytes (the next request just
+/// refetches).
+fn cache_write(path: &Path, bytes: &[u8]) {
+    if let Err(e) = std::fs::write(path, bytes) {
         tracing::warn!(error = %e, path = ?path, "media cache write failed");
     }
+}
+
+/// Serve a cache hit or fetch a miss. Returns the bytes plus the content type
+/// to report: magic-byte sniff when recognizable, else the response's own
+/// `image/*` content type. Any failure (network, non-200, non-image) is an
+/// `Err` — the handler turns it into a 404 so the frontend's AssetImage
+/// placeholder flow kicks in.
+async fn load(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
+    // Cache hit: serve straight from disk.
+    let path = cache_path(url)?;
+    if let Ok(bytes) = std::fs::read(&path) {
+        let content_type = sniff_image_type(&bytes).to_string();
+        return Ok((bytes, content_type));
+    }
+
+    // Miss: fetch through the proxy-aware client (Settings → Network applies).
+    let client = network::build_http_client()?;
+    let (bytes, content_type) = fetch_image(&client, url).await?;
+    cache_write(&path, &bytes);
     Ok((bytes, content_type))
+}
+
+/// [`load`] for GitHub-hosted media: a miss walks the standard mirror
+/// ladder (user mirror → official route → the built-in ghproxy-style
+/// prefixes) until one candidate serves the image — GitHub is commonly
+/// unreachable from mainland China, and the webview fetching the raw URL
+/// also bypasses the app proxy. The cache stays keyed by the ORIGINAL url,
+/// so every candidate lands in one entry.
+async fn load_github(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
+    // Cache hit: serve straight from disk.
+    let path = cache_path(url)?;
+    if let Ok(bytes) = std::fs::read(&path) {
+        let content_type = sniff_image_type(&bytes).to_string();
+        return Ok((bytes, content_type));
+    }
+
+    let client = network::build_http_client()?;
+    let mut last_err = anyhow!("no mirror candidates generated");
+    for candidate in crate::commands::github_mirror::candidates(url) {
+        match fetch_image(&client, &candidate).await {
+            Ok((bytes, content_type)) => {
+                cache_write(&path, &bytes);
+                return Ok((bytes, content_type));
+            },
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    candidate = %candidate,
+                    "media mirror candidate failed, trying the next"
+                );
+                last_err = e;
+            },
+        }
+    }
+    Err(last_err)
 }
 
 fn image_response(
@@ -264,6 +349,17 @@ pub fn handler<R: tauri::Runtime>(
         let response = match extract_url_param(&query)
             .filter(|url| is_allowed(url, resource_cdn.as_deref()))
         {
+            // GitHub-hosted previews walk the mirror ladder — the Resource
+            // CDN rewrite targets WG assets and must not touch them.
+            Some(url) if is_github_media(&url) => match load_github(&url).await {
+                Ok((bytes, content_type)) => {
+                    image_response(tauri::http::StatusCode::OK, &content_type, bytes)
+                },
+                Err(e) => {
+                    tracing::warn!(error = %e, "media fetch failed");
+                    status_response(tauri::http::StatusCode::NOT_FOUND)
+                },
+            },
             Some(url) => {
                 let (effective, rewritten) = effective_url(&url, resource_cdn.as_deref());
                 match load(&effective).await {
@@ -320,6 +416,69 @@ mod tests {
     }
 
     #[test]
+    fn allows_bilibili_avatar_cdn() {
+        assert!(is_allowed("https://i0.hdslb.com/bfs/face/abc.webp", None));
+        assert!(is_allowed("https://i2.hdslb.com/bfs/face/a.jpg", None));
+        // The bare apex is NOT allowlisted — only subdomains serve images.
+        assert!(!is_allowed("https://hdslb.com/a.png", None));
+        assert!(!is_allowed("https://evil-hdslb.com/a.png", None));
+    }
+
+    #[test]
+    fn allows_github_attachment_and_media_hosts() {
+        // The mod-hub publisher's preview shape: uploads.github.com hands
+        // out extension-less github.com/user-attachments/assets/<uuid>.
+        assert!(is_github_media(
+            "https://github.com/user-attachments/assets/7e5b1cb6-da6b-4c0f-9f65-2f6e9b93c2e1"
+        ));
+        assert!(is_allowed(
+            "https://github.com/user-attachments/assets/7e5b1cb6-da6b-4c0f-9f65-2f6e9b93c2e1",
+            None
+        ));
+        // Legacy hosts the community crawler still pairs with.
+        assert!(is_github_media(
+            "https://user-images.githubusercontent.com/5107015/shot.png"
+        ));
+        assert!(is_allowed(
+            "https://private-user-images.githubusercontent.com/u/1/v-4/abc.jpg?x=1",
+            None
+        ));
+        assert!(is_github_media(
+            "https://camo.githubusercontent.com/abc/687474"
+        ));
+        // The allowlist holds no matter which Resource CDN is configured.
+        assert!(is_allowed(
+            "https://github.com/user-attachments/assets/abc",
+            Some("https://mirror.example.com/wg/")
+        ));
+    }
+
+    #[test]
+    fn github_scope_is_path_limited_on_github_com() {
+        // github.com serves far more than images — only the attachment
+        // path rides the scheme.
+        assert!(!is_github_media("https://github.com/langyo/wowsp"));
+        assert!(!is_github_media(
+            "https://github.com/langyo/wowsp/releases/download/v1/a.zip"
+        ));
+        assert!(!is_github_media("https://github.com/about"));
+        // Host-suffix boundary rules, like the other media hosts.
+        assert!(!is_github_media("https://githubusercontent.com/a.png"));
+        assert!(!is_github_media("https://evil-githubusercontent.com/a.png"));
+        assert!(!is_github_media(
+            "https://githubusercontent.com.evil.com/a.png"
+        ));
+        // Scheme rules match the rest of the allowlist, and a userinfo
+        // lookalike must not smuggle an off-host fetch through.
+        assert!(!is_github_media(
+            "http://github.com/user-attachments/assets/a"
+        ));
+        assert!(!is_github_media(
+            "https://user-attachments.github.com@evil.com/assets/a"
+        ));
+    }
+
+    #[test]
     fn allows_case_and_port_variants() {
         assert!(is_allowed(
             "https://WoWs-Gloss-Icons.wgcdn.co:443/d-containers/a.png",
@@ -359,6 +518,57 @@ mod tests {
     }
 
     #[test]
+    fn rejects_allowed_hosts_disguised_as_userinfo() {
+        for url in [
+            "https://wows-gloss-icons.wgcdn.co:443@evil.example/a.png",
+            "https://i0.hdslb.com:443@evil.example/a.png",
+            "https://mirror.example.com:443@evil.example/a.png",
+            "https://evil.example\\@wows-gloss-icons.wgcdn.co/a.png",
+        ] {
+            let request = reqwest::Client::new().get(url).build().unwrap();
+            assert_eq!(request.url().host_str(), Some("evil.example"));
+            assert!(
+                !is_allowed(url, Some("https://mirror.example.com")),
+                "userinfo is not the fetch host: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_credentials_even_when_the_fetch_host_is_allowed() {
+        for url in [
+            "https://user@wows-gloss-icons.wgcdn.co/a.png",
+            "https://user:password@wows-gloss-icons.wgcdn.co/a.png",
+            "https://:password@i0.hdslb.com/a.png",
+        ] {
+            assert!(!is_allowed(url, None), "credentials are not image URLs");
+        }
+        assert!(!is_allowed(
+            "https://evil.example/a.png",
+            Some("https://user:password@evil.example")
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_authorities_and_preserves_valid_ports() {
+        for url in [
+            "https://wows-gloss-icons.wgcdn.co:invalid/a.png",
+            "https://wows-gloss-icons.wgcdn.co:65536/a.png",
+            "https://wows-gloss-icons.wgcdn.co:443./a.png",
+        ] {
+            assert!(reqwest::Url::parse(url).is_err());
+            assert!(!is_allowed(url, None), "invalid authority: {url}");
+        }
+        for url in [
+            "HTTPS://WOWS-GLOSS-ICONS.WGCDN.CO:443/a.png",
+            "https://wows-gloss-icons.wgcdn.co.:8443/a.png",
+            "https://i0.hdslb.com:9443/a.png",
+        ] {
+            assert!(is_allowed(url, None), "valid CDN authority: {url}");
+        }
+    }
+
+    #[test]
     fn allows_configured_mirror_host() {
         const BASE: Option<&str> = Some("https://mirror.example.com/wg/");
         assert!(is_allowed("https://mirror.example.com/a.png", BASE));
@@ -368,7 +578,7 @@ mod tests {
             BASE
         ));
         // Same normalization as the default host: port / case / FQDN dot.
-        assert!(is_allowed("https://MIRROR.example.com:443./a.png", BASE));
+        assert!(is_allowed("https://MIRROR.example.com.:443/a.png", BASE));
         // Base variants (whitespace, non-https) are ignored — default only.
         assert!(!is_allowed("https://mirror.example.com/a.png", Some("  ")));
         assert!(!is_allowed(
