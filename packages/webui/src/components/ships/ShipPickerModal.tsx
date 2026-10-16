@@ -4,6 +4,11 @@ import { HkButton, HkCheckbox, HkModal, HkScrollContainer, HkSearchInput, HkTag 
 
 import NationFlag from "@/components/base/NationFlag";
 import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
+import {
+  SHIP_SOURCES,
+  shipSourcesOf,
+  type ShipSource,
+} from "@/utils/shipSources";
 import { tierLabel } from "@/utils/shipCompare";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -59,6 +64,7 @@ export default defineComponent({
     const selectedTiers = ref<Set<string>>(new Set());
     const selectedTypes = ref<Set<string>>(new Set());
     const selectedNations = ref<Set<string>>(new Set());
+    const selectedSources = ref<Set<string>>(new Set());
     const checked = ref<Set<number>>(new Set());
     // Which category's popup is open — one at a time, owned here so opening
     // one chip closes the others (mirrors ShipFilterBar's single-open row).
@@ -106,6 +112,9 @@ export default defineComponent({
     const tierOptions = computed(() => TIERS.map((n) => ({ value: String(n), label: tierLabel(n) })));
     const typeOptions = computed(() => encyclopedia.types.map((tp) => ({ value: tp, label: typeLabel(tp) })));
     const nationOptions = computed(() => encyclopedia.nations.map((n) => ({ value: n, label: nationLabel(n) })));
+    const sourceOptions = computed(() =>
+      SHIP_SOURCES.map((src) => ({ value: src, label: t(`ships.filter.source_${src}`) })),
+    );
 
     /** Names that exist WITHOUT the trailing "2" — a "X2" ship whose base "X"
      *  is also a ship is a WG data clone ("蒙大拿2"). Matching on the base's
@@ -122,6 +131,19 @@ export default defineComponent({
         if (selectedTiers.value.size > 0 && !selectedTiers.value.has(String(s.tier))) return false;
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
+        // Sources are additive sets (a coal ship can also be a gold
+        // premium): a selection matches when ANY picked tag is present.
+        if (selectedSources.value.size > 0) {
+          const sources = shipSourcesOf(s);
+          let hit = false;
+          for (const src of selectedSources.value) {
+            if (sources.has(src as ShipSource)) {
+              hit = true;
+              break;
+            }
+          }
+          if (!hit) return false;
+        }
         if (q && !s.name.toLowerCase().includes(q) && !encyclopedia.shipDisplayName(s).toLowerCase().includes(q)) return false;
         // Cheap checks first — the clone match only runs for survivors.
         const bare = encyclopedia.shipDisplayName(s);
@@ -221,6 +243,16 @@ export default defineComponent({
                   onToggle={(v: string) => (selectedNations.value = toggleSet(selectedNations.value, v))}
                   onAll={() => (selectedNations.value = new Set())}
                   renderOptionIcon={nationOptionIcon}
+                />
+                <FilterCategoryChip
+                  title={t("ships.filter.sourceTitle")}
+                  allLabel={t("ships.filter.sourceAll")}
+                  options={sourceOptions.value}
+                  selected={selectedSources.value}
+                  open={openCat.value === "source"}
+                  onUpdate:open={(v: boolean) => (openCat.value = v ? "source" : null)}
+                  onToggle={(v: string) => (selectedSources.value = toggleSet(selectedSources.value, v))}
+                  onAll={() => (selectedSources.value = new Set())}
                   edge
                 >
                   {/* Scroll-hint line ahead of the default multi-select hint,

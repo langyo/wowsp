@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "note": "Curated armory-source tags, keyed by SHIP NAME and matched against every locale the offline ship db carries plus the API display name (names are stable across patches; ids are not memorable). A ship may hold SEVERAL sources at once — a coal ship that is also sold for gold is normal. Extend the arrays freely; a name that matches nothing is simply inert. tree membership (银币线) and early-access (活动) are DERIVED from tech_tree.json and isPremium (金币) from the encyclopedia — only coal/steel/event live here.",
+  "coal": [
+    "Salem",
+    "Yoshino",
+    "Georgia",
+    "Thunderer",
+    "Benham",
+    "Pommern",
+    "Brandenburg",
+    "Napoli",
+    "Moskva",
+    "Khabarovsk",
+    "Marco Polo",
+    "Annapolis",
+    "Sevastopol",
+    "Toulon",
+    "Błyskawica"
+  ],
+  "steel": [
+    "Stalingrad",
+    "Bourgogne",
+    "Somers",
+    "Austin",
+    "Plymouth",
+    "Ragnar",
+    "Black",
+    "Franklin D. Roosevelt"
+  ],
+  "event": []
+}
