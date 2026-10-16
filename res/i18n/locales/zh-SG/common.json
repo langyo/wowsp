@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "战舰世界战况分析仪表盘 — 录像复盘与游戏内覆盖层"
   },
+  "portableTag": "便捷版",
+  "portable3dBlocked": "便携版不支持 3D 视图，请安装完整版以获得最佳体验。",
   "copied": "已复制到剪贴板",
   "clickToCopy": "点击以复制",
   "reload": "重新加载",

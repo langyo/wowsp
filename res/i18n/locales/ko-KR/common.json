@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "World of Warship Panel — 리플레이 복기 및 인게임 오버레이"
   },
+  "portableTag": "휴대용 버전",
+  "portable3dBlocked": "휴대용 버전은 3D 보기를 지원하지 않습니다. 최상의 경험을 위해 정식 버전을 설치하세요.",
   "copied": "클립보드에 복사되었습니다",
   "clickToCopy": "클릭하여 복사",
   "reload": "새로고침",

@@ -22,6 +22,7 @@ import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useUpdaterStore } from "@/stores/updater";
 import { isMobileApp } from "@/utils/platform";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t, i18n } from "@/i18n";
@@ -332,8 +333,12 @@ export default defineComponent({
   setup(props, { emit }) {
     const inst = getCurrentInstance();
     const toast = useToast();
+    const updater = useUpdaterStore();
     const containerRef = ref<HTMLElement | null>(null);
-    const viewMode = ref<"2d" | "3d">("3d");
+    // The portable (便捷版) build has no 3D: default to the 2D portrait so
+    // no scene is ever initialized, and (below) a late-flipping portable
+    // probe still tears a live one down. setViewMode blocks the way back.
+    const viewMode = ref<"2d" | "3d">(updater.portable ? "2d" : "3d");
     const loading = ref(false);
     /** Any async stage load (hull or airframe). A counter, so concurrent
      *  loads keep the spinner up until the LAST one settles. */
@@ -1911,6 +1916,12 @@ export default defineComponent({
     // ── View mode switch ──────────────────────────────────────────────────
     async function setViewMode(mode: "2d" | "3d") {
       if (mode === viewMode.value) return;
+      if (mode === "3d" && updater.portable) {
+        // The portable edition ships no 3D — explain instead of switching.
+        // (The 3D tab is disabled as well; this guards any other caller.)
+        toast.show(t("common.portable3dBlocked"));
+        return;
+      }
       if (mode === "3d") {
         // Hidden stage: just record the mode — the scene (and any on-demand
         // model-pack download) initializes when the stage is re-shown.
@@ -1955,6 +1966,19 @@ export default defineComponent({
         viewMode.value = "2d";
       }
     }
+
+    // A late-flipping portable probe (updater.init resolving after this
+    // stage mounted) must still kill a running 3D scene — force the 2D
+    // portrait the moment the flag lands.
+    watch(
+      () => updater.portable,
+      (portable) => {
+        if (portable && viewMode.value === "3d") {
+          disposeScene();
+          viewMode.value = "2d";
+        }
+      },
+    );
 
     return () => {
       const ship = props.ship;
@@ -2179,7 +2203,7 @@ export default defineComponent({
                   modelValue={viewMode.value}
                   onUpdate:modelValue={(v: string) => setViewMode(v as "2d" | "3d")}
                   tabs={[
-                    { key: "3d", label: "3D" },
+                    { key: "3d", label: "3D", disabled: updater.portable },
                     { key: "2d", label: "2D" },
                   ]}
                 />

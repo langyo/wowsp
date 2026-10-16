@@ -16,7 +16,7 @@ driven from the rendered manifest:
     payload-lite/          ← wowsp.exe + wowsp-flavor.txt
     payload-webview2/      ← + models/ dogtags/ res stamp + webview2 runtime
 
-Flavor split (the two build flavors, three published artifacts):
+Flavor split (the three build flavors, four published artifacts):
 
     - ``webview2`` — the complete build: application + the current 2D/3D
       model pack + the Evergreen offline WebView2 runtime. An install never
@@ -27,6 +27,11 @@ Flavor split (the two build flavors, three published artifacts):
       out of the box and the pack downloads on demand (Settings → cache
       management, or automatically on the first 3D view). The app's
       updater always picks the ``-lite`` artifact.
+    - ``portable`` — the single-exe 便捷版: a bare renamed copy of
+      ``wowsp.exe`` with NO installer shell (no shun run — it needs only
+      the app build). The app detects portable mode from the exe file
+      name (`WoWSP_<version>_x64-portable.exe`, see paths.rs) and runs
+      fully portable (data next to the exe, no auto-updater, no 3D views).
 
 The legacy ``WoWSP_<version>_x64-installer.exe`` name (no flavor suffix)
 stays published as a byte-identical copy of lite. The materials-only
@@ -47,8 +52,9 @@ cargo build of that workspace, later runs are incremental.
 
 Artifacts land in ``target/release/bundle/installer/`` as
 ``WoWSP_<version>_x64-installer-webview2.exe``,
-``WoWSP_<version>_x64-installer-lite.exe`` and the legacy alias
-``WoWSP_<version>_x64-installer.exe``.
+``WoWSP_<version>_x64-installer-lite.exe``, the legacy alias
+``WoWSP_<version>_x64-installer.exe`` and the single-exe
+``WoWSP_<version>_x64-portable.exe``.
 
 The Evergreen offline runtime (~180 MB) is cached under
 ``packages/installer/vendor/`` (gitignored).
@@ -570,10 +576,11 @@ def main() -> int:
     )
     ap.add_argument(
         "--flavors",
-        default="webview2,lite",
-        help="comma list of artifacts to build: webview2, lite "
+        default="webview2,lite,portable",
+        help="comma list of artifacts to build: webview2, lite, portable "
         "(the webview2 flavor carries the model pack and the WebView2 "
-        "runtime; lite downloads the pack on demand)",
+        "runtime; lite downloads the pack on demand; portable is the "
+        "single-exe 便捷版 — a bare renamed copy of wowsp.exe, no installer)",
     )
     ap.add_argument(
         "--shun-repo",
@@ -584,14 +591,18 @@ def main() -> int:
     args = ap.parse_args()
 
     variants = [f.strip() for f in args.flavors.split(",") if f.strip()]
-    unknown = [f for f in variants if f not in ("webview2", "lite")]
+    unknown = [f for f in variants if f not in ("webview2", "lite", "portable")]
     if unknown:
         sys.exit(
-            f"unknown flavor(s): {', '.join(unknown)} — expected webview2, lite"
+            f"unknown flavor(s): {', '.join(unknown)} — expected webview2, lite, portable"
         )
 
     version = app_version()
-    shun_repo = resolve_shun_repo(args.shun_repo)
+    # shun builds the installer flavors only — the portable artifact is a
+    # bare renamed copy of the app exe and needs no staging tree at all
+    # (so `--flavors portable` runs without a shun checkout).
+    needs_shun = any(f in variants for f in ("webview2", "lite"))
+    shun_repo = resolve_shun_repo(args.shun_repo) if needs_shun else None
 
     # The portraits ride publicDir into the webui dist and from there into
     # the app binary itself — they must be on disk BEFORE build_app, which
@@ -607,29 +618,40 @@ def main() -> int:
         app_exe = build_app()
 
     # The res-latest stamp shipped beside the pack (empty when GitHub is
-    # unreachable — the app then re-downloads as usual).
-    res_tree, res_version = res_stamp()
+    # unreachable — the app then re-downloads as usual). Only the webview2
+    # flavor stages the pack, so runs without it skip the probe entirely.
+    res_tree, res_version = res_stamp() if "webview2" in variants else ("", "")
 
     # The Evergreen download is only needed when the webview2 flavor builds.
     wv2 = ensure_payload() if "webview2" in variants else None
 
-    # Stage the self-contained tree, then build each variant.
-    if STAGE.exists():
-        try:
-            shutil.rmtree(STAGE)
-        except OSError as exc:
-            # ignore_errors + a bare mkdir used to surface this as a
-            # cryptic FileExistsError; name the offending path and the
-            # fix instead (a running app or a parked shell routinely
-            # holds a subdirectory open).
-            sys.exit(
-                f"cannot clear {STAGE}: {exc}\n"
-                "A file inside it is held open — usually a running WoWSP "
-                "instance or a shell whose working directory sits in the "
-                "stage. Close it and retry."
-            )
-    STAGE.mkdir(parents=True)
-    stage_documents(STAGE, version)
+    # The single-exe 便捷版: a bare renamed copy of the app binary. The exe
+    # file name IS the portable marker (see paths.rs portable_mode) — data
+    # lands next to the exe, the updater and 3D views stay disabled.
+    if "portable" in variants:
+        OUT.mkdir(parents=True, exist_ok=True)
+        artifact = OUT / f"WoWSP_{version}_x64-portable.exe"
+        shutil.copy2(app_exe, artifact)
+        print(f"[ok] {artifact.name}: {artifact.stat().st_size:,} bytes")
+
+    # Stage the self-contained tree, then build each installer variant.
+    if needs_shun:
+        if STAGE.exists():
+            try:
+                shutil.rmtree(STAGE)
+            except OSError as exc:
+                # ignore_errors + a bare mkdir used to surface this as a
+                # cryptic FileExistsError; name the offending path and the
+                # fix instead (a running app or a parked shell routinely
+                # holds a subdirectory open).
+                sys.exit(
+                    f"cannot clear {STAGE}: {exc}\n"
+                    "A file inside it is held open — usually a running WoWSP "
+                    "instance or a shell whose working directory sits in the "
+                    "stage. Close it and retry."
+                )
+        STAGE.mkdir(parents=True)
+        stage_documents(STAGE, version)
 
     # The lite payload packs the BARE app: build it before the model pack
     # is staged, so its payload stays slim.

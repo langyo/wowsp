@@ -327,6 +327,7 @@ jobs:
             "WoWSP_${ver}_x64-installer.exe" \
             "WoWSP_${ver}_x64-installer-lite.exe" \
             "WoWSP_${ver}_x64-installer-webview2.exe" \
+            "WoWSP_${ver}_x64-portable.exe" \
             latest; do
             echo "$assets" | grep -qxF "$want" || {
               echo "::error::asset '$want' missing from release $rel_id — refusing to publish"

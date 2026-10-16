@@ -24,6 +24,7 @@ import { api, type AssetFileInfo, type ModelPreviewPart } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useAudioPlayerStore } from "@/stores/audioPlayer";
+import { useUpdaterStore } from "@/stores/updater";
 import ModelStage from "./ModelStage";
 import { compareByScene, humanizeEvent, humanizeState, sceneLabel } from "./voiceScenes";
 
@@ -54,6 +55,9 @@ export default defineComponent({
     const player = useAudioPlayerStore();
     const { uiLocale } = useLanguage();
     const toast = useToast();
+    // The portable edition ships no 3D: model rows keep listing, but the
+    // stage area explains instead of ever mounting ModelStage.
+    const updater = useUpdaterStore();
     // Model mode: the family parts of the clicked .geometry row. The
     // session token kills in-flight expansions when the unit switches.
     const modelParts = ref<ModelPreviewPart[] | null>(null);
@@ -126,6 +130,12 @@ export default defineComponent({
     // re-clicks. Stale loads (superseded by a unit switch or a newer
     // click) die on the session token.
     async function toggleModel(file: AssetFileInfo) {
+      if (updater.portable) {
+        // No 3D in the portable edition — explain instead of expanding
+        // the geometry into parts nothing can render.
+        toast.show(t("common.portable3dBlocked"));
+        return;
+      }
       if (modelLoading.value) return;
       if (modelRel.value === file.rel) return;
       const mySession = ++modelSession;
@@ -180,7 +190,11 @@ export default defineComponent({
       // (overlay track); the wrapped chip rows scroll in the viewport.
       return (
         <div class="asset-preview__model">
-          {modelParts.value ? <ModelStage parts={modelParts.value} /> : null}
+          {updater.portable ? (
+            <div class="asset-preview__note">{t("common.portable3dBlocked")}</div>
+          ) : modelParts.value ? (
+            <ModelStage parts={modelParts.value} />
+          ) : null}
           <HkScrollContainer class="asset-preview__model-rows">
             <ul class="asset-preview__model-rows-inner">
               {rows.map((f) => (

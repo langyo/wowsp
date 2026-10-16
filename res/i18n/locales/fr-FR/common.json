@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "World of Warship Panel — revue de replays et superposition en jeu"
   },
+  "portableTag": "Édition portable",
+  "portable3dBlocked": "L'édition portable ne prend pas en charge les vues 3D. Installez l'édition complète pour une expérience optimale.",
   "copied": "Copié dans le presse-papiers",
   "clickToCopy": "Cliquer pour copier",
   "reload": "Recharger",

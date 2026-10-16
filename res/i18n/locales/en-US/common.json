@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "World of Warship Panel — replay review & in-game overlay"
   },
+  "portableTag": "Portable",
+  "portable3dBlocked": "The portable edition does not support 3D views. Install the full edition for the best experience.",
   "copied": "Copied to clipboard",
   "clickToCopy": "Click to copy",
   "reload": "Reload",

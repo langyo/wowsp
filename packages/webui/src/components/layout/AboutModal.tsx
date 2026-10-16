@@ -64,7 +64,7 @@ export const AboutContent = defineComponent({
           <div class="about-modal__version">
             <span>v{version.value}</span>
             {updater.portable ? (
-              <span class="about-modal__portable">Portable</span>
+              <span class="about-modal__portable">{t("common.portableTag")}</span>
             ) : updater.running ? (
               <span class="about-modal__updating">{updater.statusText}</span>
             ) : updater.available ? (
