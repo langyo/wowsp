@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "World of Warship Panel — リプレイ分析とゲーム内オーバーレイ"
   },
+  "portableTag": "ポータブル版",
+  "portable3dBlocked": "ポータブル版は 3D 表示に対応していません。快適な体験のために完全版をインストールしてください。",
   "copied": "クリップボードにコピーしました",
   "clickToCopy": "クリックでコピー",
   "reload": "再読み込み",

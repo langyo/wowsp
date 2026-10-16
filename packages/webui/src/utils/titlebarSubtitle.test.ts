@@ -1,10 +1,11 @@
 /**
  * Tests for the title-bar subtitle composition (App.tsx renders this
- * verbatim next to the WoWSP title). The subtitle has two parts: the
- * running version (`v<version>` from the Tauri app API) and, in debug
- * builds only, the git identity stamp (`branch:hash7`) that pins the
- * binary to its checkout — the same convention shittim-chest's status
- * bar carries.
+ * verbatim next to the WoWSP title). The subtitle has up to three parts:
+ * the running version (`v<version>` from the Tauri app API), the
+ * localized portable tag in portable builds (`v0.6.1 便捷版`), and, in
+ * debug builds only, the git identity stamp (`branch:hash7`) that pins
+ * the binary to its checkout — the same convention shittim-chest's
+ * status bar carries.
  */
 import { describe, expect, it } from "vitest";
 
@@ -31,5 +32,19 @@ describe("titlebarSubtitle", () => {
 
   it("stays empty in browser dev mode (no version, no stamp)", () => {
     expect(titlebarSubtitle("", "")).toBe("");
+  });
+
+  it("appends the portable tag after the version (portable build)", () => {
+    expect(titlebarSubtitle("0.6.1", "", "便捷版")).toBe("v0.6.1 便捷版");
+  });
+
+  it("orders version, portable tag, then the debug stamp", () => {
+    expect(titlebarSubtitle("0.6.1", "master:05b69ad", "便捷版")).toBe(
+      "v0.6.1 便捷版 master:05b69ad",
+    );
+  });
+
+  it("shows the portable tag alone when the version is unavailable", () => {
+    expect(titlebarSubtitle("", "", "Portable")).toBe("Portable");
   });
 });

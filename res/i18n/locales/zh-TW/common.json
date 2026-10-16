@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "戰艦世界戰況分析儀表板 — 錄影復盤與遊戲內覆蓋層"
   },
+  "portableTag": "便攜版",
+  "portable3dBlocked": "便攜版不支持 3D 視圖，請安裝完整版以獲得最佳體驗。",
   "copied": "已複製到剪貼簿",
   "clickToCopy": "點擊以複製",
   "reload": "重新載入",

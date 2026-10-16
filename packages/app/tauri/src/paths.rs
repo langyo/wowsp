@@ -11,9 +11,13 @@
 //!   3. **Green / direct-run mode** — same marker-based resolution; the folder
 //!      is fully self-contained and can be copied anywhere.
 //!
-//! Portable mode is detected by the presence of a `.portable` marker file in
-//! the same directory as `wowsp.exe`. The installer writes the marker; users
-//! can also create it manually to turn any copy into a portable one.
+//! Portable mode is detected two ways: by the presence of a `.portable`
+//! marker file in the same directory as `wowsp.exe` (the installer writes
+//! it; users can also create it manually to turn any copy into a portable
+//! one), or by the exe's own file name containing "portable" — the
+//! single-exe 便捷版 artifact is a bare renamed copy of `wowsp.exe`
+//! (`WoWSP_<version>_x64-portable.exe`), so no marker file can ship along
+//! and the name itself carries the mode (see [`portable_mode`]).
 //!
 //! Android has none of that: there is no exe-relative writable directory and
 //! no `%APPDATA%`. Instead the Tauri `PathResolver` maps the app-private
@@ -53,13 +57,41 @@ pub fn exe_dir() -> Option<PathBuf> {
         .and_then(|p| p.parent().map(Path::to_path_buf))
 }
 
+/// Whether an exe file name marks a portable (便捷版) build: the file stem
+/// contains "portable" (ASCII-case-insensitive), matching the published
+/// `WoWSP_<version>_x64-portable.exe` artifact.
+#[cfg(desktop)]
+fn exe_name_is_portable(exe: &Path) -> bool {
+    exe.file_stem()
+        .map(|stem| {
+            stem.to_string_lossy()
+                .to_ascii_lowercase()
+                .contains("portable")
+        })
+        .unwrap_or(false)
+}
+
 /// Whether the app runs in portable (USB / green) mode. Always false on
 /// mobile — there is no exe-relative writable directory to resolve against.
+///
+/// Two independent triggers, so `is_portable` follows both:
+/// - the `.portable` marker next to the exe (installer-written, or created
+///   manually to green-ify any copy);
+/// - the exe's own file name containing "portable" (see
+///   [`exe_name_is_portable`]) — the single-exe 便捷版 artifact, where no
+///   marker file can ride along.
 pub fn portable_mode() -> bool {
     #[cfg(desktop)]
     {
-        exe_dir()
+        if exe_dir()
             .map(|d| d.join(PORTABLE_MARKER).exists())
+            .unwrap_or(false)
+        {
+            return true;
+        }
+        std::env::current_exe()
+            .ok()
+            .map(|exe| exe_name_is_portable(&exe))
             .unwrap_or(false)
     }
     #[cfg(not(desktop))]
@@ -135,9 +167,10 @@ pub fn ensure_cache_dir() -> anyhow::Result<PathBuf> {
     Ok(dir)
 }
 
-/// Tauri command: report whether the app runs in portable (USB / green) mode.
-/// The webui hides the auto-updater in portable mode (updates install via
-/// NSIS, which only makes sense for a local install).
+/// Tauri command: report whether the app runs in portable (USB / green)
+/// mode. The webui hides the auto-updater in portable mode (updates install
+/// via NSIS, which only makes sense for a local install) and replaces the
+/// 3D views with a hint to install the full edition.
 #[tauri::command]
 pub fn is_portable() -> bool {
     portable_mode()
@@ -156,5 +189,19 @@ mod tests {
         // The marker is not present next to the test binary, so we can only
         // assert the shape: with the marker, resolution is exe-relative.
         assert!(!portable_mode() || data_dir().unwrap().parent().is_some());
+    }
+
+    #[test]
+    #[cfg(desktop)]
+    fn exe_name_marks_portable() {
+        // The published single-exe artifact name carries the mode.
+        assert!(exe_name_is_portable(Path::new(
+            "D:\\tools\\WoWSP_0.6.1_x64-portable.exe"
+        )));
+        // ASCII-case-insensitive; any position in the stem.
+        assert!(exe_name_is_portable(Path::new("WoWSP-PORTABLE.exe")));
+        // Regular installs never trip the name check.
+        assert!(!exe_name_is_portable(Path::new("wowsp.exe")));
+        assert!(!exe_name_is_portable(Path::new("D:\\WoWSP\\wowsp.exe")));
     }
 }

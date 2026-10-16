@@ -3,6 +3,8 @@
     "name": "WoWSP",
     "tagline": "World of Warship Panel — revisión de repeticiones y superposición en el juego"
   },
+  "portableTag": "Edición portátil",
+  "portable3dBlocked": "La edición portátil no admite vistas 3D. Instala la edición completa para obtener la mejor experiencia.",
   "copied": "Copiado al portapapeles",
   "clickToCopy": "Haz clic para copiar",
   "reload": "Recargar",

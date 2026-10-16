@@ -22,7 +22,8 @@ import { t } from "@/i18n";
  * outside Tauri the caption buttons are inert and the subtitle stays empty
  * (browser dev mode has no app version). Debug builds append the git
  * identity stamp (branch:hash7) behind the version so the running binary
- * pins to its checkout — see utils/titlebarSubtitle.
+ * pins to its checkout — see utils/titlebarSubtitle. Portable builds
+ * append the localized portable tag between the two (`v0.6.1 便捷版`).
  *
  * The in-game overlay window is a separate pre-rendered page (overlay.html),
  * not a Vue view. While the game runs and the in-game overlay setting is on,
@@ -34,6 +35,7 @@ export default defineComponent({
   setup() {
     const version = ref("");
     const buildIdentity = ref("");
+    const portable = ref(false);
     const ui = useSettingsUiStore();
     useOverlayLifecycle();
     // Clears the /live retention (roster + self-stats) when the client
@@ -42,15 +44,17 @@ export default defineComponent({
 
     onMounted(async () => {
       // Resolve together so the subtitle never flips from version-only to
-      // version+stamp a frame apart in debug builds. Both fetches fail
-      // silently in browser dev mode (no app version, no mock route) and
-      // leave the subtitle empty.
-      const [appVersion, identity] = await Promise.all([
+      // version+stamp a frame apart in debug builds. All fetches fail
+      // silently in browser dev mode (no app version, no mock route, no
+      // portable probe) and leave the subtitle empty.
+      const [appVersion, identity, isPortable] = await Promise.all([
         getVersion().catch(() => ""),
         transport.invoke<string>(RPC.get_build_identity).catch(() => ""),
+        transport.invoke<boolean>(RPC.is_portable).catch(() => false),
       ]);
       version.value = appVersion;
       buildIdentity.value = identity;
+      portable.value = isPortable;
     });
 
     return () => (
@@ -61,7 +65,11 @@ export default defineComponent({
         <AppTitleBar
           icon="/logo.webp"
           title="WoWSP"
-          subtitle={titlebarSubtitle(version.value, buildIdentity.value)}
+          subtitle={titlebarSubtitle(
+            version.value,
+            buildIdentity.value,
+            portable.value ? t("common.portableTag") : "",
+          )}
           customActions={[
             { id: "settings", label: t("nav.settings"), icon: <Settings size={15} /> },
           ]}

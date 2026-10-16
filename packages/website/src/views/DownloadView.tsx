@@ -132,7 +132,7 @@ export default defineComponent({
 
     // Latest release — fetched live so version numbers never go stale.
     // `phase` keeps the pending fetch (placeholder row) apart from a real
-    // failure (fallback link to the Releases page).
+    // failure (every card falls back to the Releases page).
     const release = ref<LatestRelease | null>(null);
     const phase = ref<"loading" | "ready" | "failed">("loading");
     onMounted(async () => {
@@ -146,45 +146,46 @@ export default defineComponent({
       }
     });
 
-    // The two published installer flavors, resolved against the latest
-    // release's assets. The raw file names never reach the page: a card
-    // carries an internationalized title + audience description, and its
-    // button downloads the matching asset directly. The legacy bare-name
-    // alias (the desktop updater's bridge) and every unrecognized asset
-    // stay invisible — novices see exactly two choices.
+    // The three published flavors, resolved against the latest release's
+    // assets. The raw file names never reach the page: a card carries an
+    // internationalized title + audience description, and its button
+    // downloads the matching asset directly. The legacy bare-name alias
+    // (the desktop updater's bridge) and every unrecognized asset stay
+    // invisible — novices see exactly three choices. `label` is the
+    // capitalized i18n key suffix (flavor<Label>Title / Desc).
     const FLAVORS = [
-      { key: "lite", icon: Zap },
-      { key: "full", icon: HardDriveDownload },
+      { key: "online", label: "Online", icon: Zap },
+      { key: "offline", label: "Offline", icon: HardDriveDownload },
+      { key: "portable", label: "Portable", icon: Usb },
     ] as const;
 
     type FlavorKey = (typeof FLAVORS)[number]["key"];
 
     function flavorOf(name: string): FlavorKey | null {
-      if (/x64-installer-lite\.exe$/.test(name)) return "lite";
-      if (/x64-installer-webview2\.exe$/.test(name)) return "full";
+      if (/x64-installer-lite\.exe$/.test(name)) return "online";
+      if (/x64-installer-webview2\.exe$/.test(name)) return "offline";
+      if (/x64-portable\.exe$/.test(name)) return "portable";
       return null;
     }
 
+    // Always one card per flavor. A resolved asset rides the mirror that
+    // served the release info; a missing asset (the latest release
+    // predates the artifact) or a failed fetch falls back to the Releases
+    // page — so every button stays clickable either way.
     const flavorCards = computed(() =>
       FLAVORS.map((flavor) => {
         const asset = release.value?.assets.find(
           (a) => flavorOf(a.name) === flavor.key,
         );
-        return asset
-          ? {
-              key: flavor.key,
-              icon: flavor.icon,
-              url: asset.url,
-              size: asset.size,
-            }
-          : null;
-      }).filter((card): card is NonNullable<typeof card> => card !== null),
+        return {
+          key: flavor.key,
+          label: flavor.label,
+          icon: flavor.icon,
+          href: asset ? mirrorPrefix.value + asset.url : RELEASES,
+          size: asset?.size ?? 0,
+        };
+      }),
     );
-
-    const modes = [
-      { icon: HardDriveDownload, key: "modeInstall" },
-      { icon: Usb, key: "modeUsb" },
-    ] as const;
 
     return () => (
       <div class="download">
@@ -218,37 +219,14 @@ export default defineComponent({
           </div>
         </section>
 
-        {/* ── modes ── */}
-        <section class="download__modes container">
-          <Reveal class="download__modes-head">
-            <h2>{t("download.modesTitle")}</h2>
-          </Reveal>
-          <div class="download__grid">
-            {modes.map((m, i) => {
-              const Icon = m.icon;
-              return (
-                <Reveal delay={i * 90} key={m.key}>
-                  <article class="mode-card glass-panel is-interactive">
-                    <div class="mode-card__icon">
-                      <Icon size={22} />
-                    </div>
-                    <h3>{t(`download.${m.key}Title`)}</h3>
-                    <p>{t(`download.${m.key}Desc`)}</p>
-                  </article>
-                </Reveal>
-              );
-            })}
-          </div>
-        </section>
-
         {/* ── flavors ── */}
         <section class="download__assets container">
           <Reveal>
             <div class="download__assets-head">
               <h2>{t("download.flavorsTitle")}</h2>
-              {/* Hidden when the official route served the release info
-               * (and on a failed fetch, when only the Releases-page link
-               * remains): the note only ever names a mirror in use. */}
+              {/* Hidden when the official route served the release info,
+               * or when the fetch failed (every button then targets the
+               * Releases page): the note only ever names a mirror in use. */}
               {phase.value === "ready" && mirrorPrefix.value && (
                 <span
                   class="accent-pill download__mirror"
@@ -258,42 +236,44 @@ export default defineComponent({
                   {t("download.mirrorNote", { host: mirrorHost.value })}
                 </span>
               )}
+              {/* A failed fetch never blocks the cards — every button
+               * opens the Releases page instead — but say so up front. */}
+              {phase.value === "failed" && (
+                <span class="download__notice">{t("download.loadFailed")}</span>
+              )}
             </div>
           </Reveal>
           <Reveal delay={80}>
-            {phase.value === "ready" && flavorCards.value.length ? (
+            {phase.value === "loading" ? (
+              <ul class="download__list glass-panel">
+                <li class="download__placeholder">{t("download.loading")}</li>
+              </ul>
+            ) : (
               <div class="download__flavors">
                 {flavorCards.value.map((card, i) => {
                   const Icon = card.icon;
                   return (
                     <Reveal delay={i * 90} key={card.key}>
                       <article
-                        class={`flavor-card glass-panel${card.key === "lite" ? " is-recommended" : ""}`}
+                        class={`flavor-card glass-panel${card.key === "online" ? " is-recommended" : ""}`}
                       >
-                        {card.key === "lite" && (
+                        {card.key === "online" && (
                           <span class="flavor-card__badge">
                             <Zap size={11} />
-                            {t("download.flavorLiteBadge")}
+                            {t("download.flavorRecommendedBadge")}
                           </span>
                         )}
                         <div class="flavor-card__icon">
                           <Icon size={22} />
                         </div>
-                        <h3>
-                          {t(`download.flavor${card.key === "lite" ? "Lite" : "Full"}Title`)}
-                        </h3>
-                        <p>
-                          {t(`download.flavor${card.key === "lite" ? "Lite" : "Full"}Desc`)}
-                        </p>
+                        <h3>{t(`download.flavor${card.label}Title`)}</h3>
+                        <p>{t(`download.flavor${card.label}Desc`)}</p>
                         {card.size ? (
                           <span class="flavor-card__meta">
                             ≈ {formatSize(card.size)}
                           </span>
                         ) : null}
-                        <LinkButton
-                          href={mirrorPrefix.value + card.url}
-                          external
-                        >
+                        <LinkButton href={card.href} external>
                           <FileDown size={15} />
                           {t("download.flavorDownload")}
                         </LinkButton>
@@ -302,22 +282,6 @@ export default defineComponent({
                   );
                 })}
               </div>
-            ) : phase.value === "loading" ? (
-              <ul class="download__list glass-panel">
-                <li class="download__placeholder">{t("download.loading")}</li>
-              </ul>
-            ) : (
-              <ul class="download__list glass-panel">
-                <li>
-                  <a href={RELEASES} target="_blank" rel="noopener">
-                    <span class="download__file">
-                      <FileDown size={14} />
-                      GitHub Releases
-                    </span>
-                    <span class="download__label">{t("download.loadFailed")}</span>
-                  </a>
-                </li>
-              </ul>
             )}
           </Reveal>
           <p class="download__notes">{t("download.notes")}</p>

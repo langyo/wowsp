@@ -9,6 +9,7 @@ import HolographicMap, { type HoloMapHandle } from "@/features/holographic/Holog
 import PairingWizard from "@/features/replay/PairingWizard";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePairingStore } from "@/stores/pairing";
+import { useUpdaterStore } from "@/stores/updater";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import type {
   AchievementEvent,
@@ -1378,6 +1379,7 @@ export default defineComponent({
     const encyclopedia = useEncyclopediaStore();
     const toast = useToast();
     const loadingTasks = useLoadingTasksStore();
+    const updater = useUpdaterStore();
     const { dataLanguage } = useLanguage();
     const mapLang = computed(() => dataLanguage.value);
     const gameStatus = useGameStatusStore();
@@ -2267,6 +2269,10 @@ export default defineComponent({
                         <div class="replay-view__placeholder replay-view__placeholder--error">
                           trajectory decode failed: {trajectoryError.value}
                         </div>
+                      ) : updater.portable ? (
+                        // The portable edition ships no 3D — the
+                        // holographic map gives way to the install hint.
+                        <div class="replay-view__placeholder">{t("common.portable3dBlocked")}</div>
                       ) : (
                         <HolographicMap
                           ref={mapRef}
