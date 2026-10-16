@@ -1,8 +1,9 @@
-// SharingSection — the settings' 录像共享计划 pane: the participation
-// status card (identity editor, consent, my counts), the inline consent →
-// select → upload wizard and the contributors list. Surface colors come
-// from the hikari tokens so both theme modes read correctly (same idiom as
-// FeedbackSection).
+// SharingSection — the settings' 录像共享计划 pane: a compact
+// participation status card (read-only identity + consent tags, my counts)
+// whose 共享录像… button opens the consent → select → upload wizard in its
+// own secondary HkModal window, plus the contributors list. Surface colors
+// come from the hikari tokens so both theme modes read correctly (same
+// idiom as FeedbackSection).
 
 .sharing-sec {
   &__enroll {
@@ -18,6 +19,8 @@
     font-size: var(--hi-text-sm, 0.8125rem);
   }
 
+  // Wizard-only row now (the intro step's realm/name picker); the status
+  // card displays identity as a read-only tag instead.
   &__identity {
     display: flex;
     flex-wrap: wrap;
@@ -29,10 +32,6 @@
     }
   }
 
-  &__identity-save {
-    flex: none;
-  }
-
   &__meta {
     display: flex;
     align-items: center;
@@ -40,20 +39,9 @@
     flex-wrap: wrap;
   }
 
-  &__terms-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--hi-color-primary);
+  &__meta-label {
+    color: var(--hi-color-text-secondary);
     font-size: var(--hi-text-sm, 0.8125rem);
-    cursor: pointer;
-
-    &:hover {
-      text-decoration: underline;
-    }
   }
 
   &__consent {

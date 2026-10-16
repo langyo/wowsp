@@ -1,7 +1,9 @@
-/** Sharing settings section (录像共享计划): the replay-share status card,
- *  the inline consent → select → upload wizard and the contributors list.
- *  Wire truth: CONTRACT-replay-share.md §10/§11 — the Rust side lives in
- *  commands/contribution/ and every DTO is mirrored in
+/** Sharing settings section (录像共享计划): a compact status card whose
+ *  共享录像… button opens the consent → select → upload wizard in its own
+ *  secondary HkModal window (width matched to the settings shell so it
+ *  reads as a sibling window, not an in-place expansion), plus the
+ *  contributors list. Wire truth: CONTRACT-replay-share.md §10/§11 — the
+ *  Rust side lives in commands/contribution/ and every DTO is mirrored in
  *  api/modules/contribution.ts. */
 import {
   computed,
@@ -14,9 +16,7 @@ import {
 import { useRouter } from "vue-router";
 import {
   Check,
-  ChevronDown,
   FolderOpen,
-  ChevronRight,
   RefreshCw,
   Trash2,
   Upload,
@@ -34,7 +34,6 @@ import {
   HkSelect,
   HkSettingsGroup,
   HkSettingsHint,
-  HkSettingsSub,
   HkSpinner,
   HkStepFlow,
   HkTag,
@@ -95,7 +94,7 @@ const PIPELINE_STAGES = ["plan", "check", "mine", "pack", "upload"] as const;
 /** The baked offline ship DB's row shape — only the hint fields matter
  *  here (modelLoader's full wrapper drags three.js into the import graph,
  *  so this section reads the SAME json through a local one-liner plus the
- *  dependency-free runtime registrations;Auxiliary and other non-hull
+ *  dependency-free runtime registrations; Auxiliary and other non-hull
  *  spellings answer null, exactly what the Rust plausibility check
  *  accepts). */
 interface ShipHintRow {
@@ -203,7 +202,8 @@ export default defineComponent({
         idName.value = hit.nickname;
       }
     }
-    const savingIdentity = ref(false);
+    // The identity draft follows the declared one — the wizard's intro
+    // step is the single editing surface (the status card only displays).
     watch(
       () => state.value?.identity,
       (id) => {
@@ -213,29 +213,6 @@ export default defineComponent({
         }
       },
     );
-
-    async function saveIdentity() {
-      const name = idName.value.trim();
-      if (name.length < 3 || name.length > 24) {
-        toast.error(t("sharing.status.nameInvalid"));
-        return;
-      }
-      if (savingIdentity.value) return;
-      savingIdentity.value = true;
-      try {
-        await api.contributionSetIdentity(idRealm.value, name);
-        await refreshState();
-        toast.success(t("sharing.status.saved"));
-      } catch (e) {
-        toast.error((e as Error).message || String(e));
-      } finally {
-        savingIdentity.value = false;
-      }
-    }
-
-    // Consent terms — the SAME §11 copy the wizard's intro step shows,
-    // collapsible from the status card for an enrolled contributor.
-    const termsOpen = ref(false);
 
     const syncing = ref(false);
     async function syncMine() {
@@ -816,8 +793,9 @@ export default defineComponent({
       step.value = STEP_KEYS[Math.max(0, Math.min(i === 3 ? 2 : i - 1, 2))];
     }
 
-    /** The §11 consent bullets — shared by the wizard intro and the status
-     *  card's collapsible terms view (one copy, two surfaces). */
+    /** The §11 consent bullets — the wizard intro's terms copy (the status
+     *  card's collapsible duplicate is gone; the wizard is the one
+     *  surface that shows the terms). */
     function renderConsent() {
       return (
         <ul class="sharing-sec__consent">
@@ -983,52 +961,22 @@ export default defineComponent({
           </div>
         ) : (
           <>
-          <HkSettingsSub title={t("sharing.status.identity")} />
-          {/* Identity editor — self-declared server + nickname; no account
-              binding (contract §3). */}
-          <div class="sharing-sec__identity">
-            <HkSelect
-              label={t("sharing.status.realm")}
-              options={REALM_CODES.map((r) => ({ value: r, label: r.toUpperCase() }))}
-              modelValue={idRealm.value}
-              onUpdate:modelValue={(v: string) => (idRealm.value = v)}
-            />
-            <HkInput
-              label={t("sharing.status.name")}
-              placeholder={t("sharing.status.namePlaceholder")}
-              modelValue={idName.value}
-              onUpdate:modelValue={(v: string) => (idName.value = v)}
-            />
-            <div class="sharing-sec__identity-save">
-              <HkButton
-                size="sm"
-                variant="secondary"
-                loading={savingIdentity.value}
-                onClick={() => void saveIdentity()}
-              >
-                <Check size={14} />
-                {t("sharing.status.save")}
-              </HkButton>
-            </div>
-          </div>
-          {/* Consent + terms view — the collapsible carries the full §11
-              copy (the wizard intro's bullets verbatim). */}
+          {/* Status at a glance — identity + consent as READ-ONLY tags; the
+              wizard's intro step is the single editing surface for both
+              (realm/name inputs and the full §11 terms live there). */}
           <div class="sharing-sec__meta">
+            <span class="sharing-sec__meta-label">{t("sharing.status.identity")}</span>
+            {state.value?.identity ? (
+              <HkTag size="sm" variant="info">
+                {state.value.identity.realm.toUpperCase()} · {state.value.identity.name}
+              </HkTag>
+            ) : null}
             <HkTag variant={(state.value?.consentVersion ?? 0) >= 1 ? "success" : "warning"} size="sm">
               {(state.value?.consentVersion ?? 0) >= 1
                 ? t("sharing.status.consentRecorded", { version: state.value?.consentVersion ?? CONSENT_VERSION })
                 : t("sharing.status.consentMissing")}
             </HkTag>
-            <button
-              type="button"
-              class="sharing-sec__terms-toggle"
-              onClick={() => (termsOpen.value = !termsOpen.value)}
-            >
-              {termsOpen.value ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              {termsOpen.value ? t("sharing.status.hideTerms") : t("sharing.status.viewTerms")}
-            </button>
           </div>
-          {termsOpen.value ? renderConsent() : null}
           {/* My counts + last sync — the status card's live numbers. */}
           <div class="sharing-sec__counts">
             <span class="sharing-sec__count">
@@ -1084,13 +1032,15 @@ export default defineComponent({
       </HkSettingsGroup>
 
       {/* ── the wizard — a secondary window over the settings surface
-          (HkModal teleports to body, so it stacks over both the desktop
-          modal and the phone settings page) ───────────────────────── */}
+          (HkModal teleports to body, so it stacks cleanly over both the
+          desktop modal and the phone settings page). Its width matches
+          the settings shell's 58rem exactly, so it reads as a sibling
+          window rather than an in-place expansion of the settings one. */}
       <HkModal
         modelValue={wizardOpen.value}
         onUpdate:modelValue={(v: boolean) => (wizardOpen.value = v)}
         title={t("sharing.wizard.title")}
-        width="min(66rem, 92vw)"
+        width="58rem"
         footerActions={wizardFooter.value}
       >
         <p class="sharing-sec__modal-hint">{t("sharing.wizard.hint")}</p>
