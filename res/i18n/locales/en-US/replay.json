@@ -401,7 +401,8 @@
     },
     "hint": {
       "pin": "Click a ship to pin its real track",
-      "region": "Drag to select the export region (Esc to cancel)"
+      "region": "Drag to select the export region (Esc to cancel)",
+      "orderTrace": "Drag to draw the trajectory — release fits it to curves and computes the minimum arrival time"
     },
     "text": {
       "placeholder": "Type a note, press Enter"

@@ -312,6 +312,11 @@ export default defineComponent({
 
     return () => (
       <div ref={barRoot} class="tac-bar" onClick={(e: MouseEvent) => e.stopPropagation()}>
+        {/* The plan board has no tool modes (drag pans, clicking a hull
+            selects it and drag draws its trajectory); the replay
+            annotation host keeps the full tool set. */}
+        {!props.plan ? (
+          <>
         {BAR_TOOLS.map((tl) => toolButton(tl))}
 
         {/* Shapes + text */}
@@ -433,6 +438,8 @@ export default defineComponent({
             </div>
           </HkPopover>
         </span>
+          </>
+        ) : null}
 
         {props.lineupMode && props.onToggleMirror ? (
           <HkTooltip text={i18nT("tactics.toolbar.mirror")} placement="top">
@@ -576,7 +583,6 @@ export default defineComponent({
             </HkIconButton>
           </HkTooltip>
         )}
-
         {/* Everything else */}
         <span ref={moreBtn} class="tac-bar__group">
           <HkTooltip text={i18nT("replay.tactical.menu.more")} placement="top">
