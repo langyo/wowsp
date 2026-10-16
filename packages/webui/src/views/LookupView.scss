@@ -262,12 +262,9 @@
 }
 
 /* ── Custom range popover (the 自定义 segment) ──
-   HkPopover paints the chrome (glass panel / phone sheet) but no inner
-   spacing — this styles the slot content, mirroring ShipFilterBar's popups
-   and the replay rail's cross-linked date pair. */
-.lookup-view__range-pop {
-  padding: 10px 12px 8px;
-}
+   Content inset rides HkPopover's `padding` prop (the shared --hk-pad
+   token), mirroring ShipFilterBar's popups and the replay rail's
+   cross-linked date pair. */
 
 /* Anchored (non-sheet) panel: a fixed comfortable width for the two pickers
    — max-content would collapse them to their placeholder floors. The phone
