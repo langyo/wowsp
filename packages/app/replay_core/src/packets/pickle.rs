@@ -20,6 +20,12 @@ pub(super) enum PyVal {
 /// top-level value, or `None` on truncated/unsupported opcodes (the caller
 /// then just leaves that sample set empty — damage stats are an enhancement,
 /// never a hard requirement).
+/// Audit wowsp-R1-2: generous ceiling for the pickle memo table —
+/// legitimate WoWs replays have a few hundred entries; hostile
+/// bytecode must not drive unbounded allocation (a 6-byte sequence
+/// with LONG_BINPUT u32::MAX tried to resize to ~240GB).
+const MAX_MEMO_ENTRIES: usize = 64 * 1024;
+
 pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
     let mut stack: Vec<PyVal> = Vec::new();
     let mut metastack: Vec<Vec<PyVal>> = Vec::new();
@@ -218,6 +224,9 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 // BINPUT 'q' — memoize the top of stack (1-byte index)
                 let idx = *bytes.get(i)? as usize;
                 i += 1;
+                if idx >= MAX_MEMO_ENTRIES {
+                    return None;
+                }
                 if let Some(v) = stack.last() {
                     if memo.len() <= idx {
                         memo.resize(idx + 1, PyVal::None);
@@ -229,6 +238,9 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 // LONG_BINPUT 'r' — same with a 4-byte index
                 let idx = u32::from_le_bytes(read_bytes(bytes, i)?) as usize;
                 i += 4;
+                if idx >= MAX_MEMO_ENTRIES {
+                    return None;
+                }
                 if let Some(v) = stack.last() {
                     if memo.len() <= idx {
                         memo.resize(idx + 1, PyVal::None);
@@ -260,4 +272,44 @@ fn pop_mark(stack: &mut Vec<PyVal>, metastack: &mut Vec<Vec<PyVal>>) -> Option<V
     let items = std::mem::take(stack);
     *stack = metastack.pop()?;
     Some(items)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Audit wowsp-R1-2 regression: a 6-byte hostile sequence (push one
+    /// value + LONG_BINPUT with `u32::MAX`) drove `memo.resize(idx + 1, …)`
+    /// into a ~240GB allocation — an uncatchable abort on opening a
+    /// malicious replay. The clamp must degrade to `None` instead.
+    #[test]
+    fn long_binput_hostile_index_is_rejected() {
+        let hostile = [
+            0x80, 0x04, // PROTO 2
+            0x4b, 0x01, // BININT1 1
+            0x72, 0xff, 0xff, 0xff, 0xff, // LONG_BINPUT u32::MAX
+        ];
+        assert_eq!(parse_pickle(&hostile), None);
+    }
+
+    /// The clamp's ceiling is far above anything legitimate: a LONG_BINPUT
+    /// just under 64 KiB still parses (and memoizes a value back out).
+    #[test]
+    fn long_binput_roundtrip_under_the_ceiling() {
+        let idx: u32 = (MAX_MEMO_ENTRIES - 1) as u32;
+        let mut bytes = vec![0x80, 0x04, 0x4b, 0x07, 0x72];
+        bytes.extend_from_slice(&idx.to_le_bytes());
+        // LONG_BINGET the same index back onto the stack, then STOP.
+        bytes.extend_from_slice(&[0x6a]);
+        bytes.extend_from_slice(&idx.to_le_bytes());
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), Some(PyVal::Int(7)));
+    }
+
+    /// BINPUT/BINGET (the 1-byte index pair) memoize and replay intact.
+    #[test]
+    fn binput_binget_roundtrip() {
+        let bytes = [0x80, 0x04, 0x4b, 0x05, 0x71, 0x00, 0x68, 0x00, 0x2e];
+        assert_eq!(parse_pickle(&bytes), Some(PyVal::Int(5)));
+    }
 }
