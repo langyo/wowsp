@@ -35,6 +35,7 @@
   "all": "Todos",
   "clear": "Limpiar",
   "reload": "Recargar",
+  "retry": "Reintentar",
   "loading": "Cargando enciclopedia...",
   "empty": "Ningún buque coincide con estos filtros.",
   "noData": "Aún no hay datos de la enciclopedia. Elige un servidor y carga.",
