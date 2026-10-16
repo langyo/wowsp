@@ -230,7 +230,7 @@ export default defineComponent({
           placement={props.edge ? "bottom-end" : "bottom-start"}
           closeOnBackdrop={isMobile.value}
           sheetOnMobile
-          padding="md"
+          padding="lg"
           title={props.title}
         >
           <div ref={panelEl} class="ship-filter-bar__pop">

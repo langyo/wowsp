@@ -201,7 +201,7 @@ export default defineComponent({
             placement={placement.value}
             closeOnBackdrop={isMobile.value}
             sheetOnMobile
-            padding="md"
+            padding="lg"
             title={props.title || props.placeholder}
           >
             <div ref={panelEl} class="async-search-combo__panel">

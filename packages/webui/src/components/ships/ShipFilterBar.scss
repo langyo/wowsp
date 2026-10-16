@@ -164,7 +164,7 @@
    old absolute-position `.ship-filter-bar__pop` / `[data-edge]` rules died
    with that move. Only the panel's INNER content is styled here. */
 /* The panel's content inset rides HkPopover's `padding` prop (the
-   shared --hk-pad token) — every host of this slot passes "md". */
+   shared --hk-pad token) — every host of this slot passes "lg". */
 
 /* Hard width cap for the anchored (non-sheet) panels: a category popup
    must never outrun the viewport, and the nation strip's 14 flags give

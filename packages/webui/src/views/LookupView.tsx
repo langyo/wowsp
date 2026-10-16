@@ -940,7 +940,7 @@ export default defineComponent({
                     placement="bottom-end"
                     closeOnBackdrop={isMobile.value}
                     sheetOnMobile
-                    padding="md"
+                    padding="lg"
                     title={t("dashboard.rangeCustom")}
                   >
                     <div ref={rangePanelRef} class="lookup-view__range-pop">
