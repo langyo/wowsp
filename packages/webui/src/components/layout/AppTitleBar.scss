@@ -14,6 +14,16 @@
   --app-titlebar-h: 32px;
 }
 
+/* The debug build stamp (branch:hash7, see the get_build_identity command)
+   can run long on feature branches and the subtitle is nowrap; clamp it so
+   an extreme branch name never overlaps the dead-center view switch or
+   crowds the caption buttons on a narrow window. */
+.app-titlebar .hk-titlebar-subtitle {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* While the window is maximized the native frame is square (the shell
    squares DWM's rounded corners in main.rs), so the close button's hover
    fill must drop the windowed top-right radius hikari keeps on it —
