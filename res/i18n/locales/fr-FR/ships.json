@@ -35,6 +35,7 @@
   "all": "Tous",
   "clear": "Effacer",
   "reload": "Recharger",
+  "retry": "Réessayer",
   "loading": "Chargement de l'encyclopédie...",
   "empty": "Aucun navire ne correspond à ces filtres.",
   "noData": "Pas encore de données d'encyclopédie. Choisissez un serveur et chargez.",
