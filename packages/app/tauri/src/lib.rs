@@ -525,6 +525,7 @@ pub fn run() {
             commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,
+            commands::replay::read_replay_smoke_screens,
             // Per-(map, scenario) cap layouts learned from local replays
             // (commands/replay/cap_layouts.rs) — the map-setup wizard's
             // "measured" layouts.
@@ -697,6 +698,12 @@ pub fn run() {
             commands::update::update_download,
             #[cfg(windows)]
             commands::update::update_cancel,
+            commands::decision_ai::decision_ai_status,
+            commands::decision_ai::decision_ai_suggest,
+            commands::decision_serve::decision_fire_suggestions,
+            commands::decision_tick::decision_scale_calibration,
+            commands::decision_tick::decision_tick_state,
+            commands::replay_probe::replay_visibility_probe,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())

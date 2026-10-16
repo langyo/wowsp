@@ -180,6 +180,10 @@
     "rotateCcw": "Girar el mapa 90° antihorario",
     "rotateCw": "Girar el mapa 90° horario"
   },
+  "decisions": {
+    "toggle": "Sugerencias de tiro",
+    "demoModel": "Modelo de demo"
+  },
   "labels": {
     "hide": "Ocultar etiquetas",
     "show": "Mostrar etiquetas"

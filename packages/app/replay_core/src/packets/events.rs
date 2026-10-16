@@ -593,6 +593,115 @@ pub(super) fn args_is_plane_id(args: &[u8]) -> bool {
     args.len() == 8
 }
 
+/// The hidden-marker sentinel of `MINIMAP_USER_INFO.packedData` (experiment
+/// E11): bit 31 set, everything else zero — the unspotted state.
+const MINIMAP_HIDDEN_SENTINEL: u32 = 0x8000_0000;
+
+/// Decode `updateMinimapVisionInfo` args (experiment E11): two `MINIMAPINFO`
+/// arrays (`ARRAY<MINIMAP_USER_INFO>`, per the 15.8.0 `alias.xml`), each
+/// laid out as `[u8 count]{ [u32 vehicleID][u32 packedData] }`.
+///
+/// The first array carries the live marker updates — the opening packet of a
+/// battle contains the whole allied set, later packets only vehicles whose
+/// marker state changed (movement, or the hidden sentinel on unspot). The
+/// second array was empty in all 1,821 reference-capture calls; its entries
+/// are decoded with the same rules (the sentinel test is on the value itself)
+/// so a future firing is preserved as evidence rather than guessed at.
+///
+/// Any desync (truncated entry, trailing bytes) drops the whole packet's
+/// events — a misaligned walk would fabricate entity ids.
+pub(super) fn decode_minimap_vision(
+    time: f32,
+    args: &[u8],
+) -> Vec<wowsp_tauri_shared::VisionEvent> {
+    let mut out = Vec::new();
+    let mut off = 0usize;
+    for _ in 0..2 {
+        let Some(&count) = args.get(off) else {
+            return Vec::new();
+        };
+        off += 1;
+        for _ in 0..count {
+            let (Some(id), Some(packed)) = (
+                read_bytes(args, off).map(u32::from_le_bytes),
+                read_bytes(args, off + 4).map(u32::from_le_bytes),
+            ) else {
+                return Vec::new();
+            };
+            off += 8;
+            out.push(wowsp_tauri_shared::VisionEvent {
+                time,
+                entity_id: id as i32,
+                visible: packed != MINIMAP_HIDDEN_SENTINEL,
+                packed_data: packed,
+            });
+        }
+    }
+    if off != args.len() {
+        return Vec::new();
+    }
+    out
+}
+
+/// Decode Vehicle `onConsumableUsed` args (experiment E11):
+/// `[u8 blob_len][CONSUMABLE_USAGE_PARAMS blob][f32 workTimeLeft]`.
+///
+/// The params blob's first byte is the `ConsumableUsageType` (serialized by
+/// the game's `CommonConsumables.UsageConverter`, mirrored by the vendored
+/// wows-replays decoder): 0 = none (empty blob), 1 = default `<BB>`
+/// (usage + consumable id), 2 = position `<BBff>` (+ map x/z), 3 = entity
+/// target `<BBbQ>` (+ i8 target type + u64 target id). A blob whose length
+/// contradicts its declared variant is a desync — the call is skipped rather
+/// than half-decoded.
+pub(super) fn decode_consumable_used(
+    time: f32,
+    entity_id: i32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::ConsumableUseEvent> {
+    let &blob_len = args.first()?;
+    let blob_len = blob_len as usize;
+    let blob = args.get(1..1 + blob_len)?;
+    let duration = f32::from_le_bytes(read_bytes(args, 1 + blob_len)?);
+    if !duration.is_finite() || duration < 0.0 {
+        return None;
+    }
+    let mut event = wowsp_tauri_shared::ConsumableUseEvent {
+        time,
+        entity_id,
+        usage_type: 0,
+        consumable_id: 0,
+        duration,
+        target_x: None,
+        target_z: None,
+        target_id: None,
+    };
+    match blob.first().copied() {
+        // NONE — empty blob (or a single zero byte, as the reference accepts);
+        // trailing bytes past one would be a desync, not a valid NONE payload.
+        None | Some(0) if blob_len <= 1 => (),
+        // DEFAULT: <BB> = usage + consumable id.
+        Some(1) if blob_len == 2 => {
+            event.usage_type = 1;
+            event.consumable_id = blob[1];
+        },
+        // POSITION: <BBff> = usage + consumable id + map x + map z.
+        Some(2) if blob_len == 10 => {
+            event.usage_type = 2;
+            event.consumable_id = blob[1];
+            event.target_x = Some(f32::from_le_bytes(read_bytes(blob, 2)?));
+            event.target_z = Some(f32::from_le_bytes(read_bytes(blob, 6)?));
+        },
+        // ENTITY: <BBbQ> = usage + consumable id + target type + target id.
+        Some(3) if blob_len == 11 => {
+            event.usage_type = 3;
+            event.consumable_id = blob[1];
+            event.target_id = Some(u64::from_le_bytes(read_bytes(blob, 3)?));
+        },
+        _ => return None,
+    }
+    Some(event)
+}
+
 /// Decode `receiveArtilleryShots` args (per the `SHOTS_PACK` alias): a u8
 /// count of packs, each `{u32 paramsID, i32 ownerID, i32 salvoID, u8 shots[],
 /// SHOT}` where `SHOT` is `{VECTOR3 pos, f32 pitch, f32 speed, VECTOR3 tarPos,

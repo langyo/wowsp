@@ -180,6 +180,10 @@
     "rotateCcw": "맵 반시계 방향 90° 회전",
     "rotateCw": "맵 시계 방향 90° 회전"
   },
+  "decisions": {
+    "toggle": "발포 제안",
+    "demoModel": "데모 모델"
+  },
   "labels": {
     "hide": "라벨 숨기기",
     "show": "라벨 표시"

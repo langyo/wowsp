@@ -1,0 +1,6 @@
+# Experiment outputs (stats JSON, rasters, baked grids) stay local.
+out/
+*.npz
+*.png
+*.json
+!README.md

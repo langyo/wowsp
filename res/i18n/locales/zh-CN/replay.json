@@ -180,6 +180,10 @@
     "rotateCcw": "地图逆时针旋转 90°",
     "rotateCw": "地图顺时针旋转 90°"
   },
+  "decisions": {
+    "toggle": "开火建议",
+    "demoModel": "演示模型"
+  },
   "labels": {
     "hide": "隐藏标签",
     "show": "显示标签"

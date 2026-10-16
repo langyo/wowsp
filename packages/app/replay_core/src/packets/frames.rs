@@ -44,6 +44,18 @@ pub(super) fn walk_frames(
     let mut achievements: Vec<wowsp_tauri_shared::AchievementEvent> = Vec::new();
     let mut recorder_avatar: Option<i32> = None;
     let mut position_a_counts: BTreeMap<i32, usize> = BTreeMap::new();
+    // E2/E8/E11 experiment surfaces (PR #448): recorder control input, smoke
+    // lifecycles, minimap vision, consumable uses.
+    let mut cruise: Vec<wowsp_tauri_shared::CruiseSample> = Vec::new();
+    let mut vision_events: Vec<wowsp_tauri_shared::VisionEvent> = Vec::new();
+    let mut consumable_uses: Vec<wowsp_tauri_shared::ConsumableUseEvent> = Vec::new();
+    // SmokeScreen entities keyed by id while their lifecycle is assembled;
+    // converted to the sorted event list after the walk (the dissipation end
+    // only becomes known when the leave/destroy packet arrives later).
+    let mut smokes: BTreeMap<i32, wowsp_tauri_shared::SmokeScreenEvent> = BTreeMap::new();
+    // The recorder's own vehicle: set once the avatar's 0x2c stream links to
+    // the vehicle it occupies.
+    let mut recorder_vehicle: Option<i32> = None;
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -79,6 +91,19 @@ pub(super) fn walk_frames(
             // PACKET_PLAYER_POSITION, and modern clients never emit it.
             PACKET_PLAYER_POSITION | PACKET_POSITION_AUX => {
                 if let Some(sample) = parse_player_position(payload, time) {
+                    // The avatar's own 0x2c stream occasionally links to the
+                    // vehicle it occupies (linked != 0) — the only
+                    // deterministic recorder-vehicle join in the stream.
+                    // Only 0x2c is trusted for it: the 0x2a aux stream also
+                    // carries the avatar (spectate/aircraft following) and
+                    // its links were not verified.
+                    if ptype == PACKET_PLAYER_POSITION
+                        && recorder_vehicle.is_none()
+                        && Some(sample.entity_id) == recorder_avatar
+                        && sample.vehicle_id != 0
+                    {
+                        recorder_vehicle = Some(sample.vehicle_id);
+                    }
                     positions.entry(sample.entity_id).or_default().push(sample);
                 }
             },
@@ -95,10 +120,31 @@ pub(super) fn walk_frames(
                 if let Some(created) = parse_entity_create(payload, time, profile.zone_entity_type)
                 {
                     let eid = created.entity_id;
+                    let entity_type = created.entity_type;
+                    let (x, y, z) = (created.x, created.y, created.z);
                     let mut kind = created.clone_into_kind();
                     kind.ship_id = scan_state_for_ship_id(&payload[38..], ship_id_candidates);
                     if kind.entity_type == 2 {
                         kind.max_health = scan_state_for_max_health(&payload[38..]);
+                    }
+                    // Smoke screens: walk the create state for the radius /
+                    // height properties (experiment E8). Only the event list
+                    // consumes them — the kind stays a plain entity so the
+                    // frontend's smoke rendering is untouched.
+                    if entity_type == ENTITY_TYPE_SMOKE_SCREEN {
+                        let (radius, height) = parse_smoke_state(&payload[38..]);
+                        smokes
+                            .entry(eid)
+                            .or_insert(wowsp_tauri_shared::SmokeScreenEvent {
+                                time,
+                                entity_id: eid,
+                                x,
+                                y,
+                                z,
+                                radius,
+                                height,
+                                end_time: None,
+                            });
                     }
                     // Entities destroyed and re-created mid-match (leaving and
                     // re-entering the observed area) keep their FIRST creation
@@ -236,6 +282,9 @@ pub(super) fn walk_frames(
             },
             PACKET_CRUISE_STATE => {
                 diagnostics.cruise_states += 1;
+                if let Some(sample) = parse_cruise_state(payload, time) {
+                    cruise.push(sample);
+                }
             },
             PACKET_SHOT_TRACKING => {
                 diagnostics.shot_trackings += 1;
@@ -333,6 +382,17 @@ pub(super) fn walk_frames(
             break;
         };
         if entity_type != Some(ENTITY_TYPE_AVATAR) {
+            // Vehicle-side method streams (E11): consumable uses fire on
+            // type-2 entities against the Vehicle exposed-id table.
+            if entity_type == Some(ENTITY_TYPE_VEHICLE)
+                && profile
+                    .e11
+                    .is_some_and(|e| e.vehicle_on_consumable_used == call.method_id)
+            {
+                if let Some(event) = decode_consumable_used(call.time, call.entity_id, &call.args) {
+                    consumable_uses.push(event);
+                }
+            }
             continue;
         }
         if call.method_id == m.avatar_receive_artillery_shots {
@@ -395,6 +455,11 @@ pub(super) fn walk_frames(
             if let Some(a) = decode_achievement(call.time, &call.args) {
                 achievements.push(a);
             }
+        } else if profile
+            .e11
+            .is_some_and(|e| e.avatar_update_minimap_vision_info == call.method_id)
+        {
+            vision_events.extend(decode_minimap_vision(call.time, &call.args));
         }
     }
     // The arena's initial player/bot state: one onArenaStateReceived call on
@@ -464,6 +529,68 @@ pub(super) fn walk_frames(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
+    cruise.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    // Finish the smoke lifecycles: the observed dissipation end. A destroy is
+    // authoritative; otherwise the entity's leave time (the last one recorded
+    // — the map is overwritten per packet) is the despawn the server sent when
+    // the final puff faded.
+    let mut smoke_screens: Vec<wowsp_tauri_shared::SmokeScreenEvent> =
+        smokes.into_values().collect();
+    for s in &mut smoke_screens {
+        s.end_time = destroys
+            .get(&s.entity_id)
+            .copied()
+            .or_else(|| leaves.get(&s.entity_id).copied());
+    }
+    smoke_screens.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    // Engine-state projection (experiment E11): enginePower (idx 9, UINT8) and
+    // engineDir (idx 10, INT8) ALL_CLIENTS properties on Vehicle entities.
+    // The raw property stream is already collected; this filters it to the
+    // pinned indices on type-2 entities only. The indices were pinned against
+    // the 15.8.0 Vehicle.def (E8) — other versions' property sorts are
+    // unverified, so the projection rides the E11 version gate.
+    let mut engine_states: Vec<wowsp_tauri_shared::EngineStateSample> = Vec::new();
+    if profile.e11.is_some() {
+        for (eid, changes) in &properties {
+            if kinds.get(eid).map(|k| k.entity_type) != Some(ENTITY_TYPE_VEHICLE) {
+                continue;
+            }
+            for c in changes {
+                if c.size != 1 {
+                    continue;
+                }
+                let sample = match c.property_index {
+                    9 => wowsp_tauri_shared::EngineStateSample {
+                        time: c.time,
+                        entity_id: *eid,
+                        power: Some(c.value as u8),
+                        dir: None,
+                    },
+                    10 => wowsp_tauri_shared::EngineStateSample {
+                        time: c.time,
+                        entity_id: *eid,
+                        power: None,
+                        dir: Some(c.value as u8 as i8),
+                    },
+                    _ => continue,
+                };
+                engine_states.push(sample);
+            }
+        }
+        engine_states.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
     // The recorder's own ship entity: the local player's vehicle never
     // emits Position (0x0a) packets (its transform rides the self stream —
     // 0x2c on WG and Lesta ≤26.9, 0x2e from Lesta 26.10 on), while EVERY
@@ -510,6 +637,12 @@ pub(super) fn walk_frames(
         arena_players,
         weather_transitions,
         weather_notifications,
+        cruise,
+        smoke_screens,
+        recorder_vehicle,
+        vision_events,
+        consumable_uses,
+        engine_states,
     }
 }
 

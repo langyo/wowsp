@@ -19,6 +19,8 @@ export type {
   SessionSnapshot,
   DogTag,
   NetworkConfig,
+  DecisionSuggestion,
+  DecisionSuggestionReport,
   ResStatus,
   ResUpdate,
   ResDeltaStep,

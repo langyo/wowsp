@@ -15,6 +15,7 @@ import { resPackApi } from "./modules/respack";
 import { modHubApi } from "./modules/modhub";
 import { pairingApi } from "./modules/pairing";
 import { contributionApi } from "./modules/contribution";
+import { decisionApi } from "./modules/decision";
 
 export * from "./modules/shell";
 export * from "./modules/game";
@@ -24,8 +25,10 @@ export * from "./modules/respack";
 export * from "./modules/modhub";
 export * from "./modules/pairing";
 export * from "./modules/contribution";
+export * from "./modules/decision";
 
 export const api = {
+  ...decisionApi,
   ...shellApi,
   ...gameApi,
   ...replayApi,

@@ -695,7 +695,9 @@ fn replay_stream_omits_empty_sections() {
             hp_samples: Vec::new(),
             cap_samples: Vec::new(),
             cap_progress: Vec::new(),
+            cruise_samples: Vec::new(),
         }],
+        recorder_vehicle_id: None,
         shell_launches: Vec::new(),
         explosions: Vec::new(),
         torpedoes: Vec::new(),
@@ -866,6 +868,7 @@ fn entity_trajectory_emits_optional_streams_only_when_present() {
         hp_samples: Vec::new(),
         cap_samples: Vec::new(),
         cap_progress: Vec::new(),
+        cruise_samples: Vec::new(),
     };
     let v = round_trips(minimal);
     assert_exact_keys(&v, &["entityId", "kind", "samples"]);
@@ -908,6 +911,7 @@ fn entity_trajectory_emits_optional_streams_only_when_present() {
             time: 11.5,
             value: 1,
         }],
+        cruise_samples: Vec::new(),
     };
     let v = round_trips(full);
     assert_exact_keys(

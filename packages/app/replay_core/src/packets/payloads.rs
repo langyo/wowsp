@@ -76,6 +76,38 @@ pub(super) fn parse_camera_mode(payload: &[u8], time: f32) -> Option<wowsp_tauri
     })
 }
 
+/// Parse a CruiseState (0x32) payload — the recorder's discrete control
+/// presets (experiment E2). Reverse-engineered layout (every packet on the
+/// 15.8.0 reference replay was exactly 8 bytes):
+///
+///   `u32 controller, i32 level` (both little-endian)
+///
+/// Despite the module's entity-centric packets, the first u32 is NOT a
+/// BigWorld entity id — observed values are only 0/1, with 0 verified as the
+/// engine telegraph (throttle) and 1 as the rudder via position/yaw
+/// correlation on the reference replay. Levels with no confirmed meaning
+/// decode with `value: None`; among confirmed levels the rudder magnitude
+/// mapping is itself inferred (5-mark scaling), not separately confirmed —
+/// see [`wowsp_tauri_shared::CruiseSample`] for the per-branch evidence
+/// grading. Payloads that are not exactly 8 bytes are skipped (never
+/// observed, but a future layout change must not silently misparse).
+pub(super) fn parse_cruise_state(
+    payload: &[u8],
+    time: f32,
+) -> Option<wowsp_tauri_shared::CruiseSample> {
+    if payload.len() != 8 {
+        return None;
+    }
+    let controller = u32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let level = i32::from_le_bytes(payload[4..8].try_into().ok()?);
+    Some(wowsp_tauri_shared::CruiseSample {
+        time,
+        controller,
+        level,
+        value: wowsp_tauri_shared::CruiseSample::map_value(controller, level),
+    })
+}
+
 /// Parse a NestedPropertyUpdate (0x23) payload: `i32 entity_id, u8 is_slice,
 /// u32 payload_size, payload`. The payload blob (BigWorld nested property
 /// encoding) is kept raw; capture progress is read from its tail.
@@ -253,11 +285,11 @@ pub(super) fn parse_entity_method(payload: &[u8], time: f32) -> Option<RawMethod
 /// [`EntityKind`] before insertion. Carries the entity id separately.
 pub(super) struct ParsedCreate {
     pub(super) entity_id: i32,
-    entity_type: i16,
+    pub(super) entity_type: i16,
     vehicle_id: i32,
-    x: f32,
-    y: f32,
-    z: f32,
+    pub(super) x: f32,
+    pub(super) y: f32,
+    pub(super) z: f32,
     creation_time: f32,
     /// Capture-zone radius (metres) recovered from the state stream when the
     /// entity is an InteractiveZone; `None` for other types or when no
@@ -356,6 +388,108 @@ pub(super) fn scan_state_for_ship_id(
         }
     }
     scan_base64_runs_for_ship_id(state, candidates)
+}
+
+/// Walk a SmokeScreen EntityCreate state stream and extract the `radius` and
+/// `height` properties (experiment E8).
+///
+/// Layout (ground truth: the 15.8.0 `SmokeScreen.def` plus BigWorld's exposed
+/// property indexing — client-visible properties sorted by wire size, equal
+/// sizes keeping def order, verified by the zone teamId walk):
+///
+/// ```text
+/// [u32 state_len][u8 n_props]{ [u8 prop_id][value] }×n
+///   id 0  activePointIndex  INT8
+///   id 1  bcRadius          FLOAT32   (collision radius — observed == radius)
+///   id 2  radius            FLOAT32   ← the smoke-cloud radius
+///   id 3  height            FLOAT32   ← column height (5=ship, 10=plane)
+///   id 4  points            ARRAY<VECTOR3> (u8 count + n×12 bytes)
+///   id 5  spawnPointEffect  STRING    ("particles/SmokeScreen_spawn.xml")
+///   id 6  livePointEffect   STRING    ("particles/SmokeScreen.xml")
+/// ```
+///
+/// Evidence chain (15.8.0 reference replay): walked radii {17.0, 17.5, 30.0}
+/// exactly match the GameParams `logic.radius` of the three smoke families
+/// actually present in the match — Italian exhaust smoke (Amalfi/Veneto,
+/// r=17), support-CV plane smoke (Yorktown US_SCV, r=17.5, height 10) and
+/// Italian BB oil smoke (Colonna, r=30) — and each smoke's create position
+/// sits within 1–4 scene units of the identified layer's hull. Wire values
+/// are in the GameParams distance unit (≈30 m; calibrated via radar
+/// `distShip`), not the 5.86 m/unit scene axis.
+///
+/// Any desync (unknown id, truncated value) yields `(None, None)` rather
+/// than a guessed mapping — a future def change shifts the ids and disables
+/// the fields instead of misreporting.
+pub(super) fn parse_smoke_state(state: &[u8]) -> (Option<f32>, Option<f32>) {
+    // Skip the u32 state-length prefix; a blob shorter than the count byte
+    // plus one property header cannot carry the fields we want.
+    let Some(blob) = state.get(4..) else {
+        return (None, None);
+    };
+    let Some(&n_props) = blob.first() else {
+        return (None, None);
+    };
+    let mut radius = None;
+    let mut height = None;
+    let mut off = 1usize;
+    for _ in 0..n_props {
+        let Some(&id) = blob.get(off) else {
+            return (None, None);
+        };
+        off += 1;
+        match id {
+            0 => off += 1, // activePointIndex: INT8
+            1..=3 => {
+                // bcRadius / radius / height: FLOAT32.
+                let Some(bytes) = blob.get(off..off + 4) else {
+                    return (None, None);
+                };
+                off += 4;
+                let Some(v) = read_bytes::<4>(bytes, 0).map(f32::from_le_bytes) else {
+                    return (None, None);
+                };
+                if !v.is_finite() {
+                    return (None, None);
+                }
+                if id == 2 {
+                    radius = Some(v);
+                } else if id == 3 {
+                    height = Some(v);
+                }
+            },
+            4 => {
+                // points: u8 count + count × VECTOR3.
+                let Some(&count) = blob.get(off) else {
+                    return (None, None);
+                };
+                off += 1 + 12 * count as usize;
+            },
+            5 | 6 => {
+                // effect strings: u8 length + bytes.
+                let Some(&len) = blob.get(off) else {
+                    return (None, None);
+                };
+                off += 1 + len as usize;
+            },
+            _ => return (None, None),
+        }
+        if off > blob.len() {
+            return (None, None);
+        }
+    }
+    // Plausibility gates: every GameParams smoke radius observed so far is
+    // 13.3–40 and heights 5–10; anything else means the walk misaligned.
+    if let Some(r) = radius {
+        if !(1.0..=100.0).contains(&r) {
+            return (None, None);
+        }
+    }
+    if let Some(h) = height {
+        if !(0.5..=100.0).contains(&h) {
+            return (None, None);
+        }
+    }
+    (radius, height)
 }
 
 /// Scan a ship's EntityCreate state stream for its starting (max) health.

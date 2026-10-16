@@ -232,6 +232,93 @@ function drawTorpedoes(
   }
 }
 
+/** Minimum fireProb for a team-0 (recorder-side) row to be drawn. The
+ *  recorder row always draws (it is the flagship "what should I do"
+ *  readout), even at a low probability. */
+const DECISION_TEAM_PROB_MIN = 0.5;
+
+/** AI fire-decision suggestions (G4-b): for every visible suggestion —
+ *  the recorder row always, team-0 rows at/above the painter's probability
+ *  floor — draw a probability ring around the ship glyph, a dashed
+ *  "open fire" line to the suggested target and a small target reticle.
+ *  Positions come from the SAME trajectories/gap semantics as the glyphs
+ *  (sampleAt through trajById), so an unspotted target renders at its last
+ *  known pose exactly like its ghost marker. Paints on the ENLARGED map
+ *  only, inside the rotated world frame; the probability label
+ *  counter-rotates to stay upright like the smoke timers. */
+function drawDecisionSuggestions(
+  g: CanvasRenderingContext2D,
+  ctx: MapInternals,
+  t: number,
+  projX: (x: number) => number,
+  projZ: (zScene: number) => number,
+  rotRad: number,
+  probMin: number,
+): void {
+  if (!ctx.decisionsOn.value || !ctx.decisionReport.value) return;
+  const report = ctx.decisionReport.value;
+  // Amber → red as fireProb climbs 0 → 1 (readable on both the game's
+  // light-dark map art and next to team green/red glyphs).
+  const probColor = (p: number): string => {
+    const k = Math.min(1, Math.max(0, p));
+    const r = Math.round(251 + (239 - 251) * k);
+    const gg = Math.round(191 + (68 - 191) * k);
+    const b = Math.round(36 + (68 - 36) * k);
+    return `rgba(${r}, ${gg}, ${b}, 0.95)`;
+  };
+  const posOf = (entityId: number) => {
+    const tr = ctx.trajById.get(entityId);
+    return tr ? sampleAt(tr, t) ?? null : null;
+  };
+  g.font = "bold 11px sans-serif";
+  g.textAlign = "center";
+  for (const sug of report.suggestions) {
+    if (!sug.isRecorder && !(sug.teamId === 0 && sug.fireProb >= probMin)) {
+      continue;
+    }
+    const from = posOf(sug.entityId);
+    if (!from) continue;
+    const color = sug.isRecorder ? "rgba(255, 255, 255, 0.95)" : probColor(sug.fireProb);
+    const fx = projX(from.x);
+    const fz = projZ(-from.z);
+    // Suggested target: dashed line + reticle ring at the target.
+    if (sug.targetEntityId != null) {
+      const to = posOf(sug.targetEntityId);
+      if (to) {
+        const tx = projX(to.x);
+        const tz = projZ(-to.z);
+        g.strokeStyle = color;
+        g.lineWidth = 1.6;
+        g.setLineDash([9, 7]);
+        g.beginPath();
+        g.moveTo(fx, fz);
+        g.lineTo(tx, tz);
+        g.stroke();
+        g.setLineDash([]);
+        g.beginPath();
+        g.arc(tx, tz, 7, 0, Math.PI * 2);
+        g.stroke();
+      }
+    }
+    // Probability ring around the decider's glyph (width + colour scale
+    // with fireProb; recorder ring stays white).
+    const ringR = 23;
+    g.strokeStyle = color;
+    g.lineWidth = 1.5 + Math.min(1, sug.fireProb) * 2.5;
+    g.beginPath();
+    g.arc(fx, fz, ringR, 0, Math.PI * 2);
+    g.stroke();
+    g.save();
+    g.translate(fx, fz + ringR + 4);
+    // Percentage label stays upright under map rotation.
+    if (rotRad !== 0) g.rotate(-rotRad);
+    g.fillStyle = color;
+    g.textBaseline = "top";
+    g.fillText(`${Math.round(sug.fireProb * 100)}%`, 0, 0);
+    g.restore();
+  }
+}
+
 export function drawMinimap(ctx: MapInternals) {
   const full: MapBounds | null = computeFullMapBounds(ctx);
   if (!full) return;
@@ -780,6 +867,9 @@ export function drawMinimap(ctx: MapInternals) {
       // In-flight torpedoes at the enlarged scale (inside the rotated
       // world frame so the run direction follows the map's orientation).
       drawTorpedoes(zctx, ctx, t, zwx, zwz, 8);
+      // AI fire-suggestion overlay (G4-b) — rings / dashed fire lines /
+      // target reticles over the glyphs, through the same projection.
+      drawDecisionSuggestions(zctx, ctx, t, zwx, zwz, rotRad, DECISION_TEAM_PROB_MIN);
       zctx.restore(); // world frame (rotation)
       // Grid coordinate labels live in the SCREEN frame: pinned to the
       // top / left edges, upright at any rotation — which strip a family

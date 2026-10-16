@@ -502,6 +502,19 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         arena_players,
         weather_transitions,
         weather_notifications,
+        cruise,
+        // The smoke lifecycles are served by their own command (see
+        // `read_replay_smoke_screens`) — `ReplayStream` is constructed
+        // literally by several experiment modules, so new fields cannot be
+        // added to it without touching frozen files.
+        smoke_screens: _,
+        recorder_vehicle,
+        // E11 research surfaces (minimap vision / consumable uses / engine
+        // state) are served off `DecodedReplay` directly by their own tests
+        // until the G1 wiring lands.
+        vision_events: _,
+        consumable_uses: _,
+        engine_states: _,
     } = decoded;
     // The recorder's team slot comes from its own arena entry.
     let self_team = arena_players.iter().find(|p| p.is_self).map(|p| p.team_id);
@@ -575,6 +588,13 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
             } else {
                 destroys.get(&entity_id).copied()
             };
+            // The CruiseState (0x32) stream is recorder-scoped — it lands on
+            // the recorder's own vehicle trajectory only.
+            let cruise_samples = if recorder_vehicle == Some(entity_id) {
+                cruise.clone()
+            } else {
+                Vec::new()
+            };
             wowsp_tauri_shared::EntityTrajectory {
                 entity_id,
                 kind,
@@ -583,6 +603,7 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
                 hp_samples,
                 cap_samples,
                 cap_progress,
+                cruise_samples,
             }
         })
         .collect();
@@ -598,6 +619,7 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
                 hp_samples: hp_map.remove(eid).unwrap_or_default(),
                 cap_samples: cap_map.remove(eid).unwrap_or_default(),
                 cap_progress: cap_progress.remove(eid).unwrap_or_default(),
+                cruise_samples: Vec::new(),
             });
         }
     }
@@ -607,6 +629,7 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
     out.sort_by_key(|t| Reverse(t.samples.len()));
     wowsp_tauri_shared::ReplayStream {
         trajectories: out,
+        recorder_vehicle_id: recorder_vehicle,
         shell_launches,
         explosions,
         torpedoes,
@@ -714,6 +737,12 @@ mod tests {
             arena_players: Vec::new(),
             weather_transitions: Vec::new(),
             weather_notifications: Vec::new(),
+            cruise: Vec::new(),
+            smoke_screens: Vec::new(),
+            recorder_vehicle: None,
+            vision_events: Vec::new(),
+            consumable_uses: Vec::new(),
+            engine_states: Vec::new(),
         }
     }
 

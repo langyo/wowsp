@@ -88,6 +88,13 @@ const PACKET_CELL_PLAYER_CREATE: u32 = 0x01;
 /// Avatar entity type id (spec index 1). Its method table drives the
 /// battle-effect events (shots, torpedoes, squadrons, explosions).
 const ENTITY_TYPE_AVATAR: i16 = 1;
+/// Vehicle entity type id (spec index 2) — ships. Its method table carries
+/// the per-vehicle client events (consumable uses, E11).
+const ENTITY_TYPE_VEHICLE: i16 = 2;
+/// SmokeScreen entity type id (spec index 4 in the ClientServerEntities
+/// order, confirmed against the 15.8.0 `entities.xml`). Smoke clouds are real
+/// entities: created when emission starts and despawned on dissipation.
+const ENTITY_TYPE_SMOKE_SCREEN: i16 = 4;
 /// NestedPropertyUpdate (0x23): nested property blob updates, used by
 /// capture zones (InteractiveZone — type 13 pre-14.5.0, 14 after) to stream
 /// their live capture progress (0..1 fraction at the tail of the payload).
@@ -135,6 +142,10 @@ const PACKET_ENTITY_CONTROL: u32 = 0x02;
 const PACKET_CAMERA_MODE: u32 = 0x27;
 const PACKET_CAMERA_FREELOOK: u32 = 0x2f;
 const PACKET_SUB_CONTROLLER: u32 = 0x31;
+/// CruiseState (0x32): the recorder's own discrete control presets —
+/// `u32 controller, i32 level` (8-byte payload; see [`parse_cruise_state`]
+/// and [`wowsp_tauri_shared::CruiseSample`] for the reverse-engineered
+/// semantics). Legacy (<12.6.0) wire id is 0x31 via [`remap_legacy_packet_id`].
 const PACKET_CRUISE_STATE: u32 = 0x32;
 const PACKET_SHOT_TRACKING: u32 = 0x33;
 const PACKET_GUN_MARKER: u32 = 0x18;
@@ -144,6 +155,32 @@ const PACKET_GUN_MARKER: u32 = 0x18;
 /// entity). Method ids are per-version exposed indices — resolved through
 /// [`method_ids_for_version`], never hardcoded.
 const PACKET_ENTITY_METHOD: u32 = 0x08;
+
+/// Experiment E11 method ids (see [`E11MethodIds`]): resolved per version.
+fn e11_method_ids(version_key: Option<(u32, u32, u32)>) -> Option<E11MethodIds> {
+    match version_key {
+        // Pinned against the 15.8.0 exposed tables (E10: def build 13187581,
+        // wire-validated on the reference capture). Promoting these into the
+        // generated `method_tables` (and its generator) is a follow-up that
+        // touches frozen files; until then other versions decode nothing.
+        Some((15, 8, _)) => Some(E11MethodIds {
+            avatar_update_minimap_vision_info: 155,
+            vehicle_on_consumable_used: 72,
+        }),
+        _ => None,
+    }
+}
+
+/// Experiment E11 method ids for the G1 candidate events that are not yet in
+/// the generated [`MethodIds`] tables: the avatar's minimap vision stream and
+/// the vehicle consumable-use stream. The engine-state projection needs no
+/// method ids (properties are index-addressed) but shares the same 15.8.0
+/// pin, so it rides on this being `Some`.
+#[derive(Debug, Clone, Copy)]
+struct E11MethodIds {
+    avatar_update_minimap_vision_info: i32,
+    vehicle_on_consumable_used: i32,
+}
 
 /// Version-dependent decoder inputs resolved once per replay: the method-id
 /// table and the InteractiveZone entity-type index (13 before 14.5.0, 14 after
@@ -159,6 +196,9 @@ struct LayoutProfile {
     /// SHOTKILL entries carry a nullable TERMINAL_BALLISTICS_INFO from 12.7.0
     /// on (flag byte; 29 bytes when present).
     shotkill_has_ballistics: bool,
+    /// E11 experimental decoders (minimap vision, consumable uses, engine
+    /// state projection) — only for versions whose ids/indices are pinned.
+    e11: Option<E11MethodIds>,
     /// The arena's initial state broadcast (onArenaStateReceived) — the
     /// authoritative ship-entity → team/player mapping. `None` when the
     /// version's exposed id isn't pinned (>0); the arena player list then
@@ -277,6 +317,34 @@ pub struct DecodedReplay {
     /// Global-weather approach warnings (the same nested-property stream):
     /// one weather id + the battle second it fires at.
     pub weather_notifications: Vec<wowsp_tauri_shared::WeatherNotification>,
+    /// Recorder control-input timeline (CruiseState, 0x32) — engine telegraph
+    /// and rudder presets (experiment E2). Recorder-scoped, like `camera`.
+    pub cruise: Vec<wowsp_tauri_shared::CruiseSample>,
+    /// Smoke-screen lifecycles (entityType 4 entities, experiment E8):
+    /// creation time/position plus radius / height walked out of the create
+    /// state, with the observed dissipation time filled in from the entity's
+    /// leave/destroy. Empty on streams without smoke.
+    pub smoke_screens: Vec<wowsp_tauri_shared::SmokeScreenEvent>,
+    /// Entity id of the recorder's own vehicle — recovered from the avatar's
+    /// PlayerPosition (0x2c) packets: a subset of them link the avatar entity
+    /// (created by CellPlayerCreate) to the vehicle it occupies. `None` when
+    /// no link was seen.
+    pub recorder_vehicle: Option<i32>,
+    /// Minimap vision updates (avatar `updateMinimapVisionInfo`, experiment
+    /// E11): the explicit spot/unspot stream — one entry per vehicle whose
+    /// minimap marker state changed. Empty on versions without a pinned id.
+    #[allow(dead_code)]
+    pub vision_events: Vec<wowsp_tauri_shared::VisionEvent>,
+    /// Consumable activations (Vehicle `onConsumableUsed`, experiment E11) on
+    /// every vehicle the client observed, both teams. Empty on versions
+    /// without a pinned id.
+    #[allow(dead_code)]
+    pub consumable_uses: Vec<wowsp_tauri_shared::ConsumableUseEvent>,
+    /// Per-vehicle engine-state changes (enginePower idx 9 / engineDir idx 10
+    /// properties on type-2 entities, experiment E11). Empty on versions
+    /// without the pinned property indices.
+    #[allow(dead_code)]
+    pub engine_states: Vec<wowsp_tauri_shared::EngineStateSample>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -425,6 +493,7 @@ fn decode_replay_with(
         },
         ward_has_type: version_key.map(|k| k >= (13, 2, 0)).unwrap_or(true),
         shotkill_has_ballistics: version_key.map(|k| k >= (12, 7, 0)).unwrap_or(true),
+        e11: e11_method_ids(version_key),
         // The arena-state FixedDict layout is version-gated; without a
         // parsed version the method id would come from the newest table
         // while the field indices default to the oldest layout — skip the
@@ -603,9 +672,10 @@ mod tests;
 
 use events::{
     args_is_plane_id, decode_achievement, decode_arena_state, decode_artillery_shots,
-    decode_chat_message, decode_damage_stat, decode_explosions, decode_minimap_squadron_add,
-    decode_minimap_squadron_move, decode_shot_kills, decode_squadron_add, decode_squadron_update,
-    decode_torpedo_directions, decode_torpedo_salvos, decode_ward_added,
+    decode_chat_message, decode_consumable_used, decode_damage_stat, decode_explosions,
+    decode_minimap_squadron_add, decode_minimap_squadron_move, decode_minimap_vision,
+    decode_shot_kills, decode_squadron_add, decode_squadron_update, decode_torpedo_directions,
+    decode_torpedo_salvos, decode_ward_added,
 };
 use frames::walk_frames;
 #[cfg(test)]
@@ -616,9 +686,9 @@ use payloads::scan_state_for_control_point;
 use payloads::scan_state_for_radius;
 use payloads::{
     parse_battle_results, parse_camera, parse_camera_mode, parse_cell_player_create,
-    parse_entity_create, parse_entity_destroy, parse_entity_method, parse_map_name,
-    parse_nested_property, parse_net_stats, parse_player_position, parse_position, parse_property,
-    parse_version, parse_weapon_lock, parse_weather_nested, scan_state_for_max_health,
-    scan_state_for_ship_id,
+    parse_cruise_state, parse_entity_create, parse_entity_destroy, parse_entity_method,
+    parse_map_name, parse_nested_property, parse_net_stats, parse_player_position, parse_position,
+    parse_property, parse_smoke_state, parse_version, parse_weapon_lock, parse_weather_nested,
+    scan_state_for_max_health, scan_state_for_ship_id,
 };
 use pickle::{PyVal, parse_pickle};

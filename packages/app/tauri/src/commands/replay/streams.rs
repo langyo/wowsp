@@ -82,6 +82,98 @@ pub async fn read_replay_positions(
     .map_err(|e| anyhow!("replay positions task failed: {e}"))??)
 }
 
+/// Smoke-screen lifecycles of one `.wowsreplay` (experiment E8): every
+/// entityType-4 SmokeScreen entity with its spawn position, the radius /
+/// height walked out of the EntityCreate state, and the observed dissipation
+/// time (EntityLeave/Destroy). Served separately from
+/// `read_replay_positions` — the stream's own consumers never need it.
+/// Sync decode of one replay's full stream — the shared body behind
+/// `read_replay_positions` and the decision commands' direct calls (which
+/// cannot await the async command). Blocks the calling thread; the commands
+/// wrap it in `spawn_blocking`.
+pub(crate) fn decode_replay_stream_sync(
+    path: &str,
+) -> anyhow::Result<wowsp_tauri_shared::ReplayStream> {
+    let bytes = fs::read(path).map_err(|e| anyhow!("read {path}: {e}"))?;
+    let stream = packet_stream_after_blocks(&bytes)
+        .ok_or_else(|| anyhow!("{path}: not a valid wowsreplay (no packet stream)"))?;
+    let lesta = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(super::game_client::is_lesta_replay_extension);
+    let mut candidates = std::collections::HashSet::new();
+    let mut client_version: Option<String> = None;
+    let mut roster: Vec<VehicleEntry> = Vec::new();
+    if let Some(json) = extract_descriptor_json(&bytes) {
+        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            client_version = raw
+                .get("clientVersionFromExe")
+                .and_then(|x| x.as_str())
+                .map(str::to_string);
+            roster = roster_from_raw(std::path::Path::new(path), &raw);
+            for v in &roster {
+                if v.ship_id > 0 {
+                    candidates.insert(v.ship_id as u32);
+                }
+            }
+        }
+    }
+    let mut decoded =
+        super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)?;
+    if lesta {
+        synthesize_lesta_arena_players(
+            &mut decoded.arena_players,
+            &decoded.kinds,
+            &roster,
+            decoded.recorder_ship,
+        );
+    }
+    Ok(group_by_entity(decoded))
+}
+
+/// Sync smoke-screen decode (experiment E8) — same preamble as
+/// [`decode_replay_stream_sync`], keeping the two paths identical.
+pub(crate) fn read_smoke_screens_sync(
+    path: &str,
+) -> anyhow::Result<Vec<wowsp_tauri_shared::SmokeScreenEvent>> {
+    let bytes = fs::read(path).map_err(|e| anyhow!("read {path}: {e}"))?;
+    let stream = packet_stream_after_blocks(&bytes)
+        .ok_or_else(|| anyhow!("{path}: not a valid wowsreplay (no packet stream)"))?;
+    let lesta = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(super::game_client::is_lesta_replay_extension);
+    let mut candidates = std::collections::HashSet::new();
+    let mut client_version: Option<String> = None;
+    if let Some(json) = extract_descriptor_json(&bytes) {
+        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            client_version = raw
+                .get("clientVersionFromExe")
+                .and_then(|x| x.as_str())
+                .map(str::to_string);
+            for v in roster_from_raw(std::path::Path::new(path), &raw) {
+                if v.ship_id > 0 {
+                    candidates.insert(v.ship_id as u32);
+                }
+            }
+        }
+    }
+    let decoded =
+        super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)?;
+    Ok(decoded.smoke_screens)
+}
+
+#[tauri::command]
+pub async fn read_replay_smoke_screens(
+    path: String,
+) -> CommandResult<Vec<wowsp_tauri_shared::SmokeScreenEvent>> {
+    Ok(
+        tokio::task::spawn_blocking(move || read_smoke_screens_sync(&path))
+            .await
+            .map_err(|e| anyhow!("replay smoke task failed: {e}"))??,
+    )
+}
+
 /// The running client's in-progress replay container (`temp.wowsreplay` /
 /// `temp.korablireplay`), as surfaced to the live self-stats view. `size` is
 /// the current byte length — the frontend re-decodes only when it grew, so

@@ -45,6 +45,11 @@ pub struct EntityTrajectory {
     /// it from ship positions. Only present for capture zones.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cap_progress: Vec<HpSample>,
+    /// Recorder control-input timeline (CruiseState, 0x32) — engine telegraph
+    /// and rudder presets. Only the recorder's own trajectory carries these
+    /// (the packet is recorder-scoped, not per-entity; see [`CruiseSample`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cruise_samples: Vec<CruiseSample>,
 }
 
 /// A single HP snapshot from the replay's property stream.
@@ -303,40 +308,6 @@ pub struct NetStatsSample {
     pub is_lagging: bool,
 }
 
-/// An aircraft-squadron creation (`receive_addSquadron` on the avatar): the
-/// squadron's game-params id and its spawn position. Method id resolves via
-/// the decoder's per-version tables.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SquadronCreate {
-    pub time: f32,
-    /// Composite plane id (high bits: spawn index, low bits: owner entity).
-    pub plane_id: u64,
-    /// GameParams id of the aircraft type.
-    pub params_id: u32,
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-/// One aircraft position sample (`receive_updateSquadron` on the avatar): a
-/// per-plane waypoint of the squadron's 3D aerial path. Method id resolves via
-/// the decoder's per-version tables.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SquadronPlane {
-    pub time: f32,
-    pub plane_id: u64,
-    /// Position within the squadron formation (0..squadron size) — one
-    /// sample per aircraft per update, so `(plane_id, index)` uniquely
-    /// identifies a single plane. The frontend renders one model per index.
-    pub index: u8,
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub yaw: f32,
-}
-
 /// One battle-chat message (`onChatMessage` on the avatar): the server
 /// broadcasts every player's chat through the recorder's avatar entity, so the
 /// stream carries the whole match's chat timeline. `player_id` joins the
@@ -464,6 +435,12 @@ pub struct WeatherNotification {
 #[serde(rename_all = "camelCase")]
 pub struct ReplayStream {
     pub trajectories: Vec<EntityTrajectory>,
+    /// Entity id of the recorder's own vehicle (the type-2 entity the avatar
+    /// links to in its PlayerPosition 0x2c stream) — the trajectory that
+    /// carries `cruiseSamples`. `None` when the replay carries no trusted
+    /// PlayerPosition link: pre-modern-layout replays or a truncated capture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recorder_vehicle_id: Option<i32>,
     /// Artillery launches (`receiveArtilleryShots`) — the primary shell data:
     /// muzzle point, aim point and flight time per projectile.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -712,4 +689,256 @@ pub struct EntityKind {
 
 fn default_creation_time() -> f32 {
     -1.0
+}
+
+/// One recorder control-input sample (CruiseState, 0x32) — experiment E2.
+///
+/// Reverse-engineered payload (8 bytes, little-endian; 31 packets on the
+/// 15.8.0 reference replay, every one exactly 8 bytes):
+///   `u32 controller, i32 level`
+///
+/// The packet is NOT per-entity (the first u32 is 0/1, not a BigWorld entity
+/// id) — it echoes the recorder's own discrete control presets:
+///   - controller 0 = engine telegraph. Levels observed -1..4. Dynamics
+///     confirmed on the reference replay: a 0→1→2→3→4 burst at battle start
+///     is followed by the ship accelerating to its speed plateau (~55 s,
+///     carrier-like); sustained level 0 events decelerate the ship to a full
+///     stop within ~50 s; a level -1 (astern) tap left the (already stopped)
+///     ship stationary. Mapping: 0 = stop, 1..4 = 1/4..full ahead, -1 =
+///     astern (sign confirmed; whether deeper astern levels exist is NOT —
+///     only -1 was ever observed).
+///   - controller 1 = rudder. Levels observed -2..2. Dynamics confirmed:
+///     a 1→0→-1→-2 burst flips the ship's yaw rate from +0.05 to -0.05 rad/s
+///     within ~10 s (negative = port), and a level 0 (center) event decays
+///     the turn to 0 rad/s over ~30 s. Mapping: sign = side (negative =
+///     port, positive = starboard); whether |1|/|2| are exactly half/full
+///     rudder is inferred from the 5-mark telegraph, not separately
+///     confirmed.
+///
+/// `value` carries the normalized semantic value when the level is
+/// confirmed: controller 0 → throttle fraction in [-1, 1] (level / 4 for
+/// ahead presets; -1 → -1.0 astern), controller 1 → rudder in [-1, 1]
+/// (level / 2). `None` marks levels with no confirmed meaning (e.g. throttle
+/// below -1 — deeper astern — or unknown controller ids such as possible
+/// submarine dive-plane domains).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CruiseSample {
+    /// Seconds since match start.
+    pub time: f32,
+    /// 0 = engine telegraph (throttle), 1 = rudder. Other ids would be future
+    /// domains (submarine dive planes?) — kept raw rather than guessed.
+    pub controller: u32,
+    /// Raw discrete level as sent on the wire.
+    pub level: i32,
+    /// Normalized value (see the type docs) when the level's meaning is
+    /// confirmed, else `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f32>,
+}
+
+impl CruiseSample {
+    /// Map a raw (controller, level) onto its normalized semantic value.
+    /// Unknown territory yields `None` — see the type docs for the evidence
+    /// backing each confirmed branch.
+    pub fn map_value(controller: u32, level: i32) -> Option<f32> {
+        match controller {
+            0 => match level {
+                -1 => Some(-1.0), // astern (sign confirmed, depth unconfirmed)
+                0..=4 => Some(level as f32 / 4.0),
+                _ => None, // deeper astern levels — never observed
+            },
+            1 => match level {
+                -2..=2 => Some(level as f32 / 2.0),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// An aircraft-squadron creation (`receive_addSquadron` on the avatar): the
+/// squadron's game-params id and its spawn position. Method id resolves via
+/// the decoder's per-version tables.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronCreate {
+    pub time: f32,
+    /// Composite plane id (high bits: spawn index, low bits: owner entity).
+    pub plane_id: u64,
+    /// GameParams id of the aircraft type.
+    pub params_id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+/// One aircraft position sample (`receive_updateSquadron` on the avatar): a
+/// per-plane waypoint of the squadron's 3D aerial path. Method id resolves via
+/// the decoder's per-version tables.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronPlane {
+    pub time: f32,
+    pub plane_id: u64,
+    /// Position within the squadron formation (0..squadron size) — one
+    /// sample per aircraft per update, so `(plane_id, index)` uniquely
+    /// identifies a single plane. The frontend renders one model per index.
+    pub index: u8,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub yaw: f32,
+}
+
+/// One smoke-screen entity lifecycle (entityType 4 = SmokeScreen, experiment
+/// E8). The smoke itself is a real entity: created when emission starts,
+/// streamed a position sample trail while it drifts, and despawned
+/// (EntityLeave 0x04) when the last puff dissipates.
+///
+/// Radius and height come from the EntityCreate state stream (the SmokeScreen
+/// entity's `radius` / `height` ALL_CLIENTS properties — see the decoder for
+/// the sorted-index layout evidence). The wire values are in the GameParams
+/// distance unit, empirically 30 m per unit (calibrated against radar
+/// consumable `distShip`: 333.33 ⇒ 10 km, 400 ⇒ 12 km, 250 ⇒ 7.5 km; the
+/// standard smoke radius 15.0 ⇒ the well-known ~450 m cloud). This is NOT the
+/// replay's scene-position axis (~5.86 m/unit) — convert explicitly when
+/// feeding geometry that uses world coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmokeScreenEvent {
+    /// Match time (seconds) when the smoke entity was created — the start of
+    /// emission.
+    pub time: f32,
+    /// The SmokeScreen entity id (its position samples live on the matching
+    /// EntityTrajectory).
+    pub entity_id: i32,
+    /// Spawn position of the first puff (scene units, same axis as the
+    /// position streams).
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    /// Smoke-cloud radius (GameParams distance units, ≈30 m each — see the
+    /// struct docs). Observed families: 17.0/30.0 (Italian exhaust smoke),
+    /// 17.5 (support-CV plane smoke), 15.0/20.0/40.0 also exist in GameParams.
+    /// `None` when the create state could not be walked (version drift).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<f32>,
+    /// Smoke column height in the same GameParams units — 5.0 = ship-laid,
+    /// 10.0 = plane-laid smoke (the two families observed on 15.8.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
+    /// Observed dissipation end (EntityLeave, or EntityDestroy when the
+    /// server despawns the entity). The smoke's total lifetime is NOT carried
+    /// on the create-state wire — the entity's observed lifetime is the best
+    /// available duration signal (it matched GameParams workTime + lifeTime
+    /// within 0–10 s on every reference-replay smoke). `None` when the entity
+    /// never left the capture. Caveat: for a surface-ship recorder a smoke can
+    /// also leave the observed area without dissipating; the reference replay
+    /// (CV recorder, whole-map view) showed one leave per smoke, aligned with
+    /// dissipation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<f32>,
+}
+
+/// One minimap vision-info update (avatar `updateMinimapVisionInfo`, method id
+/// version-dependent — experiment E11). The server pushes one entry per
+/// vehicle whose minimap marker state changed: the entry identifies the
+/// vehicle and carries a packed 32-bit marker payload.
+///
+/// Evidence chain (15.8.0 reference replay, 1,821 calls / 12,096 entries over
+/// a 24-vehicle match): every >4 s gap in a vehicle's position-sample stream
+/// has an entry at its start (89/89, median within ~1 s) and at its end
+/// (89/89) — this stream IS the explicit spot/unspot signal E3 inferred from
+/// gaps. The opening packet carries all 12 allied vehicles (the always-visible
+/// set). 107 entries carry the sentinel `packedData == 0x80000000` (bit 31):
+/// the hidden-marker state the server sends when a vehicle becomes unspotted
+/// (84/89 gap-start sequences end on it). The low 31 bits of non-sentinel
+/// values encode the marker's minimap payload — position changes fire
+/// repeatedly while visible, but the exact packing resisted linear, halved
+/// and Morton (bit-interleave) fits and stays undocumented; the raw value is
+/// preserved for future analysis. `visible` is `false` exactly for the
+/// sentinel.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisionEvent {
+    /// Seconds since match start.
+    pub time: f32,
+    /// The vehicle entity the minimap marker belongs to (joins
+    /// `EntityTrajectory.entityId`).
+    pub entity_id: i32,
+    /// False when the entry is the hidden-marker sentinel (unspotted), true
+    /// for a live marker update.
+    pub visible: bool,
+    /// Raw 32-bit packed marker payload (`MINIMAP_USER_INFO.packedData`),
+    /// sentinel included — see the type docs.
+    pub packed_data: u32,
+}
+
+/// One consumable activation (Vehicle `onConsumableUsed`, method id
+/// version-dependent — experiment E11). Fires on the vehicle that used the
+/// consumable, for BOTH teams' vehicles visible to the recording client
+/// (reference capture: 104 uses across 22 of 24 vehicles).
+///
+/// Wire (15.2+): a length-prefixed blob `CONSUMABLE_USAGE_PARAMS` followed by
+/// the f32 `workTimeLeft`. The blob's first byte selects the usage variant
+/// (`ConsumableUsageType`): 0 = none (no id), 1 = default `<BB>`, 2 = position
+/// `<BBff>`, 3 = entity target `<BBbQ>`; its second byte is the raw
+/// consumable type id (GameParams enum — reference capture used ids
+/// {0,1,3,4,6,8,9,10,65}; several durations cluster near well-known
+/// consumables — 5 s (id 0, damage control immunity), 28 s (id 8, repair
+/// party) — but the id→name map is a GameParams concern and stays raw here).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConsumableUseEvent {
+    pub time: f32,
+    /// Vehicle entity that used the consumable.
+    pub entity_id: i32,
+    /// ConsumableUsageType of the params blob: 0 none, 1 default, 2 position,
+    /// 3 entity target.
+    pub usage_type: u8,
+    /// Raw consumable type id (0 for the `none` variant).
+    pub consumable_id: u8,
+    /// Remaining work time in seconds (the consumable's active duration).
+    pub duration: f32,
+    /// Map position for the `position` usage variant (tactical map pings).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_x: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_z: Option<f32>,
+    /// Target entity id for the `entity` usage variant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<u64>,
+}
+
+/// One per-vehicle engine-state change (Vehicle entity properties
+/// `enginePower` idx 9 / `engineDir` idx 10, ALL_CLIENTS — experiment E11).
+/// Exactly one of `power` / `dir` is set per sample (whichever property
+/// changed); fold by entity for a step timeline.
+///
+/// Semantics (reverse-engineered on the 15.8.0 reference replay, 23 of 24
+/// vehicles carry samples): `enginePower` is the engine's current output
+/// level in tenths of maximum — NOT the raw telegraph intent. It ramps 2→10
+/// over ~20 s after the recorder commands full ahead (the engine spin-up,
+/// ahead of the ~55 s hull acceleration), settles around 5 under sustained
+/// half throttle, and holds 10 through turn-induced speed dips. `engineDir`
+/// is the sign of the applied force (+1 driving, -1 braking/astern) — on the
+/// recorder's own ship all 7 CruiseState throttle reductions flip it to -1
+/// within ~1 s, and 6 of its 7 flips back to +1 follow a throttle raise (the
+/// seventh returns at settled half power). Settled low power (≤2) windows
+/// coincide with near-standstill (median windowed speed ≤ 9% of the ship's
+/// p95 across qualifying vehicles).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineStateSample {
+    pub time: f32,
+    /// Vehicle entity the sample belongs to.
+    pub entity_id: i32,
+    /// enginePower level 0-10 when that property changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power: Option<u8>,
+    /// engineDir force sign (+1 ahead / -1 astern-braking) when that property
+    /// changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<i8>,
 }

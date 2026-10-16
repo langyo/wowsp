@@ -1116,6 +1116,12 @@ mod tests {
     fn empty_decode() -> DecodedReplay {
         DecodedReplay {
             recorder_ship: None,
+            cruise: Vec::new(),
+            smoke_screens: Vec::new(),
+            recorder_vehicle: None,
+            vision_events: Vec::new(),
+            consumable_uses: Vec::new(),
+            engine_states: Vec::new(),
             positions: BTreeMap::new(),
             kinds: BTreeMap::new(),
             destroys: BTreeMap::new(),
@@ -1262,6 +1268,7 @@ mod tests {
             }],
             cap_samples: Vec::new(),
             cap_progress: Vec::new(),
+            cruise_samples: Vec::new(),
         }];
         stream.damage_stats = vec![wowsp_tauri_shared::DamageStatSample {
             time: 60.0,

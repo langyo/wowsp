@@ -163,6 +163,7 @@ export const RPC = {
   mod_hub_reveal_path: "mod_hub_reveal_path",
   mod_catalog_uninstall: "mod_catalog_uninstall",
   mod_hub_records: "mod_hub_records",
+
   wallpaper_list: "wallpaper_list",
   wallpaper_import: "wallpaper_import",
   wallpaper_remove: "wallpaper_remove",
@@ -203,6 +204,15 @@ export const RPC = {
   contribution_start: "contribution_start",
   contribution_cancel: "contribution_cancel",
   contribution_queue: "contribution_queue",
+  // ── Decision-AI experiment commands (G4; the webui surface starts with
+  //    the fire-suggestion layer — the rest serve scripts/tests for now). ──
+  decision_fire_suggestions: "decision_fire_suggestions",
+  decision_ai_status: "decision_ai_status",
+  decision_ai_suggest: "decision_ai_suggest",
+  decision_scale_calibration: "decision_scale_calibration",
+  decision_tick_state: "decision_tick_state",
+  replay_visibility_probe: "replay_visibility_probe",
+  read_replay_smoke_screens: "read_replay_smoke_screens",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

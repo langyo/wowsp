@@ -180,6 +180,10 @@
     "rotateCcw": "Rotate map counter-clockwise 90°",
     "rotateCw": "Rotate map clockwise 90°"
   },
+  "decisions": {
+    "toggle": "Fire suggestions",
+    "demoModel": "Demo model"
+  },
   "labels": {
     "hide": "Hide labels",
     "show": "Show labels"

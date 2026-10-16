@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
-import { Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline } from "@lucide/vue";
+import { Crosshair, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline } from "@lucide/vue";
 import { extractActions } from "./tactical/actions";
 import { useBreakpoint } from "@celestia-island/hikari";
 
@@ -61,6 +61,7 @@ import type {
   CameraSample,
   ChatEvent,
   DamageStatSample,
+  DecisionSuggestionReport,
   EntityTrajectory,
   ExplosionEvent,
   HpSample,
@@ -82,7 +83,10 @@ import type {
   VehicleEntry,
   WeaponLockEvent,
 } from "@/api";
-import { foldDamageStats } from "@/api";
+// Alias: `setup` below destructures its OWN `api` (the Three.js scene
+// handle) from useThreeScene, so the RPC client must arrive under a
+// different local name.
+import { api as rpcApi, foldDamageStats } from "@/api";
 import { parsePostBattle } from "@/features/replay/postBattle";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import type { ResolvedStatsMode } from "@/utils/statView";
@@ -491,6 +495,55 @@ export default defineComponent({
     const mmView = ref<TacticalView>({ cx: 0, cz: 0, scale: 1 });
     /** In-flight camera tween for step flyovers (eased in the scene RAF). */
     let mmViewTween: { from: TacticalView; to: TacticalView; startedAt: number; durMs: number } | null = null;
+
+    // ── Decision suggestions layer (G4-b) ─────────────────────────────────
+    /** Toggle for the AI fire-suggestion overlay on the enlarged 2D map.
+     *  Default off: the layer costs one `decision_fire_suggestions` IPC per
+     *  ~2 s of battle time and is a review aid, not core playback. */
+    const decisionsOn = ref(false);
+    /** Latest report (null = nothing fetched / last call failed). Rendered
+     *  by drawMinimap (minimapPainter.ts) onto the zoom canvas through the
+     *  SAME projection as ship glyphs, so suggestions and markers can never
+     *  drift apart. Handed to the painter through the shared MapInternals
+     *  context (reactive deps), like every other overlay input. */
+    const decisionReport = ref<DecisionSuggestionReport | null>(null);
+    /** Battle time the last in-flight call was issued for (throttle anchor). */
+    let decisionsLastFetchT = -Infinity;
+    /** Monotonic sequence: drop stale responses after seeks/toggles. */
+    let decisionsSeq = 0;
+    /** Re-fetch only when the playhead moved this many battle seconds past
+     *  the last call — the model reads coarse tactical state, finer refresh
+     *  would re-run full replay decode IPC for visually identical output. */
+    const DECISION_REFETCH_S = 2;
+
+    /** Fetch suggestions for the current playhead, throttled. Failures are
+     *  silent by design: no replay open, older shell without the command or
+     *  a decode error simply leaves the layer blank (never a console throw). */
+    function maybeFetchDecisions(): void {
+      if (!decisionsOn.value || !props.replayPath) return;
+      const t = current.value;
+      if (Math.abs(t - decisionsLastFetchT) < DECISION_REFETCH_S) return;
+      decisionsLastFetchT = t;
+      const seq = ++decisionsSeq;
+      rpcApi
+        .decisionFireSuggestions(props.replayPath, t)
+        .then((report) => {
+          if (seq !== decisionsSeq || !decisionsOn.value) return;
+          decisionReport.value = report;
+        })
+        .catch(() => {
+          // Older shell / mock backend / unreadable replay — draw nothing.
+          if (seq === decisionsSeq) decisionReport.value = null;
+        });
+    }
+
+    /** Reset the layer's fetched state (toggle-on, replay switch). */
+    function resetDecisionLayer(): void {
+      decisionReport.value = null;
+      decisionsLastFetchT = -Infinity;
+      decisionsSeq++;
+    }
+
     function formatTime(sec: number): string {
       const s = Math.max(0, Math.round(sec));
       const m = Math.floor(s / 60);
@@ -1214,6 +1267,8 @@ export default defineComponent({
       minimapShowTrails,
       minimapShowGrid,
       mmRotationDeg,
+      decisionsOn,
+      decisionReport,
       showCapEta,
       capStatus,
       allyAlive,
@@ -1442,6 +1497,8 @@ export default defineComponent({
           minimapZoom.value = false;
           mmView.value = { cx: 0, cz: 0, scale: 1 };
           mmViewTween = null;
+          // Suggestions belong to the previous replay's entity stream.
+          resetDecisionLayer();
           clearActors(ctx);
           shipLabels.value = [];
           ctx.bounds = null;
@@ -1496,8 +1553,13 @@ export default defineComponent({
       { immediate: true },
     );
 
-    // Recompute markers whenever the scrubber moves.
-    watch(current, (t) => updateMarkersAt(ctx, t));
+    // Recompute markers whenever the scrubber moves. The decision layer
+    // rides the same playhead path (throttled internally; covers RAF
+    // playback advances and scrub seeks alike).
+    watch(current, (t) => {
+      updateMarkersAt(ctx, t);
+      maybeFetchDecisions();
+    });
 
     // Keep the range input's DOM value in lockstep with the playback clock.
     // Relying on the reactive `value`/`max` props alone let the thumb drift
@@ -1773,12 +1835,35 @@ export default defineComponent({
                     <PenLine size={13} />
                   </HkIconButton>
                 </HkTooltip>
+                <HkTooltip text={i18nT("replay.decisions.toggle")} placement="bottom">
+                  <HkIconButton
+                    size={24}
+                    variant={decisionsOn.value ? "primary" : "ghost"}
+                    onClick={() => {
+                      decisionsOn.value = !decisionsOn.value;
+                      if (decisionsOn.value) {
+                        resetDecisionLayer();
+                        maybeFetchDecisions();
+                      }
+                    }}
+                  >
+                    <Crosshair size={13} />
+                  </HkIconButton>
+                </HkTooltip>
               </span>
               <HkTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
                 <HkIconButton size={24} variant="ghost" onClick={() => rotateMap(1)}>
                   <RotateCw size={13} />
                 </HkIconButton>
               </HkTooltip>
+              {/* Fixture-model badge: the numbers are placeholder demos, not
+                  trained-model output — keep it visible while the layer is
+                  on and served by the embedded fixture. */}
+              {decisionsOn.value && decisionReport.value?.modelSource === "fixture" ? (
+                <span class="holo-map__mmzoom-badge" title={decisionReport.value.modelDetail}>
+                  {i18nT("replay.decisions.demoModel")}
+                </span>
+              ) : null}
             </div>
             {/* Stage: base map canvas + tactical annotation layer. The map
                 keeps its full size in tactical mode — the board docks INSIDE

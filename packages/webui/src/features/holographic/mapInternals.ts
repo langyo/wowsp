@@ -20,6 +20,7 @@ import type {
   AchievementEvent,
   CameraSample,
   ChatEvent,
+  DecisionSuggestionReport,
   EntityTrajectory,
   ExplosionEvent,
   MinimapSquadronAdd,
@@ -259,6 +260,12 @@ export interface MapInternalsDeps {
   /** Enlarged-map world-frame rotation in degrees (+90° per clockwise
    *  click; the painter spins art/grid/trails/glyphs together). */
   mmRotationDeg: Ref<number>;
+  /** AI fire-suggestion overlay toggle (G4-b) — the enlarged 2D map draws
+   *  probability rings / dashed fire lines over the ship glyphs while on. */
+  decisionsOn: Ref<boolean>;
+  /** Latest decision-suggestion report (null = off / nothing fetched /
+   *  last fetch failed); owned by HolographicMap's setup. */
+  decisionReport: Ref<DecisionSuggestionReport | null>;
   /** Alt held → show in-game point timers on the cap letters. */
   showCapEta: Ref<boolean>;
   /** Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy. */

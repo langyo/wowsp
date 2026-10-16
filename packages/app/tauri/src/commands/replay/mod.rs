@@ -96,9 +96,10 @@ pub use listing::{
 };
 pub use streams::{
     __cmd__live_temp_replay, __cmd__read_live_replay_snapshot, __cmd__read_replay_positions,
-    __tauri_command_name_live_temp_replay, __tauri_command_name_read_live_replay_snapshot,
-    __tauri_command_name_read_replay_positions, live_temp_replay, read_live_replay_snapshot,
-    read_replay_positions,
+    __cmd__read_replay_smoke_screens, __tauri_command_name_live_temp_replay,
+    __tauri_command_name_read_live_replay_snapshot, __tauri_command_name_read_replay_positions,
+    __tauri_command_name_read_replay_smoke_screens, live_temp_replay, read_live_replay_snapshot,
+    read_replay_positions, read_replay_smoke_screens,
 };
 pub use wire::{
     __cmd__read_replay_header, __tauri_command_name_read_replay_header, read_replay_header,
@@ -113,6 +114,7 @@ pub use wowsp_replay_core::meta::meta_from_raw as meta_from_raw_pub;
 // pub(crate) surface consumed through direct `replay::...` paths by sibling
 // command modules (arena_info / playtime / pairing; call sites unchanged).
 pub(crate) use listing::{resolve_replay_dir, scan_replays_meta, walk_replays};
+pub(crate) use streams::{decode_replay_stream_sync, read_smoke_screens_sync};
 pub(crate) use wowsp_replay_core::meta::{
     is_bot_nickname, is_operation_battle, is_scripted_unit_nickname, lite_and_client_version,
     lite_from_path, parse_datetime_from_filename,

@@ -181,6 +181,13 @@ lewton = "0.10"
 # image-data path is needed — Wayland/other default features stay off.
 arboard = { version = "^3.6", default-features = false, features = ["image-data"] }
 
+# ONNX Runtime bindings for the built-in decision model (experiment E1).
+# Pinned exactly: the 2.0.0-rc line shifts API between RCs, so a caret would
+# silently pull a different surface. Defaults enable `download-binaries` —
+# ort-sys's build script fetches prebuilt static ORT libs from the pyke CDN
+# (first build needs network, then cached in target/).
+ort = "=2.0.0-rc.13"
+
 # Encoding helpers
 base64 = "^0.23"
 hex = "^0.4"

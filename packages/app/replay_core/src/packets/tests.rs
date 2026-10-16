@@ -64,6 +64,7 @@ fn profile_for(lesta: bool) -> LayoutProfile {
         ward_has_type: true,
         shotkill_has_ballistics: true,
         arena_state_method: None,
+        e11: None,
         lesta,
     }
 }
@@ -1930,4 +1931,979 @@ fn test_entity_kind(entity_type: i16) -> wowsp_tauri_shared::EntityKind {
         initial_team: None,
         radius: None,
     }
+}
+
+/// CruiseState (0x32): the 8-byte `u32 controller, i32 level` layout
+/// decodes for both controllers, maps confirmed levels to normalized
+/// values, leaves unconfirmed ones as `None`, and rejects non-8-byte
+/// payloads outright.
+#[test]
+fn decodes_cruise_state_payload() {
+    let mk = |controller: u32, level: i32| {
+        let mut p = Vec::new();
+        p.extend_from_slice(&controller.to_le_bytes());
+        p.extend_from_slice(&level.to_le_bytes());
+        p
+    };
+    // Throttle: battle-start W W W W burst (real bytes from the reference
+    // replay): 0 -> 1 -> 2 -> 3 -> 4.
+    for (level, want) in [(0, 0.0f32), (1, 0.25), (2, 0.5), (3, 0.75), (4, 1.0)] {
+        let s = parse_cruise_state(&mk(0, level), 7.2).expect("must parse");
+        assert_eq!(s.controller, 0);
+        assert_eq!(s.level, level);
+        assert!((s.value.expect("ahead presets map") - want).abs() < 1e-6);
+    }
+    // Astern tap (real bytes: ff ff ff ff): sign mapped, depth kept at
+    // -1.0 with the documented uncertainty.
+    let s = parse_cruise_state(&mk(0, -1), 483.14).expect("must parse");
+    assert_eq!(s.value, Some(-1.0));
+    // Deeper astern levels were never observed — must stay unmapped.
+    assert_eq!(
+        parse_cruise_state(&mk(0, -2), 0.0)
+            .expect("structure decodes")
+            .value,
+        None
+    );
+    // Rudder: the t=112 hard-over burst 1 -> 0 -> -1 -> -2 (real bytes).
+    for (level, want) in [(1, 0.5f32), (0, 0.0), (-1, -0.5), (-2, -1.0)] {
+        let s = parse_cruise_state(&mk(1, level), 112.9).expect("must parse");
+        assert_eq!(s.controller, 1);
+        assert!((s.value.expect("rudder marks map") - want).abs() < 1e-6);
+    }
+    // Unknown controller id — structure decodes, semantics stay None.
+    let s = parse_cruise_state(&mk(3, 1), 1.0).expect("must parse");
+    assert_eq!(s.value, None);
+    // Length discipline: 7 or 9 bytes never observed — rejected.
+    assert!(parse_cruise_state(&mk(0, 4)[..7], 0.0).is_none());
+    let mut nine = mk(0, 4);
+    nine.push(0);
+    assert!(parse_cruise_state(&nine, 0.0).is_none());
+}
+
+/// E2 verification against a real replay (skips without
+/// `WOWSP_TEST_REPLAY`): the decoded throttle timeline must be consistent
+/// with position-differentiated speed of the recorder's own ship —
+/// sustained full-ahead reaches (at least) half the ship's top observed
+/// speed, and sustained stop events bring it to a near standstill — and
+/// the recorder-vehicle join (avatar's 0x2c link) must resolve to the
+/// type-2 entity whose cruise samples are attached.
+#[test]
+fn cruise_state_consistent_with_speed_on_real_replay() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        return;
+    };
+    let bytes = std::fs::read(&path).expect("read real replay");
+    // Mirror read_replay_positions' preamble minimally: block-walk to the
+    // packet stream, descriptor roster ids, version-driven profile.
+    let mut cur = 8usize;
+    let mut client_version: Option<String> = None;
+    if let Some(json) = crate::meta::extract_descriptor_json(&bytes) {
+        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            client_version = raw
+                .get("clientVersionFromExe")
+                .and_then(|x| x.as_str())
+                .map(str::to_string);
+        }
+    }
+    if let Some(n) = u32::from_le_bytes(bytes[4..8].try_into().unwrap()).checked_sub(1) {
+        for _ in 0..n {
+            let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+            cur += 4 + bl;
+        }
+    }
+    let decoded = decode_replay(
+        &bytes[cur..],
+        &std::collections::HashSet::new(),
+        client_version.as_deref(),
+        false,
+    )
+    .expect("decode real replay");
+    let stream = crate::assemble::group_by_entity(decoded);
+    let recorder_id = stream
+        .recorder_vehicle_id
+        .expect("modern replay must carry the avatar->vehicle link");
+    let traj = stream
+        .trajectories
+        .iter()
+        .find(|t| t.entity_id == recorder_id)
+        .expect("recorder trajectory");
+    assert_eq!(
+        traj.kind.as_ref().map(|k| k.entity_type),
+        Some(2),
+        "recorder vehicle must be a type-2 ship"
+    );
+    let cruise = &traj.cruise_samples;
+    assert!(
+        !cruise.is_empty(),
+        "a real replay must carry CruiseState packets"
+    );
+    // Every sample must be one of the two known controllers with
+    // dynamics-confirmed level ranges.
+    for s in cruise {
+        assert!(s.controller <= 1, "unexpected controller {}", s.controller);
+        if s.controller == 0 {
+            assert!((-1..=4).contains(&s.level), "throttle level {}", s.level);
+        } else {
+            assert!((-2..=2).contains(&s.level), "rudder level {}", s.level);
+        }
+    }
+    // No other entity carries cruise samples.
+    for t in &stream.trajectories {
+        if t.entity_id != recorder_id {
+            assert!(
+                t.cruise_samples.is_empty(),
+                "cruise samples leaked onto entity {}",
+                t.entity_id
+            );
+        }
+    }
+    // Speed series (planar) of the recorder's ship.
+    let samples = &traj.samples;
+    if samples.len() < 2 {
+        eprintln!(
+            "[e2] degenerate replay: {} position samples - skipping",
+            samples.len()
+        );
+        return;
+    }
+    let speed_at = |t: f32, win: f32| -> Option<f32> {
+        let a = samples.iter().find(|s| s.time >= t - win)?;
+        let b = samples.iter().rev().find(|s| s.time <= t + win)?;
+        let dt = b.time - a.time;
+        if dt < 0.5 {
+            return None;
+        }
+        Some(((b.x - a.x).powi(2) + (b.z - a.z).powi(2)).sqrt() / dt)
+    };
+    // Ship's top observed speed: 95th percentile of the 30s-window series
+    // (robust against any stray jumps).
+    let mut speeds = Vec::new();
+    let mut t = samples.first().unwrap().time;
+    let t_end = samples.last().unwrap().time;
+    while t < t_end {
+        if let Some(v) = speed_at(t + 15.0, 15.0) {
+            speeds.push(v);
+        }
+        t += 10.0;
+    }
+    speeds.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let p95 = speeds[(speeds.len() as f32 * 0.95) as usize].max(1e-3);
+    // Step-hold the throttle timeline; check quasi-steady consistency.
+    let throttle_at = |tt: f32| -> Option<i32> {
+        cruise
+            .iter()
+            .filter(|s| s.controller == 0 && s.time <= tt)
+            .next_back()
+            .map(|s| s.level)
+    };
+    let mut full_ok = 0usize;
+    let mut stop_ok = 0usize;
+    let mut full_total = 0usize;
+    let mut stop_total = 0usize;
+    let mut tt = samples.first().unwrap().time + 60.0;
+    while tt < t_end - 60.0 {
+        let level = throttle_at(tt);
+        let held = |target: i32| -> bool {
+            // The level at tt and 20 s earlier match -> held long enough
+            // for the ship to have settled towards it.
+            level == Some(target) && throttle_at(tt - 20.0) == Some(target)
+        };
+        if held(4) {
+            full_total += 1;
+            if let Some(v) = speed_at(tt, 8.0) {
+                if v >= 0.5 * p95 {
+                    full_ok += 1;
+                }
+            }
+        } else if held(0) {
+            stop_total += 1;
+            if let Some(v) = speed_at(tt, 8.0) {
+                if v <= 0.25 * p95 {
+                    stop_ok += 1;
+                }
+            }
+        }
+        tt += 5.0;
+    }
+    eprintln!(
+        "[e2] {} cruise samples ({} throttle / {} rudder); p95 speed {:.2}; full-ahead settled {}/{} windows >= 50% p95; stop settled {}/{} windows <= 25% p95",
+        cruise.len(),
+        cruise.iter().filter(|s| s.controller == 0).count(),
+        cruise.iter().filter(|s| s.controller == 1).count(),
+        p95,
+        full_ok,
+        full_total,
+        stop_ok,
+        stop_total
+    );
+    // The reference Lexington replay: 17/31 throttle, 14/31 rudder. Both
+    // behaviors must have been exercised and held at least 80% of the
+    // settled windows.
+    assert!(full_total > 0, "no sustained full-ahead window observed");
+    assert!(stop_total > 0, "no sustained stop window observed");
+    assert!(
+        full_ok as f32 / full_total as f32 >= 0.8,
+        "full-ahead windows inconsistent with speed ({full_ok}/{full_total})"
+    );
+    assert!(
+        stop_ok as f32 / stop_total as f32 >= 0.8,
+        "stop windows inconsistent with speed ({stop_ok}/{stop_total})"
+    );
+}
+
+/// The exact SmokeScreen create-state bytes captured from the 15.8.0
+/// reference replay — one per smoke family present in that match.
+/// eid 205831 (Amalfi exhaust smoke), 205853 (Yorktown plane smoke),
+/// 205884 (Colonna BB oil smoke).
+fn smoke_state_blob(family: u8) -> Vec<u8> {
+    match family {
+            // radius 17.0, height 5.0, one puff point at (483.50, 0, -96.24).
+            0 => "5c00000007000101000088410200008841030000a0400401baccf143000000001e9ac0c2051f7061727469636c65732f536d6f6b6553637265656e5f737061776e2e786d6c06197061727469636c65732f536d6f6b6553637265656e2e786d6c",
+            // radius 17.5, height 10.0.
+            1 => "5c0000000700010100008c410200008c4103000020410401353a3c4200000000883be343051f7061727469636c65732f536d6f6b6553637265656e5f737061776e2e786d6c06197061727469636c65732f536d6f6b6553637265656e2e786d6c",
+            // radius 30.0, height 5.0.
+            _ => "5c000000070001010000f041020000f041030000a04004013bf307c30000000045f06cc2051f7061727469636c65732f536d6f6b6553637265656e5f737061776e2e786d6c06197061727469636c65732f536d6f6b6553637265656e2e786d6c",
+        }
+        .chars()
+        .map(|c| c.to_digit(16).unwrap() as u8)
+        .collect::<Vec<u8>>()
+        .chunks(2)
+        .map(|c| (c[0] << 4) | c[1])
+        .collect()
+}
+
+/// parse_smoke_state walks the real captured state blobs and yields the
+/// GameParams radius/height of each family: 17.0/5.0 (Italian exhaust
+/// smoke), 17.5/10.0 (support-CV plane smoke), 30.0/5.0 (Italian BB oil
+/// smoke).
+#[test]
+fn parses_smoke_state_from_reference_replay_bytes() {
+    let (r, h) = parse_smoke_state(&smoke_state_blob(0));
+    assert_eq!(r, Some(17.0));
+    assert_eq!(h, Some(5.0));
+    let (r, h) = parse_smoke_state(&smoke_state_blob(1));
+    assert_eq!(r, Some(17.5));
+    assert_eq!(h, Some(10.0));
+    let (r, h) = parse_smoke_state(&smoke_state_blob(2));
+    assert_eq!(r, Some(30.0));
+    assert_eq!(h, Some(5.0));
+    // The blob is passed with its u32 length prefix included (payload
+    // tail as the frame loop sees it); a bare prefix shorter than the
+    // count byte yields nothing.
+    assert_eq!(parse_smoke_state(&[0x5c, 0, 0, 0]), (None, None));
+    assert_eq!(parse_smoke_state(&[]), (None, None));
+}
+
+/// Any desync disables the fields instead of guessing: an unknown
+/// property id (future def change) or a truncated value aborts the walk.
+#[test]
+fn smoke_state_walk_rejects_desync() {
+    let mut blob = smoke_state_blob(0);
+    // Corrupt the first property id (offset 4+1) to an id the smoke def
+    // does not define.
+    blob[5] = 0x63;
+    assert_eq!(parse_smoke_state(&blob), (None, None));
+    // Truncating mid-string also aborts.
+    let short = &smoke_state_blob(0)[..40];
+    assert_eq!(parse_smoke_state(short), (None, None));
+    // An out-of-plausibility radius (id 2) is rejected: flip the float to
+    // 1e9 (0x4e6e6b28) — walk succeeds but the gate zeroes both fields.
+    let mut hot = smoke_state_blob(0);
+    let off = 4 + 1 + 2 + 5 + 1; // prefix + nProps + id0/i8 + id1/f32 + id2
+    hot[off..off + 4].copy_from_slice(&1e9f32.to_le_bytes());
+    assert_eq!(parse_smoke_state(&hot), (None, None));
+}
+
+/// Frame-level lifecycle: a SmokeScreen EntityCreate followed by its
+/// EntityLeave produces one event with the walked radius/height and the
+/// leave time as the observed dissipation end.
+#[test]
+fn walk_frames_collects_smoke_lifecycle() {
+    fn frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+        let mut f = Vec::with_capacity(12 + payload.len());
+        f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        f.extend_from_slice(&ptype.to_le_bytes());
+        f.extend_from_slice(&time.to_le_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+    // EntityCreate payload: eid=205831, type=4, vehicle/space=0, pos,
+    // direction, then the real captured state blob.
+    let mut create = Vec::new();
+    create.extend_from_slice(&205831i32.to_le_bytes());
+    create.extend_from_slice(&4i16.to_le_bytes());
+    create.extend_from_slice(&0i32.to_le_bytes());
+    create.extend_from_slice(&0i32.to_le_bytes());
+    create.extend_from_slice(&484.0f32.to_le_bytes());
+    create.extend_from_slice(&0.0f32.to_le_bytes());
+    create.extend_from_slice(&(-96.0f32).to_le_bytes());
+    create.extend_from_slice(&[0u8; 12]);
+    create.extend_from_slice(&smoke_state_blob(0));
+    let mut stream = frame(PACKET_ENTITY_CREATE, 81.7, &create);
+    // A ship EntityCreate must NOT produce a smoke event.
+    let mut ship_create = create.clone();
+    ship_create[4..6].copy_from_slice(&2i16.to_le_bytes());
+    stream.extend(frame(PACKET_ENTITY_CREATE, 82.0, &ship_create));
+    // The entity leaves the observed area at 131.7 — dissipation.
+    stream.extend(frame(PACKET_ENTITY_LEAVE, 131.7, &205831i32.to_le_bytes()));
+
+    let profile = LayoutProfile {
+        e11: None,
+        ..profile_for(false)
+    };
+    let decoded = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile,
+        None,
+    );
+    assert_eq!(
+        decoded.smoke_screens.len(),
+        1,
+        "only the type-4 create counts"
+    );
+    let s = &decoded.smoke_screens[0];
+    assert_eq!(s.entity_id, 205831);
+    assert!((s.time - 81.7).abs() < 1e-4);
+    assert!((s.x - 484.0).abs() < 1e-3);
+    assert!((s.z + 96.0).abs() < 1e-3);
+    assert_eq!(s.radius, Some(17.0));
+    assert_eq!(s.height, Some(5.0));
+    assert_eq!(s.end_time, Some(131.7));
+    // The entity kind is still recorded for the position-stream consumer.
+    assert_eq!(
+        decoded.kinds.get(&205831).map(|k| k.entity_type),
+        Some(ENTITY_TYPE_SMOKE_SCREEN)
+    );
+}
+
+/// E8 against the real replay (skips without `WOWSP_TEST_REPLAY`): every
+/// smoke must decode a plausible radius/height, carry a dissipation end
+/// after its creation, and spawn where its own position trail begins
+/// (the create state's first puff point equals the header position, so
+/// the trajectory's first sample must sit next to it).
+#[test]
+fn smoke_screens_on_real_replay() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        return;
+    };
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let mut cur = 8;
+    let mut client_version: Option<String> = None;
+    for i in 0..block_count {
+        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+        cur += 4;
+        if i == 0 {
+            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes[cur..cur + bl]) {
+                client_version = json
+                    .get("clientVersionFromExe")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
+            }
+        }
+        cur += bl;
+    }
+    let decoded = decode_replay(
+        &bytes[cur..],
+        &std::collections::HashSet::new(),
+        client_version.as_deref(),
+        false,
+    )
+    .expect("decode must succeed");
+    if decoded.smoke_screens.is_empty() {
+        eprintln!("[e8] no smoke screens in this replay - skipping");
+        return;
+    }
+    eprintln!(
+        "[e8] {} smoke screens (version {:?}):",
+        decoded.smoke_screens.len(),
+        client_version
+    );
+    for s in &decoded.smoke_screens {
+        eprintln!(
+            "  t={:>6.1} eid={} pos=({:>6.1},{:>6.1}) r={:?} h={:?} end={:?} dur={}",
+            s.time,
+            s.entity_id,
+            s.x,
+            s.z,
+            s.radius,
+            s.height,
+            s.end_time,
+            s.end_time.map(|e| e - s.time).unwrap_or(f32::NAN)
+        );
+    }
+    for s in &decoded.smoke_screens {
+        let (Some(r), Some(h), Some(end)) = (s.radius, s.height, s.end_time) else {
+            panic!("smoke {} must decode radius/height/end_time", s.entity_id);
+        };
+        assert!((1.0..=100.0).contains(&r), "implausible radius {r}");
+        assert!((0.5..=100.0).contains(&h), "implausible height {h}");
+        assert!(end > s.time, "dissipation before creation");
+        // Total smoke lifetimes in WoWS run ~20-140 s (emission + puff
+        // lifeTime); the observed entity lifetime must land there.
+        assert!(
+            (10.0..=180.0).contains(&(end - s.time)),
+            "implausible lifetime {:.1}",
+            end - s.time
+        );
+        // Positional anchor: the smoke entity's own trail starts at its
+        // spawn point (within the cloud radius in scene units, ~2x slack).
+        if let Some(first) = decoded.positions.get(&s.entity_id).and_then(|v| v.first()) {
+            let d = ((first.x - s.x).powi(2) + (first.z - s.z).powi(2)).sqrt();
+            let r_scene = r * 30.0 / 5.86; // GameParams units -> scene units
+            assert!(
+                d <= 2.0 * r_scene,
+                "trail starts {d:.0}u from spawn but radius is only {r_scene:.0}u scene"
+            );
+        }
+    }
+    // Every smoke entity is a type-4 kind.
+    for s in &decoded.smoke_screens {
+        assert_eq!(
+            decoded.kinds.get(&s.entity_id).map(|k| k.entity_type),
+            Some(ENTITY_TYPE_SMOKE_SCREEN)
+        );
+    }
+}
+
+/// updateMinimapVisionInfo: the exact wire bytes captured from the 15.8.0
+/// reference replay — the t=30.3 packet (one live marker update for
+/// vehicle 963613) and a synthetic batch echoing the t=0 opening packet's
+/// shape (live entries + the hidden sentinel + empty second array).
+#[test]
+fn decodes_minimap_vision_packets() {
+    // Real t=30.3 payload: count=1, {963613, 0x37e4836f}, count=0.
+    let args: Vec<u8> = [0x01u8, 0x1d, 0xb4, 0x0e, 0x00, 0x6f, 0x83, 0xe4, 0x37, 0x00]
+        .into_iter()
+        .collect();
+    let events = decode_minimap_vision(30.3, &args);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].entity_id, 963613);
+    assert_eq!(events[0].packed_data, 0x37e4_836f);
+    assert!(events[0].visible);
+    assert!((events[0].time - 30.3).abs() < 1e-6);
+
+    // Opening-packet shape: live entries for the allied set, one sentinel
+    // (unspotted) entry, empty second array.
+    let mut batch: Vec<u8> = vec![0x04];
+    for (id, packed) in [
+        (963601u32, 0x37e6_9bce_u32),
+        (963603, 0x37e6_1383),
+        (963607, 0x37e7_6bcb),
+        (963617, 0x8000_0000u32),
+    ] {
+        batch.extend_from_slice(&id.to_le_bytes());
+        batch.extend_from_slice(&packed.to_le_bytes());
+    }
+    batch.push(0x00); // second array: empty
+    let events = decode_minimap_vision(0.0, &batch);
+    assert_eq!(events.len(), 4);
+    assert!(events[..3].iter().all(|e| e.visible));
+    let hidden = &events[3];
+    assert!(!hidden.visible);
+    assert_eq!(hidden.entity_id, 963617);
+    assert_eq!(hidden.packed_data, 0x8000_0000u32);
+
+    // Second-array entries decode under the same rules (never observed on
+    // the wire — preserved as evidence, not assigned new semantics).
+    let mut two_arrays: Vec<u8> = vec![0x00, 0x01];
+    two_arrays.extend_from_slice(&963621u32.to_le_bytes());
+    two_arrays.extend_from_slice(&0x37e2_6b2bu32.to_le_bytes());
+    let events = decode_minimap_vision(12.0, &two_arrays);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].entity_id, 963621);
+    assert!(events[0].visible);
+
+    // Desync discipline: truncated entry, or trailing garbage after the
+    // second array, drops the whole packet's events.
+    assert!(decode_minimap_vision(0.0, &batch[..8]).is_empty());
+    let mut trailing = batch.clone();
+    trailing.push(0xff);
+    assert!(decode_minimap_vision(0.0, &trailing).is_empty());
+    assert!(decode_minimap_vision(0.0, &[]).is_empty());
+}
+
+/// onConsumableUsed: every usage variant decodes; desyncs are skipped.
+/// The DEFAULT bytes are the real t=74.9 capture (usage blob {1, 10},
+/// workTimeLeft 120.5 s).
+#[test]
+fn decodes_consumable_used_variants() {
+    let real: Vec<u8> = [0x02u8, 0x01, 0x0a, 0x00, 0x00, 0xf2, 0x42]
+        .into_iter()
+        .collect();
+    let e = decode_consumable_used(74.9, 963623, &real).expect("must decode");
+    assert_eq!(e.usage_type, 1);
+    assert_eq!(e.consumable_id, 10);
+    assert!((e.duration - 121.0).abs() < 1e-3);
+    assert_eq!(e.entity_id, 963623);
+    assert!(e.target_x.is_none() && e.target_z.is_none() && e.target_id.is_none());
+
+    // POSITION variant: blob <BBff> plus f32 duration.
+    let mut pos: Vec<u8> = vec![0x0a, 0x02, 0x05];
+    pos.extend_from_slice(&123.5f32.to_le_bytes());
+    pos.extend_from_slice(&(-67.25f32).to_le_bytes());
+    pos.extend_from_slice(&30.0f32.to_le_bytes());
+    let e = decode_consumable_used(83.3, 951995, &pos).expect("must decode");
+    assert_eq!(e.usage_type, 2);
+    assert_eq!(e.consumable_id, 5);
+    assert!((e.target_x.unwrap() - 123.5).abs() < 1e-3);
+    assert!((e.target_z.unwrap() + 67.25).abs() < 1e-3);
+    assert_eq!(e.target_id, None);
+
+    // ENTITY variant: blob <BBbQ>.
+    let mut ent: Vec<u8> = vec![0x0b, 0x03, 0x07, 0x01];
+    ent.extend_from_slice(&963621u64.to_le_bytes());
+    ent.extend_from_slice(&45.0f32.to_le_bytes());
+    let e = decode_consumable_used(90.0, 951999, &ent).expect("must decode");
+    assert_eq!(e.usage_type, 3);
+    assert_eq!(e.consumable_id, 7);
+    assert_eq!(e.target_id, Some(963621));
+
+    // NONE variant: empty blob, duration only.
+    let mut none: Vec<u8> = vec![0x00];
+    none.extend_from_slice(&5.0f32.to_le_bytes());
+    let e = decode_consumable_used(101.0, 963619, &none).expect("must decode");
+    assert_eq!(e.usage_type, 0);
+    assert_eq!(e.consumable_id, 0);
+    assert!((e.duration - 5.0).abs() < 1e-4);
+
+    // Desyncs: variant/length contradiction, truncation, bad duration.
+    assert!(decode_consumable_used(0.0, 1, &[0x02, 0x02, 0x09, 0, 0, 0x16, 0x44]).is_none());
+    assert!(decode_consumable_used(0.0, 1, &real[..5]).is_none());
+    assert!(decode_consumable_used(0.0, 1, &[]).is_none());
+    let mut nan = real.clone();
+    nan[6] = 0xff; // duration exponent all-ones -> non-finite
+    nan[3] = 0x7f;
+    assert!(decode_consumable_used(0.0, 1, &nan).is_none());
+}
+
+/// The engine-state projection: type-2 entities' idx 9/10 property changes
+/// become samples; other entities and other indices stay out; a version
+/// without the E11 pin projects nothing.
+#[test]
+fn walk_frames_collects_engine_states() {
+    fn frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+        let mut f = Vec::with_capacity(12 + payload.len());
+        f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        f.extend_from_slice(&ptype.to_le_bytes());
+        f.extend_from_slice(&time.to_le_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+    fn entity_create(eid: i32, etype: i16) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&etype.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&[0u8; 24]);
+        p
+    }
+    fn property(eid: i32, idx: u32, value: u8) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&idx.to_le_bytes());
+        p.extend_from_slice(&1u32.to_le_bytes());
+        p.push(value);
+        p
+    }
+    let mut stream = Vec::new();
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(963613, ENTITY_TYPE_VEHICLE),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(963614, ENTITY_TYPE_AVATAR),
+    ));
+    stream.extend(frame(PACKET_ENTITY_PROPERTY, 29.0, &property(963613, 9, 2)));
+    stream.extend(frame(PACKET_ENTITY_PROPERTY, 31.0, &property(963613, 9, 5)));
+    stream.extend(frame(
+        PACKET_ENTITY_PROPERTY,
+        32.0,
+        &property(963613, 10, 0xff),
+    ));
+    // Avatar property at the same indices must not leak in.
+    stream.extend(frame(PACKET_ENTITY_PROPERTY, 33.0, &property(963614, 9, 7)));
+
+    let profile = |e11: Option<E11MethodIds>| LayoutProfile {
+        e11,
+        ..profile_for(false)
+    };
+    let ids = e11_method_ids(Some((15, 8, 0)));
+    let decoded = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile(ids),
+        None,
+    );
+    assert_eq!(decoded.engine_states.len(), 3, "two power + one dir change");
+    let s0 = &decoded.engine_states[0];
+    assert_eq!(s0.entity_id, 963613);
+    assert_eq!(s0.power, Some(2));
+    assert_eq!(s0.dir, None);
+    assert!((s0.time - 29.0).abs() < 1e-6);
+    let dir = &decoded.engine_states[2];
+    assert_eq!(dir.dir, Some(-1), "0xff as i8 = -1 (braking)");
+    assert_eq!(dir.power, None);
+    // Without the E11 pin the projection stays empty.
+    let off = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile(None),
+        None,
+    );
+    assert!(off.engine_states.is_empty());
+}
+
+/// Shared helper for the E11 real-replay tests: decode the env-gated
+/// replay (None when `WOWSP_TEST_REPLAY` is unset).
+fn decoded_real_replay() -> Option<DecodedReplay> {
+    let path = std::env::var("WOWSP_TEST_REPLAY").ok()?;
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let mut cur = 8;
+    let mut client_version: Option<String> = None;
+    for i in 0..block_count {
+        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+        cur += 4;
+        if i == 0 {
+            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes[cur..cur + bl]) {
+                client_version = json
+                    .get("clientVersionFromExe")
+                    .and_then(|x| x.as_str())
+                    .map(str::to_string);
+            }
+        }
+        cur += bl;
+    }
+    let decoded = decode_replay(
+        &bytes[cur..],
+        &std::collections::HashSet::new(),
+        client_version.as_deref(),
+        false,
+    )
+    .expect("decode must succeed");
+    Some(decoded)
+}
+
+/// E11 against the real replay (skips without `WOWSP_TEST_REPLAY`): the
+/// minimap vision stream is the explicit spot/unspot signal. Every >4 s
+/// gap in a vehicle's position stream must be bracketed by vision events,
+/// the last event before a gap must be the hidden sentinel in the strong
+/// majority, and the first event after must be positional. This is the G1
+/// core metric: the alignment rate of the explicit events against E3's
+/// gap-inferred visibility.
+#[test]
+fn e11_vision_events_on_real_replay() {
+    let Some(decoded) = decoded_real_replay() else {
+        return;
+    };
+    if decoded.vision_events.is_empty() {
+        eprintln!("[e11] no vision events decoded (version without pin?) - skipping");
+        return;
+    }
+    let ships: std::collections::BTreeSet<i32> = decoded
+        .kinds
+        .iter()
+        .filter(|(_, k)| k.entity_type == ENTITY_TYPE_VEHICLE)
+        .map(|(eid, _)| *eid)
+        .collect();
+    // Every referenced entity is a vehicle.
+    for e in &decoded.vision_events {
+        assert!(
+            ships.contains(&e.entity_id),
+            "non-vehicle id {}",
+            e.entity_id
+        );
+    }
+    let hidden = decoded.vision_events.iter().filter(|e| !e.visible).count();
+    eprintln!(
+        "[e11] {} vision events across {} vehicles; {} hidden-sentinel events ({:.1}%)",
+        decoded.vision_events.len(),
+        decoded
+            .vision_events
+            .iter()
+            .map(|e| e.entity_id)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        hidden,
+        100.0 * hidden as f32 / decoded.vision_events.len() as f32
+    );
+    // Gap alignment over every vehicle's position stream.
+    let by_entity: std::collections::BTreeMap<i32, Vec<&wowsp_tauri_shared::VisionEvent>> = decoded
+        .vision_events
+        .iter()
+        .fold(std::collections::BTreeMap::new(), |mut m, e| {
+            m.entry(e.entity_id).or_default().push(e);
+            m
+        });
+    let gap_threshold = 4.0f32;
+    let mut starts_total = 0usize;
+    let mut starts_hit = 0usize;
+    let mut starts_sentinel = 0usize;
+    let mut ends_total = 0usize;
+    let mut ends_hit = 0usize;
+    let mut ends_positional = 0usize;
+    for (eid, samples) in &decoded.positions {
+        if !ships.contains(eid) || samples.len() < 2 {
+            continue;
+        }
+        let Some(events) = by_entity.get(eid) else {
+            continue;
+        };
+        for w in samples.windows(2) {
+            let (a, b) = (w[0].time, w[1].time);
+            if b - a <= gap_threshold {
+                continue;
+            }
+            starts_total += 1;
+            if let Some(last) = events
+                .iter()
+                .filter(|e| a - 3.5 <= e.time && e.time <= a + 1.5)
+                .next_back()
+            {
+                starts_hit += 1;
+                if !last.visible {
+                    starts_sentinel += 1;
+                }
+            }
+            ends_total += 1;
+            if let Some(first) = events
+                .iter()
+                .find(|e| b - 1.5 <= e.time && e.time <= b + 3.5)
+            {
+                ends_hit += 1;
+                if first.visible {
+                    ends_positional += 1;
+                }
+            }
+        }
+    }
+    eprintln!(
+        "[e11] gap alignment: starts {starts_hit}/{starts_total} (sentinel {starts_sentinel}), ends {ends_hit}/{ends_total} (positional {ends_positional})"
+    );
+    assert!(starts_total > 0, "reference capture must contain gaps");
+    assert!(
+        starts_hit * 10 >= starts_total * 9,
+        "gap starts without vision event: {}",
+        starts_total - starts_hit
+    );
+    assert!(
+        ends_hit * 10 >= ends_total * 9,
+        "gap ends without vision event: {}",
+        ends_total - ends_hit
+    );
+    assert!(
+        starts_sentinel * 7 >= starts_hit * 5,
+        "too few hidden-sentinel terminations: {starts_sentinel}/{starts_hit}"
+    );
+    assert_eq!(
+        ends_positional, ends_hit,
+        "every gap-end resumption must be positional"
+    );
+}
+
+/// E11 against the real replay: consumable uses decode on vehicles of
+/// both teams with sane durations.
+#[test]
+fn e11_consumables_on_real_replay() {
+    let Some(decoded) = decoded_real_replay() else {
+        return;
+    };
+    if decoded.consumable_uses.is_empty() {
+        eprintln!("[e11] no consumable uses decoded (version without pin?) - skipping");
+        return;
+    }
+    let ships: std::collections::BTreeSet<i32> = decoded
+        .kinds
+        .iter()
+        .filter(|(_, k)| k.entity_type == ENTITY_TYPE_VEHICLE)
+        .map(|(eid, _)| *eid)
+        .collect();
+    let users: std::collections::BTreeSet<i32> = decoded
+        .consumable_uses
+        .iter()
+        .map(|e| e.entity_id)
+        .collect();
+    let ids: std::collections::BTreeSet<u8> = decoded
+        .consumable_uses
+        .iter()
+        .map(|e| e.consumable_id)
+        .collect();
+    eprintln!(
+        "[e11] {} consumable uses across {}/{} vehicles; ids {:?}",
+        decoded.consumable_uses.len(),
+        users.len(),
+        ships.len(),
+        ids
+    );
+    assert!(
+        decoded.consumable_uses.len() >= 40,
+        "reference capture carries 104 uses"
+    );
+    assert!(users.len() >= 10, "expected double-digit vehicle coverage");
+    assert!(
+        users.len() * 2 >= ships.len() - 4,
+        "uses must cover vehicles of both teams"
+    );
+    for e in &decoded.consumable_uses {
+        assert!(ships.contains(&e.entity_id), "non-vehicle consumer");
+        assert!(e.usage_type <= 3, "unknown usage variant {}", e.usage_type);
+        assert!(
+            e.duration > 0.0 && e.duration <= 700.0,
+            "implausible workTimeLeft {}",
+            e.duration
+        );
+    }
+}
+
+/// E11 against the real replay: every vehicle carries engine-state
+/// samples; settled low power means near-standstill, full power tracks
+/// the ship's top speed, and the recorder's own engine power follows its
+/// CruiseState throttle (10 under sustained full-ahead).
+#[test]
+fn e11_engine_states_on_real_replay() {
+    let Some(decoded) = decoded_real_replay() else {
+        return;
+    };
+    if decoded.engine_states.is_empty() {
+        eprintln!("[e11] no engine states decoded (version without pin?) - skipping");
+        return;
+    }
+    let ships: std::collections::BTreeSet<i32> = decoded
+        .kinds
+        .iter()
+        .filter(|(_, k)| k.entity_type == ENTITY_TYPE_VEHICLE)
+        .map(|(eid, _)| *eid)
+        .collect();
+    let covered: std::collections::BTreeSet<i32> =
+        decoded.engine_states.iter().map(|s| s.entity_id).collect();
+    // Reference capture: 23/24 vehicles carry engine-state samples — the
+    // 24th (951997) streams positions but no idx-9/10 property packets at
+    // all, so full coverage cannot be forced.
+    assert!(
+        covered.len() + 1 >= ships.len(),
+        "engine states must cover nearly every vehicle ({}/{})",
+        covered.len(),
+        ships.len()
+    );
+
+    // Windowed speed helper over one entity's (sorted) samples.
+    let speed_at = |eid: i32, t: f32, win: f32| -> Option<f32> {
+        let samples = decoded.positions.get(&eid)?;
+        let a = samples.iter().find(|s| s.time >= t - win)?;
+        let b = samples.iter().rev().find(|s| s.time <= t + win)?;
+        let dt = b.time - a.time;
+        if dt < 1.0 {
+            return None;
+        }
+        Some(((b.x - a.x).powi(2) + (b.z - a.z).powi(2)).sqrt() / dt)
+    };
+    // p95 of windowed planar speed per ship.
+    let p95 = |eid: i32| -> f32 {
+        let mut speeds = Vec::new();
+        if let Some(ss) = decoded.positions.get(&eid) {
+            for w in ss.windows(2) {
+                let dt = w[1].time - w[0].time;
+                if (0.5..=4.0).contains(&dt) {
+                    speeds
+                        .push(((w[1].x - w[0].x).powi(2) + (w[1].z - w[0].z).powi(2)).sqrt() / dt);
+                }
+            }
+        }
+        speeds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        speeds
+            .get(speeds.len() * 95 / 100)
+            .copied()
+            .unwrap_or(f32::MAX)
+            .max(1e-3)
+    };
+    let power_at = |eid: i32, t: f32| -> Option<u8> {
+        decoded
+            .engine_states
+            .iter()
+            .filter(|s| s.entity_id == eid && s.power.is_some() && s.time <= t)
+            .next_back()
+            .and_then(|s| s.power)
+    };
+    let stream_bounds = |eid: i32| -> Option<(f32, f32)> {
+        decoded
+            .positions
+            .get(&eid)
+            .and_then(|v| v.first().zip(v.last()))
+            .map(|(a, b)| (a.time, b.time))
+    };
+
+    let mut low_ratios = Vec::new();
+    let mut full_ratios = Vec::new();
+    for eid in &ships {
+        let Some((t0, t1)) = stream_bounds(*eid) else {
+            continue;
+        };
+        let top = p95(*eid);
+        let mut t = t0 + 20.0;
+        while t < t1 {
+            if let (Some(ep), Some(v)) = (power_at(*eid, t), speed_at(*eid, t, 8.0)) {
+                if ep <= 2 {
+                    low_ratios.push(v / top);
+                } else if ep == 10 {
+                    full_ratios.push(v / top);
+                }
+            }
+            t += 10.0;
+        }
+    }
+    low_ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    full_ratios.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let low_med = low_ratios[low_ratios.len() / 2];
+    let full_med = full_ratios[full_ratios.len() / 2];
+    eprintln!(
+        "[e11] engine anchors: low-power median speed ratio {low_med:.3} (n={}), full-power median {full_med:.3} (n={})",
+        low_ratios.len(),
+        full_ratios.len()
+    );
+    assert!(
+        low_med <= 0.25,
+        "settled low power must be near-standstill (median ratio {low_med:.3})"
+    );
+    assert!(
+        full_med >= 0.35,
+        "full power must track top speed (median ratio {full_med:.3})"
+    );
+
+    // Recorder anchor: sustained full-ahead CruiseState -> engine power 10.
+    let Some(rec) = decoded.recorder_vehicle else {
+        panic!("modern replay must carry the avatar->vehicle link");
+    };
+    let throttle_at = |t: f32| -> Option<i32> {
+        decoded
+            .cruise
+            .iter()
+            .filter(|c| c.controller == 0 && c.time <= t)
+            .next_back()
+            .map(|c| c.level)
+    };
+    let mut checked = 0;
+    let mut agreed = 0;
+    for t in [50.0f32, 100.0, 150.0, 200.0, 250.0] {
+        if throttle_at(t) == Some(4) {
+            checked += 1;
+            if power_at(rec, t) == Some(10) {
+                agreed += 1;
+            }
+        }
+    }
+    eprintln!("[e11] recorder throttle->power agreement: {agreed}/{checked} probes");
+    assert!(checked > 0, "recorder must hold full-ahead long enough");
+    assert_eq!(
+        agreed, checked,
+        "sustained full throttle must read power 10"
+    );
 }

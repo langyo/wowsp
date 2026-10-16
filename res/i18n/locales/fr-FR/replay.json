@@ -180,6 +180,10 @@
     "rotateCcw": "Pivoter la carte de 90° anti-horaire",
     "rotateCw": "Pivoter la carte de 90° horaire"
   },
+  "decisions": {
+    "toggle": "Suggestions de tir",
+    "demoModel": "Modèle de démo"
+  },
   "labels": {
     "hide": "Masquer les étiquettes",
     "show": "Afficher les étiquettes"

@@ -180,6 +180,10 @@
     "rotateCcw": "マップを反時計回りに90°回転",
     "rotateCw": "マップを時計回りに90°回転"
   },
+  "decisions": {
+    "toggle": "射撃提案",
+    "demoModel": "デモモデル"
+  },
   "labels": {
     "hide": "ラベルを非表示",
     "show": "ラベルを表示"

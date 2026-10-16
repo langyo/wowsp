@@ -8,6 +8,7 @@
 
 mod arena;
 mod contribution;
+mod decision;
 pub mod download;
 mod encyclopedia;
 pub mod error;
@@ -24,6 +25,7 @@ mod supporters;
 
 pub use arena::*;
 pub use contribution::*;
+pub use decision::*;
 pub use download::*;
 pub use encyclopedia::*;
 pub use error::{CommandError, CommandResult};

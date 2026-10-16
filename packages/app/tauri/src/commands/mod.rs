@@ -10,9 +10,13 @@ pub mod arena_info;
 pub mod changelog;
 pub mod contribution;
 pub mod data_pack;
+pub mod decision_ai;
+pub mod decision_serve;
+pub mod decision_tick;
 pub mod download_hub;
 pub mod encyclopedia;
 pub mod exports;
+pub mod fire_dataset;
 pub mod game_client;
 pub mod game_config;
 pub mod game_context;
@@ -125,6 +129,7 @@ pub mod probe_roster;
 pub mod ranked;
 pub mod release_digest;
 pub mod replay;
+pub mod replay_probe;
 pub mod res_mods;
 #[cfg(desktop)]
 pub mod screenshot;
@@ -137,6 +142,7 @@ pub mod supporters;
 // The tray panel webview window (tray.html) — desktop only, like the tray
 // itself.
 pub mod tab_dump;
+pub mod terrain_los;
 #[cfg(desktop)]
 pub mod tray_panel;
 pub mod trends;
