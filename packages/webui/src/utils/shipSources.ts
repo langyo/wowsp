@@ -39,13 +39,22 @@ for (const [id, node] of Object.entries(techTree)) {
 
 const norm = (value: string) => value.trim().toLowerCase();
 
-/** normalized name → curated tag (first tag wins on a duplicate name). */
+/** normalized name → curated tag (first tag wins on a duplicate name).
+ *  The manual arrays are the maintainer's hand additions. */
 const CURATED_BY_NAME = new Map<string, ShipSource>();
 for (const tag of ["coal", "steel", "event"] as const) {
   for (const name of (sourcesDoc as unknown as { [k: string]: string[] })[tag] ?? []) {
     if (!CURATED_BY_NAME.has(norm(name))) CURATED_BY_NAME.set(norm(name), tag);
   }
 }
+
+/** The scraper's generated shipId → tags map (live armory regions +
+ *  Wayback history union — see scripts/scrape_armory_sources.py). */
+const GENERATED_BY_ID = new Map<string, ShipSource[]>(
+  Object.entries(
+    (sourcesDoc as unknown as { generated?: Record<string, string[]> }).generated ?? {},
+  ).map(([id, tags]) => [id, tags.filter((t): t is ShipSource => (SHIP_SOURCES as readonly string[]).includes(t))]),
+);
 
 /** shipId → every normalized name the offline db carries for it. */
 const NAMES_BY_SHIP = new Map<string, Set<string>>();
@@ -77,5 +86,6 @@ export function shipSourcesOf(ship: {
   }
   const apiTag = CURATED_BY_NAME.get(norm(ship.name ?? ""));
   if (apiTag) out.add(apiTag);
+  for (const tag of GENERATED_BY_ID.get(String(ship.shipId)) ?? []) out.add(tag);
   return out;
 }
