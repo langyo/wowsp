@@ -412,7 +412,7 @@ export default defineComponent({
               }}
               anchorRef={addBtn.value}
               placement="bottom-end"
-              padding="md"
+              padding="lg"
               title={t("settings.overlayContent.colAdd")}
             >
               <div class="overlay-columns__menu">

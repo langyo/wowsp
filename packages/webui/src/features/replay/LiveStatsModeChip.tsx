@@ -117,7 +117,7 @@ export default defineComponent({
           placement="bottom-start"
           closeOnBackdrop={isMobile.value}
           sheetOnMobile
-          padding="md"
+          padding="lg"
           title={t("replay.live.statsSourceTitle")}
         >
           <div ref={panelEl} class="live-battle__mode-pop">
