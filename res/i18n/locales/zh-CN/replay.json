@@ -420,7 +420,19 @@
       "fps": "帧率",
       "offline": "离线快进导出视频（快于实时）",
       "offlineRunning": "正在渲染",
-      "cancel": "取消"
+      "cancel": "取消",
+      "wizardTitle": "导出",
+      "stepOutput": "输出设置",
+      "stepRun": "执行导出",
+      "imageTitle": "图片",
+      "videoTitle": "视频",
+      "jsonTitle": "标注数据",
+      "fullDesc": "按当前视图与上一步的图片设置截取整幅画面",
+      "regionDesc": "先在图上框选范围，再按同样的设置导出该区域",
+      "recordDesc": "按实际播放速度录制，直到手动停止",
+      "offlineDesc": "离线逐帧渲染，比实时快得多；范围与帧率见上一步",
+      "jsonDesc": "把标注导出为可分享的 JSON 文档",
+      "jsonImportDesc": "从 JSON 文档载入标注（覆盖当前内容，可撤销）"
     },
     "record": {
       "start": "开始录制（播放并录制画面）",
@@ -455,7 +467,8 @@
     "menu": {
       "shapes": "形状与文字",
       "markers": "单位标记",
-      "more": "更多"
+      "more": "更多",
+      "behaviour": "行为"
     },
     "timeline": {
       "zoomIn": "时间轴放大（滚轮）",

@@ -420,7 +420,19 @@
       "fps": "フレームレート",
       "offline": "オフライン高速書き出し（リアルタイムより速い）",
       "offlineRunning": "レンダリング中",
-      "cancel": "キャンセル"
+      "cancel": "キャンセル",
+      "wizardTitle": "エクスポート",
+      "stepOutput": "出力設定",
+      "stepRun": "実行",
+      "imageTitle": "画像",
+      "videoTitle": "動画",
+      "jsonTitle": "注釈データ",
+      "fullDesc": "前のステップの画像設定で全体を撮影します",
+      "regionDesc": "まずマップで範囲をドラッグし、同じ設定でその領域だけを書き出します",
+      "recordDesc": "リアルタイムで録画し、手動で停止します",
+      "offlineDesc": "オフラインでコマ描画する高速方式。範囲とfpsは前のステップの設定を使います",
+      "jsonDesc": "注釈を共有可能なJSONドキュメントとして書き出します",
+      "jsonImportDesc": "JSONドキュメントから注釈を読み込みます（現在の内容を置き換え、取り消し可能）"
     },
     "record": {
       "start": "録画開始（リプレイを再生）",
@@ -455,7 +467,8 @@
     "menu": {
       "shapes": "図形とテキスト",
       "markers": "ユニットマーカー",
-      "more": "その他"
+      "more": "その他",
+      "behaviour": "動作"
     },
     "timeline": {
       "zoomIn": "タイムライン拡大（ホイール）",

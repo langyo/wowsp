@@ -1,6 +1,6 @@
 /* Tactical-board bar: the compact horizontal toolbar in the board dock.
  * The bar itself keeps the HUD chip chrome (it sits on the stage palette);
- * every flyout is hikari's HkPopover/HkMenuPanel/HkPopupSelect — only the
+ * every flyout is hikari's HkPopover/HkMenuPanel — only the
  * panel CONTENT layout (swatches, width/dash pickers, toggle stacks, the
  * export grid) is styled here. */
 
@@ -279,12 +279,6 @@
   gap: 6px;
 }
 
-.tac-pop__grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px 8px;
-}
-
 .tac-bar__count {
   font-size: var(--text-xs);
   color: rgb(var(--color-muted));
@@ -306,12 +300,8 @@
     row-gap: 4px;
   }
 
-  /* The wide more-panel grid collapses to one column on the sheet. */
+  /* The flyout panels go full-width on the sheet. */
   .tac-pop--wide {
     width: 100%;
-  }
-
-  .tac-pop__grid {
-    grid-template-columns: 1fr;
   }
 }

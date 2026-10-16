@@ -420,7 +420,19 @@
       "fps": "幀率",
       "offline": "離線快轉匯出影片（快於即時）",
       "offlineRunning": "正在渲染",
-      "cancel": "取消"
+      "cancel": "取消",
+      "wizardTitle": "匯出",
+      "stepOutput": "輸出設定",
+      "stepRun": "執行匯出",
+      "imageTitle": "圖片",
+      "videoTitle": "影片",
+      "jsonTitle": "註解資料",
+      "fullDesc": "按目前檢視與上一步的圖片設定擷取整幅畫面",
+      "regionDesc": "先在地圖上框選範圍，再按同樣的設定匯出該區域",
+      "recordDesc": "按實際播放速度錄製，直到手動停止",
+      "offlineDesc": "離線逐幀渲染，比即時快得多；範圍與幀率見上一步",
+      "jsonDesc": "把註解匯出為可分享的 JSON 文件",
+      "jsonImportDesc": "從 JSON 文件載入註解（覆蓋目前內容，可復原）"
     },
     "record": {
       "start": "開始錄製（播放並錄製畫面）",
@@ -455,7 +467,8 @@
     "menu": {
       "shapes": "形狀與文字",
       "markers": "單位標記",
-      "more": "更多"
+      "more": "更多",
+      "behaviour": "行為"
     },
     "timeline": {
       "zoomIn": "時間軸放大（滾輪）",
