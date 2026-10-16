@@ -27,11 +27,11 @@ Flavor split (the three build flavors, four published artifacts):
       out of the box and the pack downloads on demand (Settings → cache
       management, or automatically on the first 3D view). The app's
       updater always picks the ``-lite`` artifact.
-    - ``portable`` — the single-exe 便捷版: a bare renamed copy of
-      ``wowsp.exe`` with NO installer shell (no shun run — it needs only
-      the app build). The app detects portable mode from the exe file
-      name (`WoWSP_<version>_x64-portable.exe`, see paths.rs) and runs
-      fully portable (data next to the exe, no auto-updater, no 3D views).
+    - ``portable`` — the single-exe 便捷版: a dedicated ``--features
+      portable`` compile of the app (portable mode baked into the binary —
+      data next to the exe, no auto-updater, no 3D views; see paths.rs),
+      published as the bare ``WoWSP_<version>_x64-portable.exe`` with NO
+      installer shell (no shun run — it needs only the app build).
 
 The legacy ``WoWSP_<version>_x64-installer.exe`` name (no flavor suffix)
 stays published as a byte-identical copy of lite. The materials-only
@@ -359,13 +359,24 @@ def ensure_images(mode: str = "auto") -> None:
         sys.exit(f"portrait pack extraction left {IMAGES / 'ships'} empty")
 
 
-def build_app() -> Path:
-    print("[app] building webui + wowsp_tauri (release) …")
+def build_webui() -> None:
     # pnpm ships as a .cmd shim on Windows — subprocess needs the resolved
     # path (bare "pnpm" fails CreateProcess's extension-less lookup).
     pnpm = shutil.which("pnpm") or "pnpm"
     run([pnpm, "--filter", "@wowsp/webui", "build"])
-    run(["cargo", "build", "-p", "wowsp_tauri", "--release"])
+
+
+def build_app(portable: bool = False) -> Path:
+    """Compile the app binary (the webui dist is embedded by the Rust build,
+    so build_webui() must have run first). ``portable=True`` is the 便捷版
+    compile: ``--features portable`` bakes the mode into the binary (see
+    paths.rs) instead of leaving it to the runtime marker probe."""
+    if portable:
+        print("[app] building wowsp_tauri (release, portable feature) …")
+        run(["cargo", "build", "-p", "wowsp_tauri", "--release", "--features", "portable"])
+    else:
+        print("[app] building wowsp_tauri (release) …")
+        run(["cargo", "build", "-p", "wowsp_tauri", "--release"])
     exe = TARGET / "wowsp.exe"
     if not exe.is_file():
         sys.exit(f"application binary missing: {exe}")
@@ -554,7 +565,7 @@ def build_variant(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--skip-app-build", action="store_true", help="reuse target/release/wowsp.exe")
+    ap.add_argument("--skip-app-build", action="store_true", help="reuse target/release/wowsp.exe for the installer flavors; the portable flavor always compiles its own feature build, which OVERWRITES that path — rebuild without --flavors portable before a later --skip-app-build run")
     ap.add_argument(
         "--models",
         choices=("auto", "fetch"),
@@ -580,7 +591,7 @@ def main() -> int:
         help="comma list of artifacts to build: webview2, lite, portable "
         "(the webview2 flavor carries the model pack and the WebView2 "
         "runtime; lite downloads the pack on demand; portable is the "
-        "single-exe 便捷版 — a bare renamed copy of wowsp.exe, no installer)",
+        "single-exe 便捷版 — its own --features portable compile, no installer)",
     )
     ap.add_argument(
         "--shun-repo",
@@ -598,9 +609,9 @@ def main() -> int:
         )
 
     version = app_version()
-    # shun builds the installer flavors only — the portable artifact is a
-    # bare renamed copy of the app exe and needs no staging tree at all
-    # (so `--flavors portable` runs without a shun checkout).
+    # shun builds the installer flavors only — the portable flavor is its
+    # own `--features portable` compile of the app and needs no staging
+    # tree at all (so `--flavors portable` runs without a shun checkout).
     needs_shun = any(f in variants for f in ("webview2", "lite"))
     shun_repo = resolve_shun_repo(args.shun_repo) if needs_shun else None
 
@@ -609,13 +620,20 @@ def main() -> int:
     # is why this runs unconditionally (all flavors embed the same dist).
     ensure_images(args.images)
 
+    # The installer payloads pack the plain binary; the portable flavor
+    # compiles its own later. --skip-app-build reuses the existing plain
+    # exe for the installer flavors (the portable flavor still compiles —
+    # a different feature set cannot be reused).
     app_exe = TARGET / "wowsp.exe"
     if args.skip_app_build:
-        if not app_exe.is_file():
-            sys.exit(f"--skip-app-build but {app_exe} is missing")
-        print("[app] skipped cargo build (--skip-app-build)")
+        if needs_shun:
+            if not app_exe.is_file():
+                sys.exit(f"--skip-app-build but {app_exe} is missing")
+            print("[app] skipped cargo build (--skip-app-build)")
     else:
-        app_exe = build_app()
+        build_webui()
+        if needs_shun:
+            app_exe = build_app()
 
     # The res-latest stamp shipped beside the pack (empty when GitHub is
     # unreachable — the app then re-downloads as usual). Only the webview2
@@ -624,15 +642,6 @@ def main() -> int:
 
     # The Evergreen download is only needed when the webview2 flavor builds.
     wv2 = ensure_payload() if "webview2" in variants else None
-
-    # The single-exe 便捷版: a bare renamed copy of the app binary. The exe
-    # file name IS the portable marker (see paths.rs portable_mode) — data
-    # lands next to the exe, the updater and 3D views stay disabled.
-    if "portable" in variants:
-        OUT.mkdir(parents=True, exist_ok=True)
-        artifact = OUT / f"WoWSP_{version}_x64-portable.exe"
-        shutil.copy2(app_exe, artifact)
-        print(f"[ok] {artifact.name}: {artifact.stat().st_size:,} bytes")
 
     # Stage the self-contained tree, then build each installer variant.
     if needs_shun:
@@ -672,6 +681,20 @@ def main() -> int:
         build_variant(
             shun_repo, STAGE, "webview2", f"WoWSP_{version}_x64-installer-webview2.exe"
         )
+
+    # The single-exe 便捷版: its own `--features portable` compile — the
+    # mode is baked into the binary (see paths.rs portable_mode), so the
+    # exe stays portable whatever its file name. The feature build lands
+    # at the same target/release/wowsp.exe path, which is why this runs
+    # AFTER the installer payloads have staged the plain binary above —
+    # and why a later --skip-app-build run must first rebuild the plain
+    # exe (the skip-branch help text says the same).
+    if "portable" in variants:
+        portable_exe = build_app(portable=True)
+        OUT.mkdir(parents=True, exist_ok=True)
+        artifact = OUT / f"WoWSP_{version}_x64-portable.exe"
+        shutil.copy2(portable_exe, artifact)
+        print(f"[ok] {artifact.name}: {artifact.stat().st_size:,} bytes")
     return 0
 
 

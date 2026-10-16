@@ -26,9 +26,9 @@ and `WoWSP_<version>_x64-installer-webview2.exe`:
   download page otherwise).
 
 The build script also publishes `WoWSP_<version>_x64-portable.exe`: the
-single-exe 便捷版 — a bare renamed copy of `wowsp.exe`, no install step,
-detected as portable by its file name (data lands next to the exe; the
-auto-updater and the 3D views stay disabled).
+single-exe 便捷版 — a dedicated `--features portable` compile of the app
+(no install step, no marker or file-name probing): data lands next to the
+exe, and the auto-updater and the 3D views stay disabled.
 
 The build script also publishes `WoWSP_<version>_x64-installer.exe` (no
 suffix) as a byte-identical copy of lite. The name is not a flavor — the

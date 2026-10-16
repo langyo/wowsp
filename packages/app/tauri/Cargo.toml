@@ -181,6 +181,12 @@ shun = { version = "^0.4.1", default-features = false, features = ["online"] }
 # This feature is required by `cargo tauri build` and is injected by default.
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+# The single-exe 便捷版 flavor compiles portable mode IN (data next to the
+# exe, auto-updater off, 3D views replaced by an install hint — see
+# src/paths.rs). Installer builds leave it off and probe the `.portable`
+# marker file at runtime instead; build_installers.py passes it only for
+# the `portable` flavor's dedicated compile.
+portable = []
 # Dev-only test control server. NEVER enable in release builds. Gates a
 # localhost HTTP listener (see src/test_harness.rs) that lets external Python
 # scripts drive eval_js + capture_main_window for visual regression testing.
