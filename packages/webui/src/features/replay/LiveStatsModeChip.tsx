@@ -3,17 +3,16 @@
  * filter-style popup hosting THE VERY COLUMN EDITOR the settings page
  * renders (OverlayColumnsEditor — the draggable scope × metric cards +
  * the plus-connector's add menu), so the roster's per-column content is
- * editable right where it renders. The retired three-row dimension
- * filter groups (ship / battle / solo scopes) are gone: the ship/solo
- * scopes moved INTO the columns themselves; the battle-type career —
- * the one dimension that stays panel-wide — keeps its segmented row
- * under the editor, reading and writing the SAME statsPrefs store field
- * the settings page hosts.
+ * editable right where it renders. The retired dimension filter rows
+ * (ship / battle / solo scopes) are gone from this popup — the ship/solo
+ * scopes live IN the columns themselves, and the panel-wide battle-type
+ * scope keeps its settings row (OverlayContentControls) only; the chip's
+ * active face and label key purely on the columns it edits.
  *
  * Mounted in two hosts: the live panel's head and the post-battle share
  * bar (PostBattleShareBar — riding the replay results modal and its
  * incomplete-results fallback), so both windows offer the identical
- * selector and every edit re-resolves the roster through the shared store.
+ * editor and every edit re-resolves the roster through the shared store.
  *
  * The popup frame follows the filter-bar popup pattern (FilterCategoryChip):
  * HkPopover teleported to body level and anchored bottom-start, outside
@@ -26,25 +25,13 @@
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 
-import { HkPopover, HkTabs, useBreakpoint } from "@celestia-island/hikari";
+import { HkPopover, useBreakpoint } from "@celestia-island/hikari";
 import { ShipWheel } from "@lucide/vue";
 
 import { t } from "@/i18n";
-import {
-  overlayColumnsAreDefault,
-  useStatsPrefsStore,
-  type RosterBattleScope,
-} from "@/stores/statsPrefs";
+import { overlayColumnsAreDefault, useStatsPrefsStore } from "@/stores/statsPrefs";
 import OverlayColumnsEditor from "@/components/settings/OverlayColumnsEditor";
 import "./LiveStatsModeChip.scss";
-
-/** scope value → its option label key (the settings row uses the same). */
-const BATTLE_SCOPE_LABEL: Record<RosterBattleScope, string> = {
-  follow: "settings.overlayContent.battleFollow",
-  random: "settings.overlayContent.battleRandom",
-  ranked: "settings.overlayContent.battleRanked",
-  all: "settings.overlayContent.battleAll",
-};
 
 export default defineComponent({
   name: "LiveStatsModeChip",
@@ -92,31 +79,19 @@ export default defineComponent({
       document.removeEventListener("pointerdown", onDocPointerDown, true);
     });
 
-    /** Any dimension off its default — the columns edited off the
-     *  shipped four, or the battle scope pinned — the chip then wears
-     *  its active face, exactly like the head's other toggles. */
-    const customized = computed(
-      () =>
-        !overlayColumnsAreDefault(prefs.prefs.overlayColumns) ||
-        prefs.prefs.overlayBattleScope !== "follow",
+    /** The columns off the shipped defaults — the chip then wears its
+     *  active face, exactly like the head's other toggles. */
+    const customized = computed(() =>
+      !overlayColumnsAreDefault(prefs.prefs.overlayColumns),
     );
 
-    /** The non-default dimensions joined with " · "; the resting face is
-     *  the chip's own name ("战绩筛选") — never an option label, which
-     *  would collide with the identically-named option inside the
-     *  popup. */
-    const label = computed(() => {
-      const parts: string[] = [];
-      if (!overlayColumnsAreDefault(prefs.prefs.overlayColumns)) {
-        parts.push(t("settings.overlayContent.columnsLabel"));
-      }
-      if (prefs.prefs.overlayBattleScope !== "follow") {
-        parts.push(t(BATTLE_SCOPE_LABEL[prefs.prefs.overlayBattleScope]));
-      }
-      return parts.length > 0
-        ? parts.join(" · ")
-        : t("replay.live.statsSourceTitle");
-    });
+    /** The resting face is the chip's own name ("战绩筛选"); customized
+     *  it names what it edits ("显示列"). */
+    const label = computed(() =>
+      customized.value
+        ? t("settings.overlayContent.columnsLabel")
+        : t("replay.live.statsSourceTitle"),
+    );
 
     return () => (
       <div ref={root} class="live-battle__mode-anchor">
@@ -149,26 +124,6 @@ export default defineComponent({
                 settings' 显示内容 section renders (one shared store:
                 edits here show up there, and vice versa). */}
             <OverlayColumnsEditor />
-            {/* The battle-type career feeding every column — the one
-                panel-wide dimension left. */}
-            <div class="live-battle__mode-group">
-              <span class="live-battle__mode-group-label">
-                {t("settings.overlayContent.battleScope")}
-              </span>
-              <HkTabs
-                variant="segmented"
-                modelValue={prefs.prefs.overlayBattleScope}
-                onUpdate:modelValue={(v: string) =>
-                  prefs.setOverlayBattleScope(v as RosterBattleScope)
-                }
-                tabs={[
-                  { key: "follow" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.follow) },
-                  { key: "random" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.random) },
-                  { key: "ranked" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.ranked) },
-                  { key: "all" as RosterBattleScope, label: t(BATTLE_SCOPE_LABEL.all) },
-                ]}
-              />
-            </div>
           </div>
         </HkPopover>
       </div>

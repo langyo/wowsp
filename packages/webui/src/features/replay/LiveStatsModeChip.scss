@@ -39,44 +39,24 @@
 }
 
 /* The popup teleports to body level (HkPopover), so these rules stay
-   top-level on purpose — the flat classes reach it there. */
+   top-level on purpose — the flat classes reach it there. The popup
+   hosts the columns editor alone (the dimension filter rows are gone —
+   the battle scope keeps its settings row only), so the width serves
+   the editor's card row and nothing else. */
 .live-battle__mode-pop {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  /* Wide enough for the column editor's card row + the add menu's
-   *  segmented groups (the retired dimension rows fit at 17rem; the
-   *  scope options 仅当前舰种 etc. do not). */
   width: min(24rem, calc(100vw - 2.5rem));
   /* The popover chrome's own padding is a bare 4px (hikari
      .hii-dropdown-content) — the slot content owns the real inset, the
      same family voice as .ship-filter-bar__pop / .async-search-combo__panel. */
   padding: 10px 12px 8px;
 
-  /* The columns editor rides first (the draggable cards + the add
-     connector); its add menu teleports to body level and anchors to the
-     plus button, so it sizes itself outside this panel entirely. */
+  /* The columns editor's add menu teleports to body level and anchors
+     to the plus button, so it sizes itself outside this panel entirely;
+     only the card row rides here. */
   .overlay-columns {
     margin: 0 -2px;
-  }
-
-  .live-battle__mode-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-
-  .live-battle__mode-group-label {
-    font-size: var(--text-2xs);
-    font-weight: 700;
-    color: rgb(var(--color-text) / 65%);
-  }
-
-  /* HkTabs' scroll wrapper centers its shrink-wrapped strip by default
-     (align="center" — the page-bar look); inside this anchored panel the
-     groups read as a filter form, so pin every strip to the inline start
-     under its label. */
-  .hk-scroll-container-aligner {
-    margin-inline: 0;
   }
 }

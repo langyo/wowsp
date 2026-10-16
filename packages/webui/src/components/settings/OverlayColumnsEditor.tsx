@@ -396,7 +396,8 @@ export default defineComponent({
               }
             >
               <HkIconButton
-                variant="primary"
+                variant="ghost"
+                size={24}
                 disabled={atLimit.value}
                 aria-label={t("settings.overlayContent.colAdd")}
                 onClick={() => (addOpen.value = !addOpen.value)}
