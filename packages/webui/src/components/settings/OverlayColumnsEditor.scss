@@ -1,7 +1,9 @@
 /* The water-table column editor (OverlayColumnsEditor): draggable cards
    in one auto-splitting row + the plus-connector's add menu. Visual voice
    follows the stats settings' row pattern (StatsPrefsControls.scss) and
-   hikari's surface tokens. */
+   hikari's surface tokens; the drag states mirror HkDraggableList.scss —
+   source dims to a dashed placeholder, the drop target wears a 2px inset
+   primary line, the ghost rides fixed under the pointer. */
 
 .overlay-columns {
   display: flex;
@@ -43,11 +45,6 @@
   align-items: stretch;
 }
 
-.overlay-columns__row--dragging {
-  cursor: grabbing;
-  user-select: none;
-}
-
 .overlay-columns__card {
   flex: 1 1 0;
   min-width: 0;
@@ -60,20 +57,46 @@
   background: rgb(var(--color-text) / 0.04);
   cursor: grab;
   touch-action: none;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.15s;
+  transition:
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 150ms ease,
+    background 150ms ease;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .overlay-columns__card:hover {
   border-color: rgb(var(--color-primary) / 0.5);
 }
 
-.overlay-columns__card--dragging {
+/* The dragged card's ORIGIN slot — hikari's data-dragging face: dimmed,
+   slightly shrunk, dashed primary outline (a ghost of the card stays
+   visible in place while the pointer carries the clone). */
+.overlay-columns__card[data-dragging] {
+  opacity: 0.35;
+  transform: scale(0.96);
+  border-style: dashed;
+  border-color: rgb(var(--color-primary));
+  background: rgb(var(--color-primary) / 0.04);
   cursor: grabbing;
-  border-color: rgb(var(--color-primary) / 0.8);
-  background: rgb(var(--color-primary) / 0.08);
-  box-shadow: 0 6px 18px rgb(var(--color-text) / 0.18);
-  transform: translateY(-1px);
-  z-index: 1;
+}
+
+/* The drop target's edge line — inset primary, on the edge the dragged
+   card will land against (before = it moves leftward onto this slot,
+   after = rightward), mirroring HkDraggableList's placeholder rule. */
+.overlay-columns__card[data-placeholder="before"] {
+  box-shadow: inset 2px 0 0 0 rgb(var(--color-primary));
+}
+
+.overlay-columns__card[data-placeholder="after"] {
+  box-shadow: inset -2px 0 0 0 rgb(var(--color-primary));
+}
+
+/* While a drag is live the row's hover cue stands down (hikari's
+   data-dragging list rule): hover borders would read as targets. */
+.overlay-columns__row[data-dragging] .overlay-columns__card:hover {
+  border-color: rgb(var(--color-text) / 0.12);
 }
 
 .overlay-columns__card-grip {
@@ -120,6 +143,40 @@
   color: rgb(var(--color-text) / 0.5);
 }
 
+/* The drag GHOST — hikari's list-drag ghost, horizontal edition: the
+   pressed card's clone teleported to <body>, following the pointer via
+   the inline translate3d the tsx writes, translucent over an elevated
+   plate. No transform here: the tsx always writes the full translate3d
+   before the ghost paints — a class transform could never win the
+   cascade against it. Above page chrome but below every popup band, so
+   a drag never buries toasts or open popovers (hikari's --hk-z-drag). */
+.overlay-columns__ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  margin: 0;
+  opacity: 0.85;
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 28%),
+    0 2px 6px rgb(0 0 0 / 18%);
+  border-radius: 8px;
+  background: var(--color-bg-elevated, #161b22);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  z-index: var(--hk-z-drag, 950);
+  will-change: transform;
+
+  > .overlay-columns__card {
+    margin: 0;
+    width: 100%;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    opacity: 1;
+  }
+}
+
 /* The add menu inside the popover: two labeled segmented groups + the
    bottom-right confirm. */
 .overlay-columns__menu {
@@ -164,5 +221,15 @@
   .overlay-columns__menu {
     min-width: 0;
     width: min(88vw, 340px);
+  }
+}
+
+/* Reduced motion: the dragging press cue (scale + dim) must snap instead
+   of animating; the ghost itself is pointer-positioned — 1:1 direct
+   manipulation, not autonomous motion — so it is left alone (the same
+   guard HkDraggableList.scss carries). */
+@media (prefers-reduced-motion: reduce) {
+  .overlay-columns__card {
+    transition: border-color 150ms ease, background 150ms ease;
   }
 }

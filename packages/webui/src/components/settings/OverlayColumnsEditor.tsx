@@ -1,17 +1,25 @@
 /**
- * The water-table column editor (settings → 游戏内水表 → 显示内容): the
- * configured roster columns as DRAGGABLE CARDS in one auto-splitting row
- * (1–5 cards, equal widths), plus the add-connector — a plus icon button
- * on the cluster header's right end opening a tooltip-style popover with
- * two segmented button groups (数据范围: 全局/仅单人/仅单船/仅当前舰种;
- * 指标: 场均/PR/胜率/场次) and a confirm-add button at the bottom right.
+ * The water-table column editor: the configured roster columns as
+ * DRAGGABLE CARDS in one auto-splitting row (1–5 cards, equal widths),
+ * plus the add-connector — a plus icon button on the cluster header's
+ * right end opening a tooltip-style popover with two segmented button
+ * groups (数据范围: 全局/仅单人/仅单船/仅当前舰种; 指标: 场均/PR/胜率/
+ * 场次) and a confirm-add button at the bottom right.
+ *
+ * Mounted TWICE: the settings page's 显示内容 section, and the live
+ * panel head's stats-source chip popover (LiveStatsModeChip — the very
+ * filter that used to host the retired three-row dimension groups), so
+ * the columns are editable right where they render.
  *
  * The widgets are hikari base components (HkPopover / HkTabs / HkButton /
- * HkIconButton); the HORIZONTAL drag-to-reorder is the local adaptation —
- * hikari's own HkDraggableList is a vertical stack, so the pointer
- * contract (press-to-arm, adjacent-midpoint swaps, click-swallow after a
- * real drag — the same discipline the account manager's SortableList
- * uses) is re-implemented here for the one-row layout.
+ * HkIconButton), and the drag is hikari's OWN final list-drag design
+ * (HkDraggableList), re-implemented for the horizontal one-row layout:
+ * the pressed card arms after a 6px threshold, a translucent GHOST clone
+ * (teleported to body, following the pointer 1:1, above page chrome but
+ * below every popup band) carries the card while its origin slot dims to
+ * a dashed placeholder, a 2px primary line on the drop target's edge
+ * marks where the card lands, and the reorder commits ONCE at pointerup
+ * — the cards themselves never move mid-drag.
  *
  * Every mutation writes the shared statsPrefs store (setOverlayColumns),
  * so the live panel, the post-battle panels and the Tab overlay apply it
@@ -27,134 +35,239 @@ import { t } from "@/i18n";
 import {
   OVERLAY_COLUMN_LIMIT,
   useStatsPrefsStore,
-  type OverlayColumn,
   type OverlayColumnMetric,
   type OverlayColumnScope,
 } from "@/stores/statsPrefs";
 import "./OverlayColumnsEditor.scss";
 
-/** The add-menu's scope options, in the settings' canonical order. */
-const SCOPE_TABS: Array<{ key: OverlayColumnScope; label: string }> = [
-  { key: "global", label: t("settings.overlayContent.colScopeGlobal") },
-  { key: "solo", label: t("settings.overlayContent.colScopeSolo") },
-  { key: "ship", label: t("settings.overlayContent.colScopeShip") },
-  { key: "class", label: t("settings.overlayContent.colScopeClass") },
-];
+/** Effective CSS `zoom` between a body-level element and the viewport
+ *  root — hikari's runtime cssZoom.ancestorZoom, ported verbatim (it is
+ *  not re-exported through the package's ./runtime entry): standardized
+ *  zoom makes getBoundingClientRect() report the ROOT VISUAL space while
+ *  fixed px assigned inside the zoomed subtree paint in local space, so
+ *  the drag ghost's fixed-position writes must divide by the cumulative
+ *  factor or they land zoom× off the pointer. */
+function ancestorZoom(el: Element | null | undefined): number {
+  if (typeof window === "undefined" || !el) return 1;
+  let zoom = 1;
+  let cur: Element | null = el;
+  while (cur) {
+    const raw = (window.getComputedStyle(cur) as CSSStyleDeclaration & {
+      zoom?: string | number;
+    }).zoom;
+    const v =
+      typeof raw === "number"
+        ? raw
+        : typeof raw === "string"
+          ? Number.parseFloat(raw)
+          : Number.NaN;
+    if (Number.isFinite(v) && v > 0) zoom *= v;
+    cur = cur.parentElement;
+  }
+  return zoom > 0 ? zoom : 1;
+}
+
+/** scope value → its option's i18n key (render-time `t()` — the label
+ *  must follow the loaded locale, never the module-import-time one). */
+const SCOPE_KEY: Record<OverlayColumnScope, string> = {
+  global: "settings.overlayContent.colScopeGlobal",
+  solo: "settings.overlayContent.colScopeSolo",
+  ship: "settings.overlayContent.colScopeShip",
+  class: "settings.overlayContent.colScopeClass",
+};
+
+/** metric value → its option's i18n key. */
+const METRIC_KEY: Record<OverlayColumnMetric, string> = {
+  winrate: "settings.overlayContent.colMetricWinrate",
+  pr: "settings.overlayContent.colMetricPr",
+  battles: "settings.overlayContent.colMetricBattles",
+  damage: "settings.overlayContent.colMetricDamage",
+};
+
+/** The add-menu's scope options, in the settings' canonical order —
+ *  built at RENDER time so the labels are the loaded locale's (the
+ *  module-scope arrays this replaces froze whatever `t()` answered at
+ *  import, i.e. raw keys). */
+const scopeTabs = () =>
+  (Object.keys(SCOPE_KEY) as OverlayColumnScope[]).map((key) => ({
+    key,
+    label: t(SCOPE_KEY[key]),
+  }));
 
 /** The add-menu's metric options (the issue-1082 ordering: 场均/PR/胜率/
- *  场次). */
-const METRIC_TABS: Array<{ key: OverlayColumnMetric; label: string }> = [
-  { key: "damage", label: t("settings.overlayContent.colMetricDamage") },
-  { key: "pr", label: t("settings.overlayContent.colMetricPr") },
-  { key: "winrate", label: t("settings.overlayContent.colMetricWinrate") },
-  { key: "battles", label: t("settings.overlayContent.colMetricBattles") },
-];
+ *  场次), render-time for the same reason. */
+const metricTabs = () =>
+  (["damage", "pr", "winrate", "battles"] as OverlayColumnMetric[]).map((key) => ({
+    key,
+    label: t(METRIC_KEY[key]),
+  }));
 
-const scopeLabel = (scope: OverlayColumnScope): string =>
-  t(
-    scope === "global"
-      ? "settings.overlayContent.colScopeGlobal"
-      : scope === "solo"
-        ? "settings.overlayContent.colScopeSolo"
-        : scope === "ship"
-          ? "settings.overlayContent.colScopeShip"
-          : "settings.overlayContent.colScopeClass",
-  );
+const scopeLabel = (scope: OverlayColumnScope): string => t(SCOPE_KEY[scope]);
 
-const metricLabel = (metric: OverlayColumnMetric): string =>
-  t(
-    metric === "winrate"
-      ? "settings.overlayContent.colMetricWinrate"
-      : metric === "pr"
-        ? "settings.overlayContent.colMetricPr"
-        : metric === "battles"
-          ? "settings.overlayContent.colMetricBattles"
-          : "settings.overlayContent.colMetricDamage",
-  );
+const metricLabel = (metric: OverlayColumnMetric): string => t(METRIC_KEY[metric]);
+
+interface DragState {
+  fromIndex: number;
+  placeholderIndex: number;
+  grabOffsetX: number;
+  grabOffsetY: number;
+}
 
 export default defineComponent({
   name: "OverlayColumnsEditor",
   setup() {
     const prefs = useStatsPrefsStore();
+    const columns = computed(() => prefs.prefs.overlayColumns);
 
-    // ── Cards row ───────────────────────────────────────────────────────
-    /** The rendered order — the store's list mirrored, so an in-flight
-     *  drag can reorder locally and commit once at drop. */
-    const order = ref<OverlayColumn[]>([...prefs.prefs.overlayColumns]);
-    watch(
-      () => prefs.prefs.overlayColumns,
-      (v) => {
-        if (dragFrom < 0) order.value = [...v];
-      },
-      { deep: true },
-    );
+    // ── Cards row: hikari's list-drag contract, horizontal ──────────────
+    const cardEls = ref<(HTMLElement | null)[]>([]);
+    /** Reactive drag snapshot (renders the source/placeholder faces);
+     *  null while at rest. */
+    const drag = ref<DragState | null>(null);
+    /** Render bump for the non-reactive cardEls writes (same trick
+     *  hikari's HkDraggableList uses). */
+    const tick = ref(0);
 
-    const rowEl = ref<HTMLElement | null>(null);
-    /** The card currently under the pointer (dragging face); -1 = none. */
-    const dragging = ref(-1);
-    let dragFrom = -1;
     let armed = false;
     let startX = 0;
+    let ghost: HTMLElement | null = null;
 
-    /** Which card slot the pointer x falls into (the last whose midpoint
-     *  it has passed — the adjacent-midpoint swap rule, horizontal). */
-    function indexAtX(x: number): number {
-      const cards = rowEl.value?.querySelectorAll<HTMLElement>(".overlay-columns__card");
-      if (!cards || cards.length === 0) return -1;
-      for (let i = 0; i < cards.length; i += 1) {
-        const r = cards[i].getBoundingClientRect();
-        if (x < r.left + r.width / 2) return i;
+    function setCardEl(index: number, el: unknown) {
+      cardEls.value[index] = (el as HTMLElement | null) ?? null;
+    }
+
+    /** The translucent clone riding under the pointer — teleported to
+     *  <body> (inside any root CSS zoom subtree, so its px are LOCAL
+     *  while getBoundingClientRect reports the VISUAL space; divide at
+     *  the write layer or the ghost paints zoom× too large and zoom× off
+     *  the pointer). Pointer-events off: the ghost is a visual, never a
+     *  hit target. */
+    function attachGhost(source: HTMLElement) {
+      detachGhost();
+      const rect = source.getBoundingClientRect();
+      const snapshot = source.outerHTML.replace(
+        /\s(data-dragging|data-placeholder)="[^"]*"/g,
+        "",
+      );
+      const z = ancestorZoom(document.body);
+      const node = document.createElement("div");
+      node.className = "overlay-columns__ghost";
+      node.innerHTML = snapshot;
+      node.style.width = `${rect.width / z}px`;
+      node.style.transform = `translate3d(${rect.left / z}px, ${rect.top / z}px, 0)`;
+      node.style.pointerEvents = "none";
+      document.body.appendChild(node);
+      ghost = node;
+    }
+
+    function detachGhost() {
+      ghost?.remove();
+      ghost = null;
+    }
+
+    function moveGhost(s: DragState, e: PointerEvent) {
+      if (!ghost) return;
+      const z = ancestorZoom(document.body);
+      const gx = (e.clientX - s.grabOffsetX) / z;
+      const gy = (e.clientY - s.grabOffsetY) / z;
+      ghost.style.transform = `translate3d(${gx}px, ${gy}px, 0)`;
+    }
+
+    /** Which slot the pointer x marks as the drop target — hikari's
+     *  adjacent-midpoint rule, horizontal: the first card whose midpoint
+     *  the pointer has not yet passed, the last card past every midpoint,
+     *  with the same fallback wrinkle (resting between cards resolves to
+     *  the last candidate, never back onto the source). */
+    function recomputePlaceholder(s: DragState, clientX: number) {
+      let target = s.fromIndex;
+      let fallback = s.fromIndex;
+      for (let i = 0; i < cardEls.value.length; i += 1) {
+        if (i === s.fromIndex) continue;
+        const el = cardEls.value[i];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        const mid = rect.left + rect.width / 2;
+        fallback = i;
+        if (clientX < mid) {
+          target = i;
+          break;
+        }
+        target = i;
       }
-      return cards.length - 1;
+      if (target === s.fromIndex && fallback !== s.fromIndex) {
+        target = fallback;
+      }
+      if (target !== s.placeholderIndex) {
+        s.placeholderIndex = target;
+        tick.value += 1;
+      }
     }
 
     function onPointerMove(e: PointerEvent) {
-      if (dragFrom < 0) return;
+      const s = drag.value;
+      if (!s) return;
       if (!armed) {
         // Press-to-arm: a 6px threshold separates a drag from the taps
         // and hovers a settings row normally receives.
         if (Math.abs(e.clientX - startX) < 6) return;
         armed = true;
-        dragging.value = dragFrom;
+        const source = cardEls.value[s.fromIndex];
+        // The ghost lands next frame (hikari's onceFrame cadence) — the
+        // drag may already be over (a fast flick) or the surface unmounted;
+        // both leave nothing to attach.
+        if (source) {
+          requestAnimationFrame(() => {
+            if (drag.value === s) attachGhost(source);
+          });
+        }
       }
       e.preventDefault();
-      const target = indexAtX(e.clientX);
-      if (target >= 0 && target !== dragFrom) {
-        const next = [...order.value];
-        const [moved] = next.splice(dragFrom, 1);
-        next.splice(target, 0, moved);
-        order.value = next;
-        dragFrom = target;
-        dragging.value = target;
-      }
+      moveGhost(s, e);
+      recomputePlaceholder(s, e.clientX);
     }
 
     function detachDrag() {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointercancel", onPointerUp);
+      detachGhost();
     }
 
     function onPointerUp() {
+      const s = drag.value;
       detachDrag();
-      if (armed && dragFrom >= 0) {
-        prefs.setOverlayColumns(order.value.map((c) => ({ ...c })));
+      if (s && armed && s.placeholderIndex !== s.fromIndex) {
+        // The one commit — the cards never moved mid-drag, so the list
+        // reorders exactly once, where the placeholder line sat.
+        const next = [...columns.value];
+        const [moved] = next.splice(s.fromIndex, 1);
+        next.splice(s.placeholderIndex, 0, moved);
+        prefs.setOverlayColumns(next);
       }
-      dragFrom = -1;
       armed = false;
-      dragging.value = -1;
+      drag.value = null;
+      tick.value += 1;
     }
 
-    // The settings surface can unmount mid-drag (a view flip while the
-    // pointer is down) — the window listeners must not outlive the
-    // component, or the dead handler would keep swallowing moves.
+    // The surface can unmount mid-drag (a view flip while the pointer is
+    // down) — the window listeners and any live ghost must not outlive
+    // the component.
     onBeforeUnmount(detachDrag);
 
     function onCardPointerDown(e: PointerEvent, index: number) {
       if (e.button !== 0) return;
+      if (drag.value) return;
       // The delete button owns its presses; the drag owns the rest.
       if ((e.target as HTMLElement).closest("button")) return;
-      dragFrom = index;
+      const el = cardEls.value[index];
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      drag.value = {
+        fromIndex: index,
+        placeholderIndex: index,
+        grabOffsetX: e.clientX - rect.left,
+        grabOffsetY: e.clientY - rect.top,
+      };
       armed = false;
       startX = e.clientX;
       window.addEventListener("pointermove", onPointerMove, { passive: false });
@@ -163,7 +276,7 @@ export default defineComponent({
     }
 
     function removeAt(index: number) {
-      const next = [...order.value];
+      const next = [...columns.value];
       next.splice(index, 1);
       prefs.setOverlayColumns(next);
     }
@@ -177,18 +290,23 @@ export default defineComponent({
     const selScope = ref<OverlayColumnScope>("global");
     const selMetric = ref<OverlayColumnMetric>("winrate");
 
-    const atLimit = computed(() => order.value.length >= OVERLAY_COLUMN_LIMIT);
+    const atLimit = computed(() => columns.value.length >= OVERLAY_COLUMN_LIMIT);
     const comboExists = computed(() =>
-      order.value.some((c) => c.scope === selScope.value && c.metric === selMetric.value),
+      columns.value.some(
+        (c) => c.scope === selScope.value && c.metric === selMetric.value,
+      ),
     );
     const canAdd = computed(() => !atLimit.value && !comboExists.value);
 
     /** Opening the menu lands on the first FREE combo (scope-major), so
      *  the confirm button starts enabled whenever anything is addable. */
-    function firstFreeCombo(): { scope: OverlayColumnScope; metric: OverlayColumnMetric } {
-      for (const s of SCOPE_TABS) {
-        for (const m of METRIC_TABS) {
-          if (!order.value.some((c) => c.scope === s.key && c.metric === m.key)) {
+    function firstFreeCombo(): {
+      scope: OverlayColumnScope;
+      metric: OverlayColumnMetric;
+    } {
+      for (const s of scopeTabs()) {
+        for (const m of metricTabs()) {
+          if (!columns.value.some((c) => c.scope === s.key && c.metric === m.key)) {
             return { scope: s.key, metric: m.key };
           }
         }
@@ -206,7 +324,7 @@ export default defineComponent({
     function confirmAdd() {
       if (!canAdd.value) return;
       prefs.setOverlayColumns([
-        ...order.value,
+        ...columns.value,
         { scope: selScope.value, metric: selMetric.value },
       ]);
       addOpen.value = false;
@@ -215,133 +333,150 @@ export default defineComponent({
       void nextTick(() => addBtn.value?.querySelector("button")?.focus());
     }
 
-    return () => (
-      <div class="overlay-columns">
-        {/* Cluster header: the label (+ live count) on the left, the add
-            connector on the RIGHT END — the issue-1082 spec. */}
-        <div class="overlay-columns__head">
-          <span class="overlay-columns__label">
-            {t("settings.overlayContent.columnsLabel")}
-            <span class="overlay-columns__count">
-              {order.value.length}/{OVERLAY_COLUMN_LIMIT}
+    return () => {
+      void tick.value;
+      const s = drag.value;
+      const cards = columns.value.map((col, index) => {
+        const isSource = s != null && s.fromIndex === index;
+        const placeholderDir =
+          s != null && !isSource && s.placeholderIndex === index
+            ? s.placeholderIndex < s.fromIndex
+              ? "before"
+              : "after"
+            : null;
+        return (
+          <div
+            key={`${col.scope}:${col.metric}`}
+            ref={(el: unknown) => setCardEl(index, el)}
+            class="overlay-columns__card"
+            data-dragging={isSource || undefined}
+            data-placeholder={placeholderDir || undefined}
+            onPointerdown={(e: PointerEvent) => onCardPointerDown(e, index)}
+          >
+            <span class="overlay-columns__card-grip">
+              <GripHorizontal size={13} />
             </span>
-          </span>
-          <span
-            ref={addBtn}
-            class="overlay-columns__add"
-            data-hint={
-              atLimit.value
-                ? t("settings.overlayContent.colLimitHint")
-                : t("settings.overlayContent.colAdd")
-            }
-          >
-            <HkIconButton
-              variant="primary"
-              disabled={atLimit.value}
-              aria-label={t("settings.overlayContent.colAdd")}
-              onClick={() => (addOpen.value = !addOpen.value)}
+            <span class="overlay-columns__card-text">
+              <span class="overlay-columns__card-metric">{metricLabel(col.metric)}</span>
+              <span class="overlay-columns__card-scope">{scopeLabel(col.scope)}</span>
+            </span>
+            <span
+              class="overlay-columns__del"
+              data-hint={t("settings.overlayContent.colRemove")}
             >
-              <Plus size={16} />
-            </HkIconButton>
-          </span>
-          <HkPopover
-            modelValue={addOpen.value}
-            onUpdate:modelValue={(v: boolean) => {
-              if (!v) addOpen.value = false;
-            }}
-            anchorRef={addBtn.value}
-            placement="bottom-end"
-            title={t("settings.overlayContent.colAdd")}
-          >
-            <div class="overlay-columns__menu">
-              <div class="overlay-columns__menu-group">
-                <span class="overlay-columns__menu-label">
-                  {t("settings.overlayContent.colScope")}
-                </span>
-                <HkTabs
-                  variant="segmented"
-                  modelValue={selScope.value}
-                  onUpdate:modelValue={(v: string) =>
-                    (selScope.value = v as OverlayColumnScope)
-                  }
-                  tabs={SCOPE_TABS}
-                />
-              </div>
-              <div class="overlay-columns__menu-group">
-                <span class="overlay-columns__menu-label">
-                  {t("settings.overlayContent.colMetric")}
-                </span>
-                <HkTabs
-                  variant="segmented"
-                  modelValue={selMetric.value}
-                  onUpdate:modelValue={(v: string) =>
-                    (selMetric.value = v as OverlayColumnMetric)
-                  }
-                  tabs={METRIC_TABS}
-                />
-              </div>
-              {/* The menu's own copy keeps up with the selection: what the
-                  confirm button would add, or why it cannot. */}
-              <div class="overlay-columns__menu-foot">
-                <span class="overlay-columns__menu-hint">
-                  {atLimit.value
-                    ? t("settings.overlayContent.colLimitHint")
-                    : comboExists.value
-                      ? t("settings.overlayContent.colDupHint")
-                      : `${scopeLabel(selScope.value)} · ${metricLabel(selMetric.value)}`}
-                </span>
-                <HkButton
-                  variant="primary"
-                  size="sm"
-                  disabled={!canAdd.value}
-                  onClick={confirmAdd}
-                >
-                  {t("settings.overlayContent.colAddConfirm")}
-                </HkButton>
-              </div>
-            </div>
-          </HkPopover>
-        </div>
-        {/* The cards row — one line, every card an equal slice of the
-            whole width (flex: 1 1 0), 1 to 5 of them. */}
-        <div ref={rowEl} class={{ "overlay-columns__row": true, "overlay-columns__row--dragging": dragging.value >= 0 }}>
-          {order.value.map((col, i) => (
-            <div
-              key={`${col.scope}:${col.metric}`}
-              class={{
-                "overlay-columns__card": true,
-                "overlay-columns__card--dragging": dragging.value === i,
-              }}
-              onPointerdown={(e: PointerEvent) => onCardPointerDown(e, i)}
-            >
-              <span class="overlay-columns__card-grip">
-                <GripHorizontal size={13} />
-              </span>
-              <span class="overlay-columns__card-text">
-                <span class="overlay-columns__card-metric">{metricLabel(col.metric)}</span>
-                <span class="overlay-columns__card-scope">{scopeLabel(col.scope)}</span>
-              </span>
-              <span
-                class="overlay-columns__del"
-                data-hint={t("settings.overlayContent.colRemove")}
+              <HkIconButton
+                variant="ghost"
+                aria-label={t("settings.overlayContent.colRemove")}
+                onClick={() => removeAt(index)}
               >
-                <HkIconButton
-                  variant="ghost"
-                  aria-label={t("settings.overlayContent.colRemove")}
-                  onClick={() => removeAt(i)}
-                >
-                  <Trash2 size={14} />
-                </HkIconButton>
+                <Trash2 size={14} />
+              </HkIconButton>
+            </span>
+          </div>
+        );
+      });
+      return (
+        <div class="overlay-columns">
+          {/* Cluster header: the label (+ live count) on the left, the add
+              connector on the RIGHT END — the issue-1082 spec. */}
+          <div class="overlay-columns__head">
+            <span class="overlay-columns__label">
+              {t("settings.overlayContent.columnsLabel")}
+              <span class="overlay-columns__count">
+                {columns.value.length}/{OVERLAY_COLUMN_LIMIT}
               </span>
-            </div>
-          ))}
-          {order.value.length === 0 ? (
-            <div class="overlay-columns__empty">
-              {t("settings.overlayContent.colEmpty")}
-            </div>
-          ) : null}
+            </span>
+            <span
+              ref={addBtn}
+              class="overlay-columns__add"
+              data-hint={
+                atLimit.value
+                  ? t("settings.overlayContent.colLimitHint")
+                  : t("settings.overlayContent.colAdd")
+              }
+            >
+              <HkIconButton
+                variant="primary"
+                disabled={atLimit.value}
+                aria-label={t("settings.overlayContent.colAdd")}
+                onClick={() => (addOpen.value = !addOpen.value)}
+              >
+                <Plus size={16} />
+              </HkIconButton>
+            </span>
+            <HkPopover
+              modelValue={addOpen.value}
+              onUpdate:modelValue={(v: boolean) => {
+                if (!v) addOpen.value = false;
+              }}
+              anchorRef={addBtn.value}
+              placement="bottom-end"
+              title={t("settings.overlayContent.colAdd")}
+            >
+              <div class="overlay-columns__menu">
+                <div class="overlay-columns__menu-group">
+                  <span class="overlay-columns__menu-label">
+                    {t("settings.overlayContent.colScope")}
+                  </span>
+                  <HkTabs
+                    variant="segmented"
+                    modelValue={selScope.value}
+                    onUpdate:modelValue={(v: string) =>
+                      (selScope.value = v as OverlayColumnScope)
+                    }
+                    tabs={scopeTabs()}
+                  />
+                </div>
+                <div class="overlay-columns__menu-group">
+                  <span class="overlay-columns__menu-label">
+                    {t("settings.overlayContent.colMetric")}
+                  </span>
+                  <HkTabs
+                    variant="segmented"
+                    modelValue={selMetric.value}
+                    onUpdate:modelValue={(v: string) =>
+                      (selMetric.value = v as OverlayColumnMetric)
+                    }
+                    tabs={metricTabs()}
+                  />
+                </div>
+                {/* The menu's own copy keeps up with the selection: what the
+                    confirm button would add, or why it cannot. */}
+                <div class="overlay-columns__menu-foot">
+                  <span class="overlay-columns__menu-hint">
+                    {atLimit.value
+                      ? t("settings.overlayContent.colLimitHint")
+                      : comboExists.value
+                        ? t("settings.overlayContent.colDupHint")
+                        : `${scopeLabel(selScope.value)} · ${metricLabel(selMetric.value)}`}
+                  </span>
+                  <HkButton
+                    variant="primary"
+                    size="sm"
+                    disabled={!canAdd.value}
+                    onClick={confirmAdd}
+                  >
+                    {t("settings.overlayContent.colAddConfirm")}
+                  </HkButton>
+                </div>
+              </div>
+            </HkPopover>
+          </div>
+          {/* The cards row — one line, every card an equal slice of the
+              whole width (flex: 1 1 0), 1 to 5 of them. */}
+          <div
+            class="overlay-columns__row"
+            data-dragging={s ? "" : undefined}
+          >
+            {cards}
+            {columns.value.length === 0 ? (
+              <div class="overlay-columns__empty">
+                {t("settings.overlayContent.colEmpty")}
+              </div>
+            ) : null}
+          </div>
         </div>
-      </div>
-    );
+      );
+    };
   },
 });
