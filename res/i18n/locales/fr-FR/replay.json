@@ -401,7 +401,8 @@
     },
     "hint": {
       "pin": "Cliquez sur un navire pour épingler sa trace réelle",
-      "region": "Tracez la zone d'export (Échap pour annuler)"
+      "region": "Tracez la zone d'export (Échap pour annuler)",
+      "orderTrace": "Glissez pour tracer la trajectoire — au relâchement elle s'ajuste en courbes et calcule le temps d'arrivée minimal"
     },
     "text": {
       "placeholder": "Saisissez une note, Entrée pour valider"

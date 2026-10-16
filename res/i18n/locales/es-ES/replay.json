@@ -401,7 +401,8 @@
     },
     "hint": {
       "pin": "Haz clic en un buque para fijar su trayectoria real",
-      "region": "Arrastra para elegir la zona de exportación (Esc para cancelar)"
+      "region": "Arrastra para elegir la zona de exportación (Esc para cancelar)",
+      "orderTrace": "Arrastra para trazar la trayectoria: al soltar se ajusta a curvas y calcula el tiempo mínimo de llegada"
     },
     "text": {
       "placeholder": "Escribe una nota y pulsa Intro"

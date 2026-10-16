@@ -88,6 +88,20 @@ export function wrapAngle(a: number): number {
   return x;
 }
 
+/** Minimum time to traverse a whole polyline: its arc length under the
+ *  hull's accel/decel profile, starting from half speed (the plan-mode
+ *  convention — an author usually sketches mid-battle). This is the
+ *  number stamped under a hand-drawn trajectory. */
+export function estimatePolylineTime(pts: Vec2[], kin: ShipKinematics): number {
+  const v = kin.topSpeedKn * KN_TO_MS / 30; // world units per second
+  const accel = v / kin.accelS;
+  let dist = 0;
+  for (let i = 1; i < pts.length; i++) {
+    dist += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+  }
+  return travelTime(dist, v * 0.5, v, accel);
+}
+
 /** Time to cover `dist` metres accelerating linearly from v0 toward vmax
  *  (then holding). Closed form of the two-phase solution. */
 function travelTime(dist: number, v0: number, vmax: number, accel: number): number {

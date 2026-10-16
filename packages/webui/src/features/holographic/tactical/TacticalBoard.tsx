@@ -41,7 +41,9 @@ import {
   zoneSourceOf,
   type PlanUnit,
 } from "./lineup";
-import { kinematicsOf, planLeg, type Pose } from "./kinematics";
+import { estimatePolylineTime, kinematicsOf, planLeg, type Pose } from "./kinematics";
+import { fitCurve, sampleSegments } from "./freehand";
+import { polylineLength, simplifyRDP } from "./geometry";
 import {
   zoneEndedAt,
   zoneParamsOf,
@@ -111,7 +113,10 @@ type Drag =
   | { kind: "region"; from: Vec2; to: Vec2 }
   | { kind: "pan"; lastLx: number; lastLy: number }
   | { kind: "route"; raw: Vec2[] }
-  | { kind: "erase" };
+  | { kind: "erase" }
+  /** Plan board: freehand trajectory gesture for the selected unit — the
+   *  raw samples fit to Béziers on release. */
+  | { kind: "orderTrace"; unitKey: string; raw: Vec2[] };
 
 /** Min drag extents (logical px) below which a gesture is treated as a click. */
 const MIN_SHAPE_PX = 8;
@@ -487,6 +492,48 @@ export default defineComponent({
       const tween = planTweensOf(store.elements.value).get(el.id) ?? null;
       const pose = markerPoseAt(el, props.getTime(), tween);
       return { at: pose.at, heading: pose.heading };
+    }
+
+    /** Freehand order: the author drew the trajectory — fit Béziers, time
+     *  the sampled polyline, commit it as the unit's scripted route and
+     *  advance the clock to arrival. A too-short scribble (a stray click)
+     *  is rejected; the caller treats it as a deselect. */
+    function commitOrderTrace(
+      pu: PlanUnit,
+      raw: Vec2[],
+      opts: { mirrorChain?: boolean; seek?: boolean } = {},
+    ): boolean {
+      const owner = owningMarkerOf(pu.key);
+      if (!owner || raw.length < 2) return false;
+      const pose = unitPoseOf(owner);
+      // The curve starts at the hull itself; light simplification keeps
+      // the fit stable against pointer jitter.
+      const simplified = simplifyRDP([pose.at, ...raw], (proj()?.worldPerPx ?? 1) * 1.5);
+      if (polylineLength(simplified) < (proj()?.worldPerPx ?? 1) * 12) return false;
+      const segs = fitCurve(simplified, (proj()?.worldPerPx ?? 1) * 4);
+      const poly = sampleSegments(segs, 10);
+      if (poly.length < 2) return false;
+      const kin = kinematicsOf(pu.unit.topSpeedKn, pu.unit.shipType);
+      const durS = Math.round(estimatePolylineTime(poly, kin) * 10) / 10;
+      const t = props.getTime();
+      store.commit({
+        ...commitMarker(pose.at, pose.heading, "ship", TEAM_COLOR[pu.side], t, pu.key, "move"),
+        route: poly,
+        moveDur: durS,
+        shipId: pu.unit.entry.shipId,
+        team: pu.side,
+      });
+      if (opts.seek !== false) {
+        props.seekTo(Math.min(props.getDuration(), t + durS));
+      }
+      if (opts.mirrorChain !== false && props.mirror && pu.mateKey) {
+        const mate = planUnitByKey(pu.mateKey);
+        const full = props.getFullBounds?.();
+        if (mate && full) {
+          commitOrderTrace(mate, raw.map((q) => mirrorPoint(q, full)), { mirrorChain: false, seek: false });
+        }
+      }
+      return true;
     }
 
     /** RTS order: plan the leg with the kinematics estimator, commit it as
@@ -1023,6 +1070,24 @@ export default defineComponent({
             route: d.raw,
             moveDur: 30,
           };
+        case "orderTrace": {
+          // The in-flight trajectory as a plain stroke in the hull's team
+          // colour, running from the HULL itself (the commit prepends its
+          // pose) to the pen — no ghost glyph at the pen-down point.
+          const pu = planUnitByKey(d.unitKey);
+          const owner = pu ? owningMarkerOf(pu.key) : null;
+          const startAt = owner ? unitPoseOf(owner).at : d.raw[0];
+          return {
+            id: "preview",
+            kind: "freehand",
+            t0: 0,
+            points: [startAt, ...d.raw],
+            drawIn: 0,
+            color: pu ? TEAM_COLOR[pu.side] : look.color,
+            width: 3,
+            dash: "solid",
+          };
+        }
         default:
           return null;
       }
@@ -1088,6 +1153,71 @@ export default defineComponent({
       // else (pan, select, orders) waits until the aim resolves.
       if (aiming.value) {
         commitAim();
+        return;
+      }
+      // PLAN board has no tool modes at all: drag on empty water pans
+      // (Space held pans anywhere), a hull click selects it, and a drag
+      // with a hull selected draws its trajectory. The replay annotation
+      // host keeps the full tool machinery.
+      if (props.planMode) {
+        if (!props.editMode || spacePanning.value) {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          drag.value = { kind: "pan", lastLx: hit.lx, lastLy: hit.ly };
+          return;
+        }
+        if (regionMode.value) {
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          drag.value = { kind: "region", from: hit.p, to: hit.p };
+          return;
+        }
+        // Arrival knob for an ordered (scripted) hull outranks hit-testing.
+        if (store.selectedId.value) {
+          const sel0 = store.elements.value.find((x) => x.id === store.selectedId.value);
+          if (sel0 && sel0.kind === "marker" && sel0.shipId != null && sel0.route != null) {
+            const handle = markerHandlePx(
+              sel0,
+              store.elements.value,
+              hit.p2,
+              props.getTime(),
+              rotateOverride.value ?? undefined,
+            );
+            if (handle && Math.hypot(handle.at.x - hit.lx, handle.at.y - hit.ly) <= 9) {
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              drag.value = { kind: "rotate", id: sel0.id, pushed: false };
+              return;
+            }
+          }
+        }
+        const target = hitTest(hit.p, hit.p2);
+        const sel = store.selected.value;
+        if (target != null) {
+          store.selectedId.value = target.id;
+          // Selectable but immovable: an ordered hull sits at its route's
+          // start — dragging would desync hull from trajectory. Spawn
+          // poses (no route) and plain annotations still drag.
+          const movable =
+            target.kind !== "replayPath" && target.kind !== "zone" &&
+            !(target.kind === "marker" && target.route != null);
+          if (movable) {
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            drag.value = { kind: "move", id: target.id, grab: hit.p, last: hit.p, pushed: false };
+          }
+          return;
+        }
+        if (sel && sel.kind === "marker" && sel.shipId != null) {
+          const pu = planUnitByKey(sel.label);
+          if (pu) {
+            // Trajectory gesture begins: the raw line is captured and
+            // fitted to Béziers on release.
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            hoverLeg.value = null;
+            drag.value = { kind: "orderTrace", unitKey: pu.key, raw: [hit.p] };
+            return;
+          }
+        }
+        // Empty water, nothing selected: pan.
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        drag.value = { kind: "pan", lastLx: hit.lx, lastLy: hit.ly };
         return;
       }
       // View-only mode still pans/zooms the camera (annotations are read).
@@ -1343,6 +1473,13 @@ export default defineComponent({
           }
           break;
         }
+        case "orderTrace": {
+          const last = d.raw[d.raw.length - 1];
+          if (!last || Math.hypot(last.x - hit.p.x, last.z - hit.p.z) > hit.p2.worldPerPx * 1.2) {
+            d.raw.push(hit.p);
+          }
+          break;
+        }
         case "erase":
           eraseAt(hit.p, hit.p2);
           break;
@@ -1483,6 +1620,18 @@ export default defineComponent({
               (pr?.worldPerPx ?? 1) * 2.2,
             );
             if (el) store.commit(el);
+          }
+          break;
+        }
+        case "orderTrace": {
+          const pu = planUnitByKey(d.unitKey);
+          if (pu) {
+            const ok = commitOrderTrace(pu, d.raw);
+            if (!ok && !aiming.value) {
+              // A too-short scribble reads as a click on empty water —
+              // drop the selection so the next drag pans again.
+              store.selectedId.value = null;
+            }
           }
           break;
         }
@@ -1716,10 +1865,8 @@ export default defineComponent({
         return;
       }
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        const tool = TOOL_KEYS[e.key.toLowerCase()];
+        const tool = props.planMode ? undefined : TOOL_KEYS[e.key.toLowerCase()];
         if (tool) {
-          // The plan board has no replay to pin a path from.
-          if (props.planMode && tool === "pinPath") return;
           store.tool.value = tool as typeof store.tool.value;
           regionMode.value = false;
           return;
@@ -2093,6 +2240,16 @@ export default defineComponent({
     }
 
     const cursorClass = computed(() => {
+      if (props.planMode) {
+        // Cross while a hull is selected (drawing its trajectory); grab
+        // otherwise. The gesture in flight keeps the cross.
+        const sel = store.selected.value;
+        const drawing = drag.value?.kind === "orderTrace";
+        if (drawing || (sel?.kind === "marker" && sel.shipId != null)) {
+          return "tac-layer__canvas--cross";
+        }
+        return "tac-layer__canvas--grab";
+      }
       if (aiming.value) return "tac-layer__canvas--cross";
       if (drag.value?.kind === "pan" || spacePanning.value || !props.editMode) {
         return "tac-layer__canvas--grab";
@@ -2188,6 +2345,11 @@ export default defineComponent({
               <button class="tac-layer__rec-cancel" onClick={cancelOfflineExport}>
                 {i18nT("replay.tactical.export.cancel")}
               </button>
+            </div>
+          ) : null}
+          {drag.value?.kind === "orderTrace" ? (
+            <div class="tac-layer__hint" onClick={(e: MouseEvent) => e.stopPropagation()}>
+              {i18nT("replay.tactical.hint.orderTrace")}
             </div>
           ) : null}
           {regionMode.value ? (

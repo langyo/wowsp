@@ -471,6 +471,25 @@ function drawElement(
         strokePolylineWorld(ctx, routePts, proj);
         ctx.setLineDash([]);
         ctx.globalAlpha = alpha;
+        // The trajectory's minimum traversal time rides UNDER the curve's
+        // end — the number the kinematics estimator committed (mm:ss).
+        // shipId separates unit-ordered trajectories from hand-drawn
+        // annotation routes (whose moveDur is just animation length).
+        if (el.shipId != null && el.moveDur && el.moveDur > 0 && mode === "normal") {
+          const end = routePts[routePts.length - 1];
+          const endPx = proj.toPx(end);
+          const total = Math.round(el.moveDur);
+          const m = Math.floor(total / 60);
+          const sec = total % 60;
+          drawLabelChip(
+            ctx,
+            `${m}:${String(sec).padStart(2, "0")}`,
+            endPx.x,
+            endPx.y + 14,
+            el.color,
+            "center",
+          );
+        }
       } else if (tween && mode === "normal") {
         // Leg: the straight line this action travels, dashed, ending in an
         // arrowhead plus an arrival ring on the spot it is ordered to (the
@@ -699,12 +718,13 @@ function drawLegPreview(ctx: CanvasRenderingContext2D, opts: RenderOptions): voi
   const from = opts.proj.toPx(pv.path[0]);
   const to = opts.proj.toPx(pv.to);
   drawArrowHead(ctx, from, to, 1.8, "rgba(0, 195, 255, 0.95)");
-  const m = Math.floor(pv.durS / 60);
-  const sec = Math.round(pv.durS % 60);
+  const total = Math.round(pv.durS);
+  const m = Math.floor(total / 60);
+  const sec = total % 60;
   const eta = `${m}:${String(sec).padStart(2, "0")}`;
-  const arrive = opts.time + pv.durS;
+  const arrive = Math.round(opts.time + pv.durS);
   const am = Math.floor(arrive / 60);
-  const as = Math.round(arrive % 60);
+  const as = arrive % 60;
   drawLabelChip(
     ctx,
     `${eta} · T+${am}:${String(as).padStart(2, "0")}`,
