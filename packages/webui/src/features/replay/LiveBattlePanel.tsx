@@ -1477,11 +1477,10 @@ export default defineComponent({
                 hover previews the map's bundled minimap, click opens the
                 map's tactical board — see MapNameTag. */}
             <MapNameTag class="live-battle__map" spaceId={props.arena.mapName} lang={dataLanguage.value} />
-            {/* Stats-source mode tag: shows the current battle-type
-                scope and opens the same selector the settings page hosts
-                (one shared store — both stay in sync live). The ship/solo
-                scopes live in the columns themselves now (the settings'
-                column editor). */}
+            {/* Stats-source mode tag: opens the very column editor the
+                settings page hosts (drag cards + the add connector) with
+                the panel-wide battle scope beneath — one shared store,
+                every surface stays in sync live. */}
             <LiveStatsModeChip />
             {/* Copy-share-shot: the roster as a watermarked PNG straight
                 onto the clipboard — the share path itself, no separate

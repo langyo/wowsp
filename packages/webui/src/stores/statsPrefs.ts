@@ -38,6 +38,19 @@ export interface OverlayColumn {
 
 export const OVERLAY_COLUMN_LIMIT = 5;
 
+/** True when the column list IS the shipped default (the four global
+ *  career columns) — the surfaces' "customized" faces (the live head's
+ *  stats-source chip) key off this. */
+export function overlayColumnsAreDefault(
+  cols: readonly OverlayColumn[],
+): boolean {
+  const d = DEFAULT_STATS_PREFS.overlayColumns;
+  if (cols.length !== d.length) return false;
+  return d.every(
+    (c, i) => cols[i]?.scope === c.scope && cols[i]?.metric === c.metric,
+  );
+}
+
 /** Which battle-type career the columns read — the one remaining
  *  panel-wide stats-source dimension: "follow" tracks the current battle
  *  (ranked battles read the ranked career, everything else randoms), the

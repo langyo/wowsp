@@ -11,6 +11,7 @@ import {
   DEFAULT_STATS_PREFS,
   STATS_PREFS_STORAGE_KEY,
   loadStatsPrefs,
+  overlayColumnsAreDefault,
   useStatsPrefsStore,
 } from "./statsPrefs";
 
@@ -295,6 +296,26 @@ describe("loadStatsPrefs", () => {
       JSON.stringify({ overlayStatsMode: "ranked", overlayBattleScope: "all" }),
     );
     expect(loadStatsPrefs().overlayBattleScope).toBe("all");
+  });
+});
+
+describe("overlayColumnsAreDefault", () => {
+  it("matches only the shipped four global columns", () => {
+    expect(overlayColumnsAreDefault(DEFAULT_STATS_PREFS.overlayColumns)).toBe(true);
+    // Reordered → not default (the chip's customized face keys on this).
+    const reordered = [...DEFAULT_STATS_PREFS.overlayColumns].reverse();
+    expect(overlayColumnsAreDefault(reordered)).toBe(false);
+    // Scoped / added / removed → not default.
+    expect(
+      overlayColumnsAreDefault([{ scope: "ship", metric: "winrate" }]),
+    ).toBe(false);
+    expect(overlayColumnsAreDefault([])).toBe(false);
+    expect(
+      overlayColumnsAreDefault([
+        ...DEFAULT_STATS_PREFS.overlayColumns,
+        { scope: "solo", metric: "battles" },
+      ]),
+    ).toBe(false);
   });
 });
 

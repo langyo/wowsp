@@ -1,26 +1,28 @@
 /**
- * LiveStatsModeChip — the stats-source tag: a pill that shows the current
- * battle-scope selection and opens a filter-style popup hosting the very
- * segmented group the settings page renders (OverlayContentControls) —
- * identical option set, reading and writing the SAME statsPrefs store
- * field, so a flip here shows up in the settings and vice versa,
- * immediately.
- *
- * The ship/solo scopes this chip used to carry moved INTO the roster
- * columns themselves (settings' column editor — each column is a scope ×
- * metric pair now); the battle-type career is the one dimension that
- * stays panel-wide, and it is the one this chip flips.
+ * LiveStatsModeChip — the stats-source tag: a pill that opens the
+ * filter-style popup hosting THE VERY COLUMN EDITOR the settings page
+ * renders (OverlayColumnsEditor — the draggable scope × metric cards +
+ * the plus-connector's add menu), so the roster's per-column content is
+ * editable right where it renders. The retired three-row dimension
+ * filter groups (ship / battle / solo scopes) are gone: the ship/solo
+ * scopes moved INTO the columns themselves; the battle-type career —
+ * the one dimension that stays panel-wide — keeps its segmented row
+ * under the editor, reading and writing the SAME statsPrefs store field
+ * the settings page hosts.
  *
  * Mounted in two hosts: the live panel's head and the post-battle share
  * bar (PostBattleShareBar — riding the replay results modal and its
  * incomplete-results fallback), so both windows offer the identical
- * selector and every flip re-resolves the roster through the shared store.
+ * selector and every edit re-resolves the roster through the shared store.
  *
  * The popup frame follows the filter-bar popup pattern (FilterCategoryChip):
  * HkPopover teleported to body level and anchored bottom-start, outside
  * close via a document pointerdown listener while open (HkPopover's own
  * backdrop close stays off on desktop so re-clicking the open chip keeps
  * toggling it; Escape still closes), phones dock it as a bottom sheet.
+ * Presses inside ANY hikari popover panel count as inside — the editor's
+ * own add-connector opens a NESTED HkPopover that teleports to body
+ * level, outside this anchor's subtree.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 
@@ -28,7 +30,12 @@ import { HkPopover, HkTabs, useBreakpoint } from "@celestia-island/hikari";
 import { ShipWheel } from "@lucide/vue";
 
 import { t } from "@/i18n";
-import { useStatsPrefsStore, type RosterBattleScope } from "@/stores/statsPrefs";
+import {
+  overlayColumnsAreDefault,
+  useStatsPrefsStore,
+  type RosterBattleScope,
+} from "@/stores/statsPrefs";
+import OverlayColumnsEditor from "@/components/settings/OverlayColumnsEditor";
 import "./LiveStatsModeChip.scss";
 
 /** scope value → its option label key (the settings row uses the same). */
@@ -60,6 +67,17 @@ export default defineComponent({
       const target = e.target as Node;
       if (root.value?.contains(target)) return;
       if (panelEl.value?.contains(target)) return;
+      // The editor's add-connector opens a NESTED HkPopover that
+      // teleports to body level — outside this anchor's subtree, but a
+      // press inside the columns editor all the same; any hikari popover
+      // panel (the nested menu, its scrim) counts as inside.
+      if (
+        typeof Element !== "undefined" &&
+        target instanceof Element &&
+        target.closest(".hk-popover-panel, .hk-popover-scrim")
+      ) {
+        return;
+      }
       close();
     }
 
@@ -74,20 +92,31 @@ export default defineComponent({
       document.removeEventListener("pointerdown", onDocPointerDown, true);
     });
 
-    /** The battle scope off its default — the chip then wears its active
-     *  face, exactly like the head's other toggles. */
+    /** Any dimension off its default — the columns edited off the
+     *  shipped four, or the battle scope pinned — the chip then wears
+     *  its active face, exactly like the head's other toggles. */
     const customized = computed(
-      () => prefs.prefs.overlayBattleScope !== "follow",
+      () =>
+        !overlayColumnsAreDefault(prefs.prefs.overlayColumns) ||
+        prefs.prefs.overlayBattleScope !== "follow",
     );
 
-    /** The non-default battle scope; the resting face is the chip's own
-     *  name ("战绩筛选") — never the option label, which would collide
-     *  with the identically-named option inside the popup. */
-    const label = computed(() =>
-      prefs.prefs.overlayBattleScope !== "follow"
-        ? t(BATTLE_SCOPE_LABEL[prefs.prefs.overlayBattleScope])
-        : t("replay.live.statsSourceTitle"),
-    );
+    /** The non-default dimensions joined with " · "; the resting face is
+     *  the chip's own name ("战绩筛选") — never an option label, which
+     *  would collide with the identically-named option inside the
+     *  popup. */
+    const label = computed(() => {
+      const parts: string[] = [];
+      if (!overlayColumnsAreDefault(prefs.prefs.overlayColumns)) {
+        parts.push(t("settings.overlayContent.columnsLabel"));
+      }
+      if (prefs.prefs.overlayBattleScope !== "follow") {
+        parts.push(t(BATTLE_SCOPE_LABEL[prefs.prefs.overlayBattleScope]));
+      }
+      return parts.length > 0
+        ? parts.join(" · ")
+        : t("replay.live.statsSourceTitle");
+    });
 
     return () => (
       <div ref={root} class="live-battle__mode-anchor">
@@ -116,6 +145,12 @@ export default defineComponent({
           title={t("replay.live.statsSourceTitle")}
         >
           <div ref={panelEl} class="live-battle__mode-pop">
+            {/* The columns themselves — the identical editor the
+                settings' 显示内容 section renders (one shared store:
+                edits here show up there, and vice versa). */}
+            <OverlayColumnsEditor />
+            {/* The battle-type career feeding every column — the one
+                panel-wide dimension left. */}
             <div class="live-battle__mode-group">
               <span class="live-battle__mode-group-label">
                 {t("settings.overlayContent.battleScope")}

@@ -44,11 +44,21 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  min-width: 17rem;
+  /* Wide enough for the column editor's card row + the add menu's
+   *  segmented groups (the retired dimension rows fit at 17rem; the
+   *  scope options 仅当前舰种 etc. do not). */
+  width: min(24rem, calc(100vw - 2.5rem));
   /* The popover chrome's own padding is a bare 4px (hikari
      .hii-dropdown-content) — the slot content owns the real inset, the
      same family voice as .ship-filter-bar__pop / .async-search-combo__panel. */
   padding: 10px 12px 8px;
+
+  /* The columns editor rides first (the draggable cards + the add
+     connector); its add menu teleports to body level and anchors to the
+     plus button, so it sizes itself outside this panel entirely. */
+  .overlay-columns {
+    margin: 0 -2px;
+  }
 
   .live-battle__mode-group {
     display: flex;
