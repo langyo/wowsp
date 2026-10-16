@@ -14,6 +14,7 @@ import { HkIconButton } from "@celestia-island/hikari";
 import { Maximize2, ZoomIn, ZoomOut } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import type { MapBounds } from "../modelLoader";
+import { MAP_GRID_COLUMNS } from "./mapGrid";
 import type { CapSpec } from "./modes";
 import "./OverviewPanel.scss";
 
@@ -122,6 +123,22 @@ export default defineComponent({
         ctx.drawImage(img, 0, 0, PANEL, PANEL);
       }
 
+      // The game's own 10×10 grid, so the card speaks the same A–J/1–10
+      // coordinate language as the stage: the panel always shows the WHOLE
+      // map, so the lines sit at fixed deciles of the square (no labels —
+      // they would be illegible at this size).
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 1; i < MAP_GRID_COLUMNS; i++) {
+        const p = (i / MAP_GRID_COLUMNS) * PANEL;
+        ctx.moveTo(p, 0);
+        ctx.lineTo(p, PANEL);
+        ctx.moveTo(0, p);
+        ctx.lineTo(PANEL, p);
+      }
+      ctx.stroke();
+
       // World fraction helpers (the art fills the full square).
       const fx = (x: number): number => ((x - s.full.minX) / (s.full.maxX - s.full.minX || 1)) * PANEL;
       const fz = (z: number): number => ((s.full.maxZ - z) / (s.full.maxZ - s.full.minZ || 1)) * PANEL;
@@ -217,7 +234,12 @@ export default defineComponent({
           onPointercancel={onUp}
         />
         <div class="tac-overview__bar">
-          <HkIconButton size={24} aria-label="zoom out" onClick={() => props.onZoomStep(1 / 1.22)}>
+          <HkIconButton
+            size={24}
+            data-hint={i18nT("replay.tactical.view.zoomOut")}
+            aria-label={i18nT("replay.tactical.view.zoomOut")}
+            onClick={() => props.onZoomStep(1 / 1.22)}
+          >
             <ZoomOut size={13} />
           </HkIconButton>
           <button
@@ -228,10 +250,20 @@ export default defineComponent({
           >
             {percent.value}%
           </button>
-          <HkIconButton size={24} aria-label="zoom in" onClick={() => props.onZoomStep(1.22)}>
+          <HkIconButton
+            size={24}
+            data-hint={i18nT("replay.tactical.view.zoomIn")}
+            aria-label={i18nT("replay.tactical.view.zoomIn")}
+            onClick={() => props.onZoomStep(1.22)}
+          >
             <ZoomIn size={13} />
           </HkIconButton>
-          <HkIconButton size={24} aria-label="reset" onClick={() => props.onReset()}>
+          <HkIconButton
+            size={24}
+            data-hint={i18nT("replay.tactical.view.reset")}
+            aria-label={i18nT("replay.tactical.view.reset")}
+            onClick={() => props.onReset()}
+          >
             <Maximize2 size={13} />
           </HkIconButton>
         </div>

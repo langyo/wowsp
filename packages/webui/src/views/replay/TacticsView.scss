@@ -175,12 +175,15 @@
     flex-direction: column;
   }
 
-  /* The teleported overview minimap lives here: a square card that fills
-     the panel width, vertically bottom-aligned (it is a "where am I"
-     instrument, not the main stage). */
+  /* The teleported overview minimap lives here: a square card, vertically
+     bottom-aligned (it is a "where am I" instrument, not the main stage).
+     container-type lets the card cap its width against the panel HEIGHT —
+     on a short window an uncapped card would be flex-squashed and its
+     zoom bar clipped by the card's own overflow:hidden. */
   &__side {
-    width: 264px;
+    width: 216px;
     flex-shrink: 0;
+    container-type: size;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -193,7 +196,12 @@
 
     .plan-stage__minimap {
       position: static;
-      width: 100%;
+      /* Never flex-squash (the bar must stay visible); shrink by WIDTH
+         instead — the canvas keeps its square, the card just narrows until
+         square + bar fit the panel's inner height (2.4rem ≈ bar + borders). */
+      flex-shrink: 0;
+      width: min(100%, calc(100cqh - 2.4rem));
+      margin-inline: auto;
     }
   }
 }
