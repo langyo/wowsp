@@ -420,7 +420,19 @@
       "fps": "프레임률",
       "offline": "오프라인 빠른 내보내기(실시간보다 빠름)",
       "offlineRunning": "렌더링 중",
-      "cancel": "취소"
+      "cancel": "취소",
+      "wizardTitle": "내보내기",
+      "stepOutput": "출력 설정",
+      "stepRun": "실행",
+      "imageTitle": "이미지",
+      "videoTitle": "동영상",
+      "jsonTitle": "주석 데이터",
+      "fullDesc": "이전 단계의 이미지 설정으로 전체 화면을 캡처합니다",
+      "regionDesc": "먼저 지도에서 영역을 지정한 뒤 같은 설정으로 그 영역만 내보냅니다",
+      "recordDesc": "실시간으로 녹화하여 수동으로 중지합니다",
+      "offlineDesc": "오프라인으로 프레임 단위 렌더링하여 실시간보다 훨씬 빠릅니다. 범위와 fps는 이전 단계 설정을 따릅니다",
+      "jsonDesc": "주석을 공유 가능한 JSON 문서로 내보냅니다",
+      "jsonImportDesc": "JSON 문서에서 주석을 불러옵니다(현재 내용을 대체, 실행 취소 가능)"
     },
     "record": {
       "start": "녹화 시작(리플레이 재생)",
@@ -455,7 +467,8 @@
     "menu": {
       "shapes": "도형 및 텍스트",
       "markers": "유닛 마커",
-      "more": "더보기"
+      "more": "더보기",
+      "behaviour": "동작"
     },
     "timeline": {
       "zoomIn": "타임라인 확대(휠)",

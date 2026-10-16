@@ -2,15 +2,15 @@
  * Tactical-board toolbar: one compact horizontal bar in the board dock.
  * Frequently-used tools sit directly on the bar; everything else collapses
  * into popovers that open upward — shapes, unit markers, the colour/width/
- * dash style sheet and a "more" panel holding the time-anchor toggles,
- * history, JSON import/export and the whole export/record group.
+ * dash style sheet and a slim "more" panel (the behaviour switches + the
+ * annotation count). Exports live behind the bar's rightmost button, which
+ * opens the standalone ExportWizardModal (a two-step stepper).
  *
  * Every flyout is hikari machinery, not hand-rolled chrome: HkPopover
- * (anchored, auto-flipping, phone bottom-sheet) carries the panel, tool
+ * (anchored, auto-flipping, phone bottom-sheet) carries the panel and tool
  * lists render as HkMenuPanel + HkMenuActionItem rows (icon + label +
- * shortcut suffix, active row via the host's is-active class), and the
- * export settings use HkPopupSelect — the same primitives the filter
- * chips and admin menus are built on.
+ * shortcut suffix, active row via the host's is-active class) — the same
+ * primitives the filter chips and admin menus are built on.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
 import {
@@ -18,7 +18,6 @@ import {
   HkMenuActionItem,
   HkMenuPanel,
   HkPopover,
-  HkPopupSelect,
   HkSwitch,
   HkTooltip,
   useBreakpoint,
@@ -26,22 +25,18 @@ import {
 import {
   Anchor,
   ArrowRight,
-  Camera,
   ChevronUp,
   Circle,
-  Crop,
   Crosshair,
-  Download,
   Eraser,
   Eye,
   EyeOff,
-  FastForward,
+  FileOutput,
   Flame,
   FlipHorizontal,
   Footprints,
   Hand,
   MapPin,
-  Maximize2,
   Minus,
   MoreHorizontal,
   MousePointer2,
@@ -56,8 +51,6 @@ import {
   Trash2,
   Type,
   Undo2,
-  Upload,
-  Video,
   Waypoints,
   ZoomIn,
   ZoomOut,
@@ -68,6 +61,7 @@ import { TACTICAL_PALETTE, TACTICAL_WIDTHS } from "./useTactical";
 import { ACTION_KINDS } from "./plan";
 import type { HeatLayerMode, HeatOverlayData } from "./heatLayer";
 import type { DashStyle, TacticalActionKind, TacticalToolId } from "./types";
+import ExportWizardModal from "./ExportWizardModal";
 import "./TacticalToolbar.scss";
 
 interface ExportSettings {
@@ -224,7 +218,7 @@ export default defineComponent({
     // HkPopover only closes on outside clicks when its backdrop is active
     // (our phone sheets); on desktop the filter-chip convention carries a
     // capture-phase closer of its own — presses inside the bar or inside
-    // any open hikari popup (this panel, a nested HkPopupSelect) count as
+    // any open hikari popup (this panel, a nested select popout) count as
     // inside, everything else dismisses.
     const barRoot = ref<HTMLElement | null>(null);
     function onDocPointerDown(e: PointerEvent): void {
@@ -249,6 +243,8 @@ export default defineComponent({
     const styleBtn = ref<HTMLElement | null>(null);
     const moreBtn = ref<HTMLElement | null>(null);
     const heatBtn = ref<HTMLElement | null>(null);
+    /** The standalone export wizard (the bar's rightmost button). */
+    const wizardOpen = ref(false);
 
     /** Pick the popover button's icon: the active sub-tool when one of the
      *  group's tools is selected, else the group glyph. */
@@ -593,9 +589,11 @@ export default defineComponent({
             </HkIconButton>
           </HkTooltip>
           <HkPopover {...popoverProps("more", () => moreBtn.value, true)} title={i18nT("replay.tactical.menu.more")}>
-            <div class="tac-pop tac-pop--wide">
+            <div class="tac-pop">
+              <div class="tac-pop__label">{i18nT("replay.tactical.menu.behaviour")}</div>
               <div class="tac-bar__toggles">
                 <HkSwitch
+                  size="sm"
                   modelValue={props.store.anchorToTime.value}
                   onUpdate:modelValue={(v: boolean) => {
                     props.store.anchorToTime.value = v;
@@ -604,6 +602,7 @@ export default defineComponent({
                   {i18nT("replay.tactical.time.anchor")}
                 </HkSwitch>
                 <HkSwitch
+                  size="sm"
                   modelValue={props.store.showGhostFuture.value}
                   onUpdate:modelValue={(v: boolean) => {
                     props.store.showGhostFuture.value = v;
@@ -613,148 +612,37 @@ export default defineComponent({
                 </HkSwitch>
               </div>
               <div class="tac-pop__sep" />
-              <HkMenuPanel label={i18nT("replay.tactical.menu.more")}>
-                <HkMenuActionItem
-                  icon={<Maximize2 size={14} />}
-                  label={i18nT("replay.tactical.view.reset")}
-                  onClick={() => {
-                    props.actions.resetView();
-                    close();
-                  }}
-                />
-              </HkMenuPanel>
-              <div class="tac-pop__sep" />
-              <div class="tac-pop__grid">
-                <HkPopupSelect
-                  label={i18nT("replay.tactical.export.format")}
-                  modelValue={props.exportSettings.format}
-                  options={[
-                    { value: "png", label: "PNG" },
-                    { value: "webp", label: "WebP" },
-                  ]}
-                  onUpdate:modelValue={(v: string) => {
-                    props.exportSettings.format = v === "webp" ? "webp" : "png";
-                  }}
-                />
-                <HkPopupSelect
-                  label={i18nT("replay.tactical.export.scale")}
-                  modelValue={String(props.exportSettings.scale)}
-                  options={[
-                    { value: "1", label: "1×" },
-                    { value: "2", label: "2×" },
-                  ]}
-                  onUpdate:modelValue={(v: string) => {
-                    props.exportSettings.scale = v === "2" ? 2 : 1;
-                  }}
-                />
-                <HkPopupSelect
-                  label={i18nT("replay.tactical.export.range")}
-                  modelValue={props.exportSettings.offlineFrom}
-                  options={[
-                    { value: "now", label: i18nT("replay.tactical.export.rangeNow") },
-                    { value: "start", label: i18nT("replay.tactical.export.rangeFull") },
-                  ]}
-                  onUpdate:modelValue={(v: string) => {
-                    props.exportSettings.offlineFrom = v === "start" ? "start" : "now";
-                  }}
-                />
-                <HkPopupSelect
-                  label={i18nT("replay.tactical.export.fps")}
-                  modelValue={String(props.exportSettings.offlineFps)}
-                  options={[
-                    { value: "30", label: "30" },
-                    { value: "60", label: "60" },
-                  ]}
-                  onUpdate:modelValue={(v: string) => {
-                    props.exportSettings.offlineFps = v === "60" ? 60 : 30;
-                  }}
-                />
-              </div>
-              <div class="tac-bar__toggles">
-                <HkSwitch
-                  modelValue={props.exportSettings.timestamp}
-                  onUpdate:modelValue={(v: boolean) => {
-                    props.exportSettings.timestamp = v;
-                  }}
-                >
-                  {i18nT("replay.tactical.export.timestamp")}
-                </HkSwitch>
-                <HkSwitch
-                  modelValue={props.exportSettings.minimap}
-                  onUpdate:modelValue={(v: boolean) => {
-                    props.exportSettings.minimap = v;
-                  }}
-                >
-                  {i18nT("replay.tactical.export.minimap")}
-                </HkSwitch>
-              </div>
-              <div class="tac-pop__row tac-pop__row--actions">
-                <HkTooltip text={i18nT("replay.tactical.export.full")} placement="top">
-                  <HkIconButton size={32} disabled={props.busy} onClick={() => { props.actions.exportFull(); close(); }}>
-                    <Camera size={14} />
-                  </HkIconButton>
-                </HkTooltip>
-                <HkTooltip
-                  text={
-                    props.pendingRegion
-                      ? i18nT("replay.tactical.export.regionRun")
-                      : i18nT("replay.tactical.export.region")
-                  }
-                  placement="top"
-                >
-                  <HkIconButton
-                    size={32}
-                    variant={props.regionActive || props.pendingRegion ? "primary" : "ghost"}
-                    disabled={props.busy}
-                    onClick={() => { props.actions.exportRegion(); close(); }}
-                  >
-                    <Crop size={14} />
-                  </HkIconButton>
-                </HkTooltip>
-                <HkTooltip
-                  text={
-                    props.recording
-                      ? i18nT("replay.tactical.record.stop")
-                      : i18nT("replay.tactical.record.start")
-                  }
-                  placement="top"
-                >
-                  <HkIconButton
-                    size={32}
-                    variant={props.recording ? "danger" : "ghost"}
-                    disabled={props.busy || (!props.recording && !props.recordingSupported)}
-                    onClick={() => { props.actions.recordToggle(); close(); }}
-                  >
-                    <Video size={14} />
-                  </HkIconButton>
-                </HkTooltip>
-                <HkTooltip text={i18nT("replay.tactical.export.offline")} placement="top">
-                  <HkIconButton
-                    size={32}
-                    variant="primary"
-                    disabled={props.busy || props.recording}
-                    onClick={() => { props.actions.offlineExport(); close(); }}
-                  >
-                    <FastForward size={14} />
-                  </HkIconButton>
-                </HkTooltip>
-                <HkTooltip text={i18nT("replay.tactical.action.exportJson")} placement="top">
-                  <HkIconButton size={32} disabled={props.busy} onClick={() => { props.actions.exportJson(); close(); }}>
-                    <Download size={14} />
-                  </HkIconButton>
-                </HkTooltip>
-                <HkTooltip text={i18nT("replay.tactical.action.importJson")} placement="top">
-                  <HkIconButton size={32} disabled={props.busy} onClick={() => { props.actions.importJson(); close(); }}>
-                    <Upload size={14} />
-                  </HkIconButton>
-                </HkTooltip>
-              </div>
               <div class="tac-bar__count">
                 {i18nT("replay.tactical.count", { n: props.store.elements.value.length })}
               </div>
             </div>
           </HkPopover>
         </span>
+
+        {/* Export: its own button at the far end, opening the standalone
+            wizard (settings step + runs step) instead of a crammed popover. */}
+        <HkTooltip text={i18nT("replay.tactical.export.wizardTitle")} placement="top">
+          <HkIconButton
+            size={32}
+            variant="primary"
+            onClick={() => (wizardOpen.value = true)}
+          >
+            <FileOutput size={15} />
+          </HkIconButton>
+        </HkTooltip>
+
+        <ExportWizardModal
+          modelValue={wizardOpen.value}
+          onUpdate:modelValue={(v: boolean) => (wizardOpen.value = v)}
+          exportSettings={props.exportSettings}
+          actions={props.actions}
+          busy={props.busy}
+          recording={props.recording}
+          recordingSupported={props.recordingSupported}
+          regionActive={props.regionActive}
+          pendingRegion={props.pendingRegion}
+          elementCount={props.store.elements.value.length}
+        />
       </div>
     );
   },

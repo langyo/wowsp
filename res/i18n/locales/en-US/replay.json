@@ -420,7 +420,19 @@
       "fps": "FPS",
       "offline": "Export video offline (faster than realtime)",
       "offlineRunning": "Rendering",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "wizardTitle": "Export",
+      "stepOutput": "Output",
+      "stepRun": "Run",
+      "imageTitle": "Image",
+      "videoTitle": "Video",
+      "jsonTitle": "Annotation data",
+      "fullDesc": "Snapshot the whole view with the image settings from the previous step",
+      "regionDesc": "Drag a region on the map first, then export just that area with the same settings",
+      "recordDesc": "Record in realtime until you stop it",
+      "offlineDesc": "Renders frame by frame offline — much faster than realtime; range and fps come from the previous step",
+      "jsonDesc": "Export the annotations as a shareable JSON document",
+      "jsonImportDesc": "Load annotations from a JSON document (replaces the current ones; undoable)"
     },
     "record": {
       "start": "Start recording (plays the replay)",
@@ -455,7 +467,8 @@
     "menu": {
       "shapes": "Shapes & text",
       "markers": "Unit markers",
-      "more": "More"
+      "more": "More",
+      "behaviour": "Behaviour"
     },
     "timeline": {
       "zoomIn": "Zoom in (mouse wheel on the timeline)",

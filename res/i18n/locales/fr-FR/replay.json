@@ -420,7 +420,19 @@
       "fps": "IPS",
       "offline": "Export vidéo hors ligne (plus rapide que le temps réel)",
       "offlineRunning": "Rendu",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "wizardTitle": "Exporter",
+      "stepOutput": "Sortie",
+      "stepRun": "Exécuter",
+      "imageTitle": "Image",
+      "videoTitle": "Vidéo",
+      "jsonTitle": "Données d'annotation",
+      "fullDesc": "Capture toute la vue avec les réglages d'image de l'étape précédente",
+      "regionDesc": "Tracez d'abord une zone sur la carte, puis exportez cette seule zone avec les mêmes réglages",
+      "recordDesc": "Enregistre en temps réel jusqu'à l'arrêt",
+      "offlineDesc": "Rendu image par image hors temps réel, bien plus rapide ; la portée et les fps viennent de l'étape précédente",
+      "jsonDesc": "Exporte les annotations en document JSON partageable",
+      "jsonImportDesc": "Charge les annotations depuis un JSON (remplace les actuelles ; annulable)"
     },
     "record": {
       "start": "Démarrer l'enregistrement (lecture)",
@@ -455,7 +467,8 @@
     "menu": {
       "shapes": "Formes et texte",
       "markers": "Marqueurs d'unités",
-      "more": "Plus"
+      "more": "Plus",
+      "behaviour": "Comportement"
     },
     "timeline": {
       "zoomIn": "Agrandir la timeline (molette)",
