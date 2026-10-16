@@ -178,17 +178,14 @@
 }
 
 /* The add menu inside the popover: two labeled segmented groups + the
-   bottom-right confirm. Hikari's popover chrome carries a bare 4px
-   padding — the slot content owns the real inset (the same 10/12 voice
-   as .live-battle__mode-pop / .ship-filter-bar__pop), or the label and
-   the confirm button sit glued to the panel edges. */
+   bottom-right confirm. The content inset rides the popover's own
+   `padding` prop (hikari --hk-pad) since 0.55.176. */
 .overlay-columns__menu {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 300px;
   max-width: min(92vw, 380px);
-  padding: 10px 12px 8px;
 
   /* HkTabs' scroll wrapper centers its shrink-wrapped strip by default;
      inside this menu the groups read as a form — pin every strip to the
