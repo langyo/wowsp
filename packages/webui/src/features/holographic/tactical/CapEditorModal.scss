@@ -13,9 +13,13 @@
   }
 
   &__stage {
-    width: 100%;
+    /* Square ALWAYS: the height budget must shrink the WIDTH with it
+       (max-height alone clamped the height and left the width at 100%,
+       squashing the square canvas — and its cap circles into ellipses).
+       aspect-ratio then derives the height ≤ the same 58vh budget. */
+    width: min(100%, 58vh);
     aspect-ratio: 1 / 1;
-    max-height: 58vh;
+    margin-inline: auto;
     border: 1px solid rgb(var(--color-border) / 22%);
     border-radius: var(--radius-md);
     background: rgb(4 8 16 / 95%);
