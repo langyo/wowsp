@@ -159,6 +159,67 @@ pub fn get_os_preferences() -> OsPreferences {
     crate::os_prefs::detect()
 }
 
+/// Debug-build identity stamp (`branch:hash7`) for the title bar's version
+/// subtitle, resolved at compile time by build.rs from the git checkout —
+/// it pins which branch and commit a running debug binary came from (the
+/// same convention as the celestia family's panel build stamp). Release
+/// builds answer "" so the suffix never ships: build.rs only exports the
+/// env var for the debug profile, hence `option_env!`.
+#[tauri::command]
+pub fn get_build_identity() -> &'static str {
+    if cfg!(debug_assertions) {
+        option_env!("WOWSP_BUILD_IDENTITY").unwrap_or_default()
+    } else {
+        ""
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_build_identity;
+
+    /// The stamp shape the title bar contract promises: `branch:hash7+`
+    /// (git lengthens the short hash on prefix collisions; uppercase hex
+    /// is accepted, matching build.rs's resolver-side validation).
+    fn is_well_formed(stamp: &str) -> bool {
+        match stamp.split_once(':') {
+            Some((branch, hash)) => {
+                !branch.is_empty()
+                    && (7..=40).contains(&hash.len())
+                    && hash.chars().all(|c| c.is_ascii_hexdigit())
+            },
+            None => false,
+        }
+    }
+
+    #[test]
+    fn stamp_shape_contract() {
+        assert!(is_well_formed("master:05b69ad"));
+        assert!(is_well_formed("feat/titlebar-build-identity:2CB4E90"));
+        // 40-char full hash.
+        assert!(is_well_formed(
+            "detached:0123456789abcdef0123456789abcdef01234567"
+        ));
+        assert!(!is_well_formed(""));
+        assert!(!is_well_formed("master"));
+        assert!(!is_well_formed("master:"));
+        assert!(!is_well_formed(":05b69ad"));
+        assert!(!is_well_formed("master:05b69"));
+        assert!(!is_well_formed("master:05b69zz"));
+    }
+
+    /// The live stamp — debug builds resolve it from the git checkout at
+    /// compile time, release builds carry none — must hold the shape the
+    /// frontend renders verbatim next to the version.
+    #[test]
+    fn live_stamp_is_well_formed_when_present() {
+        let stamp = get_build_identity();
+        if !stamp.is_empty() {
+            assert!(is_well_formed(stamp), "malformed build stamp: {stamp}");
+        }
+    }
+}
+
 /// Hard-quit the app. Triggers graceful drain of background tasks, then
 /// exits the process. Called from the frontend close-confirm dialog.
 #[tauri::command]

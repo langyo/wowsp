@@ -9,6 +9,9 @@
  */
 export const RPC = {
   get_os_preferences: "get_os_preferences",
+  // Debug-build git identity stamp (`branch:hash7`) for the title bar's
+  // version subtitle — "" in release builds.
+  get_build_identity: "get_build_identity",
   is_portable: "is_portable",
   app_migrations_pending: "app_migrations_pending",
   app_migration_completed: "app_migration_completed",
