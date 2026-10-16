@@ -315,6 +315,12 @@ html.overlay-hidden body {
   color: rgb(226 74 66);
   font-weight: 700;
   white-space: nowrap;
+  /* One step BELOW the chip's own text size: the framed face reads as a
+     tag beside the figures instead of a second headline. The bare-ink era
+     kept 1em only because a bump would widen the chip for nothing; the
+     frame now adds the visual weight itself, so the ink gives some back —
+     and every em saved is trim room chipFit gets to keep. */
+  font-size: 0.92em;
   /* The tag plate: a faint cinnabar wash over the chip's own dark glass,
      edged by a matching border — the seal then sits in its own rounded
      box like the name strips do, instead of floating bare on the chip.
@@ -324,11 +330,14 @@ html.overlay-hidden body {
   border: 1px solid rgb(226 74 66 / 50%);
   border-radius: 0.45em;
   background: rgb(226 74 66 / 14%);
-  /* Deliberately NO font-size bump here: the seal rides the chip's own
-     text size (1em). The in-app seals carry the enlarged faces; the
-     in-game chips sit inside the table's fixed row pitch, where a bigger
-     face only widens the chip for no readability gain (chipFit's trim
-     pass still sheds seals first if a chip overflows). */
+  /* Ride the row's shared BASELINE, not the line's center: the plate is
+     the tallest box on the line now it carries padding + border, and
+     centering the tallest box sank the seal text visibly below every
+     neighbor's baseline. Baseline alignment pins the ink to the same line
+     the name and figures sit on, with the plate growing symmetrically
+     around it. (The custom-picture <img> keeps its center alignment —
+     a bitmap has no baseline to ride.) */
+  align-self: baseline;
   line-height: 1.2em;
 }
 
