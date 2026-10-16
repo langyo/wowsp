@@ -393,6 +393,20 @@ html[data-wallpaper-art="true"] body::after {
   }
 }
 
+/* Solid PRIMARY icon buttons follow the fill's luminance (user direction
+   2026-10-17, retracting the uniform white-on-solid rule): hikari's
+   primary icon-button variant pins --color-on-solid-icon (default white)
+   and deliberately skips the luminance-computed --color-on-primary — on
+   a bright custom brand fill that white glyph is unreadable. Re-pinned to
+   the computed slot: near-black ink on bright primaries, white on dark
+   ones. Scoped to the primary icon button only — the shared on-solid
+   slots keep feeding the switch thumb / checkbox tick / toast surfaces,
+   and the danger/success buttons ride fixed palette fills that are
+   white-safe in every scheme. */
+.hk-icon-button-primary {
+  --color-on-solid-icon: var(--color-on-primary);
+}
+
 /* Toast solid surfaces: white ink in BOTH color schemes. Hikari's stock
    default preset pins the shared on-solid slot to near-black Nord ink in
    its dark scheme — the ink its PALE primary fills need (white is ~1.9:1
