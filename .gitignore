@@ -125,3 +125,6 @@ node_modules
 # Release-digest signing PRIVATE seeds must never be committed (only the
 # *.pub halves live in packages/app/tauri/res/keys/ — see its README).
 packages/app/tauri/res/keys/*.key
+
+# armory scrape cache (scripts/scrape_armory_sources.py)
+scripts/.armory-cache/
