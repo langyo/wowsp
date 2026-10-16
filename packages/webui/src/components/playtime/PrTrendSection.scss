@@ -17,10 +17,9 @@
   }
 }
 
-/* ── Custom-range popover (the LookupView range-pop's twin) ───────────── */
-.pr-trend-rangepop {
-  padding: 10px 12px 8px;
-}
+/* ── Custom-range popover (the LookupView range-pop's twin) ─────────────
+   Content inset rides HkPopover's `padding` prop (the shared --hk-pad
+   token). */
 
 /* Anchored (non-sheet) panel: a fixed width so the two pickers keep their
    fields — wide enough for a full zh date ("2024年1月18日" + calendar icon)

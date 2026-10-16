@@ -51,12 +51,8 @@
    position `.async-search-combo__panel` rule (and its --left/--right edge
    modifiers, now HPopover placements) died with that move. Only the
    panel's INNER content is styled below. */
-/* HPopover paints the panel chrome but no inner spacing — the slot
-   content owns it (restores the padding the retired absolute-positioned
-   panel rule carried). */
-.async-search-combo__panel {
-  padding: 10px 12px 12px;
-}
+/* The panel's content inset rides HkPopover's `padding` prop (the
+   shared --hk-pad token). */
 
 .async-search-combo__panel-head {
   display: flex;
@@ -140,10 +136,6 @@
    padding, scroll containment, top-inset cap) is hikari's .hk-is-sheet —
    nothing to re-paint. Desktop anchored panels are untouched. */
 .hk-popover-panel.hk-is-sheet {
-  .async-search-combo__panel {
-    padding: 10px var(--space-12, 0.75rem) 0;
-  }
-
   .async-search-combo__panel-head {
     display: none;
   }

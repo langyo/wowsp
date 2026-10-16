@@ -807,6 +807,7 @@ export default defineComponent({
                   }
                   closeOnBackdrop={isMobile.value}
                   sheetOnMobile
+                  padding="md"
                   title={t(def.title)}
                 >
                   <div
@@ -930,6 +931,7 @@ export default defineComponent({
               placement="bottom-end"
               closeOnBackdrop={isMobile.value}
               sheetOnMobile
+              padding="md"
               title={t("common.search.fuzzy")}
             >
               <div ref={searchPanelEl} class="ship-filter-bar__search-panel">

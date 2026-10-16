@@ -163,13 +163,8 @@
    teleport, glass surface) so overflow ancestors can never clip it — the
    old absolute-position `.ship-filter-bar__pop` / `[data-edge]` rules died
    with that move. Only the panel's INNER content is styled here. */
-/* HPopover paints the panel chrome (glass surface, border, shadow) but
-   no inner spacing — the slot content owns it. This restores the padding
-   the pre-portal absolute-positioned panel carried, lost in the HPopover
-   migration (content sat flush against the panel edge). */
-.ship-filter-bar__pop {
-  padding: 10px 12px 8px;
-}
+/* The panel's content inset rides HkPopover's `padding` prop (the
+   shared --hk-pad token) — every host of this slot passes "md". */
 
 /* Hard width cap for the anchored (non-sheet) panels: a category popup
    must never outrun the viewport, and the nation strip's 14 flags give
@@ -383,7 +378,6 @@
    independent, so it cannot re-enter HkPopover's resize feedback loop. */
 .ship-filter-bar__search-panel {
   width: min(360px, 70vw);
-  padding: 10px 12px 12px;
 }
 
 /* Fuzzy-match candidates under the input — same row-button spec as
@@ -454,10 +448,6 @@
    .hk-is-sheet — nothing to re-paint here. Desktop anchored panels are
    untouched. */
 .hk-popover-panel.hk-is-sheet {
-  .ship-filter-bar__pop {
-    padding: 10px var(--space-12, 0.75rem) 0;
-  }
-
   .ship-filter-bar__pop-head,
   .ship-filter-bar__search-panel-head {
     display: none;
@@ -500,6 +490,5 @@
 
   .ship-filter-bar__search-panel {
     width: auto;
-    padding: 10px var(--space-12, 0.75rem) 0;
   }
 }
