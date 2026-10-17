@@ -26,13 +26,14 @@
  *  separators are gone).
  *
  *  ALIGN THE STAT COLUMN (alignStatColumns): every row carries a stat cell
- *  against the table edge and a name cell outside it; the cells must line
- *  up across rows for the two-column read (enemies: numbers right-aligned,
- *  names left-aligned; allies mirrored). Row elements are individually
- *  anchored, so the columns align only when every stat cell shares ONE
- *  width — measured here as the widest face on the side, which pins the
- *  enemy name column's START and the ally name column's END to a fixed
- *  x. */
+ *  against the table edge — plus a name cell outside it while the row
+ *  order is the offline inference (rowFace's fallback face); the cells
+ *  must line up across rows so the stat column reads as one table and the
+ *  seals' flank holds a fixed x. Row elements are individually anchored,
+ *  so the column aligns only when every stat cell shares ONE width —
+ *  measured here as the widest face on the side, which on fallback rows
+ *  also pins the enemy name column's START and the ally name column's END
+ *  to a fixed x. */
 
 /** Sub-pixel overhang tolerance (CSS px): the anchor's physical→CSS
  *  division rounds, and costing a seal over a hairline clip is worse than
@@ -127,16 +128,18 @@ export function alignMetricColumns(root: ParentNode): void {
 }
 
 /** Pin each side's stat column to ONE width — the widest face among that
- *  side's rows — so the numbers sit on a single alignment line and the
- *  name column starts at a fixed x (the two-column contract of the row
- *  layout in overlay/main.ts). Call after the rows are in the DOM (real
- *  layout), after {@link alignMetricColumns} has pinned the inner metric
- *  cells (this pass then measures the cells around their sum), and before
- *  {@link fitChips}, which measures the pinned widths.
+ *  side's rows — so the numbers sit on a single alignment line, the seals'
+ *  flank keeps its x, and the fallback rows' name column (rowFace in
+ *  overlay/main.ts — exact-order rows carry no name cell) starts at a
+ *  fixed x. Call after the rows are in the DOM (real layout), after
+ *  {@link alignMetricColumns} has pinned the inner metric cells (this pass
+ *  then measures the cells around their sum), and before {@link fitChips},
+ *  which measures the pinned widths.
  *  Every cell joins the width even when its own face is empty (a row with
- *  the numbers off must keep the column slot, or its name cell would slide
- *  out of the column). Lays out as zero width under happy-dom, so a
- *  test-environment measure (width 0 everywhere) skips the pass. */
+ *  the numbers off must keep the column slot — an exact-order row for the
+ *  seals' flank, a fallback row for its name cell). Lays out as zero width
+ *  under happy-dom, so a test-environment measure (width 0 everywhere)
+ *  skips the pass. */
 export function alignStatColumns(root: ParentNode): void {
   for (const side of ["ally", "enemy"] as const) {
     const cells = root.querySelectorAll<HTMLElement>(

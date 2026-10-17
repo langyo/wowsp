@@ -79,14 +79,18 @@ html.overlay-hidden body {
   filter: grayscale(0.9);
 }
 
-/* The per-row two-column face (overlay-chip--ally / --enemy): every player
-   is ONE line — a stats cell against the table's edge and a name cell
-   outside it, with the seals on the outermost flank. The stats cell's
-   width is pinned per side by the alignStatColumns pass (the widest face on
-   that side) so the numbers hold a single alignment line and the name
-   column's near edge — its start for enemies, its end for allies — holds a
-   fixed x: enemies read [stats right-aligned][name left-aligned], allies
-   mirror it [name right-aligned][stats left-aligned].
+/* The per-row face (overlay-chip--ally / --enemy): every player is ONE
+   line — a stats cell against the table's edge, the seals on the
+   outermost flank, and — only while the row order is the offline
+   inference (overlay/main.ts sideOrderExact) — a name cell outside the
+   stats cell. The stats cell's width is pinned per side by the
+   alignStatColumns pass (the widest face on that side) so the numbers
+   hold a single alignment line, the seals' flank keeps its x, and the
+   fallback name column's near edge — its start for enemies, its end for
+   allies — holds a fixed x: enemies read [stats right-aligned][name
+   left-aligned], allies mirror it [name right-aligned][stats
+   left-aligned]. Exact-order rows carry no name cell at all — the game's
+   own table names the row at the same Y.
    The name cell caps its width and ellipsizes — the game's own table
    truncates long names the same way. */
 .overlay-chip__stat {

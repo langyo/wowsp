@@ -15,12 +15,16 @@
  *     side's rows hang off each grid row.
  *
  * Each side renders as its OWN single-line rows — the player's number
- * block on a stat column against the table's edge, the player's display
- * name in a column beside it, seals on the outermost flank (see rowFace).
- * The list is built from the believed client Tab order over the roster
- * (sideFullOrder), split [alive] ++ [sunk] by the trusted set — NEVER from
- * per-row attribution: every line IS one known player, so no row can
- * misattribute and no row has to speak for a set of candidates.
+ * block on a stat column against the table's edge, seals on the outermost
+ * flank, and — only while the row order is NOT yet game-true — the
+ * player's display name in a column beside it (see rowFace): once the
+ * probe telemetry confirms the exact Tab order (sideOrderExact), every
+ * chip hangs beside a game row that already carries the nickname, so the
+ * chip's own name column would only repeat it. The list is built from the
+ * believed client Tab order over the roster (sideFullOrder), split
+ * [alive] ++ [sunk] by the trusted set — NEVER from per-row attribution:
+ * every line IS one known player, so no row can misattribute and no row
+ * has to speak for a set of candidates.
  *
  * Coordinates arrive in physical px relative to the overlay window's own
  * origin; CSS px = physical / devicePixelRatio.
@@ -710,12 +714,13 @@ function escapeHtml(value: string): string {
  *  stats' clan tag filling a bare one the moment the batch arrives (the
  *  same reactive rule the sort keys follow). Escaped.
  *
- *  The name column is the row's IDENTITY and the overlay's whole failure
- *  visibility: a stats outage (wrong realm baked into the window URL,
- *  unreachable API, lookups disabled) can empty the numbers, never the
- *  name — on a Lesta client whose realm the main window had not detected,
- *  an anonymous face here used to read as "the overlay never appeared at
- *  all". */
+ *  The name column is the FALLBACK row's identity and the overlay's whole
+ *  failure visibility: a stats outage (wrong realm baked into the window
+ *  URL, unreachable API, lookups disabled) can empty the numbers, never
+ *  the name — on a Lesta client whose realm the main window had not
+ *  detected, an anonymous face here used to read as "the overlay never
+ *  appeared at all". Game-true rows (sideOrderExact) carry no name cell —
+ *  the game's own table names those rows at the same Y. */
 function displayNameOf(name: string): string {
   const tagged = name.startsWith("[") && name.includes("]");
   const tag = tagged ? null : stats.get(cacheKey(name))?.clanTag;
@@ -785,18 +790,33 @@ function sealNodes(name: string): string {
   return resolveStamps(career, comp).map(stampNode).join("");
 }
 
-/** One player's line face: the stat column, the name column and the seals,
- *  arranged so the STATS column sits against the table's edge and the NAME
- *  column outside it, seals on the outermost flank. The render loop's side
- *  anchoring turns that into the aligned two-column layout: enemies read
- *  [stats][name][seals] growing rightward (stats right-aligned against the
- *  table, names left-aligned), allies mirror it [seals][name][stats]
- *  growing leftward (stats left-aligned, names right-aligned). */
-function rowFace(name: string, side: "ally" | "enemy"): string {
-  const stat = `<span class="overlay-chip__stat">${statFace(name, side)}</span>`;
-  const label = `<span class="overlay-chip__name">${displayNameOf(name)}</span>`;
+/** One player's line face: the stat column, the seals, and — only while
+ *  the row order is NOT game-confirmed (`exactOrder` false, sideOrderExact)
+ *  — the name column, arranged so the STATS column sits against the table's
+ *  edge, the NAME column outside it and the seals on the outermost flank.
+ *  A confirmed game-true row hangs beside a table line the game itself has
+ *  named at the same Y, so its chip drops the name column outright; the
+ *  moment key coverage or the plugin degrades, the self-describing line
+ *  returns: enemies read [stats][name][seals] growing rightward (stats
+ *  right-aligned against the table, names left-aligned), allies mirror it
+ *  [seals][name][stats] growing leftward (stats left-aligned, names
+ *  right-aligned). An exact row with nothing visible at all (every number
+ *  toggle off, no seals landed yet) returns the EMPTY STRING — the render
+ *  loop skips the row instead of painting an empty chip pill. */
+function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): string {
+  const stat = statFace(name, side);
   const seals = sealNodes(name);
-  return side === "ally" ? seals + label + stat : stat + label + seals;
+  if (exactOrder) {
+    // Nothing visible at all (every number toggle off, no seals landed yet,
+    // no name cell on a game-true row): an empty string — the render loop
+    // skips the row instead of painting an empty chip pill.
+    if (!stat && !seals) return "";
+    const cell = `<span class="overlay-chip__stat">${stat}</span>`;
+    return side === "ally" ? seals + cell : cell + seals;
+  }
+  const label = `<span class="overlay-chip__name">${displayNameOf(name)}</span>`;
+  const cell = `<span class="overlay-chip__stat">${stat}</span>`;
+  return side === "ally" ? seals + label + cell : cell + label + seals;
 }
 
 /** One side's summary card, directly below that side's column. Line 1
@@ -974,6 +994,29 @@ function liveRosterSides(): RosterSides<Vehicle> {
   );
 }
 
+/** Whether a side's believed row order is the game's OWN: the probe's
+ *  telemetry sort keys cover EVERY row of the side (a partial map must
+ *  never interleave game-true and inferred rows) on a client that renders
+ *  key order — a ship-name-order client (CN) re-sorts by localized ship
+ *  name, an order the keys cannot express, so it never grades exact
+ *  (utils/realms). The same verdict the live panel's "exact order" pill
+ *  grades and the row sort below switches on — and the contract the chip
+ *  face rides: a game-true row hangs beside a table line the game itself
+ *  has named, so its chip drops the redundant name column (rowFace); any
+ *  loss of coverage — or a stale stream dropping the keys — brings the
+ *  name back. */
+function sideOrderExact(side: SunkSide): boolean {
+  if (!arena || !telemetrySortKeys || nameOrderLayout()) return false;
+  const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
+  return (
+    list.length > 0 &&
+    list.every((v) => {
+      const key = telemetrySortKeys![v.name];
+      return typeof key === "string" && key.length > 0;
+    })
+  );
+}
+
 /** The roster's believed full-key order for one side — the ordering the
  *  row list below draws from (see utils/shipClass for the decompiled
  *  rule and its CN ship-name permutation) over the live side split
@@ -1020,17 +1063,13 @@ function sideFullOrder(side: SunkSide): string[] {
           .map(({ v }) => v)
       : list;
   // Game-true sort keys: only a FULLY covered list switches the sort
-  // (game-true and inferred rows must never interleave), and never on a
-  // ship-name-order client (its HUD renders an order the keys cannot
-  // express).
+  // (game-true and inferred rows must never interleave) — the verdict
+  // lives in sideOrderExact above (full per-side coverage, never a
+  // ship-name-order client).
   const keyOf = telemetrySortKeys
     ? (v: (typeof list)[number]) => telemetrySortKeys![v.name]
     : undefined;
-  const clientKeys = keyOf && list.length > 0 ? list.map((v) => keyOf(v)) : null;
-  const useClientKeys =
-    clientKeys != null &&
-    !nameOrderLayout() &&
-    clientKeys.every((k) => typeof k === "string" && k.length > 0);
+  const useClientKeys = sideOrderExact(side);
   const clientKeyOf = useClientKeys
     ? (v: (typeof list)[number]) => {
         const key = keyOf!(v) as string;
@@ -1210,6 +1249,10 @@ function render() {
   // what is actually on screen.
   let chipsMissingStats = false;
   for (const [side, block, blockOffset] of sides) {
+    // The exact-order verdict is per side (key coverage is judged over the
+    // side's roster): game-true rows drop the name column, fallback rows
+    // keep it (rowFace / sideOrderExact).
+    const exactOrder = sideOrderExact(side);
     sideRows(side, blockOffset).forEach((row, i) => {
       // The player's own grid row — the anchor caps each block at the
       // expected team size, so a row past the grid (a phantom grid row, a
@@ -1230,8 +1273,12 @@ function render() {
       if (!AI_NAME.test(name) && !stats.has(cacheKey(name))) {
         chipsMissingStats = true;
       }
+      const face = rowFace(name, side, exactOrder);
+      // Nothing visible this row (exact mode: numbers off, no seals yet) —
+      // skip it rather than paint an empty chip pill.
+      if (!face) return;
       const el = document.createElement("div");
-      el.innerHTML = rowFace(name, side);
+      el.innerHTML = face;
       el.className =
         `overlay-chip overlay-chip--${side}` + (isSunk ? " overlay-chip--sunk" : "");
       el.style.top = `${top / dpr}px`;
@@ -1239,12 +1286,12 @@ function render() {
       if (side === "ally") {
         // Right edge of the row just left of the table's left edge — the
         // stats column innermost (left-aligned against the table), the
-        // name column outside it (right-aligned), seals outermost.
+        // fallback name column outside it (right-aligned), seals outermost.
         el.style.right = `${Math.max(0, overlayW - tableLeft + gap)}px`;
       } else {
         // Left edge of the row just right of the table's right edge — the
         // stats column innermost (right-aligned against the table), the
-        // name column outside it (left-aligned), seals outermost.
+        // fallback name column outside it (left-aligned), seals outermost.
         el.style.left = `${tableRight + gap}px`;
       }
       root.appendChild(el);
@@ -1252,9 +1299,9 @@ function render() {
   }
   // One width per METRIC column first (the widest face across the roster —
   // chipFit.ts), then one stat column width per side around those cells:
-  // the numbers sit in evenly separated columns on ONE alignment line and
-  // the name column starts at a fixed x — the two-column contract of the
-  // row layout.
+  // the numbers sit in evenly separated columns on ONE alignment line, the
+  // seals' flank holds a fixed x, and the fallback rows' name column starts
+  // at a fixed x — the column contract of the row layout.
   alignMetricColumns(root);
   alignStatColumns(root);
 

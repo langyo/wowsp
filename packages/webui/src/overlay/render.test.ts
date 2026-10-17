@@ -5,17 +5,23 @@
  * 2026-10-08 field logs (3072x1920 client, 6 allies + a 4-vehicle enemy
  * roster — the anchor's grid carries exactly those 10 rows).
  *
- * Pins the two-column row contract (see rowFace): every player renders ONE
- * line — a stat cell against the table's edge and a NAME cell beside it
- * carrying the game's own '[TAG]nickname' display string — where the old
- * per-row chips rendered anonymous faces (a "…" waiting face, slash-joined
- * candidate ranges) and needed per-row attribution to place. The name
- * column is also the stats-outage visibility: with the batch unable to
- * answer (a realm the window URL baked stale, an unreachable API, or
- * lookups disabled), the numbers empty but the rows still name every
- * player.
+ * Pins the row contract (see rowFace): every player renders ONE line — a
+ * stat cell against the table's edge and, while the row order is the
+ * offline inference, a NAME cell beside it carrying the game's own
+ * '[TAG]nickname' display string — where the old per-row chips rendered
+ * anonymous faces (a "…" waiting face, slash-joined candidate ranges) and
+ * needed per-row attribution to place. The name column is also the
+ * fallback face's stats-outage visibility: with the batch unable to answer
+ * (a realm the window URL baked stale, an unreachable API, or lookups
+ * disabled), the numbers empty but the rows still name every player. Once
+ * the probe telemetry confirms the exact Tab order (sideOrderExact) the
+ * name column drops — the game's own table names the row at the same Y —
+ * and returns on any degrade (partial key coverage, a stale stream); the
+ * last test pins that lifecycle.
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
+
+import { STATS_PREFS_STORAGE_KEY } from "../stores/statsPrefs";
 
 type Handler = (e: { payload: unknown }) => void;
 const handlers = new Map<string, Handler>();
@@ -170,5 +176,86 @@ describe("overlay page render", () => {
     expect(
       chips.slice(0, 5).some((c) => c.classList.contains("overlay-chip--sunk")),
     ).toBe(false);
+  });
+
+  it("drops the name column on confirmed exact order and restores it on any degrade", async () => {
+    // The plugin-telemetry lifecycle of the name column (sideOrderExact /
+    // rowFace): the battle starts on the offline inference (names shown),
+    // full per-side sort-key coverage confirms the exact Tab order (names
+    // drop — the game's own table names the row at the same Y), partial
+    // coverage degrades only the unkeyed side (its names return while the
+    // still-keyed side stays exact), and a stale stream drops the keys
+    // wholesale (every side's names return).
+    const pluginAnchor = { ...anchor, rosterMode: "plugin" };
+    const alive = Object.fromEntries(arena.vehicles.map((v) => [v.name, true]));
+    const fullKeys = Object.fromEntries(
+      arena.vehicles.map((v, i) => [v.name, `0${i}00${v.shipId}`]),
+    );
+    handlers.get("wowsp://arena-info")!({
+      payload: { ...arena, dateTime: "20261018_exact_order" },
+    });
+    handlers.get("wowsp://overlay-anchor")!({ payload: pluginAnchor });
+    await vi.waitFor(() => expect(rowChips().length).toBe(10));
+    expect(document.querySelectorAll(".overlay-chip__name").length).toBe(10);
+
+    handlers.get("wowsp://ingame-telemetry")!({
+      payload: {
+        t: Date.now(),
+        battle: "exact_order",
+        players: alive,
+        sortKeys: fullKeys,
+      },
+    });
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll(".overlay-chip__name").length).toBe(0),
+    );
+    // The rows themselves stay — one line per player, stats cell only.
+    const chips = rowChips();
+    expect(chips).toHaveLength(10);
+    for (const chip of chips) {
+      expect(chip.querySelectorAll(".overlay-chip__stat")).toHaveLength(1);
+      expect(chip.querySelector(".overlay-chip__stat")!.textContent).toBe("—");
+    }
+
+    // One unkeyed name = partial coverage on the ALLY side only: the side
+    // falls back to the inference (game-true and inferred rows must never
+    // interleave) and carries its names again, while the still-fully-keyed
+    // enemy side stays exact and nameless — the verdict is per side.
+    const partialKeys = { ...fullKeys };
+    delete partialKeys["langyo"];
+    handlers.get("wowsp://ingame-telemetry")!({
+      payload: {
+        t: Date.now(),
+        battle: "exact_order",
+        players: alive,
+        sortKeys: partialKeys,
+      },
+    });
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll(".overlay-chip__name").length).toBe(6),
+    );
+    const mixed = rowChips();
+    for (const chip of mixed.slice(0, 6)) {
+      expect(chip.querySelectorAll(".overlay-chip__name")).toHaveLength(1);
+    }
+    for (const chip of mixed.slice(6)) {
+      expect(chip.querySelectorAll(".overlay-chip__name")).toHaveLength(0);
+    }
+
+    // A stale stream (the plugin died) clears the keys wholesale — every
+    // side returns to the inference and its names.
+    handlers.get("wowsp://ingame-telemetry")!({
+      payload: { t: 1, battle: "exact_order", players: alive, sortKeys: partialKeys },
+    });
+    await vi.waitFor(() =>
+      expect(document.querySelectorAll(".overlay-chip__name").length).toBe(10),
+    );
+
+    // Numbers off (and no seals under this file's en-US locale): nothing on
+    // any row can render, exact or not — the rows disappear outright
+    // instead of painting empty chip pills.
+    localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify({ overlayColumns: [] }));
+    handlers.get("wowsp://stats-prefs-changed")!({ payload: null });
+    await vi.waitFor(() => expect(rowChips().length).toBe(0));
   });
 });
