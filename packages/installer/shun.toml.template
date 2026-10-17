@@ -1,5 +1,5 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.23 (debug step clamp and footer index guard).
+# Requires shun >= 0.6.25 (headless shortcut presence refresh).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
 # staging tree (substituting __WOWSP_VERSION__ with the workspace version)
@@ -46,11 +46,15 @@ portable = true
 # The wowsp app detects this marker beside its executable (paths.rs).
 portable-marker = ".portable"
 main-exe = "wowsp.exe"
-# NSIS checkbox conventions: desktop asked (default checked), start menu
-# always; the wizard's done page applies the answers, headless runs take
-# the same defaults or the updater's explicit --shortcut-* answers.
+# Shortcut conventions: both asked on the wizard's done page (default
+# checked, the NSIS fresh-install convention), while headless runs
+# resolve "ask" by PRESENCE — an existing launcher is refreshed in
+# place, a missing one is not invented — so a silent auto-update never
+# re-creates a desktop/start-menu entry the player deleted (that
+# uninvited .lnk spray is exactly what Huorong/360 flag). Explicit
+# --shortcut-* answers still win when an updater passes them.
 desktop-shortcut = "ask"
-start-menu-shortcut = "always"
+start-menu-shortcut = "ask"
 # Unattended updates self-heal: the silent flow stopped the running app on
 # the overwrite, "always" puts it back (the GUI done page keeps its own
 # checkbox — this knob only pins the headless lane).
