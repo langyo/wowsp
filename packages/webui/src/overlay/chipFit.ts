@@ -17,6 +17,14 @@
  *  trading a slight reach back over the table's outer column for keeping
  *  the numbers whole (the webview would otherwise clip them away).
  *
+ *  ALIGN THE METRIC COLUMNS (alignMetricColumns): each metric (winrate /
+ *  PR / battles / damage) is its own right-aligned cell inside the stat
+ *  cell, keyed by data-col; measured across BOTH sides to the column's
+ *  widest laid-out face and pinned there, so every column reads at one
+ *  width in one mirrored table around the roster — the cells' own 4px
+ *  side margins are the only separators between them (the old dot
+ *  separators are gone).
+ *
  *  ALIGN THE STAT COLUMN (alignStatColumns): every row carries a stat cell
  *  against the table edge and a name cell outside it; the cells must line
  *  up across rows for the two-column read (enemies: numbers right-aligned,
@@ -89,11 +97,42 @@ export function fitChips(root: ParentNode, viewportWidth: number): void {
   }
 }
 
+/** Pin each metric column (every `.overlay-chip__stat b[data-col]` sharing
+ *  one data-col key) to ONE width — the widest laid-out face across BOTH
+ *  sides — so winrate / PR / battles / damage read as columns of one
+ *  table mirrored around the roster, separated only by the cells' own
+ *  4px side margins (the chipColumns markup no longer emits dot
+ *  separators). Call BEFORE {@link alignStatColumns}: the outer stat cell
+ *  must pin around the sum of these widths — pinned after, a column's
+ *  max could exceed the narrower rows' already-pinned cell and bleed into
+ *  the name column. Lays out as zero width under happy-dom, so a
+ *  test-environment measure (width 0 everywhere) skips the pass. */
+export function alignMetricColumns(root: ParentNode): void {
+  const byCol = new Map<string, HTMLElement[]>();
+  for (const cell of root.querySelectorAll<HTMLElement>(
+    ".overlay-chip__stat b[data-col]",
+  )) {
+    const key = cell.dataset.col ?? "";
+    const list = byCol.get(key);
+    if (list) list.push(cell);
+    else byCol.set(key, [cell]);
+  }
+  for (const cells of byCol.values()) {
+    let widest = 0;
+    for (const cell of cells) widest = Math.max(widest, cell.getBoundingClientRect().width);
+    if (widest <= 0) continue;
+    const width = `${Math.ceil(widest)}px`;
+    for (const cell of cells) cell.style.width = width;
+  }
+}
+
 /** Pin each side's stat column to ONE width — the widest face among that
  *  side's rows — so the numbers sit on a single alignment line and the
  *  name column starts at a fixed x (the two-column contract of the row
  *  layout in overlay/main.ts). Call after the rows are in the DOM (real
- *  layout) and before {@link fitChips}, which measures the pinned widths.
+ *  layout), after {@link alignMetricColumns} has pinned the inner metric
+ *  cells (this pass then measures the cells around their sum), and before
+ *  {@link fitChips}, which measures the pinned widths.
  *  Every cell joins the width even when its own face is empty (a row with
  *  the numbers off must keep the column slot, or its name cell would slide
  *  out of the column). Lays out as zero width under happy-dom, so a
