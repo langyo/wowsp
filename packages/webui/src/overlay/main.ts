@@ -46,7 +46,12 @@ import { splitRowsBySunk, type RosterRow } from "./rowList";
 // Post-layout passes keeping the row columns aligned and the rows inside
 // the overlay window — a row wider than the reserved side pad would
 // otherwise clip flat at the window edge.
-import { alignStatColumns, fitChips, refitWhenSealsSettle } from "./chipFit";
+import {
+  alignMetricColumns,
+  alignStatColumns,
+  fitChips,
+  refitWhenSealsSettle,
+} from "./chipFit";
 // Two-sided team consumable intel (radar/hydro/smoke estimate counts +
 // longest radar range) from the baked capability asset, overlaid by the
 // runtime-downloaded copy when the shell has one cached.
@@ -544,16 +549,15 @@ function fmtBattles(n: number): string {
 
 /** One battle count wearing its locale's unit ("1234 场" / "1234 battles")
  *  — split around the {n} placeholder so the count itself stays a pure
- *  ASCII run in its fixed-width column cell (.overlay-num n-battles — the
- *  mono number face), while the unit word drops into .overlay-unit (the
- *  text face, one size down) OUTSIDE that cell: the figures alone define
- *  the column, the unit hangs beside it. Both halves sit INSIDE the bold
- *  value, so the whole face keeps one color (including the thin-sample
- *  red). Every battle-count chip face carries the unit: with all four chip
- *  toggles on, a bare number between the PR and the damage figures is
- *  exactly what a Tab-glance misreads. The count itself keeps fmtBattles'
- *  compaction — a unit must not widen the chip by digits the roster table
- *  already has no room for. */
+ *  ASCII run on the mono face (.overlay-num n-battles), while the unit
+ *  word drops into .overlay-unit (the text face, one size down) beside
+ *  it. Both halves sit INSIDE the bold value, so the whole face keeps
+ *  one color (including the thin-sample red) and the measured column
+ *  covers the whole face. Every battle-count chip face carries the unit:
+ *  with all four chip toggles on, a bare number between the PR and the
+ *  damage figures is exactly what a Tab-glance misreads. The count itself
+ *  keeps fmtBattles' compaction — a unit must not widen the chip by
+ *  digits the roster table already has no room for. */
 function battlesText(n: number): string {
   const pattern = localized("battlesCount");
   const at = pattern.indexOf("{n}");
@@ -637,58 +641,60 @@ function scopeTagHtml(scope: OverlayColumnScope): string {
 }
 
 /** The per-row number block, one COLUMN per configured scope × metric
- *  pair, joined by dots. Each figure sits in a fixed-width right-aligned
- *  cell (.overlay-num + the n-* class, widths in ch on the mono face), so
- *  every metric reads as its own aligned column across rows — a 3-digit
- *  PR no longer drags the battles and damage figures out of line. A
- *  metric with no value renders its dash in the same cell, keeping the
- *  column. Scoped (non-global) columns carry their small muted scope tag
- *  inside the bold value, ahead of the figure — the tag hangs OUTSIDE
- *  the fixed-width cell (same rule as the battles unit) so the figures
- *  alone define the column; the ENEMY side renders the columns REVERSED
- *  so the two sides mirror each other around the game's table (config
- *  order reads left→right on the ally block). */
+ *  pair. Each metric is its own right-aligned cell (the bold value; the
+ *  data-col hook lets alignMetricColumns pin every row's cell to the
+ *  column's widest face across the roster), and the cells keep only
+ *  their own 4px side margins between them — no dot separators. A metric
+ *  with no value renders its dash in the same cell, keeping the column.
+ *  Scoped (non-global) columns carry their small muted scope tag inside
+ *  the bold value, ahead of the figure. The ENEMY side renders the
+ *  columns REVERSED so the two sides mirror each other around the game's
+ *  table (config order reads left→right on the ally block); the data-col
+ *  key stays the config column, so the shared measured widths keep the
+ *  mirrored halves symmetric. */
 function chipColumns(name: string, side: "ally" | "enemy"): string {
   const cols = effectiveOverlayColumns(PREFS.columns, PREFS.prOn);
   const ordered = side === "enemy" ? [...cols].reverse() : cols;
+  const colIndex = new Map(cols.map((c, i) => [c, i] as const));
   const parts: string[] = [];
   const fig = (cls: string, text: string) =>
     `<span class="overlay-num ${cls}">${text}</span>`;
   for (const col of ordered) {
+    const slot = `data-col="${colIndex.get(col) ?? 0}"`;
     const v = columnStatView(name, col.scope);
     const tag = scopeTagHtml(col.scope);
     if (col.metric === "winrate") {
       parts.push(
         v.winrate != null
-          ? `<b style="color:${winrateColor(v.winrate)}">${tag}${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
-          : `<b class="muted">${tag}${fig("n-wr", "—")}</b>`,
+          ? `<b ${slot} style="color:${winrateColor(v.winrate)}">${tag}${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
+          : `<b ${slot} class="muted">${tag}${fig("n-wr", "—")}</b>`,
       );
     } else if (col.metric === "pr") {
       parts.push(
         v.pr != null
-          ? `<b style="color:${prTier(v.pr).color}">${tag}${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
-          : `<b class="muted">${tag}${fig("n-pr", "—")}</b>`,
+          ? `<b ${slot} style="color:${prTier(v.pr).color}">${tag}${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
+          : `<b ${slot} class="muted">${tag}${fig("n-pr", "—")}</b>`,
       );
     } else if (col.metric === "battles") {
       // Red under 200 battles (thin-sample warning), plain above — same rule
       // as the roster panels' battles column (utils/winrate battlesColor).
-      // The count lands with its localized unit (battlesText) — the unit
-      // hangs OUTSIDE the fixed-width cell so the figures alone align.
+      // The count lands with its localized unit (battlesText), inside the
+      // same measured cell.
       const color = battlesColor(v.battles);
       parts.push(
         v.battles != null
-          ? `<b${color ? ` style="color:${color}"` : ""}>${tag}${battlesText(v.battles)}</b>`
-          : `<b class="muted">${tag}${fig("n-battles", "—")}</b>`,
+          ? `<b ${slot}${color ? ` style="color:${color}"` : ""}>${tag}${battlesText(v.battles)}</b>`
+          : `<b ${slot} class="muted">${tag}${fig("n-battles", "—")}</b>`,
       );
     } else {
       parts.push(
         v.avgDamage != null
-          ? `<b style="color:${damageColor(v.avgDamage)}">${tag}${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
-          : `<b class="muted">${tag}${fig("n-dmg", "—")}</b>`,
+          ? `<b ${slot} style="color:${damageColor(v.avgDamage)}">${tag}${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
+          : `<b ${slot} class="muted">${tag}${fig("n-dmg", "—")}</b>`,
       );
     }
   }
-  return parts.join(`<span class="sep">·</span>`);
+  return parts.join("");
 }
 
 /** HTML-escape one game-controlled string (roster names are game data). */
@@ -1244,9 +1250,12 @@ function render() {
       root.appendChild(el);
     });
   }
-  // One stat column width per side (the widest face among its rows): the
-  // numbers then sit on ONE alignment line and the name column starts at a
-  // fixed x — the two-column contract of the row layout.
+  // One width per METRIC column first (the widest face across the roster —
+  // chipFit.ts), then one stat column width per side around those cells:
+  // the numbers sit in evenly separated columns on ONE alignment line and
+  // the name column starts at a fixed x — the two-column contract of the
+  // row layout.
+  alignMetricColumns(root);
   alignStatColumns(root);
 
   // Two-sided summary cards — each side's consumable intel (radar/hydro/

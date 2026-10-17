@@ -137,33 +137,18 @@ html.overlay-hidden body {
   font-family: var(--overlay-num-font);
 }
 
-/* Each metric is its own COLUMN: a fixed-width, right-aligned cell sized
-   in ch on the mono face, so the column boundaries hold across rows no
-   matter how many digits a value has — winrate one column, PR one,
-   battles one, damage one, exactly like a table. A missing value renders
-   its dash in the same cell, keeping the column. Widths cover the worst
-   formatted case of each metric (100.0% / 9999 PR / 100.0k / 999.9k);
-   the localized battles unit hangs OUTSIDE the cell (battlesText), so it
-   never shifts the figures. */
-.overlay-chip__stat .overlay-num {
+/* Each metric is its own COLUMN: a right-aligned cell (the bold value)
+   pinned by alignMetricColumns to the widest face the roster actually
+   has for that metric — not a worst-case ch guess — and separated from
+   its neighbors by the cell's own 4px side margins; no dot separators
+   between the columns. A missing value renders its dash in the same
+   cell, keeping the column. The battles unit and the scope tag ride
+   inside their cell (battlesText / scopeTagHtml), so the measured
+   column covers the whole face. */
+.overlay-chip__stat b {
   display: inline-block;
   text-align: right;
-}
-
-.overlay-chip__stat .n-wr {
-  width: 6ch;
-}
-
-.overlay-chip__stat .n-pr {
-  width: 4ch;
-}
-
-.overlay-chip__stat .n-battles {
-  width: 6ch;
-}
-
-.overlay-chip__stat .n-dmg {
-  width: 6ch;
+  margin: 0 4px;
 }
 
 /* A battles-count unit word (场/場/battles/회 …) split out of its mono
@@ -177,10 +162,9 @@ html.overlay-hidden body {
 }
 
 /* A scoped column's tag (单人/单船/舰种 …) ahead of its figure: same
-   treatment as the battles unit — the text face, one size down, hanging
-   OUTSIDE the fixed-width figure cell so the digits alone define the
-   column. Global columns carry no tag: the unmarked figure IS the
-   account career. */
+   treatment as the battles unit — the text face, one size down, riding
+   inside the cell its figure is measured in. Global columns carry no
+   tag: the unmarked figure IS the account career. */
 .overlay-chip .overlay-scope {
   font-family: var(--overlay-text-font);
   font-size: 0.8em;

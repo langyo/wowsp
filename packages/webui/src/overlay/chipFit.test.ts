@@ -12,7 +12,12 @@
  *  each removal shrink the chip exactly like a real bitmap seal would. */
 import { describe, expect, it } from "vitest";
 
-import { alignStatColumns, fitChips, refitWhenSealsSettle } from "./chipFit";
+import {
+  alignMetricColumns,
+  alignStatColumns,
+  fitChips,
+  refitWhenSealsSettle,
+} from "./chipFit";
 
 const VIEW_W = 1000;
 /** Numbers + chip padding (CSS px) — every chip carries at least this. */
@@ -224,5 +229,84 @@ describe("alignStatColumns", () => {
 
   it("does not fail on a side with no rows", () => {
     expect(() => alignStatColumns(mounted())).not.toThrow();
+  });
+});
+
+/** A metric-cell fixture for the column alignment pass: a stat cell
+ *  holding one bold value keyed by data-col, with a stubbed laid-out
+ *  width (happy-dom lays nothing out). */
+function metricRow(
+  side: "ally" | "enemy",
+  cells: Array<{ col: number; w: number }>,
+): HTMLDivElement {
+  const el = document.createElement("div");
+  el.className = `overlay-chip overlay-chip--${side}`;
+  const stat = document.createElement("span");
+  stat.className = "overlay-chip__stat";
+  for (const { col, w } of cells) {
+    const b = document.createElement("b");
+    b.dataset.col = String(col);
+    b.getBoundingClientRect = () =>
+      ({ width: w, left: 0, right: w, top: 0, bottom: 12, height: 12, x: 0, y: 0, toJSON: () => ({}) }) as unknown as DOMRect;
+    stat.appendChild(b);
+  }
+  const name = document.createElement("span");
+  name.className = "overlay-chip__name";
+  name.textContent = "someone";
+  el.append(stat, name);
+  return el;
+}
+
+describe("alignMetricColumns", () => {
+  it("pins each metric column to its own widest face", () => {
+    // Column 0's widest face is 56px, column 1's is 30px — each column
+    // takes its OWN max, not one width for all metrics.
+    const a = metricRow("ally", [
+      { col: 0, w: 40 },
+      { col: 1, w: 30 },
+    ]);
+    const b = metricRow("ally", [
+      { col: 0, w: 56 },
+      { col: 1, w: 24 },
+    ]);
+    alignMetricColumns(mounted(a, b));
+    const widthOf = (row: HTMLDivElement, col: number) =>
+      (row.querySelectorAll<HTMLElement>(".overlay-chip__stat b")[col]).style.width;
+    expect(widthOf(a, 0)).toBe("56px");
+    expect(widthOf(b, 0)).toBe("56px");
+    expect(widthOf(a, 1)).toBe("30px");
+    expect(widthOf(b, 1)).toBe("30px");
+  });
+
+  it("shares widths across the two sides (one mirrored table)", () => {
+    // The enemy block renders its columns in reverse order but keyed by
+    // the same data-col — both sides' cells must land on one width so the
+    // mirrored halves stay symmetric.
+    const ally = metricRow("ally", [{ col: 2, w: 40 }]);
+    const enemy = metricRow("enemy", [{ col: 2, w: 61.2 }]);
+    alignMetricColumns(mounted(ally, enemy));
+    const widthOf = (row: HTMLDivElement) =>
+      (row.querySelector(".overlay-chip__stat b") as HTMLElement).style.width;
+    expect(widthOf(ally)).toBe("62px");
+    expect(widthOf(enemy)).toBe("62px");
+  });
+
+  it("leaves placeholder rows alone (no data-col cells in them)", () => {
+    // A loading/hidden row's stat face is a span without data-col — the
+    // pass must not touch it (alignStatColumns still gives the CELL its
+    // column slot).
+    const row = metricRow("ally", []);
+    alignMetricColumns(mounted(row));
+    expect(row.querySelectorAll(".overlay-chip__stat b")).toHaveLength(0);
+  });
+
+  it("skips zero-width measures (the happy-dom layout gap)", () => {
+    const row = metricRow("enemy", [{ col: 0, w: 0 }]);
+    alignMetricColumns(mounted(row));
+    expect((row.querySelector(".overlay-chip__stat b") as HTMLElement).style.width).toBe("");
+  });
+
+  it("does not fail on an empty root", () => {
+    expect(() => alignMetricColumns(mounted())).not.toThrow();
   });
 });

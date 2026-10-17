@@ -188,14 +188,29 @@ describe("overlay sample frame", () => {
       `.sample-stage{position:relative;width:1600px;height:480px;margin:24px auto;` +
       `overflow:hidden;border-radius:8px}\n` +
       `</style>\n</head>\n<body>\n<div class="sample-stage">\n${stage}\n</div>\n` +
-      // The static fixture carries no layout passes (alignStatColumns needs
-      // a real browser measure); mirror its column pin here so the sample
-      // shows the production two-column contract — a hidden-profile row's
-      // dot cell is pinned to the side's widest face exactly like every
-      // numbered row, keeping the nickname on the shared column edge.
-      `<script>\n// Mirror of overlay/chipFit.ts alignStatColumns: pin each side's stat\n` +
-      `// cells to the widest face so this static sample shows the production\n` +
-      `// two-column contract (hidden-profile dot cells included).\n` +
+      // The static fixture carries no layout passes (the alignment passes
+      // need a real browser measure); mirror chipFit's two column pins
+      // here, in production call order — each data-col metric column to
+      // its widest face across both sides, then each side's stat cell
+      // around those sums — so the sample shows the production column
+      // contract: evenly separated metric columns on one alignment line,
+      // a hidden-profile row's dot cell pinned to the side's widest face
+      // exactly like every numbered row, nickname on the shared edge.
+      `<script>\n// Mirror of overlay/chipFit.ts alignMetricColumns + alignStatColumns:\n` +
+      `// pin each data-col metric column to its widest laid-out face across\n` +
+      `// both sides, then pin each side's stat cells around those sums — the\n` +
+      `// static sample then shows the production column contract (hidden-\n` +
+      `// profile dot cells included).\n` +
+      `const groups = new Map();\n` +
+      `for (const b of document.querySelectorAll(".overlay-chip__stat b[data-col]")) {\n` +
+      `  const k = b.dataset.col || "";\n` +
+      `  if (!groups.has(k)) groups.set(k, []);\n` +
+      `  groups.get(k).push(b);\n` +
+      `}\n` +
+      `for (const cells of groups.values()) {\n` +
+      `  const w = Math.max(0, ...cells.map((c) => c.getBoundingClientRect().width));\n` +
+      `  if (w > 0) for (const c of cells) c.style.width = Math.ceil(w) + "px";\n` +
+      `}\n` +
       `for (const side of ["ally", "enemy"]) {\n` +
       `  const cells = [...document.querySelectorAll(\`.overlay-chip--\${side} .overlay-chip__stat\`)];\n` +
       `  const w = Math.max(0, ...cells.map((c) => c.getBoundingClientRect().width));\n` +
