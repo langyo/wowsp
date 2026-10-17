@@ -79,6 +79,9 @@ export interface WantedRule {
 export interface WantedDoc {
   rulesetVersion: number;
   updatedAt: string | null;
+  /** Dot-numeric minimum app build the ruleset accepts (`0.6.1`); older
+   *  builds plan nothing (the relay 426s their uploads). Null = no floor. */
+  clientVersionMin?: string | null;
   watermark: Watermark;
   rules: WantedRule[];
 }

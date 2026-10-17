@@ -110,12 +110,28 @@ pub(super) fn rule_open(rule: &WantedRule, watermark: &Watermark) -> bool {
     watermark.accepting && rule.max_count.is_none_or(|max| rule.collected < max)
 }
 
+/// Whether this app build clears the ruleset's whole-document minimum app
+/// version (`clientVersionMin`, dot-numeric; `None` = no floor). The relay
+/// enforces the same gate upload-side (426 `client_too_old`); the mirror
+/// here keeps an outdated build from planning a package the server would
+/// refuse.
+pub(super) fn app_version_ok(doc: &WantedDoc) -> bool {
+    doc.client_version_min
+        .as_deref()
+        .is_none_or(|min| version_ge(super::app_version(), min))
+}
+
 /// The first OPEN rule (document order — the same scan the relay's
 /// `/check` walks) whose criteria match the facts, or `None`.
 pub(super) fn matching_open_rule<'a>(
     doc: &'a WantedDoc,
     facts: &ReplayFacts,
 ) -> Option<&'a WantedRule> {
+    // A build below the ruleset's app floor is never eligible — no rule
+    // can match, so plans come back with no accept items.
+    if !app_version_ok(doc) {
+        return None;
+    }
     doc.rules
         .iter()
         .find(|rule| rule_open(rule, &doc.watermark) && rule_matches(rule, facts))
@@ -176,6 +192,7 @@ mod tests {
         WantedDoc {
             ruleset_version: 1,
             updated_at: Some("2026-10-14T00:00:00Z".into()),
+            client_version_min: None,
             watermark: Watermark {
                 staged_bytes: 0,
                 limit_bytes: 8,
@@ -285,6 +302,20 @@ mod tests {
         assert!(matching_open_rule(&d, &facts()).is_some());
         let mut d = d;
         d.watermark.accepting = false;
+        assert!(matching_open_rule(&d, &facts()).is_none());
+    }
+
+    #[test]
+    fn rulesets_flooring_the_app_version_never_accept() {
+        let r = rule("open");
+        let mut d = doc(vec![r]);
+        // A floor below any shipped build never gates…
+        d.client_version_min = Some("0.0.1".into());
+        assert!(app_version_ok(&d));
+        assert!(matching_open_rule(&d, &facts()).is_some());
+        // …one above this build's version gates every rule out.
+        d.client_version_min = Some("9999.0".into());
+        assert!(!app_version_ok(&d));
         assert!(matching_open_rule(&d, &facts()).is_none());
     }
 

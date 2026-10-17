@@ -572,6 +572,7 @@ fn closed_wanted() -> WantedDoc {
     WantedDoc {
         ruleset_version: 0,
         updated_at: None,
+        client_version_min: None,
         watermark: wowsp_tauri_shared::Watermark {
             staged_bytes: 0,
             limit_bytes: 0,
@@ -967,6 +968,13 @@ async fn pipeline_inner(ctx: &RunContext, items: &[PlanCandidate], scratch: &Pat
             s.identity.as_ref().map(|i| i.realm.clone()),
         )
     })?;
+    // Self-gate: the ruleset may floor the app build (`clientVersionMin`)
+    // — refuse before hashing or packing anything the relay would 426
+    // anyway; the error lands on the queue snapshot's message.
+    if !wanted::app_version_ok(&wanted) {
+        let min = wanted.client_version_min.clone().unwrap_or_default();
+        bail!("collection rules require a newer app version ({min})");
+    }
     let planned = tokio::task::spawn_blocking({
         let items = items.to_vec();
         let roots = ctx.roots.clone();
@@ -1525,6 +1533,9 @@ fn upload_error(
         reqwest::StatusCode::PAYLOAD_TOO_LARGE => {
             anyhow!("share package exceeds the relay's size or member cap")
         },
+        reqwest::StatusCode::UPGRADE_REQUIRED => {
+            anyhow!("collection rules require a newer app version — please update")
+        },
         reqwest::StatusCode::TOO_MANY_REQUESTS | reqwest::StatusCode::SERVICE_UNAVAILABLE => {
             match retry_after {
                 Some(secs) => anyhow!("relay is busy — retry after {secs}s"),
@@ -1795,6 +1806,7 @@ mod tests {
         let wanted = WantedDoc {
             ruleset_version: 3,
             updated_at: Some("2026-10-14T00:00:00Z".into()),
+            client_version_min: None,
             watermark: wowsp_tauri_shared::Watermark {
                 staged_bytes: 1,
                 limit_bytes: 8,

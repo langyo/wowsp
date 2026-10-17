@@ -111,6 +111,11 @@ pub struct WantedDoc {
     /// omits the stamp — the server serializes the absence explicitly.
     #[serde(default)]
     pub updated_at: Option<String>,
+    /// Dot-numeric minimum APP build the whole ruleset accepts (`0.6.1`):
+    /// an older build plans nothing and the relay refuses its uploads
+    /// (426 `client_too_old`).
+    #[serde(default)]
+    pub client_version_min: Option<String>,
     pub watermark: Watermark,
     #[serde(default)]
     pub rules: Vec<WantedRule>,

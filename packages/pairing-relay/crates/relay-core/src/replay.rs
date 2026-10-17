@@ -51,6 +51,12 @@ pub const ARCHIVE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 pub const MEMBERS_MAX: usize = 400;
 /// Total staged bytes across all contributors (the watermark ceiling).
 pub const LIMIT_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+/// One contributor's staged archive blob (tar.zst) may not exceed this —
+/// the explicit PER-CONTRIBUTOR policy bound (0.5 GiB). Today the tighter
+/// per-upload [`ARCHIVE_MAX_BYTES`] dominates because each re-upload
+/// REPLACES the contributor's blob rather than stacking it; this is the
+/// cap the policy promises per anon.
+pub const ANON_ARCHIVE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 
 /// The only manifest/consent version wave 1 speaks (contract §4/§11).
 pub const MANIFEST_VERSION: u32 = 1;
@@ -216,6 +222,12 @@ pub struct WantedDoc {
     pub updated_at: Option<String>,
     #[serde(default)]
     pub rules: Vec<WantedRule>,
+    /// Dot-numeric minimum APP version the whole ruleset accepts
+    /// (`0.6.1` — uploads from older builds are refused with 426).
+    /// Skipped when unset so the canonical stored form (and the console's
+    /// raw round-trip) never carries an explicit null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_version_min: Option<String>,
 }
 
 /// `^[a-z0-9-]{1,64}$`.
@@ -245,6 +257,13 @@ pub fn parse_wanted_doc(raw: &str) -> Option<WantedDoc> {
             .and_then(Value::as_str)
             .map(str::to_string),
         rules: Vec::new(),
+        // Tolerant like the rules: a malformed floor drops to None (no
+        // gate) rather than closing the collection.
+        client_version_min: v
+            .get("clientVersionMin")
+            .and_then(Value::as_str)
+            .filter(|s| valid_version_min(s))
+            .map(str::to_string),
     };
     for rule_v in v
         .get("rules")
@@ -319,9 +338,27 @@ pub fn validate_wanted_save(raw: &str, now_ms: u64) -> Result<WantedDoc, String>
         ruleset_version: v.get("rulesetVersion").and_then(Value::as_u64).unwrap_or(1),
         updated_at: Some(iso8601_utc(now_ms)),
         rules: Vec::with_capacity(rules_v.len()),
+        client_version_min: v
+            .get("clientVersionMin")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     };
     if doc.ruleset_version == 0 {
         return Err("rulesetVersion must be ≥ 1".to_string());
+    }
+    // A JSON null reads as "unset" (hand-typed in the console), matching
+    // the tolerant read path; anything else non-string is an authoring error.
+    if v.get("clientVersionMin")
+        .is_some_and(|cv| !cv.is_null() && !cv.is_string())
+    {
+        return Err("clientVersionMin must be a dot-numeric string".to_string());
+    }
+    if let Some(min) = doc.client_version_min.as_deref() {
+        if !valid_version_min(min) {
+            return Err(format!(
+                "clientVersionMin {min:?} must be dot-numeric (e.g. \"0.6.1\")"
+            ));
+        }
     }
     for (i, rule_v) in rules_v.iter().enumerate() {
         let rule: WantedRule = serde_json::from_value(rule_v.clone())
@@ -351,9 +388,28 @@ pub fn validate_wanted_save(raw: &str, now_ms: u64) -> Result<WantedDoc, String>
                 return Err(format!("rules[{i}]: maxCount {max} is absurd (cap 1,000,000)"));
             }
         }
+        if let Some(min) = rule.client_version_min.as_deref() {
+            if !valid_version_min(min) {
+                return Err(format!(
+                    "rules[{i}]: clientVersionMin {min:?} must be dot-numeric (e.g. \"14.0\")"
+                ));
+            }
+        }
         doc.rules.push(rule);
     }
     Ok(doc)
+}
+
+/// Dot-numeric version SHAPE (`14`, `14.0`, `0.6.1`): 1..=4 components,
+/// each 1..=4 ASCII digits — the grammar every `clientVersionMin` floor
+/// (per-rule and whole-doc) must speak, so `version_ge` compares honest
+/// numbers instead of letting junk silently count as 0.0.0.
+pub fn valid_version_min(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    (1..=4).contains(&parts.len())
+        && parts
+            .iter()
+            .all(|p| (1..=4).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Dot-numeric `a` ≥ `b` ("14.5.0" ≥ "14.0"). Missing or non-numeric
@@ -882,7 +938,8 @@ impl Ledger {
     }
 
     /// Evaluate an upload (contract §4 order: per-member verdicts →
-    /// superset → watermark delta). Pure: `apply_claim` runs this and
+    /// superset → per-anon cap → watermark delta). Pure: `apply_claim`
+    /// runs this and
     /// then mutates, so a DO can dry-run (prepare) before the R2 write
     /// and re-validate atomically at commit.
     pub fn evaluate_claim(&self, input: &ClaimInput) -> Result<ClaimPlan, ClaimError> {
@@ -978,6 +1035,12 @@ impl Ledger {
             .collect();
         if !dropped.is_empty() {
             return Err(ClaimError::DroppedMembers(dropped));
+        }
+
+        // Per-anon cap: one contributor's blob may not exceed
+        // ANON_ARCHIVE_MAX_BYTES, however the global watermark stands.
+        if input.archive_bytes > ANON_ARCHIVE_MAX_BYTES {
+            return Err(ClaimError::ArchivePerAnonTooLarge);
         }
 
         // Watermark delta: total' = wm − oldBlob + newBlob ≤ limit.
@@ -1180,6 +1243,8 @@ pub enum ClaimError {
     Rejected(Vec<RejectedMember>),
     /// 422 — staged members missing from the manifest.
     DroppedMembers(Vec<String>),
+    /// 413 — the contributor's new blob would pass the per-anon cap.
+    ArchivePerAnonTooLarge,
     /// 503 — the watermark delta would pass the ceiling.
     Watermark,
 }
@@ -1285,6 +1350,7 @@ pub fn wanted_response(doc: Option<&WantedDoc>, wm: u64, counters: &HashMap<Stri
     json!({
         "rulesetVersion": doc.map(|d| d.ruleset_version).unwrap_or(0),
         "updatedAt": doc.and_then(|d| d.updated_at.clone()),
+        "clientVersionMin": doc.and_then(|d| d.client_version_min.clone()),
         "watermark": {
             "stagedBytes": wm,
             "limitBytes": LIMIT_BYTES,
@@ -1576,6 +1642,7 @@ mod tests {
         let raw = r#"{
             "rulesetVersion": 3,
             "updatedAt": "2026-10-14T00:00:00Z",
+            "clientVersionMin": "0.6.1",
             "rules": [
                 { "id": "solomon-std-asia", "collected": 123, "maxCount": 200,
                   "note": " Solomon standard ",
@@ -1592,6 +1659,7 @@ mod tests {
         let doc = parse_wanted_doc(raw).unwrap();
         assert_eq!(doc.ruleset_version, 3);
         assert_eq!(doc.updated_at.as_deref(), Some("2026-10-14T00:00:00Z"));
+        assert_eq!(doc.client_version_min.as_deref(), Some("0.6.1"));
         assert_eq!(doc.rules.len(), 1, "two malformed rules dropped");
         let r = &doc.rules[0];
         assert_eq!(r.id, "solomon-std-asia");
@@ -1601,6 +1669,11 @@ mod tests {
         assert_eq!(r.tiers, vec![10u8]);
         assert_eq!(r.player_count_min, Some(12));
         assert_eq!(r.client_version_min.as_deref(), Some("14.0"));
+        // A malformed whole-doc floor drops to None (no gate) instead of
+        // closing the collection — tolerant like a malformed rule.
+        let junk = raw.replace("\"0.6.1\"", "\"0.6.x\"");
+        let doc = parse_wanted_doc(&junk).unwrap();
+        assert_eq!(doc.client_version_min, None);
         // A doc with only malformed rules is open-but-empty (closed).
         let empty = parse_wanted_doc(r#"{ "rules": [ { "id": "X" } ] }"#).unwrap();
         assert!(empty.rules.is_empty());
@@ -1643,6 +1716,26 @@ mod tests {
         assert!(!version_ge("junk", "1"), "junk counts as 0.0.0");
         assert!(version_ge("", ""), "empty == empty");
         assert!(version_ge("14.", "13.9"), "empty tail counts as 0");
+    }
+
+    #[test]
+    fn version_min_floors_must_be_dot_numeric() {
+        assert!(valid_version_min("14"));
+        assert!(valid_version_min("14.0"));
+        assert!(valid_version_min("0.6.1"));
+        assert!(valid_version_min("14.0.0.8867"));
+        assert!(!valid_version_min(""), "no components");
+        assert!(!valid_version_min("."));
+        assert!(!valid_version_min("14."));
+        assert!(!valid_version_min("14..0"));
+        assert!(!valid_version_min("0.6.x"));
+        assert!(!valid_version_min("v0.6.1"));
+        assert!(!valid_version_min(" 0.6.1"));
+        assert!(!valid_version_min("0.6.1.2.3"), "more than 4 components");
+        assert!(
+            !valid_version_min("12345.0"),
+            "component longer than 4 digits"
+        );
     }
 
     // ── rule matching matrix ──────────────────────────────────────────
@@ -2233,23 +2326,28 @@ mod tests {
         let mut f = fx(ANON, TOKEN, vec![member(&"a".repeat(64))]);
         f.archive_bytes = 100;
         led.apply_claim(&f.input(), T0).unwrap();
-        // A REPLACEMENT never trips the ceiling while it fits the limit
-        // itself: the contributor's old blob bytes are released first
-        // (and the manifest keeps the staged member — superset rule).
+        // A REPLACEMENT never trips a cap while it fits them itself: the
+        // contributor's old blob bytes are released first (and the
+        // manifest keeps the staged member — superset rule). The blob is
+        // bounded by the per-anon cap, so the FULL watermark is never one
+        // contributor's to fill.
         let mut repl = fx(
             ANON,
             TOKEN,
             vec![member(&"a".repeat(64)), member(&"b".repeat(64))],
         );
-        repl.archive_bytes = LIMIT_BYTES;
+        repl.archive_bytes = ANON_ARCHIVE_MAX_BYTES;
         let delta = led.apply_claim(&repl.input(), T0).unwrap();
-        assert_eq!(delta.plan.wm, LIMIT_BYTES);
+        assert_eq!(delta.plan.wm, ANON_ARCHIVE_MAX_BYTES);
         // A FRESH contributor's member under the full watermark is
-        // unwanted (the verdict gate runs before the delta check).
+        // unwanted (the verdict gate runs before the delta check). The
+        // full state is restored directly — one contributor's blob can no
+        // longer fill the watermark alone under the per-anon cap.
+        let brim = Ledger::restore([], [], [], [], LIMIT_BYTES);
         let mut fresh = fx(ANON2, TOKEN, vec![member(&"c".repeat(64))]);
         fresh.archive_bytes = 100;
         assert_eq!(
-            led.evaluate_claim(&fresh.input()),
+            brim.evaluate_claim(&fresh.input()),
             Err(ClaimError::Rejected(vec![RejectedMember {
                 sha256: "c".repeat(64),
                 verdict: Verdict::Unwanted,
@@ -2295,6 +2393,30 @@ mod tests {
         fits.archive_bytes = 100;
         assert!(led2.apply_claim(&fits.input(), T0).is_ok());
         assert_eq!(led2.counters().0, LIMIT_BYTES);
+    }
+
+    #[test]
+    fn anon_archive_cap_bounds_one_contributor() {
+        let mut led = Ledger::new();
+        // Over the per-anon cap: the 413 itself, even though the global
+        // watermark is empty and the member is a legal fresh accept.
+        let mut over = fx(ANON, TOKEN, vec![member(&"a".repeat(64))]);
+        over.archive_bytes = ANON_ARCHIVE_MAX_BYTES + 1;
+        assert_eq!(
+            led.evaluate_claim(&over.input()),
+            Err(ClaimError::ArchivePerAnonTooLarge)
+        );
+        // Exactly at the cap: accepted (the cap is inclusive), filling the
+        // contributor's whole budget in one blob.
+        let mut at = fx(ANON, TOKEN, vec![member(&"a".repeat(64))]);
+        at.archive_bytes = ANON_ARCHIVE_MAX_BYTES;
+        let delta = led.apply_claim(&at.input(), T0).unwrap();
+        assert_eq!(delta.plan.wm, ANON_ARCHIVE_MAX_BYTES);
+        // A REPLACEMENT under the cap still passes — the old blob bytes
+        // are released, not stacked.
+        let mut repl = fx(ANON, TOKEN, vec![member(&"a".repeat(64))]);
+        repl.archive_bytes = 100;
+        assert!(led.evaluate_claim(&repl.input()).is_ok());
     }
 
     #[test]
@@ -2469,13 +2591,14 @@ mod tests {
     #[test]
     fn save_validation_is_strict_and_canonical() {
         let ok = validate_wanted_save(
-            r#"{ "rulesetVersion": 3, "rules": [
+            r#"{ "rulesetVersion": 3, "clientVersionMin": "0.6.1", "rules": [
                 { "id": "r1", "maps": ["008_SOLOMONS"], "maxCount": 10 } ] }"#,
             1_700_000_000_000,
         )
         .unwrap();
         assert_eq!(ok.ruleset_version, 3);
         assert_eq!(ok.rules.len(), 1);
+        assert_eq!(ok.client_version_min.as_deref(), Some("0.6.1"));
         assert_eq!(ok.updated_at.as_deref(), Some("2023-11-14T22:13:20Z"));
 
         // A malformed rule is an authoring error, not a silent skip.
@@ -2485,6 +2608,23 @@ mod tests {
         )
         .unwrap_err();
         assert!(e.contains("rules[0]"), "{e}");
+        // A malformed whole-doc floor (or per-rule floor) refuses too.
+        assert!(
+            validate_wanted_save(
+                r#"{ "clientVersionMin": "0.6.x", "rules": [ { "id": "r1" } ] }"#,
+                0
+            )
+            .unwrap_err()
+            .contains("clientVersionMin")
+        );
+        assert!(
+            validate_wanted_save(
+                r#"{ "rules": [ { "id": "r1", "clientVersionMin": "junk" } ] }"#,
+                0
+            )
+            .unwrap_err()
+            .contains("rules[0]")
+        );
         // Missing rules array, non-object, junk JSON, oversize, and the
         // empty-string cop-out all refuse with actionable copy.
         assert!(validate_wanted_save("{}", 0).unwrap_err().contains("rules"));
@@ -2504,6 +2644,35 @@ mod tests {
         let canon = serde_json::to_string(&ok).unwrap();
         let again = validate_wanted_save(&canon, 1_700_000_000_000).unwrap();
         assert_eq!(again.rules, ok.rules);
+        assert_eq!(again.client_version_min, ok.client_version_min);
+
+        // A FLOORLESS canonical doc never serializes an explicit null, so
+        // the console's raw round-trip (GET raw → textarea → POST) keeps
+        // re-saving forever — and a hand-typed null reads as unset too.
+        let floorless =
+            validate_wanted_save(r#"{ "rules": [ { "id": "r1", "maps": [] } ] }"#, 0).unwrap();
+        assert_eq!(floorless.client_version_min, None);
+        let floorless_canon = serde_json::to_string(&floorless).unwrap();
+        // The top-level key is absent (rules keep serializing their own
+        // optional fields as null — the pre-existing canonical form).
+        let canon_v: serde_json::Value = serde_json::from_str(&floorless_canon).unwrap();
+        assert!(canon_v.get("clientVersionMin").is_none());
+        validate_wanted_save(&floorless_canon, 0).unwrap();
+        let mut with_null: serde_json::Value = serde_json::from_str(&floorless_canon).unwrap();
+        with_null["clientVersionMin"] = serde_json::Value::Null;
+        let nulled = with_null.to_string();
+        assert!(nulled.contains("\"clientVersionMin\":null"));
+        assert_eq!(
+            validate_wanted_save(&nulled, 0).unwrap().client_version_min,
+            None
+        );
+        // A non-string type is an authoring error, not a silent unset.
+        let numeric = floorless_canon.replacen("{", "{\"clientVersionMin\": 0.6, ", 1);
+        assert!(
+            validate_wanted_save(&numeric, 0)
+                .unwrap_err()
+                .contains("clientVersionMin must be a dot-numeric string")
+        );
     }
 
     #[test]
@@ -2517,6 +2686,11 @@ mod tests {
         let v = wanted_response(Some(&doc), 123, &counters);
         assert_eq!(v["rulesetVersion"], json!(3));
         assert_eq!(v["updatedAt"], json!("2026-10-14T00:00:00Z"));
+        assert_eq!(
+            v["clientVersionMin"],
+            json!(null),
+            "absent floor serves null"
+        );
         assert_eq!(v["watermark"]["stagedBytes"], json!(123));
         assert_eq!(v["watermark"]["limitBytes"], json!(8_589_934_592u64));
         assert!(v["watermark"]["accepting"].as_bool().unwrap());
@@ -2536,10 +2710,16 @@ mod tests {
                 max_count: Some(10),
                 ..rule("r1")
             }],
+            client_version_min: Some("0.6.1".into()),
             ..doc.clone()
         };
         let v = wanted_response(Some(&r1_doc), 0, &counters2);
         assert!(!v["watermark"]["accepting"].as_bool().unwrap());
+        assert_eq!(
+            v["clientVersionMin"],
+            json!("0.6.1"),
+            "floor serves through"
+        );
         // Watermark full → not accepting.
         let v = wanted_response(Some(&doc), LIMIT_BYTES, &counters);
         assert!(!v["watermark"]["accepting"].as_bool().unwrap());
@@ -2548,6 +2728,7 @@ mod tests {
         assert_eq!(v["rulesetVersion"], json!(0));
         assert_eq!(v["rules"], json!([]));
         assert!(v["updatedAt"].is_null());
+        assert!(v["clientVersionMin"].is_null());
         assert!(!v["watermark"]["accepting"].as_bool().unwrap());
         assert_eq!(v["watermark"]["stagedBytes"], json!(5));
     }

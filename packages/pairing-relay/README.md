@@ -403,10 +403,16 @@ tested); `crates/relay-worker/src/replay.rs` is the plumbing and
 
 What the server accepts is **server-authoritative**: the maintainer
 writes ONE KV value — `FEEDBACK_KV` key `replays:wanted` — holding the
-ruleset (`{rulesetVersion, updatedAt, rules:[{id, maxCount, maps, modes,
-realms, shipClasses, shipIds, tiers, playerCountMin/Max, botMax,
-clientVersionMin}]}`; absent or empty rules = collection CLOSED. Rules
-are matched against client-claimed, plausibility-checked facts.
+ruleset (`{rulesetVersion, updatedAt, clientVersionMin, rules:[{id,
+maxCount, maps, modes, realms, shipClasses, shipIds, tiers,
+playerCountMin/Max, botMax, clientVersionMin}]}`; absent or empty rules =
+collection CLOSED. Rules are matched against client-claimed,
+plausibility-checked facts. The top-level `clientVersionMin` (dot-numeric,
+e.g. `0.6.1`) floors the APP build itself: uploads from older builds are
+refused with 426 `client_too_old` (an empty/malformed manifest version
+counts as too old), and the app self-gates so an outdated install never
+plans or packs a share — the per-rule `clientVersionMin` stays a facts
+dimension (the game client inside the replay).
 Edit the ruleset either directly in KV or from the /erp console's
 录像征集 view (编辑需求单 — a strict server-side validation, the
 canonical form is stored with a server-stamped updatedAt); 关闭征集
@@ -419,7 +425,11 @@ headroom. An upload must be a SUPERSET of the contributor's staged set
 (dropping staged members → 422 `dropped_members`), every member must be
 `accept`/`own_staged` NOW (else 422 `rejected`), and the new blob must
 keep the global staged total under the 8 GiB watermark (503 `watermark`,
-retry-after). Archives are capped at 256 MiB / 400 members (413).
+retry-after). Archives are capped at 256 MiB / 400 members (413), and
+one contributor's staged blob at 0.5 GiB (413
+`archive_per_anon_too_large` — the explicit policy bound; today the
+tighter per-upload 256 MiB cap dominates because re-uploads REPLACE the
+contributor's blob).
 
 Storage layout:
 

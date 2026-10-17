@@ -333,9 +333,10 @@ async fn shard_response(env: &Env, anon: &str) -> Result<Response> {
 }
 
 /// POST /api/replays/upload — RAW tar.zst body + `x-manifest` header.
-/// Server order per contract §4: quotas → manifest shape → per-member
-/// verdict + superset + watermark (DO prepare) → stream body into R2 →
-/// ledger transaction (DO commit).
+/// Server order per contract §4: quotas → manifest shape → ruleset
+/// app-version floor (426 `client_too_old`) → per-member verdict +
+/// superset + watermark (DO prepare) → stream body into R2 → ledger
+/// transaction (DO commit).
 pub async fn handle_upload(mut req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Post {
         return err(405, "method_not_allowed");
@@ -354,6 +355,13 @@ pub async fn handle_upload(mut req: Request, env: Env) -> Result<Response> {
     };
     if len > replay::ARCHIVE_MAX_BYTES {
         return err(413, "archive_too_large");
+    }
+    // The explicit per-contributor policy bound — shadowed by the tighter
+    // per-upload cap above today (re-uploads replace the blob, they never
+    // stack); kept defensive so relaxing ARCHIVE_MAX_BYTES alone can never
+    // silently drop the per-anon promise.
+    if len > replay::ANON_ARCHIVE_MAX_BYTES {
+        return err(413, "archive_per_anon_too_large");
     }
     if let Some(ct) = req.headers().get("Content-Type")?.filter(|c| !c.is_empty()) {
         let base = ct.split(';').next().unwrap_or("").trim();
@@ -384,7 +392,20 @@ pub async fn handle_upload(mut req: Request, env: Env) -> Result<Response> {
         Err(ManifestError::TooManyMembers) => return err(413, "too_many_members"),
     };
 
-    let rules = wanted_doc(&env).await?.map(|d| d.rules).unwrap_or_default();
+    let wanted = wanted_doc(&env).await?;
+    // The ruleset may floor the APP build (`clientVersionMin`): an older
+    // build's uploads refuse here, before the DO prepare and the R2
+    // stream. Fail CLOSED on an empty/malformed manifest version —
+    // version_ge counts junk as 0.0.0, so it never passes a real floor.
+    if let Some(min) = wanted
+        .as_ref()
+        .and_then(|d| d.client_version_min.as_deref())
+    {
+        if !replay::version_ge(&manifest.app_version, min) {
+            return err(426, "client_too_old");
+        }
+    }
+    let rules = wanted.map(|d| d.rules).unwrap_or_default();
     let claim = DoClaim {
         phase: "prepare".into(),
         anon: auth.anon.clone(),
