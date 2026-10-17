@@ -3,10 +3,11 @@
  *
  * The payload is a JSON object; `playersPublicInfo` maps account id → the
  * client's fixed-position `CLIENT_PUBLIC_RESULTS` array. Index semantics
- * follow the authoritative layout vendored in
- * packages/tools/wowsunpack-vendor/embedded_resources/constants.json
- * (client 15.2), re-verified against 126 replays / 417 players on client
- * 15.8: `damage` (426) equals the summed damage_* family, `remained_hp`
+ * follow the wowsunpack constants layout (client 15.2; the vendored
+ * constants.json copy went away when the vendor tree slimmed to its
+ * library crates — the pinning tests in postBattle.test.ts are now the
+ * in-repo authority), re-verified against 126 replays / 417 players on
+ * client 15.8: `damage` (426) equals the summed damage_* family, `remained_hp`
  * (20) is 0 exactly for sunk ships, planes killed (280+281) stays ≤ ~40.
  * Arrays shorter than 427 entries (older clients) simply lack the late
  * fields — they surface as null/0 instead of wrong numbers. A second,
