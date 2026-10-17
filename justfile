@@ -416,6 +416,7 @@ convert-map-holo *ARGS:
 #   just bake-model raw.glb -o ship.glb --triangles 2000
 #   just bake-ships
 #   just bake-maps
+#   just bake-optimize
 
 bake-model *ARGS:
     python scripts/model_convert/bake_model.py {{ARGS}}
@@ -425,6 +426,11 @@ bake-ships *ARGS:
 
 bake-maps *ARGS:
     WOWSP_WOWSUNPACK="target/release/wowsunpack.exe" python scripts/model_convert/batch_bake_maps.py {{ARGS}}
+
+# Optimize the baked GLB pack in place (meshopt + quantize; idempotent,
+# skips already-optimized files). Run after bake-ships/bake-maps.
+bake-optimize *ARGS:
+    python scripts/model_convert/optimize_glbs.py {{ARGS}}
 
 # ── extract ───────────────────────────────────────────────────────────
 #   just extract                  → auto-detect game, run all modules

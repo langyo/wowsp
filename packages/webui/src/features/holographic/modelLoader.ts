@@ -38,6 +38,7 @@ import { isTauri } from "@/utils/platform";
 import { wireInsightsPack } from "./insightsLoader";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 
 // ── Model-pack cache (populated by initModelPack) ───────────────────────
 let _modelCacheRoot: string | null = null;
@@ -626,7 +627,15 @@ export function resolveShipModelForEntry(
 
 let _loader: GLTFLoader | null = null;
 function getLoader(): GLTFLoader {
-  if (!_loader) _loader = new GLTFLoader();
+  if (!_loader) {
+    _loader = new GLTFLoader();
+    // Pack GLBs are meshopt+quantized by scripts/model_convert/
+    // optimize_glbs.py — the decoder only engages when the
+    // EXT_meshopt_compression extension is present, so legacy uncompressed
+    // packs keep loading unchanged. Same wiring as the site's replay3d
+    // loader (packages/website glb.ts) and packages/holo's glbLoader.
+    _loader.setMeshoptDecoder(MeshoptDecoder);
+  }
   return _loader;
 }
 
