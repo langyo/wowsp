@@ -2622,6 +2622,7 @@ fn contribution_wanted_doc_roundtrips_with_sparse_rules() {
     let raw = serde_json::json!({
         "rulesetVersion": 3,
         "updatedAt": "2026-10-14T00:00:00Z",
+        "clientVersionMin": "0.6.1",
         "watermark": { "stagedBytes": 123, "limitBytes": 8_589_934_592u64, "accepting": true },
         "rules": [ { "id": "solomon-std-asia", "collected": 123, "maxCount": 200,
             "maps": ["008_SOLOMONS"], "modes": ["standard"], "realms": ["asia"],
@@ -2636,7 +2637,17 @@ fn contribution_wanted_doc_roundtrips_with_sparse_rules() {
     assert!(rule.ship_ids.is_empty());
     assert!(rule.note.is_none());
     assert_eq!(rule.max_count, Some(200));
+    // The whole-doc app floor rides along — and heals to None when the
+    // ruleset omits it (the sparse-parse half of the same wire shape).
+    assert_eq!(doc.client_version_min.as_deref(), Some("0.6.1"));
     let v = round_trips(doc);
+    assert_eq!(v["clientVersionMin"], "0.6.1");
+    let sparse: WantedDoc = serde_json::from_value(serde_json::json!({
+        "rulesetVersion": 1,
+        "watermark": { "stagedBytes": 0, "limitBytes": 0, "accepting": false }
+    }))
+    .unwrap();
+    assert_eq!(sparse.client_version_min, None);
     assert_eq!(v["rules"][0]["playerCountMin"], 12);
     assert_eq!(v["watermark"]["limitBytes"], 8_589_934_592u64);
 }

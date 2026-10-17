@@ -227,8 +227,8 @@ impl ReplayIndex {
 
     /// POST /claim — prepare (dry-run before the R2 write) or commit
     /// (the ledger transaction). The worker maps the statuses 1:1 onto
-    /// the client face (409 / 422 rejected / 422 dropped_members / 503
-    /// watermark).
+    /// the client face (409 / 422 rejected / 422 dropped_members /
+    /// 413 archive_per_anon_too_large / 503 watermark).
     async fn claim(&self, body: DoClaim) -> Result<Response> {
         if !relay_core::replay::valid_anon_id(&body.anon)
             || !relay_core::replay::valid_hex64(&body.thash)
@@ -237,6 +237,10 @@ impl ReplayIndex {
             || body.members.is_empty()
             || body.members.len() > replay::MEMBERS_MAX
             || body.archive_bytes > replay::ARCHIVE_MAX_BYTES
+            // The explicit per-contributor policy bound — shadowed by the
+            // tighter per-upload cap above today (re-uploads replace the
+            // blob, they never stack), kept defensive like the ledger's.
+            || body.archive_bytes > replay::ANON_ARCHIVE_MAX_BYTES
         {
             return Response::error("bad request", 400);
         }
@@ -392,6 +396,7 @@ fn claim_error(e: ClaimError) -> Result<Response> {
         ClaimError::DroppedMembers(dropped) => {
             error_json(422, "dropped_members", Some(json!({ "dropped": dropped })))
         },
+        ClaimError::ArchivePerAnonTooLarge => error_json(413, "archive_per_anon_too_large", None),
         ClaimError::Watermark => error_json(503, "watermark", None),
     }
 }
