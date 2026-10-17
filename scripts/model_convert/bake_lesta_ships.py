@@ -13,18 +13,32 @@ Turrets are NOT in the ship's model directory — each gun is its own
 GameParams entity with a separate model dir, authored in GUN-LOCAL space
 (pivot at the traverse axis). Their placement used to live only in the
 undecoded visual layer, but the ship's `.splash` file (a plain packaged
-file, same as WG) carries named hit-box AABBs in the hull's coordinate
-frame, and the GameParams artillery HP blocks reference them by name
+file, same as WG) carries named hit-box AABBs, and the GameParams
+artillery HP blocks reference them by name
 (`HitLocationArtillery.splashBoxes: ["CM_SB_gk_1_1"]`). So each main
-turret is placed exactly, with the convention measured against WG's own
-export-ship output: the gun origin lands at the box's center-x/z and its
-TOP on the box's max-y (the box is the barbette volume, the turret sits
-on it), barrels yawed toward the bow.
+turret is placed exactly, with the convention calibrated against WG's own
+export-ship output for hulls the two clients share under the same model
+directory (Montana, Worcester, Dante, Agincourt, Mikasa: every pivot
+matched to three decimals):
+
+  - the hull `.geometry` frame is WG's ship frame — bow at -z;
+  - the `.splash` frame is MIRRORED along z (bow at +z), so the mount
+    point is (box_center_x, box_max_y, -box_center_z) — x and the
+    barbette-top y carry over as-is;
+  - facing: WG authors per-turret yaw in the visual layer, which stays
+    undecoded, so facing is inferred from position — turrets whose box
+    lands aft of the ship's splash-box midpoint face the stern, the rest
+    face the bow (24 of 26 sampled WG turrets agree; the outliers are
+    WG's own midship styling quirks).
+
+The earlier bake skipped the z mirror, which mounted every turret on the
+opposite end of the hull, and yawed everything one way.
 
 Coverage follows the data: every CA/BB in the Lesta-only set anchors all
-its turrets this way; CVs have no artillery (hull-only, as they should
-be); DD/sub deck guns have no separate hit boxes at all — they stay out
-until the visual layer (assets.bin) is decoded.
+its turrets this way (Lesta's Akagi PJSA508 even mounts her two bow
+casemate guns); most CVs have no artillery at all (hull-only, as they
+should be); DD/sub deck guns have no separate hit boxes at all — they
+stay out until the visual layer (assets.bin) is decoded.
 
 Pipeline per ship (the Lesta-only indexes of tech_tree_lesta.json):
   1. ship + gun model dirs from ship_models.json / GameParams;
@@ -128,15 +142,19 @@ def artillery_anchors(entry: dict, entity_by_id: dict) -> list[dict]:
     return anchors
 
 
-def bow_forward_sign(boxes: dict[str, tuple[list, list]]) -> int:
-    """The bow's z direction in the splash frame (+1 or -1): the `bow`-named
-    boxes sit toward the bow, `ruder` (rudder) toward the stern."""
-    bow = [c[2] for n, (mn, mx) in boxes.items() if "bow" in n.lower()
-           for c in [( (mn[0]+mx[0])/2, (mn[1]+mx[1])/2, (mn[2]+mx[2])/2 )]]
-    ruder = [c[2] for n, (mn, mx) in boxes.items() if "ruder" in n.lower()
-             for c in [( (mn[0]+mx[0])/2, (mn[1]+mx[1])/2, (mn[2]+mx[2])/2 )]]
-    if bow and ruder:
-        return 1 if sum(bow) / len(bow) > sum(ruder) / len(ruder) else -1
+def splash_bow_sign(boxes: dict[str, tuple[list, list]]) -> int:
+    """The bow's z direction in the SPLASH frame (+1 or -1): the `bow`-named
+    boxes sit toward the bow, `stern`/`ruder` (rudder) toward the stern.
+    Every Lesta splash seen so far is bow-at-+z (mirrored vs the hull
+    geometry frame); this keeps the mapping data-driven per ship."""
+    def centers(sub: str) -> list[float]:
+        return [(mn[2] + mx[2]) / 2 for n, (mn, mx) in boxes.items()
+                if sub in n.lower()]
+    bow = centers("bow")
+    for aft in ("stern", "rudder", "ruder"):
+        other = centers(aft)
+        if bow and other:
+            return 1 if sum(bow) / len(bow) > sum(other) / len(other) else -1
     return 1
 
 
@@ -177,23 +195,23 @@ def _transform_accessor(bin_chunk: bytearray, js: dict, ai: int,
     acc["max"] = hi
 
 
-def place_gun_glb(src: Path, dst: Path, forward_sign: int,
-                  box_min: list, box_max: list) -> None:
-    """Mount a gun-local GLB onto the ship, per the convention measured
-    against WG's own export-ship output (Myoko: every turret mesh bottom
-    sits ON its gk box top, and each mesh center rides the gun-bbox bias
-    around the box center exactly as the gun origin does):
+def place_gun_glb(src: Path, dst: Path, face_z: int, box_min: list,
+                  box_max: list, z_sign: int) -> None:
+    """Mount a gun-local GLB onto the ship, per the convention calibrated
+    against WG's own export-ship output for shared hulls (Montana et al.:
+    every pivot reproduced to three decimals):
 
-      - the gun ORIGIN lands at (box_center_x, box_max_y, box_center_z) —
-        the box is the barbette hit volume, the turret sits on its top,
-        pivoting at its axis;
-      - the barrels face the bow. The barrel side is the longer z half of
-        the gun's bbox (barrels stick out far past the housing); the game
-        authors guns facing -z, ships face their `bow`-named splash boxes,
-        so flip 180° when the two disagree.
+      - the gun ORIGIN lands at (box_center_x, box_max_y, z_sign*box_center_z)
+        — the splash frame is z-mirrored vs the hull geometry frame, so the
+        box's z carries the mirror sign; the box is the barbette hit volume
+        and the turret sits on its top, pivoting at its axis;
+      - the barrels point at face_z in the hull frame (-1 = bow, +1 =
+        stern). The barrel side is the longer z half of the gun's bbox
+        (barrels stick out far past the housing); yaw 180° when the two
+        disagree.
 
-    (Turrets the game mounts facing aft — e.g. Myoko's No.3 — can't be
-    detected without the visual layer; everything faces forward here.)
+    (WG's visual layer authors per-turret yaw — Myoko-style exceptions to
+    the position rule can't be detected; the caller decides BOW/STERN.)
     """
     js, bins = read_glb(src)
     bins = bytearray(bins or b"")
@@ -221,7 +239,7 @@ def place_gun_glb(src: Path, dst: Path, forward_sign: int,
     hi_z = max(js["accessors"][i]["max"][2] for i in pos
                if js["accessors"][i].get("min") and js["accessors"][i].get("max"))
     muzzle_sign = -1 if -lo_z > hi_z else 1
-    rot_xz = muzzle_sign * forward_sign  # +1: already facing the bow
+    rot_xz = muzzle_sign * face_z  # +1: muzzles already point at face_z
 
     # Pass 1 — rotate every VEC3 (positions + normals) about the Y axis
     # through the gun origin (the traverse pivot stays the origin).
@@ -236,7 +254,7 @@ def place_gun_glb(src: Path, dst: Path, forward_sign: int,
 
     # Pass 2 — translate the origin onto its anchor; refresh min/max.
     translate = ((box_min[0] + box_max[0]) / 2, box_max[1],
-                 (box_min[2] + box_max[2]) / 2)
+                 z_sign * (box_min[2] + box_max[2]) / 2)
     for i in accs:
         _transform_accessor(bins, js, i, 1,
                             translate if i in pos else (0.0, 0.0, 0.0),
@@ -546,15 +564,26 @@ def main() -> int:
                 print(f"[bake-lesta] WARN {idx}: unreadable .splash ({e}) — hull-only",
                       flush=True)
                 boxes = None
-            forward = bow_forward_sign(boxes) if boxes else 1
+            if boxes:
+                # Hull frame: bow at -z; splash frame: bow at +sign (mirrored).
+                bow_sign = splash_bow_sign(boxes)
+                mid_z = -bow_sign * (
+                    min(mn[2] for mn, _ in boxes.values())
+                    + max(mx[2] for _, mx in boxes.values())) / 2
+            else:
+                bow_sign = mid_z = None
             for a in anchors:
                 box = boxes.get(a["box"]) if boxes else None
                 gun_src = Path(args.stage) / a["geometry"].lstrip("/")
                 if box is None or not gun_src.is_file():
-                    print(f"[bake-lesta] WARN {idx}: turret {a['hp']} skipped "
-                          f"(box {a['box']} or geometry missing)", flush=True)
+                    if boxes is not None:
+                        print(f"[bake-lesta] WARN {idx}: turret {a['hp']} skipped "
+                              f"(box {a['box']} or geometry missing)", flush=True)
                     continue
                 mn, mx = box
+                # Facing: aft mounts face the stern, the rest face the bow.
+                mount_z = -bow_sign * (mn[2] + mx[2]) / 2
+                face_z = 1 if mount_z > mid_z else -1
                 raw = raw_dir / f"{idx}__gun_{a['hp']}.glb"
                 if not raw.is_file() or args.force:
                     r = subprocess.run(
@@ -567,13 +596,15 @@ def main() -> int:
                         continue
                 placed = raw_dir / f"{idx}__gun_{a['hp']}_placed.glb"
                 try:
-                    place_gun_glb(raw, placed, forward, mn, mx)
+                    place_gun_glb(raw, placed, face_z, mn, mx, -bow_sign)
                 except (ValueError, KeyError, struct.error) as e:
                     print(f"[bake-lesta] WARN {idx}: turret {a['hp']} place failed: {e}",
                           flush=True)
                     continue
                 if tri_count(placed) >= 10:
                     parts.append((f"{a['hp']}_turret", placed))
+                    print(f"[bake-lesta]   {idx} {a['hp']}: mount z={mount_z:+.2f} "
+                          f"face={'stern' if face_z > 0 else 'bow'}", flush=True)
 
         if not parts:
             print(f"[bake-lesta] WARN {idx}: all parts degenerate", flush=True)
