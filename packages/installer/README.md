@@ -42,7 +42,9 @@ mirrors). One such bridge update lands them on a client that fetches
 ## Who does what
 
 - The **installer** (shun) delivers files, registers ARP/uninstall,
-  applies shortcuts, honors the updater's `--silent --dir
+  refreshes existing shortcuts by presence (a kept launcher is updated
+  in place, a deleted one is never re-created — silent updates must not
+  spray `.lnk` files), honors the updater's `--silent --dir
   --shortcut-menu/--shortcut-desktop` contract, and relaunches the app
   after unattended updates (`launch-after-install = "always"`).
 - The **app** publishes the shipped resource pack into its cache root on

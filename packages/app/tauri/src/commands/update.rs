@@ -851,12 +851,12 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     cleanup_part_files(None).await;
 
     // Install over the directory the running exe lives in; the hardened
-    // installer takes it from here — it kills this app, extracts, leaves
-    // every launcher untouched (they point at the same exe) and relaunches
-    // the new build. No shortcut flags ride along: the shun headless
-    // lane re-applies the manifest policy (start menu always, desktop
-    // asked → checked), refreshing launchers in place — paths are
-    // stable, so existing links stay valid.
+    // installer takes it from here — it kills this app, extracts, and
+    // relaunches the new build. No shortcut flags ride along: the shun
+    // headless lane resolves the manifest's "ask" policies by presence —
+    // launchers the player kept are refreshed in place (paths are
+    // stable), and ones they deleted stay deleted instead of being
+    // force-recreated (the uninvited .lnk spray AV tools flag).
     let install_dir = std::env::current_exe()
         .map_err(|e| anyhow!("resolve current exe: {e}"))?
         .parent()
