@@ -436,60 +436,72 @@ def bundle_icons(
     icons_dir: str,
     icons_out: str,
 ) -> dict:
-    """Resolve and copy the feature icons (small variants preferred — the
-    tree cards and the tooltip render at 12-20px). Returns the manifest the
-    webui resolves against `${BASE_URL}images/tech-tree-features/`."""
-    import shutil
+    """Resolve, re-encode and copy the feature icons (small variants
+    preferred — the tree cards and the tooltip render at 12-20px). The
+    source pool is the raw wowsunpack extraction (.png); each icon is
+    re-encoded to WebP (q85 — the res WebP settings, see
+    convert_res_webp.py) and the manifest records the .webp filename, which
+    the webui resolves against `${BASE_URL}images/tech-tree-features/`."""
+    from convert_res_webp import png_bytes_to_webp
 
     root = Path(icons_dir) / "gui" / "ships_tree_features"
     main_dir = root / "main_features"
     cat_dir = root / "categories"
     manifest: dict[str, dict[str, str]] = {"card": {}, "category": {}}
 
+    # Pool names are the game's .png spelling (raw extraction); the emitted
+    # file + manifest name flips the extension to the bundled .webp.
     def pick(key: str, pool: set[str]) -> str | None:
         lo = key.lower()
-        for cand in (f"{lo}_small.png", f"{lo}.png"):
-            if cand in pool:
-                return cand
+        for src in (f"{lo}_small.png", f"{lo}.png"):
+            if src in pool:
+                return src
         return None
 
     main_pool = {p.name for p in main_dir.glob("*.png")}
     cat_pool = {p.name for p in cat_dir.glob("*.png")}
-    wanted: list[tuple[Path, str]] = []
+    wanted: list[tuple[Path, str]] = []  # (.png source, .webp emitted name)
     missing_icons: list[str] = []
     for key in sorted(used_cards):
-        f = pick(key, main_pool)
-        if not f:
+        src = pick(key, main_pool)
+        if not src:
             missing_icons.append(key)
             continue
-        manifest["card"][key] = f
-        wanted.append((main_dir / f, f))
+        name = src[:-4] + ".webp"
+        manifest["card"][key] = name
+        wanted.append((main_dir / src, name))
     for code in sorted(used_cats):
-        f = f"category_{code}.png"
-        if f not in cat_pool:
+        src = f"category_{code}.png"
+        if src not in cat_pool:
             missing_icons.append(code)
             continue
-        manifest["category"][code] = f
-        wanted.append((cat_dir / f, f))
+        name = src[:-4] + ".webp"
+        manifest["category"][code] = name
+        wanted.append((cat_dir / src, name))
     if missing_icons:
         # A typo'd --icons-dir must fail loudly, not silently strip the
         # bundle down (or wipe the committed icon set in --icons-out).
         raise SystemExit(f"[branchfeat] icons missing from {icons_dir}: {missing_icons[:10]}")
 
     out_dir = Path(icons_out)
-    # The prune below unlinks PNGs — only ever allow the dedicated folder.
+    # The prune below unlinks image files — only ever allow the dedicated folder.
     if out_dir.name != "tech-tree-features":
         raise SystemExit(
             f"[branchfeat] refusing --icons-out {out_dir} (expected .../tech-tree-features)"
         )
     out_dir.mkdir(parents=True, exist_ok=True)
     keep = {f for _, f in wanted}
-    for stale in out_dir.glob("*.png"):
-        if stale.name not in keep:
-            stale.unlink()
+    # Prune BOTH extensions: stale .webp from earlier runs and leftover .png
+    # from the pre-WebP tree.
+    for ext in ("*.png", "*.webp"):
+        for stale in out_dir.glob(ext):
+            if stale.name not in keep:
+                stale.unlink()
+    total = 0
     for src, name in wanted:
-        shutil.copyfile(src, out_dir / name)
-    total = sum(src.stat().st_size for src, _ in wanted)
+        blob = png_bytes_to_webp(src.read_bytes(), lossless=False)
+        (out_dir / name).write_bytes(blob)
+        total += len(blob)
     print(f"[branchfeat] bundled {len(wanted)} icons ({total / 1024:.0f} KB) → {out_dir}")
     return manifest
 

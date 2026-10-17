@@ -1,4 +1,4 @@
-import { computed, defineComponent } from "vue";
+import { computed, defineComponent, ref } from "vue";
 import type { DogTag } from "@/api";
 
 import { AssetImage } from "@/components/base/AssetImage";
@@ -16,9 +16,25 @@ const DEFAULT_SYMBOL_ID = 3247393712;
 const DEFAULT_SHAPE_ID = 3247426480;
 
 /**
+ * One-shot WebP→PNG fallback for dog-tag part URLs. This build's bundled
+ * snapshot ships .webp (the res-WebP wave), but a resource-pack cache
+ * downloaded earlier still holds an all-.png dogtags tree — and once
+ * initDogtagPack wires, part URLs point into the pack with no embedded
+ * fallback. Pack trees are uniform per generation, so the first .webp load
+ * error flips EVERY part URL (imgs and CSS masks alike) to .png; the ref
+ * makes the flip once-only, so a .png that also fails degrades to
+ * AssetImage's fallback glyph instead of error-looping.
+ */
+const dogtagPngFallback = ref(false);
+
+function markDogtagError(): void {
+  dogtagPngFallback.value = true;
+}
+
+/**
  * BackgroundShape assets ship in two layouts:
- *   - PCNA001..PCNA009: a per-shape directory. "border.png" is the plate
- *     outline (interior transparent) drawn on top; "PCNT001.png" in the same
+ *   - PCNA001..PCNA009: a per-shape directory. "border" is the plate
+ *     outline (interior transparent) drawn on top; "PCNT001" in the same
  *     directory is the filled shield used as the clip mask.
  *   - everything else (PCNA037+, PCNA999): a single flat plate image whose
  *     own alpha is both the plate and the clip mask.
@@ -31,7 +47,7 @@ function isOutlineShape(index: string): boolean {
 
 /** Image URL for a dog tag part (symbol/texture), pack-aware. */
 function partUrl(index: string): string {
-  return dogtagAssetUrl(index + ".png");
+  return dogtagAssetUrl(index + (dogtagPngFallback.value ? ".png" : ".webp"));
 }
 
 /** Patch (PCNP) and unique-emblem (PCNU) species ship as complete medals on
@@ -96,20 +112,21 @@ export default defineComponent({
 
       const outline = shape ? isOutlineShape(shape[0]) : false;
       const shapeIndex = shape ? shape[0] : "";
+      const ext = dogtagPngFallback.value ? ".png" : ".webp";
       return {
         standalone: false,
         bg: bgColor?.[2] ? hex(bgColor[2]) : null,
         border: borderColor?.[2] ? hex(borderColor[2]) : null,
         // Flat shapes are the plate (bottom layer); directory shapes only
         // contribute a border outline (top layer).
-        plateUrl: shape && !outline ? dogtagAssetUrl(shapeIndex + ".png") : null,
-        frameUrl: shape && outline ? dogtagAssetUrl(shapeIndex + "/border.png") : null,
+        plateUrl: shape && !outline ? dogtagAssetUrl(shapeIndex + ext) : null,
+        frameUrl: shape && outline ? dogtagAssetUrl(shapeIndex + "/border" + ext) : null,
         // Clip mask = the plate filled shape: the flat plate alpha, or the
         // filled shield shipped next to the outline for directory shapes.
         maskUrl: shape
           ? outline
-            ? dogtagAssetUrl(shapeIndex + "/PCNT001.png")
-            : dogtagAssetUrl(shapeIndex + ".png")
+            ? dogtagAssetUrl(shapeIndex + "/PCNT001" + ext)
+            : dogtagAssetUrl(shapeIndex + ext)
           : null,
         textureUrl: texture ? partUrl(texture[0]) : null,
         symbolUrl: symbol ? partUrl(symbol[0]) : null,
@@ -147,18 +164,20 @@ export default defineComponent({
                   class="player-badge__dt-symbol"
                   src={l.symbolUrl}
                   alt=""
+                  onError={markDogtagError}
                   fallback={<span class="player-badge__tier">{props.tier || "?"}</span>}
                 />
               </span>
             ) : (
               <span class="player-badge__dt">
                 <span class="player-badge__clip" style={clipStyle}>
-                  <AssetImage class="player-badge__dt-plate" src={l.plateUrl} alt="" />
-                  <AssetImage class="player-badge__dt-texture" src={l.textureUrl} alt="" />
+                  <AssetImage class="player-badge__dt-plate" src={l.plateUrl} alt="" onError={markDogtagError} />
+                  <AssetImage class="player-badge__dt-texture" src={l.textureUrl} alt="" onError={markDogtagError} />
                   <AssetImage
                     class="player-badge__dt-symbol"
                     src={l.symbolUrl}
                     alt=""
+                    onError={markDogtagError}
                     fallback={<span class="player-badge__tier">{props.tier || "?"}</span>}
                   />
                 </span>
@@ -166,6 +185,7 @@ export default defineComponent({
                   class="player-badge__dt-frame"
                   src={l.frameUrl}
                   alt=""
+                  onError={markDogtagError}
                   style={l.border ? { filter: "drop-shadow(0 0 1px " + l.border + ")" } : undefined}
                 />
               </span>

@@ -1,4 +1,4 @@
-"""Regenerate the dog-tag asset pack (map + PNGs) from a WoWS install.
+"""Regenerate the dog-tag asset pack (map + WebPs) from a WoWS install.
 
 Player avatars ("dog tags") are rendered from two repo-shipped artifacts:
 
@@ -18,9 +18,10 @@ artifacts from the local install:
      BackgroundColor / BorderColor / BackgroundTexture) and, for the color
      species, `colorHEX`. These ids are the exact ids the Vortex account API
      returns in `dog_tag` (verified field-by-field against live accounts).
-  2. `gui/dogTags/small/**` + `gui/dogTags/DT_Default.png` — the part images,
-     sliced out of the gui_*.pkg blobs and mirrored into res/dogtags/ (stale
-     files removed). wowsunpack's own `extract` subcommand is broken on the
+  2. `gui/dogTags/small/**` + `gui/dogTags/DT_Default.png` — the part
+     images, sliced out of the gui_*.pkg blobs, re-encoded to WebP (q85 —
+     the res WebP settings, see convert_res_webp.py) and mirrored into
+     res/dogtags/ (stale files removed). wowsunpack's own `extract` subcommand is broken on the
      Steam install layout ("Wrote 0 files"), so this walks the same
      metadata path→size/crc map + PNG-slicing approach as
      extract_game_assets.py, across every gui_*.pkg.
@@ -57,6 +58,7 @@ import urllib.request
 import zlib
 from pathlib import Path
 
+from convert_res_webp import png_bytes_to_webp
 from extract_game_assets import slice_pngs
 
 DOG_TAG_SPECIES = {
@@ -126,7 +128,9 @@ def wanted_rel_path(meta_path: str) -> str | None:
     `/gui/dogTags/small/PCNP053.png`      → `PCNP053.png`
     `/gui/dogTags/small/PCNA001/border.png` → `PCNA001/border.png`
     `/gui/dogTags/DT_Default.png`         → `DT_Default.png`
-    """
+
+    (Metadata rel paths keep the game's .png spelling; extract_images()
+    writes each part out as the WebP sibling name.)"""
     prefix = "/gui/dogTags/small/"
     if meta_path.startswith(prefix):
         return meta_path[len(prefix):]
@@ -185,9 +189,9 @@ def extract_images(
                     continue
                 if rel in matched:
                     continue
-                dest = out_dir / rel
+                dest = out_dir / (rel[:-4] + ".webp" if rel.endswith(".png") else rel)
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(png)
+                dest.write_bytes(png_bytes_to_webp(png, lossless=False))
                 matched.add(rel)
         print(f"[dogtags] {len(matched)}/{wanted} images so far")
     return len(matched), wanted
@@ -354,7 +358,7 @@ def glossary_icon_urls(host: str) -> dict[str, str]:
 
 
 def backfill_placeholder_art(res_dir: Path, host: str) -> list[str]:
-    """Replace white stand-in PNGs with the official glossary art.
+    """Replace white stand-in parts with the official glossary art.
 
     Some DogTag entities exist in GameParams but their textures never ship
     in the client's gui pkgs (CN-collab patches and friends): the slicer
@@ -362,8 +366,12 @@ def backfill_placeholder_art(res_dir: Path, host: str) -> list[str]:
     renders a white square where the medal should be. The glossary CDN
     carries the real art for exactly those ids. Best-effort: network
     failures leave the placeholders in place (the next run retries)."""
+    # The tree is all-.webp now; the .png arm keeps a mixed tree (a
+    # pre-WebP pack cache overlaid on the bundled snapshot) covered too.
     blanks = sorted(
-        p for p in res_dir.rglob("*.png")
+        p
+        for ext in ("*.png", "*.webp")
+        for p in res_dir.rglob(ext)
         if p.stat().st_size <= PLACEHOLDER_MAX_BYTES
     )
     if not blanks:
@@ -395,8 +403,11 @@ def backfill_placeholder_art(res_dir: Path, host: str) -> list[str]:
             print(f"[dogtags] {path.name}: glossary serves no real art; "
                   f"placeholder kept")
             continue
-        path.write_bytes(art)
-        replaced.append(path.name)
+        dest = path.with_suffix(".webp")
+        dest.write_bytes(png_bytes_to_webp(art, lossless=False))
+        if path.suffix == ".png":
+            path.unlink()  # the placeholder .png is superseded by the .webp
+        replaced.append(dest.name)
     if replaced:
         print(f"[dogtags] backfilled {len(replaced)} parts from the "
               f"glossary: {', '.join(replaced)}")
@@ -445,7 +456,7 @@ def main() -> None:
     backfill_placeholder_art(Path(args.res_dir), args.glossary_host)
 
     # The map goes down only once the images landed, so a crash mid-run can
-    # never pair a refreshed map with stale PNGs.
+    # never pair a refreshed map with stale part images.
     out_map.parent.mkdir(parents=True, exist_ok=True)
     out_map.write_text(
         json.dumps(mapping, separators=(",", ":"), ensure_ascii=False),

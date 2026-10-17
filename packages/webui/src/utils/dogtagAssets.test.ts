@@ -50,7 +50,7 @@ describe("dogtagAssets", () => {
   it("keeps bundled URLs when the pack download fails", async () => {
     const mod = await import("./dogtagAssets");
     await mod.initDogtagPack(() => Promise.reject(new Error("offline")));
-    expect(mod.dogtagAssetUrl("PCNP053.png")).toBe("/dogtags/PCNP053.png");
+    expect(mod.dogtagAssetUrl("PCNP053.webp")).toBe("/dogtags/PCNP053.webp");
   });
 
   it("overlays the pack map and rewrites part URLs to the cache", async () => {
@@ -65,7 +65,7 @@ describe("dogtagAssets", () => {
     expect(mod.dogtagEntry(9999999999)?.[0]).toBe("PCNP999");
     // The overlay merges — an id only the bundled map knows survives.
     expect(mod.dogtagEntry(3247393712)?.[0]).toBe("PCNB999");
-    expect(mod.dogtagAssetUrl("PCNP999.png")).toBe("asset://localhost/C:/cache/dogtags/PCNP999.png");
+    expect(mod.dogtagAssetUrl("PCNP999.webp")).toBe("asset://localhost/C:/cache/dogtags/PCNP999.webp");
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/dogtags/dogtags_map.json"),
     );
@@ -76,8 +76,8 @@ describe("dogtagAssets", () => {
     const mod = await import("./dogtagAssets");
     await mod.initDogtagPack(() => Promise.resolve("C:/cache"));
     expect(mod.dogtagEntry(9999999999)).toBeNull();
-    expect(mod.dogtagAssetUrl("PCNA001/border.png")).toBe(
-      "asset://localhost/C:/cache/dogtags/PCNA001/border.png",
+    expect(mod.dogtagAssetUrl("PCNA001/border.webp")).toBe(
+      "asset://localhost/C:/cache/dogtags/PCNA001/border.webp",
     );
   });
 
@@ -93,7 +93,7 @@ describe("dogtagAssets", () => {
     const mod = await import("./dogtagAssets");
     await mod.initDogtagPack(() => Promise.resolve("C:/cache"));
     expect(convertFileSrc).not.toHaveBeenCalled();
-    expect(mod.dogtagAssetUrl("PCNP053.png")).toBe("/dogtags/PCNP053.png");
+    expect(mod.dogtagAssetUrl("PCNP053.webp")).toBe("/dogtags/PCNP053.webp");
     expect(mod.dogtagEntry(9999999999)).toBeNull();
   });
 });

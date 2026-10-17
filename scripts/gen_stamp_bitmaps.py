@@ -10,7 +10,8 @@ files. Re-run locally when a glyph or style changes:
       --mao "D:/path/草檀斋毛泽东字体.ttf" \
       --luxun "D:/path/方正鲁迅行书.ttf"
 
-Output: 400x400 transparent PNGs (2x the 100-unit SVG box), centered cinnabar
+Output: 400x400 transparent WebPs (2x the 100-unit SVG box; q85 — the res
+WebP settings), centered cinnabar
 ink with an outline stroke. Single-glyph verdicts (神 / 猴 / 蛆) dominate the face;
 four-char seals stack two lines into the classic 2x2 face (空中 over 小人, 水下 over 小人,
 过街 over 老鼠, 空中 over 神人, 水下 over 神人, 空中 over 小猴, 水下 over 小猴,
@@ -29,18 +30,18 @@ GAP = 10
 
 # (output name, lines top-to-bottom, which font, font size)
 JOBS = [
-    ("stamp-miracle.png", ["神"], "mao", 330),
-    ("stamp-ape.png", ["猴"], "luxun", 330),
-    ("stamp-maggot.png", ["蛆"], "luxun", 330),
-    ("stamp-rat.png", ["过街", "老鼠"], "luxun", 165),
-    ("stamp-air.png", ["空中", "小人"], "luxun", 165),
-    ("stamp-sub.png", ["水下", "小人"], "luxun", 165),
-    ("stamp-air-miracle.png", ["空中", "神人"], "luxun", 165),
-    ("stamp-sub-miracle.png", ["水下", "神人"], "luxun", 165),
-    ("stamp-air-ape.png", ["空中", "小猴"], "luxun", 165),
-    ("stamp-sub-ape.png", ["水下", "小猴"], "luxun", 165),
-    ("stamp-air-veteran.png", ["空中", "奶龙"], "luxun", 165),
-    ("stamp-sub-veteran.png", ["水下", "奶蛙"], "luxun", 165),
+    ("stamp-miracle.webp", ["神"], "mao", 330),
+    ("stamp-ape.webp", ["猴"], "luxun", 330),
+    ("stamp-maggot.webp", ["蛆"], "luxun", 330),
+    ("stamp-rat.webp", ["过街", "老鼠"], "luxun", 165),
+    ("stamp-air.webp", ["空中", "小人"], "luxun", 165),
+    ("stamp-sub.webp", ["水下", "小人"], "luxun", 165),
+    ("stamp-air-miracle.webp", ["空中", "神人"], "luxun", 165),
+    ("stamp-sub-miracle.webp", ["水下", "神人"], "luxun", 165),
+    ("stamp-air-ape.webp", ["空中", "小猴"], "luxun", 165),
+    ("stamp-sub-ape.webp", ["水下", "小猴"], "luxun", 165),
+    ("stamp-air-veteran.webp", ["空中", "奶龙"], "luxun", 165),
+    ("stamp-sub-veteran.webp", ["水下", "奶蛙"], "luxun", 165),
 ]
 
 
@@ -82,7 +83,7 @@ def main() -> None:
     for name, lines, which, size in JOBS:
         img = render(lines, fonts[which], size)
         path = os.path.join(out, name)
-        img.save(path, optimize=True)
+        img.save(path, quality=85, method=6)
         print(f"{name}: {img.size} {os.path.getsize(path)} bytes")
 
 

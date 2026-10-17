@@ -20,18 +20,18 @@
  */
 import { t } from "@/i18n";
 import type { StampKind } from "@/utils/winrate";
-import stampAir from "../../res/stamps/stamp-air.png";
-import stampAirApe from "../../res/stamps/stamp-air-ape.png";
-import stampAirMiracle from "../../res/stamps/stamp-air-miracle.png";
-import stampAirVeteran from "../../res/stamps/stamp-air-veteran.png";
-import stampApe from "../../res/stamps/stamp-ape.png";
-import stampMaggot from "../../res/stamps/stamp-maggot.png";
-import stampMiracle from "../../res/stamps/stamp-miracle.png";
-import stampRat from "../../res/stamps/stamp-rat.png";
-import stampSub from "../../res/stamps/stamp-sub.png";
-import stampSubApe from "../../res/stamps/stamp-sub-ape.png";
-import stampSubMiracle from "../../res/stamps/stamp-sub-miracle.png";
-import stampSubVeteran from "../../res/stamps/stamp-sub-veteran.png";
+import stampAir from "../../res/stamps/stamp-air.webp";
+import stampAirApe from "../../res/stamps/stamp-air-ape.webp";
+import stampAirMiracle from "../../res/stamps/stamp-air-miracle.webp";
+import stampAirVeteran from "../../res/stamps/stamp-air-veteran.webp";
+import stampApe from "../../res/stamps/stamp-ape.webp";
+import stampMaggot from "../../res/stamps/stamp-maggot.webp";
+import stampMiracle from "../../res/stamps/stamp-miracle.webp";
+import stampRat from "../../res/stamps/stamp-rat.webp";
+import stampSub from "../../res/stamps/stamp-sub.webp";
+import stampSubApe from "../../res/stamps/stamp-sub-ape.webp";
+import stampSubMiracle from "../../res/stamps/stamp-sub-miracle.webp";
+import stampSubVeteran from "../../res/stamps/stamp-sub-veteran.webp";
 
 /** App palette snapshot: CSS var triplets ("R G B") resolved at render time. */
 export interface ShotPalette {

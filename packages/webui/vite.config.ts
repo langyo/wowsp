@@ -78,13 +78,16 @@ function vendorChunks(id: string): string | undefined {
 // (scripts/build_installers.py). Production serves models from the relocated
 // model-pack cache; publicDir paths are only the DEV fallback, where Vite
 // serves src/res directly and this plugin never runs. So the build prunes
-// every .glb from outDir and keeps the git-tracked 2D subset (~27 MB of
-// silhouettes/minimaps — the exact set a fresh CI checkout carries), making
-// local builds byte-equivalent to release CI's dist. The ship preview
-// portraits (images/ships/[0-9]*.png) are ALSO gitignored derived files, but
-// unlike the GLBs they are wanted in the shipped binary: release CI fetches
-// them from the res-latest wowsp-images archive before the webui build
-// (scripts/build_installers.py --images), so they embed on every side.
+// every .glb from outDir and keeps the git-tracked 2D subset (~10 MB of
+// WebP silhouettes/minimaps — the exact set a fresh CI checkout carries),
+// making local builds byte-equivalent to release CI's dist. The ship
+// preview portraits (images/ships/[0-9]*.webp — .png on trees the
+// archive/channel has not republished yet) are ALSO gitignored derived
+// files, but unlike the GLBs they are wanted in the shipped binary:
+// release CI fetches them from the res-latest wowsp-images archive before
+// the webui build (scripts/build_installers.py --images), so they embed on
+// every side. The GLB pruning itself matches only the .glb extension — it
+// never filters by image format.
 //
 // MOBILE BUNDLE exception (WOWSP_MOBILE_BUNDLE=1): the Android build embeds
 // dist into the APK's read-only assets and the app loads GLBs SAME-ORIGIN

@@ -1,7 +1,7 @@
 /**
  * Dog-tag asset overlay.
  *
- * Player dog tags render from two repo-shipped artifacts: the part PNGs
+ * Player dog tags render from two repo-shipped artifacts: the part WebPs
  * under `src/res/dogtags/` and the `id → [index, species, colorHEX?]` map
  * in `src/data/dogtags_map.json`. Both are snapshots of the game client, so
  * medals Wargaming adds later are unknown until a new app build ships.
@@ -82,7 +82,7 @@ export function dogtagEntry(id: number | null | undefined): DogtagMapEntry | nul
   return entries[String(id)] ?? null;
 }
 
-/** URL for a dog-tag part image (`"PCNP053.png"`, `"PCNA001/border.png"`). */
+/** URL for a dog-tag part image (`"PCNP053.webp"`, `"PCNA001/border.webp"`). */
 export function dogtagAssetUrl(relPath: string): string {
   const root = packRoot.value;
   if (root == null || convertFileSrc == null) return "/dogtags/" + relPath;

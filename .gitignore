@@ -116,6 +116,7 @@ packages/installer/vendor/
 # Baked ship portraits (scripts/extract/download_ship_images.py) — derived
 # from the WG CDN like the model pack; regenerated at packaging time.
 packages/webui/src/res/images/ships/[0-9]*.png
+packages/webui/src/res/images/ships/[0-9]*.webp
 packages/webui/src/res/images/ships/_index.json
 
 # Local release staging (installers are uploaded to GitHub Releases)

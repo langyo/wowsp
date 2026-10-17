@@ -7,13 +7,14 @@ minimap image as its base layer. The game ships two textures per space:
   - `spaces/<id>/minimap_water.png` — water/sea background (760x760, opaque)
   - `spaces/<id>/minimap.png`       — land overlay (760x760, alpha)
 
-This script composites them into one RGB PNG per map and records the
+This script composites them into one RGB WebP per map (q85 — the res
+WebP settings) and records the
 space.settings world bounds (chunk coords x100, matching the map GLB and the
 replay's world coordinates) so the frontend can project ship positions onto
 the image correctly.
 
 Outputs (next to the baked map GLBs):
-  packages/webui/src/res/models/maps/minimaps/<spaceId>.png   (760x760 RGB, native)
+  packages/webui/src/res/models/maps/minimaps/<spaceId>.webp  (760x760 RGB, native)
   packages/webui/src/res/models/maps/minimaps.json            ({id: bounds})
 
 Usage:
@@ -97,7 +98,7 @@ def parse_bounds(settings_xml: str) -> dict[str, float] | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Extract minimap art + bounds for converted maps")
-    parser.add_argument("--force", action="store_true", help="re-extract even if the PNG exists")
+    parser.add_argument("--force", action="store_true", help="re-extract even if the WebP exists")
     parser.add_argument("--game-dir", default=None, help="game install path (default: auto-detect)")
     parser.add_argument("--limit", type=int, default=0, help="max maps this run (0=all)")
     args = parser.parse_args()
@@ -119,13 +120,16 @@ def main() -> int:
         existing_bounds = json.loads(json_path.read_text(encoding="utf-8"))
 
     # Maps to process = those with a baked GLB. Without --force, skip only
-    # maps that already have both the PNG and a bounds entry.
+    # maps that already have an image (either format) and a bounds entry.
     space_ids = sorted(p.stem for p in MAPS_DIR.glob("*.glb"))
     if not args.force:
         space_ids = [
             sid
             for sid in space_ids
-            if not (out_dir / f"{sid}.png").exists() or sid not in existing_bounds
+            if not any(
+                (out_dir / f"{sid}{ext}").exists() for ext in (".webp", ".png")
+            )
+            or sid not in existing_bounds
         ]
     if args.limit > 0:
         space_ids = space_ids[: args.limit]
@@ -181,7 +185,12 @@ def main() -> int:
                     land = land.resize(base.size, Image.LANCZOS)
                 base.alpha_composite(land)
             out = base.convert("RGB").resize((MINIMAP_SIZE, MINIMAP_SIZE), Image.LANCZOS)
-            out.save(out_dir / f"{sid}.png", optimize=True)
+            out.save(out_dir / f"{sid}.webp", quality=85, method=6)
+            # A pre-WebP tree may still hold this map's legacy .png — drop
+            # it so the frontend's mixed glob never sees a stale duplicate.
+            legacy = out_dir / f"{sid}.png"
+            if legacy.exists():
+                legacy.unlink()
             ok += 1
             print(f"  [{i+1}/{len(space_ids)}] + {sid}")
 

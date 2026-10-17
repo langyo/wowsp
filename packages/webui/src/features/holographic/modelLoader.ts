@@ -295,15 +295,29 @@ export function shipModelStem(
   return null;
 }
 
+// Silhouette art is baked as WebP (lossless — exact plaque edges); the
+// mixed glob keeps packs/caches still holding .png rendering while the
+// channel migrates.
+const _silhouetteGlobKeys = Object.keys(
+  import.meta.glob("../../res/models/silhouettes/*.{png,webp}"),
+);
+const silhouetteExtByIndex = new Map<string, string>();
+for (const path of _silhouetteGlobKeys) {
+  const name = path.split("/").pop()!;
+  const dot = name.lastIndexOf(".");
+  silhouetteExtByIndex.set(name.slice(0, dot), name.slice(dot));
+}
+
 /** URL of the game's own hull silhouette bitmap for a ship
- *  (gui/ships_silhouettes/<INDEX>.png, shipped under res/models/silhouettes).
- *  This is the exact in-game HP plaque art — no outline extraction. */
+ *  (gui/ships_silhouettes/<INDEX>.<webp|png>, shipped under
+ *  res/models/silhouettes). This is the exact in-game HP plaque art — no
+ *  outline extraction. */
 export function shipSilhouetteUrl(shipId: number | string | undefined): string | null {
   if (shipId == null) return null;
   const entry = shipModelMap[String(shipId)];
   const index = entry?.index;
   if (!index) return null;
-  return "/models/silhouettes/" + index + ".png";
+  return "/models/silhouettes/" + index + (silhouetteExtByIndex.get(index) ?? ".webp");
 }
 
 // ── Offline ship-name DB (GameParams + game gettext catalogs) ───────────
@@ -437,11 +451,12 @@ export function resolvePropModelUrl(name: "shell" | "torpedo"): string | null {
 }
 
 // ── Minimap base art (game minimap composite) + world bounds ────────────
-// `minimaps/<spaceId>.png` is the water+land composite the game itself draws
-// on the in-battle minimap; `minimaps.json` carries each map's world bounds
-// (space.settings chunks x100 — the same coordinate frame as replay entity
-// positions and the baked terrain GLBs). Both are produced by
-// `scripts/model_convert/extract_minimaps.py`.
+// `minimaps/<spaceId>.webp` is the water+land composite the game itself
+// draws on the in-battle minimap; `minimaps.json` carries each map's world
+// bounds (space.settings chunks x100 — the same coordinate frame as replay
+// entity positions and the baked terrain GLBs). Both are produced by
+// `scripts/model_convert/extract_minimaps.py`. The glob tolerates .png
+// siblings (pack trees predating the WebP migration).
 
 export interface MapBounds {
   minX: number;
@@ -451,12 +466,16 @@ export interface MapBounds {
 }
 
 const _minimapGlobKeys = Object.keys(
-  import.meta.glob("../../res/models/maps/minimaps/*.png"),
+  import.meta.glob("../../res/models/maps/minimaps/*.{png,webp}"),
 );
 const minimapCasedByLower = new Map<string, string>();
+const minimapExtByCased = new Map<string, string>();
 for (const path of _minimapGlobKeys) {
-  const original = path.split("/").pop()!.replace(/\.png$/i, "");
+  const name = path.split("/").pop()!;
+  const dot = name.lastIndexOf(".");
+  const original = name.slice(0, dot);
   minimapCasedByLower.set(original.toLowerCase(), original);
+  minimapExtByCased.set(original, name.slice(dot));
 }
 
 /** URL of the game's own minimap art for a space id, if extracted. */
@@ -465,10 +484,11 @@ export function resolveMapMinimapUrl(spaceId: string | undefined): string | null
   const clean = spaceId.replace(/^spaces\//, "").toLowerCase();
   const cased = minimapCasedByLower.get(clean);
   if (!cased) return null;
+  const withExt = `${cased}${minimapExtByCased.get(cased) ?? ".webp"}`;
   if (!import.meta.env.DEV && _modelCacheRoot && _convertFileSrc) {
-    return _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps/${cased}.png`);
+    return _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps/${withExt}`);
   }
-  return `/models/maps/minimaps/${cased}.png`;
+  return `/models/maps/minimaps/${withExt}`;
 }
 
 let _mapBoundsPromise: Promise<Map<string, MapBounds>> | null = null;

@@ -299,8 +299,8 @@ describe("branch features", () => {
 describe("branch feature icons and official texts", () => {
   it("resolves bundled card and category icon URLs", () => {
     const url = techTreeCardIcon("MAIN_HIGHFIREPOWER");
-    expect(url).toMatch(/images\/tech-tree-features\/main_highfirepower(_small)?\.png$/);
-    expect(techTreeCategoryIcon("main_caliber")).toMatch(/category_main_caliber\.png$/);
+    expect(url).toMatch(/images\/tech-tree-features\/main_highfirepower(_small)?\.webp$/);
+    expect(techTreeCategoryIcon("main_caliber")).toMatch(/category_main_caliber\.webp$/);
     expect(techTreeCardIcon("MAIN_KEY_WITH_NO_ICON")).toBeNull();
   });
 

@@ -2,17 +2,22 @@
 """Download and cache all ship portrait images from the WG CDN.
 
 Reads the ship encyclopedia cache (populated by the Tauri app) to get each
-ship's image URLs, downloads the `medium` portrait to
-packages/webui/src/res/images/ships/<shipId>.png, and generates an index
-mapping shipId → local filename. This makes images available offline and
-removes the runtime dependency on the WG CDN.
+ship's image URLs, downloads the `medium` portrait, re-encodes it to
+packages/webui/src/res/images/ships/<shipId>.webp (quality 85, method 6 —
+the res-WebP settings shared with convert_res_webp.py), and generates an
+index mapping shipId → local filename. This makes images available offline
+and removes the runtime dependency on the WG CDN.
 
 The script is idempotent: ships whose image is already cached are skipped.
+`--reencode-existing` is the one-shot that migrates a tree holding old
+.png portraits: every [0-9]*.png is converted in place (verified, then the
+.png deleted) and the index entries flipped to the .webp filename.
 
 Usage:
-    python scripts/model_convert/download_ship_images.py
-    python scripts/model_convert/download_ship_images.py --force
-    python scripts/model_convert/download_ship_images.py --size large
+    python scripts/extract/download_ship_images.py
+    python scripts/extract/download_ship_images.py --force
+    python scripts/extract/download_ship_images.py --size large
+    python scripts/extract/download_ship_images.py --reencode-existing
 
     just download-ship-images
 """
@@ -24,6 +29,8 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+
+from convert_res_webp import png_bytes_to_webp
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IMAGES_OUT = REPO_ROOT / "packages" / "webui" / "src" / "res" / "images" / "ships"
@@ -68,6 +75,36 @@ def load_ships() -> list[dict]:
     return data.get("ships", data.get("data", []))
 
 
+def reencode_existing(index: dict[str, str]) -> int:
+    """Convert the tree's legacy [0-9]*.png portraits to .webp in place.
+
+    The maintainer's one-shot for a pre-WebP local tree: each .png is
+    re-encoded (q85/method 6), the written .webp re-opened for a dimension
+    sanity check, and only then is the .png deleted and the index entry
+    flipped. A .png whose .webp sibling already exists is stale and goes
+    without a re-encode."""
+    converted = 0
+    for png in sorted(IMAGES_OUT.glob("[0-9]*.png")):
+        webp = png.with_suffix(".webp")
+        if not webp.exists():
+            blob = png_bytes_to_webp(png.read_bytes(), lossless=False)
+            webp.write_bytes(blob)
+            from PIL import Image
+
+            with Image.open(webp) as check, Image.open(png) as src:
+                if check.size != src.size:
+                    webp.unlink()
+                    print(f"  ✗ {png.name}: verify failed, kept .png", file=sys.stderr)
+                    continue
+        png.unlink()
+        if index.get(png.stem) == png.name:
+            index[png.stem] = webp.name
+        converted += 1
+    if converted:
+        print(f"[download-images] re-encoded {converted} existing portraits to .webp")
+    return converted
+
+
 def main() -> int:
     import argparse
 
@@ -75,15 +112,23 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="re-download even if cached")
     parser.add_argument("--size", default="medium", choices=["small", "medium", "large"],
                         help="image size to download (default: medium)")
+    parser.add_argument("--reencode-existing", action="store_true",
+                        help="only migrate existing .png portraits to .webp (no download)")
     args = parser.parse_args()
-
-    ships = load_ships()
-    IMAGES_OUT.mkdir(parents=True, exist_ok=True)
 
     # Load or create index.
     index: dict[str, str] = {}
     if INDEX_FILE.exists():
         index = json.loads(INDEX_FILE.read_text())
+
+    if args.reencode_existing:
+        # Pure local migration — no encyclopedia cache or network needed.
+        reencode_existing(index)
+        INDEX_FILE.write_text(json.dumps(index, indent=2))
+        return 0
+
+    ships = load_ships()
+    IMAGES_OUT.mkdir(parents=True, exist_ok=True)
 
     todo = []
     for s in ships:
@@ -93,7 +138,7 @@ def main() -> int:
         url = s.get("images", {}).get(args.size, "")
         if not url:
             continue
-        local = f"{sid}.png"
+        local = f"{sid}.webp"
         if not args.force and (IMAGES_OUT / local).exists():
             continue
         todo.append((sid, url, local))
@@ -110,7 +155,9 @@ def main() -> int:
             req = urllib.request.Request(url, headers={"User-Agent": "WoWSP/0.1"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = resp.read()
-            (IMAGES_OUT / local).write_bytes(data)
+            # The CDN serves PNGs; re-encode every download to the res tree's
+            # WebP format (decode failures leave this ship for a later run).
+            (IMAGES_OUT / local).write_bytes(png_bytes_to_webp(data, lossless=False))
             index[sid] = local
             ok += 1
         except Exception as e:
