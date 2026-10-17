@@ -7,6 +7,7 @@ import { t } from "@/i18n";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import type { PendingInstall, PluginUpdateInfo } from "@/stores/pluginUpdates";
+import { sameGamePath } from "@/utils/gamePath";
 import { installFolderName, installLabel } from "@/utils/installLabel";
 import "./PluginUpdateHint.scss";
 
@@ -83,6 +84,24 @@ export default defineComponent({
       const proc = gameStatus.process;
       if (!proc.running) return false;
       return !!updates.infoFor(proc.matchedInstall?.path)?.probeOutdated;
+    });
+
+    /** EVERY pending install belongs to a running client — the one-click
+     *  pass would skip 100% of the work (Rust refuses writes into a live
+     *  game tree) and the click was a guaranteed silent no-op exactly in
+     *  the state that pins this card: no backend command, no log line,
+     *  only a transient toast far from where the user is looking (user
+     *  report 2026-10-17). The action then says so itself; a mixed
+     *  machine (some installs live, others not) keeps the normal CTA —
+     *  the pass does real work there and the skip toast covers the rest. */
+    const allRunning = computed(() => {
+      const groups = updates.pendingInstalls;
+      if (groups.length === 0) return false;
+      const runningPaths = gameStatus.processes
+        .filter((p) => p.running)
+        .map((p) => p.matchedInstall?.path ?? null)
+        .filter((p): p is string => p != null);
+      return groups.every((g) => runningPaths.some((path) => sameGamePath(g.path, path)));
     });
 
     function clearTimers(): void {
@@ -272,14 +291,16 @@ export default defineComponent({
                 <button
                   type="button"
                   class="plugin-update-hint__go"
-                  disabled={updates.running}
+                  disabled={updates.running || allRunning.value}
                   onClick={(e) => {
                     e.stopPropagation();
                     void updates.updateAll();
                   }}
                 >
                   <ArrowUpCircle size={13} />
-                  {t("resources.pluginUpdateOne")}
+                  {allRunning.value
+                    ? t("resources.pluginUpdateBlockedRunning")
+                    : t("resources.pluginUpdateOne")}
                 </button>
               </div>
             </Teleport>

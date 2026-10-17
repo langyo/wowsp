@@ -89,6 +89,8 @@
   "pluginUpdateCount": "{count} actualización(es) de complemento disponibles",
   "pluginUpdateCountMulti": "{count} actualización(es) de complemento · {clients} cliente(s)",
   "pluginUpdateOne": "Actualizar todo",
+  "pluginUpdateBlockedRunning": "Juego en ejecución — ciérralo para actualizar",
+  "pluginUpdateBusyElsewhere": "Estos plugins ya se están actualizando en otra ventana.",
   "pluginUpdateStaleWarning": "El complemento del cliente en ejecución no está actualizado: las estadísticas mostradas al mantener Tab pueden ser imprecisas.",
   "pluginUpdateSkipped": "«{names}» está en ejecución: se omitieron {count} actualización(es). Cierra el juego y vuelve a ejecutar Actualizar todo.",
   "pluginUpdateBadge": "Actualiz.",

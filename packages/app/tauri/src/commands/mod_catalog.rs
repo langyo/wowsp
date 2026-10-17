@@ -245,8 +245,14 @@ async fn fetch_index() -> anyhow::Result<(CatalogIndex, String)> {
             .map_err(|e| anyhow!("catalog index cannot be verified: {e}"))?;
     let mut last_err = String::from("no index url attempted");
     for url in index_urls() {
+        // The shared client caps only the CONNECT phase; a mirror that
+        // accepts the connection but trickles the body would otherwise
+        // hang `mod_catalog_refresh` (and every freshness assessment
+        // joined onto it) forever. A 30s total cap per URL keeps the
+        // failover ladder moving instead.
         let resp = client
             .get(&url)
+            .timeout(std::time::Duration::from_secs(30))
             .header("Accept", "application/json")
             .header("Cache-Control", "no-cache")
             .send()

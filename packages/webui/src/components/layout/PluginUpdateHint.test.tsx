@@ -245,6 +245,48 @@ describe("PluginUpdateHint", () => {
     expect(mocks.ingamePluginInstall).toHaveBeenCalledWith(GAME);
   });
 
+  it("disables the action and says why while every pending client runs", async () => {
+    // The pinned card is exactly the all-running state (user report
+    // 2026-10-17): the pass would skip 100% of the work, so the CTA
+    // must not look actionable — disabled, relabeled, and unable to
+    // reach even the skipping branch.
+    await mountHint({ probeOutdated: true, running: true }, anchorCard());
+
+    const btn = pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__go");
+    expect(btn).toBeTruthy();
+    expect(btn?.disabled).toBe(true);
+    expect(btn?.textContent).toContain(t("resources.pluginUpdateBlockedRunning"));
+    btn?.click();
+    await flushPromises();
+    expect(mocks.ingamePluginInstall).not.toHaveBeenCalled();
+  });
+
+  it("keeps the action live when another install can still update", async () => {
+    // The running client is skipped, but a second pending install keeps
+    // the pass meaningful: normal label, clickable CTA.
+    await mountHint(
+      { probeOutdated: true, running: true, other: { probeOutdated: true } },
+      anchorCard(),
+    );
+
+    const btn = pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__go");
+    expect(btn?.disabled).toBe(false);
+    expect(btn?.textContent).toContain(t("resources.pluginUpdateOne"));
+  });
+
+  it("explains itself when every pending item is busy elsewhere", async () => {
+    // The fully silent no-op shape: nothing skipped-by-running-game, yet
+    // no task either — every pending item mid-op on another surface.
+    const { updates } = await mountHint({ probeOutdated: true, running: false }, anchorCard());
+    updates.itemBusy.set("probe:builtin", "install");
+    await updates.updateAll();
+    await flushPromises();
+
+    expect(mocks.ingamePluginInstall).not.toHaveBeenCalled();
+    const slot = useToast().toasts.find((x) => x.type === "info");
+    expect(slot?.messages.at(-1)?.text).toBe(t("resources.pluginUpdateBusyElsewhere"));
+  });
+
   it("renders just the slot when nothing is outdated", async () => {
     const { wrapper } = await mountHint({ probeOutdated: false, running: true }, anchorCard());
 

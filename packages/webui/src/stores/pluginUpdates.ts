@@ -392,6 +392,13 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
 
     if (tasks.length === 0) {
       reportSkipped();
+      // The remaining silent shape: nothing skipped-by-running-game, yet
+      // no task either — every pending item is mid-op on another surface
+      // (busy table). Without this the click is a total no-op (user
+      // report 2026-10-17): no backend command, no log line, no toast.
+      if (skipped === 0) {
+        toast.info(t("resources.pluginUpdateBusyElsewhere"));
+      }
       void syncFreshness();
       return;
     }
