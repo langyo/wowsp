@@ -32,6 +32,7 @@ import { api, type LearnedCapLayout } from "@/api";
 import { loadMapInsights, type MapInsightsDoc } from "../insightsLoader";
 import { resolveMapMinimapUrl, type MapBounds } from "../modelLoader";
 import CapEditorModal from "./CapEditorModal";
+import ReplaySourcesTip from "./ReplaySourcesTip";
 import type { CapSpec } from "./modes";
 import type { MapModeBucket } from "@/utils/mapModes";
 import "./MapSetupModal.scss";
@@ -279,7 +280,7 @@ export default defineComponent({
             x: c.x,
             z: c.z,
             radius: c.radius ?? 115,
-            team: null as string | null,
+            team: learnedTeamOf(c, learnedPick.value?.recorderTeam) as string | null,
           }))
         : customCaps.value
           ? customCaps.value.map((c, i) => ({
@@ -304,6 +305,37 @@ export default defineComponent({
      *  ("domination_3point"); fall back to the match group. */
     function learnedTitle(l: LearnedCapLayout): string {
       return l.scenario ?? l.modeGroup ?? "";
+    }
+
+    /** Team of one learned cap relative to the recorder ("ally" when the
+     *  recorder's side owns it, "enemy" for the other team, null neutral /
+     *  unanchored). */
+    function learnedTeamOf(
+      cap: { team?: number | null },
+      recorderTeam: number | null | undefined,
+    ): "ally" | "enemy" | null {
+      if (cap.team == null || recorderTeam == null || recorderTeam === undefined) return null;
+      if (cap.team === recorderTeam) return "ally";
+      if (cap.team === 0 || cap.team === 1) return "enemy";
+      return null;
+    }
+
+    /** Pre-own split of a cap set for the card's info line: counts per
+     *  side; null when the side cannot be named (no recorder anchor or no
+     *  pre-owned cap at all — the line then degrades to the point count). */
+    function preownedOf(
+      caps: Array<{ team?: number | null }>,
+      recorderTeam?: number | null,
+    ): { ally: number; enemy: number } | null {
+      if (recorderTeam == null) return null;
+      let ally = 0;
+      let enemy = 0;
+      for (const c of caps) {
+        const t = learnedTeamOf(c, recorderTeam);
+        if (t === "ally") ally += 1;
+        else if (t === "enemy") enemy += 1;
+      }
+      return ally + enemy > 0 ? { ally, enemy } : null;
     }
 
     return () => (
@@ -450,7 +482,8 @@ export default defineComponent({
                               </HkTag>
                             </span>
                             <span class="map-setup__mode-desc">
-                              {i18nT("tactics.setup.corpusFrom", { n: entry.battleCount })}
+                              {i18nT("tactics.setup.capsOnly", { n: l.caps.length })}
+                              · {i18nT("tactics.setup.corpusFrom", { n: entry.battleCount })}
                             </span>
                           </button>
                         );
@@ -470,15 +503,32 @@ export default defineComponent({
                             <HkTag size="sm" variant="success">
                               {i18nT("tactics.setup.measured")}
                             </HkTag>
-                            <HkTag size="sm">
-                              {i18nT("tactics.setup.capCount", { n: l.caps.length })}
-                            </HkTag>
                           </span>
                           <span class="map-setup__mode-desc">
-                            {i18nT("tactics.setup.learnedFrom", {
-                              date: l.sourceTime ?? l.sourceReplay,
-                            })}
+                            {(() => {
+                              const pre = preownedOf(l.caps, l.recorderTeam);
+                              return pre
+                                ? i18nT("tactics.setup.capsPreowned", {
+                                    n: l.caps.length,
+                                    ally: pre.ally,
+                                    enemy: pre.enemy,
+                                  })
+                                : i18nT("tactics.setup.capsOnly", { n: l.caps.length });
+                            })()}
                           </span>
+                          {(() => {
+                            // Provenance chip: the repeat count, with the
+                            // full (scrollable) file list on hover — a
+                            // single replay lists itself the same way.
+                            const files = l.replays ?? [];
+                            if (files.length === 0) return null;
+                            return (
+                              <ReplaySourcesTip
+                                label={i18nT("tactics.setup.replaySources", { n: files.length })}
+                                replays={files}
+                              />
+                            );
+                          })()}
                         </button>
                       );
                     })
@@ -561,7 +611,7 @@ export default defineComponent({
                     letter: String.fromCharCode(65 + Math.max(0, Math.min(25, c.index))),
                     at: { x: c.x, z: c.z },
                     radius: c.radius ?? 115,
-                    team: null,
+                    team: learnedTeamOf(c, learnedPick.value?.recorderTeam),
                   }))
                 : [])
             }

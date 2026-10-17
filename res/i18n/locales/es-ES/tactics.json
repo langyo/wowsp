@@ -52,7 +52,12 @@
     "corpusSource": "Medido del corpus",
     "corpusFrom": "Agregado de {n} batallas del corpus",
     "custom": "Personalizado",
-    "customDesc": "Abre el editor de puntos: añade, arrastra y ajusta puntos a mano, parte de una plantilla o importa cualquier repetición para calcar sus puntos."
+    "customDesc": "Abre el editor de puntos: añade, arrastra y ajusta puntos a mano, parte de una plantilla o importa cualquier repetición para calcar sus puntos.",
+    "capsPreowned": "{n} puntos · {ally} en poder aliado · {enemy} enemigo",
+    "capsOnly": "{n} puntos",
+    "capsPreownedShort": "aliados {ally} · enemigos {enemy}",
+    "replaySources": "{n} repeticiones",
+    "replaysTooltip": "Misma disposición en {n} repeticiones (más recientes primero)"
   },
   "mode": {
     "dom4": "Aleatorio · 4 puntos",
@@ -127,7 +132,7 @@
   "cap": {
     "section": "Puntos personalizados",
     "title": "Editar puntos",
-    "hint": "Clic en el agua vacía para añadir un punto; arrastra para moverlo; selecciónalo para ajustar su radio y dueño a la derecha.",
+    "hint": "Clic en el agua para añadir un punto; arrastrar para moverlo; clic derecho para eliminarlo.",
     "templates": "Empezar de una plantilla",
     "importReplay": "Importar de una repetición…",
     "imported": "Cargados {n} puntos de {name}",

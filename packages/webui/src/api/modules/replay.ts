@@ -127,12 +127,25 @@ export interface LearnedCapPoint {
   appearT: number | null;
 }
 
+/** One replay file behind a learned layout (tooltip provenance). */
+export interface LearnedReplaySource {
+  name: string;
+  time: string | null;
+}
+
 /** One learned (matchGroup, scenario) layout of a map. */
 export interface LearnedCapLayout {
   modeGroup: string | null;
   scenario: string | null;
   sourceReplay: string;
   sourceTime: string | null;
+  /** Team id (0/1) the source replay was recorded from — caps whose team
+   *  equals it are the recorder's side. Null when unanchored. */
+  recorderTeam?: number | null;
+  /** Every replay that yielded this exact arrangement, newest first
+   *  (content duplicates merge into one entry; optional because corpus
+   *  rows synthesize the shape without files). */
+  replays?: LearnedReplaySource[];
   caps: LearnedCapPoint[];
 }
 

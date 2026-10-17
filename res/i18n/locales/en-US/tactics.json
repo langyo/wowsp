@@ -52,7 +52,12 @@
     "corpusSource": "Corpus-measured",
     "corpusFrom": "Aggregated from {n} corpus battles",
     "custom": "Custom",
-    "customDesc": "Open the point editor: add, drag and tune points by hand, start from a template, or import any replay for exact matching."
+    "customDesc": "Open the point editor: add, drag and tune points by hand, start from a template, or import any replay for exact matching.",
+    "capsPreowned": "{n} points · ours holds {ally} · theirs {enemy}",
+    "capsOnly": "{n} points",
+    "capsPreownedShort": "ours {ally} · theirs {enemy}",
+    "replaySources": "{n} replays",
+    "replaysTooltip": "Same layout in {n} replays (newest first)"
   },
   "mode": {
     "dom4": "Random · 4 caps",
@@ -127,7 +132,7 @@
   "cap": {
     "section": "Custom points",
     "title": "Edit capture points",
-    "hint": "Click empty water to add a point; drag to move; select one to tune its radius and ownership on the right.",
+    "hint": "Click water to add a point; drag a point to move it; right-click a point to delete it.",
     "templates": "Start from a template",
     "importReplay": "Import from a replay…",
     "imported": "Loaded {n} points from {name}",

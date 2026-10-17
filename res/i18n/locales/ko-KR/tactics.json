@@ -52,7 +52,12 @@
     "corpusSource": "코퍼스 실측",
     "corpusFrom": "코퍼스 {n}전투에서 집계",
     "custom": "사용자 지정",
-    "customDesc": "거점 편집기를 엽니다: 직접 추가·이동·조정하거나, 템플릿에서 시작하거나, 임의의 리플레이를 가져와 정확히 맞춥니다."
+    "customDesc": "거점 편집기를 엽니다: 직접 추가·이동·조정하거나, 템플릿에서 시작하거나, 임의의 리플레이를 가져와 정확히 맞춥니다.",
+    "capsPreowned": "{n}개 거점 · 아군 {ally} · 적군 {enemy} 선점",
+    "capsOnly": "{n}개 거점",
+    "capsPreownedShort": "아군 {ally} · 적군 {enemy}",
+    "replaySources": "리플레이 {n}개",
+    "replaysTooltip": "동일한 배치의 리플레이 {n}개 (최신순)"
   },
   "mode": {
     "dom4": "랜덤 · 거점 4개",
@@ -127,7 +132,7 @@
   "cap": {
     "section": "사용자 지정 거점",
     "title": "거점 편집",
-    "hint": "빈 수면을 클릭해 추가하고, 드래그해 옮기고, 선택하면 오른쪽에서 반경과 소속을 조정합니다.",
+    "hint": "수면 클릭으로 거점 추가, 드래그로 이동, 우클릭으로 삭제.",
     "templates": "템플릿에서 시작",
     "importReplay": "리플레이에서 가져오기…",
     "imported": "{name}에서 거점 {n}개를 불러왔습니다",
