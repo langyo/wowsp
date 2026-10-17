@@ -29,7 +29,7 @@ const MOD_ENTRY: &str = "Main.py";
 /// per-session battle state the plugin rewrites from scratch every run. An
 /// install wipes any leftovers, so a dead session's roster and ordering can
 /// never survive a reinstall into a tree that carried them in.
-const RUNTIME_BRIDGE_FILES: [&str; 7] = [
+const RUNTIME_BRIDGE_FILES: [&str; 8] = [
     "telemetry.json",
     "heartbeat.json",
     "request.json",
@@ -37,6 +37,7 @@ const RUNTIME_BRIDGE_FILES: [&str; 7] = [
     "roster_raw.json",
     "roster_journal.jsonl",
     "manual_refresh.flag",
+    "order_probe.json",
 ];
 
 #[derive(Debug, Serialize)]
@@ -836,6 +837,7 @@ mod tests {
             "roster_raw.json",
             "roster_journal.jsonl",
             "manual_refresh.flag",
+            "order_probe.json",
         ];
         assert_eq!(runtime_files, RUNTIME_BRIDGE_FILES);
         for file in runtime_files {

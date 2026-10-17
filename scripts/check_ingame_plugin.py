@@ -133,8 +133,9 @@ class StubUtils(object):
         if isinstance(value, FakeRecord):
             if not self.encode_records:
                 raise TypeError("encoder rejects SafeClass")
-            return json.dumps(value._f)
-        return json.dumps(value, default=self._encode_default)
+            return json.dumps(value._f, ensure_ascii=False)
+        return json.dumps(value, default=self._encode_default,
+                          ensure_ascii=False)
 
     @staticmethod
     def _encode_default(obj):
@@ -152,12 +153,33 @@ class StubBattle(object):
         # The game API's own self view (name carries the clan tag, like
         # the live client's) — the entity-walk-independent self source.
         self._self = FakeRecord(name="[RUQL]langyo")
+        # The raw dh collection door the decompiled battleGate carries
+        # internally. The live 15.9 SafeClass does NOT forward it (the
+        # order_probe records 'missing'); the harness still plants it so
+        # the probe's raw-collection branch stays covered for clients
+        # (and future builds) where the wrapper does expose it.
+        self.avatar_collection = None
 
     def getPlayersInfo(self):
         return dict(self.players)
 
     def getSelfPlayerInfo(self):
         return self._self
+
+    def getCollection(self, component_id):
+        if component_id == "cc.avatar":
+            return self.avatar_collection
+        return []
+
+
+class StubBattleNoRaw(StubBattle):
+    """The live 15.9 `battle` SafeClass shape: the internal getCollection
+    helper is NOT forwarded. The probe must record 'missing', skip the
+    paths and still write order_probe.json."""
+
+    @property
+    def getCollection(self):
+        raise AttributeError("getCollection")
 
 
 class StubEvents(object):
@@ -283,6 +305,26 @@ class FakeShipEntity(object):
             self.components = {"position": FakeComponent(value=(1.0, 2.0, 3.0))}
         else:
             self.components = {"ship": FakeComponent(sortKey=sort_key)}
+
+
+class FakeRawAvatarCollection(object):
+    """The RAW dh avatar collection battle.getCollection(CC.avatar)
+    returns on builds where the SafeClass forwards it: iterable, with the
+    client's splitting/sorting children reachable by path. The planted
+    'team.ally.sortedAlive' child is the exact rendered order the probe
+    must capture verbatim (never the walk order)."""
+
+    def __init__(self, entities, paths):
+        self._entities = entities
+        self._paths = paths
+
+    def __iter__(self):
+        return iter(self._entities)
+
+    def getChildByPath(self, path):
+        if path not in self._paths:
+            raise KeyError(path)
+        return self._paths[path]
 
 
 class RaisingConstants(object):
@@ -440,8 +482,8 @@ def crippled_builtins():
 
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
              raising_constants, fail_plain, ships, with_ship_names,
-             drift_records, failures):
-    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s"
+             drift_records, failures, raw_collection=True):
+    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s"
              % ("records" if encode_records else "projection",
                 "yes" if with_manifest else "missing",
                 "yes" if with_ui else "absent",
@@ -449,9 +491,10 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 "reject" if fail_plain else "ok",
                 ships,
                 "yes" if with_ship_names else "withheld",
-                "yes" if drift_records else "no"))
+                "yes" if drift_records else "no",
+                "yes" if raw_collection else "missing"))
     utils = StubUtils(encode_records, fail_plain)
-    battle = StubBattle()
+    battle = StubBattle() if raw_collection else StubBattleNoRaw()
     events = StubEvents()
     callbacks = StubCallbacks()
     cc = StubConstants.UiComponents
@@ -467,6 +510,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                           drift_records=drift_records)
     dh_avatars = []
     dh_ships = []
+    avatar_by_name = {}
     # Iteration follows build_roster's insertion order (the py3.7+ dict
     # guarantee) — the walk-order expectations below are coupled to it.
     for slot, rec in roster.items():
@@ -493,10 +537,19 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                              alive=True,
                              ship_slot=(FakeShipSlot(ship_id)
                                         if ship_id is not None else None)))
+        avatar_by_name[name] = dh_avatars[-1]
         if ship_id is not None and ship_id != UNPAIRED_SHIP_ID:
             dh_ships.append(FakeShipEntity(ship_id, SHIP_KEYS[name]))
     if ships == "full":
         dh_ships.append(FakeShipEntity(NOISE_SHIP_ID, None))
+    # The client's own splitting/sorting child: the SHIP_KEY_ORDERS ally
+    # sequence, deliberately different from the walk order, so the probe's
+    # order_probe.json must reproduce IT (not the fold) name for name.
+    planted_order = [n for n in SHIP_KEY_ORDERS["ally"] if n in avatar_by_name]
+    planted_entities = [avatar_by_name[n] for n in planted_order]
+    battle.avatar_collection = FakeRawAvatarCollection(
+        dh_avatars,
+        {"team.ally.sortedAlive": planted_entities})
     env = {
         "__builtins__": crippled_builtins(),
         "__name__": "__sandbox__",
@@ -811,6 +864,41 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                     failures.append(
                         "[%s] panel %s order wrong (ships=%s): %r"
                         % (label, side, ships, probe.order.get(side)))
+        # The client-order probe: the fake raw avatar collection exposes
+        # the planted 'team.ally.sortedAlive' child in SHIP_KEY_ORDERS
+        # order (NOT the walk order); order_probe.json must capture that
+        # exact sequence and report the raw door as present. The
+        # raising-cc (Lesta) passes stand _cc() down, so the probe never
+        # runs there.
+        if not raising_constants and probe is not None:
+            try:
+                with open("order_probe.json") as fh:
+                    order_probe = json.load(fh)
+                rows = order_probe.get("paths", {}).get("avatar/team.ally.sortedAlive")
+                got = ([r.get("name") for r in rows]
+                       if isinstance(rows, list) else rows)
+                apis = order_probe.get("apis", {})
+                if raw_collection:
+                    if got != planted_order:
+                        failures.append(
+                            "[%s] order_probe sortedAlive=%r, expected %r"
+                            % (label, got, planted_order))
+                    if apis.get("getCollection") != "present":
+                        failures.append(
+                            "[%s] order_probe did not report getCollection present"
+                            % label)
+                else:
+                    if apis.get("getCollection") != "missing":
+                        failures.append(
+                            "[%s] no-raw order_probe getCollection=%r, expected missing"
+                            % (label, apis.get("getCollection")))
+                    if order_probe.get("paths"):
+                        failures.append(
+                            "[%s] no-raw order_probe captured paths: %r"
+                            % (label, order_probe.get("paths")))
+            except Exception as e:
+                failures.append("[%s] order_probe.json unreadable: %r"
+                                % (label, e))
         if "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))
@@ -883,6 +971,12 @@ def main(argv):
             run_once(plugin_src, workdir, encode_records, with_manifest,
                      with_ui, raising_constants, fail_plain, ships,
                      with_ship_names, drift_records, failures)
+    # The live 15.9 `battle` SafeClass does NOT forward the internal
+    # getCollection helper. One extra pass pins that shape: the probe must
+    # record 'missing', capture no paths and still write its file.
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, False, False, False,
+                 "none", True, False, failures, raw_collection=False)
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
@@ -890,7 +984,7 @@ def main(argv):
             print(" - " + line)
         return 1
     print("SANDBOX CONFORMANCE: PASS (%d passes, %s, crippled builtins: %s)"
-          % (len(passes), os.path.basename(os.path.normpath(plugin)),
+          % (len(passes) + 1, os.path.basename(os.path.normpath(plugin)),
              ", ".join(SAFE_BUILTINS)))
     return 0
 

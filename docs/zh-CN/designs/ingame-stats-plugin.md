@@ -51,7 +51,8 @@ git 历史）：
 
 **不可用**（也不需要）：avatar 实体上没有每玩家 score/XP 组件；
 unbound 侧的 `$datahub.getCollection().getChildByPath('team.ally.sortedAlive')`
-路径在 Python 侧没有对应（注入的 dataHub 没有 `getCollection`）。
+路径在 Python 侧没有对应：注入的 `dataHub` 没有 `getCollection`，注入的
+`battle` SafeClass 也不转发 battleGate 内部的同名助手（15.9.0 实测）。
 
 **排序规则——不稳定、按客户端各自校准；真值必须来自游戏内。** TAB 表格的
 行序由各家客户端的 HUD 自行渲染，厂商之间已经真实分叉（早期"竞技场载具序
@@ -122,6 +123,49 @@ roster_raw.json 同帧携带 `order` 数组，Rust 合成（probe_roster）据�
 记录里是否真的存在，待实装机验证（离线合规已钉住"存在则桥接、缺失则空表"
 两形）。
 
+**精确顺序来源（2026-10-18 静态 + 回放探针）**——TAB 行序是客户端
+`AvatarSystem` 自己渲染的序列。反编译 `mcb5884c1/m9be68bb6.pyc`
+（`__createCollections`）可见它基于 avatar 集合构建 dh 的拆分/排序集合
+`byTeams`、`byTeamsSortedAlive`（`sortedAlive`）、`sortedLeftTeam`、
+`realPlayers`；unbound UI 通过这些路径读取：
+`$datahub.getCollection(CC.avatar).getChildByPath('team.<side>.sortedAlive')`。
+这个集合是游戏内唯一的精确顺序——任何排序键重建都无法还原国服 HUD 的
+船名序或厂商各自的并列裁决。
+
+当前 WG 构建的 Mods API 到不了它：反编译的
+`ModsShell/API_v_1_0/battleGate` 里有一个内部 `getCollection(componentId)`
+助手，能返回带 `getChildByPath` 的原始 dh 集合，但它只是模块级赋值，并非
+导出 API——注入的 `battle` SafeClass 在 Steam 亚服 15.9.0（build 13357625，
+回放探针）上把 `getCollection`/`getCollections`/`getAllPlayers` 都报为
+missing，而 `getPlayersInfo`、`getPlayerInfo`、`getSelfPlayerInfo`、
+`getAllShips` 可用。注入的 `dataHub` 只按 SYNCED 白名单提供实体列表
+（`avatar`、`ship` 等）并把它拍平成 list，拆分树因此丢失。名单记录里的
+`prebattleIndex` 不是行序：同一次回放里多数为 0、少数为 1–3（更像预战斗/
+分队槽位，而非 HUD 顺序）。15.9 回放里 `children` 集合返回了 33 个实体，
+但它们的 `Children.list` 值是 UI 数据树自己的实体 id（197xx），不是名单的
+avatar id（798xxx）——这棵树不是队伍行序；`battleInfo`/`battleState` 采到
+的字段为空。这些负结果都记在 `order_probe.json` 里。
+
+剩余可行路径，按优先级：
+
+1. **unbound 视图**——直接读上面的集合，按该顺序渲染面板行，或把顺序桥给
+   伴生进程。unbound 运行时可派发外部动作（`bindcall externalCall
+   'direct.action'` / `inputMapping.onAction`，现成 mod 已在用），但现成
+   mod 都不写文件；外部动作能否到达 Python `events` 处理器，是下一步实验。
+2. **Flash 桥**——`flashGate` 导出 `call`、
+   `addExternalCallback`/`removeExternalCallback`，且注入沙盒里
+   `flash.call` 可用。若战斗 HUD 通过 ActionScript 回调暴露渲染行表，
+   Python 可直接查询；SWF ABC 面尚未检查。
+3. **舰船排序键 + 名单序**（已桥接）——只有客户端规则与重建键一致时才精确；
+   国服 HUD 与厂商特有的并列裁决不在其中。
+4. **OCR/TAB 截图**——兜底，不是客户端真值。
+
+探针在每次名单稳定后写一次 `order_probe.json`（名单再次稳定会重写）：
+API 面、候选集合计数、名单的
+`prebattleIndex` 值、被服务容器组件的有限采样（`children` 列表、
+`battleInfo`/`battleState` 字段），以及该构建能给出的
+`team.<side>.sortedAlive` 顺序。它纯属诊断，排序消费端不读它。
+
 **编码器加固（2026-10-09，WG 亚服 15.9.0 实测）**：客户端自带的
 `utils.jsonEncode` 同样被证明随构建不稳——15.9 对 15.8 曾接受的普通字典
 载荷直接抛异常，WG 亚服的 telemetry.json 冻结在退出清空态，而
@@ -129,6 +173,13 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 现在所有桥接写入都经 `json_encode_safe`——先走客户端编码器，失败则退到
 手写的 ASCII 安全序列化器（沙箱场景 `plain=reject`）——任何编码器怪癖都
 再也压不住遥测。
+
+**遥测兜底（2026-10-18）**：1 s 遥测写入器现在会标注失败阶段
+（`telemetry failed@<stage>`），并统一经 `_bridge_write` 写 UTF-8 字节
+（py2 文本模式会把 unicode 体按 ASCII 编码；二进制打开被拒时回退文本
+模式）。若某个辅助阶段仍抛异常，写入器会写出实际收集到的内容——名单
+循环完整时的存活表 + 客户端排序键——名单循环未完成时省略 `players`，
+既不让旧文件冻结，也不会误报“全员存活”。
 
 **国服分叉**（360 build 13243917，2026-10-07 实拍）：国服客户端的 TAB
 表格**不重排**——沉没行留在开局原位、就地变暗（实测 5 名阵亡者的行与存活
