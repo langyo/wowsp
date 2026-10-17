@@ -221,7 +221,10 @@ Before submitting, the relevant subset of `just lint` (or scoped
   the pinned `windows-future 0.2.1` does not compile on Linux (upstream bug,
   see the ci.yml comment). fmt/clippy target only the app crates
   (`wowsp_tauri` / `wowsp_tauri_shared`); the vendored `wowsunpack` /
-  `wows-core` are dependency sources and keep their upstream formatting.
+  `wows-core` are dependency sources and keep their historical formatting
+  (the whole `packages/tools/wowsunpack-vendor` tree is an independent
+  in-repo fork since 2026-10 — no upstream sync; dependency bumps and fixes
+  there are WoWSP's own, see its workspace-root header comment).
 - **Cross-repo dependencies**: always consume published artifacts or
   vendored checkouts — never path dependencies pointing at local directories
   outside this repo. hikari comes from the npm package
