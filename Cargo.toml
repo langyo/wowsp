@@ -62,7 +62,7 @@ thiserror = "^2.0.21"
 chrono = { version = "^0.4", features = ["serde", "clock"] }
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1.0.151"
-toml = "1.1"
+toml = "^1.1"
 uuid = { version = "^1.28.0", features = ["v4", "serde"] }
 
 # OS randomness for the pairing server's PIN/token minting. Already in the
@@ -171,10 +171,10 @@ windows = { version = "^0.61", features = [
 
 # Image handling for capture analysis
 image = { version = "^0.25", default-features = false, features = ["png"] }
-ww2ogg = "0.1"
+ww2ogg = "^0.1"
 # Full-stream decode gate for the wem transcode fallback (already in the
 # tree via ww2ogg, so this adds no new crate).
-lewton = "0.10"
+lewton = "^0.10"
 
 # System clipboard image copy for the post-battle share shot (desktop only;
 # already in the lockfile via egui-winit, so this adds no new crate). Only the
@@ -212,27 +212,27 @@ wowsunpack = { path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", defa
     "models",
 ] }
 # Native folder picker for manual game-path selection (Windows IFileDialog).
-rfd = { version = "0.17", default-features = false }
-clap = { version = "4.6.0", features = ["derive"] }
-rootcause = "0.12"
-glob = "0.3.4"
-pickled = { version = "2.0.0-alpha9" }
-winnow = "1.0"
-paste = "1"
-roxmltree = "0.21"
-itertools = "0.14"
-gettext = "0.4"
-convert_case = "0.12"
-indicatif = "0.18.4"
-rkyv = "0.8.15"
-bon = "3.9.1"
-image_dds = { version = "0.7", default-features = false }
-ciborium = "0.2"
-insta = { version = "1.47", features = ["yaml"] }
-sha2 = "0.11"
+rfd = { version = "^0.17", default-features = false }
+clap = { version = "^4.6.0", features = ["derive"] }
+rootcause = "^0.12"
+glob = "^0.3.4"
+pickled = { version = "^2.0.0-alpha9" }
+winnow = "^1.0"
+paste = "^1"
+roxmltree = "^0.21"
+itertools = "^0.14"
+gettext = "^0.4"
+convert_case = "^0.12"
+indicatif = "^0.18.4"
+rkyv = "^0.8.15"
+bon = "^3.9.1"
+image_dds = { version = "^0.7", default-features = false }
+ciborium = "^0.2"
+insta = { version = "^1.47", features = ["yaml"] }
+sha2 = "^0.11"
 # Ed25519 verification of the relay digest docs' signature layer (the
 # seeds live outside the repo — see scripts/catalog_signing.py).
-ed25519-dalek = "2"
+ed25519-dalek = "^2"
 
 # ── Build profiles ──────────────────────────────────────────
 
