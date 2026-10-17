@@ -139,7 +139,9 @@
     border: none;
     border-radius: var(--radius-sm, 6px);
     background: rgb(var(--color-primary));
-    color: rgb(var(--color-on-solid, #fff));
+    // Luminance-following ink (the #1150/#1164 direction): bright custom
+    // primaries need near-black text, dark ones white — never a pinned white.
+    color: rgb(var(--color-on-primary, 255 255 255));
     font-size: var(--text-xs, 0.75rem);
     cursor: pointer;
     transition: opacity var(--duration-short, 0.15s) ease;
