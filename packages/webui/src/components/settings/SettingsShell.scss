@@ -2,11 +2,64 @@
 // settings grammar. Every rail/pane class comes from the shipped
 // HkSettingsDialog stylesheet (imported by SettingsShell.tsx, so it lands
 // in the bundle BEFORE this file and these rules win on equal
-// specificity); only the first-level cluster title is new here.
+// specificity); only the cluster heading styles and the scroll-ownership
+// re-anchoring below are local.
 //
 // The title speaks the pane's own sub-block vocabulary
 // (.hk-settings-sub-title: small caps, muted) so it reads as structure,
 // not content — and truncates like the rail labels it fronts.
+//
+// Scroll ownership (2026-10-18): both shell scrollers are hikari
+// HkScrollContainers — the native thin bars are gone, the auto-hiding
+// overlay chrome draws instead. The hosts keep every shell geometry rule
+// from the imported stylesheet (rail width, border, pane flex, and the
+// modal host's flush-edge negative margin); the paired-class rules pin
+// the two things the container anatomy replaces (the hosts' own
+// overflow-y: auto, and the paddings/gaps whose home is now the
+// viewport, because the slot content and rail entries are its children).
+
+.hk-settings__rail.hk-scroll-container,
+.hk-settings__pane.hk-scroll-container {
+  overflow: hidden;
+}
+
+.hk-settings__rail.hk-scroll-container {
+  /* The shell geometry that used to inset the rail's own scroller —
+     the viewport carries it now, so the overlay track hugs the rail's
+     border edge (flush, like the native bar it replaces). */
+  padding: 0;
+
+  & > .hk-scroll-container-viewport {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-12) var(--space-4) 0;
+  }
+}
+
+.hk-settings__pane.hk-scroll-container > .hk-scroll-container-viewport {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+/* Modal host context: hikari's host rule cancels the modal body's right
+   padding on the pane and re-applies the inset as pane padding-right —
+   that inset must sit INSIDE the viewport now, or the overlay track
+   (hugging the viewport's edge) would land 1.75rem short of the window
+   edge instead of flush where the native bar sat. The negative margin
+   stays on the host. */
+.hk-settings-host .hk-settings__pane.hk-scroll-container {
+  padding-right: 0;
+
+  & > .hk-scroll-container-viewport {
+    padding-right: var(--space-28);
+
+    @media (max-width: 767px) {
+      padding-right: var(--space-20);
+    }
+  }
+}
 
 .hk-settings__rail-heading {
   /* The rail is a fixed-height flex column; without this the shrink

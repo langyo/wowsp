@@ -448,40 +448,12 @@ button {
    Every scroll region renders through hikari's HkScrollContainer: the
    viewport hides its native bar and the shared overlay chrome
    (.hk-scrollbar-track/.hk-scrollbar-thumb from hikari's stylesheet)
-   draws the app-wide bar. The one exception is hikari's own settings
-   shell: HkSettingsDialog ships .hk-settings__pane/.hk-settings__rail
-   as bare native scrollers — its flush-edge geometry is sized for a
-   thin bar, and the pane cannot be restructured from the consumer
-   side — so the thin themed bar is scoped to exactly those two
-   selectors. Textareas keep the OS bar too (native input chrome, not
-   content-scroll chrome). */
-.hk-settings__pane,
-.hk-settings__rail {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(var(--color-border) / 40%) transparent;
-
-  &::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: rgb(var(--color-border) / 35%);
-    border-radius: 4px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
-
-  &::-webkit-scrollbar-thumb:hover {
-    background: rgb(var(--color-primary) / 40%);
-    background-clip: padding-box;
-    border: 2px solid transparent;
-  }
-}
+   draws the app-wide bar — the settings shell's rail and pane included
+   (its SettingsShell hosts are HkScrollContainers since 2026-10-18; the
+   former thin-native-bar exception for them is gone). Textareas keep
+   the OS bar (native input chrome, not content-scroll chrome), and the
+   document-level scroller of the marketing website (a separate package)
+   is out of this app's contract. */
 
 /* === Styled form controls (replace native select/input appearance) === */
 select {

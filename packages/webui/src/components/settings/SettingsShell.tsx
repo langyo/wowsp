@@ -1,6 +1,6 @@
 import { defineComponent, Fragment, nextTick, ref, watch, type PropType } from "vue";
 
-import type { HkSettingsSection } from "@celestia-island/hikari";
+import { HkScrollContainer, type HkSettingsSection } from "@celestia-island/hikari";
 
 // The rail+pane anatomy and its stylesheet are hikari's settings-window
 // grammar; the grouped rail is a wowsp-local extension (the upstream
@@ -33,7 +33,20 @@ export interface SettingsRailGroup {
  * over the first entry, disabled entries render but cannot activate) so
  * swapping this in for HkSettingsBody changes nothing but the rail's
  * grouping.
+ *
+ * Both scrollers are hikari HkScrollContainers (the app-wide overlay
+ * scrollbar contract): the hosts keep the shell geometry (rail width,
+ * pane flex, the modal host's flush-edge trick), the viewports scroll —
+ * native bars hidden, the auto-hiding overlay chrome drawn by the
+ * library. The rail+pane BEM classes stay on the hosts so every shell
+ * selector (here, the modal's and the page's) keeps working unchanged.
  */
+/** Consumed slice of HkScrollContainer's exposed component ref (the ref
+ *  yields the exposed handle, not an element — see the pane below). */
+interface PaneScrollHandle {
+  scrollTo(top: number, behavior?: ScrollBehavior): void;
+}
+
 export const SettingsShell = defineComponent({
   name: "SettingsShell",
   props: {
@@ -70,12 +83,10 @@ export const SettingsShell = defineComponent({
     const active = () =>
       entries().some((s) => s.key === internal.value) ? internal.value : firstEnabled();
 
-    const paneRef = ref<HTMLElement | null>(null);
+    const paneRef = ref<PaneScrollHandle | null>(null);
     // Section switches restart the pane from the top.
     watch(active, () => {
-      void nextTick(() => {
-        if (paneRef.value) paneRef.value.scrollTop = 0;
-      });
+      void nextTick(() => paneRef.value?.scrollTo(0));
     });
 
     function pick(key: string) {
@@ -87,7 +98,7 @@ export const SettingsShell = defineComponent({
 
     return () => (
       <div class="hk-settings">
-        <nav class="hk-settings__rail" aria-label={props.navLabel}>
+        <HkScrollContainer as="nav" class="hk-settings__rail" aria-label={props.navLabel}>
           {props.groups.map((group) => (
             <Fragment key={group.key}>
               <div class="hk-settings__rail-heading">{group.label}</div>
@@ -115,10 +126,10 @@ export const SettingsShell = defineComponent({
               })}
             </Fragment>
           ))}
-        </nav>
-        <div class="hk-settings__pane" ref={paneRef}>
+        </HkScrollContainer>
+        <HkScrollContainer class="hk-settings__pane" ref={paneRef}>
           {slots[active()]?.()}
-        </div>
+        </HkScrollContainer>
       </div>
     );
   },

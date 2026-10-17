@@ -4,7 +4,7 @@ import {
   Ship, Crosshair, Map, SlidersHorizontal, Volume2, Palette, Layers,
   Search, Waves, CloudFog, Radar, Timer, Crosshair as CrosshairIcon,
 } from "@lucide/vue";
-import { HkButton, HkSwitch, HkTag } from "@celestia-island/hikari";
+import { HkButton, HkScrollContainer, HkSwitch, HkTag } from "@celestia-island/hikari";
 import "./ModWindow.scss";
 
 /** Category tabs mirror Aslain's real modpack groups (no catch-all "all"). */
@@ -135,25 +135,28 @@ export default defineComponent({
           </span>
         </div>
 
-        {/* category tabs — auto-rotating, no catch-all */}
-        <div class="mod-win__tabs" role="tablist">
-          {CATS.map((c, i) => {
-            const Icon = c.icon;
-            return (
-              <button
-                key={c.key}
-                type="button"
-                role="tab"
-                aria-selected={state.cat === i}
-                class={["mod-win__tab", state.cat === i ? "is-active" : ""].join(" ")}
-                onClick={() => selectCat(i)}
-              >
-                <Icon size={13} />
-                {t(`showcase.mods.win.cats.${c.key}`)}
-              </button>
-            );
-          })}
-        </div>
+        {/* category tabs — auto-rotating, no catch-all; the strip pans
+            through hikari's scroll container like the real mod hub's */}
+        <HkScrollContainer axis="horizontal" class="mod-win__tabs">
+          <div class="mod-win__tabs-inner" role="tablist">
+            {CATS.map((c, i) => {
+              const Icon = c.icon;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={state.cat === i}
+                  class={["mod-win__tab", state.cat === i ? "is-active" : ""].join(" ")}
+                  onClick={() => selectCat(i)}
+                >
+                  <Icon size={13} />
+                  {t(`showcase.mods.win.cats.${c.key}`)}
+                </button>
+              );
+            })}
+          </div>
+        </HkScrollContainer>
 
         {/* mod rows */}
         <ul class="mod-win__list">
