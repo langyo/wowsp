@@ -14,16 +14,16 @@ flate2 = { workspace = true }
 serde = { workspace = true, features = ["rc"] }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
-blowfish = { version = "0.9", optional = true }
-cipher = { version = "0.4", optional = true }
-byteorder = { version = "1", optional = true }
+blowfish = { version = "^0.9", optional = true }
+cipher = { version = "^0.4", optional = true }
+byteorder = { version = "^1", optional = true }
 pickled = { workspace = true, optional = true }
-kinded = "0.5"
+kinded = "^0.5"
 tracing = { workspace = true }
 wowsunpack = { workspace = true, default-features = false }
 bon = { workspace = true, optional = true }
 rootcause = { workspace = true, optional = true }
-modular-bitfield = { version = "0.13", optional = true }
+modular-bitfield = { version = "^0.13", optional = true }
 
 [build-dependencies]
 serde = { workspace = true }

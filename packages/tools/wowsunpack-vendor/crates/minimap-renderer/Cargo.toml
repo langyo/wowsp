@@ -55,7 +55,7 @@ wows-replay-insights = { workspace = true, optional = true, features = ["build"]
 wows-battle-world = { workspace = true, optional = true }
 wt-translations = { workspace = true }
 image = { workspace = true, features = ["png", "jpeg"], optional = true }
-ab_glyph = { version = "0.2", optional = true }
+ab_glyph = { version = "^0.2", optional = true }
 clap = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 serde = { workspace = true }
@@ -63,8 +63,8 @@ serde_json = { workspace = true, optional = true }
 convert_case = { workspace = true, optional = true }
 gettext = { workspace = true, optional = true }
 roxmltree = { workspace = true, optional = true }
-resvg = { version = "0.47", optional = true }
-tiny-skia = { version = "0.12", optional = true }
+resvg = { version = "^0.47", optional = true }
+tiny-skia = { version = "^0.12", optional = true }
 indicatif = { workspace = true, optional = true }
 rootcause = { workspace = true, optional = true }
 tracing = { workspace = true }
@@ -72,24 +72,24 @@ tracing-subscriber = { workspace = true, optional = true }
 rkyv = { workspace = true, optional = true }
 wows-data-mgr = { workspace = true, optional = true }
 
-yuvutils-rs = { version = "0.8", optional = true }
+yuvutils-rs = { version = "^0.8", optional = true }
 
-openh264 = { version = "0.9", features = ["source"], optional = true }
-rav1e = { version = "0.8.1", default-features = false, features = ["threading"], optional = true }
-muxide = { version = "0.2.5", optional = true }
+openh264 = { version = "^0.9", features = ["source"], optional = true }
+rav1e = { version = "^0.8.1", default-features = false, features = ["threading"], optional = true }
+muxide = { version = "^0.2.5", optional = true }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-gpu-video = { version = "0.4.0", default-features = false, features = ["wgpu"], optional = true }
-wgpu = { version = "29", optional = true }
+gpu-video = { version = "^0.4.0", default-features = false, features = ["wgpu"], optional = true }
+wgpu = { version = "^29", optional = true }
 
 # VideoToolbox encoder (macOS only)
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.6", optional = true }
-objc2-foundation = { version = "0.3", optional = true }
-objc2-core-foundation = { version = "0.3", optional = true }
-objc2-core-media = { version = "0.3", optional = true }
-objc2-core-video = { version = "0.3", optional = true }
-objc2-video-toolbox = { version = "0.3", optional = true }
+objc2 = { version = "^0.6", optional = true }
+objc2-foundation = { version = "^0.3", optional = true }
+objc2-core-foundation = { version = "^0.3", optional = true }
+objc2-core-media = { version = "^0.3", optional = true }
+objc2-core-video = { version = "^0.3", optional = true }
+objc2-video-toolbox = { version = "^0.3", optional = true }
 
 [dev-dependencies]
 wows-data-mgr = { workspace = true }
