@@ -171,8 +171,9 @@ Before submitting, the relevant subset of `just lint` (or scoped
      bundle a coherent batch of mergeable work (a feature/fix wave); small
      PRs are allowed only when there is genuinely nothing to bundle (urgent
      hotfix, an isolated single-rule change).
-- **Version bumps ride along with the main PR**: when the version changes,
-  bump all seven places in the same feature/fix PR (`Cargo.toml` workspace
+- **Version bumps ride along with the main PR**: when the user explicitly
+  instructs a version change (see the authorization rule below), bump all
+  seven places in the same feature/fix PR (`Cargo.toml` workspace
   version, `packages/app/tauri/tauri.conf.json`, root `package.json`, the
   `version` field of `packages/webui`, `packages/website`, `packages/holo`,
   and `packages/pairing-relay/wrangler.toml`'s `[vars]
@@ -181,17 +182,27 @@ Before submitting, the relevant subset of `just lint` (or scoped
   shun.toml manifest (see packages/installer), so no separate slot.
   `scripts/check_versions.py` enforces consistency in CI. **Do not** open
   version-bump-only PRs (unless the user explicitly asks).
-- **Version bump authorization tiers**: without explicit user consent, an
-  agent may autonomously advance **at most the patch digit**. minor / major
-  bumps must never be advanced unilaterally — first get the user's explicit
-  approval of the target version, then bump all seven places in the same PR.
+- **Version bump authorization — no autonomous version changes at all
+  (mandatory; patch included)**: agents must never advance any of the seven
+  version fields on their own initiative — **the patch digit included**.
+  Riding a bump into a feature/fix PR and opening a bump PR both require
+  the user's explicit instruction naming the target version (in effect, an
+  explicit release request — the version only moves when the user has asked
+  for the next version to come out), and then all seven places move
+  together in a single PR. (Revised 2026-10-18: the former authorization
+  tiers allowed an autonomous patch bump; one rode into #1175 and had to
+  be ordered back to the next sequential release before any tag could be
+  cut — do not repeat that.) Minor/major target versions additionally need
+  the user's explicit approval of the number itself, per the
+  release-versioning rule below.
 - **Release versioning — no skipped versions (mandatory)**. The seven
-  version fields on master drift ahead as main PRs merge (each bumping the
-  patch digit), but release tags must follow the published sequence
+  version fields on master stay put until an explicit user instruction
+  moves them (see the authorization rule above), but release tags must
+  follow the published sequence
   strictly: the next release tag is always the latest `v*` release tag plus
   one patch increment (after `v0.6.0` comes `v0.6.1`, then `v0.6.2`, …).
   A minor/major jump is allowed only with the user's explicit approval of
-  the target version (see the authorization tiers above); after such an
+  the target version (see the authorization rule above); after such an
   approved jump the patch sequence resumes from it. Before cutting a
   release tag, if the seven fields do not already equal the version to
   publish, a release-prep PR MUST first reset all seven fields to it
