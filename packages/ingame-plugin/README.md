@@ -19,7 +19,12 @@ everything to the WoWSP app through flat JSON files in its own directory:
   `entity[CC.health]`),
 - exact TAB-screen state (`input.tabModeIn/Out` SFM events) and roster
   churn (`onPlayersListUpdated`),
-- battle lifecycle marks, heartbeat, request/response stats bridge.
+- battle lifecycle marks, heartbeat, request/response stats bridge,
+- `order_probe.json` — one-shot per stabilized session: the client's
+  exact-order source surface (`battle.getCollection` presence, SYNCED
+  collection counts, bounded `children`/`battleInfo` container samples,
+  the roster's `prebattleIndex`, and any `team.<side>.sortedAlive` order
+  the build exposes). Diagnostic only; no ordering consumer reads it.
 
 The in-game reported version is pinned at `0.1.0` by owner decision;
 iteration happens in git history only.
@@ -43,10 +48,12 @@ while Tab is held. The pieces:
   Python).
 - Main.py merges the app's `response.json` stats rows into the
   relation-walk sides (`entity_walk`: PlayerRelation.SELF/ALLY — the
-  game's sortedAlive collections have no Python-side getCollection) and
-  rewrites the panel component whenever Tab state, ordering or alive
-  flags change. No answer from the app means no panel: the
-  transparent-overlay view mode simply never turns the bridge on.
+  injected `dataHub` and `battle` wrapper do not forward the client's
+  raw collection/`getChildByPath` API; the one-shot `order_probe.json`
+  records what this build does expose) and rewrites the panel component
+  whenever Tab state, ordering or alive flags change. No answer from the
+  app means no panel: the transparent-overlay view mode simply never
+  turns the bridge on.
 
 ## Sandbox rules the code must obey
 
@@ -57,6 +64,14 @@ names, never imported-and-shadowed), `open()` has no append mode, and
 any exception escaping a callback kills the mod silently. The file is
 intentionally conservative; see the design doc's constraints section
 before touching it.
+
+## Testing discipline
+
+Game-client testing is governed by `AGENTS.md` §0: static analysis
+first. A live or replay session needs explicit per-action developer
+permission, must never log into a live match, and any `res_mods/`
+files installed for the test must be restored to their previous state
+afterwards.
 
 ## Layout
 

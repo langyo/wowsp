@@ -58,10 +58,12 @@ forever; iteration lives in git history only):
 | Roster churn | `events.onPlayersListUpdated` | 14 events in one battle |
 | Battle lifecycle | `sfm.battleLoadingStarted`, `request.showBattle`, `onBattleStart`, `up.exitBattle`, `window.hide(Battle)` | finer-grained than tempArenaInfo file appearance/removal |
 
-**Not available** (and not needed): per-player score/XP components do not
-exist on avatar entities, and the unbound-side `$datahub.getCollection()
-.getChildByPath('team.ally.sortedAlive')` path has no Python-side
-equivalent (`getCollection` does not exist on the injected dataHub).
+**Not available** (and not needed for the API the overlay consumes):
+per-player score/XP components do not exist on avatar entities, and the
+unbound-side `$datahub.getCollection().getChildByPath('team.ally.sortedAlive')`
+path has no Python-side equivalent: the injected `dataHub` has no
+`getCollection`, and the injected `battle` SafeClass does not forward
+the battleGate-internal helper of the same name (live 15.9.0 probe).
 
 **Ordering rule — UNSTABLE, per-client knowledge; ground truth must come
 from inside the game.** The TAB table's row order is whatever each
@@ -168,6 +170,61 @@ exists in CN records awaits verification on a real install (offline
 conformance has pinned both shapes, "bridge when present, empty table
 when missing").
 
+**Exact-order sources (2026-10-18 static + replay probe).** The TAB order
+is the client's rendered `AvatarSystem` sequence. Decompiled
+`mcb5884c1/m9be68bb6.pyc` (`__createCollections`) builds the dh
+splitting/sorting collections `byTeams`, `byTeamsSortedAlive`
+(`sortedAlive`), `sortedLeftTeam` and `realPlayers` from the avatar
+collection; the unbound UI reads them as
+`$datahub.getCollection(CC.avatar).getChildByPath('team.<side>.sortedAlive')`.
+That collection is the only exact in-client order — no sort-key
+reconstruction can recover the CN HUD order or a vendor's tie rule.
+
+The Mods API cannot reach it on the current WG build. The decompiled
+`ModsShell/API_v_1_0/battleGate` carries an internal
+`getCollection(componentId)` helper returning the raw dh collection,
+but it is a plain module-global assignment, not an exported API: the
+injected `battle` SafeClass reported `getCollection`/`getCollections`/
+`getAllPlayers` as missing on Steam-ASIA 15.9.0 (build 13357625, replay
+probe), while `getPlayersInfo`, `getPlayerInfo`, `getSelfPlayerInfo` and
+`getAllShips` resolve. The injected `dataHub` only serves the SYNCED
+entity lists (`avatar`, `ship`, …) and flattens them, so the splitting
+tree is lost. `prebattleIndex` in the roster records is NOT the row
+order: the same replay showed 0 for most players and 1–3 for others (a
+pre-battle/division slot, not the HUD sequence). The 15.9 replay probe
+also served the `children` collection (33 entities), but their
+`Children.list` values are the UI data-hub's own entity ids (197xx),
+not the roster's avatar ids (798xxx); that tree is not the team order.
+`battleInfo`/`battleState` sampled empty fields. These negative results
+are recorded in `order_probe.json`.
+
+Remaining exact-order routes, in preference order:
+
+1. **Unbound view** — read the collection directly (the path above) and
+   either render the panel rows in that order or bridge the sequence to
+   the companion. The unbound runtime can dispatch external actions
+   (`bindcall externalCall 'direct.action'` / `inputMapping.onAction`,
+   used by installed mods), but no installed mod writes files; whether
+   an external action reaches the Python `events` handler is the next
+   experiment.
+2. **Flash bridge** — `flashGate` exports `call`,
+   `addExternalCallback`/`removeExternalCallback`, and `flash.call`
+   resolves in the injected sandbox. If the battle HUD exposes the
+   rendered row list through an ActionScript callback, Python could ask
+   for it directly; the SWF ABC surface is still uninspected.
+3. **Ship sort keys + roster order** (already bridged) — exact only
+   when the client's rule matches the reconstructed key; the CN HUD and
+   vendor-specific ties remain outside it.
+4. **OCR/TAB capture** — the fallback, not a client truth.
+
+The probe now writes `order_probe.json` once per stabilized session
+(re-armed if the roster re-stabilizes) with the API surface, the
+candidate collection counts, the roster's `prebattleIndex` values, a
+bounded sample of the served container components (`children` lists,
+`battleInfo`/`battleState` fields) and any
+`team.<side>.sortedAlive` order the build exposes. It is diagnostic
+only; no ordering consumer reads it.
+
 **Encoder hardening (2026-10-09, WG-ASIA 15.9.0 live)**: the client's
 own `utils.jsonEncode` proved build-unstable as well — 15.9 RAISED on
 plain dict payloads 15.8 accepted, freezing telemetry.json at its
@@ -176,6 +233,16 @@ key events, records, journal all normal). Every bridge write now routes
 through `json_encode_safe` — the client encoder first, a hand-rolled
 ASCII-safe serializer as the fallback (harness pass `plain=reject`) —
 so one encoder quirk can never silence the telemetry again.
+
+**Telemetry fail-safe (2026-10-18).** The 1 s telemetry writer now names
+its failing stage (`telemetry failed@<stage>`) and always emits UTF-8
+bytes through `_bridge_write` (py2 text mode would ASCII-encode a
+unicode body; a rejected binary open falls back to text mode). If an
+auxiliary stage still raises, the writer emits what it actually
+collected — the completed alive map (when available) and the client sort
+keys — and omits `players` when the roster loop did not finish, so a
+failure can neither freeze the file nor falsely assert "everyone
+alive".
 
 **CN divergence** (360 build 13243917, captured 2026-10-07): the CN
 client's TAB table does NOT move sunk players anywhere — their rows dim

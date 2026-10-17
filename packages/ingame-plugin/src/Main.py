@@ -63,6 +63,7 @@ MANUAL_FLAG = 'manual_refresh.flag'
 ROSTER_RAW_FILE = 'roster_raw.json'
 ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
 TELEMETRY_FILE = 'telemetry.json'
+ORDER_PROBE_FILE = 'order_probe.json'
 
 # Tool config: WoWSP maintains res_mods/wowsp.toml and seeds our table
 # ([tools."battle.ingame.stats"]) with these values; the keys below are the
@@ -267,6 +268,45 @@ def json_encode_safe(value):
         return utils.jsonEncode(value)
     except:
         return _json_encode(value)
+
+
+def _bridge_write(name, text):
+    """Write one bridge file as UTF-8 BYTES.
+
+    py2 text mode encodes a `unicode` payload with the locale codec
+    (ASCII on the client), so a body the client's own encoder echoed as
+    unicode — non-ASCII nicknames or localized ship names — raises
+    UnicodeEncodeError and freezes the file while heartbeat/request
+    (ASCII bodies) keep flowing. Binary mode plus an explicit utf-8
+    encoding makes the writer payload-agnostic: str bytes pass through,
+    unicode is encoded, and the file always ends with one newline.
+
+    'wb' is not among the sandbox modes already live-proven ('r'/'w'
+    are, 'a' is rejected), so a rejected/None binary open falls back to
+    text mode and writes the already-encoded bytes raw (py2 'w' does
+    not re-encode a byte str); the py3 harness path decodes back only
+    if text mode is somehow reached there.
+    """
+    try:
+        data = text + '\n'
+    except:
+        data = text
+    try:
+        data = data.encode('utf-8')
+    except:
+        pass
+    stream = None
+    try:
+        stream = open(name, 'wb')
+    except:
+        stream = None
+    if stream is None:
+        stream = open(name, 'w')
+    try:
+        stream.write(data)
+    except:
+        stream.write(data.decode('utf-8'))
+    stream.close()
 
 
 def _parse_int(s):
@@ -526,6 +566,10 @@ class Probe:
         self.labels = {}
         self.states = {}
         self.last_panel = ''
+        # One-shot per stabilized session: the client's own TAB-order source
+        # probe (see client_order_probe). It runs on the first stabilized
+        # tick, once the data hub's splitting/sorting collections exist.
+        self.order_probe_done = False
         self.resolve_api()
         self.api_probe('load')
         try:
@@ -585,9 +629,7 @@ class Probe:
     # -- file bridge ------------------------------------------------------
 
     def write_json(self, name, data):
-        stream = open(name, 'w')
-        stream.write(json_encode_safe(data) + '\n')
-        stream.close()
+        _bridge_write(name, json_encode_safe(data))
 
     def read_json(self, name, limit):
         stream = open(name, 'r')
@@ -856,6 +898,316 @@ class Probe:
             self.soft('avatar pairing failed=' + _exc_text(120))
         return keys
 
+    # -- client order probe -------------------------------------------------
+    # The TAB table's row order is the client's OWN rendered sequence. The
+    # client builds it in AvatarSystem (scripts/mcb5884c1/m9be68bb6.pyc:
+    # __createCollections -> 'byTeams', 'byTeamsSortedAlive', 'sortedAlive',
+    # 'sortedLeftTeam', 'realPlayers' via dh.Splitting / dh.Sorting), and
+    # the unbound view reads it as
+    #   $datahub.getCollection(CC.avatar).getChildByPath('team.ally.sortedAlive').
+    # The injected `dataHub` wrapper flattens entity collections to a list
+    # and exposes no getCollection/getChildByPath (the 2026-09 finding),
+    # but the battleGate module that backs `battle` carries an INTERNAL
+    # getCollection(componentId) returning the raw dh collection object —
+    # the one that does have getChildByPath. Whether the SafeClass wrapper
+    # forwards that internal name, and which SYNCED collection names answer
+    # at all, is build-dependent and exactly what this one-shot probe
+    # records. It is DIAGNOSTIC ONLY: nothing here feeds the panel,
+    # telemetry or the companion's ordering.
+
+    def _collection_order(self, collection, cc, limit):
+        """One collection's own iteration sequence as [{id,name,alive}].
+        For an AvatarSystem sorting child this IS the client's rendered
+        row order; for the raw avatar collection it is insertion order.
+        Bounded and fault-tolerant: one odd entity cannot kill the probe."""
+        order = []
+        count = 0
+        try:
+            for entity in collection:
+                count += 1
+                if count > limit:
+                    break
+                row = {}
+                try:
+                    row['id'] = _to_int(entity.id)
+                except:
+                    row['id'] = 0
+                try:
+                    row['name'] = bare_name(_fmt(entity[cc.avatar].name))
+                except:
+                    pass
+                try:
+                    row['alive'] = _fmt(entity[cc.health].isAlive)
+                except:
+                    pass
+                order.append(row)
+        except:
+            self.soft('order collection iteration failed=' + _exc_text(120))
+        return order
+
+    def _sample_collection(self, cols, comp_class, limit):
+        """Bounded projection of one served component collection: entity
+        id, any `list` field (the Children tree edges), public field
+        names and data keys. A failing field is skipped; an uniterable
+        collection raises to the caller (which records the negative
+        result instead of aborting the tick)."""
+        sample = []
+        seen = 0
+        for ent in cols:
+            seen += 1
+            if seen > limit:
+                break
+            row = {}
+            try:
+                row['id'] = _to_int(ent.id)
+            except:
+                pass
+            if comp_class is not None:
+                try:
+                    comp = ent[comp_class]
+                except:
+                    comp = None
+                if comp is not None:
+                    try:
+                        row['list'] = [_to_int(x) for x in comp.list]
+                    except:
+                        pass
+                    try:
+                        row['fields'] = _public_names(comp)[:24]
+                    except:
+                        pass
+                    try:
+                        data = comp.data
+                        try:
+                            row['dataKeys'] = data.keys()
+                        except:
+                            row['dataKind'] = _fmt(data.__class__.__name__)
+                    except:
+                        pass
+            sample.append(row)
+        return sample
+
+    def client_order_probe(self):
+        """One-shot per stabilized session: verify which in-client order
+        source this build exposes and dump the evidence to order_probe.json."""
+        cc = self._cc()
+        if cc is None:
+            return
+        evidence = {'t': _to_int(time.time() * 1000),
+                    'battle': self.session,
+                    'apis': {}, 'collections': {}, 'paths': {},
+                    'players': [], 'allPlayers': []}
+
+        # 1. Which entry points does the injected `battle` SafeClass
+        # forward? Direct attribute reads under bare excepts (no getattr:
+        # Lesta's whitelist may withhold it, and a Dummy lookalike is
+        # proven only by the call below, never by an `is callable` guess).
+        try:
+            battle.getCollection
+            evidence['apis']['getCollection'] = 'present'
+        except:
+            evidence['apis']['getCollection'] = 'missing'
+        try:
+            battle.getCollections
+            evidence['apis']['getCollections'] = 'present'
+        except:
+            evidence['apis']['getCollections'] = 'missing'
+        try:
+            battle.getAllPlayers
+            evidence['apis']['getAllPlayers'] = 'present'
+        except:
+            evidence['apis']['getAllPlayers'] = 'missing'
+        try:
+            battle.getPlayersInfo
+            evidence['apis']['getPlayersInfo'] = 'present'
+        except:
+            evidence['apis']['getPlayersInfo'] = 'missing'
+        try:
+            battle.getPlayerInfo
+            evidence['apis']['getPlayerInfo'] = 'present'
+        except:
+            evidence['apis']['getPlayerInfo'] = 'missing'
+        try:
+            battle.getSelfPlayerInfo
+            evidence['apis']['getSelfPlayerInfo'] = 'present'
+        except:
+            evidence['apis']['getSelfPlayerInfo'] = 'missing'
+        try:
+            battle.getAllShips
+            evidence['apis']['getAllShips'] = 'present'
+        except:
+            evidence['apis']['getAllShips'] = 'missing'
+
+        # The raw avatar collection: the object getChildByPath lives on.
+        raw_avatar = None
+        if evidence['apis'].get('getCollection') == 'present':
+            try:
+                raw_avatar = battle.getCollection(cc.avatar)
+                evidence['apis']['getCollection(avatar)'] = 'ok'
+            except:
+                evidence['apis']['getCollection(avatar)'] = 'failed=' + _exc_text(80)
+            if raw_avatar is not None:
+                # The exact paths the client's own UI resolves. 'team' /
+                # 'ally' are the grouping split; the leaf names are the
+                # AvatarSystem collections (live unbound path: team.ally.
+                # sortedAlive). The bare leaves cover builds without the
+                # grouping prefix.
+                for path in ('team.ally.sortedAlive',
+                             'team.enemy.sortedAlive',
+                             'team.ally.byTeamsSortedAlive',
+                             'team.enemy.byTeamsSortedAlive',
+                             'team.ally.sortedLeftTeam',
+                             'team.enemy.sortedLeftTeam',
+                             'team.ally.realPlayers',
+                             'team.enemy.realPlayers',
+                             'sortedAlive', 'byTeamsSortedAlive',
+                             'sortedLeftTeam', 'realPlayers'):
+                    try:
+                        child = raw_avatar.getChildByPath(path)
+                        evidence['paths']['avatar/' + path] = self._collection_order(child, cc, 32)
+                    except:
+                        evidence['paths']['avatar/' + path] = 'failed=' + _exc_text(80)
+
+        # 2. Which collections answer through the two documented doors?
+        # `dataHub.getEntityCollections(name)` is the SYNCED-whitelist
+        # path the probe already uses for avatar/ship; `battle.
+        # getCollection(componentId)` is the raw door (if forwarded).
+        # Candidates stay bounded: each wrapper call materializes the
+        # whole collection on the live client.
+        for name in ('dataComponent', 'mods_DataComponent', 'children',
+                     'parent', 'battleTeamScore', 'teamScore', 'battleInfo',
+                     'battleUIInfo', 'battleState', 'vehicle', 'health',
+                     'relation', 'playerMode', 'divisionMember'):
+            cols = None
+            if self.dh is not None:
+                try:
+                    cols = self.dh.getEntityCollections(name)
+                    evidence['collections'][name] = len(cols)
+                except:
+                    evidence['collections'][name] = 'failed=' + _exc_text(60)
+            else:
+                evidence['collections'][name] = 'no-dataHub'
+            # The SYNCED path is the one that answers on 15.9; sample the
+            # containers it serves. `children` is the UI data hub's tree
+            # edges: each Children.list is an ordered entity-id sequence,
+            # a candidate for the client's own row order.
+            if cols is not None and name in ('children', 'battleInfo',
+                                             'battleState',
+                                             'mods_DataComponent',
+                                             'dataComponent'):
+                comp_class = None
+                try:
+                    comp_class = cc.__dict__[name]
+                except:
+                    comp_class = None
+                try:
+                    sample = self._sample_collection(cols, comp_class, 40)
+                    evidence['collections'][name + '#sample'] = sample
+                except:
+                    evidence['collections'][name + '#sample'] = 'failed=' + _exc_text(60)
+            klass = None
+            try:
+                klass = cc.__dict__[name]
+            except:
+                klass = None
+            if klass is not None and evidence['apis'].get('getCollection') == 'present':
+                try:
+                    raw = battle.getCollection(klass)
+                    evidence['collections'][name + '#raw'] = 'ok'
+                    if name in ('dataComponent', 'mods_DataComponent'):
+                        # Sample the data component nodes: their `data`
+                        # payloads are where the UI's tree leaves live.
+                        sample = []
+                        seen = 0
+                        for ent in raw:
+                            seen += 1
+                            if seen > 12:
+                                break
+                            row = {}
+                            try:
+                                row['id'] = _to_int(ent.id)
+                            except:
+                                pass
+                            try:
+                                data = ent[klass].data
+                                try:
+                                    row['keys'] = data.keys()
+                                except:
+                                    row['kind'] = _fmt(data.__class__.__name__)
+                            except:
+                                pass
+                            sample.append(row)
+                        evidence['collections'][name + '#sample'] = sample
+                except:
+                    evidence['collections'][name + '#raw'] = 'failed=' + _exc_text(60)
+
+        # 3. The Player record's prebattle slot: the one roster field the
+        # probe never bridged. If the client renders the table from it,
+        # its values ARE the order; if it is always 0, it is not.
+        try:
+            records = self.latest_raw or battle.getPlayersInfo()
+            rows = []
+            for key, p in records.items():
+                row = {'key': _fmt(key)}
+                for field in ('name', 'teamId', 'prebattleIndex',
+                              'shipParamsId', 'isAlive', 'isBot',
+                              'avatarId', 'id'):
+                    try:
+                        row[field] = _fmt(p[field])
+                    except:
+                        pass
+                rows.append(row)
+                if len(rows) >= 64:
+                    break
+            evidence['players'] = rows
+        except:
+            evidence['players'] = 'failed=' + _exc_text(80)
+
+        # 4. getAllPlayers(): if it forwards a Player list, its sequence
+        # is a candidate too (PlayersInfo.getAllPlayers backs
+        # getPlayersInfo on the same module).
+        if evidence['apis'].get('getAllPlayers') == 'present':
+            try:
+                rows = []
+                for player in battle.getAllPlayers():
+                    row = {}
+                    for field in ('name', 'teamId', 'id', 'avatarId',
+                                  'shipId', 'prebattleIndex', 'isAlive'):
+                        try:
+                            row[field] = _fmt(player[field])
+                        except:
+                            pass
+                    rows.append(row)
+                    if len(rows) >= 64:
+                        break
+                evidence['allPlayers'] = rows
+            except:
+                evidence['apis']['getAllPlayers()'] = 'failed=' + _exc_text(80)
+
+        # 5. The flash bridge (flashGate exports call/addExternalCallback):
+        # present on both client families, but whether the battle HUD
+        # exposes a row-order function through it is unknown — record the
+        # surface only, never call an unidentified UI function.
+        try:
+            flash
+            evidence['apis']['flash'] = 'present'
+            try:
+                flash.call
+                evidence['apis']['flash.call'] = 'present'
+            except:
+                evidence['apis']['flash.call'] = 'missing'
+        except:
+            evidence['apis']['flash'] = 'missing'
+
+        try:
+            self.write_json(ORDER_PROBE_FILE, evidence)
+        except:
+            self.soft('order probe write failed=' + _exc_text(120))
+        try:
+            log('order probe ' + json_encode_safe(evidence)[:3800])
+        except:
+            self.soft('order probe log failed=' + _exc_text(120))
+
     def entity_walk(self):
         """ONE entity walk feeding the panel + telemetry: per-avatar live
         state plus the ally/enemy side split and row order.
@@ -1056,14 +1408,12 @@ class Probe:
         self.empty_ticks = 0
         self.dead_latch = {None} - {None}
         try:
-            stream = open(TELEMETRY_FILE, 'w')
-            stream.write(json_encode_safe({'t': _to_int(time.time() * 1000),
-                                           'battle': self.session or '',
-                                           'players': {},
-                                           'sortKeys': {},
-                                           'rosterOrder': [],
-                                           'shipNames': {}}) + '\n')
-            stream.close()
+            _bridge_write(TELEMETRY_FILE, json_encode_safe({'t': _to_int(time.time() * 1000),
+                                                            'battle': self.session or '',
+                                                            'players': {},
+                                                            'sortKeys': {},
+                                                            'rosterOrder': [],
+                                                            'shipNames': {}}))
         except:
             self.soft('telemetry clear failed=' + _exc_text(120))
         log('battle cleared')
@@ -1095,6 +1445,9 @@ class Probe:
         # local player).
         self.self_name = ''
         self.last_panel = ''
+        # The client order probe is per battle: a stale verdict must not
+        # describe the next battle's roster.
+        self.order_probe_done = False
 
     def clear_players(self):
         if _UI is None:
@@ -1184,9 +1537,7 @@ class Probe:
         # the journal is rewritten whole from an in-memory ring buffer.
         del self.journal[:-JOURNAL_LIMIT]
         try:
-            stream = open(ROSTER_JOURNAL_FILE, 'w')
-            stream.write('\n'.join(self.journal) + '\n')
-            stream.close()
+            _bridge_write(ROSTER_JOURNAL_FILE, '\n'.join(self.journal))
         except:
             self.soft('journal flush failed=' + _exc_text(120))
 
@@ -1297,9 +1648,8 @@ class Probe:
                 self.last_raw = body
                 stamp = _fmt(_to_int(time.time() * 1000))
                 try:
-                    stream = open(ROSTER_RAW_FILE, 'w')
-                    stream.write('{"t":' + stamp + ',' + body[1:] + '\n')
-                    stream.close()
+                    _bridge_write(ROSTER_RAW_FILE,
+                                  '{"t":' + stamp + ',' + body[1:])
                 except:
                     self.soft('roster_raw write failed=' + _exc_text(120))
                 if records and not self.discovered:
@@ -1485,6 +1835,13 @@ class Probe:
         self.write_telemetry()
         if not self.session:
             return
+        # One-shot client order source probe (see client_order_probe): run
+        # on the FIRST stabilized tick — a replay can stop a second later,
+        # and the AvatarSystem collections are already built by then. It
+        # never feeds the panel or telemetry.
+        if not self.order_probe_done:
+            self.client_order_probe()
+            self.order_probe_done = True
         try:
             stream = open(MANUAL_FLAG, 'r')
             stamp = stream.read(100)
@@ -1530,8 +1887,19 @@ class Probe:
         """
         if not self.session:
             return
+        # Stage markers: the soft-error text is often hidden by the
+        # sandbox ('telemetry failed=?'), so the stage name makes a
+        # recurring write failure diagnosable from python.log alone.
+        stage = 'walk'
+        # Pre-seeded so the fail-safe write below can emit the pieces that
+        # did make it through this tick. `players_complete` gates the
+        # alive map: consumers treat a present `players` object as
+        # authoritative, so a partial/empty map must never be published.
+        players = {}
+        players_complete = False
         try:
             states, sides = self.entity_walk()
+            stage = 'sortkeys'
             # The game's own TAB sort keys (see sort_key_probe): read BEFORE
             # the panel fold so merge_order can sort the in-game panel's
             # alive block with them too, and carried in the payload below.
@@ -1539,7 +1907,9 @@ class Probe:
             # Shared with the panel builder so alive flags + sides cost one
             # entity walk per tick, not two.
             self.states = states
+            stage = 'fold'
             self.merge_order(sides)
+            stage = 'alive'
             players = {}
             identity = {}
             # The game's own roster records carry an isAlive that tracks
@@ -1554,6 +1924,7 @@ class Probe:
             # now requires the record's own verdict, so a single doubting
             # read can never pin anyone again; the record also supersedes
             # the walk when it says alive.
+            stage = 'alive-raw'
             raw_alive = {}
             for p in self.latest_raw.values():
                 try:
@@ -1569,6 +1940,7 @@ class Probe:
                     raw_alive[nm] = _fmt(verdict) != 'False'
                 except:
                     continue
+            stage = 'alive-roster'
             for p in self.roster:
                 name = p['name']
                 row = states.get(name)
@@ -1610,10 +1982,17 @@ class Probe:
                 # instead of the walk's raw read.
                 if name in states:
                     states[name]['alive'] = 'True' if alive else 'False'
+                stage = 'alive-identity'
                 if p.get('account_id') or p.get('realm'):
                     identity[name] = {'account_id': p.get('account_id', 0),
                                       'realm': p.get('realm', '')}
-            self_name = self.__dict__.get('self_name') or ''
+            players_complete = True
+            stage = 'self'
+            self_name = ''
+            try:
+                self_name = self.self_name or ''
+            except:
+                self_name = ''
             if not self_name:
                 # The entity walk is the primary self latch, but it stands
                 # down when UiComponents cannot resolve (Lesta) — the game
@@ -1642,16 +2021,22 @@ class Probe:
             # off the stable roster, so the raw-material fields hold the
             # last non-empty derivation for the same one-two seconds
             # instead of flapping the companion's tie base to null.
+            stage = 'order'
             roster_order, ship_names = self.roster_order(self.latest_raw)
             if roster_order:
                 self.last_order_cache = (roster_order, ship_names)
             elif self.roster and self.last_order_cache is not None:
                 roster_order, ship_names = self.last_order_cache
+            stage = 'self'
             self_realm = ''
-            for p in self.roster:
-                if p['name'] == self_name and p.get('realm'):
-                    self_realm = p['realm']
-                    break
+            try:
+                for p in self.roster:
+                    if p['name'] == self_name and p.get('realm'):
+                        self_realm = p['realm']
+                        break
+            except:
+                self_realm = ''
+            stage = 'encode'
             body = json_encode_safe({'t': _to_int(time.time() * 1000),
                                      'battle': self.session,
                                      'players': players,
@@ -1660,11 +2045,30 @@ class Probe:
                                      'shipNames': ship_names,
                                      'self': {'name': self_name, 'realm': self_realm},
                                      'identity': identity})
-            stream = open(TELEMETRY_FILE, 'w')
-            stream.write(body + '\n')
-            stream.close()
+            stage = 'write'
+            _bridge_write(TELEMETRY_FILE, body)
         except:
-            self.soft('telemetry failed=' + _exc_text(120))
+            self.soft('telemetry failed@' + stage + '=' + _exc_text(120))
+            # Fail-safe: one auxiliary stage must not freeze the whole
+            # telemetry stream. Emit what was actually collected; publish
+            # the alive map only when the roster loop completed (a
+            # present `players` object is authoritative to consumers, so
+            # an empty/partial map would falsely assert "everyone alive").
+            # Without `players` the consumers ignore the frame and the
+            # app's stale-stream fallback still applies.
+            try:
+                fallback = {'t': _to_int(time.time() * 1000),
+                            'battle': self.session,
+                            'sortKeys': self.sort_keys,
+                            'rosterOrder': [],
+                            'shipNames': {},
+                            'self': {'name': '', 'realm': ''},
+                            'identity': {}}
+                if players_complete:
+                    fallback['players'] = players
+                _bridge_write(TELEMETRY_FILE, json_encode_safe(fallback))
+            except:
+                pass
         self.refresh_panel()
 
     # -- in-game panel -------------------------------------------------------
