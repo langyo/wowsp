@@ -2,7 +2,46 @@
 
 Every AI agent / subagent working in this repository (langyo/wowsp) **must**
 follow these rules. Real credentials and intranet details that live outside
-this repository are **never** copied into it (red lines in §7).
+this repository are **never** copied into it (red lines in §7). **§0 is a
+hard safety gate and overrides every workflow convenience below.**
+
+---
+
+## 0. Game Client & Live-Session Safety (READ FIRST; mandatory)
+
+**Static analysis first, always. Never launch the game.** No agent may
+start, stop, restart, reconnect, or otherwise control the World of
+Warships client, its launcher, Steam, or any process/account that can
+enter or affect a live battle, and no agent may install, copy, remove,
+or edit files under a game installation (`res_mods/`, `profile/`,
+`bin/`, `replays/`, …), in order to analyze the game client. This applies
+to every route into the client, including but not limited to:
+
+- `WorldOfWarships.exe`, `WorldOfWarships64.exe`, launchers, and direct
+  executable calls;
+- Steam `-applaunch`, `steam://` URIs, replay file associations, and
+  double-click-style launch paths;
+- replay playback, training rooms, port/offline sessions, and even a
+  "quick" windowed smoke test;
+- `taskkill` / any process termination, including a client the agent
+  itself started;
+- copying probe/mod files into or out of the game directory.
+
+**Analysis of the game client is static by default:** read the repo,
+decompile `scripts.zip` with the vendored tooling, inspect SWF/assets,
+and read logs/telemetry artifacts the developer already produced. A live
+client experiment requires **explicit, per-action permission from the
+developer (including the user)** — a standing instruction to work on the
+plugin, a previous approval, or an apparently idle client is not
+permission. Even with permission, the developer must confirm the game is
+closed and no account is in a live match, and the experiment must be
+scheduled with them.
+
+Subagents inherit this rule and receive no independent authority to run
+a client; the orchestrating agent is responsible for every subagent's
+actions. If a task seems to require a live client and permission is not
+explicitly present, stop and report the static-analysis blocker instead
+of improvising a launch.
 
 ---
 
@@ -189,36 +228,25 @@ Before submitting, the relevant subset of `just lint` (or scoped
   the user's explicit instruction naming the target version (in effect, an
   explicit release request — the version only moves when the user has asked
   for the next version to come out), and then all seven places move
-  together in a single PR. (Revised 2026-10-18: the former authorization
-  tiers allowed an autonomous patch bump; one rode into #1175 and had to
-  be ordered back to the next sequential release before any tag could be
-  cut — do not repeat that.) Minor/major target versions additionally need
+  together in a single PR. Minor/major target versions additionally need
   the user's explicit approval of the number itself, per the
   release-versioning rule below.
 - **Release versioning — no skipped versions (mandatory)**. The seven
   version fields on master stay put until an explicit user instruction
   moves them (see the authorization rule above), but release tags must
   follow the published sequence
-  strictly: the next release tag is always the latest `v*` release tag plus
-  one patch increment (after `v0.6.0` comes `v0.6.1`, then `v0.6.2`, …).
-  A minor/major jump is allowed only with the user's explicit approval of
-  the target version (see the authorization rule above); after such an
-  approved jump the patch sequence resumes from it. Before cutting a
-  release tag, if the seven fields do not already equal the version to
-  publish, a release-prep PR MUST first reset all seven fields to it
-  (this is the one sanctioned version-bump-down; the target is either
-  the next sequential patch or the user-approved jump);
-  `scripts/check_versions.py` still enforces seven-place agreement. Never
-  tag a version that skips numbers, and never let the tag and the built
-  version string disagree. Incident record (2026-10-10): an autonomous
-  session pushed tag `v0.5.9` without authorization; release.yml
-  auto-published it as latest within the hour and the installer was
-  downloaded ~390 times before the same-day rollback (release + tag
-  deleted, latest restored to `v0.5.5`). Because installs already on
-  0.5.9 only accept updates numbered above it, the owner then directed a
-  minor advance: the seven fields were reset 0.5.10 → 0.6.0, so the next
-  release is `v0.6.0` — and per §4, pushing a release tag is reserved
-  for the user.
+  strictly: the next release tag is always the latest published `v*`
+  release tag plus one patch increment. A minor/major jump is allowed only
+  with the user's explicit approval of the target version (see the
+  authorization rule above); after such an approved jump the patch
+  sequence resumes from it. Before cutting a release tag, if the seven
+  fields do not already equal the version to publish, a release-prep PR
+  MUST first reset all seven fields to it (this is the one sanctioned
+  version-bump-down; the target is either the next sequential patch or the
+  user-approved jump); `scripts/check_versions.py` still enforces
+  seven-place agreement. Never tag a version that skips numbers, and never
+  let the tag and the built version string disagree. Per §4, pushing a
+  release tag is reserved for the user.
 - **Create PRs only when asked, or as a step of an approved workflow**;
   never open unsolicited PRs.
 
@@ -229,13 +257,13 @@ Before submitting, the relevant subset of `just lint` (or scoped
 - Web: `pnpm build` / `pnpm lint` / `pnpm -r typecheck`
   (repo wrapper: `just lint webui`).
 - Rust checks run on Windows (CI's rust job also runs on a Windows runner):
-  the pinned `windows-future 0.2.1` does not compile on Linux (upstream bug,
+  the pinned `windows-future` crate does not compile on Linux (upstream bug;
   see the ci.yml comment). fmt/clippy target only the app crates
   (`wowsp_tauri` / `wowsp_tauri_shared`); the vendored `wowsunpack` /
   `wows-core` are dependency sources and keep their historical formatting
   (the whole `packages/tools/wowsunpack-vendor` tree is an independent
-  in-repo fork since 2026-10 — no upstream sync; dependency bumps and fixes
-  there are WoWSP's own, see its workspace-root header comment).
+  in-repo fork — no upstream sync; dependency bumps and fixes there are
+  WoWSP's own, see its workspace-root header comment).
 - **Cross-repo dependencies**: always consume published artifacts or
   vendored checkouts — never path dependencies pointing at local directories
   outside this repo. hikari comes from the npm package
