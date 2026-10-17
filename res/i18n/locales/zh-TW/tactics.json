@@ -52,7 +52,12 @@
     "corpusSource": "語料實測",
     "corpusFrom": "聚合自語料中的 {n} 場對局",
     "custom": "自訂",
-    "customDesc": "開啟點位編輯器：手動增刪拖動點位、從範本起步，或匯入任意一場錄影精確匹配點位。"
+    "customDesc": "開啟點位編輯器：手動增刪拖動點位、從範本起步，或匯入任意一場錄影精確匹配點位。",
+    "capsPreowned": "{n} 個點位 · 我方預佔 {ally} · 敵方預佔 {enemy}",
+    "capsOnly": "{n} 個點位",
+    "capsPreownedShort": "我方 {ally} · 敵方 {enemy}",
+    "replaySources": "共 {n} 份錄影",
+    "replaysTooltip": "相同點位的錄影共 {n} 份（最新在前）"
   },
   "mode": {
     "dom4": "隨機 · 四點",
@@ -127,7 +132,7 @@
   "cap": {
     "section": "自訂點位",
     "title": "編輯點位",
-    "hint": "點擊空白處新增點位；拖曳移動；選取後可在右側調整半徑與歸屬。",
+    "hint": "點擊水面新增點位；拖曳點位移動；右鍵點位刪除。",
     "templates": "從範本開始",
     "importReplay": "從錄影匯入…",
     "imported": "已從 {name} 載入 {n} 個點位",

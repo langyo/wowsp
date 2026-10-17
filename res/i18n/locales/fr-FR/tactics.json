@@ -52,7 +52,12 @@
     "corpusSource": "Mesuré du corpus",
     "corpusFrom": "Agrégé à partir de {n} batailles du corpus",
     "custom": "Personnalisé",
-    "customDesc": "Ouvre l'éditeur de points : ajoutez, déplacez et réglez les points à la main, partez d'un modèle ou importez n'importe quel replay pour calquer ses points."
+    "customDesc": "Ouvre l'éditeur de points : ajoutez, déplacez et réglez les points à la main, partez d'un modèle ou importez n'importe quel replay pour calquer ses points.",
+    "capsPreowned": "{n} points · {ally} tenus par nos alliés · {enemy} par l'ennemi",
+    "capsOnly": "{n} points",
+    "capsPreownedShort": "alliés {ally} · ennemis {enemy}",
+    "replaySources": "{n} replays",
+    "replaysTooltip": "Même disposition dans {n} replays (plus récents d'abord)"
   },
   "mode": {
     "dom4": "Aléatoire · 4 points",
@@ -127,7 +132,7 @@
   "cap": {
     "section": "Points personnalisés",
     "title": "Modifier les points",
-    "hint": "Cliquez sur l'eau libre pour ajouter un point ; glissez pour le déplacer ; sélectionnez-le pour régler son rayon et son camp à droite.",
+    "hint": "Clic sur l'eau pour ajouter un point ; glisser pour le déplacer ; clic droit pour le supprimer.",
     "templates": "Partir d'un modèle",
     "importReplay": "Importer d'un replay…",
     "imported": "{n} points chargés depuis {name}",

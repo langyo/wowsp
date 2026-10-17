@@ -2,6 +2,7 @@ export { api, foldDamageStats, isPlaneWeapon, GAMEDATA_SENTINEL } from "./client
 export type {
   LearnedCapPoint,
   LearnedCapLayout,
+  LearnedReplaySource,
   GameInstall,
   GameInstallKind,
   GameProcessInfo,

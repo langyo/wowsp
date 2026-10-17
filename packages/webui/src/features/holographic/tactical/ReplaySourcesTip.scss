@@ -1,0 +1,72 @@
+/* Hover provenance chip + teleported scrollable replay list (see the
+ * component doc). The panel is fixed-positioned against the viewport and
+ * lives in hikari's overlay root (tooltip band) so it clears the wizard
+ * modal and the modes scroll column. */
+
+.rs-tip {
+  display: inline-flex;
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-border) / 25%);
+    background: rgb(var(--color-surface) / 60%);
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    cursor: default;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  &__panel {
+    position: fixed;
+    /* The overlay root fences pointer-events: none — every interactive
+       teleport restores its own (HkModal/HkPopover do the same). */
+    pointer-events: auto;
+    width: 268px;
+    padding: 0.45rem 0.55rem 0.5rem;
+    border-radius: var(--radius-md);
+    border: 1px solid rgb(var(--color-border) / 30%);
+    background: rgb(var(--color-surface));
+    box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
+  }
+
+  &__head {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    margin-bottom: 0.35rem;
+  }
+
+  &__list {
+    max-height: 13rem;
+  }
+
+  &__item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 2px 2px;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left; /* the date column carries the timestamp; the name
+                           ellipsizes from its end */
+  }
+
+  &__time {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--color-border));
+  }
+}

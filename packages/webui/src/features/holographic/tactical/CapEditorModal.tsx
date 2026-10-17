@@ -191,7 +191,16 @@ export default defineComponent({
       }
       return -1;
     }
-    function onDown(e: MouseEvent): void {
+    function onDown(e: PointerEvent): void {
+      // Right button is the delete gesture (see onContextmenu); middle or
+      // other buttons do nothing here.
+      if (e.button !== 0) return;
+      const cvs = cvsRef.value;
+      if (cvs) {
+        // Capture keeps the drag alive when the pointer leaves the canvas
+        // mid-move (the cap snaps along instead of the drag dying).
+        cvs.setPointerCapture(e.pointerId);
+      }
       const p = localXY(e);
       if (!p) return;
       const hit = hitAt(p);
@@ -227,8 +236,31 @@ export default defineComponent({
       if (!cap) return;
       caps.value = caps.value.map((c, i) => (i === d.index ? { ...c, at: w } : c));
     }
-    function onUp(): void {
+    function onUp(e: PointerEvent): void {
+      const cvs = cvsRef.value;
+      if (cvs) {
+        try {
+          cvs.releasePointerCapture(e.pointerId);
+        } catch {
+          // Already released (pointercancel path) — nothing to do.
+        }
+      }
       drag = null;
+    }
+
+    /** Right-click on a point deletes it (the hint says so); on empty
+     *  water the browser menu is suppressed too — the stage is a surface,
+     *  not a text context. */
+    function onContextmenu(e: MouseEvent): void {
+      e.preventDefault();
+      drag = null; // a chorded right-click during a drag must not keep a stale index
+      const p = localXY(e);
+      if (!p) return;
+      const hit = hitAt(p);
+      if (hit < 0) return;
+      caps.value = caps.value.filter((_, i) => i !== hit);
+      if (selected.value === hit) selected.value = -1;
+      else if (selected.value > hit) selected.value -= 1;
     }
 
     function nextLetter(list: CapSpec[]): string {
@@ -275,7 +307,16 @@ export default defineComponent({
           letter: String.fromCharCode(65 + Math.max(0, Math.min(25, c.index))),
           at: { x: c.x, z: c.z },
           radius: c.radius ?? 115,
-          team: null,
+          // Pre-owned points keep their side (recorder-relative); the
+          // author can still flip it on the selected point.
+          team:
+            c.team != null &&
+            layout.recorderTeam != null &&
+            (c.team === 0 || c.team === 1)
+              ? c.team === layout.recorderTeam
+                ? ("ally" as const)
+                : ("enemy" as const)
+              : null,
           ...(c.appearT != null && c.appearT > 0 ? { appearT: c.appearT } : {}),
           // Station mechanics are not derivable from the layout — the
           // author ticks the checkbox on the selected point.
@@ -325,6 +366,7 @@ export default defineComponent({
               onPointermove={onMove}
               onPointerup={onUp}
               onPointercancel={onUp}
+              onContextmenu={onContextmenu}
             />
             <p class="cap-edit__hint">{i18nT("tactics.cap.hint")}</p>
             {!bounds.value ? (
@@ -334,17 +376,26 @@ export default defineComponent({
           <div class="cap-edit__side">
             <div class="cap-edit__section">{i18nT("tactics.cap.templates")}</div>
             <div class="cap-edit__templates">
-              {MODE_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  class="cap-edit__tpl"
-                  onClick={() => loadTemplate(preset.id)}
-                >
-                  {i18nT(`tactics.mode.${preset.labelKey}`)}
-                  <span class="cap-edit__tpl-n">{preset.caps.length}</span>
-                </button>
-              ))}
+              {MODE_PRESETS.map((preset) => {
+                const ally = preset.caps.filter((c) => c.team === "ally").length;
+                const enemy = preset.caps.filter((c) => c.team === "enemy").length;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    class="cap-edit__tpl"
+                    onClick={() => loadTemplate(preset.id)}
+                  >
+                    {i18nT(`tactics.mode.${preset.labelKey}`)}
+                    <span class="cap-edit__tpl-n">{preset.caps.length}</span>
+                    <span class="cap-edit__tpl-pre">
+                      {ally + enemy > 0
+                        ? i18nT("tactics.setup.capsPreownedShort", { ally, enemy })
+                        : null}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <HkButton variant="outline" block onClick={() => void importFromReplay()}>
               <Upload size={13} />

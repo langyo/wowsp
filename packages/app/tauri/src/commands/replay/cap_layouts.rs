@@ -44,7 +44,19 @@ pub struct LearnedCapPoint {
     pub appear_t: Option<f32>,
 }
 
-/// One learned layout: the cap set of one (matchGroup, scenario) group.
+/// One replay file behind a learned layout (tooltip provenance).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnedReplaySource {
+    /// File name (no directory — the list is for reading, not opening).
+    pub name: String,
+    /// Recorded date ("YYYYMMDD_HHMMSS"), when parsed.
+    pub time: Option<String>,
+}
+
+/// One learned layout: the cap set of one (matchGroup, scenario) group,
+/// with every replay that produced the SAME arrangement folded in
+/// (content-level duplicates merge; the list length is the repeat count).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LearnedCapLayout {
@@ -57,6 +69,12 @@ pub struct LearnedCapLayout {
     pub source_replay: String,
     /// That replay's recorded date ("YYYYMMDD_HHMMSS"), when parsed.
     pub source_time: Option<String>,
+    /// Team id (0/1) the layout's replay was recorded FROM — caps whose
+    /// team equals it are the recorder's side ("ally"). None when the
+    /// arena join could not anchor the recorder.
+    pub recorder_team: Option<i8>,
+    /// Every replay that yielded this exact arrangement, newest first.
+    pub replays: Vec<LearnedReplaySource>,
     pub caps: Vec<LearnedCapPoint>,
 }
 
@@ -111,20 +129,26 @@ fn replay_cap_layout(path: &str) -> anyhow::Result<Option<LearnedCapLayout>> {
     let p = std::path::Path::new(path);
     // mod.rs re-exports wowsp_replay_core's lite meta reader pub(crate).
     let meta = super::lite_from_path(p);
-    let Some(caps) = caps_of_replay(p) else {
+    let Some((caps, recorder_team)) = caps_of_replay(p) else {
         return Ok(None);
     };
     if caps.is_empty() {
         return Ok(None);
     }
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string());
     Ok(Some(LearnedCapLayout {
         mode_group: meta.match_group.clone(),
         scenario: meta.scenario.clone(),
-        source_replay: p
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.to_string()),
+        source_replay: name.clone(),
         source_time: meta.date_time.clone(),
+        recorder_team,
+        replays: vec![LearnedReplaySource {
+            name,
+            time: meta.date_time.clone(),
+        }],
         caps,
     }))
 }
@@ -141,38 +165,98 @@ fn learn_cap_layouts(space_id: &str, dir: Option<String>) -> anyhow::Result<Vec<
     use std::path::Path;
 
     let (_, metas) = super::listing::scan_replays_meta(dir, None)?;
-    // The metas arrive newest-first: the first hit per group IS the newest
-    // replay of that layout — keep exactly one decode per group.
-    let mut newest: Vec<wowsp_tauri_shared::ReplayMetaLite> = Vec::new();
-    let mut seen = HashSet::new();
+    // The metas arrive newest-first. Group EVERY replay of the map by
+    // (matchGroup, scenario) — the counts and tooltip lists come straight
+    // off these metas (no decode) — but only the NEWEST member of each
+    // group is decoded (layouts shift between patches; newest is current).
+    let mut groups: Vec<(
+        (Option<String>, Option<String>),
+        Vec<wowsp_tauri_shared::ReplayMetaLite>,
+    )> = Vec::new();
+    let mut index: std::collections::HashMap<(Option<String>, Option<String>), usize> =
+        std::collections::HashMap::new();
     for meta in metas {
         if meta.map_name.as_deref() != Some(space_id) {
             continue;
         }
-        if seen.insert(group_of(&meta)) {
-            newest.push(meta);
-        }
+        let key = group_of(&meta);
+        let slot = match index.get(&key) {
+            Some(&i) => i,
+            None => {
+                groups.push((key.clone(), Vec::new()));
+                index.insert(key, groups.len() - 1);
+                groups.len() - 1
+            },
+        };
+        groups[slot].1.push(meta);
     }
     let mut out = Vec::new();
-    for meta in newest {
+    for ((mode_group, scenario), members) in groups {
+        let meta = &members[0];
         let path = Path::new(&meta.path);
-        let Some(caps) = caps_of_replay(path) else {
+        let Some((caps, recorder_team)) = caps_of_replay(path) else {
             continue;
         };
         if caps.is_empty() {
             continue;
         }
         out.push(LearnedCapLayout {
-            mode_group: meta.match_group.clone(),
-            scenario: meta.scenario.clone(),
+            mode_group,
+            scenario,
             source_replay: path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| meta.path.clone()),
             source_time: meta.date_time.clone(),
+            recorder_team,
+            replays: members
+                .iter()
+                .map(|m| LearnedReplaySource {
+                    name: Path::new(&m.path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| m.path.clone()),
+                    time: m.date_time.clone(),
+                })
+                .collect(),
             caps,
         });
     }
+    // Content-level dedup ACROSS groups (the same arrangement under two
+    // descriptors — pvp and ranked sharing a domination set, say — is one
+    // entry): identical cap sets (index, quantised position, owner, appear
+    // time; radius deliberately excluded — its scan jitters) merge into the
+    // first-seen entry (first-seen order is newest-overall), the replay
+    // lists concatenate and re-sort newest-first.
+    let mut deduped: Vec<LearnedCapLayout> = Vec::new();
+    let mut keys: Vec<Vec<(i32, i32, i32, Option<i8>, Option<i32>)>> = Vec::new();
+    for layout in out {
+        let mut key: Vec<(i32, i32, i32, Option<i8>, Option<i32>)> = layout
+            .caps
+            .iter()
+            .map(|c| {
+                (
+                    c.index,
+                    (c.x * 2.0).round() as i32,
+                    (c.z * 2.0).round() as i32,
+                    c.team,
+                    c.appear_t.map(|t| t.round() as i32),
+                )
+            })
+            .collect();
+        key.sort_unstable();
+        match keys.iter().position(|k| *k == key) {
+            Some(i) => {
+                deduped[i].replays.extend(layout.replays);
+                deduped[i].replays.sort_by(|a, b| b.time.cmp(&a.time));
+            },
+            None => {
+                keys.push(key);
+                deduped.push(layout);
+            },
+        }
+    }
+    let mut out = deduped;
     // Stable, readable order: group then scenario.
     out.sort_by(|a, b| {
         (
@@ -193,7 +277,7 @@ fn learn_cap_layouts(space_id: &str, dir: Option<String>) -> anyhow::Result<Vec<
 /// itself lives in the decoding core (`wowsp_replay_core::caps::
 /// cap_points_of`), shared with the replay-corpus aggregator (wave 4a).
 #[cfg(desktop)]
-fn caps_of_replay(path: &std::path::Path) -> Option<Vec<LearnedCapPoint>> {
+fn caps_of_replay(path: &std::path::Path) -> Option<(Vec<LearnedCapPoint>, Option<i8>)> {
     use super::streams::packet_stream_after_blocks;
 
     let bytes = std::fs::read(path).ok()?;
@@ -215,7 +299,14 @@ fn caps_of_replay(path: &std::path::Path) -> Option<Vec<LearnedCapPoint>> {
             appear_t: c.appear_t,
         })
         .collect();
-    Some(caps)
+    // The recorder's team id anchors which cap owner is "ours" — the
+    // arena state's is_self row is the authoritative join.
+    let recorder_team = decoded
+        .arena_players
+        .iter()
+        .find(|p| p.is_self)
+        .map(|p| p.team_id as i8);
+    Some((caps, recorder_team))
 }
 
 #[cfg(all(test, desktop))]

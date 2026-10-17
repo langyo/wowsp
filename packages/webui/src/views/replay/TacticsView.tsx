@@ -192,7 +192,16 @@ export default defineComponent({
             letter: String.fromCharCode(65 + Math.max(0, Math.min(25, c.index))),
             at: { x: c.x, z: c.z },
             radius: c.radius ?? 115,
-            team: null,
+            // Pre-owned points keep their side, recorder-relative — same
+            // mapping the setup preview and the editor use.
+            team:
+              c.team != null &&
+              choice.layout.recorderTeam != null &&
+              (c.team === 0 || c.team === 1)
+                ? c.team === choice.layout.recorderTeam
+                  ? ("ally" as const)
+                  : ("enemy" as const)
+                : null,
             ...(c.appearT != null && c.appearT > 0 ? { appearT: c.appearT } : {}),
           })),
         };
