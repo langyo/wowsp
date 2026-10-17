@@ -44,11 +44,13 @@ repository = "https://github.com/langyo/wowsp"
 
 [workspace.dependencies]
 
-# Workspace internal crate aliases
-wowsp_tauri_shared = { path = "packages/app/tauri_shared" }
+# Workspace internal crate aliases (versioned path deps: a version-less
+# path dep resolves as a wildcard requirement, which cargo-deny's bans
+# check denies).
+wowsp_tauri_shared = { version = "^0.6.1", path = "packages/app/tauri_shared" }
 # Reusable replay decoding core (header + packet stream) — shared by the app
 # shell and the replay-corpus maintainer CLI (wave 4a).
-wowsp_replay_core = { path = "packages/app/replay_core" }
+wowsp_replay_core = { version = "^0.6.1", path = "packages/app/replay_core" }
 
 # Core language and utilities
 anyhow = "^1"
@@ -201,13 +203,15 @@ tauri-build = "^2"
 # AppData directory resolution (cross-platform %APPDATA%)
 dirs-next = "^2"
 
-# wowsunpack / wows-core vendor deps (inherited via workspace = true)
-wows-core = { path = "packages/tools/wowsunpack-vendor/crates/wows-core", default-features = false }
+# wowsunpack / wows-core vendor deps (inherited via workspace = true;
+# versioned so the path requirements are not wildcards — see the aliases
+# note above)
+wows-core = { version = "^0.11.0", path = "packages/tools/wowsunpack-vendor/crates/wows-core", default-features = false }
 # In-app GameParams unpacking: vfs-mmap = idx/pkg VFS over the game install
 # (parsing + arc come in transitively). `models` additionally compiles the
 # geometry/gltf exporters the mod-hub custom-model preview parses loose
 # res_mods `.geometry` files with. The `bin` CLI feature stays off.
-wowsunpack = { path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", default-features = false, features = [
+wowsunpack = { version = "^0.43.0", path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", default-features = false, features = [
     "vfs-mmap",
     "models",
 ] }
