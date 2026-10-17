@@ -159,6 +159,10 @@ fn group_of(meta: &wowsp_tauri_shared::ReplayMetaLite) -> (Option<String>, Optio
     (meta.match_group.clone(), meta.scenario.clone())
 }
 
+/// Grouping key of the content-dedup pass: one cap as (index, quantised
+/// x/z, owner, appear second) — see the dedup comment inside.
+type CapKeyPart = (i32, i32, i32, Option<i8>, Option<i32>);
+
 /// Synchronous core (unit-testable with an explicit dir).
 #[cfg(desktop)]
 fn learn_cap_layouts(space_id: &str, dir: Option<String>) -> anyhow::Result<Vec<LearnedCapLayout>> {
@@ -169,12 +173,9 @@ fn learn_cap_layouts(space_id: &str, dir: Option<String>) -> anyhow::Result<Vec<
     // (matchGroup, scenario) — the counts and tooltip lists come straight
     // off these metas (no decode) — but only the NEWEST member of each
     // group is decoded (layouts shift between patches; newest is current).
-    let mut groups: Vec<(
-        (Option<String>, Option<String>),
-        Vec<wowsp_tauri_shared::ReplayMetaLite>,
-    )> = Vec::new();
-    let mut index: std::collections::HashMap<(Option<String>, Option<String>), usize> =
-        std::collections::HashMap::new();
+    type GroupKey = (Option<String>, Option<String>);
+    let mut groups: Vec<(GroupKey, Vec<wowsp_tauri_shared::ReplayMetaLite>)> = Vec::new();
+    let mut index: std::collections::HashMap<GroupKey, usize> = std::collections::HashMap::new();
     for meta in metas {
         if meta.map_name.as_deref() != Some(space_id) {
             continue;
@@ -229,9 +230,9 @@ fn learn_cap_layouts(space_id: &str, dir: Option<String>) -> anyhow::Result<Vec<
     // first-seen entry (first-seen order is newest-overall), the replay
     // lists concatenate and re-sort newest-first.
     let mut deduped: Vec<LearnedCapLayout> = Vec::new();
-    let mut keys: Vec<Vec<(i32, i32, i32, Option<i8>, Option<i32>)>> = Vec::new();
+    let mut keys: Vec<Vec<CapKeyPart>> = Vec::new();
     for layout in out {
-        let mut key: Vec<(i32, i32, i32, Option<i8>, Option<i32>)> = layout
+        let mut key: Vec<CapKeyPart> = layout
             .caps
             .iter()
             .map(|c| {
@@ -305,7 +306,7 @@ fn caps_of_replay(path: &std::path::Path) -> Option<(Vec<LearnedCapPoint>, Optio
         .arena_players
         .iter()
         .find(|p| p.is_self)
-        .map(|p| p.team_id as i8);
+        .map(|p| p.team_id);
     Some((caps, recorder_team))
 }
 
