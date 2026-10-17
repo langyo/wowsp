@@ -292,14 +292,14 @@ def index_discussions(nodes: list[dict]) -> dict:
         entry["versions"][version] = {
             "game": meta.get("game", "*"),
             "title": d.get("title"),
-            # Mod author tag(s): front-matter `authors:` resolved through the
-            # registry (the legacy singular `author:` falls back to the
-            # thread poster when absent). `authors` drives the catalog's
+            # Mod author tag(s): front-matter `authors:`/`author:` only,
+            # resolved through the registry. The thread poster is NOT an
+            # attribution — crediting releases to whoever opened the thread
+            # misattributes mods, so an unregistered mod stays empty (the
+            # app renders no author tag). `authors` drives the catalog's
             # clickable tags; the legacy singular fields ride along for
             # older consumers.
-            "author": meta.get("author")
-            or (authors[0]["name"] if authors else "")
-            or (d.get("author") or {}).get("login"),
+            "author": meta.get("author") or (authors[0]["name"] if authors else ""),
             **({"author_url": meta["author_url"]} if meta.get("author_url") else {}),
         }
         if authors:
@@ -414,7 +414,10 @@ def main(argv: list[str] | None = None) -> int:
              "body": "---\nwowsp-mod: mx\nversion: 1\ncategory: battle\n---\nx",
              "comments": {"nodes": []}},
         ])
-        assert plain["mods"]["mx"]["versions"]["1"]["author"] == "poster"
+        # No front-matter author -> empty legacy author (the thread poster
+        # must never be credited as the mod author) and no `authors` list.
+        assert plain["mods"]["mx"]["versions"]["1"]["author"] == ""
+        assert "authors" not in plain["mods"]["mx"]["versions"]["1"]
         assert "author_url" not in plain["mods"]["mx"]["versions"]["1"]
         i18n = parse_i18n(
             "<!--\nwowsp:i18n\nen-US: Shot Timer | Counts down 20s\n"

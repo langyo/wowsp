@@ -28,7 +28,8 @@
   "langyo": "https://github.com/langyo",
   "qMBQx8GH_real": "https://github.com/qMBQx8GH",
   "sasagcy": "https://discord.com/channels/669128285527080961/1149723186401915041",
-  "vito74m": "https://aslain.com/index.php?/profile/5514-vito74m"
+  "vito74m": "https://aslain.com/index.php?/profile/5514-vito74m",
+  "爱上哔啦啦": ""
  },
  "mods": {
   "battle.build.viewer": [
@@ -45,7 +46,9 @@
    "Roslich",
    "BADoBEST"
   ],
-  "battle.commands.compact": [],
+  "battle.commands.compact": [
+   "AutoSpy"
+  ],
   "battle.cv.consumables": [
    "TTaro"
   ],
@@ -61,7 +64,9 @@
   "battle.cv.telegraph": [
    "Odo_Toothless"
   ],
-  "battle.expert.core": [],
+  "battle.expert.core": [
+   "AutoSpy"
+  ],
   "battle.expert.v2-bottom-left": [
    "OlliN"
   ],
@@ -92,7 +97,9 @@
   "battle.impact-angle.torpedo": [
    "EternalParty"
   ],
-  "battle.info.self": [],
+  "battle.info.self": [
+   "BADoBEST"
+  ],
   "battle.info.target-v1": [
    "AutoSpy",
    "Aslain"
@@ -446,7 +453,9 @@
    "Capt_Oveur",
    "Odo_Toothless"
   ],
-  "text.chat.anti-censorship": [],
+  "text.chat.anti-censorship": [
+   "Aslain"
+  ],
   "text.chat.google-input": [
    "TTaro"
   ],
@@ -456,7 +465,9 @@
   "text.font.east-asia": [
    "Ren_Zotto_prpr"
   ],
-  "text.shipname.fanhexie": [],
+  "text.shipname.fanhexie": [
+   "爱上哔啦啦"
+  ],
   "text.shipname.lowercase": [
    "OlliN"
   ],
