@@ -253,7 +253,7 @@ tick 快照可算「敌舰已知位置是否在某活跃烟云内」；视野特
   恰为哨兵——E3 的「间隙=未点亮」从推断升级为直接验证，且从此有显式事件
   可用。packedData 低 31 位疑似位置量子（相关拟合 ~0.2 未解出编码，按红线
   保留原始值）。
-- **`onConsumableUsed`=72 确证**（布局镜像 vendored wows-replays 的
+- **`onConsumableUsed`=72 确证**（布局镜像上游 wows-toolkit 的 wows-replays
   UsageConverter）：104 次全 7 字节变体 1，跨 22 船双方阵营，ids
   {0,1,3,4,6,8,9,10,65}，时长 5–600s（id0=5s≈损管、id8=28s≈修理小组；
   id→名称映射留给 GameParams 侧）。

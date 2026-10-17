@@ -223,8 +223,9 @@ repo. Build it once:
 just build wowsunpack
 ```
 
-The vendor tree is tracked in-tree (synced from upstream by hand — never a
-nested clone inside this checkout) and the build compiles the `wowsunpack`
+The vendor tree is tracked in-tree (an independent fork of landaire's
+wows-toolkit, slimmed to the library crates — never a nested clone inside
+this checkout) and the build compiles the `wowsunpack`
 workspace member into `target/release/wowsunpack.exe`.
 `convert_map_holo.py` auto-detects and uses it. The script gracefully
 degrades without `--keep-submerged` (trenches flattened, contours still work).

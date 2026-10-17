@@ -104,9 +104,10 @@ _build-installers *FLAGS='':
 
 _build-wowsunpack:
     @# The vendor tree is TRACKED IN-TREE (packages/tools/wowsunpack-vendor),
-    @# never a nested clone: it is updated by explicitly syncing from upstream
-    @# (landaire/wows-toolkit) — never by a pull from inside this checkout.
-    @echo "Building vendored wowsunpack (landaire/wows-toolkit, tracked in-tree)..."
+    @# never a nested clone: an independent fork slimmed to the wowsunpack /
+    @# wows-core library crates — changes land via normal PRs, never via a
+    @# pull from inside this checkout.
+    @echo "Building vendored wowsunpack (landaire/wows-toolkit fork, tracked in-tree)..."
     cargo build --release -p wowsunpack
 
 _build-unoodle:

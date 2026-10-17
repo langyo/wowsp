@@ -647,8 +647,8 @@ pub(super) fn decode_minimap_vision(
 /// `[u8 blob_len][CONSUMABLE_USAGE_PARAMS blob][f32 workTimeLeft]`.
 ///
 /// The params blob's first byte is the `ConsumableUsageType` (serialized by
-/// the game's `CommonConsumables.UsageConverter`, mirrored by the vendored
-/// wows-replays decoder): 0 = none (empty blob), 1 = default `<BB>`
+/// the game's `CommonConsumables.UsageConverter`, mirrored by upstream
+/// wows-toolkit's wows-replays decoder): 0 = none (empty blob), 1 = default `<BB>`
 /// (usage + consumable id), 2 = position `<BBff>` (+ map x/z), 3 = entity
 /// target `<BBbQ>` (+ i8 target type + u64 target id). A blob whose length
 /// contradicts its declared variant is a desync — the call is skipped rather

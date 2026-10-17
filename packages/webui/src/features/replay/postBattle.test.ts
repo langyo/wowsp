@@ -1,8 +1,9 @@
 /** Tests for the post-battle parser's CLIENT_PUBLIC_RESULTS field mapping.
  *
- * The index semantics come from the vendored authoritative layout
- * (wowsunpack constants.json, client 15.2) and were verified against 126
- * replays / 417 players on client 15.8 — see postBattle.ts. These tests pin
+ * The index semantics come from the wowsunpack constants layout (client
+ * 15.2; the vendored constants.json copy is gone — these tests are the
+ * in-repo authority) and were verified against 126 replays / 417 players
+ * on client 15.8 — see postBattle.ts. These tests pin
  * the mapping so layout regressions (first-spotting read as plane kills,
  * bomb drops as plane losses, distance as HP ratio) can't silently return.
  */

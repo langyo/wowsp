@@ -528,8 +528,9 @@ pub(crate) struct ExpectedPrRow {
 }
 
 /// wows-numbers personal rating from actual/expected totals. Their published
-/// formula (same shape as the vendored reference in wows-toolkit's
-/// `util/personal_rating.rs`): each ratio is normalized — damage (r−0.4)/0.6,
+/// formula (same shape as wows-toolkit's `util/personal_rating.rs`, the
+/// reference the vendored fork once carried — dropped when the vendor tree
+/// slimmed to its library crates): each ratio is normalized — damage (r−0.4)/0.6,
 /// frags (r−0.1)/0.9, wins (r−0.7)/0.3, each floored at zero — and combined
 /// as PR = 700·nDmg + 300·nFrags + 150·nWins. The offsets are calibrated so
 /// playing exactly at the server average lands on 1150 (Average band).
