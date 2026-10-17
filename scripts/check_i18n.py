@@ -19,9 +19,19 @@ never resolve, and flatten() makes it parity-invisible against the nested
 spelling of the same path (exactly how the dead `resources.json` `kind.*`
 duplicates sat unnoticed). Write nested objects instead.
 
+Translation-table values (a dict carrying BOTH "en-US" and "zh-CN" keys,
+e.g. `"source_tree": {"en-US": "Tech tree", "zh-CN": "仅银币线"}`) are
+rejected like dotted keys: a pasted multi-locale source table is not a
+message — vue-i18n resolves the path to an object and the UI renders the
+raw key. Exactly this sat unnoticed in `ships.json`'s seven
+`filter.source*` entries (#1135 pasted the tables into all nine locales;
+parity was green because every file carried the same wrong shape). Resolve
+the table to this locale's string before committing.
+
 Exit codes: 0 = parity, 1 = missing keys / placeholder drift (unless
---no-fail); dotted keys ALWAYS exit 1 — --no-fail does not cover them, or
-the fence could be talked out of failing on exactly the bug it exists for.
+--no-fail); dotted keys and translation-table values ALWAYS exit 1 —
+--no-fail does not cover them, or the fence could be talked out of failing
+on exactly the bug it exists for.
 
 Usage:
     python scripts/check_i18n.py             # full report
@@ -107,6 +117,35 @@ def dotted_key_paths(lang: str) -> list[str]:
     return out
 
 
+def table_value_paths(lang: str) -> list[str]:
+    """`<namespace>.json: <path>` for every value that is itself a
+    multi-locale translation table (a dict with both "en-US" and "zh-CN"
+    keys) — a pasted source table, not a message; `t()` renders the raw
+    path. See the module docstring."""
+    out: list[str] = []
+    lang_dir = LOCALES_DIR / lang
+    if not lang_dir.is_dir():
+        return out
+    for p in sorted(lang_dir.glob("*.json")):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue  # parse failures are reported by the parity loader
+        ns = p.stem
+
+        def walk(node: object, prefix: str) -> None:
+            if not isinstance(node, dict):
+                return
+            for k, v in node.items():
+                path = f"{prefix}{k}"
+                if isinstance(v, dict) and "en-US" in v and "zh-CN" in v:
+                    out.append(f"{ns}.json: {path}")
+                walk(v, f"{path}.")
+
+        walk(data, "")
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate WoWSP i18n key parity")
     parser.add_argument("--quiet", action="store_true")
@@ -125,12 +164,17 @@ def main() -> int:
 
     # Dotted keys first — they break resolution itself, so parity below is
     # moot for them (and flatten() would happily compare the unresolvable
-    # spelling against the nested one).
+    # spelling against the nested one). Translation tables are the same
+    # class: parity-green, unresolvable at runtime.
     dotted: dict[str, list[str]] = {}
+    tables: dict[str, list[str]] = {}
     for lang in langs:
         paths = dotted_key_paths(lang)
         if paths:
             dotted[lang] = paths
+        tbl = table_value_paths(lang)
+        if tbl:
+            tables[lang] = tbl
 
     problems: dict[str, list[str]] = {}
     for lang in langs:
@@ -166,20 +210,26 @@ def main() -> int:
             json.dumps(
                 {
                     "langs": langs,
-                    # Machine consumers get one boolean: dotted keys count
-                    # as failures here even though --no-fail softens the
-                    # parity exit (see the exit-code contract above).
-                    "parity": not problems and not dotted,
+                    # Machine consumers get one boolean: dotted keys and
+                    # translation tables count as failures here even though
+                    # --no-fail softens the parity exit (see the exit-code
+                    # contract above).
+                    "parity": not problems and not dotted and not tables,
                     "problems": problems,
                     "dottedKeys": dotted,
+                    "tableValues": tables,
                 },
                 indent=2,
                 ensure_ascii=False,
             )
         )
-    elif dotted or problems:
+    elif dotted or tables or problems:
         for lang, paths in dotted.items():
             print(f"[{lang}] {len(paths)} dotted key(s) — unresolvable without flatJson:")
+            for it in paths:
+                print(f"  {it}")
+        for lang, paths in tables.items():
+            print(f"[{lang}] {len(paths)} translation-table value(s) — resolve to this locale's string:")
             for it in paths:
                 print(f"  {it}")
         for lang, items in problems.items():
@@ -189,7 +239,7 @@ def main() -> int:
     elif not args.quiet:
         print(f"i18n OK: {len(baseline_keys)} keys across {tuple(langs)}")
 
-    ok = not dotted and (not problems or args.no_fail)
+    ok = not dotted and not tables and (not problems or args.no_fail)
     return 0 if ok else 1
 
 
