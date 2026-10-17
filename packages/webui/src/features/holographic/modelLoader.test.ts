@@ -5,11 +5,15 @@
  *  glob — otherwise every ship renders the placeholder hull even though the
  *  runtime pack is fully populated. */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type * as THREE from "three";
 
 import { registerRuntimeShipEntry, resetRuntimeShipEntries } from "@/utils/runtimeShipDb";
 import {
   fetchModelResource,
   initModelPack,
+  loadGlbModel,
   resolveShipModelByShipId,
   resolvePropModelUrl,
   shipDescriptionFromOfflineDb,
@@ -277,5 +281,89 @@ describe("fetchModelResource payload validation", () => {
       "spaces/00_CO_ocean": { minX: 0 },
     });
     expect(calls).toEqual([assetJson, embeddedJson]);
+  });
+});
+
+// ── meshopt-compressed pack GLBs through the real loader wiring ──────────
+// scripts/model_convert/optimize_glbs.py re-bakes the pack with
+// `gltf-transform optimize --compress meshopt` (EXT_meshopt_compression +
+// KHR_mesh_quantization — the exact format the site's replay3d assets
+// already ship). The loader must wire MeshoptDecoder or every optimized
+// GLB dies with "THREE.GLTFLoader: setMeshoptDecoder() must be called…".
+// This round-trips the module's own chain headlessly: stubbed fetch →
+// fetchModelResource payload validation → fixGlbPadding → getLoader()
+// (the wiring under test) → a REAL WebAssembly meshopt decode.
+//
+// The fixture (modelLoader.fixtures/meshopt-cube.glb, 1.9 KB) was produced
+// once by gltf-transform from a hand-written subdivided-cube .gltf:
+//   pnpm exec gltf-transform optimize cube.gltf meshopt-cube.glb \
+//     --compress meshopt --simplify false
+describe("meshopt-compressed GLB round-trip", () => {
+  const MODEL_URL = "/models/ships/meshopt-cube.glb";
+  const FIXTURE = join(
+    process.cwd(),
+    "src",
+    "features",
+    "holographic",
+    "modelLoader.fixtures",
+    "meshopt-cube.glb",
+  );
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("decodes an EXT_meshopt_compression GLB through loadGlbModel", async () => {
+    const buf = readFileSync(FIXTURE);
+    const bytes = new Uint8Array(buf).buffer;
+
+    // Guard the fixture's own integrity: a regenerated-but-uncompressed
+    // fixture would make the assertions below protect nothing.
+    const view = new DataView(bytes);
+    expect(String.fromCharCode(
+      view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3),
+    )).toBe("glTF");
+    const jsonLen = view.getUint32(12, true);
+    const jsonHead = new TextDecoder().decode(new Uint8Array(bytes, 20, Math.min(jsonLen, 512)));
+    expect(jsonHead).toContain("EXT_meshopt_compression");
+
+    // happy-dom's fetch refuses blob: URLs, and the loader hands GLTFLoader
+    // a blob URL — record createObjectURL's blobs and serve them from the
+    // fetch stub so the REAL GLTFLoader/FileLoader path still runs.
+    const blobs = new Map<string, Blob>();
+    vi.spyOn(URL, "createObjectURL").mockImplementation((obj: Blob | MediaSource) => {
+      const url = `blob:stub-${blobs.size}`;
+      blobs.set(url, obj as Blob); // the loader only ever hands it Blobs
+      return url;
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      // three's FileLoader hands fetch a Request object — recover the real
+      // URL from it instead of "[object Request]".
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url.startsWith("blob:")) {
+        const blob = blobs.get(url);
+        if (blob) return blob.arrayBuffer().then((b) => new Response(b));
+      }
+      if (url === MODEL_URL) return Promise.resolve(new Response(bytes));
+      return Promise.resolve(new Response("not found", { status: 404 }));
+    });
+
+    const group = await loadGlbModel(MODEL_URL);
+
+    const meshes: THREE.Mesh[] = [];
+    group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+    });
+    expect(meshes.length).toBeGreaterThan(0);
+    const position = meshes[0]!.geometry.getAttribute("position");
+    expect(position).toBeDefined();
+    expect(position.count).toBeGreaterThan(0);
   });
 });

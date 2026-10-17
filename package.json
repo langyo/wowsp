@@ -19,6 +19,7 @@
     "pnpm": ">=11"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "^4.5.1",
     "@types/three": "^0.185.4",
     "@unocss/preset-wind": "^66.8.1",
     "oxlint": "^1.80.0",
