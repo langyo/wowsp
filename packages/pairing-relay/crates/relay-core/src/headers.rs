@@ -40,13 +40,18 @@
 ///   /feedback: its `api.js` (script), the challenge iframe (frame-src,
 ///   which would otherwise fall back to `default-src 'self'` and break
 ///   the form) and its client-side challenge fetches (connect-src).
+/// - `https://api.github.com` + the four ghproxy-style mirrors — the
+///   download page's live release lookup (DownloadView walks the same
+///   official-first mirror ladder as the desktop app; without these in
+///   connect-src the fetches fail on this host and the page shows its
+///   "release info unavailable" notice forever).
 /// - `'unsafe-inline'` (script + style) — the /feedback and /erp pages
 ///   and the shell's fallback loader are inline by design today.
 pub const CSP_HTML: &str = "default-src 'self'; \
 script-src 'self' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'; \
 style-src 'self' https://langyo.github.io 'unsafe-inline'; \
 img-src 'self' data: https://langyo.github.io; \
-connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com; \
+connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net; \
 frame-src https://challenges.cloudflare.com; \
 object-src 'none'; \
 base-uri 'self'; \
@@ -150,7 +155,7 @@ mod tests {
             "script-src 'self' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'",
             "style-src 'self' https://langyo.github.io 'unsafe-inline'",
             "img-src 'self' data: https://langyo.github.io",
-            "connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com",
+            "connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net",
             "frame-src https://challenges.cloudflare.com",
             "object-src 'none'",
             "base-uri 'self'",

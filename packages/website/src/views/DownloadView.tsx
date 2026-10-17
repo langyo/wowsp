@@ -4,6 +4,7 @@ import {
   HardDriveDownload, Usb, Download, ExternalLink, FileDown, Check, Zap,
 } from "@lucide/vue";
 import { LinkButton, Reveal } from "@/components/ui";
+import { siteBase } from "@/composables/siteBase";
 import "./DownloadView.scss";
 
 const GITHUB = "https://github.com/langyo/wowsp";
@@ -106,6 +107,31 @@ async function fetchLatestRelease(): Promise<{
   return null;
 }
 
+/* Last rung of the ladder: a slimmed releases snapshot baked into the
+ * site at deploy time (site.yml writes it via `gh api`). When GitHub
+ * and every mirror are all unreachable — the norm on some mainland
+ * networks, and what rate-limit exhaustion looks like too — the page
+ * still shows a real version with real links, one deploy behind at
+ * worst (version bumps touch packages/website, so every release wave
+ * redeploys the site and refreshes the snapshot). */
+async function fetchBakedRelease(): Promise<LatestRelease | null> {
+  try {
+    const res = await fetch(`${siteBase}latest-release.json`, {
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const data: unknown = await res.json();
+    const rows = Array.isArray(data) ? data : [data];
+    for (const row of rows) {
+      const parsed = pickRelease(row);
+      if (parsed) return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function formatSize(bytes: number): string {
   if (!bytes) return "";
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
@@ -140,6 +166,14 @@ export default defineComponent({
       if (hit) {
         release.value = hit.release;
         mirrorPrefix.value = hit.prefix;
+        phase.value = "ready";
+        return;
+      }
+      // Live lookup failed everywhere: same-origin deploy-time snapshot
+      // before giving up ("" prefix = links go straight to GitHub).
+      const baked = await fetchBakedRelease();
+      if (baked) {
+        release.value = baked;
         phase.value = "ready";
       } else {
         phase.value = "failed";

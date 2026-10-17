@@ -112,6 +112,23 @@ jobs:
           pnpm --filter @wowsp/website build
           cp -r dist/website/. _site/
 
+      - name: Bake release snapshot
+        # The download page's last-resort release source: a same-origin
+        # snapshot taken at deploy time, served at <siteBase>
+        # latest-release.json (DownloadView's fetchBakedRelease). Version
+        # bumps touch packages/website (one of the seven version slots),
+        # so every release wave redeploys the site and refreshes this
+        # file; an unreachable API at worst costs one version of lag.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api 'repos/langyo/wowsp/releases?per_page=30' \
+            | jq '[.[] | {tag_name, assets: [.assets[]
+                | select(.name | test("\\.(exe|msi)$"))
+                | {name, size, browser_download_url}]}]' > _site/latest-release.json \
+            || echo '[]' > _site/latest-release.json
+          head -c 200 _site/latest-release.json; echo
+
       # Guard: a CNAME in the artifact would flip langyo.github.io/wowsp
       # into a redirect and break the /wowsp/ asset paths the worker
       # shell depends on. lagrange writes one at docs/CNAME whenever
