@@ -129,7 +129,7 @@ tar = "^0.4"
 zstd = "^0.13"
 
 # Mod Hub package unpacking (catalog zips) — direct dep of the app crate
-zip = { version = "^8", default-features = false, features = ["deflate"] }
+zip = { version = "^9", default-features = false, features = ["deflate"] }
 
 # Service supervision — graceful shutdown / signal handling (same usage as
 # shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /

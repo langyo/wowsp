@@ -168,7 +168,13 @@ pub fn unpack_profile(bytes: &[u8]) -> anyhow::Result<TacticsProfilePayload> {
     let mut plans = Vec::new();
     for i in 0.. {
         let name = format!("{PLANS_DIR}/{i:02}.json");
-        if !zip.file_names().any(|n| n == name) {
+        // zip 9 makes entry-name decoding fallible (a malformed archive can
+        // carry an undecodable name) — such a name simply never matches a
+        // numbered plan slot.
+        if !zip
+            .file_names()
+            .any(|n| n.is_ok_and(|n| n == name.as_str()))
+        {
             break;
         }
         let raw = read_member(&mut zip, &name)?;

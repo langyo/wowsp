@@ -19,18 +19,6 @@ yanked = "warn"
 id = "RUSTSEC-2024-0436"
 reason = "paste is unmaintained but functional, and is a direct dependency of the vendored wows-toolkit sources (packages/tools/wowsunpack-vendor) which we keep in sync with upstream — swapping in the pastey fork would fork the vendor diff. Revisit when upstream wows-toolkit migrates."
 
-[[advisories.ignore]]
-id = "RUSTSEC-2026-0367"
-reason = "zip 8.6.0 preserves SUID/SGID bits on extract; the fix is a zip 9 major upgrade. The app only WRITES archives (log/share-card/resource-pack exports) and reads game-owned archives entry-by-entry — never ZipArchive::extract on untrusted input — so the escalation path needs a privileged extractor this app does not run. The 9.x migration touches six app command modules plus the vendored wows-toolkit and is tracked as its own maintenance task."
-
-[[advisories.ignore]]
-id = "RUSTSEC-2026-0368"
-reason = "zip 8.6.0 can create outbound symlinks during ZipArchive::extract; same exposure analysis and same zip 9 remediation as RUSTSEC-2026-0367 above."
-
-[[advisories.ignore]]
-id = "RUSTSEC-2026-0369"
-reason = "zip 8.6.0 applies Unix permissions through extracted symlinks in ZipStreamReader::extract; same exposure analysis and same zip 9 remediation as RUSTSEC-2026-0367 above. Drop all three ignores when the zip 9 migration lands."
-
 [licenses]
 # Removed keys (vulnerability/notice/unlicensed/copyleft/default) are built
 # in since cargo-deny PR #611: unallowed licenses deny, everything else warns.

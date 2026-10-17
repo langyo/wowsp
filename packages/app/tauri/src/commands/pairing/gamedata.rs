@@ -269,15 +269,22 @@ pub(crate) fn extract_gamedata_zip(archive: &Path, dest: &Path) -> Result<usize>
     let mut extracted = 0usize;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| anyhow!("zip entry {i}: {e}"))?;
-        let Some(rel) = gamedata_entry_path(entry.name(), entry.is_dir()) else {
-            tracing::warn!(entry = entry.name(), "gamedata zip: skipping unsafe entry");
+        // zip 9 makes entry-name decoding fallible (a malformed archive can
+        // carry an undecodable name) — an undecodable name can't be path-
+        // validated, so the entry is skipped like any unsafe spelling.
+        let Ok(entry_name) = entry.name() else {
+            tracing::warn!(index = i, "gamedata zip: skipping undecodable entry name");
+            continue;
+        };
+        let Some(rel) = gamedata_entry_path(&entry_name, entry.is_dir()) else {
+            tracing::warn!(entry = %entry_name, "gamedata zip: skipping unsafe entry");
             continue;
         };
         if entry
             .unix_mode()
             .is_some_and(|mode| mode & 0o170000 == 0o120000)
         {
-            bail!("gamedata zip contains a symbolic link: {}", entry.name());
+            bail!("gamedata zip contains a symbolic link: {entry_name}");
         }
         if entry.is_dir() {
             gamedata_parent(&root, &rel)?;
