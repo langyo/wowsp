@@ -1322,13 +1322,40 @@ async fn ensure_pack() -> anyhow::Result<String> {
         let cache = cache_root()?;
         let client = crate::commands::network::build_http_client()?;
 
-        // Route through the SAME single-flight guard the panel download uses.
-        // While another download holds the guard, sleep and retry — once
-        // ACQUIRED, the install pass re-resolves everything locally against
-        // the freshest manifest, so a download that finished meanwhile is
-        // detected as a no-op. Patience is bounded (~2 minutes) so a stuck
-        // download falls through to the on-disk fallback below instead of
-        // hanging forever.
+        // Decision phase — NO single-flight slot held. These checks are
+        // pure reads (local stamp + manifest fetch), yet the network leg
+        // (official-digest verification + the mirror ladder) can take tens
+        // of seconds on constrained networks; holding the download slot
+        // through it made a user-initiated `res_download` fail with
+        // "already in flight" while no download was running at all — the
+        // post-app-update boot hits exactly that window (startup ensure
+        // checks while the update toast's 立即更新 fires the panel pass).
+        // A populated pack NEVER installs from here, so it never needs the
+        // slot; only the missing-pack pass below takes it.
+        if dir_populated(&cache.join("models")) {
+            let local = read_local_version(&cache);
+            let up_to_date = fetch_manifest(&client)
+                .await
+                .ok()
+                .is_some_and(|m| local.tree_sha256.as_deref() == Some(m.tree_sha256.as_str()));
+            // Current, hash-unknown (legacy stamp, installer-shipped) or
+            // stale — keep what is on disk; the panel offers the update.
+            if up_to_date {
+                tracing::info!(?cache, "resource pack up to date");
+            } else {
+                tracing::info!(?cache, "resource pack present — deferring to panel");
+            }
+            return Ok(cache.to_string_lossy().to_string());
+        }
+
+        // Missing pack — the only path that installs. Route through the
+        // SAME single-flight guard the panel download uses. While another
+        // download holds the guard, sleep and retry — once ACQUIRED, the
+        // install pass re-resolves everything locally against the freshest
+        // manifest, so a download that finished meanwhile is detected as a
+        // no-op. Patience is bounded (~2 minutes) so a stuck download
+        // falls through to the on-disk fallback below instead of hanging
+        // forever.
         const WAIT_SLOT: Duration = Duration::from_millis(750);
         const WAIT_SLOTS: u32 = 160;
         let mut held = false;
