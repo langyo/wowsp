@@ -94,9 +94,14 @@
 
     &__rail {
       width: 3rem;
-      padding: 0 0 0.25rem;
       border-right: none;
-      align-items: stretch;
+    }
+
+    /* The icon strip's inset rides the shell's HkScrollContainer viewport
+       (the rail host stopped carrying padding when the overlay scrollbar
+       took over — see SettingsShell.scss). */
+    &__rail.hk-scroll-container > .hk-scroll-container-viewport {
+      padding: 0 0 0.25rem;
     }
 
     &__rail-item {

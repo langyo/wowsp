@@ -38,15 +38,22 @@
     border-radius: var(--radius-full);
   }
 
-  /* ── tabs ── */
+  /* ── tabs ──
+     The strip scrolls through hikari's HkScrollContainer (axis
+     "horizontal") — the app's overlay-scrollbar contract, and the same
+     affordance the real mod hub's tab strip shows: a bar-less strip that
+     still pans, with the auto-hiding overlay track on the bottom edge
+     while hovered. Layout lives on the inner wrapper so it pans with
+     the pills. */
   &__tabs {
+    /* intentionally empty — the root is sized by the scroll container's
+       own chrome */
+  }
+
+  &__tabs-inner {
     display: flex;
     gap: var(--space-8);
     padding: var(--space-14) var(--space-16) 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-
-    &::-webkit-scrollbar { display: none; }
   }
 
   &__tab {
