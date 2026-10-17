@@ -7,7 +7,7 @@ unreachable — the worker always CARRIES the full copy but normally
 SERVES only the small HTML shells, the public files and the docs; the
 heavy app bundle leaves Cloudflare only when GitHub is down.
 
-The site is PRERENDERED (packages/website/scripts/prerender.mjs): every
+The site is PRERENDERED (packages/website/scripts/prerender.ts): every
 page shell ships its full markup, and its stylesheets (entry + route
 CSS) are INLINED into the shell itself — first paint needs zero
 external CSS, which is the whole point on slow links. Only the entry

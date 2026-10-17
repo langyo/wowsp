@@ -5,7 +5,7 @@
  */
 
 /** Ship-class glyph polygons TRACED from the game's own 28×28 HUD
- *  bitmaps (scripts/trace_icons.mjs: connected-component boundary
+ *  bitmaps (scripts/trace_icons.ts: connected-component boundary
  *  extraction + Douglas-Peucker). Each class is a list of solid
  *  polygons; the GAPS between them reproduce the icons' engraved class
  *  separators — battleship: two slanted cuts, cruiser: one, carrier:
