@@ -75,11 +75,11 @@ wows-data-mgr = { workspace = true, optional = true }
 yuvutils-rs = { version = "^0.8", optional = true }
 
 openh264 = { version = "^0.9", features = ["source"], optional = true }
-rav1e = { version = "^0.8.1", default-features = false, features = ["threading"], optional = true }
-muxide = { version = "^0.2.5", optional = true }
+rav1e = { version = "^0.8", default-features = false, features = ["threading"], optional = true }
+muxide = { version = "^0.2", optional = true }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-gpu-video = { version = "^0.4.0", default-features = false, features = ["wgpu"], optional = true }
+gpu-video = { version = "^0.4", default-features = false, features = ["wgpu"], optional = true }
 wgpu = { version = "^29", optional = true }
 
 # VideoToolbox encoder (macOS only)

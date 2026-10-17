@@ -15,7 +15,7 @@ clap = { workspace = true }
 walkdir = { workspace = true }
 jiff = { workspace = true }
 serde_json = { workspace = true }
-parse_int = "^0.9.0"
+parse_int = "^0.9"
 wowsunpack = { workspace = true, features = ["json", "vfs-mmap", "rkyv"] }
 anyhow = { workspace = true }
 toml = { workspace = true }

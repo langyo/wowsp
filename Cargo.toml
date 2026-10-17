@@ -47,10 +47,10 @@ repository = "https://github.com/langyo/wowsp"
 # Workspace internal crate aliases (versioned path deps: a version-less
 # path dep resolves as a wildcard requirement, which cargo-deny's bans
 # check denies).
-wowsp_tauri_shared = { version = "^0.6.1", path = "packages/app/tauri_shared" }
+wowsp_tauri_shared = { version = "^0.6", path = "packages/app/tauri_shared" }
 # Reusable replay decoding core (header + packet stream) — shared by the app
 # shell and the replay-corpus maintainer CLI (wave 4a).
-wowsp_replay_core = { version = "^0.6.1", path = "packages/app/replay_core" }
+wowsp_replay_core = { version = "^0.6", path = "packages/app/replay_core" }
 
 # Core language and utilities
 anyhow = "^1"
@@ -59,13 +59,13 @@ async-trait = "^0.1"
 # by the vendored wowsunpack member (root-workspace inheritance — the
 # vendor's own [workspace.dependencies] only applies when building from
 # inside packages/tools/wowsunpack-vendor), so it must stay declared here.
-thiserror = "^2.0.21"
+thiserror = "^2"
 # Data and serialization
 chrono = { version = "^0.4", features = ["serde", "clock"] }
 serde = { version = "^1", features = ["derive"] }
-serde_json = "^1.0.151"
-toml = "^1.1"
-uuid = { version = "^1.28.0", features = ["v4", "serde"] }
+serde_json = "^1"
+toml = "^1"
+uuid = { version = "^1", features = ["v4", "serde"] }
 
 # OS randomness for the pairing server's PIN/token minting. Already in the
 # lockfile via tempfile/uuid; a direct dependency adds no new crate.
@@ -181,7 +181,7 @@ lewton = "^0.10"
 # System clipboard image copy for the post-battle share shot (desktop only;
 # already in the lockfile via egui-winit, so this adds no new crate). Only the
 # image-data path is needed — Wayland/other default features stay off.
-arboard = { version = "^3.6", default-features = false, features = ["image-data"] }
+arboard = { version = "^3", default-features = false, features = ["image-data"] }
 
 # ONNX Runtime bindings for the built-in decision model (experiment E1).
 # Pinned exactly: the 2.0.0-rc line shifts API between RCs, so a caret would
@@ -206,33 +206,33 @@ dirs-next = "^2"
 # wowsunpack / wows-core vendor deps (inherited via workspace = true;
 # versioned so the path requirements are not wildcards — see the aliases
 # note above)
-wows-core = { version = "^0.11.0", path = "packages/tools/wowsunpack-vendor/crates/wows-core", default-features = false }
+wows-core = { version = "^0.11", path = "packages/tools/wowsunpack-vendor/crates/wows-core", default-features = false }
 # In-app GameParams unpacking: vfs-mmap = idx/pkg VFS over the game install
 # (parsing + arc come in transitively). `models` additionally compiles the
 # geometry/gltf exporters the mod-hub custom-model preview parses loose
 # res_mods `.geometry` files with. The `bin` CLI feature stays off.
-wowsunpack = { version = "^0.43.0", path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", default-features = false, features = [
+wowsunpack = { version = "^0.43", path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", default-features = false, features = [
     "vfs-mmap",
     "models",
 ] }
 # Native folder picker for manual game-path selection (Windows IFileDialog).
 rfd = { version = "^0.17", default-features = false }
-clap = { version = "^4.6.0", features = ["derive"] }
+clap = { version = "^4", features = ["derive"] }
 rootcause = "^0.12"
-glob = "^0.3.4"
+glob = "^0.3"
 pickled = { version = "^2.0.0-alpha9" }
-winnow = "^1.0"
+winnow = "^1"
 paste = "^1"
 roxmltree = "^0.21"
 itertools = "^0.14"
 gettext = "^0.4"
 convert_case = "^0.12"
-indicatif = "^0.18.4"
-rkyv = "^0.8.15"
-bon = "^3.9.1"
+indicatif = "^0.18"
+rkyv = "^0.8"
+bon = "^3"
 image_dds = { version = "^0.7", default-features = false }
 ciborium = "^0.2"
-insta = { version = "^1.47", features = ["yaml"] }
+insta = { version = "^1", features = ["yaml"] }
 sha2 = "^0.11"
 # Ed25519 verification of the relay digest docs' signature layer (the
 # seeds live outside the repo — see scripts/catalog_signing.py).
