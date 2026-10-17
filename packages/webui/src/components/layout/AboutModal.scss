@@ -7,11 +7,48 @@
   padding: 0.5rem 0;
 
   &__logo {
+    position: relative;
+    border: none;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+    user-select: none;
+
     img {
+      position: relative;
+      display: block;
       width: 64px;
       height: 64px;
       border-radius: var(--radius-md);
     }
+
+    /* Skin-tone glow halo behind the pig — fades in only while the
+       subtitle is hovered (.about-modal--piggy), its gradient slowly
+       flowing (about-piggy-glow below). */
+    &::before {
+      content: "";
+      position: absolute;
+      inset: -6px;
+      border-radius: 999px;
+      background: linear-gradient(
+        115deg,
+        #ffd9c4,
+        #ff9e90,
+        #ffe9d8,
+        #ffc2ad,
+        #ffd9c4
+      );
+      background-size: 300% 300%;
+      filter: blur(9px);
+      opacity: 0;
+      transition: opacity var(--duration-short) ease;
+      pointer-events: none;
+    }
+  }
+
+  &--piggy &__logo::before {
+    opacity: 1;
+    animation: about-piggy-glow 2.4s ease-in-out infinite;
   }
 
   &__name {
@@ -22,9 +59,51 @@
   }
 
   &__subtitle {
+    display: grid;
     margin: 0;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
+    /* The label crossfades on hover instead of being selectable — the
+       hover is the easter egg, text selection would fight it. */
+    user-select: none;
+    cursor: default;
+
+    &-face {
+      grid-area: 1 / 1;
+      transition: opacity var(--duration-short) ease;
+    }
+
+    &-face--pig {
+      opacity: 0;
+      color: rgb(var(--color-primary));
+      font-weight: 600;
+    }
+  }
+
+  &--piggy &__subtitle-face {
+    opacity: 0;
+
+    &--pig {
+      opacity: 1;
+    }
+  }
+
+  /* Floating "hmph" bubble — pops at a random spot around the logo on
+     click and expires by itself (the element is removed once the
+     about-piggy-bubble animation finishes). */
+  &__bubble {
+    position: absolute;
+    z-index: 10;
+    padding: 0.15rem 0.6rem;
+    border-radius: var(--radius-full);
+    background: rgb(var(--color-primary));
+    color: rgb(var(--color-on-solid));
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    transform: translate(-50%, -100%);
+    animation: about-piggy-bubble 1.6s ease forwards;
   }
 
   &__version {
@@ -102,12 +181,29 @@
     }
   }
 
-  &__desc {
+  /* Description ↔ trivia crossfade stack — both faces share one grid cell
+     so the swap never shifts layout; the trivia face wins while present
+     (clicking it restores the plain description). */
+  &__desc-swap {
+    display: grid;
     margin: 0.5rem 0 0;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-text));
-    line-height: 1.5;
     max-width: 22rem;
+
+    > p {
+      grid-area: 1 / 1;
+      margin: 0;
+      font-size: var(--text-xs);
+      line-height: 1.5;
+      transition: opacity var(--duration-short) ease;
+    }
+  }
+
+  &__desc {
+    color: rgb(var(--color-text));
+  }
+
+  &__trivia {
+    color: rgb(var(--color-primary));
   }
 
   &__tech {
@@ -227,5 +323,59 @@
         text-decoration: underline;
       }
     }
+  }
+}
+
+/* The piggy glow: the skin-tone gradient slowly flows across the halo so
+   the hover state reads as breathing light, not a static tint. */
+@keyframes about-piggy-glow {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* Bubble lifecycle in one animation: pop in, hold, drift up and fade —
+   the JS side removes the element when it ends. */
+@keyframes about-piggy-bubble {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.4);
+  }
+
+  14% {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1.1);
+  }
+
+  26% {
+    transform: translate(-50%, -100%) scale(1);
+  }
+
+  70% {
+    opacity: 1;
+    transform: translate(-50%, -100%) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -112%) scale(0.95);
+  }
+}
+
+/* Reduced motion: the crossfades are plain opacity and stay, but the
+   continuous glow flow is dropped and the bubble pop is shortened —
+   matching the toasts' convention. */
+@media (prefers-reduced-motion: reduce) {
+  .about-modal--piggy .about-modal__logo::before {
+    animation: none;
+  }
+
+  .about-modal__bubble {
+    animation-duration: 0.8s;
   }
 }
