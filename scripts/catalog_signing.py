@@ -174,7 +174,11 @@ def sign_doc_from_env(doc: dict) -> dict | None:
     seed_b64 = os.environ.get("WOWSP_DIGEST_SIGNING_KEY", "").strip()
     if not seed_b64:
         return doc
-    key_id = os.environ.get("WOWSP_DIGEST_SIGNING_KEY_ID", "main").strip()
+    # Blank falls back like unset: release.yml always sets the env var
+    # (passing vars.* through), so a missing variable arrives as "" and
+    # must not defeat the documented default (v0.6.1's publish job died
+    # on exactly that shape).
+    key_id = os.environ.get("WOWSP_DIGEST_SIGNING_KEY_ID", "main").strip() or "main"
     seed = base64.b64decode(seed_b64, validate=True)
     if len(seed) != 32:
         raise _die("WOWSP_DIGEST_SIGNING_KEY is not a 32-byte base64 seed")
@@ -232,6 +236,19 @@ def _selftest() -> None:
     # Re-signing over an existing signature replaces it cleanly.
     resigned = sign_doc(signed, seed, "main")
     assert verify_doc(resigned, {"main": pub_b64})
+
+    # A blank KEY_ID override behaves like an unset one — the workflow
+    # always exports the variable, so blank (a missing repo variable)
+    # must fall back to the default instead of failing the publish.
+    os.environ["WOWSP_DIGEST_SIGNING_KEY"] = base64.b64encode(seed).decode("ascii")
+    for blank in ("", "   "):
+        os.environ["WOWSP_DIGEST_SIGNING_KEY_ID"] = blank
+        from_env = sign_doc_from_env(doc)
+        assert from_env["key_id"] == "main" and verify_doc(from_env, {"main": pub_b64})
+    os.environ["WOWSP_DIGEST_SIGNING_KEY_ID"] = "backup"
+    assert sign_doc_from_env(doc)["key_id"] == "backup"
+    os.environ.pop("WOWSP_DIGEST_SIGNING_KEY", None)
+    os.environ.pop("WOWSP_DIGEST_SIGNING_KEY_ID", None)
 
     # The canonical form is exactly sorted-key compact JSON.
     assert canonical_bytes(signed) == json.dumps(
