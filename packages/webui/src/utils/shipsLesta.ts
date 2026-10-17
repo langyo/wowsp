@@ -108,7 +108,7 @@ export function lestaToShipInfo(
     gameVersion: overlay.gameVersion,
     defaultProfile: entry.defaultProfile ?? null,
     // No WG CDN urls exist — empty strings hand resolution to the local
-    // portrait PNG chain (res/images/ships/<shipId>.png).
+    // portrait chain (res/images/ships/<shipId>.webp).
     images: { small: "", medium: "", large: "", contour: "" },
   };
 }

@@ -427,7 +427,7 @@ def _run_shipmodels() -> None:
 
 
 def _run_dogtags(game: str) -> None:
-    """Dog-tag id→index/species map + 80x80 part PNGs (player avatars)."""
+    """Dog-tag id→index/species map + 80x80 part WebPs (player avatars)."""
     _py(
         "build_dogtags.py",
         "--gameparams", str(GAMEPARAMS_JSON),

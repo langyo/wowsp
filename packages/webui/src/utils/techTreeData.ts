@@ -307,10 +307,36 @@ export function techTreeFeatureCategoryText(category: string): string {
   return featureText(featureData.texts.category[category]) || category;
 }
 
-/** Public URL of a bundled feature icon (small game-client PNGs served from
- *  the webui publicDir), or null when the key has no icon bundled. */
+// Feature icons ship as WebP; the mixed glob tolerates .png leftovers and
+// lets featureIconUrl() normalize each JSON name to the extension actually
+// bundled (the manifest and the files are regenerated together, but a tree
+// mid-migration must keep rendering).
+const _featureIconKeys = Object.keys(
+  import.meta.glob("../res/images/tech-tree-features/*.{png,webp}"),
+);
+// key = full filename OR bare stem → the bundled filename. Sorted so a
+// stem's .webp entry (sorts after .png) wins a mixed-tree collision.
+const _featureIconByName = new Map<string, string>();
+for (const path of [..._featureIconKeys].sort()) {
+  const name = path.split("/").pop()!;
+  const dot = name.lastIndexOf(".");
+  _featureIconByName.set(name, name);
+  _featureIconByName.set(name.slice(0, dot), name);
+}
+
+/** Public URL of a bundled feature icon (small game-client bitmaps served
+ *  from the webui publicDir), or null when the key has no icon bundled.
+ *  Manifest names are re-extensioned to whatever file the bundle actually
+ *  carries for that stem, so a manifest/file extension skew (mid-migration
+ *  trees) resolves instead of 404ing. */
 function featureIconUrl(file: string | undefined): string | null {
-  return file ? `${import.meta.env.BASE_URL}images/tech-tree-features/${encodeURIComponent(file)}` : null;
+  if (!file) return null;
+  const dot = file.lastIndexOf(".");
+  const name =
+    _featureIconByName.get(file) ?? _featureIconByName.get(file.slice(0, dot));
+  return name
+    ? `${import.meta.env.BASE_URL}images/tech-tree-features/${encodeURIComponent(name)}`
+    : null;
 }
 
 /** Icon URL for a branch card-feature key (MAIN_/CLASS_), or null. */

@@ -252,7 +252,8 @@ def stage_pack(tmp: str) -> Path:
 def package_ship_images(tmp: str) -> Path | None:
     """Stage the gitignored ship preview portraits into wowsp-images.tar.gz.
 
-    The portraits (`images/ships/[0-9]*.png` + `_index.json`) are derived
+    The portraits (`images/ships/[0-9]*.webp` — `.png` on trees the
+    re-encoder has not migrated yet — + `_index.json`) are derived
     downloads (scripts/extract/download_ship_images.py) and gitignored, so
     release CI cannot get them from a checkout — they ride this archive
     instead, land in `src/res/images/ships/` on extraction, and the webui
@@ -268,7 +269,8 @@ def package_ship_images(tmp: str) -> Path | None:
     packed = 0
     for entry in sorted(SHIP_IMAGES_DIR.iterdir()):
         if entry.is_file() and (
-            entry.name == "_index.json" or (entry.name.endswith(".png") and entry.name[0].isdigit())
+            entry.name == "_index.json"
+            or (entry.name.endswith((".png", ".webp")) and entry.name[0].isdigit())
         ):
             shutil.copy2(entry, stage / entry.name)
             packed += 1

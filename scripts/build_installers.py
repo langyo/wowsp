@@ -322,7 +322,7 @@ def has_ship_images() -> bool:
         return False
     return any(
         p.name == "_index.json"
-        or (p.suffix == ".png" and p.name[:1].isdigit())
+        or (p.suffix in (".png", ".webp") and p.name[:1].isdigit())
         for p in ships.iterdir()
     )
 
