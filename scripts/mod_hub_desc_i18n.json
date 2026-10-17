@@ -180,6 +180,12 @@
    "de-DE": "Gefecht-Button (Vito74m-Stil)",
    "fr-FR": "Bouton de bataille (style Vito74m)",
    "es-ES": "Botón de tipo de batalla (estilo Vito74m)"
+  },
+  "text.shipname.fanhexie": {
+   "zh-CN": "船名反和谐（360服专用）"
+  },
+  "text.font.east-asia": {
+   "zh-CN": "东亚字库补充（英文端专用）"
   }
  },
  "battle.build.viewer": {

@@ -44,6 +44,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
@@ -199,6 +200,13 @@ def author_record(slug: str) -> list[tuple[str, str]]:
     if isinstance(names, str):
         names = [names]
     return [(n, MOD_AUTHORS.get("authors", {}).get(n, "")) for n in names if n]
+
+
+def clean_author_url(url: str) -> str:
+    """Aslain rows occasionally carry a placeholder author page ("https://")
+    — keep only absolute urls with a host, so threads and the index never
+    render a broken author link."""
+    return url if urllib.parse.urlparse(url).netloc else ""
 
 
 def append_author_lines(front: list[str], slug: str) -> None:
@@ -471,7 +479,7 @@ def curate(cache: Path, dry_run: bool = False) -> list[dict]:
                     "name_en": en.get("Name") or mid,
                     "name_zh": zh.get("Name") or "",
                     "description": re.sub(r"\s+", " ", en.get("Description") or "").strip(),
-                    "author_url": mod.attrib.get("AuthorUrl", ""),
+                    "author_url": clean_author_url(mod.attrib.get("AuthorUrl", "")),
                     "preview_url": previews[0] if previews else "",
                     "preview_urls": previews,
                     "loc_meta": loc_meta,
@@ -1047,7 +1055,7 @@ def enrich_body(curated: dict | None, thread: dict, gallery_urls: list[str]) -> 
     lines.append("| --- | --- |")
     lines.append(f"| 版本 / version | `{version}` |")
     lines.append(f"| 兼容 / game | `{game}` |")
-    author_url = (curated or {}).get("author_url", "")
+    author_url = clean_author_url((curated or {}).get("author_url", ""))
     source = "[Aslain's WoWs Modpack](https://aslain.com/)"
     if author_url:
         source += f" · [author]({author_url})"
@@ -1209,7 +1217,8 @@ def build_index(state: dict) -> dict:
                 {"name": name, "url": url} for name, url in author_record(mod["id"])
             ],
             "author": rec_authors[0][0] if rec_authors else "",
-            "author_url": (rec_authors[0][1] if rec_authors and rec_authors[0][1] else mod["author_url"]),
+            "author_url": (rec_authors[0][1] if rec_authors and rec_authors[0][1]
+                           else clean_author_url(mod["author_url"])),
             "packages": [
                 {
                     "url": pkg["download_url"],
@@ -1319,6 +1328,14 @@ def selftest() -> None:
     assert not looks_like_zip(SEVENZ_MAGIC + b"....")
     assert not looks_like_zip(b"\x89PNG\r\n\x1a\n")
     assert not looks_like_zip(b"")
+
+    # Author page cleaning: Aslain's placeholder pages ("https://") drop,
+    # real absolute urls survive untouched.
+    assert clean_author_url("https://") == ""
+    assert clean_author_url("") == ""
+    assert clean_author_url("http://aslain.com/index.php?/topic/8521") == \
+        "http://aslain.com/index.php?/topic/8521"
+    assert clean_author_url("mailto:someone@example.com") == ""
 
     # 7z -> zip repack round-trip (only meaningful with a converter).
     binary = sevenz_binary()
