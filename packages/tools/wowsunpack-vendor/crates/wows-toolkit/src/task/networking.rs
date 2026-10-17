@@ -393,12 +393,17 @@ async fn download_update(tx: mpsc::Sender<DownloadProgress>, file: Url) -> Resul
     let mut zip = ZipArchive::new(cursor).context("failed to create ZipArchive reader")?;
     for i in 0..zip.len() {
         let mut file = zip.by_index(i).context("failed to get zip inner file by index")?;
-        if file.name().ends_with(".exe") {
+        // zip 9 makes entry-name decoding fallible; an undecodable name can't
+        // be one of the update artifacts, so skip it.
+        let Ok(name) = file.name() else {
+            continue;
+        };
+        if name.ends_with(".exe") {
             let mut out_file = std::fs::File::create(&new_exe_path)
                 .context("failed to create update tmp file")
                 .attach_with(|| format!("{new_exe_path:?}"))?;
             std::io::copy(&mut file, &mut out_file).context("failed to decompress update file to disk")?;
-        } else if file.name().ends_with(".pdb") {
+        } else if name.ends_with(".pdb") {
             let pdb_path = exe_dir.join("wows_toolkit.pdb");
             if let Ok(mut out_file) = std::fs::File::create(&pdb_path) {
                 let _ = std::io::copy(&mut file, &mut out_file);
