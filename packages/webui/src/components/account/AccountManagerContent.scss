@@ -65,16 +65,6 @@
     flex-direction: column;
     gap: 0.4rem;
 
-    /* hikari's content lane is a row flex, so the card content-sizes
-       inside it — stretch it back across the lane (min-width: 0 lets
-       the name/stats truncate instead of overflowing; the
-       pre-HkDraggableList rows were plain blocks that filled the list
-       width). */
-    .hk-draggable-list-content > * {
-      flex: 1;
-      min-width: 0;
-    }
-
     .hk-draggable-list-item {
       min-height: 0;
       padding: 0;
