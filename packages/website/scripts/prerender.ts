@@ -16,13 +16,16 @@
 // when the entry module mounts. The route's CSS chunk is linked in
 // <head> so the paint is styled even before the JS that would load it.
 //
-// Node-only (no browser); CI's web job and site.yml run it via
-// `pnpm --filter @wowsp/website build`.
-
+// Runs as its own process (see package.json "build": embedding this in
+// a vite closeBundle plugin instead makes two Vite instances share one
+// rolldown-vite process, which eats the JS heap after finishing) via
+// Node's type stripping:
+//   node --experimental-strip-types scripts/prerender.ts
+// (Node >= 23.6 runs .ts natively without the flag.)
 import { createServer } from "vite";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = resolve(pkgDir, "../../dist/website");
@@ -35,6 +38,13 @@ const ROUTES = [
 
 // Primary locale first: it is the visible default when JS is disabled.
 const LOCALES = ["zh-Hans", "en"];
+
+// In-project TS stubs swapped in for browser-only CJS deps during
+// prerendering (loaded through the Vite pipeline, hence .ts sources).
+const xtermStub = fileURLToPath(new URL("../src/prerender/stubs/xterm.ts", import.meta.url));
+const hljsStubUrl = pathToFileURL(
+  fileURLToPath(new URL("../src/prerender/stubs/hljs.ts", import.meta.url)),
+).href;
 
 // Locale picker — MUST mirror main.ts loadLocale + locales.ts
 // detectLocale (localStorage key, valid set, navigator fallback) and
@@ -75,8 +85,8 @@ const PICKER = `<script>
 // bake the settled state into every reveal class. The live app owns the
 // DOM again at mount (in-viewport reveals flip instantly via the
 // observer fallback, so the swap is invisible).
-function markRevealsVisible(html) {
-  return html.replace(/class="([^"]*)"/g, (whole, value) =>
+function markRevealsVisible(html: string): string {
+  return html.replace(/class="([^"]*)"/g, (whole, value: string) =>
     /(^|\s)reveal(\s|$)/.test(value) && !/(^|\s)is-visible(\s|$)/.test(value)
       ? `class="${value.replace(/(^|\s)reveal(\s|$)/, "$1reveal is-visible$2")}"`
       : whole,
@@ -87,9 +97,9 @@ function markRevealsVisible(html) {
 // module (HomeView-<hash>.css). The entry stylesheet is already linked
 // by Vite; this links the route's own chunk so the prerendered markup
 // is styled before the lazy JS that would otherwise load it.
-function routeCssLink(base, view) {
+function routeCssLink(base: string, view: string): string {
   const assetsDir = resolve(outDir, "assets");
-  let names;
+  let names: string[];
   try {
     names = readdirSync(assetsDir);
   } catch {
@@ -107,35 +117,29 @@ const server = await createServer({
   root: pkgDir,
   server: { middlewareMode: true },
   logLevel: "error",
-  // @xterm/xterm: hikari's barrel re-exports the terminal component,
-  // whose CJS package cannot be named-imported under the SSR runner's
-  // interop — and no terminal is ever rendered during prerendering. The
-  // in-project stub keeps the import clean (highlight.js is handled by
-  // the load stub inside the plugin below).
   resolve: {
     alias: {
-      "@xterm/xterm": fileURLToPath(new URL("./stubs/xterm.mjs", import.meta.url)),
+      // hikari's barrel re-exports the terminal component; its CJS
+      // package cannot be named-imported under the SSR runner's
+      // interop, and no terminal is ever rendered while prerendering.
+      // Inline aliases merge after the config file's — no competition
+      // for this specifier, and bare-dep resolution for the ssr runner
+      // goes through the native resolver, which user plugin resolveId
+      // hooks never see.
+      "@xterm/xterm": xtermStub,
     },
   },
   plugins: [
-    // Prerendering needs class NAMES, never CSS text — and vite:css's
-    // sass invocation crashes in the ssr environment (dependency
-    // stylesheets the browser pipeline tree-shakes away never compiled
-    // there either). Redirect every stylesheet import in the SSR
-    // pipeline to one shared empty module so vite:css never engages;
-    // the client environment is untouched (this server never serves
-    // the browser anyway).
-    //
-    // The load hook below covers the one CJS file the SSR module runner
-    // pulls in THROUGH the pipeline: highlight.js's es/core.js shim
-    // re-exports ../lib/core.js, whose raw `module.exports` cannot be
-    // evaluated as ESM (dev/build wrap it; the runner does not). Swap
-    // in the same-shaped ESM stub the resolveId alias above points at.
     {
-      name: "prerender-stubs",
+      name: "prerender-style-stub",
       enforce: "pre",
       resolveId(source, importer, options) {
         const ssr = options?.ssr ?? this.environment?.name === "ssr";
+        // Prerendering needs class NAMES, never CSS text — vite:css's
+        // sass invocation crashes in the ssr environment (dependency
+        // stylesheets the browser pipeline tree-shakes away never
+        // compiled there either), so stylesheets resolve to one shared
+        // empty module and vite:css never engages.
         if (ssr && importer && /\.(scss|sass|css)(\?.*)?$/.test(source)) {
           return "\0prerender-style-stub";
         }
@@ -145,8 +149,12 @@ const server = await createServer({
         const ssr = options?.ssr ?? this.environment?.name === "ssr";
         if (!ssr) return null;
         if (id === "\0prerender-style-stub") return "export default {}";
+        // highlight.js's es/core.js shim re-exports ../lib/core.js,
+        // whose raw CJS cannot be evaluated as ESM by the runner
+        // (dev/build wrap it; the runner does not) — hand the import
+        // the TS stub instead, through the normal pipeline.
         if (id.replace(/\\/g, "/").endsWith("highlight.js/lib/core.js")) {
-          return readFileSync(fileURLToPath(new URL("./stubs/hljs/core.mjs", import.meta.url)), "utf8");
+          return `export { default } from ${JSON.stringify(hljsStubUrl)}`;
         }
         return null;
       },
@@ -163,11 +171,9 @@ try {
   }
 
   for (const route of ROUTES) {
-    const snapshots = [];
+    const snapshots: string[] = [];
     for (const locale of LOCALES) {
-      snapshots.push(
-        await prerender(route.path, locale).then(markRevealsVisible),
-      );
+      snapshots.push(await prerender(route.path, locale).then(markRevealsVisible));
     }
     const appBlock = [
       `<div data-prerender-locale="${LOCALES[0]}">${snapshots[0]}</div>`,
@@ -178,10 +184,7 @@ try {
     ].join("\n      ");
 
     const page = shell
-      .replace(
-        '<div id="app"></div>',
-        `<div id="app">\n      ${appBlock}\n    </div>`,
-      )
+      .replace('<div id="app"></div>', `<div id="app">\n      ${appBlock}\n    </div>`)
       .replace("</head>", `    ${routeCssLink(base, route.view)}\n  </head>`);
 
     const outFile = resolve(outDir, route.out);

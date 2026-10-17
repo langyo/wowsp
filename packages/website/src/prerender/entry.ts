@@ -1,7 +1,7 @@
 // Prerender entry: renders the real app (App shell + view + i18n) to a
 // static HTML string at BUILD time, via Vite's ssrLoadModule pipeline
 // (same TSX/SASS/alias processing as the browser build — see
-// scripts/prerender.mjs). Loaded only by that script; never bundled.
+// scripts/prerender.ts). Loaded only by that script; never bundled.
 // Keep the wiring in sync with main.ts / router/index.ts minus the
 // browser-only side effects (theme init, listeners, fetches in
 // onMounted never run during prerendering).
