@@ -156,10 +156,14 @@ export default defineComponent({
           <span class="plan-slots__actions plan-slots__actions--col">
             {props.onBranch ? (
               <HkTooltip text={i18nT("tactics.slots.branch")} placement="right">
+                {/* Primary, not secondary: the fork is this panel's main
+                    action, and only the primary variant's ink follows its
+                    fill luminance (--color-on-primary; user direction
+                    2026-10-17 retracting the uniform white-on-solid rule) —
+                    the secondary fill pins white ink and washed out. */}
                 <HkIconButton
                   size={24}
-                  variant="secondary"
-                  class="plan-slots__btn--branch"
+                  variant="primary"
                   onClick={() => {
                     armed.value = false;
                     props.onBranch!();

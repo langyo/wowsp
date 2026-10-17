@@ -51,11 +51,9 @@
   margin-left: 2px;
 }
 
-/* Action buttons are hikari HkIconButtons (tooltips + variants carry the
-   armed-delete emphasis); only the branch button keeps a dashed outline. */
-.plan-slots__btn--branch {
-  border: 1px dashed rgb(var(--color-primary) / 45%);
-}
+/* Action buttons are hikari HkIconButtons; tooltips + variants carry the
+   armed-delete emphasis and the fork's main-action fill (no extra outline
+   rules here — solid variants bring their own ink by design). */
 
 /* ── Tree layout (the tactics page's left branch panel) ───────────────────
    The bar becomes a vertical, left-aligned tree: roots at the top, forks
@@ -171,8 +169,12 @@
 
 /* Tree-panel buttons ride the app surface tokens (the panel lives outside
    the stage's HUD palette). hikari paints the glyph through its own
-   icon-color variables (same override pattern as AudioPlayerToast). */
-.plan-slots--tree .hk-icon-button {
+   icon-color variables (same override pattern as AudioPlayerToast) — but
+   ONLY on the unfilled variants: the muted glyph is panel ink, which washes
+   out on solid fills. Solid variants (the primary fork button, the armed
+   danger trash) keep their own ink, which follows the fill's luminance. */
+.plan-slots--tree .hk-icon-button-ghost,
+.plan-slots--tree .hk-icon-button-borderless {
   --hi-icon-button-icon-color: rgb(var(--color-muted) / 90%);
   --hi-icon-button-icon-color-active: rgb(var(--color-primary));
 }
