@@ -38,6 +38,16 @@ export interface OverlayColumn {
 
 export const OVERLAY_COLUMN_LIMIT = 5;
 
+/** One configured aim-crosshair panel column — the SAME scope × metric
+ *  pair shape the roster columns use (the aim panel currently only ever
+ *  receives "global"-scoped entries, but the pair type is shared so the
+ *  editor and the persisted list stay one shape). */
+export type AimColumn = OverlayColumn;
+
+/** The aim panel sits under the crosshair — room for fewer columns than
+ *  the roster surfaces. */
+export const AIM_COLUMN_LIMIT = 4;
+
 /** True when the column list IS the shipped default (the four global
  *  career columns) — the surfaces' "customized" faces (the live head's
  *  stats-source chip) key off this. */
@@ -141,6 +151,12 @@ export interface StatsPrefs {
    *  empty list means no stat numbers at all — only the seal stamps (and
    *  the panels' battle-local XP column) remain. */
   overlayColumns: OverlayColumn[];
+  /** The aim-crosshair panel's columns (scope × metric pairs, left to
+   *  right, at most AIM_COLUMN_LIMIT) — the in-game plugin's crosshair
+   *  floating panel for the ship being aimed at. An empty list HIDES the
+   *  panel. Pushed to the Rust bridge (set_ingame_bridge_aim) by the
+   *  overlay lifecycle whenever it changes or the bridge starts. */
+  aimColumns: AimColumn[];
   /** Stats-source battle-type scope — the panel-wide dimension every
    *  column reads (see `RosterBattleScope`). */
   overlayBattleScope: RosterBattleScope;
@@ -192,6 +208,14 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
     { scope: "global", metric: "battles" },
     { scope: "global", metric: "damage" },
   ],
+  // The aim panel ships with the three most-glanceable career numbers
+  // (winrate / PR / battles, global career) — narrower than the roster's
+  // four-column default because the crosshair strip has less room.
+  aimColumns: [
+    { scope: "global", metric: "winrate" },
+    { scope: "global", metric: "pr" },
+    { scope: "global", metric: "battles" },
+  ],
   overlayBattleScope: "follow",
   overlayIntel: { radar: true, hydro: true, smoke: true },
   overlayTeamAvg: { winrate: false, pr: false, damage: false },
@@ -239,6 +263,29 @@ export function parseOverlayColumns(raw: unknown): OverlayColumn[] {
     seen.add(key);
     out.push({ scope: e.scope, metric: e.metric });
     if (out.length >= OVERLAY_COLUMN_LIMIT) break;
+  }
+  return out;
+}
+
+/** Validate a raw aimColumns value — the same tolerant contract as
+ *  parseOverlayColumns (junk shapes drop out, duplicates keep their first
+ *  occurrence) with two aim-specific guards: capped at AIM_COLUMN_LIMIT,
+ *  and scope restricted to "global" (the bridge's v1 protocol validates
+ *  exactly that and rejects the WHOLE list otherwise — a hand-edited
+ *  blob must never smuggle in a scope the push would choke on). */
+export function parseAimColumns(raw: unknown): AimColumn[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AimColumn[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (entry == null || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (e.scope !== "global" || !isOverlayColumnMetric(e.metric)) continue;
+    const key = `${e.scope}:${e.metric}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ scope: e.scope, metric: e.metric });
+    if (out.length >= AIM_COLUMN_LIMIT) break;
   }
   return out;
 }
@@ -390,6 +437,14 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
           : DEFAULT_STATS_PREFS.teamIntelEnabled,
       sealDisabled: parseSealDisabled(j.sealDisabled),
       overlayColumns,
+      // Aim panel: no legacy seed exists — a blob written before the
+      // crosshair panel (or missing the key) simply takes the shipped
+      // default; the healed rewrite then persists it like any other
+      // field. An explicitly EMPTY list is valid (it hides the panel)
+      // and must survive the parse untouched.
+      aimColumns: Array.isArray(j.aimColumns)
+        ? parseAimColumns(j.aimColumns)
+        : [...DEFAULT_STATS_PREFS.aimColumns],
       // Migration: a blob written before the battle-dimension split only
       // carries the retired `overlayStatsMode` enum — it seeds the battle
       // dimension; the healed rewrite then drops the legacy key for good.
@@ -536,6 +591,20 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     // prevents those states, so this is only the hand-edited-blob guard.
   }
 
+  /** The one write path for the aim panel's column list — same guard
+   *  stack as setOverlayColumns (revalidated: no dups, no over-limit),
+   *  same persist + broadcast, so the bridge push (which rides the prefs
+   *  write's reactivity, see features/overlay/useOverlayLifecycle.ts)
+   *  fires on every change. */
+  function setAimColumns(cols: AimColumn[]) {
+    const next = parseAimColumns(cols);
+    if (next.length === cols.length) {
+      prefs.value.aimColumns = next;
+      persist({ ...prefs.value });
+    }
+    // A rejected write silently no-ops (see setOverlayColumns).
+  }
+
   function setOverlayBattleScope(v: RosterBattleScope) {
     prefs.value.overlayBattleScope = v;
     persist({ ...prefs.value });
@@ -568,6 +637,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setSealDisabled,
     setOverlayColumns,
     setOverlayBattleScope,
+    setAimColumns,
     setOverlayIntel,
     setOverlayTeamAvg,
   };

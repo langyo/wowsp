@@ -567,6 +567,10 @@ pub fn run() {
             commands::ingame_bridge::ingame_bridge_start,
             #[cfg(desktop)]
             commands::ingame_bridge::ingame_bridge_stop,
+            // 准心浮窗 column pinning — same desktop-only family as the
+            // bridge worker it feeds (see ingame_bridge.rs).
+            #[cfg(desktop)]
+            commands::ingame_bridge::set_ingame_bridge_aim,
             commands::game_config::get_game_config,
             commands::game_config::set_game_config,
             commands::game_config::add_replay_dir,

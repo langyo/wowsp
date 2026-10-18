@@ -448,6 +448,79 @@ Bridge files (protocol v1, all in the mod directory):
 // re-query; the mod consumes it within a 10 s window.
 ```
 
+## Crosshair aim panel
+
+The aim panel (2026-10-18) floats the AIMED player's basic stats a
+configurable distance under the crosshair, in-game rendered like the Tab
+tables and readable while aiming — not while Tab is held (the unbound
+root therefore keeps it OUTSIDE the Tab-visible block).
+
+**Detection contract (decompiled, build 13357625).** The client's own
+world ship markers iterate the SAME `CC.avatar` collection the probe
+walks (`gui/unbound2/pc/battle/markers/base_marker.unbound`:
+`WorldShipMarker` is the avatar renderer), and the lock icon on each
+marker lights on `targetComponent.flags & LOCKABLE_WEAPONS`
+(`markers/ship_marker.unbound` GET_MARKER_ENTITY_COMPONENT 'target';
+the mask is frozen in `shared/constants.unbound` as bits
+{0,1,2,6,7,8,10,12,13} = `0x35C7` over the WEAPON_* enum). So "who the
+local player is aiming at" is authoritative and engine-computed: the
+avatar entity whose `target` component carries any lockable bit. The
+probe reads it per tick in the same entity walk (`aim_flags_of`):
+`entity[UiComponents.target].flags` on the cc path, duck-typed
+components-mapping fallback (`.flags` without `.reasons` — CanHit
+carries both) when the client withholds the cc attribute. When several
+entities are targeted at once (guns on one ship, torpedoes locked on
+another) the MAIN-battery bits (0-2 = UNKNOWN/MAIN_AP/MAIN_HE) win, else
+the first lockable hit. The mask constants live in Main.py as
+`AIM_LOCKABLE`/`AIM_MAIN_BITS`; changing them is a spec bump against the
+client, exactly like the barcode geometry.
+
+**Verdict surface.** The latch lands in telemetry (`aim: {name, flags}`
+every battle tick, empty name = no target — the replay/live monitor
+reads this), in python.log (`aim <name> flags=<n>` on every switch), and
+in the panel payload (`aim` block below).
+
+**Panel payload (aim_block, all presentation Python-side).**
+
+```jsonc
+{ "aim": { "on": true, "name": "Foe03", "ship": "Shimakaze",
+           "offset": 120,
+           "vals": [ { "t": "52.5%", "c": 0xFFFFEE66, "label": "Win rate" },
+                     { "t": "1234",  "c": 0xFFFFEE66, "label": "PR" } ] } }
+```
+
+`offset` is the wowsp.toml `aim_offset` px below the stage center (the
+crosshair sits at the center in every gun mode); `aim = 0` hides the
+panel; an EXPLICIT empty column list (the user removed every card)
+hides it too, while a companion that never sent columns keeps a
+name/ship-only panel.
+
+**Column pipeline.** The columns are the SAME drag-card editor the
+water table uses (`OverlayColumnsEditor`, a second instance in the
+in-game settings section), persisted as `aimColumns` in the stats prefs
+(limit 4, scope "global" in v1 — the bridge serves one roster lookup;
+per-ship/class scopes would need the webui's per-player ship-list
+pipeline, deliberately out of scope). The MAIN window's overlay
+lifecycle pushes them to the bridge on start and on every prefs change
+(`set_ingame_bridge_aim([{scope, metric, label}])`, label pre-localized
+by the webui), and `response.json` grows:
+
+```jsonc
+"aimCols": [ { "scope": "global", "metric": "winrate", "label": "Win rate" } ],
+"rows": [ { ..., "aim": [ 52.3 ] } ]   // aligned with aimCols; null = no data
+```
+
+`aimCols` is omitted entirely until the companion first receives a
+column list (old-probe byte compatibility); an explicitly EMPTY list is
+still written (the hide gate above).
+
+**Replay caveat.** Replays do not mount the battle HUD views, so the
+panel itself is not visually verifiable in a replay — but the Python
+walk runs (the order-probe evidence class), which is why the verdict
+rides telemetry: replay playback is the sanctioned way to watch aim
+switches live (2026-10-18 matrix: the Steam client's own 15.9.0 replays
+plus the CN360 volunteer replays at matching builds).
+
 ## Product integration
 
 1. **Auto-install on toggle**: enabling the in-game ordering source in

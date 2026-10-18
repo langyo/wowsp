@@ -292,7 +292,7 @@
     "colAdd": "열 추가",
     "colAddConfirm": "추가 확인",
     "colRemove": "이 열 제거",
-    "colLimitHint": "열은 최대 5개",
+    "colLimitHint": "열은 최대 {limit}개",
     "colEmpty": "구성된 열이 없습니다. 오른쪽 위 + 로 추가",
     "colDupHint": "이 열은 이미 있습니다",
     "colScope": "데이터 범위",
@@ -304,7 +304,9 @@
     "colMetricWinrate": "승률",
     "colMetricPr": "PR",
     "colMetricBattles": "전투 수",
-    "colMetricDamage": "평균 피해"
+    "colMetricDamage": "평균 피해",
+    "aimTitle": "조준선 패널",
+    "aimHint": "조준한 적 함선의 전적 열을 조준선 아래에 표시합니다(현재는 전체 범위만 지원). 카드를 모두 제거하면 패널이 숨겨집니다."
   },
   "schemeDefaultName": "기본",
   "pairingWip": "휴대폰 페어링 기능은 개발 중이며 아직 완성되지 않았습니다.",

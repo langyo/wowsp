@@ -292,7 +292,7 @@
     "colAdd": "列を追加",
     "colAddConfirm": "追加する",
     "colRemove": "この列を削除",
-    "colLimitHint": "列は最大 5 つ",
+    "colLimitHint": "列は最大 {limit} つ",
     "colEmpty": "列が未設定です。右上の + で追加",
     "colDupHint": "この列は既に存在します",
     "colScope": "データ範囲",
@@ -304,7 +304,9 @@
     "colMetricWinrate": "勝率",
     "colMetricPr": "PR",
     "colMetricBattles": "戦闘数",
-    "colMetricDamage": "平均ダメージ"
+    "colMetricDamage": "平均ダメージ",
+    "aimTitle": "照準パネル",
+    "aimHint": "狙った敵艦の戦績列を照準マークの下に表示します（現在はグローバル範囲のみ）。カードをすべて削除するとパネルは非表示になります。"
   },
   "schemeDefaultName": "デフォルト",
   "pairingWip": "スマホ連携機能は開発中で、まだ完成していません。",

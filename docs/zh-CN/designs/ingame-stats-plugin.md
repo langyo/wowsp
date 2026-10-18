@@ -348,6 +348,69 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 // mod 在 10 s 窗口内消费。
 ```
 
+## 准心瞄准浮窗
+
+瞄准浮窗（2026-10-18）在准心正下方一段可配置的距离上悬浮显示被瞄准
+玩家的基本战绩，与 Tab 表同属游戏内渲染，但**不随 Tab 显隐**——瞄准
+和按 Tab 是两个时刻，unbound 根节点因此把它放在 Tab 可见块之外。
+
+**检测契约（build 13357625 反编译实证）。** 客户端自己的世界船标就是
+遍历探针所走的同一个 `CC.avatar` 集合
+（`gui/unbound2/pc/battle/markers/base_marker.unbound`：avatar 的
+renderer 即 `WorldShipMarker`），而每个 marker 上的锁定图标点亮条件是
+`targetComponent.flags & LOCKABLE_WEAPONS`
+（`markers/ship_marker.unbound` 的 GET_MARKER_ENTITY_COMPONENT
+'target'；掩码冻结在 `shared/constants.unbound`，位集
+{0,1,2,6,7,8,10,12,13} = `0x35C7`，基于 WEAPON_* 枚举）。因此"本机玩
+家正在瞄准谁"由引擎计算、权威可读：target 组件携带任一锁定位的
+avatar 实体。探针每 tick 在同一次实体遍历里读取（`aim_flags_of`）：
+cc 路径 `entity[UiComponents.target].flags`，cc 属性被扣留时回退到
+components 映射的鸭子类型探测（有 `.flags` 且无 `.reasons` —— CanHit
+两者都有）。多目标同时锁定时（炮瞄 A、雷锁 B）主炮位（0-2 =
+UNKNOWN/MAIN_AP/MAIN_HE）优先，否则取首个锁定命中。掩码常量即
+Main.py 的 `AIM_LOCKABLE`/`AIM_MAIN_BITS`；改动即对客户端的规格升
+级，与条码几何同规。
+
+**判定出口。** 锁存进 telemetry（每战斗 tick 的
+`aim: {name, flags}`，空名 = 无目标——回放/实机监听读这里）、
+python.log（每次切换一行 `aim <name> flags=<n>`）与面板 payload
+（下述 `aim` 块）。
+
+**面板 payload（aim_block，全部呈现逻辑在 Python 侧）。**
+
+```jsonc
+{ "aim": { "on": true, "name": "Foe03", "ship": "岛风",
+           "offset": 120,
+           "vals": [ { "t": "52.5%", "c": 0xFFFFEE66, "label": "胜率" },
+                     { "t": "1234",  "c": 0xFFFFEE66, "label": "PR" } ] } }
+```
+
+`offset` 为 wowsp.toml 的 `aim_offset`（准心在所有炮击视角下都位于舞
+台中心，故以中心为锚下移）；`aim = 0` 隐藏浮窗；伴生侧**显式**回空列
+表（用户删光卡片）同样隐藏，而从未下发过列的旧伴生保持仅名字/船名
+的降级浮窗。
+
+**列管线。** 列编辑与水表同一拖拽卡片编辑器
+（`OverlayColumnsEditor`，游戏内设置区的第二个实例），以 stats prefs
+的 `aimColumns` 持久化（上限 4，v1 仅 "global" scope——桥只做一次名单
+查询；单船/船类 scope 需要 webui 的整船列表管线，明确不进本期）。
+**主窗口**的 overlay 生命周期在桥启动与每次偏好变化时推送
+（`set_ingame_bridge_aim([{scope, metric, label}])`，label 由 webui
+预本地化），`response.json` 相应扩展：
+
+```jsonc
+"aimCols": [ { "scope": "global", "metric": "winrate", "label": "胜率" } ],
+"rows": [ { ..., "aim": [ 52.3 ] } ]   // 与 aimCols 对齐；null = 无数据
+```
+
+伴生侧首次收到列之前 `aimCols` 整体缺省（对旧探针字节兼容）；显式空
+列表仍会写出（即上述隐藏门）。
+
+**回放注意。** 回放不挂载战斗 HUD 视图，浮窗本身无法在回放中目视验
+证——但 Python 遍历照常运行（order-probe 同证据类），判定因此走
+telemetry：回放播放是实时观察瞄准切换的受权途径（2026-10-18 矩阵：
+Steam 客户端自带的 15.9.0 录像 + build 匹配的国服 360 志愿者录像）。
+
 ## Rust 集成点（精确到文件）
 
 | 关注点 | 文件（无标注即现有） | 变更 |

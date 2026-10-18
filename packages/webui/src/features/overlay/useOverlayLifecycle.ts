@@ -20,11 +20,24 @@
 import { watch } from "vue";
 
 import { api } from "@/api";
-import { i18n } from "@/i18n";
+import { i18n, t } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
+import { statsPrefsState, type OverlayColumnMetric } from "@/stores/statsPrefs";
+
+/** metric → the aim panel's column-label i18n key — the SAME wording the
+ *  settings' column editor cards show (OverlayColumnsEditor's METRIC_KEY,
+ *  kept local so the app-lifecycle module doesn't pull the settings
+ *  component chunk; keep the two in lock-step). The bridge renders these
+ *  labels verbatim under the crosshair. */
+const AIM_METRIC_LABEL_KEY: Record<OverlayColumnMetric, string> = {
+  winrate: "settings.overlayContent.colMetricWinrate",
+  pr: "settings.overlayContent.colMetricPr",
+  battles: "settings.overlayContent.colMetricBattles",
+  damage: "settings.overlayContent.colMetricDamage",
+};
 
 export function useOverlayLifecycle() {
   const game = useGameStatusStore();
@@ -43,6 +56,26 @@ export function useOverlayLifecycle() {
 
   function locale(): string {
     return (i18n.global.locale as unknown as { value: string }).value;
+  }
+
+  /** Push the aim-crosshair panel's column list (statsPrefs.aimColumns,
+   *  labels resolved in the CURRENT locale) to the bridge — the very
+   *  write the statsPrefs store's aimColumns mutation (and its
+   *  `wowsp://stats-prefs-changed` broadcast) represents. Best-effort: a
+   *  rejected push (mobile shell, bridge down) retries on the next bridge
+   *  start or the next aimColumns change. An empty list hides the panel. */
+  function pushAimColumns() {
+    void api
+      .setIngameBridgeAim(
+        statsPrefsState.value.aimColumns.map((c) => ({
+          scope: c.scope,
+          metric: c.metric,
+          label: t(AIM_METRIC_LABEL_KEY[c.metric]),
+        })),
+      )
+      .catch(() => {
+        // see the starts above — retried on the next transition.
+      });
   }
 
   async function sync() {
@@ -95,6 +128,9 @@ export function useOverlayLifecycle() {
       try {
         await api.startIngameBridge(locale());
         bridgeActive = true;
+        // The aim panel's columns ride the same start: the bridge bakes
+        // them into every response.json it writes from here on.
+        pushAimColumns();
       } catch {
         // Retry on the next state change.
       }
@@ -141,5 +177,18 @@ export function useOverlayLifecycle() {
     ],
     () => void requestSync(),
     { immediate: true },
+  );
+
+  // A settings edit of the aim panel's columns reaches the running bridge
+  // through THIS watcher (the same mutation the store persists and
+  // broadcasts as `wowsp://stats-prefs-changed`): the main window owns the
+  // store state, so watching it here is the live channel — no re-read off
+  // localStorage needed. Skipped while the bridge is down; the start
+  // above pushes the current list the moment it comes up.
+  watch(
+    () => statsPrefsState.value.aimColumns,
+    () => {
+      if (bridgeActive) pushAimColumns();
+    },
   );
 }

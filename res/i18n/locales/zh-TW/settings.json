@@ -292,7 +292,7 @@
     "colAdd": "新增列",
     "colAddConfirm": "確認新增",
     "colRemove": "移除此列",
-    "colLimitHint": "最多 5 列",
+    "colLimitHint": "最多 {limit} 列",
     "colEmpty": "未配置任何列，點擊右上角 + 新增",
     "colDupHint": "該列已存在",
     "colScope": "資料範圍",
@@ -304,7 +304,9 @@
     "colMetricWinrate": "勝率",
     "colMetricPr": "PR",
     "colMetricBattles": "場次",
-    "colMetricDamage": "場均"
+    "colMetricDamage": "場均",
+    "aimTitle": "準心浮窗",
+    "aimHint": "瞄準敵艦時在準心下方顯示的戰績列（目前僅支援全域資料範圍）；移除全部卡片即隱藏浮窗。"
   },
   "schemeDefaultName": "預設",
   "pairingWip": "手機配對功能正在開發中，尚未完工",

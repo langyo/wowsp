@@ -6,10 +6,15 @@
  * groups (数据范围: 全局/仅单人/仅单船/仅当前舰种; 指标: 场均/PR/胜率/
  * 场次) and a confirm-add button at the bottom right.
  *
- * Mounted TWICE: the settings page's 显示内容 section, and the live
- * panel head's stats-source chip popover (LiveStatsModeChip — the very
- * filter that used to host the retired three-row dimension groups), so
- * the columns are editable right where they render.
+ * Mounted TWICE on the store's own columns: the settings page's 显示内容
+ * section, and the live panel head's stats-source chip popover
+ * (LiveStatsModeChip — the very filter that used to host the retired
+ * three-row dimension groups), so the columns are editable right where
+ * they render. A THIRD mount (the settings' aim-crosshair panel block)
+ * supplies the list externally through the `columns`/`limit`/
+ * `allowedScopes`/`onChange` props instead — the aim panel's own column
+ * list (statsPrefs.aimColumns, global-only, a narrower cap) gets the
+ * identical drag/edit experience without a second editor.
  *
  * The widgets are hikari base components (HkPopover / HkTabs / HkButton /
  * HkIconButton), and the drag is hikari's OWN final list-drag design
@@ -26,7 +31,7 @@
  * immediately — the panels through the store's reactivity, the overlay
  * window through its broadcast.
  */
-import { computed, defineComponent, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, nextTick, onBeforeUnmount, ref, watch, type PropType } from "vue";
 
 import { Plus, Trash2, GripHorizontal } from "@lucide/vue";
 import { HkButton, HkIconButton, HkPopover, HkTabs } from "@celestia-island/hikari";
@@ -35,6 +40,7 @@ import { t } from "@/i18n";
 import {
   OVERLAY_COLUMN_LIMIT,
   useStatsPrefsStore,
+  type OverlayColumn,
   type OverlayColumnMetric,
   type OverlayColumnScope,
 } from "@/stores/statsPrefs";
@@ -84,16 +90,6 @@ const METRIC_KEY: Record<OverlayColumnMetric, string> = {
   damage: "settings.overlayContent.colMetricDamage",
 };
 
-/** The add-menu's scope options, in the settings' canonical order —
- *  built at RENDER time so the labels are the loaded locale's (the
- *  module-scope arrays this replaces froze whatever `t()` answered at
- *  import, i.e. raw keys). */
-const scopeTabs = () =>
-  (Object.keys(SCOPE_KEY) as OverlayColumnScope[]).map((key) => ({
-    key,
-    label: t(SCOPE_KEY[key]),
-  }));
-
 /** The add-menu's metric options (the issue-1082 ordering: 场均/PR/胜率/
  *  场次), render-time for the same reason. */
 const metricTabs = () =>
@@ -115,9 +111,50 @@ interface DragState {
 
 export default defineComponent({
   name: "OverlayColumnsEditor",
-  setup() {
+  props: {
+    /** An EXTERNALLY-owned column list — when omitted (both existing
+     *  mounts) the editor drives the statsPrefs store's overlayColumns
+     *  itself. The third mount (the settings' aim-crosshair panel block)
+     *  passes the store's aimColumns + setAimColumns here instead, so the
+     *  exact same drag/edit surface serves both lists. */
+    columns: { type: Array as PropType<OverlayColumn[]>, default: undefined },
+    /** The list's cardinality cap (defaults to OVERLAY_COLUMN_LIMIT; the
+     *  aim panel passes its narrower AIM_COLUMN_LIMIT). */
+    limit: { type: Number, default: undefined },
+    /** When given, the add-menu's scope group offers ONLY these scopes
+     *  (the aim panel is global-only today). Undefined = every scope. */
+    allowedScopes: { type: Array as PropType<OverlayColumnScope[]>, default: undefined },
+    /** The commit path for an externally-owned list — every mutation
+     *  (reorder / remove / add) funnels through here, exactly once per
+     *  gesture (the drag commits at pointerup only). Ignored (the store
+     *  writes instead) when `columns` is omitted. */
+    onChange: {
+      type: Function as PropType<(cols: OverlayColumn[]) => void>,
+      default: undefined,
+    },
+  },
+  setup(props) {
     const prefs = useStatsPrefsStore();
-    const columns = computed(() => prefs.prefs.overlayColumns);
+    // The list under edit: the caller's when props.columns is given, the
+    // store's overlayColumns otherwise — identical either way downstream.
+    const columns = computed(() => props.columns ?? prefs.prefs.overlayColumns);
+    const limit = computed(() => props.limit ?? OVERLAY_COLUMN_LIMIT);
+    /** The one commit path — the store for the legacy mounts, the
+     *  caller's callback for an externally-owned list. */
+    function commit(next: OverlayColumn[]) {
+      if (props.columns != null) {
+        props.onChange?.(next);
+      } else {
+        prefs.setOverlayColumns(next);
+      }
+    }
+    /** The add-menu's scope options — the settings' canonical order,
+     *  filtered down to allowedScopes when the mount restricts them;
+     *  built at RENDER time so the labels follow the loaded locale. */
+    const scopeTabs = () =>
+      (Object.keys(SCOPE_KEY) as OverlayColumnScope[])
+        .filter((key) => !props.allowedScopes || props.allowedScopes.includes(key))
+        .map((key) => ({ key, label: t(SCOPE_KEY[key]) }));
 
     // ── Cards row: hikari's list-drag contract, horizontal ──────────────
     const cardEls = ref<(HTMLElement | null)[]>([]);
@@ -242,7 +279,7 @@ export default defineComponent({
         const next = [...columns.value];
         const [moved] = next.splice(s.fromIndex, 1);
         next.splice(s.placeholderIndex, 0, moved);
-        prefs.setOverlayColumns(next);
+        commit(next);
       }
       armed = false;
       drag.value = null;
@@ -278,7 +315,7 @@ export default defineComponent({
     function removeAt(index: number) {
       const next = [...columns.value];
       next.splice(index, 1);
-      prefs.setOverlayColumns(next);
+      commit(next);
     }
 
     // ── Add menu ────────────────────────────────────────────────────────
@@ -290,7 +327,7 @@ export default defineComponent({
     const selScope = ref<OverlayColumnScope>("global");
     const selMetric = ref<OverlayColumnMetric>("winrate");
 
-    const atLimit = computed(() => columns.value.length >= OVERLAY_COLUMN_LIMIT);
+    const atLimit = computed(() => columns.value.length >= limit.value);
     const comboExists = computed(() =>
       columns.value.some(
         (c) => c.scope === selScope.value && c.metric === selMetric.value,
@@ -299,19 +336,24 @@ export default defineComponent({
     const canAdd = computed(() => !atLimit.value && !comboExists.value);
 
     /** Opening the menu lands on the first FREE combo (scope-major), so
-     *  the confirm button starts enabled whenever anything is addable. */
+     *  the confirm button starts enabled whenever anything is addable.
+     *  Both walks honor allowedScopes (an aim-panel mount never offers a
+     *  scope its list cannot carry); when EVERYTHING is taken the
+     *  fallback lands on the first allowed scope (the confirm button is
+     *  disabled there anyway — at the limit or a dup). */
     function firstFreeCombo(): {
       scope: OverlayColumnScope;
       metric: OverlayColumnMetric;
     } {
-      for (const s of scopeTabs()) {
+      const scopes = scopeTabs();
+      for (const s of scopes) {
         for (const m of metricTabs()) {
           if (!columns.value.some((c) => c.scope === s.key && c.metric === m.key)) {
             return { scope: s.key, metric: m.key };
           }
         }
       }
-      return { scope: "global", metric: "winrate" };
+      return { scope: scopes[0]?.key ?? "global", metric: "winrate" };
     }
     watch(addOpen, (open) => {
       if (open) {
@@ -323,10 +365,7 @@ export default defineComponent({
 
     function confirmAdd() {
       if (!canAdd.value) return;
-      prefs.setOverlayColumns([
-        ...columns.value,
-        { scope: selScope.value, metric: selMetric.value },
-      ]);
+      commit([...columns.value, { scope: selScope.value, metric: selMetric.value }]);
       addOpen.value = false;
       // The popover tears down its content on close; refocusing the plus
       // keeps keyboard users on the connector they just used.
@@ -383,7 +422,7 @@ export default defineComponent({
             <span class="overlay-columns__label">
               {t("settings.overlayContent.columnsLabel")}
               <span class="overlay-columns__count">
-                {columns.value.length}/{OVERLAY_COLUMN_LIMIT}
+                {columns.value.length}/{limit.value}
               </span>
             </span>
             <span
@@ -391,7 +430,7 @@ export default defineComponent({
               class="overlay-columns__add"
               data-hint={
                 atLimit.value
-                  ? t("settings.overlayContent.colLimitHint")
+                  ? t("settings.overlayContent.colLimitHint", { limit: limit.value })
                   : t("settings.overlayContent.colAdd")
               }
             >
@@ -447,7 +486,7 @@ export default defineComponent({
                 <div class="overlay-columns__menu-foot">
                   <span class="overlay-columns__menu-hint">
                     {atLimit.value
-                      ? t("settings.overlayContent.colLimitHint")
+                      ? t("settings.overlayContent.colLimitHint", { limit: limit.value })
                       : comboExists.value
                         ? t("settings.overlayContent.colDupHint")
                         : `${scopeLabel(selScope.value)} · ${metricLabel(selMetric.value)}`}

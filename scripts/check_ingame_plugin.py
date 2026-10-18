@@ -256,7 +256,8 @@ class FakeAvatarEntity(object):
     reference; None = an avatar that pairs with no ship entry."""
 
     def __init__(self, component_class, name, relation, alive=True,
-                 hp=24400.0, hp_max=24400.0, ship_slot=None, entity_id=0):
+                 hp=24400.0, hp_max=24400.0, ship_slot=None, entity_id=0,
+                 target_flags=None):
         # `.id` models the avatar ENTITY id — the id space the client's
         # sortedAlive collection items carry and the sticky walk map
         # latches (deliberately DIFFERENT from the roster record's
@@ -272,6 +273,13 @@ class FakeAvatarEntity(object):
         }
         self.components = {"avatar": avatar, "health": health,
                            "relation": relation_comp}
+        if target_flags is not None:
+            # The aim walk's component: `.flags` only, no `.reasons` — the
+            # duck-typed fallback distinguishes it from CanHit (which
+            # carries both) exactly this way.
+            target_comp = FakeComponent(flags=target_flags)
+            self._map[getattr(component_class, "target", "cc.target")] = target_comp
+            self.components["target"] = target_comp
 
     def __getitem__(self, key):
         return self._map[key]
@@ -352,6 +360,21 @@ class StubConstants(object):
         SELF = 0
         ALLY = 1
         ENEMY = 2
+
+    class UiComponents(object):
+        avatar = "cc.avatar"
+        health = "cc.health"
+        relation = "cc.relation"
+        target = "cc.target"
+
+
+class StubConstantsNoTargetCC(object):
+    """The WG-family shape with the `target` attribute withheld: UiComponents
+    resolves but carries no target class, so the aim walk must fall back to
+    duck-typing the raw components mapping (a client-side withholding, not
+    the Lesta whole-attribute raise)."""
+
+    PlayerRelation = StubConstants.PlayerRelation
 
     class UiComponents(object):
         avatar = "cc.avatar"
@@ -487,8 +510,8 @@ def crippled_builtins():
 
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
              raising_constants, fail_plain, ships, with_ship_names,
-             drift_records, failures, raw_collection=True):
-    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s"
+             drift_records, failures, raw_collection=True, aim_duck=False):
+    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s"
              % ("records" if encode_records else "projection",
                 "yes" if with_manifest else "missing",
                 "yes" if with_ui else "absent",
@@ -497,7 +520,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 ships,
                 "yes" if with_ship_names else "withheld",
                 "yes" if drift_records else "no",
-                "yes" if raw_collection else "missing"))
+                "yes" if raw_collection else "missing",
+                "yes" if aim_duck else "no"))
     utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle() if raw_collection else StubBattleNoRaw()
     events = StubEvents()
@@ -541,9 +565,20 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # disjoint from the roster record keys (100/200/300) and their
         # avatar_id fields, pinning the "walk id is authoritative" rule.
         entity_id = 7000 + slot
+        # The aim pass's planted target flags: Foe03 holds the MAIN-battery
+        # bits (1<<1|1<<2 = AP|HE) while Foe01 carries a NON-main lockable
+        # bit (1<<6) — the walk's main-battery preference must pick Foe03
+        # even though Foe01 walks first. Both match the frozen client mask
+        # (target.flags & LOCKABLE_WEAPONS, build 13357625 views).
+        target_flags = None
+        if name == "Foe03":
+            target_flags = (1 << 1) | (1 << 2)
+        elif name == "Foe01":
+            target_flags = 1 << 6
         dh_avatars.append(
             FakeAvatarEntity(cc, name=entity_name, relation=relation,
                              alive=True, entity_id=entity_id,
+                             target_flags=target_flags,
                              ship_slot=(FakeShipSlot(ship_id)
                                         if ship_id is not None else None)))
         avatar_by_name[name] = dh_avatars[-1]
@@ -568,7 +603,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         "callbacks": callbacks,
         "dataHub": StubDataHub(dh_avatars, dh_ships),
         "constants": (RaisingConstants() if raising_constants
-                      else StubConstants()),
+                      else (StubConstantsNoTargetCC() if aim_duck
+                            else StubConstants())),
     }
     # `ui` only in the explicit ui-present pass: Lesta's ModsAPI injects no
     # `ui` module (census 2026-10-08), and the harness must be at least as
@@ -610,10 +646,10 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # a reintroduced `except Exception:` raises NameError on Lesta's
         # whitelist and this pass catches it (the round-1 crash class).
         expected_cfg = ({"panel_fade_ticks": 7, "journal_limit": 123,
-                         "panel": 1, "barcode": 0}
+                         "panel": 1, "barcode": 0, "aim": 1, "aim_offset": 120}
                         if with_manifest else
                         {"panel_fade_ticks": 3, "journal_limit": 300,
-                         "panel": 1, "barcode": 0})
+                         "panel": 1, "barcode": 0, "aim": 1, "aim_offset": 120})
         if env.get("TOOL_CONFIG") != expected_cfg:
             failures.append("[%s] TOOL_CONFIG=%r, expected %r"
                             % (label, env.get("TOOL_CONFIG"), expected_cfg))
@@ -770,6 +806,17 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if tele.get("shipNames") != expected_localized:
             failures.append("[%s] telemetry shipNames mismatch: %r"
                             % (label, tele.get("shipNames")))
+        # The aim verdict (the target-flags walk): Foe03's main-battery bits
+        # beat Foe01's earlier-walked non-main lockable bit. The raising-cc
+        # (Lesta) passes stand the whole walk down — the field must still
+        # be present with the EMPTY verdict, never absent. The aim_duck
+        # pass proves the components-mapping fallback (no
+        # UiComponents.target) lands the same pick.
+        expected_aim = ({"name": "", "flags": 0} if raising_constants
+                        else {"name": "Foe03", "flags": 6})
+        if tele.get("aim") != expected_aim:
+            failures.append("[%s] telemetry aim=%r, expected %r"
+                            % (label, tele.get("aim"), expected_aim))
         # roster_raw.json carries the same sequence as its `order` array —
         # the Rust synthesizer preserves it instead of sorting (name, id).
         if raw.get("order") != expected_sequence:
@@ -983,6 +1030,114 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             if env_cfg.get("panel") != 1 or env_cfg.get("barcode") != 0:
                 failures.append("[%s] default mode flags flipped: %r"
                                 % (label, env_cfg))
+            # The crosshair aim panel's payload (aim_block): columns and
+            # stats are planted straight onto the probe here (the
+            # response.json application is exercised by the aim_duck pass
+            # below). Non-raising passes expect Foe03 + his localized ship
+            # name and the winrate/pr bands; a null column value renders
+            # the translucent dash. The raising (Lesta) passes expect the
+            # hidden shape.
+            if not raising_constants:
+                probe.aim_cols = [{"metric": "winrate", "label": "WR"},
+                                  {"metric": "pr", "label": "PR"}]
+                probe.stats["Foe03"] = {"name": "Foe03", "wr": 52.5,
+                                        "pr": 1234, "aim": [52.5, 1234]}
+            aim = probe.aim_block()
+            if raising_constants:
+                if aim.get("on") is not False or aim.get("name"):
+                    failures.append("[%s] aim panel must stay hidden without "
+                                    "the walk: %r" % (label, aim))
+            else:
+                if aim.get("on") is not True or aim.get("name") != "Foe03":
+                    failures.append("[%s] aim panel not on Foe03: %r"
+                                    % (label, aim))
+                expected_ship = SHIP_LOCALIZED["Foe03"] if with_ship_names else ""
+                if aim.get("ship") != expected_ship:
+                    failures.append("[%s] aim ship=%r, expected %r"
+                                    % (label, aim.get("ship"), expected_ship))
+                if aim.get("offset") != 120:
+                    failures.append("[%s] aim offset=%r (default 120)"
+                                    % (label, aim.get("offset")))
+                vals = aim.get("vals")
+                if not isinstance(vals, list) or len(vals) != 2:
+                    failures.append("[%s] aim vals=%r, expected 2 columns"
+                                    % (label, vals))
+                else:
+                    if vals[0].get("t") != "52.5%" or vals[0].get("c") != 0xFFFFEE66:
+                        failures.append("[%s] aim winrate cell=%r"
+                                        % (label, vals[0]))
+                    if vals[1].get("t") != "1234" or vals[1].get("c") != 0xFFFFEE66:
+                        failures.append("[%s] aim pr cell=%r"
+                                        % (label, vals[1]))
+            # The hide gates: an explicitly EMPTY column list (the user
+            # removed every card) and the wowsp.toml aim switch must both
+            # stand the panel down — and restore for the next assertion.
+            saved_cols = probe.aim_cols
+            probe.aim_cols = []
+            if probe.aim_block().get("on") is not False:
+                failures.append("[%s] empty aimCols must hide the panel"
+                                % label)
+            probe.aim_cols = saved_cols
+            saved_aim = env_cfg.get("aim", 1)
+            env_cfg["aim"] = 0
+            try:
+                if probe.aim_block().get("on") is not False:
+                    failures.append("[%s] aim=0 must hide the panel" % label)
+            finally:
+                env_cfg["aim"] = saved_aim
+            # The response.json application (aim_duck pass only): aimCols
+            # sanitize + the row's aligned `aim` values + the formatted
+            # panel. Unknown metrics drop; a null value renders '--'.
+            if aim_duck and not raising_constants:
+                payload = {"version": 1, "session": probe.session,
+                           "revision": (probe.revision or 0) + 5,
+                           "rows": [{"name": "Foe03", "wr": 52.5, "pr": 1234,
+                                     "state": "ok",
+                                     "bf": {"battles": 4321, "ishidden": False},
+                                     "aim": [52.5, 1234, None, 28500.0]}],
+                           "labels": {"wr": "WR", "pr": "PR",
+                                      "ally": "A", "enemy": "E"},
+                           "aimCols": [
+                               {"scope": "global", "metric": "winrate",
+                                "label": "胜率"},
+                               {"scope": "global", "metric": "pr",
+                                "label": "PR"},
+                               {"scope": "global", "metric": "bogus",
+                                "label": "X"},
+                               {"scope": "global", "metric": "battles",
+                                "label": "场次"},
+                               {"scope": "global", "metric": "damage",
+                                "label": "均伤"}]}
+                with open("response.json", "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False)
+                    fh.write("\n")
+                probe.read_response()
+                if probe.aim_cols != [{"metric": "winrate", "label": "胜率"},
+                                      {"metric": "pr", "label": "PR"},
+                                      {"metric": "battles", "label": "场次"},
+                                      {"metric": "damage", "label": "均伤"}]:
+                    failures.append("[%s] aimCols sanitize wrong: %r"
+                                    % (label, probe.aim_cols))
+                row = probe.stats.get("Foe03") or {}
+                if row.get("aim") != [52.5, 1234, None, 28500.0]:
+                    failures.append("[%s] response aim row wrong: %r"
+                                    % (label, row.get("aim")))
+                vals = probe.aim_block().get("vals")
+                texts = [v.get("t") for v in vals] if isinstance(vals, list) else None
+                if texts != ["52.5%", "1234", "--", "28500"]:
+                    failures.append("[%s] aim panel texts=%r" % (label, texts))
+                # A MALFORMED aimCols (not a list / overlong) is ignored,
+                # never collapsed into the explicit-empty hide gate.
+                saved_cols = probe.aim_cols
+                payload["aimCols"] = "junk"
+                payload["revision"] += 1
+                with open("response.json", "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False)
+                    fh.write("\n")
+                probe.read_response()
+                if probe.aim_cols != saved_cols:
+                    failures.append("[%s] malformed aimCols mutated state: %r"
+                                    % (label, probe.aim_cols))
         if "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))
@@ -1061,6 +1216,14 @@ def main(argv):
     with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
         run_once(plugin_src, workdir, True, True, False, False, False,
                  "none", True, False, failures, raw_collection=False)
+    # The aim-duck pass: UiComponents resolves but carries no `target`
+    # attribute, so the aim walk must fall back to duck-typing the raw
+    # components mapping — same Foe03 pick, plus the response.json
+    # aimCols application (sanitize + aligned row values + formatted
+    # panel, null column renders '--').
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, False, False, False,
+                 "full", True, False, failures, aim_duck=True)
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
@@ -1068,7 +1231,7 @@ def main(argv):
             print(" - " + line)
         return 1
     print("SANDBOX CONFORMANCE: PASS (%d passes, %s, crippled builtins: %s)"
-          % (len(passes) + 1, os.path.basename(os.path.normpath(plugin)),
+          % (len(passes) + 2, os.path.basename(os.path.normpath(plugin)),
              ", ".join(SAFE_BUILTINS)))
     return 0
 
