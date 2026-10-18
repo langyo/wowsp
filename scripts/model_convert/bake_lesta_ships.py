@@ -245,20 +245,24 @@ def gun_hp_entities(entry: dict, entity_by_id: dict) -> dict[str, dict]:
 
 def ship_mount_blocks(blk_digest: list[dict], spec: dict) -> list[dict]:
     """This ship's node blocks out of the global digest. A block matches
-    when its main-turret names are a subset of the ship's GameParams
-    mains, every boxed main agrees with the ship's splash gk boxes to
-    0.02 (the strong signal — wrong-family blocks differ by ≥0.1), and
-    its gun names overlap the ship's set by a majority. Sister hulls
+    when it carries main turrets, every main that has a splash box
+    agrees with the ship's gk boxes (dy 0.05 / dz 0.04 — the strong
+    signal, wrong-family blocks differ by >=0.1; unboxed extra mains are
+    revision drift and filter out at mount time), and its gun names
+    overlap the ship's set by 90%. Sister hulls
     with identical turret geometry may share a block — harmless, their
     mount layouts coincide and twin mounts dedupe by proximity in
     collect_mounts."""
     def compatible(names: set, mounts: dict) -> bool:
         mains_c = {n for n in names if MAIN_HP_RE.match(n)}
-        if not mains_c or not mains_c <= spec["main_names"]:
+        if not mains_c:
             return False
         # Positional evidence is mandatory: at least one main must have a
         # splash box to anchor the block (ships whose mains lack boxes
-        # would otherwise accept every same-nation block).
+        # would otherwise accept every same-nation block). Extra mains
+        # WITHOUT boxes are allowed — visual-revision drift (a removed or
+        # renumbered turret) — and are filtered out at mount time since
+        # they carry no GameParams entity; boxed mains stay the gate.
         boxed = [n for n in mains_c if spec["agm_boxes"].get(n)]
         if not boxed:
             return False
@@ -271,7 +275,10 @@ def ship_mount_blocks(blk_digest: list[dict], spec: dict) -> list[dict]:
         for n in boxed:
             exp = spec["agm_boxes"][n]
             m = mounts[n]
-            if abs(m[13] - exp[0]) > 0.05 or abs(m[14] - exp[1]) > 0.02:
+            # dz 0.04: same-family blocks measured ≥0.1 apart, while
+            # revision drift between a ship's own visual and splash runs
+            # up to ~0.04 on some hulls (PASB520's anchors).
+            if abs(m[13] - exp[0]) > 0.05 or abs(m[14] - exp[1]) > 0.04:
                 return False
         return True
 
@@ -280,21 +287,23 @@ def ship_mount_blocks(blk_digest: list[dict], spec: dict) -> list[dict]:
     if not tight:
         return []
     # Parts with no main turrets (pure secondary/AA midship parts) carry
-    # no positional evidence of their own. Admit the ones whose names are
-    # entirely fresh (a ship's parts partition its HP names) and that are
-    # stored next to a tight block of this ship — a sister's pure-AA part
-    # sits next to the sister's tight parts, not ours.
+    # no positional evidence of their own. Admit the ones that bring at
+    # least one still-uncovered name and that are stored next to a tight
+    # block of this ship — a sister's pure-AA part sits next to the
+    # sister's tight parts, not ours. Names shared with admitted blocks
+    # are fine: collect_mounts keeps the tight block's position first and
+    # dedupes (or suffix-drops) the overlap.
     covered = set().union(*(set(b["mounts"]) for b in tight))
     anchor_offs = [b["off"] for b in tight]
     spare = [blk for blk in blk_digest
              if not any(MAIN_HP_RE.match(n) for n in blk["mounts"])
              and set(blk["mounts"]) <= spec["gp_names"]
-             and not set(blk["mounts"]) & covered]
+             and set(blk["mounts"]) - covered]
     spare.sort(key=lambda b: min(abs(b["off"] - o) for o in anchor_offs))
     for blk in spare:
         if min(abs(blk["off"] - o) for o in anchor_offs) > 1024 * 1024:
             break
-        if set(blk["mounts"]) & covered:
+        if not set(blk["mounts"]) - covered:
             continue
         tight.append(blk)
         covered |= set(blk["mounts"])
@@ -309,7 +318,8 @@ def collect_mounts(matched: list[dict], hull_bounds: tuple[list, list],
     block would plant mounts in the air or off-hull). Same-HP collisions
     from different blocks keep both, suffixed x2, x3…"""
     (hx0, hy0, hz0), (hx1, hy1, hz1) = hull_bounds
-    margin = 0.5
+    margin = 0.5   # x/y; z gets extra headroom below — AA sponsons on the
+    margin_z = 0.8  # extreme bow/stern sit past the splash-box extent
     out: dict[str, tuple[str, list[float]]] = {}
     dups = 0
     for blk in matched:
@@ -317,20 +327,25 @@ def collect_mounts(matched: list[dict], hull_bounds: tuple[list, list],
             x, y, z = m[12], m[13], m[14]
             if not (hx0 - margin <= x <= hx1 + margin
                     and hy0 - margin <= y <= hy1 + 2.5
-                    and hz0 - margin <= z <= hz1 + margin):
+                    and hz0 - margin_z <= z <= hz1 + margin_z):
+                dups += 1
+                continue
+            # A DIFFERENT-named mount at the same spot is a visual
+            # revision twin: the reworked block renames/re-models the gun
+            # (e.g. an open 25mm becoming a shielded triple at the same
+            # pivot) while GameParams lists both HP names. First-collected
+            # (tight blocks come before spares) wins.
+            if any(abs(hm[12] - x) <= 0.05 and abs(hm[13] - y) <= 0.05
+                   and abs(hm[14] - z) <= 0.05
+                   for _, hm in out.values()):
                 dups += 1
                 continue
             name = base
             sfx = 1
             while name in out:
-                hm = out[name][1]
-                if (abs(hm[12] - x) <= 0.05 and abs(hm[13] - y) <= 0.05
-                        and abs(hm[14] - z) <= 0.05):
-                    break  # twin copy of a mount already collected
                 sfx += 1
                 name = f"{base}x{sfx}"
-            else:
-                out[name] = (base, m)
+            out[name] = (base, m)
     if dups:
         print(f"[bake-lesta]   {idx}: {dups} mounts skipped (out of hull "
               f"bounds — attribution guard)", flush=True)
@@ -1002,6 +1017,12 @@ def main() -> int:
         n_main = n_sec = n_aa = 0
         mounted_hp: set[str] = set()
         anchor_boxes = {a["hp"]: a["box"] for a in anchors} if anchors else {}
+        mid_z = half_z = None
+        if boxes:
+            bow_sign = splash_bow_sign(boxes)
+            zs = [v for mn, mx in boxes.values() for v in (mn[2], mx[2])]
+            mid_z = -bow_sign * (min(zs) + max(zs)) / 2
+            half_z = (max(zs) - min(zs)) / 2
         for uniq in sorted(mounts):
             hp, m16 = mounts[uniq]
             ent = hp_ents[hp]
@@ -1023,8 +1044,25 @@ def main() -> int:
                 continue
             placed = raw_dir / f"{idx}__gun_{uniq}_placed.glb"
             try:
+                flip = muzzle_flip(lo)
+                if ent["cls"] == "main" and mid_z is not None and half_z:
+                    # Matrix-swap quirk guard: a few fictional ships carry
+                    # node blocks whose turret rotations are written
+                    # swapped (bow turret rot=180, stern rot=0). When the
+                    # composed barrel direction decisively contradicts
+                    # the mount's fore/aft position (the rule calibrated
+                    # 24/26 against WG's own exports), flip this mount.
+                    # The composed direction is ALWAYS -m16[10]: the Y-M
+                    # pre-rotation negates m10, exactly compensating a
+                    # +z-authored muzzle.
+                    d_z = -m16[10]
+                    mount_hull_z = -m16[14]
+                    if (abs(d_z) > 0.7
+                            and abs(mount_hull_z - mid_z) > 0.1 * half_z
+                            and (d_z > 0) != (mount_hull_z > mid_z)):
+                        flip = not flip
                 m_place = m16
-                if muzzle_flip(lo):
+                if flip:
                     # pre-rotate 180° about Y in gun-local space. Row-vector
                     # convention: p' = (p·Y)·M, so M' = Y·M — negate the
                     # matrix's row 0 and row 2, translation row untouched.
