@@ -296,9 +296,35 @@ entered the readable node-block store):
   as an alternative discriminator for their pure-AA blocks and FAILED
   calibration (wrong-family blocks score 1.0 near the centerline of any
   hull; a ship's own superstructure AA scores 0.6) — geometric context
-  does not separate revisions here. The path to full coverage is either
-  the SDK dump performed by the developer on their own client, or a
-  future crack of the recursive cell serialization.
+  does not separate revisions here. The path to full coverage is a
+  future crack of the recursive cell serialization (see the follow-up
+  below — the SDK dump turned out not to contain placements either).
+
+### Phase 7b: the ModsSDK dump obtained and closed as a placement source
+
+With proxy access restored, the community ModsSDK_26.10.0.zip (532 MB,
+167,563 files, 891 ship folders keyed by GameParams entity names minus
+the leading P) was pulled from the maintainer's Drive. Findings:
+
+- 93 of the 111 turret-anchored ships and 3 of the 7 no-block hulls
+  (Akagi `JSA508`, Tranalucator `ISB529`, Patagonia `VSB509`) have
+  source folders — but the dumped `.visual` files are MESH CONTAINERS
+  only: the ship-part visuals carry render-set nodes (`Bow_0001`-style
+  mesh names, `TL2_*` materials, `HP_flag_*` flag poles) and ZERO
+  weapon hardpoints. The client injects `HP_*G?_*` mounts from the
+  COMPILED visual layer at load time; the text source format never
+  contains them. This closes the SDK avenue definitively: no text
+  artifact in Lesta's ecosystem carries mount transforms.
+- The dump's `gun/*.visual` files are the gun models' own containers
+  (gun-local, no ship placement) — equivalent to what
+  `wowsunpack export-model` already produces.
+- Also in the Drive folder: `pfsunpack2.exe` (Lesta's newer official
+  pkg unpacker — not needed, `lesta_extract.py` + unoodle already
+  decode everything we consume) and `geometrypack.zip` (a repacker for
+  pushing mods back INTO the client — out of scope by §0).
+
+So the ONLY remaining path to the seven hulls' secondaries/AA is
+cracking blob2's recursive cell serialization (the phase-4 wall).
 - Related hardening that DID land: revision-twin mounts of the same
   class dedupe at per-axis 0.15 (two mounts of one class cannot share
   a pivot; the fleet-wide same-class pair histogram is empty 0.05-0.15
