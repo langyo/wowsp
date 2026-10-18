@@ -182,7 +182,9 @@
   },
   "decisions": {
     "toggle": "Suggestions de tir",
-    "demoModel": "Modèle de démo"
+    "demoModel": "Modèle de démo",
+    "portableUnavailable": "L'inférence IA est indisponible dans cette version. Installez la version complète pour utiliser les suggestions de tir.",
+    "portableBadge": "Version complète uniquement"
   },
   "labels": {
     "hide": "Masquer les étiquettes",

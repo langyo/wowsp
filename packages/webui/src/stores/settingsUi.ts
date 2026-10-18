@@ -16,6 +16,7 @@ export type SettingsSection =
   | "network"
   | "pairing"
   | "updates"
+  | "resources"
   | "installCleanup"
   | "changelog"
   | "overlay"
@@ -46,7 +47,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "general", sections: ["language", "appearance", "closeBehavior"] },
   { id: "game", sections: ["stats", "overlay", "overlayCalibration", "gamePath"] },
   { id: "connection", sections: ["account", "network", "pairing"] },
-  { id: "app", sections: ["updates", "installCleanup", "changelog"] },
+  { id: "app", sections: ["updates", "resources", "installCleanup", "changelog"] },
   { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
 ];
 

@@ -56,6 +56,28 @@ pub struct DecisionAiStatus {
     pub fixture_loaded: bool,
 }
 
+/// Installed `decisions` model-pack inventory (`<cache>/decisions`): the
+/// ONNX fire model plus one terrain-LOS raster per map subdirectory. The
+/// pack is installed out of band; the settings' resources page reads this
+/// to show what is on disk and to offer a clear.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionsPackStatus {
+    /// Whether the pack directory exists at all.
+    pub present: bool,
+    /// Absolute pack directory (shown in the settings row).
+    pub dir: String,
+    /// Recursive size of the pack directory.
+    pub size_bytes: u64,
+    /// Whether `fire_model.onnx` is installed.
+    pub model_present: bool,
+    /// Size of the installed model file (0 when absent).
+    pub model_bytes: u64,
+    /// Map short names that already have a `terrain_los.npz` raster,
+    /// sorted ascending.
+    pub los_maps: Vec<String>,
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Replay visibility probe (experiment E3)
 // ═══════════════════════════════════════════════════════════════════════

@@ -182,7 +182,9 @@
   },
   "decisions": {
     "toggle": "Sugerencias de tiro",
-    "demoModel": "Modelo de demo"
+    "demoModel": "Modelo de demo",
+    "portableUnavailable": "La inferencia de IA no está disponible en esta versión. Instala la versión completa para usar las sugerencias de disparo.",
+    "portableBadge": "Solo versión completa"
   },
   "labels": {
     "hide": "Ocultar etiquetas",

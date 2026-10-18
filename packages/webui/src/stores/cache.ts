@@ -1,5 +1,5 @@
 /**
- * Resource-pack + auxiliary-cache state for the Settings → updates panel.
+ * Resource-pack + auxiliary-cache state for the Settings → resources panel.
  * Owns the single pack's status/update snapshots, the in-flight pass
  * progress (fed by the unified `wowsp://download-progress` stream,
  * kind "res-pack") and the GitHub mirror
@@ -31,7 +31,7 @@ import { t } from "@/i18n";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { isMobileApp } from "@/utils/platform";
 
-/** The pack-pass progress projection the updates panel renders — the
+/** The pack-pass progress projection the resources panel renders — the
  *  store-side view of a `DownloadProgress` tick with kind "res-pack"
  *  (chain-patch segment counters come from the event's `detail`). */
 interface ResProgress {
@@ -70,7 +70,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
   let baselineReported = false;
 
   /** True when the manifest is known and the local hash differs — drives
-   *  the update banner in the updates section. */
+   *  the update banner in the resources section. */
   const anyUpdateAvailable = computed(() => update.value?.updateAvailable ?? false);
 
   /** True when the APK-bundled pack is the one serving (mobile; false on
@@ -236,7 +236,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
    * first boot of a NEW build when the manifest reports an outdated
    * pack). Same grammar as the updater's idle prompt: a hikari
    * blocking toast with 立即更新 / 稍后. 立即更新 opens Settings →
-   * updates (where the live progress bar lives) and starts the pass;
+   * resources (where the live progress bar lives) and starts the pass;
    * 稍后 just dismisses — the panel banner remains, and the next
    * post-update restart asks again.
    */
@@ -267,7 +267,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
     );
     promptPending = false;
     if (answered) {
-      useSettingsUiStore().show("updates");
+      useSettingsUiStore().show("resources");
       void download();
     }
   }

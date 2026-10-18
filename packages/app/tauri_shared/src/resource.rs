@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// The single resource pack's LOCAL state (Settings → updates panel).
+/// The single resource pack's LOCAL state (Settings → resources panel).
 /// Mirrored by `ResStatus` in the webui api client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,7 +45,7 @@ pub struct ResDeltaStep {
 }
 
 /// Remote resource-pack state after a `res-latest` manifest lookup
-/// (updates panel).
+/// (resources panel).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResUpdate {

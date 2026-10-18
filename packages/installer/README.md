@@ -10,7 +10,8 @@ TUI, headless lane, ten-locale license flow — against the WoWSP payload.
 
 ```
 shun.toml.template   ← the manifest (product, install, webview2, licenses, variants)
-licenses/            ← copyright notices + vendored SySL agreements (per locale)
+licenses/            ← copyright notices, vendored SySL agreements (per locale)
+                       and the Microsoft DirectML notice
 logo.webp            ← caption-bar logo source
 ```
 
@@ -25,10 +26,22 @@ and `WoWSP_<version>_x64-installer-webview2.exe`:
   machines; the egui degrade face warns and links Microsoft's official
   download page otherwise).
 
+Both installer payloads also carry `DirectML.dll` beside `wowsp.exe`. The
+default-on `ai` feature statically links ONNX Runtime, whose Windows
+prebuilt libraries always link DirectML even though WoWSP infers on the
+CPU; the DLL is a load-time import, so a machine without it (Win10 before
+1903, LTSC 2019, Server, trimmed images) dies before the app starts. It
+must ride **both** payloads because auto-updates always install the lite
+artifact and shun swaps the whole install directory.
+
 The build script also publishes `WoWSP_<version>_x64-portable.exe`: the
-single-exe 便捷版 — a dedicated `--features portable` compile of the app
-(no install step, no marker or file-name probing): data lands next to the
-exe, and the auto-updater and the 3D views stay disabled.
+single-exe 便捷版 — a dedicated `--no-default-features --features portable`
+compile of the app (no install step, no marker or file-name probing):
+data lands next to the exe, the auto-updater and the 3D views stay
+disabled, and the `ai` feature is compiled out entirely — the portable exe
+links neither ONNX Runtime nor DirectML, so it needs no extra runtime file.
+Its settings UI reports AI inference/scoring as unavailable and points at
+the full installer.
 
 The build script also publishes `WoWSP_<version>_x64-installer.exe` (no
 suffix) as a byte-identical copy of lite. The name is not a flavor — the

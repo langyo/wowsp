@@ -1303,7 +1303,7 @@ async def cmd_ensure_res_pack() -> str:
 @app.post("/api/res_cache_root")
 async def cmd_res_cache_root() -> str | None:
     # The real command probes `models/` under the cache dir; the mock ties
-    # the root to the same presence flag the updates panel shows.
+    # the root to the same presence flag the resources panel shows.
     if _MOCK_RES["present"]:
         return "C:/Users/mock/AppData/Local/WoWSP"
     return None

@@ -192,7 +192,7 @@ fn kit_is_current(local: Option<&str>, entry: &DatasetEntry) -> bool {
     local.is_some_and(|sha| sha.eq_ignore_ascii_case(&entry.sha256))
 }
 
-/// The cached kit's published-at version, for the Settings → updates
+/// The cached kit's published-at version, for the Settings → resources
 /// data-sources row — `None` when no downloadable copy is installed (the
 /// bundled asset is serving). Shows the version string verbatim (an ISO
 /// timestamp today).

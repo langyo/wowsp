@@ -6,7 +6,7 @@ import { RPC } from "@/rpc";
 
 // ── Resource pack (mirrors `wowsp_tauri_shared`, see commands/model_pack.rs)
 
-/** The single resource pack's LOCAL state (Settings → updates panel). */
+/** The single resource pack's LOCAL state (Settings → resources panel). */
 export interface ResStatus {
   present: boolean;
   /** Content tree hash the cache was installed from (last 6 chars shown). */
@@ -119,7 +119,7 @@ export const resPackApi = {
    *  never calls it (pure bookkeeping there). */
   resReportBundled: (treeSha256: string, version: string) =>
     transport.invoke<null>(RPC.res_report_bundled, { treeSha256, version }),
-  // ── Resource pack: updates panel ──
+  // ── Resource pack: resources panel ──
   /** Local state (presence, hash stamp, size, in-flight). */
   getResStatus: () => transport.invoke<ResStatus>(RPC.get_res_status),
   /** Remote manifest hash/timestamp + chain-patch path, if any. */

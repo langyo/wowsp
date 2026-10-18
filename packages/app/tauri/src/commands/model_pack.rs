@@ -13,7 +13,7 @@
 //! computed over the sorted per-file sha256 manifest of the tree, so
 //! republishing identical content keeps clients current and any change is
 //! detectable without trusting upload timestamps. The hash's LAST 6 hex
-//! chars are what the Settings → updates panel shows.
+//! chars are what the Settings → resources panel shows.
 //!
 //! Chain patches: every publish also uploads a `res-delta-<from>-<to>`
 //! release whose `wowsp-res-delta.tar.gz` carries the changed/added files
@@ -597,18 +597,21 @@ fn delta_chain(edges: &[DeltaEdge], local: &str, latest: &str) -> Vec<DeltaEdge>
 
 // ── Disk helpers ──────────────────────────────────────────────────────────
 
-/// Recursive directory size in bytes (0 when absent).
-fn dir_size(path: &Path) -> u64 {
+/// Recursive directory size in bytes (0 when absent). Symlinks/junctions are
+/// skipped so a cache entry can never walk outside its tree or loop.
+pub(crate) fn dir_size(path: &Path) -> u64 {
     let Ok(entries) = fs::read_dir(path) else {
         return 0;
     };
     let mut total = 0u64;
     for entry in entries.flatten() {
-        let Ok(meta) = entry.metadata() else { continue };
-        if meta.is_dir() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
             total += dir_size(&entry.path());
-        } else {
-            total += meta.len();
+        } else if file_type.is_file() {
+            total += entry.metadata().map(|meta| meta.len()).unwrap_or(0);
         }
     }
     total
@@ -1301,7 +1304,7 @@ async fn install_latest(
 ///
 /// Fast path when the cached hash matches the manifest. Hash-unknown
 /// states (legacy stamps, installer-shipped packs) count as PRESENT but
-/// are never silently re-pulled — the updates panel surfaces them. When no
+/// are never silently re-pulled — the resources panel surfaces them. When no
 /// manifest is reachable, whatever is on disk still serves (offline
 /// machines fall back to the installer-shipped pack).
 async fn ensure_pack() -> anyhow::Result<String> {

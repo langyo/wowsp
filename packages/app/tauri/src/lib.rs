@@ -478,6 +478,9 @@ pub fn run() {
             // Debug-build git identity stamp for the title bar's version
             // subtitle ("" in release builds).
             commands::get_build_identity,
+            // Compile-time capabilities (AI feature + DirectML runtime
+            // probe) — the portable build answers `aiInference: false`.
+            commands::get_runtime_capabilities,
             paths::is_portable,
             // App-version one-time migrations (commands/app_migrations.rs):
             // the hifumi-ledger gate + the webui's delegated action reports.
@@ -716,9 +719,14 @@ pub fn run() {
             commands::update::update_download,
             #[cfg(windows)]
             commands::update::update_cancel,
+            #[cfg(feature = "ai")]
             commands::decision_ai::decision_ai_status,
+            #[cfg(feature = "ai")]
             commands::decision_ai::decision_ai_suggest,
+            #[cfg(feature = "ai")]
             commands::decision_serve::decision_fire_suggestions,
+            commands::decision_pack::decisions_pack_status,
+            commands::decision_pack::clear_decisions_pack,
             commands::decision_tick::decision_scale_calibration,
             commands::decision_tick::decision_tick_state,
             commands::replay_probe::replay_visibility_probe,

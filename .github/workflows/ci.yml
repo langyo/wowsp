@@ -135,6 +135,22 @@ jobs:
         run: python scripts/check_anyhow.py
       - name: Check
         run: cargo check -p wowsp_tauri
+      - name: Check (portable, AI stripped)
+        # The release portable artifact compiles with
+        # `--no-default-features --features portable`: no ONNX Runtime and
+        # no DirectML load-time import. Keep that combination compiling
+        # between releases (the release workflow is the only other place
+        # that builds it), including the test targets, and assert the
+        # dependency graph carries no `ort` (which is what pulls DirectML
+        # into the link).
+        shell: bash
+        run: |
+          cargo check -p wowsp_tauri --no-default-features --features portable --tests
+          cargo tree -p wowsp_tauri --no-default-features --features portable -e normal --prefix none > target/portable-deps.txt
+          if grep -qE '^(ort|ort-sys) v' target/portable-deps.txt; then
+            echo "::error::the portable build unexpectedly depends on ort"
+            exit 1
+          fi
       - name: Test (workspace)
         # Full workspace, not just the app crate: the vendored
         # wowsunpack/wows-core members ride along (their test count

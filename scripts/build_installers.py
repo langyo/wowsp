@@ -95,6 +95,15 @@ DEFAULT_SHUN_REPO = REPO.parent / "shun"
 MODELS_CACHE = TARGET / "model-pack"
 RES_ARCHIVE = "wowsp-res.tar.gz"
 RES_MANIFEST = "wowsp-res.json"
+# The DirectML redistributable the full (AI) exe statically imports; staged
+# beside wowsp.exe by stage_directml for both installer payloads.
+DIRECTML_DLL = "DirectML.dll"
+DIRECTML_MIN_BYTES = 1_000_000
+# Written by build_app() so --skip-app-build can tell a plain (AI) build
+# from the portable flavor's AI-stripped compile, which overwrites the same
+# target/release/wowsp.exe path.
+BUILD_STAMP = TARGET / ".wowsp-build-flavor"
+PE_MACHINE_X64 = 0x8664
 IMAGES_ARCHIVE = "wowsp-images.tar.gz"
 RES_RELEASE_API = "repos/langyo/wowsp/releases/tags/res-latest"
 RES_RELEASE_DL = (
@@ -369,17 +378,32 @@ def build_webui() -> None:
 def build_app(portable: bool = False) -> Path:
     """Compile the app binary (the webui dist is embedded by the Rust build,
     so build_webui() must have run first). ``portable=True`` is the 便捷版
-    compile: ``--features portable`` bakes the mode into the binary (see
-    paths.rs) instead of leaving it to the runtime marker probe."""
+    compile: ``--no-default-features --features portable`` bakes the mode
+    into the binary (see paths.rs) instead of leaving it to the runtime
+    marker probe, and strips the default-on ``ai`` feature so the binary
+    links neither ONNX Runtime nor its DirectML load-time dependency
+    (the portable artifact carries no installer payload to ship the DLL)."""
     if portable:
-        print("[app] building wowsp_tauri (release, portable feature) …")
-        run(["cargo", "build", "-p", "wowsp_tauri", "--release", "--features", "portable"])
+        print("[app] building wowsp_tauri (release, portable, AI stripped) …")
+        run([
+            "cargo",
+            "build",
+            "-p",
+            "wowsp_tauri",
+            "--release",
+            "--no-default-features",
+            "--features",
+            "portable",
+        ])
     else:
         print("[app] building wowsp_tauri (release) …")
         run(["cargo", "build", "-p", "wowsp_tauri", "--release"])
     exe = TARGET / "wowsp.exe"
     if not exe.is_file():
         sys.exit(f"application binary missing: {exe}")
+    BUILD_STAMP.write_text(
+        "portable" if portable else "full", encoding="utf-8", newline=""
+    )
     return exe
 
 
@@ -430,6 +454,8 @@ def stage_documents(stage: Path, version: str) -> None:
     licenses.mkdir(parents=True, exist_ok=True)
     for src in sorted((INSTALLER / "licenses").glob("copyright-*.txt")):
         shutil.copy2(src, licenses / src.name)
+    # The Microsoft DirectML redistributable shipped beside the app exe.
+    shutil.copy2(INSTALLER / "licenses" / "directml.txt", licenses / "directml.txt")
 
     fetch_sysl_agreements(stage)
 
@@ -449,11 +475,59 @@ def stage_payload(stage: Path, app_exe: Path, variant: str) -> Path:
     shutil.rmtree(payload, ignore_errors=True)
     payload.mkdir(parents=True)
     shutil.copy2(app_exe, payload / app_exe.name)
+    # The full (AI) exe statically imports DirectML.dll. Carry the runtime
+    # beside it in BOTH installer payloads: auto-updates always install the
+    # lite artifact, and shun swaps the whole install directory, so a
+    # webview2-only copy would vanish on the first update.
+    stage_directml(payload)
     # Diagnostic flavor marker beside the app (the updater picks -lite
     # regardless — this is the wizard's identity line + older builds).
     (payload / "wowsp-flavor.txt").write_text(variant, encoding="utf-8", newline="")
     print(f"[stage] payload-{variant}: {payload} ({app_exe.name})")
     return payload
+
+
+def pe_machine(path: Path) -> int:
+    """Return the PE COFF machine type, or 0 when the file is not a PE image."""
+    with path.open("rb") as handle:
+        header = handle.read(0x40)
+        if len(header) < 0x40 or header[:2] != b"MZ":
+            return 0
+        pe_offset = int.from_bytes(header[0x3C:0x40], "little")
+        handle.seek(pe_offset)
+        if handle.read(4) != b"PE\0\0":
+            return 0
+        machine = handle.read(2)
+        return int.from_bytes(machine, "little") if len(machine) == 2 else 0
+
+
+def stage_directml(payload: Path) -> None:
+    """Copy the DirectML runtime that ort-sys deposits beside the app exe.
+
+    The pyke ONNX Runtime static libraries always link DirectML on Windows,
+    so the full (AI) `wowsp.exe` has a static import of `DirectML.dll` even
+    though inference itself is CPU-only. Windows only ships that DLL from
+    10 1903 onward, and the 1903 inbox build predates `DMLCreateDevice1`
+    (DirectML 1.1.0) — carrying the redistributable next to the exe is what
+    makes the installed app start on 1809/LTSC/server and trimmed systems.
+    The portable flavor compiles `ai` out entirely and never reaches here.
+    """
+    src = TARGET / DIRECTML_DLL
+    if not src.is_file():
+        sys.exit(
+            f"DirectML runtime missing: {src}\n"
+            "The plain (AI) app build must run before the installer payloads; "
+            "rebuild without --skip-app-build (or stage DirectML.dll first)."
+        )
+    size = src.stat().st_size
+    machine = pe_machine(src)
+    if size < DIRECTML_MIN_BYTES or machine != PE_MACHINE_X64:
+        sys.exit(
+            f"DirectML runtime looks wrong: {src} "
+            f"({size:,} bytes, PE machine 0x{machine:04x}; expected x64 0x8664)"
+        )
+    shutil.copy2(src, payload / DIRECTML_DLL)
+    print(f"[stage] DirectML runtime: {payload / DIRECTML_DLL} ({size:,} bytes)")
 
 
 def stage_res(payload: Path, tree: str, version: str) -> None:
@@ -565,7 +639,7 @@ def build_variant(
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--skip-app-build", action="store_true", help="reuse target/release/wowsp.exe for the installer flavors; the portable flavor always compiles its own feature build, which OVERWRITES that path — rebuild without --flavors portable before a later --skip-app-build run")
+    ap.add_argument("--skip-app-build", action="store_true", help="reuse target/release/wowsp.exe for the installer flavors (requires the plain AI build stamp written by a previous non-portable run); the portable flavor always compiles its own feature build, which OVERWRITES that path — rebuild without --flavors portable before a later --skip-app-build run")
     ap.add_argument(
         "--models",
         choices=("auto", "fetch"),
@@ -591,7 +665,8 @@ def main() -> int:
         help="comma list of artifacts to build: webview2, lite, portable "
         "(the webview2 flavor carries the model pack and the WebView2 "
         "runtime; lite downloads the pack on demand; portable is the "
-        "single-exe 便捷版 — its own --features portable compile, no installer)",
+        "single-exe 便捷版 — its own --no-default-features --features "
+        "portable compile, no installer)",
     )
     ap.add_argument(
         "--shun-repo",
@@ -610,8 +685,9 @@ def main() -> int:
 
     version = app_version()
     # shun builds the installer flavors only — the portable flavor is its
-    # own `--features portable` compile of the app and needs no staging
-    # tree at all (so `--flavors portable` runs without a shun checkout).
+    # own `--no-default-features --features portable` compile of the app and
+    # needs no staging tree at all (so `--flavors portable` runs without a
+    # shun checkout).
     needs_shun = any(f in variants for f in ("webview2", "lite"))
     shun_repo = resolve_shun_repo(args.shun_repo) if needs_shun else None
 
@@ -634,6 +710,22 @@ def main() -> int:
         build_webui()
         if needs_shun:
             app_exe = build_app()
+
+    # The portable flavor overwrites target/release/wowsp.exe with an
+    # AI-stripped binary. Refuse to package that into an installer through
+    # the skip path: the DLL check alone cannot tell the two builds apart.
+    if args.skip_app_build and needs_shun:
+        flavor = (
+            BUILD_STAMP.read_text(encoding="utf-8").strip()
+            if BUILD_STAMP.is_file()
+            else None
+        )
+        if flavor != "full":
+            sys.exit(
+                "--skip-app-build needs the plain (AI) app build: "
+                f"{BUILD_STAMP} says {flavor or 'nothing'}. "
+                "Rebuild without --flavors portable first."
+            )
 
     # The res-latest stamp shipped beside the pack (empty when GitHub is
     # unreachable — the app then re-downloads as usual). Only the webview2
@@ -682,8 +774,9 @@ def main() -> int:
             shun_repo, STAGE, "webview2", f"WoWSP_{version}_x64-installer-webview2.exe"
         )
 
-    # The single-exe 便捷版: its own `--features portable` compile — the
-    # mode is baked into the binary (see paths.rs portable_mode), so the
+    # The single-exe 便捷版: its own `--no-default-features --features
+    # portable` compile — the mode is baked into the binary (see paths.rs
+    # portable_mode), so the
     # exe stays portable whatever its file name. The feature build lands
     # at the same target/release/wowsp.exe path, which is why this runs
     # AFTER the installer payloads have staged the plain binary above —

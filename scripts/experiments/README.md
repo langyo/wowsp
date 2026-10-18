@@ -41,9 +41,13 @@
 ### E1 · ONNX 推理运行时可静态编入桌面应用 ✅
 
 - `ort =2.0.0-rc.13`（精确 pin：rc 线 API 不稳）默认 `download-binaries` 静态链接：
-  测试 exe 的 PE 导入表**无 `onnxruntime.dll`**，核心运行时已编入（附带系统自带的
-  DirectML 依赖，Win10 1903+ 无需分发）。预编译件来自 pyke CDN（构建期下载，
-  ~341 MB 解压后留在本地缓存 `%LOCALAPPDATA%/ort.pyke.io`）。
+  测试 exe 的 PE 导入表**无 `onnxruntime.dll`**，核心运行时已编入，但 pyke 预编译件
+  在 Windows 上始终链接 DirectML，exe 因而**静态导入 `DirectML.dll`**（尽管推理只用
+  CPU）。DirectML 从 Win10 1903 才随系统提供，且 1903 自带版本缺 `DMLCreateDevice1`，
+  所以完整版安装包在两个 installer payload 里都随附 `DirectML.dll`；便捷版则通过
+  `--no-default-features --features portable` 完全剥离 `ai`，不链接 ORT/DirectML。
+  预编译件来自 pyke CDN（构建期下载，~341 MB 解压后留在本地缓存
+  `%LOCALAPPDATA%/ort.pyke.io`）。
 - 369 字节 fixture（单 MatMul，`[1,8]→[1,8]`）经 `include_bytes!` 内嵌，
   `OnceLock<Mutex<Session>>` 惰性加载（ORT Session 非 `Sync`），两个 Tauri
   command（`decision_ai_status` / `decision_ai_suggest`）+ 4 个单测全过。
