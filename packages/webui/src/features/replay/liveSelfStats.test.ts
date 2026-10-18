@@ -25,6 +25,7 @@ import { buildSelfStats, type BuildSelfStatsInput } from "./liveSelfStats";
 type TestStream = Pick<
   ReplayStream,
   | "trajectories"
+  | "recorderVehicleId"
   | "shotKills"
   | "damageStats"
   | "achievements"
@@ -384,5 +385,137 @@ describe("buildSelfStats", () => {
     // The attacker's hit near me rode no launch of theirs → other.
     const rec = m!.received.find((r) => r.entityId === 30);
     expect(rec!.comp).toEqual({ other: 4000 });
+  });
+
+  it("anchors the self trajectory on the recorder vehicle link when the arena join misses", () => {
+    // The 15.9.0 drift shape: the arena's isSelf entry exists (identity
+    // fields readable) but its entity slot misreads — no trajectory joins,
+    // and the drift also poisons shipParamsId. The recorder's own vehicle
+    // link must anchor the trajectory and the kind's shipId restores the
+    // ship identity.
+    const stream = baseStream();
+    stream.recorderVehicleId = 10;
+    stream.arenaPlayers = ARENA_PLAYERS.map((p) =>
+      p.isSelf ? { ...p, entityId: 9999, shipParamsId: 9999 } : p,
+    );
+    const m = build(stream);
+    expect(m).not.toBeNull();
+    expect(m!.selfEntityId).toBe(10);
+    expect(m!.selfPlayerId).toBe(77);
+    expect(m!.selfName).toBe("Me");
+    expect(m!.selfShipId).toBe(101);
+    // Both ledgers attribute as usual off the anchored trajectory.
+    expect(m!.dealt.find((r) => r.entityId === 20)!.damage).toBe(4000);
+    expect(m!.received.find((r) => r.entityId === 30)!.damage).toBe(4000);
+  });
+
+  it("settles mirror shipId picks with the recorder vehicle link", () => {
+    // Two entities share the relation-0 shipId (an enemy mirror pick, both
+    // listed in the roster): the unique-shipId join stands down, and the
+    // recorder link decides which trajectory is mine.
+    const mirror = traj(60, 101, { x: 4000, z: 0 }, [
+      { time: 0, value: 50000 },
+      { time: 10, value: 50000 },
+      { time: 11, value: 44000 },
+      { time: 30, value: 44000 },
+    ]);
+    const stream = baseStream();
+    stream.arenaPlayers = [];
+    stream.recorderVehicleId = 10;
+    stream.trajectories = [...stream.trajectories, mirror];
+    stream.shotKills = [
+      impact(11, 10, 905, 5),
+      impact(11, 10, 4005, 0), // my hit near the mirror hull
+      impact(15, 30, 10, 8),
+    ];
+    stream.achievements = [{ time: 5, playerId: 77, achievementId: 4293059504 }];
+    const roster: VehicleEntry[] = [
+      ...ROSTER,
+      { id: 200, name: "MirrorFoe", relation: 2, shipId: 101, shipName: "SelfShip" },
+    ];
+    const m = buildSelfStats({ stream, roster, dataLang: "en-US" });
+    expect(m).not.toBeNull();
+    expect(m!.selfEntityId).toBe(10);
+    // The recorder anchor settled the trajectory, but the roster fallback
+    // still owes the identity: name, player id (and with it my achievements).
+    expect(m!.selfPlayerId).toBe(77);
+    expect(m!.selfName).toBe("Me");
+    expect(m!.achievements.length).toBe(1);
+    // The mirror keeps its own attributed row (unjoined — the shipId join
+    // is ambiguous without an arena) and never masquerades as my hull.
+    const mirrorRow = m!.dealt.find((r) => r.entityId === 60);
+    expect(mirrorRow).toBeDefined();
+    expect(mirrorRow!.damage).toBe(6000);
+    expect(mirrorRow!.relation).toBeNull();
+    expect(m!.taken).toBe(4000);
+  });
+
+  it("re-stamps kill skulls through the name join when the results key another id space", () => {
+    // The 15.9.0 capture shape: the results' accountDBID keys are per-battle
+    // session ids, the arena/roster join carries account dbids — the id
+    // join never meets, and nicknames carry the kill attribution instead.
+    const stream = baseStream();
+    const mk = (name: string, id: number, team: number, shipId: number, killerId: number | null): unknown[] => {
+      const a: unknown[] = new Array(538).fill(0);
+      a[1] = name; a[6] = team; a[7] = shipId; a[9] = "asia";
+      a[15] = 40000; a[20] = 0; a[21] = false; a[32] = 0;
+      a[408] = killerId; a[426] = 1000;
+      return a;
+    };
+    stream.battleResults = JSON.stringify({
+      accountDBID: 2035526744,
+      playersPublicInfo: {
+        2035526744: mk("Me", 2035526744, 0, 101, null),
+        2023650727: mk("Victim", 2023650727, 1, 102, 2035526744),
+        2023363393: mk("Attacker", 2023363393, 1, 103, null),
+      },
+    });
+    // The server's own frag counter for Me agrees with the killer ids.
+    const payload = JSON.parse(stream.battleResults!) as {
+      playersPublicInfo: Record<string, unknown[]>;
+    };
+    payload.playersPublicInfo["2035526744"][32] = 1;
+    stream.battleResults = JSON.stringify(payload);
+    const m = build(stream);
+    // My kill of Victim re-stamps via NAME (her results id shares nothing
+    // with the arena's 88), and no duplicate row is appended.
+    const rows = m!.dealt.filter((r) => r.name === "Victim");
+    expect(rows.length).toBe(1);
+    expect(rows[0].killed).toBe(true);
+    expect(m!.frags).toBe(1);
+  });
+
+  it("merges BattleResults figures even without a self trajectory", () => {
+    // Every identity join missed but the battle settled: the early-exit
+    // model still carries the server's authoritative totals, my kills and
+    // my killer instead of an empty report.
+    const stream = baseStream();
+    stream.trajectories = [];
+    stream.shotKills = [];
+    stream.arenaPlayers = [];
+    stream.damageStats = [{ time: 3, weapon: 1, category: 0, count: 2, total: 800 }];
+    const mk = (name: string, team: number, shipId: number, damage: number, alive: boolean, frags: number, killerId: number | null): unknown[] => {
+      const a: unknown[] = new Array(538).fill(0);
+      a[1] = name; a[6] = team; a[7] = shipId; a[9] = "asia";
+      a[15] = 50000; a[20] = alive ? 20000 : 0; a[21] = alive; a[32] = frags;
+      a[408] = killerId; a[426] = damage;
+      return a;
+    };
+    stream.battleResults = JSON.stringify({
+      accountDBID: 77,
+      playersPublicInfo: {
+        77: mk("Me", 0, 101, 51938, false, 2, 55),
+        55: mk("Killer", 1, 103, 8000, true, 0, null),
+        88: mk("Victim", 1, 102, 2000, false, 0, 77),
+      },
+    });
+    const m = build(stream);
+    expect(m).not.toBeNull();
+    expect(m!.selfEntityId).toBeNull();
+    expect(m!.damage).toBe(51938);
+    expect(m!.frags).toBe(2);
+    expect(m!.sunk).toBe(true);
+    expect(m!.final!.killerName).toBe("Killer");
+    expect(m!.dealt.find((r) => r.name === "Victim")!.killed).toBe(true);
   });
 });

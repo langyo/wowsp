@@ -556,6 +556,13 @@ pub struct LiveSelfStream {
     /// Ship trajectories only (entity type 2), positions + HP timelines +
     /// death times — the hit-attribution substrate.
     pub trajectories: Vec<EntityTrajectory>,
+    /// Entity id of the recorder's own vehicle — the authoritative self
+    /// anchor for the personal report's identity join, carried over from
+    /// the full stream's `recorder_vehicle_id` (see `ReplayStream`): it
+    /// survives a version-drifted arena state and disambiguates mirror
+    /// shipId picks where the roster fallback cannot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recorder_vehicle_id: Option<i32>,
     /// Projectile kills (receiveShotKills) — the hit-level attribution key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shot_kills: Vec<ShotKillEvent>,
@@ -589,6 +596,7 @@ impl LiveSelfStream {
             .retain(|t| t.kind.as_ref().map(|k| k.entity_type) == Some(2));
         Self {
             trajectories: full.trajectories,
+            recorder_vehicle_id: full.recorder_vehicle_id,
             shot_kills: full.shot_kills,
             damage_stats: full.damage_stats,
             achievements: full.achievements,
