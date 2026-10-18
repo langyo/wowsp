@@ -205,3 +205,65 @@ starting from the unoodle-decoded `content/assets.bin` (223,841,548 B):
   against the byte layout at its live r2p address to find the
   new-format's field order, then walk NJ rec 27066 as the reworked-ship
   specimen.
+
+## Phase 6 (2026-10-18): CRACKED — the node trees are WG-shaped OOL blocks in blob1
+
+The decode that matters for the bakes is done. The new-format visual
+records' *headers* remain unlinked, but their **payload — the node
+trees with every hardpoint transform — sits in blob1 as plain WG-shaped
+OOL array blocks**, findable by structure scan with no header needed:
+
+- **Block layout** (one per ship PART visual, i.e. Bow / MidFront /
+  MidBack / Stern): `[name_map_name_ids u32×N][name_map_node_ids
+  u16×N][name_ids u32×N][matrices 16×f32×N][parent_ids u16×N]` — byte
+  for byte the WG `VisualNodes` OOL layout. Matrices are ROW-major
+  (translation in the last row, elements 12–14) where WG's were
+  column-major; parents carry the 0xFFFF root sentinel.
+- **Where**: blob1's out-of-line zone, roughly offsets 59.7M–68.3M of
+  78.3M. A structural scan (walk `Scene Root`-anchored u32 runs that
+  resolve as strings, then validate the map/matrices/parents layout)
+  finds **4,534 blocks**, 105 of which contain `HP_AGM_*` main-turret
+  nodes — matching the 111 turret-anchored Lesta-only ships (some ships
+  share hulls/twins).
+- **Frame**: blocks are in the SHIP-GLOBAL SPLASH frame (+z = bow, the
+  mirrored one). New Jersey's bow block has `HP_AGM_1 = (0, 0.349,
+  +4.065)` and `HP_AGM_2 = (0, 0.536, +2.608)` — the splash `gk_1_1` /
+  `gk_2_1` box (center-x, **top-y**, center-z) to three decimals. The
+  splash-mount calibration in `bake_lesta_ships.py` is hereby confirmed
+  by the game's own visual layer.
+- **Everything is there**: NJ's bow block (312 nodes) carries 32
+  `HP_AGA_*` AA mounts + 6 `HP_AGS_*` secondaries; the stern block (295
+  nodes) carries 35 + 4 more, plus `HP_AGM_3 = (0, 0.406, −4.451)`.
+  Combined `AGS_1..10` and `AGA_1..67` match the GameParams
+  `A_ATBA`/`A_AirDefense` HP name sets EXACTLY — that name-set equality
+  is the attribution signature (see below).
+- **Rotation is real**: side mounts carry ±90° yaw matrices (row-major
+  `[[0,0,1],[0,1,0],[-1,0,0]]`), verified mirror-consistent against the
+  WG client's own export of the same hull's mounts; translations agree
+  within the two clients' ship-revision differences (~0.1).
+- **Attribution without headers**: nothing in the file references a
+  block by offset (u32/u64/relptr searches all come up empty — the
+  formal record→block linkage is still unknown), but attribution by
+  content is exact: (a) a block's `HP_AGM_N` (y, z) must equal the
+  ship's splash `gk_N` box (top-y, center-z), and (b) the union of a
+  ship's blocks' HP names must equal the GameParams HP name set.
+  Sister ships with identical turret signatures (Iowa-class sterns)
+  disambiguate via (b) — their AA/secondary name sets differ.
+- **Bogus lead eliminated**: the tag-0x08 r2p values read as full-u32
+  byte offsets into blob2 land on scenery tiles (`LNT035_*` nature
+  geometry) — that addressing is a coincidence, not a linkage. The
+  0x40-stride AABB "cells" near those addresses and the 0x50-stride
+  render-set bundles (with `TL2_SHIPMAT_*` strings and `.mfm` path
+  selfIds resolving cleanly) elsewhere in blob2 are real structures but
+  unrelated to ship node trees.
+- **Bake integration path** (next PR): parse assets.bin once per bake
+  run → attribute part blocks per ship as above → for every GameParams
+  HP gun entity (`A_Artillery`/`A_ATBA`/`A_AirDefense`), export the gun
+  geometry and place it with the block's full matrix (rotation finally
+  becomes per-mount exact, replacing the positional bow/stern yaw
+  inference for mains too — the AGM nodes carry true facing).
+  `place_gun_glb` needs a general 4×4 path (it currently only does the
+  180° yaw flip); sub-mounts (`HP_AGM_2_HP_AGA_4` — AA riding turret
+  tops) ride the parent chain via the block's parent_ids.
+  `scripts/extract/lesta_assetsbin_probe.py --node-blocks` now
+  implements the scan.
