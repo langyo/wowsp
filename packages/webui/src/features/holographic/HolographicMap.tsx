@@ -6,6 +6,7 @@ import { useBreakpoint } from "@celestia-island/hikari";
 
 import { useThreeScene } from "./useThreeScene";
 import { useTheme } from "@/theme";
+import { useCapabilitiesStore } from "@/stores/capabilities";
 import {
   shipModelStem,
   shipSilhouetteUrl,
@@ -515,12 +516,29 @@ export default defineComponent({
      *  the last call — the model reads coarse tactical state, finer refresh
      *  would re-run full replay decode IPC for visually identical output. */
     const DECISION_REFETCH_S = 2;
+    /** Compile-time AI availability (false in the portable flavor, which
+     *  links no ONNX Runtime at all). */
+    const capabilities = useCapabilitiesStore();
+    void capabilities.load();
+    watch(
+      () => capabilities.aiInference,
+      (available) => {
+        if (available) return;
+        // The probe can land after the layer was toggled on: disarm it and
+        // drop anything a previous (full-build) session left behind.
+        decisionsOn.value = false;
+        decisionReport.value = null;
+        decisionsLastFetchT = -Infinity;
+        decisionsSeq++;
+      },
+      { immediate: true },
+    );
 
     /** Fetch suggestions for the current playhead, throttled. Failures are
      *  silent by design: no replay open, older shell without the command or
      *  a decode error simply leaves the layer blank (never a console throw). */
     function maybeFetchDecisions(): void {
-      if (!decisionsOn.value || !props.replayPath) return;
+      if (!capabilities.aiInference || !decisionsOn.value || !props.replayPath) return;
       const t = current.value;
       if (Math.abs(t - decisionsLastFetchT) < DECISION_REFETCH_S) return;
       decisionsLastFetchT = t;
@@ -1835,20 +1853,35 @@ export default defineComponent({
                     <PenLine size={13} />
                   </HkIconButton>
                 </HkTooltip>
-                <HkTooltip text={i18nT("replay.decisions.toggle")} placement="bottom">
-                  <HkIconButton
-                    size={24}
-                    variant={decisionsOn.value ? "primary" : "ghost"}
-                    onClick={() => {
-                      decisionsOn.value = !decisionsOn.value;
-                      if (decisionsOn.value) {
-                        resetDecisionLayer();
-                        maybeFetchDecisions();
-                      }
-                    }}
-                  >
-                    <Crosshair size={13} />
-                  </HkIconButton>
+                <HkTooltip
+                  text={
+                    !capabilities.loaded
+                      ? i18nT("settings.resourcesAiChecking")
+                      : capabilities.aiInference
+                        ? i18nT("replay.decisions.toggle")
+                        : i18nT("replay.decisions.portableUnavailable")
+                  }
+                  placement="bottom"
+                >
+                  {/* The span keeps the tooltip hoverable when the button is
+                      disabled (the portable build has no AI runtime). */}
+                  <span>
+                    <HkIconButton
+                      size={24}
+                      variant={decisionsOn.value ? "primary" : "ghost"}
+                      disabled={!capabilities.aiInference}
+                      onClick={() => {
+                        if (!capabilities.aiInference) return;
+                        decisionsOn.value = !decisionsOn.value;
+                        if (decisionsOn.value) {
+                          resetDecisionLayer();
+                          maybeFetchDecisions();
+                        }
+                      }}
+                    >
+                      <Crosshair size={13} />
+                    </HkIconButton>
+                  </span>
                 </HkTooltip>
               </span>
               <HkTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
@@ -1856,6 +1889,11 @@ export default defineComponent({
                   <RotateCw size={13} />
                 </HkIconButton>
               </HkTooltip>
+              {capabilities.loaded && !capabilities.aiInference ? (
+                <span class="holo-map__mmzoom-badge">
+                  {i18nT("replay.decisions.portableBadge")}
+                </span>
+              ) : null}
               {/* Fixture-model badge: the numbers are placeholder demos, not
                   trained-model output — keep it visible while the layer is
                   on and served by the embedded fixture. */}

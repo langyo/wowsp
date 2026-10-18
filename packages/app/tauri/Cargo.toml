@@ -79,8 +79,11 @@ pickled.workspace = true
 # Image handling for capture analysis
 image = { workspace = true, features = ["tga", "jpeg", "dds", "bmp"] }
 
-# ONNX Runtime inference for the built-in decision model (experiment E1)
-ort.workspace = true
+# ONNX Runtime inference for the built-in decision model (experiment E1).
+# Optional: the default-on `ai` feature is what links it, so the portable
+# single-exe flavor can drop the whole runtime (and its DirectML load-time
+# dependency) with `--no-default-features --features portable`.
+ort = { workspace = true, optional = true }
 
 # Encoding
 base64.workspace = true
@@ -179,14 +182,20 @@ shun = { version = "^0.6", default-features = false, features = ["online"] }
 
 [features]
 # This feature is required by `cargo tauri build` and is injected by default.
-default = ["custom-protocol"]
+default = ["custom-protocol", "ai"]
 custom-protocol = ["tauri/custom-protocol"]
+# Built-in ONNX decision-model inference. Default-on for the installer
+# builds; the portable flavor compiles with
+# `--no-default-features --features portable`, so neither `ort` nor its
+# DirectML load-time dependency reaches that binary.
+ai = ["dep:ort"]
 # The single-exe 便捷版 flavor compiles portable mode IN (data next to the
 # exe, auto-updater off, 3D views replaced by an install hint — see
 # src/paths.rs). Installer builds leave it off and probe the `.portable`
 # marker file at runtime instead; build_installers.py passes it only for
-# the `portable` flavor's dedicated compile.
-portable = []
+# the `portable` flavor's dedicated compile. It implies custom-protocol
+# because that compile is a release build.
+portable = ["custom-protocol"]
 # Dev-only test control server. NEVER enable in release builds. Gates a
 # localhost HTTP listener (see src/test_harness.rs) that lets external Python
 # scripts drive eval_js + capture_main_window for visual regression testing.

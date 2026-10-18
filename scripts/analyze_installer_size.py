@@ -5,8 +5,9 @@ WoWSP publishes four Windows artifacts per release (assembled by
 scripts/build_installers.py — this script is that one's read-only
 companion):
 
-    WoWSP_<v>_x64-portable.exe            bare ``--features portable``
-                                          compile, no installer shell
+    WoWSP_<v>_x64-portable.exe            bare ``--no-default-features
+                                          --features portable`` compile,
+                                          no installer shell
     WoWSP_<v>_x64-installer-lite.exe      shun shell around wowsp.exe
     WoWSP_<v>_x64-installer.exe           byte-identical alias of lite
     WoWSP_<v>_x64-installer-webview2.exe  shun shell around wowsp.exe +
@@ -88,9 +89,12 @@ RES_MANIFEST = "wowsp-res.json"
 
 # Staged payload extras (build_installers.py stage_payload/stage_res): the
 # flavor marker is exactly the variant string, the res stamp a two-field
-# JSON — rounded up so the byte arithmetic stays honest at MB scale.
-LITE_EXTRAS = len("lite")
-WEBVIEW2_EXTRAS = len("webview2") + 128
+# JSON — rounded up so the byte arithmetic stays honest at MB scale. Both
+# installer payloads also carry DirectML.dll (the AI build's load-time
+# dependency); this is the current 1.15.4 x64 redistributable size.
+DIRECTML_BYTES = 18_527_776
+LITE_EXTRAS = len("lite") + DIRECTML_BYTES
+WEBVIEW2_EXTRAS = len("webview2") + 128 + DIRECTML_BYTES
 
 
 def fmt_bytes(n: int) -> str:
@@ -441,9 +445,9 @@ def section_summary(
     pub_webview2, _ = _pub_asset(pub_s, "release", PUB_WEBVIEW2)
     pub_res_archive, res_tag = _pub_asset(pub_s, "res_latest", RES_ARCHIVE)
 
-    # ---- lite: wowsp.exe + wowsp-flavor.txt ------------------------------
+    # ---- lite: wowsp.exe + DirectML.dll + wowsp-flavor.txt ---------------
     lite: dict = {
-        "payload_recipe": "wowsp.exe + wowsp-flavor.txt (4 B)",
+        "payload_recipe": "wowsp.exe + DirectML.dll + wowsp-flavor.txt (4 B)",
         "exe_local": exe_local,
         "payload_local": exe_local + LITE_EXTRAS if exe_local is not None else None,
         "container_local": lite_local,
@@ -465,8 +469,8 @@ def section_summary(
     payload_wv = sum(ingredients) + WEBVIEW2_EXTRAS if None not in ingredients else None
     webview2: dict = {
         "payload_recipe": (
-            "wowsp.exe + flavor marker (8 B) + models/ unpacked + dogtags/ "
-            "+ webview2 runtime + res stamp (~128 B)"
+            "wowsp.exe + DirectML.dll + flavor marker (8 B) + models/ "
+            "unpacked + dogtags/ + webview2 runtime + res stamp (~128 B)"
         ),
         "exe_local": exe_local,
         "models_unpacked": models_total,

@@ -43,6 +43,18 @@ export interface DecisionSuggestionReport {
   suggestions: DecisionSuggestion[];
 }
 
+/** Installed `decisions` model-pack inventory. Mirrors
+ *  `wowsp_tauri_shared::DecisionsPackStatus`. */
+export interface DecisionsPackStatus {
+  present: boolean;
+  dir: string;
+  sizeBytes: number;
+  modelPresent: boolean;
+  modelBytes: number;
+  /** Map short names that carry a `terrain_los.npz` raster. */
+  losMaps: string[];
+}
+
 export const decisionApi = {
   /** Fire-decision suggestions for one replay instant. `losGridDir` is
    *  optional (defaults to the installed `decisions` pack's raster layout);
@@ -54,4 +66,10 @@ export const decisionApi = {
       timeSec,
       losGridDir: losGridDir ?? null,
     }),
+  /** Filesystem-only inventory of `<cache>/decisions` (no ORT session). */
+  decisionsPackStatus: () =>
+    transport.invoke<DecisionsPackStatus>(RPC.decisions_pack_status),
+  /** Remove the installed decisions pack (a loaded model stays in memory
+   *  until restart). */
+  clearDecisionsPack: () => transport.invoke<null>(RPC.clear_decisions_pack),
 };

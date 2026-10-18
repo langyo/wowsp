@@ -48,6 +48,19 @@ export interface NetworkConfig {
   effectiveProxy?: string | null;
 }
 
+/** Compile-time capabilities + the DirectML runtime probe. Mirrors
+ *  `wowsp_tauri_shared::RuntimeCapabilities`. `aiInference` cannot be
+ *  inferred from `portable`: a custom build may drop the `ai` cargo feature
+ *  while still being a normal installer build. */
+export interface RuntimeCapabilities {
+  aiInference: boolean;
+  portable: boolean;
+  /** Windows AI builds carry `DirectML.dll` beside the executable. */
+  directmlRequired: boolean;
+  directmlPresent: boolean;
+  directmlBytes: number | null;
+}
+
 /** One retained diagnostics-log file (`wowsp.<date>.log`, UTF-8 text).
  *  Mirrors `wowsp_tauri::commands::logs::LogFileInfo`. */
 export interface LogFileInfo {
@@ -74,6 +87,9 @@ export interface LogsOverview {
 
 export const shellApi = {
   getOsPreferences: () => transport.invoke<{ locale: string; colorScheme: string }>(RPC.get_os_preferences),
+  /** Compile-time feature probe used by the map/settings AI surfaces. */
+  getRuntimeCapabilities: () =>
+    transport.invoke<RuntimeCapabilities>(RPC.get_runtime_capabilities),
   appdataRead: (file: string) => transport.invoke<string | null>(RPC.appdata_read, { file }),
   appdataWrite: (file: string, content: string) => transport.invoke<null>(RPC.appdata_write, { file, content }),
   appdataDelete: (file: string) => transport.invoke<null>(RPC.appdata_delete, { file }),

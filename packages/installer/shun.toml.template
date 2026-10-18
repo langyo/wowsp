@@ -66,7 +66,7 @@ launch-after-install = "always"
 # uninstall, so the per-user install lives one Programs level deeper.
 default-dir = '%LOCALAPPDATA%\Programs\WoWSP'
 
-# ── Wizard license documents (three docs, ten locales) ────────────────────
+# ── Wizard license documents (four docs, ten locales) ─────────────────────
 # The agreement bodies are the vendored SySL translations (staged as
 # licenses/<locale>.txt; the build refreshes them from celestia-island/sysl
 # when the network allows), the copyright notices and telemetry pages are
@@ -144,6 +144,23 @@ fr = "telemetry/fr.md"
 es = "telemetry/es.md"
 de = "telemetry/en.md"
 pt = "telemetry/en.md"
+
+# The DirectML redistributable staged beside wowsp.exe by build_installers.py
+# (the full AI build statically imports it). One English body for every
+# locale; only the license-page title is localized.
+[[licenses]]
+title = "Microsoft DirectML License"
+path = "licenses/directml.txt"
+[licenses.title-locales]
+zh-Hans = "Microsoft DirectML 许可证"
+zh-Hant = "Microsoft DirectML 授權條款"
+ja = "Microsoft DirectML ライセンス"
+ko = "Microsoft DirectML 라이선스"
+ru = "Лицензия Microsoft DirectML"
+fr = "Licence Microsoft DirectML"
+es = "Licencia de Microsoft DirectML"
+de = "Microsoft DirectML-Lizenz"
+pt = "Licença do Microsoft DirectML"
 
 # ── Published artifacts ────────────────────────────────────────────────────
 # `--variant lite` / `--variant webview2` map onto these; the shipped

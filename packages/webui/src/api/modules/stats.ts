@@ -505,7 +505,7 @@ export const statsApi = {
   getExpectedPrTable: () => transport.invoke<ExpectedPrEntry[]>(RPC.get_expected_pr_table),
   getRankedStats: (accountId: number, realm: string, seasonCount?: number) =>
     transport.invoke<RankedSeasonStats[]>(RPC.get_ranked_stats, { accountId, realm, seasonCount }),
-  /** The data pack's installed version (Settings → updates data
+  /** The data pack's installed version (Settings → resources data
    *  sources row), or null while only the bundled asset serves. */
   dataPackInfo: () => transport.invoke<string | null>(RPC.data_pack_info),
   /** The runtime-downloaded consumable-kit JSON (the `data-latest`

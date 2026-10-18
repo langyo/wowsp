@@ -10,7 +10,7 @@ Game-engine style resource management, split from the app binary's own
     manifest asset. The tree hash is computed over the sorted per-file
     sha256 manifest of the staged tree (`models/` + `dogtags/`), so the
     same content always hashes the same regardless of upload timestamps —
-    and the app's Settings → updates panel shows its last 6 hex chars.
+    and the app's Settings → resources panel shows its last 6 hex chars.
 
 Each full publish ALSO uploads a chain patch: the release tagged
 `res-delta-<from-tree>-<to-tree>` carries a `wowsp-res-delta.tar.gz`

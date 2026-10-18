@@ -19,6 +19,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useSessionStore } from "@/stores/session";
 import { useUpdaterStore } from "@/stores/updater";
 import { useCacheStore } from "@/stores/cache";
+import { useCapabilitiesStore } from "@/stores/capabilities";
 import { useNavUiStore } from "@/stores/navUi";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
@@ -82,6 +83,10 @@ export default defineComponent({
     const toast = useToast();
     const updater = useUpdaterStore();
     const cacheStore = useCacheStore();
+    // Compile-time feature probe is shared by the map's AI layer and the
+    // settings' resources page; start it before either surface mounts.
+    const capabilities = useCapabilitiesStore();
+    void capabilities.load();
     const navUi = useNavUiStore();
     const settingsUi = useSettingsUiStore();
     const closeBehavior = useCloseBehaviorStore();
@@ -250,11 +255,11 @@ export default defineComponent({
       // (last-run version moved + manifest says outdated → blocking
       // toast, see offerUpdatePrompt). The pack auto-downloads ONLY when
       // entirely missing (lite install / wiped cache); an
-      // outdated-but-present pack is surfaced in Settings → updates
+      // outdated-but-present pack is surfaced in Settings → resources
       // instead of silently re-pulling. The phone app build skips the
       // updater entirely (update commands are unsupported there —
       // failures stay quiet); its pack ships INSIDE the APK, so it never
-      // downloads either — the updates panel is the only mobile download
+      // downloads either — the resources panel is the only mobile download
       // path.
       if (!import.meta.env.DEV) {
         void cacheStore.init();
@@ -317,13 +322,13 @@ export default defineComponent({
               return;
             }
             // Present (or status unavailable): refresh the remote manifest
-            // so the updates panel's banner is ready when it opens.
+            // so the resources panel's banner is ready when it opens.
             await cacheStore.refreshUpdates();
             // First boot after an app update (the installer's relaunch —
             // the last-run version moved): the pack stood down while the
             // update was pending, so ask for its catch-up now instead of
             // waiting for the user to find the panel. A normal boot (same
-            // version) stays silent — the updates-panel banner suffices;
+            // version) stays silent — the resources-panel banner suffices;
             // a first-ever boot has no previous version to compare.
             const currentVersion = await getVersion().catch(() => null);
             if (

@@ -182,7 +182,9 @@
   },
   "decisions": {
     "toggle": "開火建議",
-    "demoModel": "示範模型"
+    "demoModel": "示範模型",
+    "portableUnavailable": "此版本不包含 AI 推論。安裝完整版後即可使用開火建議。",
+    "portableBadge": "僅完整版"
   },
   "labels": {
     "hide": "隱藏標籤",

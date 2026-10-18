@@ -103,7 +103,7 @@ export function useSettingsUpdatesState() {
    *  pack must wait for it: app first, pack after the restart. */
   const appUpdatePending = computed(() => updater.available && !updater.portable);
 
-  // ── dynamic data sources (updates section) ──────────────────────────
+  // ── dynamic data sources (resources section) ──────────────────────────
   // The managed rows above the aux caches: the ship-data hot-update pack
   // (data-latest) and the mod-hub catalog. Both show a state stamp and
   // offer an explicit refresh; failures keep the previous stamp — a

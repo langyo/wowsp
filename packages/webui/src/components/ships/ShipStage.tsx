@@ -1934,7 +1934,7 @@ export default defineComponent({
         // download (lite installs — the installer's done pane offers the same
         // download up front). The phone build never reaches the download:
         // its pack ships in the APK and loads same-origin without wiring a
-        // cache root (Settings → updates is the only mobile download path).
+        // cache root (Settings → resources is the only mobile download path).
         if (!isModelPackReady() && !isMobileApp()) await ensurePackWired();
         if (!isModelPackReady() && !isMobileApp()) {
           if (modelPackDownloading.value) return;

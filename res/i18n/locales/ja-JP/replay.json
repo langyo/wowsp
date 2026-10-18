@@ -182,7 +182,9 @@
   },
   "decisions": {
     "toggle": "射撃提案",
-    "demoModel": "デモモデル"
+    "demoModel": "デモモデル",
+    "portableUnavailable": "このビルドでは AI 推論を利用できません。完全版をインストールすると射撃提案を使えます。",
+    "portableBadge": "完全版のみ"
   },
   "labels": {
     "hide": "ラベルを非表示",

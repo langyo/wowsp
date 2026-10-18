@@ -14,6 +14,7 @@ import AccountSection from "@/components/settings/sections/AccountSection";
 import NetworkSection from "@/components/settings/sections/NetworkSection";
 import PairingSection from "@/components/settings/sections/PairingSection";
 import UpdatesSection from "@/components/settings/sections/UpdatesSection";
+import ResourcesSection from "@/components/settings/sections/ResourcesSection";
 import InstallCleanupSection from "@/components/settings/sections/InstallCleanupSection";
 import ChangelogSection from "@/components/settings/ChangelogSection";
 import OverlaySection from "@/components/settings/sections/OverlaySection";
@@ -77,6 +78,7 @@ export default defineComponent({
           network: () => <NetworkSection ctx={ctx} />,
           pairing: () => <PairingSection ctx={ctx} />,
           updates: () => <UpdatesSection ctx={ctx} />,
+          resources: () => <ResourcesSection ctx={ctx} />,
           installCleanup: () => <InstallCleanupSection />,
           changelog: () => (
           <>

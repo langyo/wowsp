@@ -182,7 +182,9 @@
   },
   "decisions": {
     "toggle": "Fire suggestions",
-    "demoModel": "Demo model"
+    "demoModel": "Demo model",
+    "portableUnavailable": "AI inference is unavailable in this build. Install the full version to use suggestions.",
+    "portableBadge": "Full version only"
   },
   "labels": {
     "hide": "Hide labels",

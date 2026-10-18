@@ -13,6 +13,9 @@ export const RPC = {
   // version subtitle — "" in release builds.
   get_build_identity: "get_build_identity",
   is_portable: "is_portable",
+  // Compile-time capabilities (AI feature + DirectML runtime presence) —
+  // the portable single-exe build answers `aiInference: false`.
+  get_runtime_capabilities: "get_runtime_capabilities",
   app_migrations_pending: "app_migrations_pending",
   app_migration_completed: "app_migration_completed",
   quit_app: "quit_app",
@@ -222,6 +225,9 @@ export const RPC = {
   decision_fire_suggestions: "decision_fire_suggestions",
   decision_ai_status: "decision_ai_status",
   decision_ai_suggest: "decision_ai_suggest",
+  // Decisions model-pack inventory + clear (settings → resources page).
+  decisions_pack_status: "decisions_pack_status",
+  clear_decisions_pack: "clear_decisions_pack",
   decision_scale_calibration: "decision_scale_calibration",
   decision_tick_state: "decision_tick_state",
   replay_visibility_probe: "replay_visibility_probe",

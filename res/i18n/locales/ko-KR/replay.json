@@ -182,7 +182,9 @@
   },
   "decisions": {
     "toggle": "발포 제안",
-    "demoModel": "데모 모델"
+    "demoModel": "데모 모델",
+    "portableUnavailable": "이 빌드에서는 AI 추론을 사용할 수 없습니다. 전체 버전을 설치하면 사격 제안을 사용할 수 있습니다.",
+    "portableBadge": "전체 버전 전용"
   },
   "labels": {
     "hide": "라벨 숨기기",

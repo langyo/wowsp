@@ -10,7 +10,10 @@ pub mod arena_info;
 pub mod changelog;
 pub mod contribution;
 pub mod data_pack;
+#[cfg(feature = "ai")]
 pub mod decision_ai;
+pub mod decision_pack;
+#[cfg(feature = "ai")]
 pub mod decision_serve;
 pub mod decision_tick;
 pub mod download_hub;
@@ -200,6 +203,7 @@ pub mod wg_composition;
 pub mod wg_realm;
 
 use crate::os_prefs::OsPreferences;
+use wowsp_tauri_shared::RuntimeCapabilities;
 
 /// Sync convenience: hand the cached OS prefs (detected at startup) to the
 /// webui without an extra detect round-trip.
@@ -223,9 +227,53 @@ pub fn get_build_identity() -> &'static str {
     }
 }
 
+/// Runtime capability flags the webui probes once at startup. `ai` is a
+/// COMPILE-TIME feature (the portable single-exe build passes
+/// `--no-default-features --features portable`), so it cannot be inferred
+/// from `is_portable` alone: a custom build may also drop the AI feature.
+/// `directml_required` marks the Windows AI builds whose installer carries
+/// `DirectML.dll` beside the exe; `directml_present`/`directml_bytes` probe
+/// the file on every Windows build so a broken install is diagnosable
+/// instead of a loader dialog. Only a plausible PE image counts — a
+/// zero-byte or truncated file must not read as present.
+#[tauri::command]
+pub fn get_runtime_capabilities() -> RuntimeCapabilities {
+    let directml = probe_directml();
+    RuntimeCapabilities {
+        ai_inference: cfg!(feature = "ai"),
+        portable: crate::paths::portable_mode(),
+        directml_required: cfg!(all(windows, feature = "ai")),
+        directml_present: directml.is_some(),
+        directml_bytes: directml,
+    }
+}
+
+#[cfg(windows)]
+fn probe_directml() -> Option<u64> {
+    use std::io::Read;
+    // Keep the floor in sync with build_installers.py's stage_directml.
+    const MIN_BYTES: u64 = 1_000_000;
+    let path = crate::paths::exe_dir()?.join("DirectML.dll");
+    let meta = std::fs::metadata(&path).ok()?;
+    if meta.len() < MIN_BYTES {
+        return None;
+    }
+    let mut magic = [0u8; 2];
+    std::fs::File::open(&path)
+        .ok()?
+        .read_exact(&mut magic)
+        .ok()?;
+    (magic == *b"MZ").then_some(meta.len())
+}
+
+#[cfg(not(windows))]
+fn probe_directml() -> Option<u64> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
-    use super::get_build_identity;
+    use super::{get_build_identity, get_runtime_capabilities};
 
     /// The stamp shape the title bar contract promises: `branch:hash7+`
     /// (git lengthens the short hash on prefix collisions; uppercase hex
@@ -266,6 +314,16 @@ mod tests {
         if !stamp.is_empty() {
             assert!(is_well_formed(stamp), "malformed build stamp: {stamp}");
         }
+    }
+
+    /// The capability probe must mirror the compiled feature set — the
+    /// portable artifact is built with `--no-default-features` and relies
+    /// on this flag to disable the AI surfaces.
+    #[test]
+    fn runtime_capabilities_reflect_the_compiled_features() {
+        let caps = get_runtime_capabilities();
+        assert_eq!(caps.ai_inference, cfg!(feature = "ai"));
+        assert_eq!(caps.directml_required, cfg!(all(windows, feature = "ai")));
     }
 }
 
