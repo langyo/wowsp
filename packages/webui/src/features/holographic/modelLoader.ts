@@ -33,6 +33,7 @@ import shipModelNames from "../../data/ship_models.json";
 import shipNamesDbRaw from "../../data/ship_names.json";
 import shipDescriptionsDbRaw from "../../data/ship_descriptions.json";
 import nationNamesDbRaw from "../../data/nation_names.json";
+import { ref } from "vue";
 import { runtimeShipEntry } from "@/utils/runtimeShipDb";
 import { isTauri } from "@/utils/platform";
 import { wireInsightsPack } from "./insightsLoader";
@@ -64,6 +65,10 @@ export async function initModelPack(fetch: () => Promise<string>): Promise<void>
     // the wiring so its loaders can read <cacheRoot>/insights/*, falling
     // back to the bundled docs while unwired.
     wireInsightsPack(_convertFileSrc, _modelCacheRoot);
+    // The pack predates the WebP migration until proven otherwise — learn
+    // its minimap extension before the first board renders (prod only:
+    // dev serves the repo tree through the publicDir paths).
+    if (!import.meta.env.DEV) probeMinimapPackEra();
     if (import.meta.env.DEV) console.log("[modelLoader] using cache:", _modelCacheRoot);
   } catch {
     console.warn("[modelLoader] model pack unavailable, falling back to publicDir");
@@ -478,17 +483,82 @@ for (const path of _minimapGlobKeys) {
   minimapExtByCased.set(original, name.slice(dot));
 }
 
+// ── Minimap pack era (pre-WebP resource packs) ──────────────────────────
+// The WebP migration (#1178) converted every repo-shipped minimap, so the
+// compile-time glob above now only knows .webp extensions — but the prod
+// URL below points into the DOWNLOADED resource pack, and a pack fetched
+// before the migration still holds an all-.png tree on disk. A .webp URL
+// into a .png pack 404s every 2D map image (user report 2026-10-19: all
+// map art went blank). One producer run generates the whole subtree, so
+// ONE representative probe per wiring decides the family's extension; a
+// failed <img>/Image load can still flip it later (the dogtagPngFallback
+// idiom in PlayerBadge) as belt-and-braces.
+const minimapPackPng = ref(false);
+
+/** One-way: the pack tree carries .png minimaps (called from a minimap
+ *  load error; reactive URL derivations re-render with .png). */
+export function noteMapMinimapLoadError(): void {
+  minimapPackPng.value = true;
+}
+
+/** Probe the pack's actual minimap extension once it is wired: if any
+ *  known stem exists as .png in the cache, the family is pre-WebP. Called
+ *  by initModelPack (and by tests); fire-and-forget by design. */
+export function probeMinimapPackEra(): void {
+  if (!_modelCacheRoot || !_convertFileSrc) return;
+  const stem = minimapExtByCased.keys().next().value;
+  if (!stem) return;
+  const url = _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps/${stem}.png`);
+  void fetch(url)
+    .then((r) => {
+      if (r.ok) minimapPackPng.value = true;
+    })
+    .catch(() => {
+      // Unreadable cache — the load-error flip stays as the backstop.
+    });
+}
+
 /** URL of the game's own minimap art for a space id, if extracted. */
 export function resolveMapMinimapUrl(spaceId: string | undefined): string | null {
   if (!spaceId) return null;
   const clean = spaceId.replace(/^spaces\//, "").toLowerCase();
   const cased = minimapCasedByLower.get(clean);
   if (!cased) return null;
-  const withExt = `${cased}${minimapExtByCased.get(cased) ?? ".webp"}`;
+  // The pack era decides first (pre-WebP packs hold .png); the glob's
+  // extension (repo tree, now .webp) is the default.
+  const ext = minimapPackPng.value ? ".png" : (minimapExtByCased.get(cased) ?? ".webp");
+  const withExt = `${cased}${ext}`;
   if (!import.meta.env.DEV && _modelCacheRoot && _convertFileSrc) {
     return _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps/${withExt}`);
   }
   return `/models/maps/minimaps/${withExt}`;
+}
+
+/** Load one minimap's art for canvas pipelines (drawImage feeders), with
+ *  the pack-era fallback built in: a failed first attempt flips the family
+ *  to .png once and retries; resolves null when both eras fail (callers
+ *  keep their designed dark-sea paint). */
+export function loadMapMinimapImage(
+  spaceId: string | undefined | null,
+): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const attempt = (retried: boolean): void => {
+      const url = resolveMapMinimapUrl(spaceId ?? undefined);
+      if (!url) return resolve(null);
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => {
+        if (!retried && !minimapPackPng.value) {
+          minimapPackPng.value = true;
+          attempt(true);
+        } else {
+          resolve(null);
+        }
+      };
+      img.src = url;
+    };
+    attempt(false);
+  });
 }
 
 let _mapBoundsPromise: Promise<Map<string, MapBounds>> | null = null;

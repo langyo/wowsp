@@ -14,6 +14,9 @@ import {
   fetchModelResource,
   initModelPack,
   loadGlbModel,
+  loadMapMinimapImage,
+  probeMinimapPackEra,
+  resolveMapMinimapUrl,
   resolveShipModelByShipId,
   resolvePropModelUrl,
   shipDescriptionFromOfflineDb,
@@ -365,5 +368,89 @@ describe("meshopt-compressed GLB round-trip", () => {
     const position = meshes[0]!.geometry.getAttribute("position");
     expect(position).toBeDefined();
     expect(position.count).toBeGreaterThan(0);
+  });
+});
+
+// ── Minimap pack era (pre-WebP resource packs) ───────────────────────────
+// The repo tree ships .webp since #1178, but a pack downloaded earlier
+// holds .png on disk — the URL builder must follow the pack's actual era
+// (probe at wiring time, load-error flip as the backstop). The era flag
+// is one-way MODULE state, so the default-behavior tests run FIRST and
+// the flipping tests run LAST inside this describe.
+describe("minimap pack era fallback", () => {
+  // A stem straight from the repo's minimap tree (tracked webp assets).
+  const STEM = "00_CO_ocean";
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defaults to the repo glob's .webp extension", () => {
+    const url = resolveMapMinimapUrl(STEM);
+    expect(url).toBe(`/models/maps/minimaps/${STEM}.webp`);
+  });
+
+  it("resolves unknown spaces to null", () => {
+    expect(resolveMapMinimapUrl("spaces/does_not_exist")).toBeNull();
+  });
+
+  it("loadMapMinimapImage flips to .png once and retries after an error", async () => {
+    const instances: Array<{ src: string; onload: (() => void) | null; onerror: (() => void) | null }> = [];
+    class FakeImage {
+      src = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        instances.push(this as never);
+      }
+    }
+    vi.stubGlobal("Image", FakeImage);
+
+    const pending = loadMapMinimapImage(STEM);
+    await Promise.resolve(); // let the loader create the first image
+    expect(instances.length).toBe(1);
+    expect(instances[0]!.src).toBe(`/models/maps/minimaps/${STEM}.webp`);
+
+    // The .webp miss: the loader must flip the family and re-derive .png.
+    instances[0]!.onerror!();
+    await Promise.resolve();
+    expect(instances.length).toBe(2);
+    expect(instances[1]!.src).toBe(`/models/maps/minimaps/${STEM}.png`);
+
+    instances[1]!.onload!();
+    await expect(pending).resolves.toBe(instances[1] as never);
+  });
+
+  it("loadMapMinimapImage resolves null when both eras fail", async () => {
+    const instances: Array<{ src: string; onerror: (() => void) | null }> = [];
+    class FakeImage {
+      src = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        instances.push(this as never);
+      }
+    }
+    vi.stubGlobal("Image", FakeImage);
+
+    const pending = loadMapMinimapImage(STEM);
+    await Promise.resolve();
+    instances[0]!.onerror!(); // .png (already flipped above) — final era
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it("probeMinimapPackEra flips the family when the pack answers .png", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response("png", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    probeMinimapPackEra();
+    await vi.waitFor(() => {
+      expect(resolveMapMinimapUrl(STEM)).toBe(`/models/maps/minimaps/${STEM}.png`);
+    });
+    // The fake convertFileSrc percent-encodes separators — decode before
+    // asserting on the probed path.
+    const probed = decodeURIComponent(String(fetchSpy.mock.calls[0]![0]));
+    expect(probed).toContain("/models/maps/minimaps/");
+    expect(probed).toContain(".png");
   });
 });

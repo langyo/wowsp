@@ -13,7 +13,7 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch, type
 import { HkIconButton } from "@celestia-island/hikari";
 import { Maximize2, ZoomIn, ZoomOut } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
-import type { MapBounds } from "../modelLoader";
+import { noteMapMinimapLoadError, type MapBounds } from "../modelLoader";
 import { MAP_GRID_COLUMNS } from "./mapGrid";
 import type { CapSpec } from "./modes";
 import "./OverviewPanel.scss";
@@ -69,6 +69,15 @@ export default defineComponent({
       const img = new Image();
       img.onload = () => {
         if (artSrc.value === url) artImg.value = img;
+      };
+      // Defensive era flip (the stage only publishes artUrl after a load
+      // succeeded, so this is nearly unreachable — but a stale-cache miss
+      // here should still re-point the family at .png for the next pass).
+      img.onerror = () => {
+        if (artSrc.value === url) {
+          noteMapMinimapLoadError();
+          artImg.value = null;
+        }
       };
       img.src = url;
     }, { immediate: true });

@@ -30,7 +30,7 @@ import { displayMapName } from "@/utils/mapNames";
 import { legacyMapOf, mapLineage } from "@/utils/legacyMaps";
 import { api, type LearnedCapLayout } from "@/api";
 import { loadMapInsights, type MapInsightsDoc } from "../insightsLoader";
-import { resolveMapMinimapUrl, type MapBounds } from "../modelLoader";
+import { noteMapMinimapLoadError, resolveMapMinimapUrl, type MapBounds } from "../modelLoader";
 import CapEditorModal from "./CapEditorModal";
 import ReplaySourcesTip from "./ReplaySourcesTip";
 import type { CapSpec } from "./modes";
@@ -426,7 +426,13 @@ export default defineComponent({
                 </div>
                 <div class="map-setup__preview">
                   {previewUrl.value ? (
-                    <img class="map-setup__art" src={previewUrl.value} alt="" draggable={false} />
+                    <img
+                      class="map-setup__art"
+                      src={previewUrl.value}
+                      alt=""
+                      draggable={false}
+                      onError={noteMapMinimapLoadError}
+                    />
                   ) : (
                     <div class="map-setup__art map-setup__art--empty" />
                   )}
@@ -557,7 +563,13 @@ export default defineComponent({
                 <div class="map-setup__preview">
                   {previewUrl.value ? (
                     <div class="map-setup__art-wrap">
-                      <img class="map-setup__art" src={previewUrl.value} alt="" draggable={false} />
+                      <img
+                        class="map-setup__art"
+                        src={previewUrl.value}
+                        alt=""
+                        draggable={false}
+                        onError={noteMapMinimapLoadError}
+                      />
                       {capDots.value.map((c) => (
                         <span
                           key={c.key}

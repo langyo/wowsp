@@ -48,7 +48,7 @@ import { disposeMarker } from "./shipMarker";
 import { disposeAny } from "./sceneUtils";
 import { roleFromRelation } from "./teamColors";
 import type { ArenaIdentity } from "./rosterRoles";
-import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "./modelLoader";
+import { loadMapMinimapImage, loadMapBounds, type MapBounds } from "./modelLoader";
 import { viewWindow } from "./tactical/render";
 import type { CapZoneState } from "./capZones";
 import { disposeRangeRings } from "./rangeRings";
@@ -678,12 +678,11 @@ export function loadMinimapBase(ctx: MapInternals) {
   const epoch = ++ctx.minimapEpoch;
   ctx.minimapImage = null;
   ctx.minimapBounds = null;
-  const url = resolveMapMinimapUrl(ctx.props.mapId);
-  if (url) {
-    const img = new Image();
-    img.onload = () => { if (epoch === ctx.minimapEpoch) ctx.minimapImage = img; };
-    img.src = url;
-  }
+  // The shared loader carries the pre-WebP-pack .png fallback; a null art
+  // keeps the painter's designed dark-sea grid.
+  void loadMapMinimapImage(ctx.props.mapId).then((img) => {
+    if (epoch === ctx.minimapEpoch && img) ctx.minimapImage = img;
+  });
   void loadMapBounds().then((all) => {
     if (epoch !== ctx.minimapEpoch) return;
     const key = ctx.props.mapId.replace(/^spaces\//, "");
