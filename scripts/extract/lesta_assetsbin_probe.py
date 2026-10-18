@@ -28,6 +28,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as _np
+
 BWDB_MAGIC = 0x42574442
 TOMBSTONE_RUN_MAX = 4096  # a contiguous leading invalid run at least this long
 
@@ -150,6 +152,71 @@ class Bin:
         return "/".join(reversed(parts))
 
 
+def scan_node_blocks(b: "Bin", blob_idx: int = 1) -> list[dict]:
+    """Phase-6 finding: the new-format visuals' node trees sit in blob1's
+    OOL zone as plain WG-shaped blocks — [name_map_name_ids u32×N]
+    [name_map_node_ids u16×N] [name_ids u32×N] [matrices 16×f32×N
+    (ROW-major, translation in elements 12-14)] [parent_ids u16×N] —
+    in the ship-global SPLASH frame (+z = bow). Nothing references them
+    by offset; attribute blocks to ships by content (HP_AGM y/z vs the
+    ship's splash gk boxes, and the HP name set vs GameParams).
+
+    Returns dicts {names_off, n, names, matrices, parents}."""
+    import struct as _s
+
+    # string id for 'Scene Root' via the offsets map's buckets
+    SR = None
+    for slot in range(b.u32(0x10)):
+        key = b.u32(b.strings_buckets + slot * 8)
+        if key and b.get_string_by_id(key) == "Scene Root":
+            SR = key
+            break
+    if SR is None:
+        raise SystemExit("no 'Scene Root' string — not a valid assets.bin")
+
+    base, size = b.dbs[blob_idx][:2]
+    raw = b.data[base:base + size]
+    u32s = _np.frombuffer(raw[: len(raw) // 4 * 4], dtype="<u4")
+
+    def _aff(m):
+        return (abs(m[15] - 1) < 1e-3 and abs(m[3]) < 1e-3
+                and abs(m[7]) < 1e-3 and abs(m[11]) < 1e-3)
+
+    blocks, seen = [], set()
+    for h in _np.where(u32s == SR)[0]:
+        pos = int(h) * 4
+        if pos in seen:
+            continue
+        e, n = pos, 0
+        while b.get_string_by_id(b.u32(base + e)) is not None:
+            e += 4
+            n += 1
+        if n < 8 or n > 4000 or pos - n * 6 < 0:
+            continue
+        if not all(b.get_string_by_id(b.u32(base + pos - n * 6 + i * 4))
+                   for i in range(n)):
+            continue
+        mat_off = e
+        try:
+            if not (_aff(_s.unpack_from("<16f", raw, mat_off))
+                    and _aff(_s.unpack_from("<16f", raw, mat_off + (n - 1) * 64))):
+                continue
+            parents = _s.unpack_from(f"<{n}H", raw, mat_off + n * 64)
+        except _s.error:
+            continue
+        if parents[0] != 0xFFFF:
+            continue
+        seen.add(pos)
+        names = [b.get_string_by_id(b.u32(base + pos + i * 4)) for i in range(n)]
+        blocks.append({
+            "names_off": pos, "n": n, "names": names,
+            "matrices": [_s.unpack_from("<16f", raw, mat_off + i * 64)
+                         for i in range(n)],
+            "parents": list(parents),
+        })
+    return blocks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("assets_bin", type=Path)
@@ -157,6 +224,9 @@ def main() -> int:
     ap.add_argument("--visual", help="resolve one visual leaf name to its blob2 record and dump it")
     ap.add_argument("--matrix-census", action="store_true",
                     help="census affine-matrix windows per database blob")
+    ap.add_argument("--node-blocks", action="store_true",
+                    help="scan blob1 for the new-format node-tree blocks (phase 6) "
+                         "and list their HP hardpoint translations")
     args = ap.parse_args()
 
     b = Bin(args.assets_bin)
@@ -245,6 +315,19 @@ def main() -> int:
             break
         if not seen:
             print(f"\n== visual {args.visual!r}: no live tag-0x08 r2p entry found")
+
+    if args.node_blocks:
+        blocks = scan_node_blocks(b)
+        print(f"\n== node blocks (blob1, phase 6) ==\n  total: {len(blocks):,}")
+        turret_blocks = [bl for bl in blocks
+                         if any(nm == "HP_AGM_1" for nm in bl["names"])]
+        print(f"  with HP_AGM_1: {len(turret_blocks)}")
+        for bl in turret_blocks:
+            agm = {nm: bl["matrices"][i][12:15]
+                   for i, nm in enumerate(bl["names"]) if nm.startswith("HP_AGM_")}
+            n_hp = sum(1 for nm in bl["names"] if nm.startswith("HP_"))
+            print(f"  @blob1+{bl['names_off']:>9,}  nodes={bl['n']:>4} HP={n_hp:>3}  "
+                  f"AGM={' '.join(f'{nm}=(y{t[1]:+.3f},z{t[2]:+.3f})' for nm, t in sorted(agm.items()))}")
 
     if args.matrix_census:
         import numpy as np
