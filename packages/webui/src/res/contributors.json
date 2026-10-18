@@ -1,5 +1,26 @@
 {
-  "version": 0,
-  "generatedAt": null,
-  "contributors": []
+  "version": 1,
+  "generatedAt": "2026-10-19T12:00:00Z",
+  "contributors": [
+    {
+      "name": "万州烤鱼灬椒盐味丨蓝博",
+      "realm": "cn",
+      "count": 1
+    },
+    {
+      "name": "刮痧之王奈里夫",
+      "realm": "cn",
+      "count": 3
+    },
+    {
+      "name": "苟简行隐",
+      "realm": "cn",
+      "count": 1
+    },
+    {
+      "name": "榊由美子",
+      "realm": "cn",
+      "count": 1
+    }
+  ]
 }
