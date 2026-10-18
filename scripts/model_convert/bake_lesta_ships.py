@@ -334,10 +334,23 @@ def collect_mounts(matched: list[dict], hull_bounds: tuple[list, list],
             # revision twin: the reworked block renames/re-models the gun
             # (e.g. an open 25mm becoming a shielded triple at the same
             # pivot) while GameParams lists both HP names. First-collected
-            # (tight blocks come before spares) wins.
-            if any(abs(hm[12] - x) <= 0.05 and abs(hm[13] - y) <= 0.05
-                   and abs(hm[14] - z) <= 0.05
-                   for _, hm in out.values()):
+            # (tight blocks come before spares) wins. The same-CLASS radius
+            # is 0.15 — two mounts of one class physically cannot share a
+            # pivot (the fleet-wide pair histogram is empty between 0.05
+            # and 0.15 per-axis and dense above it; revision twins land
+            # 0.05-0.15 apart when generations nudge the pivot), while
+            # different classes keep the tight 0.05 (a secondary genuinely
+            # abuts a director-sized AA mount more closely).
+            hit = False
+            for k2, (_, hm) in out.items():
+                # 'G?' letter (M/S/A) carries the class; names are
+                # GUN_HP_RE-filtered so [3:6] is always nation+G+class.
+                r = 0.15 if base[4:6] == k2[4:6] else 0.05
+                if (abs(hm[12] - x) <= r and abs(hm[13] - y) <= r
+                        and abs(hm[14] - z) <= r):
+                    hit = True
+                    break
+            if hit:
                 dups += 1
                 continue
             name = base
