@@ -15,7 +15,10 @@
  *  career verdict belongs to one player), and only when even the bare
  *  numbers cannot fit does the row's free edge clamp to the window edge,
  *  trading a slight reach back over the table's outer column for keeping
- *  the numbers whole (the webview would otherwise clip them away).
+ *  the numbers whole (the webview would otherwise clip them away). The one
+ *  chip that never sheds its last seal is the rat exception's badge-only
+ *  face (rowFace's 过街老鼠 row): with no stat column behind the seal,
+ *  trimming it would leave an empty pill shell — the clamp covers it.
  *
  *  ALIGN THE METRIC COLUMNS (alignMetricColumns): each metric (winrate /
  *  PR / battles / damage) is its own right-aligned cell inside the stat
@@ -25,7 +28,8 @@
  *  side margins are the only separators between them (the old dot
  *  separators are gone).
  *
- *  ALIGN THE STAT COLUMN (alignStatColumns): every row carries a stat cell
+ *  ALIGN THE STAT COLUMN (alignStatColumns): every row but the rat
+ *  exception's badge-only face (below) carries a stat cell
  *  against the table edge — plus a name cell outside it while the row
  *  order is the offline inference (rowFace's fallback face); the cells
  *  must line up across rows so the stat column reads as one table and the
@@ -79,6 +83,17 @@ export function fitChips(root: ParentNode, viewportWidth: number): void {
       }
       for (const seal of [...comp, ...career]) {
         if (overflow() <= FIT_TOLERANCE_PX) break;
+        // The rat exception's badge-only chip (rowFace's 过街老鼠 face,
+        // the overlay-chip--rat marker) has no stat column behind its
+        // seal: trimming the LAST stamp would leave an empty pill shell.
+        // Keep the verdict — the clamp below trades a reach over the
+        // table's outer column for keeping the row's only answer visible.
+        if (
+          el.classList.contains("overlay-chip--rat") &&
+          el.querySelectorAll(".overlay-stamp[data-stamp]").length === 1
+        ) {
+          break;
+        }
         seal.remove();
       }
       if (overflow() <= FIT_TOLERANCE_PX) continue;
@@ -137,7 +152,10 @@ export function alignMetricColumns(root: ParentNode): void {
  *  which measures the pinned widths.
  *  Every cell joins the width even when its own face is empty (a row with
  *  the numbers off must keep the column slot — an exact-order row for the
- *  seals' flank, a fallback row for its name cell). Lays out as zero width
+ *  seals' flank, a fallback row for its name cell). The ONE exception is
+ *  the rat row (rowFace's 过街老鼠 face): it carries no stat cell at all,
+ *  so it neither reserves the slot nor joins this measure — its badge
+ *  hugs the table edge instead. Lays out as zero width
  *  under happy-dom, so a test-environment measure (width 0 everywhere)
  *  skips the pass. */
 export function alignStatColumns(root: ParentNode): void {

@@ -148,6 +148,27 @@ describe("fitChips", () => {
     expect(el.style.right).toBe("0px");
   });
 
+  it("keeps a rat chip's lone badge and clamps instead of emptying the pill", () => {
+    // The rat exception's badge-only chip (rowFace's 过街老鼠 face) has no
+    // stat column behind the seal: trimming it would leave an empty pill
+    // shell, so the verdict stays and the free edge clamps instead.
+    const el = chip("ally", 80, ["rat"]);
+    el.classList.add("overlay-chip--rat");
+    fitChips(mounted(el), VIEW_W);
+    expect(sealKinds(el)).toEqual(["rat"]);
+    expect(el.style.left).toBe("0px");
+    expect(el.style.right).toBe("auto");
+  });
+
+  it("clamps a rat enemy chip's free edge to the right window edge", () => {
+    const el = chip("enemy", 950, ["rat"]);
+    el.classList.add("overlay-chip--rat");
+    fitChips(mounted(el), VIEW_W);
+    expect(sealKinds(el)).toEqual(["rat"]);
+    expect(el.style.left).toBe("auto");
+    expect(el.style.right).toBe("0px");
+  });
+
   it.each(["load", "error"] as const)(
     "re-fits when a still-decoding seal %ss (the terminal state widens the chip)",
     (event) => {
