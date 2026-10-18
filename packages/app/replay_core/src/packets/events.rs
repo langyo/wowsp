@@ -206,17 +206,25 @@ struct ArenaFields {
     max_health: i64,
     name: i64,
     /// The player's SHIP VEHICLE entity id — confusingly named `shipId` in
-    /// the FixedDict; NOT the GameParams id (`ship_params_id`).
+    /// the FixedDict; NOT the GameParams id (`ship_params_id`). Head of a
+    /// rigid tail trio: `ship_params_id` = entity + 1 and `team_id` =
+    /// entity + 3 in EVERY layout ever pinned (0.10.7 → 15.9.0, the bot
+    /// layout included), so the drift probe below moves the trio as one
+    /// block instead of testing 3 free indices.
     ship_entity_id: i64,
     ship_params_id: i64,
     team_id: i64,
 }
 
 impl ArenaFields {
-    /// 0.11.11+ ships a 38-field player layout that has stayed stable since
-    /// (verified upstream across 0.11.11–0.12.8); earlier layouts shift the
-    /// alphabetical tail fields. Bots dropped 10 human-only fields in
-    /// 0.12.8, moving their tail indices down.
+    /// 15.9.0 inserted one field between `name` (25) and the tail trio,
+    /// pushing the trio up by one (verified on a real 15.9.0 capture; the
+    /// dict now spans indices 0..38). 0.11.11+ ships the 38-field layout
+    /// this replaced (verified upstream across 0.11.11–0.12.8); earlier
+    /// layouts shift the alphabetical tail fields further. Bots dropped 10
+    /// human-only fields in 0.12.8, moving their tail indices down — no
+    /// 15.9.0 bot capture has been pinned yet, so the bot row keeps the
+    /// 0.12.8 indices and the drift probe absorbs the same insertion.
     fn for_version(version: Option<(u32, u32, u32)>, is_bot: bool) -> Self {
         let bot_layout = is_bot && version.is_some_and(|k| k >= (0, 12, 8));
         match (version, bot_layout) {
@@ -228,6 +236,15 @@ impl ArenaFields {
                 ship_entity_id: 23,
                 ship_params_id: 24,
                 team_id: 26,
+            },
+            (Some(k), _) if k >= (15, 9, 0) => Self {
+                avatar_id: 2,
+                player_id: 11,
+                max_health: 24,
+                name: 25,
+                ship_entity_id: 34,
+                ship_params_id: 35,
+                team_id: 37,
             },
             (Some(k), _) if k >= (0, 11, 11) => Self {
                 avatar_id: 2,
@@ -268,7 +285,26 @@ impl ArenaFields {
             },
         }
     }
+
+    /// The trio shifted as one block (`by` slots up/down the index axis).
+    fn shifted(&self, by: i64) -> Self {
+        Self {
+            avatar_id: self.avatar_id,
+            player_id: self.player_id,
+            max_health: self.max_health,
+            name: self.name,
+            ship_entity_id: self.ship_entity_id + by,
+            ship_params_id: self.ship_params_id + by,
+            team_id: self.team_id + by,
+        }
+    }
 }
+
+/// Candidate trio shifts the arena decode probes when the version-keyed
+/// layout fails the shape check, most-likely first: insertions only ever
+/// push fields UP the alphabetical axis, so +1 (a single new field before
+/// the tail) is the canonical next drift, then removal/insertion variants.
+const ARENA_TAIL_SHIFTS: [i64; 5] = [0, 1, -1, 2, -2];
 
 /// Decode the avatar's `onArenaStateReceived` args: `i64 arenaId,
 /// i8 teamBuildTypeId, BLOB preBattlesInfo, BLOB playersData, BLOB botsData`.
@@ -294,7 +330,13 @@ pub(super) fn decode_arena_state(
     (out.len() >= 2).then_some(out)
 }
 
-/// Parse one arena player/bot blob (see [`decode_arena_state`]).
+/// Parse one arena player/bot blob (see [`decode_arena_state`]). The
+/// version-keyed [`ArenaFields`] is the primary layout; when its reads fail
+/// the cross-player shape check (a version whose insertion has not been
+/// pinned yet), the tail trio is probed over [`ARENA_TAIL_SHIFTS`] and the
+/// first layout passing the check wins. A blob that fails every candidate
+/// still decodes against the version-keyed table — the historical behavior
+/// (downstream consumers fall back to their own joins).
 fn arena_player_list(
     blob: &[u8],
     version: Option<(u32, u32, u32)>,
@@ -303,62 +345,113 @@ fn arena_player_list(
     let Some(PyVal::List(players)) = parse_pickle(blob) else {
         return Vec::new();
     };
-    let f = ArenaFields::for_version(version, bots);
-    let mut out = Vec::new();
-    for p in players {
-        // Each player is a list of (index, value) tuples (FixedDict pickled
-        // flat). Reads tolerate missing pairs — older layouts only ever
-        // shrink, never reorder.
-        let PyVal::List(pairs) = &p else {
-            continue;
-        };
-        let field = |idx: i64| -> Option<&PyVal> {
-            pairs.iter().find_map(|kv| match kv {
-                PyVal::Tuple(pair) => match (pair.first(), pair.get(1)) {
-                    (Some(PyVal::Int(k)), v) if *k == idx => v,
-                    _ => None,
-                },
-                _ => None,
-            })
-        };
-        let as_i64 = |v: Option<&PyVal>| -> Option<i64> {
-            match v? {
-                PyVal::Int(i) => Some(*i),
-                PyVal::Float(fl) => Some(*fl as i64),
-                _ => None,
-            }
-        };
-        let Some(entity_id) = as_i64(field(f.ship_entity_id)) else {
-            continue;
-        };
-        if entity_id == 0 {
-            continue;
-        }
-        // Event/asymmetric modes deliver scaled FRACTIONAL health here;
-        // round to the whole number (a plain float→int cast truncates and
-        // would read the ship 1 HP short of its true total).
-        let max_health = match field(f.max_health) {
-            Some(PyVal::Float(fl)) => fl.round() as i64,
-            Some(PyVal::Int(i)) => *i,
-            _ => 0,
-        };
-        let name = match field(f.name) {
-            Some(PyVal::Str(s)) => s.clone(),
-            _ => String::new(),
-        };
-        out.push(wowsp_tauri_shared::ArenaPlayer {
-            entity_id: entity_id as i32,
-            team_id: as_i64(field(f.team_id)).unwrap_or(0) as i8,
-            player_id: as_i64(field(f.player_id)).unwrap_or(0),
-            ship_params_id: as_i64(field(f.ship_params_id)).unwrap_or(0) as u32,
-            max_health: max_health.max(0) as u32,
-            name,
-            is_bot: bots,
-            avatar_id: as_i64(field(f.avatar_id)).map(|v| v as i32),
-            is_self: false,
-        });
+    // Each player is a list of (index, value) tuples (FixedDict pickled
+    // flat). Reads tolerate missing pairs — older layouts only ever
+    // shrink, never reorder.
+    let pairs: Vec<&Vec<PyVal>> = players
+        .iter()
+        .filter_map(|p| match p {
+            PyVal::List(l) => Some(l),
+            _ => None,
+        })
+        .collect();
+    if pairs.is_empty() {
+        return Vec::new();
     }
-    out
+    let base = ArenaFields::for_version(version, bots);
+    let fields = *ARENA_TAIL_SHIFTS
+        .iter()
+        .find(|&s| arena_layout_plausible(&pairs, &base.shifted(*s)))
+        .unwrap_or(&0);
+    pairs
+        .iter()
+        .filter_map(|p| arena_player_of(p, &base.shifted(fields), bots))
+        .collect()
+}
+
+/// One player's reads under one layout (see [`arena_player_list`]); `None`
+/// when the entity slot is absent or zero.
+fn arena_player_of(
+    pairs: &[PyVal],
+    f: &ArenaFields,
+    bots: bool,
+) -> Option<wowsp_tauri_shared::ArenaPlayer> {
+    let field = |idx: i64| -> Option<&PyVal> {
+        pairs.iter().find_map(|kv| match kv {
+            PyVal::Tuple(pair) => match (pair.first(), pair.get(1)) {
+                (Some(PyVal::Int(k)), v) if *k == idx => v,
+                _ => None,
+            },
+            _ => None,
+        })
+    };
+    let as_i64 = |v: Option<&PyVal>| -> Option<i64> {
+        match v? {
+            PyVal::Int(i) => Some(*i),
+            PyVal::Float(fl) => Some(*fl as i64),
+            _ => None,
+        }
+    };
+    let entity_id = as_i64(field(f.ship_entity_id)).filter(|e| *e != 0)?;
+    // Event/asymmetric modes deliver scaled FRACTIONAL health here;
+    // round to the whole number (a plain float→int cast truncates and
+    // would read the ship 1 HP short of its true total).
+    let max_health = match field(f.max_health) {
+        Some(PyVal::Float(fl)) => fl.round() as i64,
+        Some(PyVal::Int(i)) => *i,
+        _ => 0,
+    };
+    let name = match field(f.name) {
+        Some(PyVal::Str(s)) => s.clone(),
+        _ => String::new(),
+    };
+    Some(wowsp_tauri_shared::ArenaPlayer {
+        entity_id: entity_id as i32,
+        team_id: as_i64(field(f.team_id)).unwrap_or(0) as i8,
+        player_id: as_i64(field(f.player_id)).unwrap_or(0),
+        ship_params_id: as_i64(field(f.ship_params_id)).unwrap_or(0) as u32,
+        max_health: max_health.max(0) as u32,
+        name,
+        is_bot: bots,
+        avatar_id: as_i64(field(f.avatar_id))
+            .filter(|v| *v > 0)
+            .map(|v| v as i32),
+        is_self: false,
+    })
+}
+
+/// Cross-player shape check for one candidate layout — the drift detector.
+/// With the trio read correctly, a human player's ship entity id is exactly
+/// its AVATAR entity id + 1 (avatar and vehicle entities are created as a
+/// consecutive pair; the avatar slot itself sits at a stable index that has
+/// never drifted). Bots carry no avatar, so their check is the trio's own
+/// shape: a u32-range GameParams id in the params slot and a 0/1 team slot.
+/// A layout is plausible when ≥ 2 players decode an entity and ≥ 80% of
+/// those pass their check — the wrong shift misreads EVERY entry (reading
+/// e.g. a slot count where the entity id should be), never a near miss.
+fn arena_layout_plausible(pairs: &[&Vec<PyVal>], f: &ArenaFields) -> bool {
+    let mut with_entity = 0usize;
+    let mut consistent = 0usize;
+    for p in pairs {
+        // `bots: false` — the produced entry's is_bot flag is the one field
+        // the checks below never read; the layout probe itself is agnostic.
+        let Some(player) = arena_player_of(p, f, false) else {
+            continue;
+        };
+        with_entity += 1;
+        let ok = match player.avatar_id {
+            Some(avatar) => player.entity_id as i64 == avatar as i64 + 1,
+            None => {
+                player.ship_params_id >= 100_000_000
+                    && player.ship_params_id <= u32::MAX as u32
+                    && (player.team_id == 0 || player.team_id == 1)
+            },
+        };
+        if ok {
+            consistent += 1;
+        }
+    }
+    with_entity >= 2 && consistent * 5 >= with_entity * 4
 }
 
 /// Decode `onChatMessage` args: `i32 playerId, STRING namespace, STRING
@@ -1020,4 +1113,210 @@ pub(super) fn decode_explosions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_share
         });
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Emit one `(int key, int|str value)` pair as pickle: INT text form for
+    /// both integers (handles the u32-range params ids BININT cannot carry),
+    /// SHORT_BINSTRING for strings, TUPLE2 to close the pair.
+    fn pair(buf: &mut Vec<u8>, key: i64, value: &PyVal) {
+        let int = |b: &mut Vec<u8>, v: i64| {
+            b.extend_from_slice(b"I");
+            b.extend_from_slice(v.to_string().as_bytes());
+            b.push(b'\n');
+        };
+        int(buf, key);
+        match value {
+            PyVal::Int(v) => int(buf, *v),
+            PyVal::Str(s) => {
+                buf.push(0x55); // SHORT_BINSTRING
+                buf.push(s.len() as u8);
+                buf.extend_from_slice(s.as_bytes());
+            },
+            _ => unreachable!("test fixture values are ints/strings"),
+        }
+        buf.push(0x86); // TUPLE2
+    }
+
+    /// Pickle a players blob: outer LIST of per-player pair LISTS (proto 2,
+    /// MARK/APPENDS framing — the shape `parse_pickle` consumes).
+    fn players_blob(players: &[Vec<(i64, PyVal)>]) -> Vec<u8> {
+        let mut b = vec![0x80, 0x02, 0x5d, 0x28]; // PROTO 2, EMPTY_LIST, MARK
+        for pairs in players {
+            b.push(0x5d); // EMPTY_LIST (this player's pairs)
+            b.push(0x28); // MARK
+            for (k, v) in pairs {
+                pair(&mut b, *k, v);
+            }
+            b.push(0x6c); // LIST
+        }
+        b.push(0x65); // APPENDS
+        b.push(0x2e); // STOP
+        b
+    }
+
+    /// The 15.9.0 player shape (one new field before the tail pushed the
+    /// trio to 34/35/37): avatar 2, player id 11, max health 24, name 25,
+    /// slot-count-ish small int 33, ship entity 34, params id 35, team 37.
+    fn player_159(
+        avatar: i64,
+        account: i64,
+        hp: i64,
+        name: &str,
+        entity: i64,
+        params: i64,
+        team: i64,
+    ) -> Vec<(i64, PyVal)> {
+        vec![
+            (2, PyVal::Int(avatar)),
+            (11, PyVal::Int(account)),
+            (24, PyVal::Int(hp)),
+            (25, PyVal::Str(name.to_string())),
+            (33, PyVal::Int(34)),
+            (34, PyVal::Int(entity)),
+            (35, PyVal::Int(params)),
+            (37, PyVal::Int(team)),
+        ]
+    }
+
+    /// The pre-15.9 player shape (0.11.11+ trio at 33/34/36).
+    fn player_1111(
+        avatar: i64,
+        account: i64,
+        hp: i64,
+        name: &str,
+        entity: i64,
+        params: i64,
+        team: i64,
+    ) -> Vec<(i64, PyVal)> {
+        vec![
+            (2, PyVal::Int(avatar)),
+            (11, PyVal::Int(account)),
+            (24, PyVal::Int(hp)),
+            (25, PyVal::Str(name.to_string())),
+            (33, PyVal::Int(entity)),
+            (34, PyVal::Int(params)),
+            (36, PyVal::Int(team)),
+        ]
+    }
+
+    #[test]
+    fn arena_159_layout_decodes() {
+        let blob = players_blob(&[
+            player_159(839071, 672005842, 14700, "langyo", 839072, 4078352368, 0),
+            player_159(
+                839051,
+                671965198,
+                31400,
+                "CharlesDuck",
+                839052,
+                4278105904,
+                0,
+            ),
+            player_159(
+                839053,
+                671914004,
+                50850,
+                "_Aul_NIshizumi_",
+                839054,
+                3765385168,
+                1,
+            ),
+        ]);
+        let out = arena_player_list(&blob, Some((15, 9, 0)), false);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].entity_id, 839072);
+        assert_eq!(out[0].avatar_id, Some(839071));
+        assert_eq!(out[0].ship_params_id, 4078352368);
+        assert_eq!(out[0].team_id, 0);
+        assert_eq!(out[0].player_id, 672005842);
+        assert_eq!(out[0].max_health, 14700);
+        assert_eq!(out[0].name, "langyo");
+        assert_eq!(out[2].team_id, 1);
+    }
+
+    /// The drift this fix ships for: a replay whose version predates the
+    /// pinned 15.9.0 row would read the trio one slot low (entity 34 read
+    /// at 33 → slot-count garbage). The probe's +1 shift heals it without a
+    /// table row — the safety net for the NEXT unpinned insertion too.
+    #[test]
+    fn arena_probe_heals_unpinned_tail_drift() {
+        let blob = players_blob(&[
+            player_159(839071, 672005842, 14700, "langyo", 839072, 4078352368, 0),
+            player_159(
+                839051,
+                671965198,
+                31400,
+                "CharlesDuck",
+                839052,
+                4278105904,
+                0,
+            ),
+            player_159(
+                839053,
+                671914004,
+                50850,
+                "_Aul_NIshizumi_",
+                839054,
+                3765385168,
+                1,
+            ),
+        ]);
+        let out = arena_player_list(&blob, Some((15, 8, 0)), false);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].entity_id, 839072);
+        assert_eq!(out[0].ship_params_id, 4078352368);
+        assert_eq!(out[0].team_id, 0);
+    }
+
+    /// The 0.11.11+ layout decodes unchanged at shift 0 (no probe detour).
+    #[test]
+    fn arena_pre159_layout_unchanged() {
+        let blob = players_blob(&[
+            player_1111(101, 1, 20000, "alpha", 102, 3765385168, 0),
+            player_1111(201, 2, 30000, "bravo", 202, 4278105904, 1),
+        ]);
+        let out = arena_player_list(&blob, Some((0, 11, 11)), false);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].entity_id, 102);
+        assert_eq!(out[0].ship_params_id, 3765385168);
+        assert_eq!(out[1].team_id, 1);
+    }
+
+    /// Bots carry no avatar, so the plausibility check rides the trio's own
+    /// shape (u32-range params id + 0/1 team). The 0.12.8 bot row is still
+    /// served for 15.9.0 bots (no capture pinned yet) — a drifted bot blob
+    /// must heal through the probe exactly like the human one.
+    #[test]
+    fn arena_bot_blob_probes_without_avatar() {
+        let bot = |entity_at: i64| -> Vec<(i64, PyVal)> {
+            vec![
+                (10, PyVal::Int(9001)),
+                (18, PyVal::Int(12000)),
+                (19, PyVal::Str("Bot".into())),
+                (entity_at, PyVal::Int(555001)),
+                (entity_at + 1, PyVal::Int(4184749872)),
+                (entity_at + 3, PyVal::Int(1)),
+            ]
+        };
+        // Pinned 0.12.8 bot layout (trio at 23/24/26): decodes as-is.
+        let pinned = players_blob(&[bot(23), bot(23)]);
+        let out = arena_player_list(&pinned, Some((0, 12, 8)), true);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].entity_id, 555001);
+        assert_eq!(out[0].ship_params_id, 4184749872);
+        assert!(out[0].is_bot);
+        assert_eq!(out[0].avatar_id, None);
+        // The same blob one field late (a 15.9-style insertion): the probe's
+        // +1 shift restores the reads.
+        let drifted = players_blob(&[bot(24), bot(24)]);
+        let out = arena_player_list(&drifted, Some((0, 12, 8)), true);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].entity_id, 555001);
+        assert_eq!(out[0].ship_params_id, 4184749872);
+        assert_eq!(out[0].team_id, 1);
+    }
 }

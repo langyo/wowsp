@@ -624,6 +624,12 @@ export function foldDamageStats(
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
   trajectories: EntityTrajectory[];
+  /** Entity id of the recorder's own vehicle (the type-2 entity the avatar
+   *  links to in its PlayerPosition stream) — the authoritative self anchor
+   *  for the personal report: it survives a version-drifted arena state and
+   *  disambiguates mirror shipId picks. Absent on pre-modern-layout or
+   *  truncated captures. */
+  recorderVehicleId?: number | null;
   /** Artillery launches (receiveArtilleryShots) — true shell trajectories. */
   shellLaunches?: ShellLaunchEvent[];
   explosions?: ExplosionEvent[];
@@ -692,6 +698,9 @@ export interface LiveTempReplay {
  *  `wowsp_tauri_shared::LiveSelfStream`. */
 export interface LiveSelfStream {
   trajectories: EntityTrajectory[];
+  /** The recorder's own vehicle entity id — see `ReplayStream` (carried
+   *  over by the slim projection for the personal report's self join). */
+  recorderVehicleId?: number | null;
   shotKills?: ShotKillEvent[];
   damageStats?: DamageStatSample[];
   achievements?: AchievementEvent[];

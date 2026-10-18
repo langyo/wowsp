@@ -15,6 +15,9 @@
  *  - `shellLaunches`/`torpedoes` — launch joins classifying each hit's
  *                     weapon bucket (the row composition chips).
  *  - `trajectories` — per-ship HP timelines (hpSamples) + deathTime.
+ *  - `recorderVehicleId` — the recorder's own vehicle entity id (the
+ *                     avatar's PlayerPosition link): the self anchor when
+ *                     the arena join misses and the mirror-pick arbiter.
  *  - `arenaPlayers` — the authoritative entity ↔ player join (isSelf marks
  *                     the recorder).
  *  - `achievements` — onAchievementEarned events (roster player ids).
@@ -313,6 +316,7 @@ class RowBook {
 export type SelfStatsStream = Pick<
   ReplayStream,
   | "trajectories"
+  | "recorderVehicleId"
   | "shotKills"
   | "damageStats"
   | "achievements"
@@ -342,16 +346,34 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
   const ships = trajectories.filter((t) => t.kind?.entityType === 2);
 
   // ── self identity: the arena's isSelf entry is authoritative (entity id
-  // + player id + starting HP); the roster's relation-0 player is the
-  // fallback, its unique shipId the last resort (mirror picks make the
-  // shipId join unsafe when ambiguous).
+  // + player id + starting HP); the recorder's own vehicle link
+  // (recorderVehicleId — the avatar's PlayerPosition stream) anchors the
+  // trajectory when the arena join misses (a version-drifted arena state,
+  // an unpinned method id) and disambiguates the roster fallback's mirror
+  // shipId picks; the roster's relation-0 player is the identity fallback,
+  // its unique shipId the last resort.
   const selfArena = arenaPlayers.find((p) => p.isSelf) ?? null;
+  const recorderEntityId = stream.recorderVehicleId ?? null;
   let selfTraj: EntityTrajectory | undefined;
   if (selfArena) selfTraj = ships.find((t) => t.entityId === selfArena.entityId);
+  if (!selfTraj && recorderEntityId != null) {
+    selfTraj = ships.find((t) => t.entityId === recorderEntityId);
+  }
   let selfPlayerId = selfArena?.playerId ?? null;
   let selfShipId = selfArena?.shipParamsId ?? null;
   let selfName = selfArena?.name ?? null;
-  if (!selfTraj) {
+  if (selfArena && selfTraj && selfArena.entityId !== selfTraj.entityId) {
+    // The arena entry failed to join the recorder's trajectory — its tail
+    // fields (shipParamsId included) read from a drifted layout, so the
+    // trajectory kind's roster-joined shipId is the trustworthy identity.
+    selfShipId = selfTraj.kind?.shipId ?? selfShipId;
+  }
+  // The roster identity fallback runs whenever the identity is incomplete —
+  // not only when the trajectory is: the recorder link can anchor selfTraj
+  // while no arena isSelf entry ever joined (a partial live prefix, a
+  // method-id drift), and the roster's relation-0 player still names me
+  // (and with the player id, my achievements).
+  if (!selfTraj || selfPlayerId == null) {
     const selfVehicle =
       selfPlayerId != null
         ? roster.find((v) => v.id === selfPlayerId)
@@ -360,12 +382,25 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
       selfPlayerId ??= selfVehicle.id;
       selfName ??= selfVehicle.name;
       selfShipId ??= selfVehicle.shipId ?? null;
-      const byShip = ships.filter((t) => t.kind?.shipId === selfShipId);
-      if (byShip.length === 1) selfTraj = byShip[0];
+      if (!selfTraj) {
+        const byShip = ships.filter((t) => t.kind?.shipId === selfShipId);
+        if (byShip.length === 1) selfTraj = byShip[0];
+        else if (recorderEntityId != null) {
+          // Mirror pick (two entities share the roster shipId): the
+          // recorder's own vehicle link settles which trajectory is mine.
+          selfTraj = byShip.find((t) => t.entityId === recorderEntityId);
+        }
+      }
     }
   }
   if (selfName == null && selfPlayerId != null) {
     selfName = roster.find((v) => v.id === selfPlayerId)?.name ?? null;
+  }
+  if (selfTraj && selfShipId == null) {
+    // The recorder link resolved the trajectory but no roster/arena identity
+    // joined — the kind's roster-joined shipId still names the ship (and
+    // with it the identity card's icon).
+    selfShipId = selfTraj.kind?.shipId ?? null;
   }
 
   const folded =
@@ -376,11 +411,15 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
   const battleTime = lastTimeOf(trajectories, shotKills, stream.damageStats ?? []);
 
   if (!selfTraj) {
-    // No ship entity yet (loading screen / first ticks) — surface the
-    // server totals while the damage stream already flows; without it there
-    // is nothing personal to show (shot kills cannot be attributed).
+    // No ship entity yet (loading screen / first ticks — or every identity
+    // join missed) — surface the server totals while the damage stream
+    // already flows; without it there is nothing personal to show (shot
+    // kills cannot be attributed). A settled BattleResults payload still
+    // merges its authoritative figures (frags by killer ids, ribbons, my
+    // killer, exp) over the empty ledgers — the report stays useful even
+    // when the hit-level attribution had nothing to work on.
     if (!folded) return null;
-    return {
+    const early: SelfStatsModel = {
       selfName,
       selfShipId,
       selfEntityId: null,
@@ -401,6 +440,9 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
       achievements: achievementsOf(stream.achievements ?? [], selfPlayerId, dataLang),
       final: null,
     };
+    const post = parsePostBattle(stream.battleResults ?? null);
+    if (post) mergeFinal(early, post);
+    return early;
   }
   const selfEntityId = selfTraj.entityId;
   const selfMaxHp = maxHpOf(selfTraj, selfArena ?? undefined);
@@ -609,11 +651,25 @@ function mergeFinal(model: SelfStatsModel, post: PostBattleData): void {
     // Server kill attribution beats the death-proximity heuristic: re-stamp
     // every dealt row whose player the results settle, and append a bare
     // killed row for DoT-only sinks the hit-level attribution never saw.
+    // The row→results join rides id OR name: modern WG payloads key the
+    // results by a per-battle session id (the arena state's idx-0 field)
+    // while the arena/roster join carries the account dbids — two id
+    // spaces over the same players, and nicknames are unique per battle
+    // (the 2026-10-17 15.9.0 capture's kill skulls rode the name join).
+    const postByName = new Map(post.players.map((p) => [p.name, p]));
     for (const row of model.dealt) {
-      if (row.playerId != null) row.killed = killedIds.has(row.playerId);
+      const settled =
+        (row.playerId != null
+          ? post.players.find((p) => p.accountId === row.playerId)
+          : undefined) ??
+        (row.name != null ? postByName.get(row.name) : undefined);
+      if (settled) row.killed = killedIds.has(settled.accountId);
     }
+    // Both join keys, not `playerId ?? name`: a row whose skull arrived via
+    // the name join still carries its other-space playerId, and the dedup
+    // must recognize it by either key (same dual join as the re-stamp).
     const withRow = new Set(
-      model.dealt.filter((r) => r.killed).map((r) => r.playerId ?? r.name),
+      model.dealt.flatMap((r) => (r.killed ? [r.playerId, r.name] : [])),
     );
     for (const p of killedEnemies) {
       if (withRow.has(p.accountId) || withRow.has(p.name)) continue;

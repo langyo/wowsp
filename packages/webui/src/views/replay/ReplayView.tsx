@@ -1637,6 +1637,9 @@ export default defineComponent({
     const chatMessages = ref<ChatEvent[]>([]);
     const achievements = ref<AchievementEvent[]>([]);
     const arenaPlayers = ref<ArenaPlayer[]>([]);
+    /** The recorder's own vehicle entity id — the results modal's self view
+     *  (我的战绩) anchors its identity join on it (see buildSelfStats). */
+    const recorderVehicleId = ref<number | null>(null);
     /** Entity ids whose deathTime was inferred from the post-battle payload
      *  (ships that sank while un-spotted) — heuristics crediting kills from
      *  death-time proximity must stand down for them (shipHp.ts). */
@@ -1731,6 +1734,7 @@ export default defineComponent({
           stream.arenaPlayers,
         );
         trajectories.value = stream.trajectories;
+        recorderVehicleId.value = stream.recorderVehicleId ?? null;
         shellLaunches.value = stream.shellLaunches ?? [];
         explosions.value = stream.explosions ?? [];
         torpedoes.value = stream.torpedoes ?? [];
@@ -2199,6 +2203,7 @@ export default defineComponent({
                                 operation={isOperation.value}
                                 stream={{
                                   trajectories: trajectories.value,
+                                  recorderVehicleId: recorderVehicleId.value,
                                   shotKills: shotKills.value,
                                   damageStats: damageStats.value,
                                   achievements: achievements.value,
