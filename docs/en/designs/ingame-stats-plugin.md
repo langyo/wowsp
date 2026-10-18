@@ -241,14 +241,18 @@ input (proven with a clean build: always-visible panel + scancode Tab
 with verified foreground produced zero renders and zero `tabMode`
 events), so the visual check needs one real battle.
 
-**CN arrangement re-calibrated (2026-10-18, replay automation)** — a
-second independent photographed capture (the replay loading screen's own
-team lists — a ground-truth surface that DOES render in replay) matched
-the offline `gameTabRowCompare(shipNameOrder)` prediction **18/18
-across both teams** (first capture: 9/9). The CN reconstruction is
-empirically exact on every capture so far; the exact-grade pill still
-withholds until a client-truth channel exists (the capture side channel
-below), per the grading discipline.
+**CN arrangement re-calibrated (2026-10-18, replay automation)** —
+independent photographed captures (the replay loading screen's own team
+lists — a ground-truth surface that DOES render in replay) matched the
+offline `gameTabRowCompare(shipNameOrder)` prediction exactly: **18/18**
+across both teams on one battle, then a full **24/24** on a 12v12, and —
+on five volunteer duplicate-ship battles — **5/5 same-team duplicate
+pairs** (two Maines, three 芒s, two 沉舰者s, two Kearsarges) all broken
+by the client in PLAYER-NAME pinyin order, exactly the comparator's
+tie rule (g<m, d<n, l<s, q<s, b<y). Zero mismatches across every
+capture so far. The exact-grade pill still withholds until a
+client-truth channel exists (the capture side channel below), per the
+grading discipline.
 
 **Overlay nickname column (2026-10-18)** — the transparent overlay
 drops a side's extra nickname column when the probe telemetry's sort
