@@ -169,8 +169,20 @@ API 面、候选集合计数、名单的
 **游戏内面板精确行序（2026-10-18）**——unbound 面板直接读取
 `$datahub.getCollection().getChildByPath('team.<side>.sortedAlive')`，
 用每个条目的 avatar id 映射到面板行（行数据带 `avatar_id`，并同时下发
-`allyById`/`enemyById` 映射）。集合缺失或过早时回退到 Python 的排序键/
-遍历序。回放不挂载 unbound 战斗视图，因此这条路径仍需真人局冒烟验证。
+`allyById`/`enemyById` 映射）。所用 DSL 构造全部有两家客户端已装视图的
+先例：无守卫的集合变量（battle_expert）、`items.length` +
+`evAdded`/`evRemoved`、`items[$index].id`，以及数字 id 载荷字典下标
+（`toString(id)` + `in` + 三元守卫——BuildViewer 的原样习语）。未配对
+的条目渲染**空行位**——精确行各自守住自己的 TAB 行，绝不与回退块交错；
+集合缺失则整侧回退 Python 行序。回放既不挂载 unbound 战斗视图也不接受
+战斗输入（干净构建实测：常显面板 + 扫描码 Tab、前台已验证，零渲染、零
+`tabMode` 事件），视觉验证需要一局真人局。
+
+**CN 排列再校准（2026-10-18，回放自动化）**——第二组独立实拍（回放
+载入屏自带的队伍名单——载入屏在回放里**会**渲染，是真值面）与离线
+`gameTabRowCompare(shipNameOrder)` 预测**双侧 18/18 完全一致**（第一组
+9/9）。CN 重建在至今所有实拍上经验精确；按评级纪律，精确档药丸仍要等
+客户端真值通道（下文截屏侧信道）才放开。
 
 **透明覆盖层昵称列（2026-10-18）**——当探针遥测的排序键完整覆盖某一侧、
 且不是 CN 船名序时，覆盖层去掉该侧额外的玩家昵称列；部分覆盖、过期流或

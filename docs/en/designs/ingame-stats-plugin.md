@@ -229,9 +229,26 @@ only; no ordering consumer reads it.
 `$datahub.getCollection().getChildByPath('team.<side>.sortedAlive')`
 directly and maps each item to its panel row by avatar id (the row
 payload carries `avatar_id`, plus the per-side `allyById`/`enemyById`
-maps). The Python sort-key/walk order stays as the fallback when the
-collection is absent or mounts early. Replay playback does not mount
-unbound battle views, so this path still needs a real-battle smoke test.
+maps). Every DSL construct used is precedented in views shipped on BOTH
+clients: the unguarded collection var (battle_expert), `items.length` +
+`evAdded`/`evRemoved`, `items[$index].id`, and the numeric-id payload
+dict index via `toString(id)` + `in` + a guarded index (BuildViewer's
+exact idiom). An entry whose id pairs with no row renders a BLANK slot —
+exact rows keep their TAB lines and never interleave with the fallback
+block; a missing collection falls back to the Python order wholesale.
+Replay playback neither mounts unbound battle views nor accepts battle
+input (proven with a clean build: always-visible panel + scancode Tab
+with verified foreground produced zero renders and zero `tabMode`
+events), so the visual check needs one real battle.
+
+**CN arrangement re-calibrated (2026-10-18, replay automation)** — a
+second independent photographed capture (the replay loading screen's own
+team lists — a ground-truth surface that DOES render in replay) matched
+the offline `gameTabRowCompare(shipNameOrder)` prediction **18/18
+across both teams** (first capture: 9/9). The CN reconstruction is
+empirically exact on every capture so far; the exact-grade pill still
+withholds until a client-truth channel exists (the capture side channel
+below), per the grading discipline.
 
 **Overlay nickname column (2026-10-18)** — the transparent overlay
 drops a side's extra nickname column when the probe telemetry's sort

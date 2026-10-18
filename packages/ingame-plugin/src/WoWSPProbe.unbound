@@ -81,9 +81,13 @@
 	(scope
 		# The client's own sortedAlive collection is the exact TAB order;
 		# its items are avatar entities whose .id matches the roster's
-		# avatar id (panel rows carry it as avatar_id, keyed by id in
-		# _byId). Fall back to the Python-ordered rows when the collection
-		# is absent (another client build, or the view mounts early).
+		# avatar id (panel rows carry it as avatar_id, keyed by its string
+		# form in _byId — BuildViewer's shipped idiom: toString(entity.id)
+		# + `in` + a guarded index into a Python-written payload dict).
+		# Fall back to the Python-ordered rows when the collection is
+		# absent; an entry whose id pairs with no row renders a BLANK slot
+		# (keeps every exact row on its own TAB line instead of shifting
+		# the block — exact and inferred rows never interleave).
 		(var orderCount:number = "_order ? _order.items.length : 0"
 			(event "_order.evAdded")
 			(event "_order.evRemoved"))
@@ -133,7 +137,7 @@
 	(controller $Repeat renderer='WowspStatRow'
 		(count = "rowCount")
 		(args
-			_row = "orderCount > 0 ? (_byId ? _byId[_order.items[$index].id] : null) : (_rows ? _rows[$index] : null)"
+			_row = "orderCount > 0 ? ((_byId && (toString(_order.items[$index].id) in _byId)) ? _byId[toString(_order.items[$index].id)] : null) : (_rows ? _rows[$index] : null)"
 			_isAlly = "_isAlly"
 		)
 	)
