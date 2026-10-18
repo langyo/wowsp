@@ -225,6 +225,20 @@ bounded sample of the served container components (`children` lists,
 `team.<side>.sortedAlive` order the build exposes. It is diagnostic
 only; no ordering consumer reads it.
 
+**In-game panel exact order (2026-10-18)** — the unbound panel now reads
+`$datahub.getCollection().getChildByPath('team.<side>.sortedAlive')`
+directly and maps each item to its panel row by avatar id (the row
+payload carries `avatar_id`, plus the per-side `allyById`/`enemyById`
+maps). The Python sort-key/walk order stays as the fallback when the
+collection is absent or mounts early. Replay playback does not mount
+unbound battle views, so this path still needs a real-battle smoke test.
+
+**Overlay nickname column (2026-10-18)** — the transparent overlay
+drops a side's extra nickname column when the probe telemetry's sort
+keys cover every row of that side and the realm is not CN; partial
+coverage, a stale stream, or CN brings the name cell back. This is the
+"probe installed, no extra nickname column" behavior for WG/Lesta.
+
 **Encoder hardening (2026-10-09, WG-ASIA 15.9.0 live)**: the client's
 own `utils.jsonEncode` proved build-unstable as well — 15.9 RAISED on
 plain dict payloads 15.8 accepted, freezing telemetry.json at its

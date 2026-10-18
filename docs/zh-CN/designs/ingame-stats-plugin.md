@@ -166,6 +166,16 @@ API 面、候选集合计数、名单的
 `battleInfo`/`battleState` 字段），以及该构建能给出的
 `team.<side>.sortedAlive` 顺序。它纯属诊断，排序消费端不读它。
 
+**游戏内面板精确行序（2026-10-18）**——unbound 面板直接读取
+`$datahub.getCollection().getChildByPath('team.<side>.sortedAlive')`，
+用每个条目的 avatar id 映射到面板行（行数据带 `avatar_id`，并同时下发
+`allyById`/`enemyById` 映射）。集合缺失或过早时回退到 Python 的排序键/
+遍历序。回放不挂载 unbound 战斗视图，因此这条路径仍需真人局冒烟验证。
+
+**透明覆盖层昵称列（2026-10-18）**——当探针遥测的排序键完整覆盖某一侧、
+且不是 CN 船名序时，覆盖层去掉该侧额外的玩家昵称列；部分覆盖、过期流或
+CN 会恢复昵称列。这是 WG/Lesta 的“装了探针即无额外昵称列”行为。
+
 **编码器加固（2026-10-09，WG 亚服 15.9.0 实测）**：客户端自带的
 `utils.jsonEncode` 同样被证明随构建不稳——15.9 对 15.8 曾接受的普通字典
 载荷直接抛异常，WG 亚服的 telemetry.json 冻结在退出清空态，而

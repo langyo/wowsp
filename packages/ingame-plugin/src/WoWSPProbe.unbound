@@ -77,9 +77,17 @@
 	)
 )
 
-(def element WowspSidePanel(_isAlly:bool=true, _rows:array=null, _labels:dict=null, _stageW:number=0, _stageH:number=0)
+(def element WowspSidePanel(_isAlly:bool=true, _rows:array=null, _byId:dict=null, _order:gfx=null, _labels:dict=null, _stageW:number=0, _stageH:number=0)
 	(scope
-		(var rowCount:number = "_rows ? _rows.length : 0")
+		# The client's own sortedAlive collection is the exact TAB order;
+		# its items are avatar entities whose .id matches the roster's
+		# avatar id (panel rows carry it as avatar_id, keyed by id in
+		# _byId). Fall back to the Python-ordered rows when the collection
+		# is absent (another client build, or the view mounts early).
+		(var orderCount:number = "_order ? _order.items.length : 0"
+			(event "_order.evAdded")
+			(event "_order.evRemoved"))
+		(var rowCount:number = "orderCount > 0 ? orderCount : (_rows ? _rows.length : 0)")
 	)
 	(style
 		(position = "absolute")
@@ -125,7 +133,7 @@
 	(controller $Repeat renderer='WowspStatRow'
 		(count = "rowCount")
 		(args
-			_row = "_rows ? _rows[$index] : null"
+			_row = "orderCount > 0 ? (_byId ? _byId[_order.items[$index].id] : null) : (_rows ? _rows[$index] : null)"
 			_isAlly = "_isAlly"
 		)
 	)
@@ -142,7 +150,13 @@
 		(var panelData:dict = "dataComponent ? dataComponent.data : null" (event "dataComponent.evDataChanged"))
 		(var allyRows:array = "panelData ? panelData.ally : null" (event "dataComponent.evDataChanged"))
 		(var enemyRows:array = "panelData ? panelData.enemy : null" (event "dataComponent.evDataChanged"))
+		(var allyById:dict = "panelData ? panelData.allyById : null" (event "dataComponent.evDataChanged"))
+		(var enemyById:dict = "panelData ? panelData.enemyById : null" (event "dataComponent.evDataChanged"))
 		(var labels:dict = "panelData ? panelData.labels : null" (event "dataComponent.evDataChanged"))
+		# The client's own TAB-order children (AvatarSystem's splitting/
+		# sorting collections); the side panels use their iteration order.
+		(var allyOrder:gfx = "$datahub.getCollection().getChildByPath('team.ally.sortedAlive')")
+		(var enemyOrder:gfx = "$datahub.getCollection().getChildByPath('team.enemy.sortedAlive')")
 	)
 
 	(style
@@ -156,7 +170,7 @@
 		(style
 			(position = "absolute")
 		)
-		(element WowspSidePanel _isAlly="true" _rows="allyRows" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
-		(element WowspSidePanel _isAlly="false" _rows="enemyRows" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+		(element WowspSidePanel _isAlly="true" _rows="allyRows" _byId="allyById" _order="allyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+		(element WowspSidePanel _isAlly="false" _rows="enemyRows" _byId="enemyById" _order="enemyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
 	)
 )

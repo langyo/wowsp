@@ -2104,6 +2104,18 @@ class Probe:
 
     def panel_rows(self, side):
         rows = []
+        # The avatar id is the key the client's own sortedAlive collection
+        # iterates; the unbound view maps each collection entry to its
+        # panel row by this id (names carry clan tags there, ids do not).
+        ids = {}
+        for p in self.roster:
+            try:
+                aid = _to_int(p.get('avatar_id', 0))
+                nm = p.get('name')
+                if aid and nm:
+                    ids[nm] = aid
+            except:
+                pass
         for name in self.order.get(side, []):
             if not name:
                 continue
@@ -2115,6 +2127,7 @@ class Probe:
             wr = row.get('wr') if _is_kind(row, 'dict') else None
             pr = row.get('pr') if _is_kind(row, 'dict') else None
             rows.append({'name': name,
+                         'avatar_id': ids.get(name, 0),
                          'wr': ('%.1f%%' % wr) if _is_num(wr) else '--',
                          'pr': _fmt(_to_int(pr)) if _is_num(pr) else '--',
                          'alive': alive,
@@ -2128,9 +2141,21 @@ class Probe:
         try:
             ally = self.panel_rows('ally')
             enemy = self.panel_rows('enemy')
+            ally_by_id = {}
+            for row in ally:
+                aid = row.get('avatar_id', 0)
+                if aid:
+                    ally_by_id[_fmt(aid)] = row
+            enemy_by_id = {}
+            for row in enemy:
+                aid = row.get('avatar_id', 0)
+                if aid:
+                    enemy_by_id[_fmt(aid)] = row
             data = {'visible': True if (self.tab and (ally or enemy)) else False,
                     'ally': ally,
                     'enemy': enemy,
+                    'allyById': ally_by_id,
+                    'enemyById': enemy_by_id,
                     'labels': self.labels}
             body = json_encode_safe(data)
             if body == self.last_panel:
