@@ -176,6 +176,40 @@ API 面、候选集合计数、名单的
 且不是 CN 船名序时，覆盖层去掉该侧额外的玩家昵称列；部分覆盖、过期流或
 CN 会恢复昵称列。这是 WG/Lesta 的“装了探针即无额外昵称列”行为。
 
+**精确顺序路线矩阵（2026-10-18，WG + 国服静态/实测）**——多条路线已
+关死，这里记录状态，避免重复走死路：
+
+- **Python Mods API**——两家客户端都关死。反编译的国服
+  `ModsShell/API_v_1_0` 与 WG 同构：`dataHub` 只导出
+  `getEntityCollections`/`getSingleEntity`（SYNCED 组件列表、拍平——
+  拆分树丢失）；`battleGate` 内部的 `getCollection(componentId)` 只是
+  模块级助手，非导出 API（国服回放探针：`getCollection`/
+  `getCollections`/`getAllPlayers` 两家都 missing）。
+- **unbound → Python 反向桥**——两家实测都不通：自定义动作名的
+  `bindcall externalCall 'inputMapping.onAction'`/`'direct.action'`、
+  直呼回调名的 externalCall、`setUserPref` 载荷通道，都到不了 Python
+  的 SFM 事件处理器或已注册的 `flash.addExternalCallback` 回调。Flash
+  回调本身注册成功（两参形式），但 unbound 侧没有任何入口能唤起它。
+- **unbound 集合读取**——可行（即上文游戏内面板的精确行序）。国服
+  unbound 运行时确定支持：国服随包的 battle_expert 视图就在用
+  `$datahub.getCollection(CC.xxx).getChildByPath(...)`。回放不挂载战斗
+  视图，验证需要一局真人局。
+- **名单记录旁侧字段**——`prebattleIndex` 是分队槽位（多数为 0、分队
+  成员 1–3），不是行序；国服记录顶层无 `shipName`（嵌套 `shipInfo`
+  还差一次下标访问探测）。负结果都记在 `order_probe.json`。
+- **读客户端内存**——按红线排除（无注入/无内存读写；AGENTS.md §0）。
+- **OCR 渲染出的 TAB 表**——已废弃的像素管线，不再回头。
+
+**CN 覆盖层的选定下一步：截屏侧信道（定位条码）。**覆盖层本来就会截屏
+取表格外几何；游戏内面板（客户端精确行序）可以再给每行渲染一小组高对比
+的 5 位色块图案，编码该玩家在 Python 已知名单序中的下标（载荷走同一个
+mods_DataComponent）。解码固定几何的二值色块无需 OCR：采样色块中心、
+阈值化、按 侧+行位 → 名单下标 → 玩家。这样在所有客户端（含国服）上都
+能精确归位每一行 TAB，而且只用官方 API（unbound 渲染 + 既有截屏），
+失败面就是覆盖层已有的截屏层。要点：行高仍是已知 22px，首行放同步图案；
+比特在 Python 算好以布尔随载荷下发（DSL 只写三元表达式，不用位运算）；
+解码器放在锚点检测旁边，喂给排序键今天喂的那套行归位逻辑。
+
 **编码器加固（2026-10-09，WG 亚服 15.9.0 实测）**：客户端自带的
 `utils.jsonEncode` 同样被证明随构建不稳——15.9 对 15.8 曾接受的普通字典
 载荷直接抛异常，WG 亚服的 telemetry.json 冻结在退出清空态，而

@@ -239,6 +239,56 @@ keys cover every row of that side and the realm is not CN; partial
 coverage, a stale stream, or CN brings the name cell back. This is the
 "probe installed, no extra nickname column" behavior for WG/Lesta.
 
+**Exact-order route matrix (2026-10-18, WG + CN static/live).** The
+search is closed on several fronts; what remains is listed with its
+status so nobody re-walks the dead ends:
+
+- **Python Mods API** — closed on BOTH clients. CN's decompiled
+  `ModsShell/API_v_1_0` matches WG's: `dataHub` exports exactly
+  `getEntityCollections`/`getSingleEntity` (SYNCED component lists,
+  flattened — the splitting tree is lost), and `battleGate`'s internal
+  `getCollection(componentId)` is a plain module-global helper, not an
+  exported API (live CN replay probe: `getCollection`/`getCollections`/
+  `getAllPlayers` missing on both clients).
+- **unbound → Python reverse bridge** — dead on both clients (live):
+  `bindcall externalCall 'inputMapping.onAction'`/`'direct.action'`
+  with custom action names, direct callback-name externalCalls, and a
+  `setUserPref` payload carrier all fail to reach the Python SFM event
+  handler or a registered `flash.addExternalCallback` callback. The
+  flash callback REGISTERS fine (2-arg form); nothing unbound-side can
+  invoke it.
+- **unbound collection reads** — WORK (this is the in-game panel's
+  exact order above). CN's unbound runtime provably supports them: the
+  community battle_expert view shipped on CN uses
+  `$datahub.getCollection(CC.xxx).getChildByPath(...)`. Replay
+  playback does not mount battle views, so validation needs one real
+  battle.
+- **Roster-record side fields** — `prebattleIndex` is a division slot
+  (0 for most, 1–3 for division members), never the row order; CN
+  records carry no top-level `shipName` (the nested `shipInfo` SafeClass
+  still needs an item-access probe). Negative results recorded in
+  `order_probe.json`.
+- **Client memory reading** — out of scope by policy (no injection /
+  no memory writes; AGENTS.md §0).
+- **OCR of the rendered TAB table** — the retired pixel pipeline; not
+  revisited.
+
+**Selected next route for the CN overlay: a capture side channel
+(positional barcode).** The overlay already screen-captures the game
+for table geometry; the in-game panel (in the client's exact order) can
+additionally render, per row, a tiny high-contrast 5-bit block pattern
+encoding that player's index in the roster order Python already knows
+(the payload rides the same mods_DataComponent). Decoding fixed-
+geometry binary blocks is OCR-free: sample the block centers, threshold,
+map side+position → roster index → player. That attributes every TAB
+row exactly on EVERY client (CN included) with only official APIs
+(unbound render + the existing capture), and the failure mode is the
+capture layer the overlay already falls back from. Sketch: rows stay at
+the known 22 px pitch with a sync pattern on the first row; bits arrive
+as booleans in the panel payload (computed in Python — the DSL gets
+plain ternaries, no bitwise ops); the decoder lives next to the anchor
+detection and feeds the same row attribution the sort keys feed today.
+
 **Encoder hardening (2026-10-09, WG-ASIA 15.9.0 live)**: the client's
 own `utils.jsonEncode` proved build-unstable as well — 15.9 RAISED on
 plain dict payloads 15.8 accepted, freezing telemetry.json at its
