@@ -14,7 +14,7 @@ import { defineComponent } from "vue";
 import { AlertTriangle, Plug, RotateCcw } from "@lucide/vue";
 
 import { HkSpinner, useToast } from "@celestia-island/hikari";
-import { t } from "@/i18n";
+import { t, tError } from "@/i18n";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import "./PluginStatusCard.scss";
 
@@ -36,7 +36,9 @@ export default defineComponent({
             ? await plugin.update()
             : await plugin.install();
       if (done) {
-        toast.error(t(done));
+        // Key-or-raw contract (see tError): a backend guard refusal is an
+        // English sentence and must surface verbatim, never via t().
+        toast.error(tError(done));
         return;
       }
       toast.success(

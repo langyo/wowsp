@@ -153,3 +153,17 @@ export async function setLocale(locale: Locale): Promise<void> {
 export function t(key: string, params?: Record<string, unknown>): string {
   return i18n.global.t(key, params as never);
 }
+
+/**
+ * Localize an error string that may be EITHER an i18n key or a raw
+ * backend sentence. The plugin lifecycle stores' error contract mixes
+ * shapes: their own sentinel values are keys ("common.game.offline" —
+ * dot paths, no spaces), while command rejections arrive as raw anyhow
+ * Display strings (English sentences, always with spaces). Only the key
+ * may pass through t() — a lookup on a raw sentence is a guaranteed miss
+ * that merely happens to echo the input back (and would break the day a
+ * message collides with the interpolation syntax).
+ */
+export function tError(text: string): string {
+  return /\s/.test(text) ? text : t(text);
+}

@@ -3,7 +3,7 @@ import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 import { HkButton, HkModal, HkScrollContainer, HkSpinner, HkStepFlow, useToast, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 import { Check, ImagePlus, Moon, Sun, SunMoon } from "@lucide/vue";
 
-import { t } from "@/i18n";
+import { t, tError } from "@/i18n";
 import { themePresetIds } from "@/theme";
 import {
   setThemeModePreference,
@@ -318,9 +318,9 @@ export default defineComponent({
       if (plugin.busy) return;
       const done = await plugin.install();
       if (done) {
-        // Same contract as PluginStatusCard: the store returns either a
-        // localized key or a raw message — t() passes the latter through.
-        toast.error(t(done));
+        // Key-or-raw contract (see tError): a backend guard refusal is an
+        // English sentence and must surface verbatim, never via t().
+        toast.error(tError(done));
         return;
       }
       pluginInstalledHere.value = true;

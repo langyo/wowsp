@@ -72,6 +72,14 @@ export interface PendingInstall {
  *  so a remote catalog mod id can never collide into the probe's slot. */
 export const PROBE_ITEM = "probe:builtin";
 
+/** Mount grace of the pass's progress card (ModUpdateToast): a pass that
+ *  ends inside this window never mounts it — an instant guard refusal's
+ *  flash-in/flash-out read as "the click did nothing". The STORE owns the
+ *  number (not the component) because the fast-pass outcome branches on
+ *  it too: a full success inside the grace gets the light success toast
+ *  instead of the card's leave snapshot as its only visible trace. */
+export const MOD_PASS_CARD_GRACE_MS = 400;
+
 /** Lifecycle op an item is mid-way through. */
 export type PluginItemOp = "install" | "update" | "uninstall";
 
@@ -404,6 +412,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     }
 
     running.value = true;
+    const startedAt = Date.now();
     total.value = tasks.length;
     done.value = 0;
     failures.value = [];
@@ -453,12 +462,38 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
       percent.value = null;
       currentName.value = "";
       if (failures.value.length > 0) {
-        toast.error(
-          t("resources.pluginUpdateFailed", {
-            count: failures.value.length,
-            names: failures.value.join(", "),
-          }),
-        );
+        const text = t("resources.pluginUpdateFailed", {
+          count: failures.value.length,
+          names: failures.value.join(", "),
+        });
+        if (failures.value.length === tasks.length) {
+          // Every single item was refused (guard-class outcome: a running
+          // client, safe mode) — the pass died in well under a second and
+          // the progress card never mounts, so this toast is the ONLY
+          // surface the rejection ever reaches. Make it sticky (duration 0
+          // = no auto-dismiss, copyable) instead of the 30 s default: an
+          // unreadable flash read as "the click did nothing" (user report
+          // 2026-10-18). A partial failure keeps the auto-dismiss — some
+          // work DID land, the toast is a footnote.
+          //
+          // Retire any live error slot FIRST: hikari's push() only takes
+          // the duration when it CREATES the slot, so a sticky show into
+          // an existing 30 s slot would ride the old timer and take the
+          // whole verdict down with it (the common sequence is exactly a
+          // prior per-surface toast.error, e.g. the plugin card's refusal).
+          const prior = toast.toasts.find((s) => s.type === "error");
+          if (prior) toast.remove(prior.id);
+          toast.show(text, { type: "error", duration: 0, copyable: true });
+        } else {
+          toast.error(text);
+        }
+      } else if (tasks.length > 0 && Date.now() - startedAt < MOD_PASS_CARD_GRACE_MS) {
+        // A pass that finished INSIDE the card's mount grace leaves no
+        // visible trace at all (the card never mounted; success normally
+        // speaks through the card's leave snapshot). The fast full-success
+        // shape — a probe-only local write — is common, so it gets the
+        // light success toast; anything slower keeps the card feedback.
+        toast.success(t("resources.pluginUpdateDone"));
       }
       reportSkipped();
       void syncFreshness();

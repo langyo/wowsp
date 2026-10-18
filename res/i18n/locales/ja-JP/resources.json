@@ -98,6 +98,7 @@
   "pluginUpdateDownloading": "ダウンロード {percent}%",
   "pluginUpdateInstalling": "インストール中…",
   "pluginUpdateFailed": "{count} 件の更新に失敗:{names}",
+  "pluginUpdateDone": "更新が完了しました。",
   "installedBadge": "インストール済み",
   "installedAt": "インストール済み {version}",
   "uninstall": "アンインストール",

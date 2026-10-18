@@ -98,6 +98,7 @@
   "pluginUpdateDownloading": "下载中 {percent}%",
   "pluginUpdateInstalling": "安装中…",
   "pluginUpdateFailed": "{count} 个插件更新失败:{names}",
+  "pluginUpdateDone": "插件已更新。",
   "installedBadge": "已安装",
   "installedAt": "已装 {version}",
   "uninstall": "卸载",

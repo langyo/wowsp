@@ -3,7 +3,7 @@ import { PackageCheck } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
-import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
+import { MOD_PASS_CARD_GRACE_MS, usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import "./ModUpdateToast.scss";
 
 /** Leave transition length — must match the --leave duration below. */
@@ -38,6 +38,7 @@ export default defineComponent({
     /** Frozen pass state served while the leave transition runs. */
     const held = ref({ statusText: "", determinate: false, progress: 0 });
     let leaveTimer: number | undefined;
+    let mountTimer: number | undefined;
 
     function statusText(): string {
       const step = t("resources.pluginUpdateStep", {
@@ -65,19 +66,36 @@ export default defineComponent({
             leaveTimer = undefined;
           }
           leaving.value = false;
-          mounted.value = true;
-        } else if (mounted.value && !leaving.value) {
-          held.value = {
-            statusText: statusText(),
-            determinate: updates.overallPercent != null,
-            progress: updates.overallPercent ?? 0,
-          };
-          leaving.value = true;
-          leaveTimer = window.setTimeout(() => {
-            leaveTimer = undefined;
-            mounted.value = false;
-            leaving.value = false;
-          }, LEAVE_MS);
+          if (mountTimer === undefined) {
+            // The mount grace (MOD_PASS_CARD_GRACE_MS, owned by the
+            // store): only a pass still running past the window earns
+            // the card.
+            mountTimer = window.setTimeout(() => {
+              mountTimer = undefined;
+              if (updates.running) mounted.value = true;
+            }, MOD_PASS_CARD_GRACE_MS);
+          }
+        } else {
+          if (mountTimer !== undefined) {
+            // The pass died inside the grace — the card never mounts and
+            // no leave snapshot is taken (the frozen text of a dead pass
+            // is exactly the flash this guard exists to remove).
+            window.clearTimeout(mountTimer);
+            mountTimer = undefined;
+          }
+          if (mounted.value && !leaving.value) {
+            held.value = {
+              statusText: statusText(),
+              determinate: updates.overallPercent != null,
+              progress: updates.overallPercent ?? 0,
+            };
+            leaving.value = true;
+            leaveTimer = window.setTimeout(() => {
+              leaveTimer = undefined;
+              mounted.value = false;
+              leaving.value = false;
+            }, LEAVE_MS);
+          }
         }
       },
       // Sync so the snapshot samples the still-live pass state at the
@@ -87,6 +105,7 @@ export default defineComponent({
 
     onBeforeUnmount(() => {
       if (leaveTimer !== undefined) window.clearTimeout(leaveTimer);
+      if (mountTimer !== undefined) window.clearTimeout(mountTimer);
     });
 
     return () => {
