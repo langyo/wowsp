@@ -19,7 +19,7 @@ import { Plug } from "@lucide/vue";
 
 import { HkCheckbox, HkModal, useToast } from "@celestia-island/hikari";
 
-import { t } from "@/i18n";
+import { t, tError } from "@/i18n";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { usePluginPromptStore } from "@/stores/pluginPrompt";
 import "./PluginInstallPromptModal.scss";
@@ -50,9 +50,9 @@ export default defineComponent({
       try {
         const done = await plugin.install();
         if (done) {
-          // Same contract as PluginStatusCard: the store returns either a
-          // localized key or a raw message — t() passes the latter through.
-          toast.error(t(done));
+          // Key-or-raw contract (see tError): a backend guard refusal is
+          // an English sentence and must surface verbatim, never via t().
+          toast.error(tError(done));
           return;
         }
         toast.success(t("replay.live.idlePluginInstalled"));

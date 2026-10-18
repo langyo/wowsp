@@ -98,6 +98,7 @@
   "pluginUpdateDownloading": "téléchargement {percent}%",
   "pluginUpdateInstalling": "installation…",
   "pluginUpdateFailed": "{count} mise(s) à jour échouée(s) : {names}",
+  "pluginUpdateDone": "Mise à jour terminée.",
   "installedBadge": "Installé",
   "installedAt": "Installé {version}",
   "uninstall": "Désinstaller",

@@ -98,6 +98,7 @@
   "pluginUpdateDownloading": "다운로드 {percent}%",
   "pluginUpdateInstalling": "설치 중…",
   "pluginUpdateFailed": "{count}개 업데이트 실패: {names}",
+  "pluginUpdateDone": "업데이트가 완료되었습니다.",
   "installedBadge": "설치됨",
   "installedAt": "설치됨 {version}",
   "uninstall": "제거",

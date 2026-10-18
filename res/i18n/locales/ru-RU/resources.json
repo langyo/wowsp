@@ -98,6 +98,7 @@
   "pluginUpdateDownloading": "загрузка {percent}%",
   "pluginUpdateInstalling": "установка…",
   "pluginUpdateFailed": "Не удалось обновить ({count}): {names}",
+  "pluginUpdateDone": "Обновление завершено.",
   "installedBadge": "Установлен",
   "installedAt": "Установлен {version}",
   "uninstall": "Удалить",

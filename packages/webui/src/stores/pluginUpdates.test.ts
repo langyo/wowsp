@@ -195,9 +195,68 @@ describe("usePluginUpdatesStore.updateAll", () => {
     // to the raw key — assert on the collected failures instead (the
     // real app interpolates names into the message).
     expect(useToast().toasts.some((s) => s.type === "error")).toBe(true);
+    // PARTIAL failure: work landed, the toast is a footnote — the 30 s
+    // auto-dismiss default stays (a sticky slot is reserved for a pass
+    // that was refused wholesale).
+    expect(useToast().toasts.some((s) => s.type === "error" && s.duration !== 0)).toBe(true);
     expect(updates.failures.join("|")).toContain("mod-b");
     expect(updates.failures.join("|")).toContain("mirror down");
     expect(updates.done).toBe(2);
+  });
+
+  it("raises a STICKY error toast when the whole pass was refused", async () => {
+    // The guard-refusal shape (a running client): the single probe task
+    // rejects with the backend's raw sentence, the pass dies in ~100 ms
+    // and the progress card never mounts — this toast is the ONLY
+    // surface the rejection reaches, so it must not auto-dismiss
+    // (duration 0 = sticky until closed, copyable).
+    mocked.probeInstall.mockRejectedValueOnce(
+      new Error("World of Warships is running from D:/Korabli (pid 7) — close that client before installing") as never,
+    );
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    const slot = useToast().toasts.find((s) => s.type === "error");
+    expect(slot).toBeDefined();
+    expect(slot?.duration).toBe(0);
+    expect(slot?.copyable).toBe(true);
+    expect(updates.failures.length).toBe(1);
+    expect(updates.done).toBe(1);
+  });
+
+  it("retires a live 30 s error slot before raising the sticky verdict", async () => {
+    // The real-world sequence: the plugin card's refusal already put a
+    // 30 s error slot up, THEN the user hits the batch pass. hikari's
+    // push() only takes duration when CREATING a slot, so the sticky
+    // show must remove the old slot first or the whole verdict rides the
+    // old timer and vanishes with it at 30 s.
+    useToast().error("prior refusal");
+    mocked.probeInstall.mockRejectedValueOnce(new Error("client running") as never);
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = { [GAME]: { mods: [], probeOutdated: true } };
+
+    await updates.updateAll();
+
+    const errors = useToast().toasts.filter((s) => s.type === "error");
+    expect(errors).toHaveLength(1); // the prior slot was retired, not reused
+    expect(errors[0]?.duration).toBe(0);
+  });
+
+  it("toasts the light success when a fast pass beats the card grace", async () => {
+    // Probe-only local write: resolves in ~0 ms, the progress card never
+    // mounts, so the success toast is the pass's only visible trace.
+    mocked.probeInstall.mockResolvedValueOnce("ok" as never);
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = { [GAME]: { mods: [], probeOutdated: true } };
+
+    await updates.updateAll();
+
+    expect(useToast().toasts.some((s) => s.type === "success")).toBe(true);
+    expect(updates.failures.length).toBe(0);
   });
 
   it("folds per-item progress events into overallPercent", async () => {
