@@ -1,57 +1,60 @@
 #!/usr/bin/env python3
 """Bake the Lesta-only ships' 3D models straight from the client geometry.
 
-The finding that makes this work WITHOUT the assets.bin visual layer: the
-per-part `.geometry` files in a ship's model directory are already
-positioned in SHIP space (Connecticut: MidFront z∈[-7.2, 0.4], MidBack
-z∈[-0.1, 7.3] — disjoint halves meeting at the seam), so the hull is the
-union of its non-LOD part meshes. The 26.x assets.bin prototype payload
-(new recursive serialization, see docs/lesta-assets-bin-format.md) is not
-needed for the pack's texture-less holographic bakes.
+The hull comes from the per-part `.geometry` files in the ship's model
+directory — they are already positioned in SHIP space (Connecticut:
+MidFront z∈[-7.2, 0.4], MidBack z∈[-0.1, 7.3] — disjoint halves meeting
+at the seam), so the hull is the union of its non-LOD part meshes.
 
-Turrets are NOT in the ship's model directory — each gun is its own
-GameParams entity with a separate model dir, authored in GUN-LOCAL space
-(pivot at the traverse axis). Their placement used to live only in the
-undecoded visual layer, but the ship's `.splash` file (a plain packaged
-file, same as WG) carries named hit-box AABBs, and the GameParams
-artillery HP blocks reference them by name
-(`HitLocationArtillery.splashBoxes: ["CM_SB_gk_1_1"]`). So each main
-turret is placed exactly, with the convention calibrated against WG's own
-export-ship output for hulls the two clients share under the same model
-directory (Montana, Worcester, Dante, Agincourt, Mikasa: every pivot
-matched to three decimals):
+Every gun (main / secondary / AA) is its own GameParams entity with a
+separate model dir, authored in GUN-LOCAL space. Their placement comes
+from BOTH of these client sources, cross-validating each other:
 
-  - the hull `.geometry` frame is WG's ship frame — bow at -z;
-  - the `.splash` frame is MIRRORED along z (bow at +z), so the mount
-    point is (box_center_x, box_max_y, -box_center_z) — x and the
-    barbette-top y carry over as-is;
-  - facing: WG authors per-turret yaw in the visual layer, which stays
-    undecoded, so facing is inferred from position — turrets whose box
-    lands aft of the ship's splash-box midpoint face the stern, the rest
-    face the bow (24 of 26 sampled WG turrets agree; the outliers are
-    WG's own midship styling quirks).
+  - the ship's `.splash` file carries named hit-box AABBs referenced by
+    the GameParams artillery HP blocks (`CM_SB_gk_1_1`). Main turrets
+    anchor at (box_center_x, box_max_y, -box_center_z) — the splash
+    frame is z-mirrored vs the hull geometry frame (bow at -z in the
+    geometry, +z in splash), calibrated against WG's own export-ship
+    output for hulls both clients share (every pivot to 3 decimals).
+  - assets.bin's node-tree blocks (phase 6 of
+    docs/lesta-assets-bin-format.md): per ship PART, WG-shaped OOL
+    blocks in blob1 carrying every hardpoint's full ROW-major matrix
+    in the splash frame — mains, secondaries (`HP_*GS_*`), AA
+    (`HP_*GA_*`), catapults. Blocks are attributed per ship by
+    content: a block's HP-name set must be a subset of the ship's
+    GameParams HP names, anchored by exact (y, z) agreement of its
+    `HP_*GM_*` translations with the splash gk boxes; turret-less part
+    blocks additionally need storage adjacency to an anchored block.
+    Nothing in the file references blocks by offset, so content
+    matching is the only attribution path — and it is exact.
 
-The earlier bake skipped the z mirror, which mounted every turret on the
-opposite end of the hull, and yawed everything one way.
+With a block attributed, every gun mounts at its node matrix (true
+per-mount rotation — side secondaries face outboard, aft mains face
+aft); the splash anchor remains the fallback for mains when a ship has
+no matched block, with facing inferred from position (aft of the
+splash midpoint faces the stern).
 
-Coverage follows the data: every CA/BB in the Lesta-only set anchors all
-its turrets this way (Lesta's Akagi PJSA508 even mounts her two bow
-casemate guns); most CVs have no artillery at all (hull-only, as they
-should be); DD/sub deck guns have no separate hit boxes at all — they
-stay out until the visual layer (assets.bin) is decoded.
+Triangle economy: each unique gun MODEL is pre-decimated once via
+bake_model (mains 1500 / secondaries 400 / AA 150 tris, cached under
+<stage>/rawglb/gunlo) before per-mount placement, so a 67-mount AA
+suite costs ~10k tris instead of its raw ~50k; the final whole-ship
+bake_model pass then budgets by category as for the WG bakes.
 
 Pipeline per ship (the Lesta-only indexes of tech_tree_lesta.json):
   1. ship + gun model dirs from ship_models.json / GameParams;
-  2. extract the dirs' .geometry files + the .splash via lesta_extract.py
-     (Oodle pkgs);
+  2. extract the dirs' .geometry files + the .splash (+ content/
+     assets.bin once per stage) via lesta_extract.py (Oodle pkgs);
   3. `wowsunpack export-model --no-vfs` per part (skips lod*/wire/ports
      duplicates and degenerate <10-tri marker meshes);
-  4. merge the parts into one GLB (one node per part, named by stem);
+  4. merge the parts into one GLB (one node per part, named by stem —
+     gun parts are named `<GUN_STEM>_<HP>` so bake_model classifies
+     them main_battery / secondary_battery / aa_mount per instance);
   5. `bake_model.py --triangles 15000` decimates into the pack format
      (INDEX-named, exactly how modelLoader resolves GLB stems).
 
 Resume-safe: a current-looking <INDEX>.glb output is skipped — pass
---force when re-baking after a pipeline change (e.g. picking up turrets).
+--force when re-baking after a pipeline change (e.g. picking up
+secondaries).
 
 Usage:
     python scripts/model_convert/bake_lesta_ships.py \
@@ -63,6 +66,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -156,6 +160,254 @@ def splash_bow_sign(boxes: dict[str, tuple[list, list]]) -> int:
         if bow and other:
             return 1 if sum(bow) / len(bow) > sum(other) / len(other) else -1
     return 1
+
+
+# ── assets.bin node blocks (phase 6) ───────────────────────────────────
+# A gun hardpoint node: HP_<nation>G<M|S|A>_<n> — mains (GM), secondaries
+# (GS), AA (GA). Compound names (HP_AGM_2_HP_AGA_4 — AA riding a turret
+# top) have no node of their own and stay unmounted.
+GUN_HP_RE = re.compile(r"^HP_[A-Z]G[MSA]_\d+$")
+MAIN_HP_RE = re.compile(r"^HP_[A-Z]GM_\d+$")
+# Per-class pre-decimation budgets for a unique gun model (whole-ship
+# bake_model pass then allocates category shares on top; these caps keep
+# a 60+-mount AA suite from flooding the raw merge).
+GUN_TRI_CAP = {"main": 1500, "secondary": 400, "aa": 150}
+
+
+def load_node_blocks(stage: Path, game_dir: str, ooz: str | None,
+                     wowsunpack: str) -> list[dict] | None:
+    """HP-node digest of every assets.bin node block, cached under the
+    stage. Each entry: {off, mounts: {HP_name: 16 row-major floats}} for
+    blocks carrying at least one gun hardpoint. Returns None when the
+    file can't be extracted or parsed (the bake falls back to splash
+    anchoring, hull+main-turrets only)."""
+    assets = Path(stage) / "content" / "assets.bin"
+    cache = Path(stage) / "lesta_node_blocks.json"
+    if cache.is_file():
+        try:
+            return json.loads(cache.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            pass
+    if not assets.is_file():
+        rc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
+             "--game-dir", game_dir, "--out", str(stage), "--wowsunpack", wowsunpack]
+            + (["--ooz", ooz] if ooz else []) + ["content/assets.bin"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if rc.returncode != 0 or not assets.is_file():
+            print(f"[bake-lesta] WARN: assets.bin unavailable — "
+                  f"no secondary/AA mounts ({(rc.stderr or '')[-160:]})", flush=True)
+            return None
+    from lesta_assetsbin_probe import Bin, scan_node_blocks
+
+    print("[bake-lesta] scanning assets.bin node blocks (once per stage) ...",
+          flush=True)
+    b = Bin(assets)
+    b.sections()
+    out = []
+    for blk in scan_node_blocks(b):
+        mounts = {name: list(blk["matrices"][i])
+                  for i, name in enumerate(blk["names"])
+                  if name and GUN_HP_RE.match(name)}
+        if mounts:
+            out.append({"off": blk["names_off"], "mounts": mounts})
+    try:
+        cache.write_text(json.dumps(out), encoding="utf-8")
+    except OSError:
+        pass
+    print(f"[bake-lesta] node blocks with gun mounts: {len(out):,}", flush=True)
+    return out
+
+
+def gun_hp_entities(entry: dict, entity_by_id: dict) -> dict[str, dict]:
+    """HP name → gun entity placement info for every armament section
+    (mains, secondaries, AA). Compound names (turret-top sub-mounts) and
+    blocks without a resolvable model are skipped."""
+    out: dict[str, dict] = {}
+    for section, cls in (("A_Artillery", "main"), ("A_ATBA", "secondary"),
+                         ("A_AirDefense", "aa")):
+        for hp, block in (entry.get(section) or {}).items():
+            if not (isinstance(block, dict) and GUN_HP_RE.match(hp)):
+                continue
+            entity = entity_by_id.get(block.get("id"))
+            model = (entity or {}).get("model") or ""
+            if not model.endswith(".model"):
+                continue
+            out[hp] = {
+                "cls": cls,
+                "model": model,
+                "geometry": "/" + model[: -len(".model")] + ".geometry",
+                "stem": model.rsplit("/", 1)[-1][: -len(".model")],
+            }
+    return out
+
+
+def ship_mount_blocks(blk_digest: list[dict], spec: dict) -> list[dict]:
+    """This ship's node blocks out of the global digest. A block matches
+    when its main-turret names are a subset of the ship's GameParams
+    mains, every boxed main agrees with the ship's splash gk boxes to
+    0.02 (the strong signal — wrong-family blocks differ by ≥0.1), and
+    its gun names overlap the ship's set by a majority. Sister hulls
+    with identical turret geometry may share a block — harmless, their
+    mount layouts coincide and twin mounts dedupe by proximity in
+    collect_mounts."""
+    def compatible(names: set, mounts: dict) -> bool:
+        mains_c = {n for n in names if MAIN_HP_RE.match(n)}
+        if not mains_c or not mains_c <= spec["main_names"]:
+            return False
+        # Positional evidence is mandatory: at least one main must have a
+        # splash box to anchor the block (ships whose mains lack boxes
+        # would otherwise accept every same-nation block).
+        boxed = [n for n in mains_c if spec["agm_boxes"].get(n)]
+        if not boxed:
+            return False
+        # A block may carry a few gun nodes the GameParams revision lacks
+        # (or vice versa), but the overlap must be near-total — a
+        # same-class sister's block (shared turret geometry, different AA
+        # revision) falls out here.
+        if len(names & spec["gp_names"]) < 0.9 * len(names):
+            return False
+        for n in boxed:
+            exp = spec["agm_boxes"][n]
+            m = mounts[n]
+            if abs(m[13] - exp[0]) > 0.05 or abs(m[14] - exp[1]) > 0.02:
+                return False
+        return True
+
+    tight = [blk for blk in blk_digest
+             if compatible(set(blk["mounts"]), blk["mounts"])]
+    if not tight:
+        return []
+    # Parts with no main turrets (pure secondary/AA midship parts) carry
+    # no positional evidence of their own. Admit the ones whose names are
+    # entirely fresh (a ship's parts partition its HP names) and that are
+    # stored next to a tight block of this ship — a sister's pure-AA part
+    # sits next to the sister's tight parts, not ours.
+    covered = set().union(*(set(b["mounts"]) for b in tight))
+    anchor_offs = [b["off"] for b in tight]
+    spare = [blk for blk in blk_digest
+             if not any(MAIN_HP_RE.match(n) for n in blk["mounts"])
+             and set(blk["mounts"]) <= spec["gp_names"]
+             and not set(blk["mounts"]) & covered]
+    spare.sort(key=lambda b: min(abs(b["off"] - o) for o in anchor_offs))
+    for blk in spare:
+        if min(abs(blk["off"] - o) for o in anchor_offs) > 1024 * 1024:
+            break
+        if set(blk["mounts"]) & covered:
+            continue
+        tight.append(blk)
+        covered |= set(blk["mounts"])
+    return tight
+
+
+def collect_mounts(matched: list[dict], hull_bounds: tuple[list, list],
+                   idx: str) -> dict[str, tuple[str, list[float]]]:
+    """Unique mount name → (base HP name, block matrix) across the ship's
+    blocks, deduped (twin blocks repeat content) and bounds-checked
+    against the hull's splash bbox (attribution safety: a wrong-ship
+    block would plant mounts in the air or off-hull). Same-HP collisions
+    from different blocks keep both, suffixed x2, x3…"""
+    (hx0, hy0, hz0), (hx1, hy1, hz1) = hull_bounds
+    margin = 0.5
+    out: dict[str, tuple[str, list[float]]] = {}
+    dups = 0
+    for blk in matched:
+        for base, m in blk["mounts"].items():
+            x, y, z = m[12], m[13], m[14]
+            if not (hx0 - margin <= x <= hx1 + margin
+                    and hy0 - margin <= y <= hy1 + 2.5
+                    and hz0 - margin <= z <= hz1 + margin):
+                dups += 1
+                continue
+            name = base
+            sfx = 1
+            while name in out:
+                hm = out[name][1]
+                if (abs(hm[12] - x) <= 0.05 and abs(hm[13] - y) <= 0.05
+                        and abs(hm[14] - z) <= 0.05):
+                    break  # twin copy of a mount already collected
+                sfx += 1
+                name = f"{base}x{sfx}"
+            else:
+                out[name] = (base, m)
+    if dups:
+        print(f"[bake-lesta]   {idx}: {dups} mounts skipped (out of hull "
+              f"bounds — attribution guard)", flush=True)
+    return out
+
+
+def decimate_gun_glb(src: Path, dst: Path, cap: int) -> None:
+    """Pre-decimate one gun model to a triangle cap as a single POSITION+
+    indices mesh. bake_model's CLI path is unusable here — its whole-ship
+    budget floor (`max(triangles, 6000)`) returns small guns untouched —
+    so this drives bake_model.decimate() directly on the vertex soup."""
+    import bake_model  # noqa: PLC0415  (module-level import would drag numpy into every run)
+
+    js, bins = read_glb(src)
+    bins = bins or b""
+    verts: list[float] = []
+    idx: list[int] = []
+    for mesh in js.get("meshes", []):
+        for prim in mesh.get("primitives", []):
+            ai = prim.get("attributes", {}).get("POSITION")
+            ii = prim.get("indices")
+            if ai is None:
+                continue
+            acc = js["accessors"][ai]
+            bv = js["bufferViews"][acc["bufferView"]]
+            if bv.get("byteStride") not in (None, 12):
+                raise ValueError("interleaved POSITION accessor")
+            base = bv.get("byteOffset", 0) + acc.get("byteOffset", 0)
+            off = len(verts) // 3
+            for vi in range(acc["count"]):
+                verts.extend(struct.unpack_from("<3f", bins, base + vi * 12))
+            if ii is None:
+                idx.extend(range(off, off + acc["count"]))
+                continue
+            iacc = js["accessors"][ii]
+            ibv = js["bufferViews"][iacc["bufferView"]]
+            ibase = ibv.get("byteOffset", 0) + iacc.get("byteOffset", 0)
+            fmt, sz = {5123: ("<H", 2), 5125: ("<I", 4)}[iacc.get("componentType")]
+            for k in range(iacc["count"]):
+                (v,) = struct.unpack_from(fmt, bins, ibase + k * sz)
+                idx.append(off + v)
+    if not verts:
+        raise ValueError("no geometry")
+    dv, di = bake_model.decimate(verts, idx, cap)
+    pos = struct.pack(f"<{len(dv)}f", *dv)
+    index = struct.pack(f"<{len(di)}{'H' if max(di) < 65536 else 'I'}", *di)
+    jtxt = json.dumps({
+        "asset": {"version": "2.0", "generator": "wowsp-lesta-gunlo"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": [{"mesh": 0, "name": dst.stem}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+        "accessors": [
+            {"bufferView": 0, "componentType": VEC3_FLOAT, "count": len(dv) // 3,
+             "type": "VEC3",
+             "min": [min(dv[i::3]) for i in range(3)],
+             "max": [max(dv[i::3]) for i in range(3)]},
+            {"bufferView": 1,
+             "componentType": 5123 if max(di) < 65536 else 5125,
+             "count": len(di), "type": "SCALAR",
+             "min": [min(di)], "max": [max(di)]},
+        ],
+        "bufferViews": [
+            {"buffer": 0, "byteOffset": 0, "byteLength": len(pos)},
+            {"buffer": 0, "byteOffset": len(pos), "byteLength": len(index)},
+        ],
+        "buffers": [{"byteLength": len(pos) + len(index)}],
+    }, separators=(",", ":")).encode()
+    padj = (4 - len(jtxt) % 4) % 4
+    binb = pos + index
+    padb = (4 - len(binb) % 4) % 4
+    total = 12 + 8 + len(jtxt) + padj + 8 + len(binb) + padb
+    dst.write_bytes(
+        struct.pack("<III", 0x46546C67, 2, total)
+        + struct.pack("<II", len(jtxt) + padj, 0x4E4F534A) + jtxt + b" " * padj
+        + struct.pack("<II", len(binb) + padb, 0x004E4942) + binb + b"\0" * padb
+    )
 
 
 # ── GLB vertex transform (rotate + translate a raw export in place) ────
@@ -268,6 +520,61 @@ def _accessor_is_position(js: dict, ai: int) -> bool:
             if prim.get("attributes", {}).get("POSITION") == ai:
                 return True
     return False
+
+
+def place_gun_matrix_glb(src: Path, dst: Path, m16: list[float]) -> None:
+    """Mount a gun-local GLB with a full node matrix from an assets.bin
+    node block. The block matrix is ROW-major with the translation in
+    elements 12-14, expressed in the SPLASH frame (+z = bow); the hull
+    geometry frame is z-mirrored, so the transform is conjugated by
+    diag(1,1,-1): rotation entries touching the z axis exactly once
+    flip sign, and so does the z translation. Vertices (row-vector
+    convention, p' = p·M): x' = m0x+m4y+m8z+tx etc.; normals rotate the
+    same way without translation (pure rotation, unit length kept)."""
+    # hull-frame entries: h[i][j] = s_i * s_j * m[i][j], s = (1, 1, -1)
+    m = m16
+    r = (m[0], m[4], -m[8],
+         m[1], m[5], -m[9],
+         -m[2], -m[6], m[10])
+    t = (m[12], m[13], -m[14])
+    js, bins = read_glb(src)
+    bins = bytearray(bins or b"")
+    accs = []
+    for i, acc in enumerate(js["accessors"]):
+        if acc.get("type") != "VEC3" or acc.get("componentType") != VEC3_FLOAT:
+            continue
+        bv = js["bufferViews"][acc["bufferView"]]
+        if bv.get("byteStride") not in (None, 12):
+            raise ValueError(f"accessor {i} is interleaved "
+                             f"(stride {bv.get('byteStride')})")
+        accs.append(i)
+    pos = {i for i in accs if _accessor_is_position(js, i)}
+    for i in accs:
+        acc = js["accessors"][i]
+        base = js["bufferViews"][acc["bufferView"]].get("byteOffset", 0) \
+            + acc.get("byteOffset", 0)
+        is_pos = i in pos
+        lo = [None, None, None]
+        hi = [None, None, None]
+        for vi in range(acc["count"]):
+            o = base + vi * 12
+            x, y, z = struct.unpack_from("<3f", bins, o)
+            nx = r[0] * x + r[1] * y + r[2] * z
+            ny = r[3] * x + r[4] * y + r[5] * z
+            nz = r[6] * x + r[7] * y + r[8] * z
+            if is_pos:
+                nx += t[0]
+                ny += t[1]
+                nz += t[2]
+            struct.pack_into("<3f", bins, o, nx, ny, nz)
+            if is_pos:
+                for c, v in ((0, nx), (1, ny), (2, nz)):
+                    lo[c] = v if lo[c] is None else min(lo[c], v)
+                    hi[c] = v if hi[c] is None else max(hi[c], v)
+        if is_pos:
+            acc["min"] = lo
+            acc["max"] = hi
+    write_glb(js, bytes(bins), dst)
 
 
 def write_glb(js: dict, bins: bytes, out: Path) -> None:
@@ -485,6 +792,69 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     raw_dir = Path(args.stage) / "rawglb"
     raw_dir.mkdir(parents=True, exist_ok=True)
+    # Node blocks: every mount's exact transform (secondary/AA rely on it
+    # entirely; mains use it with the splash anchor as cross-check).
+    blocks = load_node_blocks(Path(args.stage), args.game_dir, args.ooz, wowsunpack)
+
+    # Splash files for the whole scope up front — the global block
+    # attribution needs every ship's boxes before any ship is baked.
+    splash_paths = {}
+    for idx in indexes:
+        base = dir_by_index.get(idx)
+        if not base:
+            continue
+        sp = f"/{base}/" + base.rsplit("/", 1)[-1] + ".splash"
+        if any(e["path"] == sp for e in meta):
+            splash_paths[idx] = sp
+    if splash_paths:
+        rc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
+             "--game-dir", args.game_dir, "--out", str(args.stage),
+             "--wowsunpack", wowsunpack]
+            + (["--ooz", args.ooz] if args.ooz else [])
+            + [p.lstrip("/") for p in splash_paths.values()],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if rc.returncode != 0:
+            print("[bake-lesta] WARN: splash pre-extract reported failures "
+                  f"({(rc.stdout or rc.stderr or '')[-160:]})", flush=True)
+
+    # Per-ship armament specs, then per-ship block attribution (the
+    # tight positional anchor discriminates families on its own).
+    ship_specs: dict[str, dict] = {}
+    ship_boxes: dict[str, dict] = {}
+    for idx in indexes:
+        entry = entry_by_index.get(idx)
+        if not entry or idx not in splash_paths:
+            continue
+        try:
+            boxes = parse_splash_boxes(
+                (Path(args.stage) / splash_paths[idx].lstrip("/")).read_bytes())
+        except (ValueError, struct.error, OSError):
+            continue
+        hp_ents = gun_hp_entities(entry, entity_by_id)
+        if not hp_ents:
+            continue
+        agm_boxes = {}
+        for a in artillery_anchors(entry, entity_by_id):
+            box = boxes.get(a["box"])
+            if box:
+                agm_boxes[a["hp"]] = (box[1][1], (box[0][2] + box[1][2]) / 2)
+        ship_specs[idx] = {"gp_names": set(hp_ents),
+                           "main_names": {n for n in hp_ents if MAIN_HP_RE.match(n)},
+                           "agm_boxes": agm_boxes}
+        ship_boxes[idx] = boxes
+    ship_blocks: dict[str, list[dict]] = {}
+    if blocks and ship_specs:
+        for idx in indexes:
+            if idx in ship_specs:
+                matched = ship_mount_blocks(blocks, ship_specs[idx])
+                if matched:
+                    ship_blocks[idx] = matched
+        n_attr = sum(len(v) for v in ship_blocks.values())
+        print(f"[bake-lesta] block attribution: {n_attr:,} blocks across "
+              f"{len(ship_blocks)} ships", flush=True)
+
     baked = skipped = failed = 0
     for idx in indexes:
         target = args.out / f"{idx}.glb"
@@ -507,22 +877,44 @@ def main() -> int:
             failed += 1
             continue
 
-        # Turret anchors: artillery HP blocks → splash boxes → gun models.
+        # Armament data: splash boxes (main-turret anchor + fallback) and
+        # the assets.bin node blocks (every mount's exact transform).
         anchors: list[dict] = []
         splash_path = ""
         entry = entry_by_index.get(idx)
         if entry:
             anchors = artillery_anchors(entry, entity_by_id)
-            splash_path = f"/{base}/" + base.rsplit("/", 1)[-1] + ".splash"
-            if not any(e["path"] == splash_path for e in meta):
-                splash_path = ""
-        extra: list[str] = [a["geometry"].lstrip("/") for a in anchors]
-        if splash_path:
-            extra.append(splash_path.lstrip("/"))
+            splash_path = splash_paths.get(idx, "")
         if anchors and not splash_path:
             print(f"[bake-lesta] WARN {idx}: no .splash in the ship dir — hull-only.", flush=True)
             anchors = []
-            extra = []
+
+        boxes = ship_boxes.get(idx)
+
+        hp_ents = gun_hp_entities(entry, entity_by_id) if entry else {}
+        # unique mount name (base HP, x2… on block collisions) → (hp, matrix)
+        mounts: dict[str, tuple[str, list[float]]] = {}
+        if hp_ents and boxes and ship_blocks.get(idx):
+            hull_bounds = (
+                [min(mn[c] for mn, _ in boxes.values()) for c in range(3)],
+                [max(mx[c] for _, mx in boxes.values()) for c in range(3)],
+            )
+            raw_mounts = collect_mounts(ship_blocks[idx], hull_bounds, idx)
+            # GameParams HP names are unique per ship — a suffixed (x2…)
+            # same-name variant is by construction a sister-revision
+            # collision, not a real mount. Keep only unsuffixed mounts.
+            mounts = {k: v for k, v in raw_mounts.items()
+                      if v[0] in hp_ents and k == v[0]}
+
+        extra: list[str] = [a["geometry"].lstrip("/") for a in anchors]
+        seen_geo = set(extra)
+        for _, (hp, _) in mounts.items():
+            g = hp_ents[hp]["geometry"].lstrip("/")
+            if g not in seen_geo:
+                seen_geo.add(g)
+                extra.append(g)
+        if splash_path:
+            extra.append(splash_path.lstrip("/"))
 
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
@@ -554,25 +946,115 @@ def main() -> int:
             if tri_count(out) >= 10:
                 parts.append((stem, out))
 
-        # Place the turrets: hull-only if the splash data is missing or a
-        # box name does not resolve (a warning, not a bake failure).
-        if anchors:
-            try:
-                boxes = parse_splash_boxes(
-                    (Path(args.stage) / splash_path.lstrip("/")).read_bytes())
-            except (ValueError, struct.error) as e:
-                print(f"[bake-lesta] WARN {idx}: unreadable .splash ({e}) — hull-only",
+        # Place the armament. Mounts come from the node blocks (exact
+        # matrix); mains fall back to the splash anchor + positional
+        # facing when their block is missing or disagrees with the box.
+        gun_raw_dir = raw_dir / "gun"
+        gun_lo_dir = raw_dir / "gunlo"
+        gun_raw_dir.mkdir(exist_ok=True)
+        gun_lo_dir.mkdir(exist_ok=True)
+
+        def gun_model_lo(hp: str) -> Path | None:
+            """Export + class-budget pre-decimation of one unique gun
+            model, cached across ships under the stage."""
+            ent = hp_ents[hp]
+            raw = gun_raw_dir / f"{ent['stem']}.glb"
+            src = Path(args.stage) / ent["geometry"].lstrip("/")
+            if not raw.is_file() or args.force:
+                if not src.is_file():
+                    return None
+                r = subprocess.run(
+                    [wowsunpack, "export-model", str(src), "--no-vfs", "-o", str(raw)],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                )
+                if r.returncode != 0 or not raw.is_file():
+                    return None
+            cap = GUN_TRI_CAP[ent["cls"]]
+            lo = gun_lo_dir / f"{ent['stem']}__{cap}_in.glb"
+            if not lo.is_file() or args.force:
+                try:
+                    decimate_gun_glb(raw, lo, cap)
+                except (ValueError, KeyError, struct.error) as e:
+                    print(f"[bake-lesta] WARN {idx}: gun decimation failed for "
+                          f"{ent['stem']}: {e}", flush=True)
+                    return None
+            return lo
+
+        def muzzle_flip(lo: Path) -> bool:
+            """True when the gun model is authored with its barrels on the
+            +z side. Lesta mixes conventions (~15% of main-gun models are
+            +z while every node matrix assumes -z), which would render
+            those turrets backwards; the node transform is then preceded
+            by a local 180° yaw. Small decimated mounts (AA) often lose
+            the asymmetry — require a clear signal before flipping."""
+            js, _ = read_glb(lo)
+            lo_z, hi_z = None, None
+            for acc in js.get("accessors", []):
+                if acc.get("type") != "VEC3" or not acc.get("min"):
+                    continue
+                lo_z = acc["min"][2] if lo_z is None else min(lo_z, acc["min"][2])
+                hi_z = acc["max"][2] if hi_z is None else max(hi_z, acc["max"][2])
+            if lo_z is None:
+                return False
+            ahead, astern = -lo_z, hi_z
+            return astern - ahead > 0.15 * (ahead + astern)
+
+        n_main = n_sec = n_aa = 0
+        mounted_hp: set[str] = set()
+        anchor_boxes = {a["hp"]: a["box"] for a in anchors} if anchors else {}
+        for uniq in sorted(mounts):
+            hp, m16 = mounts[uniq]
+            ent = hp_ents[hp]
+            # Per-main cross-check vs the splash anchor: the block must
+            # agree with its gk box; a gross disagreement means the block
+            # belongs to a different (sister) hull — fall back below.
+            box = boxes.get(anchor_boxes[hp]) if (anchor_boxes.get(hp) and boxes) else None
+            if box is not None and MAIN_HP_RE.match(hp):
+                exp = ((box[0][0] + box[1][0]) / 2, box[1][1], (box[0][2] + box[1][2]) / 2)
+                if (abs(m16[12] - exp[0]) > 0.05 or abs(m16[13] - exp[1]) > 0.05
+                        or abs(m16[14] - exp[2]) > 0.05):
+                    print(f"[bake-lesta] WARN {idx}: {hp} block disagrees with its "
+                          f"splash box — using splash fallback", flush=True)
+                    continue
+            lo = gun_model_lo(hp)
+            if lo is None:
+                print(f"[bake-lesta] WARN {idx}: gun model for {hp} unavailable",
                       flush=True)
-                boxes = None
+                continue
+            placed = raw_dir / f"{idx}__gun_{uniq}_placed.glb"
+            try:
+                m_place = m16
+                if muzzle_flip(lo):
+                    # pre-rotate 180° about Y in gun-local space. Row-vector
+                    # convention: p' = (p·Y)·M, so M' = Y·M — negate the
+                    # matrix's row 0 and row 2, translation row untouched.
+                    m_place = [-m16[0], -m16[1], -m16[2], -m16[3],
+                               m16[4], m16[5], m16[6], m16[7],
+                               -m16[8], -m16[9], -m16[10], -m16[11],
+                               m16[12], m16[13], m16[14], m16[15]]
+                place_gun_matrix_glb(lo, placed, m_place)
+            except (ValueError, KeyError, struct.error) as e:
+                print(f"[bake-lesta] WARN {idx}: {uniq} place failed: {e}",
+                      flush=True)
+                continue
+            if tri_count(placed) >= 10:
+                parts.append((f"{ent['stem']}_{uniq}", placed))
+                mounted_hp.add(hp)
+                n_main += ent["cls"] == "main"
+                n_sec += ent["cls"] == "secondary"
+                n_aa += ent["cls"] == "aa"
+
+        # Mains without a (validated) block mount: splash anchor + the
+        # positional bow/stern facing rule.
+        if anchors:
             if boxes:
-                # Hull frame: bow at -z; splash frame: bow at +sign (mirrored).
                 bow_sign = splash_bow_sign(boxes)
                 mid_z = -bow_sign * (
                     min(mn[2] for mn, _ in boxes.values())
                     + max(mx[2] for _, mx in boxes.values())) / 2
-            else:
-                bow_sign = mid_z = None
             for a in anchors:
+                if a["hp"] in mounted_hp:
+                    continue
                 box = boxes.get(a["box"]) if boxes else None
                 gun_src = Path(args.stage) / a["geometry"].lstrip("/")
                 if box is None or not gun_src.is_file():
@@ -581,35 +1063,45 @@ def main() -> int:
                               f"(box {a['box']} or geometry missing)", flush=True)
                     continue
                 mn, mx = box
-                # Facing: aft mounts face the stern, the rest face the bow.
                 mount_z = -bow_sign * (mn[2] + mx[2]) / 2
                 face_z = 1 if mount_z > mid_z else -1
                 raw = raw_dir / f"{idx}__gun_{a['hp']}.glb"
-                if not raw.is_file() or args.force:
-                    r = subprocess.run(
-                        [wowsunpack, "export-model", str(gun_src), "--no-vfs", "-o", str(raw)],
-                        capture_output=True, text=True, encoding="utf-8", errors="replace",
-                    )
-                    if r.returncode != 0 or not raw.is_file():
-                        print(f"[bake-lesta] WARN {idx}: turret {a['hp']} export failed",
-                              flush=True)
-                        continue
+                src = gun_model_lo(a["hp"]) if a["hp"] in hp_ents else None
+                if src is None:
+                    if not raw.is_file() or args.force:
+                        r = subprocess.run(
+                            [wowsunpack, "export-model", str(gun_src), "--no-vfs", "-o", str(raw)],
+                            capture_output=True, text=True, encoding="utf-8", errors="replace",
+                        )
+                        if r.returncode != 0 or not raw.is_file():
+                            print(f"[bake-lesta] WARN {idx}: turret {a['hp']} export failed",
+                                  flush=True)
+                            continue
+                    src = raw
                 placed = raw_dir / f"{idx}__gun_{a['hp']}_placed.glb"
                 try:
-                    place_gun_glb(raw, placed, face_z, mn, mx, -bow_sign)
+                    place_gun_glb(src, placed, face_z, mn, mx, -bow_sign)
                 except (ValueError, KeyError, struct.error) as e:
                     print(f"[bake-lesta] WARN {idx}: turret {a['hp']} place failed: {e}",
                           flush=True)
                     continue
                 if tri_count(placed) >= 10:
-                    parts.append((f"{a['hp']}_turret", placed))
-                    print(f"[bake-lesta]   {idx} {a['hp']}: mount z={mount_z:+.2f} "
-                          f"face={'stern' if face_z > 0 else 'bow'}", flush=True)
+                    stem = a["model"].rsplit("/", 1)[-1][: -len(".model")]
+                    parts.append((f"{stem}_{a['hp']}", placed))
+                    n_main += 1
+                    print(f"[bake-lesta]   {idx} {a['hp']}: splash fallback "
+                          f"mount z={mount_z:+.2f} face={'stern' if face_z > 0 else 'bow'}",
+                          flush=True)
 
         if not parts:
             print(f"[bake-lesta] WARN {idx}: all parts degenerate", flush=True)
             failed += 1
             continue
+        gp_mains = sum(1 for h in hp_ents.values() if h["cls"] == "main") if hp_ents else 0
+        if gp_mains and n_main == 0:
+            print(f"[bake-lesta] WARN {idx}: {gp_mains} main-gun HPs in "
+                  f"GameParams but none mounted (stub/incomplete client "
+                  f"config) — hull-only bake", flush=True)
         merged = raw_dir / f"{idx}__merged.glb"
         merge_glbs(parts, merged)
         rc = subprocess.run(
@@ -622,8 +1114,8 @@ def main() -> int:
             failed += 1
             continue
         baked += 1
-        turrets = sum(1 for name, _ in parts if name.endswith("_turret"))
-        print(f"[bake-lesta] {idx}: {len(parts)} parts ({turrets} turrets) -> {target.name} "
+        print(f"[bake-lesta] {idx}: {len(parts)} parts ({n_main} mains, "
+              f"{n_sec} secondaries, {n_aa} AA) -> {target.name} "
               f"({tri_count(target):,} tris)", flush=True)
         merged.unlink(missing_ok=True)
         if args.limit and baked >= args.limit:
