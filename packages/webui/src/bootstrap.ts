@@ -13,6 +13,7 @@ import {
   applyViewportPolicy,
   initFontContext,
   initTheme,
+  installHkImageFallback,
   setLocale as setHikariLocale,
   useTheme,
 } from "@celestia-island/hikari";
@@ -106,6 +107,14 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   // Delegated tooltip hook: everything that used to lean on native
   // `title` popups opts in via data-hint and renders hikari-style.
   installGlobalTooltip();
+
+  // hikari's document-level image safety net (user direction 2026-10-19):
+  // any raw <img> whose load fails gets hikari's designed broken-image
+  // placeholder in place (class + bundled SVG swap, one-shot, self-healing)
+  // instead of the WebView's default torn-file glyph. Map surfaces pair
+  // this with the pack-era URL fallback in modelLoader; everything else —
+  // icon-ish art, remote thumbnails — is covered right here.
+  installHkImageFallback();
 
   // Backend flag hygiene: a webview reload (Vite HMR, WebView2 crash
   // recovery) wipes this window's manual-locate picker-layer state while

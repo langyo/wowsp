@@ -22,7 +22,7 @@ import { useRouter } from "vue-router";
 import { ArrowUpRight, Map } from "@lucide/vue";
 import { usePopupManager } from "@celestia-island/hikari";
 
-import { resolveMapMinimapUrl } from "@/features/holographic/modelLoader";
+import { noteMapMinimapLoadError, resolveMapMinimapUrl } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import { displayMapName } from "@/utils/mapNames";
 import { isAnalysableSpace } from "@/utils/tacticsMaps";
@@ -189,7 +189,13 @@ export default defineComponent({
           <Teleport to="body">
             <div ref={cardEl} class="map-tag__card" style={cardPos.value} role="tooltip">
               {thumbUrl.value ? (
-                <img class="map-tag__card-img" src={thumbUrl.value} alt="" draggable={false} />
+                <img
+                  class="map-tag__card-img"
+                  src={thumbUrl.value}
+                  alt=""
+                  draggable={false}
+                  onError={noteMapMinimapLoadError}
+                />
               ) : null}
               <span class="map-tag__card-foot">
                 {t("nav.tactics")}

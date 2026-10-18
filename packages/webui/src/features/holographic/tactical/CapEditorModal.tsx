@@ -21,7 +21,7 @@ import { HkButton, HkModal, HkPopupSelect, HkTag, useToast } from "@celestia-isl
 import { Crosshair, Upload } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import { api, type LearnedCapLayout } from "@/api";
-import { resolveMapMinimapUrl, type MapBounds } from "../modelLoader";
+import { loadMapMinimapImage, type MapBounds } from "../modelLoader";
 import { MODE_PRESETS, instantiateCaps, type CapSpec } from "./modes";
 import "./CapEditorModal.scss";
 
@@ -49,7 +49,6 @@ export default defineComponent({
     const caps = ref<CapSpec[]>([]);
     const selected = ref<number>(-1);
     const cvsRef = ref<HTMLCanvasElement | null>(null);
-    const artUrl = computed(() => resolveMapMinimapUrl(props.spaceId));
     const bounds = computed<MapBounds | null>(() => props.getBounds?.(props.spaceId) ?? null);
 
     let artImg: HTMLImageElement | null = null;
@@ -69,13 +68,11 @@ export default defineComponent({
     function loadArt(): void {
       const epoch = ++artEpoch;
       artImg = null;
-      const url = artUrl.value;
-      if (!url) return;
-      const img = new Image();
-      img.onload = () => {
+      // The shared loader carries the pre-WebP-pack .png fallback; a null
+      // art keeps the canvas's own dark sea.
+      void loadMapMinimapImage(props.spaceId).then((img) => {
         if (epoch === artEpoch) artImg = img;
-      };
-      img.src = url;
+      });
     }
 
     // ── Projection (world ⇄ canvas), matching the board's frame ──────────

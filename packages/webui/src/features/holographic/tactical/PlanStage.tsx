@@ -23,7 +23,7 @@ import {
   watch,
   type PropType,
 } from "vue";
-import { resolveMapMinimapUrl, loadMapBounds, type MapBounds } from "../modelLoader";
+import { loadMapMinimapImage, loadMapBounds, type MapBounds } from "../modelLoader";
 import { useToast } from "@celestia-island/hikari";
 import OverviewPanel from "./OverviewPanel";
 import { t as i18nT } from "@/i18n";
@@ -147,17 +147,15 @@ export default defineComponent({
       fullBounds.value = null;
       boundsReady.value = false;
       mapArtUrl.value = null;
-      const url = resolveMapMinimapUrl(props.spaceId);
-      if (url) {
-        mapArtUrl.value = url;
-        const img = new Image();
-        img.onload = () => {
-          if (epoch !== loadEpoch) return;
-          artImage = img;
-          dirty.value = true;
-        };
-        img.src = url;
-      }
+      // The shared loader carries the pre-WebP-pack .png fallback; the
+      // URL lands only once art actually loaded (so the overview card's
+      // background never points at a URL that 404s).
+      void loadMapMinimapImage(props.spaceId).then((img) => {
+        if (epoch !== loadEpoch || !img) return;
+        artImage = img;
+        mapArtUrl.value = img.src;
+        dirty.value = true;
+      });
       void loadMapBounds().then((all) => {
         if (epoch !== loadEpoch) return;
         const key = props.spaceId.replace(/^spaces\//, "");
