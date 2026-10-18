@@ -45,7 +45,8 @@ export function prTrendShipType(shipId: number): string {
   return TYPE_KEYS.find((k) => type.startsWith(k)) ?? "unknown";
 }
 
-/** The ship's tier (null when unknown) — the filter pill's "T10 ·" prefix. */
+/** The ship's tier (null when unknown) — feeds the corridor slider's
+ *  corridor check and the ship rows' tier tags. */
 export function prTrendShipTier(shipId: number): number | null {
   return dbEntryOf(shipId)?.tier ?? null;
 }
@@ -273,25 +274,6 @@ export function prTrendShipCatalog(intervals: PrTrendInterval[]): PrTrendShip[] 
       tier: prTrendShipTier(shipId),
     }))
     .sort((a, b) => b.battles - a.battles || a.shipId - b.shipId);
-}
-
-/** The tier brackets the ship popup's second button group offers — the
- *  water-meter bar's own grouping (ShipFilterBar's TIER_FILTERS), kept in
- *  lockstep so both popups read the same. Ships outside every bracket
- *  (tier unknown / ★-less curios) never match a concrete pick. */
-export const PR_TREND_TIER_BRACKETS: { key: string; label: string; tiers: number[] }[] = [
-  { key: "I-V", label: "I – V", tiers: [1, 2, 3, 4, 5] },
-  { key: "VI-VII", label: "VI – VII", tiers: [6, 7] },
-  { key: "VIII-IX", label: "VIII – IX", tiers: [8, 9] },
-  { key: "X-star", label: "X – ★", tiers: [10, 11] },
-];
-
-/** Whether a ship's tier falls in the bracket (null tiers match nothing —
- *  the same face an unclassifiable ship had before brackets existed). */
-export function prTrendTierMatches(tier: number | null, bracketKey: string): boolean {
-  if (tier == null) return false;
-  const b = PR_TREND_TIER_BRACKETS.find((x) => x.key === bracketKey);
-  return b != null && b.tiers.includes(tier);
 }
 
 // ── Chart geometry ────────────────────────────────────────────────────────

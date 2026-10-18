@@ -217,6 +217,13 @@
     gap: 0.3rem;
   }
 
+  /* The inline tier corridor slider (TierRangeSelect) — a fixed
+     comfortable width so the 11-stop rail and its labels never squeeze
+     between the row label and the grid edge. */
+  &__tier-range {
+    width: min(260px, 100%);
+  }
+
   &__chip {
     background: transparent;
     border: 1px solid rgb(var(--color-border) / 25%);

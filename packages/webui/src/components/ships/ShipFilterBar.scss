@@ -328,8 +328,31 @@
 
 .ship-filter-bar__pop-hint {
   margin-top: 8px;
+  /* Hints run long; a max-content panel would size itself to the WIDEST
+     hint line (the tier popup's body is a fixed-width slider — the panel
+     read lopsided). Wrapping keeps every popup governed by its control. */
+  max-width: 360px;
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted) / 90%);
+}
+
+/* ── Tier popup body: the shared corridor slider + its action row ──
+   The slider is TierRangeSelect's; the popup fixes a comfortable width for
+   the 11-stop rail (the panel itself sizes to content), and the action row
+   reuses the segmented __opts chrome so the 全部… pill and the shared-
+   direction flip read as the same control family as every other category's
+   options. */
+.ship-filter-bar__tier-pop {
+  width: min(360px, 100%);
+}
+
+.ship-filter-bar__tier-actions {
+  margin-top: 8px;
+}
+
+.ship-filter-bar__tier-flip {
+  /* Icon-only pill — a touch more side room than a text option needs. */
+  padding-inline: var(--space-8);
 }
 
 /* ── Search: one compact button, roomy leftward popup panel ──
@@ -489,6 +512,11 @@
   }
 
   .ship-filter-bar__search-panel {
+    width: auto;
+  }
+
+  /* The tier corridor spans the sheet — 11 stops get the full width. */
+  .ship-filter-bar__tier-pop {
     width: auto;
   }
 }

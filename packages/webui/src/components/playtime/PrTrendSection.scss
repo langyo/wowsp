@@ -79,6 +79,12 @@
   .ship-filter-bar__opts {
     align-self: flex-start;
   }
+
+  /* The tier corridor slider spans the panel — 11 stops want the room. */
+  .pr-trend-pop__tier-range {
+    align-self: stretch;
+    width: auto;
+  }
 }
 
 /* Column captions aligned to the row grid — five tracks: checkbox, name

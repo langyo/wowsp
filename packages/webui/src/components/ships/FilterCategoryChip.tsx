@@ -31,7 +31,12 @@
  *
  * Hosts that need more controls inside the popup render them through the
  * DEFAULT SLOT (between the option strip and the hint line — the replay
- * rail's client/player selects and its date-range pair live there). A nested
+ * rail's client/player selects and its date-range pair live there). Two
+ * extension props cover hosts whose category is NOT an option set: `label`
+ * overrides the collapsed chip's text (the tier chip reads its corridor
+ * "VI – ★"), and `bare` drops the option strip + 全部… pill so the default
+ * slot becomes the whole popup body (the tier chip hosts the shared
+ * TierRangeSelect slider that way). A nested
  * popup opened from slot content (an embedded HkDatePicker's calendar, an
  * embedded HkSelect's option popout — both teleport to body level) survives
  * the outside-close: presses inside any open surface of those families other
@@ -99,6 +104,15 @@ export default defineComponent({
      *  filter state of its own (the replay date-range pair) report it here
      *  — the icon anchor must not read idle while a window is set. */
     engaged: { type: Boolean, default: false },
+    /** Chip label override — hosts whose selection is not an option set
+     *  (the tier corridor slider) render their own label text ("VI – ★")
+     *  while the chip keeps this component's look and open/close state. */
+    label: { type: String, default: undefined },
+    /** Body-only popup: hosts that carry a fully custom control (the tier
+     *  corridor slider) pass bare — the option strip and the 全部… pill are
+     *  omitted and the default slot IS the popup body (the host's control
+     *  owns its own reset). */
+    bare: { type: Boolean, default: false },
   },
   emits: {
     "update:open": (_v: boolean) => true,
@@ -176,13 +190,16 @@ export default defineComponent({
     });
 
     // Chip label reads in canonical option order (not click order) so the
-    // text never shuffles when selections are toggled back and forth.
-    const chipLabel = computed(() => {
-      const labels = props.options
-        .filter((o) => props.selected.has(o.value))
-        .map((o) => o.label);
-      return labels.length > 0 ? labels.join("·") : props.allLabel;
-    });
+    // text never shuffles when selections are toggled back and forth; a
+    // `label` override wins outright (hosts whose state is not a set).
+    const chipLabel = computed(
+      () =>
+        props.label ??
+        (props.options
+          .filter((o) => props.selected.has(o.value))
+          .map((o) => o.label)
+          .join("·") || props.allLabel),
+    );
 
     const dirIcon = (d: "asc" | "desc") =>
       d === "desc" ? (
@@ -242,42 +259,45 @@ export default defineComponent({
                 capped by the panel and panned by wheel / drag / touch, its
                 edges fading where content still hides (the library senses
                 data-h-overflow; optionStrip normalizes the wheel and owns
-                the drag pan). The phone sheet relaxes the track back into
-                a wrapping group (SCSS). */}
-            <HkScrollContainer
-              ref={strip.attach}
-              class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
-              axis="horizontal"
-              fade
-              data-panning={strip.panning.value || undefined}
-            >
-              <div class="ship-filter-bar__opts-track">
-                <button
-                  type="button"
-                  class="ship-filter-bar__opt"
-                  data-active={props.selected.size === 0 || undefined}
-                  onClick={() => emit("all")}
-                >
-                  <span>{props.allLabel}</span>
-                  {props.dir ? dirIcon(props.dir) : null}
-                </button>
-                {props.options.map((o) => (
+                the drag pan). The phone sheet relaxes the track back into a
+                wrapping group (SCSS). Bare hosts skip the strip — the
+                default slot carries the whole body. */}
+            {props.bare ? null : (
+              <HkScrollContainer
+                ref={strip.attach}
+                class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
+                axis="horizontal"
+                fade
+                data-panning={strip.panning.value || undefined}
+              >
+                <div class="ship-filter-bar__opts-track">
                   <button
-                    key={o.value}
                     type="button"
                     class="ship-filter-bar__opt"
-                    data-active={props.selected.has(o.value) || undefined}
-                    onClick={() => emit("toggle", o.value)}
+                    data-active={props.selected.size === 0 || undefined}
+                    onClick={() => emit("all")}
                   >
-                    {props.renderOptionIcon ? props.renderOptionIcon(o.value) : null}
-                    <span>{o.label}</span>
-                    {props.dir && !props.pure && props.selected.has(o.value)
-                      ? dirIcon(props.dir)
-                      : null}
+                    <span>{props.allLabel}</span>
+                    {props.dir ? dirIcon(props.dir) : null}
                   </button>
-                ))}
-              </div>
-            </HkScrollContainer>
+                  {props.options.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      class="ship-filter-bar__opt"
+                      data-active={props.selected.has(o.value) || undefined}
+                      onClick={() => emit("toggle", o.value)}
+                    >
+                      {props.renderOptionIcon ? props.renderOptionIcon(o.value) : null}
+                      <span>{o.label}</span>
+                      {props.dir && !props.pure && props.selected.has(o.value)
+                        ? dirIcon(props.dir)
+                        : null}
+                    </button>
+                  ))}
+                </div>
+              </HkScrollContainer>
+            )}
             {/* Slot content rides between the strip and the hint — the
                 replay rail's date-range pair lives here. */}
             {slots.default?.()}

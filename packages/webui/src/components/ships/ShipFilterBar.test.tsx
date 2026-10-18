@@ -1,14 +1,15 @@
 /**
  * Tests for the chip-based ShipFilterBar interaction model (mixed
- * multi/single select):
+ *  multi/single select + the tier corridor slider):
  *  - six collapsed chips default to the inert grayed 全部… state; with
  *    nothing engaged the view keeps the historical battles-desc order;
- *  - the popup hosts the category's option group: type/nation/tier/mode are
- *    multi-select (picks OR within the category — the tier test covers the
- *    shared-direction flip), winrate/battles hold a SINGLE pick (a new
- *    bracket replaces the old one). Re-clicking the picked option flips
- *    the category's SHARED 正序/倒序 flag (every arrow in the category
- *    follows), and 全部… resets the category when a selection exists;
+ *  - the popup hosts the category's control: type/nation/mode are
+ *    multi-select (picks OR within the category), winrate/battles hold a
+ *    SINGLE pick (a new bracket replaces the old one), and tier hosts the
+ *    shared TierRangeSelect dual-thumb slider — the keyboard-driven tests
+ *    below narrow its corridor through the teleported popup. Re-clicking
+ *    a picked option (or the tier flip toggle) flips the category's SHARED
+ *    正序/倒序 flag, and 全部… resets the category when a selection exists;
  *  - 全部… runs the all-state sort through a THREE-click cycle while
  *    nothing is picked: engage in the canonical direction (--sort style),
  *    flip, switch off entirely (the chip returns to the gray state) — and
@@ -32,9 +33,9 @@
  *    result is the hosting view's business);
  *  - the multi-key sort priority is the FIXED canonical chip order: the
  *    earlier sorting category is the primary key, the next breaks ties;
- *  - the v4 drag-era storage migrates to v5 carrying only the selections
- *    (the drag order is dead state), the legacy key swept and the v5 blob
- *    written back;
+ *  - the v4/v5 storage migrates to v6 carrying only the selections (the
+ *    drag order is dead state, tier bracket pills fold into the slider
+ *    corridor), the legacy key swept and the v6 blob written back;
  *  - stale multi-select storage of the now-single categories is clamped
  *    to one pick on load;
  *  - selections survive an unmount/remount cycle;
@@ -57,8 +58,9 @@ import { panEngaged, stripWheelDelta } from "./optionStrip";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { PlayerShipStats, ShipInfo, ShipModeBreakdown, ShipModeStats } from "@/api";
 
-const PERSIST_KEY = "wowsp.shipFilter.v5";
-const LEGACY_PERSIST_KEY = "wowsp.shipFilter.v4";
+const PERSIST_KEY = "wowsp.shipFilter.v6";
+const LEGACY_PERSIST_KEY = "wowsp.shipFilter.v5";
+const V4_PERSIST_KEY = "wowsp.shipFilter.v4";
 
 // A popover left open by one test must not leak into the next test's
 // body-level queries — unmount every wrapper after each test.
@@ -287,26 +289,118 @@ describe("ShipFilterBar chips", () => {
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
   });
 
-  it("syncs the direction across multi-selected tier brackets", async () => {
+  /** The tier popup's slider rides the teleported panel (body-level). */
+  const bodyEl = (sel: string) =>
+    new DOMWrapper(document.body.querySelector(sel) as HTMLElement);
+  const tierThumb = (which: "lo" | "hi") =>
+    bodyEl(`.ship-filter-bar__pop .range-slider__thumb[data-thumb="${which}"]`);
+
+  it("renders the tier popup as the corridor slider with the ★ tick rail", async () => {
     const wrapper = mountBar();
     await flushPromises();
 
     await chip(wrapper, "tier").trigger("click");
     await waitPops(1);
-    await popOpts()[2]!.trigger("click"); // VI–VII → id 3 only
-    await popOpts()[3]!.trigger("click"); // VIII–IX → adds ids 1, 2
-    await flushPromises();
-    expect(order(wrapper)).toEqual([2, 1, 3]); // tier desc: T9, T8, T6
 
-    // Both brackets are active, both show the same down arrow…
-    expect(activeOpts().length).toBe(2);
-    expect(activeOpts().filter((o) => o.find(".lucide-arrow-down").exists()).length).toBe(2);
+    // The shared slider mounts inside the popup: 11 stops, the supership
+    // star on the right end, roman numerals elsewhere.
+    expect(document.body.querySelector(".ship-filter-bar__pop .tier-range")).not.toBeNull();
+    expect(
+      document.body.querySelectorAll(".ship-filter-bar__pop .range-slider__label").length,
+    ).toBe(11);
+    expect(bodyEl(".ship-filter-bar__pop .tier-range__star").text()).toBe("★");
+    const labels = [...document.body.querySelectorAll(".ship-filter-bar__pop .range-slider__label")];
+    expect(labels[0]!.textContent).toBe("I");
+    expect(labels[9]!.textContent).toBe("X");
+    // No option pills in the tier popup — only the 全部… action row.
+    expect(
+      document.body.querySelectorAll(".ship-filter-bar__pop .ship-filter-bar__opt").length,
+    ).toBe(1);
+    // Idle full range: no flip toggle while the category does not sort.
+    expect(document.body.querySelector("[data-tier-flip]")).toBeNull();
+  });
 
-    // …and flipping ONE of them flips BOTH (shared category direction).
-    await popOpts()[3]!.trigger("click");
+  it("filters a tier corridor through the slider and flips its sort", async () => {
+    const wrapper = mountBar();
     await flushPromises();
-    expect(order(wrapper)).toEqual([3, 1, 2]); // tier asc: T6, T8, T9
-    expect(activeOpts().filter((o) => o.find(".lucide-arrow-up").exists()).length).toBe(2);
+
+    await chip(wrapper, "tier").trigger("click");
+    await waitPops(1);
+
+    // Walk the lo thumb five steps → corridor [6, 11] ("VI – ★").
+    for (let i = 0; i < 5; i += 1) {
+      await tierThumb("lo").trigger("keydown", { key: "ArrowRight" });
+    }
+    await flushPromises();
+
+    // Chip wears the corridor as its label and turns active.
+    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--on");
+    expect(chip(wrapper, "tier").text()).toContain("VI");
+    expect(chip(wrapper, "tier").text()).toContain("★");
+    // All five ships sit in tiers 6..10 — the corridor sorts tier desc:
+    // T10 T10 T9 T8 T6 (battles desc breaks the T10 tie).
+    expect(order(wrapper)).toEqual([5, 4, 2, 1, 3]);
+    // The narrowed corridor engages the category's sort → chip arrow and
+    // the popup's flip toggle appear.
+    expect(chip(wrapper, "tier").find(".lucide-arrow-down").exists()).toBe(true);
+    expect(document.body.querySelector("[data-tier-flip]")).not.toBeNull();
+
+    // Flip the shared direction via the toggle.
+    await bodyEl("[data-tier-flip]").trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([3, 1, 2, 5, 4]); // tier asc; battles desc breaks the T10 tie
+
+    // 全部等级 resets the whole category — gray chip, historical order.
+    await bodyEl("[data-tier-all]").trigger("click");
+    await flushPromises();
+    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "tier").text()).not.toContain("VI");
+    expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
+  });
+
+  it("runs the tier 全部… sort through the same three-click cycle", async () => {
+    const wrapper = mountBar();
+    await flushPromises();
+
+    await chip(wrapper, "tier").trigger("click");
+    await waitPops(1);
+
+    // Engage in the canonical direction (tier desc) from the idle state.
+    await bodyEl("[data-tier-all]").trigger("click");
+    await flushPromises();
+    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--sort");
+    expect(chip(wrapper, "tier").find(".lucide-arrow-down").exists()).toBe(true);
+    expect(order(wrapper)).toEqual([5, 4, 2, 1, 3]);
+
+    // Second click flips; third switches the sort off entirely.
+    await bodyEl("[data-tier-all]").trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([3, 1, 2, 5, 4]);
+    await bodyEl("[data-tier-all]").trigger("click");
+    await flushPromises();
+    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--all");
+    expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
+  });
+
+  it("keeps a tier corridor across an unmount/remount cycle", async () => {
+    const first = mountBar();
+    await flushPromises();
+    await chip(first, "tier").trigger("click");
+    await waitPops(1);
+    // Walk the hi thumb three steps left → corridor [1, 8].
+    for (let i = 0; i < 3; i += 1) {
+      await tierThumb("hi").trigger("keydown", { key: "ArrowLeft" });
+    }
+    await flushPromises();
+    // Tiers ≤ 8: the T8 and T6 ships, tier desc.
+    expect(order(first)).toEqual([1, 3]);
+    first.unmount();
+
+    const second = mountBar();
+    await flushPromises();
+    expect(chip(second, "tier").classes()).toContain("ship-filter-bar__chip--on");
+    expect(order(second)).toEqual([1, 3]);
+    second.unmount();
   });
 
   it("keeps ship types pure filters: no arrows, re-click deselects", async () => {
@@ -487,7 +581,8 @@ describe("ShipFilterBar chips", () => {
     // pollute the indices.
     await chip(wrapper, "tier").trigger("click");
     await waitPops(1);
-    await popOpts()[0]!.trigger("click"); // 全部等级 → tier sort (desc)
+    // The tier popup's 全部… pill (no option group there).
+    await bodyEl("[data-tier-all]").trigger("click"); // → tier sort (desc)
     await flushPromises();
 
     // Tier desc leads (T10 T10 T9 T8 T6); the T10 tie resolves by the
@@ -520,11 +615,11 @@ describe("ShipFilterBar chips", () => {
     expect(order(wrapper)).toEqual([3, 1, 2]);
   });
 
-  it("carries the v4 drag-era storage into v5 as selections only", async () => {
+  it("carries the v4 drag-era storage into v6 as selections only", async () => {
     // A v4-era blob (any drag order plus a live selection): the order side
     // is dead state now, only the selection migrates.
     localStorage.setItem(
-      LEGACY_PERSIST_KEY,
+      V4_PERSIST_KEY,
       JSON.stringify({
         order: ["battles", "winrate", "tier", "type", "nation"],
         sel: {
@@ -537,7 +632,7 @@ describe("ShipFilterBar chips", () => {
 
     // The carried-over selection still filters…
     expect(order(wrapper)).toEqual([5]);
-    // …the v5 blob is written back immediately, selections only (the state
+    // …the v6 blob is written back immediately, selections only (the state
     // must survive a no-interaction session, not re-migrate next boot)…
     const persisted = JSON.parse(localStorage.getItem(PERSIST_KEY)!) as {
       sel?: Record<string, unknown>;
@@ -546,6 +641,37 @@ describe("ShipFilterBar chips", () => {
     expect(persisted.sel?.winrate).toBeDefined();
     expect(persisted.order).toBeUndefined();
     // …and the legacy key is swept so the migration runs exactly once.
+    expect(localStorage.getItem(LEGACY_PERSIST_KEY)).toBe(null);
+  });
+
+  it("folds v5 tier bracket pills into the v6 corridor covering them", async () => {
+    // A v5 blob whose tier category still holds bracket pill picks — a
+    // contiguous set maps straight, a non-contiguous one widens to its
+    // hull (the slider only expresses corridors; the superset never hides
+    // a ship the old OR filter showed).
+    localStorage.setItem(
+      LEGACY_PERSIST_KEY,
+      JSON.stringify({
+        sel: {
+          tier: { values: ["VI–VII", "X–★"], dir: "desc", allSort: false },
+        },
+      }),
+    );
+    const wrapper = mountBar();
+    await flushPromises();
+
+    // Hull of {6,7} ∪ {10,11} → corridor [6, 11], chip "VI – ★".
+    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--on");
+    expect(chip(wrapper, "tier").text()).toContain("VI");
+    expect(chip(wrapper, "tier").text()).toContain("★");
+    // Every test ship (T6..T10) passes; the engaged tier sort reads desc.
+    expect(order(wrapper)).toEqual([5, 4, 2, 1, 3]);
+    // The v6 blob carries the corridor; the v5 key is swept.
+    const persisted = JSON.parse(localStorage.getItem(PERSIST_KEY)!) as {
+      sel?: { tier?: { lo?: number; hi?: number } };
+    };
+    expect(persisted.sel?.tier?.lo).toBe(6);
+    expect(persisted.sel?.tier?.hi).toBe(11);
     expect(localStorage.getItem(LEGACY_PERSIST_KEY)).toBe(null);
   });
 
