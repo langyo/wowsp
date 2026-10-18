@@ -249,6 +249,11 @@
     "manualNoBattle": "目前沒有進行中的戰鬥，進入戰鬥後才能手動定位",
     "manualNoGame": "未找到遊戲視窗，請確認遊戲已啟動",
     "manualNoFrame": "暫無可用的快取截圖，請在遊戲中按住 Tab 檢視戰績表後重試",
+    "manualShotPick": "選擇參照截圖",
+    "manualShotLive": "最新畫面",
+    "manualShotPaste": "貼上圖片",
+    "manualShotFile": "選擇檔案",
+    "manualShotLoadFailed": "讀取圖片失敗",
     "param": {
       "mainGun": "主砲",
       "secondary": "副砲",

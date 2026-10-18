@@ -43,6 +43,13 @@ static LAST_TEAM_SIZES: std::sync::atomic::AtomicUsize = std::sync::atomic::Atom
 /// its modification stamp says when the battle actually started.
 static LAST_ARENA_MTIME: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
+/// Whether the most recently seen battle is PvE-class (co-op / scenario /
+/// operation — `matchGroup: "pve"` or an operation roster). The overlay's
+/// anchor-calibration store keys on it: the PvE Tab table is a different
+/// layout (single centered team header) and keeps its own detected
+/// coordinates (see `commands::overlay::calibration::BattleClass`).
+static LAST_BATTLE_PVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// mtime (unix secs) of the freshest roster `read_temp_arena_info` ever
 /// SERVED, per replays dir (normalized install-path key) — the read gate's
 /// regression rule. Per-DIR, not the global [`LAST_ARENA_MTIME`]: the /live
@@ -184,6 +191,10 @@ fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime)
         (allies << 16) | enemies,
         std::sync::atomic::Ordering::Relaxed,
     );
+    LAST_BATTLE_PVE.store(
+        operation || info.match_group.as_deref() == Some("pve"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
     LAST_ARENA_MTIME.store(stamp, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -207,6 +218,13 @@ pub(crate) fn arena_seen_within(max_age_secs: u64) -> bool {
 /// anchor, no per-press re-detection drift.
 pub(crate) fn last_arena_stamp() -> i64 {
     LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether the most recently recorded battle is PvE-class (see
+/// [`LAST_BATTLE_PVE`]). Read by the overlay watcher each tick to pick the
+/// anchor calibration's battle-class slot.
+pub(crate) fn last_battle_pve() -> bool {
+    LAST_BATTLE_PVE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Cheap synchronous re-check of the arena file, used by the overlay Tab
@@ -918,6 +936,7 @@ mod tests {
         let story = info_of("pve", Some("PCVO011_OP_10_s10_USS_CL"), story);
         note_arena_seen(&story, SystemTime::UNIX_EPOCH);
         assert_eq!(last_known_team_sizes(), (7, 0));
+        assert!(last_battle_pve(), "operation rosters are PvE-class");
 
         // The tutorial family: scripted units ARE team rows — the plain
         // relation split (allies 3 including the flagship pair, enemy 1).
@@ -933,6 +952,7 @@ mod tests {
         );
         note_arena_seen(&tutorial, SystemTime::UNIX_EPOCH);
         assert_eq!(last_known_team_sizes(), (3, 1));
+        assert!(last_battle_pve(), "tutorial operations are PvE-class");
 
         // Plain PvP keeps the raw relation split (no scripted units).
         let pvp = info_of(
@@ -946,10 +966,13 @@ mod tests {
         );
         note_arena_seen(&pvp, SystemTime::UNIX_EPOCH);
         assert_eq!(last_known_team_sizes(), (2, 1));
+        assert!(!last_battle_pve(), "random battles are PvP-class");
 
-        // Restore the process-global the sink solver keys on (other tests
-        // in this binary may run after this one).
+        // Restore the process-globals the sink solver and the overlay's
+        // anchor calibration key on (other tests in this binary may run
+        // after this one).
         LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_BATTLE_PVE.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// find_latest_arena_info picks the only tempArenaInfo.json in a dir tree.

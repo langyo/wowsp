@@ -209,6 +209,12 @@ pub(super) struct WatchFsm {
     /// The sink fast-path's strip-fingerprint baseline (see
     /// [`StripBaseline`]) — the previous probe's thumbs at the pinned grid.
     pub(super) strip_baseline: Option<StripBaseline>,
+    /// Persistent anchor calibration (see `calibration.rs`): the loaded
+    /// per-client store, the screen fingerprint, the battle class the
+    /// cached geometry belongs to and the per-press stability vote.
+    pub(super) calibration: CalibrationCtx,
+    /// When the hardware screen fingerprint was last recomputed.
+    pub(super) last_screen_check: Option<Instant>,
 }
 
 /// Push a detection-status report to ALL windows — but only when it differs
@@ -385,6 +391,18 @@ pub(super) fn apply_watch_command(
             // through the dedup mirror.
             None
         },
+        WatchCommand::CalibrationStoreChanged { client_key } => {
+            // The settings calibration editor wrote this client's store:
+            // reload it when the watcher is bound to the same client and
+            // forget the battle-class alignment so the next battle-known
+            // tick re-seeds the geometry cache from the fresh entries.
+            if fsm.calibration.client_key.as_deref() == Some(client_key.as_str()) {
+                fsm.calibration.force_reload();
+                fsm.calibration.cache_class = None;
+                tracing::info!(client = %client_key, "anchor calibration reloaded after an editor write");
+            }
+            None
+        },
     }
 }
 
@@ -418,6 +436,89 @@ pub(super) fn acquisition_retry_interval(held: Option<Duration>) -> Duration {
     }
 }
 
+/// Assemble the persistent calibration's LIVE identity for this moment:
+/// the bound client + battle class + screen fingerprint, plus the window's
+/// current origin/size/style/kind. `None` while the watcher has not
+/// resolved a client or recorded a battle class — every calibration op is
+/// then a no-op (plain uncached detection).
+#[cfg(target_os = "windows")]
+pub(super) fn live_calibration_key(
+    fsm: &WatchFsm,
+    game: &GameWindow,
+) -> Option<calibration::LiveKey> {
+    let class = fsm.calibration.cache_class?;
+    let rect = rect_from_win32(game.rect);
+    fsm.calibration.live_key(
+        class,
+        &game.kind,
+        (rect.x, rect.y),
+        (rect.width, rect.height),
+        super::capture::window_style_bits(game.hwnd),
+    )
+}
+
+/// Pure cadence decision for the pinned-anchor revalidation (unit-tested).
+/// Two arms:
+///
+/// - FORCED (`last == None` — the cache was just dropped): always run. A
+///   certified geometry must still heal itself when the sink probe's band
+///   gate proves the table moved.
+/// - PERIODIC (5 s cadence): skipped while the geometry is CERTIFIED
+///   stable (see `calibration.rs`) — this is the "stop re-detecting once
+///   several consecutive Tab presses agreed" contract; an uncertified
+///   geometry keeps the historical watchdog cadence.
+pub(super) fn revalidate_due(last: Option<Instant>, certified: bool, now: Instant) -> bool {
+    match last {
+        None => true,
+        Some(at) => !certified && now.duration_since(at) >= ANCHOR_REVALIDATE_INTERVAL,
+    }
+}
+
+/// Re-align the in-memory geometry cache to a battle-class change (PvP ↔
+/// PvE tables are different layouts with independently calibrated
+/// coordinates): seed the cache from the new class's STORED entry when the
+/// window mode matches, otherwise drop the old class's cache — its band
+/// would only buy three failed verifies before the full scan anyway.
+#[cfg(target_os = "windows")]
+pub(super) fn align_geometry_cache_to_class(
+    fsm: &mut WatchFsm,
+    game: &GameWindow,
+    class: calibration::BattleClass,
+) {
+    let rect = rect_from_win32(game.rect);
+    let key = GeometryKey {
+        game_size: (rect.width, rect.height),
+        style_bits: super::capture::window_style_bits(game.hwnd),
+        kind: game.kind,
+    };
+    let seeded = fsm
+        .calibration
+        .seed_geometry(class, &game.kind, key.game_size, key.style_bits)
+        .map(|(band, roster, team_sizes, profile)| GeometryCacheEntry {
+            key,
+            band,
+            roster,
+            team_sizes,
+            profile,
+        });
+    match seeded {
+        Some(cache) => {
+            tracing::info!(class = ?class, "geometry cache seeded from the stored anchor calibration");
+            fsm.geometry_cache = Some(cache);
+        },
+        None => {
+            if fsm.geometry_cache.is_some() {
+                tracing::info!(
+                    class = ?class,
+                    "battle class changed — geometry cache dropped (no matching calibration entry)"
+                );
+            }
+            fsm.geometry_cache = None;
+        },
+    }
+    fsm.geometry_verify_fails = 0;
+}
+
 /// One poll iteration of the Tab watcher (factored out so the loop can wrap
 /// it in `catch_unwind`).
 #[cfg(target_os = "windows")]
@@ -441,23 +542,54 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     }
 
     // Resolve the game window: cached while valid, rescanned at most
-    // once per HWND_REFRESH — including the not-found case.
-    let game = match fsm.cached_game {
-        Some((g, at)) if at.elapsed() < HWND_REFRESH && g.is_alive() => Some(g),
+    // once per HWND_REFRESH — including the not-found case. (The cached
+    // entry is CLONED out — GameWindow carries the install key as a
+    // String — a per-tick allocation the poll rate easily affords.)
+    let game = match fsm.cached_game.as_ref() {
+        Some((g, at)) if at.elapsed() < HWND_REFRESH && g.is_alive() => Some(g.clone()),
         _ if fsm.last_scan.is_none_or(|t| t.elapsed() >= HWND_REFRESH) => {
             fsm.last_scan = Some(Instant::now());
             let found = find_game_window();
-            fsm.cached_game = found.map(|g| (g, Instant::now()));
+            fsm.cached_game = found.clone().map(|g| (g, Instant::now()));
             found
         },
         _ => fsm
             .cached_game
+            .as_ref()
             .filter(|(g, _)| g.is_alive())
-            .map(|(g, _)| g),
+            .map(|(g, _)| g.clone()),
     };
 
-    let focused_on_game = game.is_some_and(|g| g.is_foreground());
+    // Anchor-calibration bookkeeping (per-client persistent geometry, see
+    // `calibration.rs`): bind the store to the running install, and keep
+    // the hardware screen fingerprint fresh — a changed layout retires
+    // every entry (they stop matching) and detection re-arms.
+    if let Some(g) = game.as_ref() {
+        fsm.calibration.bind_client(&g.install_key);
+        if fsm
+            .last_screen_check
+            .is_none_or(|t| t.elapsed() >= SCREEN_FINGERPRINT_REFRESH)
+        {
+            fsm.last_screen_check = Some(Instant::now());
+            let fingerprint = screen_fingerprint();
+            if fingerprint != fsm.calibration.screen {
+                tracing::info!(
+                    screen = %fingerprint,
+                    "screen configuration changed — anchor calibration re-armed"
+                );
+                fsm.calibration.screen = fingerprint;
+            }
+        }
+    }
+
+    let focused_on_game = game.as_ref().is_some_and(|g| g.is_foreground());
     let tab_down = tab_key_down();
+    // One stability vote per Tab PRESS episode: the key coming up re-arms
+    // the vote so a long hold cannot certify its own geometry (see
+    // `CalibrationCtx::note_stable`).
+    if !tab_down {
+        fsm.calibration.hold_counted = false;
+    }
 
     // Declare the OVERLAY view mode in the probe's wowsp.toml once per
     // game session (panel = 0 / barcode = 1 — the capture side channel's
@@ -522,8 +654,22 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     }
 
     let battle = super::arena_info::last_arena_stamp();
-    let game_rect = game.map(|g| rect_from_win32(g.rect));
-    let game_kind = game.map(|g| g.kind);
+    let game_rect = game.as_ref().map(|g| rect_from_win32(g.rect));
+    let game_kind = game.as_ref().map(|g| g.kind);
+    // Battle-class tracking for the anchor calibration (PvP and PvE keep
+    // independent entries — their Tab tables are different layouts). On a
+    // class CHANGE the in-memory geometry cache is re-seeded from the new
+    // class's stored entry (or dropped when none matches: the other
+    // class's band would only buy three failed verifies), so the first
+    // press of the new class verifies a band instead of scanning — or
+    // scans once and re-stores.
+    if let Some(g) = game.as_ref().filter(|_| battle_known && !table_off) {
+        let class = calibration::BattleClass::current();
+        if fsm.calibration.cache_class != Some(class) {
+            fsm.calibration.cache_class = Some(class);
+            align_geometry_cache_to_class(fsm, g, class);
+        }
+    }
     // MANUAL anchor first: while a user-drawn box is in force for THIS
     // battle on THIS game-window geometry, it replaces the entire
     // automatic machine for the tick — no capture, no detector, no pin.
@@ -626,16 +772,20 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             // tick, priority: sink probe (cheapest, most time-critical) →
             // full revalidation. A branch that fires
             // bumps only its own stamp, so the others simply run on a later
-            // tick (their `due` conditions stay armed).
+            // tick (their `due` conditions stay armed). The revalidation
+            // arm stands down while the geometry is CERTIFIED stable —
+            // see `revalidate_due` (a forced pass, `last_revalidate ==
+            // None`, still runs: the sink probe's band gate must always be
+            // able to heal a genuinely moved table).
+            let calibrated = live_calibration_key(fsm, &g)
+                .as_ref()
+                .is_some_and(|k| fsm.calibration.certified(k));
             if fsm
                 .last_sink_check
                 .is_none_or(|t| t.elapsed() >= SINK_CHECK_INTERVAL)
             {
                 sink_check_pass(app, fsm, &g);
-            } else if fsm
-                .last_revalidate
-                .is_none_or(|t| t.elapsed() >= ANCHOR_REVALIDATE_INTERVAL)
-            {
+            } else if revalidate_due(fsm.last_revalidate, calibrated, Instant::now()) {
                 // Periodically re-check the pin against a live detection —
                 // the panel moves as a whole when HUD phases change
                 // (countdown → combat) and neither pin key (arena stamp,

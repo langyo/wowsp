@@ -17,6 +17,7 @@ import UpdatesSection from "@/components/settings/sections/UpdatesSection";
 import InstallCleanupSection from "@/components/settings/sections/InstallCleanupSection";
 import ChangelogSection from "@/components/settings/ChangelogSection";
 import OverlaySection from "@/components/settings/sections/OverlaySection";
+import OverlayCalibrationSection from "@/components/settings/sections/OverlayCalibrationSection";
 import FeedbackSection from "@/components/settings/FeedbackSection";
 import AboutSection from "@/components/settings/sections/AboutSection";
 import AttributionsSection from "@/components/settings/sections/AttributionsSection";
@@ -83,6 +84,7 @@ export default defineComponent({
           </>
           ),
           overlay: () => <OverlaySection ctx={ctx} />,
+          overlayCalibration: () => <OverlayCalibrationSection ctx={ctx} />,
           feedback: () => (
           <>
           <FeedbackSection />

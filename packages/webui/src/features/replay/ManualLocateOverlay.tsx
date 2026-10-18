@@ -1,19 +1,30 @@
 /**
  * Manual-locate picker — an in-app SUB-WINDOW of the main window, rendered
  * as a plain HkModal (the same window context as Settings), NOT a dedicated
- * Tauri window and NOT a full-screen takeover. Opened by the live-battle
- * panel's "manual locate" button after the backend gates pass
- * (`startManualLocate`); the open state lives in the manualLocate store so
- * a mid-pick roster update cannot unmount the picker out from under the
- * user.
+ * Tauri window and NOT a full-screen takeover. Opened in "battle" mode by
+ * the manual-locate flow after the backend gates pass (`startManualLocate`)
+ * or in "calibration" mode by the settings calibration editor
+ * (`startCalibrationLocate`); the open state lives in the manualLocate
+ * store so a mid-pick roster update cannot unmount the picker out from
+ * under the user.
  *
- * The background is the LAST frame captured while the player held Tab (the
- * roster moment they actually saw — the Rust cache only stores Tab-held
- * captures), downscaled for transport. The detector's knowledge of that
- * frame is overlaid as GUIDES — the table rectangle, one horizontal line
- * per row, the team seam — and the drag box's edges snap to them
- * (toggleable; hiding the guides disables the snapping). A suggested box
- * (the detected table) is pre-drawn so a good detection is one Enter away.
+ * The background is a REFERENCE IMAGE — by default the last frame captured
+ * while the player held Tab (the roster moment they actually saw; the Rust
+ * cache only stores Tab-held captures), downscaled for transport. The
+ * footer-adjacent selector row swaps it: one entry per gallery capture
+ * (thumbnail + age), the newest frame, a pasted clipboard image, or a
+ * picked file. The detector's knowledge of the displayed image is overlaid
+ * as GUIDES — the table rectangle, one horizontal line per row, the team
+ * seam — and the drag box's edges snap to them (toggleable; hiding the
+ * guides disables the snapping). A suggested box (the detected table) is
+ * pre-drawn so a good detection is one Enter away.
+ *
+ * Submit routing keys off the store's mode: battle submits go to
+ * `setManualRosterRect` (anchored against the capture's game rect);
+ * calibration submits go to `setCalibrationAnchor` with the editor target
+ * (client + class) and the `source` describing the displayed reference
+ * image — the backend rescales the frame-space box onto the STORED
+ * entry's window size, so editing works against any reference.
  *
  * Coordinates under zoom/DPI: a single factor `k` (CSS px per physical px)
  * is derived from the canvas element's actual on-screen box, so the app
@@ -25,7 +36,7 @@
  * therefore NEUTRALIZES zoom (`neutralizeZoom`): the subtree runs at
  * effective zoom 1 and every px inside is a true CSS px again. The
  * submitted box converts back through `k` into PHYSICAL px relative to the
- * game window origin (what `set_manual_roster_rect` validates).
+ * reference image's top-left (what the backend validates).
  *
  * Closing paths: Confirm (submit Ok), Cancel (footer / Esc — HkModal's own
  * Esc/X/mask close included, routed through `cancelPick` so the backend's
@@ -49,11 +60,14 @@ import {
   watch,
 } from "vue";
 import { Teleport } from "vue";
-import { HkModal, HkSpinner } from "@celestia-island/hikari";
+import { HkModal, HkSpinner, useToast } from "@celestia-island/hikari";
+import { Copy, FileImage, ImageIcon } from "@lucide/vue";
 
 import {
   api,
   type ManualLocateContext,
+  type ManualLocateGalleryFrame,
+  type ManualLocateSource,
   type Rect,
 } from "@/api";
 import { t } from "@/i18n";
@@ -85,6 +99,7 @@ export default defineComponent({
   name: "ManualLocateOverlay",
   setup() {
     const manual = useManualLocateStore();
+    const toast = useToast();
 
     // ── picker payload ───────────────────────────────────────────────────
     const loading = ref(false);
@@ -100,6 +115,113 @@ export default defineComponent({
     const frameSrc = computed(() =>
       ctx.value?.imageBase64 ? `data:image/png;base64,${ctx.value.imageBase64}` : "",
     );
+
+    // ── reference-image selector (the picker's bottom row) ───────────────
+    // `activeSource` is the IDENTITY of the displayed image: null = the
+    // newest automatic capture, a frame source names one gallery capture,
+    // an image source the user's own picture. Calibration submits send it
+    // verbatim; battle submits never send it.
+    const activeSource = ref<ManualLocateSource | null>(null);
+    const gallery = ref<ManualLocateGalleryFrame[]>([]);
+    /** The ORIGINAL user-supplied base64 (and its mime, for the thumbnail)
+     *  behind an `image` selection — the backend context re-encodes to a
+     *  downscaled PNG, but submits must carry what the user supplied. */
+    const customImageBase64 = ref<string | null>(null);
+    const customImageMime = ref("image/png");
+    const fileInput = ref<HTMLInputElement | null>(null);
+
+    /** The source a calibration submit describes the displayed image with
+     *  (battle submits never send one): the chosen gallery frame, the
+     *  user's original image bytes, or undefined for the newest frame. */
+    function submitSource(): ManualLocateSource | undefined {
+      const src = activeSource.value;
+      if (src?.kind === "image" && customImageBase64.value) {
+        return { kind: "image", imageBase64: customImageBase64.value };
+      }
+      if (src?.kind === "frame" && src.atMs != null) {
+        return { kind: "frame", atMs: src.atMs };
+      }
+      return undefined;
+    }
+
+    /** The custom image's thumb as a data URL (empty while none). */
+    const customThumbSrc = computed(() =>
+      customImageBase64.value
+        ? `data:${customImageMime.value};base64,${customImageBase64.value}`
+        : "",
+    );
+
+    /** Read a Blob/File into BARE base64 (no data-URL prefix — the wire
+     *  format `manual_locate_context_for` / `set_calibration_anchor`
+     *  expects). */
+    function readAsBase64(blob: Blob): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const s = String(reader.result ?? "");
+          const i = s.indexOf(";base64,");
+          const b64 = i >= 0 ? s.slice(i + ";base64,".length) : "";
+          if (b64) resolve(b64);
+          else reject(new Error("empty base64 read"));
+        };
+        reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    /** Stage a user-supplied image (paste / file) and load its context. */
+    function selectImage(base64: string, mime: string) {
+      customImageBase64.value = base64;
+      customImageMime.value = mime || "image/png";
+      void load({ kind: "image", imageBase64: base64 });
+    }
+
+    /** Clipboard image: `navigator.clipboard.read()` (the async clipboard
+     *  API — read() is the only route to ITEMS; readText() cannot carry
+     *  images), then the first image blob type. Failures (permission
+     *  denied, no image, unsupported browser) toast — never silent. */
+    async function pasteImage() {
+      try {
+        if (!navigator.clipboard?.read) {
+          throw new Error("async clipboard unavailable");
+        }
+        const items = await navigator.clipboard.read();
+        let blob: Blob | null = null;
+        for (const item of items) {
+          const type = item.types.find((ty) => ty.startsWith("image/"));
+          if (type) {
+            blob = await item.getType(type);
+            break;
+          }
+        }
+        if (!blob) throw new Error("clipboard carries no image");
+        selectImage(await readAsBase64(blob), blob.type);
+      } catch (err) {
+        toast.error(t("replay.live.manualShotLoadFailed"));
+        console.warn("[manual-locate] clipboard image unavailable:", err);
+      }
+    }
+
+    async function onFileChange(e: Event) {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      input.value = "";
+      if (!file) return;
+      try {
+        selectImage(await readAsBase64(file), file.type);
+      } catch (err) {
+        toast.error(t("replay.live.manualShotLoadFailed"));
+        console.warn("[manual-locate] image file read failed:", err);
+      }
+    }
+
+    async function loadGallery() {
+      try {
+        gallery.value = await api.fetchManualLocateGallery();
+      } catch (err) {
+        console.warn("[manual-locate] gallery unavailable:", err);
+      }
+    }
 
     // ── selection state (PHYSICAL px; conversions at the pointer edge) ──
     const box = ref<Box | null>(null);
@@ -265,26 +387,38 @@ export default defineComponent({
     // ── age label ("缓存截屏 · 刚刚 / N 分钟前"), ticking every 30 s ─────
     const now = ref(Date.now());
     let ageTimer: ReturnType<typeof setInterval> | null = null;
-    const ageText = computed(() => {
-      const at = ctx.value?.capturedAtMs;
-      if (at == null) return "";
+    function ageLabelOf(at: number): string {
       const minutes = Math.max(0, Math.floor((now.value - at) / 60000));
       return minutes < 1
         ? t("replay.live.manualShotFresh")
         : t("replay.live.manualShotAge", { n: minutes });
+    }
+    const ageText = computed(() => {
+      const at = ctx.value?.capturedAtMs;
+      return at == null ? "" : ageLabelOf(at);
     });
 
-    // ── payload load (open + the picker's Retry button) ───────────────────
-    async function load() {
+    // ── payload load (open + selector switches + the Retry button) ────────
+    /** Load the context for one source (null = the newest automatic
+     *  capture). The whole boot sequence — suggested box, zoom
+     *  neutralization, stage measurement — re-runs on the new image. */
+    async function load(source: ManualLocateSource | null = null) {
       loading.value = true;
       ctx.value = null;
       box.value = null;
       note.value = null;
       let next: ManualLocateContext | null = null;
       try {
-        next = await api.fetchManualLocateContext();
+        next = await api.fetchManualLocateContextFor(source ?? undefined);
       } catch (err) {
         console.warn("[manual-locate] context unavailable:", err);
+      }
+      activeSource.value = source;
+      if (source?.kind !== "image") {
+        // Leaving a custom image (or re-picking the same slot class):
+        // drop the stale user bytes so a later submit cannot send them.
+        customImageBase64.value = null;
+        customImageMime.value = "image/png";
       }
       // Flip `loading` BEFORE measuring: the stage only mounts once the
       // spinner branch is gone, and the layout factor below needs its box.
@@ -332,26 +466,49 @@ export default defineComponent({
       }
       submitting.value = true;
       try {
-        await api.setManualRosterRect(
-          Math.round(b.x),
-          Math.round(b.y),
-          Math.round(b.w),
-          Math.round(b.h),
-          // The rect the cached frame was captured against — the drawing is
-          // relative to it. The live window rect is useless here: the picker
-          // is designed for Alt-Tab use, where the minimized window reports
-          // a placeholder rect that refuses valid boxes.
-          ctx.value?.capturedGameRect ?? null,
-        );
+        if (manual.mode === "calibration" && manual.calibration) {
+          // Calibration editor submit: the frame-space box plus the
+          // displayed reference image's identity — the backend rescales
+          // onto the STORED entry's window size, so the game need not be
+          // running (or even installed at this window size) right now.
+          await api.setCalibrationAnchor(
+            manual.calibration.clientKey,
+            manual.calibration.class,
+            Math.round(b.x),
+            Math.round(b.y),
+            Math.round(b.w),
+            Math.round(b.h),
+            submitSource(),
+          );
+        } else {
+          await api.setManualRosterRect(
+            Math.round(b.x),
+            Math.round(b.y),
+            Math.round(b.w),
+            Math.round(b.h),
+            // The rect the cached frame was captured against — the drawing is
+            // relative to it. The live window rect is useless here: the picker
+            // is designed for Alt-Tab use, where the minimized window reports
+            // a placeholder rect that refuses valid boxes.
+            ctx.value?.capturedGameRect ?? null,
+          );
+        }
         // Success: the backend armed the anchor and cleared its open flag —
         // drop the picker. `submitting` stays true until the close reset: no
         // further input is accepted meanwhile.
         manual.closePicker();
       } catch (err) {
-        // Validation failed (too small / no battle / game gone). Keep the
-        // picker open so the user can retry or hit Esc — surface the reason.
+        // Validation failed (too small / no battle / no stored calibration
+        // entry / reference frame gone). Keep the picker open so the user
+        // can retry or hit Esc — surface the reason inline, and (calibration
+        // mode) as a toast carrying the raw backend string behind a generic
+        // prefix so it reads as the editor's failure, not a stray code.
         submitting.value = false;
-        note.value = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : String(err);
+        note.value = msg;
+        if (manual.mode === "calibration") {
+          toast.error(`${t("settings.overlayCalibrationEditor")}: ${msg}`);
+        }
         console.warn("[manual-locate] submit refused:", err);
       }
     }
@@ -451,6 +608,7 @@ export default defineComponent({
           now.value = Date.now();
           ageTimer = setInterval(() => (now.value = Date.now()), 30000);
           void load();
+          void loadGallery();
         } else {
           if (ageTimer) {
             clearInterval(ageTimer);
@@ -468,6 +626,10 @@ export default defineComponent({
           submitting.value = false;
           guidesOn.value = true;
           zoomFix.value = 1;
+          activeSource.value = null;
+          gallery.value = [];
+          customImageBase64.value = null;
+          customImageMime.value = "image/png";
         }
       },
     );
@@ -494,7 +656,11 @@ export default defineComponent({
         <HkModal
           modelValue={manual.open}
           onUpdate:modelValue={onModalUpdate}
-          title={t("replay.live.manualLocate")}
+          title={
+            manual.mode === "calibration"
+              ? t("settings.overlayCalibrationEditor")
+              : t("replay.live.manualLocate")
+          }
           width="min(72rem, 94vw)"
           footerActions={[
             {
@@ -576,7 +742,11 @@ export default defineComponent({
             <div class="manual-locate ml-state">
               <p class="ml-state__msg">{t("replay.live.manualNoFrame")}</p>
               <div class="ml-state__actions">
-                <button type="button" class="ml-btn" onClick={() => void load()}>
+                <button
+                  type="button"
+                  class="ml-btn"
+                  onClick={() => void load(activeSource.value)}
+                >
                   {t("common.retry")}
                 </button>
                 <button
@@ -589,6 +759,78 @@ export default defineComponent({
               </div>
             </div>
           )}
+          {/* Reference-image selector — the bottom strip above the footer
+              buttons. The first entry is the newest capture (the default),
+              then one thumbnail per still-fresh cached capture (hover = its
+              age), then the clipboard / file entries for a user-supplied
+              picture; a loaded custom image shows as a highlighted thumb.
+              Every entry reloads the whole context — guides included — via
+              `manual_locate_context_for`. Visible in BOTH modes: the
+              calibration editor wants it, and the battle picker benefits
+              the same way (pick the frame the roster moment actually sat
+              on). Hidden while loading so a switch cannot stack on a
+              half-built stage. */}
+          {!loading.value ? (
+            <div class="ml-shots">
+              <span class="ml-shots__label">{t("replay.live.manualShotPick")}</span>
+              <div class="ml-shots__row">
+                <button
+                  type="button"
+                  class={["ml-shot", { "ml-shot--on": !activeSource.value }]}
+                  onClick={() => void load()}
+                >
+                  <ImageIcon size={14} />
+                  {t("replay.live.manualShotLive")}
+                </button>
+                {gallery.value.map((f) => (
+                  <button
+                    key={f.atMs}
+                    type="button"
+                    class={[
+                      "ml-shot ml-shot--thumb",
+                      {
+                        "ml-shot--on":
+                          activeSource.value?.kind === "frame" &&
+                          activeSource.value.atMs === f.atMs,
+                      },
+                    ]}
+                    title={ageLabelOf(f.atMs)}
+                    onClick={() => void load({ kind: "frame", atMs: f.atMs })}
+                  >
+                    <img
+                      src={`data:image/png;base64,${f.imageBase64}`}
+                      alt=""
+                      draggable={false}
+                    />
+                  </button>
+                ))}
+                {customThumbSrc.value ? (
+                  <span class="ml-shot ml-shot--thumb ml-shot--on">
+                    <img src={customThumbSrc.value} alt="" draggable={false} />
+                  </span>
+                ) : null}
+                <button type="button" class="ml-shot" onClick={() => void pasteImage()}>
+                  <Copy size={14} />
+                  {t("replay.live.manualShotPaste")}
+                </button>
+                <button
+                  type="button"
+                  class="ml-shot"
+                  onClick={() => fileInput.value?.click()}
+                >
+                  <FileImage size={14} />
+                  {t("replay.live.manualShotFile")}
+                </button>
+              </div>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".png,.jpg,.jpeg,.bmp"
+                style="display:none"
+                onChange={onFileChange}
+              />
+            </div>
+          ) : null}
         </HkModal>
       </Teleport>
     );

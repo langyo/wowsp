@@ -6,6 +6,14 @@ pub(crate) fn overlay_padding(roster: &Rect) -> i32 {
     (roster.height / 8).clamp(24, 96)
 }
 
+/// The team-intel summary card's reserve BELOW the table, in CSS px. The
+/// card (average win rate / radar / hydro / smoke lines, `teamSummaryCard`
+/// in the overlay page) is TOP-anchored one full row pitch below the last
+/// row's center and grows downward; at the 13 CSS px font cap its full
+/// three-line face measures ≈4.27 em + 2 px ≈ 58 CSS px. 64 covers the
+/// card plus the page's 2 px clamp margin with room for one accent line.
+const SUMMARY_RESERVE_CSS_PX: f32 = 64.0;
+
 /// The row layer's worst-case side reserve in CSS px. Rows anchor at the
 /// table's edge and grow OUTWARD with `white-space: nowrap`; at the 15 CSS
 /// px font cap the widest SEAL-LESS row measures (browser-measured):
@@ -47,6 +55,30 @@ pub(crate) fn overlay_padding_x(roster: &Rect, dpi_scale: f32) -> i32 {
         .min(1024)
 }
 
+/// Bottom padding (physical px): at least the plain vertical pad, but never
+/// less than what the team-intel summary card needs below the last row.
+/// The card parks its TOP one full row pitch under the last row's center,
+/// while the roster rect's bottom edge is only 0.75 × pitch below that
+/// center — so the reserve must additionally cover 0.25 × pitch plus the
+/// whole card (CSS-px sized, hence DPI-aware like the side pad; the plain
+/// `overlay_padding` is physical-capped at 96 and DPI-BLIND, which is why
+/// a FULL 12-player team — the one roster size where the
+/// `MIN_WINDOW_ROWS` floor adds no slack — ran out of room and the page's
+/// vertical clamp slid the card up into the 12th row's lower half; smaller
+/// rosters never noticed because the 12-row floor left them spare window).
+pub(crate) fn overlay_padding_bottom(roster: &Rect, row_centers: &[i32], dpi_scale: f32) -> i32 {
+    let rows = row_centers.len().max(1) as f32;
+    let pitch = match (row_centers.first(), row_centers.get(1)) {
+        (Some(&a), Some(&b)) if b > a => (b - a) as f32,
+        // Fewer than two rows: approximate the pitch off the rect itself.
+        _ => roster.height as f32 / rows,
+    };
+    let card_reserve = SUMMARY_RESERVE_CSS_PX * dpi_scale.max(1.0) + pitch * 0.25;
+    overlay_padding(roster)
+        .max(card_reserve.round() as i32)
+        .min(512)
+}
+
 /// Build the overlay-window anchor from a detection relative to the game
 /// window: the overlay covers ONLY the table area (inflated by padding), and
 /// every coordinate is re-based to the overlay window's origin. `dpi_scale`
@@ -64,14 +96,17 @@ pub(crate) fn build_anchor(
     dpi_scale: f32,
 ) -> (Rect, wowsp_tauri_shared::OverlayAnchor) {
     let pad = overlay_padding(roster_rel);
+    let pad_bottom = overlay_padding_bottom(roster_rel, &row_centers, dpi_scale);
     let padx = overlay_padding_x(roster_rel, dpi_scale);
     // Overlay rect in screen px: the table area inflated by the padding,
     // clamped to stay inside the game window (multi-monitor safe — the game
-    // rect is already monitor-clamped).
+    // rect is already monitor-clamped). The bottom pad is the summary-card
+    // reserve (see [`overlay_padding_bottom`]) — larger than the top pad
+    // whenever the card needs more room than the plain height/8 heuristic.
     let ox = (game_screen.x + roster_rel.x - padx).max(game_screen.x);
     let oy = (game_screen.y + roster_rel.y - pad).max(game_screen.y);
     let orx = game_screen.x + roster_rel.x + roster_rel.width + padx;
-    let ory = game_screen.y + roster_rel.y + roster_rel.height + pad;
+    let ory = game_screen.y + roster_rel.y + roster_rel.height + pad_bottom;
     let overlay = Rect {
         x: ox,
         y: oy,
@@ -139,6 +174,70 @@ pub(crate) fn fallback_roster(frame_w: i32, frame_h: i32, expected: usize) -> (R
 // ─────────────────────────────────────────────────────────────────────────
 // Pinned-anchor revalidation (pure decision — unit-testable)
 // ─────────────────────────────────────────────────────────────────────────
+
+/// Plausibility gates for a detected (or cache-rebuilt) roster geometry —
+/// the silent VETO layer between the detector and the anchor: a detector
+/// misfire that anchors the chips to a corner mod scoreboard, a water
+/// horizon or an off-window phantom would otherwise pin, render and
+/// CERTIFY like any real table. Every bound is deliberately generous
+/// against the REAL layouts (the PvP table spans the middle ~26–74% of the
+/// frame with the header at ~23% height; the PvE variants are centered and
+/// narrower still — see the module docs), so only genuinely absurd
+/// geometry is refused:
+///
+/// - SIZE: the table spans 10–98% of the frame width and 3–75% of its
+///   height (the full 12-row grid plus header stays far inside);
+/// - EDGE-HUGGING: ≥2% frame width free on each side and ≥4% height above
+///   (the header scan itself starts at 6% — nothing real sits higher);
+/// - SPLIT: 0.2–1.0 (two-team tables measure 0.30–0.70, single-team
+///   exactly 1.0);
+/// - ROWS: non-empty, strictly increasing, and each center inside the
+///   rect's vertical span ± half a pitch (rounding slack).
+///
+/// Pure (unit-tested); callers treat a veto exactly like a failed
+/// detection (fallback geometry, nothing stored, nothing certified).
+pub(crate) fn roster_plausible(
+    roster: &Rect,
+    row_centers: &[i32],
+    team_split: f32,
+    frame_w: i32,
+    frame_h: i32,
+) -> bool {
+    if frame_w <= 0 || frame_h <= 0 {
+        return false;
+    }
+    let (fw, fh) = (frame_w as f32, frame_h as f32);
+    let width = roster.width as f32 / fw;
+    let height = roster.height as f32 / fh;
+    if !(0.10..=0.98).contains(&width) || !(0.03..=0.75).contains(&height) {
+        return false;
+    }
+    let left = roster.x as f32 / fw;
+    let right = (roster.x + roster.width) as f32 / fw;
+    let top = roster.y as f32 / fh;
+    if left < 0.02 || right > 0.98 || top < 0.04 {
+        return false;
+    }
+    if !(0.2..=1.0).contains(&team_split) {
+        return false;
+    }
+    let Some(&first) = row_centers.first() else {
+        return false;
+    };
+    let pitch = match (row_centers.first(), row_centers.get(1)) {
+        (Some(&a), Some(&b)) if b > a => (b - a) as f32,
+        _ => roster.height as f32 / row_centers.len().max(1) as f32,
+    };
+    let top_bound = roster.y as f32 - pitch * 0.5;
+    let bottom_bound = (roster.y + roster.height) as f32 + pitch * 0.5;
+    let mut prev = i32::MIN;
+    row_centers.iter().all(|c| {
+        let in_span = (*c as f32) >= top_bound && (*c as f32) <= bottom_bound;
+        let ordered = *c > prev;
+        prev = *c;
+        in_span && ordered
+    }) && first > 0
+}
 
 /// Move threshold for replacing a pinned anchor: the fresh first row must sit
 /// more than HALF a row pitch away from the pinned one. Detector jitter (the

@@ -711,3 +711,25 @@ fn acquisition_retry_is_short_only_while_the_hold_is_young() {
         CAPTURE_MIN_INTERVAL
     );
 }
+
+/// The pinned-anchor revalidation cadence under the calibration contract:
+/// a FORCED pass (the cache was just dropped — `None`) always runs, even
+/// over a certified geometry (the sink probe's band gate must be able to
+/// heal a genuinely moved table), while the PERIODIC 5 s arm stands down
+/// once the geometry is certified stable — and only then.
+#[test]
+fn revalidation_stands_down_only_when_certified() {
+    let now = Instant::now();
+    // Forced: always due, certified or not.
+    assert!(watch::revalidate_due(None, false, now));
+    assert!(watch::revalidate_due(None, true, now));
+    // Young pass: not due on either side.
+    let young = now - ANCHOR_REVALIDATE_INTERVAL / 2;
+    assert!(!watch::revalidate_due(Some(young), false, now));
+    assert!(!watch::revalidate_due(Some(young), true, now));
+    // Mature pass: due while uncertified (the historical watchdog), stood
+    // down once certified.
+    let mature = now - ANCHOR_REVALIDATE_INTERVAL;
+    assert!(watch::revalidate_due(Some(mature), false, now));
+    assert!(!watch::revalidate_due(Some(mature), true, now));
+}

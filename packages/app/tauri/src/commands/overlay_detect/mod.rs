@@ -56,7 +56,7 @@
 use wowsp_tauri_shared::{GameInstallKind, Rect};
 
 /// Downscaled working width — caps the analysis cost on QHD/4K captures.
-const MAX_WORK_WIDTH: u32 = 800;
+pub(crate) const MAX_WORK_WIDTH: u32 = 800;
 /// Vertical band (fractions of the capture height) scanned for the header
 /// row. The real table's bars sit at ~23%; pre-battle screens never render
 /// them at all.
@@ -142,7 +142,9 @@ mod tests;
 
 // Items consumed through direct `overlay_detect::...` paths by the
 // `commands::overlay` stack (call sites unchanged).
-pub(crate) use anchor::{anchor_meaningfully_moved, build_anchor, fallback_roster};
+pub(crate) use anchor::{
+    anchor_meaningfully_moved, build_anchor, fallback_roster, roster_plausible,
+};
 pub(crate) use band::{
     HeaderBand, header_bars_present, measured_pitch_from_centers, rebuild_roster_from_band,
     verify_header_band,
@@ -160,7 +162,7 @@ pub(crate) use strip::{
 // Items used only by this module's own test suite (invisible to the non-test
 // build, keeping `cargo clippy --lib -D warnings` quiet).
 #[cfg(test)]
-pub(crate) use anchor::{overlay_padding, overlay_padding_x};
+pub(crate) use anchor::{overlay_padding, overlay_padding_bottom, overlay_padding_x};
 #[cfg(test)]
 pub(crate) use band::refine_roster_native;
 #[cfg(test)]

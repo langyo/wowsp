@@ -42,6 +42,19 @@
 //!   the cached grid — a new battle shape on the same window is rebuilt
 //!   from the band without a rescan. Three consecutive verify misses (a
 //!   HUD-phase table move) retire the cache and re-arm a full detection.
+//! - CALIBRATION STORE (`calibration.rs`): the geometry cache's persistent
+//!   sibling. Each client install keeps its own file under the appdata
+//!   root (`overlay-anchors/`), with PvP and PvE layouts in SEPARATE
+//!   entries — and once [`calibration::STABLE_PRESSES_TO_CERTIFY`]
+//!   consecutive Tab presses have verified the stored band (each press
+//!   casts one vote), the entry is CERTIFIED: the watcher stops
+//!   scheduling the periodic anchor revalidations (the sink probe's band
+//!   gate keeps watching reactively, so a genuine table move still drops
+//!   the cache and restarts the streak). Certification — and the entry
+//!   itself — expire when the game window moves or is resized/re-styled,
+//!   the client install or kind changes, or the hardware screen
+//!   configuration (monitor layout / resolution / DPI fingerprint)
+//!   changes; the store then re-detects and re-accumulates votes.
 //! - SINK FAST-PATH: while the overlay is up, a light probe
 //!   ([`overlay_detect::crop_row_name_strips`] — strip luma + occupancy
 //!   fingerprints, no OCR) runs every [`SINK_CHECK_INTERVAL`] at the
@@ -234,7 +247,14 @@ const GEOMETRY_VERIFY_MAX_FAILS: u32 = 3;
 /// Generous enough to ride out a skipped probe, tight enough that a stale
 /// reading can never confirm a much later flip.
 const SINK_CANDIDATE_TTL: Duration = Duration::from_millis(1500);
+/// How often the hardware screen fingerprint is recomputed while a game
+/// window is resolved (see `game_window::screen_fingerprint`): one monitor
+/// enumeration per couple of seconds bounds the cost, while a
+/// dock/undock/rescale retires every anchor-calibration entry within this
+/// window.
+const SCREEN_FINGERPRINT_REFRESH: Duration = Duration::from_secs(2);
 
+mod calibration;
 mod capture;
 mod game_window;
 mod manual;
@@ -251,21 +271,31 @@ mod tests;
 // `generate_handler!` entries in `lib.rs` resolve both the command function
 // and its doc(hidden) sibling macros (`__cmd__*` / `__tauri_command_name_*`)
 // through `commands::overlay::*`, so those paths are re-exported verbatim.
+use calibration::CalibrationCtx;
+pub use calibration::{
+    __cmd__overlay_calibration_list, __cmd__set_calibration_anchor,
+    __tauri_command_name_overlay_calibration_list, __tauri_command_name_set_calibration_anchor,
+    overlay_calibration_list, set_calibration_anchor,
+};
 pub use capture::{
     __cmd__capture_game_window, __tauri_command_name_capture_game_window, capture_game_window,
 };
 use capture::{compute_anchor, encode_png};
 use game_window::{
     GameWindow, capture_game_rgba, capture_game_rgba_cached, find_game_window, rect_from_win32,
-    window_dpi_scale,
+    screen_fingerprint, window_dpi_scale,
 };
 pub use manual::{
     __cmd__cancel_manual_locate, __cmd__clear_manual_roster_rect, __cmd__manual_locate_context,
-    __cmd__set_manual_roster_rect, __cmd__start_manual_locate,
+    __cmd__manual_locate_context_for, __cmd__manual_locate_gallery, __cmd__set_manual_roster_rect,
+    __cmd__start_calibration_locate, __cmd__start_manual_locate,
     __tauri_command_name_cancel_manual_locate, __tauri_command_name_clear_manual_roster_rect,
-    __tauri_command_name_manual_locate_context, __tauri_command_name_set_manual_roster_rect,
-    __tauri_command_name_start_manual_locate, cancel_manual_locate, clear_manual_roster_rect,
-    manual_locate_context, set_manual_roster_rect, start_manual_locate,
+    __tauri_command_name_manual_locate_context, __tauri_command_name_manual_locate_context_for,
+    __tauri_command_name_manual_locate_gallery, __tauri_command_name_set_manual_roster_rect,
+    __tauri_command_name_start_calibration_locate, __tauri_command_name_start_manual_locate,
+    cancel_manual_locate, clear_manual_roster_rect, manual_locate_context,
+    manual_locate_context_for, manual_locate_gallery, set_manual_roster_rect,
+    start_calibration_locate, start_manual_locate,
 };
 use manual::{
     ManualAnchor, ManualAnchorCheck, build_manual_anchor, force_close_manual_locate,
