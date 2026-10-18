@@ -69,11 +69,35 @@ ORDER_PROBE_FILE = 'order_probe.json'
 # ([tools."battle.ingame.stats"]) with these values; the keys below are the
 # contract, hand edits to the file survive WoWSP rewrites. JOURNAL_LIMIT
 # stays as the fallback default for a missing/unreadable manifest.
+# `panel`/`barcode` declare the ACTIVE view mode's halves: the companion
+# upserts them when a mode starts (the in-game bridge → panel=1/barcode=0,
+# the overlay watcher → panel=0/barcode=1), so exactly one consumer owns
+# the screen: the stats panel (table = "ingame") or the capture side
+# channel's barcode strip (table = "detect") — never both, never neither
+# while a mode is running. A missing manifest keeps BOTH defaults on:
+# the panel is the long-shipped behavior, the strip stays off until the
+# overlay side asks for it.
 CONFIG_DEFAULTS = {
     'panel_fade_ticks': 3,
     'journal_limit': 300,
+    'panel': 1,
+    'barcode': 0,
 }
 JOURNAL_LIMIT = CONFIG_DEFAULTS['journal_limit']
+
+# The barcode strip's frozen geometry contract (see the design doc's
+# capture side-channel section): the overlay's decoder is written against
+# these exact numbers; changing any of them is a coordinated spec bump on
+# both sides of the channel.
+BARCODE_BLOCK = 6      # px per bit block
+BARCODE_HGAP = 2       # horizontal gap between blocks
+BARCODE_VGAP = 3       # vertical gap between rows
+BARCODE_PAD = 4        # backdrop padding around the block grid
+BARCODE_CELLS = 8      # blocks per row: [1,0] sync + 5 index bits + parity
+BARCODE_MARGIN = 24    # screen-edge margin (same anchor px as the panel)
+BARCODE_ON = 0xFFF2F2F2
+BARCODE_OFF = 0xFF303030
+BARCODE_BACK = 0xFF101010
 
 
 def load_tool_config():
@@ -548,6 +572,9 @@ class Probe:
         self.journal = []
         self.empty_ticks = 0
         self.dead_latch = {None} - {None}
+        # Sticky name -> avatar ENTITY id (see entity_walk): the id space
+        # the client's sortedAlive collection carries, bots included.
+        self.avatar_entity_ids = {}
         self.dh = None
         self.const = None
         # False = not yet resolved; None = resolution failed (see _cc).
@@ -663,6 +690,14 @@ class Probe:
         # Before anything else: the heartbeat must report battle from the
         # game's own event, not from roster stabilization (see __init__).
         self.in_battle = True
+        # Re-read the tool config each battle (in-place update, so every
+        # TOOL_CONFIG reader sees it): the companion upserts the panel/
+        # barcode mode keys when a view mode starts, and a settings flip
+        # between battles must apply without relaunching the game.
+        try:
+            TOOL_CONFIG.update(load_tool_config())
+        except:
+            pass
         self.explore_shell('battleStart')
         self.api_probe('battleStart')
         log('battle start')
@@ -1226,7 +1261,12 @@ class Probe:
         [(name, alive), ...] in walk order. Also latches the SELF avatar's
         bare name onto self.self_name (the identity telemetry reports as
         the local player) — cleared up front so an early return cannot
-        leak the previous battle's name.
+        leak the previous battle's name — and the avatar ENTITY ids into
+        self.avatar_entity_ids (sticky, bots included): the same id space
+        the client's sortedAlive collection items carry, which is what
+        the panel/barcode byId maps and the overlay's row attribution
+        key on. The roster records' own avatarId field is a DIFFERENT id
+        (their mapping key), so the walk is the authoritative source.
         """
         self.self_name = ''
         cc = self._cc()
@@ -1249,6 +1289,16 @@ class Probe:
                     continue
                 if not name:
                     continue
+                # The avatar entity's own id, latched sticky: sunk ships
+                # tear their entities down mid-battle while the client's
+                # sortedAlive collection still lists them, so a once-seen
+                # id must survive the entity's disappearance.
+                try:
+                    eid = _to_int(entity.id)
+                    if eid:
+                        self.avatar_entity_ids[name] = eid
+                except:
+                    pass
                 alive = True
                 row = {}
                 try:
@@ -1436,6 +1486,7 @@ class Probe:
         self.alive_last = {'ally': {}, 'enemy': {}}
         self.sort_keys = {}
         self.dead_latch = {None} - {None}
+        self.avatar_entity_ids = {}
         self.raw_isalive_seen = False
         self.last_order_cache = None
         self.stats = {}
@@ -2107,15 +2158,36 @@ class Probe:
         # The avatar id is the key the client's own sortedAlive collection
         # iterates; the unbound view maps each collection entry to its
         # panel row by this id (names carry clan tags there, ids do not).
-        ids = {}
+        # The WALK's sticky entity ids are authoritative (they share the
+        # collection's id space and cover the bots, whose roster records
+        # carry no avatarId at all — a co-op side keyed on the records'
+        # mapping keys would pair nothing); the roster record's avatar_id
+        # stays as the fallback for a name the walk has not seen yet.
+        ids = self.avatar_entity_ids
         for p in self.roster:
             try:
                 aid = _to_int(p.get('avatar_id', 0))
                 nm = p.get('name')
-                if aid and nm:
+                if aid and nm and nm not in ids:
                     ids[nm] = aid
             except:
                 pass
+        # The canonical rank every row carries: its position in the
+        # rosterOrder bridge (the records mapping's own sequence, bots
+        # included) — the SAME list the companion's telemetry publishes,
+        # so the overlay's barcode decoder resolves rank -> name through
+        # the telemetry it already holds. Sourced from the cached
+        # derivation so a transient empty getPlayersInfo cannot renumber
+        # the rows mid-battle.
+        roster_order, _ship_names = self.roster_order(self.latest_raw)
+        if not roster_order and self.last_order_cache is not None:
+            roster_order = self.last_order_cache[0]
+        ranks = {}
+        pos = 0
+        for nm in roster_order:
+            if nm and nm not in ranks:
+                ranks[nm] = pos
+                pos += 1
         for name in self.order.get(side, []):
             if not name:
                 continue
@@ -2126,14 +2198,39 @@ class Probe:
             row = self.stats.get(name)
             wr = row.get('wr') if _is_kind(row, 'dict') else None
             pr = row.get('pr') if _is_kind(row, 'dict') else None
+            rank = ranks.get(name, -1)
+            # A rankless row (a name the records never carried) renders a
+            # parity-INVALID word, never an empty array: the DSL indexes
+            # bits[0..5] unguarded, and the decoder's parity check fails
+            # the row — it must never guess a rank.
+            bits = self.barcode_bits(rank) if 0 <= rank < 32 else \
+                [True, False, False, False, False, False, False, False]
             rows.append({'name': name,
                          'avatar_id': ids.get(name, 0),
+                         'idx': rank,
+                         'bits': bits,
                          'wr': ('%.1f%%' % wr) if _is_num(wr) else '--',
                          'pr': _fmt(_to_int(pr)) if _is_num(pr) else '--',
                          'alive': alive,
                          'wrColor': self.wr_color(wr),
                          'prColor': self.pr_color(pr)})
         return rows
+
+    def barcode_bits(self, rank):
+        """The capture side channel's per-row word (see the design doc for
+        the frozen contract): [1, 0] sync + 5 index bits MSB-first + one
+        EVEN parity bit over the five — six booleans the unbound strip
+        renders as on/off blocks and the overlay's decoder reads back.
+        Pure arithmetic on ints/bools; no builtins."""
+        out = [True, False]
+        parity = 0
+        for shift in (16, 8, 4, 2, 1):
+            bit = (rank & shift) != 0
+            if bit:
+                parity += 1
+            out.append(True if bit else False)
+        out.append(parity % 2 == 0)
+        return out
 
     def refresh_panel(self):
         if not self.session:
@@ -2152,6 +2249,8 @@ class Probe:
                 if aid:
                     enemy_by_id[_fmt(aid)] = row
             data = {'visible': True if (self.tab and (ally or enemy)) else False,
+                    'panel': TOOL_CONFIG.get('panel', 1) == 1,
+                    'barcode': TOOL_CONFIG.get('barcode', 0) == 1,
                     'ally': ally,
                     'enemy': enemy,
                     'allyById': ally_by_id,

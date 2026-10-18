@@ -182,6 +182,11 @@ pub(super) struct WatchFsm {
     pub(super) last_state_refresh: Option<Instant>,
     /// When the last arena-watcher dir re-check ran (see `watch_tab_tick`).
     pub(super) last_watcher_dir_check: Option<Instant>,
+    /// Whether the overlay mode has been declared in the probe's
+    /// wowsp.toml for the CURRENT game session (panel = 0 / barcode = 1):
+    /// the declaration runs once per game-window acquisition so a running
+    /// watcher costs nothing per tick, and re-runs for each new session.
+    pub(super) declared_overlay_mode: bool,
     /// When the last pinned-anchor revalidation ran.
     pub(super) last_revalidate: Option<Instant>,
     /// When the last sink fast-probe ran (independent of every other stamp:
@@ -241,6 +246,39 @@ pub(super) fn report_status(
     if let Err(e) = app.emit(OVERLAY_STATUS_EVENT, status) {
         tracing::warn!(error = %e, "emit overlay-status failed");
     }
+}
+
+/// Declare the overlay view mode in the probe's wowsp.toml table
+/// (`panel = 0`, `barcode = 1`): the probe re-reads the table at every
+/// battle start, so its unbound view keeps the stats tables dark (the
+/// companion is not answering in this mode — no '--' duplicate beside
+/// the overlay) and renders the capture side channel's barcode strips
+/// instead. Only touches an install that actually carries the probe.
+#[cfg(target_os = "windows")]
+fn declare_overlay_mode() {
+    let Some(resolved) = super::super::game_context::resolve_root(
+        super::super::game_context::RootPreference::PreferRunning,
+    ) else {
+        return;
+    };
+    let Ok(res_mods) = super::super::game_context::res_mods_dir(&resolved.root) else {
+        return;
+    };
+    let probe = res_mods
+        .join("PnFMods")
+        .join(super::super::ingame_plugin::MOD_DIR);
+    if !probe.join(super::super::ingame_plugin::MOD_ENTRY).is_file() {
+        return;
+    }
+    super::super::mod_hub::manifest::hub_apply(
+        super::super::mod_hub::manifest::ManifestOp::SetToolValues {
+            res_mods,
+            tool: "battle.ingame.stats".into(),
+            values: [("panel".to_string(), 0i64), ("barcode".to_string(), 1i64)]
+                .into_iter()
+                .collect(),
+        },
+    );
 }
 
 /// The watcher loop — see the module docs for the interaction contract.
@@ -420,6 +458,19 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
 
     let focused_on_game = game.is_some_and(|g| g.is_foreground());
     let tab_down = tab_key_down();
+
+    // Declare the OVERLAY view mode in the probe's wowsp.toml once per
+    // game session (panel = 0 / barcode = 1 — the capture side channel's
+    // strips own the screen; the in-game '--' tables stay dark): the
+    // probe re-reads the table at every battle start, and the in-game
+    // bridge re-declares its own mode when IT starts, so the two
+    // consumers never race on the same screen.
+    if game.is_some() != fsm.declared_overlay_mode {
+        fsm.declared_overlay_mode = game.is_some();
+        if fsm.declared_overlay_mode {
+            declare_overlay_mode();
+        }
+    }
 
     // View-mode switch (`overlay-config.toml`, written by the settings
     // modal): `table: "off"` AND `table: "ingame"` (the plugin renders

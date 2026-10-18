@@ -378,6 +378,38 @@ pub(crate) fn seed_tool_config(res_mods: &Path, tool_id: &str, defaults: &BTreeM
     }
 }
 
+/// Unconditionally overwrite the given keys of one tool's table (the
+/// overwrite arm of [`seed_tool_config`]): the caller owns the keys'
+/// semantics — used for the probe's view-mode switches, where the active
+/// mode's consumer (the in-game bridge or the overlay watcher) declares
+/// itself when it starts. Other keys, hand-tuned or seeded, are kept.
+pub(crate) fn set_tool_values(res_mods: &Path, tool_id: &str, values: &BTreeMap<String, i64>) {
+    let loaded = load(res_mods);
+    if loaded.read_only {
+        return;
+    }
+    let mut manifest = loaded.manifest;
+    let table = manifest
+        .tools
+        .entry(tool_id.to_string())
+        .or_insert_with(|| toml::Value::Table(Default::default()));
+    let Some(table) = table.as_table_mut() else {
+        return; // a tool id occupied by a non-table value is not ours to fix
+    };
+    let mut changed = false;
+    for (key, value) in values {
+        if table.get(key) != Some(&toml::Value::from(*value)) {
+            table.insert(key.clone(), toml::Value::from(*value));
+            changed = true;
+        }
+    }
+    if changed {
+        if let Err(e) = store(res_mods, &manifest) {
+            tracing::warn!(error = %e, "wowsp.toml update failed");
+        }
+    }
+}
+
 /// Replace every `[foreign.<installer>]` row of one installer with the
 /// freshly scanned set (other installers' rows are untouched — each is
 /// refreshed by its own scan pass).
@@ -542,6 +574,42 @@ mod tests {
                 .as_integer(),
             Some(9),
             "seed must not clobber hand-tuned values"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn set_tool_values_overwrites_only_named_keys() {
+        let dir = tmp_res_mods("setvals");
+        let mut defaults = BTreeMap::new();
+        defaults.insert("panel_fade_ticks".to_string(), 3i64);
+        defaults.insert("panel".to_string(), 1i64);
+        seed_tool_config(&dir, "battle.ingame.stats", &defaults);
+        // The overlay watcher's declaration: flip the mode pair only.
+        let mut values = BTreeMap::new();
+        values.insert("panel".to_string(), 0i64);
+        values.insert("barcode".to_string(), 1i64);
+        set_tool_values(&dir, "battle.ingame.stats", &values);
+        let m = load(&dir).manifest;
+        let table = &m.tools["battle.ingame.stats"];
+        assert_eq!(table.get("panel").unwrap().as_integer(), Some(0));
+        assert_eq!(table.get("barcode").unwrap().as_integer(), Some(1));
+        assert_eq!(
+            table.get("panel_fade_ticks").unwrap().as_integer(),
+            Some(3),
+            "untouched keys keep their seeded values"
+        );
+        // Idempotent re-declare must not rewrite the file (set -> same
+        // values = no store): prove stability by hand-tuning an unrelated
+        // key's position… simpler: run it twice and just assert values.
+        set_tool_values(&dir, "battle.ingame.stats", &values);
+        let m = load(&dir).manifest;
+        assert_eq!(
+            m.tools["battle.ingame.stats"]
+                .get("panel")
+                .unwrap()
+                .as_integer(),
+            Some(0)
         );
         fs::remove_dir_all(&dir).ok();
     }
@@ -832,6 +900,16 @@ pub(crate) enum ManifestOp {
         tool: String,
         defaults: BTreeMap<String, i64>,
     },
+    /// Unconditionally set the given keys of one tool's table (creating
+    /// the table when absent): unlike [`ManifestOp::SeedTool`] this
+    /// OVERWRITES existing values — the caller owns the semantics of the
+    /// keys it sets (e.g. the probe's panel/barcode view-mode switches,
+    /// which the active mode's consumer declares when it starts).
+    SetToolValues {
+        res_mods: PathBuf,
+        tool: String,
+        values: BTreeMap<String, i64>,
+    },
     ReplaceForeign {
         res_mods: PathBuf,
         installer: String,
@@ -877,6 +955,7 @@ impl ManifestHub {
             | ManifestOp::RemoveManaged { res_mods, .. }
             | ManifestOp::SetEnabled { res_mods, .. }
             | ManifestOp::SeedTool { res_mods, .. }
+            | ManifestOp::SetToolValues { res_mods, .. }
             | ManifestOp::ReplaceForeign { res_mods, .. } => res_mods.clone(),
             ManifestOp::MergeAfterMigration { to_res_mods, .. } => to_res_mods.clone(),
         };
@@ -926,6 +1005,14 @@ impl ManifestHub {
                 defaults,
             } => {
                 seed_tool_config(&res_mods, &tool, &defaults);
+                Ok(())
+            },
+            ManifestOp::SetToolValues {
+                res_mods,
+                tool,
+                values,
+            } => {
+                set_tool_values(&res_mods, &tool, &values);
                 Ok(())
             },
             ManifestOp::ReplaceForeign {

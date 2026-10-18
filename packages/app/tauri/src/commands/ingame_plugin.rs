@@ -23,7 +23,9 @@ const DISCUSSION_NUMBER: u64 = 640;
 /// probe. Shared with `ingame_bridge` (the same directory hosts the
 /// request/response mailbox).
 pub(crate) const MOD_DIR: &str = "WoWSPProbe";
-const MOD_ENTRY: &str = "Main.py";
+/// The probe's entry file — the presence probe shared with the bridge
+/// and the overlay watcher's mode declaration.
+pub(crate) const MOD_ENTRY: &str = "Main.py";
 
 /// The plugin's runtime bridge files (the Main.py side of the file bridge):
 /// per-session battle state the plugin rewrites from scratch every run. An
@@ -264,6 +266,12 @@ pub(crate) fn install_probe_files(game_root: &str) -> anyhow::Result<String> {
         let mut defaults = BTreeMap::new();
         defaults.insert("panel_fade_ticks".to_string(), 3i64);
         defaults.insert("journal_limit".to_string(), 300i64);
+        // The view-mode pair's install baseline: the stats panel on, the
+        // barcode strip off. The ACTIVE mode's consumer re-declares the
+        // pair when it starts (the in-game bridge / the overlay watcher),
+        // so a settings flip applies from the next battle on.
+        defaults.insert("panel".to_string(), 1i64);
+        defaults.insert("barcode".to_string(), 0i64);
         super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::SeedTool {
             res_mods: dir.clone(),
             tool: "battle.ingame.stats".into(),

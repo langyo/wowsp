@@ -184,6 +184,30 @@ fn plugin_dir_under(res_mods: &std::path::Path) -> PathBuf {
     res_mods.join("PnFMods").join(super::ingame_plugin::MOD_DIR)
 }
 
+/// Declare the in-game display mode in the probe's wowsp.toml table
+/// (`panel = 1`, `barcode = 0`): the probe re-reads the table at every
+/// battle start, so its unbound view renders the stats tables and keeps
+/// the capture side channel's barcode strip dark. Only touches an
+/// install that actually carries the probe's entry file.
+fn declare_ingame_mode() {
+    let Some(dir) = plugin_dir() else {
+        return;
+    };
+    if !dir.join(super::ingame_plugin::MOD_ENTRY).is_file() {
+        return;
+    }
+    let Some(res_mods) = dir.parent().and_then(|p| p.parent()) else {
+        return;
+    };
+    super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::SetToolValues {
+        res_mods: res_mods.to_path_buf(),
+        tool: "battle.ingame.stats".into(),
+        values: [("panel".to_string(), 1i64), ("barcode".to_string(), 0i64)]
+            .into_iter()
+            .collect(),
+    });
+}
+
 /// The realm of a game root, the same chain the process watcher feeds the
 /// webui: the launch log first, then the detected-install scan (a Steam
 /// client may pick a realm long after its log line scrolled away).
@@ -214,6 +238,9 @@ pub fn ingame_bridge_start(locale: Option<String>) -> CommandResult<()> {
     if guard.is_some() {
         return Ok(());
     }
+    // The mode declaration rides the start (idempotent): the probe picks
+    // it up at the next battle start.
+    declare_ingame_mode();
     // Adopt a battle that may already be running: the plugin re-requests
     // within its 10 s window when it sees a fresh stamp.
     poke_manual_refresh();
