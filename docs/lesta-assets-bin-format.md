@@ -267,3 +267,39 @@ OOL array blocks**, findable by structure scan with no header needed:
   tops) ride the parent chain via the block's parent_ids.
   `scripts/extract/lesta_assetsbin_probe.py --node-blocks` now
   implements the scan.
+
+## Phase 7 (2026-10-19): the .visual text format confirmed via WG's ModsSDK; Lesta's SDK needs the live client
+
+Internet research on the remaining edge (ships whose part visuals never
+entered the readable node-block store):
+
+- **The visual prototype's source form is XML.** WG publishes a ModsSDK
+  repo (github.com/WG-devacc/ModSDK) whose per-ship folders carry the
+  extracted `.model`/`.visual`/`.geometry`/`.splash` as TEXT: a
+  `.visual` is a `<node>` tree with `<identifier>` names and ROW-major
+  4×4 `<transform>` rows (translation in row3) — exactly the structure
+  the blob1 node blocks serialize. This retro-validates the phase-6
+  block layout including the row-major convention.
+- **Lesta's equivalent (the forum's Content SDK) cannot be used
+  offline.** Its `ModsSDK.zip` (Google Drive, linked from the korabli.su
+  Content SDK guides) feeds an in-client dump: a `PnFMods` mod calls
+  `contentSdk.extractSources(mod, ship_id)` and the CLIENT writes the
+  ship's sources on next launch. Extracting that way means launching
+  the game and writing under `res_mods/` — forbidden by this repo's
+  §0 client-safety gate (and the Drive folder is unreachable from CN
+  networks anyway). No public offline spec for the 26.x recursive
+  serialization exists; gamemodels3d's 2023-era PHP parser predates it.
+- Consequence: the seven hulls with no node-block coverage (Akagi's
+  main deck, the Jean Bart stub, Borodino 04, two Soviet cruisers,
+  Patagonia, Izmail-class twin) stay on the splash fallback — mains
+  only, secondaries/AA absent. A deck-proximity validator was prototyped
+  as an alternative discriminator for their pure-AA blocks and FAILED
+  calibration (wrong-family blocks score 1.0 near the centerline of any
+  hull; a ship's own superstructure AA scores 0.6) — geometric context
+  does not separate revisions here. The path to full coverage is either
+  the SDK dump performed by the developer on their own client, or a
+  future crack of the recursive cell serialization.
+- Related hardening that DID land: revision-twin mounts of the same
+  class dedupe at per-axis 0.15 (two mounts of one class cannot share
+  a pivot; the fleet-wide same-class pair histogram is empty 0.05-0.15
+  and dense above), different classes keep 0.05.
