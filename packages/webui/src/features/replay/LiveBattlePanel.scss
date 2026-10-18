@@ -186,15 +186,15 @@
      mode pills, clock): no auto margin, it just follows the row gap. Its
      compact pill voice is MapNameTag.scss's own base — no override needed. */
 
-  /* Head action pills (copy-shot / hide-nicknames / density / manual-locate)
-     share one voice: a quiet neutral pill; the nicknames and density
-     toggles flip green while their mode is on, and the locate button picks
-     up its own locate-state voices below. (The stats-source mode tag keeps
-     the same voice from its own sheet — LiveStatsModeChip.scss.) */
+  /* Head action pills (copy-shot / hide-nicknames / density) share one
+     voice: a quiet neutral pill; the nicknames and density toggles flip
+     green while their mode is on. The read-only locate-status pill at the
+     row's end picks up its own state voices below. (The stats-source mode
+     tag keeps the same voice from its own sheet —
+     LiveStatsModeChip.scss.) */
   &__shot-btn,
   &__mask-btn,
-  &__density-btn,
-  &__manual-btn {
+  &__density-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -216,14 +216,14 @@
   }
 
   /* The head's right-corner action cluster starts at the copy-shot button
-     and runs to the manual-locate button — the auto margin pulls the whole
+     and runs to the locate-status pill — the auto margin pulls the whole
      group to the right end of the line. */
   &__shot-btn {
     margin-left: auto;
   }
 
   /* Nicknames are masked: the toggle reads "show nicknames" in the same
-     success green as the locate button's located/anchored states. */
+     success green as the locate pill's located/anchored states. */
   &__mask-btn--on {
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     color: rgb(var(--color-success, 74 222 128));
@@ -236,27 +236,40 @@
     color: rgb(var(--color-success, 74 222 128));
   }
 
-  /* The locate button's state voices, inherited from the status pills this
-     button absorbed: an anchored or automatically located roster fills the
-     pill in the success green, a settling Tab pass in the warning amber —
-     the whole locate story now reads off one widget. */
-  &__manual-btn--active,
-  &__manual-btn--detected {
+  /* Read-only locate-status pill (was the clickable manual-locate button;
+     calibrating now lives in Settings → 游戏内显示校准): the same pill
+     voice as the head's status pills, non-interactive. */
+  &__locate-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--color-text) / 20%);
+    background: transparent;
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+
+  /* An anchored (manually calibrated) or automatically located roster
+     fills the pill in the success green — the same voices the old button
+     carried. */
+  &__locate-pill--manual,
+  &__locate-pill--detected {
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
   }
 
-  &__manual-btn--searching {
+  /* A settling automatic Tab pass — the warning amber the head's other
+     transitional pills use. */
+  &__locate-pill--searching {
     border-color: rgb(var(--color-warning, 251 191 36) / 55%);
     background: rgb(var(--color-warning, 251 191 36) / 16%);
     color: rgb(var(--color-warning, 251 191 36));
-  }
-
-  /* Backend refused the manual-locate request (no battle / no game window):
-     a short horizontal shake so the refusal is visible, not silent. */
-  &__manual-btn--shake {
-    animation: live-battle-manual-shake 0.4s ease;
   }
 
   /* Roster scroller — the hikari container owns the scrollbar (auto-hiding
@@ -764,7 +777,7 @@
     &__shot-btn,
     &__mask-btn,
     &__density-btn,
-    &__manual-btn {
+    &__locate-pill {
       padding-inline: 0.45rem;
     }
 
@@ -788,23 +801,5 @@
          cluster's normal position. */
       justify-content: flex-end;
     }
-  }
-}
-
-/* Manual-locate refusal shake (see .live-battle__manual-btn--shake).
-   Top-level: @keyframes cannot nest meaningfully inside a selector. */
-@keyframes live-battle-manual-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  25% {
-    transform: translateX(-3px);
-  }
-  50% {
-    transform: translateX(3px);
-  }
-  75% {
-    transform: translateX(-2px);
   }
 }

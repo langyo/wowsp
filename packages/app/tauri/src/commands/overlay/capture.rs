@@ -44,6 +44,11 @@ pub(super) fn compute_anchor(
         style_bits: window_style_bits(game.hwnd),
         kind: game.kind,
     };
+    // Live identity for the persistent anchor calibration (see
+    // `calibration.rs`): `None` while the watcher has not resolved a
+    // client + battle class yet, in which case every calibration op below
+    // is a no-op.
+    let cal_key = super::watch::live_calibration_key(fsm, game);
     let mut verify_missed = false;
     let mut band_verified = false;
     // The strip-layout profile IN EFFECT for this frame: the client-kind
@@ -103,6 +108,12 @@ pub(super) fn compute_anchor(
             );
             fsm.geometry_cache = None;
             fsm.geometry_verify_fails = 0;
+            // The stored calibration entry carries the same dead band —
+            // drop it too, or every future class flip / app start would
+            // re-seed stale geometry and re-buy these three misses.
+            if let Some(k) = cal_key.as_ref() {
+                fsm.calibration.note_unstable(k);
+            }
             // The misses almost always mean the table itself moved (HUD
             // phase switch): re-arm the pin revalidation so the very next
             // tick re-detects, instead of leaving misplaced chips until
@@ -123,6 +134,15 @@ pub(super) fn compute_anchor(
         // frame is exactly the cost this cache exists to avoid; the strike
         // counter is the last-resort re-arm.
         return None;
+    }
+    // A frame that verified the cached band is a STABLE press for the
+    // calibration store: one vote per Tab press episode, and after
+    // `STABLE_PRESSES_TO_CERTIFY` agreeing presses the entry is certified
+    // and the watcher's periodic revalidations stand down.
+    if band_verified {
+        if let Some(k) = cal_key.as_ref() {
+            fsm.calibration.note_stable(k);
+        }
     }
     // Scene gate (only reached for frames that will actually be detected:
     // a verified band or no cache). The HUD probe (HP bar + ship icons)
@@ -147,42 +167,96 @@ pub(super) fn compute_anchor(
             return None;
         }
     }
+    // Fresh detections DEFER their cache/calibration store until the
+    // plausibility veto below has approved the geometry — a vetoed misfire
+    // must leave no trace anywhere.
+    let mut fresh: Option<(overlay_detect::HeaderBand, overlay_detect::DetectedRoster)> = None;
     let (roster_rel, rows, split, detected) = if let Some(det) = cached {
         (det.rect, det.row_centers, det.team_split, true)
     } else {
         match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes, &profile) {
             Some((band, det)) => {
-                // Confirmed detection → (re)fill the cache. Fallback
-                // geometry never enters it (table_detected == false never
-                // pins, so it would never be reused by a pin path anyway).
                 // The strip layout resolves HERE, once per detection: the
                 // classic and rework WG tables share this header geometry,
                 // and every strip read (this frame's luma pass, the sink
                 // probes, all later cache hits) keys on the cached profile.
                 profile_eff =
                     overlay_detect::resolve_wg_strip_profile(&rgba, w, h, band, &det, &profile);
-                fsm.geometry_cache = Some(GeometryCacheEntry {
-                    key,
-                    band,
-                    roster: det.clone(),
-                    team_sizes,
-                    profile: profile_eff,
-                });
-                fsm.geometry_verify_fails = 0;
+                fresh = Some((band, det.clone()));
                 (det.rect, det.row_centers, det.team_split, true)
             },
             None => {
                 tracing::info!(
                     allies = team_sizes.0,
                     enemies = team_sizes.1,
-                    "team list not detected — using centered fallback table"
+                    "team list not detected — using fallback table"
                 );
-                let expected = team_sizes.0.max(team_sizes.1);
-                let (r, rows) = overlay_detect::fallback_roster(w as i32, h as i32, expected);
-                (r, rows, 0.5, false)
+                fallback_geometry(fsm, game, w as i32, h as i32, team_sizes)
             },
         }
     };
+    // Plausibility veto (silent — see `overlay_detect::roster_plausible`):
+    // a detector misfire must not pin, render or certify. A vetoed FRESH
+    // detection simply falls back (nothing was stored yet); a vetoed CACHE
+    // rebuild additionally charges the verify-miss budget so a cache that
+    // keeps producing absurd geometry retires like any other dead band.
+    let (roster_rel, rows, split, detected) = if detected
+        && overlay_detect::roster_plausible(&roster_rel, &rows, split, w as i32, h as i32)
+    {
+        (roster_rel, rows, split, true)
+    } else if detected {
+        tracing::warn!(
+            x = roster_rel.x,
+            y = roster_rel.y,
+            width = roster_rel.width,
+            height = roster_rel.height,
+            split,
+            "detected roster failed the plausibility gates — vetoed, falling back"
+        );
+        if fresh.is_none() && fsm.geometry_cache.is_some() {
+            fsm.geometry_verify_fails += 1;
+            if fsm.geometry_verify_fails >= GEOMETRY_VERIFY_MAX_FAILS {
+                tracing::info!(
+                    fails = fsm.geometry_verify_fails,
+                    "vetoed cache geometry one time too many — roster geometry cache dropped"
+                );
+                fsm.geometry_cache = None;
+                fsm.geometry_verify_fails = 0;
+                if let Some(k) = cal_key.as_ref() {
+                    fsm.calibration.note_unstable(k);
+                }
+            }
+        }
+        fresh = None;
+        fallback_geometry(fsm, game, w as i32, h as i32, team_sizes)
+    } else {
+        (roster_rel, rows, split, false)
+    };
+    if let Some((band, det)) = fresh {
+        // Confirmed detection → (re)fill the cache. Fallback geometry never
+        // enters it (table_detected == false never pins, so it would never
+        // be reused by a pin path anyway). A fresh full-scan detection is
+        // also the calibration store's ground truth: the entry takes this
+        // geometry wholesale and the stability streak restarts (the NEXT
+        // presses vote on it).
+        if let Some(k) = cal_key.as_ref() {
+            fsm.calibration.note_geometry(
+                k,
+                band,
+                det.clone(),
+                team_sizes,
+                calibration::StoredProfile::of(&profile_eff),
+            );
+        }
+        fsm.geometry_cache = Some(GeometryCacheEntry {
+            key,
+            band,
+            roster: det,
+            team_sizes,
+            profile: profile_eff,
+        });
+        fsm.geometry_verify_fails = 0;
+    }
     // A frame that PROVED to carry the Tab table — the verified cached band,
     // or a fresh detection that just matched — is the best possible
     // manual-locate reference: it IS the roster moment the player saw. It
@@ -257,12 +331,49 @@ pub(super) fn compute_anchor(
     Some((anchor, profile_eff))
 }
 
+/// Fallback geometry when detection failed (or was vetoed): first the
+/// stored calibration's PROPORTIONS remapped onto the current window —
+/// the table lands where it historically sat, which is the best estimate
+/// available on a client whose detection cannot run at all — then the
+/// built-in centered prior. Always `table_detected == false`: an estimate
+/// never pins, never certifies; every press keeps retrying the real
+/// detector.
+#[cfg(target_os = "windows")]
+fn fallback_geometry(
+    fsm: &mut WatchFsm,
+    game: &GameWindow,
+    w: i32,
+    h: i32,
+    team_sizes: (usize, usize),
+) -> (Rect, Vec<i32>, f32, bool) {
+    if let Some(class) = fsm.calibration.cache_class {
+        if let Some((rect, rows, split)) =
+            fsm.calibration
+                .remap_geometry(class, &game.kind, (w, h), team_sizes)
+        {
+            // The stored proportions are only a prior — an absurd remap
+            // (a poisoned entry) falls through to the centered prior
+            // instead of parking the fallback hint at the absurd spot.
+            if overlay_detect::roster_plausible(&rect, &rows, split, w, h) {
+                tracing::info!(
+                    class = ?class,
+                    "fallback: remapped the stored anchor calibration onto the current window"
+                );
+                return (rect, rows, split, false);
+            }
+        }
+    }
+    let expected = team_sizes.0.max(team_sizes.1);
+    let (r, rows) = overlay_detect::fallback_roster(w, h, expected);
+    (r, rows, 0.5, false)
+}
+
 /// Pack `GWL_STYLE` + `GWL_EXSTYLE` into one geometry-cache key component:
 /// a window-mode switch (borderless ↔ windowed) can theoretically keep the
 /// outer rect identical while the styles change — the style bits turn that
 /// into a cache miss too.
 #[cfg(target_os = "windows")]
-fn window_style_bits(hwnd: windows::Win32::Foundation::HWND) -> u64 {
+pub(super) fn window_style_bits(hwnd: windows::Win32::Foundation::HWND) -> u64 {
     use windows::Win32::UI::WindowsAndMessaging::{GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW};
     unsafe {
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);

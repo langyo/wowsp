@@ -64,9 +64,8 @@ import {
   Rows3,
   ScanEye,
   Unplug,
-  X,
 } from "@lucide/vue";
-import { HkScrollContainer, useToast } from "@celestia-island/hikari";
+import { HkScrollContainer } from "@celestia-island/hikari";
 
 import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
@@ -124,7 +123,6 @@ import {
   useStatsPrefsStore,
   type OverlayColumnScope,
 } from "@/stores/statsPrefs";
-import { useManualLocateStore } from "@/stores/manualLocate";
 import { useRosterStats, isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
@@ -132,15 +130,6 @@ import RatingStamp from "@/components/base/RatingStamp";
 import { HkSpinner } from "@celestia-island/hikari";
 import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
 import "./LiveBattlePanel.scss";
-
-/** Stable refusal codes from `start_manual_locate` → the replay.live.*
- *  copy toasted next to the button shake. Module-level: the mapping is
- *  pure data, no per-instance state. */
-const MANUAL_REFUSAL_KEYS: Record<string, string> = {
-  "no-battle": "replay.live.manualNoBattle",
-  "no-game": "replay.live.manualNoGame",
-  "no-frame": "replay.live.manualNoFrame",
-};
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
  *  battle script / roster bots). */
@@ -183,8 +172,6 @@ export default defineComponent({
      *  compact one-line rows — a persisted stats pref flipped from the
      *  head's density toggle. */
     const compact = computed(() => prefs.prefs.liveRosterCompact);
-    const manualLocate = useManualLocateStore();
-    const toast = useToast();
     const { dataLanguage } = useLanguage();
     // Declared BEFORE useRosterStats below: the composable's watches run
     // their getters synchronously at registration, and the `realms` option
@@ -272,10 +259,11 @@ export default defineComponent({
 
     // Overlay detection state, streamed by the Rust Tab watcher as
     // transition-only `wowsp://overlay-status` events. Rendered by the
-    // manual-locate button itself in the panel's head (right corner) — the
-    // locate state IS the button's voice. `null` = nothing received yet →
-    // the button reads plain "manual locate" (it is permanent — idle
-    // stretches between battles must not strand the entry point).
+    // read-only locate pill in the panel's head (right corner) — a status
+    // display, not an entry point; calibrating the anchor happens in
+    // Settings → 游戏内显示校准. `null` = nothing received yet → the pill
+    // reads plain "manual locate" in its subdued idle voice (it is
+    // permanent — idle stretches between battles must not look broken).
     const overlayStatus = ref<OverlayStatus | null>(null);
     let unlistenStatus: (() => void) | null = null;
     // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
@@ -545,24 +533,18 @@ export default defineComponent({
       unlistenSinkAttrib = null;
       unlistenTelemetry?.();
       unlistenTelemetry = null;
-      if (shakeTimer) {
-        clearTimeout(shakeTimer);
-        shakeTimer = null;
-      }
     });
 
     const locateState = computed(() => {
       const s = overlayStatus.value;
-      if (!s) return null;
       // A manual anchor stays ARMED across Idle/Searching (Rust marks every
-      // automatic report manual:true while it is stored): the button must
-      // survive those transitions too, since the anchor re-anchors on the
-      // same battle's next Tab hold.
-      if (s.manual) {
+      // automatic report manual:true while it is stored) — the pill keeps
+      // its green voice through those transitions, since the anchor
+      // re-anchors on the same battle's next Tab hold.
+      if (s?.manual) {
         return { cls: "manual", spin: false, text: t("replay.live.manualRows", { n: s.rows ?? 0 }) };
       }
-      if (s.state === "idle") return null;
-      if (s.state === "detected") {
+      if (s?.state === "detected") {
         return {
           cls: "detected",
           spin: false,
@@ -571,12 +553,14 @@ export default defineComponent({
       }
       // Searching/fallback are settling states — carry the same inline
       // spinner the loading roster rows use (HkSpinner, currentcolor tone).
-      return { cls: "searching", spin: true, text: t("replay.live.searching") };
+      if (s && (s.state === "searching" || s.state === "fallback")) {
+        return { cls: "searching", spin: true, text: t("replay.live.searching") };
+      }
+      // Nothing received yet, or idle between battles: the subdued resting
+      // voice (the pill is permanent — the calibration entry point it used
+      // to open now lives in Settings → 游戏内显示校准).
+      return { cls: "idle", spin: false, text: t("replay.live.manualLocate") };
     });
-
-    /** A manual anchor is in force: the button turns green and its click
-     *  flips from opening the picker to clearing the anchor. */
-    const manualActive = computed(() => overlayStatus.value?.manual === true);
 
     // ── Telemetry-source grade (the head's state pill) ───────────────────
     // Staged per the roster mode, the plugin's presence and the battle's
@@ -591,45 +575,6 @@ export default defineComponent({
     const telemetryGrade = computed(() =>
       telemetryGradeFor(overlayCfg.roster, plugin, telemetryExactOrder()),
     );
-
-    /** Manual-locate entry point: opens the cached-frame picker layer inside
-     *  the main window (ManualLocateOverlay, after the backend gates pass),
-     *  or (when a manual anchor is already in force) clears it back to the
-     *  automatic detection flow. */
-    const manualBusy = ref(false);
-    /** Short shake when the backend refuses to open the picker — visible
-     *  feedback, never silent. The refusal ALSO toasts the localized reason:
-     *  stable gate codes (see MANUAL_REFUSAL_KEYS) map onto replay.live.*,
-     *  anything else surfaces raw so nothing is ever swallowed. NOTE: the
-     *  transport wraps invoke rejections into an `RpcError` (message = the
-     *  backend string), so the code must be read off `.message`. */
-    const manualShake = ref(false);
-    let shakeTimer: ReturnType<typeof setTimeout> | null = null;
-    async function onManualButton() {
-      if (manualBusy.value) return;
-      manualBusy.value = true;
-      try {
-        if (manualActive.value) {
-          await api.clearManualRosterRect();
-        } else {
-          await api.startManualLocate();
-          manualLocate.openPicker();
-        }
-      } catch (err) {
-        const code =
-          typeof err === "string" ? err : ((err as Error | null)?.message ?? String(err));
-        toast.warning(MANUAL_REFUSAL_KEYS[code] ? t(MANUAL_REFUSAL_KEYS[code]) : code);
-        console.warn("[live-battle] manual locate refused:", err);
-        manualShake.value = true;
-        if (shakeTimer) clearTimeout(shakeTimer);
-        shakeTimer = setTimeout(() => {
-          manualShake.value = false;
-          shakeTimer = null;
-        }, 500);
-      } finally {
-        manualBusy.value = false;
-      }
-    }
 
     // Column ordering mirrors the in-game Tab table: telemetry's
     // game-true client keys win whenever they cover that side's rows
@@ -1592,50 +1537,30 @@ export default defineComponent({
               )}
               {t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}`)}
             </span>
-            {/* One widget, four voices: idle reads as the manual-locate
-                entry, searching/detected carry the automatic Tab-pass state,
-                and a live manual anchor reads the anchored state (its click
-                then clears it). This button absorbed the separate read-only
-                status pill that used to sit beside it — two widgets voicing
-                one locate state pushed the head onto a second line. The
-                entry itself stays PERMANENT: idle stretches between battles
-                (and battles where Tab was never held) leave no overlay
-                status at all, and stranding the region-picker entry on
-                those states is exactly what made it look flaky. */}
-            <button
+            {/* Read-only locate-status pill — one widget, four voices:
+                idle reads subdued ("manual locate" resting), searching
+                carries the automatic Tab pass's settling spinner, detected
+                the located row count, and a live manual/calibrated anchor
+                reads green. It replaced the old clickable manual-locate
+                button (which absorbed a separate status pill in its day):
+                calibrating the anchor now lives in Settings → 游戏内显示
+                校准, so this surface only REPORTS the detection state. The
+                pill is permanent — idle stretches between battles (and
+                battles where Tab was never held) leave no overlay status at
+                all, and dropping the widget there would look flaky. */}
+            <span
               class={[
-                "live-battle__manual-btn",
-                {
-                  "live-battle__manual-btn--active": manualActive.value,
-                  "live-battle__manual-btn--detected":
-                    locateState.value?.cls === "detected",
-                  "live-battle__manual-btn--searching":
-                    locateState.value?.cls === "searching",
-                  "live-battle__manual-btn--shake": manualShake.value,
-                },
+                "live-battle__locate-pill",
+                `live-battle__locate-pill--${locateState.value.cls}`,
               ]}
-              type="button"
-              disabled={manualBusy.value}
-              data-hint={
-                manualActive.value ? t("replay.live.manualClearHint") : undefined
-              }
-              onClick={() => void onManualButton()}
             >
-              {/* Icon = the action a click performs, matching the
-                  nickname/density toggles: crosshair while idle, X to
-                  clear an anchor that is live; the spinner only while the
-                  automatic Tab pass is still settling. */}
-              {locateState.value?.spin ? (
+              {locateState.value.spin ? (
                 <HkSpinner size="xs" tone="current" />
-              ) : manualActive.value ? (
-                <X size={13} />
               ) : (
                 <LocateFixed size={13} />
               )}
-              {locateState.value
-                ? locateState.value.text
-                : t("replay.live.manualLocate")}
-            </button>
+              {locateState.value.text}
+            </span>
           </div>
           {/* Operations (行动) have no enemy list — the enemy side is all
               scripted spawns — so the roster renders as one centered

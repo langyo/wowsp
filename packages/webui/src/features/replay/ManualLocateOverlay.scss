@@ -212,3 +212,74 @@
 .ml-btn:hover {
   filter: brightness(1.15);
 }
+
+// ── reference-image selector row (bottom strip, above the footer) ─────────
+// Same literal-dark pill voice as the metaline's controls: it sits on the
+// themed modal surface but belongs to the screenshot viewer's chrome.
+
+.ml-shots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Sibling of the stage block inside the modal body — the stage's own
+     column gap does not reach across, so the strip keeps its own. */
+  margin-top: 10px;
+}
+
+.ml-shots__label {
+  color: rgb(255 255 255 / 45%);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.ml-shots__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.ml-shot {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  background: rgb(10 14 20 / 85%);
+  color: rgb(236 241 246);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ml-shot:hover {
+  filter: brightness(1.15);
+}
+
+/* The displayed source: the same pressed green the guides toggle carries. */
+.ml-shot--on {
+  border-color: rgb(96 214 164 / 65%);
+  color: rgb(126 231 183);
+}
+
+/* Gallery thumbnails: a fixed 3:1.7 tile, the capture letterboxed inside. */
+.ml-shot--thumb {
+  width: 57px;
+  height: 34px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ml-shot--thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}

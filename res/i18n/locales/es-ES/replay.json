@@ -249,6 +249,11 @@
     "manualNoBattle": "No hay ninguna batalla en curso: la ubicación manual requiere una batalla activa",
     "manualNoGame": "No se encontró la ventana del juego: comprueba que el juego esté en ejecución",
     "manualNoFrame": "No hay fotograma en caché utilizable: mantén pulsado Tab sobre la tabla en el juego y reintenta",
+    "manualShotPick": "Elegir captura de referencia",
+    "manualShotLive": "Imagen más reciente",
+    "manualShotPaste": "Pegar imagen",
+    "manualShotFile": "Elegir archivo",
+    "manualShotLoadFailed": "No se pudo cargar la imagen",
     "param": {
       "mainGun": "Batería principal",
       "secondary": "Batería secundaria",

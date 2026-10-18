@@ -249,6 +249,11 @@
     "manualNoBattle": "現在進行中の戦闘がありません。戦闘に入ってから手動配置を利用してください",
     "manualNoGame": "ゲームのウィンドウが見つかりません。ゲームが起動しているか確認してください",
     "manualNoFrame": "利用可能なキャッシュ画像がありません。ゲーム内で Tab を押して戦績テーブルを表示してから再試行してください",
+    "manualShotPick": "参照画像を選択",
+    "manualShotLive": "最新の画面",
+    "manualShotPaste": "画像を貼り付け",
+    "manualShotFile": "ファイルを選択",
+    "manualShotLoadFailed": "画像の読み込みに失敗しました",
     "param": {
       "mainGun": "主砲",
       "secondary": "副砲",

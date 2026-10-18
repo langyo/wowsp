@@ -4,19 +4,41 @@
  * Settings) — there is no dedicated Tauri window (see
  * `ManualLocateOverlay`).
  *
- * The live-battle panel's button opens the layer after the backend gates
- * pass (`startManualLocate`); the layer closes itself on submit / cancel
- * and on the backend's `wowsp://manual-locate-close` force-close push. The
- * state lives here (not in the panel) so a mid-pick roster/battle update
- * cannot unmount the picker out from under the user.
+ * The picker serves two openers: the settings calibration editor (the
+ * "calibration" mode — `startCalibrationLocate` armed it; submits go to
+ * `setCalibrationAnchor` against the target entry) and the battle-flow
+ * manual locate (`startManualLocate`, after the backend's battle gates
+ * pass). The layer closes itself on submit / cancel and on the backend's
+ * `wowsp://manual-locate-close` force-close push. The state lives here
+ * (not in the opener) so a mid-pick roster/battle update cannot unmount
+ * the picker out from under the user.
  */
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
+/** The calibration editor's target: which client install and battle-class
+ *  entry a calibration-mode submit writes to (`setCalibrationAnchor`). */
+export interface ManualLocateCalibration {
+  clientKey: string;
+  class: "pvp" | "pve";
+}
+
 export const useManualLocateStore = defineStore("manualLocate", () => {
   const open = ref(false);
+  /** Which opener the current pick serves — battle submits go to
+   *  `setManualRosterRect`, calibration submits to `setCalibrationAnchor`.
+   *  Battle stays the default so the battle flow needs no call changes. */
+  const mode = ref<"battle" | "calibration">("battle");
+  /** The calibration target; null outside calibration mode. */
+  const calibration = ref<ManualLocateCalibration | null>(null);
 
-  function openPicker() {
+  function openPicker(opts?: {
+    mode?: "battle" | "calibration";
+    calibration?: ManualLocateCalibration | null;
+  }) {
+    mode.value = opts?.mode ?? "battle";
+    calibration.value =
+      mode.value === "calibration" ? (opts?.calibration ?? null) : null;
     open.value = true;
   }
 
@@ -24,5 +46,5 @@ export const useManualLocateStore = defineStore("manualLocate", () => {
     open.value = false;
   }
 
-  return { open, openPicker, closePicker };
+  return { open, mode, calibration, openPicker, closePicker };
 });

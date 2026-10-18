@@ -7,13 +7,18 @@ use super::*;
 /// already clamped to the window's monitor so the capture and the overlay
 /// cover exactly the same region — multi-monitor / negative-origin safe) +
 /// the client kind behind it (resolved from the process image; drives the
-/// per-client detection profile in `overlay_detect`).
+/// per-client detection profile in `overlay_detect`) + the install's
+/// identity key (drives the per-client isolation of the anchor-calibration
+/// store — twin installs never share detected coordinates). Not `Copy`
+/// since the key is a `String`; cloned at the tick's bookkeeping rate,
+/// never per pixel.
 #[cfg(target_os = "windows")]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(super) struct GameWindow {
     pub(super) hwnd: windows::Win32::Foundation::HWND,
     pub(super) rect: windows::Win32::Foundation::RECT,
     pub(super) kind: wowsp_tauri_shared::GameInstallKind,
+    pub(super) install_key: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -100,15 +105,123 @@ pub(super) fn find_game_window() -> Option<GameWindow> {
     }
     let (hwnd, _) = ctx.best?;
     let rect = window_bounds_clamped(hwnd)?;
-    // Client kind for the detection profile: same inference the process
+    // Client identity for the detection profile AND the anchor
+    // calibration's per-install isolation: same inference the process
     // watcher uses (exe name/path markers), defaulting to the WG client —
-    // the WG profile is also the unknown-client fallback downstream.
-    let kind = super::appdata::query_process_image_path(pid)
+    // the WG profile is also the unknown-client fallback downstream. When
+    // the install root cannot be resolved at all, the calibration falls
+    // back to a kind-scoped key (twin unknown clients of the same kind are
+    // indistinguishable anyway).
+    let install = super::appdata::query_process_image_path(pid)
         .as_deref()
-        .and_then(super::appdata::infer_install_from_exe)
-        .map(|install| install.kind)
+        .and_then(super::appdata::infer_install_from_exe);
+    let kind = install
+        .as_ref()
+        .map(|i| i.kind)
         .unwrap_or(wowsp_tauri_shared::GameInstallKind::Wargaming);
-    Some(GameWindow { hwnd, rect, kind })
+    let install_key = install
+        .as_ref()
+        .map(|i| super::super::game_detect::install_path_key(&i.path))
+        .unwrap_or_else(|| format!("kind-{}", kind_str(&kind)));
+    Some(GameWindow {
+        hwnd,
+        rect,
+        kind,
+        install_key,
+    })
+}
+
+/// Stable lowercase token for a kind-scoped fallback client key.
+#[cfg(target_os = "windows")]
+fn kind_str(kind: &wowsp_tauri_shared::GameInstallKind) -> &'static str {
+    match kind {
+        wowsp_tauri_shared::GameInstallKind::Wargaming => "wargaming",
+        wowsp_tauri_shared::GameInstallKind::Steam => "steam",
+        wowsp_tauri_shared::GameInstallKind::Lesta => "lesta",
+        wowsp_tauri_shared::GameInstallKind::Cn360 => "cn360",
+        wowsp_tauri_shared::GameInstallKind::CnKongzhong => "kongzhong",
+        wowsp_tauri_shared::GameInstallKind::Manual => "manual",
+    }
+}
+
+/// Fingerprint of the HARDWARE screen configuration: every monitor's
+/// origin, resolution and effective DPI, plus the primary marker, sorted
+/// by origin — e.g. `p2560x1440@0,0:96;1920x1080@2560,0:144`. The anchor
+/// calibration stores the fingerprint it was measured under and refuses an
+/// entry when the layout changed: docking/undocking, a resolution switch
+/// or a monitor-scale change all move or rescale the game window's table,
+/// and the origin/size keys alone cannot see a scale change that keeps
+/// sizes but re-renders the client's UI. Cheap (one enumeration of a
+/// handful of monitors), called on the watcher's screen-refresh cadence.
+#[cfg(target_os = "windows")]
+pub(super) fn screen_fingerprint() -> String {
+    use std::ffi::c_void;
+
+    use windows::Win32::Foundation::{LPARAM, RECT};
+    use windows::Win32::Graphics::Gdi::{
+        EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
+    };
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    use windows::core::BOOL;
+
+    // (left, top, right, bottom, dpi, primary) per monitor.
+    struct Ctx {
+        monitors: Vec<(i32, i32, i32, i32, u32, bool)>,
+    }
+    unsafe extern "system" fn enum_cb(
+        hmon: HMONITOR,
+        _dc: HDC,
+        rect: *mut RECT,
+        lparam: LPARAM,
+    ) -> BOOL {
+        unsafe {
+            let ctx = &mut *(lparam.0 as *mut Ctx);
+            let mut mi = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            if GetMonitorInfoW(hmon, &mut mi).as_bool() {
+                let raw = if rect.is_null() { mi.rcMonitor } else { *rect };
+                let (mut dx, mut dy) = (0u32, 0u32);
+                let _ = GetDpiForMonitor(hmon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
+                ctx.monitors.push((
+                    raw.left,
+                    raw.top,
+                    raw.right,
+                    raw.bottom,
+                    dx,
+                    // MONITORINFOF_PRIMARY = 1.
+                    mi.dwFlags & 1 == 1,
+                ));
+            }
+        }
+        BOOL(1)
+    }
+
+    let mut ctx = Ctx {
+        monitors: Vec::new(),
+    };
+    unsafe {
+        let lparam = &mut ctx as *mut Ctx as *mut c_void;
+        let _ = EnumDisplayMonitors(None, None, Some(enum_cb), LPARAM(lparam as isize));
+    }
+    ctx.monitors.sort();
+    let mut out = String::new();
+    for (i, (l, t, r, b, dpi, primary)) in ctx.monitors.iter().enumerate() {
+        if i > 0 {
+            out.push(';');
+        }
+        if *primary {
+            out.push('p');
+        }
+        out.push_str(&format!("{}x{}@{},{}:{}", r - l, b - t, l, t, dpi));
+    }
+    out
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn screen_fingerprint() -> String {
+    String::new()
 }
 
 /// Window bounds in physical screen px: DWM extended frame bounds (visible

@@ -19,6 +19,7 @@ export type SettingsSection =
   | "installCleanup"
   | "changelog"
   | "overlay"
+  | "overlayCalibration"
   | "feedback"
   | "about"
   | "attributions"
@@ -43,7 +44,7 @@ export interface SettingsGroupSpec {
 
 export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "general", sections: ["language", "appearance", "closeBehavior"] },
-  { id: "game", sections: ["stats", "overlay", "gamePath"] },
+  { id: "game", sections: ["stats", "overlay", "overlayCalibration", "gamePath"] },
   { id: "connection", sections: ["account", "network", "pairing"] },
   { id: "app", sections: ["updates", "installCleanup", "changelog"] },
   { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
@@ -63,6 +64,10 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = SETTINGS_GROUPS.
 const MOBILE_HIDDEN_SECTIONS: readonly SettingsSection[] = [
   "gamePath",
   "overlay",
+  // Desktop-only with the overlay section above: the anchor calibration
+  // edits the desktop Tab-overlay detector's stored per-client anchors,
+  // which the phone build has no overlay window to consume.
+  "overlayCalibration",
   // Desktop-only: the phone build has no system tray and no window close
   // button, so there is no close behavior to configure.
   "closeBehavior",

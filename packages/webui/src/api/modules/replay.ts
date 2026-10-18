@@ -250,6 +250,87 @@ export interface ManualLocateContext {
   guides: ManualLocateGuides;
 }
 
+/** Mirrors `wowsp_tauri_shared::ManualLocateSource`: which image the picker
+ *  (or the calibration editor behind it) anchors against. Absent/undefined
+ *  = the newest automatic capture; `{ kind: "frame", atMs }` resolves one
+ *  of the gallery's cached captures by stamp; `{ kind: "image",
+ *  imageBase64 }` is a user-supplied picture (pasted / picked from a file),
+ *  base64 WITHOUT the data-URL prefix. */
+export interface ManualLocateSource {
+  kind: string;
+  atMs?: number;
+  imageBase64?: string;
+}
+
+/** Mirrors `wowsp_tauri_shared::ManualLocateGalleryFrame`: one entry of the
+ *  picker's image selector row — a recent automatic capture's thumbnail
+ *  (downscaled to ≤320 px wide) plus the metadata that resolves it back to
+ *  full pixels (`ManualLocateSource` with `kind: "frame"`). */
+export interface ManualLocateGalleryFrame {
+  /** Wall-clock capture time (unix ms) — the row's label and the frame's
+   *  identity. */
+  atMs: number;
+  /** Base64 PNG thumbnail (no data-URL prefix). */
+  imageBase64: string;
+  imageWidth: number;
+  imageHeight: number;
+  /** Capture size in PHYSICAL px — the coordinate space selections map
+   *  back to. */
+  physWidth: number;
+  physHeight: number;
+  /** Game-window rect (physical screen px) the frame was captured from. */
+  gameRect: Rect;
+}
+
+/** Mirrors `wowsp_tauri_shared::CalibrationEntryInfo`: one battle-class
+ *  entry of the persistent anchor calibration, as the settings calibration
+ *  list shows it. Coordinates are capture-relative (game-window relative)
+ *  physical px. */
+export interface CalibrationEntryInfo {
+  /** `"pvp"` or `"pve"`. */
+  class: string;
+  /** Game-window ORIGIN (physical screen px) the entry was measured at. */
+  gameOrigin: [number, number];
+  /** Game-window SIZE (physical px). */
+  gameSize: [number, number];
+  /** Monitor-configuration fingerprint at measurement time. */
+  screen: string;
+  /** Certified (stable across presses) — the watcher skips its periodic
+   *  re-detection while this holds. */
+  certified: boolean;
+  /** Hand-drawn in the calibration editor (vs auto-measured). */
+  manual: boolean;
+  /** The stored band kept failing verification — kept only as the remap
+   *  fallback's proportional prior. */
+  suspect: boolean;
+  /** Consecutive stable presses counted so far. */
+  stablePresses: number;
+  /** The table rectangle, game-window relative. */
+  rosterRect: Rect;
+  /** Row centers, game-window relative. */
+  rowCenters: number[];
+  /** Allies/enemies column split (1.0 = single-team PvE layout). */
+  teamSplit: number;
+  /** Team sizes the grid was built for. */
+  teamSizes: [number, number];
+}
+
+/** Mirrors `wowsp_tauri_shared::CalibrationClientInfo`: one client's
+ *  calibration file as the settings list shows it — PvP and PvE entries
+ *  are independent. */
+export interface CalibrationClientInfo {
+  /** Install-identity key (the install root path) — also the display
+   *  identity of the client. */
+  clientKey: string;
+  /** Client family, as `kind_name` spells it (`wargaming` / `steam` /
+   *  `lesta` / `cn360` / `kongzhong` / `manual`). */
+  kind: string;
+  pvp: CalibrationEntryInfo | null;
+  pve: CalibrationEntryInfo | null;
+  /** File modification time (unix ms), when known. */
+  updatedAtMs: number | null;
+}
+
 /** One position sample (mirrors `wowsp_tauri_shared::PositionSample`). WoWS
  *  maps are planar: x = east, z = north, y ≈ 0 (sea level). */
 export interface PositionSample {
@@ -810,6 +891,19 @@ export const replayApi = {
    *  payload; the layer re-invokes it on retry). */
   fetchManualLocateContext: () =>
     transport.invoke<ManualLocateContext>(RPC.manual_locate_context),
+  /** The picker's image-selector row: every still-fresh cached capture as
+   *  a small thumbnail, newest first. */
+  fetchManualLocateGallery: () =>
+    transport.invoke<ManualLocateGalleryFrame[]>(RPC.manual_locate_gallery),
+  /** The picker context for a CHOSEN source: one of the gallery's cached
+   *  captures (by stamp) or a user-supplied picture (base64). Switching
+   *  the selector re-runs the whole context build — guides included —
+   *  against the new image. `source` omitted/undefined = the newest
+   *  capture (plain `manual_locate_context`). */
+  fetchManualLocateContextFor: (source?: ManualLocateSource) =>
+    transport.invoke<ManualLocateContext>(RPC.manual_locate_context_for, {
+      source: source ?? null,
+    }),
   /** Submit the picker's drag-box selection (PHYSICAL px relative to the
    *  game window origin). Validates + freezes the manual roster anchor;
    *  the layer closes on this Ok and the overlay chips re-anchor on the
@@ -818,6 +912,42 @@ export const replayApi = {
     transport.invoke<null>(RPC.set_manual_roster_rect, { x, y, width, height, frameGameRect }),
   /** Drop the manual anchor; detection returns to the automatic flow. */
   clearManualRosterRect: () => transport.invoke<null>(RPC.clear_manual_roster_rect),
+  /** Open the picker for the SETTINGS calibration editor: the same layer
+   *  and reference-frame machinery as `startManualLocate`, but without the
+   *  battle gates — the editor adjusts STORED calibration entries, which
+   *  exist outside any battle. Still arms the open flag so a running Tab
+   *  watcher stands down while the picker is up. */
+  startCalibrationLocate: () => transport.invoke<null>(RPC.start_calibration_locate),
+  /** The settings calibration list: one row per client install that has a
+   *  stored calibration file, newest write first. Pure read. */
+  fetchOverlayCalibrationList: () =>
+    transport.invoke<CalibrationClientInfo[]>(RPC.overlay_calibration_list),
+  /** Submit the calibration editor's hand-drawn box (PHYSICAL frame px,
+   *  exactly like `setManualRosterRect`): the selection is scaled from the
+   *  reference image's pixels onto the stored entry's window size — the
+   *  entry's identity is KEPT, so editing never depends on the client
+   *  currently running. `source` describes the reference image the
+   *  drawing was made against (omitted = the newest capture). Refusals
+   *  (e.g. "no stored calibration for this client yet") reject with the
+   *  backend's message. */
+  setCalibrationAnchor: (
+    clientKey: string,
+    cls: "pvp" | "pve",
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    source?: ManualLocateSource,
+  ) =>
+    transport.invoke<null>(RPC.set_calibration_anchor, {
+      clientKey,
+      class: cls,
+      x,
+      y,
+      width,
+      height,
+      source: source ?? null,
+    }),
   /** Backend force-close push for the picker layer: the game window vanished
    *  underneath it (or overlay mode ended) — unmount the layer. */
   listenManualLocateClose: (handler: () => void) =>

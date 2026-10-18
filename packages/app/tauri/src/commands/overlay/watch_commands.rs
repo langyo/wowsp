@@ -26,6 +26,11 @@ pub(crate) enum WatchCommand {
     /// A NEW battle's `tempArenaInfo.json` landed (arena mtime moved) — the
     /// current pin, if any, is void.
     BattleChanged,
+    /// The calibration store of the named client changed on disk (the
+    /// settings calibration editor wrote a hand-drawn entry). The watcher
+    /// reloads the file when it is bound to that client and re-runs the
+    /// battle-class alignment so the new entry seeds the geometry cache.
+    CalibrationStoreChanged { client_key: String },
 }
 
 /// FIFO command queue between the command threads and the watcher loop

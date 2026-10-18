@@ -80,6 +80,13 @@ export const RPC = {
   set_manual_roster_rect: "set_manual_roster_rect",
   clear_manual_roster_rect: "clear_manual_roster_rect",
   manual_locate_context: "manual_locate_context",
+  // The picker's image-selector row + the settings calibration editor
+  // (commands/overlay/{manual,calibration}.rs) — see api/modules/replay.ts.
+  manual_locate_gallery: "manual_locate_gallery",
+  manual_locate_context_for: "manual_locate_context_for",
+  start_calibration_locate: "start_calibration_locate",
+  overlay_calibration_list: "overlay_calibration_list",
+  set_calibration_anchor: "set_calibration_anchor",
   lookup_player_stats: "lookup_player_stats",
   lookup_players_stats_batch: "lookup_players_stats_batch",
   clear_roster_stats_cache: "clear_roster_stats_cache",

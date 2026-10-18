@@ -259,9 +259,19 @@ pub(super) fn sink_check_pass(app: &AppHandle, fsm: &mut WatchFsm, game: &GameWi
             );
             fsm.geometry_cache = None;
             fsm.geometry_verify_fails = 0;
+            // The persistent calibration's entry carries the same dead
+            // band — drop it too (see `CalibrationCtx::note_unstable`), or
+            // every future class flip / app start would re-seed stale
+            // geometry and re-buy these misses.
+            if let Some(k) = super::watch::live_calibration_key(fsm, game).as_ref() {
+                fsm.calibration.note_unstable(k);
+            }
             // Three misses ≈ the table itself moved (HUD phase switch):
             // force the next tick's revalidation pass instead of waiting
-            // out the regular 5 s cadence with misplaced chips.
+            // out the regular 5 s cadence with misplaced chips. This is
+            // the FORCED arm — it fires even while the geometry is
+            // certified (`revalidate_due`), which is exactly how a
+            // certified streak heals after a real layout change.
             fsm.last_revalidate = None;
         }
         return;

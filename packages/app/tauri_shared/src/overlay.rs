@@ -73,6 +73,98 @@ pub struct ManualLocateContext {
     pub guides: ManualLocateGuides,
 }
 
+/// Which image the manual-locate picker (or the calibration editor behind
+/// it) should anchor against. The default — no source — is the newest
+/// automatic capture; a `frame` source resolves one of the gallery's cached
+/// captures by its stamp; an `image` source is a user-supplied PNG
+/// (pasted or picked from a file), base64 without a data-URL prefix.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualLocateSource {
+    /// `"frame"` or `"image"`; anything else resolves to the newest cache.
+    #[serde(default)]
+    pub kind: String,
+    /// Gallery stamp of the `frame` source.
+    #[serde(default)]
+    pub at_ms: Option<u64>,
+    /// Base64 PNG of the `image` source.
+    #[serde(default)]
+    pub image_base64: Option<String>,
+}
+
+/// One entry of the picker's image selector row: a recent automatic
+/// capture's thumbnail (downscaled to ≤320 px wide) plus the metadata
+/// needed to resolve it back to full pixels (see
+/// [`ManualLocateSource::kind = "frame"`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualLocateGalleryFrame {
+    /// Wall-clock capture time (unix ms) — the selector's label and the
+    /// frame's identity.
+    pub at_ms: u64,
+    /// Base64 PNG thumbnail (no data-URL prefix).
+    pub image_base64: String,
+    /// Thumbnail pixel size.
+    pub image_width: u32,
+    pub image_height: u32,
+    /// Capture size in PHYSICAL px — the coordinate space selections map
+    /// back to.
+    pub phys_width: u32,
+    pub phys_height: u32,
+    /// Game-window rect (physical screen px) the frame was captured from.
+    pub game_rect: Rect,
+}
+
+/// One battle-class entry of the anchor calibration, as the settings
+/// calibration list shows it. Coordinates are capture-relative (game-window
+/// relative) physical px — the "key feature points" the detector anchored.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalibrationEntryInfo {
+    /// `"pvp"` or `"pve"`.
+    pub class: String,
+    /// Game-window ORIGIN (physical screen px) the entry was measured at.
+    pub game_origin: (i32, i32),
+    /// Game-window SIZE (physical px).
+    pub game_size: (i32, i32),
+    /// Monitor-configuration fingerprint at measurement time.
+    pub screen: String,
+    /// Certified (stable across presses) — the watcher skips its periodic
+    /// re-detection while this holds.
+    pub certified: bool,
+    /// Hand-drawn in the calibration editor (vs auto-measured).
+    pub manual: bool,
+    /// The stored band kept failing verification — kept only as the remap
+    /// fallback's proportional prior.
+    pub suspect: bool,
+    /// Consecutive stable presses counted so far.
+    pub stable_presses: u32,
+    /// The table rectangle, game-window relative.
+    pub roster_rect: Rect,
+    /// Row centers, game-window relative.
+    pub row_centers: Vec<i32>,
+    /// Allies/enemies column split (1.0 = single-team PvE layout).
+    pub team_split: f32,
+    /// Team sizes the grid was built for.
+    pub team_sizes: (u32, u32),
+}
+
+/// One client's calibration file as the settings list shows it: PvP and PvE
+/// entries are independent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalibrationClientInfo {
+    /// Install-identity key (the install root path) — also the display
+    /// name of the client.
+    pub client_key: String,
+    /// Client family (Wargaming / Steam / Lesta / …).
+    pub kind: String,
+    pub pvp: Option<CalibrationEntryInfo>,
+    pub pve: Option<CalibrationEntryInfo>,
+    /// File modification time (unix ms), when known.
+    pub updated_at_ms: Option<u64>,
+}
+
 /// Everything the overlay window needs to align its stat chips with the
 /// in-game team list, produced by the roster detector on each Tab press.
 ///

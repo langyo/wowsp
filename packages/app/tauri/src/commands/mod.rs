@@ -98,6 +98,44 @@ pub mod overlay {
         _y: i32,
         _width: i32,
         _height: i32,
+        _frame_game_rect: Option<wowsp_tauri_shared::Rect>,
+    ) -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
+    }
+
+    #[tauri::command]
+    pub async fn manual_locate_context_for(
+        _source: Option<wowsp_tauri_shared::ManualLocateSource>,
+    ) -> CommandResult<wowsp_tauri_shared::ManualLocateContext> {
+        Err(anyhow!(OVERLAY).into())
+    }
+
+    #[tauri::command]
+    pub async fn manual_locate_gallery()
+    -> CommandResult<Vec<wowsp_tauri_shared::ManualLocateGalleryFrame>> {
+        Err(anyhow!(OVERLAY).into())
+    }
+
+    #[tauri::command]
+    pub async fn start_calibration_locate() -> CommandResult<()> {
+        Err(anyhow!(OVERLAY).into())
+    }
+
+    #[tauri::command]
+    pub async fn overlay_calibration_list()
+    -> CommandResult<Vec<wowsp_tauri_shared::CalibrationClientInfo>> {
+        Err(anyhow!(OVERLAY).into())
+    }
+
+    #[tauri::command]
+    pub async fn set_calibration_anchor(
+        _client_key: String,
+        _class: String,
+        _x: i32,
+        _y: i32,
+        _width: i32,
+        _height: i32,
+        _source: Option<wowsp_tauri_shared::ManualLocateSource>,
     ) -> CommandResult<()> {
         Err(anyhow!(OVERLAY).into())
     }

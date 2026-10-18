@@ -176,6 +176,16 @@ pub(super) fn manual_locate_open() -> bool {
     PICKER_OPEN.load(Ordering::SeqCst)
 }
 
+/// Clear the picker-open flag from a NON-manual submit path (the settings
+/// calibration editor's `set_calibration_anchor`): same bookkeeping
+/// `set_manual_roster_rect` performs on its Ok — the frontend's
+/// close-on-success does not route through `cancel_manual_locate`, and a
+/// flag left standing keeps the whole Tab watcher stood down
+/// (`want_visible` gates on `!picker_open`).
+pub(super) fn clear_picker_open() {
+    PICKER_OPEN.store(false, Ordering::SeqCst);
+}
+
 /// Force-close the picker layer from the backend (the game window vanished
 /// underneath it, or overlay mode ended): clears the open flag and tells the
 /// main window to unmount the layer. No-op when nothing is open.
@@ -264,13 +274,59 @@ fn usable_picker_frame(game: &GameWindow) -> Option<(Vec<u8>, u32, u32, u64, Rec
     Some((rgba, w, h, at_ms, game_rect))
 }
 
+/// Open the manual-locate picker for the SETTINGS calibration editor: the
+/// same layer and the same reference-frame machinery, but without the
+/// battle gates — the editor adjusts STORED calibration entries, which
+/// exist outside any battle. Still sets the open flag so a running Tab
+/// watcher stands down while the picker is up.
+#[tauri::command]
+pub async fn start_calibration_locate() -> CommandResult<()> {
+    PICKER_OPEN.store(true, Ordering::SeqCst);
+    tracing::info!("calibration-locate picker layer opened from the settings editor");
+    Ok(())
+}
+
+/// The picker's image selector row: every still-fresh cached capture as a
+/// small thumbnail, newest first (see `overlay_manual::gallery_entries`).
+#[tauri::command]
+pub async fn manual_locate_gallery()
+-> CommandResult<Vec<wowsp_tauri_shared::ManualLocateGalleryFrame>> {
+    #[cfg(target_os = "windows")]
+    {
+        let entries = super::overlay_manual::gallery_entries();
+        let mut out = Vec::with_capacity(entries.len());
+        for e in entries {
+            // The thumbs arrive pre-rendered (≤160 px wide) — only the PNG
+            // encoding runs here, on a few tens of KB per frame.
+            if let (Some(image_base64), Some(image_width), Some(image_height)) =
+                encode_picker_image_scaled(&e.thumb, e.thumb_size.0, e.thumb_size.1, 320)
+            {
+                out.push(wowsp_tauri_shared::ManualLocateGalleryFrame {
+                    at_ms: e.at_ms,
+                    image_base64,
+                    image_width,
+                    image_height,
+                    phys_width: e.phys_size.0,
+                    phys_height: e.phys_size.1,
+                    game_rect: e.game_rect,
+                });
+            }
+        }
+        Ok(out)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(Vec::new())
+    }
+}
+
 /// Build the screenshot-mode context the main window's picker layer loads
-/// with: the cached automatic capture (downscaled to ≤1280 px wide, PNG,
-/// base64) plus the guides the detector finds on it RIGHT NOW (table rect,
-/// row lines, team seam). All heavy work runs once here, on a clone — the
-/// watcher's hot path never pays for the picker. No usable frame →
-/// all-None fields and the layer shows its "no frame" state (retry /
-/// close). Desktop only (the picker layer never exists on mobile).
+/// with: the chosen frame (downscaled to ≤1280 px wide, PNG, base64) plus
+/// the guides the detector finds on it RIGHT NOW (table rect, row lines,
+/// team seam). All heavy work runs once here, on a clone — the watcher's
+/// hot path never pays for the picker. No usable frame → all-None fields
+/// and the layer shows its "no frame" state (retry / close). Desktop only
+/// (the picker layer never exists on mobile).
 #[tauri::command]
 pub async fn manual_locate_context() -> CommandResult<ManualLocateContext> {
     #[cfg(target_os = "windows")]
@@ -285,35 +341,133 @@ pub async fn manual_locate_context() -> CommandResult<ManualLocateContext> {
         };
         let team_sizes = super::arena_info::last_known_team_sizes();
         let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
-        let guides =
-            match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes, &profile) {
-                Some((_, det)) => {
-                    let seam = (det.rect.x as f64
-                        + f64::from(det.rect.width) * det.team_split as f64)
-                        .round() as i32;
-                    ManualLocateGuides {
-                        table_rect: Some(det.rect),
-                        row_lines: det.row_centers,
-                        seam_x: Some(seam),
-                    }
-                },
-                None => ManualLocateGuides::default(),
-            };
-        let (image_base64, image_width, image_height) = encode_picker_image(&rgba, w, h);
-        Ok(ManualLocateContext {
-            image_base64,
-            image_width,
-            image_height,
-            phys_width: w,
-            phys_height: h,
-            captured_at_ms: Some(at_ms),
-            captured_game_rect: Some(captured_rect),
-            guides,
-        })
+        Ok(build_picker_context(
+            &rgba,
+            w,
+            h,
+            Some(at_ms),
+            Some(captured_rect),
+            team_sizes,
+            profile,
+        ))
     }
     #[cfg(not(target_os = "windows"))]
     {
         Ok(ManualLocateContext::default())
+    }
+}
+
+/// The picker context for a CHOSEN source: one of the gallery's cached
+/// captures (by stamp), or a user-supplied PNG (pasted / picked from a
+/// file, base64). Switching the selector re-runs the whole context build —
+/// including the guide detection — against the new image. A frame stamp
+/// that no longer resolves falls back to the newest capture; a custom
+/// image that fails to decode returns the empty (no-frame) context.
+#[tauri::command]
+pub async fn manual_locate_context_for(
+    source: Option<wowsp_tauri_shared::ManualLocateSource>,
+) -> CommandResult<ManualLocateContext> {
+    let Some(source) = source else {
+        return manual_locate_context().await;
+    };
+    match source.kind.as_str() {
+        "image" => {
+            let Some(b64) = source.image_base64 else {
+                return Ok(ManualLocateContext::default());
+            };
+            let Some((rgba, w, h)) = super::calibration::decode_image(&b64) else {
+                tracing::warn!("picker source image failed to decode");
+                return Ok(ManualLocateContext::default());
+            };
+            // Custom screenshots carry no battle context: detect without a
+            // roster hint (no row extension) and no capture stamp/rect.
+            #[cfg(target_os = "windows")]
+            let profile = find_game_window()
+                .map(|g| overlay_detect::DetectProfile::for_kind(&g.kind))
+                .unwrap_or(overlay_detect::DetectProfile::WG);
+            #[cfg(not(target_os = "windows"))]
+            let profile = overlay_detect::DetectProfile::WG;
+            Ok(build_picker_context(
+                &rgba,
+                w,
+                h,
+                None,
+                None,
+                (0, 0),
+                profile,
+            ))
+        },
+        _ => {
+            // "frame" (or anything else): a gallery capture by stamp, else
+            // the newest.
+            #[cfg(target_os = "windows")]
+            {
+                let Some(game) = find_game_window() else {
+                    return Ok(ManualLocateContext::default());
+                };
+                let game_rect = rect_from_win32(game.rect);
+                let frame = match source.at_ms {
+                    Some(at) => super::overlay_manual::frame_by_stamp(at, &game_rect),
+                    None => None,
+                };
+                let Some((rgba, w, h, at_ms, captured_rect)) =
+                    frame.or_else(|| usable_picker_frame(&game))
+                else {
+                    return Ok(ManualLocateContext::default());
+                };
+                let team_sizes = super::arena_info::last_known_team_sizes();
+                let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
+                Ok(build_picker_context(
+                    &rgba,
+                    w,
+                    h,
+                    Some(at_ms),
+                    Some(captured_rect),
+                    team_sizes,
+                    profile,
+                ))
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                Ok(ManualLocateContext::default())
+            }
+        },
+    }
+}
+
+/// Shared context builder for the two context commands: encode the frame,
+/// run the guide detection once, return the payload.
+fn build_picker_context(
+    rgba: &[u8],
+    w: u32,
+    h: u32,
+    at_ms: Option<u64>,
+    captured_rect: Option<Rect>,
+    team_sizes: (usize, usize),
+    profile: overlay_detect::DetectProfile,
+) -> ManualLocateContext {
+    let guides = match overlay_detect::detect_roster_with_band(rgba, w, h, team_sizes, &profile) {
+        Some((_, det)) => {
+            let seam = (det.rect.x as f64 + f64::from(det.rect.width) * det.team_split as f64)
+                .round() as i32;
+            ManualLocateGuides {
+                table_rect: Some(det.rect),
+                row_lines: det.row_centers,
+                seam_x: Some(seam),
+            }
+        },
+        None => ManualLocateGuides::default(),
+    };
+    let (image_base64, image_width, image_height) = encode_picker_image(rgba, w, h);
+    ManualLocateContext {
+        image_base64,
+        image_width,
+        image_height,
+        phys_width: w,
+        phys_height: h,
+        captured_at_ms: at_ms,
+        captured_game_rect: captured_rect,
+        guides,
     }
 }
 
@@ -322,9 +476,20 @@ pub async fn manual_locate_context() -> CommandResult<ManualLocateContext> {
 /// mapping exact), PNG, base64. `None` when encoding fails.
 #[cfg(target_os = "windows")]
 fn encode_picker_image(rgba: &[u8], w: u32, h: u32) -> (Option<String>, Option<u32>, Option<u32>) {
-    const PICKER_IMAGE_MAX_WIDTH: u32 = 1280;
-    let (buf, nw, nh) = if w > PICKER_IMAGE_MAX_WIDTH {
-        let factor = w.div_ceil(PICKER_IMAGE_MAX_WIDTH);
+    encode_picker_image_scaled(rgba, w, h, 1280)
+}
+
+/// [`encode_picker_image`] with the width cap as a parameter — the gallery
+/// thumbnails use a much smaller cap. Cross-platform (the custom-image
+/// context path runs on every desktop).
+fn encode_picker_image_scaled(
+    rgba: &[u8],
+    w: u32,
+    h: u32,
+    max_width: u32,
+) -> (Option<String>, Option<u32>, Option<u32>) {
+    let (buf, nw, nh) = if w > max_width {
+        let factor = w.div_ceil(max_width);
         let nw = w / factor;
         let nh = h / factor;
         let mut out = vec![0u8; (nw * nh * 4) as usize];

@@ -1007,12 +1007,19 @@ fn build_anchor_sizes_window_to_the_table_area() {
     let (overlay, anchor) = build_anchor(&game, &roster, rows.clone(), 0.5, false, 1.0);
     assert!(!anchor.table_detected);
     // The overlay window covers ONLY the inflated table area — wider on
-    // the sides (chips render OUTSIDE the table) than above/below.
+    // the sides (chips render OUTSIDE the table) than above, and with the
+    // summary-card reserve below (the team-intel card parks one row pitch
+    // under the last row and must fit without sliding up onto it).
     let pad = overlay_padding(&roster);
+    let pad_bottom = overlay_padding_bottom(&roster, &rows, 1.0);
     let padx = overlay_padding_x(&roster, 1.0);
     assert!(padx > pad, "side padding must exceed vertical padding");
+    assert!(
+        pad_bottom > pad,
+        "the summary-card reserve widens the bottom pad"
+    );
     assert_eq!(overlay.width, roster.width + 2 * padx);
-    assert_eq!(overlay.height, roster.height + 2 * pad);
+    assert_eq!(overlay.height, roster.height + pad + pad_bottom);
     assert_eq!(overlay.x, roster.x - padx);
     assert_eq!(overlay.y, roster.y - pad);
     // ...and the anchor coordinates are re-based to ITS origin.
@@ -2399,4 +2406,94 @@ fn resolver_keeps_base_on_green_only_band() {
         resolve_wg_strip_profile(&rgba, w, h, band, &det, &DetectProfile::WG),
         DetectProfile::WG
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Plausibility veto
+// ─────────────────────────────────────────────────────────────────────────
+
+/// A realistic PvP-table geometry (mirrors the 1440p fixture proportions:
+/// table at x 26–74%, header ~23% down, 7 rows) passes every gate.
+#[test]
+fn plausible_roster_accepts_real_layouts() {
+    let rect = Rect {
+        x: 665,
+        y: 331,
+        width: 1230,
+        height: 700,
+    };
+    let rows: Vec<i32> = (0..7).map(|i| 480 + i * 52).collect();
+    assert!(roster_plausible(&rect, &rows, 0.5, 2560, 1440));
+    // The single-team PvE shape (full-width split 1.0, narrower centered
+    // rect) passes too.
+    let pve = Rect {
+        x: 950,
+        y: 331,
+        width: 660,
+        height: 700,
+    };
+    assert!(roster_plausible(&pve, &rows, 1.0, 2560, 1440));
+    // DWM-scale jitter on the rect or rows stays inside the tolerance.
+    let mut jittered = rect;
+    jittered.x -= 3;
+    assert!(roster_plausible(&jittered, &rows, 0.5, 2560, 1440));
+}
+
+/// Each absurd shape is vetoed: hugging an edge, spanning nearly the whole
+/// frame, a degenerate sliver, an out-of-range split, or rows outside the
+/// rect's span.
+#[test]
+fn plausible_roster_vetoes_absurd_geometry() {
+    let rows: Vec<i32> = (0..7).map(|i| 480 + i * 52).collect();
+    let good = Rect {
+        x: 665,
+        y: 331,
+        width: 1230,
+        height: 700,
+    };
+    // Left edge-hugging (a corner mod scoreboard).
+    let mut hug = good;
+    hug.x = 5;
+    assert!(!roster_plausible(&hug, &rows, 0.5, 2560, 1440));
+    // Nearly the whole frame wide.
+    let mut wide = good;
+    wide.x = 20;
+    wide.width = 2530;
+    assert!(!roster_plausible(&wide, &rows, 0.5, 2560, 1440));
+    // A degenerate sliver.
+    let sliver = Rect {
+        x: 1000,
+        y: 331,
+        width: 300,
+        height: 12,
+    };
+    assert!(!roster_plausible(&sliver, &rows, 0.5, 2560, 1440));
+    // Split outside any real layout.
+    assert!(!roster_plausible(&good, &rows, 0.05, 2560, 1440));
+    assert!(!roster_plausible(&good, &rows, 1.2, 2560, 1440));
+    // Rows outside the rect's vertical span (phantom grid below the table).
+    let stray: Vec<i32> = rows.iter().map(|c| c + 400).collect();
+    assert!(!roster_plausible(&good, &stray, 0.5, 2560, 1440));
+    // Non-increasing rows.
+    let flat = vec![480; 7];
+    assert!(!roster_plausible(&good, &flat, 0.5, 2560, 1440));
+    // Empty grid.
+    assert!(!roster_plausible(&good, &[], 0.5, 2560, 1440));
+    // Degenerate frame.
+    assert!(!roster_plausible(&good, &rows, 0.5, 0, 1440));
+}
+
+/// The veto bounds stay generous against the real extremes: a 12-row grid
+/// that fills the rect to its bottom edge, and header-heavy heights at a
+/// small window, still pass.
+#[test]
+fn plausible_roster_accepts_full_12_row_grid() {
+    let rect = Rect {
+        x: 320,
+        y: 200,
+        width: 1280,
+        height: 720,
+    };
+    let rows: Vec<i32> = (0..12).map(|i| 260 + i * 52).collect();
+    assert!(roster_plausible(&rect, &rows, 0.5, 1920, 1080));
 }

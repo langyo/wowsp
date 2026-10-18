@@ -556,6 +556,11 @@ pub fn run() {
             // never renders on mobile, so no stand-in is mirrored).
             #[cfg(desktop)]
             commands::overlay::manual_locate_context,
+            commands::overlay::manual_locate_context_for,
+            commands::overlay::manual_locate_gallery,
+            commands::overlay::start_calibration_locate,
+            commands::overlay::overlay_calibration_list,
+            commands::overlay::set_calibration_anchor,
             commands::network::get_network_config,
             commands::installer::installer_language,
             commands::overlay_config::get_overlay_config,
