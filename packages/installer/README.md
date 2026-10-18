@@ -45,8 +45,11 @@ mirrors). One such bridge update lands them on a client that fetches
   refreshes existing shortcuts by presence (a kept launcher is updated
   in place, a deleted one is never re-created — silent updates must not
   spray `.lnk` files), honors the updater's `--silent --dir
-  --shortcut-menu/--shortcut-desktop` contract, and relaunches the app
-  after unattended updates (`launch-after-install = "always"`).
+  --shortcut-menu/--shortcut-desktop` contract, upgrades the registered
+  install in place on dir-less silent runs (shun >= 0.6.26: ARP
+  `InstallLocation` leads the resolution, so a silent run without
+  `--dir` never relocates a custom-path install to the pinned
+  default-dir), and relaunches the app after unattended updates (`launch-after-install = "always"`).
 - The **app** publishes the shipped resource pack into its cache root on
   first launch (`packages/app/tauri/src/resource_pack.rs` — the
   transactional relocation that used to live in the old installer shell),
