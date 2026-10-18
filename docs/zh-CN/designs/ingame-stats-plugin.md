@@ -166,6 +166,62 @@ API 面、候选集合计数、名单的
 `battleInfo`/`battleState` 字段），以及该构建能给出的
 `team.<side>.sortedAlive` 顺序。它纯属诊断，排序消费端不读它。
 
+**游戏内面板精确行序（2026-10-18）**——unbound 面板直接读取
+`$datahub.getCollection().getChildByPath('team.<side>.sortedAlive')`，
+用每个条目的 avatar id 映射到面板行（行数据带 `avatar_id`，并同时下发
+`allyById`/`enemyById` 映射）。所用 DSL 构造全部有两家客户端已装视图的
+先例：无守卫的集合变量（battle_expert）、`items.length` +
+`evAdded`/`evRemoved`、`items[$index].id`，以及数字 id 载荷字典下标
+（`toString(id)` + `in` + 三元守卫——BuildViewer 的原样习语）。未配对
+的条目渲染**空行位**——精确行各自守住自己的 TAB 行，绝不与回退块交错；
+集合缺失则整侧回退 Python 行序。回放既不挂载 unbound 战斗视图也不接受
+战斗输入（干净构建实测：常显面板 + 扫描码 Tab、前台已验证，零渲染、零
+`tabMode` 事件），视觉验证需要一局真人局。
+
+**CN 排列再校准（2026-10-18，回放自动化）**——第二组独立实拍（回放
+载入屏自带的队伍名单——载入屏在回放里**会**渲染，是真值面）与离线
+`gameTabRowCompare(shipNameOrder)` 预测**双侧 18/18 完全一致**（第一组
+9/9）。CN 重建在至今所有实拍上经验精确；按评级纪律，精确档药丸仍要等
+客户端真值通道（下文截屏侧信道）才放开。
+
+**透明覆盖层昵称列（2026-10-18）**——当探针遥测的排序键完整覆盖某一侧、
+且不是 CN 船名序时，覆盖层去掉该侧额外的玩家昵称列；部分覆盖、过期流或
+CN 会恢复昵称列。这是 WG/Lesta 的“装了探针即无额外昵称列”行为。
+
+**精确顺序路线矩阵（2026-10-18，WG + 国服静态/实测）**——多条路线已
+关死，这里记录状态，避免重复走死路：
+
+- **Python Mods API**——两家客户端都关死。反编译的国服
+  `ModsShell/API_v_1_0` 与 WG 同构：`dataHub` 只导出
+  `getEntityCollections`/`getSingleEntity`（SYNCED 组件列表、拍平——
+  拆分树丢失）；`battleGate` 内部的 `getCollection(componentId)` 只是
+  模块级助手，非导出 API（国服回放探针：`getCollection`/
+  `getCollections`/`getAllPlayers` 两家都 missing）。
+- **unbound → Python 反向桥**——两家实测都不通：自定义动作名的
+  `bindcall externalCall 'inputMapping.onAction'`/`'direct.action'`、
+  直呼回调名的 externalCall、`setUserPref` 载荷通道，都到不了 Python
+  的 SFM 事件处理器或已注册的 `flash.addExternalCallback` 回调。Flash
+  回调本身注册成功（两参形式），但 unbound 侧没有任何入口能唤起它。
+- **unbound 集合读取**——可行（即上文游戏内面板的精确行序）。国服
+  unbound 运行时确定支持：国服随包的 battle_expert 视图就在用
+  `$datahub.getCollection(CC.xxx).getChildByPath(...)`。回放不挂载战斗
+  视图，验证需要一局真人局。
+- **名单记录旁侧字段**——`prebattleIndex` 是分队槽位（多数为 0、分队
+  成员 1–3），不是行序；国服记录顶层无 `shipName`（嵌套 `shipInfo`
+  还差一次下标访问探测）。负结果都记在 `order_probe.json`。
+- **读客户端内存**——按红线排除（无注入/无内存读写；AGENTS.md §0）。
+- **OCR 渲染出的 TAB 表**——已废弃的像素管线，不再回头。
+
+**CN 覆盖层的选定下一步：截屏侧信道（定位条码）。**覆盖层本来就会截屏
+取表格外几何；游戏内面板（客户端精确行序）可以再给每行渲染一小组高对比
+的 5 位色块图案，编码该玩家在 Python 已知名单序中的下标（载荷走同一个
+mods_DataComponent）。解码固定几何的二值色块无需 OCR：采样色块中心、
+阈值化、按 侧+行位 → 名单下标 → 玩家。这样在所有客户端（含国服）上都
+能精确归位每一行 TAB，而且只用官方 API（unbound 渲染 + 既有截屏），
+失败面就是覆盖层已有的截屏层。要点：行高仍是已知 22px，首行放同步图案；
+比特在 Python 算好以布尔随载荷下发（DSL 只写三元表达式，不用位运算）；
+解码器放在锚点检测旁边，喂给排序键今天喂的那套行归位逻辑。
+
 **编码器加固（2026-10-09，WG 亚服 15.9.0 实测）**：客户端自带的
 `utils.jsonEncode` 同样被证明随构建不稳——15.9 对 15.8 曾接受的普通字典
 载荷直接抛异常，WG 亚服的 telemetry.json 冻结在退出清空态，而

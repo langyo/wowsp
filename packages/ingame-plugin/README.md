@@ -33,10 +33,12 @@ iteration happens in git history only.
 
 Besides feeding the transparent overlay window, the plugin can render
 the stats **inside the game** (the app's 游戏内展示 view mode): two stat
-tables (allies / enemies) in battle order — the arena walk order with
-sunk players folded to a sinking-order tail, an approximation of the
-client's TAB order — with winrate, PR and alive-state per player, shown
-while Tab is held. The pieces:
+tables (allies / enemies) in the client's own TAB order — the unbound
+view reads `$datahub.getCollection().getChildByPath('team.<side>.sortedAlive')`
+and maps each collection entry to its panel row by avatar id; the
+Python sort-key/walk order is the fallback when the collection is
+absent — with winrate, PR and alive-state per player, shown while Tab is
+held. The pieces:
 
 - `src/WoWSPProbe.unbound` — the unbound 2 view, auto-discovered AND
   auto-mounted by the game from `gui/unbound2/mods/` (the folder the
@@ -54,6 +56,13 @@ while Tab is held. The pieces:
   whenever Tab state, ordering or alive flags change. No answer from the
   app means no panel: the transparent-overlay view mode simply never
   turns the bridge on.
+
+The in-game panel carries player names itself, so the overlay's
+nickname-column question does not apply there. Replay playback does not
+mount unbound battle views; this path needs a real-battle smoke test.
+The transparent overlay's chips drop their nickname column per side when
+the probe's telemetry sort keys cover every row and the realm is not CN;
+the name cell returns on partial coverage, a stale stream, or CN.
 
 ## Sandbox rules the code must obey
 
