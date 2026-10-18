@@ -91,6 +91,11 @@ html.overlay-hidden body {
    left-aligned], allies mirror it [name right-aligned][stats
    left-aligned]. Exact-order rows carry no name cell at all — the game's
    own table names the row at the same Y.
+   The rat exception is the one row without a stats cell: the lone
+   过街老鼠 verdict rides a hidden profile, so the badge ALONE hugs the
+   table's edge where the numbers would sit (overlay-chip--rat) instead
+   of reserving the pinned empty slot, and a fallback row keeps its name
+   cell outside the badge.
    The name cell caps its width and ellipsizes — the game's own table
    truncates long names the same way. */
 .overlay-chip__stat {

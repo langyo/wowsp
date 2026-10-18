@@ -790,6 +790,18 @@ function sealNodes(name: string): string {
   return resolveStamps(career, comp).map(stampNode).join("");
 }
 
+/** Whether a rendered seal cluster is exactly the lone 过街老鼠 stamp: both
+ *  the text face and a custom picture carry data-stamp, and resolveStamps
+ *  guarantees a rat verdict stands alone (a hidden profile's composition is
+ *  ungradeable), so one rat marker and no other stamp is the whole check. */
+function isRatAloneFace(seals: string): boolean {
+  return (
+    seals !== "" &&
+    seals.split('data-stamp="').length === 2 &&
+    seals.includes('data-stamp="rat"')
+  );
+}
+
 /** One player's line face: the stat column, the seals, and — only while
  *  the row order is NOT game-confirmed (`exactOrder` false, sideOrderExact)
  *  — the name column, arranged so the STATS column sits against the table's
@@ -800,9 +812,18 @@ function sealNodes(name: string): string {
  *  returns: enemies read [stats][name][seals] growing rightward (stats
  *  right-aligned against the table, names left-aligned), allies mirror it
  *  [seals][name][stats] growing leftward (stats left-aligned, names
- *  right-aligned). An exact row with nothing visible at all (every number
- *  toggle off, no seals landed yet) returns the EMPTY STRING — the render
- *  loop skips the row instead of painting an empty chip pill. */
+ *  right-aligned).
+ *
+ *  THE RAT EXCEPTION — the one face allowed to leave the stat column out
+ *  entirely: the 过街老鼠 verdict only lands on a hidden profile, whose
+ *  stat column is the lone red dot, so carrying the cell would pin it to
+ *  the side's widest face and paint the wide empty glass bar the row reads
+ *  as. The badge alone hugs the table's edge where the numbers would sit
+ *  (the render loop marks the chip overlay-chip--rat), with a fallback
+ *  row's name cell kept outside it. An exact row with nothing visible at
+ *  all (every number toggle off, no seals landed yet) still returns the
+ *  EMPTY STRING — the render loop skips the row instead of painting an
+ *  empty chip pill. */
 function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): string {
   const stat = statFace(name, side);
   const seals = sealNodes(name);
@@ -811,10 +832,12 @@ function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): str
     // no name cell on a game-true row): an empty string — the render loop
     // skips the row instead of painting an empty chip pill.
     if (!stat && !seals) return "";
+    if (isRatAloneFace(seals)) return seals;
     const cell = `<span class="overlay-chip__stat">${stat}</span>`;
     return side === "ally" ? seals + cell : cell + seals;
   }
   const label = `<span class="overlay-chip__name">${displayNameOf(name)}</span>`;
+  if (isRatAloneFace(seals)) return side === "ally" ? label + seals : seals + label;
   const cell = `<span class="overlay-chip__stat">${stat}</span>`;
   return side === "ally" ? seals + label + cell : cell + label + seals;
 }
@@ -1306,8 +1329,17 @@ function render() {
       if (!face) return;
       const el = document.createElement("div");
       el.innerHTML = face;
+      // The rat exception's marker (rowFace's badge-only 过街老鼠 face —
+      // read off the emitted face, so class and markup cannot drift):
+      // chipFit's trim pass must never shed the lone stamp and leave an
+      // empty pill shell behind.
+      const stamps = el.querySelectorAll<HTMLElement>(".overlay-stamp[data-stamp]");
       el.className =
-        `overlay-chip overlay-chip--${side}` + (isSunk ? " overlay-chip--sunk" : "");
+        `overlay-chip overlay-chip--${side}` +
+        (stamps.length === 1 && stamps[0].dataset.stamp === "rat"
+          ? " overlay-chip--rat"
+          : "") +
+        (isSunk ? " overlay-chip--sunk" : "");
       el.style.top = `${top / dpr}px`;
       el.style.fontSize = `${fontSize.toFixed(1)}px`;
       if (side === "ally") {

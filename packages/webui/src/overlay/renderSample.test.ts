@@ -30,7 +30,7 @@ const ROSTER = [
   { name: "[GHOST]mkwp22", relation: 1, winrate: 42.2, pr: 499, battles: 595, dmg: 30500 },
   { name: "korea4950", relation: 2, winrate: 45.4, pr: 649, battles: 2895, dmg: 40300 },
   { name: "ByakuyaWN", relation: 2, winrate: 52.5, pr: 1424, battles: 10200, dmg: 74600 },
-  // A hidden profile: the red-dot face, no numbers.
+  // A hidden profile: the rat exception's badge-only face, no numbers.
   { name: "CT_RSE", relation: 2, winrate: null, pr: null, battles: null, dmg: null, hidden: true },
 ];
 
@@ -154,8 +154,9 @@ describe("overlay sample frame", () => {
 
     // The markup contract the picture depends on: five numbered rows carry
     // the four mono figures (winrate / PR / battles / damage), every
-    // battles count carries the split unit word, the hidden row carries
-    // the red dot, and both average lines settled into numbers.
+    // battles count carries the split unit word, the hidden profile row is
+    // the rat exception's badge-only face, and both average lines settled
+    // into numbers.
     const numbered = rowChips().filter((c) => c.querySelector(".overlay-chip__stat b"));
     expect(numbered).toHaveLength(5);
     for (const chip of numbered) {
@@ -166,7 +167,17 @@ describe("overlay sample frame", () => {
       }
     }
     expect(document.querySelectorAll(".overlay-chip__stat .overlay-unit")).toHaveLength(5);
-    expect(document.querySelector(".overlay-chip__stat .hidden")).not.toBeNull();
+    // The rat exception: the hidden profile renders the lone 过街老鼠
+    // badge hugging the table's edge — no stat cell at all (the red dot is
+    // gone with the reserved slot), the fallback name cell kept outside
+    // it, and on the enemy block the badge innermost (first child).
+    const ratChips = rowChips().filter((c) => c.classList.contains("overlay-chip--rat"));
+    expect(ratChips).toHaveLength(1);
+    expect(ratChips[0]!.querySelector('.overlay-stamp[data-stamp="rat"]')).not.toBeNull();
+    expect(ratChips[0]!.querySelectorAll(".overlay-stamp")).toHaveLength(1);
+    expect(ratChips[0]!.querySelector(".overlay-chip__stat")).toBeNull();
+    expect(ratChips[0]!.querySelector(".overlay-chip__name")).not.toBeNull();
+    expect(ratChips[0]!.firstElementChild!.classList.contains("overlay-stamp")).toBe(true);
     const avgLines = [
       ...document.querySelectorAll<HTMLElement>(".overlay-intel-line--avg"),
     ];
@@ -194,13 +205,13 @@ describe("overlay sample frame", () => {
       // its widest face across both sides, then each side's stat cell
       // around those sums — so the sample shows the production column
       // contract: evenly separated metric columns on one alignment line,
-      // a hidden-profile row's dot cell pinned to the side's widest face
-      // exactly like every numbered row, nickname on the shared edge.
+      // nickname on the shared edge. The rat exception's badge-only row
+      // carries no stat cell, so it stays outside the pin.
       `<script>\n// Mirror of overlay/chipFit.ts alignMetricColumns + alignStatColumns:\n` +
       `// pin each data-col metric column to its widest laid-out face across\n` +
       `// both sides, then pin each side's stat cells around those sums — the\n` +
-      `// static sample then shows the production column contract (hidden-\n` +
-      `// profile dot cells included).\n` +
+      `// static sample then shows the production column contract (the rat\n` +
+      `// exception's badge-only row carries no stat cell to pin).\n` +
       `const groups = new Map();\n` +
       `for (const b of document.querySelectorAll(".overlay-chip__stat b[data-col]")) {\n` +
       `  const k = b.dataset.col || "";\n` +

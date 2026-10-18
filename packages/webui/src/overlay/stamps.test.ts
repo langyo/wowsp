@@ -78,4 +78,17 @@ describe("overlay stamp refresh", () => {
     expect(image()).toBeUndefined();
     expect(document.querySelector("span[data-stamp='rat']")).not.toBeNull();
   });
+
+  it("renders the rat verdict as the badge-only chip hugging the inner edge", () => {
+    // The rat exception (rowFace): the hidden profile's lone 过街老鼠
+    // badge replaces the stat column outright — no cell, no reserved
+    // slot — and on a fallback row the name cell stays outside it, the
+    // badge on the ally block's inner flank.
+    const ratChip = document.querySelector<HTMLElement>(".overlay-chip--rat");
+    expect(ratChip).not.toBeNull();
+    expect(ratChip!.querySelector(".overlay-chip__stat")).toBeNull();
+    expect(ratChip!.querySelector(".overlay-chip__name")).not.toBeNull();
+    expect(ratChip!.querySelectorAll(".overlay-stamp")).toHaveLength(1);
+    expect(ratChip!.lastElementChild!.classList.contains("overlay-stamp")).toBe(true);
+  });
 });
