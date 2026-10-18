@@ -103,7 +103,7 @@ tauri-plugin-opener = "^2"
 # local file parse behind no feature — so the `online` probe feature
 # stays off here: update.rs probes mirrors with the app's own reqwest
 # stack, and Android must not drag shun's HTTP client in.
-shun = { version = "^0.4", default-features = false }
+shun = { version = "^0.6", default-features = false }
 
 # Workspace internal crates
 wowsp_tauri_shared.workspace = true
@@ -175,7 +175,7 @@ serde_json.workspace = true
 # Parses `[package.metadata.shun.update]` out of this manifest at build time.
 # Build-deps run on the host,
 # so its `online` feature never cross-compiles.
-shun = { version = "^0.4", default-features = false, features = ["online"] }
+shun = { version = "^0.6", default-features = false, features = ["online"] }
 
 [features]
 # This feature is required by `cargo tauri build` and is injected by default.

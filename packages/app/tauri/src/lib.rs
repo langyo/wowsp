@@ -692,6 +692,15 @@ pub fn run() {
             // Self-update ships a Windows NSIS installer artifact; mobile has
             // no installer flow (store updates instead) — the frontend hides
             // the updater on mobile.
+            // Duplicate-install cleanup (see commands/duplicate_install.rs)
+            #[cfg(windows)]
+            commands::duplicate_install::duplicate_install_check,
+            #[cfg(windows)]
+            commands::duplicate_install::duplicate_install_uninstall,
+            #[cfg(windows)]
+            commands::duplicate_install::get_duplicate_install_config,
+            #[cfg(windows)]
+            commands::duplicate_install::set_duplicate_install_config,
             #[cfg(windows)]
             commands::update::update_check,
             #[cfg(windows)]

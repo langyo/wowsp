@@ -146,6 +146,11 @@ pub mod terrain_los;
 #[cfg(desktop)]
 pub mod tray_panel;
 pub mod trends;
+// Duplicate-install hygiene: detect (and offer to remove) the leftover a
+// pre-0.6.26 silent update could leave on the default path. Windows only,
+// like the updater whose bug it cleans up after.
+#[cfg(windows)]
+pub mod duplicate_install;
 #[cfg(windows)]
 pub mod update;
 // Per-host upstream health registry behind the title bar's fault chip.

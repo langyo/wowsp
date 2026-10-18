@@ -25,6 +25,7 @@ import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { useCloseBehaviorStore } from "@/stores/closeBehavior";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { usePluginPromptStore } from "@/stores/pluginPrompt";
+import { useDuplicateInstallStore } from "@/stores/duplicateInstall";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { peekLastRunVersion } from "@/utils/lastRunVersion";
@@ -34,6 +35,7 @@ import { isMobileApp, isTauri } from "@/utils/platform";
 import OnboardingWizard from "./OnboardingWizard";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import PluginInstallPromptModal from "@/features/replay/PluginInstallPromptModal";
+import DuplicateInstallPromptModal from "./DuplicateInstallPromptModal";
 import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import AudioPlayerToast from "./AudioPlayerToast";
@@ -85,6 +87,7 @@ export default defineComponent({
     const closeBehavior = useCloseBehaviorStore();
     const ingamePlugin = useIngamePluginStore();
     const pluginPrompt = usePluginPromptStore();
+    const dupInstall = useDuplicateInstallStore();
     const route = useRoute();
     const router = useRouter();
     // Phone LAYOUT (viewport width — NOT the phone-app platform gate):
@@ -397,6 +400,15 @@ export default defineComponent({
         void updater.init().then(() => updater.scheduleAutoCheck());
       }
 
+      // Duplicate-install hygiene: a late check for the leftover a
+      // pre-0.6.26 silent update could have left on the default path —
+      // delayed past the updater's own prompt so the two never collide,
+      // and the ask itself only rises when a leftover is actually live
+      // (see stores/duplicateInstall.ts).
+      if (isTauri() && !mobileApp) {
+        dupInstall.scheduleCheck();
+      }
+
       // The close-requested event only exists inside the Tauri shell; in a
       // plain browser tab listen() would throw at mount, so guard it (the
       // close dialog is desktop-app-only anyway).
@@ -561,6 +573,11 @@ export default defineComponent({
             both entry points share one window. Desktop-app only: the
             phone app has no game install to write the plugin into. */}
         {!mobileApp ? <PluginInstallPromptModal /> : null}
+
+        {/* Duplicate-install ask — the boot-time cleanup prompt over
+            the duplicateInstall store (desktop-app only, same lane as
+            the updater). */}
+        {!mobileApp ? <DuplicateInstallPromptModal /> : null}
 
         {/* Settings modal — the DESKTOP-layout surface of the shared
             settings body, app-singleton, opened from the title-bar gear or

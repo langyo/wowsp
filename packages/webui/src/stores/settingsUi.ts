@@ -16,6 +16,7 @@ export type SettingsSection =
   | "network"
   | "pairing"
   | "updates"
+  | "installCleanup"
   | "changelog"
   | "overlay"
   | "feedback"
@@ -44,7 +45,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "general", sections: ["language", "appearance", "closeBehavior"] },
   { id: "game", sections: ["stats", "overlay", "gamePath"] },
   { id: "connection", sections: ["account", "network", "pairing"] },
-  { id: "app", sections: ["updates", "changelog"] },
+  { id: "app", sections: ["updates", "installCleanup", "changelog"] },
   { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
 ];
 
@@ -69,6 +70,9 @@ const MOBILE_HIDDEN_SECTIONS: readonly SettingsSection[] = [
   // the Rust logging module) — logcat covers Android debugging, and the
   // phone has no file manager to reveal a log folder in anyway.
   "feedback",
+  // Desktop-Windows only: the duplicate-install detection reads the
+  // desktop install's ARP registration, which the phone build has none of.
+  "installCleanup",
 ];
 
 /** Clamp a section request to what the current build can show. */
