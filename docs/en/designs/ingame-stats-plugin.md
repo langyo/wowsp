@@ -163,12 +163,12 @@ and the overlay) pre-sort by rosterOrder as the tie base order (names
 missing from it land stably last), and the CN arrangement swaps the DB
 name segment for the client ship name once a whole side is covered
 (mixing the two sources would misorder, hence the whole-side gate). The
-grading discipline is unchanged: the CN pill still does not grade
-exact — the sort function is still our pinyin collator, only the name
-segment is now the client's raw string; whether shipName actually
-exists in CN records awaits verification on a real install (offline
-conformance has pinned both shapes, "bridge when present, empty table
-when missing").
+grading discipline: the CN pill did not grade exact while the sort
+function was our pinyin collator over DB-name inputs — released
+2026-10-18 (see the re-calibration below): with client-truth ship
+names covering a whole side, the comparator's inputs are the strings
+the client itself renders and the arrangement grades EXACT (partial
+name coverage keeps the inferred grade).
 
 **Exact-order sources (2026-10-18 static + replay probe).** The TAB order
 is the client's rendered `AvatarSystem` sequence. Decompiled
@@ -250,15 +250,19 @@ on five volunteer duplicate-ship battles — **5/5 same-team duplicate
 pairs** (two Maines, three 芒s, two 沉舰者s, two Kearsarges) all broken
 by the client in PLAYER-NAME pinyin order, exactly the comparator's
 tie rule (g<m, d<n, l<s, q<s, b<y). Zero mismatches across every
-capture so far. The exact-grade pill still withholds until a
-client-truth channel exists (the capture side channel below), per the
-grading discipline.
+capture so far. On this evidence the owner RELEASED the CN exact grade
+the same day: the pill (gated on every row of BOTH sides) and the
+overlay's per-side nickname-column drop now grade exact when the
+covered rows all carry client-truth localized ship names — the
+calibrated arrangement's inputs are then the rendered strings
+themselves. The capture side channel below remains
+the belt-and-suspenders client-truth channel for both families.
 
 **Overlay nickname column (2026-10-18)** — the transparent overlay
-drops a side's extra nickname column when the probe telemetry's sort
-keys cover every row of that side and the realm is not CN; partial
-coverage, a stale stream, or CN brings the name cell back. This is the
-"probe installed, no extra nickname column" behavior for WG/Lesta.
+drops a side's extra nickname column when the side's row order is
+game-confirmed: WG/Lesta via full sort-key coverage, CN (since the
+2026-10-18 release) via full per-side client ship-name coverage.
+Partial coverage or a stale stream brings the name cell back.
 
 **Exact-order route matrix (2026-10-18, WG + CN static/live).** The
 search is closed on several fronts; what remains is listed with its
