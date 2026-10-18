@@ -256,7 +256,12 @@ class FakeAvatarEntity(object):
     reference; None = an avatar that pairs with no ship entry."""
 
     def __init__(self, component_class, name, relation, alive=True,
-                 hp=24400.0, hp_max=24400.0, ship_slot=None):
+                 hp=24400.0, hp_max=24400.0, ship_slot=None, entity_id=0):
+        # `.id` models the avatar ENTITY id — the id space the client's
+        # sortedAlive collection items carry and the sticky walk map
+        # latches (deliberately DIFFERENT from the roster record's
+        # avatar_id mapping key: the two must never be confused).
+        self.id = entity_id
         avatar = FakeComponent(name=name, ship=ship_slot)
         health = FakeComponent(value=hp, max=hp_max, isAlive=alive)
         relation_comp = FakeComponent(value=relation)
@@ -532,9 +537,13 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         ship_id = SHIP_ENTITY_BASE + slot if ships != "none" else None
         if ships == "partial" and name == "langyo":
             ship_id = UNPAIRED_SHIP_ID
+        # Avatar entity ids live in their OWN space (7000+) — deliberately
+        # disjoint from the roster record keys (100/200/300) and their
+        # avatar_id fields, pinning the "walk id is authoritative" rule.
+        entity_id = 7000 + slot
         dh_avatars.append(
             FakeAvatarEntity(cc, name=entity_name, relation=relation,
-                             alive=True,
+                             alive=True, entity_id=entity_id,
                              ship_slot=(FakeShipSlot(ship_id)
                                         if ship_id is not None else None)))
         avatar_by_name[name] = dh_avatars[-1]
@@ -600,8 +609,11 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # fallback — evaluating the handler TYPE there is the whole point:
         # a reintroduced `except Exception:` raises NameError on Lesta's
         # whitelist and this pass catches it (the round-1 crash class).
-        expected_cfg = ({"panel_fade_ticks": 7, "journal_limit": 123}
-                        if with_manifest else {"panel_fade_ticks": 3, "journal_limit": 300})
+        expected_cfg = ({"panel_fade_ticks": 7, "journal_limit": 123,
+                         "panel": 1, "barcode": 0}
+                        if with_manifest else
+                        {"panel_fade_ticks": 3, "journal_limit": 300,
+                         "panel": 1, "barcode": 0})
         if env.get("TOOL_CONFIG") != expected_cfg:
             failures.append("[%s] TOOL_CONFIG=%r, expected %r"
                             % (label, env.get("TOOL_CONFIG"), expected_cfg))
@@ -899,6 +911,78 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             except Exception as e:
                 failures.append("[%s] order_probe.json unreadable: %r"
                                 % (label, e))
+        # The panel payload's side-channel fields: every row carries the
+        # WALK-sourced avatar entity id (bots included — the harness bot's
+        # record has no avatar_id at all), a canonical idx (its rank in
+        # the rosterOrder bridge) and its 8-slot barcode word, and the
+        # payload declares the mode flags. The byId maps key on the walk
+        # ids — planting disjoint id spaces pins "walk id is authoritative"
+        # against the roster records' mapping keys.
+        if probe is not None and getattr(probe, "stats", None) is not None:
+            roster_order, _ = probe.roster_order(probe.latest_raw)
+            ranks = {n: i for i, n in enumerate(roster_order)}
+            for side in ("ally", "enemy"):
+                rows = probe.panel_rows(side)
+                if not rows:
+                    continue
+                for row in rows:
+                    name = row["name"]
+                    # The harness's walk ids are 7000 + the record slot;
+                    # resolve via the sticky map the probe itself built.
+                    got_id = row.get("avatar_id", 0)
+                    if got_id and got_id < 7000:
+                        failures.append(
+                            "[%s] %s avatar_id %r is a roster key, not a walk id"
+                            % (label, name, got_id))
+                    idx = row.get("idx", -2)
+                    want_rank = ranks.get(name, -1)
+                    if idx != want_rank:
+                        failures.append(
+                            "[%s] %s idx=%r, expected rosterOrder rank %r"
+                            % (label, name, idx, want_rank))
+                    bits = row.get("bits")
+                    if want_rank < 0:
+                        # A rankless row carries a parity-INVALID 8-slot
+                        # word (never an empty array — the DSL indexes
+                        # bits[0..5] unguarded): the decoder's parity
+                        # check must reject it. No harness pass walks a
+                        # rankless avatar today; the shape is pinned by
+                        # the direct barcode_bits(-1) probe below.
+                        if bits != [True, False, False, False, False,
+                                    False, False, False]:
+                            failures.append(
+                                "[%s] %s rankless row carries bits %r"
+                                % (label, name, bits))
+                        continue
+                    if not isinstance(bits, list) or len(bits) != 8:
+                        failures.append("[%s] %s bits=%r, expected 8 slots"
+                                        % (label, name, bits))
+                        continue
+                    if bits[0] is not True or bits[1] is not False:
+                        failures.append("[%s] %s bits sync prefix=%r"
+                                        % (label, name, bits[:2]))
+                    word = (16 if bits[2] is True else 0) \
+                        | (8 if bits[3] is True else 0) \
+                        | (4 if bits[4] is True else 0) \
+                        | (2 if bits[5] is True else 0) \
+                        | (1 if bits[6] is True else 0)
+                    if word != idx:
+                        failures.append(
+                            "[%s] %s bits decode to %r, idx says %r"
+                            % (label, name, word, idx))
+                    ones = sum(1 for b in bits[2:7] if b is True)
+                    if bits[7] is not (ones % 2 == 0):
+                        failures.append("[%s] %s bits parity wrong: %r"
+                                        % (label, name, bits))
+            # The mode flags the payload forwards come from the probe's
+            # OWN module config (the exec env's TOOL_CONFIG): defaults
+            # keep the panel on and the strip off. The rankless-row
+            # invalid word is pinned by the literal in the row loop above
+            # (no harness pass walks a rankless avatar).
+            env_cfg = env.get("TOOL_CONFIG") or {}
+            if env_cfg.get("panel") != 1 or env_cfg.get("barcode") != 0:
+                failures.append("[%s] default mode flags flipped: %r"
+                                % (label, env_cfg))
         if "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))

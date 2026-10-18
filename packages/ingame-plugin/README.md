@@ -64,6 +64,19 @@ The transparent overlay's chips drop their nickname column per side when
 the probe's telemetry sort keys cover every row and the realm is not CN;
 the name cell returns on partial coverage, a stale stream, or CN.
 
+## The capture side channel (barcode strips)
+
+In the overlay view mode the same unbound view renders, per side, a tiny
+barcode strip (top-left ally / top-right enemy) whose rows follow the
+client's own `sortedAlive` order, each row encoding that player's rank
+in the telemetry `rosterOrder` — the overlay's capture pipeline will decode
+the blocks back into exact per-row attribution (see the design doc for
+the frozen geometry/encoding contract and the decoder spec). The strip
+and the stats tables are mode-gated by the probe's wowsp.toml keys
+`panel`/`barcode`: the active mode's consumer (the in-game bridge or
+the overlay watcher) declares them when it starts, and the probe
+re-reads the table at every battle start.
+
 ## Sandbox rules the code must obey
 
 The client executes this file under a Python 2.7 sandbox: builtins are

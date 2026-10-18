@@ -143,6 +143,91 @@
 	)
 )
 
+# The capture side channel's strip (overlay view mode only): one row per
+# player IN THE CLIENT'S OWN sortedAlive ORDER (the same byId pairing the
+# stats panel uses), each row a frozen 8-block word — [1,0] sync, five
+# roster-rank bits MSB-first, one even-parity bit — that the WoWSP
+# overlay's capture pipeline decodes back into per-row attribution. The
+# header row (1,0,1,0,1,0,1,1) lets the decoder locate and orient the
+# strip. Geometry is the frozen contract: blocks 6x6, hgap 2, vgap 3,
+# 4px backdrop padding, 24px screen-edge margin, ally top-left / enemy
+# top-right — the decoder is written against these exact numbers.
+(def element WowspBarcodeBit(_on:bool=false)
+	(block
+		(style
+			(width = 6px)
+			(height = 6px)
+		)
+		(bind backgroundColor "_on ? 0xFFF2F2F2 : 0xFF303030")
+	)
+)
+
+(def element WowspBarcodeRow(_row:dict=null)
+	(block
+		(style
+			(flow = "Flow.HORIZONTAL")
+			(height = 6px)
+			(hgap = 2px)
+		)
+		(element WowspBarcodeBit _on="true")
+		(element WowspBarcodeBit _on="false")
+		(element WowspBarcodeBit _on="_row ? _row.bits[0] == true : false")
+		(element WowspBarcodeBit _on="_row ? _row.bits[1] == true : false")
+		(element WowspBarcodeBit _on="_row ? _row.bits[2] == true : false")
+		(element WowspBarcodeBit _on="_row ? _row.bits[3] == true : false")
+		(element WowspBarcodeBit _on="_row ? _row.bits[4] == true : false")
+		(element WowspBarcodeBit _on="_row ? _row.bits[5] == true : false")
+	)
+)
+
+(def element WowspBarcodeHeaderRow()
+	(block
+		(style
+			(flow = "Flow.HORIZONTAL")
+			(height = 6px)
+			(hgap = 2px)
+		)
+		(element WowspBarcodeBit _on="true")
+		(element WowspBarcodeBit _on="false")
+		(element WowspBarcodeBit _on="true")
+		(element WowspBarcodeBit _on="false")
+		(element WowspBarcodeBit _on="true")
+		(element WowspBarcodeBit _on="false")
+		(element WowspBarcodeBit _on="true")
+		(element WowspBarcodeBit _on="true")
+	)
+)
+
+(def element WowspBarcodeStrip(_isAlly:bool=true, _rows:array=null, _byId:dict=null, _order:gfx=null, _stageW:number=0)
+	(scope
+		(var orderCount:number = "_order ? _order.items.length : 0"
+			(event "_order.evAdded")
+			(event "_order.evRemoved"))
+		(var rowCount:number = "orderCount > 0 ? orderCount : (_rows ? _rows.length : 0)")
+		# Frozen strip width: 8 blocks * 6px + 7 gaps * 2px + 2 * 4px pad.
+		(var stripW:number = 70)
+	)
+
+	(block
+		(style
+			(position = "absolute")
+			(bind left "_isAlly ? 24px : (_stageW - 24 - stripW)")
+			(top = 24px)
+			(width = 70px)
+			(padding = 4px)
+			(vgap = 3px)
+			(backgroundColor = 0xFF101010)
+		)
+		(element WowspBarcodeHeaderRow)
+		(controller $Repeat renderer='WowspBarcodeRow'
+			(count = "rowCount")
+			(args
+				_row = "orderCount > 0 ? ((_byId && (toString(_order.items[$index].id) in _byId)) ? _byId[toString(_order.items[$index].id)] : null) : (_rows ? _rows[$index] : null)"
+			)
+		)
+	)
+)
+
 (def element WoWSPProbeStatsPanel() layout=true
 	(scope
 		(macro STAGE_SIZE)
@@ -174,7 +259,22 @@
 		(style
 			(position = "absolute")
 		)
-		(element WowspSidePanel _isAlly="true" _rows="allyRows" _byId="allyById" _order="allyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
-		(element WowspSidePanel _isAlly="false" _rows="enemyRows" _byId="enemyById" _order="enemyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+		# The stats tables render only in the in-game display mode
+		# (payload `panel`); the barcode strips only in the overlay mode
+		# (payload `barcode`) — the companion declares its mode in the
+		# probe's wowsp.toml table and Main.py forwards it here, so the
+		# two consumers never share the screen.
+		(block
+			(bind visible "panelData ? (panelData.panel == true) : false")
+			(style (position = "absolute"))
+			(element WowspSidePanel _isAlly="true" _rows="allyRows" _byId="allyById" _order="allyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+			(element WowspSidePanel _isAlly="false" _rows="enemyRows" _byId="enemyById" _order="enemyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+		)
+		(block
+			(bind visible "panelData ? (panelData.barcode == true) : false")
+			(style (position = "absolute"))
+			(element WowspBarcodeStrip _isAlly="true" _rows="allyRows" _byId="allyById" _order="allyOrder" _stageW="stageWidth")
+			(element WowspBarcodeStrip _isAlly="false" _rows="enemyRows" _byId="enemyById" _order="enemyOrder" _stageW="stageWidth")
+		)
 	)
 )

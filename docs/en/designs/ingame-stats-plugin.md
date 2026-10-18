@@ -290,21 +290,48 @@ status so nobody re-walks the dead ends:
 - **OCR of the rendered TAB table** — the retired pixel pipeline; not
   revisited.
 
-**Selected next route for the CN overlay: a capture side channel
-(positional barcode).** The overlay already screen-captures the game
-for table geometry; the in-game panel (in the client's exact order) can
-additionally render, per row, a tiny high-contrast 5-bit block pattern
-encoding that player's index in the roster order Python already knows
-(the payload rides the same mods_DataComponent). Decoding fixed-
-geometry binary blocks is OCR-free: sample the block centers, threshold,
-map side+position → roster index → player. That attributes every TAB
-row exactly on EVERY client (CN included) with only official APIs
-(unbound render + the existing capture), and the failure mode is the
-capture layer the overlay already falls back from. Sketch: rows stay at
-the known 22 px pitch with a sync pattern on the first row; bits arrive
-as booleans in the panel payload (computed in Python — the DSL gets
-plain ternaries, no bitwise ops); the decoder lives next to the anchor
-detection and feeds the same row attribution the sort keys feed today.
+**Capture side channel v1 — the encoder is SHIPPED (2026-10-18), decoder
+next.** The overlay already screen-captures the game for table geometry;
+the unbound view now renders, per side, a tiny barcode strip whose rows
+follow the client's OWN sortedAlive order (the same byId pairing the
+panel uses), each row encoding that player's rank in the rosterOrder
+bridge the telemetry already publishes. Decoding fixed-geometry binary
+blocks is OCR-free and attributes every TAB row exactly on EVERY client
+(CN included) with only official APIs. The frozen contract (both sides
+are written against these exact numbers — a change is a coordinated
+spec bump):
+
+- Strip geometry: blocks 6×6 px, hgap 2, vgap 3, 4 px backdrop padding,
+  24 px screen-edge margin — ally strip top-LEFT, enemy strip top-RIGHT
+  (`left = stageW - 24 - 70`); strip width 70 px. Backdrop
+  `0xFF101010`, one-bit `0xFFF2F2F2`, zero-bit `0xFF303030`.
+- Row 0 is the header `1,0,1,0,1,0,1,1` (locate + orient); each data
+  row is `[1,0] sync + 5 rank bits MSB-first + even-parity bit` (the
+  bit over the five: on when their ones count is even). Bits ride the
+  panel payload as booleans (`bits`), computed in Python — the DSL only
+  renders ternaries. A rankless row (a name the records never carried)
+  renders NO word — the decoder must never guess.
+- Mode gating: the payload's `panel`/`barcode` flags come from the
+  probe's wowsp.toml keys of the same names; the ACTIVE mode's consumer
+  declares them when it starts (the in-game bridge → panel=1/barcode=0,
+  the overlay watcher → panel=0/barcode=1, once per game session), and
+  the probe re-reads the table at every battle start — the two displays
+  never share the screen, and the '--' stats tables stay dark in
+  overlay mode.
+- Row ids: byId keys are the avatar ENTITY ids the walk latches
+  (sticky, bots included) — the same id space the collection items
+  carry; the roster record's avatarId field is a DIFFERENT id and only
+  a fallback.
+- Decoder (the Rust side, next PR): scan the LEFT corridor (x 8..120,
+  y 8..600, step 2) for the ally strip's header at the 8 px cell pitch,
+  and the MIRRORED right corridor (x stageW-120..stageW-8) for the enemy
+  strip; per row sample the 8
+  cell centers, threshold at luminance 140, validate sync + parity;
+  row k of a side's strip ↔ row k of that side's TAB column; rank →
+  name via telemetry rosterOrder. Any failure discards the side
+  wholesale (the current order inference stays). A synthetic proof
+  (500 random permutations + corners, random offsets, noisy scenes,
+  0.4 px blur) round-trips this exact contract.
 
 **Encoder hardening (2026-10-09, WG-ASIA 15.9.0 live)**: the client's
 own `utils.jsonEncode` proved build-unstable as well — 15.9 RAISED on
