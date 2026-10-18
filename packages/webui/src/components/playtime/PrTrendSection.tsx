@@ -27,11 +27,16 @@ import {
   prTrendIntervals,
   prTrendShipCatalog,
   prTrendShipName,
-  prTrendTierMatches,
-  PR_TREND_TIER_BRACKETS,
   type PrTrendPoint,
   type PrTrendRangeKey,
 } from "./prTrend";
+import TierRangeSelect, {
+  TIER_MAX,
+  TIER_MIN,
+  tierRangeNarrowed,
+  tierRangeText,
+  type TierRange,
+} from "@/components/ships/TierRangeSelect";
 import "@/components/ships/ShipFilterBar.scss";
 import "./PrTrendSection.scss";
 
@@ -51,7 +56,8 @@ const TYPE_ORDER = ["Battleship", "AirCarrier", "Cruiser", "Destroyer", "Submari
  * Controls: a time-range segmented tabs row (7d / 30d / 90d / full career /
  * custom — the custom segment opens the LookupView's date-pair popover
  * pattern) and ONE ship-filter chip. The chip's popup stacks, top to
- * bottom: the water-meter's type and tier button groups (pinned), the
+ * bottom: the water-meter's type button group and the shared tier corridor
+ * slider (pinned), the
  * range-scoped ship list with per-row checkboxes and battles / winrate /
  * avg-damage columns (scrollable, capped), and a pinned select-all row
  * whose checkbox goes indeterminate on a partial selection. The three
@@ -84,7 +90,7 @@ export default defineComponent({
     // immediate run and the reset below both touch these). Type / tier /
     // ship AND together; each empty list = that constraint off. ──
     const typeSel = ref<string[]>([]);
-    const tierSel = ref<string[]>([]);
+    const tierRange = ref<TierRange>([TIER_MIN, TIER_MAX]);
     const shipSel = ref<string[]>([]);
 
     // The two popovers' open flags live above the account watch: its body
@@ -106,7 +112,7 @@ export default defineComponent({
         // would silently filter the new history down to nothing.
         if (prev) {
           typeSel.value = [];
-          tierSel.value = [];
+          tierRange.value = [TIER_MIN, TIER_MAX];
           shipSel.value = [];
           // The section renders null mid-switch; closed popovers cannot
           // leave their outside-close listeners hanging.
@@ -267,8 +273,10 @@ export default defineComponent({
       catalog.value.filter(
         (s) =>
           (typeSel.value.length === 0 || typeSel.value.includes(s.type)) &&
-          (tierSel.value.length === 0 ||
-            tierSel.value.some((b) => prTrendTierMatches(s.tier, b))),
+          (!tierRangeNarrowed(tierRange.value) ||
+            (s.tier != null &&
+              s.tier >= tierRange.value[0] &&
+              s.tier <= tierRange.value[1])),
       ),
     );
 
@@ -317,11 +325,13 @@ export default defineComponent({
         const ty = typeOfShip.value.get(shipId);
         if (!ty || !typeSel.value.includes(ty)) return false;
       }
-      if (
-        tierSel.value.length > 0 &&
-        !tierSel.value.some((b) => prTrendTierMatches(tierOfShip.value.get(shipId) ?? null, b))
-      ) {
-        return false;
+      if (tierRangeNarrowed(tierRange.value)) {
+        const tier = tierOfShip.value.get(shipId) ?? null;
+        // Unknown tiers match no concrete corridor — the same face they
+        // had under the old bracket picks.
+        if (tier == null || tier < tierRange.value[0] || tier > tierRange.value[1]) {
+          return false;
+        }
       }
       if (shipSel.value.length > 0 && !shipSel.value.includes(String(shipId))) return false;
       return true;
@@ -350,13 +360,8 @@ export default defineComponent({
           .map((o) => o.label)
           .join("·"));
       }
-      if (tierSel.value.length > 0) {
-        parts.push(
-          PR_TREND_TIER_BRACKETS
-            .filter((b) => tierSel.value.includes(b.key))
-            .map((b) => b.label)
-            .join("·"),
-        );
+      if (tierRangeNarrowed(tierRange.value)) {
+        parts.push(tierRangeText(tierRange.value[0], tierRange.value[1]) ?? "");
       }
       if (shipSel.value.length > 0) {
         parts.push(t("playtime.prTrendShipCount", { n: shipSel.value.length }));
@@ -497,7 +502,10 @@ export default defineComponent({
                 ref={shipBtnRef}
                 class={[
                   "ship-filter-bar__chip",
-                  typeSel.value.length + tierSel.value.length + shipSel.value.length > 0
+                  typeSel.value.length +
+                    (tierRangeNarrowed(tierRange.value) ? 1 : 0) +
+                    shipSel.value.length >
+                    0
                     ? "ship-filter-bar__chip--on"
                     : "ship-filter-bar__chip--all",
                 ]}
@@ -523,9 +531,9 @@ export default defineComponent({
                   <div class="ship-filter-bar__pop-head">
                     <span>{t("playtime.prTrendShipFilterTitle")}</span>
                   </div>
-                  {/* The two water-meter button groups — pinned above the
-                      scrolling list (the panel is a flex column; only the
-                      list scrolls). */}
+                  {/* The type button group + the tier corridor slider —
+                      pinned above the scrolling list (the panel is a flex
+                      column; only the list scrolls). */}
                   <div class="pr-trend-pop__groups">
                     <div class="ship-filter-bar__opts">
                       <button
@@ -549,27 +557,15 @@ export default defineComponent({
                         </button>
                       ))}
                     </div>
-                    <div class="ship-filter-bar__opts">
-                      <button
-                        type="button"
-                        class="ship-filter-bar__opt"
-                        data-active={tierSel.value.length === 0 || undefined}
-                        onClick={() => (tierSel.value = [])}
-                      >
-                        <span>{t("ships.filter.tierAll")}</span>
-                      </button>
-                      {PR_TREND_TIER_BRACKETS.map((b) => (
-                        <button
-                          key={b.key}
-                          type="button"
-                          class="ship-filter-bar__opt"
-                          data-active={tierSel.value.includes(b.key) || undefined}
-                          onClick={() => toggle(tierSel, b.key)}
-                        >
-                          <span>{b.label}</span>
-                        </button>
-                      ))}
-                    </div>
+                    {/* Tier narrows through the shared corridor slider
+                        (TierRangeSelect — the same control every ship
+                        filter uses now); its built-in reset row replaces
+                        the old 全部… pill. */}
+                    <TierRangeSelect
+                      class="pr-trend-pop__tier-range"
+                      modelValue={tierRange.value}
+                      onUpdate:modelValue={(v: TierRange) => (tierRange.value = v)}
+                    />
                   </div>
                   {/* The scrollable checkbox list — a hikari scroll
                       container owns the scrollbar (cap in SCSS); rows show

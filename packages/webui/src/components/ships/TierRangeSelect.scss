@@ -1,0 +1,60 @@
+/* TierRangeSelect — the shared tier range filter's chrome: a readout row
+ * (current corridor + 全部… reset) above the slider. The slider itself is
+ * RangeSlider's; only the wrapper spacing and the ★ glyph live here. */
+
+.tier-range {
+  /* Popups and inline filter rows both host it; width is the host's call. */
+  min-width: 220px;
+  max-width: 100%;
+}
+
+.tier-range__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8, 8px);
+  margin-bottom: var(--space-4, 4px);
+}
+
+.tier-range__value {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgb(var(--color-text));
+  white-space: nowrap;
+}
+
+/* The 全部… reset rides the readout row — a quiet ghost pill, not a
+   segmented option: it only appears while the corridor is narrowed, so it
+   never competes with the host's own action row. */
+.tier-range__reset {
+  padding: 2px var(--space-8, 8px);
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: rgb(var(--color-muted));
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid rgb(var(--color-border) / 25%);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  transition: color var(--duration-short) ease;
+
+  &:hover {
+    color: rgb(var(--color-text));
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+}
+
+/* The supership star — the game's gold ★, not a plain label glyph. The
+   label row sits below the track and stays pointer-dead (labels must never
+   catch a stray press), but the star re-enables hit-testing so its native
+   "supership" tooltip can actually fire on hover. */
+.tier-range__star {
+  color: rgb(var(--color-warning));
+  font-size: max(var(--text-2xs), 10px);
+  line-height: inherit;
+  pointer-events: auto;
+}

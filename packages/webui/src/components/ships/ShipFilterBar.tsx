@@ -10,17 +10,24 @@
  *   - Six filter categories — type / nation / tier / winrate / battles /
  *     mode — render as collapsed chips styled after the segmented
  *     button-group triggers.
- *   - Clicking a chip opens a popup hosting the category's option group.
- *     Type, nation, tier and mode are MULTI-SELECT: the chosen options OR
- *     together inside the category (categories still AND). Winrate and
- *     battles are
+ *   - Clicking a chip opens a popup hosting the category's control. Type,
+ *     nation and mode are MULTI-SELECT: the chosen options OR together
+ *     inside the category (categories still AND). Winrate and battles are
  *     SINGLE-SELECT — their brackets sit on one numeric axis, so OR-ing
  *     thresholds that subsume each other (≥30 ∪ ≥100 = ≥30) only confuses;
  *     picking a bracket replaces the previous pick. The 正序/倒序 flag is
- *     SHARED by the whole category — re-clicking the picked option flips
- *     every arrow in it at once. Ship types, nations and division modes are
- *     further special: pure filters with no direction at all, so re-clicking
- *     one of them simply deselects it.
+ *     SHARED by the whole category — a re-click of a picked option (or the
+ *     popup's arrow toggle) flips every arrow in it at once. Ship types,
+ *     nations and division modes are further special: pure filters with no
+ *     direction at all, so re-clicking one of them simply deselects it.
+ *   - Tier is a RANGE, not a pick set: the popup hosts the shared
+ *     TierRangeSelect dual-thumb slider (1–11 with ★ for superships — the
+ *     same component the compare picker and the encyclopedia grid use).
+ *     Dragging either end carves a contiguous corridor; a narrowed range
+ *     makes the category sort like a concrete pick would, the arrow toggle
+ *     beside the 全部… pill flips that sort, and the 全部… pill itself runs
+ *     the same three-click all-state cycle every other category has (with
+ *     a corridor set it first resets the category).
  *   - The nation popup hosts its options as ONE capped horizontal strip
  *     (it never wraps or outruns the viewport): a hikari HkScrollContainer
  *     (axis horizontal, edge fades) panned by wheel or mouse drag (5px
@@ -63,10 +70,20 @@ import NationFlag from "@/components/base/NationFlag";
 import { useLanguage } from "@/i18n/useLanguage";
 import { matchShipNames } from "@/features/search/pinyinSearch";
 import { t } from "@/i18n";
+import TierRangeSelect, {
+  TIER_MAX,
+  TIER_MIN,
+  tierRangeNarrowed,
+  tierRangeText,
+  type TierRange,
+} from "./TierRangeSelect";
 import { useOptionStrip } from "./optionStrip";
 import "./ShipFilterBar.scss";
 
 type CatKey = "type" | "nation" | "tier" | "winrate" | "battles" | "mode";
+/** Categories whose popup is an option-pill group — tier hosts the range
+ *  slider instead and never touches the option machinery below. */
+type OptCatKey = Exclude<CatKey, "tier">;
 type SortDir = "asc" | "desc";
 
 const TYPE_ORDER = ["Battleship", "AirCarrier", "Cruiser", "Destroyer", "Submarine", ""];
@@ -79,24 +96,18 @@ const NATION_FILTER_ORDER = [
   "pan_asia", "italy", "netherlands", "commonwealth",
   "pan_america", "spain", "europe",
 ];
-const TIER_FILTERS: [string, string][] = [
-  ["I–V", "I – V"],
-  ["VI–VII", "VI – VII"],
-  ["VIII–IX", "VIII – IX"],
-  ["X–★", "X – ★"],
+/** Pre-v6 tier storage: the four bracket pills. Kept ONLY as the migration
+ *  table — a stored pick set folds into the contiguous corridor covering
+ *  it (the slider cannot express anything else). */
+const LEGACY_TIER_BRACKETS: [key: string, lo: number, hi: number][] = [
+  ["I–V", 1, 5],
+  ["VI–VII", 6, 7],
+  ["VIII–IX", 8, 9],
+  ["X–★", 10, 11],
 ];
-function bracketTiers(key: string): number[] {
-  switch (key) {
-    case "I–V":
-      return [1, 2, 3, 4, 5];
-    case "VI–VII":
-      return [6, 7];
-    case "VIII–IX":
-      return [8, 9];
-    case "X–★":
-      return [10, 11];
-  }
-  return [];
+function legacyBracketSpan(key: string): [number, number] | null {
+  const b = LEGACY_TIER_BRACKETS.find(([k]) => k === key);
+  return b ? [b[1], b[2]] : null;
 }
 /** [storage value, label, predicate over winrate (0–100)]. */
 const WINRATE_BRACKETS: [string, string, (wr: number) => boolean][] = [
@@ -157,7 +168,7 @@ function nationRank(nation: string): number {
   return idx >= 0 ? idx : NATION_FILTER_ORDER.length;
 }
 
-const CAT_DEFS: Record<CatKey, CatDef> = {
+const CAT_DEFS: Record<OptCatKey, CatDef> = {
   type: {
     title: "ships.filter.typeTitle",
     allLabel: "ships.filter.typeAll",
@@ -173,12 +184,6 @@ const CAT_DEFS: Record<CatKey, CatDef> = {
     // rather than getting an "other" option of their own.
     matches: (_row, info, value) => canonicalNation(info?.nation ?? "") === value,
     sortValue: (_row, info) => nationRank(info?.nation ?? ""),
-  },
-  tier: {
-    title: "ships.filter.tierTitle",
-    allLabel: "ships.filter.tierAll",
-    matches: (_row, info, value) => bracketTiers(value).includes(info?.tier ?? 0),
-    sortValue: (_row, info) => info?.tier ?? 0,
   },
   winrate: {
     title: "ships.filter.wrTitle",
@@ -205,6 +210,14 @@ const CAT_DEFS: Record<CatKey, CatDef> = {
   },
 };
 
+/** The tier category's popup is the shared range slider, so it has no
+ *  option pills — only the title/allLabel pair and the tier sort key. */
+const TIER_DEF = {
+  title: "ships.filter.tierTitle",
+  allLabel: "ships.filter.tierAll",
+  sortValue: (_row: PlayerShipStats, info: ShipMeta | null) => info?.tier ?? 0,
+} satisfies Pick<CatDef, "title" | "allLabel" | "sortValue">;
+
 const CAT_KEYS: CatKey[] = ["type", "nation", "tier", "winrate", "battles", "mode"];
 const DEFAULT_ORDER: CatKey[] = [...CAT_KEYS];
 /** The direction a category's 全部…-sort first engages in (and re-arms to
@@ -223,28 +236,26 @@ const DEFAULT_DIR: Record<CatKey, SortDir> = {
 /** Winrate and battles brackets carve up ONE numeric axis, so picking
  *  several at once ORs thresholds that subsume each other (≥30 ∪ ≥100 is
  *  just ≥30) — these two categories hold exactly one pick at a time;
- *  type/tier/nation/mode stay multi-select. */
+ *  type/nation/mode stay multi-select (tier is a range, not a set). */
 const SINGLE_CATS: readonly CatKey[] = ["winrate", "battles"];
-const isSingleSel = (key: CatKey) => SINGLE_CATS.includes(key);
+const isSingleSel = (key: OptCatKey) => SINGLE_CATS.includes(key);
 
 /** Pure-filter categories: multi-select picks with no sort direction — a
  *  re-click deselects, and only the 全部… option can engage a sort (by the
  *  category's canonical rank order). */
 const PURE_CATS: readonly CatKey[] = ["type", "nation", "mode"];
-const isPureCat = (key: CatKey) => PURE_CATS.includes(key);
+const isPureCat = (key: OptCatKey) => PURE_CATS.includes(key);
 
-/** Concrete option values of a category in canonical (display) order —
- *  used to clamp stale multi-select storage down to the single-select
- *  model (battles keeps its lowest threshold, which is what the old OR
- *  actually filtered by). */
-function canonicalValues(key: CatKey): string[] {
+/** Concrete option values of an option category in canonical (display)
+ *  order — used to clamp stale multi-select storage down to the
+ *  single-select model (battles keeps its lowest threshold, which is what
+ *  the old OR actually filtered by). */
+function canonicalValues(key: OptCatKey): string[] {
   switch (key) {
     case "type":
-      return TYPE_ORDER.filter((t) => t !== "");
+      return TYPE_ORDER.filter((tp) => tp !== "");
     case "nation":
       return [...NATION_FILTER_ORDER];
-    case "tier":
-      return TIER_FILTERS.map(([v]) => v);
     case "winrate":
       return WINRATE_BRACKETS.map(([v]) => v);
     case "battles":
@@ -256,12 +267,13 @@ function canonicalValues(key: CatKey): string[] {
 
 // ── localStorage persistence (shared by every view hosting the bar) ──
 
-const PERSIST_KEY = "wowsp.shipFilter.v5";
-/** Pre-v5 formats ({ order, sel }): the drag-reorderable chip order died
- *  with the drag gesture — only the selections carry forward. */
-const LEGACY_PERSIST_KEYS = ["wowsp.shipFilter.v4", "wowsp.shipFilter.v3"];
+const PERSIST_KEY = "wowsp.shipFilter.v6";
+/** Pre-v6 formats: v5 ({sel} with the tier category as bracket pills) and
+ *  the v4/v3 drag-era blobs before it — only the selections carry forward
+ *  (the tier brackets fold into the slider corridor on load). */
+const LEGACY_PERSIST_KEYS = ["wowsp.shipFilter.v5", "wowsp.shipFilter.v4", "wowsp.shipFilter.v3"];
 
-/** Per-category state: multi-select filter values + the SHARED sort
+/** Per-option-category state: multi-select filter values + the SHARED sort
  *  direction + whether the category also sorts while sitting at 全部…
  *  (engaged by clicking the 全部… option). */
 interface CatSel {
@@ -270,27 +282,40 @@ interface CatSel {
   allSort: boolean;
 }
 
-interface Persisted {
-  sel: Partial<Record<CatKey, CatSel>>;
+/** Tier state: the corridor [lo, hi] on the 1–11 axis plus the same shared
+ *  sort machinery every category carries. */
+interface TierSel {
+  lo: number;
+  hi: number;
+  dir: SortDir;
+  allSort: boolean;
 }
 
-function isValidTierValue(v: string): boolean {
-  return bracketTiers(v).length > 0;
+type SelMap = {
+  type: CatSel;
+  nation: CatSel;
+  tier: TierSel;
+  winrate: CatSel;
+  battles: CatSel;
+  mode: CatSel;
+};
+
+interface Persisted {
+  sel: Partial<Record<CatKey, unknown>>;
 }
+
 function isValidWinrateValue(v: string): boolean {
   return WINRATE_BRACKETS.some(([k]) => k === v);
 }
 function isValidBattleValue(v: string): boolean {
   return BATTLE_STEPS.some((n) => String(n) === v);
 }
-function isValidValue(key: CatKey, v: string): boolean {
+function isValidValue(key: OptCatKey, v: string): boolean {
   switch (key) {
     case "type":
-      return TYPE_ORDER.some((t) => t && t === v);
+      return TYPE_ORDER.some((tp) => tp && tp === v);
     case "nation":
       return NATION_FILTER_ORDER.includes(v);
-    case "tier":
-      return isValidTierValue(v);
     case "winrate":
       return isValidWinrateValue(v);
     case "battles":
@@ -308,10 +333,10 @@ function loadPersisted(): Persisted | null {
       // validated per-key by the caller, everything else is ignored.
       return { sel: (JSON.parse(raw) as Partial<Persisted>).sel ?? {} };
     }
-    // Pre-v5 migration: only the selections carry forward (the stored chip
-    // order is dead state). The v5 blob is written back IMMEDIATELY and the
-    // legacy key swept — the migrated state must survive a session with no
-    // further interaction, not re-migrate from defaults on the next boot.
+    // Legacy migration: only the selections carry forward. The v6 blob is
+    // written back IMMEDIATELY and the legacy key swept — the migrated
+    // state must survive a session with no further interaction, not
+    // re-migrate from defaults on the next boot.
     for (const legacy of LEGACY_PERSIST_KEYS) {
       const rawLegacy = localStorage.getItem(legacy);
       if (!rawLegacy) continue;
@@ -353,22 +378,70 @@ export default defineComponent({
     // popup as a bottom sheet instead of an anchored floating panel.
     const { isMobile } = useBreakpoint();
 
-    // ── Chip state: per-category multi-select. Types start ascending (the
+    // ── Chip state: per-category selections. Types start ascending (the
     //    canonical BB→CV→CA→DD→SS reading order), everything else descending
     //    (high tier / good winrate / most battles first) so the first
     //    engagement lands on the useful direction. ──
     const stored = loadPersisted();
-    const sel = ref<Record<CatKey, CatSel>>({
+    const sel = ref<SelMap>({
       type: { values: [], dir: "asc", allSort: false },
       nation: { values: [], dir: "asc", allSort: false },
-      tier: { values: [], dir: "desc", allSort: false },
+      tier: { lo: TIER_MIN, hi: TIER_MAX, dir: "desc", allSort: false },
       winrate: { values: [], dir: "desc", allSort: false },
       battles: { values: [], dir: "desc", allSort: false },
       mode: { values: [], dir: "desc", allSort: false },
     });
     if (stored?.sel) {
       for (const k of CAT_KEYS) {
-        const s = stored.sel[k];
+        if (k === "tier") {
+          const s = stored.sel.tier;
+          if (!s || typeof s !== "object") continue;
+          let lo: number;
+          let hi: number;
+          if (Array.isArray((s as { values?: unknown }).values)) {
+            // v5-and-older bracket pills → the corridor covering the picked
+            // set: a non-contiguous pick (I–V plus X–★) widens to its hull —
+            // the slider only expresses corridors, and the superset never
+            // hides a ship the old filter showed.
+            let min = TIER_MAX + 1;
+            let max = TIER_MIN - 1;
+            for (const v of (s as unknown as { values: unknown[] }).values) {
+              const span = typeof v === "string" ? legacyBracketSpan(v) : null;
+              if (!span) continue;
+              min = Math.min(min, span[0]);
+              max = Math.max(max, span[1]);
+            }
+            [lo, hi] = min <= max ? [min, max] : [TIER_MIN, TIER_MAX];
+          } else {
+            const clampTier = (v: unknown, fallback: number) => {
+              // null/"" Number-coerce to 0 — a hand-corrupted blob must
+              // fall back, not silently read as tier 0.
+              if (v == null || v === "") return fallback;
+              const n = Math.round(Number(v));
+              return Number.isFinite(n)
+                ? Math.min(TIER_MAX, Math.max(TIER_MIN, n))
+                : fallback;
+            };
+            lo = clampTier((s as { lo?: unknown }).lo, TIER_MIN);
+            hi = clampTier((s as { hi?: unknown }).hi, TIER_MAX);
+            if (lo > hi) [lo, hi] = [hi, lo];
+          }
+          const allSort = (s as { allSort?: unknown }).allSort === true;
+          const dirRaw = (s as { dir?: unknown }).dir;
+          sel.value.tier = {
+            lo,
+            hi,
+            // An idle corridor (full range, no 全部…-sort) re-arms from the
+            // canonical direction, exactly like the option categories.
+            dir:
+              allSort || lo > TIER_MIN || hi < TIER_MAX
+                ? (dirRaw === "asc" || dirRaw === "desc" ? dirRaw : DEFAULT_DIR.tier)
+                : DEFAULT_DIR.tier,
+            allSort,
+          };
+          continue;
+        }
+        const s = stored.sel[k] as { values?: unknown; dir?: unknown; allSort?: unknown } | null | undefined;
         if (!s || (s.dir !== "asc" && s.dir !== "desc") || !Array.isArray(s.values)) continue;
         // Storage written by the all-multi-select model may hold several
         // picks for a now-single-select category — clamp to one.
@@ -386,6 +459,15 @@ export default defineComponent({
           dir: allSort || values.length > 0 ? s.dir : DEFAULT_DIR[k],
           allSort,
         };
+      }
+      // The normalization above (legacy tier brackets → corridor) may
+      // reshape what the raw migration wrote back — persist the normalized
+      // form at once so the v6 blob never carries a legacy tier entry into
+      // the next boot.
+      try {
+        localStorage.setItem(PERSIST_KEY, JSON.stringify({ sel: sel.value } satisfies Persisted));
+      } catch {
+        /* storage full / unavailable — the in-memory state still holds */
       }
     }
     watch(
@@ -510,14 +592,14 @@ export default defineComponent({
         : null;
     };
 
-    /** Option rows per category. Type/tier/winrate/battles/mode lists are
-     *  RESIDENT: the selectable range never shrinks with the queried data,
-     *  so a pick that matches nothing in the current range stays visible
-     *  and re-clickable and just yields an empty result (the hosting view
-     *  shows the no-match empty state) instead of degrading the popup.
-     *  Nations are the exception — data-derived: only nations PRESENT in
-     *  the queried list get an option (a nation with no ships can never
-     *  match anything), in the canonical tech-tree reading order. */
+    /** Option rows per option category. The lists are RESIDENT: the
+     *  selectable range never shrinks with the queried data, so a pick that
+     *  matches nothing in the current range stays visible and re-clickable
+     *  and just yields an empty result (the hosting view shows the no-match
+     *  empty state) instead of degrading the popup. Nations are the
+     *  exception — data-derived: only nations PRESENT in the queried list
+     *  get an option (a nation with no ships can never match anything), in
+     *  the canonical tech-tree reading order. */
     const presentNations = computed(() => {
       const set = new Set<string>();
       for (const s of props.ships) {
@@ -536,7 +618,7 @@ export default defineComponent({
       );
     }
 
-    const catOptions = computed<Record<CatKey, { value: string; label: string }[]>>(() => ({
+    const catOptions = computed<Record<OptCatKey, { value: string; label: string }[]>>(() => ({
       type: [
         { value: "", label: t(CAT_DEFS.type.allLabel) },
         ...TYPE_ORDER.filter((k) => k !== "").map(
@@ -546,10 +628,6 @@ export default defineComponent({
       nation: [
         { value: "", label: t(CAT_DEFS.nation.allLabel) },
         ...presentNations.value.map((n) => ({ value: n, label: nationOptionLabel(n) })),
-      ],
-      tier: [
-        { value: "", label: t(CAT_DEFS.tier.allLabel) },
-        ...TIER_FILTERS.map(([v, label]) => ({ value: v, label })),
       ],
       winrate: [
         { value: "", label: t(CAT_DEFS.winrate.allLabel) },
@@ -587,12 +665,21 @@ export default defineComponent({
       }),
     );
 
+    /** The tier category's corridor as the slider's model. */
+    const tierRange = computed<TierRange>(() => [sel.value.tier.lo, sel.value.tier.hi]);
+    function setTierRange(v: TierRange) {
+      sel.value.tier = { ...sel.value.tier, lo: v[0], hi: v[1] };
+    }
+
     /** A category contributes a sort key while it has a concrete selection
      *  or an engaged 全部…-sort. Types, nations and division modes only via
      *  the latter: a pure pick is a filter with no direction, so it must
-     *  not reorder the list. */
+     *  not reorder the list. The tier corridor counts as a concrete
+     *  selection while it is narrowed. */
     const isSortCat = (key: CatKey) =>
-      sel.value[key].allSort || (sel.value[key].values.length > 0 && !isPureCat(key));
+      key === "tier"
+        ? sel.value.tier.allSort || tierRangeNarrowed(tierRange.value)
+        : sel.value[key].allSort || (sel.value[key].values.length > 0 && !isPureCat(key));
 
     const filteredShips = computed(() => {
       let rows = props.ships;
@@ -601,7 +688,18 @@ export default defineComponent({
         rows = rows.filter((s) => hitNames.value.has(s.shipId));
       } else {
         // Within a category the picked options OR together; categories AND.
+        // The tier corridor replaces the tier option set.
         for (const key of DEFAULT_ORDER) {
+          if (key === "tier") {
+            const tr = sel.value.tier;
+            if (tierRangeNarrowed([tr.lo, tr.hi])) {
+              rows = rows.filter((s) => {
+                const tier = infoOf(s.shipId)?.tier ?? 0;
+                return tier >= tr.lo && tier <= tr.hi;
+              });
+            }
+            continue;
+          }
           const { values } = sel.value[key];
           if (!values.length) continue;
           const def = CAT_DEFS[key];
@@ -617,7 +715,7 @@ export default defineComponent({
       const sortCats = DEFAULT_ORDER.filter(isSortCat);
       return [...rows].sort((a, b) => {
         for (const key of sortCats) {
-          const def = CAT_DEFS[key];
+          const def = key === "tier" ? TIER_DEF : CAT_DEFS[key];
           const d = def.sortValue(b, infoOf(b.shipId)) - def.sortValue(a, infoOf(a.shipId));
           if (d !== 0) return sel.value[key].dir === "desc" ? d : -d;
         }
@@ -634,16 +732,17 @@ export default defineComponent({
 
     const totalBattles = computed(() => filteredShips.value.reduce((a, s) => a + s.battles, 0));
 
-    /** Click one option in a category popup. The 全部… option carries dual
-     *  semantics: with a concrete selection it resets the whole category
-     *  (filter AND all-state sort off, direction re-armed to canonical);
-     *  without one it runs the all-state sort through a three-click cycle —
-     *  engage in the canonical direction, flip, switch off. Concrete
-     *  options join the selection when unpicked (replacing it outright in
-     *  the single-select categories); when picked they flip the category's
-     *  shared direction — except the pure categories (types/nations/modes),
-     *  which carry no direction and simply drop out. */
-    function clickOption(key: CatKey, value: string) {
+    /** Click one option in an option-category popup. The 全部… option
+     *  carries dual semantics: with a concrete selection it resets the whole
+     *  category (filter AND all-state sort off, direction re-armed to
+     *  canonical); without one it runs the all-state sort through a
+     *  three-click cycle — engage in the canonical direction, flip, switch
+     *  off. Concrete options join the selection when unpicked (replacing it
+     *  outright in the single-select categories); when picked they flip the
+     *  category's shared direction — except the pure categories
+     *  (types/nations/modes), which carry no direction and simply drop
+     *  out. */
+    function clickOption(key: OptCatKey, value: string) {
       const s = sel.value[key];
       if (value === "") {
         if (s.values.length > 0) {
@@ -674,7 +773,25 @@ export default defineComponent({
       }
     }
 
-    // Chip elements double as the teleported popups' anchor refs.
+    /** The tier popup's 全部… pill — the same three-click all-state cycle
+     *  as every category's 全部…, with a narrowed corridor playing the
+     *  concrete-selection role (first click resets the corridor). */
+    function clickTierAll() {
+      const s = sel.value.tier;
+      if (tierRangeNarrowed([s.lo, s.hi])) {
+        sel.value.tier = { lo: TIER_MIN, hi: TIER_MAX, dir: DEFAULT_DIR.tier, allSort: false };
+      } else if (s.allSort) {
+        if (s.dir === DEFAULT_DIR.tier) {
+          sel.value.tier = { ...s, dir: s.dir === "desc" ? "asc" : "desc" };
+        } else {
+          sel.value.tier = { ...s, allSort: false, dir: DEFAULT_DIR.tier };
+        }
+      } else {
+        sel.value.tier = { ...s, allSort: true, dir: DEFAULT_DIR.tier };
+      }
+    }
+
+    /** Chip elements double as the teleported popups' anchor refs. */
     const chipEls = new Map<CatKey, HTMLElement | null>();
 
     function onChipClick(key: CatKey) {
@@ -700,26 +817,30 @@ export default defineComponent({
       if (key !== "nation") strip.resetDragged();
     });
 
-    /** Popup explainer — four shapes: types/nations/modes are pure filters
+    /** Popup explainer — five shapes: types/nations/modes are pure filters
      *  (re-click deselects; types get the dedicated wording, the others the
      *  generic multi-select hint), winrate/battles pick a single bracket,
-     *  tier is the multi-select-with-sort case. */
+     *  tier is the range slider. */
     const popHint = (key: CatKey) =>
-      key === "type"
-        ? t("ships.filter.hintTypePop")
-        : isPureCat(key)
-          ? t("ships.filter.hintMulti")
-          : isSingleSel(key)
-            ? t("ships.filter.hintSinglePop")
-            : t("ships.filter.hintSortPop");
+      key === "tier"
+        ? t("ships.filter.hintTierPop")
+        : key === "type"
+          ? t("ships.filter.hintTypePop")
+          : isPureCat(key)
+            ? t("ships.filter.hintMulti")
+            : isSingleSel(key)
+              ? t("ships.filter.hintSinglePop")
+              : t("ships.filter.hintSortPop");
 
     /** Chip tooltip — same split as the popup hint. */
     const chipTitle = (key: CatKey) =>
-      isPureCat(key)
-        ? t("ships.filter.hintTypeChip")
-        : isSingleSel(key)
-          ? t("ships.filter.hintSingleChip")
-          : t("ships.filter.hintSortChip");
+      key === "tier"
+        ? t("ships.filter.hintTierChip")
+        : isPureCat(key)
+          ? t("ships.filter.hintTypeChip")
+          : isSingleSel(key)
+            ? t("ships.filter.hintSingleChip")
+            : t("ships.filter.hintSortChip");
 
     const dirIcon = (dir: SortDir) =>
       dir === "desc" ? <ArrowDown size={11} class="ship-filter-bar__dir" /> : <ArrowUp size={11} class="ship-filter-bar__dir" />;
@@ -737,30 +858,39 @@ export default defineComponent({
             order is flex `order`'s job, not the markup's. */}
         <div class="ship-filter-bar__chips">
           {DEFAULT_ORDER.map((key) => {
-            const def = CAT_DEFS[key];
-            const cur = sel.value[key];
+            const def = key === "tier" ? TIER_DEF : CAT_DEFS[key];
+            const optCur: CatSel | null = key === "tier" ? null : sel.value[key];
+            const tierCur: TierSel | null = key === "tier" ? sel.value.tier : null;
+            const hasPick = tierCur
+              ? tierRangeNarrowed([tierCur.lo, tierCur.hi])
+              : (optCur?.values.length ?? 0) > 0;
+            const curDir: SortDir = tierCur?.dir ?? optCur!.dir;
+            const curAllSort = tierCur?.allSort ?? optCur!.allSort;
             // Labels render in canonical option order (not click order) so a
-            // ≥60% + 50–60% pick always reads "50–60%·≥60%".
+            // ≥60% + 50–60% pick always reads "50–60%·≥60%"; the tier chip
+            // reads its corridor ("VI – ★", "VIII") or falls back to 全部….
             const byOrder = (a: string, b: string) => {
-              const opts = catOptions.value[key];
+              const opts = catOptions.value[key as OptCatKey];
               return (
                 opts.findIndex((o) => o.value === a) - opts.findIndex((o) => o.value === b)
               );
             };
             const chipLabel =
-              [...cur.values]
-                .sort(byOrder)
-                .map(
-                  (v) =>
-                    catOptions.value[key].find((o) => o.value === v)?.label ??
-                    // Stale picks can outlive their option rows (nation
-                    // options are data-derived, so a selected nation can
-                    // vanish from the current date range): resolve those
-                    // through the label chain so the chip still reads a
-                    // localized name instead of the raw code.
-                    (key === "nation" ? nationOptionLabel(v) : v),
-                )
-                .join("·") || t(def.allLabel);
+              (tierCur
+                ? tierRangeText(tierCur.lo, tierCur.hi)
+                : [...(optCur?.values ?? [])]
+                    .sort(byOrder)
+                    .map(
+                      (v) =>
+                        catOptions.value[key as OptCatKey].find((o) => o.value === v)?.label ??
+                        // Stale picks can outlive their option rows (nation
+                        // options are data-derived, so a selected nation can
+                        // vanish from the current date range): resolve those
+                        // through the label chain so the chip still reads a
+                        // localized name instead of the raw code.
+                        (key === "nation" ? nationOptionLabel(v) : v),
+                    )
+                    .join("·")) || t(def.allLabel);
             return (
               <div key={key} class="ship-filter-bar__chip-anchor">
                 <button
@@ -770,9 +900,9 @@ export default defineComponent({
                   }}
                   class={[
                     "ship-filter-bar__chip",
-                    cur.values.length
+                    hasPick
                       ? "ship-filter-bar__chip--on"
-                      : cur.allSort
+                      : curAllSort
                         ? "ship-filter-bar__chip--sort"
                         : "ship-filter-bar__chip--all",
                   ]}
@@ -781,7 +911,7 @@ export default defineComponent({
                   onClick={() => onChipClick(key)}
                 >
                   <span>{chipLabel}</span>
-                  {isSortCat(key) ? dirIcon(cur.dir) : null}
+                  {isSortCat(key) ? dirIcon(curDir) : null}
                 </button>
                 {/* The popup teleports to body (HkPopover) — no overflow
                     ancestor can clip it. On phones it docks as a bottom
@@ -819,66 +949,108 @@ export default defineComponent({
                     <div class="ship-filter-bar__pop-head">
                       <span>{t(def.title)}</span>
                     </div>
-                    {/* Option group in the segmented track look (multi-select
-                        for type/nation/tier/mode, single for winrate/
-                        battles). The 全部… pill carries the direction arrow
-                        only while its all-state sort is engaged; concrete
-                        pure categories (types/nations/modes) never show
-                        one. Nation
-                        options lead with their flag (NationFlag swaps to a
-                        letter badge when the asset is missing), and the
-                        nation track alone is a one-line pannable strip —
-                        wrapped only by the phone sheet (see the SCSS). */}
-                    {(() => {
-                      const optButtons = catOptions.value[key].map((o) => {
-                        const isAll = o.value === "";
-                        const on = isAll ? cur.values.length === 0 : cur.values.includes(o.value);
-                        return (
+                    {/* Category body: tier hosts the shared dual-thumb
+                        corridor slider plus its action row; the option
+                        categories keep the segmented track (multi-select for
+                        type/nation/mode, single for winrate/battles). The
+                        全部… pill carries the direction arrow only while its
+                        all-state sort is engaged; concrete pure categories
+                        (types/nations/modes) never show one. Nation options
+                        lead with their flag (NationFlag swaps to a letter
+                        badge when the asset is missing), and the nation
+                        track alone is a one-line pannable strip — wrapped
+                        only by the phone sheet (see the SCSS). */}
+                    {key === "tier" ? (
+                      <div class="ship-filter-bar__tier-pop">
+                        <TierRangeSelect
+                          modelValue={tierRange.value}
+                          onUpdate:modelValue={setTierRange}
+                          showReset={false}
+                        />
+                        <div class="ship-filter-bar__opts ship-filter-bar__tier-actions">
                           <button
-                            key={o.value}
                             type="button"
                             class="ship-filter-bar__opt"
-                            data-active={on || undefined}
-                            onClick={() => clickOption(key, o.value)}
+                            data-tier-all
+                            data-active={!hasPick || undefined}
+                            onClick={clickTierAll}
                           >
-                            {key === "nation" && !isAll ? (
-                              <NationFlag nation={o.value} label={o.label} variant="flag" size="sm" />
-                            ) : null}
-                            {/* Type options lead with the game's white
-                                battle-HUD silhouette (flipped to the
-                                enemy row's rightward facing — the same
-                                icon the PR trend popup's type row uses). */}
-                            {key === "type" && !isAll ? (
-                              <img
-                                class="ship-filter-bar__type-icon"
-                                src={shipIconUrl(o.value, "white") ?? undefined}
-                                alt=""
-                                draggable={false}
-                              />
-                            ) : null}
-                            <span>{o.label}</span>
-                            {(isAll ? cur.allSort : on && !isPureCat(key)) ? dirIcon(cur.dir) : null}
+                            <span>{t(TIER_DEF.allLabel)}</span>
+                            {curAllSort ? dirIcon(curDir) : null}
                           </button>
+                          {isSortCat("tier") ? (
+                            <button
+                              type="button"
+                              class="ship-filter-bar__opt ship-filter-bar__tier-flip"
+                              data-tier-flip
+                              title={t("ships.filter.dirFlip")}
+                              aria-label={t("ships.filter.dirFlip")}
+                              onClick={() => {
+                                sel.value.tier = {
+                                  ...sel.value.tier,
+                                  dir: curDir === "desc" ? "asc" : "desc",
+                                };
+                              }}
+                            >
+                              {dirIcon(curDir)}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
+                      (() => {
+                        const cur = optCur!;
+                        const optKey = key as OptCatKey;
+                        const optButtons = catOptions.value[optKey].map((o) => {
+                          const isAll = o.value === "";
+                          const on = isAll ? cur.values.length === 0 : cur.values.includes(o.value);
+                          return (
+                            <button
+                              key={o.value}
+                              type="button"
+                              class="ship-filter-bar__opt"
+                              data-active={on || undefined}
+                              onClick={() => clickOption(optKey, o.value)}
+                            >
+                              {optKey === "nation" && !isAll ? (
+                                <NationFlag nation={o.value} label={o.label} variant="flag" size="sm" />
+                              ) : null}
+                              {/* Type options lead with the game's white
+                                  battle-HUD silhouette (flipped to the
+                                  enemy row's rightward facing — the same
+                                  icon the PR trend popup's type row uses). */}
+                              {optKey === "type" && !isAll ? (
+                                <img
+                                  class="ship-filter-bar__type-icon"
+                                  src={shipIconUrl(o.value, "white") ?? undefined}
+                                  alt=""
+                                  draggable={false}
+                                />
+                              ) : null}
+                              <span>{o.label}</span>
+                              {(isAll ? cur.allSort : on && !isPureCat(optKey)) ? dirIcon(cur.dir) : null}
+                            </button>
+                          );
+                        });
+                        // The nation track renders into the pannable strip
+                        // (a hikari HkScrollContainer, shared with every
+                        // FilterCategoryChip popup); every other category
+                        // keeps the plain wrapping track.
+                        return optKey === "nation" ? (
+                          <HkScrollContainer
+                            ref={strip.attach}
+                            class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
+                            axis="horizontal"
+                            fade
+                            data-panning={strip.panning.value ? "" : undefined}
+                          >
+                            <div class="ship-filter-bar__opts-track">{optButtons}</div>
+                          </HkScrollContainer>
+                        ) : (
+                          <div class="ship-filter-bar__opts">{optButtons}</div>
                         );
-                      });
-                      // The nation track renders into the pannable strip
-                      // (a hikari HkScrollContainer, shared with every
-                      // FilterCategoryChip popup); every other category
-                      // keeps the plain wrapping track.
-                      return key === "nation" ? (
-                        <HkScrollContainer
-                          ref={strip.attach}
-                          class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
-                          axis="horizontal"
-                          fade
-                          data-panning={strip.panning.value ? "" : undefined}
-                        >
-                          <div class="ship-filter-bar__opts-track">{optButtons}</div>
-                        </HkScrollContainer>
-                      ) : (
-                        <div class="ship-filter-bar__opts">{optButtons}</div>
-                      );
-                    })()}
+                      })()
+                    )}
                     {/* The nation strip pans instead of wrapping — name the
                         gesture. Hidden on the phone sheet, whose track wraps
                         and has nothing to pan (SCSS). */}

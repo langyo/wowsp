@@ -4,6 +4,13 @@ import { HkButton, HkCheckbox, HkModal, HkScrollContainer, HkSearchInput, HkTag 
 
 import NationFlag from "@/components/base/NationFlag";
 import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
+import TierRangeSelect, {
+  TIER_MAX,
+  TIER_MIN,
+  tierRangeNarrowed,
+  tierRangeText,
+  type TierRange,
+} from "@/components/ships/TierRangeSelect";
 import {
   SHIP_SOURCES,
   shipSourcesOf,
@@ -22,14 +29,14 @@ import "./ShipPickerModal.scss";
  *  encyclopedia and the DOM (plus HkCheckbox instances) must stay small.
  *  The truncation is display-only: "add all" still covers every match. */
 const RENDER_CAP = 150;
-const TIERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
 /**
- * Batch ship picker for the compare mode. Unlike 水表查询's bundled tier
- * ranges, every filter chip here multi-selects individually; matching ships
- * list as checkbox rows and land in the compare table via the `add` event
- * (payload = ShipInfo[]). The modal stays open after adding — the parent
- * owns the toast feedback.
+ * Batch ship picker for the compare mode. Tier filters through the shared
+ * corridor slider (TierRangeSelect — the same control 水表查询's filter bar
+ * and the encyclopedia grid use); every other filter chip multi-selects
+ * individually. Matching ships list as checkbox rows and land in the
+ * compare table via the `add` event (payload = ShipInfo[]). The modal stays
+ * open after adding — the parent owns the toast feedback.
  *
  * `existingIds` marks ships already in the compare list: their rows render
  * an "Added" tag with a checked + disabled checkbox and are excluded from
@@ -58,10 +65,10 @@ export default defineComponent({
     const encyclopedia = useEncyclopediaStore();
 
     // ── filters (same matching semantics as the grid view) ────────────
-    // Tier/type/nation selections are string sets so they feed the
-    // FilterCategoryChip props unchanged.
+    // Type/nation selections are string sets so they feed the
+    // FilterCategoryChip props unchanged; tier is the corridor slider.
     const searchText = ref("");
-    const selectedTiers = ref<Set<string>>(new Set());
+    const tierRange = ref<TierRange>([TIER_MIN, TIER_MAX]);
     const selectedTypes = ref<Set<string>>(new Set());
     const selectedNations = ref<Set<string>>(new Set());
     const selectedSources = ref<Set<string>>(new Set());
@@ -108,8 +115,7 @@ export default defineComponent({
     }
 
     // Chip option lists — derived from the store so a realm switch re-derives
-    // them; canonical order matches the old checkbox rows (tiers I–★).
-    const tierOptions = computed(() => TIERS.map((n) => ({ value: String(n), label: tierLabel(n) })));
+    // them; canonical order matches the old checkbox rows.
     const typeOptions = computed(() => encyclopedia.types.map((tp) => ({ value: tp, label: typeLabel(tp) })));
     const nationOptions = computed(() => encyclopedia.nations.map((n) => ({ value: n, label: nationLabel(n) })));
     const sourceOptions = computed(() =>
@@ -128,7 +134,8 @@ export default defineComponent({
     const filteredShips = computed(() => {
       const q = searchText.value.trim().toLowerCase();
       return encyclopedia.displayShips.filter((s) => {
-        if (selectedTiers.value.size > 0 && !selectedTiers.value.has(String(s.tier))) return false;
+        if (tierRangeNarrowed(tierRange.value) && (s.tier < tierRange.value[0] || s.tier > tierRange.value[1]))
+          return false;
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
         // Sources are additive sets (a coal ship can also be a gold
@@ -212,16 +219,25 @@ export default defineComponent({
                   gesture like the 水表 nation popup does. The last chip opens
                   leftwards so its popup never escapes the modal edge. */}
               <div class="ship-picker__toolbar">
+                {/* Tier is the shared corridor slider (TierRangeSelect), not
+                    an option set: the chip hosts it in bare mode with the
+                    corridor as its label — the same control the 水表 bar and
+                    the encyclopedia grid use. */}
                 <FilterCategoryChip
                   title={t("ships.filter.tierTitle")}
                   allLabel={t("ships.filter.tierAll")}
-                  options={tierOptions.value}
-                  selected={selectedTiers.value}
+                  bare
+                  label={tierRangeText(tierRange.value[0], tierRange.value[1]) ?? t("ships.filter.tierAll")}
+                  engaged={tierRangeNarrowed(tierRange.value)}
                   open={openCat.value === "tier"}
                   onUpdate:open={(v: boolean) => (openCat.value = v ? "tier" : null)}
-                  onToggle={(v: string) => (selectedTiers.value = toggleSet(selectedTiers.value, v))}
-                  onAll={() => (selectedTiers.value = new Set())}
-                />
+                  hint={t("ships.filter.tierRangeHint")}
+                >
+                  <TierRangeSelect
+                    modelValue={tierRange.value}
+                    onUpdate:modelValue={(v: TierRange) => (tierRange.value = v)}
+                  />
+                </FilterCategoryChip>
                 <FilterCategoryChip
                   title={t("ships.filter.typeTitle")}
                   allLabel={t("ships.filter.typeAll")}

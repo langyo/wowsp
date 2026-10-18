@@ -12,7 +12,6 @@ import {
   prTrendIntervals,
   prTrendLayout,
   prTrendShipCatalog,
-  prTrendTierMatches,
 } from "./prTrend";
 
 function point(
@@ -229,18 +228,6 @@ describe("filterIntervalsByRange", () => {
     // Both bounds required — an unfinished pick answers an empty series
     // rather than an unfiltered one.
     expect(filterIntervalsByRange(ivs, { key: "custom", fromSec: 9 * DAY, toSec: null }, NOW)).toEqual([]);
-  });
-});
-
-describe("prTrendTierMatches", () => {
-  it("mirrors the water-meter brackets; unknown tiers match nothing", () => {
-    expect(prTrendTierMatches(3, "I-V")).toBe(true);
-    expect(prTrendTierMatches(7, "VI-VII")).toBe(true);
-    expect(prTrendTierMatches(9, "VIII-IX")).toBe(true);
-    expect(prTrendTierMatches(10, "X-star")).toBe(true);
-    expect(prTrendTierMatches(11, "X-star")).toBe(true);
-    expect(prTrendTierMatches(6, "I-V")).toBe(false);
-    expect(prTrendTierMatches(null, "I-V")).toBe(false);
   });
 });
 

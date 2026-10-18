@@ -29,6 +29,12 @@ import { authoritativeEvent } from "@/utils/shipEventData";
 import { eventLabel, eventTooltip } from "@/utils/shipEvents";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
+import TierRangeSelect, {
+  TIER_MAX,
+  TIER_MIN,
+  tierRangeNarrowed,
+  type TierRange,
+} from "@/components/ships/TierRangeSelect";
 import "./ShipsView.scss";
 
 /**
@@ -130,7 +136,7 @@ export default defineComponent({
     const searchText = ref("");
     const selectedNations = ref<Set<string>>(new Set());
     const selectedTypes = ref<Set<string>>(new Set());
-    const selectedTiers = ref<Set<number>>(new Set());
+    const tierRange = ref<TierRange>([TIER_MIN, TIER_MAX]);
     const selectedRarities = ref<Set<Rarity>>(new Set());
 
     function toggleSet<T>(set: Set<T>, value: T): Set<T> {
@@ -145,7 +151,7 @@ export default defineComponent({
       searchText.value = "";
       selectedNations.value = new Set();
       selectedTypes.value = new Set();
-      selectedTiers.value = new Set();
+      tierRange.value = [TIER_MIN, TIER_MAX];
       selectedRarities.value = new Set();
     }
 
@@ -154,7 +160,7 @@ export default defineComponent({
         searchText.value.trim() !== "" ||
         selectedNations.value.size > 0 ||
         selectedTypes.value.size > 0 ||
-        selectedTiers.value.size > 0 ||
+        tierRangeNarrowed(tierRange.value) ||
         selectedRarities.value.size > 0,
     );
 
@@ -177,7 +183,8 @@ export default defineComponent({
     const filteredShips = computed(() => {
       const q = searchText.value.trim().toLowerCase();
       return encyclopedia.displayShips.filter((s) => {
-        if (selectedTiers.value.size > 0 && !selectedTiers.value.has(s.tier)) return false;
+        if (tierRangeNarrowed(tierRange.value) && (s.tier < tierRange.value[0] || s.tier > tierRange.value[1]))
+          return false;
         if (selectedNations.value.size > 0 && !selectedNations.value.has(s.nation)) return false;
         if (selectedTypes.value.size > 0 && !selectedTypes.value.has(s.type)) return false;
         if (selectedRarities.value.size > 0 && !selectedRarities.value.has(shipRarity(s))) return false;
@@ -391,20 +398,15 @@ export default defineComponent({
 
             <div class="ships-view__filter-group">
               <span class="ships-view__filter-label">{t("ships.tier")}</span>
-              <div class="ships-view__chips">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((tier) => (
-                  <button
-                    class={[
-                      "ships-view__chip",
-                      "ships-view__chip--tier",
-                      selectedTiers.value.has(tier) ? "ships-view__chip--on" : "",
-                    ]}
-                    onClick={() => (selectedTiers.value = toggleSet(selectedTiers.value, tier))}
-                  >
-                    {tier}
-                  </button>
-                ))}
-              </div>
+              {/* The shared tier corridor slider (TierRangeSelect) — the
+                  same control the 水表 bar and the compare picker use. The
+                  old per-tier chip row stopped at tier 10, silently locking
+                  superships (★ 11) out of its own filter. */}
+              <TierRangeSelect
+                class="ships-view__tier-range"
+                modelValue={tierRange.value}
+                onUpdate:modelValue={(v: TierRange) => (tierRange.value = v)}
+              />
             </div>
 
             <div class="ships-view__filter-group">
