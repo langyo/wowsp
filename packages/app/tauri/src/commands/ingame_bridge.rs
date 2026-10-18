@@ -27,13 +27,23 @@
 //! (one that already wrote a request while the bridge was off) to
 //! re-request within its 10 s window, so flipping the view mode adopts
 //! the running battle instead of waiting for the next one.
+//!
+//! The 准心浮窗 (crosshair float) extension: the webui pins user-chosen
+//! columns via `set_ingame_bridge_aim` and every response then carries
+//! them as a top-level `aimCols` array plus a per-row `aim` value array
+//! aligned with it. Three states, deliberately distinct on the wire:
+//! never-set (no `aimCols` key at all — the old plugins' byte-identical
+//! pre-aim contract), explicitly cleared (`aimCols: []`, rows without
+//! `aim` — the plugin's hide-the-float signal), and configured.
+
+use anyhow::{Result, bail};
 
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use tokio::sync::watch;
 use wowsp_tauri_shared::CommandResult;
@@ -133,6 +143,14 @@ fn stats_row(name: &str, stats: Option<&PlayerStats>) -> serde_json::Value {
     row_from(name, stats.winrate, stats.pr, stats.battles, stats.hidden)
 }
 
+/// One-decimal rounding shared by EVERY raw float this module emits into
+/// JSON (the row's `wr`, the aim float's winrate/damage): f32 values
+/// carry binary dust (52.3f32 is 52.29999923706055 as f64) that would
+/// leak into the JSON verbatim once widened — see `row_from`.
+fn round1(v: f32) -> f64 {
+    ((v as f64) * 10.0).round() / 10.0
+}
+
 /// Pure row builder (the testable core of [`stats_row`]): one decimal on
 /// `wr`, matching the overlay page's rendering precision.
 fn row_from(
@@ -144,14 +162,34 @@ fn row_from(
 ) -> serde_json::Value {
     serde_json::json!({
         "name": name,
-        // One decimal, matching the overlay page's rendering precision.
-        // Widened to f64 BEFORE rounding: f32 52.3 carries binary dust
-        // (52.29999923706055) that would leak into the JSON verbatim.
-        "wr": wr.map(|w| ((w as f64) * 10.0).round() / 10.0),
+        // One decimal via `round1` — f32 binary dust must not leak (above).
+        "wr": wr.map(round1),
         "pr": pr,
         "state": if hidden { "hidden" } else if wr.is_none() && pr.is_none() && battles.is_none() { "none" } else { "ok" },
         "bf": { "battles": battles, "ishidden": hidden },
     })
+}
+
+/// One 准心浮窗 value for one (metric, stats) pair: the SAME source fields
+/// and the SAME rounding the panel row reads (`winrate` is the row's `wr`,
+/// byte-for-byte), so the float window and the stats panel can never
+/// disagree about a player. Hidden profiles surface no numbers (their
+/// stats arrive all-`None` — the row's `wr`/`pr` go null the same way) and
+/// unlooked-up players have no stats object at all: `null` slots, which the
+/// float renders as its `--` fallback.
+fn aim_value(metric: &str, stats: Option<&PlayerStats>) -> serde_json::Value {
+    let Some(stats) = stats else {
+        return serde_json::Value::Null;
+    };
+    match metric {
+        "winrate" => stats.winrate.map(round1).into(),
+        "pr" => stats.pr.into(),
+        "battles" => stats.battles.into(),
+        "damage" => stats.avg_damage.map(round1).into(),
+        // Validation locks the metric set; a stray value still keeps the
+        // per-row array ALIGNED with `aimCols` rather than shifting slots.
+        _ => serde_json::Value::Null,
+    }
 }
 
 /// Column labels for the unbound template's header, in the app locale:
@@ -164,6 +202,58 @@ fn labels_for(locale: &str) -> serde_json::Value {
     } else {
         serde_json::json!({ "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" })
     }
+}
+
+/// Pure `response.json` assembler — the testable core of `bridge_cycle`'s
+/// write step (extracted unchanged in shape from the loop body so the aim
+/// extension could grow a dedicated seam). `aim` mirrors the three-state
+/// `AIM_COLUMNS` contract:
+/// - `None` (never set): no `aimCols` key, no per-row `aim` — the pre-aim
+///   wire shape, byte-compatible with older plugins;
+/// - `Some([])` (explicit clear): `"aimCols": []` written, rows WITHOUT an
+///   `aim` field — the plugin reads the empty list as hide-the-float;
+/// - `Some(cols)`: `aimCols` echoed and every row carrying an `aim` array
+///   aligned slot-for-slot with it.
+fn build_response(
+    session: &str,
+    revision: u64,
+    roster: &[(&str, Option<&PlayerStats>)],
+    locale: &str,
+    aim: Option<&[AimColumn]>,
+) -> serde_json::Value {
+    // Rows carry float values only when there are columns to align with;
+    // the explicit empty list is a top-level-only signal.
+    let cols = aim.unwrap_or(&[]);
+    let rows: Vec<serde_json::Value> = roster
+        .iter()
+        .map(|&(name, stats)| {
+            let mut row = stats_row(name, stats);
+            if !cols.is_empty() {
+                row["aim"] = serde_json::Value::Array(
+                    cols.iter().map(|c| aim_value(&c.metric, stats)).collect(),
+                );
+            }
+            row
+        })
+        .collect();
+    let mut response = serde_json::json!({
+        "version": 1,
+        "session": session,
+        "revision": revision,
+        "busy": false,
+        "rows": rows,
+        "labels": labels_for(locale),
+    });
+    if let Some(cols) = aim {
+        response["aimCols"] = serde_json::Value::Array(
+            cols.iter()
+                .map(|c| {
+                    serde_json::json!({ "scope": c.scope, "metric": c.metric, "label": c.label })
+                })
+                .collect(),
+        );
+    }
+    response
 }
 
 /// The plugin directory of the currently running install, when one is
@@ -251,7 +341,9 @@ pub fn ingame_bridge_start(locale: Option<String>) -> CommandResult<()> {
     Ok(())
 }
 
-/// Stop the bridge worker (idempotent when not running).
+/// Stop the bridge worker (idempotent when not running). Only the worker
+/// goes: the aim-column preference ([`AIM_COLUMNS`]) deliberately survives
+/// the stop — see its doc for the lifecycle rationale.
 #[tauri::command]
 pub fn ingame_bridge_stop() -> CommandResult<()> {
     let mut guard = WORKER
@@ -262,6 +354,94 @@ pub fn ingame_bridge_stop() -> CommandResult<()> {
         tracing::info!("ingame bridge stopped");
     }
     Ok(())
+}
+
+/// One user-chosen column of the 准心浮窗 (crosshair float window): the
+/// webui pushes the list via [`set_ingame_bridge_aim`], the bridge echoes
+/// it into every response as `aimCols` and attaches the aligned per-row
+/// `aim` values. `scope` is locked to `"global"` in protocol v1 but stays
+/// a field so a future per-ship scope needs no wire change.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AimColumn {
+    pub scope: String,
+    /// One of `winrate` / `pr` / `battles` / `damage` (validated).
+    pub metric: String,
+    /// Free-form header text the float renders (1..=32 chars, validated).
+    pub label: String,
+}
+
+/// The webui's chosen crosshair-float columns, or `None` when it has never
+/// chosen any. App-lifetime preference, deliberately OUTSIDE the worker's
+/// lifecycle (unlike the per-loop dedupe state, which dies with the
+/// worker): the webui must be able to set columns BEFORE the first start
+/// (「先设置后启动」) and a stop/start flip mid-session must not forget
+/// the choice (「桥重启后仍记得列」) — the worker owns transport, this
+/// owns preference, exactly like `REVISION` outlives every worker. Hence
+/// `ingame_bridge_stop` leaves it alone. `Some(vec![])` is the explicit
+/// clear (a user action, not an absence): the response carries
+/// `aimCols: []` and the plugin hides the float window.
+static AIM_COLUMNS: Mutex<Option<Vec<AimColumn>>> = Mutex::new(None);
+
+/// Set (or clear — an empty list) the crosshair-float columns the bridge
+/// echoes into every response. Accepted whether or not the bridge worker
+/// is running: the value lands in [`AIM_COLUMNS`] and the next answered
+/// cycle picks it up (the webui's saved settings replay this on startup,
+/// before any start call). A mid-battle change also pokes the manual
+/// refresh so the probe re-requests NOW and the next response (seconds,
+/// not next battle) carries the new columns — best-effort like `start`.
+#[tauri::command]
+pub fn set_ingame_bridge_aim(columns: Vec<AimColumn>) -> CommandResult<()> {
+    validate_aim_columns(&columns)?;
+    {
+        let mut guard = AIM_COLUMNS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *guard = Some(columns);
+    }
+    poke_manual_refresh();
+    Ok(())
+}
+
+/// Validation gate for [`set_ingame_bridge_aim`]: scope locked to
+/// `"global"` (v1), metrics to the four the row data can supply, at most
+/// four columns (the float window's width), labels non-empty and short
+/// (they render inside the float; 32 CHARS, so CJK labels are not halved
+/// by a byte cap). Pure — unit-tested.
+fn validate_aim_columns(columns: &[AimColumn]) -> Result<()> {
+    if columns.len() > 4 {
+        bail!("aim columns: at most 4 supported, got {}", columns.len());
+    }
+    for c in columns {
+        if c.scope != "global" {
+            bail!(
+                "aim column scope {:?} is unsupported (v1 allows \"global\" only)",
+                c.scope
+            );
+        }
+        if !matches!(c.metric.as_str(), "winrate" | "pr" | "battles" | "damage") {
+            bail!(
+                "aim column metric {:?} is not one of winrate/pr/battles/damage",
+                c.metric
+            );
+        }
+        if c.label.is_empty() || c.label.chars().count() > 32 {
+            bail!(
+                "aim column label must be 1..=32 characters, got {:?}",
+                c.label
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Read-side snapshot of [`AIM_COLUMNS`] for `bridge_cycle` (lock held only
+/// for the clone; a mid-battle change lands with the next answered cycle).
+fn aim_columns_snapshot() -> Option<Vec<AimColumn>> {
+    AIM_COLUMNS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 /// Stamp `manual_refresh.flag` (epoch SECONDS — the plugin's freshness
@@ -469,20 +649,19 @@ async fn bridge_cycle(
             };
         },
     };
-    let rows: Vec<serde_json::Value> = players
-        .into_iter()
-        .zip(stats)
-        .map(|(p, s)| stats_row(&p.name, s.as_ref()))
+    let roster: Vec<(&str, Option<&PlayerStats>)> = players
+        .iter()
+        .zip(stats.iter())
+        .map(|(p, s)| (p.name.as_str(), s.as_ref()))
         .collect();
     let revision = REVISION.fetch_add(1, Ordering::Relaxed);
-    let response = serde_json::json!({
-        "version": 1,
-        "session": request.session,
-        "revision": revision,
-        "busy": false,
-        "rows": rows,
-        "labels": labels_for(locale),
-    });
+    let response = build_response(
+        &request.session,
+        revision,
+        &roster,
+        locale,
+        aim_columns_snapshot().as_deref(),
+    );
     // The plugin's read contract: whole file, trailing newline, < 256 KiB.
     if let Err(e) = std::fs::write(dir.join(RESPONSE_FILE), format!("{response}\n")) {
         tracing::warn!(error = %e, "ingame bridge response write failed");
@@ -496,7 +675,7 @@ async fn bridge_cycle(
     tracing::info!(
         session = %request.session,
         revision,
-        rows = rows.len(),
+        rows = roster.len(),
         "ingame bridge answered"
     );
     CycleState {
@@ -636,5 +815,166 @@ mod tests {
             dir.components().any(|c| c.as_os_str() == "PnFMods"),
             "path must carry the PnFMods segment: {dir:?}"
         );
+    }
+
+    /// Minimal `PlayerStats` for response-shape tests: the fields the
+    /// bridge reads populated per the args, everything else `None` (the
+    /// struct has no `Default` and the response touches nothing else).
+    fn stats_fixture(
+        winrate: Option<f32>,
+        pr: Option<i64>,
+        battles: Option<i64>,
+        avg_damage: Option<f32>,
+        hidden: bool,
+    ) -> PlayerStats {
+        PlayerStats {
+            account_id: 1,
+            name: "fixture".into(),
+            realm: "eu".into(),
+            battles,
+            winrate,
+            hidden,
+            clan_tag: None,
+            clan_id: None,
+            avg_damage,
+            avg_xp: None,
+            kd_ratio: None,
+            survival_rate: None,
+            hit_rate: None,
+            pr,
+            ships_played: None,
+            leveling_tier: None,
+            leveling_points: None,
+            dog_tag: None,
+            solo_wr: None,
+            div2_wr: None,
+            div3_wr: None,
+            solo_battles: None,
+            div2_battles: None,
+            div3_battles: None,
+            ranked_battles: None,
+            ranked_winrate: None,
+            ranked_avg_damage: None,
+            ranked_pr: None,
+            global_battles: None,
+            global_winrate: None,
+            global_avg_damage: None,
+            global_pr: None,
+            last_battle_time: None,
+        }
+    }
+
+    /// The set-command's gate: scope locked to `"global"` (v1), metrics to
+    /// the four the row data can supply, at most four columns, labels
+    /// 1..=32 CHARS (a CJK label is not halved by a byte cap).
+    #[test]
+    fn aim_columns_validation_gate() {
+        let col = |metric: &str, label: &str| AimColumn {
+            scope: "global".into(),
+            metric: metric.into(),
+            label: label.into(),
+        };
+        // The explicit clear is a valid setting, not an absence.
+        assert!(validate_aim_columns(&[]).is_ok());
+        assert!(
+            validate_aim_columns(&[
+                col("winrate", "胜率"),
+                col("pr", "PR"),
+                col("battles", "场次"),
+                col("damage", "伤害"),
+            ])
+            .is_ok()
+        );
+        // v1 scope: anything but "global" is rejected.
+        assert!(
+            validate_aim_columns(&[AimColumn {
+                scope: "solo".into(),
+                ..col("pr", "PR")
+            }])
+            .is_err()
+        );
+        // Metric whitelist.
+        assert!(validate_aim_columns(&[col("kd", "KD")]).is_err());
+        // Width: four columns fit, five do not.
+        let four: Vec<AimColumn> = (0..4).map(|_| col("pr", "x")).collect();
+        let five: Vec<AimColumn> = (0..5).map(|_| col("pr", "x")).collect();
+        assert!(validate_aim_columns(&four).is_ok());
+        assert!(validate_aim_columns(&five).is_err());
+        // Labels: empty and 33 chars rejected; 32 CJK chars accepted.
+        assert!(validate_aim_columns(&[col("pr", "")]).is_err());
+        assert!(validate_aim_columns(&[col("pr", &"x".repeat(33))]).is_err());
+        assert!(validate_aim_columns(&[col("pr", &"胜".repeat(32))]).is_ok());
+    }
+
+    /// The aim overlay's three response states: never-set emits no
+    /// `aimCols` key at all (the pre-aim wire shape, byte-compatible with
+    /// old plugins), the explicit clear emits an EMPTY `aimCols` with rows
+    /// still lacking an `aim` field (the hide-the-float signal), and a
+    /// configured list is echoed as `aimCols` plus slot-aligned per-row
+    /// arrays — hidden and unlooked-up rows carry all-null slots, and the
+    /// `winrate` slot mirrors the row's `wr` exactly.
+    #[test]
+    fn response_aim_three_states() {
+        let found = stats_fixture(Some(52.34), Some(1450), Some(8213), Some(84523.67), false);
+        let hidden = stats_fixture(None, None, None, None, true);
+        let roster: Vec<(&str, Option<&PlayerStats>)> =
+            vec![("a", Some(&found)), ("h", Some(&hidden)), ("b", None)];
+        let cols = vec![
+            AimColumn {
+                scope: "global".into(),
+                metric: "winrate".into(),
+                label: "勝率".into(),
+            },
+            AimColumn {
+                scope: "global".into(),
+                metric: "damage".into(),
+                label: "傷害".into(),
+            },
+            AimColumn {
+                scope: "global".into(),
+                metric: "battles".into(),
+                label: "場次".into(),
+            },
+            AimColumn {
+                scope: "global".into(),
+                metric: "pr".into(),
+                label: "PR".into(),
+            },
+        ];
+
+        // Never set: the old contract — no aimCols key, no aim field.
+        let none = build_response("s", 7, &roster, "zh-TW", None);
+        assert!(none.get("aimCols").is_none());
+        assert!(none["rows"][0].get("aim").is_none());
+
+        // Explicit clear: aimCols present and EMPTY, rows without aim.
+        let cleared = build_response("s", 8, &roster, "zh-TW", Some(&[]));
+        assert_eq!(cleared["aimCols"], serde_json::json!([]));
+        assert!(cleared["rows"][0].get("aim").is_none());
+
+        // Configured: aimCols echoed verbatim, every row slot-aligned.
+        let full = build_response("s", 9, &roster, "zh-TW", Some(&cols));
+        assert_eq!(full["aimCols"][0]["scope"], "global");
+        assert_eq!(full["aimCols"][1]["metric"], "damage");
+        assert_eq!(full["aimCols"][2]["label"], "場次");
+        assert_eq!(full["aimCols"][3]["metric"], "pr");
+        assert_eq!(
+            full["rows"][0]["aim"],
+            serde_json::json!([52.3, 84523.7, 8213, 1450])
+        );
+        // Same source and rounding as the panel row's wr — the float
+        // window and the panel can never disagree.
+        assert_eq!(full["rows"][0]["aim"][0], full["rows"][0]["wr"]);
+        // Hidden and missing rows: all-null slots, base shape untouched.
+        assert_eq!(
+            full["rows"][1]["aim"],
+            serde_json::json!([null, null, null, null])
+        );
+        assert_eq!(
+            full["rows"][2]["aim"],
+            serde_json::json!([null, null, null, null])
+        );
+        assert_eq!(full["rows"][1]["state"], "hidden");
+        assert_eq!(full["rows"][2]["state"], "none");
     }
 }

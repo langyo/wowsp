@@ -20,6 +20,13 @@ everything to the WoWSP app through flat JSON files in its own directory:
 - exact TAB-screen state (`input.tabModeIn/Out` SFM events) and roster
   churn (`onPlayersListUpdated`),
 - battle lifecycle marks, heartbeat, request/response stats bridge,
+- the crosshair aim verdict (2026-10-18): per tick, the avatar entity
+  whose `target` component carries a lockable-weapon bit
+  (`flags & 0x35C7`, the client's own marker lock mask) is the aimed
+  player — latched into telemetry (`aim`), logged on every switch, and
+  rendered by the unbound view as a stats mini-panel floating under the
+  crosshair (columns companion-configured via the same drag-card editor
+  as the water table; see the design doc's aim section),
 - `order_probe.json` — one-shot per stabilized session: the client's
   exact-order source surface (`battle.getCollection` presence, SYNCED
   collection counts, bounded `children`/`battleInfo` container samples,

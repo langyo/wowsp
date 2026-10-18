@@ -91,6 +91,14 @@ export const shellApi = {
   startIngameBridge: (locale?: string) =>
     transport.invoke<null>(RPC.ingame_bridge_start, { locale: locale ?? null }),
   stopIngameBridge: () => transport.invoke<null>(RPC.ingame_bridge_stop),
+  /** The aim-crosshair panel's column list (see commands/ingame_bridge.rs):
+   *  which stats the in-game plugin renders under the crosshair for the
+   *  ship being aimed at, as {scope, metric, label} pairs (labels are the
+   *  settings' column-metric wording in the current locale). An empty list
+   *  hides the panel. Pushed at bridge start and on every aimColumns pref
+   *  change (features/overlay/useOverlayLifecycle.ts). */
+  setIngameBridgeAim: (columns: { scope: string; metric: string; label: string }[]) =>
+    transport.invoke<null>(RPC.set_ingame_bridge_aim, { columns }),
   /** In-game stats plugin presence in a game install (see
    *  commands/ingame_plugin.rs) — powers the roster "plugin detection"
    *  option's enabled state and its Discussions page link. */

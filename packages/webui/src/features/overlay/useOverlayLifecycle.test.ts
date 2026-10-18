@@ -1,4 +1,5 @@
 import { effectScope, reactive } from "vue";
+import { createPinia, setActivePinia } from "pinia";
 import { flushPromises } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,11 +7,16 @@ const mocks = vi.hoisted(() => ({
   api: {
     createOverlayWindow: vi.fn(), destroyOverlayWindow: vi.fn(),
     startIngameBridge: vi.fn(), stopIngameBridge: vi.fn(),
+    setIngameBridgeAim: vi.fn(),
   },
   game: vi.fn(), installs: vi.fn(), config: vi.fn(), plugin: vi.fn(),
 }));
 vi.mock("@/api", () => ({ api: mocks.api }));
-vi.mock("@/i18n", () => ({ i18n: { global: { locale: { value: "en-US" } } } }));
+vi.mock("@/i18n", () => ({
+  i18n: { global: { locale: { value: "en-US" } } },
+  // Identity: the aim push's labels become the raw keys in assertions.
+  t: (key: string) => key,
+}));
 vi.mock("@/stores/gameStatus", () => ({ useGameStatusStore: mocks.game }));
 vi.mock("@/stores/config", () => ({ useConfigStore: mocks.installs }));
 vi.mock("@/stores/overlayConfig", () => ({ useOverlayConfigStore: mocks.config }));
@@ -31,6 +37,9 @@ let installs = reactive({ activeInstall: null as { realm: string } | null });
 beforeEach(() => {
   vi.resetAllMocks();
   scope = effectScope();
+  // The aim-push tests drive the REAL statsPrefs store (its module-level
+  // ref is what the lifecycle watches), so a pinia must be active.
+  setActivePinia(createPinia());
   game = reactive({ process: { running: true, realm: "asia" as string | null } });
   config = reactive({ table: "detect", loaded: true, load: vi.fn(async () => {}) });
   installs = reactive({ activeInstall: null as { realm: string } | null });
@@ -161,5 +170,40 @@ describe("overlay lifecycle transitions", () => {
     stopping.resolve();
     await flushPromises();
     expect(start).not.toHaveBeenCalled();
+  });
+
+  it("pushes the aim columns when the bridge starts, and again on every aim edit", async () => {
+    config.table = "ingame";
+    scope.run(useOverlayLifecycle);
+    await flushPromises();
+    expect(mocks.api.startIngameBridge).toHaveBeenCalledTimes(1);
+    // The payload rides the start: statsPrefs' shipped default aim list,
+    // each column with its label resolved through t() (mocked to the raw
+    // key). localStorage is clean here, so the store's module-level state
+    // holds DEFAULT_STATS_PREFS.
+    expect(mocks.api.setIngameBridgeAim).toHaveBeenCalledTimes(1);
+    expect(mocks.api.setIngameBridgeAim).toHaveBeenCalledWith([
+      { scope: "global", metric: "winrate", label: "settings.overlayContent.colMetricWinrate" },
+      { scope: "global", metric: "pr", label: "settings.overlayContent.colMetricPr" },
+      { scope: "global", metric: "battles", label: "settings.overlayContent.colMetricBattles" },
+    ]);
+    // A settings edit of the aim list (the store's one write path) pushes
+    // again while the bridge is up.
+    const { useStatsPrefsStore } = await import("@/stores/statsPrefs");
+    useStatsPrefsStore().setAimColumns([{ scope: "global", metric: "damage" }]);
+    await flushPromises();
+    expect(mocks.api.setIngameBridgeAim).toHaveBeenCalledTimes(2);
+    expect(mocks.api.setIngameBridgeAim).toHaveBeenLastCalledWith([
+      { scope: "global", metric: "damage", label: "settings.overlayContent.colMetricDamage" },
+    ]);
+  });
+
+  it("does not push aim columns while the bridge is down", async () => {
+    scope.run(useOverlayLifecycle);
+    await flushPromises();
+    const { useStatsPrefsStore } = await import("@/stores/statsPrefs");
+    useStatsPrefsStore().setAimColumns([{ scope: "global", metric: "pr" }]);
+    await flushPromises();
+    expect(mocks.api.setIngameBridgeAim).not.toHaveBeenCalled();
   });
 });

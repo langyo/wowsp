@@ -292,7 +292,7 @@
     "colAdd": "Add column",
     "colAddConfirm": "Add",
     "colRemove": "Remove column",
-    "colLimitHint": "Up to 5 columns",
+    "colLimitHint": "Up to {limit} columns",
     "colEmpty": "No columns configured — add one via the + button",
     "colDupHint": "This column already exists",
     "colScope": "Data scope",
@@ -304,7 +304,9 @@
     "colMetricWinrate": "Win rate",
     "colMetricPr": "PR",
     "colMetricBattles": "Battles",
-    "colMetricDamage": "Avg damage"
+    "colMetricDamage": "Avg damage",
+    "aimTitle": "Aim crosshair panel",
+    "aimHint": "Columns shown under the crosshair for the ship you are aiming at (global career scope only for now). Remove all cards to hide the panel."
   },
   "schemeDefaultName": "Default",
   "pairingWip": "Phone pairing is under development and not finished yet.",

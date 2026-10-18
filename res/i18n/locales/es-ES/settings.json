@@ -292,7 +292,7 @@
     "colAdd": "Añadir columna",
     "colAddConfirm": "Añadir",
     "colRemove": "Quitar columna",
-    "colLimitHint": "Máximo 5 columnas",
+    "colLimitHint": "Máximo {limit} columnas",
     "colEmpty": "Sin columnas — añade una con el botón +",
     "colDupHint": "Esta columna ya existe",
     "colScope": "Ámbito de datos",
@@ -304,7 +304,9 @@
     "colMetricWinrate": "Tasa de victoria",
     "colMetricPr": "PR",
     "colMetricBattles": "Batallas",
-    "colMetricDamage": "Daño medio"
+    "colMetricDamage": "Daño medio",
+    "aimTitle": "Panel de mira",
+    "aimHint": "Columnas que se muestran bajo la mira del barco al que apuntas (por ahora solo el ámbito global). Quita todas las tarjetas para ocultar el panel."
   },
   "schemeDefaultName": "Por defecto",
   "pairingWip": "El emparejamiento con el teléfono está en desarrollo y aún no está terminado.",

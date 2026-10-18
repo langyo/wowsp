@@ -18,6 +18,11 @@
 # with a 2px vgap; the header is 20px. stageWidth/stageHeight reach the
 # side panels as arguments bound in the root scope — the one place the
 # STAGE_SIZE macro is declared.
+#
+# The aim panel anchors to the STAGE CENTER plus the payload's `offset`
+# (the crosshair sits at the center in every gun mode) and renders
+# independently of the Tab tables — aiming happens while Tab is up or
+# down.
 
 (def constant WOWSP_PANEL_KEY 'wowspProbe.panel')
 
@@ -228,6 +233,93 @@
 	)
 )
 
+# The crosshair aim panel: while the local player's weapons hold a target
+# (Main.py's walk over the avatar entities' target components), this floats
+# the aimed player's name/ship plus the companion-configured stat columns
+# at the stage center + payload offset — INDEPENDENT of the Tab tables
+# (it must be readable while aiming, not while the roster is up). Like the
+# rest of the file, the payload decides everything (on/name/ship/offset/
+# vals[].{t,c,label}); this element only lays it out.
+(def element WowspAimCol(_col:dict=null)
+	(block
+		(style
+			(width = 64px)
+		)
+		(tf
+			(class $WowspPanelText)
+			(style
+				(width = 64px)
+				(textAlign = "center")
+				(alpha = 0.7)
+			)
+			(bind text "_col ? _col.label : ''")
+		)
+		(tf
+			(class $WowspPanelText)
+			(style
+				(width = 64px)
+				(textAlign = "center")
+			)
+			(bind textColor "_col ? _col.c : 0xFFFFFFFF")
+			(bind text "_col ? _col.t : ''")
+		)
+	)
+)
+
+(def element WowspAimPanel(_aim:dict=null, _stageW:number=0, _stageH:number=0)
+	(scope
+		(var colCount:number = "_aim && _aim.vals ? _aim.vals.length : 0")
+		(var panelW:number = "colCount * 64 > 160 ? colCount * 64 : 160")
+	)
+
+	(block
+		(bind visible "_aim && _aim.on == true")
+		(style
+			(position = "absolute")
+			(bind left "(_stageW / 2) - (panelW / 2)")
+			(bind top "(_stageH / 2) + (_aim ? _aim.offset : 120)")
+			(padding = 6px)
+			(vgap = 2px)
+			(backgroundColor = 0xE60A1016)
+		)
+		(tf
+			(class $WowspPanelText)
+			(style
+				(bind width "panelW")
+				(textAlign = "center")
+				(elideMode = true)
+			)
+			(bind text "_aim ? _aim.name : ''")
+		)
+		(tf
+			(class $WowspPanelText)
+			(style
+				(bind width "panelW")
+				(textAlign = "center")
+				(elideMode = true)
+				(alpha = 0.75)
+			)
+			(bind text "_aim ? _aim.ship : ''")
+		)
+		# The columns row: the $Repeat renderer's children join THIS
+		# block's flow — HORIZONTAL, or the label/value pairs stack
+		# vertically (the same wrapper pattern BuildViewer's row repeats
+		# use; WowspStatRow sets flow on the row itself).
+		(block
+			(style
+				(flow = "Flow.HORIZONTAL")
+				(hgap = 2px)
+			)
+			(controller $Repeat renderer='WowspAimCol'
+				(count = "colCount")
+				(args
+					_col = "_aim && _aim.vals ? _aim.vals[$index] : null"
+				)
+			)
+		)
+	)
+)
+
 (def element WoWSPProbeStatsPanel() layout=true
 	(scope
 		(macro STAGE_SIZE)
@@ -242,6 +334,9 @@
 		(var allyById:dict = "panelData ? panelData.allyById : null" (event "dataComponent.evDataChanged"))
 		(var enemyById:dict = "panelData ? panelData.enemyById : null" (event "dataComponent.evDataChanged"))
 		(var labels:dict = "panelData ? panelData.labels : null" (event "dataComponent.evDataChanged"))
+		# The aim panel payload (in-game display mode only — the overlay
+		# mode's companion owns the screen there, exactly like the tables).
+		(var aimData:dict = "panelData && panelData.panel == true ? panelData.aim : null" (event "dataComponent.evDataChanged"))
 		# The client's own TAB-order children (AvatarSystem's splitting/
 		# sorting collections); the side panels use their iteration order.
 		(var allyOrder:gfx = "$datahub.getCollection().getChildByPath('team.ally.sortedAlive')")
@@ -255,26 +350,36 @@
 	)
 
 	(block
-		(bind visible "panelData ? (panelData.visible == true) : false")
 		(style
 			(position = "absolute")
 		)
-		# The stats tables render only in the in-game display mode
-		# (payload `panel`); the barcode strips only in the overlay mode
-		# (payload `barcode`) — the companion declares its mode in the
-		# probe's wowsp.toml table and Main.py forwards it here, so the
-		# two consumers never share the screen.
+		# The Tab-gated half: the stats tables and the barcode strips show
+		# only while Tab is held (payload `visible`). The aim panel below
+		# is OUTSIDE this gate on purpose — aiming and holding Tab are
+		# different moments.
 		(block
-			(bind visible "panelData ? (panelData.panel == true) : false")
-			(style (position = "absolute"))
-			(element WowspSidePanel _isAlly="true" _rows="allyRows" _byId="allyById" _order="allyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
-			(element WowspSidePanel _isAlly="false" _rows="enemyRows" _byId="enemyById" _order="enemyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+			(bind visible "panelData ? (panelData.visible == true) : false")
+			(style
+				(position = "absolute")
+			)
+			# The stats tables render only in the in-game display mode
+			# (payload `panel`); the barcode strips only in the overlay mode
+			# (payload `barcode`) — the companion declares its mode in the
+			# probe's wowsp.toml table and Main.py forwards it here, so the
+			# two consumers never share the screen.
+			(block
+				(bind visible "panelData ? (panelData.panel == true) : false")
+				(style (position = "absolute"))
+				(element WowspSidePanel _isAlly="true" _rows="allyRows" _byId="allyById" _order="allyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+				(element WowspSidePanel _isAlly="false" _rows="enemyRows" _byId="enemyById" _order="enemyOrder" _labels="labels" _stageW="stageWidth" _stageH="stageHeight")
+			)
+			(block
+				(bind visible "panelData ? (panelData.barcode == true) : false")
+				(style (position = "absolute"))
+				(element WowspBarcodeStrip _isAlly="true" _rows="allyRows" _byId="allyById" _order="allyOrder" _stageW="stageWidth")
+				(element WowspBarcodeStrip _isAlly="false" _rows="enemyRows" _byId="enemyById" _order="enemyOrder" _stageW="stageWidth")
+			)
 		)
-		(block
-			(bind visible "panelData ? (panelData.barcode == true) : false")
-			(style (position = "absolute"))
-			(element WowspBarcodeStrip _isAlly="true" _rows="allyRows" _byId="allyById" _order="allyOrder" _stageW="stageWidth")
-			(element WowspBarcodeStrip _isAlly="false" _rows="enemyRows" _byId="enemyById" _order="enemyOrder" _stageW="stageWidth")
-		)
+		(element WowspAimPanel _aim="aimData" _stageW="stageWidth" _stageH="stageHeight")
 	)
 )

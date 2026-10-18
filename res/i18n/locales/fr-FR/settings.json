@@ -292,7 +292,7 @@
     "colAdd": "Ajouter une colonne",
     "colAddConfirm": "Ajouter",
     "colRemove": "Retirer la colonne",
-    "colLimitHint": "5 colonnes au maximum",
+    "colLimitHint": "{limit} colonnes au maximum",
     "colEmpty": "Aucune colonne — ajoutez-en via le bouton +",
     "colDupHint": "Cette colonne existe déjà",
     "colScope": "Portée des données",
@@ -304,7 +304,9 @@
     "colMetricWinrate": "Taux de victoire",
     "colMetricPr": "PR",
     "colMetricBattles": "Batailles",
-    "colMetricDamage": "Dégâts moyens"
+    "colMetricDamage": "Dégâts moyens",
+    "aimTitle": "Panneau du réticule",
+    "aimHint": "Colonnes affichées sous le réticule pour le navire visé (pour l'instant, portée globale uniquement). Retirez toutes les cartes pour masquer le panneau."
   },
   "schemeDefaultName": "Par défaut",
   "pairingWip": "Le jumelage téléphonique est en cours de développement et pas encore terminé.",

@@ -77,11 +77,16 @@ ORDER_PROBE_FILE = 'order_probe.json'
 # while a mode is running. A missing manifest keeps BOTH defaults on:
 # the panel is the long-shipped behavior, the strip stays off until the
 # overlay side asks for it.
+# `aim`/`aim_offset` drive the crosshair aim panel (see entity_walk): on
+# by default, `aim_offset` px below the stage center. Hand edits to the
+# offset survive rewrites like every other key.
 CONFIG_DEFAULTS = {
     'panel_fade_ticks': 3,
     'journal_limit': 300,
     'panel': 1,
     'barcode': 0,
+    'aim': 1,
+    'aim_offset': 120,
 }
 JOURNAL_LIMIT = CONFIG_DEFAULTS['journal_limit']
 
@@ -98,6 +103,22 @@ BARCODE_MARGIN = 24    # screen-edge margin (same anchor px as the panel)
 BARCODE_ON = 0xFFF2F2F2
 BARCODE_OFF = 0xFF303030
 BARCODE_BACK = 0xFF101010
+
+# The aim panel's frozen detection contract (build 13357625 decompile +
+# the client's own views): the marker an avatar entity carries is drawn
+# from the SAME avatar collection this probe walks, and the client's own
+# lock icon lights up on `target.flags & LOCKABLE_WEAPONS` —
+# gui/unbound2/pc/shared/constants.unbound freezes that mask as
+# "1<<0 | 1<<1 | 1<<2 | 1<<6 | 1<<7 | 1<<8 | 1<<10 | 1<<12 | 1<<13"
+# over the WEAPON_* bit enum (bit index = weapon type). The main-battery
+# bits (UNKNOWN/MAIN_AP/MAIN_HE = bits 0-2) are preferred when several
+# entities are targeted at once (guns on one ship, torpedoes locked on
+# another). Changing either number is a spec bump against the client.
+AIM_LOCKABLE = 0x35C7
+AIM_MAIN_BITS = 0x7
+# Metrics the companion's aimCols may name (response.json). Formatting and
+# coloring live here so the view stays dumb.
+AIM_METRICS = ('winrate', 'pr', 'battles', 'damage')
 
 
 def load_tool_config():
@@ -593,6 +614,16 @@ class Probe:
         self.labels = {}
         self.states = {}
         self.last_panel = ''
+        # Aim panel state: the current target walk verdict ({name, flags}
+        # or None — latched by entity_walk, cleared per battle), the
+        # companion's aim column list (None = no response ever carried
+        # aimCols; [] = the user emptied the list = panel hidden), and the
+        # UiComponents `target` attribute resolved behind its own guard
+        # (False = not yet resolved, None = unavailable — see _cc_target).
+        self.aim = None
+        self.aim_cols = None
+        self.cc_target_cache = False
+        self.aim_log_last = ''
         # One-shot per stabilized session: the client's own TAB-order source
         # probe (see client_order_probe). It runs on the first stabilized
         # tick, once the data hub's splitting/sorting collections exist.
@@ -817,6 +848,92 @@ class Probe:
             except:
                 log('UiComponents unavailable - entity walks disabled, records carry the battle')
         return self.cc_cache
+
+    def _cc_target(self):
+        """The UiComponents `target` attribute, resolved ONCE behind its own
+        guard: a client can serve UiComponents yet withhold the attribute
+        (the aim walk's duck-typed fallback then carries that client), and
+        per-entity attribute misses must never re-raise the lookup."""
+        if self.cc_target_cache is False:
+            self.cc_target_cache = None
+            cc = self._cc()
+            if cc is not None:
+                try:
+                    self.cc_target_cache = cc.target
+                except:
+                    self.cc_target_cache = None
+        return self.cc_target_cache
+
+    def aim_flags_of(self, entity):
+        """One entity's target-flags, or None when it carries no target
+        component. Primary path: the UiComponents `target` class via the
+        entity's `in`/subscript protocol (the census-proven component
+        access) — a resolvable cc whose key misses is an AUTHORITATIVE
+        negative (no duck probing: a third-party component that happens
+        to carry `.flags` would otherwise fabricate a target). Fallback
+        (cc.target withheld while UiComponents itself resolves — a
+        per-client withholding, NOT the whole-attribute raise that stands
+        the entire walk down): duck-type the raw components mapping for
+        an object with `.flags` but no `.reasons` (CanHit carries both;
+        the marker views read flags off target and reasons off canHit —
+        build 13357625 views)."""
+        cc_target = self._cc_target()
+        if cc_target is not None:
+            try:
+                if cc_target in entity:
+                    return _to_int(entity[cc_target].flags)
+            except:
+                pass
+            return None
+        try:
+            for comp in entity.components.values():
+                try:
+                    flags = comp.flags
+                except:
+                    continue
+                try:
+                    comp.reasons
+                    continue  # CanHit shape — not the target component
+                except:
+                    pass
+                return _to_int(flags)
+        except:
+            pass
+        return None
+
+    def aim_latch(self, hits):
+        """Fold this walk's [(name, flags)] hits into the aim verdict: the
+        main-battery target wins, else the first lockable hit. Logged on
+        change so a replay tail (python.log) shows the recorded player's
+        aim switches as they happen."""
+        chosen = None
+        for name, flags in hits:
+            if not name:
+                continue
+            if flags & AIM_MAIN_BITS:
+                chosen = (name, flags)
+                break
+        if chosen is None:
+            for name, flags in hits:
+                if name:
+                    chosen = (name, flags)
+                    break
+        verdict = {'name': chosen[0], 'flags': chosen[1]} if chosen else None
+        was = self.aim['name'] if _is_kind(self.aim, 'dict') else ''
+        now = verdict['name'] if chosen else ''
+        if was != now:
+            # Name switches only — flags ride telemetry every tick, and a
+            # flags-only change (an AP/HE swap flipping bits on the same
+            # target) must not earn a log line per tick. A normal telemetry
+            # line, NOT soft(): the latch stays empty in a healthy battle
+            # (the harness pins this) — aim switches are expected traffic,
+            # replay tails read them.
+            line = ('aim ' + (now or 'none') +
+                    (' flags=' + _fmt(verdict['flags']) if chosen else ''))
+            if line != self.aim_log_last:
+                log(line)
+                self.aim_log_last = line
+        self.aim = verdict
 
     def entity_states(self):
         """Per-avatar live state from entity components (health path is
@@ -1281,6 +1398,7 @@ class Probe:
         states = {}
         sides = {'ally': [], 'enemy': []}
         self_name = ''
+        aim_hits = []
         try:
             for entity in self.dh.getEntityCollections('avatar'):
                 try:
@@ -1332,9 +1450,19 @@ class Probe:
                     pass
                 states[name] = row
                 sides[side].append((name, alive))
+                # The aim verdict rides the same walk: an entity whose
+                # target component carries a lockable-weapon bit is a
+                # candidate (see aim_flags_of/aim_latch).
+                try:
+                    aim_flags = self.aim_flags_of(entity)
+                    if aim_flags is not None and aim_flags & AIM_LOCKABLE:
+                        aim_hits.append((name, aim_flags))
+                except:
+                    pass
         except:
             self.soft('entity walk failed=' + _exc_text(120))
         self.self_name = self_name
+        self.aim_latch(aim_hits)
         return states, sides
 
     def merge_order(self, sides):
@@ -1489,6 +1617,12 @@ class Probe:
         self.avatar_entity_ids = {}
         self.raw_isalive_seen = False
         self.last_order_cache = None
+        # The aim verdict is per-battle too; aim_cols (the companion's
+        # column list) is config-level and survives the reset.
+        self.aim = None
+        # Re-arm the aim log gate: the next battle's first switch must
+        # log even when its line is byte-identical to the last battle's.
+        self.aim_log_last = ''
         self.stats = {}
         self.labels = {}
         # The SELF latch rides the same reset story as the rest of the
@@ -1727,8 +1861,15 @@ class Probe:
     # -- request/response ----------------------------------------------------
 
     def request(self, manual):
+        """Write one stats request; returns True when it was actually
+        written. The manual-refresh tick consumes its flag stamp ONLY on
+        a True answer — a declined request (busy window, <5 s since the
+        last one) leaves the stamp unconsumed so the next tick retries it
+        inside the 10 s freshness window (a poke that lands while the
+        previous response is still in flight would otherwise be silently
+        eaten and the change it asked for would wait a whole battle)."""
         if not self.session or not self.roster or self.busy or time.time() - self.last_request < 5:
-            return
+            return False
         self.last_request = time.time()
         self.revision = -1
         try:
@@ -1742,8 +1883,10 @@ class Probe:
             stream.close()
             self.busy = True
             log('request written players=' + _fmt(len(self.roster)) + ' manual=' + ('True' if manual else 'False'))
+            return True
         except:
             self.soft('request write failed=' + _exc_text(120))
+            return False
 
     def read_response(self):
         try:
@@ -1765,6 +1908,24 @@ class Probe:
             labels = data.get('labels')
             if _is_kind(labels, 'dict'):
                 self.labels = labels
+            # aimCols: absent on older companions (aim_cols stays None =
+            # name/ship-only panel); [] = the user emptied the column list
+            # (panel hidden); otherwise sanitized to [{metric,label}]. A
+            # MALFORMED list (not a list / overlong) is ignored outright —
+            # it must not collapse into the explicit-empty hide gate.
+            raw_cols = data.get('aimCols')
+            if _is_kind(raw_cols, 'list') and len(raw_cols) <= 8:
+                cols = []
+                for col in raw_cols:
+                    if not _is_kind(col, 'dict'):
+                        continue
+                    metric = col.get('metric')
+                    if metric not in AIM_METRICS:
+                        continue
+                    label = col.get('label')
+                    cols.append({'metric': metric,
+                                 'label': _fmt(label) if label else ''})
+                self.aim_cols = cols
             self.stats = stats
             self.revision = data.get('revision', -1)
             self.busy = False
@@ -1898,9 +2059,14 @@ class Probe:
             stamp = stream.read(100)
             stream.close()
             if stamp != self.manual_stamp:
-                self.manual_stamp = stamp
+                # Fresh + issued → consume; fresh but DECLINED → keep the
+                # stamp and retry next tick (see request); stale → consume
+                # so it is not re-checked forever.
                 if 0 <= time.time() - _to_float(stamp) < 10:
-                    self.request(True)
+                    if self.request(True):
+                        self.manual_stamp = stamp
+                else:
+                    self.manual_stamp = stamp
         except:
             pass
         if self.busy:
@@ -2087,6 +2253,9 @@ class Probe:
                         break
             except:
                 self_realm = ''
+            # The aim verdict the walk latched earlier THIS tick (a plain
+            # dict read — nothing here can fail, so no stage of its own).
+            aim_now = self.aim if _is_kind(self.aim, 'dict') else None
             stage = 'encode'
             body = json_encode_safe({'t': _to_int(time.time() * 1000),
                                      'battle': self.session,
@@ -2095,7 +2264,12 @@ class Probe:
                                      'rosterOrder': roster_order,
                                      'shipNames': ship_names,
                                      'self': {'name': self_name, 'realm': self_realm},
-                                     'identity': identity})
+                                     'identity': identity,
+                                     # The aim verdict every tick (empty name
+                                     # = no target): the replay/live monitor
+                                     # reads this to watch aim switches.
+                                     'aim': {'name': aim_now['name'] if aim_now else '',
+                                             'flags': aim_now['flags'] if aim_now else 0}})
             stage = 'write'
             _bridge_write(TELEMETRY_FILE, body)
         except:
@@ -2152,6 +2326,67 @@ class Probe:
         if pr >= 1150:
             return 0xFFFFEE66  # pale yellow
         return 0xFFCBBBBC      # grey
+
+    def aim_block(self):
+        """The crosshair panel's payload (see the aim section of the design
+        doc): {'on', 'name', 'ship', 'offset', 'vals': [{t, c}]}. All
+        presentation is decided here — the view only lays it out under the
+        stage center. `on` is false when the feature is disabled in
+        wowsp.toml, no target is held, or the companion has explicitly
+        answered with an EMPTY column list (the user removed every card =
+        hide the panel). A companion that never sent aimCols (older build)
+        keeps the panel up with name/ship only."""
+        verdict = self.aim if _is_kind(self.aim, 'dict') else None
+        name = verdict['name'] if verdict else ''
+        enabled = TOOL_CONFIG.get('aim', 1) == 1
+        cols_known = self.aim_cols is None or len(self.aim_cols) > 0
+        on = True if (name and enabled and cols_known) else False
+        if not on:
+            return {'on': False, 'name': '', 'ship': '',
+                    'offset': _to_int(TOOL_CONFIG.get('aim_offset', 120)),
+                    'vals': []}
+        ship = ''
+        if self.last_order_cache is not None:
+            try:
+                ship = self.last_order_cache[1].get(name, '') or ''
+            except:
+                ship = ''
+        vals = []
+        cols = self.aim_cols or []
+        if cols:
+            row = self.stats.get(name)
+            numbers = row.get('aim') if _is_kind(row, 'dict') else None
+            # Indexed walk by hand: `enumerate` is a builtin NAME the
+            # Lesta whitelist may withhold (the load_tool_config rule).
+            pos = 0
+            for col in cols:
+                value = None
+                if _is_kind(numbers, 'list') and pos < len(numbers):
+                    value = numbers[pos]
+                metric = col.get('metric')
+                label = col.get('label') or ''
+                text = '--'
+                color = 0xB4FFFFFF
+                if _is_num(value):
+                    if metric == 'winrate':
+                        text = '%.1f%%' % (value,)
+                        color = self.wr_color(value)
+                    elif metric == 'pr':
+                        text = _fmt(_to_int(value))
+                        color = self.pr_color(value)
+                    elif metric == 'battles':
+                        text = _fmt(_to_int(value))
+                        color = 0xFFE8F4F4
+                    elif metric == 'damage':
+                        text = _fmt(_to_int(value))
+                        color = 0xFFE8F4F4
+                vals.append({'t': text, 'c': color, 'label': label})
+                pos += 1
+        return {'on': True,
+                'name': name,
+                'ship': _fmt(ship),
+                'offset': _to_int(TOOL_CONFIG.get('aim_offset', 120)),
+                'vals': vals}
 
     def panel_rows(self, side):
         rows = []
@@ -2255,7 +2490,8 @@ class Probe:
                     'enemy': enemy,
                     'allyById': ally_by_id,
                     'enemyById': enemy_by_id,
-                    'labels': self.labels}
+                    'labels': self.labels,
+                    'aim': self.aim_block()}
             body = json_encode_safe(data)
             if body == self.last_panel:
                 return
