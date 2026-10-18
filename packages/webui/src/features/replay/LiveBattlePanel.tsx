@@ -1332,8 +1332,8 @@ export default defineComponent({
           "live-battle__player",
           { "live-battle__player--link": clickable },
           // Sunk mid-battle (recognized off the dim-gray Tab row): the
-          // card grays out like the game's row, save the seal track — it
-          // keeps the row's PR-tier tint (see the SCSS sunk rules).
+          // card grays out like the game's row, the seal included — the
+          // whole row reads uniformly gray (see the SCSS sunk rules).
           { "live-battle__player--sunk": entry.sunk },
         ];
         const seal =
