@@ -994,18 +994,27 @@ function liveRosterSides(): RosterSides<Vehicle> {
   );
 }
 
-/** Whether a side's believed row order is the game's OWN: the probe's
- *  telemetry sort keys cover EVERY row of the side (a partial map must
- *  never interleave game-true and inferred rows) on a client that renders
- *  key order — a ship-name-order client (CN) re-sorts by localized ship
- *  name, an order the keys cannot express, so it never grades exact
- *  (utils/realms). The same verdict the live panel's "exact order" pill
- *  grades and the row sort below switches on — and the contract the chip
- *  face rides: a game-true row hangs beside a table line the game itself
- *  has named, so its chip drops the redundant name column (rowFace); any
- *  loss of coverage — or a stale stream dropping the keys — brings the
- *  name back. */
-function sideOrderExact(side: SunkSide): boolean {
+/** The client's own localized ship names for a side, gated to FULL side
+ *  coverage (a side mixing client names with DB names would misorder):
+ *  only the CN permutation consumes the segment. Returns the resolver
+ *  when every row carries one, else null. */
+function clientNameResolver(
+  list: readonly TabSortVehicle[],
+): ((v: TabSortVehicle) => string) | null {
+  if (!telemetryShipNames) return null;
+  const names = telemetryShipNames;
+  return list.every((v) => (names[v.name] ?? "") !== "")
+    ? (v) => names[v.name]
+    : null;
+}
+
+/** Whether the side's row sort switches to the client's OWN keys: the
+ *  probe's telemetry sort keys cover EVERY row of the side (a partial
+ *  map must never interleave game-true and inferred rows) on a client
+ *  that renders key order — a ship-name-order client (CN) re-sorts by
+ *  localized ship name, an order the keys cannot express, so the key
+ *  override never engages there (utils/realms). */
+function keyCoverageExact(side: SunkSide): boolean {
   if (!arena || !telemetrySortKeys || nameOrderLayout()) return false;
   const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
   return (
@@ -1015,6 +1024,28 @@ function sideOrderExact(side: SunkSide): boolean {
       return typeof key === "string" && key.length > 0;
     })
   );
+}
+
+/** Whether a side's believed row order is the game's OWN — the verdict
+ *  the live panel's "exact order" pill mirrors and the contract the chip
+ *  face rides: a game-true row hangs beside a table line the game itself
+ *  has named, so its chip drops the redundant name column (rowFace); any
+ *  loss of coverage — or a stale stream — brings the name back. Two
+ *  independent roads to exact: the WG family's sort-key coverage
+ *  (keyCoverageExact), and — released 2026-10-18 on the calibration
+ *  evidence (18/18 + 24/24 full battles, 5/5 duplicate-ship tie pairs
+ *  broken by player-name pinyin, zero mismatches; see the design doc) —
+ *  the CN name-order arrangement, exact when EVERY row of the side
+ *  carries a client-truth localized ship name (telemetry shipNames):
+ *  with full coverage the comparator's inputs are the strings the
+ *  client itself renders, and its tie rule is the calibrated one.
+ *  Partial name coverage keeps the inferred grade — a side mixing
+ *  client names with DB names would misorder. */
+function sideOrderExact(side: SunkSide): boolean {
+  if (keyCoverageExact(side)) return true;
+  if (!arena || !nameOrderLayout()) return false;
+  const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
+  return list.length > 0 && clientNameResolver(list) !== null;
 }
 
 /** The roster's believed full-key order for one side — the ordering the
@@ -1033,11 +1064,7 @@ function sideFullOrder(side: SunkSide): string[] {
   // (a side mixing client names with DB names would misorder): only the
   // CN permutation consumes the segment, and CN arena rows carry no
   // synthesized ship_name — telemetry is the only source here.
-  const clientShipName = (v: TabSortVehicle): string | null =>
-    telemetryShipNames?.[v.name] ?? null;
-  const clientShipNameOf = list.every((v) => (clientShipName(v) ?? "") !== "")
-    ? clientShipName
-    : undefined;
+  const clientShipNameOf = clientNameResolver(list) ?? undefined;
   const compareOptions: TabRowCompareOptions = {
     locale,
     clanTagOf: (v) => stats.get(cacheKey(v.name))?.clanTag ?? null,
@@ -1064,12 +1091,12 @@ function sideFullOrder(side: SunkSide): string[] {
       : list;
   // Game-true sort keys: only a FULLY covered list switches the sort
   // (game-true and inferred rows must never interleave) — the verdict
-  // lives in sideOrderExact above (full per-side coverage, never a
+  // lives in keyCoverageExact above (full per-side coverage, never a
   // ship-name-order client).
   const keyOf = telemetrySortKeys
     ? (v: (typeof list)[number]) => telemetrySortKeys![v.name]
     : undefined;
-  const useClientKeys = sideOrderExact(side);
+  const useClientKeys = keyCoverageExact(side);
   const clientKeyOf = useClientKeys
     ? (v: (typeof list)[number]) => {
         const key = keyOf!(v) as string;

@@ -402,21 +402,30 @@ export default defineComponent({
     const liveSides = computed(() =>
       splitLiveRosterSides(props.arena?.vehicles ?? [], operation.value),
     );
-    /** True when this battle's telemetry sort-key map covers EVERY name
-     *  of the live split — the exact-order gate for the pill and the
-     *  orderForTab override alike. Partial coverage must not interleave
-     *  game-true rows with inferred ones, so anything less grades
-     *  partial. An empty roster (no battle) is never exact. */
+    /** True when the believed row order is the game's OWN — the
+     *  exact-order gate for the pill (orderForTab's key override keys on
+     *  the sort-key map separately, below). Partial coverage must not
+     *  interleave game-true rows with inferred ones, so anything less
+     *  grades partial. An empty roster (no battle) is never exact. Two
+     *  roads to exact: the WG family's full sort-key coverage, and —
+     *  released 2026-10-18 on the calibration evidence (see the design
+     *  doc) — the CN name-order arrangement with client-truth ship
+     *  names for EVERY row of BOTH sides (telemetry shipNames or the
+     *  synthesized record lift): the comparator's inputs are then the
+     *  strings the client renders, and its tie rule (player-name pinyin)
+     *  is the calibrated one. */
     const telemetryExactOrder = (): boolean => {
       void sortKeyEpoch.value;
-      if (!telemetrySortKeys) return false;
-      // A ship-name-order client (CN) never renders the key order — its
-      // HUD re-sorts by the localized name — so even a covering map
-      // cannot grade exact there (the 2026-10-10 Lesta lesson, applied to
-      // the one realm that still re-sorts).
-      if (realmUsesShipNameOrder(realm.value)) return false;
       const sides = liveSides.value;
       if (sides.allies.length + sides.enemies.length === 0) return false;
+      if (realmUsesShipNameOrder(realm.value)) {
+        const nameOf = (v: VehicleEntry): string | null =>
+          telemetryShipNames?.[v.name] ?? v.shipName ?? null;
+        return [...sides.allies, ...sides.enemies].every(
+          (v) => (nameOf(v) ?? "") !== "",
+        );
+      }
+      if (!telemetrySortKeys) return false;
       for (const v of [...sides.allies, ...sides.enemies]) {
         if (!telemetrySortKeys[v.name]) return false;
       }
