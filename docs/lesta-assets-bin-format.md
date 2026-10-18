@@ -161,3 +161,47 @@ export-ship still trips deeper in (the tail layout past +0x30 differs),
 so the full-fidelity Rust port remains future work, but anyone resuming
 it should start from the UNOODLE-decoded file and distrust every
 conclusion above that was drawn from ooz output.
+
+## Phase 5 (2026-10-18): the WG-format records are a minority; ship visuals mostly new-format
+
+Motivated by wanting secondary/AA mount placements for the Lesta-only
+bakes (splash boxes anchor main turrets only — the `CM_SB_ss_*` boxes
+turn out to be superstructure hit volumes, not secondary mounts). The
+mount transforms exist ONLY in the visual prototypes, so this phase
+re-audited how much of the visual store is actually WG-parseable,
+starting from the unoodle-decoded `content/assets.bin` (223,841,548 B):
+
+- **blob1 (abs 85,695,377, size 78,349,548, count 39,793) holds WG-layout
+  VisualPrototype records at `base + 0x10 + rec*0x70` — but only a
+  minority parse**: a full-stride scan with a strict sanity gate
+  (nodes_count ≤ 3000, five in-bounds relptrs, last-node matrix affine)
+  validates **5,685 / 39,793**. Zuiho's root (rec 11196) parses perfectly
+  — 7 nodes `Scene Root + Full + HP_Bow/Full/MidBack/MidFront/Stern`,
+  identity matrices — so the WG reader itself is fine; the other ~34k
+  slots hold something else (new-format records, OOL spill, or both).
+  Note the sanity gate is what phase-4's hand-check lacked: scanning
+  *every* 8-byte offset produces ~39.8k plausible-looking headers, most
+  of them false positives (their offsets mod 0x70 scatter over
+  {0,16,32,48,64,80,96}).
+- **Coverage over the 111 turret-anchored Lesta-only ships: 2** —
+  PJSC111 (rec 12352) and PFSC519 (rec 4540). New Jersey's root visual
+  (r2p `0x0069ba08`, rec 27066, both path twins agree) lands mid-blob on
+  bytes that read as a packed-transform array (f32 runs with 1.0f
+  terminators ~60 B apart, no `nodes_count` prologue) — consistent with
+  phase-4's "tail layout past +0x30 differs": reworked ships are stored
+  in the new layout, unmigrated ones keep the WG one.
+- **Why this blocks secondaries/AA**: WG `VisualPrototype` carries the
+  full node tree (names + matrices + parent chain), and GameParams'
+  `A_ATBA` / `A_AirDefense` gun entities carry the models — together
+  they are everything `export-ship` needs to mount secondaries and AA
+  (plus every boat/crane). With 109/111 ship visuals in the new format,
+  a harvest-from-the-WG-client fallback is no substitute either: only
+  11 of the 111 hull dirs still exist there verbatim (+4 more under a
+  different revision prefix), because WG pruned retired model dirs.
+- Practical consequence for `bake_lesta_ships.py`: main-turret mounting
+  stays splash-anchored (see the script's mirror calibration); universal
+  secondary/AA mounting waits on decoding the new visual record layout.
+  Suggested next probe: diff a known WG-format record (Zuiho rec 11196)
+  against the byte layout at its live r2p address to find the
+  new-format's field order, then walk NJ rec 27066 as the reworked-ship
+  specimen.
