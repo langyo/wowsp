@@ -1,0 +1,94 @@
+/* Aim-card window — self-contained styles, same conventions as the table
+   overlay's overlay.scss (this page does NOT load the app theme, colors are
+   literal, nothing may interact with the pointer). The card hangs below the
+   crosshair; one dark translucent block: the aimed player's name + ship on
+   the text face, the four career figures on the mono face. */
+
+html,
+body {
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+  overflow: hidden;
+  pointer-events: none;
+  /* Same two font roles as the table overlay (text face first for CJK
+     harmony on the shared baseline, mono for the pure-ASCII figures). */
+  --overlay-text-font: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  --overlay-num-font: Consolas, "Cascadia Mono", "Courier New", monospace;
+  font-family: var(--overlay-text-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.aim-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: rgb(10 14 20 / 62%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  color: rgb(236 241 246);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
+  white-space: nowrap;
+}
+
+.aim-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.aim-tag {
+  color: rgb(168 178 190);
+  margin-right: 0.25em;
+}
+
+.aim-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aim-ship {
+  color: rgb(168 178 190);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aim-chips {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9em;
+  font-family: var(--overlay-num-font);
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+/* .aim-num is the figure hook inside a chip: the bold mono value (the
+   color arrives inline from the tier helpers, or .aim-none's muted gray
+   for a missing figure). .aim-unit is the locale's battle-count word. */
+.aim-num {
+  font-weight: 700;
+}
+
+.aim-none,
+.aim-chip .aim-unit {
+  color: rgb(168 178 190);
+  font-weight: 400;
+}
+
+.aim-chip .aim-unit {
+  font-family: var(--overlay-text-font);
+  font-size: 0.8em;
+}

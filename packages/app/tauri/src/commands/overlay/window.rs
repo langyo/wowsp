@@ -6,11 +6,17 @@ use super::*;
 // Window management
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Create the transparent overlay window if it doesn't exist yet. Idempotent —
-/// a second call just returns without recreating. The window starts hidden;
-/// the Tab watcher shows it. `realm` (when known) is forwarded via the URL so
-/// the overlay webview can batch WG lookups without re-detecting the install.
-/// Also starts the Tab watcher thread.
+/// Create the transparent overlay windows if they don't exist yet.
+/// Idempotent — a second call just returns without recreating. The windows
+/// start hidden; the Tab watcher shows the table one on a Tab hold and the
+/// aim-card one while a battle is on. `realm` (when known) is forwarded via
+/// the URLs so the webviews can batch WG lookups without re-detecting the
+/// install. Also starts the Tab watcher thread.
+///
+/// This ONE command brings up BOTH transparent windows serving the overlay
+/// mode: the table window ([`OVERLAY_LABEL`]) and the aim-card window
+/// ([`AIM_CARD_LABEL`], the crosshair target-stats card) — one mode, two
+/// windows.
 #[tauri::command]
 pub async fn create_overlay_window(
     app: AppHandle,
@@ -21,36 +27,68 @@ pub async fn create_overlay_window(
         // The overlay window loads a PRE-RENDERED static page (bare HTML +
         // CSS + a tiny vanilla listener, built as a second Vite entry) —
         // no Vue app, no loading state, first paint is instant.
-        let mut url = "/overlay.html".to_string();
-        let mut sep = "?";
-        if let Some(r) = realm.as_deref().filter(|r| !r.is_empty()) {
-            url.push_str(sep);
-            url.push_str("realm=");
-            url.push_str(r);
-            sep = "&";
-        }
-        if let Some(l) = locale.as_deref().filter(|l| !l.is_empty()) {
-            url.push_str(sep);
-            url.push_str("locale=");
-            url.push_str(l);
-        }
-        let win = WebviewWindowBuilder::new(&app, OVERLAY_LABEL, WebviewUrl::App(url.into()))
-            .title("WoWSP Overlay")
-            .transparent(true)
-            .decorations(false)
-            .always_on_top(true)
-            .skip_taskbar(true)
-            .resizable(false)
-            .visible(false) // start hidden; shown on first Tab press
-            .inner_size(420.0, 320.0)
-            .build()
-            .map_err(|e| anyhow!("create overlay window: {e}"))?;
+        let win = WebviewWindowBuilder::new(
+            &app,
+            OVERLAY_LABEL,
+            WebviewUrl::App(overlay_page_url("/overlay.html", &realm, &locale).into()),
+        )
+        .title("WoWSP Overlay")
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .visible(false) // start hidden; shown on first Tab press
+        .inner_size(420.0, 320.0)
+        .build()
+        .map_err(|e| anyhow!("create overlay window: {e}"))?;
+        post_create_window_setup(&win);
+    }
+    if app.get_webview_window(AIM_CARD_LABEL).is_none() {
+        // The aim card: same family of pre-rendered bare-DOM pages, same
+        // click-through styling. Starts hidden; the watcher shows it while
+        // a battle is on and Tab is up.
+        let win = WebviewWindowBuilder::new(
+            &app,
+            AIM_CARD_LABEL,
+            WebviewUrl::App(overlay_page_url("/aimcard.html", &realm, &locale).into()),
+        )
+        .title("WoWSP Aim Card")
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .visible(false)
+        .inner_size(AIM_CARD_LOGICAL_SIZE.0, AIM_CARD_LOGICAL_SIZE.1)
+        .build()
+        .map_err(|e| anyhow!("create aim-card window: {e}"))?;
         post_create_window_setup(&win);
     }
     start_overlay_tab_watch(app).await
 }
 
-/// Destroy the overlay window (when overlay mode ends) and stop the watcher.
+/// The pre-rendered overlay-family page URL with the realm/locale the
+/// window's webview needs baked in (realm gates the WG batch lookups —
+/// "no realm, no guesses" — and locale picks the page's bundled copy).
+fn overlay_page_url(path: &str, realm: &Option<String>, locale: &Option<String>) -> String {
+    let mut url = path.to_string();
+    let mut sep = "?";
+    if let Some(r) = realm.as_deref().filter(|r| !r.is_empty()) {
+        url.push_str(sep);
+        url.push_str("realm=");
+        url.push_str(r);
+        sep = "&";
+    }
+    if let Some(l) = locale.as_deref().filter(|l| !l.is_empty()) {
+        url.push_str(sep);
+        url.push_str("locale=");
+        url.push_str(l);
+    }
+    url
+}
+
+/// Destroy the overlay windows (when overlay mode ends) and stop the watcher.
 /// Also stops the arena file watcher — it is owned by the overlay window's
 /// store, and closing the webview skips Vue teardown.
 #[tauri::command]
@@ -64,12 +102,14 @@ pub async fn destroy_overlay_window(app: AppHandle) -> CommandResult<()> {
     force_close_manual_locate(&app);
     stop_overlay_tab_watch().await?;
     let _ = super::arena_info::stop_arena_watcher().await;
-    if let Some(win) = app.get_webview_window(OVERLAY_LABEL) {
-        // destroy(), not close(): close() raises CloseRequested like a
-        // user-initiated close (and is subject to close interception),
-        // while this is pure programmatic teardown that must always go
-        // through.
-        win.destroy().map_err(|e| anyhow!("destroy overlay: {e}"))?;
+    for label in [OVERLAY_LABEL, AIM_CARD_LABEL] {
+        if let Some(win) = app.get_webview_window(label) {
+            // destroy(), not close(): close() raises CloseRequested like a
+            // user-initiated close (and is subject to close interception),
+            // while this is pure programmatic teardown that must always go
+            // through.
+            win.destroy().map_err(|e| anyhow!("destroy {label}: {e}"))?;
+        }
     }
     Ok(())
 }

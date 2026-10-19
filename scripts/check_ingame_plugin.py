@@ -32,7 +32,7 @@ companion app consumes:
     (shipNames — the CN name-order segment; EMPTY when the records carry
     no such field), and roster_raw.json mirrors the sequence as `order`
     for the Rust synthesizer's order preservation,
-  - heartbeat.json / request.json written with the roster count,
+  - heartbeat.json written with the roster count,
   - the scheduler survives tick-over-tick (no swallowed exception text).
 
 The GAME-TRUE sort-key path (sort_key_probe: the 'ship' collection walk
@@ -43,7 +43,7 @@ toward the 'ship' collection stays unverified in a real battle (the
 design doc's open item). The passes now pin, OFFLINE:
   - the WG shape (ship components carrying sortKey, avatar `.ship` slot
     references whose `.ref.id` matches a ship entry id): the exact key
-    table lands in telemetry AND the panel fold sorts its alive block by
+    table lands in telemetry AND the row fold sorts its alive block by
     the keys alone, stable — equal keys keep the roster's own order
     (live 2026-10-10: the client rendered two same-key rows in record
     order against the key + name concatenation's ':'-first tie);
@@ -52,7 +52,7 @@ design doc's open item). The passes now pin, OFFLINE:
   - the LESTA shape (UiComponents raising): the key table still lands —
     the path duck-types the components and must never need constants;
   - a partial-coverage shape (one avatar's reference resolves to no ship
-    entry): the key map stays partial AND that side's panel fold keeps
+    entry): the key map stays partial AND that side's row fold keeps
     the walk order (game-true and walk-order rows never interleave),
     while the fully covered side still sorts;
   - the 15.9 encoder quirk: the key table survives the hand-rolled
@@ -117,9 +117,9 @@ class StubUtils(object):
         self.encode_records = encode_records
         # True = the 15.9-style quirk: the encoder RAISES on plain dict
         # payloads it accepted in earlier builds (live WG 2026-10-09 —
-        # telemetry.json froze at its quit-clear while heartbeat/request
-        # shaped differently). The load-bearing writers must fall back to
-        # the hand-rolled serializer and keep every file flowing.
+        # telemetry.json froze at its quit-clear while the other bridge
+        # files shaped differently). The load-bearing writers must fall
+        # back to the hand-rolled serializer and keep every file flowing.
         self.fail_plain = fail_plain
         self.log_info_calls = 0
 
@@ -460,7 +460,7 @@ def build_roster(self_name="langyo", with_ship_names=True, drift_records=False):
 # germany 3, uk 4, france 5, pan_asia 7). Deliberately chosen so the
 # game-true sort (the keys alone, a STABLE sort per the live 2026-10-10
 # Lesta capture) is OBSERVABLE: it differs from the entity-walk order on
-# both sides, so the assertions below prove the panel fold really sorted
+# both sides, so the assertions below prove the row fold really sorted
 # rather than kept insertion order. The co-op bot carries one too — on
 # the real client bots are ordinary ship entities.
 SHIP_KEYS = {
@@ -624,7 +624,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
     os.makedirs(mod_dir)
     if with_manifest:
         with open(os.path.join(workdir, "bin", "8867689", "res_mods", "wowsp.toml"), "w") as fh:
-            fh.write('[tools."battle.ingame.stats"]\npanel_fade_ticks = 7\njournal_limit = 123\n')
+            fh.write('[tools."battle.ingame.stats"]\npanel_fade_ticks = 7\njournal_limit = 123\nbarcode = 0\n')
     cwd = os.getcwd()
     os.chdir(mod_dir)
     try:
@@ -646,10 +646,10 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # a reintroduced `except Exception:` raises NameError on Lesta's
         # whitelist and this pass catches it (the round-1 crash class).
         expected_cfg = ({"panel_fade_ticks": 7, "journal_limit": 123,
-                         "panel": 1, "barcode": 0, "aim": 1, "aim_offset": 120}
+                         "barcode": 0}
                         if with_manifest else
                         {"panel_fade_ticks": 3, "journal_limit": 300,
-                         "panel": 1, "barcode": 0, "aim": 1, "aim_offset": 120})
+                         "barcode": 0})
         if env.get("TOOL_CONFIG") != expected_cfg:
             failures.append("[%s] TOOL_CONFIG=%r, expected %r"
                             % (label, env.get("TOOL_CONFIG"), expected_cfg))
@@ -842,26 +842,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             failures.append("[%s] heartbeat phase=%r (expected battle)"
                             % (label, hb.get("phase")))
 
-        with open("request.json") as fh:
-            req = json.load(fh)
-        if len(req.get("players", [])) != len(expected_names):
-            failures.append("[%s] request.json players=%d (expected %d)"
-                            % (label, len(req.get("players", [])), len(expected_names)))
-        if req.get("manual") is not False:
-            failures.append("[%s] request manual is %r (must be the bool False)"
-                            % (label, req.get("manual")))
-        # Numeric ids must land as real numbers with real values — a
-        # silently-zeroed conversion (the swallowed-NameError class)
-        # would otherwise pass unnoticed.
-        for row in req.get("players", []):
-            if not isinstance(row.get("account_id"), int) or row["account_id"] <= 0:
-                failures.append("[%s] request row account_id invalid: %r"
-                                % (label, row.get("account_id")))
-            if not isinstance(row.get("ship_id"), int) or row["ship_id"] <= 0:
-                failures.append("[%s] request row ship_id invalid: %r"
-                                % (label, row.get("ship_id")))
-
-        # The panel path: with `ui` injected (WG-family clients) the panel
+        # The panel path: with `ui` injected (WG-family clients) the strip
         # must actually be driven; without it (Lesta) the paths must be a
         # silent no-op — the zero-`is not defined` contract above already
         # proves the latter.
@@ -958,14 +939,14 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             except Exception as e:
                 failures.append("[%s] order_probe.json unreadable: %r"
                                 % (label, e))
-        # The panel payload's side-channel fields: every row carries the
+        # The strip payload's row fields: every row carries the
         # WALK-sourced avatar entity id (bots included — the harness bot's
         # record has no avatar_id at all), a canonical idx (its rank in
-        # the rosterOrder bridge) and its 8-slot barcode word, and the
-        # payload declares the mode flags. The byId maps key on the walk
-        # ids — planting disjoint id spaces pins "walk id is authoritative"
-        # against the roster records' mapping keys.
-        if probe is not None and getattr(probe, "stats", None) is not None:
+        # the rosterOrder bridge) and its 8-slot barcode word. The byId
+        # maps key on the walk ids — planting disjoint id spaces pins
+        # "walk id is authoritative" against the roster records' mapping
+        # keys.
+        if probe is not None:
             roster_order, _ = probe.roster_order(probe.latest_raw)
             ranks = {n: i for i, n in enumerate(roster_order)}
             for side in ("ally", "enemy"):
@@ -1021,123 +1002,16 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                     if bits[7] is not (ones % 2 == 0):
                         failures.append("[%s] %s bits parity wrong: %r"
                                         % (label, name, bits))
-            # The mode flags the payload forwards come from the probe's
-            # OWN module config (the exec env's TOOL_CONFIG): defaults
-            # keep the panel on and the strip off. The rankless-row
-            # invalid word is pinned by the literal in the row loop above
-            # (no harness pass walks a rankless avatar).
+            # The mode flag the payload forwards comes from the probe's
+            # OWN module config (the exec env's TOOL_CONFIG): the default
+            # keeps the strips off (the overlay watcher upserts barcode=1
+            # when its mode starts). The rankless-row invalid word is
+            # pinned by the literal in the row loop above (no harness
+            # pass walks a rankless avatar).
             env_cfg = env.get("TOOL_CONFIG") or {}
-            if env_cfg.get("panel") != 1 or env_cfg.get("barcode") != 0:
-                failures.append("[%s] default mode flags flipped: %r"
+            if env_cfg.get("barcode") != 0:
+                failures.append("[%s] default mode flag flipped: %r"
                                 % (label, env_cfg))
-            # The crosshair aim panel's payload (aim_block): columns and
-            # stats are planted straight onto the probe here (the
-            # response.json application is exercised by the aim_duck pass
-            # below). Non-raising passes expect Foe03 + his localized ship
-            # name and the winrate/pr bands; a null column value renders
-            # the translucent dash. The raising (Lesta) passes expect the
-            # hidden shape.
-            if not raising_constants:
-                probe.aim_cols = [{"metric": "winrate", "label": "WR"},
-                                  {"metric": "pr", "label": "PR"}]
-                probe.stats["Foe03"] = {"name": "Foe03", "wr": 52.5,
-                                        "pr": 1234, "aim": [52.5, 1234]}
-            aim = probe.aim_block()
-            if raising_constants:
-                if aim.get("on") is not False or aim.get("name"):
-                    failures.append("[%s] aim panel must stay hidden without "
-                                    "the walk: %r" % (label, aim))
-            else:
-                if aim.get("on") is not True or aim.get("name") != "Foe03":
-                    failures.append("[%s] aim panel not on Foe03: %r"
-                                    % (label, aim))
-                expected_ship = SHIP_LOCALIZED["Foe03"] if with_ship_names else ""
-                if aim.get("ship") != expected_ship:
-                    failures.append("[%s] aim ship=%r, expected %r"
-                                    % (label, aim.get("ship"), expected_ship))
-                if aim.get("offset") != 120:
-                    failures.append("[%s] aim offset=%r (default 120)"
-                                    % (label, aim.get("offset")))
-                vals = aim.get("vals")
-                if not isinstance(vals, list) or len(vals) != 2:
-                    failures.append("[%s] aim vals=%r, expected 2 columns"
-                                    % (label, vals))
-                else:
-                    if vals[0].get("t") != "52.5%" or vals[0].get("c") != 0xFFFFEE66:
-                        failures.append("[%s] aim winrate cell=%r"
-                                        % (label, vals[0]))
-                    if vals[1].get("t") != "1234" or vals[1].get("c") != 0xFFFFEE66:
-                        failures.append("[%s] aim pr cell=%r"
-                                        % (label, vals[1]))
-            # The hide gates: an explicitly EMPTY column list (the user
-            # removed every card) and the wowsp.toml aim switch must both
-            # stand the panel down — and restore for the next assertion.
-            saved_cols = probe.aim_cols
-            probe.aim_cols = []
-            if probe.aim_block().get("on") is not False:
-                failures.append("[%s] empty aimCols must hide the panel"
-                                % label)
-            probe.aim_cols = saved_cols
-            saved_aim = env_cfg.get("aim", 1)
-            env_cfg["aim"] = 0
-            try:
-                if probe.aim_block().get("on") is not False:
-                    failures.append("[%s] aim=0 must hide the panel" % label)
-            finally:
-                env_cfg["aim"] = saved_aim
-            # The response.json application (aim_duck pass only): aimCols
-            # sanitize + the row's aligned `aim` values + the formatted
-            # panel. Unknown metrics drop; a null value renders '--'.
-            if aim_duck and not raising_constants:
-                payload = {"version": 1, "session": probe.session,
-                           "revision": (probe.revision or 0) + 5,
-                           "rows": [{"name": "Foe03", "wr": 52.5, "pr": 1234,
-                                     "state": "ok",
-                                     "bf": {"battles": 4321, "ishidden": False},
-                                     "aim": [52.5, 1234, None, 28500.0]}],
-                           "labels": {"wr": "WR", "pr": "PR",
-                                      "ally": "A", "enemy": "E"},
-                           "aimCols": [
-                               {"scope": "global", "metric": "winrate",
-                                "label": "胜率"},
-                               {"scope": "global", "metric": "pr",
-                                "label": "PR"},
-                               {"scope": "global", "metric": "bogus",
-                                "label": "X"},
-                               {"scope": "global", "metric": "battles",
-                                "label": "场次"},
-                               {"scope": "global", "metric": "damage",
-                                "label": "均伤"}]}
-                with open("response.json", "w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, ensure_ascii=False)
-                    fh.write("\n")
-                probe.read_response()
-                if probe.aim_cols != [{"metric": "winrate", "label": "胜率"},
-                                      {"metric": "pr", "label": "PR"},
-                                      {"metric": "battles", "label": "场次"},
-                                      {"metric": "damage", "label": "均伤"}]:
-                    failures.append("[%s] aimCols sanitize wrong: %r"
-                                    % (label, probe.aim_cols))
-                row = probe.stats.get("Foe03") or {}
-                if row.get("aim") != [52.5, 1234, None, 28500.0]:
-                    failures.append("[%s] response aim row wrong: %r"
-                                    % (label, row.get("aim")))
-                vals = probe.aim_block().get("vals")
-                texts = [v.get("t") for v in vals] if isinstance(vals, list) else None
-                if texts != ["52.5%", "1234", "--", "28500"]:
-                    failures.append("[%s] aim panel texts=%r" % (label, texts))
-                # A MALFORMED aimCols (not a list / overlong) is ignored,
-                # never collapsed into the explicit-empty hide gate.
-                saved_cols = probe.aim_cols
-                payload["aimCols"] = "junk"
-                payload["revision"] += 1
-                with open("response.json", "w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, ensure_ascii=False)
-                    fh.write("\n")
-                probe.read_response()
-                if probe.aim_cols != saved_cols:
-                    failures.append("[%s] malformed aimCols mutated state: %r"
-                                    % (label, probe.aim_cols))
         if "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))
@@ -1218,9 +1092,8 @@ def main(argv):
                  "none", True, False, failures, raw_collection=False)
     # The aim-duck pass: UiComponents resolves but carries no `target`
     # attribute, so the aim walk must fall back to duck-typing the raw
-    # components mapping — same Foe03 pick, plus the response.json
-    # aimCols application (sanitize + aligned row values + formatted
-    # panel, null column renders '--').
+    # components mapping — same Foe03 pick, asserted through telemetry's
+    # per-tick 'aim' verdict.
     with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
         run_once(plugin_src, workdir, True, True, False, False, False,
                  "full", True, False, failures, aim_duck=True)

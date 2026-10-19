@@ -35,27 +35,28 @@ everything to the WoWSP app through flat JSON files in its own directory:
 The in-game reported version is pinned at `0.1.0` by owner decision;
 iteration happens in git history only.
 
-## The retired in-game rendering
+## The removed in-game rendering
 
 The app's 游戏内展示 (in-game panel) view mode — the plugin rendering
 stats tables and a crosshair mini-panel INSIDE the game through the
 unbound view — was retired on 2026-10-19 together with its stats bridge
 (the app no longer ships the bridge responder, and a stored
 `table = "ingame"` pick migrates to the transparent-overlay mode). The
-rendering sources stay in the tree but are permanently dormant:
+plugin side is REMOVED, not dormant:
 
-- The unbound view (`src/WoWSPProbe.unbound`) remains mounted ONLY for
-  the capture side channel's barcode strips (next section). Its
-  stats-table and aim-panel branches key off the probe's wowsp.toml
-  `panel` flag, and the overlay watcher declares `panel = 0` on every
-  game session — the in-game rendering can never light up.
-- Main.py still writes the once-per-stabilized-roster `request.json`
-  and reads `response.json`, but no app build answers anymore: at most
-  one deduped "response timeout" line per request (a roster change
-  re-arms it), no retry loop.
+- Main.py no longer writes `request.json`, reads `response.json`, writes
+  `manual_refresh.flag`, or puts the one-shot `wowspProbe.status` data
+  component — the side-channel set is exactly heartbeat / roster_raw /
+  roster_journal / telemetry / order_probe.
+- The unbound view (`src/WoWSPProbe.unbound`) renders ONLY the capture
+  side channel's barcode strips (next section); the stats tables, the
+  crosshair aim panel and their CSS/elements are cut from the file.
 - The per-player stats columns and the aim panel's companion-configured
-  column list (the settings' drag-card aim list) died with the bridge;
-  the aim verdict itself lives on as pure telemetry.
+  column list died with the bridge; the aim verdict itself lives on as
+  pure telemetry (`aim`: `{name, flags}` on every tick), with the
+  client's lock masks (`AIM_LOCKABLE`/`AIM_MAIN_BITS`) still pinned in
+  Main.py. The tool config table keeps only `panel_fade_ticks`,
+  `journal_limit` and `barcode`.
 
 Replay playback does not mount unbound battle views. The transparent
 overlay's chips drop their nickname column per side when the probe's
@@ -71,8 +72,8 @@ in the telemetry `rosterOrder` — the overlay's capture pipeline decodes
 the blocks back into exact per-row attribution (see the design doc for
 the frozen geometry/encoding contract and the decoder spec). The strip
 is gated by the probe's wowsp.toml `barcode` key: the overlay watcher
-declares `barcode = 1` when it starts (`panel = 0` alongside it), and
-the probe re-reads the table at every battle start.
+declares `barcode = 1` when it starts, and the probe re-reads the table
+at every battle start.
 
 ## Sandbox rules the code must obey
 
@@ -97,7 +98,7 @@ afterwards.
 ```
 packages/ingame-plugin/
   src/Main.py                    the mod (installed to PnFMods/WoWSPProbe)
-  src/WoWSPProbe.unbound         unbound view (barcode strips; the panel/aim rendering is retired)
+  src/WoWSPProbe.unbound         unbound view (barcode strips only; the in-game rendering is removed)
   README.md                      this file
 ```
 

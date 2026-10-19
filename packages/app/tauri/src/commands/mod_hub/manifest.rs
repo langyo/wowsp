@@ -583,16 +583,14 @@ mod tests {
         let dir = tmp_res_mods("setvals");
         let mut defaults = BTreeMap::new();
         defaults.insert("panel_fade_ticks".to_string(), 3i64);
-        defaults.insert("panel".to_string(), 1i64);
+        defaults.insert("barcode".to_string(), 0i64);
         seed_tool_config(&dir, "battle.ingame.stats", &defaults);
-        // The overlay watcher's declaration: flip the mode pair only.
+        // The overlay watcher's declaration: flip the strip switch only.
         let mut values = BTreeMap::new();
-        values.insert("panel".to_string(), 0i64);
         values.insert("barcode".to_string(), 1i64);
         set_tool_values(&dir, "battle.ingame.stats", &values);
         let m = load(&dir).manifest;
         let table = &m.tools["battle.ingame.stats"];
-        assert_eq!(table.get("panel").unwrap().as_integer(), Some(0));
         assert_eq!(table.get("barcode").unwrap().as_integer(), Some(1));
         assert_eq!(
             table.get("panel_fade_ticks").unwrap().as_integer(),
@@ -606,10 +604,10 @@ mod tests {
         let m = load(&dir).manifest;
         assert_eq!(
             m.tools["battle.ingame.stats"]
-                .get("panel")
+                .get("barcode")
                 .unwrap()
                 .as_integer(),
-            Some(0)
+            Some(1)
         );
         fs::remove_dir_all(&dir).ok();
     }
@@ -903,8 +901,8 @@ pub(crate) enum ManifestOp {
     /// Unconditionally set the given keys of one tool's table (creating
     /// the table when absent): unlike [`ManifestOp::SeedTool`] this
     /// OVERWRITES existing values — the caller owns the semantics of the
-    /// keys it sets (e.g. the probe's panel/barcode view-mode switches,
-    /// which the active mode's consumer declares when it starts).
+    /// keys it sets (e.g. the probe's barcode strip switch, which the
+    /// active overlay mode declares when it starts).
     SetToolValues {
         res_mods: PathBuf,
         tool: String,

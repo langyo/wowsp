@@ -140,6 +140,15 @@ pub(super) fn place_and_show(app: &AppHandle, anchor: &OverlayAnchor) {
 /// Raw Win32 placement: async `SetWindowPos` + `ShowWindowAsync(SW_SHOWNOACTIVATE)`.
 #[cfg(target_os = "windows")]
 fn place_and_show_async(hwnd: windows::Win32::Foundation::HWND, r: &Rect) {
+    place_window_async(hwnd, r);
+    show_async(hwnd);
+}
+
+/// Raw Win32 move/resize with the topmost band re-asserted, no show — the
+/// geometry half of [`place_and_show_async`], shared with the aim-card
+/// window's placement pass (which shows/hides on its own edges).
+#[cfg(target_os = "windows")]
+fn place_window_async(hwnd: windows::Win32::Foundation::HWND, r: &Rect) {
     use windows::Win32::UI::WindowsAndMessaging::{
         HWND_TOPMOST, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SetWindowPos,
     };
@@ -168,7 +177,6 @@ fn place_and_show_async(hwnd: windows::Win32::Foundation::HWND, r: &Rect) {
             r.height.max(1),
             SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE,
         );
-        show_async(hwnd);
     }
 }
 
@@ -228,3 +236,86 @@ pub(super) fn hide_overlay(app: &AppHandle) {
 
 #[cfg(not(target_os = "windows"))]
 pub(super) fn hide_overlay(_app: &AppHandle) {}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Aim-card window (the second transparent overlay window)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The aim card's rect over this game window: centered horizontally on the
+/// game window, hanging [`AIM_CARD_HANG_PX`] (DPI-scaled) below the game
+/// window's vertical center — where the crosshair sits — and clamped so the
+/// card never leaves the game rect (the game rect is already
+/// monitor-clamped, so this stays multi-monitor safe). Pure math;
+/// unit-tested.
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn aim_card_rect(game: &Rect, dpi_scale: f32) -> Rect {
+    let s = dpi_scale.max(1.0);
+    let w = (AIM_CARD_LOGICAL_SIZE.0 * f64::from(s)).round() as i32;
+    let h = (AIM_CARD_LOGICAL_SIZE.1 * f64::from(s)).round() as i32;
+    let hang = (AIM_CARD_HANG_PX * s).round() as i32;
+    let x = game.x + (game.width - w).max(0) / 2;
+    let y = (game.y + game.height / 2 + hang).clamp(game.y, (game.y + game.height - h).max(game.y));
+    Rect {
+        x,
+        y,
+        width: w.max(1),
+        height: h.max(1),
+    }
+}
+
+/// Move/resize the aim-card window over this game window. Returns false
+/// when the window does not exist (creation is async — the caller must not
+/// stamp its placed-rect cache from a no-op).
+#[cfg(target_os = "windows")]
+pub(super) fn place_aim_card(app: &AppHandle, game_rect: &Rect, dpi_scale: f32) -> bool {
+    let Some(win) = app.get_webview_window(AIM_CARD_LABEL) else {
+        return false;
+    };
+    let Ok(hwnd) = win.hwnd() else {
+        return false;
+    };
+    place_window_async(
+        windows::Win32::Foundation::HWND(hwnd.0),
+        &aim_card_rect(game_rect, dpi_scale),
+    );
+    true
+}
+
+/// Bring the aim-card window back onto the topmost band and show it without
+/// activating (the topmost bit does not survive ordinary use — see
+/// [`place_window_async`]).
+#[cfg(target_os = "windows")]
+pub(super) fn show_aim_card(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(AIM_CARD_LABEL)
+        && let Ok(hwnd) = win.hwnd()
+    {
+        reassert_topmost(windows::Win32::Foundation::HWND(hwnd.0));
+        show_async(windows::Win32::Foundation::HWND(hwnd.0));
+    }
+}
+
+/// Hide the aim-card window (Tab held, picker open, battle gone). Native
+/// hide only — the card page's content visibility is data-driven (the
+/// telemetry aim verdict), so no HTML-level event is needed.
+#[cfg(target_os = "windows")]
+pub(super) fn hide_aim_card(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(AIM_CARD_LABEL)
+        && let Ok(hwnd) = win.hwnd()
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindowAsync};
+        unsafe {
+            let _ = ShowWindowAsync(windows::Win32::Foundation::HWND(hwnd.0), SW_HIDE);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn place_aim_card(_app: &AppHandle, _game_rect: &Rect, _dpi_scale: f32) -> bool {
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn show_aim_card(_app: &AppHandle) {}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn hide_aim_card(_app: &AppHandle) {}

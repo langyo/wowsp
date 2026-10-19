@@ -268,12 +268,10 @@ pub(crate) fn install_probe_files(game_root: &str) -> anyhow::Result<String> {
         let mut defaults = BTreeMap::new();
         defaults.insert("panel_fade_ticks".to_string(), 3i64);
         defaults.insert("journal_limit".to_string(), 300i64);
-        // The view-mode pair's install baseline: both rendering switches
-        // off. The overlay watcher owns the screen and re-declares the
-        // pair (panel off, barcode strips on) every game session; the
-        // in-game rendering family is retired with the app's in-game
-        // display mode.
-        defaults.insert("panel".to_string(), 0i64);
+        // The strip switch's install baseline: off. The overlay watcher
+        // owns the screen and re-declares it (barcode strips on) every
+        // game session; the probe's former `panel` half is gone with the
+        // retired in-game display mode.
         defaults.insert("barcode".to_string(), 0i64);
         super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::SeedTool {
             res_mods: dir.clone(),

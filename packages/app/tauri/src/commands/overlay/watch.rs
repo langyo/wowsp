@@ -183,7 +183,7 @@ pub(super) struct WatchFsm {
     /// When the last arena-watcher dir re-check ran (see `watch_tab_tick`).
     pub(super) last_watcher_dir_check: Option<Instant>,
     /// Whether the overlay mode has been declared in the probe's
-    /// wowsp.toml for the CURRENT game session (panel = 0 / barcode = 1):
+    /// wowsp.toml for the CURRENT game session (barcode = 1):
     /// the declaration runs once per game-window acquisition so a running
     /// watcher costs nothing per tick, and re-runs for each new session.
     pub(super) declared_overlay_mode: bool,
@@ -215,6 +215,17 @@ pub(super) struct WatchFsm {
     pub(super) calibration: CalibrationCtx,
     /// When the hardware screen fingerprint was last recomputed.
     pub(super) last_screen_check: Option<Instant>,
+    /// Whether the aim-card window (the second transparent overlay window —
+    /// the crosshair target-stats card) is logically shown. The card's want
+    /// is "battle active + game focused + Tab up": while Tab is held the
+    /// table overlay owns the screen, and in port there is nothing to aim
+    /// at. The card PAGE decides its own content visibility from the
+    /// telemetry aim verdict; this flag only drives the native window.
+    pub(super) aim_card_shown: bool,
+    /// Game rect the aim card was last placed at — placement is skipped
+    /// while the game window has not moved/resized. `None` forces the next
+    /// show to place first.
+    pub(super) aim_card_placed: Option<Rect>,
 }
 
 /// Push a detection-status report to ALL windows — but only when it differs
@@ -255,12 +266,12 @@ pub(super) fn report_status(
 }
 
 /// Declare the overlay view mode in the probe's wowsp.toml table
-/// (`panel = 0`, `barcode = 1`): the probe re-reads the table at every
-/// battle start, so its unbound view keeps the stats tables dark (no
-/// app build answers the probe's stats requests anymore — no '--'
-/// duplicate beside the overlay) and renders the capture side channel's
-/// barcode strips instead. Only touches an install that actually carries
-/// the probe.
+/// (`barcode = 1`): the probe re-reads the table at every battle start, so
+/// its unbound view renders the capture side channel's barcode strips while
+/// the overlay mode owns the screen. (The probe's former `panel` half — the
+/// in-game stats tables — is gone with the retired in-game display mode; no
+/// app build answers the probe's stats requests anymore.) Only touches an
+/// install that actually carries the probe.
 #[cfg(target_os = "windows")]
 fn declare_overlay_mode() {
     let Some(resolved) = super::super::game_context::resolve_root(
@@ -281,9 +292,7 @@ fn declare_overlay_mode() {
         super::super::mod_hub::manifest::ManifestOp::SetToolValues {
             res_mods,
             tool: "battle.ingame.stats".into(),
-            values: [("panel".to_string(), 0i64), ("barcode".to_string(), 1i64)]
-                .into_iter()
-                .collect(),
+            values: [("barcode".to_string(), 1i64)].into_iter().collect(),
         },
     );
 }
@@ -311,9 +320,12 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
         }
         std::thread::sleep(POLL_INTERVAL);
     }
-    // Never leave the overlay behind when the watcher dies.
+    // Never leave the overlays behind when the watcher dies.
     if fsm.overlay_shown {
         hide_overlay(&app);
+    }
+    if fsm.aim_card_shown {
+        hide_aim_card(&app);
     }
     // Nor a leftover badge in the main window: drop the panel to idle (a
     // no-op when the last emitted state already was idle). The manual anchor
@@ -593,9 +605,8 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     }
 
     // Declare the OVERLAY view mode in the probe's wowsp.toml once per
-    // game session (panel = 0 / barcode = 1 — the capture side channel's
-    // strips own the screen; the in-game '--' tables stay dark): the
-    // probe re-reads the table at every battle start.
+    // game session (barcode = 1 — the capture side channel's strips own
+    // the screen): the probe re-reads the table at every battle start.
     if game.is_some() != fsm.declared_overlay_mode {
         fsm.declared_overlay_mode = game.is_some();
         if fsm.declared_overlay_mode {
@@ -649,6 +660,36 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     let picker_open = manual_locate_open();
     if picker_open && game.is_none() {
         force_close_manual_locate(app);
+    }
+
+    // AIM-CARD pass — the second transparent window serving the one overlay
+    // mode: shown while a battle is active and the game is focused, hidden
+    // while Tab is held (the table overlay owns the screen then), the
+    // picker is open, or the mode/battle is gone. Placement hangs the card
+    // below the game window's center (the crosshair) and follows every
+    // game-window move; the PAGE decides its own content visibility from
+    // the telemetry aim verdict, so this only drives the native window and
+    // costs two flag compares per idle tick.
+    let want_aim_card = focused_on_game && battle_known && !table_off && !picker_open && !tab_down;
+    if want_aim_card {
+        if let Some(g) = game.as_ref() {
+            let rect = rect_from_win32(g.rect);
+            // A moved/resized game window re-places; a no-op placement
+            // (window not created yet — creation is async) must not stamp
+            // the cache, or the card would stay unplaced after creation.
+            if fsm.aim_card_placed.as_ref() != Some(&rect)
+                && place_aim_card(app, &rect, window_dpi_scale(g.hwnd))
+            {
+                fsm.aim_card_placed = Some(rect);
+            }
+            if !fsm.aim_card_shown && app.get_webview_window(AIM_CARD_LABEL).is_some() {
+                show_aim_card(app);
+                fsm.aim_card_shown = true;
+            }
+        }
+    } else if fsm.aim_card_shown {
+        hide_aim_card(app);
+        fsm.aim_card_shown = false;
     }
 
     let battle = super::arena_info::last_arena_stamp();

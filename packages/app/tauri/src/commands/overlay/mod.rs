@@ -96,10 +96,25 @@
 //! battle or a moved/resized game window silently expires it back to the
 //! automatic flow; hiding the overlay does NOT.
 //!
-//! The overlay window is created lazily by `create_overlay_window` (called
+//! The overlay windows are created lazily by `create_overlay_window` (called
 //! once when overlay mode starts, hidden) and destroyed by
 //! `destroy_overlay_window` (when the game exits or overlay mode is turned
 //! off). The main shell window keeps running underneath.
+//!
+//! TWO windows serve this ONE mode: the table window (`overlay`, everything
+//! above) and the AIM CARD (`aim-card`) — the second transparent window that
+//! hangs below the game window's center (the crosshair) while a battle is
+//! on and Tab is up, showing the aimed player's stats. The card's data is
+//! the in-game probe's per-tick `aim` verdict (telemetry.json, relayed to
+//! the page by the telemetry poller's `wowsp://ingame-telemetry` event);
+//! the page resolves the name through the same WG batch command the table
+//! page uses, so the three surfaces share one session cache. The watcher
+//! owns the card's native window only (the per-tick pass at the top of
+//! `watch_tab_tick`): shown while the battle is on, hidden while Tab is
+//! held (the table owns the screen then), placed at the game center + the
+//! [`AIM_CARD_HANG_PX`] hang. What the card DRAWS is the page's own
+//! data-driven decision — the native visibility and the content never
+//! gate each other.
 //!
 //! Threading: every command here is `async` so it runs on the Tauri async
 //! runtime, NOT the main/UI thread — sync commands execute inline on the
@@ -124,6 +139,25 @@ use super::{appdata, arena_info, overlay_config, overlay_detect, overlay_manual,
 
 /// Label of the dedicated overlay window (distinct from "main").
 const OVERLAY_LABEL: &str = "overlay";
+
+/// Label of the aim-card window — the SECOND transparent overlay window
+/// serving the one overlay mode: it hangs below the game window's center
+/// (the crosshair) during battles and shows the aimed player's stats, fed
+/// by the in-game probe's telemetry `aim` verdict. Created and destroyed
+/// together with the table window ([`create_overlay_window`] /
+/// [`destroy_overlay_window`]); the watcher drives its visibility and
+/// placement.
+const AIM_CARD_LABEL: &str = "aim-card";
+
+/// The aim card's creation size (logical px) — one name/ship line plus the
+/// metric chip line. Placement resizes the window to the DPI-scaled
+/// physical rect on every game-window change anyway; this only sizes the
+/// first paint.
+const AIM_CARD_LOGICAL_SIZE: (f64, f64) = (380.0, 120.0);
+/// Physical-px hang of the card's top edge below the game window's vertical
+/// center (where the crosshair sits), before DPI scaling — the same offset
+/// the retired in-game panel hung below the stage center.
+const AIM_CARD_HANG_PX: f32 = 120.0;
 
 /// Minimum accepted size (physical px) of a manual roster selection, per
 /// axis — anything smaller cannot carry a readable table row.
@@ -304,7 +338,8 @@ use manual::{
 #[cfg(test)]
 use manual::{manual_row_centers, validate_manual_selection};
 use placement::{
-    hide_overlay, place_and_show, reassert_topmost, show_async, tab_held_for, tab_key_down,
+    hide_aim_card, hide_overlay, place_aim_card, place_and_show, reassert_topmost, show_aim_card,
+    show_async, tab_held_for, tab_key_down,
 };
 use reconcile::{HeldStatus, held_status, pin_matches, revalidate_pinned_anchor, sink_check_pass};
 #[cfg(test)]
