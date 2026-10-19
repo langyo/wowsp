@@ -10,7 +10,10 @@ pub(crate) struct DetectedRoster {
     /// The team-list rectangle (header bar top → last row bottom,
     /// green bar left → red bar right).
     pub rect: Rect,
-    /// Vertical center of each player row, top to bottom. Length equals
+    /// Vertical center of each player row, per TEAM BLOCK: the ally block
+    /// top→bottom, then the enemy block (also top→bottom — both hang under
+    /// the shared header, so the concatenation descends once at the block
+    /// boundary; see `roster_plausible`'s ROWS gate). Length equals
     /// `expected_players` when the arena hint was available (short counts
     /// are extended with the median pitch).
     pub row_centers: Vec<i32>,
