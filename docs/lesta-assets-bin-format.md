@@ -492,3 +492,20 @@ The blob2 recursive-cell grammar stays uncracked — but with the SDK
 dump covering the holdouts, the remaining business case for that
 crack is empty unless Lesta ships new hulls absent from a community
 dump.
+
+### Phase 11b: the source audit for the last two holdouts
+
+Hanko (PRSC517) and Borodino_04 (PRSB503) are in neither the 26.10.0
+nor the 26.9.0 ModsSDK archives (the maintainer keeps only two recent
+versions on the Drive; the 26.1.0 folder referenced in a forum status
+is gone), the forum hosts no per-ship dumps, gamemodels3d covers WG
+only, and none of the Drive's tools touch assets.bin (pfsunpack2 is
+pkg-only; geometrypack is a primitives repacker; MKGeometryPatcher is
+a 363 MB Flex/AIR GUI with no blob reader; FlexSDK is an exe). The
+pkg tree carries ZERO .visual files (everything lives in assets.bin),
+and a quantized-i16 oracle scan across blob1/blob2 at nine scales for
+both ships' known mains shows no coherent cluster (single-scale
+coincidences only). Their unlock remains the developer-side Content
+SDK dump: run the client once with the official extractSources mod
+for `RSC017_Hanko` and `RSB503_Borodino_04`, drop the folders into
+the SDK dir, and pass `--sdk-dump`.
