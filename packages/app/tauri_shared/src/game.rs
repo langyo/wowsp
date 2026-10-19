@@ -89,28 +89,18 @@ pub struct AccountProfile {
     pub realm: String,
 }
 
-/// Where a playing-account observation came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum PlayingSource {
-    /// The battle roster (`tempArenaInfo.json`, local player = relation 0).
-    Arena,
-    /// The in-game plugin bridge roster (carries exact account ids).
-    Plugin,
-}
-
 /// The player OBSERVED playing on the running client — nickname from the
-/// battle roster, account id from the plugin bridge when that roster is
-/// available. Cleared when the game process exits.
+/// battle roster, exact account id when the observation carries one (the
+/// retired in-game plugin bridge was the only id feed; the field stays
+/// optional). Cleared when the game process exits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayingAccount {
     pub realm: String,
     pub nickname: String,
-    /// Exact WG account id when the plugin bridge roster provided one for
-    /// the local player; nickname matching covers the rest.
+    /// Exact WG account id when the observation carries one for the local
+    /// player; nickname matching covers the rest.
     pub account_id: Option<i64>,
-    pub source: PlayingSource,
 }
 
 /// The resolved player the surfaces should DISPLAY: the actually-playing

@@ -380,9 +380,9 @@ pub(crate) fn seed_tool_config(res_mods: &Path, tool_id: &str, defaults: &BTreeM
 
 /// Unconditionally overwrite the given keys of one tool's table (the
 /// overwrite arm of [`seed_tool_config`]): the caller owns the keys'
-/// semantics — used for the probe's view-mode switches, where the active
-/// mode's consumer (the in-game bridge or the overlay watcher) declares
-/// itself when it starts. Other keys, hand-tuned or seeded, are kept.
+/// semantics — used for the probe's view-mode switches, which the overlay
+/// watcher declares when it starts. Other keys, hand-tuned or seeded,
+/// are kept.
 pub(crate) fn set_tool_values(res_mods: &Path, tool_id: &str, values: &BTreeMap<String, i64>) {
     let loaded = load(res_mods);
     if loaded.read_only {

@@ -164,9 +164,9 @@ describe("useLiveSessionGuard", () => {
     // First identity (the battle's own player), THEN the battle ends, THEN
     // the hub re-identifies the OTHER client's player: the carve-out must
     // hold even though two consecutive identities really did differ.
-    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 1, source: "arena" });
+    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 1 });
     overlay.battleEnded = true;
-    await setPlaying(session, { realm: "ru", nickname: "Other", accountId: 9, source: "arena" });
+    await setPlaying(session, { realm: "ru", nickname: "Other", accountId: 9 });
     expect(overlay.arenaInfo).not.toBeNull();
     expect(liveSelf.model).not.toBeNull();
   });
@@ -176,8 +176,8 @@ describe("useLiveSessionGuard", () => {
     await setProcess(game, { running: true, pid: 100 });
     overlay.arenaInfo = fakeArena("2026-01-01 10:00:00");
     await seedSelfContent(liveSelf);
-    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 1, source: "arena" });
-    await setPlaying(session, { realm: "asia", nickname: "Alt", accountId: 2, source: "arena" });
+    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 1 });
+    await setPlaying(session, { realm: "asia", nickname: "Alt", accountId: 2 });
     expect(overlay.arenaInfo).toBeNull();
     expect(liveSelf.model).toBeNull();
   });
@@ -188,8 +188,8 @@ describe("useLiveSessionGuard", () => {
     overlay.arenaInfo = fakeArena("2026-01-01 10:00:00");
     await seedSelfContent(liveSelf);
     await nextTick();
-    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: null, source: "arena" });
-    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 7, source: "arena" });
+    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: null });
+    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 7 });
     expect(overlay.arenaInfo).not.toBeNull();
     expect(liveSelf.model).not.toBeNull();
   });
@@ -199,7 +199,7 @@ describe("useLiveSessionGuard", () => {
     await setProcess(game, { running: true, pid: 100 });
     overlay.arenaInfo = fakeArena("2026-01-01 10:00:00");
     await nextTick();
-    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 1, source: "arena" });
+    await setPlaying(session, { realm: "asia", nickname: "Main", accountId: 1 });
     expect(overlay.arenaInfo).not.toBeNull();
   });
 

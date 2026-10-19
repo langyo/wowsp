@@ -38,7 +38,7 @@ use std::time::{Duration, SystemTime};
 
 use tauri::{AppHandle, Emitter};
 use wowsp_tauri_shared::{
-    AccountProfile, CommandResult, PlayingAccount, PlayingSource, SessionPlayer, SessionSnapshot,
+    AccountProfile, CommandResult, PlayingAccount, SessionPlayer, SessionSnapshot,
 };
 
 /// Tauri event emitted to ALL windows whenever the resolved snapshot
@@ -137,7 +137,8 @@ fn apply_process_info(state: &mut SessionState, info: wowsp_tauri_shared::GamePr
 // ── identity matching (pure core, unit-tested) ──────────────────────────────
 
 /// Match a playing observation against the bound profiles: account id when
-/// the plugin bridge provided one (exact), else nickname on the same realm,
+/// the observation carries one (exact — the retired plugin bridge was the
+/// only feed), else nickname on the same realm,
 /// else a UNIQUE case-insensitive nickname hit (the game preserves case, but
 /// the user may have bound the profile with different capitalization).
 fn match_account(
@@ -478,7 +479,6 @@ fn record_arena_player(
         realm,
         nickname: nickname.to_string(),
         account_id,
-        source: PlayingSource::Arena,
     };
     let changed = state.playing.as_ref() != Some(&next);
     if changed {
@@ -646,7 +646,6 @@ pub fn spawn_session_poller(app: AppHandle) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wowsp_tauri_shared::PlayingSource;
 
     #[test]
     fn arena_game_root_strips_one_trailing_replays_component() {
@@ -694,7 +693,6 @@ mod tests {
                 realm: "asia".into(),
                 nickname: nickname.into(),
                 account_id: Some(99),
-                source: PlayingSource::Arena,
             };
             let display = resolve_display(Some(&playing), None, &accounts).unwrap();
             assert_eq!(
@@ -719,7 +717,6 @@ mod tests {
                 realm: "asia".into(),
                 nickname: "MAIN".into(),
                 account_id,
-                source: PlayingSource::Arena,
             };
             let display = resolve_display(Some(&playing), None, &accounts).unwrap();
             assert_eq!(display.account_id, Some(10));
@@ -884,7 +881,6 @@ mod tests {
             realm: "asia".into(),
             nickname: "Alt".into(),
             account_id: None,
-            source: PlayingSource::Arena,
         };
         let display = resolve_display(Some(&playing), None, &accounts).expect("playing resolves");
         assert_eq!(display.account_id, Some(2));
@@ -894,7 +890,6 @@ mod tests {
             realm: "asia".into(),
             nickname: "SomeoneElse".into(),
             account_id: None,
-            source: PlayingSource::Arena,
         };
         let display = resolve_display(Some(&stranger), None, &accounts).expect("shows");
         assert_eq!(display.account_id, None);

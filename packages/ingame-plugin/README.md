@@ -3,7 +3,9 @@
 The in-game companion mod for WoWSP's live-battle overlay, maintained
 here as a first-party subpackage. Design and evidence:
 [`docs/en/designs/ingame-stats-plugin.md`](../../docs/en/designs/ingame-stats-plugin.md)
-(all languages under `docs/<lang>/designs/`).
+(all languages under `docs/<lang>/designs/`; the design doc predates the
+2026-10-19 rendering retirement described below and records the full
+experiment, stats bridge included).
 
 ## What it is
 
@@ -19,14 +21,11 @@ everything to the WoWSP app through flat JSON files in its own directory:
   `entity[CC.health]`),
 - exact TAB-screen state (`input.tabModeIn/Out` SFM events) and roster
   churn (`onPlayersListUpdated`),
-- battle lifecycle marks, heartbeat, request/response stats bridge,
+- battle lifecycle marks and heartbeat,
 - the crosshair aim verdict (2026-10-18): per tick, the avatar entity
   whose `target` component carries a lockable-weapon bit
   (`flags & 0x35C7`, the client's own marker lock mask) is the aimed
-  player — latched into telemetry (`aim`), logged on every switch, and
-  rendered by the unbound view as a stats mini-panel floating under the
-  crosshair (columns companion-configured via the same drag-card editor
-  as the water table; see the design doc's aim section),
+  player — latched into telemetry (`aim`) and logged on every switch,
 - `order_probe.json` — one-shot per stabilized session: the client's
   exact-order source surface (`battle.getCollection` presence, SYNCED
   collection counts, bounded `children`/`battleInfo` container samples,
@@ -36,53 +35,44 @@ everything to the WoWSP app through flat JSON files in its own directory:
 The in-game reported version is pinned at `0.1.0` by owner decision;
 iteration happens in git history only.
 
-## The in-game display mode
+## The retired in-game rendering
 
-Besides feeding the transparent overlay window, the plugin can render
-the stats **inside the game** (the app's 游戏内展示 view mode): two stat
-tables (allies / enemies) in the client's own TAB order — the unbound
-view reads `$datahub.getCollection().getChildByPath('team.<side>.sortedAlive')`
-and maps each collection entry to its panel row by avatar id; the
-Python sort-key/walk order is the fallback when the collection is
-absent — with winrate, PR and alive-state per player, shown while Tab is
-held. The pieces:
+The app's 游戏内展示 (in-game panel) view mode — the plugin rendering
+stats tables and a crosshair mini-panel INSIDE the game through the
+unbound view — was retired on 2026-10-19 together with its stats bridge
+(the app no longer ships the bridge responder, and a stored
+`table = "ingame"` pick migrates to the transparent-overlay mode). The
+rendering sources stay in the tree but are permanently dormant:
 
-- `src/WoWSPProbe.unbound` — the unbound 2 view, auto-discovered AND
-  auto-mounted by the game from `gui/unbound2/mods/` (the folder the
-  working battle views live in; a ForgeBlueprints/ manifest was tried
-  first and never worked — those XMLs are installer-only metadata the
-  game ignores). A deliberately dumb template: it watches the probe's
-  single `wowspProbe.panel` data component and draws whatever Main.py
-  put there (rows, texts, colors, visibility are all decided in
-  Python).
-- Main.py merges the app's `response.json` stats rows into the
-  relation-walk sides (`entity_walk`: PlayerRelation.SELF/ALLY — the
-  injected `dataHub` and `battle` wrapper do not forward the client's
-  raw collection/`getChildByPath` API; the one-shot `order_probe.json`
-  records what this build does expose) and rewrites the panel component
-  whenever Tab state, ordering or alive flags change. No answer from the
-  app means no panel: the transparent-overlay view mode simply never
-  turns the bridge on.
+- The unbound view (`src/WoWSPProbe.unbound`) remains mounted ONLY for
+  the capture side channel's barcode strips (next section). Its
+  stats-table and aim-panel branches key off the probe's wowsp.toml
+  `panel` flag, and the overlay watcher declares `panel = 0` on every
+  game session — the in-game rendering can never light up.
+- Main.py still writes the once-per-stabilized-roster `request.json`
+  and reads `response.json`, but no app build answers anymore: at most
+  one deduped "response timeout" line per request (a roster change
+  re-arms it), no retry loop.
+- The per-player stats columns and the aim panel's companion-configured
+  column list (the settings' drag-card aim list) died with the bridge;
+  the aim verdict itself lives on as pure telemetry.
 
-The in-game panel carries player names itself, so the overlay's
-nickname-column question does not apply there. Replay playback does not
-mount unbound battle views; this path needs a real-battle smoke test.
-The transparent overlay's chips drop their nickname column per side when
-the probe's telemetry sort keys cover every row and the realm is not CN;
-the name cell returns on partial coverage, a stale stream, or CN.
+Replay playback does not mount unbound battle views. The transparent
+overlay's chips drop their nickname column per side when the probe's
+telemetry sort keys cover every row and the realm is not CN; the name
+cell returns on partial coverage, a stale stream, or CN.
 
 ## The capture side channel (barcode strips)
 
 In the overlay view mode the same unbound view renders, per side, a tiny
 barcode strip (top-left ally / top-right enemy) whose rows follow the
 client's own `sortedAlive` order, each row encoding that player's rank
-in the telemetry `rosterOrder` — the overlay's capture pipeline will decode
+in the telemetry `rosterOrder` — the overlay's capture pipeline decodes
 the blocks back into exact per-row attribution (see the design doc for
 the frozen geometry/encoding contract and the decoder spec). The strip
-and the stats tables are mode-gated by the probe's wowsp.toml keys
-`panel`/`barcode`: the active mode's consumer (the in-game bridge or
-the overlay watcher) declares them when it starts, and the probe
-re-reads the table at every battle start.
+is gated by the probe's wowsp.toml `barcode` key: the overlay watcher
+declares `barcode = 1` when it starts (`panel = 0` alongside it), and
+the probe re-reads the table at every battle start.
 
 ## Sandbox rules the code must obey
 
@@ -107,7 +97,7 @@ afterwards.
 ```
 packages/ingame-plugin/
   src/Main.py                    the mod (installed to PnFMods/WoWSPProbe)
-  src/WoWSPProbe.unbound         in-game panel view (gui/unbound2/mods)
+  src/WoWSPProbe.unbound         unbound view (barcode strips; the panel/aim rendering is retired)
   README.md                      this file
 ```
 

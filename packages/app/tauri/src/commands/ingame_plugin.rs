@@ -85,13 +85,16 @@ pub fn ingame_plugin_status(game_root: String) -> CommandResult<IngamePluginStat
 /// script and one installed here are byte-identical.
 const PLUGIN_SOURCE: &str = include_str!("../../../../ingame-plugin/src/Main.py");
 
-/// The visible half of the 游戏内展示 view mode: the unbound 2 view, auto
-/// discovered + mounted by the game from `gui/unbound2/mods/` — the folder
-/// every working battle view on real installs lives in (radar_timer,
-/// shot_timer, …). A `ForgeBlueprints/` manifest was tried first and never
-/// worked: those XMLs are installer-only metadata the game ignores, and
-/// `gui/unbound2/PnFMods/` is outside the scan set. No view file means the
-/// plugin stays a telemetry-only probe.
+/// The plugin's unbound 2 view — auto discovered + mounted by the game
+/// from `gui/unbound2/mods/` — the folder every working battle view on
+/// real installs lives in (radar_timer, shot_timer, …). A
+/// `ForgeBlueprints/` manifest was tried first and never worked: those
+/// XMLs are installer-only metadata the game ignores, and
+/// `gui/unbound2/PnFMods/` is outside the scan set. Shipped for the
+/// capture side channel's barcode strips — the in-game panel rendering
+/// the view also carries is retired with the 游戏内展示 mode (see
+/// packages/ingame-plugin/README.md). No view file means the plugin
+/// stays a telemetry-only probe.
 const PLUGIN_VIEW: &str = include_str!("../../../../ingame-plugin/src/WoWSPProbe.unbound");
 const VIEW_DEST: &str = "gui/unbound2/mods/WoWSPProbe.unbound";
 /// The layout #694 shipped, retired by this fix — an install (or update)
@@ -265,10 +268,12 @@ pub(crate) fn install_probe_files(game_root: &str) -> anyhow::Result<String> {
         let mut defaults = BTreeMap::new();
         defaults.insert("panel_fade_ticks".to_string(), 3i64);
         defaults.insert("journal_limit".to_string(), 300i64);
-        // The view-mode pair's install baseline: the stats panel on, the
-        // barcode strip off. The overlay watcher re-declares the pair when
-        // it starts, so a settings flip applies from the next battle on.
-        defaults.insert("panel".to_string(), 1i64);
+        // The view-mode pair's install baseline: both rendering switches
+        // off. The overlay watcher owns the screen and re-declares the
+        // pair (panel off, barcode strips on) every game session; the
+        // in-game rendering family is retired with the app's in-game
+        // display mode.
+        defaults.insert("panel".to_string(), 0i64);
         defaults.insert("barcode".to_string(), 0i64);
         super::mod_hub::manifest::hub_apply(super::mod_hub::manifest::ManifestOp::SeedTool {
             res_mods: dir.clone(),
