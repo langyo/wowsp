@@ -260,6 +260,20 @@ pub fn run() {
                 let (data_dir, cache_dir) = (paths::data_dir(), paths::cache_dir());
                 tracing::debug!(?data_dir, ?cache_dir, "writable roots resolved");
             }
+            // One line of network truth for the support bundles: every CN
+            // stats complaint of the "rosters spin forever" class ends up
+            // being either a degraded vortex or a system proxy black-holing
+            // wowsgame.cn, and this log is what tells the two apart. The
+            // proxy URL itself never lands here — manual proxies may embed
+            // credentials, so only its presence is recorded.
+            {
+                let config = commands::network::load_config();
+                tracing::info!(
+                    mode = ?config.mode,
+                    proxy_active = commands::network::effective_proxy(&config).is_some(),
+                    "network config loaded"
+                );
+            }
 
             // The frontend loads 3D models through the asset protocol from
             // the model-pack cache (paths.rs conventions: %LOCALAPPDATA%\WoWSP
