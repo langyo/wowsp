@@ -33,7 +33,7 @@
  * are the norm (same discipline as antiAir.ts).
  */
 
-type Gp = Record<string, any> | null | undefined;
+type Gp = Record<string, unknown> | null | undefined;
 
 /** Role names the ship detail views consume, in ShipUpgradeInfo spelling. */
 export type ShipPartRole =
@@ -69,16 +69,16 @@ export interface ShipParts {
   airSupport: Gp[];
 }
 
-function isDict(v: unknown): v is Record<string, any> {
+function isDict(v: unknown): v is Record<string, unknown> {
   return v != null && typeof v === "object" && !Array.isArray(v);
 }
 
 /** ShipUpgradeInfo entries keyed by upgrade name; null when absent/unparsable. */
-function upgradeInfoOf(gp: Gp): Record<string, Record<string, any>> | null {
+function upgradeInfoOf(gp: Gp): Record<string, Record<string, unknown>> | null {
   if (!isDict(gp)) return null;
   const info = gp.ShipUpgradeInfo;
   if (!isDict(info)) return null;
-  const out: Record<string, Record<string, any>> = {};
+  const out: Record<string, Record<string, unknown>> = {};
   for (const [name, ent] of Object.entries(info)) {
     if (isDict(ent)) out[name] = ent;
   }
@@ -91,7 +91,7 @@ function ucKind(ucType: unknown): string {
 }
 
 /** Role components of one upgrade entry (component NAMES per role). */
-function componentsOf(ent: Record<string, any>): Record<string, string[]> {
+function componentsOf(ent: Record<string, unknown>): Record<string, string[]> {
   const comps = ent.components;
   const out: Record<string, string[]> = {};
   if (!isDict(comps)) return out;
@@ -110,7 +110,7 @@ function componentsOf(ent: Record<string, any>): Record<string, string[]> {
  * "not referenced as anyone's prev", ties keep the first in table order.
  */
 function chainsByKind(
-  info: Record<string, Record<string, any>>,
+  info: Record<string, Record<string, unknown>>,
 ): Map<string, { head: string; end: string; names: string[] }> {
   const byKind = new Map<string, string[]>();
   for (const [name, ent] of Object.entries(info)) {
@@ -146,9 +146,9 @@ function chainsByKind(
 
 /** Component-name list for one role, at the requested configuration depth. */
 function roleComponentNames(
-  info: Record<string, Record<string, any>>,
+  info: Record<string, Record<string, unknown>>,
   chains: Map<string, { head: string; end: string; names: string[] }>,
-  hullEntry: Record<string, any>,
+  hullEntry: Record<string, unknown>,
   role: ShipPartRole,
   config: "stock" | "top",
 ): { names: string[]; explicitEmpty: boolean } {
@@ -200,7 +200,7 @@ function blocksFor(gp: Gp, names: string[]): Gp[] {
   if (!isDict(gp)) return [];
   return names
     .map((n) => gp[n])
-    .filter((b): b is Record<string, any> => isDict(b));
+    .filter((b): b is Record<string, unknown> => isDict(b));
 }
 
 /**
@@ -306,7 +306,7 @@ export function resolveShipParts(gp: Gp, config: "stock" | "top" = "top"): ShipP
  * component names (A_Artillery, A_Torpedoes, …). Torpedoes deliberately
  * have NO A_AirArmament leg — that block is aircraft catapults.
  */
-function canonicalParts(gp: Record<string, any>): ShipParts {
+function canonicalParts(gp: Record<string, unknown>): ShipParts {
   const first = (v: unknown): Gp => (isDict(v) ? v : null);
   const list = (v: unknown): Gp[] => (isDict(v) ? [v] : []);
   return {
@@ -322,11 +322,12 @@ function canonicalParts(gp: Record<string, any>): ShipParts {
 }
 
 /** HP_* mount slot entries of a component block ("HP_AGM_1" → dict). */
-export function hpSlots(block: Gp): [string, Record<string, any>][] {
+export function hpSlots(block: Gp): [string, Record<string, unknown>][] {
   if (!isDict(block)) return [];
   return Object.entries(block).filter(
-    ([k, v]) => k.startsWith("HP_") && isDict(v),
-  ) as [string, Record<string, any>][];
+    (e): e is [string, Record<string, unknown>] =>
+      e[0].startsWith("HP_") && isDict(e[1]),
+  );
 }
 
 /**
@@ -335,8 +336,8 @@ export function hpSlots(block: Gp): [string, Record<string, any>][] {
  * key (variant blocks co-listed by one upgrade entry), the first wins so
  * mounts never double-count.
  */
-export function roleHpSlots(blocks: Gp[]): [string, Record<string, any>][] {
-  const out: [string, Record<string, any>][] = [];
+export function roleHpSlots(blocks: Gp[]): [string, Record<string, unknown>][] {
+  const out: [string, Record<string, unknown>][] = [];
   const seen = new Set<string>();
   for (const block of blocks) {
     for (const [k, v] of hpSlots(block)) {

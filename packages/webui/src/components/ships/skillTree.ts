@@ -230,25 +230,28 @@ const SKILL_REQUIREMENTS: Record<string, SkillRequirement> = {
  *  dataset (its consumable needs then never ban). */
 export function skillUnavailable(
   skillCode: string,
-  profile: Record<string, any> | null | undefined,
+  profile: Record<string, unknown> | null | undefined,
   consumables?: ReadonlySet<string> | null,
 ): SkillRequirement | null {
   const req = SKILL_REQUIREMENTS[skillCode];
   if (!req) return null;
   // profile is the raw WG snake_case default_profile (same reads as
-  // shipCompare's groupApplies).
+  // shipCompare's groupApplies); the two nested blocks narrow one step off
+  // `unknown` — missing / mis-typed fields stay null-safe reads.
   const num = (v: unknown): number | null =>
     typeof v === "number" && Number.isFinite(v) ? v : null;
   const has = (v: unknown): boolean => v != null && typeof v === "object";
+  const hull = profile?.hull as { torpedoes_barrels?: unknown } | undefined;
+  const aa = profile?.anti_aircraft as { defense?: unknown } | undefined;
   switch (req) {
     case "torpedoes":
-      return (num(profile?.hull?.torpedoes_barrels) ?? 0) > 0 || has(profile?.torpedoes)
+      return (num(hull?.torpedoes_barrels) ?? 0) > 0 || has(profile?.torpedoes)
         ? null
         : "torpedoes";
     case "aa":
-      return (num(profile?.anti_aircraft?.defense) ?? 0) > 0 ? null : "aa";
+      return (num(aa?.defense) ?? 0) > 0 ? null : "aa";
     case "aaOrAsw":
-      return (num(profile?.anti_aircraft?.defense) ?? 0) > 0 || has(profile?.depth_charge)
+      return (num(aa?.defense) ?? 0) > 0 || has(profile?.depth_charge)
         ? null
         : "aaOrAsw";
     case "spotterOrFighter":

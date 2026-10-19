@@ -5,7 +5,7 @@ import { HkButton, HkIconButton, HkScrollContainer, HkTag, HkTabs, useToast } fr
 
 import NationFlag from "@/components/base/NationFlag";
 import ShipPickerModal from "@/components/ships/ShipPickerModal";
-import { COMPARE_GROUPS, groupApplies, tierLabel } from "@/utils/shipCompare";
+import { COMPARE_GROUPS, groupApplies, tierLabel, type CompareProfile } from "@/utils/shipCompare";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -161,7 +161,7 @@ export default defineComponent({
                   </thead>
                   <tbody>
                     {ships.value.map((s) => {
-                      const profile = s.defaultProfile as Record<string, any> | null;
+                      const profile = s.defaultProfile as CompareProfile | null;
                       return (
                         <tr key={s.shipId}>
                           <td class="ship-compare__sticky ship-compare__sticky--remove">

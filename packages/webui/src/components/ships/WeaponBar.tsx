@@ -8,7 +8,7 @@ import { auraBandMap, type AaBandKey } from "./antiAir";
 import type { FocusZone } from "./ShipStage";
 import "./WeaponBar.scss";
 
-type Gp = Record<string, any> | null | undefined;
+type Gp = Record<string, unknown> | null | undefined;
 
 interface WeaponCard {
   key: string;

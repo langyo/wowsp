@@ -8,7 +8,7 @@
 import "./shims";
 import { createSSRApp, type Component } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
-import { createI18n } from "vue-i18n";
+import { createI18n, type DefineLocaleMessage } from "vue-i18n";
 
 import App from "@/App";
 import HomeView from "@/views/HomeView";
@@ -18,12 +18,10 @@ import { SUPPORTED_LOCALES, type Locale } from "@/locales";
 
 const modules = import.meta.glob("../messages/*.ts", { eager: true, import: "default" }) as Record<
   string,
-  Record<string, unknown>
+  DefineLocaleMessage
 >;
 
-// `any` matches main.ts's messages typing: vue-i18n's LocaleMessage
-// shape is intentionally loose here.
-const messages: Record<string, Record<string, any>> = {};
+const messages: Record<string, DefineLocaleMessage> = {};
 for (const code of SUPPORTED_LOCALES) {
   messages[code] = modules[`../messages/${code}.ts`] ?? {};
 }

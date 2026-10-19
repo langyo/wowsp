@@ -16,6 +16,66 @@
  * ASW, aircraft) are collapsed into one gray "not applicable" cell by
  * `groupApplies`.
  */
+/** One HE/AP shell entry of the artillery block (leaves stay `unknown` —
+ *  `num()`/`fmtNum()` narrow them at each read site). */
+interface CompareShell {
+  damage?: unknown;
+  bullet_speed?: unknown;
+  penetration?: unknown;
+  burn_chance?: unknown;
+  burn_probability?: unknown;
+}
+
+/** Minimal read shape of the raw WG `default_profile` consumed here. Every
+ *  block is optional (the dump omits keys freely — WG API v15.5 also nulls
+ *  several sub-objects) and leaf values stay `unknown`. */
+export interface CompareProfile {
+  hull?: {
+    health?: unknown;
+    artillery_barrels?: unknown;
+    torpedoes_barrels?: unknown;
+  } | null;
+  armour?: { flood_damage?: unknown } | null;
+  mobility?: {
+    max_speed?: unknown;
+    rudder_time?: unknown;
+    turning_radius?: unknown;
+  } | null;
+  concealment?: {
+    detect_distance_by_ship?: unknown;
+    detect_distance_by_plane?: unknown;
+  } | null;
+  artillery?: {
+    distance?: unknown;
+    shot_delay?: unknown;
+    rotation_time?: unknown;
+    max_dispersion?: unknown;
+    barrelDiameter?: unknown;
+    barrel_diameter?: unknown;
+    caliber?: unknown;
+    slots?: Record<string, { name?: unknown }> | null;
+    shells?: { HE?: CompareShell | null; AP?: CompareShell | null } | null;
+  } | null;
+  torpedoes?: {
+    distance?: unknown;
+    torpedo_speed?: unknown;
+    max_damage?: unknown;
+    reload_time?: unknown;
+    visibility_dist?: unknown;
+  } | null;
+  depth_charge?: {
+    bomb_max_damage?: unknown;
+    max_packs?: unknown;
+    num_bombs_in_pack?: unknown;
+    reload_time?: unknown;
+  } | null;
+  torpedo_bomber?: {
+    torpedo_damage?: unknown;
+    torpedo_distance?: unknown;
+    torpedo_max_speed?: unknown;
+  } | null;
+}
+
 export interface CompareColumn {
   /** Stable column key (React-style key + lookup). */
   key: string;
@@ -26,7 +86,7 @@ export interface CompareColumn {
    * `nation` rides along because estimates like the German HE pen live on
    * the ShipInfo, not inside the profile subtree.
    */
-  get: (p: Record<string, any> | null | undefined, nation?: string) => string | null;
+  get: (p: CompareProfile | null | undefined, nation?: string) => string | null;
 }
 
 export interface CompareGroup {
@@ -60,12 +120,17 @@ function hePenEstimate(caliberMm: number | null, nation: string | undefined): nu
 /** WG API dropped the caliber field — parse it from the first gun-slot
  *  name ("406 mm/45 Mk.6 in a turret" → 406). Falls back to the legacy
  *  barrelDiameter keys when present. */
-function mainGunCaliber(art: any): number | null {
+function mainGunCaliber(art: unknown): number | null {
   if (!art || typeof art !== "object") return null;
-  const direct = num(art.barrelDiameter) ?? num(art.barrel_diameter) ?? num(art.caliber);
+  const a = art as {
+    barrelDiameter?: unknown;
+    barrel_diameter?: unknown;
+    caliber?: unknown;
+    slots?: Record<string, { name?: unknown }> | null;
+  };
+  const direct = num(a.barrelDiameter) ?? num(a.barrel_diameter) ?? num(a.caliber);
   if (direct != null) return direct;
-  const slots = art.slots as Record<string, any> | undefined;
-  const first = slots ? Object.values(slots)[0] as any : undefined;
+  const first = a.slots ? Object.values(a.slots)[0] : undefined;
   const m = typeof first?.name === "string" ? first.name.match(/(\d+(?:\.\d+)?)\s*mm/i) : null;
   return m ? Number(m[1]) : null;
 }
@@ -136,7 +201,7 @@ const HULL_COLUMNS: CompareColumn[] = [
 // ── artillery ────────────────────────────────────────────────────────────
 /** HE per-shell row shared by the heShell/hePenetration/fireChance/DPM
  *  columns — null when the profile carries no HE shell. */
-function heShellOf(p: Record<string, any> | null | undefined): Record<string, any> | null {
+function heShellOf(p: CompareProfile | null | undefined): CompareShell | null {
   const sh = p?.artillery?.shells?.HE;
   return sh && typeof sh === "object" ? sh : null;
 }
@@ -376,7 +441,7 @@ export const COMPARE_GROUPS: CompareGroup[] = [
 
 /** Whether the ship carries this weapon system at all — drives the merged
  *  gray "not applicable" cell for groups the hull can never have. */
-export function groupApplies(group: CompareGroup, p: Record<string, any> | null | undefined): boolean {
+export function groupApplies(group: CompareGroup, p: CompareProfile | null | undefined): boolean {
   const has = (v: unknown) => v != null && typeof v === "object";
   switch (group.key) {
     case "torpedoes":

@@ -41,7 +41,7 @@ export interface WeaponGroup {
   band?: "long" | "mid" | "short";
 }
 
-type Gp = Record<string, any> | null | undefined;
+type Gp = Record<string, unknown> | null | undefined;
 
 function gunIds(blocks: Gp[]): Set<string> {
   const ids = new Set<string>();
@@ -53,7 +53,7 @@ function gunIds(blocks: Gp[]): Set<string> {
 }
 
 function groupMounts(
-  slots: [string, Record<string, any>][],
+  slots: [string, Record<string, unknown>][],
   skip?: Set<string>,
 ): { barrels: number; cal: number; count: number; slots: string[] }[] {
   const groups = new Map<string, { barrels: number; cal: number; count: number; slots: string[] }>();

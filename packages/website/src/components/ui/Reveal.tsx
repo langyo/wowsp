@@ -1,4 +1,4 @@
-import { defineComponent } from "vue";
+import { defineComponent, h, type VNodeRef } from "vue";
 import { useScrollReveal } from "@/composables/useScrollReveal";
 
 /**
@@ -13,19 +13,18 @@ export default defineComponent({
   },
   setup(props, { slots }) {
     const r = useScrollReveal(props.delay);
-    return () => {
-      // Dynamic tag (string prop): the JSX intrinsic table has no index
-      // signature for it, so route through "any".
-      const Tag = props.tag as any;
-      return (
-        <Tag
-          ref={(el: Element | null) => r.setEl(el instanceof HTMLElement ? el : null)}
-          class={r.cls()}
-          style={r.style()}
-        >
-          {slots.default?.()}
-        </Tag>
+    // Dynamic tag (string prop): h() takes any tag name while keeping the
+    // ref/attr types, no escape hatch needed.
+    const setRef: VNodeRef = (el) => r.setEl(el instanceof HTMLElement ? el : null);
+    return () =>
+      h(
+        props.tag,
+        {
+          ref: setRef,
+          class: r.cls(),
+          style: r.style(),
+        },
+        slots.default?.(),
       );
-    };
   },
 });
