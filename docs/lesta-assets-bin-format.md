@@ -355,6 +355,48 @@ cracking blob2's recursive cell serialization (the phase-4 wall).
   positions do NOT match Akagi's gk boxes (y 0.30 vs 1.115) — it is a
   different Russian ship's part; r2p rec numbers do not index blob1
   slots for new-format ships.
+
+## Phase 9 (2026-10-19, evening): data-sharing audit + the WG reference source
+
+Motivated by the observation that node blocks belong to HULL DIRS (the
+.visual files live in the dir), not ships — attribution-by-content was
+only ever a dir-matching workaround. Three sharing levels audited for
+the remaining no-block hulls:
+
+- **Same hull dir**: only Mikasa_04 and Borodino_04 share their dirs
+  (with the _1904 variants and bots — none attributed either). No help.
+- **Content duplication**: a full-digest positional search for every
+  boxed main of the six hulls (any block, any name, 0.06 box). Akagi's
+  casemates exist NOWHERE readable; the others' single-main hits are
+  centerline coincidences from other nations (one 2-main Tranclucator
+  candidate is too weak to trust).
+- **Cross-client hull sharing** (the productive one): matching Lesta
+  hull-dir TAIL names against WG GameParams hull dirs
+  (`JSB271_Mikasa_1905` ↔ `JSB011_Mikasa_1905` — Lesta renumbered
+  sibling hulls WG kept). 16 Lesta-only hulls tail-match WG ships;
+  15 already have blocks; **Mikasa_04 is the one that gains**. Its WG
+  twin's export-ship nodes reproduce the Lesta splash mains through
+  the mirror to 0.025 (JGM_1 (0,0.473,-1.879) hull ↔ gk box
+  (0,0.449,+1.879) splash).
+
+`bake_lesta_ships.py` now carries `wg_reference_mounts` as the
+no-block fallback: export-ship of the tail-matched WG hull (cached
+under rawglb/wgref/), HARD-validated — every boxed Lesta main must
+agree with a WG main node through the splash mirror at 0.06, else the
+reference is rejected whole (hull revisions move turrets 0.1+; e.g.
+Borodino_04's 1904 hull vs WG's modernized Borodino correctly fails).
+glTF node matrices carry over VERBATIM into the block convention
+(both flat layouts compose x' = m0x+m4y+m8z+m12 with translation at
+12-14). Lesta's gun models are z-mirrored vs WG's own (measured on the
+76mm casemate meshes), so the splash matrix applies diag(1,1,-1)
+from the LEFT — negating the z-output row and the z translation
+(flat indices 2/6/10/14) — verified 20/20 by the thin-end muzzle
+test against WG's own world-space meshes. Mains re-key by box position (Lesta's aft JGM_16 is WG's
+JGM_2); secondaries keep WG names, mounted only when the Lesta
+GameParams lists them. Mikasa_04: 2 mains + 18 secondaries.
+
+Remaining after this pass: Akagi, Tranclucator, Patagonia, Borodino_04,
+Hanko — no readable Lesta data (recursive cells) and no WG hull twin.
 - Related hardening that DID land: revision-twin mounts of the same
   class dedupe at per-axis 0.15 (two mounts of one class cannot share
   a pivot; the fleet-wide same-class pair histogram is empty 0.05-0.15
