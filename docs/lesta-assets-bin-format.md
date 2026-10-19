@@ -397,6 +397,60 @@ GameParams lists them. Mikasa_04: 2 mains + 18 secondaries.
 
 Remaining after this pass: Akagi, Tranclucator, Patagonia, Borodino_04,
 Hanko — no readable Lesta data (recursive cells) and no WG hull twin.
+
+## Phase 10 (2026-10-19, night): the blob2 grammar probed to its walls
+
+A dedicated crack session on the five remaining hulls. Every cheap
+probe is now exhausted, with precise negative results (so the next
+pass starts at the real work, not re-falsification):
+
+**Negative results (all falsified):**
+- Node translations are NOT plain f32 triples anywhere in any of the
+  12 blobs — searched as adjacent (x,y,z) at 2e-4..3e-3 tolerance,
+  hull AND splash frames, exact WG-reference values for Mikasa_04
+  (0.4732/±1.8788 etc.) as controls. Not f16-adjacent either.
+- Not even an identity 4x4 f32 matrix exists in blob2/3/5 (Zuiho's
+  7-node all-identity root would serialize one if plain).
+- Gun-node names are NOT global string-ID u32s: a sparse whole-blob
+  search of all 1,145 gun HP IDs found exactly ONE hit in blob2
+  (a marker-zone record, below). Not inline ASCII, not FNV1a-32/64,
+  not CRC32 of the names.
+- The ModsSDK avenues hold no node data: `content.info` is a base64
+  path-redirect table; the Drive's `26.10.0.zip` (52 MB) is the
+  GUI/config dump (xml/unbound/swf); `pfsunpack2.exe` is pkg-only;
+  the client's pkg tree carries only entity `.def` scripts — the
+  visual loader is engine-side C++.
+
+**Positive structural findings (the resume map):**
+- blob2's header records start at +0x10 with ~0x80-byte root cells:
+  symmetric float-triple pairs (AABB min/max), u64 hashes, and a
+  `(child_count, byte_offset)` pair — e.g. blob2+0x10 (±0.1 AABB) →
+  child (1, 7,656,320); +0x90 (±0.12/±0.23 AABB) → child (3,
+  7,656,340). The child table entries are ~20 bytes each and recurse
+  again ((1, 38,637,944) → deep cells at 38.6 MB with render-set
+  AABBs and material hashes).
+- A 0x40-stride zone at blob2 ~1.13 MB carries name-bearing records:
+  `[u32 name_id][u32 hash][count=1][0][u32 off2][0][f32 a][0][f32 b]
+  [0][f32 -a][f32 d][f32 -b][0][u64 hash]` — symmetric 2D rects with
+  a radius-ish scalar; these are markers/attachments, not ship nodes.
+- The five hulls' r2p rec numbers do NOT index blob1 slots (stale
+  content there — rec 11316 holds a Russian casemate part) and do
+  not parse WG-shaped at blob2 either; their data is in the
+  recursive encoding with quantized/hashed payloads (the negative
+  results above are what prove the encoding is nontrivial).
+- WG-side context: WG's own current assets.bin (chunked container)
+  is EQUALLY uncracked in the public ecosystem (wows-tools sidesteps
+  via Steam depot downloads) — this is shared hard tech, not a
+  Lesta-only quirk.
+
+**The two remaining routes** (both heavyweight):
+1. Static disassembly of the client's visual loader (find the
+   deserializer for the recursive cells in the rendering DLL —
+   §0-legal static analysis, but a multi-session project).
+2. A long grammar-walk session: align the five hulls' root cells on
+   the 0x80 grid, walk `(count, offset)` trees to leaves with the
+   splash mains + Mikasa WG transforms as oracles, and brute-force
+   the leaf encoding (quantization scale, hash space).
 - Related hardening that DID land: revision-twin mounts of the same
   class dedupe at per-axis 0.15 (two mounts of one class cannot share
   a pivot; the fleet-wide same-class pair histogram is empty 0.05-0.15
