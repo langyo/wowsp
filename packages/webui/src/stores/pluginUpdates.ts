@@ -313,6 +313,25 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   }
 
   /**
+   * Fold one successful batch item into the LOCAL snapshot at once — the
+   * badge, hint and pin react on the next tick instead of after the
+   * freshness re-assessment's network round-trip (its catalog digest
+   * check alone can stall for seconds), which still runs and confirms.
+   * The ledger/probe writes behind a resolved task are already durable
+   * Rust-side, so "fresh" is the truth here, not a guess. `path` is the
+   * exact perInstall key the task group came from; `id` null = the probe.
+   */
+  function markItemFresh(path: string, id: string | null): void {
+    const info = perInstall.value[path];
+    if (!info) return;
+    if (id === null) {
+      info.probeOutdated = false;
+    } else {
+      info.mods = info.mods.filter((m) => m.id !== id);
+    }
+  }
+
+  /**
    * One-click update across EVERY pending install: per install the probe
    * plugin first (local, fast), then its outdated catalog mods — installs
    * run sequentially too, and a single front-end queue keeps the overall
@@ -324,9 +343,14 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
    * attempting it would only surface a raw backend refusal — and gets a
    * dedicated warning toast instead. Items already busy on another
    * surface are skipped (that op's own fan-out keeps the snapshot
-   * honest). Failures are collected and reported at the end; every
-   * item's completion fans out a freshness sync, so the badge ticks
-   * down while the pass runs.
+   * honest). Every successful item folds into the local snapshot at once
+   * (markItemFresh — the badge ticks down while the pass runs, clearing
+   * the moment the last item lands) and still fans out a freshness sync
+   * that confirms against catalog/ledger. The end-of-pass toast speaks
+   * per client when several were attempted: all updated → success with
+   * the client count, a mixed run → warning naming the failed clients,
+   * none updated → sticky error; a single client keeps the per-item
+   * failure detail it always had.
    */
   async function updateAll(): Promise<void> {
     if (running.value) return;
@@ -343,9 +367,19 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
       .map((p) => p.matchedInstall?.path ?? null)
       .filter((p): p is string => p != null);
 
-    const tasks: { id: string | null; name: string; run: () => Promise<unknown> }[] = [];
+    const tasks: {
+      id: string | null;
+      path: string;
+      name: string;
+      run: () => Promise<unknown>;
+    }[] = [];
     let skipped = 0;
     const skippedClients: string[] = [];
+    /** Attempted groups only (running-game skips never enter) — the
+     *  per-client rollup behind the end-of-pass summary toast. */
+    const clientLabels = new Map<string, string>();
+    /** Clients (perInstall keys) with at least one failed task. */
+    const failedPaths = new Set<string>();
     for (const g of groups) {
       const label = installLabel(g.install?.kind, g.install?.realm) || installFolderName(g.path);
       if (runningPaths.some((path) => sameGamePath(g.path, path))) {
@@ -353,10 +387,12 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         if (!skippedClients.includes(label)) skippedClients.push(label);
         continue;
       }
+      clientLabels.set(g.path, label);
       const suffix = multi ? ` · ${label}` : "";
       if (g.info.probeOutdated && !probeBusy.value) {
         tasks.push({
           id: null,
+          path: g.path,
           name: t("resources.pluginProbeName") + suffix,
           run: async () => {
             // Another surface (live page, onboarding) may have grabbed
@@ -373,6 +409,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         if (itemBusy.value.has(m.id)) continue;
         tasks.push({
           id: m.id,
+          path: g.path,
           name: m.name + suffix,
           run: async () => {
             // A mod-hub install may have grabbed this id between task
@@ -396,6 +433,19 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
           }),
         );
       }
+    }
+
+    /** The total-failure verdict: sticky (duration 0 = no auto-dismiss,
+     *  copyable) so an unreadable flash can't read as "the click did
+     *  nothing". Retire any live error slot FIRST: hikari's push() only
+     *  takes the duration when it CREATES the slot, so a sticky show into
+     *  an existing 30 s slot would ride the old timer and take the whole
+     *  verdict down with it (the common sequence is exactly a prior
+     *  per-surface toast.error, e.g. the plugin card's refusal). */
+    function showStickyError(text: string): void {
+      const prior = toast.toasts.find((s) => s.type === "error");
+      if (prior) toast.remove(prior.id);
+      toast.show(text, { type: "error", duration: 0, copyable: true });
     }
 
     if (tasks.length === 0) {
@@ -448,9 +498,14 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         percent.value = null;
         try {
           await task.run();
+          // The write landed (or a concurrent op owns the item and will
+          // confirm its own outcome) — drop it from the badge now; the
+          // post-item freshness sync only confirms.
+          markItemFresh(task.path, task.id);
         } catch (e) {
           const detail = e instanceof Error ? e.message : String(e);
           failures.value.push(`${task.name}: ${detail}`);
+          failedPaths.add(task.path);
         }
         done.value += 1;
       }
@@ -461,31 +516,56 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
       phase.value = null;
       percent.value = null;
       currentName.value = "";
+      // A client counts as updated only when EVERY one of its tasks
+      // landed; a single failure marks the whole client for the summary.
+      // A client that contributed NO task (its every item was already
+      // busy on another surface at build) stays out of the rollup — the
+      // outcome is that op's story to tell, not this pass's to claim.
+      const attempted = [...clientLabels.entries()].filter(([path]) =>
+        tasks.some((task) => task.path === path),
+      );
+      const multiClients = attempted.length > 1;
+      const failedClients = attempted
+        .filter(([path]) => failedPaths.has(path))
+        .map(([, label]) => label);
+      const okClients = attempted.length - failedClients.length;
       if (failures.value.length > 0) {
-        const text = t("resources.pluginUpdateFailed", {
-          count: failures.value.length,
-          names: failures.value.join(", "),
-        });
-        if (failures.value.length === tasks.length) {
-          // Every single item was refused (guard-class outcome: a running
-          // client, safe mode) — the pass died in well under a second and
-          // the progress card never mounts, so this toast is the ONLY
-          // surface the rejection ever reaches. Make it sticky (duration 0
-          // = no auto-dismiss, copyable) instead of the 30 s default: an
-          // unreadable flash read as "the click did nothing" (user report
-          // 2026-10-18). A partial failure keeps the auto-dismiss — some
-          // work DID land, the toast is a footnote.
-          //
-          // Retire any live error slot FIRST: hikari's push() only takes
-          // the duration when it CREATES the slot, so a sticky show into
-          // an existing 30 s slot would ride the old timer and take the
-          // whole verdict down with it (the common sequence is exactly a
-          // prior per-surface toast.error, e.g. the plugin card's refusal).
-          const prior = toast.toasts.find((s) => s.type === "error");
-          if (prior) toast.remove(prior.id);
-          toast.show(text, { type: "error", duration: 0, copyable: true });
+        if (multiClients && okClients === 0) {
+          // Every client was refused — typically the guard-refusal shape
+          // (safe mode, permissions) that dies in well under a second
+          // with the progress card never mounting, so this toast is then
+          // the ONLY surface the rejection reaches. Sticky (duration 0 =
+          // no auto-dismiss, copyable) per the single-client rationale
+          // below.
+          showStickyError(
+            t("resources.pluginUpdateAllFailedClients", { count: attempted.length }),
+          );
+        } else if (multiClients) {
+          // Mixed machine: some work DID land — a warning (auto-dismiss)
+          // reporting the success count plus the failed clients' names.
+          toast.warning(
+            t("resources.pluginUpdatePartialClients", {
+              ok: okClients,
+              names: failedClients.join("/"),
+            }),
+          );
         } else {
-          toast.error(text);
+          const text = t("resources.pluginUpdateFailed", {
+            count: failures.value.length,
+            names: failures.value.join(", "),
+          });
+          if (failures.value.length === tasks.length) {
+            // Every single item was refused (guard-class outcome: a
+            // running client, safe mode) — the pass died in well under a
+            // second and the progress card never mounts, so this toast is
+            // the ONLY surface the rejection ever reaches. Make it sticky
+            // (duration 0 = no auto-dismiss, copyable) instead of the 30 s
+            // default: an unreadable flash read as "the click did
+            // nothing" (user report 2026-10-18).
+            showStickyError(text);
+          } else {
+            toast.error(text);
+          }
         }
       } else if (tasks.length > 0 && Date.now() - startedAt < MOD_PASS_CARD_GRACE_MS) {
         // A pass that finished INSIDE the card's mount grace leaves no
@@ -493,7 +573,12 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         // speaks through the card's leave snapshot). The fast full-success
         // shape — a probe-only local write — is common, so it gets the
         // light success toast; anything slower keeps the card feedback.
-        toast.success(t("resources.pluginUpdateDone"));
+        // Multi-client passes name the client count, not a bare "done".
+        toast.success(
+          multiClients
+            ? t("resources.pluginUpdateDoneClients", { count: okClients })
+            : t("resources.pluginUpdateDone"),
+        );
       }
       reportSkipped();
       void syncFreshness();
