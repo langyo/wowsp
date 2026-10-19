@@ -5,6 +5,7 @@ import { Check, Download, MessageCircle, RefreshCw } from "@lucide/vue";
 import { HkButton, HkModal } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import { SPECIAL_THANKS } from "@/data/attributions";
 import { useUpdaterStore } from "@/stores/updater";
 import { openExternal } from "@/utils/openExternal";
 import AnnouncementContent from "./AnnouncementContent";
@@ -66,7 +67,72 @@ const TRIVIA_KEYS = [
   "about.trivia13",
   "about.trivia14",
   "about.trivia15",
+  "about.trivia16",
+  "about.trivia17",
+  "about.trivia18",
+  "about.trivia19",
+  "about.trivia20",
+  "about.trivia21",
+  "about.trivia22",
+  "about.trivia23",
+  "about.trivia24",
+  "about.trivia25",
+  "about.trivia26",
+  "about.trivia27",
+  "about.trivia28",
+  "about.trivia29",
+  "about.trivia30",
+  "about.trivia31",
+  "about.trivia32",
+  "about.trivia33",
+  "about.trivia34",
+  "about.trivia35",
+  "about.trivia36",
+  "about.trivia37",
+  "about.trivia38",
+  "about.trivia39",
+  "about.trivia40",
+  "about.trivia41",
+  "about.trivia42",
+  "about.trivia43",
+  "about.trivia44",
 ];
+
+/** The one trivia entry that name-drops a credited helper: @BestNaomi is
+ *  rendered as an external link to his Bilibili space — the same URL the
+ *  special-thanks card in Settings opens. The localized trivia43 text
+ *  carries the literal token, so keep the two in sync. */
+const TRIVIA_LINK_ENTRY = SPECIAL_THANKS.find((entry) => entry.id === "thanks-naomi");
+const TRIVIA_LINK_TOKEN = TRIVIA_LINK_ENTRY ? `@${TRIVIA_LINK_ENTRY.name}` : "";
+const TRIVIA_LINK_URL = TRIVIA_LINK_ENTRY
+  ? `https://space.bilibili.com/${TRIVIA_LINK_ENTRY.uid}`
+  : "";
+
+/** Split a trivia line on the credited-helper token and turn the token
+ *  into an external-link button. The click stops bubbling so it opens
+ *  Bilibili instead of also restoring the plain description. */
+function renderTriviaFact(text: string) {
+  if (!TRIVIA_LINK_TOKEN || !TRIVIA_LINK_URL || !text.includes(TRIVIA_LINK_TOKEN)) {
+    return text;
+  }
+  return text.split(TRIVIA_LINK_TOKEN).flatMap((part, index) =>
+    index === 0
+      ? [part]
+      : [
+          <button
+            type="button"
+            class="about-modal__trivia-link"
+            onClick={(event: MouseEvent) => {
+              event.stopPropagation();
+              void openExternal(TRIVIA_LINK_URL);
+            }}
+          >
+            {TRIVIA_LINK_TOKEN}
+          </button>,
+          part,
+        ],
+  );
+}
 
 /** One floating bubble around the logo — the point it grows from, in px
  *  offsets from the logo centre, and the hum message key it renders. */
@@ -254,7 +320,7 @@ export const AboutContent = defineComponent({
               }}
             >
               {triviaKey.value
-                ? t("about.triviaLead", { fact: t(triviaKey.value) })
+                ? renderTriviaFact(t("about.triviaLead", { fact: t(triviaKey.value) }))
                 : ""}
             </p>
           </div>
