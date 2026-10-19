@@ -41,7 +41,7 @@ const TECH_LINKS = [
 /** Piggy easter-egg message pools: the hums barked in the click bubble
  *  (about.hum1..5) and the cold-knowledge facts swapped in under the logo
  *  (about.trivia01..N). Enumerated message keys instead of JSON arrays so
- *  per-item key parity across all nine locales stays enforced by
+ *  per-item key parity across all eight locales stays enforced by
  *  scripts/check_i18n.py and t() remains the only lookup path. */
 const HUM_KEYS = [
   "about.hum1",

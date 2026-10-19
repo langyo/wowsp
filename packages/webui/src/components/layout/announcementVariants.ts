@@ -157,7 +157,6 @@ export function pickTelemetryNotice(uiLocale: string): { label: string; text: st
  *  the app's canonical UI locale). Codes outside the set fall back to en. */
 const LOCALE_VARIANT: Record<string, string> = {
   "zh-CN": "zh-CN",
-  "zh-SG": "zh-CN",
   "zh-TW": "zh-TW",
   "en-US": "en",
   "ja-JP": "ja",

@@ -5,7 +5,7 @@
  * renamed `resources.*` key fails silently at runtime: the value simply stops
  * appearing in every list (or renders as a raw key). These tests pin the
  * mapping as total in both directions and tie every strip entry to a label
- * that exists in all nine shipped locales.
+ * that exists in all eight shipped locales.
  */
 import { beforeAll, describe, expect, it } from "vitest";
 import { Anchor, Crosshair, MessagesSquare, Puzzle } from "@lucide/vue";
@@ -24,7 +24,7 @@ import {
   type BigCat,
 } from "./taxonomy";
 
-// Locale messages load lazily now (one bundle per locale) — pull all nine
+// Locale messages load lazily now (one bundle per locale) — pull all eight
 // in before the label-parity test reads them off the i18n instance.
 beforeAll(async () => {
   await Promise.all(SUPPORTED_LOCALES.map((locale) => loadLocaleMessages(locale)));

@@ -30,7 +30,6 @@ const LOCALES = [
   "ko-KR",
   "ru-RU",
   "zh-CN",
-  "zh-SG",
   "zh-TW",
 ] as const;
 

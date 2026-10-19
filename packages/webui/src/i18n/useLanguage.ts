@@ -3,8 +3,9 @@
  *
  *   uiLocale      — the SOFTWARE INTERFACE language (menus, labels, the app's
  *                   own copy). Drives `i18n.global.locale` and `t()`.
- *                   Standardized BCP 47 lang-loc — the same nine codes the
- *                   data language offers (see UI_LOCALE_OPTIONS).
+ *                   Standardized BCP 47 lang-loc — eight of the data
+ *                   language's nine codes; zh-SG is a data language only
+ *                   (see UI_LOCALE_OPTIONS).
  *   dataLanguage  — the GAME-ASSET language used to fetch localized names
  *                   (ships, maps, ...). Also standardized BCP 47 lang-loc:
  *                   "zh-CN" (国服简体), "zh-SG" (亚服简体), "zh-TW" (亚服繁体),
@@ -96,16 +97,16 @@ export function isLangLoc(code: string): boolean {
 /** Data-language dropdown options (the game-asset languages). */
 export const WG_LANGUAGES = LANG_LOCS.map(({ code, label }) => ({ value: code, label }));
 
-/** UI-language dropdown options — the same nine lang-locs the data language
- *  offers, labeled in their own language. The zh-CN / zh-SG pair shares one
- *  simplified-Chinese UI copy; the choice only seeds the FIRST-STARTUP data
- *  language (国服 vs 亚服 game-asset names), which stays independently
- *  switchable. */
+/** UI-language dropdown options — the eight UI locales, labeled in their own
+ *  language. Simplified Chinese is ONE option (the zh-CN copy; zh-SG differs
+ *  only by wording style and survives as a data language), and locale labels
+ *  carry no region suffix — region belongs to the data-language list. The
+ *  zh-CN choice still seeds the FIRST-STARTUP data language (国服 vs 亚服
+ *  game-asset names, by realm), which stays independently switchable. */
 export const UI_LOCALE_OPTIONS: { value: Locale; label: string }[] = [
   { value: "en-US", label: "English" },
-  { value: "zh-CN", label: "简体中文（大陆）" },
-  { value: "zh-SG", label: "简体中文（新加坡）" },
-  { value: "zh-TW", label: "繁體中文（台灣）" },
+  { value: "zh-CN", label: "简体中文" },
+  { value: "zh-TW", label: "繁體中文" },
   { value: "ja-JP", label: "日本語" },
   { value: "ko-KR", label: "한국어" },
   { value: "ru-RU", label: "Русский" },
@@ -124,8 +125,27 @@ export function determineDataLanguage(ui: Locale, realm: string): string {
   return ui;
 }
 
+/** UI locales retired from the dropdown, mapped onto the option that
+ *  absorbed them — a saved tag migrates instead of falling into the
+ *  detected-locale heal (which could land on a different language). */
+const LEGACY_UI_LOCALES: Record<string, Locale> = {
+  // 简体中文（新加坡） merged into 简体中文 (the zh-CN copy) — same script,
+  // the variants differed only by wording style.
+  "zh-SG": "zh-CN",
+};
+
 function loadUiLocale(): Locale {
   const saved = localStorage.getItem(UI_KEY) as string | null;
+  const migrated = saved != null ? LEGACY_UI_LOCALES[saved] : undefined;
+  if (migrated) {
+    // Rewrite the retired tag so the migration sticks across boots.
+    try {
+      localStorage.setItem(UI_KEY, migrated);
+    } catch {
+      // storage unavailable — the migrated locale holds for the session
+    }
+    return migrated;
+  }
   if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved)) {
     return saved as Locale;
   }

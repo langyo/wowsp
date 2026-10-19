@@ -189,7 +189,7 @@ and `/erp` are answered by this worker itself — they sit in
 `run_worker_first` ahead of the static-assets layer, alongside `/api*`:
 
 - **`GET /feedback`** — an embedded, dependency-free form localized in the
-  same nine locales as the app's `res/i18n` files (language selector with
+  same eight locales as the app's `res/i18n` files (language selector with
   `?lang=`/localStorage/browser resolution) and styled with hikari's design
   tokens: the token sheet under `crates/relay-core/.generated/` is
   generated from the webui's `@celestia-island/hikari` dependency by
