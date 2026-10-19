@@ -206,6 +206,26 @@
     color: rgb(var(--color-primary));
   }
 
+  /* Clickable @name inside a trivia line (trivia43 credits BestNaomi):
+     styled as part of the sentence, not as a separate control. */
+  &__trivia-link {
+    display: inline;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+
+    &:hover {
+      filter: brightness(1.15);
+    }
+  }
+
   &__tech {
     display: flex;
     flex-wrap: wrap;
