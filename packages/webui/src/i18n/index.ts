@@ -31,8 +31,6 @@ export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export const FALLBACK_LOCALE: Locale = "en-US";
 
-type Messages = Record<string, Record<string, any>>;
-
 /** Fold one namespace JSON into a locale's message tree at its namespace
  *  path (nested res/i18n/locales dirs become nested message keys) — the
  *  single merge implementation shared by every locale load. */
@@ -119,7 +117,10 @@ export const i18n = createI18n({
   // every other locale; key parity for all remaining messages is enforced
   // by scripts/check_i18n.py, so per-key fallback chatter is just dev noise.
   fallbackWarn: false,
-  messages: {} as Messages,
+  // Empty message table — locales are merged in lazily by
+  // loadLocaleMessages (setLocaleMessage) before first render; the createI18n
+  // default for `messages` is the same empty object.
+  messages: {},
 });
 
 /** Pre-mount bootstrap: load the fallback (en-US — vue-i18n resolves every

@@ -125,12 +125,23 @@ const MODERNIZATIONS = new Map<string, ModernizationJsonEntry>(
 /** Read the base stat values from a raw WG default_profile. Returns nulls for
  *  absent fields so the caller can fall back to "—". */
 function readBase(profile: Profile): ModifiedStats {
-  const p = (profile ?? {}) as Record<string, any>;
-  const hull = p.hull as any;
-  const artillery = p.artillery as any;
-  const mobility = p.mobility as any;
-  const concealment = p.concealment as any;
-  const torpedoes = p.torpedoes as any;
+  const p = (profile ?? {}) as Record<string, unknown>;
+  // Minimal shapes of the blocks read here; leaf values stay `unknown` and
+  // are narrowed by `num()` at each read site (the dump omits keys freely).
+  const hull = p.hull as { health?: unknown } | undefined;
+  const artillery = p.artillery as {
+    shot_delay?: unknown;
+    distance?: unknown;
+    rotation_time?: unknown;
+    shells?: { HE?: { burn_chance?: unknown; burn_probability?: unknown } | null } | null;
+  } | undefined;
+  const mobility = p.mobility as { max_speed?: unknown; rudder_time?: unknown } | undefined;
+  const concealment = p.concealment as { detect_distance_by_ship?: unknown } | undefined;
+  const torpedoes = p.torpedoes as {
+    torpedo_speed?: unknown;
+    shot_delay?: unknown;
+    reload_time?: unknown;
+  } | undefined;
   return {
     hp: num(hull?.health),
     reload: num(artillery?.shot_delay),
@@ -193,7 +204,7 @@ export function recomputeStats(
   const base = readBase(profile);
   const modified: ModifiedStats = { ...base };
   const hpFrac = Math.max(0, Math.min(1, healthPct));
-  const caliber = num((profile as Record<string, any>)?.artillery?.max_caliber);
+  const caliber = num((profile?.artillery as { max_caliber?: unknown } | null | undefined)?.max_caliber);
 
   // Per-stat multiplicative accumulators (start at 1.0 = no change).
   const mults: Record<string, number> = {};

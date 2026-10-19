@@ -80,7 +80,11 @@ describe("generated overlay data", () => {
         expect(entry.names["zh-CN"], `${id} zh-CN name`).toBeTruthy();
       }
       expect(entry.tier, `${id} tier`).toBeGreaterThanOrEqual(1);
-      const dp = entry.defaultProfile as Record<string, any> | null;
+      const dp = entry.defaultProfile as {
+        hull?: { health?: number } | null;
+        mobility?: { max_speed?: number } | null;
+        concealment?: { detect_distance_by_ship?: number } | null;
+      } | null;
       if (dp) {
         expect(dp.hull?.health, `${id} hull.health`).toBeGreaterThan(0);
         expect(dp.mobility?.max_speed, `${id} max_speed`).toBeGreaterThan(0);

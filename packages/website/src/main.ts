@@ -1,5 +1,5 @@
 import { createApp } from "vue";
-import { createI18n } from "vue-i18n";
+import { createI18n, type DefineLocaleMessage } from "vue-i18n";
 
 import { initTheme, initFontContext, applyViewportPolicy } from "@celestia-island/hikari";
 
@@ -12,10 +12,10 @@ import "@/theme/theme.scss";
 
 const modules = import.meta.glob("./messages/*.ts", { eager: true, import: "default" }) as Record<
   string,
-  Record<string, unknown>
+  DefineLocaleMessage
 >;
 
-const messages: Record<string, Record<string, any>> = {};
+const messages: Record<string, DefineLocaleMessage> = {};
 for (const code of SUPPORTED_LOCALES) {
   messages[code] = modules[`./messages/${code}.ts`] ?? {};
 }

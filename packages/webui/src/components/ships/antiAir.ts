@@ -30,7 +30,7 @@
 import { resolveShipParts } from "./shipParts";
 import type { SpecRow } from "./shipSpecs";
 
-type Gp = Record<string, any> | null | undefined;
+type Gp = Record<string, unknown> | null | undefined;
 
 /** Aura band in GameParams terms; maps to short/mid/long in player terms. */
 export type AaBandKey = "near" | "medium" | "far";
@@ -62,7 +62,7 @@ function bandKeyOf(v: unknown): AaBandKey | null {
 
 /** A dict value that looks like an aura: typed near/medium/far AND carrying
  *  damage numbers (skips settings dicts and HP_* mount entries). */
-function isAura(v: unknown): v is Record<string, any> {
+function isAura(v: unknown): v is Record<string, unknown> {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
   return bandKeyOf(o.type) != null && ("areaDamage" in o || "bubbleDamage" in o);
@@ -71,8 +71,8 @@ function isAura(v: unknown): v is Record<string, any> {
 /** All aura dicts across the given component blocks. */
 export function aurasOfBlocks(
   blocks: Gp[],
-): Array<{ band: AaBandKey; aura: Record<string, any> }> {
-  const out: Array<{ band: AaBandKey; aura: Record<string, any> }> = [];
+): Array<{ band: AaBandKey; aura: Record<string, unknown> }> {
+  const out: Array<{ band: AaBandKey; aura: Record<string, unknown> }> = [];
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
     for (const v of Object.values(block)) {
@@ -90,7 +90,7 @@ function stockAaBlocks(gp: Gp): Gp[] {
 }
 
 /** All aura dicts across the stock-hull AA carrier blocks. */
-function aurasOf(gp: Gp): Array<{ band: AaBandKey; aura: Record<string, any> }> {
+function aurasOf(gp: Gp): Array<{ band: AaBandKey; aura: Record<string, unknown> }> {
   return aurasOfBlocks(stockAaBlocks(gp));
 }
 

@@ -283,7 +283,7 @@ export default defineComponent({
 
     // ── Armor overlay data (from GameParams, passed to ShipStage) ──────────
     const armorZones = computed<ArmorZone[]>(() => {
-      const gp = gameparams.value as Record<string, any> | null;
+      const gp = gameparams.value as Record<string, unknown> | null;
       if (!gp) return [];
       try {
         function num(v: unknown): number | undefined {
@@ -349,7 +349,7 @@ export default defineComponent({
 
     // ── Waterline from GameParams (optional, falls back to geometry) ──────
     const waterlineDraft = computed<number | null>(() => {
-      const gp = gameparams.value as Record<string, any> | null;
+      const gp = gameparams.value as Record<string, unknown> | null;
       if (!gp) return null;
       function num(v: unknown): number | null {
         if (v == null) return null;
@@ -373,7 +373,7 @@ export default defineComponent({
     // "Hakuryu top" dive bombers), a qualifier distilled from the raw suffix
     // (stock → 白板, B5N2 → B5N2) keeps the picker entries distinguishable.
     const planeModels = computed<PlaneModelOption[]>(() => {
-      const gp = gameparams.value as Record<string, any> | null;
+      const gp = gameparams.value as Record<string, unknown> | null;
       if (!gp) return [];
       try {
         const seen = new Set<string>();

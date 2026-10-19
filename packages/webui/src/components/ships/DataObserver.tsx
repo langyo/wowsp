@@ -53,7 +53,7 @@ export default defineComponent({
     gameparams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
   },
   setup(props) {
-    const profile = computed(() => (props.ship.defaultProfile ?? {}) as Record<string, any>);
+    const profile = computed(() => (props.ship.defaultProfile ?? {}) as Record<string, unknown>);
 
     const stats = computed(() =>
       recomputeStats(profile.value, props.ship.type, props.ship.tier, props.build, props.build.healthPct),
@@ -175,13 +175,13 @@ export default defineComponent({
  *  the stat isn't affected by modifiers. */
 function computeDelta(
   key: string,
-  profile: Record<string, any>,
+  profile: Record<string, unknown>,
   base: ModifiedStats,
   modified: ModifiedStats,
 ): string | null {
-  const p = profile as Record<string, any>;
-  const art = p.artillery as Record<string, any> | undefined;
-  const hull = p.hull as Record<string, any> | undefined;
+  const p = profile;
+  const art = p.artillery as { shells?: Record<string, { damage?: unknown }> | null } | undefined;
+  const hull = p.hull as { artillery_barrels?: unknown } | undefined;
 
   switch (key) {
     case "hp": {
@@ -231,7 +231,7 @@ function computeDelta(
       if (baseReload == null) return null;
       const barrels = num(hull?.artillery_barrels);
       if (barrels == null) return null;
-      const shells = art?.shells as Record<string, any> | undefined;
+      const shells = art?.shells;
       const isHe = key === "heDpm";
       const dmg = num(shells?.[isHe ? "HE" : "AP"]?.damage);
       if (dmg == null) return null;

@@ -46,6 +46,15 @@ import "./ShipsView.scss";
  * per-ship battles, shown on cards when an account is bound) + config store
  * (game root path, needed for GameParams extraction).
  */
+
+/** Minimal read shape of the raw WG `default_profile` behind the ship-card
+ *  stats (snake_case keys; blocks absent on hulls that lack them). */
+interface CardProfile {
+  hull?: { health?: number | null } | null;
+  concealment?: { detect_distance_by_ship?: number | null } | null;
+  mobility?: { max_speed?: number | null } | null;
+}
+
 export default defineComponent({
   name: "ShipsView",
   setup() {
@@ -240,17 +249,17 @@ export default defineComponent({
     // WG `default_profile` uses snake_case keys — camelCase reads always
     // returned null, silently hiding the stats off the cards.
     function hp(ship: ShipInfo): number | null {
-      const dp = ship.defaultProfile as Record<string, any> | null;
+      const dp = ship.defaultProfile as CardProfile | null;
       return dp?.hull?.health ?? null;
     }
 
     function concealment(ship: ShipInfo): number | null {
-      const dp = ship.defaultProfile as Record<string, any> | null;
+      const dp = ship.defaultProfile as CardProfile | null;
       return dp?.concealment?.detect_distance_by_ship ?? null;
     }
 
     function speed(ship: ShipInfo): number | null {
-      const dp = ship.defaultProfile as Record<string, any> | null;
+      const dp = ship.defaultProfile as CardProfile | null;
       return dp?.mobility?.max_speed ?? null;
     }
 

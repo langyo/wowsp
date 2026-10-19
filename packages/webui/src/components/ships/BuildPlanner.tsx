@@ -300,7 +300,7 @@ export default defineComponent({
     });
 
     function skillBan(skill: Skill): SkillRequirement | null {
-      return skillUnavailable(skill.code, props.ship.defaultProfile as Record<string, any> | null, consumableFamilies.value);
+      return skillUnavailable(skill.code, props.ship.defaultProfile as Record<string, unknown> | null, consumableFamilies.value);
     }
 
     // A build restored against another hull may carry skills this ship can
@@ -312,7 +312,7 @@ export default defineComponent({
         const skills = { ...props.build.skills };
         let pruned = false;
         for (const code of Object.keys(skills)) {
-          if (skillUnavailable(code, props.ship.defaultProfile as Record<string, any> | null, consumableFamilies.value)) {
+          if (skillUnavailable(code, props.ship.defaultProfile as Record<string, unknown> | null, consumableFamilies.value)) {
             delete skills[code];
             pruned = true;
           }

@@ -39,6 +39,63 @@ export interface SpecGroup {
 
 export type Profile = Record<string, unknown> | null | undefined;
 
+/**
+ * Minimal views of the raw WG data this module reads. Fields stay `unknown`
+ * on purpose — missing / null / mis-typed entries are the norm (see module
+ * header) — and every read still flows through `num()` / `fmtNum()` /
+ * `armourThickness()`, which defend at runtime. These shapes assert one
+ * step at a time off an `unknown` value, never across two hops.
+ */
+interface ShellEntry {
+  damage?: unknown;
+  burn_probability?: unknown;
+  burn_chance?: unknown;
+  bullet_speed?: unknown;
+  penetration?: unknown;
+}
+
+interface HullBlock {
+  health?: unknown;
+  artillery_barrels?: unknown;
+  torpedoes_barrels?: unknown;
+}
+
+interface ArmourBlock {
+  flood_damage?: unknown;
+  citadel?: unknown;
+  deck?: unknown;
+  extremities?: unknown;
+}
+
+interface ArtilleryBlock {
+  distance?: unknown;
+  shot_delay?: unknown;
+  sigma?: unknown;
+  rotation_time?: unknown;
+  max_dispersion?: unknown;
+  shells?: Record<string, ShellEntry | undefined>;
+}
+
+interface TorpedoesBlock {
+  distance?: unknown;
+  torpedo_speed?: unknown;
+  max_damage?: unknown;
+  reload_time?: unknown;
+  visibility_dist?: unknown;
+}
+
+interface MobilityBlock {
+  max_speed?: unknown;
+  rudder_time?: unknown;
+  turning_radius?: unknown;
+}
+
+interface ConcealmentBlock {
+  detect_distance_by_ship?: unknown;
+  detect_distance_by_plane?: unknown;
+  detect_distance_by_submarine?: unknown;
+}
+
 function num(v: unknown): number | null {
   if (v == null) return null;
   const n = typeof v === "number" ? v : Number(v);
@@ -66,7 +123,7 @@ function armourThickness(v: unknown): number | null {
 
 /** Per-shell row: damage, fire chance, muzzle velocity, HE pen estimate.
  *  Returns one row per available shell (HE / SAP / AP / Cruise). */
-function shellRows(shells: Record<string, any> | undefined): SpecRow[] {
+function shellRows(shells: Record<string, unknown> | undefined): SpecRow[] {
   if (!shells || typeof shells !== "object") return [];
   const rows: SpecRow[] = [];
   // Order: HE, SAP, AP, Cruise (readable priority for players).
@@ -79,15 +136,16 @@ function shellRows(shells: Record<string, any> | undefined): SpecRow[] {
   for (const [key, rowKey, hint] of order) {
     const sh = shells[key];
     if (!sh || typeof sh !== "object") continue;
+    const e = sh as ShellEntry;
     const parts: string[] = [];
-    const dmg = fmtNum(sh.damage);
+    const dmg = fmtNum(e.damage);
     if (dmg) parts.push(dmg);
     // HE / SAP carry a fire / pen affordance.
     if (key === "HE") {
-      const fp = num(sh.burn_probability);
+      const fp = num(e.burn_probability);
       if (fp != null) parts.push(`${fp}% ${fireLabel()}`);
     }
-    const spd = num(sh.bullet_speed);
+    const spd = num(e.bullet_speed);
     if (spd != null) parts.push(`${spd} ${speedUnit()}`);
     const rowValue = parts.join(" · ");
     if (rowValue) rows.push({ key: rowKey, value: rowValue, hint });
@@ -113,10 +171,15 @@ function hePenFromCaliber(caliberMm: number | null, nation: string | undefined):
 /** Extract the main-gun caliber (mm) from the artillery sub-tree.
  *  WG stores barrel diameter under several keys depending on schema; try the
  *  common ones. */
-function mainGunCaliber(art: any): number | null {
+function mainGunCaliber(art: unknown): number | null {
   if (!art || typeof art !== "object") return null;
+  const o = art as {
+    barrelDiameter?: unknown;
+    barrel_diameter?: unknown;
+    caliber?: unknown;
+  };
   // `barrelDiameter` (mm) on some profiles, or under the first turret.
-  const direct = num(art.barrelDiameter) ?? num(art.barrel_diameter) ?? num(art.caliber);
+  const direct = num(o.barrelDiameter) ?? num(o.barrel_diameter) ?? num(o.caliber);
   if (direct != null) return direct;
   return null;
 }
@@ -131,53 +194,53 @@ function mainGunCaliber(art: any): number | null {
  */
 export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: unknown): SpecGroup[] {
   if (!profile || typeof profile !== "object") return [];
-  const p = profile as Record<string, any>;
+  const p = profile as Record<string, unknown>;
   const groups: SpecGroup[] = [];
 
   // ── Survivability ─────────────────────────────────────────────────────
   const survRows: SpecRow[] = [];
-  const hull = p.hull as object | undefined;
-  const armour = p.armour as object | undefined;
-  const hp = fmtNum((hull as any)?.health);
+  const hull = p.hull as HullBlock | undefined;
+  const armour = p.armour as ArmourBlock | undefined;
+  const hp = fmtNum(hull?.health);
   if (hp) survRows.push({ key: "hp", value: hp, hint: "hpHint" });
-  const flood = num((armour as any)?.flood_damage);
+  const flood = num(armour?.flood_damage);
   if (flood != null)
     survRows.push({ key: "torpProtection", value: `${flood}%`, hint: "torpProtectionHint" });
-  const citadel = armourThickness((armour as any)?.citadel);
+  const citadel = armourThickness(armour?.citadel);
   if (citadel != null)
     survRows.push({ key: "citadelArmor", value: `${citadel} mm`, hint: "citadelArmorHint" });
-  const deck = armourThickness((armour as any)?.deck);
+  const deck = armourThickness(armour?.deck);
   if (deck != null) survRows.push({ key: "deckArmor", value: `${deck} mm` });
-  const extremities = armourThickness((armour as any)?.extremities);
+  const extremities = armourThickness(armour?.extremities);
   if (extremities != null)
     survRows.push({ key: "bowArmor", value: `${extremities} mm`, hint: "bowArmorHint" });
   if (survRows.length) groups.push({ group: "survivability", icon: "Shield", rows: survRows });
 
   // ── Main Battery (Firepower) ──────────────────────────────────────────
-  const art = p.artillery as object | undefined;
+  const art = p.artillery as ArtilleryBlock | undefined;
   const artRows: SpecRow[] = [];
-  const dist = fmtNum((art as any)?.distance, 1);
+  const dist = fmtNum(art?.distance, 1);
   if (dist) artRows.push({ key: "mainGunRange", value: `${dist} km`, hint: "mainGunRangeHint" });
-  const reload = num((art as any)?.shot_delay);
+  const reload = num(art?.shot_delay);
   if (reload != null)
     artRows.push({ key: "mainGunReload", value: `${reload.toFixed(1)} s`, hint: "mainGunReloadHint" });
-  const barrels = num((hull as any)?.artillery_barrels);
+  const barrels = num(hull?.artillery_barrels);
   if (barrels != null) artRows.push({ key: "mainGunBarrels", value: String(barrels) });
   const caliber = mainGunCaliber(art);
   if (caliber != null)
     artRows.push({ key: "mainGunCaliber", value: `${caliber} mm`, hint: "mainGunCaliberHint" });
   // Sigma: WG puts it at artillery.sigma (top-level of the artillery block).
-  const sigma = num((art as any)?.sigma);
+  const sigma = num(art?.sigma);
   if (sigma != null)
     artRows.push({ key: "mainGunSigma", value: sigma.toFixed(1), hint: "mainGunSigmaHint" });
-  const rot = num((art as any)?.rotation_time);
+  const rot = num(art?.rotation_time);
   if (rot != null)
     artRows.push({ key: "turretTraverse", value: `${rot.toFixed(1)} s / 180°`, hint: "turretTraverseHint" });
-  const disp = num((art as any)?.max_dispersion);
+  const disp = num(art?.max_dispersion);
   if (disp != null)
     artRows.push({ key: "maxDispersion", value: `${disp} m`, hint: "maxDispersionHint" });
   // HE penetration estimate (mm) — only meaningful if there's an HE shell.
-  const shells = (art as any)?.shells as Record<string, any> | undefined;
+  const shells = art?.shells;
   const heShell = shells?.HE;
   const hePen = heShell
     ? num(heShell.penetration) ?? hePenFromCaliber(caliber, nation)
@@ -202,21 +265,21 @@ export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: u
   if (artRows.length) groups.push({ group: "artillery", icon: "Crosshair", rows: artRows });
 
   // ── Torpedoes ─────────────────────────────────────────────────────────
-  const torp = p.torpedoes as object | undefined;
+  const torp = p.torpedoes as TorpedoesBlock | undefined;
   const torpRows: SpecRow[] = [];
   if (torp && typeof torp === "object") {
-    const tDist = fmtNum((torp as any).distance, 1);
+    const tDist = fmtNum(torp.distance, 1);
     if (tDist) torpRows.push({ key: "torpRange", value: `${tDist} km` });
-    const tSpeed = num((torp as any).torpedo_speed);
+    const tSpeed = num(torp.torpedo_speed);
     if (tSpeed != null) torpRows.push({ key: "torpSpeed", value: `${tSpeed} kn` });
-    const tDmg = fmtNum((torp as any).max_damage);
+    const tDmg = fmtNum(torp.max_damage);
     if (tDmg) torpRows.push({ key: "torpDamage", value: tDmg });
-    const tReload = num((torp as any).reload_time);
+    const tReload = num(torp.reload_time);
     if (tReload != null) torpRows.push({ key: "torpReload", value: `${tReload.toFixed(1)} s` });
-    const tVis = num((torp as any).visibility_dist);
+    const tVis = num(torp.visibility_dist);
     if (tVis != null)
       torpRows.push({ key: "torpDetect", value: `${tVis.toFixed(1)} km`, hint: "torpDetectHint" });
-    const tBarrels = num((hull as any)?.torpedoes_barrels);
+    const tBarrels = num(hull?.torpedoes_barrels);
     if (tBarrels != null && tBarrels > 0)
       torpRows.push({ key: "torpLaunchers", value: String(tBarrels) });
   }
@@ -230,31 +293,31 @@ export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: u
   if (aaRows.length) groups.push({ group: "antiAir", icon: "Plane", rows: aaRows });
 
   // ── Mobility ──────────────────────────────────────────────────────────
-  const mob = p.mobility as object | undefined;
+  const mob = p.mobility as MobilityBlock | undefined;
   const mobRows: SpecRow[] = [];
   if (mob && typeof mob === "object") {
-    const speed = num((mob as any).max_speed);
+    const speed = num(mob.max_speed);
     if (speed != null) mobRows.push({ key: "maxSpeed", value: `${speed.toFixed(1)} kn` });
-    const rudder = num((mob as any).rudder_time);
+    const rudder = num(mob.rudder_time);
     if (rudder != null)
       mobRows.push({ key: "rudderShift", value: `${rudder.toFixed(1)} s`, hint: "rudderShiftHint" });
-    const radius = num((mob as any).turning_radius);
+    const radius = num(mob.turning_radius);
     if (radius != null)
       mobRows.push({ key: "turningRadius", value: `${radius} m`, hint: "turningRadiusHint" });
   }
   if (mobRows.length) groups.push({ group: "mobility", icon: "Gauge", rows: mobRows });
 
   // ── Concealment ───────────────────────────────────────────────────────
-  const con = p.concealment as object | undefined;
+  const con = p.concealment as ConcealmentBlock | undefined;
   const conRows: SpecRow[] = [];
   if (con && typeof con === "object") {
-    const byShip = num((con as any).detect_distance_by_ship);
+    const byShip = num(con.detect_distance_by_ship);
     if (byShip != null)
       conRows.push({ key: "surfaceDetect", value: `${byShip.toFixed(1)} km`, hint: "surfaceDetectHint" });
-    const byPlane = num((con as any).detect_distance_by_plane);
+    const byPlane = num(con.detect_distance_by_plane);
     if (byPlane != null)
       conRows.push({ key: "airDetect", value: `${byPlane.toFixed(1)} km`, hint: "airDetectHint" });
-    const bySub = num((con as any).detect_distance_by_submarine);
+    const bySub = num(con.detect_distance_by_submarine);
     if (bySub != null) conRows.push({ key: "subDetect", value: `${bySub.toFixed(1)} km` });
   }
   if (conRows.length) groups.push({ group: "concealment", icon: "Eye", rows: conRows });
