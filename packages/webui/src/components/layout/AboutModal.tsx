@@ -96,6 +96,7 @@ const TRIVIA_KEYS = [
   "about.trivia42",
   "about.trivia43",
   "about.trivia44",
+  "about.trivia45",
 ];
 
 /** The one trivia entry that name-drops a credited helper: @BestNaomi is
