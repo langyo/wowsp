@@ -191,8 +191,16 @@ pub(crate) fn fallback_roster(frame_w: i32, frame_h: i32, expected: usize) -> (R
 ///   (the header scan itself starts at 6% — nothing real sits higher);
 /// - SPLIT: 0.2–1.0 (two-team tables measure 0.30–0.70, single-team
 ///   exactly 1.0);
-/// - ROWS: non-empty, strictly increasing, and each center inside the
-///   rect's vertical span ± half a pitch (rounding slack).
+/// - ROWS: non-empty, climbing strictly WITHIN each team block, and each
+///   center inside the rect's vertical span ± half a pitch (rounding
+///   slack). The wire order is the ALLY block (top→bottom) followed by the
+///   ENEMY block — also top→bottom, both hanging under the shared header —
+///   so the enemy block's first row sits back up at the ally block's first
+///   row: the concatenation legitimately descends ONCE at the block
+///   boundary, and a two-team grid (`team_split` < 1.0) allows exactly that
+///   one descent. The single-team PVE layout (split exactly 1.0) is one
+///   block: zero descents. A duplicated or jittering grid (a detector
+///   misfire) descends repeatedly and is refused.
 ///
 /// Pure (unit-tested); callers treat a veto exactly like a failed
 /// detection (fallback geometry, nothing stored, nothing certified).
@@ -230,13 +238,18 @@ pub(crate) fn roster_plausible(
     };
     let top_bound = roster.y as f32 - pitch * 0.5;
     let bottom_bound = (roster.y + roster.height) as f32 + pitch * 0.5;
+    let allowed_descents = if team_split >= 0.999 { 0 } else { 1 };
     let mut prev = i32::MIN;
-    row_centers.iter().all(|c| {
+    let mut descents = 0usize;
+    let all_in_span = row_centers.iter().all(|c| {
         let in_span = (*c as f32) >= top_bound && (*c as f32) <= bottom_bound;
-        let ordered = *c > prev;
+        if *c <= prev {
+            descents += 1;
+        }
         prev = *c;
-        in_span && ordered
-    }) && first > 0
+        in_span
+    });
+    all_in_span && descents <= allowed_descents && first > 0
 }
 
 /// Move threshold for replacing a pinned anchor: the fresh first row must sit

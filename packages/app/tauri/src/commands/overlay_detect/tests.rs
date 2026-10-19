@@ -419,6 +419,70 @@ fn detects_real_captured_frame() {
     );
 }
 
+/// The REAL captured frame behind the 3v3 (对决) bug report: a Tab-held WG
+/// client in a 3v3 brawl — the classic two-team table at its usual spot,
+/// just THREE rows per side (a short table; the scoring-legend banner and
+/// the map caption sit in the profile window below it, and the player's own
+/// gold row barely feeds the white-text profile). Regression: the detector
+/// always found this table — the PLAUSIBILITY veto then rejected it, because
+/// the wire row order is [ally block, enemy block] and the enemy block's
+/// first row sits back up at the ally block's first row: one legitimate
+/// descent at the block boundary that the old global strictly-increasing
+/// gate read as a misfire. The veto must accept it.
+#[test]
+fn detects_real_3v3_frame_and_passes_the_veto() {
+    let png = include_bytes!("../testdata/tab_table_3v3_768x480.png");
+    let img = image::load_from_memory(png)
+        .expect("fixture decodes")
+        .to_rgba8();
+    let (w, h) = img.dimensions();
+    assert_eq!((w, h), (768, 480));
+    let rgba = img.into_raw();
+    let det = detect_roster(&rgba, w, h, (3, 3), &DetectProfile::WG)
+        .expect("real 3v3 table must be detected");
+    assert_eq!(det.row_centers.len(), 6, "3 allies + 3 enemies");
+    // Truth (working px — the fixture IS the detector's working frame):
+    // header band top 111, bars 199..569, row centers ≈ 132.5/145/157.5 on
+    // the ally side and ≈ 133/145.5/158 on the enemy side.
+    let truth: [f32; 6] = [132.5, 145.0, 157.5, 133.0, 145.5, 158.0];
+    for (k, &c) in det.row_centers.iter().enumerate() {
+        assert!(
+            (c as f32 - truth[k]).abs() <= 8.0,
+            "row {k}: {c} vs {}",
+            truth[k]
+        );
+    }
+    assert!(
+        (det.rect.x as f32 - 199.0).abs() <= 8.0,
+        "x: {:?}",
+        det.rect
+    );
+    assert!(
+        (det.rect.y as f32 - 111.0).abs() <= 8.0,
+        "y: {:?}",
+        det.rect
+    );
+    assert!(
+        (det.team_split - 0.5).abs() <= 0.04,
+        "split: {}",
+        det.team_split
+    );
+    // THE regression: the veto must accept the two-block row order — the
+    // exact gate that kept this real table off the screen (the watcher
+    // pinned the fallback hint instead, every press).
+    assert!(
+        roster_plausible(
+            &det.rect,
+            &det.row_centers,
+            det.team_split,
+            w as i32,
+            h as i32
+        ),
+        "a real two-block 3v3 grid must pass the plausibility veto: {:?}",
+        det
+    );
+}
+
 /// The REAL captured frame behind the scenario/operation bug report: a
 /// Tab-held WG client in an operation (行动) battle — dimmed scene, 任务/
 /// 团队成员 tabs, ONE centered teal "我的团队" header bar measuring only
@@ -2413,7 +2477,7 @@ fn resolver_keeps_base_on_green_only_band() {
 // ─────────────────────────────────────────────────────────────────────────
 
 /// A realistic PvP-table geometry (mirrors the 1440p fixture proportions:
-/// table at x 26–74%, header ~23% down, 7 rows) passes every gate.
+/// table at x 26–74%, header ~23% down, 7 rows per side) passes every gate.
 #[test]
 fn plausible_roster_accepts_real_layouts() {
     let rect = Rect {
@@ -2422,17 +2486,23 @@ fn plausible_roster_accepts_real_layouts() {
         width: 1230,
         height: 700,
     };
-    let rows: Vec<i32> = (0..7).map(|i| 480 + i * 52).collect();
+    // The wire row order every two-team detection reports: the ALLY block
+    // top→bottom, then the ENEMY block — also top→bottom, both hanging
+    // under the shared header, so the concatenation descends ONCE at the
+    // block boundary. That is the real shape, not a misfire.
+    let mut rows: Vec<i32> = (0..7).map(|i| 480 + i * 52).collect();
+    rows.extend((0..7).map(|i| 480 + i * 52));
     assert!(roster_plausible(&rect, &rows, 0.5, 2560, 1440));
     // The single-team PvE shape (full-width split 1.0, narrower centered
-    // rect) passes too.
+    // rect) passes too — one ally block, strictly climbing.
     let pve = Rect {
         x: 950,
         y: 331,
         width: 660,
         height: 700,
     };
-    assert!(roster_plausible(&pve, &rows, 1.0, 2560, 1440));
+    let single: Vec<i32> = (0..7).map(|i| 480 + i * 52).collect();
+    assert!(roster_plausible(&pve, &single, 1.0, 2560, 1440));
     // DWM-scale jitter on the rect or rows stays inside the tolerance.
     let mut jittered = rect;
     jittered.x -= 3;
@@ -2474,9 +2544,16 @@ fn plausible_roster_vetoes_absurd_geometry() {
     // Rows outside the rect's vertical span (phantom grid below the table).
     let stray: Vec<i32> = rows.iter().map(|c| c + 400).collect();
     assert!(!roster_plausible(&good, &stray, 0.5, 2560, 1440));
-    // Non-increasing rows.
+    // Repeated descents — no real table shape produces more than the ONE
+    // legitimate team-boundary drop (a duplicated / jittering grid).
+    let zigzag = vec![480, 532, 584, 480, 532, 480, 532];
+    assert!(!roster_plausible(&good, &zigzag, 0.5, 2560, 1440));
+    // Flat rows (every center the same) descend six times.
     let flat = vec![480; 7];
     assert!(!roster_plausible(&good, &flat, 0.5, 2560, 1440));
+    // The single-team layout is ONE block: even a single descent refuses it.
+    let stepped = vec![480, 532, 480];
+    assert!(!roster_plausible(&good, &stepped, 1.0, 2560, 1440));
     // Empty grid.
     assert!(!roster_plausible(&good, &[], 0.5, 2560, 1440));
     // Degenerate frame.
