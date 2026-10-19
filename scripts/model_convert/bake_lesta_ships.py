@@ -294,6 +294,103 @@ def gun_hp_entities(entry: dict, entity_by_id: dict) -> dict[str, dict]:
     return out
 
 
+def wg_reference_mounts(hull_dir: str, hp_ents: dict[str, dict],
+                        anchors: list[dict],
+                        boxes: dict[str, tuple[list, list]],
+                        wowsunpack: str, wg_game: str | None,
+                        raw_dir: Path) -> dict[str, tuple[str, list[float]]]:
+    """Cross-client fallback for hulls with no readable node blocks:
+    the WG client's own export-ship of a hull sharing the Lesta hull
+    dir's tail name (e.g. Lesta `JSB271_Mikasa_1905` ↔ WG
+    `JSB011_Mikasa_1905` — Lesta renumbered sibling hulls that WG kept).
+    Validated hard: every boxed Lesta main must agree with the WG node
+    position through the splash mirror (dy/dz 0.06) — hull revisions
+    move turrets by 0.1+, so a mismatched reference is rejected whole.
+
+    Returns the same shape as collect_mounts ({unique: (hp, m16)}) with
+    matrices in the splash frame (WG exports are hull-frame; the
+    conjugation S·M·S flips the xz rotation terms and the z translation).
+    Mains are re-keyed by box position (Lesta's aft main may be numbered
+    differently — Mikasa_04's JGM_16 is WG's JGM_2); secondaries/AA keep
+    their WG names, kept only when the Lesta GameParams lists them."""
+    import re as _re
+
+    def _tail(d: str) -> str:
+        return _re.sub(r"^[A-Z]{2,3}\d{3}_", "", d.rsplit("/", 1)[-1])
+
+    ref_glb = raw_dir / "wgref" / f"{_tail(hull_dir)}.glb"
+    ref_glb.parent.mkdir(exist_ok=True)
+    if not ref_glb.is_file():
+        if not wg_game:
+            return {}
+        # find the WG hull dir by tail name via its GameParams dump
+        wg_gp_path = WG_GAMEPARAMS
+        if not wg_gp_path.is_file():
+            return {}
+        from build_techtree import _params_root  # noqa: PLC0415
+
+        wr = _params_root(json.loads(wg_gp_path.read_text(encoding="utf-8")))
+        wg_dir = None
+        for e in wr.values():
+            if not isinstance(e, dict):
+                continue
+            hm = (e.get("A_Hull") or {}).get("model")
+            if isinstance(hm, str) and hm.startswith("content/") \
+                    and _tail(hm.rsplit("/", 1)[0]) == _tail(hull_dir):
+                wg_dir = hm.rsplit("/", 1)[0].rsplit("/", 1)[-1]
+                break
+        if not wg_dir:
+            return {}
+        r = subprocess.run(
+            [wowsunpack, "-g", wg_game, "export-ship", wg_dir,
+             "--no-textures", "-o", str(ref_glb)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if r.returncode != 0 or not ref_glb.is_file():
+            return {}
+    js, _ = read_glb(ref_glb)
+    # glTF node matrices share the block convention's flat layout (both
+    # compose as x' = m0x + m4y + m8z + m12 with translation at 12-14).
+    # Lesta's gun models are z-mirrored vs WG's own (measured: the
+    # models align under diag(1,1,-1)), and WG's export already
+    # composes its mirrored meshes — so the correct splash matrix is
+    # diag(1,1,-1) LEFT-multiplied into the node matrix (negating the
+    # z-output row, flat 2/6/10) with the z translation negated (14).
+    # Barrel directions verified 20/20 against WG's own world-space
+    # meshes (thin-end muzzle test, worst dot +0.9908).
+    nodes: dict[str, list[float]] = {}
+    for nd in js.get("nodes", []):
+        m = re.match(r"(HP_[A-Z]G[MSA]_\d+) \(", nd.get("name", ""))
+        mc = nd.get("matrix")
+        if not m or not mc:
+            continue
+        nodes[m.group(1)] = [-mc[i] if i in (2, 6, 10, 14) else mc[i]
+                             for i in range(16)]
+    if not nodes:
+        return {}
+    # hard validation: every boxed Lesta main must have a WG main at the
+    # mirrored box position (0.06); mains re-key to the Lesta HP name.
+    out: dict[str, tuple[str, list[float]]] = {}
+    for a in anchors:
+        box = boxes.get(a["box"])
+        if not box:
+            continue
+        exp = ((box[0][0] + box[1][0]) / 2, box[1][1], (box[0][2] + box[1][2]) / 2)
+        hit = next(((n, m) for n, m in nodes.items()
+                    if MAIN_HP_RE.match(n)
+                    and abs(m[12] - exp[0]) <= 0.06 and abs(m[13] - exp[1]) <= 0.06
+                    and abs(m[14] - exp[2]) <= 0.06), None)
+        if hit is None:
+            return {}  # reference hull disagrees — reject whole
+        out[a["hp"]] = (a["hp"], hit[1])
+    if anchors and not out:
+        return {}
+    for n, m in nodes.items():
+        if n in hp_ents and n not in out:
+            out[n] = (n, m)
+    return out
+
+
 def ship_mount_blocks(blk_digest: list[dict], spec: dict) -> list[dict]:
     """This ship's node blocks out of the global digest. A block matches
     when it carries main turrets, every main that has a splash box
@@ -986,6 +1083,17 @@ def main() -> int:
             # collision, not a real mount. Keep only unsuffixed mounts.
             mounts = {k: v for k, v in raw_mounts.items()
                       if v[0] in hp_ents and k == v[0]}
+        if not mounts and hp_ents and boxes and anchors and base:
+            # Cross-client fallback: WG's export-ship of a tail-named
+            # sibling hull (validated against the splash mains above).
+            from _common import find_game_path  # noqa: PLC0415
+
+            mounts = wg_reference_mounts(
+                base, hp_ents, anchors, boxes, wowsunpack,
+                find_game_path(), raw_dir)
+            if mounts:
+                print(f"[bake-lesta]   {idx}: {len(mounts)} mounts from a WG "
+                      f"reference hull", flush=True)
 
         extra: list[str] = [a["geometry"].lstrip("/") for a in anchors]
         seen_geo = set(extra)
