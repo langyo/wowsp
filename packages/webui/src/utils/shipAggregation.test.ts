@@ -6,7 +6,9 @@
  *  - `computeRecentDelta` picks the latest baseline at or before the cutoff,
  *    subtracts per-ship totals, derives winrate/avgDamage from the deltas,
  *    keeps first-seen ships whole, drops untouched ships, clamps negative
- *    totals, and reports null when no old-enough baseline exists. A finite
+ *    totals, drops ships whose last battle predates the labeled window
+ *    start (a positive delta there is a missing-baseline artifact), and
+ *    reports null when no old-enough baseline exists. A finite
  *    `endSec` bounds the window the same way — the latest snapshot at or
  *    before it closes the window, so a past end day never leaks newer
  *    battles in;
@@ -134,7 +136,7 @@ describe("computeRecentDelta", () => {
   });
 
   it("clamps negative totals against WG-side corrections", () => {
-    const current = [ship({ shipId: 1, battles: 20, wins: 5, damageCaused: 50_000, frags: 2, survivedBattles: 1 })];
+    const current = [ship({ shipId: 1, battles: 20, wins: 5, damageCaused: 50_000, frags: 2, survivedBattles: 1, lastBattleTime: now - 100 })];
     const history = [
       point(cutoff - 1, [{ shipId: 1, battles: 10, wins: 8, damageCaused: 90_000, frags: 9, survivedBattles: 4, lastBattleTime: 0 }]),
     ];
@@ -154,7 +156,7 @@ describe("computeRecentDelta", () => {
   });
 
   it("accepts a baseline recorded exactly at the cutoff", () => {
-    const current = [ship({ shipId: 1, battles: 10, wins: 5, damageCaused: 100_000 })];
+    const current = [ship({ shipId: 1, battles: 10, wins: 5, damageCaused: 100_000, lastBattleTime: now - 100 })];
     const exact = point(cutoff, [
       { shipId: 1, battles: 4, wins: 2, damageCaused: 40_000, frags: 3, survivedBattles: 1, lastBattleTime: 0 },
     ]);
@@ -175,7 +177,7 @@ describe("computeRecentDelta", () => {
         { shipId: 1, battles: 4_000, wins: 2_050, damageCaused: 390_000_000, frags: 5_900, survivedBattles: 1_180, lastBattleTime: 0 },
       ]),
       point(now - 10 * 86_400, [
-        { shipId: 1, battles: 4_040, wins: 2_070, damageCaused: 396_000_000, frags: 5_950, survivedBattles: 1_190, lastBattleTime: 0 },
+        { shipId: 1, battles: 4_040, wins: 2_070, damageCaused: 396_000_000, frags: 5_950, survivedBattles: 1_190, lastBattleTime: now - 10 * 86_400 },
       ]),
     ];
     const delta = computeRecentDelta(current, history, now - 15 * 86_400, now - 10 * 86_400)!;
@@ -187,8 +189,44 @@ describe("computeRecentDelta", () => {
     expect(delta.ships[0].damageCaused).toBe(6_000_000);
   });
 
+  it("keeps a ship played inside a past-ended window whose career continues past it", () => {
+    // The guard dates a bounded-window delta by the closing snapshot's
+    // career-last battle time, never the current row's — playing again
+    // after `to` must not eject the ship, and must not count those later
+    // battles either.
+    const current = [ship({ shipId: 1, battles: 4_020, wins: 2_010, damageCaused: 400_200_000, lastBattleTime: now - 2 * 86_400 })];
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 1, battles: 4_000, wins: 2_000, damageCaused: 400_000_000, frags: 6_000, survivedBattles: 1_200, lastBattleTime: now - 40 * 86_400 },
+      ]),
+      point(now - 10 * 86_400, [
+        { shipId: 1, battles: 4_010, wins: 2_005, damageCaused: 400_100_000, frags: 6_010, survivedBattles: 1_205, lastBattleTime: now - 12 * 86_400 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, now - 15 * 86_400, now - 10 * 86_400)!;
+    expect(delta.ships[0].battles).toBe(10);
+    expect(delta.ships[0].lastBattleTime).toBe(now - 2 * 86_400);
+  });
+
+  it("drops a bounded-window ship whose closing snapshot predates the window", () => {
+    // The bounded-window leak: the baseline at or before `from` lacks the
+    // ship (truncated fetch), so the diff resurrects everything up to the
+    // closing snapshot — all fought before `from`. Dating by the closing
+    // snapshot's career-last time (not the current row's, which kept
+    // advancing after `to`) is what drops it.
+    const current = [ship({ shipId: 1, battles: 50, wins: 25, damageCaused: 1_000_000, lastBattleTime: now - 2 * 86_400 })];
+    const history = [
+      point(now - 15 * 86_400, []),
+      point(now - 10 * 86_400, [
+        { shipId: 1, battles: 49, wins: 24, damageCaused: 980_000, frags: 40, survivedBattles: 20, lastBattleTime: now - 20 * 86_400 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, now - 15 * 86_400, now - 10 * 86_400)!;
+    expect(delta.ships).toHaveLength(0);
+  });
+
   it("drops ships absent from the end snapshot (unplayed at the window's close)", () => {
-    const current = [ship({ shipId: 1, battles: 100, wins: 50, damageCaused: 1_000_000 })];
+    const current = [ship({ shipId: 1, battles: 100, wins: 50, damageCaused: 1_000_000, lastBattleTime: now - 100 })];
     const history = [
       point(now - 40 * 86_400, [
         { shipId: 1, battles: 80, wins: 40, damageCaused: 800_000, frags: 10, survivedBattles: 5, lastBattleTime: 0 },
@@ -207,19 +245,72 @@ describe("computeRecentDelta", () => {
     // `to` = today: the fetch that produced the current rows is itself the
     // newest snapshot ≤ the bound, so the window closes there — effectively
     // the current totals, never older.
-    const current = [ship({ shipId: 1, battles: 4_100, wins: 2_090, damageCaused: 400_000_000 })];
+    const current = [ship({ shipId: 1, battles: 4_100, wins: 2_090, damageCaused: 400_000_000, lastBattleTime: now - 100 })];
     const history = [
       point(now - 40 * 86_400, [
         { shipId: 1, battles: 4_000, wins: 2_050, damageCaused: 390_000_000, frags: 5_900, survivedBattles: 1_180, lastBattleTime: 0 },
       ]),
       point(now - 86_400, [
-        { shipId: 1, battles: 4_080, wins: 2_084, damageCaused: 398_000_000, frags: 5_970, survivedBattles: 1_196, lastBattleTime: 0 },
+        { shipId: 1, battles: 4_080, wins: 2_084, damageCaused: 398_000_000, frags: 5_970, survivedBattles: 1_196, lastBattleTime: now - 86_400 },
       ]),
     ];
     const delta = computeRecentDelta(current, history, cutoff, now + 86_400)!;
     expect(delta.endTs).toBe(now - 86_400);
     expect(delta.ships[0].battles).toBe(80);
     expect(delta.ships[0].wins).toBe(34);
+  });
+
+  it("drops ships whose battles all predate the labeled window start", () => {
+    // A truncated latest point (the ship's row is missing from it) keeps the
+    // ship's baseline on a much older point; the diff then resurrects a
+    // battle fought between the two as a "recent" delta. The career-last
+    // battle time proves nothing was played inside the labeled window, so
+    // the ship must drop out. Reported symptom: a ship last played
+    // 2026/10/7 (and one last played 2023) turning up under the 1d tab.
+    const sincePoint = cutoff - 3600;
+    const current = [
+      ship({
+        shipId: 1,
+        battles: 4_100,
+        wins: 2_090,
+        damageCaused: 400_000_000,
+        lastBattleTime: now - 12 * 86_400,
+      }),
+      ship({ shipId: 2, battles: 12, wins: 6, damageCaused: 240_000, lastBattleTime: now - 100 }),
+      // Boundary: a battle fought exactly at sinceTs is inside the window.
+      ship({ shipId: 3, battles: 6, wins: 3, damageCaused: 120_000, lastBattleTime: sincePoint }),
+    ];
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 1, battles: 4_099, wins: 2_089, damageCaused: 399_900_000, frags: 5_999, survivedBattles: 1_199, lastBattleTime: now - 12 * 86_400 },
+      ]),
+      // Latest point at or before the cutoff — ship 1's row is missing.
+      point(sincePoint, [
+        { shipId: 2, battles: 10, wins: 5, damageCaused: 200_000, frags: 4, survivedBattles: 2, lastBattleTime: now - 100 },
+        { shipId: 3, battles: 5, wins: 2, damageCaused: 100_000, frags: 3, survivedBattles: 1, lastBattleTime: sincePoint },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff)!;
+    expect(delta.sinceTs).toBe(sincePoint);
+    const ids = delta.ships.map((s) => s.shipId);
+    expect(ids).not.toContain(1);
+    expect(ids).toContain(2);
+    expect(ids).toContain(3);
+    expect(delta.ships.find((s) => s.shipId === 2)!.battles).toBe(2);
+    expect(delta.ships.find((s) => s.shipId === 3)!.battles).toBe(1);
+  });
+
+  it("drops rows carrying no battle time from delta views", () => {
+    // battles > 0 with lastBattleTime 0 is the anomaly class itself — the
+    // career fallback already excluded such rows; the delta view does too.
+    const current = [ship({ shipId: 1, battles: 30, wins: 15, damageCaused: 600_000 })];
+    const history = [
+      point(cutoff - 1, [
+        { shipId: 1, battles: 10, wins: 5, damageCaused: 200_000, frags: 4, survivedBattles: 2, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff)!;
+    expect(delta.ships).toHaveLength(0);
   });
 });
 
@@ -273,6 +364,7 @@ describe("shipRecentDelta (single-ship slice)", () => {
     damageCaused: 21_824_000,
     frags: 412,
     survivedBattles: 120,
+    lastBattleTime: now - 100,
   });
 
   it("subtracts the ship's totals at the latest baseline at or before the cutoff", () => {
@@ -336,7 +428,7 @@ describe("poisoned baseline rows (zero-counter career totals)", () => {
   });
 
   it("computeRecentDelta falls back to the latest healthy earlier row", () => {
-    const current = [ship({ shipId: 1, battles: 200, wins: 100, damageCaused: 4_200_000, frags: 32, survivedBattles: 62 })];
+    const current = [ship({ shipId: 1, battles: 200, wins: 100, damageCaused: 4_200_000, frags: 32, survivedBattles: 62, lastBattleTime: now - 100 })];
     const history = [
       point(now - 40 * 86_400, [
         { shipId: 1, battles: 190, wins: 95, damageCaused: 4_000_000, frags: 30, survivedBattles: 60, lastBattleTime: 0 },
@@ -356,7 +448,7 @@ describe("poisoned baseline rows (zero-counter career totals)", () => {
   });
 
   it("treats a ship recorded only as poisoned rows as first-seen (career delta)", () => {
-    const current = [ship({ shipId: 2, battles: 55, wins: 30, damageCaused: 1_100_000, frags: 70 })];
+    const current = [ship({ shipId: 2, battles: 55, wins: 30, damageCaused: 1_100_000, frags: 70, lastBattleTime: now - 100 })];
     const history = [
       point(cutoff - 1, [
         { shipId: 2, battles: 50, wins: 27, damageCaused: 0, frags: 0, survivedBattles: 25, lastBattleTime: 0 },
@@ -368,8 +460,35 @@ describe("poisoned baseline rows (zero-counter career totals)", () => {
     expect(delta.ships[0].avgDamage).toBeCloseTo(20_000, 5);
   });
 
+  it("drops a poisoned-only ship whose career ends before the window (no resurrection)", () => {
+    // The reported 1d-tab symptom: a ship played once in 2023 with a
+    // zero-counter career row (damage AND kills 0) never enters a baseline
+    // — the poisoned-row skip — so the diff resurrects its whole career as
+    // a "recent" delta, complete with a "data anomaly" damage cell. Its
+    // lastBattleTime proves the ship was not played in the window.
+    const current = [
+      ship({
+        shipId: 9,
+        battles: 1,
+        wins: 0,
+        damageCaused: 0,
+        frags: 0,
+        survivedBattles: 0,
+        lastBattleTime: now - 1_000 * 86_400,
+      }),
+    ];
+    const history = [
+      point(cutoff - 1, [
+        // Poisoned — never becomes a baseline row.
+        { shipId: 9, battles: 1, wins: 0, damageCaused: 0, frags: 0, survivedBattles: 0, lastBattleTime: now - 1_000 * 86_400 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff)!;
+    expect(delta.ships).toHaveLength(0);
+  });
+
   it("shipRecentDelta uses the latest healthy row and labels the window from it", () => {
-    const current = ship({ shipId: 7, battles: 320, wins: 176, damageCaused: 21_824_000, frags: 412, survivedBattles: 120 });
+    const current = ship({ shipId: 7, battles: 320, wins: 176, damageCaused: 21_824_000, frags: 412, survivedBattles: 120, lastBattleTime: now - 100 });
     const history = [
       point(now - 40 * 86_400, [
         { shipId: 7, battles: 300, wins: 160, damageCaused: 20_400_000, frags: 380, survivedBattles: 110, lastBattleTime: 0 },
@@ -385,7 +504,7 @@ describe("poisoned baseline rows (zero-counter career totals)", () => {
   });
 
   it("shipRecentDelta treats an all-poisoned history as a full-career window", () => {
-    const current = ship({ shipId: 7, battles: 320, wins: 176, damageCaused: 21_824_000, frags: 412, survivedBattles: 120 });
+    const current = ship({ shipId: 7, battles: 320, wins: 176, damageCaused: 21_824_000, frags: 412, survivedBattles: 120, lastBattleTime: now - 100 });
     const history = [
       point(now - 10 * 86_400, [
         { shipId: 7, battles: 315, wins: 172, damageCaused: 0, frags: 0, survivedBattles: 116, lastBattleTime: 0 },
@@ -394,5 +513,26 @@ describe("poisoned baseline rows (zero-counter career totals)", () => {
     const d = shipRecentDelta(current, history, cutoff)!;
     expect(d.battles).toBe(320);
     expect(d.sinceTs).toBe(now - 10 * 86_400);
+  });
+
+  it("shipRecentDelta returns null when the resurrected career predates the window", () => {
+    // Same artifact as the account-level view's poisoned-only drop: the
+    // zero-counter history row never becomes a baseline, so the diff yields
+    // the full career — but the ship was last played long before the window.
+    const stale = ship({
+      shipId: 7,
+      battles: 1,
+      wins: 0,
+      damageCaused: 0,
+      frags: 0,
+      survivedBattles: 0,
+      lastBattleTime: now - 1_000 * 86_400,
+    });
+    const history = [
+      point(now - 10 * 86_400, [
+        { shipId: 7, battles: 1, wins: 0, damageCaused: 0, frags: 0, survivedBattles: 0, lastBattleTime: now - 1_000 * 86_400 },
+      ]),
+    ];
+    expect(shipRecentDelta(stale, history, cutoff)).toBeNull();
   });
 });
