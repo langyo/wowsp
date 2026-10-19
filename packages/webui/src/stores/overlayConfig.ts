@@ -4,12 +4,10 @@
  * TWO independent switches, each with its own off state:
  *
  * - `table` — the live-battle view mode: "detect" (the transparent window
- *   overlay on the pixel-detected team table, the default), "ingame" (the
- *   stats render INSIDE the game through the first-party plugin's unbound
- *   view — no overlay window; `useOverlayLifecycle` starts the stats
- *   bridge instead, and the Rust watcher suppresses shows too), or "off"
- *   (the WHOLE Tab overlay is disabled: no window, no watcher shows, no
- *   bridge).
+ *   overlay on the pixel-detected team table, the default) or "off" (the
+ *   WHOLE Tab overlay is disabled: no window, no watcher shows). A stored
+ *   "ingame" pick — the retired in-game plugin rendering, whose stats
+ *   bridge this build no longer starts — migrates to "detect".
  * - `roster` — roster attribution: "plugin" (the default and preferred:
  *   the in-game plugin's telemetry is the primary detector) or "passive"
  *   (the screen-capture pipeline; a stored "off" pick lands here — the
@@ -31,7 +29,7 @@ import { ref } from "vue";
 import { api } from "@/api";
 
 /** Live-battle view modes (schema v2 `table` field). */
-export type TableAnchorMode = "detect" | "ingame" | "off";
+export type TableAnchorMode = "detect" | "off";
 /** Roster attribution modes (schema v2 `roster` field): "plugin" = the
  *  in-game plugin is the primary detector; "passive" = the screen-capture
  *  pipeline (a stored "off" pick lands here — the table switch owns the
@@ -41,10 +39,13 @@ export type RosterRecognitionMode = "plugin" | "passive";
 const DEFAULT_TABLE: TableAnchorMode = "detect";
 const DEFAULT_ROSTER: RosterRecognitionMode = "plugin";
 
-/** Unknown values (incl. future ones) → the safe default. */
+/** Unknown values (incl. future ones) → the safe default. A stored
+ *  "ingame" pick — the retired in-game plugin rendering — lands on the
+ *  default, so the overlay window takes over as the display backend (the
+ *  Rust side heals the file to the same value, see
+ *  commands/overlay_config.rs). */
 function parseTable(raw: unknown): TableAnchorMode {
   if (raw === "off") return "off";
-  if (raw === "ingame") return "ingame";
   return DEFAULT_TABLE;
 }
 

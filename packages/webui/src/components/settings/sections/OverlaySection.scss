@@ -1,0 +1,26 @@
+// OverlaySection — the settings' 游戏内水表 card locals: the roster strip
+// and the plugin's Discussions page link share one row — the segmented
+// control fills the available width (its own scroller absorbs overflow,
+// see HkTabs), the ghost link hugs the row's right edge and wraps below
+// when the pane squeezes. Spacing comes from the hikari tokens so both
+// theme modes read correctly (same idiom as OverlayCalibrationSection).
+
+.overlay-sec {
+  &__roster-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
+    min-width: 0;
+
+    > .hk-tabs {
+      flex: 1 1 14rem;
+      min-width: 0;
+    }
+  }
+
+  &__plugin-page {
+    flex: none;
+    margin-left: auto;
+  }
+}

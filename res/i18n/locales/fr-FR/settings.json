@@ -123,11 +123,9 @@
   "cacheAuxCommunity": "Valeurs attendues communautaires",
   "cacheAuxCommunityDesc": "Tables de dégâts attendus utilisées par la note PR.",
   "overlay": "Superposition en jeu",
-  "overlayDesc": "Récupère automatiquement les statistiques des deux équipes au début de la bataille. Mode d'affichage : fenêtre superposée (maintenez Tab lorsque le jeu est au premier plan pour voir le taux de victoires et les dégâts moyens à côté de chaque pseudo), panneau en jeu (dessiné par l'extension) ou désactivé.",
+  "overlayDesc": "Récupère automatiquement les statistiques des deux équipes au début de la bataille. Mode d'affichage : fenêtre superposée (maintenez Tab lorsque le jeu est au premier plan pour voir le taux de victoires et les dégâts moyens à côté de chaque pseudo) ou désactivé.",
   "overlayTable": "Mode d'affichage",
   "overlayTableDetect": "Fenêtre superposée",
-  "overlayTableIngame": "Panneau en jeu",
-  "overlayTableIngameNote": "Dessiné dans le jeu par l'extension (maintenez Tab pour l'afficher) ; fonctionne aussi en plein écran exclusif. Nécessite l'extension en jeu.",
   "overlayTableOff": "Désactivé",
   "overlayRoster": "Reconnaissance de la liste",
   "overlayRosterPassive": "Détection passive par pixels d'écran",
@@ -340,9 +338,7 @@
     "colMetricWinrate": "Taux de victoire",
     "colMetricPr": "PR",
     "colMetricBattles": "Batailles",
-    "colMetricDamage": "Dégâts moyens",
-    "aimTitle": "Panneau du réticule",
-    "aimHint": "Colonnes affichées sous le réticule pour le navire visé (pour l'instant, portée globale uniquement). Retirez toutes les cartes pour masquer le panneau."
+    "colMetricDamage": "Dégâts moyens"
   },
   "schemeDefaultName": "Par défaut",
   "pairingWip": "Le jumelage téléphonique est en cours de développement et pas encore terminé.",

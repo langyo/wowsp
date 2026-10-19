@@ -16,6 +16,13 @@
  * events, rows rendered long after install (spec tables, filter chips,
  * map HUD buttons…) are covered with no per-component wiring.
  *
+ * `data-hint-overflow` hides the same popup behind a clipping test, for
+ * labels that only lose content when they don't fit: the settings rail's
+ * ellipsized items carry the attribute with their label as the value, and
+ * every HkTabs strip in the app is covered implicitly — a trigger that
+ * sticks out of its scrolled strip pops the trigger's full text. Nothing
+ * shows while every label still fits.
+ *
  * The popup is deliberately NOT a restyle: it reuses the exact
  * `.hk-tooltip-popup` structure and classes the HkTooltip component
  * teleports (same fade cadence, same dark-mode palette from
@@ -282,6 +289,67 @@ function renderCard(card: HintCard): HTMLElement {
   return root;
 }
 
+/** Real horizontal clipping: the content is wider than the box by more
+ *  than sub-pixel rounding noise. */
+function clippedHorizontally(el: HTMLElement): boolean {
+  return el.scrollWidth - el.clientWidth > 1;
+}
+
+/** The hovered HkTabs trigger, when its strip's scroller actually clips
+ *  it. Trigger labels never ellipsize — an overflowing strip scrolls
+ *  instead — so a trigger sticking out of the clipping ancestor's box is
+ *  exactly the "label runs off the edge" case; the popup then carries the
+ *  trigger's full text and anchors to the trigger itself. */
+function clippedTabTrigger(
+  target: Element,
+  root: Element,
+): { el: HTMLElement; text: string } | null {
+  const trigger = target.closest<HTMLElement>(".hk-tabs-trigger");
+  if (!trigger || !root.contains(trigger)) return null;
+  let clipper: HTMLElement | null = trigger.parentElement;
+  while (clipper && clipper !== root && !clippedHorizontally(clipper)) {
+    clipper = clipper.parentElement;
+  }
+  if (!clipper || clipper === root) return null;
+  const tr = trigger.getBoundingClientRect();
+  const cr = clipper.getBoundingClientRect();
+  if (tr.left < cr.left - 1 || tr.right > cr.right + 1) {
+    const text = (trigger.textContent ?? "").trim();
+    return text ? { el: trigger, text } : null;
+  }
+  return null;
+}
+
+/** An overflow-gated hint anchor for the hovered element, or null when
+ *  nothing is actually being clipped — a hint only ever explains a label
+ *  the user cannot already read in full:
+ *
+ *  - Explicit: the nearest `[data-hint-overflow]` holder. A value makes
+ *    it the hint text, shown when any part of the holder's subtree clips
+ *    (the settings rail's ellipsized labels); an empty value delegates
+ *    the holder's tab strips to the clipped-trigger rule below.
+ *  - Implicit: any HkTabs strip whose scroller clips the hovered trigger
+ *    — every segmented group in the app gets the behavior with zero
+ *    wiring. */
+function overflowHintFor(
+  target: EventTarget | null,
+): { el: HTMLElement; text: string } | null {
+  if (!(target instanceof Element)) return null;
+  const holder = target.closest<HTMLElement>("[data-hint-overflow]");
+  if (holder) {
+    const text = holder.dataset.hintOverflow ?? "";
+    if (text) {
+      const clipped =
+        clippedHorizontally(holder) ||
+        [...holder.querySelectorAll<HTMLElement>("*")].some(clippedHorizontally);
+      return clipped ? { el: holder, text } : null;
+    }
+    return clippedTabTrigger(target, holder);
+  }
+  const tabs = target.closest<HTMLElement>(".hk-tabs");
+  return tabs ? clippedTabTrigger(target, tabs) : null;
+}
+
 /** Parity with HkTooltip's default hover delay. */
 const SHOW_DELAY_MS = 300;
 /** ≥ the popup's --hk-pop-in-duration fade (0.2s) before unmounting it. */
@@ -316,6 +384,13 @@ export function installGlobalTooltip(): void {
    *  after a click so the click's own focus gain doesn't re-show the
    *  hint that same click just dismissed. */
   let pointerDownAt = -1e9;
+  /** Text of the active overflow-gated hint (see overflowHintFor) — its
+   *  copy lives on the clipped element, not in a data attribute of the
+   *  anchor, so fire() reads it through this side channel. anchorFor owns
+   *  the reset: it runs before every show, and clearing here instead
+   *  would drop the text of a retarget (hideNow sits between the new
+   *  anchorFor and the new fire). */
+  let overflowText: string | null = null;
 
   function clearShowTimer(): void {
     if (showTimer !== null) {
@@ -360,7 +435,7 @@ export function installGlobalTooltip(): void {
       content.replaceChildren(renderCard(card));
     } else {
       popup.classList.remove("global-tooltip--card");
-      const text = anchor.dataset.hint;
+      const text = overflowText ?? anchor.dataset.hint;
       if (!text) {
         hideNow();
         return;
@@ -403,7 +478,17 @@ export function installGlobalTooltip(): void {
   function anchorFor(target: EventTarget | null): HTMLElement | null {
     if (!(target instanceof Element)) return null;
     const el = target.closest<HTMLElement>("[data-hint], [data-hint-card]");
-    return el && (el.dataset.hint || el.dataset.hintCard) ? el : null;
+    // The channel is written only on the positive branches: a miss (e.g.
+    // a focusin on a non-anchor while a hover hint is pending) must leave
+    // a pending overflow hint's text alone — fire() still needs it.
+    if (el && (el.dataset.hint || el.dataset.hintCard)) {
+      overflowText = null;
+      return el;
+    }
+    const overflow = overflowHintFor(target);
+    if (!overflow) return null;
+    overflowText = overflow.text;
+    return overflow.el;
   }
 
   document.addEventListener(

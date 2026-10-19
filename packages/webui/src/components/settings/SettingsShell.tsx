@@ -105,6 +105,9 @@ export const SettingsShell = defineComponent({
               {group.sections.map((s) => {
                 const Icon = s.icon;
                 const on = active() === s.key && !s.disabled;
+                // Overflow-gated hint (see composables/globalTooltip):
+                // long locale labels ellipsize in the narrow rail — the
+                // popup only fires when the label actually clips.
                 return (
                   <button
                     key={s.key}
@@ -113,6 +116,8 @@ export const SettingsShell = defineComponent({
                     aria-current={on ? "true" : undefined}
                     aria-disabled={s.disabled || undefined}
                     disabled={s.disabled}
+                    data-hint-overflow={s.label}
+                    data-hint-pos="right"
                     onClick={() => pick(s.key)}
                   >
                     {typeof Icon === "function" ? (

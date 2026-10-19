@@ -1,5 +1,6 @@
-/** Overlay settings section: view mode, roster attribution and the
- *  display-content controls. */
+/** Overlay settings card: view mode, roster attribution and the
+ *  display-content controls. Rendered as the leading card of the
+ *  calibration section's page (the anchor calibrations follow below). */
 import { defineComponent, type PropType } from "vue";
 import { ExternalLink } from "@lucide/vue";
 import { HkButton, HkSettingsGroup, HkSettingsHint, HkSettingsSub, HkTabs } from "@celestia-island/hikari";
@@ -15,6 +16,7 @@ import { useSettingsUiStore } from "@/stores/settingsUi";
 import OverlayContentControls from "@/components/settings/OverlayContentControls";
 import { INGAME_PLUGIN_MOD_ID } from "@/components/settings/useSettingsGamePaths";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
+import "./OverlaySection.scss";
 
 export default defineComponent({
   name: "SettingsOverlaySection",
@@ -28,15 +30,14 @@ export default defineComponent({
     const { gamePaths } = props.ctx;
     return () => (
           <>
-          {/* in-game overlay (Mode 2) — the view mode picks which display
-              backend is up while the game runs: the transparent window over
-              the pixel-detected team table (hold Tab for per-player WR /
-              avg damage), the stats rendered INSIDE the game by the
-              first-party plugin's unbound view (bridge answers its
-              request.json; works in exclusive fullscreen too), or fully
-              off. The second switch (roster attribution) picks the plugin
-              telemetry (the default) or the screen-capture pipeline, and
-              its strip auto-disables while the view mode is off.
+          {/* The in-game water meter — the view mode picks whether the
+              transparent window over the pixel-detected team table is up
+              while the game runs (hold Tab for per-player WR / avg
+              damage) or the whole Tab overlay is off. The second switch
+              (roster attribution) picks the plugin telemetry (the
+              default) or the screen-capture pipeline, and its strip
+              auto-disables while the view mode is off; the plugin's
+              Discussions page rides the same row's right edge.
               Unreachable on the phone app build (no overlay window there —
               the rail filters the section out). */}
           <HkSettingsGroup title={t("settings.overlay")}>
@@ -49,79 +50,77 @@ export default defineComponent({
                 onUpdate:modelValue={(v: string) => void overlayCfg.setTable(v as TableAnchorMode)}
                 tabs={[
                   { key: "detect", label: t("settings.overlayTableDetect") },
-                  { key: "ingame", label: t("settings.overlayTableIngame") },
                   { key: "off", label: t("settings.overlayTableOff") },
                 ]}
               />
-              {overlayCfg.table === "ingame" ? (
-                <>
-                  <HkSettingsHint>{t("settings.overlayTableIngameNote")}</HkSettingsHint>
-                  {!gamePaths.ingamePluginInstalled.value ? (
-                    <HkSettingsHint>{t("settings.overlayRosterPluginMissing")}</HkSettingsHint>
-                  ) : null}
-                </>
-              ) : (
+              {/* Fullscreen limits the overlay-window mode only — with the
+                  switch off there is nothing to display in the first
+                  place. */}
+              {overlayCfg.table === "detect" ? (
                 <HkSettingsHint>{t("settings.overlayFullscreenNote")}</HkSettingsHint>
-              )}
+              ) : null}
             </HkSettingsSub>
             <HkSettingsSub title={t("settings.overlayRoster")}>
               {/* No "off" here BY DESIGN: the table switch above owns the
                   whole overlay's off state, and with it on, one of the two
                   detectors is always in force. The whole strip auto-
                   disables while the table switch is off. */}
-              <HkTabs
-                block
-                variant="segmented"
-                modelValue={overlayCfg.roster}
-                onUpdate:modelValue={(v: string) =>
-                  void overlayCfg.setRoster(v as RosterRecognitionMode)
-                }
-                tabs={[
-                  {
-                    key: "plugin",
-                    label: t("settings.overlayRosterPlugin"),
-                    // Greyed until the in-game plugin actually sits in the
-                    // active install's res_mods — the status refreshes with
-                    // the install selection (see refreshIngamePlugin).
-                    disabled:
-                      !gamePaths.ingamePluginInstalled.value || overlayCfg.table === "off",
-                  },
-                  {
-                    key: "passive",
-                    label: t("settings.overlayRosterPassive"),
-                    disabled: overlayCfg.table === "off",
-                  },
-                ]}
-              />
+              <div class="overlay-sec__roster-row">
+                <HkTabs
+                  block
+                  variant="segmented"
+                  modelValue={overlayCfg.roster}
+                  onUpdate:modelValue={(v: string) =>
+                    void overlayCfg.setRoster(v as RosterRecognitionMode)
+                  }
+                  tabs={[
+                    {
+                      key: "plugin",
+                      label: t("settings.overlayRosterPlugin"),
+                      // Greyed until the in-game plugin actually sits in the
+                      // active install's res_mods — the status refreshes with
+                      // the install selection (see refreshIngamePlugin).
+                      disabled:
+                        !gamePaths.ingamePluginInstalled.value || overlayCfg.table === "off",
+                    },
+                    {
+                      key: "passive",
+                      label: t("settings.overlayRosterPassive"),
+                      disabled: overlayCfg.table === "off",
+                    },
+                  ]}
+                />
+                {gamePaths.ingamePluginDiscussion.value ? (
+                  <HkButton
+                    class="overlay-sec__plugin-page"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      // In-app jump, not a browser link: close the settings
+                      // surface and deep-link the mod hub's catalog page to
+                      // the plugin's row (ResourcesView handles ?mod=). The
+                      // modal's hikari back guard rewinds its pushed history
+                      // entry on close (a deferred macrotask) — a same-tick
+                      // router.push races that rewind and gets stranded (see
+                      // ShipDetailModal's identical workaround), so let the
+                      // close settle first.
+                      ui.hide();
+                      setTimeout(() => void router.push({
+                        path: "/resources",
+                        query: { mod: INGAME_PLUGIN_MOD_ID },
+                      }), 350);
+                    }}
+                  >
+                    <ExternalLink size={13} />
+                    {t("settings.overlayRosterPluginPage")}
+                  </HkButton>
+                ) : null}
+              </div>
               {overlayCfg.table === "off" ? (
                 <HkSettingsHint>{t("settings.overlayRosterDisabledByTable")}</HkSettingsHint>
               ) : null}
               {!gamePaths.ingamePluginInstalled.value ? (
                 <HkSettingsHint>{t("settings.overlayRosterPluginMissing")}</HkSettingsHint>
-              ) : null}
-              {gamePaths.ingamePluginDiscussion.value ? (
-                <HkButton
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    // In-app jump, not a browser link: close the settings
-                    // surface and deep-link the mod hub's catalog page to
-                    // the plugin's row (ResourcesView handles ?mod=). The
-                    // modal's hikari back guard rewinds its pushed history
-                    // entry on close (a deferred macrotask) — a same-tick
-                    // router.push races that rewind and gets stranded (see
-                    // ShipDetailModal's identical workaround), so let the
-                    // close settle first.
-                    ui.hide();
-                    setTimeout(() => void router.push({
-                      path: "/resources",
-                      query: { mod: INGAME_PLUGIN_MOD_ID },
-                    }), 350);
-                  }}
-                >
-                  <ExternalLink size={13} />
-                  {t("settings.overlayRosterPluginPage")}
-                </HkButton>
               ) : null}
             </HkSettingsSub>
             {/* Display content — what the water table renders everywhere:

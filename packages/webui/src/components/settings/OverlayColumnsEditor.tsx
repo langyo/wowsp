@@ -10,11 +10,9 @@
  * section, and the live panel head's stats-source chip popover
  * (LiveStatsModeChip — the very filter that used to host the retired
  * three-row dimension groups), so the columns are editable right where
- * they render. A THIRD mount (the settings' aim-crosshair panel block)
- * supplies the list externally through the `columns`/`limit`/
- * `allowedScopes`/`onChange` props instead — the aim panel's own column
- * list (statsPrefs.aimColumns, global-only, a narrower cap) gets the
- * identical drag/edit experience without a second editor.
+ * they render. An external mount can supply its list through the
+ * `columns`/`limit`/`allowedScopes`/`onChange` props instead, getting
+ * the identical drag/edit experience without a second editor.
  *
  * The widgets are hikari base components (HkPopover / HkTabs / HkButton /
  * HkIconButton), and the drag is hikari's OWN final list-drag design
@@ -112,17 +110,15 @@ interface DragState {
 export default defineComponent({
   name: "OverlayColumnsEditor",
   props: {
-    /** An EXTERNALLY-owned column list — when omitted (both existing
-     *  mounts) the editor drives the statsPrefs store's overlayColumns
-     *  itself. The third mount (the settings' aim-crosshair panel block)
-     *  passes the store's aimColumns + setAimColumns here instead, so the
-     *  exact same drag/edit surface serves both lists. */
+    /** An EXTERNALLY-owned column list — when omitted (every current
+     *  mount) the editor drives the statsPrefs store's overlayColumns
+     *  itself. An external mount passes its own list + commit callback
+     *  here, so the exact same drag/edit surface serves both owners. */
     columns: { type: Array as PropType<OverlayColumn[]>, default: undefined },
-    /** The list's cardinality cap (defaults to OVERLAY_COLUMN_LIMIT; the
-     *  aim panel passes its narrower AIM_COLUMN_LIMIT). */
+    /** The list's cardinality cap (defaults to OVERLAY_COLUMN_LIMIT). */
     limit: { type: Number, default: undefined },
-    /** When given, the add-menu's scope group offers ONLY these scopes
-     *  (the aim panel is global-only today). Undefined = every scope. */
+    /** When given, the add-menu's scope group offers ONLY these scopes.
+     *  Undefined = every scope. */
     allowedScopes: { type: Array as PropType<OverlayColumnScope[]>, default: undefined },
     /** The commit path for an externally-owned list — every mutation
      *  (reorder / remove / add) funnels through here, exactly once per
@@ -337,8 +333,7 @@ export default defineComponent({
 
     /** Opening the menu lands on the first FREE combo (scope-major), so
      *  the confirm button starts enabled whenever anything is addable.
-     *  Both walks honor allowedScopes (an aim-panel mount never offers a
-     *  scope its list cannot carry); when EVERYTHING is taken the
+     *  Both walks honor allowedScopes; when EVERYTHING is taken the
      *  fallback lands on the first allowed scope (the confirm button is
      *  disabled there anyway — at the limit or a dup). */
     function firstFreeCombo(): {

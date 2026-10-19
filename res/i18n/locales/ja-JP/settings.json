@@ -123,11 +123,9 @@
   "cacheAuxCommunity": "コミュニティ期待値データ",
   "cacheAuxCommunityDesc": "PR 評価に使用する期待ダメージ表。",
   "overlay": "ゲーム内オーバーレイ",
-  "overlayDesc": "戦闘開始時に両チームの戦績を自動取得します。表示モード：オーバーレイウィンドウ（ゲーム前面で Tab を押し続けると各プレイヤーの勝率と平均ダメージを名前の横に表示）、ゲーム内表示（プラグインがゲーム画面に直接描画）、オフ。",
+  "overlayDesc": "戦闘開始時に両チームの戦績を自動取得します。表示モード：オーバーレイウィンドウ（ゲーム前面で Tab を押し続けると各プレイヤーの勝率と平均ダメージを名前の横に表示）、オフ。",
   "overlayTable": "表示モード",
   "overlayTableDetect": "オーバーレイウィンドウ",
-  "overlayTableIngame": "ゲーム内表示",
-  "overlayTableIngameNote": "ゲーム内プラグインがゲーム画面に直接描画します（Tab を押し続けると表示）。排他フルスクリーンでも有効。ゲーム内プラグインのインストールが必要です。",
   "overlayTableOff": "オフ",
   "overlayRoster": "名簿認識",
   "overlayRosterPassive": "画面ピクセル受動検出",
@@ -340,9 +338,7 @@
     "colMetricWinrate": "勝率",
     "colMetricPr": "PR",
     "colMetricBattles": "戦闘数",
-    "colMetricDamage": "平均ダメージ",
-    "aimTitle": "照準パネル",
-    "aimHint": "狙った敵艦の戦績列を照準マークの下に表示します（現在はグローバル範囲のみ）。カードをすべて削除するとパネルは非表示になります。"
+    "colMetricDamage": "平均ダメージ"
   },
   "schemeDefaultName": "デフォルト",
   "pairingWip": "スマホ連携機能は開発中で、まだ完成していません。",

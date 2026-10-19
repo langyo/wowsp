@@ -31,11 +31,6 @@ pub mod tactics_profile;
 // Consent-gated hardware & environment report for the feedback bundle
 // (see the module docs for the privacy flow + elevated self-relaunch).
 pub mod hardware_info;
-pub mod mod_tags;
-// The 游戏内展示 bridge: answers the in-game plugin's request.json with
-// stats rows (desktop only — no game client runs on the phone build).
-#[cfg(desktop)]
-pub mod ingame_bridge;
 pub mod ingame_plugin;
 pub mod installer;
 pub mod logs;
@@ -44,6 +39,7 @@ pub mod media;
 pub mod mod_catalog;
 pub mod mod_hub;
 pub mod mod_install;
+pub mod mod_tags;
 pub mod model_pack;
 pub mod network;
 pub mod open_external;

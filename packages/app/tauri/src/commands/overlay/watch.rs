@@ -594,9 +594,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // Declare the OVERLAY view mode in the probe's wowsp.toml once per
     // game session (panel = 0 / barcode = 1 — the capture side channel's
     // strips own the screen; the in-game '--' tables stay dark): the
-    // probe re-reads the table at every battle start, and the in-game
-    // bridge re-declares its own mode when IT starts, so the two
-    // consumers never race on the same screen.
+    // probe re-reads the table at every battle start.
     if game.is_some() != fsm.declared_overlay_mode {
         fsm.declared_overlay_mode = game.is_some();
         if fsm.declared_overlay_mode {
@@ -605,10 +603,9 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     }
 
     // View-mode switch (`overlay-config.toml`, written by the settings
-    // modal): `table: "off"` AND `table: "ingame"` (the plugin renders
-    // inside the game instead) both disable the transparent Tab overlay.
-    // The webui never creates the overlay window + watcher while either is
-    // set and tears them down on the off edge; this cached read is the
+    // modal): `table: "off"` disables the transparent Tab overlay. The
+    // webui never creates the overlay window + watcher while it is set
+    // and tears them down on the off edge; this cached read is the
     // Rust-side belt-and-suspenders — a stray tick (or a stale watcher
     // outliving the webui's teardown) must never show the window
     // against the setting, and an already-shown one hides again as soon
