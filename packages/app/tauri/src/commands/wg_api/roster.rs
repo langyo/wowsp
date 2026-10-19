@@ -18,6 +18,7 @@ use super::shared::{
     nickname_matches, parse_dog_tag, pick_verified_entry,
 };
 use super::stats_math::{PrAlgo, PvpStats, account_expected_pr_for};
+use crate::commands::network::HttpPair;
 
 /// Concurrency cap for the batch name→account resolution. WG public API
 /// rate-limits ~20 req/s per IP; 4 in-flight keeps a full 24-player roster
@@ -109,11 +110,8 @@ pub async fn lookup_player_stats(
         super::wg_realm::vortex_host(&realm).map_err(|e| LookupError::from(e.to_string()))?;
     // Per-request timeout — a hung connection must not block a UI lookup
     // indefinitely.
-    let client = crate::commands::network::http_client_builder()
-        .map_err(|e| LookupError::from(e.to_string()))?
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("http client: {e}"))?;
+    let clients = crate::commands::network::HttpPair::build(|b| b.timeout(Duration::from_secs(15)))
+        .map_err(|e| LookupError::from(e.to_string()))?;
 
     // 1. Resolve the query to an account. A purely numeric query is a UID
     //    ("nickname or UID" search): hit account/info directly and only fall
@@ -127,7 +125,7 @@ pub async fn lookup_player_stats(
         // `From<String>` bridge, so the anyhow error renders through its
         // Display (the historical message) on the way in.
         Ok(uid) if uid > 0 => {
-            match account_nickname_by_id(&client, &app_id, host, uid)
+            match account_nickname_by_id(&clients, &app_id, host, uid)
                 .await
                 .map_err(|e| e.to_string())?
             {
@@ -138,10 +136,10 @@ pub async fn lookup_player_stats(
                         nickname,
                     })
                 },
-                None => account_list_one(&client, &app_id, host, &name).await?,
+                None => account_list_one(&clients, &app_id, host, &name).await?,
             }
         },
-        _ => account_list_one(&client, &app_id, host, &name).await?,
+        _ => account_list_one(&clients, &app_id, host, &name).await?,
     }
     .ok_or_else(|| LookupError::not_found_account(name.clone(), realm.clone()))?;
 
@@ -157,7 +155,7 @@ pub async fn lookup_player_stats(
              statistics.rank_solo,statistics.rank_div2,statistics.rank_div3",
             entry.account_id
         );
-        let resp = super::upstream_health::recorded_get(&client, host, "account/info", url)
+        let resp = super::upstream_health::recorded_get(&clients, host, "account/info", url)
             .await
             .map_err(|e| e.to_string())?;
         resp.json::<WgResponse<serde_json::Value>>()
@@ -165,10 +163,10 @@ pub async fn lookup_player_stats(
             .map_err(|e| format!("account/info parse: {e}"))
     };
     let clan_fut =
-        async { fetch_clan_info_for_accounts(&client, &app_id, host, &[entry.account_id]).await };
+        async { fetch_clan_info_for_accounts(&clients, &app_id, host, &[entry.account_id]).await };
     let dog_tag_fut = async {
         let resp = super::upstream_health::best_effort_get(
-            &client,
+            &clients,
             vortex_host,
             "vortex dog tag",
             format!("https://{vortex_host}/api/accounts/{}", entry.account_id),
@@ -353,10 +351,8 @@ pub(crate) async fn lookup_roster(
     }
     // Per-request timeout so one hung connection can't stall the roster all
     // battle long.
-    let client = crate::commands::network::http_client_builder()?
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| anyhow!("http client: {e}"))?;
+    let clients =
+        crate::commands::network::HttpPair::build(|b| b.timeout(Duration::from_secs(15)))?;
 
     // The slot's exact account id, when the caller has one (> 0).
     let slot_id =
@@ -407,7 +403,7 @@ pub(crate) async fn lookup_roster(
         // A home-realm transport/API failure rejects the batch like the
         // name path below — the bridge's FAILURE_BACKOFF then retries
         // instead of the request settling as permanent "no data".
-        let hits = match resolve_ids_on_realm(&client, &realm, &id_misses).await {
+        let hits = match resolve_ids_on_realm(&clients, &realm, &id_misses).await {
             Ok(hits) => hits,
             Err(e) => {
                 tracing::warn!(
@@ -430,7 +426,7 @@ pub(crate) async fn lookup_roster(
     }
     if !name_misses.is_empty() {
         let miss_names: Vec<String> = name_misses.iter().map(|(_, n)| n.clone()).collect();
-        let resolved = match resolve_names_on_realm(&client, &realm, &miss_names).await {
+        let resolved = match resolve_names_on_realm(&clients, &realm, &miss_names).await {
             Ok(resolved) => resolved,
             Err(e) => {
                 // The frontend retries with backoff and then re-probes slowly, but
@@ -503,7 +499,7 @@ pub(crate) async fn lookup_roster(
                     }
                     // Probe failures degrade (the cache consult above plus
                     // the name probe below still get their chance).
-                    let hits = resolve_ids_on_realm(&client, probe, &id_entries)
+                    let hits = resolve_ids_on_realm(&clients, probe, &id_entries)
                         .await
                         .unwrap_or_default();
                     id_entries.retain(|(slot, name, _)| match hits.get(slot) {
@@ -552,7 +548,7 @@ pub(crate) async fn lookup_roster(
                         continue;
                     }
                     let live_names: Vec<String> = live.iter().map(|(_, n)| n.clone()).collect();
-                    match resolve_names_on_realm(&client, probe, &live_names).await {
+                    match resolve_names_on_realm(&clients, probe, &live_names).await {
                         Ok(resolved) => {
                             for ((slot, name), stats) in live.iter().zip(resolved) {
                                 roster_cache_insert(probe, name, stats.clone());
@@ -616,7 +612,7 @@ pub(crate) async fn lookup_roster(
     let can_be_cross = cross_realm && !cross_probe_realms(&realm).is_empty();
     if !id_fallback.is_empty() {
         let fb_names: Vec<String> = id_fallback.iter().map(|(_, n)| n.clone()).collect();
-        if let Ok(resolved) = resolve_names_on_realm(&client, &realm, &fb_names).await {
+        if let Ok(resolved) = resolve_names_on_realm(&clients, &realm, &fb_names).await {
             for ((slot, name), stats) in id_fallback.iter().zip(resolved) {
                 roster_cache_insert(&realm, name, stats.clone());
                 let Some(stats) = stats else {
@@ -694,7 +690,7 @@ pub(super) fn pick_cross_realm_hit(now: i64, mut hits: Vec<RealmHit>) -> Option<
 /// failure policy (the home pass fails the batch on error; probes
 /// degrade). Answer order matches `names`.
 async fn resolve_names_on_realm(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     realm: &str,
     names: &[String],
 ) -> Result<Vec<Option<PlayerStats>>> {
@@ -708,7 +704,7 @@ async fn resolve_names_on_realm(
     //    fails the whole batch — it must not degrade into "not found" (the
     //    frontend would cache that).
     let results: Vec<Result<Vec<AccountListEntry>>> = {
-        let client_ref = client;
+        let pair_ref = clients;
         stream::iter(names.iter().cloned())
             .map(|name| {
                 let url = format!(
@@ -717,7 +713,7 @@ async fn resolve_names_on_realm(
                 );
                 async move {
                     let resp =
-                        super::upstream_health::recorded_get(client_ref, host, "account/list", url)
+                        super::upstream_health::recorded_get(pair_ref, host, "account/list", url)
                             .await?;
                     let list = resp
                         .json::<WgResponse<Vec<AccountListEntry>>>()
@@ -769,8 +765,8 @@ async fn resolve_names_on_realm(
     let (info, clan_map) = if ids.is_empty() {
         (Ok(None), HashMap::new())
     } else {
-        let info_fut = async { fetch_account_info_chunked(client, &app_id, host, &ids).await };
-        let clan_fut = async { fetch_clan_info_for_accounts(client, &app_id, host, &ids).await };
+        let info_fut = async { fetch_account_info_chunked(clients, &app_id, host, &ids).await };
+        let clan_fut = async { fetch_clan_info_for_accounts(clients, &app_id, host, &ids).await };
         let (info, clan_map) = tokio::join!(info_fut, clan_fut);
         (info, clan_map)
     };
@@ -798,7 +794,7 @@ async fn resolve_names_on_realm(
 /// backoff then retries), while the cross-realm probe call sites degrade
 /// on the same signal — each caller owns its failure policy.
 async fn resolve_ids_on_realm(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     realm: &str,
     entries: &[(usize, String, i64)],
 ) -> Result<HashMap<usize, PlayerStats>> {
@@ -809,8 +805,8 @@ async fn resolve_ids_on_realm(
     let app_id = super::wg_realm::application_id(realm);
     let host = super::wg_realm::api_host(realm)?;
     let ids: Vec<i64> = entries.iter().map(|(_, _, id)| *id).collect();
-    let info_fut = async { fetch_account_info_chunked(client, &app_id, host, &ids).await };
-    let clan_fut = async { fetch_clan_info_for_accounts(client, &app_id, host, &ids).await };
+    let info_fut = async { fetch_account_info_chunked(clients, &app_id, host, &ids).await };
+    let clan_fut = async { fetch_clan_info_for_accounts(clients, &app_id, host, &ids).await };
     let (info, clan_map) = tokio::join!(info_fut, clan_fut);
     let info_data = info?;
     for (slot, name, id) in entries {
@@ -848,7 +844,7 @@ async fn resolve_ids_on_realm(
 /// frontend's backoff own the retry instead of silently caching
 /// hidden=true for everyone.
 async fn fetch_account_info_chunked(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     app_id: &str,
     host: &str,
     ids: &[i64],
@@ -863,7 +859,7 @@ async fn fetch_account_info_chunked(
             .collect::<Vec<_>>()
             .join(",");
         let resp = super::upstream_health::recorded_get(
-            client,
+            clients,
             host,
             "account/info",
             format!(

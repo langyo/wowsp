@@ -226,11 +226,11 @@ async fn resolve_account_ids(realm: &str, names: Vec<String>) -> Result<Vec<Opti
 /// account/list endpoint.
 async fn resolve_account_ids_uncached(realm: &str, names: Vec<String>) -> Result<Vec<Option<i64>>> {
     if realm == "cn" {
-        let cn_client = super::wg_api_cn::vortex_client()?;
-        let client_ref = &cn_client;
+        let cn_clients = super::wg_api_cn::vortex_pair()?;
+        let pair_ref = &cn_clients;
         Ok(stream::iter(names)
             .map(|name| async move {
-                super::wg_api_cn::account_list_one(client_ref, &name)
+                super::wg_api_cn::account_list_one(pair_ref, &name)
                     .await
                     .ok()
                     .flatten()
@@ -242,20 +242,18 @@ async fn resolve_account_ids_uncached(realm: &str, names: Vec<String>) -> Result
     } else {
         let app_id = wg_realm::application_id(realm);
         let host = wg_realm::api_host(realm)?;
-        let client = crate::commands::network::http_client_builder()?
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|e| anyhow!("http client: {e}"))?;
+        let clients =
+            crate::commands::network::HttpPair::build(|b| b.timeout(Duration::from_secs(15)))?;
         // Shared references (Copy) — each future captures its own copy, so
         // the closure stays movable (an owned capture would move the first
         // future's state out of the closure).
-        let client_ref = &client;
+        let pair_ref = &clients;
         let app_id_ref = &app_id;
         Ok(stream::iter(names)
             .map(|name| async move {
                 // Same exact-match guard as the stats batch: a lookalike's
                 // data must never leak into a roster row.
-                super::wg_api::account_list_one(client_ref, app_id_ref, host, &name)
+                super::wg_api::account_list_one(pair_ref, app_id_ref, host, &name)
                     .await
                     .ok()
                     .flatten()
@@ -354,16 +352,14 @@ async fn fetch_ship_types_online(realm: &str, ids: &[i64]) -> Result<HashMap<i64
         .map(|i| i.to_string())
         .collect::<Vec<_>>()
         .join(",");
-    let client = crate::commands::network::http_client_builder()?
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| anyhow!("http client: {e}"))?;
+    let clients =
+        crate::commands::network::HttpPair::build(|b| b.timeout(Duration::from_secs(15)))?;
     let url = format!(
         "https://{host}/wows/encyclopedia/ships/?application_id={app_id}\
          &ship_id={id_list}&language=en&fields=ship_id,type"
     );
     let resp =
-        super::upstream_health::recorded_get(&client, host, "encyclopedia/ships", url).await?;
+        super::upstream_health::recorded_get(&clients, host, "encyclopedia/ships", url).await?;
     let parsed: WgResponse = resp
         .json()
         .await

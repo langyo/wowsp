@@ -30,11 +30,10 @@ struct WgError {
     message: Option<String>,
 }
 
-/// Build a reqwest client for WG API calls (proxy-aware via network.rs).
-fn wg_client() -> Result<reqwest::Client> {
-    crate::commands::network::http_client_builder()?
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
+/// Build a reqwest client pair for WG API calls (proxy policy + direct
+/// twin via network.rs).
+fn wg_clients() -> Result<crate::commands::network::HttpPair> {
+    crate::commands::network::HttpPair::build(|b| b.timeout(std::time::Duration::from_secs(15)))
         .map_err(|e| anyhow!("build reqwest client: {e}"))
 }
 
@@ -105,12 +104,12 @@ pub async fn get_ranked_stats(
     }
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::api_host(&realm)?;
-    let client = wg_client()?;
+    let clients = wg_clients()?;
 
     // 1. Get season IDs (sorted descending = most recent first).
     let seasons_url = format!("https://{host}/wows/seasons/info/?application_id={app_id}");
     let seasons_resp: WgResponse<HashMap<i64, serde_json::Value>> =
-        super::upstream_health::recorded_get(&client, host, "seasons/info", seasons_url)
+        super::upstream_health::recorded_get(&clients, host, "seasons/info", seasons_url)
             .await?
             .json()
             .await
@@ -146,7 +145,7 @@ pub async fn get_ranked_stats(
         id_str.join(",")
     );
     let stats_resp: WgResponse<serde_json::Value> =
-        super::upstream_health::recorded_get(&client, host, "seasons/accountinfo", stats_url)
+        super::upstream_health::recorded_get(&clients, host, "seasons/accountinfo", stats_url)
             .await?
             .json()
             .await

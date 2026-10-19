@@ -54,12 +54,12 @@ pub async fn get_game_version_pub() -> anyhow::Result<GameVersionInfo> {
     // encyclopedia/info isn't realm-specific in content, but the API requires a
     // valid realm host. Use asia as the canonical source.
     let app_id = super::wg_realm::application_id("asia");
-    let client = wg_client()?;
+    let clients = wg_clients()?;
     let url = format!(
         "https://api.worldofwarships.asia/wows/encyclopedia/info/?application_id={app_id}&language=en"
     );
     let resp: WgResponse<serde_json::Value> = super::upstream_health::recorded_get(
-        &client,
+        &clients,
         "api.worldofwarships.asia",
         "encyclopedia/info",
         url,
@@ -135,7 +135,7 @@ pub async fn get_ship_encyclopedia(
     // compound cache key still keeps CN-named entries apart).
     let app_id = super::wg_realm::application_id(&realm);
     let host = super::wg_realm::encyclopedia_host(&realm)?;
-    let client = std::sync::Arc::new(wg_client()?);
+    let clients = std::sync::Arc::new(wg_clients()?);
     let base_url = format!(
         "https://{host}/wows/encyclopedia/ships/?application_id={app_id}&language={wg_lang}&limit=100&fields=ship_id,name,tier,type,nation,is_premium,is_special,description,default_profile,images"
     );
@@ -143,11 +143,16 @@ pub async fn get_ship_encyclopedia(
     // Fetch page 1 first to get page_total, then fetch remaining pages in parallel.
     let page1_url = format!("{base_url}&page_no=1");
     let page1_resp: WgResponse<serde_json::Map<String, serde_json::Value>> =
-        super::upstream_health::recorded_get(&client, host, "encyclopedia/ships page 1", page1_url)
-            .await?
-            .json()
-            .await
-            .map_err(|e| anyhow!("encyclopedia/ships page 1 parse: {e}"))?;
+        super::upstream_health::recorded_get(
+            &clients,
+            host,
+            "encyclopedia/ships page 1",
+            page1_url,
+        )
+        .await?
+        .json()
+        .await
+        .map_err(|e| anyhow!("encyclopedia/ships page 1 parse: {e}"))?;
     if page1_resp.status != "ok" {
         return Err(anyhow!(
             "encyclopedia/ships: {}",
@@ -167,14 +172,13 @@ pub async fn get_ship_encyclopedia(
     let mut handles = Vec::new();
     for pn in 2..=page_total {
         let url = format!("{base_url}&page_no={pn}");
-        let c = client.clone();
+        let c = clients.clone();
         handles.push(tokio::spawn(async move {
-            // Driven by hand (not recorded_get) so the raw reqwest::Error
-            // flows into this anyhow context exactly as it did before the
-            // health registry existed — only the outcome is recorded.
-            let sent = c.get(&url).send().await;
-            super::upstream_health::record_response(host, &sent);
-            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> = sent?.json().await?;
+            let resp: WgResponse<serde_json::Map<String, serde_json::Value>> =
+                super::upstream_health::recorded_get(&c, host, "encyclopedia/ships page", url)
+                    .await?
+                    .json()
+                    .await?;
             if resp.status != "ok" {
                 anyhow::bail!("{}", resp.error.message.unwrap_or_default());
             }
@@ -303,8 +307,8 @@ fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> 
 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
 
-fn wg_client() -> anyhow::Result<reqwest::Client> {
-    crate::commands::network::build_http_client()
+fn wg_clients() -> anyhow::Result<crate::commands::network::HttpPair> {
+    crate::commands::network::HttpPair::build(|b| b)
 }
 
 fn now_ts() -> i64 {

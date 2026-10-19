@@ -373,6 +373,13 @@ fn wininet_proxy() -> Option<String> {
 /// per-request bodies set their own `.timeout()` where it matters.
 pub fn http_client_builder() -> anyhow::Result<reqwest::ClientBuilder> {
     let config = load_config();
+    http_builder_for(&config)
+}
+
+/// [`http_client_builder`] against an explicit config — the testable core
+/// and the builder [`HttpPair::build`] shares so one config load feeds both
+/// clients of a pair.
+fn http_builder_for(config: &NetworkConfig) -> anyhow::Result<reqwest::ClientBuilder> {
     let mut builder = reqwest::Client::builder()
         .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
         .connect_timeout(std::time::Duration::from_secs(15));
@@ -387,7 +394,7 @@ pub fn http_client_builder() -> anyhow::Result<reqwest::ClientBuilder> {
     {
         builder = builder.tls_certs_only(android_tls_roots()?);
     }
-    if let Some(url) = effective_proxy(&config) {
+    if let Some(url) = effective_proxy(config) {
         let mut proxy =
             reqwest::Proxy::all(url.clone()).map_err(|e| anyhow!("proxy {url}: {e}"))?;
         // Loopback targets (locally served update artifacts, dev mirrors)
@@ -406,6 +413,88 @@ pub fn build_http_client() -> anyhow::Result<reqwest::Client> {
     http_client_builder()?
         .build()
         .map_err(|e| anyhow!("http client: {e}"))
+}
+
+/// A proxy-honoring client plus its always-direct twin — the unit the
+/// stats-family transports ride (see
+/// `upstream_health::get_with_fallback`): the configured policy drives the
+/// primary client exactly as the single client it replaces did, and when a
+/// proxy is actually in effect a transport-level failure degrades to one
+/// attempt over the direct twin before the request fails for good. With no
+/// proxy in effect the twins are equivalent and the pair adds nothing.
+/// Clone is cheap (both clients are internally Arc'd) — fan-out sites clone
+/// the pair per task exactly like they cloned bare clients before.
+#[derive(Clone)]
+pub struct HttpPair {
+    proxied: reqwest::Client,
+    direct: reqwest::Client,
+    /// Whether the configured policy actually routes the primary client
+    /// through a proxy — the fallback arm only makes sense then.
+    has_proxy: bool,
+}
+
+impl HttpPair {
+    /// Build both clients from one configuration closure and the persisted
+    /// network config. The closure applies the family's UA/timeout settings
+    /// to each builder; it must stay `Copy` because both twins run through
+    /// it.
+    pub fn build(
+        configure: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Copy,
+    ) -> anyhow::Result<Self> {
+        let config = load_config();
+        Self::build_with(&config, configure)
+    }
+
+    /// [`build`]'s testable core: an explicit config instead of the
+    /// persisted one. The builder is reconstructed per client (reqwest's
+    /// `ClientBuilder` is not `Clone`) — a cheap config transform.
+    fn build_with(
+        config: &NetworkConfig,
+        configure: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Copy,
+    ) -> anyhow::Result<Self> {
+        let proxied = configure(http_builder_for(config)?)
+            .build()
+            .map_err(|e| anyhow!("http client: {e}"))?;
+        // no_proxy() both clears the policy proxy the base may carry and
+        // disables system-proxy detection — the twin is direct by
+        // construction, whatever the environment says.
+        let direct = configure(http_builder_for(config)?)
+            .no_proxy()
+            .build()
+            .map_err(|e| anyhow!("http client: {e}"))?;
+        Ok(Self {
+            proxied,
+            direct,
+            has_proxy: effective_proxy(config).is_some(),
+        })
+    }
+
+    pub(crate) fn proxied(&self) -> &reqwest::Client {
+        &self.proxied
+    }
+
+    pub(crate) fn direct(&self) -> &reqwest::Client {
+        &self.direct
+    }
+
+    pub(crate) fn has_proxy(&self) -> bool {
+        self.has_proxy
+    }
+
+    /// Hand-built pair for tests (a local stub for the direct twin, a
+    /// dead-proxy client for the proxied one).
+    #[cfg(test)]
+    pub(crate) fn from_clients(
+        proxied: reqwest::Client,
+        direct: reqwest::Client,
+        has_proxy: bool,
+    ) -> Self {
+        Self {
+            proxied,
+            direct,
+            has_proxy,
+        }
+    }
 }
 
 /// The Mozilla CA root bundle vendored at `res/ca-bundle.pem` (refreshed
@@ -431,6 +520,27 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// The pair's proxy flag mirrors the config the twins were built from:
+    /// the fallback chain arms itself only when a proxy is actually in
+    /// effect (a "none"/proxy-less "system" config rides direct only).
+    #[test]
+    fn pair_reports_proxy_presence_from_the_config() {
+        let none = NetworkConfig {
+            mode: ProxyMode::None,
+            ..NetworkConfig::default()
+        };
+        let pair = HttpPair::build_with(&none, |b| b).expect("none pair");
+        assert!(!pair.has_proxy());
+
+        let manual = NetworkConfig {
+            mode: ProxyMode::Manual,
+            proxy: Some("http://127.0.0.1:7890".into()),
+            ..NetworkConfig::default()
+        };
+        let pair = HttpPair::build_with(&manual, |b| b).expect("manual pair");
+        assert!(pair.has_proxy());
     }
 
     /// A legacy JSON config migrates to canonical TOML on load, and the
