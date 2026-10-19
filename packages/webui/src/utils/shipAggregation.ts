@@ -126,8 +126,9 @@ export interface RecentDelta {
   ships: PlayerShipStats[];
   /** Baseline point timestamp — the latest history point at or before the
    *  cutoff. A ship whose rows there are absent or poisoned falls back to
-   *  its latest healthy earlier point, so an individual ship's window may
-   *  reach further back than `sinceTs`. */
+   *  its latest healthy earlier point for the counters, but is only shown
+   *  when its last battle itself lands in the window (see the
+   *  `lastBattleTime` guard in `computeRecentDelta`). */
   sinceTs: number;
   /** Window end actually used — the history point that closed a finite end
    *  bound, or "now" (the current rows) for the classic [cutoff, now]
@@ -165,7 +166,9 @@ export function isPoisonedCareerRow(row: ShipCareerTotals): boolean {
  *  (single-ship counterpart of `computeRecentDelta`). Deltas are clamped at 0
  *  to tolerate WG-side data corrections; a zero/negative battle delta yields
  *  null (not played in the window is indistinguishable from no baseline
- *  coverage per ship). */
+ *  coverage per ship), and so does a `lastBattleTime` before the window's
+ *  labeled start — a positive delta there would be the same missing-baseline
+ *  artifact `computeRecentDelta` guards against. */
 export function shipRecentDelta(
   current: PlayerShipStats,
   history: ShipStatsHistoryPoint[],
@@ -192,6 +195,10 @@ export function shipRecentDelta(
   const sinceTs = base ? baseTs : latestTs;
   const battles = current.battles - (base?.battles ?? 0);
   if (battles <= 0) return null;
+  // Same artifact guard as computeRecentDelta: a resurrected full-career
+  // delta for a ship last played before the window start is a missing
+  // (poisoned) baseline, not a recent battle.
+  if (current.lastBattleTime < sinceTs) return null;
   const wins = Math.max(0, current.wins - (base?.wins ?? 0));
   const frags = Math.max(0, current.frags - (base?.frags ?? 0));
   const damage = Math.max(0, current.damageCaused - (base?.damageCaused ?? 0));
@@ -219,7 +226,17 @@ export function shipRecentDelta(
  *  range's `to` day): the latest history point at or before it closes the
  *  window instead of the current rows, so a past end day never leaks
  *  newer battles in. Without a snapshot that old the window effectively
- *  runs to now — the current rows close it, and `endTs` says so. */
+ *  runs to now — the current rows close it, and `endTs` says so.
+ *
+ *  Ships are dropped when the career-last battle time at the window's end
+ *  reference (the current rows in the classic view) predates `sinceTs`:
+ *  the window is labeled [sinceTs, end] and a career-last battle before
+ *  `sinceTs` means nothing was played in it. A positive battle delta under
+ *  that condition is a baseline artifact — the ship's row is missing up to
+ *  the cutoff (poisoned rows never record one, or a truncated fetch dropped
+ *  it) and the diff resurrects stale career totals — never a window
+ *  battle. The views' date column renders the current row's same field, so
+ *  the guard keeps the filter and the displayed date in agreement. */
 export function computeRecentDelta(
   current: PlayerShipStats[],
   history: ShipStatsHistoryPoint[],
@@ -270,6 +287,13 @@ export function computeRecentDelta(
     const end = endByShip ? endByShip.get(cur.shipId) : cur;
     const battles = (end?.battles ?? 0) - (prev?.battles ?? 0);
     if (battles <= 0) continue;
+    // Career-last battle before the labeled window start → nothing was
+    // played in it; the delta is a missing-baseline artifact, not recent
+    // battles (see the doc comment above). Read at the window-end reference
+    // — the current rows in the classic view, the closing snapshot in a
+    // bounded window — so a resurrected delta is dated by the snapshot it
+    // was diffed against, not by battles fought after the window.
+    if ((end ?? cur).lastBattleTime < sinceTs) continue;
     const wins = Math.max(0, (end?.wins ?? 0) - (prev?.wins ?? 0));
     const damageCaused = Math.max(0, (end?.damageCaused ?? 0) - (prev?.damageCaused ?? 0));
     ships.push({
