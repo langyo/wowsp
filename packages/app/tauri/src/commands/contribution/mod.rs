@@ -58,7 +58,9 @@ use wanted::merge_verdict;
 const CONTRIBUTION_FILE: &str = "contribution.json";
 /// Bump when the store's field semantics change; `#[serde(default)]`
 /// keeps plain field additions healing instead of discarding the file.
-const STORE_VERSION: u32 = 1;
+/// (v2: `identity` re-scoped to the next-upload draft, `uploaders` added
+/// as the attribution record — pre-v2 files seed via the missing key.)
+const STORE_VERSION: u32 = 2;
 /// LRU cap on `knownHashes` (contract §9).
 const KNOWN_HASHES_CAP: usize = 5000;
 /// Local freshness window of the cached wanted document (contract §9).
@@ -105,7 +107,13 @@ struct KnownHash {
 #[serde(rename_all = "camelCase", default)]
 struct ContributionStore {
     version: u32,
+    /// The declared identity the NEXT upload runs under (the wizard's
+    /// draft — gating + prefill), not a participation record.
     identity: Option<ContributionIdentity>,
+    /// Every identity a successful upload from this machine ran under,
+    /// first-recorded first — the status card's uploader tags. Replays may
+    /// be uploaded on someone's behalf (代传), so several people pile up.
+    uploaders: Vec<ContributionIdentity>,
     consent_version: Option<u32>,
     anon_id: Option<String>,
     upload_token: Option<String>,
@@ -120,6 +128,7 @@ impl Default for ContributionStore {
         Self {
             version: STORE_VERSION,
             identity: None,
+            uploaders: Vec::new(),
             consent_version: None,
             anon_id: None,
             upload_token: None,
@@ -149,7 +158,22 @@ fn rfc3339_now() -> String {
 fn load_store_in(dir: &Path) -> Result<ContributionStore> {
     match super::appdata::read_json_in(dir, CONTRIBUTION_FILE)? {
         Some(raw) => {
-            serde_json::from_str(&raw).map_err(|e| anyhow!("parse contribution store: {e}"))
+            let value: serde_json::Value =
+                serde_json::from_str(&raw).map_err(|e| anyhow!("parse contribution store: {e}"))?;
+            // A PRE-uploader store carries the single declared identity
+            // and no `uploaders` key: seed it as the one uploader (everyone
+            // who declared one did so to upload). Current stores always
+            // write the key, so a declared-but-not-yet-uploaded identity
+            // never gains a phantom tag.
+            let legacy = value.get("uploaders").is_none();
+            let mut store: ContributionStore = serde_json::from_value(value)
+                .map_err(|e| anyhow!("parse contribution store: {e}"))?;
+            if legacy {
+                if let Some(identity) = store.identity.clone() {
+                    record_uploader(&mut store, &identity);
+                }
+            }
+            Ok(store)
         },
         None => Ok(ContributionStore::default()),
     }
@@ -256,6 +280,14 @@ fn valid_realm(realm: &str) -> bool {
 /// 3..=24 chars, no control characters (contract §3).
 fn valid_name(name: &str) -> bool {
     (3..=24).contains(&name.chars().count()) && !name.chars().any(char::is_control)
+}
+
+/// Record the identity a successful upload ran under — first-recorded
+/// first, no duplicates (the status card's uploader tags).
+fn record_uploader(store: &mut ContributionStore, identity: &ContributionIdentity) {
+    if !store.uploaders.contains(identity) {
+        store.uploaders.push(identity.clone());
+    }
 }
 
 // ── relay HTTP face ─────────────────────────────────────────────────────────
@@ -636,6 +668,7 @@ fn state_of(store: &ContributionStore) -> ContributionState {
     let mine = store.mine_cache.as_ref();
     ContributionState {
         identity: store.identity.clone(),
+        uploaders: store.uploaders.clone(),
         consent_version: store.consent_version,
         anon_id: store.anon_id.clone(),
         has_upload_token: store.upload_token.is_some(),
@@ -685,23 +718,6 @@ pub fn contribution_save_consent(version: u32) -> CommandResult<()> {
         let given = store.consent_version.unwrap_or(0);
         store.consent_version = Some(version.max(given));
         ensure_credentials(store)
-    })
-    .map_err(Into::into)
-}
-
-/// Forget the persona: identity, credentials and both caches clear;
-/// `knownHashes` survive (the contract pins them — they keep duplicate
-/// suppression working across identity resets) and so does the consent
-/// record (a privacy agreement, not an identity).
-#[tauri::command]
-pub fn contribution_forget_identity() -> CommandResult<()> {
-    edit_store(|store| {
-        store.identity = None;
-        store.anon_id = None;
-        store.upload_token = None;
-        store.wanted_cache = None;
-        store.mine_cache = None;
-        Ok(())
     })
     .map_err(Into::into)
 }
@@ -1188,15 +1204,19 @@ async fn pipeline_inner(ctx: &RunContext, items: &[PlanCandidate], scratch: &Pat
         .await
         .map_err(|e| anyhow!("parse upload response: {e}"))?;
 
-    // ── done ── remember the member hashes, refresh the mine cache from
-    // the authoritative answer, and publish the per-item results.
+    // ── done ── remember the member hashes, credit the identity the run
+    // actually uploaded under (the attribution record), refresh the mine
+    // cache from the authoritative answer, and publish the per-item
+    // results.
     let now = now_unix();
     let member_rows: Vec<(String, u64)> = members
         .values()
         .map(|m| (m.sha256.clone(), m.size_bytes))
         .collect();
+    let run_identity = ctx.identity.clone();
     edit_store(|store| {
         remember_hashes(store, now, member_rows.into_iter());
+        record_uploader(store, &run_identity);
         Ok(())
     })?;
     let mut mine_after = MineDoc {
@@ -1527,9 +1547,11 @@ fn upload_error(
 ) -> anyhow::Error {
     let trimmed: String = body.chars().take(300).collect();
     match status {
-        reqwest::StatusCode::FORBIDDEN | reqwest::StatusCode::CONFLICT => anyhow!(
-            "the relay rejected this upload token — forget your sharing identity and set it up again"
-        ),
+        reqwest::StatusCode::FORBIDDEN | reqwest::StatusCode::CONFLICT => {
+            anyhow!(
+                "the relay rejected this upload token — the contributor record may have been revoked"
+            )
+        },
         reqwest::StatusCode::PAYLOAD_TOO_LARGE => {
             anyhow!("share package exceeds the relay's size or member cap")
         },
@@ -1576,33 +1598,77 @@ mod tests {
     }
 
     #[test]
-    fn store_roundtrips_and_forgets_the_persona_but_not_the_hashes() {
+    fn store_roundtrips_and_seeds_only_legacy_uploaders() {
         let fixture = StoreFixture::new();
-        let mut store = ContributionStore::default();
-        store.identity = Some(ContributionIdentity {
+        let identity = ContributionIdentity {
             realm: "asia".into(),
             name: "Player".into(),
-        });
+        };
+        let mut store = ContributionStore::default();
+        store.identity = Some(identity.clone());
+        store.uploaders = vec![identity.clone()];
         store.consent_version = Some(1);
         store.anon_id = Some(uuid::Uuid::new_v4().to_string());
         store.upload_token = Some("t".repeat(32));
         remember_hashes(&mut store, 100, (0..10).map(|i| (sha(i), 1024)));
         persist_store_in(&fixture.0, &store).unwrap();
 
+        // Current-format roundtrip: uploaders survive verbatim, hashes too.
         let loaded = load_store_in(&fixture.0).unwrap();
         assert_eq!(loaded.identity, store.identity);
+        assert_eq!(loaded.uploaders, store.uploaders);
         assert_eq!(loaded.consent_version, Some(1));
         assert_eq!(loaded.known_hashes.len(), 10);
 
-        // forget: persona + caches clear, hashes + consent survive.
-        let mut forgotten = loaded;
-        forgotten.identity = None;
-        forgotten.anon_id = None;
-        forgotten.upload_token = None;
-        forgotten.wanted_cache = None;
-        forgotten.mine_cache = None;
-        assert_eq!(forgotten.known_hashes.len(), 10);
-        assert_eq!(forgotten.consent_version, Some(1));
+        // Pre-uploader store (no `uploaders` key): the declared identity
+        // seeds as its one uploader.
+        let legacy = serde_json::json!({
+            "version": 1,
+            "identity": { "realm": "cn", "name": "Pioneer" },
+            "consentVersion": 1,
+        });
+        super::super::appdata::write_json_in(&fixture.0, CONTRIBUTION_FILE, &legacy.to_string())
+            .unwrap();
+        let seeded = load_store_in(&fixture.0).unwrap();
+        assert_eq!(
+            seeded.uploaders,
+            vec![ContributionIdentity {
+                realm: "cn".into(),
+                name: "Pioneer".into(),
+            }]
+        );
+
+        // A current (v2) store with a declared-but-not-yet-uploaded
+        // identity must NOT gain an uploader row (the record lists real
+        // uploads only).
+        let modern = serde_json::json!({
+            "version": 2,
+            "identity": { "realm": "eu", "name": "Draft" },
+            "uploaders": [],
+        });
+        super::super::appdata::write_json_in(&fixture.0, CONTRIBUTION_FILE, &modern.to_string())
+            .unwrap();
+        let unseeded = load_store_in(&fixture.0).unwrap();
+        assert!(unseeded.uploaders.is_empty());
+    }
+
+    #[test]
+    fn record_uploader_dedups_and_keeps_first_recorded_order() {
+        let mut store = ContributionStore::default();
+        let first = ContributionIdentity {
+            realm: "asia".into(),
+            name: "Player".into(),
+        };
+        let second = ContributionIdentity {
+            realm: "cn".into(),
+            name: "Friend".into(),
+        };
+        record_uploader(&mut store, &first);
+        record_uploader(&mut store, &second);
+        record_uploader(&mut store, &first);
+        assert_eq!(store.uploaders, vec![first.clone(), second.clone()]);
+        record_uploader(&mut store, &first);
+        assert_eq!(store.uploaders, vec![first, second]);
     }
 
     #[test]
@@ -1918,10 +1984,18 @@ mod tests {
         let mut store = ContributionStore::default();
         assert_eq!(state_of(&store).staged_count, 0);
         assert!(state_of(&store).last_sync_at.is_none());
+        assert!(state_of(&store).uploaders.is_empty());
         store.identity = Some(ContributionIdentity {
             realm: "eu".into(),
             name: "Player".into(),
         });
+        record_uploader(
+            &mut store,
+            &ContributionIdentity {
+                realm: "eu".into(),
+                name: "Player".into(),
+            },
+        );
         store.mine_cache = Some(MineCacheEntry {
             doc: MineDoc {
                 staged: vec![StagedEntry {
@@ -1941,5 +2015,7 @@ mod tests {
         assert_eq!(state.credit_count, 7);
         assert_eq!(state.last_sync_at.as_deref(), Some("2026-10-14T09:00:00Z"));
         assert!(!state.has_upload_token);
+        assert_eq!(state.uploaders.len(), 1);
+        assert_eq!(state.uploaders[0].realm, "eu");
     }
 }

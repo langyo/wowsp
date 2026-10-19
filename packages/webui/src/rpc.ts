@@ -213,7 +213,6 @@ export const RPC = {
   contribution_state: "contribution_state",
   contribution_set_identity: "contribution_set_identity",
   contribution_save_consent: "contribution_save_consent",
-  contribution_forget_identity: "contribution_forget_identity",
   contribution_fetch_wanted: "contribution_fetch_wanted",
   contribution_sync_mine: "contribution_sync_mine",
   contribution_plan: "contribution_plan",

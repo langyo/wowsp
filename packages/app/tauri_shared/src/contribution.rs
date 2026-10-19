@@ -281,10 +281,16 @@ impl Default for QueueSnapshot {
 }
 
 /// The settings' status-card view of the local share state (contract §9).
+/// `identity` is the declared identity the NEXT upload runs under (the
+/// wizard's draft); `uploaders` is the attribution record — every identity
+/// a successful upload from this machine actually ran under (replays may
+/// be uploaded on someone's behalf, so the list can hold several people).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContributionState {
     pub identity: Option<ContributionIdentity>,
+    #[serde(default)]
+    pub uploaders: Vec<ContributionIdentity>,
     #[serde(default)]
     pub consent_version: Option<u32>,
     #[serde(default)]

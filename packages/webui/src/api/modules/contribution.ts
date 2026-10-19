@@ -171,9 +171,14 @@ export interface QueueSnapshot {
   results: QueueResult[];
 }
 
-/** The status card's view of the local share state. */
+/** The status card's view of the local share state. `identity` is the
+ *  declared identity the NEXT upload runs under (the wizard's draft);
+ *  `uploaders` is the attribution record — every identity a successful
+ *  upload from this machine actually ran under (replays may be uploaded
+ *  on someone's behalf, so the list can hold several people). */
 export interface ContributionState {
   identity: ContributionIdentity | null;
+  uploaders: ContributionIdentity[];
   consentVersion?: number | null;
   anonId?: string | null;
   hasUploadToken: boolean;
@@ -184,8 +189,9 @@ export interface ContributionState {
 }
 
 export const contributionApi = {
-  /** Local share state (identity, consent, counts, last sync). Never
-   *  rejects — an unreadable store degrades to defaults on the Rust side. */
+  /** Local share state (identity, uploaders, consent, counts, last sync).
+   *  Never rejects — an unreadable store degrades to defaults on the Rust
+   *  side. */
   contributionState: () => transport.invoke<ContributionState>(RPC.contribution_state),
   /** Declare/replace the self-declared identity (realm + nickname). */
   contributionSetIdentity: (realm: string, name: string) =>
@@ -193,8 +199,6 @@ export const contributionApi = {
   /** Record the accepted consent version (monotonic — never lowers). */
   contributionSaveConsent: (version: number) =>
     transport.invoke<null>(RPC.contribution_save_consent, { version }),
-  /** Forget identity + token + staged caches (keeps the known-hash cache). */
-  contributionForgetIdentity: () => transport.invoke<null>(RPC.contribution_forget_identity),
   /** Wanted ruleset with live counters (10-min local cache; `force`
    *  bypasses it). */
   contributionFetchWanted: (force: boolean) =>

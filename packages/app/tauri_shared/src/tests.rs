@@ -2721,6 +2721,10 @@ fn contribution_queue_and_state_pin_their_key_sets() {
             realm: "asia".into(),
             name: "Player".into(),
         }),
+        uploaders: vec![ContributionIdentity {
+            realm: "asia".into(),
+            name: "Player".into(),
+        }],
         consent_version: Some(1),
         anon_id: Some("00000000-0000-4000-8000-000000000000".into()),
         has_upload_token: true,
@@ -2733,6 +2737,7 @@ fn contribution_queue_and_state_pin_their_key_sets() {
         &state,
         &[
             "identity",
+            "uploaders",
             "consentVersion",
             "anonId",
             "hasUploadToken",
@@ -2744,6 +2749,7 @@ fn contribution_queue_and_state_pin_their_key_sets() {
     );
     assert_eq!(state["hasUploadToken"], true);
     assert_eq!(state["identity"]["realm"], "asia");
+    assert_eq!(state["uploaders"][0]["name"], "Player");
 
     let item = round_trips(PlanItem {
         path: r"C:\replays\x.wowsreplay".into(),

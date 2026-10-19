@@ -2,9 +2,9 @@
   "status": {
     "title": "Participar en el uso compartido",
     "hint": "Comparte repeticiones para mejorar el análisis de posiciones y la calibración de estadísticas. El servidor solo recopila los tipos de repeticiones que necesita ahora.",
-    "enrollCopy": "Únete al programa de compartir repeticiones y ayuda a WoWSP a recopilar repeticiones para el análisis táctico. Todo es anónimo y puedes detenerlo en cualquier momento.",
+    "enrollCopy": "Únete al programa de compartir repeticiones y ayuda a WoWSP a recopilar repeticiones para el análisis táctico. Todo es anónimo.",
     "enroll": "Participar",
-    "identity": "Identidad acreditada",
+    "uploaders": "Subido como",
     "realm": "Servidor",
     "name": "ID de juego",
     "namePlaceholder": "Apodo mostrado en la lista de contribuidores (3-24 caracteres)",
@@ -15,10 +15,7 @@
     "lastSync": "Última sincronización: {time}",
     "neverSynced": "Nunca sincronizado",
     "refresh": "Sincronizar",
-    "syncDone": "Sincronizado",
-    "forget": "Dejar de participar",
-    "forgetConfirm": "¿Dejar de participar y borrar la identidad local?",
-    "forgotten": "Participación detenida; identidad y token locales borrados"
+    "syncDone": "Sincronizado"
   },
   "consent": {
     "contains": "Un archivo de repetición contiene el apodo y el ID de cuenta de todos los jugadores de esa batalla, además de todo el chat.",
@@ -26,7 +23,6 @@
     "noRedistribution": "Las repeticiones originales nunca se redistribuyen; solo se publican estadísticas derivadas (buques, equipos, coordenadas y secuencias de eventos), sin información personal.",
     "contributorList": "Con cada versión, la lista «Personas que participan en el uso compartido» más abajo en esta página se actualiza: agrupada por servidor e ID de juego, el número a la derecha de cada etiqueta indica cuántas repeticiones compartió esa persona; haz clic en cualquiera para abrir sus estadísticas públicas.",
     "identity": "La identidad acreditada es un servidor y un ID de juego autodeclarados — sin vinculación de cuenta — y puede cambiarse arriba en cualquier momento.",
-    "revoke": "Dejar de participar solo detiene las futuras subidas; los datos ya recopilados siguen procesándose según los términos anteriores.",
     "agree": "He leído y acepto todos los términos anteriores"
   },
   "wizard": {
@@ -98,7 +94,7 @@
     "title": "Personas que participan en el uso compartido",
     "hint": "Agrupadas por servidor e ID de juego; el número de la derecha indica las repeticiones compartidas. Haz clic en cualquiera para abrir sus estadísticas públicas.",
     "empty": "Todavía no hay contribuidores. La lista aparecerá en la próxima versión tras la primera contribución.",
-    "self": "Yo",
+    "self": "Desde este equipo",
     "count": "{n}",
     "note": "La lista se actualiza con cada versión.",
     "thanks": "Nuestro más sincero agradecimiento a cada entusiasta que compartió sus repeticiones originales: esas batallas son la base del análisis de posiciones y de la calibración de estadísticas."
