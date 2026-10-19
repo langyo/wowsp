@@ -509,3 +509,84 @@ coincidences only). Their unlock remains the developer-side Content
 SDK dump: run the client once with the official extractSources mod
 for `RSC017_Hanko` and `RSB503_Borodino_04`, drop the folders into
 the SDK dir, and pass `--sdk-dump`.
+
+## Phase 12 (2026-10-20): Content SDK extractSources mechanics — the game-side shortcut does not exist
+
+A full in-client experiment round (game launched, PnFMods sandbox probed,
+replays patched) closed the "make the client dump the last two holdout ships"
+route. Everything below is verified against the live 26.10 client.
+
+### What extractSources actually does
+
+`contentSdk.extractSources(MOD_NAME, shipFolder)` runs at mod load and
+**materializes the `ModsSDK.zip/<shipFolder>/` content into
+`PnFMods/<MOD_NAME>/<shipFolder>/`**: it copies the SDK folder's files
+(rewriting embedded `ModsSDK.zip/...` mod paths to the target mod's paths)
+and emits XML stubs for pkg-resolvable dependencies — `.geometry` and
+`.splash` come out as ~30-byte empty XML elements even though real binaries
+live in the pkgs. It does **not** hook engine visual loads:
+
+- Control test: `JSD013_Fubuki_1942` (the ship rendered in port at that
+  moment) fully mapped + fabricated root models + `extractSources` called —
+  result: 16 stub files, **zero** `.visual` outputs while the port visibly
+  rendered the ship.
+- The `.visual` XML forms inside the official SDK zip were therefore
+  produced by Lesta's internal tooling, not by this API. For ships absent
+  from the SDK zip there is no client-side way to obtain them.
+
+Prerequisites reverse-engineered along the way (all verified):
+
+- `ModsSDK.zip/<ship>/content.info` = `<content_info>` XML whose entries are
+  `base64(json [mod_path, game_path, category])` per **root .model** (not per
+  file) plus one `RootModels.info` entry = `base64(zlib(json {model_file:
+  root_name}))`.
+- The root `.model` files themselves must exist in the folder (tiny XML:
+  `castsShadow` / `parent`(lod1) / `extent` / `nodefullVisual` / `metaData`);
+  hand-fabricated placeholders pass validation and get their `nodefullVisual`
+  rewritten into the dump.
+- Missing folder → "SDK for X not found"; folder + manifest but no model
+  files → silent empty `compile.info` (zlib payload `{}`).
+- `getAllShipsData()` returns `{sdkShipFolder: "IDS_..."}` for the 891
+  registered SDK ships only; hand-added folders do not register.
+
+### PnFMods sandbox surface (26.10)
+
+`contentSdk{registerShipMod, deRegisterShipMod, purgeShipMods,
+extractSources, getAllShipsData, buildMod}`,
+`customPorts{addCustomPort, removeCustomPort}`, `devmenu{enable}` (throws in
+release builds), plus dock/flash/web/dataHub/events/callbacks/utils gates.
+`utils` carries walk/stat/isFile/getModDir/json{De,En}code/logInfo/screenshot.
+Builtins have **no exception classes** (`except:` must be bare — `dir()` is
+also absent; enumerate via `obj.__dict__`), and `import ResMgr` is blocked.
+
+### The two holdout ships are unrenderable demo entities
+
+`RSC080_Hanko_1958` (PRSC517, tier VII premium cruiser Ханко/汉科) and
+`RSB027_Borodino_1904` (PRSB503, tier III premium Бородино '04/博罗季诺 04)
+carry `group: demoWithoutStatsPrem`: absent from tech-tree topology, not in
+the armory, referenced in GameParams by nothing but a flag and a torpedo-mod
+list, and the account owns neither (carousel shows 17 ships, none of them).
+Battle-vehicle resolution **falls back to PBSC102_Weymouth** — verified by
+patching a replay: Lesta `.korablireplay` = magic `12 32 34 11` + version(4)
++ jsonLen(u32) + header JSON + packets, first packet `u32 size + JSON` whose
+`playersPublicInfo[playerId][7]` is the shipId; swapping in the two holdout
+ids made those slots spawn as Weymouth. So neither port, battle, nor replay
+can ever load their models.
+
+### blob1/blob2 state after this round
+
+- XML-oracle cross-check (RSC070_Sverdlovsk_1961_MidFront_ports.visual XML
+  from the SDK zip vs binary): the true node-matrix cluster sits at
+  **blob1 ≈ +0x292b1e2**, 64-byte row-major matrices, translations matching
+  the XML to 4 decimals (4.7839 / 2.1825 / 3.0355 …) — but **no** 0x70-grid
+  record header points into that region; blob1 record→array addressing is
+  still unsolved.
+- blob2 records at the r2p-low-byte-0x08 offsets begin with 0x40-stride
+  LOD/extents cells (bounding min/max with ±FLT_MAX sentinels, mesh hashes,
+  counts) whose leading u32 links deeper — the recursive cell grammar from
+  phase 1 is the remaining blocker.
+
+**Conclusion:** arming the last two ships requires decoding the blob2 visual
+node grammar offline. The whole priority chain (node blocks → SDK dump → WG
+reference → splash) is unavailable for them, and the client cannot be made
+to dump what it will never load.
