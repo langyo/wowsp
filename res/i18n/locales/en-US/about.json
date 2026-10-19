@@ -51,6 +51,8 @@
   "trivia40": "World of Warships is developed by Lesta and published by WG; after the Russia-Ukraine war split Belarus-based WG and Russia-based Lesta, Lesta began independently operating its own direct-run servers.",
   "trivia41": "In the Soviet battleship line, only Tier IV Gangut is a genuinely completed historical ship; Tier IX Sovetsky Soyuz barely counts (laid down but never finished), and Novorossiysk is historical too — she was the Italian Giulio Cesare, handed over as war reparations. The rest are all paper designs.",
   "trivia42": "During World War II the US launched dozens of Essex-class carriers at dumpling-making speed — in China the class is nicknamed「the Dumplings」.",
+  "trivia43": "In one battle, @BestNaomi was sailing Vermont when an enemy Ohio one-salvoed him for 83,079 damage — since then, 「83079」 has become a code number among Chinese World of Warships players.",
+  "trivia44": "Some ships have their own unique horn sounds — press N in port or in battle to sound the horn.",
   "checkUpdate": "Check for updates",
   "updateAvailable": "New version {version} found",
   "updatePrompt": "New version {version} available",
@@ -104,7 +106,5 @@
     "noHire": "A donation does not create any employment, commissioning, or other legal relationship.",
     "openSource": "The project stays open source — the app itself will never embed features that require a donation to use.",
     "noAffiliation": "This software has no direct relationship with Wargaming, Lesta, or 360."
-  },
-  "trivia43": "In one battle, @BestNaomi was sailing Vermont when an enemy Ohio one-salvoed him for 83,079 damage — since then, 「83079」 has become a code number among Chinese World of Warships players.",
-  "trivia44": "Some ships have their own unique horn sounds — press N in port or in battle to sound the horn."
+  }
 }

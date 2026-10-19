@@ -51,6 +51,8 @@
   "trivia40": "World of Warships lo desarrolla Lesta y lo publica WG; tras la guerra de Ucrania, WG (Bielorrusia) y Lesta (Rusia) se separaron, y Lesta empezó a operar por su cuenta sus propios servidores.",
   "trivia41": "En la rama de acorazados soviéticos, el único barco histórico realmente terminado es el Gangut de tier IV; el Sovetsky Soyuz de tier IX apenas cuenta (se puso en grada pero nunca se terminó), y el Novorossiysk también es histórico: era el italiano Giulio Cesare, entregado a la URSS como reparación de guerra. El resto son proyectos sobre papel.",
   "trivia42": "Durante la Segunda Guerra Mundial, EE. UU. botó decenas de portaaviones de clase Essex a velocidad de hacer dumplings — en China, la clase recibe el apodo de «los dumplings».",
+  "trivia43": "En una partida, @BestNaomi, al mando del Vermont, fue destruido de una sola salva por un Ohio enemigo con 83 079 de daño; desde entonces, «83079» es un código entre los jugadores chinos de World of Warships.",
+  "trivia44": "Algunos barcos tienen un sonido de bocina propio: pulsa N en el puerto o en batalla para hacer sonar la bocina.",
   "checkUpdate": "Buscar actualizaciones",
   "updateAvailable": "Nueva versión {version} encontrada",
   "updatePrompt": "Nueva versión {version} disponible",
@@ -91,7 +93,5 @@
     "noHire": "Una donación no crea ninguna relación laboral, de encargo ni ningún otro tipo de relación jurídica.",
     "openSource": "El proyecto sigue siendo de código abierto: la aplicación nunca incluirá funciones que requieran una donación.",
     "noAffiliation": "Este software no tiene relación directa con Wargaming, Lesta ni 360."
-  },
-  "trivia43": "En una partida, @BestNaomi, al mando del Vermont, fue destruido de una sola salva por un Ohio enemigo con 83 079 de daño; desde entonces, «83079» es un código entre los jugadores chinos de World of Warships.",
-  "trivia44": "Algunos barcos tienen un sonido de bocina propio: pulsa N en el puerto o en batalla para hacer sonar la bocina."
+  }
 }
