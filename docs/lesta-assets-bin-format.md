@@ -325,6 +325,36 @@ the leading P) was pulled from the maintainer's Drive. Findings:
 
 So the ONLY remaining path to the seven hulls' secondaries/AA is
 cracking blob2's recursive cell serialization (the phase-4 wall).
+
+## Phase 8 (2026-10-19, later): the legacy record walk; blob2 cells mapped
+
+- **Second harvester — the legacy record walk.** blob1's 0x70-stride
+  headers are authoritative entry points: each valid one carries five
+  relptrs to the same arrays the structure scan hunts, but records whose
+  names array lacks a `Scene Root` anchor escape the scan. Walking all
+  39,793 headers (nodes 4..4000, relptrs in range, names resolvable,
+  first matrix affine) yields ~700 gun-mount blocks; ~220 are NEW vs the
+  scan (content-deduped by mount signature). Merged into the bake
+  digest, coverage jumps: Moonsund PRSC540 goes 0 -> 5 sec + 5 AA (its
+  MidFront part IS a legacy record whose names don't start with Scene
+  Root), and a dozen partial ships complete (Prinz Eitel Friedrich
+  18->36 mounts, Santander 19->33, North Dakota full, ...).
+- **blob2 identity settled: it is NOT the ship-visual store.** Its
+  136k names-runs resolve to CREW SKELETON bones (sailor animation
+  rigs, Character1_*). The tag-0x08 r2p values for the six remaining
+  no-block ships point at blob2 slots holding the recursive cell
+  format: plausible ship-space float triplets, ±FLT_MAX AABB sentinels,
+  u64 material hashes, and `(count=1, byte-offset)` pointer pairs into
+  blob2's 10-15 MB zone — which holds RENDER-SET cells (the phase-2
+  0x40-stride AABB+hash records), not node trees. The ships' node data
+  in this format is either deeper in the cell graph or absent; the
+  pointers to chase are recorded (Akagi rec 11315 blob2+1,267,296,
+  Patagonia 14,872,060, Hanko 14,995,300).
+- Nation-mismatch theory tested and dead: blob1 rec 11316 (the r2p slot
+  coincidentally labeled Akagi_Bow) carries HP_RGM_* casemates whose
+  positions do NOT match Akagi's gk boxes (y 0.30 vs 1.115) — it is a
+  different Russian ship's part; r2p rec numbers do not index blob1
+  slots for new-format ships.
 - Related hardening that DID land: revision-twin mounts of the same
   class dedupe at per-axis 0.15 (two mounts of one class cannot share
   a pivot; the fleet-wide same-class pair histogram is empty 0.05-0.15
