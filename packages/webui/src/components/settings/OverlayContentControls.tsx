@@ -4,7 +4,6 @@ import { HkSwitch, HkTabs } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import {
-  AIM_COLUMN_LIMIT,
   useStatsPrefsStore,
   type OverlayIntelToggles,
   type OverlayTeamAvgToggles,
@@ -115,25 +114,6 @@ export default defineComponent({
         {avgRow("winrate", t("settings.overlayContent.avgWinrate"), t("settings.overlayContent.avgWinrateDesc"))}
         {avgRow("pr", t("settings.overlayContent.avgPr"), t("settings.overlayContent.avgPrDesc"))}
         {avgRow("damage", t("settings.overlayContent.avgDamage"), t("settings.overlayContent.avgDamageDesc"))}
-
-        {/* The aim-crosshair panel's own columns — the SAME editor over
-            the statsPrefs aimColumns list (externally supplied: a
-            narrower cap, global career scope only for now). The list is
-            pushed to the Rust bridge on every change and at bridge start
-            (see features/overlay/useOverlayLifecycle.ts); emptying it
-            hides the in-game panel. */}
-        <div class="stats-prefs__row">
-          <span class="stats-prefs__row-text">
-            <span class="stats-prefs__row-label">{t("settings.overlayContent.aimTitle")}</span>
-            <span class="stats-prefs__row-desc">{t("settings.overlayContent.aimHint")}</span>
-          </span>
-        </div>
-        <OverlayColumnsEditor
-          columns={prefs.prefs.aimColumns}
-          limit={AIM_COLUMN_LIMIT}
-          allowedScopes={["global"]}
-          onChange={(cols) => prefs.setAimColumns(cols)}
-        />
       </div>
     );
   },

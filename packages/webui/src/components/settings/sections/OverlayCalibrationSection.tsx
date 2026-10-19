@@ -1,5 +1,7 @@
-/** Overlay calibration settings section (游戏内显示校准): the persistent
- *  per-client Tab-anchor calibrations the overlay detector stores. One card
+/** Overlay calibration settings section (游戏内显示校准): the in-game
+ *  water meter's card leads (view mode / roster attribution / display
+ *  content — see OverlaySection), then the persistent per-client
+ *  Tab-anchor calibrations the overlay detector stores. One card
  *  per client install — client key, kind badge, last-updated stamp — with
  *  its independent PvP / PvE entries (table rect, row count, team split,
  *  window identity, state badges). Each entry's edit button reopens the
@@ -21,6 +23,7 @@ import { api, type CalibrationClientInfo, type CalibrationEntryInfo } from "@/ap
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useManualLocateStore } from "@/stores/manualLocate";
+import OverlaySection from "@/components/settings/sections/OverlaySection";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
 import "./OverlayCalibrationSection.scss";
 
@@ -52,7 +55,7 @@ export default defineComponent({
   props: {
     ctx: { type: Object as PropType<SettingsBodyCtx>, required: true },
   },
-  setup() {
+  setup(props) {
     const manualLocate = useManualLocateStore();
     const { uiLocale } = useLanguage();
     const toast = useToast();
@@ -152,6 +155,10 @@ export default defineComponent({
 
     return () => (
           <>
+          {/* The water meter's own card first (view mode, roster
+              attribution, display content) — the calibration list below
+              only matters once the overlay is on. */}
+          <OverlaySection ctx={props.ctx} />
           {/* in-game overlay anchor calibration — the detector's persistent
               per-client memory of where the Tab table sat. The list is a
               pure read (overlay_calibration_list); the edit flow reopens

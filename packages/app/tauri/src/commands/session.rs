@@ -22,9 +22,9 @@
 //! 2. the arena watcher (`tempArenaInfo.json`): the local player is the
 //!    roster entry with `relation == 0` — the same identity rule the replay
 //!    parser uses — which pins the playing account per battle;
-//! 3. the in-game plugin bridge roster: exact WG account ids per nickname,
-//!    used to UPGRADE the arena nickname match to an id match when the
-//!    plugin is installed (nickname renames then can't fool the match).
+//! 3. (retired) the in-game plugin bridge roster used to feed exact WG
+//!    account ids per nickname to UPGRADE the arena nickname match to an
+//!    id match; the bridge is gone, so this input is always empty today.
 //!
 //! The webui still owns `accounts.json`; this module reads it back
 //! (mtime-cached) purely to match observations against the bound profiles,
@@ -65,8 +65,9 @@ struct SessionState {
     /// The webui's active selection, mirrored through `sync_active_account`
     /// and adopted from `accounts.json` on refresh: `(realm, account_id)`.
     active: Option<(String, i64)>,
-    /// nickname → account id, from the in-game plugin bridge's most recent
-    /// request roster (cleared implicitly — every request replaces it).
+    /// nickname → account id, the in-game plugin bridge's retired request-
+    /// roster feed: always empty since the bridge went away — the arena
+    /// path still consults it (the lookup simply never hits).
     plugin_ids: Vec<(String, i64)>,
     /// Parsed `accounts.json` profiles, refreshed when the file's mtime
     /// moves (the webui writes it atomically, tmp + rename).
@@ -252,7 +253,7 @@ fn broadcast_if_changed(app: &AppHandle) {
     }
 }
 
-// ── observation hooks (arena watcher + plugin bridge) ───────────────────────
+// ── observation hooks (arena watcher) ───────────────────────────────────────
 
 /// The local player's name in a battle roster: the `relation == 0` entry,
 /// skipping the game's bot/scripted markers (a real player's slot is what
@@ -312,9 +313,10 @@ const ARENA_FRESHNESS_SKEW_SECS: i64 = 5;
 ///   file never re-notes).
 ///
 /// The realm + process-start resolution runs BEFORE the state lock (it
-/// walks the process list and reads clientrunner.log); the id upgrade looks
-/// up the plugin bridge's nickname→id map. Broadcasts when the resolved
-/// snapshot moved.
+/// walks the process list and reads clientrunner.log); the id upgrade
+/// consults the retired plugin bridge's nickname→id map (always empty
+/// since the bridge went away). Broadcasts when the resolved snapshot
+/// moved.
 pub(crate) fn note_playing_from_arena(
     app: &AppHandle,
     nickname: &str,
@@ -483,30 +485,6 @@ fn record_arena_player(
         state.playing = Some(next);
     }
     changed
-}
-
-/// Note the plugin bridge's latest request roster (nickname → exact account
-/// id). Never broadcasts on its own — the ids only matter once an arena
-/// observation names the local player, and the poller picks the resulting
-/// snapshot change up within one tick.
-pub(crate) fn note_plugin_roster(rows: &[(String, Option<i64>)]) {
-    with_state(|state| {
-        let next: Vec<(String, i64)> = rows
-            .iter()
-            .filter_map(|(name, id)| id.map(|id| (name.clone(), id)))
-            .collect();
-        state.plugin_ids = next;
-        // An already-noted playing identity may gain its exact id now.
-        if let Some(p) = state.playing.as_mut() {
-            if p.account_id.is_none() {
-                p.account_id = state
-                    .plugin_ids
-                    .iter()
-                    .find(|(name, _)| name == &p.nickname)
-                    .map(|(_, id)| *id);
-            }
-        }
-    });
 }
 
 // ── accounts.json read-back (mtime-cached) ─────────────────────────────────

@@ -67,14 +67,6 @@ describe("loadStatsPrefs", () => {
         { scope: "global", metric: "battles" },
         { scope: "global", metric: "damage" },
       ],
-      // The aim crosshair panel ships with the three most-glanceable
-      // career numbers (winrate / PR / battles) — one narrower than the
-      // roster default.
-      aimColumns: [
-        { scope: "global", metric: "winrate" },
-        { scope: "global", metric: "pr" },
-        { scope: "global", metric: "battles" },
-      ],
       overlayBattleScope: "follow",
       overlayIntel: { radar: true, hydro: true, smoke: true },
       overlayTeamAvg: { winrate: false, pr: false, damage: false },
@@ -227,46 +219,9 @@ describe("loadStatsPrefs", () => {
     expect(prefs.teamIntelEnabled).toBe(true);
     expect(prefs.sealDisabled).toEqual({});
     expect(prefs.overlayColumns).toEqual(DEFAULT_STATS_PREFS.overlayColumns);
-    // A pre-aim-panel blob takes the shipped aim default (no legacy seed
-    // exists for the crosshair list), and the heal-write persists it.
-    expect(prefs.aimColumns).toEqual(DEFAULT_STATS_PREFS.aimColumns);
     expect(prefs.overlayBattleScope).toBe("follow");
     expect(prefs.overlayIntel).toEqual(DEFAULT_STATS_PREFS.overlayIntel);
     expect(prefs.overlayTeamAvg).toEqual(DEFAULT_STATS_PREFS.overlayTeamAvg);
-  });
-
-  it("keeps an explicitly empty aimColumns list (it hides the panel)", () => {
-    localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify({ aimColumns: [] }));
-    expect(loadStatsPrefs().aimColumns).toEqual([]);
-  });
-
-  it("drops junk entries, non-global scopes, duplicates and over-limit tails in the aim column list", () => {
-    localStorage.setItem(
-      STATS_PREFS_STORAGE_KEY,
-      JSON.stringify({
-        aimColumns: [
-          { scope: "global", metric: "winrate" },
-          { scope: "voodoo", metric: "pr" },
-          // The bridge's v1 protocol answers "global" only — a
-          // hand-edited scoped entry drops out here (never pushed), same
-          // as a junk shape.
-          { scope: "solo", metric: "winrate" },
-          "junk",
-          null,
-          { scope: "global", metric: "winrate" },
-          { scope: "global", metric: "pr" },
-          { scope: "global", metric: "battles" },
-          { scope: "global", metric: "damage" },
-          { scope: "class", metric: "damage" },
-        ],
-      }),
-    );
-    expect(loadStatsPrefs().aimColumns).toEqual([
-      { scope: "global", metric: "winrate" },
-      { scope: "global", metric: "pr" },
-      { scope: "global", metric: "battles" },
-      { scope: "global", metric: "damage" },
-    ]);
   });
 
   it("keeps only known boolean keys in sealDisabled", () => {
@@ -381,10 +336,6 @@ describe("statsPrefs store", () => {
       { scope: "ship", metric: "pr" },
       { scope: "class", metric: "damage" },
     ]);
-    store.setAimColumns([
-      { scope: "global", metric: "damage" },
-      { scope: "global", metric: "winrate" },
-    ]);
     store.setOverlayBattleScope("ranked");
     store.setOverlayIntel("radar", false);
     store.setOverlayTeamAvg("pr", true);
@@ -407,10 +358,6 @@ describe("statsPrefs store", () => {
         { scope: "ship", metric: "pr" },
         { scope: "class", metric: "damage" },
       ],
-      aimColumns: [
-        { scope: "global", metric: "damage" },
-        { scope: "global", metric: "winrate" },
-      ],
       overlayBattleScope: "ranked",
       overlayIntel: { radar: false, hydro: true, smoke: true },
       overlayTeamAvg: { winrate: false, pr: true, damage: false },
@@ -427,28 +374,6 @@ describe("statsPrefs store", () => {
     // hand-edited-state guard).
     store.setOverlayColumns([...before, before[0]]);
     expect(store.prefs.overlayColumns).toEqual(before);
-  });
-
-  it("silently rejects a duplicate or over-limit AIM column write, keeps an empty one", async () => {
-    const store = useStatsPrefsStore();
-    const before = store.prefs.aimColumns;
-    store.setAimColumns([...before, before[0]]);
-    expect(store.prefs.aimColumns).toEqual(before);
-    // The aim list allows a FIFTH roster column's worth of junk in, but
-    // not past its own (narrower) limit.
-    store.setAimColumns([
-      { scope: "global", metric: "winrate" },
-      { scope: "global", metric: "pr" },
-      { scope: "global", metric: "battles" },
-      { scope: "global", metric: "damage" },
-      { scope: "solo", metric: "winrate" },
-    ]);
-    expect(store.prefs.aimColumns).toEqual(before);
-    // Emptying the list is the shipped way to HIDE the panel — a valid
-    // write that must land (and persist).
-    store.setAimColumns([]);
-    expect(store.prefs.aimColumns).toEqual([]);
-    expect(loadStatsPrefs().aimColumns).toEqual([]);
   });
 
   it("persists a per-seal toggle and round-trips it", async () => {

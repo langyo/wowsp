@@ -17,7 +17,6 @@ import UpdatesSection from "@/components/settings/sections/UpdatesSection";
 import ResourcesSection from "@/components/settings/sections/ResourcesSection";
 import InstallCleanupSection from "@/components/settings/sections/InstallCleanupSection";
 import ChangelogSection from "@/components/settings/ChangelogSection";
-import OverlaySection from "@/components/settings/sections/OverlaySection";
 import OverlayCalibrationSection from "@/components/settings/sections/OverlayCalibrationSection";
 import FeedbackSection from "@/components/settings/FeedbackSection";
 import AboutSection from "@/components/settings/sections/AboutSection";
@@ -38,9 +37,9 @@ import "../layout/SettingsModal.scss";
  * The state lives in useSettingsBody (components/settings/
  * useSettings*.ts composables); the section cards are the focused
  * components under sections/, each receiving the shared context. On the
- * phone app build the gamePath, overlay and closeBehavior sections are
- * filtered out of the rail (no local game install / no overlay window
- * there / no tray or window close button to configure).
+ * phone app build the gamePath and closeBehavior sections are
+ * filtered out of the rail (no local game install / no tray or window
+ * close button to configure).
  */
 export default defineComponent({
   name: "SettingsBody",
@@ -85,7 +84,6 @@ export default defineComponent({
           <ChangelogSection />
           </>
           ),
-          overlay: () => <OverlaySection ctx={ctx} />,
           overlayCalibration: () => <OverlayCalibrationSection ctx={ctx} />,
           feedback: () => (
           <>

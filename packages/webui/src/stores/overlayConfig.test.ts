@@ -40,6 +40,16 @@ describe("overlay settings persistence", () => {
     expect(store.table).toBe("off");
   });
 
+  it("maps a stored in-game panel pick onto the overlay window mode", async () => {
+    // The retired "ingame" backend's picks land on the detect default —
+    // the overlay window takes over as the display backend (the Rust side
+    // heals the stored file to the same value).
+    apiMock.getOverlayConfig.mockResolvedValueOnce({ table: "ingame", roster: "plugin" });
+    const store = useOverlayConfigStore();
+    await store.load();
+    expect(store.table).toBe("detect");
+  });
+
   it("loads the untouched setting before persisting a choice made during startup", async () => {
     const read = deferred<{ table: string; roster: string }>();
     apiMock.getOverlayConfig.mockReturnValueOnce(read.promise);

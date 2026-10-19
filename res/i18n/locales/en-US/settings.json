@@ -123,11 +123,9 @@
   "cacheAuxCommunity": "Community expected values",
   "cacheAuxCommunityDesc": "Expected-damage tables used by the PR rating.",
   "overlay": "In-game overlay",
-  "overlayDesc": "Fetches both teams' stats automatically when a battle starts. View mode: overlay window (hold Tab while the game is focused to see each player's win rate and average damage next to their name), in-game panel (rendered by the companion plugin), or off.",
+  "overlayDesc": "Fetches both teams' stats automatically when a battle starts. View mode: overlay window (hold Tab while the game is focused to see each player's win rate and average damage next to their name), or off.",
   "overlayTable": "View mode",
   "overlayTableDetect": "Overlay window",
-  "overlayTableIngame": "In-game panel",
-  "overlayTableIngameNote": "Rendered inside the game by the companion plugin (hold Tab to show); also works in exclusive fullscreen. Requires the in-game plugin.",
   "overlayTableOff": "Off",
   "overlayRoster": "Roster recognition",
   "overlayRosterPassive": "Screen pixel passive detection",
@@ -340,9 +338,7 @@
     "colMetricWinrate": "Win rate",
     "colMetricPr": "PR",
     "colMetricBattles": "Battles",
-    "colMetricDamage": "Avg damage",
-    "aimTitle": "Aim crosshair panel",
-    "aimHint": "Columns shown under the crosshair for the ship you are aiming at (global career scope only for now). Remove all cards to hide the panel."
+    "colMetricDamage": "Avg damage"
   },
   "schemeDefaultName": "Default",
   "pairingWip": "Phone pairing is under development and not finished yet.",

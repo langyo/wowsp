@@ -123,11 +123,9 @@
   "cacheAuxCommunity": "커뮤니티 기대값 데이터",
   "cacheAuxCommunityDesc": "PR 평점에 사용되는 기대 데미지 표.",
   "overlay": "게임 내 오버레이",
-  "overlayDesc": "전투가 시작되면 양 팀의 전적을 자동으로 가져옵니다. 보기 모드: 오버레이 창(게임이 포그라운드일 때 Tab 키를 길게 누르면 각 플레이어의 승률과 평균 피해량이 이름 옆에 표시됨), 게임 내 표시(플러그인이 게임 화면에 직접 그림), 끄기.",
+  "overlayDesc": "전투가 시작되면 양 팀의 전적을 자동으로 가져옵니다. 보기 모드: 오버레이 창(게임이 포그라운드일 때 Tab 키를 길게 누르면 각 플레이어의 승률과 평균 피해량이 이름 옆에 표시됨), 끄기.",
   "overlayTable": "보기 모드",
   "overlayTableDetect": "오버레이 창",
-  "overlayTableIngame": "게임 내 표시",
-  "overlayTableIngameNote": "게임 내 플러그인이 게임 화면에 직접 그립니다(Tab 키를 길게 눌러 표시). 독점 전체 화면에서도 작동합니다. 게임 내 플러그인 설치가 필요합니다.",
   "overlayTableOff": "끄기",
   "overlayRoster": "명단 인식",
   "overlayRosterPassive": "화면 픽셀 수동 감지",
@@ -340,9 +338,7 @@
     "colMetricWinrate": "승률",
     "colMetricPr": "PR",
     "colMetricBattles": "전투 수",
-    "colMetricDamage": "평균 피해",
-    "aimTitle": "조준선 패널",
-    "aimHint": "조준한 적 함선의 전적 열을 조준선 아래에 표시합니다(현재는 전체 범위만 지원). 카드를 모두 제거하면 패널이 숨겨집니다."
+    "colMetricDamage": "평균 피해"
   },
   "schemeDefaultName": "기본",
   "pairingWip": "휴대폰 페어링 기능은 개발 중이며 아직 완성되지 않았습니다.",

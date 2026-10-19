@@ -324,8 +324,8 @@ pub(crate) fn cross_probe_realms(home: &str) -> Vec<String> {
     }
 }
 
-/// The roster resolution core shared by the batch command above and the
-/// in-game bridge (`ingame_bridge`). `ids` optionally carries each name's
+/// The roster resolution core behind the batch command above (the plugin's
+/// roster rows feed it). `ids` optionally carries each name's
 /// WG account id (the plugin's roster rows have them; index-aligned, None
 /// where absent). An id that verifies against the LIVE nickname is exact —
 /// and for a slot WITH an id that exactness rules everything: a cached or

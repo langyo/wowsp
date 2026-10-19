@@ -99,22 +99,6 @@ export const shellApi = {
   getOverlayConfig: () => transport.invoke<{ table: string; roster: string }>(RPC.get_overlay_config),
   setOverlayConfig: (table: string, roster: string) =>
     transport.invoke<{ table: string; roster: string }>(RPC.set_overlay_config, { table, roster }),
-  /** The 游戏内展示 view mode's stats bridge (see commands/ingame_bridge.rs):
-   *  start answers the in-game plugin's request.json with stats rows (the
-   *  plugin then renders the panel inside the game), stop silences it.
-   *  `locale` picks the panel's column labels. Desktop only — phones reject
-   *  the invoke and callers treat that as "not running". */
-  startIngameBridge: (locale?: string) =>
-    transport.invoke<null>(RPC.ingame_bridge_start, { locale: locale ?? null }),
-  stopIngameBridge: () => transport.invoke<null>(RPC.ingame_bridge_stop),
-  /** The aim-crosshair panel's column list (see commands/ingame_bridge.rs):
-   *  which stats the in-game plugin renders under the crosshair for the
-   *  ship being aimed at, as {scope, metric, label} pairs (labels are the
-   *  settings' column-metric wording in the current locale). An empty list
-   *  hides the panel. Pushed at bridge start and on every aimColumns pref
-   *  change (features/overlay/useOverlayLifecycle.ts). */
-  setIngameBridgeAim: (columns: { scope: string; metric: string; label: string }[]) =>
-    transport.invoke<null>(RPC.set_ingame_bridge_aim, { columns }),
   /** In-game stats plugin presence in a game install (see
    *  commands/ingame_plugin.rs) — powers the roster "plugin detection"
    *  option's enabled state and its Discussions page link. */

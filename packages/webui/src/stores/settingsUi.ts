@@ -19,7 +19,6 @@ export type SettingsSection =
   | "resources"
   | "installCleanup"
   | "changelog"
-  | "overlay"
   | "overlayCalibration"
   | "feedback"
   | "about"
@@ -45,7 +44,7 @@ export interface SettingsGroupSpec {
 
 export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "general", sections: ["language", "appearance", "closeBehavior"] },
-  { id: "game", sections: ["stats", "overlay", "overlayCalibration", "gamePath"] },
+  { id: "game", sections: ["stats", "overlayCalibration", "gamePath"] },
   { id: "connection", sections: ["account", "network", "pairing"] },
   { id: "app", sections: ["updates", "resources", "installCleanup", "changelog"] },
   { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
@@ -57,17 +56,17 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = SETTINGS_GROUPS.
 );
 
 /** Sections that make no sense on the phone app build: no local game
- *  install to pick (gamePath), no second overlay window (overlay), and no
- *  tray or close button to configure a close behavior for. The
- *  PAIRING section shows on BOTH builds — a CLIENT variant on the phone
- *  (open the wizard, manage paired computers) and the SERVER variant on the
- *  desktop. The rail filters only the truly inapplicable ones. */
+ *  install to pick (gamePath) and no tray or close button to configure a
+ *  close behavior for. The PAIRING section shows on BOTH builds — a
+ *  CLIENT variant on the phone (open the wizard, manage paired computers)
+ *  and the SERVER variant on the desktop. The rail filters only the truly
+ *  inapplicable ones. */
 const MOBILE_HIDDEN_SECTIONS: readonly SettingsSection[] = [
   "gamePath",
-  "overlay",
-  // Desktop-only with the overlay section above: the anchor calibration
-  // edits the desktop Tab-overlay detector's stored per-client anchors,
-  // which the phone build has no overlay window to consume.
+  // Desktop-only: the overlay-calibration page hosts the in-game water
+  // meter AND the anchor calibration list — both edit the desktop
+  // Tab-overlay detector's world, which the phone build (no overlay
+  // window) has no use for.
   "overlayCalibration",
   // Desktop-only: the phone build has no system tray and no window close
   // button, so there is no close behavior to configure.

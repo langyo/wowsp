@@ -14,7 +14,6 @@ import {
   Globe,
   Info,
   Languages,
-  Layers,
   Palette,
   Power,
   RefreshCw,
@@ -165,8 +164,8 @@ export function useSettingsBody(props: { active: boolean }) {
   // The left rail mirrors the main sidebar's nav look; only the active
   // section's card renders in the content pane. Section identity lives in
   // the settingsUi store so openers can land on a specific one. The phone
-  // app build drops the gamePath / overlay / closeBehavior sections
-  // (nothing to configure there).
+  // app build drops the gamePath / closeBehavior sections (nothing to
+  // configure there).
   const SECTION_ICONS = {
     language: Languages,
     appearance: Palette,
@@ -180,7 +179,6 @@ export function useSettingsBody(props: { active: boolean }) {
     resources: Database,
     installCleanup: FolderX,
     changelog: ScrollText,
-    overlay: Layers,
     overlayCalibration: Crosshair,
     feedback: Bug,
     about: Info,
@@ -200,7 +198,6 @@ export function useSettingsBody(props: { active: boolean }) {
     resources: t("settings.resourcesPage"),
     installCleanup: t("settings.installCleanup"),
     changelog: t("settings.changelog"),
-    overlay: t("settings.overlay"),
     overlayCalibration: t("settings.overlayCalibration"),
     feedback: t("settings.feedback"),
     about: t("settings.about"),
