@@ -256,10 +256,11 @@ pub(super) fn report_status(
 
 /// Declare the overlay view mode in the probe's wowsp.toml table
 /// (`panel = 0`, `barcode = 1`): the probe re-reads the table at every
-/// battle start, so its unbound view keeps the stats tables dark (the
-/// companion is not answering in this mode — no '--' duplicate beside
-/// the overlay) and renders the capture side channel's barcode strips
-/// instead. Only touches an install that actually carries the probe.
+/// battle start, so its unbound view keeps the stats tables dark (no
+/// app build answers the probe's stats requests anymore — no '--'
+/// duplicate beside the overlay) and renders the capture side channel's
+/// barcode strips instead. Only touches an install that actually carries
+/// the probe.
 #[cfg(target_os = "windows")]
 fn declare_overlay_mode() {
     let Some(resolved) = super::super::game_context::resolve_root(
