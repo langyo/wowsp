@@ -380,6 +380,11 @@ struct HeartbeatFrame {
     /// The heartbeat's freshness against the poll's clock (same cap as the
     /// telemetry payloads).
     fresh: bool,
+    /// The probe's degraded-roster marker (`fb`, non-empty only while the
+    /// telemetry session was synthesized instead of stabilized — `'walk'`
+    /// = records dead, entity walk carrying the roster; `'records'` = a
+    /// churning roster latched). `None` on older probe builds.
+    fallback: Option<String>,
 }
 
 /// Parse one heartbeat frame. Missing `phase`/`t`, or an unparseable file,
@@ -388,9 +393,15 @@ fn parse_heartbeat(raw: &str, now_ms: i64) -> Option<HeartbeatFrame> {
     let value: serde_json::Value = serde_json::from_str(raw.trim()).ok()?;
     let phase = value.get("phase")?.as_str()?.to_string();
     let t = payload_epoch_ms(&value)?;
+    let fallback = value
+        .get("fb")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     Some(HeartbeatFrame {
         phase,
         fresh: now_ms - t <= TELEMETRY_STALE_MS,
+        fallback,
     })
 }
 
@@ -417,6 +428,14 @@ enum ProbeHealthEvent {
     /// ([`BATTLE_TELEMETRY_GRACE_POLLS`] consecutive polls) — the roster
     /// path is failing on this build.
     BattleWithoutTelemetry,
+    /// The probe's heartbeat carries the degraded-roster marker: this
+    /// battle's telemetry session was synthesized from the fallback source
+    /// (`walk` = records dead, the entity walk carrying the roster;
+    /// `records` = a roster that churns every tick latched as-is). The
+    /// stream is FLOWING — this is the evidence line for the build class
+    /// the 2026-10-18/19 Steam/CN360 reports belong to, distinguishing
+    /// "degraded but bridged" from a hard outage.
+    RosterFallback(String),
 }
 
 /// How many consecutive battle-heartbeat polls with no readable telemetry
@@ -440,25 +459,31 @@ struct ProbeHealthState {
     /// battleStart and the first stabilized roster write.
     battle_gaps: u8,
     warned_battle_without_telemetry: bool,
+    /// The fallback source last announced this battle (see
+    /// [`ProbeHealthEvent::RosterFallback`]); resets when the phase leaves
+    /// battle so the next battle's degradation announces again.
+    fallback_seen: Option<String>,
 }
 
 impl ProbeHealthState {
     /// Fold one poll's observation into the transition list. `hb` is the
     /// fresh heartbeat frame when one parsed (absent/stale files fold to
-    /// `None`); `telemetry_readable` is whether this poll could read the
-    /// telemetry file at all.
+    /// `None` — phase, freshness, and the degraded-roster marker);
+    /// `telemetry_readable` is whether this poll could read the telemetry
+    /// file at all.
     fn observe(
         &mut self,
-        hb: Option<(&str, bool)>,
+        hb: Option<(&str, bool, Option<&str>)>,
         telemetry_readable: bool,
     ) -> Vec<ProbeHealthEvent> {
         let mut events = Vec::new();
-        let Some((phase, true)) = hb else {
+        let Some((phase, true, fallback)) = hb else {
             if self.alive {
                 self.alive = false;
                 self.phase = None;
                 self.battle_gaps = 0;
                 self.warned_battle_without_telemetry = false;
+                self.fallback_seen = None;
                 events.push(ProbeHealthEvent::HeartbeatLost);
             }
             return events;
@@ -485,9 +510,19 @@ impl ProbeHealthState {
                     events.push(ProbeHealthEvent::BattleWithoutTelemetry);
                 }
             }
+            // The degraded-roster marker announces once per source per
+            // battle: the probe latches it for the whole battle, while the
+            // poller only owes the log line at the transition.
+            if let Some(source) = fallback {
+                if self.fallback_seen.as_deref() != Some(source) {
+                    self.fallback_seen = Some(source.to_string());
+                    events.push(ProbeHealthEvent::RosterFallback(source.to_string()));
+                }
+            }
         } else {
             self.battle_gaps = 0;
             self.warned_battle_without_telemetry = false;
+            self.fallback_seen = None;
         }
         events
     }
@@ -516,6 +551,11 @@ fn log_probe_health(event: &ProbeHealthEvent, root: &std::path::Path) {
         ProbeHealthEvent::BattleWithoutTelemetry => tracing::warn!(
             root = %root.display(),
             "probe heartbeat reports a battle but telemetry is absent — the roster path is failing on this client build"
+        ),
+        ProbeHealthEvent::RosterFallback(source) => tracing::info!(
+            root = %root.display(),
+            source,
+            "probe roster bridge degraded — telemetry session synthesized from the fallback source"
         ),
     }
 }
@@ -652,7 +692,9 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                     let raw = std::fs::read_to_string(&path).ok();
                     let watch = states.entry(root.display().to_string()).or_default();
                     for event in watch.health.observe(
-                        heartbeat.as_ref().map(|h| (h.phase.as_str(), h.fresh)),
+                        heartbeat
+                            .as_ref()
+                            .map(|h| (h.phase.as_str(), h.fresh, h.fallback.as_deref())),
                         raw.is_some(),
                     ) {
                         log_probe_health(&event, &root);
@@ -952,57 +994,69 @@ mod tests {
         assert!(health.observe(None, false).is_empty());
         // First fresh heartbeat (port): announced once.
         assert_eq!(
-            health.observe(Some(("port", true)), false),
+            health.observe(Some(("port", true, None)), false),
             vec![ProbeHealthEvent::HeartbeatGained("port".into())]
         );
-        assert!(health.observe(Some(("port", true)), false).is_empty());
+        assert!(health.observe(Some(("port", true, None)), false).is_empty());
         // Battle begins, telemetry flowing: just the phase change.
         assert_eq!(
-            health.observe(Some(("battle", true)), true),
+            health.observe(Some(("battle", true, None)), true),
             vec![ProbeHealthEvent::HeartbeatPhase(
                 "port".into(),
                 "battle".into()
             )]
         );
-        assert!(health.observe(Some(("battle", true)), true).is_empty());
+        assert!(
+            health
+                .observe(Some(("battle", true, None)), true)
+                .is_empty()
+        );
         // The CN360 failure shape: battle heartbeat, no telemetry file.
         // The grace window (write-order race + the loading screen between
         // battleStart and the first stabilized write) stays silent; the
         // WARN arms once the gap outlasts it, exactly once per battle.
         for _ in 0..(BATTLE_TELEMETRY_GRACE_POLLS - 1) {
             assert!(
-                health.observe(Some(("battle", true)), false).is_empty(),
+                health
+                    .observe(Some(("battle", true, None)), false)
+                    .is_empty(),
                 "inside the grace window the gap stays silent"
             );
         }
         assert_eq!(
-            health.observe(Some(("battle", true)), false),
+            health.observe(Some(("battle", true, None)), false),
             vec![ProbeHealthEvent::BattleWithoutTelemetry]
         );
         assert!(
-            health.observe(Some(("battle", true)), false).is_empty(),
+            health
+                .observe(Some(("battle", true, None)), false)
+                .is_empty(),
             "the WARN latches once per battle"
         );
         // Back to port re-arms the warning for the next battle.
         assert_eq!(
-            health.observe(Some(("port", true)), true),
+            health.observe(Some(("port", true, None)), true),
             vec![ProbeHealthEvent::HeartbeatPhase(
                 "battle".into(),
                 "port".into()
             )]
         );
         assert_eq!(
-            health.observe(Some(("battle", true)), false),
+            health.observe(Some(("battle", true, None)), false),
             vec![ProbeHealthEvent::HeartbeatPhase(
                 "port".into(),
                 "battle".into()
             )]
         );
         for _ in 0..(BATTLE_TELEMETRY_GRACE_POLLS - 2) {
-            assert!(health.observe(Some(("battle", true)), false).is_empty());
+            assert!(
+                health
+                    .observe(Some(("battle", true, None)), false)
+                    .is_empty()
+            );
         }
         assert_eq!(
-            health.observe(Some(("battle", true)), false),
+            health.observe(Some(("battle", true, None)), false),
             vec![ProbeHealthEvent::BattleWithoutTelemetry]
         );
         // A stale/absent heartbeat while the client still runs: lost once,
@@ -1013,13 +1067,70 @@ mod tests {
         );
         assert!(health.observe(None, false).is_empty());
         assert_eq!(
-            health.observe(Some(("port", false)), false),
+            health.observe(Some(("port", false, None)), false),
             Vec::<ProbeHealthEvent>::new(),
             "a stale frame is no heartbeat at all"
         );
         assert_eq!(
-            health.observe(Some(("port", true)), false),
+            health.observe(Some(("port", true, None)), false),
             vec![ProbeHealthEvent::HeartbeatGained("port".into())]
+        );
+    }
+
+    /// The degraded-roster marker (`fb`): parsed off the heartbeat, empty
+    /// and missing keys read as None, and the RosterFallback event announces
+    /// once per source per battle — re-announcing after the phase leaves
+    /// battle and staying silent while the marker holds.
+    #[test]
+    fn roster_fallback_announces_once_per_battle() {
+        // Parsing: a non-empty marker survives, empty/missing fold to None.
+        let frame = parse_heartbeat(
+            r#"{"v":"0.1.0","t":1000,"phase":"battle","players":12,"rec":0,"fb":"walk"}"#,
+            2_000,
+        )
+        .expect("frame parses");
+        assert_eq!(frame.phase, "battle");
+        assert_eq!(frame.fallback.as_deref(), Some("walk"));
+        assert_eq!(
+            parse_heartbeat(r#"{"v":"0.1.0","t":1000,"phase":"battle","fb":""}"#, 2_000)
+                .expect("frame parses")
+                .fallback,
+            None
+        );
+
+        let mut health = ProbeHealthState::default();
+        // Battle with the marker and telemetry flowing (the fixed shape):
+        // the phase change and the fallback land together on the first
+        // poll, then silence while the marker holds.
+        let mut events = health.observe(Some(("battle", true, Some("walk"))), true);
+        assert!(events.contains(&ProbeHealthEvent::RosterFallback("walk".into())));
+        assert!(
+            health
+                .observe(Some(("battle", true, Some("walk"))), true)
+                .is_empty()
+        );
+        // A source switch mid-battle (records recovered enough to change
+        // the synthesis source) announces the new one.
+        events = health.observe(Some(("battle", true, Some("records"))), true);
+        assert_eq!(
+            events,
+            vec![ProbeHealthEvent::RosterFallback("records".into())]
+        );
+        // Leaving battle clears the latch: the next battle re-announces.
+        assert_eq!(
+            health.observe(Some(("port", true, None)), true),
+            vec![ProbeHealthEvent::HeartbeatPhase(
+                "battle".into(),
+                "port".into()
+            )]
+        );
+        events = health.observe(Some(("battle", true, Some("walk"))), true);
+        assert!(events.contains(&ProbeHealthEvent::RosterFallback("walk".into())));
+        // Old probe builds carry no marker at all: nothing ever announces.
+        assert!(
+            health
+                .observe(Some(("battle", true, None)), true)
+                .is_empty()
         );
     }
 }

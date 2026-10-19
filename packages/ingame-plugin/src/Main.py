@@ -80,6 +80,19 @@ CONFIG_DEFAULTS = {
 }
 JOURNAL_LIMIT = CONFIG_DEFAULTS['journal_limit']
 
+# Battle ticks a session may stay unset before the probe synthesizes one
+# from the best available roster source (see synthesize_session). The
+# roster normally stabilizes within three ticks; the 2026-10-18/19 field
+# reports (Steam 13357625 + CN360 13357822) showed a build class where it
+# NEVER does — getPlayersInfo empty, failing or churning all battle — so
+# write_telemetry's session gate stood closed and telemetry.json appeared
+# only as the battle-end quit-clear (the companion read alive=0 at the
+# exact battle-end millisecond). Five ticks (~10 s at the pre-session
+# cadence) sits well inside the companion's ~30 s absence grace: a
+# degraded build still gets its stream before the WARN arms, and a
+# healthy build never reaches the count.
+ROSTER_GRACE_TICKS = 5
+
 # The barcode strip's frozen geometry contract (see the design doc's
 # capture side-channel section): the overlay's decoder is written against
 # these exact numbers; changing any of them is a coordinated spec bump on
@@ -567,6 +580,17 @@ class Probe:
         # probe (see client_order_probe). It runs on the first stabilized
         # tick, once the data hub's splitting/sorting collections exist.
         self.order_probe_done = False
+        # The degraded-roster fallback bookkeeping (see synthesize_session):
+        # battle ticks elapsed without a session, the last non-empty roster
+        # attempt (records that never stabilized), and the source the
+        # current session was synthesized from ('' = the stabilized path).
+        self.grace_ticks = 0
+        self.last_unstable = []
+        self.session_fallback = ''
+        # Entities the LAST write_telemetry walk saw (0 before the first
+        # post-session tick): a walk-sourced session's battle-end signal
+        # (see tick's empty branch).
+        self.walk_seen = 0
         self.resolve_api()
         self.api_probe('load')
         try:
@@ -1544,6 +1568,16 @@ class Probe:
         # The client order probe is per battle: a stale verdict must not
         # describe the next battle's roster.
         self.order_probe_done = False
+        # The degraded-roster fallback re-arms per battle too: grace
+        # counting starts over and the next battle's session reports its
+        # own (or no) fallback source.
+        self.grace_ticks = 0
+        self.last_unstable = []
+        self.session_fallback = ''
+        # Defensive: the walk-width latch is refreshed by write_telemetry
+        # before any walk-sourced consumption could read it, but a future
+        # tick() reordering must not inherit the previous battle's width.
+        self.walk_seen = 0
 
     def clear_players(self):
         if _UI is None:
@@ -1813,6 +1847,54 @@ class Probe:
             self.schedule()
         handle[0] = callbacks.callback(1 if self.session else 2, tick)
 
+    def walk_roster(self):
+        """Roster rows off the entity walk alone — the records path's
+        last-resort stand-in (see synthesize_session). The walk's sides
+        carry the same names the strips fold; ':'-prefixed bots and
+        duplicates drop exactly like players() drops them. Rows carry no
+        account ids/realms/ship ids: the identity bridge stays empty and
+        the companion falls back to its own realm routing (degraded but
+        alive beats a silent stream). Sorted and capped like players().
+        On a client whose UiComponents withholds (the Lesta shape) the
+        walk stands down and this returns [] — nothing is invented."""
+        rows = []
+        seen = {}
+        try:
+            states, sides = self.entity_walk()
+            for side in ('ally', 'enemy'):
+                for name, alive in sides.get(side, []):
+                    if not name or name.startswith(':') or name in seen:
+                        continue
+                    seen[name] = True
+                    rows.append({'name': name, 'account_id': 0,
+                                 'avatar_id': 0, 'ship_id': 0, 'realm': ''})
+        except:
+            self.soft('walk roster failed=' + _exc_text(120))
+        rows.sort(key=lambda p: p['name'])
+        return rows[:64]
+
+    def synthesize_session(self, roster):
+        """Open the telemetry session from the best available roster when
+        the records path never stabilizes (ROSTER_GRACE_TICKS battle ticks,
+        see tick). Sources in order: this tick's records attempt, the last
+        non-empty one (a churning roster beats none — the rows keep their
+        account ids, so the identity bridge survives), else the entity
+        walk (records dead outright). The session_fallback source rides
+        the heartbeat ('fb') so the companion can log the degradation;
+        a walk that yields nothing leaves the session unset."""
+        rows = roster or self.last_unstable or self.walk_roster()
+        if not rows:
+            return
+        source = 'records' if (roster or self.last_unstable) else 'walk'
+        self.clear_players()
+        self.roster = rows
+        self.dead_latch = {None} - {None}
+        self.session = _fmt(_to_int(time.time() * 1000))
+        self.details_reset()
+        self.session_fallback = source
+        log('roster fallback session source=' + source +
+            ' players=' + _fmt(len(rows)))
+
     def tick(self):
         records = self.players_raw()
         # Stash this tick's raw roster records: write_telemetry reads their
@@ -1823,6 +1905,10 @@ class Probe:
         roster = self.players(records)
         if roster:
             self.empty_ticks = 0
+            # Remember every non-empty attempt: a roster that churns every
+            # tick never stabilizes, but its rows are still the best
+            # identity the fallback session has (see synthesize_session).
+            self.last_unstable = roster
             if roster == self.previous:
                 self.stable += 1
             else:
@@ -1838,20 +1924,55 @@ class Probe:
                 self.details_reset()
                 log('roster stable players=' + _fmt(len(roster)) + ' sample=' + json_encode_safe(roster[0]))
         elif self.session:
-            # A transient empty roster happens MID-BATTLE: the player's own
-            # death screen empties getPlayersInfo() for a second or two.
-            # Quitting on the first sighting tore the session down mid-
-            # battle (clear + rearm churn that killed the scheduler) —
-            # require the emptiness to persist before believing it.
-            self.empty_ticks += 1
-            if self.empty_ticks >= TOOL_CONFIG['panel_fade_ticks']:
-                self.quit()
+            if self.session_fallback == 'walk':
+                # A walk-sourced session has no records whose emptiness
+                # could end the battle (they were never populated — the
+                # records-dead field class). Its liveness signal is the
+                # ENTITY WALK itself: the client tears the avatars down at
+                # battle end, and a persistently empty walk is the fade
+                # signal the records path uses getPlayersInfo() for. The
+                # counter is one tick stale by construction (write_telemetry
+                # produces it at the END of each tick) — the fade window
+                # absorbs that. Without this branch the records-empty quit
+                # below fired panel_fade_ticks after synthesis and tore the
+                # stream down MID-BATTLE (round-1 review), leaving the
+                # heartbeat reporting port while the client still fought.
+                if self.walk_seen:
+                    self.empty_ticks = 0
+                else:
+                    self.empty_ticks += 1
+                    if self.empty_ticks >= TOOL_CONFIG['panel_fade_ticks']:
+                        self.quit()
+            else:
+                # A transient empty roster happens MID-BATTLE: the player's own
+                # death screen empties getPlayersInfo() for a second or two.
+                # Quitting on the first sighting tore the session down mid-
+                # battle (clear + rearm churn that killed the scheduler) —
+                # require the emptiness to persist before believing it.
+                self.empty_ticks += 1
+                if self.empty_ticks >= TOOL_CONFIG['panel_fade_ticks']:
+                    self.quit()
         else:
             self.empty_ticks = 0
+        # The degraded-roster fallback: a battle whose records never
+        # stabilize (empty, failing or churning every tick — the
+        # 2026-10-18/19 Steam/CN360 field class) still deserves a
+        # telemetry stream instead of a battle-end quit-clear as its only
+        # write. The in_battle gate (the game's own battleStart event)
+        # keeps port ticks — records empty BY DESIGN there — from ever
+        # synthesizing a session.
+        if not self.session and self.in_battle:
+            self.grace_ticks += 1
+            if self.grace_ticks >= ROSTER_GRACE_TICKS:
+                self.synthesize_session(roster)
+        else:
+            self.grace_ticks = 0
         try:
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': _to_int(time.time() * 1000),
                                              'phase': 'battle' if self.session or self.in_battle else 'port',
-                                             'players': len(self.roster)})
+                                             'players': len(self.roster),
+                                             'rec': len(self.latest_raw),
+                                             'fb': self.session_fallback})
         except:
             self.soft('heartbeat failed=' + _exc_text(120))
         self.write_telemetry()
@@ -1906,6 +2027,11 @@ class Probe:
         players_complete = False
         try:
             states, sides = self.entity_walk()
+            # The walk's width this tick: a walk-sourced session's liveness
+            # signal (see tick's empty branch). Latched BEFORE anything can
+            # fail below so a mid-stage exception still counts as "walk
+            # alive" for this tick.
+            self.walk_seen = len(sides.get('ally', [])) + len(sides.get('enemy', []))
             stage = 'sortkeys'
             # The game's own TAB sort keys (see sort_key_probe): read BEFORE
             # the fold so merge_order can sort the strips' alive block with

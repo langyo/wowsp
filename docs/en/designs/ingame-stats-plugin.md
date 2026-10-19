@@ -434,7 +434,20 @@ Bridge files (protocol v1, all in the mod directory):
 
 // heartbeat.json — rewritten every 1–2 s; stale = mod dead or game closed.
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
-  "players": 17, "revision": 3 }
+  "players": 17, "revision": 3, "rec": 18, "fb": "" | "records" | "walk" }
+
+// `rec` (records seen this tick) and `fb` (the session's fallback source)
+// are the degraded-roster diagnostics added after the 2026-10-18/19 field
+// reports (Steam 13357625 + CN360 13357822): on those builds the roster
+// NEVER stabilizes — `battle.getPlayersInfo()` answers empty or churns all
+// battle — so the telemetry session gate stood closed and telemetry.json
+// appeared only as the battle-end quit-clear. The probe now synthesizes
+// the session after five grace battle ticks: from the last non-empty
+// records attempt (`fb: "records"` — the identity bridge survives), else
+// from the entity walk (`fb: "walk"` — names/alive/sides only, identity
+// empty and the companion's own realm routing takes over). The companion
+// logs the marker once per battle as the "degraded but bridged" evidence
+// line, distinct from the hard telemetry-absent WARN.
 
 // telemetry journal — whole-file rewrite of a bounded per-battle ring;
 // every distinct state plus event marks on one timeline:
