@@ -159,8 +159,25 @@ class StubBattle(object):
         # the probe's raw-collection branch stays covered for clients
         # (and future builds) where the wrapper does expose it.
         self.avatar_collection = None
+        # Degraded-roster modes (the 2026-10-18/19 Steam-13357625 +
+        # CN360-13357822 field class): None = the healthy shape;
+        # "empty" = getPlayersInfo answers {} all battle (records dead);
+        # "churn" = one player's accountDBID flips every call, so the
+        # roster list differs each tick and NEVER stabilizes.
+        self.degraded = None
+        self._churn_flip = 0
 
     def getPlayersInfo(self):
+        if self.degraded == "empty":
+            return {}
+        if self.degraded == "churn":
+            players = dict(self.players)
+            base = players[101]._f
+            self._churn_flip += 1
+            fields = dict(base)
+            fields["accountDBID"] = base["accountDBID"] + (self._churn_flip % 2)
+            players[101] = FakeRecord(**fields)
+            return players
         return dict(self.players)
 
     def getSelfPlayerInfo(self):
@@ -510,8 +527,9 @@ def crippled_builtins():
 
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
              raising_constants, fail_plain, ships, with_ship_names,
-             drift_records, failures, raw_collection=True, aim_duck=False):
-    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s"
+             drift_records, failures, raw_collection=True, aim_duck=False,
+             degraded=None):
+    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s"
              % ("records" if encode_records else "projection",
                 "yes" if with_manifest else "missing",
                 "yes" if with_ui else "absent",
@@ -521,7 +539,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 "yes" if with_ship_names else "withheld",
                 "yes" if drift_records else "no",
                 "yes" if raw_collection else "missing",
-                "yes" if aim_duck else "no"))
+                "yes" if aim_duck else "no",
+                degraded or "no"))
     utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle() if raw_collection else StubBattleNoRaw()
     events = StubEvents()
@@ -623,8 +642,14 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                            "PnFMods", "WoWSPProbe")
     os.makedirs(mod_dir)
     if with_manifest:
+        # The degraded passes pin the FIELD default fade (3): the walk-
+        # sourced session must survive records-empty ticks at exactly the
+        # shipped value (a teardown there is the round-1 review's bug).
+        # The healthy passes keep 7 to prove the config is READ (see the
+        # TOOL_CONFIG expectation below).
+        fade = 3 if degraded else 7
         with open(os.path.join(workdir, "bin", "8867689", "res_mods", "wowsp.toml"), "w") as fh:
-            fh.write('[tools."battle.ingame.stats"]\npanel_fade_ticks = 7\njournal_limit = 123\nbarcode = 0\n')
+            fh.write('[tools."battle.ingame.stats"]\npanel_fade_ticks = %d\njournal_limit = 123\nbarcode = 0\n' % fade)
     cwd = os.getcwd()
     os.chdir(mod_dir)
     try:
@@ -645,8 +670,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # fallback — evaluating the handler TYPE there is the whole point:
         # a reintroduced `except Exception:` raises NameError on Lesta's
         # whitelist and this pass catches it (the round-1 crash class).
-        expected_cfg = ({"panel_fade_ticks": 7, "journal_limit": 123,
-                         "barcode": 0}
+        expected_cfg = ({"panel_fade_ticks": 3 if degraded else 7,
+                         "journal_limit": 123, "barcode": 0}
                         if with_manifest else
                         {"panel_fade_ticks": 3, "journal_limit": 300,
                          "barcode": 0})
@@ -659,6 +684,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # (each tick re-schedules itself; call the latest pending callback).
         battle.players = build_roster(with_ship_names=with_ship_names,
                                       drift_records=drift_records)
+        if degraded:
+            battle.degraded = degraded
         start = events.handlers.get("onBattleStart")
         if start is None:
             failures.append("[%s] onBattleStart was never registered" % label)
@@ -688,7 +715,13 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         except Exception as e:
             failures.append("[%s] heartbeat.json unreadable after the first "
                             "tick: %r" % (label, e))
-        for _ in range(4):
+        # The degraded passes need the probe's ROSTER_GRACE_TICKS to lapse
+        # (5 ticks) plus enough post-synthesis ticks to prove DURABILITY:
+        # the field-default panel_fade_ticks (3, planted in the manifest
+        # above) would tear a fragile session down at tick 8 — twelve ticks
+        # leaves that failure mode firmly inside the assertion window. The
+        # healthy passes stabilize within three.
+        for _ in range(12 if degraded else 4):
             fn = callbacks.pending
             callbacks.pending = None
             if fn is None:
@@ -699,9 +732,13 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # ── artifact assertions ──────────────────────────────────────────
         # The expected rows mirror the probe's drift contract: a record
         # without `isBot` still rows (the ':' marker filters scripted
-        # names), a record without `name` has no row at all.
+        # names), a record without `name` has no row at all. Derived from
+        # the AVATAR-BUILDING roster (identical content to battle.players
+        # on the healthy passes) so the degraded-empty pass — whose
+        # battle.players answers {} — still expects the entity walk's
+        # names.
         expected_names = set()
-        for rec in battle.players.values():
+        for rec in roster.values():
             try:
                 if rec["isBot"]:
                     continue
@@ -728,10 +765,14 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             name = record.get("name")
             if name and not name.startswith(":"):
                 seen.add(name)
-        missing = expected_names - seen
-        if missing:
-            failures.append("[%s] roster_raw.json misses players: %s"
-                            % (label, sorted(missing)))
+        if degraded != "empty":
+            # The degraded-empty pass legitimately carries no records —
+            # roster_raw.json holds the empty projection there and the
+            # telemetry (below) is the assertion that matters.
+            missing = expected_names - seen
+            if missing:
+                failures.append("[%s] roster_raw.json misses players: %s"
+                                % (label, sorted(missing)))
 
         try:
             with open("telemetry.json") as fh:
@@ -751,16 +792,26 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
 
         # Identity block: the app routes each roster row to its cluster
         # off this; a dropped/zeroed entry silently misroutes lookups.
+        # The degraded-empty pass synthesizes its roster off the entity
+        # walk (no account ids at all) — the identity bridge must be an
+        # EMPTY map there, and the companion's own realm routing takes
+        # over; the churn pass latched the records' rows, so the full
+        # identity survives.
         identity = tele.get("identity")
         if not isinstance(identity, dict):
             failures.append("[%s] telemetry identity is not a mapping: %r"
                             % (label, identity))
             identity = {}
-        if identity.get("langyo", {}).get("account_id") != 310000000:
-            failures.append("[%s] telemetry identity missing/misrouted: %r"
-                            % (label, identity.get("langyo")))
-        if not identity.get("langyo", {}).get("realm"):
-            failures.append("[%s] telemetry identity carries no realm" % label)
+        if degraded == "empty":
+            if identity != {}:
+                failures.append("[%s] walk-sourced identity must stay empty: %r"
+                                % (label, identity))
+        else:
+            if identity.get("langyo", {}).get("account_id") != 310000000:
+                failures.append("[%s] telemetry identity missing/misrouted: %r"
+                                % (label, identity.get("langyo")))
+            if not identity.get("langyo", {}).get("realm"):
+                failures.append("[%s] telemetry identity carries no realm" % label)
         if type(tele.get("t")) is not int:
             failures.append("[%s] telemetry t is %s (must be int)"
                             % (label, type(tele.get("t")).__name__))
@@ -788,10 +839,14 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # records' iteration order verbatim (bots included; they hold
         # table rows too) through BOTH encoders, and as a LIST so no
         # parser can reorder it. The drift pass's nameless record drops
-        # out (there is no name to sequence).
+        # out (there is no name to sequence); the degraded-empty pass has
+        # no records at all, so the sequence stays EMPTY (the companion
+        # reads empty as "absent" and keeps its offline inference).
         expected_sequence = ([n for n in build_roster_order()
                               if n != "Ally04"] if drift_records
                              else build_roster_order())
+        if degraded == "empty":
+            expected_sequence = []
         if tele.get("rosterOrder") != expected_sequence:
             failures.append("[%s] telemetry rosterOrder mismatch: %r"
                             % (label, tele.get("rosterOrder")))
@@ -799,10 +854,13 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # name-order segment, bridged verbatim (zh round trip included)
         # when the records carry the field; a records shape WITHOUT it
         # must degrade to an EMPTY map — the key stays present, the
-        # companion treats empty as "absent".
+        # companion treats empty as "absent". The degraded-empty pass has
+        # no records, so its map is empty for the same reason.
         expected_localized = dict(SHIP_LOCALIZED) if with_ship_names else {}
         if drift_records and with_ship_names:
             del expected_localized["Ally04"]
+        if degraded == "empty":
+            expected_localized = {}
         if tele.get("shipNames") != expected_localized:
             failures.append("[%s] telemetry shipNames mismatch: %r"
                             % (label, tele.get("shipNames")))
@@ -825,8 +883,11 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
 
         # Bots must SURVIVE into roster_raw.json: the app's synthesizer
         # keeps ':Name:' rows because they hold co-op table rows and team
-        # sizes, exactly like the WG arena file's bot entries.
-        if not any(str(v).find(BOT_NAME) >= 0 for v in players.values()):
+        # sizes, exactly like the WG arena file's bot entries. (The
+        # degraded-empty pass carries no records at all — nothing to
+        # survive there; its telemetry is the assertion that matters.)
+        if degraded != "empty" and not any(
+                str(v).find(BOT_NAME) >= 0 for v in players.values()):
             failures.append("[%s] roster_raw.json dropped the %s bot record"
                             % (label, BOT_NAME))
 
@@ -841,6 +902,16 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             # class) — pin it on the stabilized path here.
             failures.append("[%s] heartbeat phase=%r (expected battle)"
                             % (label, hb.get("phase")))
+        # The degraded-roster marker: '' on the stabilized path, the
+        # synthesis source on the degraded ones; the records counter is
+        # the companion's evidence channel for which side died.
+        expected_fb = {"empty": "walk", "churn": "records"}.get(degraded, "")
+        if hb.get("fb", "") != expected_fb:
+            failures.append("[%s] heartbeat fb=%r (expected %r)"
+                            % (label, hb.get("fb"), expected_fb))
+        if degraded == "empty" and hb.get("rec") != 0:
+            failures.append("[%s] heartbeat rec=%r (expected 0 on dead records)"
+                            % (label, hb.get("rec")))
 
         # The panel path: with `ui` injected (WG-family clients) the strip
         # must actually be driven; without it (Lesta) the paths must be a
@@ -1012,7 +1083,18 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             if env_cfg.get("barcode") != 0:
                 failures.append("[%s] default mode flag flipped: %r"
                                 % (label, env_cfg))
-        if "roster stable players=" not in joined:
+        # The session-opening log line: the stabilized path announces
+        # 'roster stable players=', the degraded ones announce their
+        # synthesis source instead — a degraded pass must NEVER show the
+        # stable line (its records never stabilized) and a healthy pass
+        # must never show the fallback line.
+        if degraded:
+            if "roster fallback session source=" not in joined:
+                failures.append("[%s] the fallback session never opened; probe log:\n%s"
+                                % (label, joined[-2000:]))
+            if "roster stable players=" in joined:
+                failures.append("[%s] a degraded battle claims a stabilized roster" % label)
+        elif "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))
         # Battle quit: the quit-clear telemetry must blank EVERY keyed
@@ -1097,6 +1179,27 @@ def main(argv):
     with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
         run_once(plugin_src, workdir, True, True, False, False, False,
                  "full", True, False, failures, aim_duck=True)
+    # The degraded-roster passes (the 2026-10-18/19 Steam-13357625 +
+    # CN360-13357822 field class: telemetry.json appeared only as the
+    # battle-end quit-clear because the roster NEVER stabilized and the
+    # session gate stood closed all battle):
+    #   "empty"  — getPlayersInfo answers {} every tick. The probe must
+    #              synthesize its session off the ENTITY WALK after the
+    #              grace ticks: telemetry flows with the walk's names and
+    #              alive flags, the identity bridge stays empty (no ids to
+    #              route), the heartbeat reports fb=walk rec=0, and the
+    #              sortKeys/aim/self bridges keep working (their sources
+    #              are records-independent);
+    #   "churn"  — one player's accountDBID flips every call, so the
+    #              roster differs each tick and never stabilizes. The
+    #              synthesis latches the records' rows: the FULL identity
+    #              (account ids + realms) survives, fb=records.
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, False, False, False,
+                 "full", True, False, failures, degraded="empty")
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, False, False, False,
+                 "full", True, False, failures, degraded="churn")
 
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
@@ -1104,7 +1207,7 @@ def main(argv):
             print(" - " + line)
         return 1
     print("SANDBOX CONFORMANCE: PASS (%d passes, %s, crippled builtins: %s)"
-          % (len(passes) + 2, os.path.basename(os.path.normpath(plugin)),
+          % (len(passes) + 4, os.path.basename(os.path.normpath(plugin)),
              ", ".join(SAFE_BUILTINS)))
     return 0
 
