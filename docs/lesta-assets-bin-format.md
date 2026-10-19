@@ -451,7 +451,44 @@ pass starts at the real work, not re-falsification):
    the 0x80 grid, walk `(count, offset)` trees to leaves with the
    splash mains + Mikasa WG transforms as oracles, and brute-force
    the leaf encoding (quantization scale, hash space).
+
 - Related hardening that DID land: revision-twin mounts of the same
   class dedupe at per-axis 0.15 (two mounts of one class cannot share
   a pivot; the fleet-wide same-class pair histogram is empty 0.05-0.15
   and dense above), different classes keep 0.05.
+
+## Phase 11 (2026-10-19, late): the crack — _ports.visual carries the gun trees; murmur3-32 confirmed
+
+Both routes were run, and the decisive find came from their
+intersection:
+
+- **Route 1 (disassembly) yielded hard format facts.** The visual
+  loader lives in Korabli64.exe: the schema field-name table sits at
+  .rdata 36,160,680..36,162,050 (nameMapNameIds/nameMapNodeIds/
+  nameIds/matrices/parentIds/rotationLimits*/renderSets/...), the
+  name→id hash is **MurmurHash3-32 seed 0** (verified against four
+  known ids AND found inlined in the loading code at 0x140637c39:
+  the 0xcc9e2d51/0x1b873593/0x85ebca6b/0xc2b2ae35 constants), and a
+  writer cluster at 0x14063ee00.. serializes visual node trees to XML
+  (F/C field tokens) — the in-client dumper behind the Content SDK's
+  extractSources.
+- **Route 2 (re-checking the SDK dump) delivered the payload.** The
+  phase-7b verdict "the SDK dumps are mesh containers only" was WRONG:
+  it only examined the non-`_ports` visuals. The `_ports.visual` files
+  (one set per ship part) carry the FULL gun-hardpoint node trees with
+  row-major splash-frame transforms — mains matching the splash gk
+  boxes to three decimals. 2,965 of 8,820 ship visuals in
+  ModsSDK_26.10.0.zip have gun HPs; the three then-remaining no-block
+  hulls are all covered: Akagi (8-gun casemate ring + 6 S + 22 AA),
+  Tranclucator (3+10+27), Patagonia (4+8+30).
+- `bake_lesta_ships.py --sdk-dump <zip|dir>` now parses them
+  (`sdk_dump_mounts`, hull-stem-indexed from the part filenames,
+  cached as lesta_sdk_mounts.json) as the source BETWEEN node blocks
+  and the WG reference. Mikasa_04 is not in the SDK and keeps the WG
+  reference; Hanko and Borodino_04 are in neither — splash fallback
+  (mains only) remains their state.
+
+The blob2 recursive-cell grammar stays uncracked — but with the SDK
+dump covering the holdouts, the remaining business case for that
+crack is empty unless Lesta ships new hulls absent from a community
+dump.
