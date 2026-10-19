@@ -235,6 +235,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Check version fields
-        # All manifests (Cargo workspace, tauri.conf.json, the three
-        # package.jsons) must move together in the same PR (AGENTS.md §5).
-        run: python scripts/check_versions.py
+        # The root package.json is the single source of truth; every
+        # derived manifest (Cargo workspace, tauri.conf.json, the three
+        # package.jsons, the relay worker) must agree (AGENTS.md §5).
+        run: python scripts/sync_versions.py --check

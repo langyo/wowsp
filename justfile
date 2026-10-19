@@ -186,6 +186,12 @@ lint target='full' *FLAGS='':
 i18n-check *FLAGS='':
     @python scripts/check_i18n.py {{FLAGS}}
 
+# Propagate the release version from its single source of truth (the root
+# package.json) into the six derived manifests. CI runs the same script
+# with --check and fails on drift (AGENTS.md §5).
+sync-versions:
+    @python scripts/sync_versions.py
+
 check:
     cargo check --workspace
 

@@ -211,39 +211,43 @@ Before submitting, the relevant subset of `just lint` (or scoped
      PRs are allowed only when there is genuinely nothing to bundle (urgent
      hotfix, an isolated single-rule change).
 - **Version bumps ride along with the main PR**: when the user explicitly
-  instructs a version change (see the authorization rule below), bump all
-  seven places in the same feature/fix PR (`Cargo.toml` workspace
-  version, `packages/app/tauri/tauri.conf.json`, root `package.json`, the
-  `version` field of `packages/webui`, `packages/website`, `packages/holo`,
-  and `packages/pairing-relay/wrangler.toml`'s `[vars]
-  FEEDBACK_LATEST_VERSION` — the /feedback form's browser-side version
-  default); the installers take their version from the stamped
-  shun.toml manifest (see packages/installer), so no separate slot.
-  `scripts/check_versions.py` enforces consistency in CI. **Do not** open
-  version-bump-only PRs (unless the user explicitly asks).
+  instructs a version change (see the authorization rule below), edit the
+  SINGLE source of truth — the root `package.json` `version` field — and
+  run `python scripts/sync_versions.py` (or `just sync-versions`), which
+  propagates it into the six derived slots in the same feature/fix PR
+  (`Cargo.toml` `[workspace.package]` version,
+  `packages/app/tauri/tauri.conf.json`, the `version` fields of
+  `packages/webui`, `packages/website`, `packages/holo`, and
+  `packages/pairing-relay/wrangler.toml`'s `[vars] FEEDBACK_LATEST_VERSION`
+  — the /feedback form's browser-side version default); commit every
+  touched manifest together. The installers take their version from the
+  stamped shun.toml manifest (see packages/installer), so no separate
+  slot. CI runs `scripts/sync_versions.py --check` and fails on drift.
+  **Do not** open version-bump-only PRs (unless the user explicitly asks).
 - **Version bump authorization — no autonomous version changes at all
-  (mandatory; patch included)**: agents must never advance any of the seven
-  version fields on their own initiative — **the patch digit included**.
+  (mandatory; patch included)**: agents must never advance the release
+  version on their own initiative — **the patch digit included**.
   Riding a bump into a feature/fix PR and opening a bump PR both require
   the user's explicit instruction naming the target version (in effect, an
   explicit release request — the version only moves when the user has asked
-  for the next version to come out), and then all seven places move
-  together in a single PR. Minor/major target versions additionally need
+  for the next version to come out), and then the root bump plus its six
+  derived slots land together in a single PR (one `sync_versions.py` run). Minor/major target versions additionally need
   the user's explicit approval of the number itself, per the
   release-versioning rule below.
-- **Release versioning — no skipped versions (mandatory)**. The seven
-  version fields on master stay put until an explicit user instruction
-  moves them (see the authorization rule above), but release tags must
+- **Release versioning — no skipped versions (mandatory)**. The release
+  version on master stays put until an explicit user instruction
+  moves it (see the authorization rule above), but release tags must
   follow the published sequence
   strictly: the next release tag is always the latest published `v*`
   release tag plus one patch increment. A minor/major jump is allowed only
   with the user's explicit approval of the target version (see the
   authorization rule above); after such an approved jump the patch
   sequence resumes from it. Before cutting a release tag, if the seven
-  fields do not already equal the version to publish, a release-prep PR
-  MUST first reset all seven fields to it (this is the one sanctioned
+  slots do not already equal the version to publish, a release-prep PR
+  MUST first reset the root package.json version to it and run
+  `scripts/sync_versions.py` (this is the one sanctioned
   version-bump-down; the target is either the next sequential patch or the
-  user-approved jump); `scripts/check_versions.py` still enforces
+  user-approved jump); `scripts/sync_versions.py --check` still enforces
   seven-place agreement. Never tag a version that skips numbers, and never
   let the tag and the built version string disagree. Per §4, pushing a
   release tag is reserved for the user.
@@ -327,7 +331,7 @@ Before submitting, the relevant subset of `just lint` (or scoped
    - `ci.yml` — web (ubuntu: typecheck / lint / website build / i18n /
      pnpm audit), rust (windows: fmt / clippy / check / test), deny
      (cargo-deny native binary: advisories / licenses / sources), versions
-     (seven-version consistency via `scripts/check_versions.py`).
+     (seven-version consistency via `scripts/sync_versions.py --check`).
    - `commit-msg-lint.yml` — PR title + every commit subject in the PR
      (via `scripts/commit_msg_lint.py`, bot authors exempt).
    - `release.yml` / `site.yml` — tag-driven build & release / site
