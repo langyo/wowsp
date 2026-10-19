@@ -36,9 +36,9 @@ import { useOverlayStore } from "@/stores/overlay";
 import { useSessionStore } from "@/stores/session";
 
 /** Stable key for a playing identity: realm + nickname. The account id is
- *  deliberately NOT part of the key — the plugin bridge upgrades an
- *  already-noted identity with its exact id mid-battle (nickname stays),
- *  which must not read as an account switch. */
+ *  deliberately NOT part of the key — the retired plugin bridge used to
+ *  upgrade an already-noted identity with its exact id mid-battle
+ *  (nickname stays), which must not read as an account switch. */
 function playingKey(p: PlayingAccount | null): string | null {
   return p ? `${p.realm}:${p.nickname}` : null;
 }

@@ -142,12 +142,11 @@ export interface AccountProfileRef {
 
 /** Mirrors `wowsp_tauri_shared::PlayingAccount` — the player OBSERVED
  *  playing on the running client (battle roster nickname, exact account id
- *  when the in-game plugin bridge supplied one). */
+ *  when the observation carries one). */
 export interface PlayingAccount {
   realm: string;
   nickname: string;
   accountId: number | null;
-  source: "arena" | "plugin";
 }
 
 /** Mirrors `wowsp_tauri_shared::SessionPlayer` — the resolved player the
