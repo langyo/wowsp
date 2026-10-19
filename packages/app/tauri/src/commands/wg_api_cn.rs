@@ -42,7 +42,7 @@ use wowsp_tauri_shared::{
     ClanInfo, ClanMember, ClanMemberStats, ClanSuggestion, PlayerStats, PlayerSuggestion,
 };
 
-use super::lookup_error::LookupError;
+use super::lookup_error::{LookupError, LookupErrorKind};
 use super::wg_api::{PrAlgo, PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
 use super::wg_realm;
 
@@ -50,6 +50,18 @@ use super::wg_realm;
 /// path (the vortex service is unauthenticated; modest parallelism keeps a
 /// full roster polite).
 const BATCH_CONCURRENCY: usize = 4;
+
+/// How fast a transient batch-slot failure must have been for the one
+/// retry to fire. The vortex's documented hiccups (sporadic 503s, brief
+/// degradation windows) answer within moments and a retry lands them; a
+/// failure that already crawled to the 15s client timeout means the host
+/// is unreachable from this client (a black-holing proxy, a dead route) —
+/// re-crawling every slot would double the roster's wait and change
+/// nothing.
+const TRANSIENT_RETRY_MAX_FIRST_ATTEMPT: Duration = Duration::from_secs(5);
+
+/// The pause between a transient slot failure and its one retry.
+const TRANSIENT_RETRY_PAUSE: Duration = Duration::from_millis(400);
 
 /// Minimum length for a CN search query — the server rejects shorter ones
 /// with a plain `Bad Request` (same floor the official profile site applies).
@@ -553,6 +565,7 @@ pub(crate) async fn lookup_player_stats(
     algo: PrAlgo,
 ) -> Result<PlayerStats, LookupError> {
     // anyhow→LookupError boundary (see `lookup_one`).
+    let lookup_started = std::time::Instant::now();
     let client = vortex_client().map_err(|e| e.to_string())?;
     let mut stats = lookup_one(&client, &name)
         .await?
@@ -567,7 +580,53 @@ pub(crate) async fn lookup_player_stats(
         stats.ranked_pr = None;
         stats.global_pr = None;
     }
+    // Parity with the WG arm's end line: the command's own finish log sits
+    // AFTER this arm's early return in `lookup_player_stats`, so a CN
+    // lookup never reached it and a field bundle could not tell a finished
+    // CN lookup from a hung one. Query length rides the start line; the
+    // nickname itself stays unlogged (the count-only discipline).
+    tracing::info!(
+        realm = %stats.realm,
+        account_id = stats.account_id,
+        hidden = stats.hidden,
+        elapsed_ms = lookup_started.elapsed().as_millis() as u64,
+        "interactive stats lookup finished"
+    );
     Ok(stats)
+}
+
+/// One settled per-name outcome inside the batch — the pure decision core
+/// [`lookup_players_stats_batch`] applies per miss.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SlotVerdict {
+    /// A usable answer arrived (stats, or a genuine not-found): land it.
+    Landed,
+    /// The account the search resolved vanished before its info fetch —
+    /// a stable business miss, cached and settled like `Ok(None)`.
+    Miss,
+    /// Transport / API-level failure: transient. Worth one quick retry,
+    /// never worth caching.
+    Transient,
+}
+
+/// Classify one per-name batch attempt. `lookup_one` answers `Ok(None)`
+/// for business not-founds and `Err(AccountNotFound)` when the account
+/// vanished between its search hit and info fetch — both are stable
+/// verdicts; everything else (the `From<String>` bridge carries the
+/// transport and parse failures) is transient.
+fn slot_verdict(result: &Result<Option<PlayerStats>, LookupError>) -> SlotVerdict {
+    match result {
+        Ok(_) => SlotVerdict::Landed,
+        Err(e) if e.kind == LookupErrorKind::AccountNotFound => SlotVerdict::Miss,
+        Err(_) => SlotVerdict::Transient,
+    }
+}
+
+/// Retry policy for a transient slot failure: exactly one quick second
+/// try, and only when the first attempt failed FAST (see
+/// [`TRANSIENT_RETRY_MAX_FIRST_ATTEMPT`]). Pure — unit-tested.
+fn should_retry_transient(verdict: SlotVerdict, first_attempt: Duration) -> bool {
+    verdict == SlotVerdict::Transient && first_attempt <= TRANSIENT_RETRY_MAX_FIRST_ATTEMPT
 }
 
 /// CN arm of `wg_api::lookup_players_stats_batch`. The shared session cache
@@ -575,11 +634,25 @@ pub(crate) async fn lookup_player_stats(
 /// info + clan round-trips — the vortex service has no multi-id batch
 /// endpoints) with bounded parallelism, so a roster that re-fires for the
 /// same names every battle window costs one resolution, not one per
-/// window. Any transport failure fails the whole batch — same contract as
-/// the WG path, so the frontend's retry backoff kicks in instead of
-/// caching "no data". Under the expected algorithm every entry answers
-/// PR=None for the same request-budget reason as the WG arm (see
-/// `wg_api::apply_batch_pr_algo`).
+/// window.
+///
+/// Per-name resilience: the vortex is documented to hiccup (sporadic 503s,
+/// short degradation windows) and a battle roster costs it ~3 requests per
+/// name — under the historical all-or-nothing contract ONE hiccup failed
+/// all 24 names and threw away every answer already paid for, and the
+/// frontend's re-fetch storm then hit the same degraded host again (the
+/// 2026-10-19 "CN rosters spin forever" field report). So a transient
+/// slot failure gets one fast retry and, if it survives that, settles as
+/// an UNCACHED None — its row renders "no data" while the rest of the
+/// roster lands; the in-game overlay's not-found budget re-probes such
+/// names within the battle (the main window has no re-probe — its
+/// name-keyed cache survives battle switches, so a settled name recovers
+/// on the manual refresh, a stats-source/algo change, or a restart).
+/// Only a batch where EVERY miss failed rejects (a total outage —
+/// the frontend's retry backoff then owns the recovery instead of this
+/// path caching "no data" for the whole roster). Under the expected
+/// algorithm every landed entry answers PR=None for the same
+/// request-budget reason as the WG arm (see `wg_api::apply_batch_pr_algo`).
 pub(crate) async fn lookup_players_stats_batch(
     names: Vec<String>,
     algo: PrAlgo,
@@ -603,27 +676,71 @@ pub(crate) async fn lookup_players_stats_batch(
     }
     let client = vortex_client()?;
     let miss_names: Vec<String> = misses.iter().map(|(_, n)| n.clone()).collect();
+    let miss_count = miss_names.len();
     let results: Vec<Result<Option<PlayerStats>, LookupError>> = {
         let client_ref = &client;
         stream::iter(miss_names)
-            .map(|name| async move { lookup_one(client_ref, &name).await })
+            .map(|name| async move {
+                let started = std::time::Instant::now();
+                let mut attempt = lookup_one(client_ref, &name).await;
+                if should_retry_transient(slot_verdict(&attempt), started.elapsed()) {
+                    tokio::time::sleep(TRANSIENT_RETRY_PAUSE).await;
+                    attempt = lookup_one(client_ref, &name).await;
+                }
+                attempt
+            })
             .buffered(BATCH_CONCURRENCY)
             .collect()
             .await
     };
-    if let Some(Err(e)) = results.iter().find(|r| r.is_err()) {
-        // The batch keeps the plain-message contract (its consumers render
-        // "no data", never a reason) — the structured error degrades to its
-        // historical message.
-        return Err(anyhow::Error::msg(e.to_string()));
-    }
-    for (i, (slot, name)) in misses.into_iter().enumerate() {
-        let stats = results[i].clone().unwrap_or(None);
-        super::wg_api::roster_cache_insert("cn", &name, stats.clone());
-        if let Some(mut stats) = stats {
-            super::wg_api::apply_batch_pr_algo(&mut stats, algo);
-            answers[slot] = Some(stats);
+    // Partition: land the answers (both miss flavors cache their None —
+    // they are stable verdicts), keep transient failures uncached so the
+    // next attempt re-fetches them instead of pinning "no data".
+    let mut transient_failures: usize = 0;
+    let mut first_failure: Option<String> = None;
+    for ((slot, name), result) in misses.iter().zip(&results) {
+        match slot_verdict(result) {
+            SlotVerdict::Landed | SlotVerdict::Miss => {
+                let stats = result.clone().unwrap_or(None);
+                super::wg_api::roster_cache_insert("cn", name, stats.clone());
+                if let Some(mut stats) = stats {
+                    super::wg_api::apply_batch_pr_algo(&mut stats, algo);
+                    answers[*slot] = Some(stats);
+                }
+            },
+            SlotVerdict::Transient => {
+                transient_failures += 1;
+                if first_failure.is_none() {
+                    // The batch keeps the plain-message contract (its
+                    // consumers render "no data", never a reason) — the
+                    // structured error degrades to its historical message.
+                    first_failure = result.as_ref().err().map(|e| e.to_string());
+                }
+            },
         }
+    }
+    if let Some(error) = first_failure {
+        if transient_failures == miss_count {
+            // Total outage: reject so the frontend's retry backoff owns
+            // the recovery — landing all-None here would cache "no data"
+            // for the whole roster on the windows that persist answers.
+            tracing::warn!(
+                error = %error,
+                realm = "cn",
+                names = miss_count,
+                "roster stats batch failed"
+            );
+            return Err(anyhow::Error::msg(error));
+        }
+        // Partial: the landed names keep their stats; say what failed so
+        // a field bundle can tell a degraded vortex from a hung roster.
+        tracing::warn!(
+            error = %error,
+            realm = "cn",
+            names = miss_count,
+            failed = transient_failures,
+            "CN roster batch partially failed — the unsettled names stay uncached for the next attempt"
+        );
     }
     Ok(answers)
 }
@@ -1435,5 +1552,68 @@ mod tests {
         // The default algorithm keeps the winrate-mapped PR.
         let info = clan_info_from_cn(7, &clan_node, members.as_array().unwrap(), PrAlgo::Winrate);
         assert!(info.members[0].stats.pr.is_some());
+    }
+
+    /// A minimal `PlayerStats` for the batch-slot classifier tests — the
+    /// Option fields deserialize as None when absent.
+    fn batch_stats() -> PlayerStats {
+        serde_json::from_value(serde_json::json!({
+            "accountId": 7050428536_i64, "name": "川S-大叔其实不是大叔", "realm": "cn",
+            "hidden": false
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn slot_verdict_lands_answers_and_business_misses() {
+        assert_eq!(
+            slot_verdict(&Ok(Some(batch_stats()))),
+            SlotVerdict::Landed,
+            "a stats answer lands"
+        );
+        assert_eq!(
+            slot_verdict(&Ok(None)),
+            SlotVerdict::Landed,
+            "a genuine not-found lands (settled as no data)"
+        );
+        // The account vanished between its search hit and info fetch — a
+        // stable business miss, not a transient failure.
+        assert_eq!(
+            slot_verdict(&Err(LookupError::not_found_account("ghost", "cn"))),
+            SlotVerdict::Miss
+        );
+        // Transport / API failures (the From<String> bridge) are transient.
+        assert_eq!(
+            slot_verdict(&Err(LookupError::api("CN vortex: HTTP 503"))),
+            SlotVerdict::Transient
+        );
+    }
+
+    #[test]
+    fn transient_retry_fires_only_on_fast_failures() {
+        assert!(should_retry_transient(
+            SlotVerdict::Transient,
+            Duration::from_millis(300)
+        ));
+        assert!(should_retry_transient(
+            SlotVerdict::Transient,
+            TRANSIENT_RETRY_MAX_FIRST_ATTEMPT
+        ));
+        // A failure that crawled to the client timeout means the host is
+        // unreachable — the retry would double the roster's wait for
+        // nothing.
+        assert!(!should_retry_transient(
+            SlotVerdict::Transient,
+            TRANSIENT_RETRY_MAX_FIRST_ATTEMPT + Duration::from_millis(1)
+        ));
+        // Landed answers and business misses never retry.
+        assert!(!should_retry_transient(
+            SlotVerdict::Landed,
+            Duration::from_millis(50)
+        ));
+        assert!(!should_retry_transient(
+            SlotVerdict::Miss,
+            Duration::from_millis(50)
+        ));
     }
 }
