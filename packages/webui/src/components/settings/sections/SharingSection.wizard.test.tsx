@@ -5,13 +5,18 @@
  *  teleported root carries .hk-modal-content (never a bare .hk-modal
  *  class — a selector trap this file exists to document too).
  *
- *  The enrolled card is pinned to the slim shape too: identity + consent
- *  render as read-only tags (NO inline realm/name editor — the wizard's
- *  intro step owns editing), and the wizard window's width matches the
- *  settings shell (58rem) so it reads as a sibling window. */
+ *  The enrolled card is pinned to the slim shape too: uploader tags +
+ *  consent render as read-only tags (NO inline realm/name editor — the
+ *  wizard's intro step owns editing), and the wizard window's width
+ *  matches the settings shell (58rem) so it reads as a sibling window.
+ *  The uploader tags themselves are pinned separately: one per identity
+ *  this machine actually uploaded under, no stop-participating button,
+ *  and a volunteer chip click closes the settings window on its way to
+ *  the lookup page. */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
+import { createRouter, createMemoryHistory } from "vue-router";
 import { HkModal } from "@celestia-island/hikari";
 
 const mocks = vi.hoisted(() => ({
@@ -21,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 
 import SharingSection from "./SharingSection";
+import { useSettingsUiStore } from "@/stores/settingsUi";
 
 enableAutoUnmount(afterEach);
 
@@ -30,6 +36,7 @@ beforeEach(() => {
     if (cmd === "contribution_state") {
       return Promise.resolve({
         identity: null,
+        uploaders: [],
         consentVersion: null,
         anonId: null,
         hasUploadToken: false,
@@ -129,6 +136,7 @@ describe("SharingSection wizard", () => {
       if (cmd === "contribution_state") {
         return Promise.resolve({
           identity: { realm: "asia", name: "langyo" },
+          uploaders: [{ realm: "asia", name: "langyo" }],
           consentVersion: 1,
           anonId: null,
           hasUploadToken: false,
@@ -196,6 +204,103 @@ describe("SharingSection wizard", () => {
       document.body.querySelector(".hk-modal-content"),
       "the wizard modal teleports into body on the share entry",
     ).toBeTruthy();
+    expect(errors, `render errors: ${JSON.stringify(errors)}`).toHaveLength(0);
+    err.mockRestore();
+  });
+
+  it("lists every uploader tag, drops the stop-participating button, and closes settings on a volunteer chip", async () => {
+    const errors: unknown[][] = [];
+    const err = vi.spyOn(console, "error").mockImplementation((...a) => {
+      errors.push(a);
+    });
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "contribution_state") {
+        return Promise.resolve({
+          identity: { realm: "asia", name: "langyo" },
+          // Two uploads ran from this machine: one under the own
+          // identity, one on a friend's behalf (代传).
+          uploaders: [
+            { realm: "asia", name: "langyo" },
+            { realm: "cn", name: "神楽坂柚咲" },
+          ],
+          consentVersion: 1,
+          anonId: null,
+          hasUploadToken: false,
+          creditCount: 5,
+          stagedCount: 0,
+          stagedBytes: 0,
+          lastSyncAt: null,
+        });
+      }
+      if (cmd === "contribution_queue") {
+        return Promise.resolve({
+          running: false,
+          stage: "idle",
+          message: null,
+          totalBytes: 0,
+          currentBytes: 0,
+          doneItems: 0,
+          totalItems: 0,
+          results: [],
+        });
+      }
+      if (cmd === "list_replays_meta") return Promise.resolve([]);
+      if (cmd === "appdata_read") return Promise.resolve(JSON.stringify({ accounts: [], activeAccountId: null, activeRealm: null }));
+      return Promise.resolve(undefined);
+    });
+
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    // The volunteer chips navigate to the lookup page — a memory router
+    // keeps the push local to the test.
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/lookup", component: { template: "<div />" } },
+        { path: "/", component: { template: "<div />" } },
+      ],
+    });
+    await router.push("/");
+    const ui = useSettingsUiStore();
+    ui.visible = true;
+
+    const wrapper = mount(SharingSection, {
+      attachTo: document.body,
+      global: { plugins: [pinia, router] },
+    });
+    await flushPromises();
+    await router.isReady();
+
+    // One tag per uploader, first-recorded order (the status card's meta
+    // row renders the uploaders vec verbatim).
+    const text = wrapper.text();
+    expect(text).toContain("ASIA · langyo");
+    expect(text).toContain("CN · 神楽坂柚咲");
+    expect(
+      text.indexOf("ASIA · langyo"),
+      "uploader tags keep first-recorded order",
+    ).toBeLessThan(text.indexOf("CN · 神楽坂柚咲"));
+
+    // The stop-participating button is gone for good — no armed confirm
+    // either (the contributor record is not a revocable enrollment).
+    expect(
+      wrapper
+        .findAll("button")
+        .filter((b) => /stop participating|停止参与|dejar de participar|arrêter la participation|参加を停止|참여 중단|прекратить участие|停止參與/i.test(b.text())),
+      "no stop-participating button remains",
+    ).toHaveLength(0);
+
+    // A volunteer chip closes the settings window on its way to /lookup.
+    // (The chips list the bundled contributors doc — 刮痧之王奈里夫 is one
+    // of the four bundled CN volunteers.)
+    const chip = wrapper
+      .findAll("button")
+      .find((b) => /刮痧之王奈里夫/.test(b.text()) && b.classes().join(" ").includes("contrib-chip"));
+    expect(chip, "contributor chip exists").toBeTruthy();
+    await chip!.trigger("click");
+    await flushPromises();
+    expect(ui.visible, "settings window auto-closes").toBe(false);
+    expect(router.currentRoute.value.path).toBe("/lookup");
     expect(errors, `render errors: ${JSON.stringify(errors)}`).toHaveLength(0);
     err.mockRestore();
   });

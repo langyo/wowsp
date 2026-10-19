@@ -18,7 +18,6 @@ import {
   Check,
   FolderOpen,
   RefreshCw,
-  Trash2,
   Upload,
   Wand2,
 } from "@lucide/vue";
@@ -45,6 +44,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { api, type ContributionState, type PlanCandidate, type PlanItem, type QueueSnapshot } from "@/api";
 import { useReplayStore } from "@/stores/replay";
 import { useAccountStore } from "@/stores/account";
+import { useSettingsUiStore } from "@/stores/settingsUi";
 import ReplayListFilter, {
   FILTER_ANY,
   collectModeOptions,
@@ -226,23 +226,6 @@ export default defineComponent({
         toast.error((e as Error).message || String(e));
       } finally {
         syncing.value = false;
-      }
-    }
-
-    // Forget — the house two-step armed confirm (same as the cache clears).
-    const forgetArmed = ref(false);
-    async function forgetIdentity() {
-      if (!forgetArmed.value) {
-        forgetArmed.value = true;
-        return;
-      }
-      forgetArmed.value = false;
-      try {
-        await api.contributionForgetIdentity();
-        await refreshState();
-        toast.success(t("sharing.status.forgotten"));
-      } catch (e) {
-        toast.error((e as Error).message || String(e));
       }
     }
 
@@ -654,11 +637,19 @@ export default defineComponent({
     const hasContributors = computed(() => contributors.value.contributors.length > 0);
 
     function openContributor(c: ContributorEntry) {
+      // The volunteer chip jumps straight to the lookup page — the
+      // settings window has nothing left to show over it, so it closes
+      // itself (the phone layout's /settings page unmounts on the route
+      // change either way).
+      useSettingsUiStore().hide();
       void router.push({ path: "/lookup", query: { name: c.name, realm: c.realm } });
     }
+    /** The chip highlight marks identities this machine has actually
+     *  uploaded under — the same record the status card's tags show. */
     function isSelf(c: ContributorEntry): boolean {
-      const id = state.value?.identity;
-      return id != null && id.realm === c.realm && id.name === c.name;
+      return (state.value?.uploaders ?? []).some(
+        (u) => u.realm === c.realm && u.name === c.name,
+      );
     }
 
     // ── lifecycle ─────────────────────────────────────────────────────────
@@ -701,7 +692,6 @@ export default defineComponent({
           }
         })
         .catch(() => {});
-      // Leaving the section disarms the pending two-step forget.
     });
     onBeforeUnmount(() => {
       stopPolling();
@@ -806,7 +796,6 @@ export default defineComponent({
               "noRedistribution",
               "contributorList",
               "identity",
-              "revoke",
             ] as const
           ).map((key) => (
             <li key={key}>{t(`sharing.consent.${key}`)}</li>
@@ -961,15 +950,23 @@ export default defineComponent({
           </div>
         ) : (
           <>
-          {/* Status at a glance — identity + consent as READ-ONLY tags; the
-              wizard's intro step is the single editing surface for both
-              (realm/name inputs and the full §11 terms live there). */}
+          {/* Status at a glance — the uploaders this machine has actually
+              uploaded under (one per credited identity: replays may be
+              uploaded on someone's behalf) + consent as READ-ONLY tags;
+              the wizard's intro step is the single editing surface for the
+              declared identity and the full §11 terms. */}
           <div class="sharing-sec__meta">
-            <span class="sharing-sec__meta-label">{t("sharing.status.identity")}</span>
-            {state.value?.identity ? (
-              <HkTag size="sm" variant="info">
-                {state.value.identity.realm.toUpperCase()} · {state.value.identity.name}
-              </HkTag>
+            {(state.value?.uploaders.length ?? 0) > 0 ? (
+              <>
+                <span class="sharing-sec__meta-label">
+                  {t("sharing.status.uploaders")}
+                </span>
+                {state.value!.uploaders.map((u) => (
+                  <HkTag key={`${u.realm}:${u.name}`} size="sm" variant="info">
+                    {u.realm.toUpperCase()} · {u.name}
+                  </HkTag>
+                ))}
+              </>
             ) : null}
             <HkTag variant={(state.value?.consentVersion ?? 0) >= 1 ? "success" : "warning"} size="sm">
               {(state.value?.consentVersion ?? 0) >= 1
@@ -977,7 +974,9 @@ export default defineComponent({
                 : t("sharing.status.consentMissing")}
             </HkTag>
           </div>
-          {/* My counts + last sync — the status card's live numbers. */}
+          {/* This machine's counts + last sync — the status card's live
+              numbers (the relay keys them on the machine's credential pair,
+              spanning every uploader on record). */}
           <div class="sharing-sec__counts">
             <span class="sharing-sec__count">
               <span class="sharing-sec__count-num">{state.value?.creditCount ?? 0}</span>
@@ -1014,17 +1013,6 @@ export default defineComponent({
                 <RefreshCw size={14} />
                 {t("sharing.status.refresh")}
               </HkButton>
-              {forgetArmed.value ? (
-                <HkButton size="sm" variant="danger" onClick={() => void forgetIdentity()}>
-                  <Trash2 size={14} />
-                  {t("sharing.status.forgetConfirm")}
-                </HkButton>
-              ) : (
-                <HkButton size="sm" variant="secondary" onClick={() => void forgetIdentity()}>
-                  <Trash2 size={14} />
-                  {t("sharing.status.forget")}
-                </HkButton>
-              )}
             </span>
           </div>
           </>

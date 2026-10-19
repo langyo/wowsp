@@ -510,7 +510,6 @@ pub fn run() {
             commands::contribution::contribution_state,
             commands::contribution::contribution_set_identity,
             commands::contribution::contribution_save_consent,
-            commands::contribution::contribution_forget_identity,
             commands::contribution::contribution_fetch_wanted,
             commands::contribution::contribution_sync_mine,
             commands::contribution::contribution_plan,
