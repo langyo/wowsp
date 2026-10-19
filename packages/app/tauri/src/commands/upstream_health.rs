@@ -118,20 +118,159 @@ pub(crate) fn record_failure(host: &str, error: &str) {
     h.last_error = Some(error);
 }
 
-/// Send one GET with the outcome recorded against `host` — the transport
-/// choke point for the stats family. Error strings keep the caller's
-/// historical `"{label} request: …"` shape so the raw texts the cards
-/// already render stay stable. Parse-level failures are NOT recorded:
-/// behind a healthy 200 they are ambiguous (a proxy answering HTML, a
-/// truncated body) and the send/status pair already covers the outage
-/// shapes a degraded host produces.
-pub(crate) async fn recorded_get(
+/// How long a host stays on the direct path after a proxy failure handed
+/// it over. The mark keeps a black-holing proxy from taxing every request
+/// with a dead-connection wait; its expiry is also the proxy's periodic
+/// re-probe — the next request after the TTL pays proxy-first again, and a
+/// healed proxy takes the host back on the spot.
+const DIRECT_PREFERRED_TTL_MS: i64 = 10 * 60 * 1000;
+
+/// host → the unix-ms instant until which requests prefer the direct path.
+static DIRECT_PREFERRED: LazyLock<std::sync::Mutex<BTreeMap<String, i64>>> =
+    LazyLock::new(|| std::sync::Mutex::new(BTreeMap::new()));
+
+fn now_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Whether `host` currently rides the direct path — a mark that is still
+/// fresh at `now`. Lock-poisoned or absent both read as "no mark", the
+/// same degrade-to-normal-policy stance the health table takes.
+fn direct_preferred_at(host: &str, now: i64) -> bool {
+    DIRECT_PREFERRED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(host)
+        .is_some_and(|until| *until > now)
+}
+
+/// Hand the host to the direct path for [`DIRECT_PREFERRED_TTL_MS`].
+fn prefer_direct(host: &str) {
+    DIRECT_PREFERRED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(host.to_string(), now_millis() + DIRECT_PREFERRED_TTL_MS);
+}
+
+/// Drop the direct-path mark; true when one existed (fresh or stale).
+fn clear_direct_preferred(host: &str) -> bool {
+    DIRECT_PREFERRED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .remove(host)
+        .is_some()
+}
+
+/// One GET attempt over one client. The point is the per-attempt log line:
+/// every connection the app makes leaves one here (host, endpoint label,
+/// which path rode, how long it took, how it ended), so a support bundle
+/// can tell a hung proxy from a dead host instead of staring at silence.
+async fn attempt_get(
     client: &reqwest::Client,
+    host: &str,
+    label: &str,
+    url: &str,
+    via: &str,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let started = std::time::Instant::now();
+    let outcome = client.get(url).send().await;
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    match &outcome {
+        Ok(_) => tracing::debug!(host, label, via, elapsed_ms, "http transport attempt ok"),
+        Err(e) => {
+            tracing::debug!(host, label, via, elapsed_ms, error = %e, "http transport attempt failed")
+        },
+    }
+    outcome
+}
+
+/// One GET through the proxy→direct chain — the stats family's transport
+/// primitive. Proxy first (the configured policy is the user's explicit
+/// choice); a TRANSPORT-level failure over the proxy (timeout, connect,
+/// TLS — not an HTTP error status, which proves the path works) degrades
+/// to one attempt on the direct twin; only both failing fails the request.
+/// After a proxy failure the host rides the direct path for
+/// [`DIRECT_PREFERRED_TTL_MS`], and a proxy success takes it back at once.
+///
+/// Errors come back UNPREFIXED — callers add their own shape
+/// (`recorded_get` restores the historical `"{label} request: …"`).
+/// No health is recorded here: callers own the recording
+/// ([`recorded_get`] / [`record_transport`]) and key it on the FINAL
+/// outcome — a proxy failure rescued by the direct path leaves the host
+/// healthy.
+/// Loopback targets never ride the proxy in the first place (the base
+/// builder exempts `localhost`/`127.0.0.1` — see `http_builder_for`), so
+/// the chain must not narrate a proxy→direct fallback for them — nor burn
+/// a direct-preference mark on a host whose "proxied" attempt was never a
+/// proxy path at all.
+fn is_loopback_host(host: &str) -> bool {
+    host == "localhost" || host.starts_with("127.") || host == "::1" || host.starts_with("[::1]")
+}
+
+pub(crate) async fn get_with_fallback(
+    pair: &super::network::HttpPair,
     host: &str,
     label: &str,
     url: String,
 ) -> anyhow::Result<reqwest::Response> {
-    let outcome = client.get(&url).send().await;
+    let can_proxy = pair.has_proxy() && !is_loopback_host(host);
+    if can_proxy && !direct_preferred_at(host, now_millis()) {
+        match attempt_get(pair.proxied(), host, label, &url, "proxy").await {
+            Ok(resp) => {
+                if clear_direct_preferred(host) {
+                    tracing::info!(
+                        host,
+                        label,
+                        "proxy transport recovered — host back on the proxy path"
+                    );
+                }
+                return Ok(resp);
+            },
+            Err(proxy_err) => {
+                tracing::info!(
+                    host,
+                    label,
+                    error = %proxy_err,
+                    "proxy transport failed — falling back to the direct path"
+                );
+                prefer_direct(host);
+                return match attempt_get(pair.direct(), host, label, &url, "direct-fallback").await
+                {
+                    Ok(resp) => Ok(resp),
+                    Err(direct_err) => Err(anyhow!(
+                        "{proxy_err}; the direct fallback also failed: {direct_err}"
+                    )),
+                };
+            },
+        }
+    }
+    let via = if can_proxy {
+        "direct-preferred"
+    } else {
+        "direct"
+    };
+    attempt_get(pair.direct(), host, label, &url, via)
+        .await
+        .map_err(|e| anyhow!("{e}"))
+}
+
+/// Send one GET through the fallback chain with the outcome recorded
+/// against `host` — the transport choke point for the stats family. Error
+/// strings keep the caller's historical `"{label} request: …"` shape so
+/// the raw texts the cards already render stay stable. Parse-level
+/// failures are NOT recorded: behind a healthy 200 they are ambiguous (a
+/// proxy answering HTML, a truncated body) and the send/status pair
+/// already covers the outage shapes a degraded host produces.
+pub(crate) async fn recorded_get(
+    pair: &super::network::HttpPair,
+    host: &str,
+    label: &str,
+    url: String,
+) -> anyhow::Result<reqwest::Response> {
+    let outcome = get_with_fallback(pair, host, label, url).await;
     match &outcome {
         Ok(resp) => {
             let status = resp.status();
@@ -149,31 +288,12 @@ pub(crate) async fn recorded_get(
 /// `recorded_get` for callers that swallow errors (best-effort paths):
 /// records the outcome, discards the error, returns whether it worked.
 pub(crate) async fn best_effort_get(
-    client: &reqwest::Client,
+    pair: &super::network::HttpPair,
     host: &str,
     label: &str,
     url: String,
 ) -> Option<reqwest::Response> {
-    recorded_get(client, host, label, url).await.ok()
-}
-
-/// Record the outcome of a request the caller drove itself — for sites
-/// that must keep their exact historical error pipeline (e.g. an anyhow
-/// context where the raw `reqwest::Error` flows on unchanged). Same
-/// send+status discipline as [`recorded_get`]; the response passes back
-/// untouched for the caller to consume.
-pub(crate) fn record_response(host: &str, result: &Result<reqwest::Response, reqwest::Error>) {
-    match result {
-        Ok(resp) => {
-            let status = resp.status();
-            if status.is_success() {
-                record_success(host);
-            } else {
-                record_failure(host, &format!("HTTP {status}"));
-            }
-        },
-        Err(e) => record_failure(host, &format!("request: {e}")),
-    }
+    recorded_get(pair, host, label, url).await.ok()
 }
 
 /// Transport-only variant for endpoints whose HTTP status is BUSINESS
@@ -183,7 +303,7 @@ pub(crate) fn record_response(host: &str, result: &Result<reqwest::Response, req
 /// answer counts as the host being alive; only a SEND failure (timeout,
 /// connection refused — the shapes a degraded host actually produces)
 /// records a failure.
-pub(crate) fn record_transport(host: &str, result: &Result<reqwest::Response, reqwest::Error>) {
+pub(crate) fn record_transport(host: &str, result: &anyhow::Result<reqwest::Response>) {
     match result {
         Ok(_) => record_success(host),
         Err(e) => record_failure(host, &format!("request: {e}")),
@@ -348,5 +468,202 @@ mod tests {
             "api.korabli.su"
         );
         assert_eq!(host_of_url("not-a-url"), "not-a-url");
+    }
+
+    #[test]
+    fn direct_preference_marks_expires_and_clears() {
+        let host = "test-preference.example";
+        assert!(!direct_preferred_at(host, 1000), "no mark yet");
+        prefer_direct(host);
+        let until = DIRECT_PREFERRED
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(host)
+            .copied()
+            .expect("mark stored");
+        assert!(until > now_millis(), "the mark reaches into the future");
+        assert!(direct_preferred_at(host, until - 1), "fresh inside the TTL");
+        assert!(
+            !direct_preferred_at(host, until),
+            "stale exactly at the expiry instant"
+        );
+        assert!(clear_direct_preferred(host), "a mark existed");
+        assert!(!clear_direct_preferred(host), "the second clear finds none");
+    }
+
+    /// A minimal HTTP/1.1 stub: answers `len` sequential connections with a
+    /// fixed 200 body. The fallback chain tests point the direct twin at it.
+    fn stub_server(len: usize) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("stub bind");
+        let addr = listener.local_addr().expect("stub addr");
+        let handle = std::thread::spawn(move || {
+            for _ in 0..len {
+                let (mut stream, _) = listener.accept().expect("stub accept");
+                let mut buf = [0u8; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let _ = std::io::Write::write_all(
+                    &mut stream,
+                    b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok",
+                );
+            }
+        });
+        (addr, handle)
+    }
+
+    /// The dead-proxy client: an explicit proxy on a refused loopback port,
+    /// system detection off — fails in milliseconds regardless of env.
+    fn dead_proxy_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .proxy(reqwest::Proxy::http("http://127.0.0.1:1").expect("dead proxy"))
+            .build()
+            .expect("dead proxy client")
+    }
+
+    #[tokio::test]
+    async fn proxy_failure_falls_back_to_direct_and_marks_the_host() {
+        let host = "test-fallback.example";
+        let (addr, server) = stub_server(2);
+        let pair = crate::commands::network::HttpPair::from_clients(
+            dead_proxy_client(),
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("direct"),
+            true,
+        );
+        let url = format!("http://{addr}/probe");
+
+        // First request: the proxy arm fails, the direct twin lands.
+        let resp = get_with_fallback(&pair, host, "probe", url.clone())
+            .await
+            .expect("direct fallback rescues");
+        assert_eq!(resp.status(), 200);
+        assert!(
+            direct_preferred_at(host, now_millis()),
+            "the proxy failure hands the host to the direct path"
+        );
+
+        // Second request inside the TTL: straight onto the direct path.
+        let resp = get_with_fallback(&pair, host, "probe", url)
+            .await
+            .expect("direct-preferred request");
+        assert_eq!(resp.status(), 200);
+        server.join().expect("stub served both connections");
+        let _ = clear_direct_preferred(host);
+    }
+
+    #[tokio::test]
+    async fn proxy_success_takes_the_host_back_from_the_direct_path() {
+        let host = "test-recovery.example";
+        prefer_direct(host);
+        // Age the mark past its expiry: a FRESH mark sends requests straight
+        // down the direct path (the proxy is not re-probed until the TTL
+        // lapses); a STALE mark lets the proxy arm run again, and its
+        // success clears the leftover mark on the spot.
+        DIRECT_PREFERRED
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(host.to_string(), now_millis() - 1);
+        let (addr, server) = stub_server(1);
+        // The proxied client talks straight to the stub here (a proxy that
+        // WORKS is indistinguishable from a direct client for the chain):
+        // its success must clear the stale direct-preference mark.
+        let pair = crate::commands::network::HttpPair::from_clients(
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("healthy"),
+            dead_proxy_client(),
+            true,
+        );
+        let resp = get_with_fallback(&pair, host, "probe", format!("http://{addr}/probe"))
+            .await
+            .expect("proxy path serves");
+        assert_eq!(resp.status(), 200);
+        assert!(
+            !direct_preferred_at(host, now_millis()),
+            "a proxy success clears the direct-preference mark"
+        );
+        server.join().expect("stub served");
+    }
+
+    #[tokio::test]
+    async fn both_paths_failing_fails_the_request_with_both_errors() {
+        let host = "test-both-fail.example";
+        let pair = crate::commands::network::HttpPair::from_clients(
+            dead_proxy_client(),
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("direct"),
+            true,
+        );
+        // Port 9 (discard) is refused on loopback — both arms fail.
+        let err = get_with_fallback(&pair, host, "probe", "http://127.0.0.1:9/probe".to_string())
+            .await
+            .expect_err("both paths dead");
+        let text = err.to_string();
+        assert!(
+            text.contains("direct fallback also failed"),
+            "both failures surface: {text}"
+        );
+        let _ = clear_direct_preferred(host);
+    }
+
+    #[tokio::test]
+    async fn no_proxy_in_effect_means_a_single_direct_attempt() {
+        let host = "test-no-proxy.example";
+        let pair = crate::commands::network::HttpPair::from_clients(
+            dead_proxy_client(),
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("direct"),
+            false,
+        );
+        let err = get_with_fallback(&pair, host, "probe", "http://127.0.0.1:9/probe".to_string())
+            .await
+            .expect_err("direct-only fails");
+        let text = err.to_string();
+        assert!(
+            !text.contains("direct fallback"),
+            "no fallback is attempted without a proxy: {text}"
+        );
+        assert!(
+            !direct_preferred_at(host, now_millis()),
+            "no mark is written without a proxy"
+        );
+    }
+
+    #[tokio::test]
+    async fn loopback_targets_never_narrate_a_proxy_fallback() {
+        // The base builder exempts loopback from any proxy, so the chain
+        // must treat a loopback host as direct-only even on a proxying
+        // pair: no proxy attempt, no fallback narrative, no mark.
+        let pair = crate::commands::network::HttpPair::from_clients(
+            dead_proxy_client(),
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("direct"),
+            true,
+        );
+        let err = get_with_fallback(
+            &pair,
+            "127.0.0.1",
+            "probe",
+            "http://127.0.0.1:9/probe".to_string(),
+        )
+        .await
+        .expect_err("loopback target dead");
+        let text = err.to_string();
+        assert!(
+            !text.contains("direct fallback"),
+            "no fallback narrative for a loopback host: {text}"
+        );
+        assert!(
+            !direct_preferred_at("127.0.0.1", now_millis()),
+            "no mark is written for a loopback host"
+        );
     }
 }

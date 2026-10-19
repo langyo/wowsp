@@ -43,6 +43,7 @@ use wowsp_tauri_shared::{
 };
 
 use super::lookup_error::{LookupError, LookupErrorKind};
+use super::network::HttpPair;
 use super::wg_api::{PrAlgo, PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
 use super::wg_realm;
 
@@ -72,17 +73,15 @@ const MIN_SEARCH_CHARS: usize = 3;
 /// here so only the CN transport is affected.
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
-/// Shared CN vortex HTTP client (browser UA + the global proxy policy).
-/// Also used by `ship_stats` for its per-ship endpoint.
-pub(crate) fn vortex_client() -> Result<reqwest::Client> {
-    crate::commands::network::http_client_builder()?
-        .timeout(Duration::from_secs(15))
-        .user_agent(BROWSER_UA)
-        .build()
-        .map_err(|e| anyhow!("http client: {e}"))
+/// Shared CN vortex client pair (browser UA + the global proxy policy and
+/// its direct twin). Also used by `ship_stats` for its per-ship endpoint.
+pub(crate) fn vortex_pair() -> Result<HttpPair> {
+    crate::commands::network::HttpPair::build(|b| {
+        b.timeout(Duration::from_secs(15)).user_agent(BROWSER_UA)
+    })
 }
 
-/// The stall-tolerant sibling of [`vortex_client`] for the big per-ship
+/// The stall-tolerant sibling of [`vortex_pair`] for the big per-ship
 /// documents: NO whole-request timeout (a degraded host serving hundreds
 /// of KB at a crawl must not die at a fixed deadline). The base builder's
 /// connect timeout bounds the handshake; this read timeout is a generous
@@ -92,20 +91,19 @@ pub(crate) fn vortex_client() -> Result<reqwest::Client> {
 /// fetches this client exists for), while the body reader's own 15s
 /// no-bytes stall rule (`ship_stats::read_body_streamed`) governs the
 /// streamed chunks, and its 180s hard cap bounds the total.
-pub(crate) fn vortex_stream_client() -> Result<reqwest::Client> {
-    crate::commands::network::http_client_builder()?
-        .read_timeout(Duration::from_secs(60))
-        .user_agent(BROWSER_UA)
-        .build()
-        .map_err(|e| anyhow!("http client: {e}"))
+pub(crate) fn vortex_stream_pair() -> Result<HttpPair> {
+    crate::commands::network::HttpPair::build(|b| {
+        b.read_timeout(Duration::from_secs(60))
+            .user_agent(BROWSER_UA)
+    })
 }
 
 /// GET one JSON document from the CN vortex/clans hosts. Non-2xx is an error
 /// (the clan endpoint's meaningful 404 is tolerated by its own caller).
-async fn get_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value> {
+async fn get_json(clients: &HttpPair, url: &str) -> Result<serde_json::Value> {
     let host = super::upstream_health::host_of_url(url);
     let resp =
-        super::upstream_health::recorded_get(client, host, "CN vortex", url.to_string()).await?;
+        super::upstream_health::recorded_get(clients, host, "CN vortex", url.to_string()).await?;
     let status = resp.status();
     if !status.is_success() {
         anyhow::bail!("CN vortex: HTTP {status}");
@@ -312,7 +310,7 @@ pub(crate) struct CnAccountRef {
 /// they stay reachable by numeric id through `resolve_entry`). Shared with
 /// `wg_composition`'s batch resolution.
 pub(crate) async fn account_list_one(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     name: &str,
 ) -> Result<Option<CnAccountRef>> {
     let host = wg_realm::vortex_host("cn")?;
@@ -320,7 +318,7 @@ pub(crate) async fn account_list_one(
         "https://{host}/api/accounts/search/{}/?limit=10",
         encode_query(name)
     );
-    let v = get_json(client, &url).await?;
+    let v = get_json(clients, &url).await?;
     if vortex_status(&v) != Some("ok") {
         let err = v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
         if err == "Bad Request" {
@@ -362,13 +360,11 @@ fn exact_hit(name: &str, entries: &[serde_json::Value]) -> Option<serde_json::Va
 /// live service answers those with HTTP 404 +
 /// `{"status":"error","error":"Not Found"}` (a 200 whose `data` omits the id
 /// key is also tolerated).
-async fn account_info(
-    client: &reqwest::Client,
-    account_id: i64,
-) -> Result<Option<serde_json::Value>> {
+async fn account_info(clients: &HttpPair, account_id: i64) -> Result<Option<serde_json::Value>> {
     let host = wg_realm::vortex_host("cn")?;
     let url = format!("https://{host}/api/accounts/{account_id}/");
-    let sent = client.get(&url).send().await;
+    let sent =
+        super::upstream_health::get_with_fallback(clients, host, "CN account info", url).await;
     // 404 = unknown account (business semantics, see record_transport) —
     // a served answer still proves the host alive.
     super::upstream_health::record_transport(host, &sent);
@@ -399,9 +395,9 @@ async fn account_info(
 /// Resolve a query (nickname or numeric id) to one account. Numeric queries
 /// hit the info endpoint directly and only fall back to the name search when
 /// the id doesn't resolve (numeric-looking nicknames are rare but exist).
-async fn resolve_entry(client: &reqwest::Client, name: &str) -> Result<Option<CnAccountRef>> {
+async fn resolve_entry(clients: &HttpPair, name: &str) -> Result<Option<CnAccountRef>> {
     let entry = match name.trim().parse::<i64>() {
-        Ok(uid) if uid > 0 => match account_info(client, uid).await? {
+        Ok(uid) if uid > 0 => match account_info(clients, uid).await? {
             Some(node) => Some(CnAccountRef {
                 account_id: uid,
                 nickname: node
@@ -410,9 +406,9 @@ async fn resolve_entry(client: &reqwest::Client, name: &str) -> Result<Option<Cn
                     .unwrap_or_default()
                     .to_owned(),
             }),
-            None => account_list_one(client, name).await?,
+            None => account_list_one(clients, name).await?,
         },
-        _ => account_list_one(client, name).await?,
+        _ => account_list_one(clients, name).await?,
     };
     Ok(entry)
 }
@@ -420,15 +416,15 @@ async fn resolve_entry(client: &reqwest::Client, name: &str) -> Result<Option<Cn
 /// Clan affiliation for one account from the vortex clans endpoint. The CN
 /// service answers 404 for clanless accounts (the API realms return an empty
 /// object), so any non-2xx means "no clan" — best-effort, never fatal.
-async fn clan_for_account(
-    client: &reqwest::Client,
-    account_id: i64,
-) -> Option<(String, Option<i64>)> {
+async fn clan_for_account(clients: &HttpPair, account_id: i64) -> Option<(String, Option<i64>)> {
     let host = wg_realm::vortex_host("cn").ok()?;
-    let sent = client
-        .get(format!("https://{host}/api/accounts/{account_id}/clans/"))
-        .send()
-        .await;
+    let sent = super::upstream_health::get_with_fallback(
+        clients,
+        host,
+        "CN clans",
+        format!("https://{host}/api/accounts/{account_id}/clans/"),
+    )
+    .await;
     // 404 = clanless (business semantics — transport-only recording).
     super::upstream_health::record_transport(host, &sent);
     let resp = sent.ok()?;
@@ -532,22 +528,19 @@ fn player_stats_of(
 /// rejects with a structured account-not-found [`LookupError`] — shared
 /// with the batch path, which degrades it back to its message string
 /// (rosters render "no data", never a reason).
-async fn lookup_one(
-    client: &reqwest::Client,
-    name: &str,
-) -> Result<Option<PlayerStats>, LookupError> {
+async fn lookup_one(clients: &HttpPair, name: &str) -> Result<Option<PlayerStats>, LookupError> {
     // anyhow→LookupError boundary: the structured rejection keeps its
     // `From<String>` bridge, so the anyhow error renders through its
     // Display (the historical message) on the way in.
-    let Some(entry) = resolve_entry(client, name)
+    let Some(entry) = resolve_entry(clients, name)
         .await
         .map_err(|e| e.to_string())?
     else {
         return Ok(None);
     };
     let (info, clan) = tokio::join!(
-        account_info(client, entry.account_id),
-        clan_for_account(client, entry.account_id)
+        account_info(clients, entry.account_id),
+        clan_for_account(clients, entry.account_id)
     );
     let node = info
         .map_err(|e| e.to_string())?
@@ -566,8 +559,8 @@ pub(crate) async fn lookup_player_stats(
 ) -> Result<PlayerStats, LookupError> {
     // anyhow→LookupError boundary (see `lookup_one`).
     let lookup_started = std::time::Instant::now();
-    let client = vortex_client().map_err(|e| e.to_string())?;
-    let mut stats = lookup_one(&client, &name)
+    let clients = vortex_pair().map_err(|e| e.to_string())?;
+    let mut stats = lookup_one(&clients, &name)
         .await?
         .ok_or_else(|| LookupError::not_found_account(name.clone(), "cn"))?;
     // Unavailable inputs (expected table or ship rows) yield None — the card
@@ -674,18 +667,18 @@ pub(crate) async fn lookup_players_stats_batch(
     if misses.is_empty() {
         return Ok(answers);
     }
-    let client = vortex_client()?;
+    let clients = vortex_pair()?;
     let miss_names: Vec<String> = misses.iter().map(|(_, n)| n.clone()).collect();
     let miss_count = miss_names.len();
     let results: Vec<Result<Option<PlayerStats>, LookupError>> = {
-        let client_ref = &client;
+        let pair_ref = &clients;
         stream::iter(miss_names)
             .map(|name| async move {
                 let started = std::time::Instant::now();
-                let mut attempt = lookup_one(client_ref, &name).await;
+                let mut attempt = lookup_one(pair_ref, &name).await;
                 if should_retry_transient(slot_verdict(&attempt), started.elapsed()) {
                     tokio::time::sleep(TRANSIENT_RETRY_PAUSE).await;
-                    attempt = lookup_one(client_ref, &name).await;
+                    attempt = lookup_one(pair_ref, &name).await;
                 }
                 attempt
             })
@@ -753,12 +746,12 @@ pub(crate) async fn suggest_players(search: String) -> Result<Vec<PlayerSuggesti
     if q.is_empty() {
         return Ok(Vec::new());
     }
-    let client = vortex_client()?;
+    let clients = vortex_pair()?;
     // UID fast path: resolve the id directly; a numeric string that is NOT a
     // valid id yields no suggestions.
     if let Ok(uid) = q.parse::<i64>() {
         if uid > 0 {
-            if let Some(node) = account_info(&client, uid).await? {
+            if let Some(node) = account_info(&clients, uid).await? {
                 return Ok(vec![PlayerSuggestion {
                     account_id: uid,
                     nickname: node
@@ -782,7 +775,7 @@ pub(crate) async fn suggest_players(search: String) -> Result<Vec<PlayerSuggesti
     // Transient transport failures (503s are documented on the CN
     // autocomplete) degrade to "no suggestions" — the popup renders a hint,
     // not an error.
-    let v = match get_json(&client, &url).await {
+    let v = match get_json(&clients, &url).await {
         Ok(v) => v,
         Err(_) => return Ok(Vec::new()),
     };
@@ -815,11 +808,11 @@ pub(crate) async fn suggest_clans(search: String) -> Result<Vec<ClanSuggestion>>
     if q.is_empty() {
         return Ok(Vec::new());
     }
-    let client = vortex_client()?;
+    let clients = vortex_pair()?;
     // Numeric query = clan id resolved directly via claninfo.
     if let Ok(clan_id) = q.parse::<i64>() {
         if clan_id > 0 {
-            if let Some(node) = clan_info_node(&client, clan_id).await? {
+            if let Some(node) = clan_info_node(&clients, clan_id).await? {
                 return Ok(vec![super::wg_api::clan_suggestion_of(clan_id, &node)]);
             }
             return Ok(Vec::new());
@@ -833,7 +826,7 @@ pub(crate) async fn suggest_clans(search: String) -> Result<Vec<ClanSuggestion>>
         "https://{host}/api/search/autocomplete/?search={}&type=clans",
         encode_query(&q)
     );
-    let v = get_json(&client, &url).await?;
+    let v = get_json(&clients, &url).await?;
     let list = v
         .get("search_autocomplete_result")
         .and_then(|d| d.as_array())
@@ -857,13 +850,10 @@ pub(crate) async fn suggest_clans(search: String) -> Result<Vec<ClanSuggestion>>
 /// clan doesn't exist — unknown ids answer HTTP 200 with an all-null clan
 /// node (occasionally a bare 404), so existence is decided by a non-empty
 /// tag rather than the status line.
-async fn clan_info_node(
-    client: &reqwest::Client,
-    clan_id: i64,
-) -> Result<Option<serde_json::Value>> {
+async fn clan_info_node(clients: &HttpPair, clan_id: i64) -> Result<Option<serde_json::Value>> {
     let host = wg_realm::cn_clans_host();
     let url = format!("https://{host}/api/clanbase/{clan_id}/claninfo/");
-    let sent = client.get(&url).send().await;
+    let sent = super::upstream_health::get_with_fallback(clients, host, "CN claninfo", url).await;
     // Unknown clans answer 200-with-nulls (occasionally a bare 404) —
     // business semantics, so the status stays out of the registry.
     super::upstream_health::record_transport(host, &sent);
@@ -896,8 +886,8 @@ async fn clan_info_node(
 /// [`LookupError`] like the WG arm.
 pub(crate) async fn lookup_clan_info(clan_id: i64, algo: PrAlgo) -> Result<ClanInfo, LookupError> {
     // anyhow→LookupError boundary (see `lookup_one`).
-    let client = vortex_client().map_err(|e| e.to_string())?;
-    let clan_node = clan_info_node(&client, clan_id)
+    let clients = vortex_pair().map_err(|e| e.to_string())?;
+    let clan_node = clan_info_node(&clients, clan_id)
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| LookupError::not_found_clan(clan_id.to_string(), "cn"))?;
@@ -905,7 +895,7 @@ pub(crate) async fn lookup_clan_info(clan_id: i64, algo: PrAlgo) -> Result<ClanI
     // Roster (best-effort: a failed members fetch still renders the card).
     let host = wg_realm::cn_clans_host();
     let members_url = format!("https://{host}/api/members/{clan_id}/?battle_type=pvp");
-    let members: Vec<serde_json::Value> = match get_json(&client, &members_url).await {
+    let members: Vec<serde_json::Value> = match get_json(&clients, &members_url).await {
         Ok(v) => v
             .get("items")
             .and_then(|i| i.as_array())
@@ -932,8 +922,8 @@ pub(crate) async fn ranked_stats(
     account_id: i64,
     season_count: Option<usize>,
 ) -> Result<Vec<super::ranked::RankedSeasonStats>> {
-    let client = vortex_client()?;
-    let node = account_info(&client, account_id)
+    let clients = vortex_pair()?;
+    let node = account_info(&clients, account_id)
         .await?
         .ok_or_else(|| anyhow!("no account found for id {account_id} on cn"))?;
     let statistics = node.get("statistics");

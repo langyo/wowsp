@@ -205,13 +205,18 @@ fn extract_url_param(query: &str) -> Option<String> {
 /// per-request timeout matters for the mirror ladder: a connected-but-
 /// stalled candidate must not hold the ladder (up to ~6 serial tries)
 /// hostage — the shared client only bounds the CONNECT phase.
-async fn fetch_image(client: &reqwest::Client, url: &str) -> anyhow::Result<(Vec<u8>, String)> {
-    let response = client
-        .get(url)
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .await
-        .map_err(|e| anyhow!("fetch {url}: {e}"))?;
+async fn fetch_image(
+    clients: &crate::commands::network::HttpPair,
+    url: &str,
+) -> anyhow::Result<(Vec<u8>, String)> {
+    let response = crate::commands::upstream_health::get_with_fallback(
+        clients,
+        crate::commands::upstream_health::host_of_url(url),
+        "media image",
+        url.to_string(),
+    )
+    .await
+    .map_err(|e| anyhow!("fetch {url}: {e}"))?;
     if response.status() != reqwest::StatusCode::OK {
         return Err(anyhow!("fetch {url}: status {}", response.status()));
     }
@@ -264,9 +269,10 @@ async fn load(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
         return Ok((bytes, content_type));
     }
 
-    // Miss: fetch through the proxy-aware client (Settings → Network applies).
-    let client = network::build_http_client()?;
-    let (bytes, content_type) = fetch_image(&client, url).await?;
+    // Miss: fetch through the proxy-aware pair (Settings → Network applies,
+    // with the direct twin as the transport fallback).
+    let clients = network::HttpPair::build(|b| b.timeout(std::time::Duration::from_secs(30)))?;
+    let (bytes, content_type) = fetch_image(&clients, url).await?;
     cache_write(&path, &bytes);
     Ok((bytes, content_type))
 }
@@ -285,10 +291,10 @@ async fn load_github(url: &str) -> anyhow::Result<(Vec<u8>, String)> {
         return Ok((bytes, content_type));
     }
 
-    let client = network::build_http_client()?;
+    let clients = network::HttpPair::build(|b| b.timeout(std::time::Duration::from_secs(30)))?;
     let mut last_err = anyhow!("no mirror candidates generated");
     for candidate in crate::commands::github_mirror::candidates(url) {
-        match fetch_image(&client, &candidate).await {
+        match fetch_image(&clients, &candidate).await {
             Ok((bytes, content_type)) => {
                 cache_write(&path, &bytes);
                 return Ok((bytes, content_type));

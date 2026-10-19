@@ -8,6 +8,7 @@ use anyhow::{Result, anyhow, bail};
 use serde::Deserialize;
 
 use super::lookup_error::LookupError;
+use crate::commands::network::HttpPair;
 
 /// Percent-encode one query component. The `format!`-built request URLs
 /// inline user input; Url encodes spaces/unicode but leaves query-structural
@@ -81,13 +82,13 @@ pub(crate) fn pick_verified_entry(
 /// `detail`; `From<String>` keeps the shared plumbing's plain strings
 /// flowing through as generic `Api` errors.
 pub(crate) async fn account_list_one(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     app_id: &str,
     host: &str,
     name: &str,
 ) -> Result<Option<AccountListEntry>, LookupError> {
     let list: WgResponse<Vec<AccountListEntry>> = super::upstream_health::recorded_get(
-        client,
+        clients,
         host,
         "account/list",
         format!(
@@ -115,13 +116,13 @@ pub(crate) async fn account_list_one(
 /// account/info for one id → the nickname. Ok(None) when the id doesn't
 /// exist (WG returns an empty data object for unknown ids).
 pub(super) async fn account_nickname_by_id(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     app_id: &str,
     host: &str,
     account_id: i64,
 ) -> Result<Option<String>> {
     let resp = super::upstream_health::recorded_get(
-        client,
+        clients,
         host,
         "account/info",
         format!(

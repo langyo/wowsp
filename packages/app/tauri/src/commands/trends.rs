@@ -242,12 +242,11 @@ fn validate_expected_values(raw: &str) -> Result<()> {
 /// Fetch the expected-values document, validate it, and cache it to disk.
 /// Returns the raw document on success.
 async fn fetch_and_cache_expected_values() -> Result<String> {
-    let client = crate::commands::network::http_client_builder()?
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| anyhow!("http client: {e}"))?;
+    let clients = crate::commands::network::HttpPair::build(|b| {
+        b.timeout(std::time::Duration::from_secs(30))
+    })?;
     let bytes = super::upstream_health::recorded_get(
-        &client,
+        &clients,
         "api.wows-numbers.com",
         "expected-values",
         EXPECTED_VALUES_URL.to_string(),

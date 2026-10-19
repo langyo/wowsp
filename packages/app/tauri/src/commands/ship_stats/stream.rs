@@ -370,7 +370,7 @@ async fn fetch_ship_stats_vortex(
     // The stream client: no whole-request timeout — the per-mode documents
     // are the big ones a degraded host serves at a crawl, and
     // [`read_body_streamed`] enforces the pacing instead.
-    let client = super::wg_api_cn::vortex_stream_client()?;
+    let clients = super::wg_api_cn::vortex_stream_pair()?;
     let modes: Vec<&'static str> = if mode_splits {
         std::iter::once(SHIP_MODE_CORE)
             .chain(SHIP_MODE_SPLITS)
@@ -381,15 +381,15 @@ async fn fetch_ship_stats_vortex(
     // Built with a plain loop instead of a `.map(|mode| …)` closure: the
     // tauri command boundary type-checks this future at higher rank, where
     // a closure over a `&str` trips rustc's "closure is not general
-    // enough". Each task owns its client clone; the collected future then
+    // enough". Each task owns its pair clone; the collected future then
     // holds no borrows of this scope at all.
     let mut tasks = Vec::with_capacity(modes.len());
     for mode in modes {
-        let client = client.clone();
+        let clients = clients.clone();
         tasks.push(async move {
             (
                 mode,
-                fetch_vortex_ships_mode(client, host, account_id, mode, ctx).await,
+                fetch_vortex_ships_mode(clients, host, account_id, mode, ctx).await,
             )
         });
     }
@@ -407,7 +407,7 @@ async fn fetch_ship_stats_vortex(
 /// reader; the `pvp` core additionally streams through the incremental
 /// scanner so partial rows surface while a slow document is mid-flight.
 async fn fetch_vortex_ships_mode(
-    client: reqwest::Client,
+    clients: crate::commands::network::HttpPair,
     host: &'static str,
     account_id: i64,
     mode: &'static str,
@@ -417,7 +417,8 @@ async fn fetch_vortex_ships_mode(
     let terminal_source = source.clone();
     with_terminal_progress(ctx, &terminal_source, async move {
         let url = format!("https://{host}/api/accounts/{account_id}/ships/{mode}/");
-        let resp = super::upstream_health::recorded_get(&client, host, "vortex ships", url).await?;
+        let resp =
+            super::upstream_health::recorded_get(&clients, host, "vortex ships", url).await?;
         if !resp.status().is_success() {
             bail!("vortex ships: HTTP {}", resp.status());
         }
@@ -509,7 +510,7 @@ async fn fetch_ship_stats_official(
     with_terminal_progress(ctx, "official", async move {
         let app_id = super::wg_realm::application_id(realm);
         let host = super::wg_realm::api_host(realm)?;
-        let client = super::wg_api_cn::vortex_stream_client()?;
+        let clients = super::wg_api_cn::vortex_stream_pair()?;
         let fields = "ship_id,last_battle_time,pvp,pvp_solo,pvp_div2,pvp_div3,pve,\
                       rank_solo,rank_div2,rank_div3";
         const MAX_PAGES: usize = 8;
@@ -531,7 +532,7 @@ async fn fetch_ship_stats_official(
                 url.push_str(&format!("&page_no={page}"));
             }
             let resp =
-                super::upstream_health::recorded_get(&client, host, "ships/stats", url).await?;
+                super::upstream_health::recorded_get(&clients, host, "ships/stats", url).await?;
             if !resp.status().is_success() {
                 bail!("ships/stats: HTTP {}", resp.status());
             }
