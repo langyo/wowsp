@@ -481,6 +481,104 @@ describe("usePluginUpdatesStore all-installs batch", () => {
   });
 });
 
+describe("usePluginUpdatesStore per-client summary", () => {
+  it("folds each landed item into the local snapshot, so the badge is clear the moment the pass ends", async () => {
+    // Hold the post-pass freshness re-assessment open (it would only
+    // confirm): the badge must clear through the LOCAL fold, not that
+    // network round-trip — the exact user report this addresses.
+    mocked.refresh.mockImplementation(() => new Promise(() => undefined) as never);
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: true },
+      [OTHER]: { mods: [], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    expect(updates.totalCount).toBe(0);
+    expect(updates.infoFor(GAME)).toEqual({ mods: [], probeOutdated: false });
+    expect(updates.infoFor(OTHER)).toEqual({ mods: [], probeOutdated: false });
+  });
+
+  it("a multi-client full success toasts the client count, not the bare done line", async () => {
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+      [OTHER]: { mods: [], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    // Raw keys: the test env's i18n has no catalogs, so t() echoes the
+    // key — enough to pin which summary branch fired.
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    expect(texts).toContain("resources.pluginUpdateDoneClients");
+    expect(updates.failures).toEqual([]);
+  });
+
+  it("a mixed run warns with the failed clients instead of erroring the whole pass", async () => {
+    mocked.probeInstall
+      .mockResolvedValueOnce("ok" as never) // GAME's probe lands
+      .mockRejectedValueOnce(new Error("other refused") as never); // OTHER's refused
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+      [OTHER]: { mods: [], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    expect(texts).toContain("resources.pluginUpdatePartialClients");
+    expect(useToast().toasts.some((s) => s.type === "error")).toBe(false);
+    expect(updates.failures.join("|")).toContain("other refused");
+  });
+
+  it("a total multi-client refusal raises the sticky all-clients error", async () => {
+    mocked.probeInstall.mockRejectedValue(new Error("safe mode") as never);
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+      [OTHER]: { mods: [], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    const errors = useToast().toasts.filter((s) => s.type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.duration).toBe(0);
+    expect(errors[0]?.copyable).toBe(true);
+    expect(errors[0]?.messages.some((m) => m.text.includes("resources.pluginUpdateAllFailedClients"))).toBe(true);
+    expect(updates.failures.length).toBe(2);
+  });
+
+  it("a client whose every item is busy elsewhere stays out of the summary rollup", async () => {
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+      [OTHER]: { mods: [{ id: "b", name: "mod-b", preset: null }], probeOutdated: false },
+    };
+    // The mod hub holds OTHER's only item across the click (a resolving
+    // mock would free the table and put "b" back into the queue).
+    let releaseB!: () => void;
+    mocked.install.mockImplementationOnce(
+      () => new Promise((resolve) => (releaseB = () => resolve({} as never))) as never,
+    );
+    const held = updates.runMod("b", OTHER);
+    await vi.waitFor(() => expect(updates.itemOp("b")).toBe("install"));
+
+    await updates.updateAll();
+
+    // GAME alone was attempted → the single-client success line; the
+    // client-count line would over-claim OTHER as updated by THIS pass.
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    expect(texts).toContain("resources.pluginUpdateDone");
+    expect(texts).not.toContain("resources.pluginUpdateDoneClients");
+    releaseB();
+    await held;
+  });
+});
+
 describe("usePluginUpdatesStore shared per-item orchestration", () => {
   it("runProbe fans the freshness sync out to the live probe store", async () => {
     // Everything stale before the op, everything current after: the
