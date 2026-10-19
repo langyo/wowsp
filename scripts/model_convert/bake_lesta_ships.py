@@ -294,6 +294,109 @@ def gun_hp_entities(entry: dict, entity_by_id: dict) -> dict[str, dict]:
     return out
 
 
+def sdk_dump_mounts(sdk_path: Path, stage: Path) -> dict[str, dict[str, list[float]]]:
+    """Mount source from the community ModsSDK dump (the korabli.su Content
+    SDK's per-ship folders, distributed as ModsSDK_<version>.zip). The
+    `_ports.visual` files carry the FULL gun-hardpoint node trees — with
+    row-major transforms in the splash frame, mains matching the gk
+    boxes to three decimals (Akagi's 8-gun casemate ring included).
+
+    Returns {entity-name-minus-P: {HP_name: m16}} for every ship folder
+    carrying gun nodes; the caller validates mains against the splash
+    boxes through the standard mounting pipeline. Accepts the SDK zip
+    or an extracted directory; result cached under the stage."""
+    import xml.etree.ElementTree as ET
+
+    cache = Path(stage) / "lesta_sdk_mounts.json"
+    if cache.is_file():
+        try:
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            if isinstance(cached, dict) and "hulls" in cached:
+                return cached
+        except (ValueError, OSError):
+            pass
+    files: list[tuple[str, bytes]] = []
+    if sdk_path.is_file() and sdk_path.suffix == ".zip":
+        import zipfile
+
+        with zipfile.ZipFile(sdk_path) as z:
+            for n in z.namelist():
+                if n.endswith(".visual"):
+                    files.append((n, z.read(n)))
+    elif sdk_path.is_dir():
+        for p in sdk_path.rglob("*.visual"):
+            files.append((str(p.relative_to(sdk_path)).replace("\\", "/"),
+                          p.read_bytes()))
+    if not files:
+        print(f"[bake-lesta] WARN: --sdk-dump {sdk_path} carries no .visual "
+              f"files — SDK mount source disabled", flush=True)
+        return {"ships": {}, "hulls": {}}
+
+    def guns_of(xml: bytes) -> dict[str, list[float]]:
+        out: dict[str, list[float]] = {}
+
+        def walk(el) -> None:
+            ident = el.find("identifier")
+            tr = el.find("transform")
+            if ident is not None and ident.text and tr is not None:
+                rows = []
+                for r in ("row0", "row1", "row2", "row3"):
+                    rel = tr.find(r)
+                    if rel is None or not rel.text:
+                        rows = None
+                        break
+                    try:
+                        rows.append([float(v) for v in rel.text.split()])
+                    except ValueError:
+                        rows = None
+                        break
+                if rows and len(rows) == 4 and all(len(r) == 4 for r in rows):
+                    name = ident.text.strip()
+                    if GUN_HP_RE.match(name):
+                        out[name] = [v for row in rows for v in row]
+            for ch in el.findall("node"):
+                walk(ch)
+
+        try:
+            walk(ET.fromstring(xml))
+        except ET.ParseError:
+            pass
+        return out
+
+    by_ship: dict[str, dict[str, list[float]]] = {}
+    by_hull: dict[str, dict[str, list[float]]] = {}
+    part_sfx = ("_Bow", "_MidFront", "_MidBack", "_Stern", "_Full", "_ports")
+    for name, blob in files:
+        ship = name.split("/", 1)[0]
+        guns = guns_of(blob)
+        if not guns:
+            continue
+        if ship:
+            for g, m in guns.items():
+                by_ship.setdefault(ship, {}).setdefault(g, m)
+        # hull-stem index from the part filenames (JSA039_Akagi_1929_
+        # Bow_ports.visual → 'JSA039_Akagi_1929') — the bake knows hull
+        # dirs, not SDK entity names.
+        stem = name.rsplit("/", 1)[-1][:-len(".visual")]
+        while True:
+            for sfx in part_sfx:
+                if stem.endswith(sfx):
+                    stem = stem[: -len(sfx)]
+                    break
+            else:
+                break
+        if stem:
+            for g, m in guns.items():
+                by_hull.setdefault(stem, {}).setdefault(g, m)
+    out = {s: m for s, m in by_ship.items() if m}
+    try:
+        cache.write_text(json.dumps({"ships": out, "hulls": by_hull}),
+                         encoding="utf-8")
+    except OSError:
+        pass
+    return {"ships": out, "hulls": by_hull}
+
+
 def wg_reference_mounts(hull_dir: str, hp_ents: dict[str, dict],
                         anchors: list[dict],
                         boxes: dict[str, tuple[list, list]],
@@ -880,7 +983,12 @@ def main() -> int:
     ap.add_argument("--wowsunpack", default=None)
     ap.add_argument("--gameparams", type=Path, default=LESTA_GAMEPARAMS,
                     help="decoded Lesta GameParams.json (turret anchors; "
-                    "hull-only bakes when absent)")
+                         "hull-only bakes when absent)")
+    ap.add_argument("--sdk-dump", type=Path, default=None,
+                    help="community ModsSDK zip (ModsSDK_<ver>.zip from the "
+                         "korabli.su Content SDK guides) or an extracted "
+                         "folder — its _ports.visual files carry full gun "
+                         "hardpoint trees for hulls missing from assets.bin")
     ap.add_argument("--out", type=Path, default=SHIPS_OUT)
     ap.add_argument("--triangles", type=int, default=15000)
     ap.add_argument("--only", help="comma list of tree indexes")
@@ -973,6 +1081,11 @@ def main() -> int:
     # Node blocks: every mount's exact transform (secondary/AA rely on it
     # entirely; mains use it with the splash anchor as cross-check).
     blocks = load_node_blocks(Path(args.stage), args.game_dir, args.ooz, wowsunpack)
+    sdk_mounts = None
+    if args.sdk_dump is not None and args.sdk_dump.exists():
+        sdk_mounts = sdk_dump_mounts(args.sdk_dump, Path(args.stage))
+        print(f"[bake-lesta] ModsSDK dump: {len(sdk_mounts['hulls'])} hulls "
+              f"with gun trees from {args.sdk_dump}", flush=True)
 
     # Splash files for the whole scope up front — the global block
     # attribution needs every ship's boxes before any ship is baked.
@@ -1083,6 +1196,15 @@ def main() -> int:
             # collision, not a real mount. Keep only unsuffixed mounts.
             mounts = {k: v for k, v in raw_mounts.items()
                       if v[0] in hp_ents and k == v[0]}
+        if not mounts and hp_ents and boxes and anchors and sdk_mounts is not None:
+            # ModsSDK dump source: the ship entity's _ports.visual gun
+            # trees. Mains flow through the standard per-turret splash
+            # cross-check below; misses fall through to the next source.
+            tree = sdk_mounts["hulls"].get(base.rsplit("/", 1)[-1]) or {}
+            mounts = {n: (n, m) for n, m in tree.items() if n in hp_ents}
+            if mounts:
+                print(f"[bake-lesta]   {idx}: {len(mounts)} mounts from the "
+                      f"ModsSDK dump", flush=True)
         if not mounts and hp_ents and boxes and anchors and base:
             # Cross-client fallback: WG's export-ship of a tail-named
             # sibling hull (validated against the splash mains above).
