@@ -57,7 +57,7 @@ struct BitableIds {
 
 /// GET /feedback — the embedded form (maintenance notice when the
 /// Turnstile sitekey is absent). The current release (wrangler var
-/// FEEDBACK_LATEST_VERSION, kept in sync by scripts/check_versions.py)
+/// FEEDBACK_LATEST_VERSION, kept in sync by scripts/sync_versions.py)
 /// and the request's User-Agent prefill the web form's editable
 /// version/system-info comboboxes.
 pub fn page_feedback(origin: &str, env: &Env, user_agent: Option<&str>) -> Result<Response> {

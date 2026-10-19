@@ -15,7 +15,7 @@
 - [ ] `just test unit` passes / 通过
 - [ ] i18n keys added for both `en` and `zhs` if adding UI strings / 如有新增 UI 字符串，已同时添加中英文 key
 - [ ] No secrets, real credentials, or private IPs in the diff / 无真实凭据与内网 IP（AGENTS.md §7 红线）
-- [ ] Version fields bumped together if this changes the release version / 版本号六处同步（`scripts/check_versions.py`）
+- [ ] Version synced from the root package.json if this changes the release version (`python scripts/sync_versions.py`) / 改发布版本则改根 package.json 后运行 `scripts/sync_versions.py` 同步
 
 ## Related Issues / 关联 Issue
 <!-- e.g. Closes #123 -->
