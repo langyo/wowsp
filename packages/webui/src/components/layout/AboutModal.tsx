@@ -70,7 +70,6 @@ const TRIVIA_KEYS = [
   "about.trivia16",
   "about.trivia17",
   "about.trivia18",
-  "about.trivia19",
   "about.trivia20",
   "about.trivia21",
   "about.trivia22",
