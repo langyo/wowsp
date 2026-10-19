@@ -378,7 +378,7 @@ pub fn urlencode(s: &str) -> String {
 // ── pages ──────────────────────────────────────────────────────────────
 
 /// The /feedback page's locale table — the SAME res/i18n/locales facility
-/// the webui consumes (en-US baseline, 9 locales, key parity enforced by
+/// the webui consumes (en-US baseline, 8 locales, key parity enforced by
 /// scripts/check_i18n.py). Compile-time embedded so the worker carries no
 /// extra fetch; key sets must stay identical across files.
 static FEEDBACK_LOCALE_FILES: &[(&str, &str)] = &[
@@ -389,10 +389,6 @@ static FEEDBACK_LOCALE_FILES: &[(&str, &str)] = &[
     (
         "zh-CN",
         include_str!("../../../../../res/i18n/locales/zh-CN/feedback.json"),
-    ),
-    (
-        "zh-SG",
-        include_str!("../../../../../res/i18n/locales/zh-SG/feedback.json"),
     ),
     (
         "zh-TW",
@@ -1216,14 +1212,14 @@ a {{ color: rgb(var(--color-primary)); }}
     sync();
   }})();
 
-  // ── i18n runtime — same 9-locale table the app ships ─────────────────
+  // ── i18n runtime — same 8-locale table the app ships ─────────────────
   var LOCALES = {locales_json};
   // Editable-combobox suggestions: the current release + the
   // server-side UA inference first, then the plain OS families.
   var SUGGEST = {suggest};
-  var ORDER = ["en-US", "zh-CN", "zh-SG", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "fr-FR", "es-ES"];
+  var ORDER = ["en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "fr-FR", "es-ES"];
   var NAMES = {{
-    "en-US": "English", "zh-CN": "简体中文", "zh-SG": "简体中文（亚服）",
+    "en-US": "English", "zh-CN": "简体中文",
     "zh-TW": "繁體中文", "ja-JP": "日本語", "ko-KR": "한국어",
     "ru-RU": "Русский", "fr-FR": "Français", "es-ES": "Español"
   }};
@@ -1233,6 +1229,8 @@ a {{ color: rgb(var(--color-primary)); }}
     var wanted = (q.get("lang") || "").toLowerCase();
     for (var i = 0; i < ORDER.length; i++) if (ORDER[i].toLowerCase() === wanted) return ORDER[i];
     var saved = localStorage.getItem("wowsp-fb-lang");
+    // 简体中文（亚服） merged into 简体中文 — migrate the saved pick.
+    if (saved === "zh-SG") saved = "zh-CN";
     if (saved && ORDER.indexOf(saved) >= 0) return saved;
     var navs = [].concat(navigator.languages || [], navigator.language || []);
     for (var j = 0; j < navs.length; j++) {{
@@ -1242,7 +1240,6 @@ a {{ color: rgb(var(--color-primary)); }}
       var base = n.split("-")[0];
       if (base === "zh") {{
         if (n.indexOf("hant") >= 0 || n === "zh-tw" || n === "zh-hk" || n === "zh-mo") return "zh-TW";
-        if (n === "zh-sg") return "zh-SG";
         return "zh-CN";
       }}
       var pref = {{ en: "en-US", ja: "ja-JP", ko: "ko-KR", ru: "ru-RU", fr: "fr-FR", es: "es-ES" }}[base];
@@ -2160,7 +2157,7 @@ mod tests {
         );
         assert!(page.contains(r#"id="langSel""#));
         for lang in [
-            "en-US", "zh-CN", "zh-SG", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "fr-FR", "es-ES",
+            "en-US", "zh-CN", "zh-TW", "ja-JP", "ko-KR", "ru-RU", "fr-FR", "es-ES",
         ] {
             assert!(
                 page.contains(&format!("\"{lang}\":")),
@@ -2171,7 +2168,7 @@ mod tests {
         let start = page.find("var LOCALES = ").expect("LOCALES decl") + "var LOCALES = ".len();
         let end = page[start..].find(";\n").expect("LOCALES terminator") + start;
         let merged: Value = serde_json::from_str(&page[start..end]).expect("LOCALES JSON");
-        assert_eq!(merged.as_object().map(Map::len), Some(9));
+        assert_eq!(merged.as_object().map(Map::len), Some(8));
         // The file picker is a translated custom button, not the OS-locale
         // native control.
         assert!(page.contains(r#"id="filePick" data-i18n="filePick""#));

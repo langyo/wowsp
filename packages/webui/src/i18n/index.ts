@@ -1,11 +1,12 @@
 /**
- * vue-i18n bootstrap. Locales (standardized BCP 47 lang-loc — the same nine
- * codes the game-asset data language offers) are auto-discovered from
- * res/i18n/locales and deep-merged by namespace path. The detected locale
+ * vue-i18n bootstrap. Locales (standardized BCP 47 lang-loc — the eight UI
+ * codes the game-asset data language offers minus zh-SG, which exists only
+ * as a data language) are auto-discovered from res/i18n/locales and
+ * deep-merged by namespace path. The detected locale
  * comes from window.__WOWSP_OS_PREFS__ (seeded by the Tauri shell before
  * page load) or the browser. Adapted from shittim-chest's i18n.
  *
- * Locale JSON is LAZY: a non-eager glob keeps all 9 locales × 18 namespaces
+ * Locale JSON is LAZY: a non-eager glob keeps all 8 locales × 22 namespaces
  * out of the main bundle, and each locale's namespaces are awaited and
  * merged on first use (see loadLocaleMessages). The fallback (en-US) and
  * the resolved initial locale are preloaded before the app mounts
@@ -19,7 +20,6 @@ const modules = import.meta.glob("../../../../res/i18n/locales/**/*.json");
 export const SUPPORTED_LOCALES = [
   "en-US",
   "zh-CN",
-  "zh-SG",
   "zh-TW",
   "ja-JP",
   "ko-KR",
@@ -81,14 +81,13 @@ export function loadLocaleMessages(locale: string): Promise<void> {
 }
 
 /** Map a BCP-47 tag (OS preference / navigator.language) onto a supported UI
- *  locale. Chinese collapses by script/region — TW/HK/Hant → zh-TW, SG →
- *  zh-SG, everything else zh → zh-CN — and bare language tags pick the
- *  primary locale. Returns null when the language isn't offered. */
+ *  locale. Chinese collapses by script — TW/HK/MO/Hant → zh-TW, every other
+ *  zh (SG included) → zh-CN — and bare language tags pick the primary
+ *  locale. Returns null when the language isn't offered. */
 export function matchLocale(tag: string): Locale | null {
   const t = tag.toLowerCase();
   if (t.startsWith("zh")) {
     if (/(^|[-_])(tw|hk|mo|hant)\b/.test(t)) return "zh-TW";
-    if (/(^|[-_])sg\b/.test(t)) return "zh-SG";
     return "zh-CN";
   }
   const byLang: Partial<Record<string, Locale>> = {

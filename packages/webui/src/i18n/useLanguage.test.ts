@@ -1,8 +1,11 @@
-/** Regression tests for the 素材翻译 (data-language) mapping layer.
- *  The WG API rejects "zh-sg" (407 INVALID_LANGUAGE on every realm) — the
- *  亚服简体 option must map onto the API's single simplified-Chinese code
- *  "zh-cn", while the realm-distinct ship/nation names come from the offline
- *  game-file DBs. See fix/data-language-mismatch. */
+/** Regression tests for the language settings layer. The 素材翻译
+ *  (data-language) mapping half: the WG API rejects "zh-sg" (407
+ *  INVALID_LANGUAGE on every realm) — the 亚服简体 option must map onto the
+ *  API's single simplified-Chinese code "zh-cn", while the realm-distinct
+ *  ship/nation names come from the offline game-file DBs. The UI-locale
+ *  half: one simplified-Chinese option (zh-SG exists only as a data
+ *  language) and the saved-preference migration for the retired tag.
+ *  See fix/data-language-mismatch. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { transport } from "@/transport";
@@ -12,10 +15,11 @@ import {
   gettextDir,
   installerLocaleToUi,
   seedUiLocaleFromInstaller,
+  UI_LOCALE_OPTIONS,
   useLanguage,
   wgApiLanguage,
 } from "./useLanguage";
-import { i18n, setLocale } from "./index";
+import { i18n, matchLocale, setLocale } from "./index";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
 
 // The seed's only external dependency is the transport's invoke; mock the
@@ -55,9 +59,8 @@ describe("determineDataLanguage", () => {
   });
 
   it("maps every other UI locale straight through", () => {
-    // zh-SG UI stays 亚服简体 regardless of realm; the remaining UI locales
-    // are themselves valid data lang-locs.
-    expect(determineDataLanguage("zh-SG", "cn")).toBe("zh-SG");
+    // The remaining UI locales are themselves valid data lang-locs; only
+    // under the merged 简体中文 does the realm decide 国服 vs 亚服 assets.
     expect(determineDataLanguage("zh-TW", "asia")).toBe("zh-TW");
     expect(determineDataLanguage("ja-JP", "na")).toBe("ja-JP");
     expect(determineDataLanguage("ko-KR", "eu")).toBe("ko-KR");
@@ -65,6 +68,46 @@ describe("determineDataLanguage", () => {
     expect(determineDataLanguage("fr-FR", "asia")).toBe("fr-FR");
     expect(determineDataLanguage("es-ES", "asia")).toBe("es-ES");
     expect(determineDataLanguage("en-US", "asia")).toBe("en-US");
+  });
+});
+
+describe("UI_LOCALE_OPTIONS", () => {
+  it("offers ONE simplified-Chinese option with no region suffixes", () => {
+    expect(UI_LOCALE_OPTIONS.map((o) => o.label)).toEqual([
+      "English",
+      "简体中文",
+      "繁體中文",
+      "日本語",
+      "한국어",
+      "Русский",
+      "Français",
+      "Español",
+    ]);
+    expect(UI_LOCALE_OPTIONS.map((o) => o.value)).toEqual([
+      "en-US",
+      "zh-CN",
+      "zh-TW",
+      "ja-JP",
+      "ko-KR",
+      "ru-RU",
+      "fr-FR",
+      "es-ES",
+    ]);
+  });
+});
+
+describe("matchLocale", () => {
+  it("folds every simplified-Chinese tag onto zh-CN (zh-SG included)", () => {
+    expect(matchLocale("zh")).toBe("zh-CN");
+    expect(matchLocale("zh-CN")).toBe("zh-CN");
+    expect(matchLocale("zh-SG")).toBe("zh-CN");
+    expect(matchLocale("zh-sg")).toBe("zh-CN");
+  });
+
+  it("keeps traditional-Chinese script detection on zh-TW", () => {
+    expect(matchLocale("zh-TW")).toBe("zh-TW");
+    expect(matchLocale("zh-HK")).toBe("zh-TW");
+    expect(matchLocale("zh-Hant")).toBe("zh-TW");
   });
 });
 
@@ -153,6 +196,24 @@ describe("seedUiLocaleFromInstaller", () => {
     expect(uiLocale.value).toBe("zh-CN");
     expect(setItem).not.toHaveBeenCalledWith(UI_KEY, expect.any(String));
     setItem.mockRestore();
+  });
+});
+
+describe("legacy UI locale migration", () => {
+  it("migrates a saved 简体中文（新加坡） tag onto the merged 简体中文 option", async () => {
+    localStorage.setItem("wowsp-ui-locale", "zh-SG");
+    try {
+      // loadUiLocale runs at module init — re-import with the legacy tag
+      // already saved to exercise the migration path.
+      vi.resetModules();
+      const { useLanguage: fresh } = await import("./useLanguage");
+      expect(fresh().uiLocale.value).toBe("zh-CN");
+      // The rewrite persists so the migration sticks across boots.
+      expect(localStorage.getItem("wowsp-ui-locale")).toBe("zh-CN");
+    } finally {
+      localStorage.clear();
+      vi.resetModules();
+    }
   });
 });
 

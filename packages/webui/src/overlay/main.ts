@@ -105,7 +105,7 @@ import { AI_NAME } from "@/utils/aiNames";
 import "./overlay.scss";
 
 // Same locale files the Vue app consumes — one source of truth for the hint
-// copy, bundled eagerly into this tiny page (a few KB across 9 locales).
+// copy, bundled eagerly into this tiny page (a few KB across 8 locales).
 interface OverlayMessages {
   /** Failed-locate copy (the centered hint box IS the failure). */
   locateHint: string;
@@ -120,7 +120,7 @@ interface OverlayMessages {
   botLabel: string;
   /** The per-row battle-count face (chipColumns) as a pattern carrying
    *  the count in `{n}`: the copy owns the unit word AND its placement,
-   *  which is what lets one pattern serve all nine locales (the Chinese
+   *  which is what lets one pattern serve all eight locales (the Chinese
    *  measure word hugs the number, Korean's noun reads before it). `{n}`
    *  is mandatory — scripts/check_i18n.py enforces placeholder parity.
    *  The unit is fixed per locale — no count inflects it, as these counts
