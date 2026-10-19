@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Install / uninstall / inspect the WoWSP in-game bridge probe.
+"""Install / uninstall / inspect the WoWSP in-game probe.
 
-Dev tool: copies packages/ingame-plugin/src/Main.py plus the in-game
-panel's unbound view into <game>/bin/<latest>/res_mods/ and makes sure the
+Dev tool: copies packages/ingame-plugin/src/Main.py plus the barcode
+strips' unbound view into <game>/bin/<latest>/res_mods/ and makes sure the
 0-byte PnFModsLoader.py marker exists (the game's Mods API scans for it).
 Never touches files it does not own; everything it writes is recorded in
 PnFMods/WoWSPProbe/install_record.json and undone by `uninstall`.
@@ -24,10 +24,12 @@ from pathlib import Path
 MOD_DIR_NAME = 'WoWSPProbe'
 PLUGIN_SRC = Path(__file__).resolve().parents[1] / 'packages' / 'ingame-plugin' / 'src'
 TEMPLATE = PLUGIN_SRC / 'Main.py'
-# The visible half of the in-game display mode: the unbound view, auto
+# The capture side channel's half of the plugin: the unbound view, auto
 # discovered + mounted by the game from gui/unbound2/mods/ (the folder the
 # working battle views live in; a ForgeBlueprints/ manifest was tried first
-# and never worked - those XMLs are installer-only metadata).
+# and never worked - those XMLs are installer-only metadata). It renders
+# the barcode strips only — the in-game stats/aim rendering was removed
+# with the app's in-game view mode on 2026-10-19.
 VIEW = PLUGIN_SRC / 'WoWSPProbe.unbound'
 VIEW_DEST = Path('gui') / 'unbound2' / 'mods' / 'WoWSPProbe.unbound'
 LEGACY_DESTS = (
@@ -119,7 +121,7 @@ def cmd_install(root, requested_bin):
               'installed_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'template': str(TEMPLATE)}
     (mod_dir / 'install_record.json').write_text(json.dumps(record, indent=2) + '\n', encoding='utf-8')
     print('installed probe %s -> %s' % (MOD_DIR_NAME, mod_dir))
-    print('  panel view   %s' % view_dest)
+    print('  strips view  %s' % view_dest)
     print('  loader marker %s (%s)' % (loader, 'created' if created_loader else 'already present'))
     print('  start the game, then: python %s status --game <root>' % Path(__file__).name)
 
@@ -162,14 +164,10 @@ def cmd_status(root, requested_bin):
             try:
                 data = json.loads(hb.read_text(encoding='utf-8'))
                 age = time.time() - data.get('t', 0) / 1000.0
-                print('  heartbeat: phase=%s players=%s revision=%s, %.0f s ago' %
-                      (data.get('phase'), data.get('players'), data.get('revision'), age))
+                print('  heartbeat: phase=%s players=%s, %.0f s ago' %
+                      (data.get('phase'), data.get('players'), age))
             except Exception as exc:
                 print('  heartbeat unreadable: %s' % exc)
-        req = mod_dir / 'request.json'
-        if req.is_file():
-            data = json.loads(req.read_text(encoding='utf-8'))
-            print('  last request: %d players at %s' % (len(data.get('players', [])), time.strftime('%H:%M:%S', time.localtime(data.get('created', 0)))))
     log_file = root / 'profile' / 'python.log'
     if log_file.is_file():
         try:

@@ -1,35 +1,36 @@
 # -*- coding: utf-8 -*-
-"""WoWSP in-game bridge probe.
+"""WoWSP in-game telemetry probe.
 
 Runs inside the game client via the WG Mods API (PnFMods loader). The
-sandbox has no networking, so this probe observes, bridges and (since the
-in-game display mode landed) renders:
+sandbox has no networking, so this probe observes and bridges out:
 
   - everything it learns goes to python.log (prefix WOWSP_PROBE) and to
-    flat JSON files next to this Main.py; the wowsp companion process is
-    expected to read request.json and write response.json back,
+    flat JSON files next to this Main.py (heartbeat, roster_raw, the
+    roster journal, telemetry, order_probe) for the wowsp companion
+    process to read,
   - live alive flags are bridged out as telemetry for the transparent
     overlay window (priority: mod telemetry > screen-capture inference >
     static roster order), together with the game's own Tab sort keys
     (sortKeys), the roster's record sequence (rosterOrder — the tie base
-    for equal client keys) and the records' localized ship names
-    (shipNames — the CN name-order segment verbatim),
-  - when the companion answers response.json, the stats rows are rendered
-    INSIDE the game: the unbound view (WoWSPProbe.unbound, installed to
+    for equal client keys), the records' localized ship names
+    (shipNames — the CN name-order segment verbatim) and the crosshair
+    aim verdict ('aim', see entity_walk),
+  - the ONE thing still rendered is the capture side channel's barcode
+    strips: the unbound view (WoWSPProbe.unbound, installed to
     gui/unbound2/mods/ where the game auto-discovers + mounts battle
     views) watches this file's single 'wowspProbe.panel' data component
-    and draws the ally/enemy stat columns while Tab is held. The sides
-    come from the per-tick relation walk (entity_walk); the row order
+    and draws the ally/enemy strips while Tab is held. The sides come
+    from the per-tick relation walk (entity_walk); the row order
     follows the client's OWN TAB sort keys when the ship-component probe
-    delivers them (sort_key_probe), else the walk's arena rule. No
-    companion answer means no panel - the transparent-overlay view mode
-    simply never turns the bridge on.
+    delivers them (sort_key_probe), else the walk's arena rule. There is
+    NO in-game stats rendering and NO request/response bridge — the
+    app's in-game panel view mode was retired on 2026-10-19 and this
+    file no longer writes request.json/response.json at all.
 
 Still measured for diagnostics:
   1. load + heartbeat (heartbeat.json, phase port/battle),
   2. the full raw schema of battle.getPlayersInfo() (roster_raw.json),
-  3. the sandbox API surface (dir() of every injected module, once),
-  4. request/response file bridge + Tab/Alt/V key events.
+  3. the sandbox API surface (dir() of every injected module, once).
 
 Keep the syntax conservative (no f-strings, 3.6-level) and never let an
 exception escape a callback: the game keeps running but the mod dies.
@@ -38,8 +39,8 @@ ModsAPI sandbox omits the exception classes from its builtin whitelist,
 so `except Exception:` itself raises NameError there; handlers must use
 bare `except:` (with `_exc_text` for the message).
 
-Stronger still: the CORE paths (roster projection, request/telemetry
-writes, the panel payload) never look up a builtin name at all —
+Stronger still: the CORE paths (roster projection, telemetry writes,
+the strip payload) never look up a builtin name at all —
 %-formatting, bound methods, comprehensions and `__dict__` access carry
 them, so a whitelist that also drops `str`/`int`/`sorted`/`dir`/`getattr`
 cannot empty the roster. `len`/`open` and the `True`/`False` constants
@@ -57,9 +58,6 @@ API_VERSION = 'API_v1.0'
 PROBE_VERSION = '0.1.0'
 PREFIX = 'WOWSP_PROBE '
 HEARTBEAT_FILE = 'heartbeat.json'
-REQUEST_FILE = 'request.json'
-RESPONSE_FILE = 'response.json'
-MANUAL_FLAG = 'manual_refresh.flag'
 ROSTER_RAW_FILE = 'roster_raw.json'
 ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
 TELEMETRY_FILE = 'telemetry.json'
@@ -69,24 +67,16 @@ ORDER_PROBE_FILE = 'order_probe.json'
 # ([tools."battle.ingame.stats"]) with these values; the keys below are the
 # contract, hand edits to the file survive WoWSP rewrites. JOURNAL_LIMIT
 # stays as the fallback default for a missing/unreadable manifest.
-# `panel`/`barcode` declare the ACTIVE view mode's halves: the companion
-# upserts them when a mode starts (the in-game bridge → panel=1/barcode=0,
-# the overlay watcher → panel=0/barcode=1), so exactly one consumer owns
-# the screen: the stats panel (table = "ingame") or the capture side
-# channel's barcode strip (table = "detect") — never both, never neither
-# while a mode is running. A missing manifest keeps BOTH defaults on:
-# the panel is the long-shipped behavior, the strip stays off until the
-# overlay side asks for it.
-# `aim`/`aim_offset` drive the crosshair aim panel (see entity_walk): on
-# by default, `aim_offset` px below the stage center. Hand edits to the
-# offset survive rewrites like every other key.
+# `barcode` gates the capture side channel's strips: the overlay watcher
+# upserts it to 1 when the overlay view mode starts, so exactly one
+# consumer owns the screen while a mode is running (the app's in-game
+# panel view mode was retired on 2026-10-19 — its panel/aim/aim_offset
+# keys are gone with it). A missing manifest keeps the strips OFF: the
+# overlay side asks for them by writing the key.
 CONFIG_DEFAULTS = {
     'panel_fade_ticks': 3,
     'journal_limit': 300,
-    'panel': 1,
     'barcode': 0,
-    'aim': 1,
-    'aim_offset': 120,
 }
 JOURNAL_LIMIT = CONFIG_DEFAULTS['journal_limit']
 
@@ -116,9 +106,6 @@ BARCODE_BACK = 0xFF101010
 # another). Changing either number is a spec bump against the client.
 AIM_LOCKABLE = 0x35C7
 AIM_MAIN_BITS = 0x7
-# Metrics the companion's aimCols may name (response.json). Formatting and
-# coloring live here so the view stays dumb.
-AIM_METRICS = ('winrate', 'pr', 'battles', 'damage')
 
 
 def load_tool_config():
@@ -174,10 +161,10 @@ def load_tool_config():
     return cfg
 
 
-# The in-game panel's single data component: the unbound view watches this
+# The strips' single data component: the unbound view watches this
 # key (getPrimWatcher(CC.mods_DataComponent, ...)) and redraws on every
-# updateUiElementData. All presentation decisions (colors, formatting) are
-# made here so the view stays a dumb template.
+# updateUiElementData. All payload decisions (visibility, rows, rank
+# words) are made here so the view stays a dumb template.
 PANEL_KEY = 'wowspProbe.panel'
 
 # SafeClass records hide their keys from dir(); probe likely field names so
@@ -282,10 +269,9 @@ def _json_encode(value):
         return 'false'
     if value is None:
         return 'null'
-    # Strings BEFORE numbers: py2's %d accepts digit strings, and the
-    # bridge's 'session' value is ALWAYS a digit string — a number-typed
-    # session would make the app's strict serde parse skip the whole
-    # stats cycle for the battle.
+    # Strings BEFORE numbers: py2's %d accepts digit strings, and a
+    # digit-string value (a session stamp, a roster key) must stay a
+    # JSON string, never flip to a number.
     try:
         probe = value + ''
     except:
@@ -321,7 +307,7 @@ def _bridge_write(name, text):
     py2 text mode encodes a `unicode` payload with the locale codec
     (ASCII on the client), so a body the client's own encoder echoed as
     unicode — non-ASCII nicknames or localized ship names — raises
-    UnicodeEncodeError and freezes the file while heartbeat/request
+    UnicodeEncodeError and freezes the file while heartbeat
     (ASCII bodies) keep flowing. Binary mode plus an explicit utf-8
     encoding makes the writer payload-agnostic: str bytes pass through,
     unicode is encoded, and the file always ends with one newline.
@@ -385,30 +371,6 @@ def _to_int(value):
         return 0
 
 
-def _to_float(value):
-    """`float(value)` without the builtin — enough for timestamp strings
-    and numbers ('12.5', u'12.5', 12, 12.5, '-3.25'); junk -> 0.0.
-    Known divergences from float(), none reachable at the one call site
-    (a seconds-since-epoch flag stamp): bool -> 0.0, exponents/NaN/inf
-    -> 0.0, a second dot is tolerated."""
-    try:
-        text = ('%s' % (value,)).strip()
-        whole, _, frac = text.partition('.')
-        base = _to_int(whole)
-        if not frac:
-            return base * 1.0
-        scale = 1
-        for _ in frac:
-            scale = scale * 10
-        part = (_to_int(frac) * 1.0) / scale
-        # The sign lives on the whole part: -3.25 is -3 MINUS .25.
-        if text[:1] == '-':
-            return base - part
-        return base + part
-    except:
-        return 0.0
-
-
 def _is_kind(value, *names):
     """Class-name probe without `isinstance`/`object`. Exact class names
     only — subclasses of dict/list would not match where isinstance did;
@@ -416,18 +378,6 @@ def _is_kind(value, *names):
     difference is unreachable."""
     try:
         return value.__class__.__name__ in names
-    except:
-        return False
-
-
-def _is_num(value):
-    """Number probe without `isinstance`: for int/long/float (and bool)
-    `value + 0 == value`; strings concatenate or raise, everything else
-    raises or compares unequal. Divergences kept in mind: py2 long and
-    complex pass, NaN fails — callers only see numbers their own codec
-    produced (jsonDecode rows, jsonEncode echoes)."""
-    try:
-        return value + 0 == value
     except:
         return False
 
@@ -477,7 +427,7 @@ def _exc_text(limit):
     Lesta's ModsAPI sandbox omits the exception classes from its builtins:
     the NAME `Exception` itself raises NameError the first time any
     handler evaluates (2026-10-08: the mod died at import that way,
-    silencing telemetry, the in-game panel and the roster files for every
+    silencing telemetry, the strips and the roster files for every
     Lesta battle). Bare `except:` needs no name, and the live exception
     still reaches this helper via sys.exc_info() when the sandbox allows
     the import.
@@ -566,16 +516,12 @@ class Probe:
         self.roster = []
         self.previous = None
         self.stable = 0
-        self.busy = False
         # The game's own battle-start event fired (onBattleStart) and the
         # matching quit has not — drives the heartbeat's phase INDEPENDENT
         # of roster stabilization, so a build whose getPlayersInfo drifts
         # (2026-10-11 CN360: session never set) still reports battle and
         # the companion's telemetry-absent WARN can fire.
         self.in_battle = False
-        self.last_request = 0.0
-        self.revision = -1
-        self.manual_stamp = ''
         self.last_error = ''
         self.entities = {}
         # {…} - {…} instead of set([]): set literals/differences compile
@@ -583,8 +529,6 @@ class Probe:
         # whitelist is never consulted for the empty-set construction.
         self.known_events = {None} - {None}
         self.event_log_count = 0
-        self.key_log_count = 0
-        self.v_down = False
         self.last_raw = ''
         self.latest_raw = {}
         self.last_order_cache = None
@@ -602,26 +546,21 @@ class Probe:
         self.cc_cache = False
         self.api_dumped = False
         self.comp_dumped = False
-        # In-game panel state: Tab visibility, the two sides' TAB order,
-        # the answered stats rows keyed by name, the companion's column
-        # labels, the freshest entity states (shared with the telemetry
+        # Barcode strip state: Tab visibility, the two sides' TAB row
+        # order, the freshest entity states (shared with the telemetry
         # writer) and the last panel body (change gate for the UI update).
         self.tab = False
         self.order = {'ally': [], 'enemy': []}
         self.alive_last = {'ally': {}, 'enemy': {}}
         self.sort_keys = {}
-        self.stats = {}
-        self.labels = {}
         self.states = {}
         self.last_panel = ''
-        # Aim panel state: the current target walk verdict ({name, flags}
-        # or None — latched by entity_walk, cleared per battle), the
-        # companion's aim column list (None = no response ever carried
-        # aimCols; [] = the user emptied the list = panel hidden), and the
-        # UiComponents `target` attribute resolved behind its own guard
-        # (False = not yet resolved, None = unavailable — see _cc_target).
+        # Aim state: the current target walk verdict ({name, flags} or
+        # None — latched by entity_walk, cleared per battle; it rides
+        # telemetry every tick) and the UiComponents `target` attribute
+        # resolved behind its own guard (False = not yet resolved,
+        # None = unavailable — see _cc_target).
         self.aim = None
-        self.aim_cols = None
         self.cc_target_cache = False
         self.aim_log_last = ''
         # One-shot per stabilized session: the client's own TAB-order source
@@ -665,22 +604,9 @@ class Probe:
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': _to_int(time.time() * 1000), 'phase': 'load'})
         except:
             log('heartbeat write failed=' + _exc_text(120))
-        try:
-            # ModsAPI logs an engine error before raising for a missing file;
-            # seed the mailbox once so battle ticks do not flood python.log.
-            stream = open(MANUAL_FLAG, 'w')
-            stream.write('0')
-            stream.close()
-        except:
-            log('flag seed failed=' + _exc_text(120))
-        try:
-            self.put('wowspProbe.status', {'message': 'probe ' + PROBE_VERSION + ' loaded', 'version': PROBE_VERSION})
-        except:
-            log('ui entity create failed=' + _exc_text(120))
         events.onSFMEvent(self.event)
         events.onBattleQuit(self.quit)
         events.onBattleStart(self.start)
-        events.onKeyEvent(self.key_event)
         self.schedule()
         log('probe ' + PROBE_VERSION + ' loaded')
 
@@ -689,20 +615,12 @@ class Probe:
     def write_json(self, name, data):
         _bridge_write(name, json_encode_safe(data))
 
-    def read_json(self, name, limit):
-        stream = open(name, 'r')
-        raw = stream.read(limit)
-        stream.close()
-        if len(raw) >= limit or not raw.endswith('\n'):
-            return None
-        return utils.jsonDecode(raw)
-
     # -- UI data components (stage-B groundwork) ---------------------------
 
     def put(self, key, data):
         if _UI is None:
-            # No `ui` module on this client (Lesta): the in-game panel is
-            # unavailable — a silent no-op, not an error.
+            # No `ui` module on this client (Lesta): the strips' data
+            # component is unavailable — a silent no-op, not an error.
             return
         try:
             if key not in self.entities:
@@ -722,8 +640,8 @@ class Probe:
         # game's own event, not from roster stabilization (see __init__).
         self.in_battle = True
         # Re-read the tool config each battle (in-place update, so every
-        # TOOL_CONFIG reader sees it): the companion upserts the panel/
-        # barcode mode keys when a view mode starts, and a settings flip
+        # TOOL_CONFIG reader sees it): the companion upserts the barcode
+        # mode key when the overlay view mode starts, and a settings flip
         # between battles must apply without relaunching the game.
         try:
             TOOL_CONFIG.update(load_tool_config())
@@ -837,7 +755,7 @@ class Probe:
         'CC dir failed=?' at load, then roster_raw.json and telemetry.json
         failing every tick) — the bare `cc = self.const.UiComponents` sat
         OUTSIDE the entity walks' guards, so the exception skipped both
-        file writes while request/heartbeat/journal kept flowing and the
+        file writes while heartbeat/journal kept flowing and the
         companion never got its roster. None = the entity walks stand
         down and the records-driven paths (teamId relations, the roster
         records' own isAlive) carry the battle alone."""
@@ -977,7 +895,7 @@ class Probe:
         2026-10-10). The client's Tab table sorts by that key — the
         WG family appends the avatar name (__sortKeyAlive: ship.sortKey
         + component.name) while Lesta breaks EQUAL keys by the roster's
-        own order (live 2026-10-10) — so the panel fold below sorts by
+        own order (live 2026-10-10) — so the row fold below sorts by
         the keys alone, stable. CN's HUD renders a different order
         altogether (its scripts still compute these keys); the companion
         stands the override down there.
@@ -1064,7 +982,7 @@ class Probe:
     # the one that does have getChildByPath. Whether the SafeClass wrapper
     # forwards that internal name, and which SYNCED collection names answer
     # at all, is build-dependent and exactly what this one-shot probe
-    # records. It is DIAGNOSTIC ONLY: nothing here feeds the panel,
+    # records. It is DIAGNOSTIC ONLY: nothing here feeds the strips,
     # telemetry or the companion's ordering.
 
     def _collection_order(self, collection, cc, limit):
@@ -1361,7 +1279,7 @@ class Probe:
             self.soft('order probe log failed=' + _exc_text(120))
 
     def entity_walk(self):
-        """ONE entity walk feeding the panel + telemetry: per-avatar live
+        """ONE entity walk feeding the strips + telemetry: per-avatar live
         state plus the ally/enemy side split and row order.
 
         The unbound-side 'team.*.sortedAlive' collections have NO
@@ -1381,7 +1299,7 @@ class Probe:
         leak the previous battle's name — and the avatar ENTITY ids into
         self.avatar_entity_ids (sticky, bots included): the same id space
         the client's sortedAlive collection items carry, which is what
-        the panel/barcode byId maps and the overlay's row attribution
+        the barcode byId map and the overlay's row attribution
         key on. The roster records' own avatarId field is a DIFFERENT id
         (their mapping key), so the walk is the authoritative source.
         """
@@ -1466,7 +1384,7 @@ class Probe:
         return states, sides
 
     def merge_order(self, sides):
-        """Fold one walk's sides into the panel row order. Alive rows keep
+        """Fold one walk's sides into the strip row order. Alive rows keep
         their relative spots; the dead slide to a tail that preserves
         SINKING order (the previous tail first, then this tick's newly
         dead in their former front order); unseen names append in walk
@@ -1512,10 +1430,9 @@ class Probe:
             # roster order's stand-in). Applied only when EVERY front
             # name carries a key; any gap keeps the walk order outright
             # (game-true and walk-order rows must not interleave). The
-            # tail keeps its sinking chronology either way — the
-            # friendlier in-game panel read (the client's own dead block
-            # re-sorts by key; documented as the panel's one cosmetic
-            # difference).
+            # tail keeps its sinking chronology either way (the client's
+            # own dead block re-sorts by key — the fold's one cosmetic
+            # difference from the client).
             keys = {}
             for nm in front:
                 key = self.sort_keys.get(nm)
@@ -1576,7 +1493,6 @@ class Probe:
         self.session = ''
         self.previous = None
         self.stable = 0
-        self.busy = False
         self.details_reset()
         self.states = {}
         self.clear_players()
@@ -1597,8 +1513,6 @@ class Probe:
         log('battle cleared')
 
     def details_reset(self):
-        self.revision = -1
-        self.v_down = False
         # Per-battle latches: the roster skip latch (players) re-arms so the
         # next battle re-documents a still-drifting schema once, and the
         # battle phase latch stands down (quit lands here too).
@@ -1617,14 +1531,11 @@ class Probe:
         self.avatar_entity_ids = {}
         self.raw_isalive_seen = False
         self.last_order_cache = None
-        # The aim verdict is per-battle too; aim_cols (the companion's
-        # column list) is config-level and survives the reset.
+        # The aim verdict is per-battle too.
         self.aim = None
         # Re-arm the aim log gate: the next battle's first switch must
         # log even when its line is byte-identical to the last battle's.
         self.aim_log_last = ''
-        self.stats = {}
-        self.labels = {}
         # The SELF latch rides the same reset story as the rest of the
         # battle state (a new battle must not inherit the previous one's
         # local player).
@@ -1639,11 +1550,10 @@ class Probe:
             self.entities = {}
             return
         for key in [k for k in self.entities]:
-            if key != 'wowspProbe.status':
-                try:
-                    _UI.deleteUiElement(self.entities.pop(key))
-                except:
-                    self.soft('entity delete failed=' + _exc_text(120))
+            try:
+                _UI.deleteUiElement(self.entities.pop(key))
+            except:
+                self.soft('entity delete failed=' + _exc_text(120))
 
     def players_raw(self):
         try:
@@ -1858,83 +1768,6 @@ class Probe:
         except:
             self.soft('roster_raw failed=' + _exc_text(120))
 
-    # -- request/response ----------------------------------------------------
-
-    def request(self, manual):
-        """Write one stats request; returns True when it was actually
-        written. The manual-refresh tick consumes its flag stamp ONLY on
-        a True answer — a declined request (busy window, <5 s since the
-        last one) leaves the stamp unconsumed so the next tick retries it
-        inside the 10 s freshness window (a poke that lands while the
-        previous response is still in flight would otherwise be silently
-        eaten and the change it asked for would wait a whole battle)."""
-        if not self.session or not self.roster or self.busy or time.time() - self.last_request < 5:
-            return False
-        self.last_request = time.time()
-        self.revision = -1
-        try:
-            self.write_json(REQUEST_FILE, {'version': 1, 'created': self.last_request,
-                                           'session': self.session, 'manual': True if manual else False,
-                                           'players': self.roster})
-            # Empty response mailbox: read_json treats a file without the
-            # trailing newline as absent, and no engine error is logged for
-            # a missing file while the companion has not answered yet.
-            stream = open(RESPONSE_FILE, 'w')
-            stream.close()
-            self.busy = True
-            log('request written players=' + _fmt(len(self.roster)) + ' manual=' + ('True' if manual else 'False'))
-            return True
-        except:
-            self.soft('request write failed=' + _exc_text(120))
-            return False
-
-    def read_response(self):
-        try:
-            data = self.read_json(RESPONSE_FILE, 262145)
-            if data is None:
-                return
-            if data.get('session') != self.session or data.get('revision', -1) <= self.revision:
-                return
-            rows = data.get('rows', [])
-            if not _is_kind(rows, 'list') or len(rows) > 64:
-                return
-            allowed = {p['name'] for p in self.roster}
-            stats = self.stats.copy()
-            for row in rows:
-                name = row.get('name', '')
-                if not name or name not in allowed:
-                    continue
-                stats[name] = row
-            labels = data.get('labels')
-            if _is_kind(labels, 'dict'):
-                self.labels = labels
-            # aimCols: absent on older companions (aim_cols stays None =
-            # name/ship-only panel); [] = the user emptied the column list
-            # (panel hidden); otherwise sanitized to [{metric,label}]. A
-            # MALFORMED list (not a list / overlong) is ignored outright —
-            # it must not collapse into the explicit-empty hide gate.
-            raw_cols = data.get('aimCols')
-            if _is_kind(raw_cols, 'list') and len(raw_cols) <= 8:
-                cols = []
-                for col in raw_cols:
-                    if not _is_kind(col, 'dict'):
-                        continue
-                    metric = col.get('metric')
-                    if metric not in AIM_METRICS:
-                        continue
-                    label = col.get('label')
-                    cols.append({'metric': metric,
-                                 'label': _fmt(label) if label else ''})
-                self.aim_cols = cols
-            self.stats = stats
-            self.revision = data.get('revision', -1)
-            self.busy = False
-            self.refresh_panel()
-            log('response applied revision=' + _fmt(self.revision) + ' rows=' + _fmt(len(rows)))
-        except:
-            # No response file yet is the normal state while nobody answers.
-            self.soft('response read failed=' + _exc_text(120))
-
     # -- events ---------------------------------------------------------------
 
     def event(self, name, data):
@@ -1945,7 +1778,7 @@ class Probe:
                     self.event_log_count += 1
                     log('sfm event ' + _fmt(name))
             if name == 'input.tabModeIn' or name == 'input.tabModeOut':
-                # The panel's visibility driver: fires <=3 ms after the key
+                # The strips' visibility driver: fires <=3 ms after the key
                 # and never for Tab typed in battle chat (design-doc-proven).
                 visible = name == 'input.tabModeIn'
                 if self.tab != visible:
@@ -1961,26 +1794,6 @@ class Probe:
                 self.quit()
         except:
             self.soft('event error=' + _exc_text(120))
-
-    def key_event(self, event):
-        try:
-            key = event.key
-            down = event.isKeyDown()
-            if self.key_log_count < 200 and key in (15, 47, 56, 184):
-                self.key_log_count += 1
-                log('key code=' + _fmt(key) + ' down=' + ('True' if down else 'False') + ' alt=' + ('True' if event.isAltDown() else 'False'))
-            if key != 47:
-                return
-            if not down:
-                self.v_down = False
-                return
-            if self.v_down:
-                return
-            self.v_down = True
-            if event.isAltDown():
-                log('alt+v pressed while session=' + (self.session or 'none'))
-        except:
-            self.soft('key event error=' + _exc_text(120))
 
     # -- scheduler ----------------------------------------------------------
 
@@ -2023,9 +1836,6 @@ class Probe:
                 self.dead_latch = {None} - {None}
                 self.session = _fmt(_to_int(time.time() * 1000))
                 self.details_reset()
-                self.busy = False
-                self.last_request = 0
-                self.request(False)
                 log('roster stable players=' + _fmt(len(roster)) + ' sample=' + json_encode_safe(roster[0]))
         elif self.session:
             # A transient empty roster happens MID-BATTLE: the player's own
@@ -2041,7 +1851,7 @@ class Probe:
         try:
             self.write_json(HEARTBEAT_FILE, {'v': PROBE_VERSION, 't': _to_int(time.time() * 1000),
                                              'phase': 'battle' if self.session or self.in_battle else 'port',
-                                             'players': len(self.roster), 'revision': self.revision})
+                                             'players': len(self.roster)})
         except:
             self.soft('heartbeat failed=' + _exc_text(120))
         self.write_telemetry()
@@ -2050,30 +1860,10 @@ class Probe:
         # One-shot client order source probe (see client_order_probe): run
         # on the FIRST stabilized tick — a replay can stop a second later,
         # and the AvatarSystem collections are already built by then. It
-        # never feeds the panel or telemetry.
+        # never feeds the strips or telemetry.
         if not self.order_probe_done:
             self.client_order_probe()
             self.order_probe_done = True
-        try:
-            stream = open(MANUAL_FLAG, 'r')
-            stamp = stream.read(100)
-            stream.close()
-            if stamp != self.manual_stamp:
-                # Fresh + issued → consume; fresh but DECLINED → keep the
-                # stamp and retry next tick (see request); stale → consume
-                # so it is not re-checked forever.
-                if 0 <= time.time() - _to_float(stamp) < 10:
-                    if self.request(True):
-                        self.manual_stamp = stamp
-                else:
-                    self.manual_stamp = stamp
-        except:
-            pass
-        if self.busy:
-            self.read_response()
-            if time.time() - self.last_request > 180:
-                self.busy = False
-                self.soft('response timeout after 180s')
 
     def write_telemetry(self):
         """The M2 consumer file: name-keyed alive flags for the whole
@@ -2082,8 +1872,8 @@ class Probe:
         whether or not anything sank and whether or not Tab is held, and
         consumers can tell a live stream from a dead one by freshness
         instead of a timeout. Cleared once (empty players) on battle
-        quit; port ticks write nothing. The same walk feeds the panel's
-        sides + row order (see entity_walk).
+        quit; port ticks write nothing. The same walk feeds the strips'
+        rows + row order (see entity_walk).
 
         Since the realm-reporting change the payload also carries the
         roster's GROUND-TRUTH identity straight off the game's own
@@ -2118,11 +1908,11 @@ class Probe:
             states, sides = self.entity_walk()
             stage = 'sortkeys'
             # The game's own TAB sort keys (see sort_key_probe): read BEFORE
-            # the panel fold so merge_order can sort the in-game panel's
-            # alive block with them too, and carried in the payload below.
+            # the fold so merge_order can sort the strips' alive block with
+            # them too, and carried in the payload below.
             self.sort_keys = self.sort_key_probe()
-            # Shared with the panel builder so alive flags + sides cost one
-            # entity walk per tick, not two.
+            # Shared with the strip row builder so alive flags + sides cost
+            # one entity walk per tick, not two.
             self.states = states
             stage = 'fold'
             self.merge_order(sides)
@@ -2194,9 +1984,9 @@ class Probe:
                     alive = not walk_dead
                 players[name] = alive
                 # Write the authoritative verdict back into this tick's walk
-                # states: the panel rows (panel_rows, below) read them, so
-                # the in-game panel shows the same truth as the telemetry
-                # instead of the walk's raw read.
+                # states: the strip rows (panel_rows, below) read them, so
+                # the strips show the same truth as the telemetry instead
+                # of the walk's raw read.
                 if name in states:
                     states[name]['alive'] = 'True' if alive else 'False'
                 stage = 'alive-identity'
@@ -2296,103 +2086,20 @@ class Probe:
                 pass
         self.refresh_panel()
 
-    # -- in-game panel -------------------------------------------------------
-    # One data component ('wowspProbe.panel') carries the whole template's
-    # payload: visibility (Tab held), both sides' rows in walk order with
-    # the answered stats merged in, and the companion's column labels.
-    # Everything visible is decided HERE (formatting, colors) so the unbound
-    # view stays a dumb template that cannot rot per game version.
-
-    def wr_color(self, wr):
-        # ARGB values, same form the unbound template literals use. Bands
-        # mirror the overlay page's winrate coloring.
-        if not _is_num(wr):
-            return 0xB4FFFFFF  # translucent white (no data)
-        if wr >= 53:
-            return 0xFF66FF66  # green
-        if wr >= 50:
-            return 0xFFFFEE66  # pale yellow
-        if wr >= 45:
-            return 0xFFFF9933  # orange
-        return 0xFFFF5555      # red
-
-    def pr_color(self, pr):
-        if not _is_num(pr):
-            return 0xB4FFFFFF
-        if pr >= 1700:
-            return 0xFFCC66FF  # purple
-        if pr >= 1450:
-            return 0xFF66FF66  # green
-        if pr >= 1150:
-            return 0xFFFFEE66  # pale yellow
-        return 0xFFCBBBBC      # grey
-
-    def aim_block(self):
-        """The crosshair panel's payload (see the aim section of the design
-        doc): {'on', 'name', 'ship', 'offset', 'vals': [{t, c}]}. All
-        presentation is decided here — the view only lays it out under the
-        stage center. `on` is false when the feature is disabled in
-        wowsp.toml, no target is held, or the companion has explicitly
-        answered with an EMPTY column list (the user removed every card =
-        hide the panel). A companion that never sent aimCols (older build)
-        keeps the panel up with name/ship only."""
-        verdict = self.aim if _is_kind(self.aim, 'dict') else None
-        name = verdict['name'] if verdict else ''
-        enabled = TOOL_CONFIG.get('aim', 1) == 1
-        cols_known = self.aim_cols is None or len(self.aim_cols) > 0
-        on = True if (name and enabled and cols_known) else False
-        if not on:
-            return {'on': False, 'name': '', 'ship': '',
-                    'offset': _to_int(TOOL_CONFIG.get('aim_offset', 120)),
-                    'vals': []}
-        ship = ''
-        if self.last_order_cache is not None:
-            try:
-                ship = self.last_order_cache[1].get(name, '') or ''
-            except:
-                ship = ''
-        vals = []
-        cols = self.aim_cols or []
-        if cols:
-            row = self.stats.get(name)
-            numbers = row.get('aim') if _is_kind(row, 'dict') else None
-            # Indexed walk by hand: `enumerate` is a builtin NAME the
-            # Lesta whitelist may withhold (the load_tool_config rule).
-            pos = 0
-            for col in cols:
-                value = None
-                if _is_kind(numbers, 'list') and pos < len(numbers):
-                    value = numbers[pos]
-                metric = col.get('metric')
-                label = col.get('label') or ''
-                text = '--'
-                color = 0xB4FFFFFF
-                if _is_num(value):
-                    if metric == 'winrate':
-                        text = '%.1f%%' % (value,)
-                        color = self.wr_color(value)
-                    elif metric == 'pr':
-                        text = _fmt(_to_int(value))
-                        color = self.pr_color(value)
-                    elif metric == 'battles':
-                        text = _fmt(_to_int(value))
-                        color = 0xFFE8F4F4
-                    elif metric == 'damage':
-                        text = _fmt(_to_int(value))
-                        color = 0xFFE8F4F4
-                vals.append({'t': text, 'c': color, 'label': label})
-                pos += 1
-        return {'on': True,
-                'name': name,
-                'ship': _fmt(ship),
-                'offset': _to_int(TOOL_CONFIG.get('aim_offset', 120)),
-                'vals': vals}
+    # -- barcode strips ------------------------------------------------------
+    # One data component ('wowspProbe.panel') carries the strips' whole
+    # payload: visibility (Tab held) and both sides' rows in fold order,
+    # each with its roster-rank barcode word. Everything the strips show
+    # is decided HERE so the unbound view stays a dumb template that
+    # cannot rot per game version. (The in-game stats tables and the
+    # crosshair aim panel were cut with the app's in-game view mode on
+    # 2026-10-19; the aim verdict itself rides telemetry.)
 
     def panel_rows(self, side):
         rows = []
         # The avatar id is the key the client's own sortedAlive collection
         # iterates; the unbound view maps each collection entry to its
-        # panel row by this id (names carry clan tags there, ids do not).
+        # strip row by this id (names carry clan tags there, ids do not).
         # The WALK's sticky entity ids are authoritative (they share the
         # collection's id space and cover the bots, whose roster records
         # carry no avatarId at all — a co-op side keyed on the records'
@@ -2430,9 +2137,6 @@ class Probe:
             # Latched names are dead even with their entity gone.
             alive = name not in self.dead_latch and (
                 state is None or state.get('alive') != 'False')
-            row = self.stats.get(name)
-            wr = row.get('wr') if _is_kind(row, 'dict') else None
-            pr = row.get('pr') if _is_kind(row, 'dict') else None
             rank = ranks.get(name, -1)
             # A rankless row (a name the records never carried) renders a
             # parity-INVALID word, never an empty array: the DSL indexes
@@ -2444,11 +2148,7 @@ class Probe:
                          'avatar_id': ids.get(name, 0),
                          'idx': rank,
                          'bits': bits,
-                         'wr': ('%.1f%%' % wr) if _is_num(wr) else '--',
-                         'pr': _fmt(_to_int(pr)) if _is_num(pr) else '--',
-                         'alive': alive,
-                         'wrColor': self.wr_color(wr),
-                         'prColor': self.pr_color(pr)})
+                         'alive': alive})
         return rows
 
     def barcode_bits(self, rank):
@@ -2484,14 +2184,11 @@ class Probe:
                 if aid:
                     enemy_by_id[_fmt(aid)] = row
             data = {'visible': True if (self.tab and (ally or enemy)) else False,
-                    'panel': TOOL_CONFIG.get('panel', 1) == 1,
                     'barcode': TOOL_CONFIG.get('barcode', 0) == 1,
                     'ally': ally,
                     'enemy': enemy,
                     'allyById': ally_by_id,
-                    'enemyById': enemy_by_id,
-                    'labels': self.labels,
-                    'aim': self.aim_block()}
+                    'enemyById': enemy_by_id}
             body = json_encode_safe(data)
             if body == self.last_panel:
                 return

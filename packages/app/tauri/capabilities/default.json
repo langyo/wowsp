@@ -1,9 +1,10 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for WoWSP windows (main + overlay + tray panel)",
+  "description": "Default capabilities for WoWSP windows (main + overlay + aim card + tray panel)",
   "windows": [
     "main",
     "overlay",
+    "aim-card",
     "tray-panel"
   ],
   "permissions": [
