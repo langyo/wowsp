@@ -180,9 +180,15 @@ def load_node_blocks(stage: Path, game_dir: str, ooz: str | None,
     stage. Each entry: {off, mounts: {HP_name: 16 row-major floats}} for
     blocks carrying at least one gun hardpoint. Returns None when the
     file can't be extracted or parsed (the bake falls back to splash
-    anchoring, hull+main-turrets only)."""
+    anchoring, hull+main-turrets only).
+
+    Two complementary harvesters, merged and content-deduped: the
+    structure scan (names-run + following matrices — finds OOL arrays
+    wherever they sit) and the legacy record walk (blob1's 0x70-stride
+    headers with their five relptrs — authoritative for arrays the scan
+    misses, e.g. parts whose names don't start with `Scene Root`)."""
     assets = Path(stage) / "content" / "assets.bin"
-    cache = Path(stage) / "lesta_node_blocks.json"
+    cache = Path(stage) / "lesta_node_blocks_v2.json"
     if cache.is_file():
         try:
             return json.loads(cache.read_text(encoding="utf-8"))
@@ -206,17 +212,62 @@ def load_node_blocks(stage: Path, game_dir: str, ooz: str | None,
     b = Bin(assets)
     b.sections()
     out = []
+
+    def _mounts(names: list[str], matrices: list[tuple]) -> dict:
+        return {name: list(matrices[i]) for i, name in enumerate(names)
+                if name and GUN_HP_RE.match(name)}
+
     for blk in scan_node_blocks(b):
-        mounts = {name: list(blk["matrices"][i])
-                  for i, name in enumerate(blk["names"])
-                  if name and GUN_HP_RE.match(name)}
+        mounts = _mounts(blk["names"], blk["matrices"])
         if mounts:
             out.append({"off": blk["names_off"], "mounts": mounts})
+
+    # Legacy record walk: blob1's fixed 0x70 headers. The relptrs land on
+    # the same five arrays the scan hunts, but records whose names array
+    # lacks a `Scene Root` anchor (or sits inside another record's OOL
+    # tail) escape the scan entirely — this walk finds them by header.
+    base1, size1 = b.dbs[1][:2]
+    rec_count = min(b.u64(base1), (size1 - 0x10) // 0x70)
+    seen = {tuple(sorted((k, tuple(m)) for k, m in blk["mounts"].items()))
+            for blk in out}
+    rec_found = 0
+    for rec in range(rec_count):
+        off = 0x10 + rec * 0x70
+        addr = base1 + off
+        nc = b.u32(addr)
+        if not (4 <= nc <= 4000):
+            continue
+        rels = struct.unpack_from("<5q", b.data, addr + 8)
+        if not all(0 < r < size1 - off for r in rels):
+            continue
+        a_names, a_mats = addr + rels[2], addr + rels[3]
+        try:
+            names = [b.get_string_by_id(b.u32(a_names + i * 4)) for i in range(nc)]
+            m0 = struct.unpack_from("<16f", b.data, a_mats)
+        except struct.error:
+            continue
+        if any(n is None for n in names):
+            continue
+        if abs(m0[15] - 1) > 1e-3 or abs(m0[3]) > 1e-3:
+            continue
+        mounts = {}
+        for i, name in enumerate(names):
+            if name and GUN_HP_RE.match(name):
+                mounts[name] = list(struct.unpack_from("<16f", b.data, a_mats + i * 64))
+        if not mounts:
+            continue
+        sig = tuple(sorted((k, tuple(m)) for k, m in mounts.items()))
+        if sig in seen:
+            continue
+        seen.add(sig)
+        out.append({"off": off, "mounts": mounts})
+        rec_found += 1
     try:
         cache.write_text(json.dumps(out), encoding="utf-8")
     except OSError:
         pass
-    print(f"[bake-lesta] node blocks with gun mounts: {len(out):,}", flush=True)
+    print(f"[bake-lesta] node blocks with gun mounts: {len(out):,} "
+          f"(+{rec_found} from legacy record walk)", flush=True)
     return out
 
 
@@ -342,7 +393,9 @@ def collect_mounts(matched: list[dict], hull_bounds: tuple[list, list],
             # different classes keep the tight 0.05 (a secondary genuinely
             # abuts a director-sized AA mount more closely).
             hit = False
-            for k2, (_, hm) in out.items():
+            for k2, (base2, hm) in out.items():
+                if k2 != base2:
+                    continue  # suffixed provisional entries are no anchors
                 # 'G?' letter (M/S/A) carries the class; names are
                 # GUN_HP_RE-filtered so [3:6] is always nation+G+class.
                 r = 0.15 if base[4:6] == k2[4:6] else 0.05
