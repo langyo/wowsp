@@ -408,7 +408,8 @@ pub(crate) fn note_playing_from_arena(
 /// The game root an arena/replays directory belongs to: strip ONE trailing
 /// `replays` path component (case-insensitive — Windows folders), tolerating
 /// stray separators. `None` when the dir is not a `<root>/replays` shape.
-fn arena_game_root(dir: &std::path::Path) -> Option<String> {
+/// Also the probe-arena fallback's dir→install resolution (probe_arena).
+pub(crate) fn arena_game_root(dir: &std::path::Path) -> Option<String> {
     let s = dir.to_str()?;
     let norm = s.trim_end_matches(['/', '\\']);
     let cut = norm.rfind(['/', '\\'])?;

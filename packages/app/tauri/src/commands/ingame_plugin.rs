@@ -717,7 +717,7 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                     if let Some(value) =
                         parse_fresh_frame(&raw, &mut watch.telemetry, &root, now_unix_ms())
                     {
-                        emit_frame(&app, &root, value, &preferred_root);
+                        dispatch_fresh_frame(&app, &root, value, &preferred_root);
                     }
                 }
             }
@@ -763,6 +763,42 @@ fn parse_fresh_frame(
     Some(value)
 }
 
+/// The one consumer of a FRESH parsed frame, shared by the poll loop and
+/// the eviction path's final read: the frame first feeds the probe-arena
+/// registry (a new `battle` id on a client that never writes
+/// tempArenaInfo.json — the 2026-10-20 field report — is the ONLY place
+/// that battle surfaces, so the synthesized roster goes straight into
+/// the arena pipeline; the quit-clear/absence frames end it there), then
+/// rides the telemetry streams as before.
+fn dispatch_fresh_frame(
+    app: &tauri::AppHandle,
+    root: &str,
+    value: serde_json::Value,
+    preferred_root: &Option<std::path::PathBuf>,
+) {
+    let replays_dir = super::game_context::replays_dir(std::path::Path::new(root));
+    match super::probe_arena::note_telemetry(std::path::Path::new(root), &value, now_unix_ms()) {
+        Some(super::probe_arena::NewProbeBattle::Serve) => {
+            // The CLAIM (not the verdict) gates the serve: a read path
+            // that already served this battle wins the race, and this
+            // poller skips its duplicate emit (see try_claim_serve).
+            if let Some(claim) = super::probe_arena::try_claim_serve(&replays_dir, now_unix_ms()) {
+                super::arena_info::serve_probe_battle(
+                    app,
+                    &replays_dir,
+                    &claim.info,
+                    claim.stamp_unix,
+                );
+            }
+        },
+        // A file-writing client's battle: the file pipeline owns it, the
+        // probe's copy stays out of the way (see probe_arena).
+        Some(super::probe_arena::NewProbeBattle::FileOwned) => {},
+        None => {},
+    }
+    emit_frame(app, root, value, preferred_root);
+}
+
 /// Read one root's file (when still present) and emit its final frame —
 /// the eviction path's quit-clear delivery (see the loop comment).
 fn emit_once(
@@ -780,7 +816,7 @@ fn emit_once(
         return;
     };
     if let Some(value) = parse_fresh_frame(&raw, state, root, now_ms) {
-        emit_frame(app, root, value, preferred_root);
+        dispatch_fresh_frame(app, root, value, preferred_root);
     }
 }
 
