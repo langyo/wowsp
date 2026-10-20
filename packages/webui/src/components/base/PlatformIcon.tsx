@@ -86,10 +86,15 @@ export default defineComponent({
         >
           {key === "steam" ? (
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              {/* The simple-icons mark is tangent to its viewBox; left as-is
-                  it shaves flat at the svg viewport's top/bottom edges. */
+              {/* The simple-icons mark is tangent to its viewBox, so it
+                  insets itself here — entirely in user units, on an svg
+                  that fills the disc's content box (the generic 100% rule).
+                  Equal user-unit clearance renders symmetric at any size
+                  and DPR; the old 87% svg box was fractional at 22px and
+                  its flex-centred position rounded a device pixel high,
+                  shoving the mark visibly up inside the disc. */
               }
-              <g transform="translate(1.2 1.2) scale(0.9)">
+              <g transform="translate(2.64 2.64) scale(0.78)">
                 <path d={STEAM_PATH} fill="currentColor" />
               </g>
             </svg>
