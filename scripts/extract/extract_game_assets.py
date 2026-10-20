@@ -1,11 +1,11 @@
 """Extract game GUI assets (nation flags, skill icons) from the WoWS .pkg blob.
 
-wowsunpack 0.43.0's `extract` subcommand is broken on this Steam install
+game-assets 0.43.0's `extract` subcommand is broken on this Steam install
 ("Wrote 0 files" / pkg loader unavailable), and its `metadata` command works
 but doesn't expose per-file offsets. However:
   - the gui_*.pkg is a flat concatenation of uncompressed resource blobs
     (PNG files appear verbatim with their `\x89PNG` signature),
-  - wowsunpack's `metadata --format json` lists every path with its exact
+  - game-assets's `metadata --format json` lists every path with its exact
     uncompressed size.
 
 So we scan the .pkg for PNG signatures, slice each by reading the IEND chunk
@@ -14,7 +14,7 @@ end, and match each extracted PNG to a known metadata entry by its byte size
 faction flags and crew-skill icons). This avoids reverse-engineering the
 .idx's directory tree.
 
-Run wowsunpack's metadata once to produce the path→size map, then this script
+Run game-assets's metadata once to produce the path→size map, then this script
 slices the pkg and renames by size.
 
 Usage:
@@ -92,7 +92,7 @@ NATION_CODE_MAP = {
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pkg", required=True)
-    ap.add_argument("--meta", required=True, help="wowsunpack metadata --format json output")
+    ap.add_argument("--meta", required=True, help="game-assets metadata --format json output")
     ap.add_argument("--prefix", action="append", default=[], help="metadata path prefix(s) to keep")
     ap.add_argument("--out", required=True)
     ap.add_argument("--webp", action="store_true")

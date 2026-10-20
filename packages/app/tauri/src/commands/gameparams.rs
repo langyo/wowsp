@@ -3,7 +3,7 @@
 //! The WoWS client ships its full ship database — armor schemes, shell
 //! ballistics, dispersion curves, consumables — as a packed binary
 //! `content/GameParams.data` inside the `bin/<build>/` idx/pkg store. The
-//! community tool `wowsunpack` (vendored under `packages/tools/`) unpacks it.
+//! community-turned-in-tree tool `game-assets` (vendored under `packages/tools/`) unpacks it.
 //!
 //! Lookup order for one ship's subtree:
 //!   0. Bundled Lesta snapshot (`data/lesta_ship_gameparams.json.gz`,
@@ -23,7 +23,7 @@
 //!   4. In-app unpack: mount the install's idx/pkg VFS, read
 //!      `content/GameParams.data`, decode the pickle, pick the ship's entry
 //!      → cache → return. This is the path every fresh player install takes
-//!      (nobody runs wowsunpack by hand); it costs a few seconds once per
+//!      (nobody runs game-assets by hand); it costs a few seconds once per
 //!      ship, then the per-ship cache makes re-opens instant.
 //!
 //! The cache is keyed to the game's current `bin/<build>` number: when the
@@ -197,7 +197,7 @@ async fn ship_from_install_or_loose(
             .await
             .map_err(|e| anyhow!("GameParams 解包任务异常退出：{e}"));
 
-    // Fallback: a pre-unpacked GameParams.json (dev flow: wowsunpack CLI
+    // Fallback: a pre-unpacked GameParams.json (dev flow: game-assets CLI
     // output at the game root, or the extract script's LOCALAPPDATA cache
     // for sessions without a resolvable install).
     let unpack_err = match unpacked {
@@ -231,10 +231,10 @@ async fn ship_from_install_or_loose(
     Err(unpack_err)
 }
 
-// ── in-app unpacking (vendored wowsunpack) ────────────────────────────────
+// ── in-app unpacking (game-assets) ────────────────────────────────
 
 /// Unpack one ship's entry straight from the install's `bin/<build>` pkg
-/// store. Mirrors what the wowsunpack CLI's `game-params --game-dir` mode
+/// store. Mirrors what the game-assets CLI's `game-params --game-dir` mode
 /// does, minus writing a 350MB intermediate JSON: mount the VFS, read
 /// `content/GameParams.data`, decode, pick the ship, serialize just that
 /// entry.
@@ -250,12 +250,12 @@ fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json:
         anyhow!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
     })?;
 
-    let vfs = wowsunpack::game_data::build_game_vfs_for_build(root, build)
+    let vfs = game_assets::game_data::build_game_vfs_for_build(root, build)
         .map_err(|e| anyhow!("读取游戏资源索引失败（build {build}）：{e}"))?;
 
     let bytes = read_game_params_bytes(&vfs)?;
 
-    let pickle = wowsunpack::game_params::convert::game_params_to_pickle(bytes)
+    let pickle = game_assets::game_params::convert::game_params_to_pickle(bytes)
         .map_err(|e| anyhow!("解析 GameParams.data 失败：{e}"))?;
 
     ship_slice_from_pickle(&pickle, ship_id)
@@ -271,7 +271,7 @@ fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json:
 /// is skipped silently; candidates that exist but fail to read are all
 /// reported.
 #[cfg(desktop)]
-fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>> {
+fn read_game_params_bytes(vfs: &game_assets::vfs::VfsPath) -> Result<Vec<u8>> {
     let candidates = super::game_client::game_params_candidates();
     let mut read_errors: Vec<String> = Vec::new();
     for path in &candidates {
@@ -281,7 +281,7 @@ fn read_game_params_bytes(vfs: &wowsunpack::vfs::VfsPath) -> Result<Vec<u8>> {
         let mut file = match node.open_file() {
             Ok(file) => file,
             Err(e) => {
-                if !matches!(e.kind(), wowsunpack::vfs::error::VfsErrorKind::FileNotFound) {
+                if !matches!(e.kind(), game_assets::vfs::error::VfsErrorKind::FileNotFound) {
                     read_errors.push(format!("打开 {path} 失败（游戏可能正在更新）：{e}"));
                 }
                 continue;
@@ -365,7 +365,7 @@ fn params_root(pickle: &pickled::Value) -> Option<pickled::Value> {
 /// first element holds the dict. On top of that, the wrapper and the
 /// individual entries may decode as Python objects (`Value::Object` whose
 /// `__dict__` is the real data) instead of plain dicts — the same dual
-/// shape wowsunpack's `params_from_data` unwraps. We mirror all of it,
+/// shape game-assets' `params_from_data` unwraps. We mirror all of it,
 /// then scan entries by their `id` field (the real format is keyed by
 /// internal name like `PJSB018_Yamato_1944`). When several entries share
 /// an id (CV hull + plane squadrons), the one carrying `A_Artillery` wins.
@@ -427,10 +427,10 @@ fn upgrade_prices_from_install(game_root: &str) -> Result<serde_json::Value> {
     let build = latest_build_with_idx(root).ok_or_else(|| {
         anyhow!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
     })?;
-    let vfs = wowsunpack::game_data::build_game_vfs_for_build(root, build)
+    let vfs = game_assets::game_data::build_game_vfs_for_build(root, build)
         .map_err(|e| anyhow!("读取游戏资源索引失败（build {build}）：{e}"))?;
     let bytes = read_game_params_bytes(&vfs)?;
-    let pickle = wowsunpack::game_params::convert::game_params_to_pickle(bytes)
+    let pickle = game_assets::game_params::convert::game_params_to_pickle(bytes)
         .map_err(|e| anyhow!("解析 GameParams.data 失败：{e}"))?;
 
     let params = params_root(&pickle).ok_or_else(|| anyhow!("GameParams 根结构无法识别"))?;
@@ -596,7 +596,7 @@ fn pickled_as_i64(v: &pickled::Value) -> Option<i64> {
 ///   4. `{ "<internalName>": { "id": <num>, ... }, ... }` — keyed by the
 ///      internal ship name (e.g. "PJSB018_Yamato_1944"), with the numeric
 ///      id as a field inside each entry. This is the shape the
-///      `wowsunpack game-params` command actually emits.
+///      `game-assets game-params` command actually emits.
 ///
 /// In cases 1/2/4 we scan entries and match by the `id` field; in case 3
 /// the key itself is the id.  When multiple entries share the same id (e.g.
@@ -823,11 +823,11 @@ mod tests {
         // Find the PASB510 ship's current id from the decoded params.
         let install = Path::new(&root);
         let build = latest_build_with_idx(install).expect("build");
-        let vfs = wowsunpack::game_data::build_game_vfs_for_build(install, build).expect("vfs");
+        let vfs = game_assets::game_data::build_game_vfs_for_build(install, build).expect("vfs");
         let bytes = read_game_params_bytes(&vfs).expect("read GameParams via candidates");
         eprintln!("[smoke] GameParams = {} bytes", bytes.len());
         let pickle =
-            wowsunpack::game_params::convert::game_params_to_pickle(bytes).expect("decode");
+            game_assets::game_params::convert::game_params_to_pickle(bytes).expect("decode");
 
         // Normalize through the production root (WG's `{"": …}` wrapper, the
         // flat dict, or the tuple-wrapped form the Lesta py2 pickle ships).
@@ -869,7 +869,7 @@ mod tests {
 
     #[test]
     fn extracts_ship_from_array_form() {
-        // Two ships, array form (wowsunpack default output shape).
+        // Two ships, array form (game-assets default output shape).
         let raw = serde_json::json!([
             {
                 "id": 4282948544_i64,
@@ -928,7 +928,7 @@ mod tests {
         assert!(err.to_string().contains("not found"));
     }
 
-    /// The real wowsunpack `game-params` output is keyed by internal ship
+    /// The real game-assets `game-params` output is keyed by internal ship
     /// name (not numeric id), with the numeric id as a field. The parser
     /// must scan values and match by `id`.
     #[test]

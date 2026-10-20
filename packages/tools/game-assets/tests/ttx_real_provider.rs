@@ -17,13 +17,13 @@
 
 use std::path::Path;
 
-use wowsunpack::data::idx;
-use wowsunpack::data::idx_vfs::IdxVfs;
-use wowsunpack::data::wrappers::mmap::MmapPkgSource;
-use wowsunpack::game_params::provider::GameMetadataProvider;
-use wowsunpack::game_params::ttx::ship_stats_stock;
-use wowsunpack::game_params::types::GameParamProvider;
-use wowsunpack::vfs::VfsPath;
+use game_assets::data::idx;
+use game_assets::data::idx_vfs::IdxVfs;
+use game_assets::data::wrappers::mmap::MmapPkgSource;
+use game_assets::game_params::provider::GameMetadataProvider;
+use game_assets::game_params::ttx::ship_stats_stock;
+use game_assets::game_params::types::GameParamProvider;
+use game_assets::vfs::VfsPath;
 
 /// Smoke test: a cruiser (Worcester) must have non-empty consumables including a
 /// Damage Control Party. Gated `#[ignore]` like the main cross-class test.
@@ -161,7 +161,7 @@ fn ttx_cross_class_against_port_values() {
 }
 
 /// The known port-value checks per ship. Tolerances allow for rounding/display.
-fn ship_checks(ship: &str, stats: &wowsunpack::game_params::ttx::model::ShipStats) -> Vec<Check> {
+fn ship_checks(ship: &str, stats: &game_assets::game_params::ttx::model::ShipStats) -> Vec<Check> {
     let durability = stats.durability.as_ref();
     let mobility = stats.mobility.as_ref();
     let arty = stats.artillery.as_ref();

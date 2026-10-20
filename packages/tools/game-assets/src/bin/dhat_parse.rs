@@ -25,10 +25,10 @@ fn main() {
     use std::path::Path;
 
     use vfs::VfsPath;
-    use wowsunpack::data::idx;
-    use wowsunpack::data::idx_vfs::IdxVfs;
-    use wowsunpack::data::wrappers::mmap::MmapPkgSource;
-    use wowsunpack::game_params::provider::GameMetadataProvider;
+    use game_assets::data::idx;
+    use game_assets::data::idx_vfs::IdxVfs;
+    use game_assets::data::wrappers::mmap::MmapPkgSource;
+    use game_assets::game_params::provider::GameMetadataProvider;
 
     let profiler = dhat::Profiler::builder().trim_backtraces(Some(32)).build();
 
@@ -87,7 +87,7 @@ fn main() {
     // de-tree + memo are freed when value_from_reader returns) so the staged
     // numbers separate "pickle tree" from "Param vec".
     {
-        let pickle = wowsunpack::game_params::convert::game_params_to_pickle(game_params_data.clone())
+        let pickle = game_assets::game_params::convert::game_params_to_pickle(game_params_data.clone())
             .expect("unpickle GameParams");
         stat("after unpickle (value tree)");
         std::hint::black_box(&pickle);
@@ -100,7 +100,7 @@ fn main() {
     eprintln!("parsed {} params", params.len());
     stat("after params_from_data");
 
-    let encoded = wowsunpack::game_params::cache::encode(&params).expect("encode cache");
+    let encoded = game_assets::game_params::cache::encode(&params).expect("encode cache");
     eprintln!("rkyv cache: {:.1} MiB", mib(encoded.len()));
     stat("after rkyv encode");
 

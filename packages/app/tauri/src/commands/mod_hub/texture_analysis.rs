@@ -83,7 +83,7 @@ fn dir_like(seg: &str) -> bool {
 /// Returns `None` for a tree without files.
 ///
 /// Path conventions mirror the game's content layout (mod-formats.md,
-/// wowsunpack's export/texture.rs): `content/gameplay/<nation>/ship/<class>/…`
+/// game-assets's export/texture.rs): `content/gameplay/<nation>/ship/<class>/…`
 /// for ship & component textures, `content/unlocks/<nation>/…` for permanent
 /// camouflages, `spaces/<map>/…` for scene overrides. Ship identity comes
 /// from the texture file names — `JSB039_Yamato_1945_Hull_a.dds` carries the

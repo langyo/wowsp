@@ -23,24 +23,24 @@ pub const CAPTAIN_SKILL_REWORK_VERSION: (u32, u32, u32) = (0, 10, 0);
 
 use super::provider::GameMetadataProvider;
 
-/// Distance newtypes. Defined in `wows-core`; re-exported so existing
-/// `wowsunpack::game_params::types::{Meters, ...}` paths keep working.
-pub use wows_core::units::BigWorldDistance;
-/// Distance newtypes. Defined in `wows-core`; re-exported so existing
-/// `wowsunpack::game_params::types::{Meters, ...}` paths keep working.
-pub use wows_core::units::Km;
-/// Distance newtypes. Defined in `wows-core`; re-exported so existing
-/// `wowsunpack::game_params::types::{Meters, ...}` paths keep working.
-pub use wows_core::units::Meters;
-/// Distance newtypes. Defined in `wows-core`; re-exported so existing
-/// `wowsunpack::game_params::types::{Meters, ...}` paths keep working.
-pub use wows_core::units::MetersPerSecond;
-/// Distance newtypes. Defined in `wows-core`; re-exported so existing
-/// `wowsunpack::game_params::types::{Meters, ...}` paths keep working.
-pub use wows_core::units::Millimeters;
-/// Distance newtypes. Defined in `wows-core`; re-exported so existing
-/// `wowsunpack::game_params::types::{Meters, ...}` paths keep working.
-pub use wows_core::units::ShipModelDistance;
+/// Distance newtypes. Defined in `game-assets-core`; re-exported so existing
+/// `game_assets::game_params::types::{Meters, ...}` paths keep working.
+pub use game_assets_core::units::BigWorldDistance;
+/// Distance newtypes. Defined in `game-assets-core`; re-exported so existing
+/// `game_assets::game_params::types::{Meters, ...}` paths keep working.
+pub use game_assets_core::units::Km;
+/// Distance newtypes. Defined in `game-assets-core`; re-exported so existing
+/// `game_assets::game_params::types::{Meters, ...}` paths keep working.
+pub use game_assets_core::units::Meters;
+/// Distance newtypes. Defined in `game-assets-core`; re-exported so existing
+/// `game_assets::game_params::types::{Meters, ...}` paths keep working.
+pub use game_assets_core::units::MetersPerSecond;
+/// Distance newtypes. Defined in `game-assets-core`; re-exported so existing
+/// `game_assets::game_params::types::{Meters, ...}` paths keep working.
+pub use game_assets_core::units::Millimeters;
+/// Distance newtypes. Defined in `game-assets-core`; re-exported so existing
+/// `game_assets::game_params::types::{Meters, ...}` paths keep working.
+pub use game_assets_core::units::ShipModelDistance;
 
 /// Per-material armor thickness map.
 ///

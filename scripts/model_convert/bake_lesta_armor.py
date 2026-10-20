@@ -4,7 +4,7 @@
 The armor collision meshes live inside each part `.geometry` file's armor
 section (already in ship space), and the plate thicknesses live in the
 ship's GameParams hull `armor` dict (raw key = `(layer << 16) |
-material_id` → mm). This reproduces wowsunpack's `export-armor-glb` output
+material_id` → mm). This reproduces game-assets's `export-armor-glb` output
 (merged triangle soup + per-vertex thickness colors + normalize-to-200)
 without the visual layer the Rust path still needs:
 

@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use wowsunpack::export::ship::ShipAssets;
+use game_assets::export::ship::ShipAssets;
 
 fn load_test_ship_assets() -> ShipAssets {
     let wows_dir = std::env::var("WOWS_DIR").unwrap_or_else(|_| r"E:\WoWs\World_of_Warships".to_string());

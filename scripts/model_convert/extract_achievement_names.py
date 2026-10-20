@@ -14,7 +14,7 @@ id gets its own entry — the names resolve via the shared `uiName` key
 GameParams scanning streams the dump with a fixed signature anchor
 (`"type":"Achievement"}` in the typeinfo block) plus brace matching, instead of
 json.load-ing the whole multi-GB dump. Run with `--gameparams-json` to reuse an
-existing dump (see `extract_ship_names.py` for the wowsunpack pass).
+existing dump (see `extract_ship_names.py` for the game-assets pass).
 """
 
 import argparse
@@ -27,7 +27,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
-from _common import find_wowsunpack  # noqa: E402
+from _common import find_game_assets  # noqa: E402
 from extract_ship_names import (  # noqa: E402
     LANG_DIRS,
     find_game_path,
@@ -79,7 +79,7 @@ def main() -> int:
     parser.add_argument(
         "--gameparams-json",
         default=None,
-        help="reuse an existing GameParams JSON (skip wowsunpack pass)",
+        help="reuse an existing GameParams JSON (skip game-assets pass)",
     )
     parser.add_argument("--out", default=str(OUT), help="output JSON path")
     args = parser.parse_args()
@@ -93,19 +93,19 @@ def main() -> int:
     if args.gameparams_json:
         gp_path = Path(args.gameparams_json)
     else:
-        wowsunpack = find_wowsunpack()
-        if not wowsunpack:
-            print("error: wowsunpack not found.", file=sys.stderr)
+        game_assets = find_game_assets()
+        if not game-assets:
+            print("error: game-assets not found.", file=sys.stderr)
             return 1
         tmp = tempfile.mkdtemp(prefix="wowsp_gp_")
         gp_path = Path(tmp) / "gameparams.json"
         import subprocess
 
         rc = subprocess.call(
-            [str(wowsunpack), "--game-dir", str(game), "game-params", str(gp_path)]
+            [str(game_assets), "--game-dir", str(game), "game-params", str(gp_path)]
         )
         if rc != 0:
-            print(f"error: wowsunpack game-params failed (rc={rc})", file=sys.stderr)
+            print(f"error: game-assets game-params failed (rc={rc})", file=sys.stderr)
             return rc
     print(f"[achievement-names] scanning GameParams: {gp_path}", flush=True)
     gp_text = gp_path.read_text(encoding="utf-8")

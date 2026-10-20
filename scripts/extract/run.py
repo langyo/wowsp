@@ -1,7 +1,7 @@
 """Unified game-asset extraction orchestrator (`just extract`).
 
 Runs every extraction module in dependency order, sharing the slow one-time
-wowsunpack outputs (GameParams.json, wowsinfo.json, metadata.json) cached under
+game-assets outputs (GameParams.json, wowsinfo.json, metadata.json) cached under
 AppData/Temp/WoWSP-extract. Each module is idempotent and only the modules
 named in --module run (default: all).
 
@@ -23,7 +23,7 @@ The techtree module also builds the Lesta tree from a Lesta client (Мир
 кораблей) install — point one out with --lesta-path / WOWSP_GAME_PATH_LESTA
 (or have one registered in the registry), or feed a pre-decoded Lesta
 GameParams.json via --lesta-gameparams (pullable without the client through
-OpenKorabli/lgc-download + `wowsunpack game-params`); without either the
+OpenKorabli/lgc-download + `game-assets game-params`); without either the
 Lesta tree is skipped rather than faked from the WG client's dump. The same
 Lesta client snapshot feeds the app-carried ship data: the armor/ballistics
 slices bundled into the Rust tree (build_lesta_shipdata.py — read by
@@ -46,7 +46,7 @@ sys.path.insert(0, str(HERE))
 from _common import (  # noqa: E402
     find_game_path,
     find_lesta_game_path,
-    find_wowsunpack,
+    find_game_assets,
     run_game_params,
     run_metadata,
 )
@@ -91,7 +91,7 @@ def main() -> None:
         default=None,
         help="pre-decoded Lesta GameParams.json for the Lesta tech tree — skips "
         "the client step entirely (e.g. pulled remotely with OpenKorabli/"
-        "lgc-download and decoded with wowsunpack game-params); "
+        "lgc-download and decoded with game-assets game-params); "
         "WOWSP_LESTA_GAMEPARAMS env works too",
     )
     ap.add_argument(
@@ -110,8 +110,8 @@ def main() -> None:
     if unknown:
         ap.error(f"unknown module(s): {unknown}. valid: {ALL_MODULES}")
 
-    if not find_wowsunpack():
-        _die("wowsunpack not found — run `cargo install wowsunpack` or set WOWSP_WOWSUNPACK.")
+    if not find_game_assets():
+        _die("game-assets not found — run `cargo install game-assets` or set WOWSP_GAME_ASSETS.")
 
     game = find_game_path(args.path)
     if not game:
@@ -157,7 +157,7 @@ def _ensure_gameparams(game: str, refresh: bool) -> None:
     print("[extract] generating GameParams.json (one-time, ~350 MB) ...")
     rc = run_game_params(GAMEPARAMS_JSON, game)
     if rc != 0:
-        _die(f"wowsunpack game-params failed (rc={rc}).")
+        _die(f"game-assets game-params failed (rc={rc}).")
 
 
 def _ensure_metadata(game: str, refresh: bool) -> None:
@@ -167,7 +167,7 @@ def _ensure_metadata(game: str, refresh: bool) -> None:
     print("[extract] generating wows metadata (one-time) ...")
     rc = run_metadata(METADATA_JSON, game)
     if rc != 0:
-        _die(f"wowsunpack metadata failed (rc={rc}).")
+        _die(f"game-assets metadata failed (rc={rc}).")
 
 
 def _ensure_bridge(bridge: str, refresh: bool) -> None:
@@ -283,7 +283,7 @@ def _run_techtree_lesta(
         print("[extract] generating Lesta GameParams_lesta.json (one-time, ~350 MB) ...")
         rc = run_game_params(GAMEPARAMS_LESTA_JSON, lesta)
         if rc != 0:
-            _die(f"wowsunpack game-params failed for the Lesta client (rc={rc}).")
+            _die(f"game-assets game-params failed for the Lesta client (rc={rc}).")
     _py(*_lesta_tree_cmd(GAMEPARAMS_LESTA_JSON))
     stamp = _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
     _run_wg_only_roster(GAMEPARAMS_LESTA_JSON)

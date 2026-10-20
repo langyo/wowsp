@@ -2,14 +2,14 @@
 
 use std::path::PathBuf;
 
-use wowsunpack::export::ship::{ShipAssets, ShipExportOptions};
-use wowsunpack::game_params::types::GameParamProvider;
+use game_assets::export::ship::{ShipAssets, ShipExportOptions};
+use game_assets::game_params::types::GameParamProvider;
 
 fn game_dir() -> PathBuf {
     std::env::var_os("WOWS_DIR").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"E:\WoWs\World_of_Warships"))
 }
 
-fn load(ship: &str) -> wowsunpack::export::ship::ShipModelContext {
+fn load(ship: &str) -> game_assets::export::ship::ShipModelContext {
     let assets = ShipAssets::from_game_dir(&game_dir()).expect("assets");
     let vehicle = assets
         .metadata()

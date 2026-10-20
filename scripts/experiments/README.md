@@ -184,7 +184,7 @@
   次变化、位 {1,2,6,8}）但位语义解不出（与位置流窗口一致性仅 60–68%，
   有反例）——**E3 的「样本间隙=未点亮」仍是唯一可靠可见性信号**。
 - **最有价值的副产品**：从本机游戏安装（恰为 15.8.0 同 build）经 vendored
-  wowsunpack VFS 取出权威 `Vehicle.def`/`Avatar.def`/`SmokeScreen.def`/
+  game-assets VFS 取出权威 `Vehicle.def`/`Avatar.def`/`SmokeScreen.def`/
   `entities.xml`——后续可用它机器生成完整 method 表，消除经验偏移
   （当前 `EMPIRICAL_OVERRIDES` 的 14 个已钉 id 实测全部正确）。
 - 门禁：285 测试通过（+4，零回归）。
@@ -224,7 +224,7 @@ tick 快照可算「敌舰已知位置是否在某活跃烟云内」；视野特
 
 ### E10 · method 表从权威 def 精确复算，覆盖率 100% ✅
 
-- **排序规则解出**（`exposed_index.py`，复刻 wowsunpack `rpc/entitydefs.rs`
+- **排序规则解出**（`exposed_index.py`，复刻 game-assets `rpc/entitydefs.rs`
   语义）：alias.xml 顺序解别名 → 按 Implements 声明序拼接（父接口一层在
   前）→ 同名保留首个 → 按参数 wire size 稳定排序（可变类型饱和 0xffff +
   VariableLengthHeaderSize），0 基索引即暴露 id。**54 个历史版本 × 12 个

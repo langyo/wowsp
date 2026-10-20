@@ -72,9 +72,9 @@ pub async fn list_game_maps(game_root: String) -> CommandResult<Vec<GameMapEntry
 fn list_game_maps_from_install(game_root: &str) -> anyhow::Result<Vec<GameMapEntry>> {
     use std::fs;
 
-    use wowsunpack::data::idx;
-    use wowsunpack::data::idx_vfs::{IdxVfs, VfsEntryMeta};
-    use wowsunpack::data::wrappers::mmap::MmapPkgSource;
+    use game_assets::data::idx;
+    use game_assets::data::idx_vfs::{IdxVfs, VfsEntryMeta};
+    use game_assets::data::wrappers::mmap::MmapPkgSource;
 
     let root = Path::new(game_root);
     if !root.join("bin").is_dir() {
@@ -165,7 +165,7 @@ fn list_game_maps_from_install(game_root: &str) -> anyhow::Result<Vec<GameMapEnt
 /// (`minimap_water.png`), nested ids (`spaces/a/b/minimap.png`), and any
 /// non-root-anchored spelling. The optional leading slash is required by the
 /// real VFS: the vendored idx file-tree keys every path FROM the root
-/// (`/spaces/…`, see `build_file_tree` in the vendored wowsunpack), so a
+/// (`/spaces/…`, see `build_file_tree` in the vendored game-assets), so a
 /// `strip_prefix("spaces/")`-only matcher inventoryed zero maps on every
 /// client (found by the real-install smoke on a Lesta machine).
 #[cfg(desktop)]

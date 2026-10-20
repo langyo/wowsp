@@ -22,8 +22,8 @@ Usage:
     # Cross-check the 15.8.0 row and the embedded full table against the
     # entity defs extracted from the local game install (E10; offline —
     # extract once with the vendored CLI, see scripts/experiments/):
-    #   cargo build -p wowsunpack --release
-    #   ./target/release/wowsunpack.exe -g <game_dir> extract \
+    #   cargo build -p game-assets --release
+    #   ./target/release/game-assets.exe -g <game_dir> extract \
     #       -o scripts/experiments/out/defs "/scripts/entity_defs/**" \
     #       "/scripts/entities*"
     python scripts/gen_method_tables.py <reference>/src \
@@ -80,7 +80,7 @@ DEF_ID_SUPPRESSED = {"avatar_receive_damage_stat"}
 # E10 cross-check (2026-09-20): the full 15.8.0 exposed table was recomputed
 # from the authoritative entity defs of game build 13187581 (the exact build
 # the captured replay records with) via `scripts/experiments/exposed_index.py`
-# — the algorithm replays `wowsunpack`'s `parse_scripts` (interface
+# — the algorithm replays `game-assets`'s `parse_scripts` (interface
 # inheritance, first-occurrence dedup, stable sort by wire size with
 # VariableLengthHeaderSize added after 0xffff saturation). It reproduces the
 # anchors 11/13 exact, plus damageStat=163 with its verified 137-call count
@@ -158,7 +158,7 @@ EMPIRICAL_NOTES = {
 # every client method, recomputed from the authoritative entity defs of game
 # build 13187581 (the exact build the captured 15.8.0 replay records with) via
 # `scripts/experiments/exposed_index.py` — the same algorithm the vendored
-# wowsunpack `parse_scripts` implements. Wire-validated on the full-battle
+# game-assets `parse_scripts` implements. Wire-validated on the full-battle
 # capture: 100% of the 64 distinct method ids observed on avatar entities
 # (66,186 calls) resolve to a name in this table. Emitted into the tests
 # module of the generated file (research artifact for upcoming decoders:

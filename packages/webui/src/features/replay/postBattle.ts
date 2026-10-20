@@ -3,7 +3,7 @@
  *
  * The payload is a JSON object; `playersPublicInfo` maps account id → the
  * client's fixed-position `CLIENT_PUBLIC_RESULTS` array. Index semantics
- * follow the wowsunpack constants layout (client 15.2; the vendored
+ * follow the game-assets constants layout (client 15.2; the vendored
  * constants.json copy went away when the vendor tree slimmed to its
  * library crates — the pinning tests in postBattle.test.ts are now the
  * in-repo authority), re-verified against 126 replays / 417 players on

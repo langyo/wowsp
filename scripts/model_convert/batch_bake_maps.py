@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Batch-bake ALL maps (spaces) to holographic contour GLBs.
 
-Uses `convert_map_holo.py` per space — which runs `wowsunpack export-map` with
+Uses `convert_map_holo.py` per space — which runs `game-assets export-map` with
 higher terrain detail (--terrain-step 4, default was 8) so the contour shader
 shows clear topographic bands on every map.
 
@@ -49,33 +49,33 @@ def find_game_path() -> str | None:
     return _fgp()
 
 
-def find_wowsunpack() -> Path | None:
-    # Prefer the vendored (locally-built) wowsunpack; fall back to global.
-    repo_wowsunpack = (
-        REPO_ROOT / "target" / "release" / "wowsunpack.exe"
+def find_game_assets() -> Path | None:
+    # Prefer the vendored (locally-built) game-assets; fall back to global.
+    repo_game_assets = (
+        REPO_ROOT / "target" / "release" / "game-assets.exe"
     )
-    if repo_wowsunpack.exists():
-        return repo_wowsunpack
+    if repo_game_assets.exists():
+        return repo_game_assets
     sys.path.insert(0, str(SCRIPT_DIR))
-    from _common import find_wowsunpack as _fwu
+    from _common import find_game_assets as _fwu
     return _fwu()
 
 
-def list_spaces(game: str, wowsunpack: Path) -> list[str]:
-    """Enumerate space IDs via wowsunpack metadata output.
+def list_spaces(game: str, game_assets: Path) -> list[str]:
+    """Enumerate space IDs via game-assets metadata output.
     
-    Runs `wowsunpack metadata` to dump every file path in the game assets, then
+    Runs `game-assets metadata` to dump every file path in the game assets, then
     extracts unique `/spaces/<id>/...` directory prefixes. This covers both
     battle maps (e.g. `17_NA_fault_line`) and docks/scenarios."""
     import tempfile
     meta_path = Path(tempfile.mktemp(suffix=".txt"))
     try:
         result = subprocess.run(
-            [str(wowsunpack), "--game-dir", game, "metadata", str(meta_path)],
+            [str(game_assets), "--game-dir", game, "metadata", str(meta_path)],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
         )
         if result.returncode != 0:
-            print(f"error: wowsunpack metadata: {result.stderr}", file=sys.stderr)
+            print(f"error: game-assets metadata: {result.stderr}", file=sys.stderr)
             return []
         ids: dict[str, int] = {}  # space_id → file count
         with meta_path.open(encoding="utf-8", errors="replace") as f:
@@ -166,7 +166,7 @@ def main() -> int:
         "--terrain-step",
         type=int,
         default=2,
-        help="wowsunpack terrain sampling step (1=full, 2=high, 4=medium, 8=coarse; default: 2)",
+        help="game-assets terrain sampling step (1=full, 2=high, 4=medium, 8=coarse; default: 2)",
     )
     parser.add_argument(
         "--limit",
@@ -189,16 +189,16 @@ def main() -> int:
         )
         return 1
 
-    wowsunpack = find_wowsunpack()
-    if not wowsunpack:
+    game_assets = find_game_assets()
+    if not game-assets:
         print(
-            "error: wowsunpack not found.",
+            "error: game-assets not found.",
             file=sys.stderr,
         )
         return 1
 
     MAPS_OUT.mkdir(parents=True, exist_ok=True)
-    space_ids = list_spaces(game, Path(wowsunpack))
+    space_ids = list_spaces(game, Path(game_assets))
     print(f"[batch_bake_maps] found {len(space_ids)} spaces in {game}")
 
     todo: list[str] = []
@@ -224,10 +224,10 @@ def main() -> int:
     fail = 0
     start = time.time()
     for i, sid in enumerate(todo):
-        # Env var for the patched wowsunpack (with --keep-submerged support).
+        # Env var for the patched game-assets (with --keep-submerged support).
         env = os.environ.copy()
-        if "WOWSP_WOWSUNPACK" not in env:
-            env["WOWSP_WOWSUNPACK"] = str(wowsunpack)
+        if "WOWSP_GAME_ASSETS" not in env:
+            env["WOWSP_GAME_ASSETS"] = str(game_assets)
 
         cmd = [
             sys.executable,

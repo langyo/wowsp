@@ -1,7 +1,7 @@
 """Shared helpers for WoWSP game-asset extraction scripts.
 
-Locates the game install and the `wowsunpack` binary, and provides convenience
-runners for the two wowsunpack subcommands these scripts rely on
+Locates the game install and the `game-assets` binary, and provides convenience
+runners for the two game-assets subcommands these scripts rely on
 (`game-params` → GameParams.json, `metadata` → the path/size map used by the
 .pkg PNG slicer).
 
@@ -11,8 +11,8 @@ Game detection order (mirrors the Rust game_detect logic in
   2. Steam appmanifest_552990.acf across every library in libraryfolders.vdf
   3. registry scan for Wargaming/Lesta/360 publishers (Windows-only)
 
-wowsunpack location order:
-  1. WOWSP_WOWSUNPACK env var
+game-assets location order:
+  1. WOWSP_GAME_ASSETS env var
   2. PATH (`shutil.which`)
 """
 from __future__ import annotations
@@ -85,18 +85,22 @@ def find_lesta_game_path(explicit: str | None = None) -> str | None:
     return None
 
 
-def find_wowsunpack() -> str | None:
-    env = os.environ.get("WOWSP_WOWSUNPACK")
+def find_game_assets() -> str | None:
+    env = os.environ.get("WOWSP_GAME_ASSETS") or os.environ.get("WOWSP_WOWSUNPACK")
     if env and Path(env).is_file():
         return env
-    return shutil.which("wowsunpack") or shutil.which("wowsunpack.exe")
+    repo_bin = Path(__file__).resolve().parents[2] / "target" / "release" / (
+        "game-assets.exe" if os.name == "nt" else "game-assets")
+    if repo_bin.is_file():
+        return str(repo_bin)
+    return shutil.which("game-assets") or shutil.which("game-assets.exe")
 
 
 def latest_bin_with_idx(game_path: str) -> Path | None:
     """The newest bin/<build>/ that actually ships an idx/ directory.
 
     Steam installs can hold several builds; only some carry the index files
-    wowsunpack needs. Pick the highest-numbered build that has idx/.
+    game-assets needs. Pick the highest-numbered build that has idx/.
     """
     bin_dir = Path(game_path, "bin")
     if not bin_dir.is_dir():
@@ -108,26 +112,26 @@ def latest_bin_with_idx(game_path: str) -> Path | None:
     return candidates[0]
 
 
-def run_wowsunpack(args: list[str]) -> int:
-    exe = find_wowsunpack()
+def run_game_assets(args: list[str]) -> int:
+    exe = find_game_assets()
     if not exe:
         raise SystemExit(
-            "wowsunpack not found. Install it (cargo install wowsunpack) or set "
-            "WOWSP_WOWSUNPACK=/path/to/wowsunpack."
+            "game-assets not found. Install it (cargo install game-assets) or set "
+            "WOWSP_GAME_ASSETS=/path/to/game-assets."
         )
     cmd = [exe, *args]
-    print(f"[wowsunpack] $ {' '.join(cmd)}")
+    print(f"[game-assets] $ {' '.join(cmd)}")
     return subprocess.call(cmd)
 
 
 def run_game_params(out_json: Path, game_path: str) -> int:
-    """Dump content/GameParams.data → JSON via wowsunpack game-params."""
-    return run_wowsunpack(["--game-dir", game_path, "game-params", str(out_json)])
+    """Dump content/GameParams.data → JSON via game-assets game-params."""
+    return run_game_assets(["--game-dir", game_path, "game-params", str(out_json)])
 
 
 def run_metadata(out_json: Path, game_path: str) -> int:
-    """Dump the full pkg path/size index via wowsunpack metadata."""
-    return run_wowsunpack(["--game-dir", game_path, "metadata", str(out_json), "--format", "json"])
+    """Dump the full pkg path/size index via game-assets metadata."""
+    return run_game_assets(["--game-dir", game_path, "metadata", str(out_json), "--format", "json"])
 
 
 def _steam_roots() -> list[Path]:

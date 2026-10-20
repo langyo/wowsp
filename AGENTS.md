@@ -263,13 +263,13 @@ Before submitting, the relevant subset of `just lint` (or scoped
 - Rust checks run on Windows (CI's rust job also runs on a Windows runner):
   the pinned `windows-future` crate does not compile on Linux (upstream bug;
   see the ci.yml comment). fmt/clippy target only the app crates
-  (`wowsp_tauri` / `wowsp_tauri_shared`); the vendored `wowsunpack` /
-  `wows-core` are dependency sources and keep their historical formatting
-  (the whole `packages/tools/wowsunpack-vendor` tree is an independent
-  in-repo fork — no upstream sync; dependency bumps and fixes there are
-  WoWSP's own, see its workspace-root header comment). The ship GLB
+  (`wowsp_tauri` / `wowsp_tauri_shared`); the `game-assets` /
+  `game-assets-core` tool packages are dependency sources and keep their
+  historical formatting (in-tree forks of wows-toolkit, flattened under
+  `packages/tools/` — no upstream sync; dependency bumps and fixes there
+  are WoWSP's own, see the packages' header comments). The ship GLB
   exporter is the Rust tool package `packages/tools/model-exporter`
-  (a thin CLI over the vendored VFS library's ship-export API; build via
+  (a thin CLI over the game-assets library's ship-export API; build via
   `just build model-exporter`) — it replaced the vendored C++
   wows-model-exporter, which is gone together with its CMake/vcpkg chain.
 - **Cross-repo dependencies**: always consume published artifacts or
@@ -279,7 +279,7 @@ Before submitting, the relevant subset of `just lint` (or scoped
   use granular style subpaths like `styles/theme/*` and
   `styles/admin-tokens.scss`, never the `styles` aggregate entry, which
   escapes the package), malkuth from its crates.io release, and
-  `wowsunpack` / `wows-core` stay vendored.
+  `game-assets` / `game-assets-core` stay vendored in-tree.
 - **Error policy (mandatory)**: app-crate error flow is anyhow end-to-end —
   helpers return `anyhow::Result`, Tauri commands return
   `wowsp_tauri_shared::CommandResult` (the `CommandError(anyhow::Error)` IPC

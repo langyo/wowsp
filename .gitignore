@@ -62,7 +62,7 @@ packages/webui/.generated/
 # The ROOT Cargo.lock is tracked (reproducible resolution for CI and its
 # hashFiles cache key). The standalone wasm workspace keeps its own
 # gitignored lock via packages/pairing-relay/.gitignore; the vendored
-# wowsunpack workspace's lock is ignored by its own .gitignore too.
+# game-assets' lock is ignored by its own .gitignore too.
 
 # ZCode agent working dir
 .zcode/
@@ -71,9 +71,9 @@ packages/webui/.generated/
 /target/model-tools/
 /target/model-tmp/
 
-# Vendored wowsunpack (maintained by us, tracked in-tree)
-# Build artifacts inside the vendor are still ignored via its own .gitignore
-packages/tools/wowsunpack-vendor/target/
+# game-assets tool packages (in-tree forks, maintained by us)
+packages/tools/game-assets/target/
+packages/tools/game-assets-core/target/
 
 # celestia-devtools: staged-on-demand shared justfile recipes (celestia-devtools init / just fetch)
 /.just/

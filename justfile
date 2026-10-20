@@ -73,7 +73,7 @@ dev target='tauri' *FLAGS='':
 #   just build site              → site + lagrange docs → dist/
 #   just build package           → cargo tauri build (app only, no install bundles)
 #   just build installers [--flavors ...] → shun installers (webview2 / lite)
-#   just build wowsunpack        → compile the vendored wowsunpack
+#   just build game-assets        → compile the vendored game-assets
 #   just build model-exporter    → compile the Rust ship GLB exporter
 #   just build unoodle           → fetch + build the Lesta Oodle decoder
 #   just build all               → webui + site + app
@@ -103,13 +103,13 @@ _build-package *FLAGS='':
 _build-installers *FLAGS='':
     python scripts/build_installers.py {{FLAGS}}
 
-_build-wowsunpack:
-    @# The vendor tree is TRACKED IN-TREE (packages/tools/wowsunpack-vendor),
-    @# never a nested clone: an independent fork slimmed to the wowsunpack /
-    @# wows-core library crates — changes land via normal PRs, never via a
+_build-game-assets:
+    @# The vendor tree is TRACKED IN-TREE (packages/tools/game-assets tree),
+    @# never a nested clone: an independent fork slimmed to the game-assets /
+    @# game-assets-core library crates — changes land via normal PRs, never via a
     @# pull from inside this checkout.
-    @echo "Building vendored wowsunpack (landaire/wows-toolkit fork, tracked in-tree)..."
-    cargo build --release -p wowsunpack
+    @echo "Building vendored game-assets (landaire/wows-toolkit fork, tracked in-tree)..."
+    cargo build --release -p game-assets
 
 _build-model-exporter:
     @# The Rust ship GLB exporter (packages/tools/model-exporter) over the
@@ -157,7 +157,7 @@ test target='unit' *FLAGS='':
 
 # Both recipes mirror the CI rust gate (ci.yml "Rustfmt"/"Clippy") exactly:
 # the two app crates get fmt + clippy (--no-deps keeps the vendored
-# wowsunpack/wows-core upstream lint style out), while repo-wide fmt would
+# game-assets/game-assets-core upstream lint style out), while repo-wide fmt would
 # fail on the vendored dependency sources.
 _lint-full:
     cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
@@ -426,7 +426,7 @@ convert-map *ARGS:
     python scripts/model_convert/convert_map.py {{ARGS}}
 
 convert-map-holo *ARGS:
-    WOWSP_WOWSUNPACK="target/release/wowsunpack.exe" python scripts/model_convert/convert_map_holo.py {{ARGS}}
+    WOWSP_GAME_ASSETS="target/release/game-assets.exe" python scripts/model_convert/convert_map_holo.py {{ARGS}}
 
 # ── bake ──────────────────────────────────────────────────────────────
 #   just bake-model raw.glb -o ship.glb --triangles 2000
@@ -441,7 +441,7 @@ bake-ships *ARGS:
     python scripts/model_convert/batch_bake.py {{ARGS}}
 
 bake-maps *ARGS:
-    WOWSP_WOWSUNPACK="target/release/wowsunpack.exe" python scripts/model_convert/batch_bake_maps.py {{ARGS}}
+    WOWSP_GAME_ASSETS="target/release/game-assets.exe" python scripts/model_convert/batch_bake_maps.py {{ARGS}}
 
 # Optimize the baked GLB pack in place (meshopt + quantize; idempotent,
 # skips already-optimized files). Run after bake-ships/bake-maps.

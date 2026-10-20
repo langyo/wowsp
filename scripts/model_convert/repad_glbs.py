@@ -2,7 +2,7 @@
 """One-shot normalization of the baked GLBs' JSON-chunk padding.
 
 Two historical writer defects shipped in the pack (both fixed at the source —
-bake_model.py and wowsunpack's write_armor_glb since #904):
+bake_model.py and game-assets's write_armor_glb since #904):
 
   1. JSON chunks padded with NUL bytes — rejected by strict JSON parsers
      (three's GLTFLoader: "Unexpected non-whitespace character after JSON").

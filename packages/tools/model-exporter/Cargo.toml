@@ -10,4 +10,4 @@ description = "Ship model GLB exporter over the game-asset VFS (bake pipeline fr
 
 [dependencies]
 rootcause = { workspace = true }
-wowsunpack = { workspace = true }
+game-assets = { workspace = true }

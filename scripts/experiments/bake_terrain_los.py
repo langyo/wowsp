@@ -20,7 +20,7 @@ Known approximations (documented on purpose, this is a feasibility probe):
      and each cell takes the MAX y of the vertices falling inside it. No
      triangle rasterization is done. For the distributed map GLBs this is
      close to exact because they contain a single "Terrain" mesh exported by
-     `wowsunpack export-map` from terrain.bin as a regular ~9 m heightfield
+     `game-assets export-map` from terrain.bin as a regular ~9 m heightfield
      grid (201 x 201 vertices over +-900 m), not the full models.geometry
      render mesh.
   2. Empty-cell fill: where the source vertex spacing is coarser than the

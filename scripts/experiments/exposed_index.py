@@ -4,7 +4,7 @@
 E10 research script: given a directory holding `entity_defs/` (with
 `alias.xml`, `<Entity>.def` and `interfaces/*.def`) plus `entities.xml`,
 replicates the engine's exposed-method index computation that
-`packages/tools/wowsunpack-vendor/crates/wowsunpack/src/rpc/entitydefs.rs`
+`packages/tools/game-assets/src/rpc/entitydefs.rs`
 implements (itself the fixed version of replay_unpack's algorithm):
 
   1. resolve type aliases from `alias.xml` (sequential — an alias may

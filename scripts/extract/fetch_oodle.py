@@ -2,7 +2,7 @@
 """Ensure an Oodle decoder (unoodle) is available, building it on demand.
 
 The Lesta (Мир кораблей) client's pkgs are Oodle-compressed, which the
-vendored wowsunpack cannot read; the extraction routes shell out to a
+vendored game-assets cannot read; the extraction routes shell out to a
 decoder CLI instead (see lesta_extract.py). The good one is the `unoodle`
 binary of github.com/lvlvllvlvllvlvl/oozextract (MIT, Rust port of ooz) —
 powzix/ooz silently mis-decodes the 26.x streams, so it is fallback-only.

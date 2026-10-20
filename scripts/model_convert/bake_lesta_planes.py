@@ -7,7 +7,7 @@ reader cannot decode (see lesta_extract.py), so the WG plane route
 This script takes the same staged route bake_lesta_ships.py uses for hulls:
 
   1. lesta_extract.py stages each airframe's `.geometry` (Oodle → plain file);
-  2. `wowsunpack export-model --no-vfs` converts the staged file to GLB;
+  2. `game-assets export-model --no-vfs` converts the staged file to GLB;
   3. bake_model.py decimates it into the pack format (--dedup-lods: plane
      .geometry files carry every section at three LODs).
 
@@ -45,7 +45,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from bake_lesta_ships import find_wowsunpack, tri_count  # noqa: E402
+from bake_lesta_ships import find_game_assets, tri_count  # noqa: E402
 
 DATA_DIR = REPO_ROOT / "packages" / "webui" / "src" / "data"
 PLANES_OUT = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models" / "planes"
@@ -57,16 +57,16 @@ def main() -> int:
     ap.add_argument("--game-dir", required=True, help="Lesta client install root")
     ap.add_argument("--stage", required=True, help="extraction dir (content/ tree + raw glbs)")
     ap.add_argument("--ooz", default=None, help="Oodle decoder for lesta_extract (unoodle preferred)")
-    ap.add_argument("--wowsunpack", default=None)
+    ap.add_argument("--game-assets", default=None)
     ap.add_argument("--out", type=Path, default=PLANES_OUT)
     ap.add_argument("--triangles", type=int, default=PLANE_TRIS)
     ap.add_argument("--only", help="comma list of plane indexes")
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
-    wowsunpack = find_wowsunpack(args.wowsunpack)
-    if not wowsunpack:
-        print("error: wowsunpack not found (build it: just build wowsunpack).", file=sys.stderr)
+    game_assets = find_game_assets(args.game-assets)
+    if not game-assets:
+        print("error: game-assets not found (build it: just build game-assets).", file=sys.stderr)
         return 1
 
     types = json.loads((DATA_DIR / "plane_types.json").read_text(encoding="utf-8"))
@@ -100,7 +100,7 @@ def main() -> int:
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
              "--game-dir", args.game_dir, "--out", args.stage,
-             "--wowsunpack", wowsunpack]
+             "--game-assets", game-assets]
             + (["--ooz", args.ooz] if args.ooz else []) + [rel],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
@@ -112,7 +112,7 @@ def main() -> int:
             continue
         raw = raw_dir / f"{index}__{name}.glb"
         r = subprocess.run(
-            [wowsunpack, "export-model", str(staged), "--no-vfs", "-o", str(raw)],
+            [game-assets, "export-model", str(staged), "--no-vfs", "-o", str(raw)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         if r.returncode != 0 or not raw.is_file():

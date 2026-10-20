@@ -31,7 +31,7 @@ Output: packages/webui/src/data/ship_descriptions.json
 Usage:
     python scripts/model_convert/extract_ship_descriptions.py
     python scripts/model_convert/extract_ship_descriptions.py --gameparams-json dump.json
-        (reuse an existing GameParams JSON instead of the slow wowsunpack pass)
+        (reuse an existing GameParams JSON instead of the slow game-assets pass)
 """
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import find_game_path, find_wowsunpack  # noqa: E402
+from _common import find_game_path, find_game_assets  # noqa: E402
 
 OUT_PATH = (
     Path(__file__).resolve().parents[2]
@@ -96,7 +96,7 @@ def main() -> int:
     parser.add_argument(
         "--gameparams-json",
         default=None,
-        help="reuse an existing GameParams JSON (skip wowsunpack pass)",
+        help="reuse an existing GameParams JSON (skip game-assets pass)",
     )
     parser.add_argument("--out", default=str(OUT_PATH), help="output JSON path")
     parser.add_argument(
@@ -115,17 +115,17 @@ def main() -> int:
     if args.gameparams_json:
         gp_path = Path(args.gameparams_json)
     else:
-        wowsunpack = find_wowsunpack()
-        if not wowsunpack:
-            print("error: wowsunpack not found.", file=sys.stderr)
+        game_assets = find_game_assets()
+        if not game-assets:
+            print("error: game-assets not found.", file=sys.stderr)
             return 1
         tmp = tempfile.mkdtemp(prefix="wowsp_gp_")
         gp_path = Path(tmp) / "gameparams.json"
         rc = subprocess.call(
-            [str(wowsunpack), "--game-dir", str(game), "game-params", str(gp_path)]
+            [str(game_assets), "--game-dir", str(game), "game-params", str(gp_path)]
         )
         if rc != 0:
-            print(f"error: wowsunpack game-params failed (rc={rc})", file=sys.stderr)
+            print(f"error: game-assets game-params failed (rc={rc})", file=sys.stderr)
             return rc
     print(f"[ship-desc] reading GameParams: {gp_path}")
     gp = json.loads(gp_path.read_text(encoding="utf-8"))

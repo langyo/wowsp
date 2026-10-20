@@ -21,7 +21,7 @@ artifacts from the local install:
   2. `gui/dogTags/small/**` + `gui/dogTags/DT_Default.png` — the part
      images, sliced out of the gui_*.pkg blobs, re-encoded to WebP (q85 —
      the res WebP settings, see convert_res_webp.py) and mirrored into
-     res/dogtags/ (stale files removed). wowsunpack's own `extract` subcommand is broken on the
+     res/dogtags/ (stale files removed). game-assets's own `extract` subcommand is broken on the
      Steam install layout ("Wrote 0 files"), so this walks the same
      metadata path→size/crc map + PNG-slicing approach as
      extract_game_assets.py, across every gui_*.pkg.
@@ -41,7 +41,7 @@ as the `wowsp-dogtags.tar.gz` asset of the rotating `res-latest` release).
 
 Inputs:
   --gameparams : unpacked GameParams.json (shared orchestrator cache)
-  --meta       : wowsunpack metadata json (shared orchestrator cache)
+  --meta       : game-assets metadata json (shared orchestrator cache)
   --game       : game install root (locates res_packages/gui_*.pkg)
   --out-map    : packages/webui/src/data/dogtags_map.json
   --res-dir    : packages/webui/src/res/dogtags

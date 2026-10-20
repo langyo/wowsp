@@ -1,9 +1,9 @@
 //! Game constants. The struct definitions, XML parsing, and hardcoded defaults
-//! live in `wows-core::game_constants`; this module re-exports them and adds the
+//! live in `game-assets-core::game_constants`; this module re-exports them and adds the
 //! VFS-backed loaders, which depend on the `vfs` crate that the foundation crate
 //! deliberately avoids.
 
-pub use wows_core::game_constants::*;
+pub use game_assets_core::game_constants::*;
 
 #[cfg(feature = "vfs")]
 use std::io::Read;
@@ -76,7 +76,7 @@ pub fn load_channel_constants(vfs: &vfs::VfsPath) -> ChannelConstants {
 /// its own client did rather than against the latest layout, which matters for
 /// older replays whose id ordering differs. No-op if the version predates every
 /// known layout and no floor applies. Kept here (not on `CommonConstants` in
-/// `wows-core`) because the version table is build-script generated in this crate.
+/// `game-assets-core`) because the version table is build-script generated in this crate.
 pub fn apply_version_consumables(common: &mut CommonConstants, version: crate::data::Version) {
     if let Some(table) = crate::consumable_versions::consumable_ids_for_version(version) {
         *common.consumable_types_mut() =

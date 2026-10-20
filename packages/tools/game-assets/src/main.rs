@@ -21,14 +21,14 @@ use std::time::Instant;
 use thread_local::ThreadLocal;
 use vfs::VfsPath;
 use vfs::impls::overlay::OverlayFS;
-use wowsunpack::data::assets_bin_vfs::AssetsBinVfs;
-use wowsunpack::data::idx;
-use wowsunpack::data::idx::VfsEntry;
-use wowsunpack::data::idx_vfs::IdxVfs;
-use wowsunpack::data::serialization;
-use wowsunpack::data::wrappers::mmap::MmapPkgSource;
-use wowsunpack::export::gltf_export;
-use wowsunpack::game_params::convert::game_params_to_pickle;
+use game_assets::data::assets_bin_vfs::AssetsBinVfs;
+use game_assets::data::idx;
+use game_assets::data::idx::VfsEntry;
+use game_assets::data::idx_vfs::IdxVfs;
+use game_assets::data::serialization;
+use game_assets::data::wrappers::mmap::MmapPkgSource;
+use game_assets::export::gltf_export;
+use game_assets::game_params::convert::game_params_to_pickle;
 
 use clap::Parser;
 use clap::Subcommand;
@@ -835,7 +835,7 @@ fn run() -> Result<(), Report> {
             // Normalized minimal output: the CBOR Vec<Param> downstream tools use.
             if min {
                 let params =
-                    wowsunpack::game_params::provider::GameMetadataProvider::params_from_data(game_params_data)
+                    game_assets::game_params::provider::GameMetadataProvider::params_from_data(game_params_data)
                         .context("Failed to normalize GameParams")?;
                 let writer = BufWriter::new(File::create(&out_file)?);
                 ciborium::into_writer(&params, writer).context("Failed to serialize CBOR")?;
@@ -1300,7 +1300,7 @@ fn load_game_params(vfs: &VfsPath) -> Result<pickled::Value, Report> {
 }
 
 fn run_geometry(file_data: &[u8], name: &str, decode: bool) -> Result<(), Report> {
-    use wowsunpack::models::geometry;
+    use game_assets::models::geometry;
 
     let geom = geometry::parse_geometry(file_data)?;
 
@@ -1390,9 +1390,9 @@ fn run_assets_bin(
     parse_visual: Option<&str>,
     parse_material: Option<&str>,
 ) -> Result<(), Report> {
-    use wowsunpack::models::assets_bin;
-    use wowsunpack::models::material;
-    use wowsunpack::models::visual;
+    use game_assets::models::assets_bin;
+    use game_assets::models::material;
+    use game_assets::models::visual;
 
     let db = assets_bin::parse_assets_bin(file_data)?;
 
@@ -1578,13 +1578,13 @@ struct ExportModelParams<'a> {
 
 fn run_export_model(params: &ExportModelParams<'_>) -> Result<(), Report> {
     let ExportModelParams { file, output, lod, no_textures, damaged, list_textures, no_vfs, vfs } = *params;
-    use wowsunpack::export::gltf_export;
-    use wowsunpack::export::ship::build_texture_set;
-    use wowsunpack::export::ship::collect_mfm_info;
-    use wowsunpack::export::texture;
-    use wowsunpack::models::assets_bin;
-    use wowsunpack::models::geometry;
-    use wowsunpack::models::visual;
+    use game_assets::export::gltf_export;
+    use game_assets::export::ship::build_texture_set;
+    use game_assets::export::ship::collect_mfm_info;
+    use game_assets::export::texture;
+    use game_assets::models::assets_bin;
+    use game_assets::models::geometry;
+    use game_assets::models::visual;
 
     // 1. Load geometry file (from disk or VFS).
     let geom_data = read_file_data(file, no_vfs, vfs)?;
@@ -1753,14 +1753,14 @@ fn run_export_map(
     max_texture_size: Option<u32>,
     keep_submerged: bool,
 ) -> Result<(), Report> {
-    use wowsunpack::export::gltf_export;
-    use wowsunpack::export::texture;
-    use wowsunpack::models::assets_bin;
-    use wowsunpack::models::forest;
-    use wowsunpack::models::geometry;
-    use wowsunpack::models::merged_models;
-    use wowsunpack::models::speedtree;
-    use wowsunpack::models::terrain;
+    use game_assets::export::gltf_export;
+    use game_assets::export::texture;
+    use game_assets::models::assets_bin;
+    use game_assets::models::forest;
+    use game_assets::models::geometry;
+    use game_assets::models::merged_models;
+    use game_assets::models::speedtree;
+    use game_assets::models::terrain;
 
     /// Join a directory path with a filename, handling both VFS and disk paths.
     fn space_file(dir: &Path, name: &str, no_vfs: bool) -> PathBuf {
@@ -2037,14 +2037,14 @@ fn run_export_ship(
     list_textures: bool,
     debug: bool,
 ) -> Result<(), Report> {
-    use wowsunpack::export::ship::ShipAssets;
-    use wowsunpack::export::ship::ShipExportOptions;
+    use game_assets::export::ship::ShipAssets;
+    use game_assets::export::ship::ShipExportOptions;
 
     let assets = ShipAssets::load(vfs)?;
 
     // Load translations if available.
     if let Some(version) = game_version {
-        let mo_path = wowsunpack::game_data::translations_path(game_dir, version as u32);
+        let mo_path = game_assets::game_data::translations_path(game_dir, version as u32);
         if let Ok(data) = std::fs::read(&mo_path)
             && let Ok(catalog) = gettext::Catalog::parse(&*data)
         {
@@ -2105,7 +2105,7 @@ fn run_export_ship(
 
     let has_armor = ctx.armor_map().is_some() || ctx.hull_splash_bytes().is_some();
 
-    wowsunpack::export::set_debug(debug);
+    game_assets::export::set_debug(debug);
     let mut file = std::fs::File::create(output).context("Failed to create output file")?;
     ctx.export_glb(&mut file)?;
 
@@ -2120,7 +2120,7 @@ fn run_export_ship(
 }
 
 fn print_armor_legend() {
-    use wowsunpack::export::gltf_export;
+    use game_assets::export::gltf_export;
 
     println!();
     println!("Armor thickness color scale:");
@@ -2137,15 +2137,15 @@ fn run_armor(
     game_version: Option<u64>,
     hull_selection: Option<&str>,
 ) -> Result<(), Report> {
-    use wowsunpack::export::ship::ShipAssets;
-    use wowsunpack::export::ship::ShipExportOptions;
-    use wowsunpack::models::geometry;
+    use game_assets::export::ship::ShipAssets;
+    use game_assets::export::ship::ShipExportOptions;
+    use game_assets::models::geometry;
 
     let assets = ShipAssets::load(vfs)?;
 
     // Load translations if available.
     if let Some(version) = game_version {
-        let mo_path = wowsunpack::game_data::translations_path(game_dir, version as u32);
+        let mo_path = game_assets::game_data::translations_path(game_dir, version as u32);
         if let Ok(data) = std::fs::read(&mo_path)
             && let Ok(catalog) = gettext::Catalog::parse(&*data)
         {
@@ -2161,8 +2161,8 @@ fn run_armor(
 
     let armor_map = ctx.armor_map();
 
-    use wowsunpack::export::gltf_export::collision_material_name;
-    use wowsunpack::export::gltf_export::zone_from_material_name;
+    use game_assets::export::gltf_export::collision_material_name;
+    use game_assets::export::gltf_export::zone_from_material_name;
 
     // Helper to print armor layer info for materials found in a geometry.
     fn print_armor_layers(
@@ -2347,7 +2347,7 @@ fn run_armor(
 
     // Zone classification by collision material ID.
     {
-        use wowsunpack::export::gltf_export::zone_from_material_name;
+        use game_assets::export::gltf_export::zone_from_material_name;
         println!("\nZone classification (by collision material):");
 
         let mut zone_counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
@@ -2411,12 +2411,12 @@ fn run_export_armor_glb(
     hull_selection: Option<&str>,
     output: &Path,
 ) -> Result<(), Report> {
-    use wowsunpack::export::ship::ShipAssets;
-    use wowsunpack::export::ship::ShipExportOptions;
+    use game_assets::export::ship::ShipAssets;
+    use game_assets::export::ship::ShipExportOptions;
 
     let assets = ShipAssets::load(vfs)?;
     if let Some(version) = game_version {
-        let mo_path = wowsunpack::game_data::translations_path(game_dir, version as u32);
+        let mo_path = game_assets::game_data::translations_path(game_dir, version as u32);
         if let Ok(data) = std::fs::read(&mo_path)
             && let Ok(catalog) = gettext::Catalog::parse(&*data)
         {
@@ -2569,8 +2569,8 @@ fn run_dump_uvs(
     _game_version: Option<u64>,
     _hull_selection: Option<&str>,
 ) -> Result<(), Report> {
-    use wowsunpack::models::geometry;
-    use wowsunpack::models::vertex_format;
+    use game_assets::models::geometry;
+    use game_assets::models::vertex_format;
 
     // Try to find and extract .geometry files matching the name from VFS.
     let mut geom_files: Vec<(String, Vec<u8>)> = Vec::new();

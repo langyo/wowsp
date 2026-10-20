@@ -38,9 +38,9 @@ pub trait ResourceLoader {
 
 pub use translation_key::TranslationKey;
 
-/// Game version. Defined in `wows-core`; re-exported so existing
-/// `wowsunpack::data::Version` paths keep working.
-pub use wows_core::Version;
+/// Game version. Defined in `game-assets-core`; re-exported so existing
+/// `game_assets::data::Version` paths keep working.
+pub use game_assets_core::Version;
 
 pub trait DataFileLoader {
     fn get(&self, path: &str) -> Result<Cow<'static, [u8]>, GameDataError>;

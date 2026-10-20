@@ -164,7 +164,7 @@ def main(argv: list[str]) -> int:
         if not path.exists():
             print(f"error: {what} not found: {path}", file=sys.stderr)
             print(
-                "hint: it is the shared WoWSP-extract cache; run the wowsunpack "
+                "hint: it is the shared WoWSP-extract cache; run the game-assets "
                 "extract flow first (see scripts/extract/_common.py).",
                 file=sys.stderr,
             )

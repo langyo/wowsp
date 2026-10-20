@@ -1,13 +1,13 @@
 """Shared helpers for WoWSP model converters: locate the game install (mirroring
-the Rust game_detect logic) and the `wowsunpack` binary.
+the Rust game_detect logic) and the `game-assets` binary.
 
 Game detection order:
   1. WOWSP_GAME_PATH env var (explicit override)
   2. Steam appmanifest_552990.acf across every library in libraryfolders.vdf
   3. (registry scan for Wargaming/Lesta/360 publishers — Windows-only)
 
-wowsunpack location order:
-  1. WOWSP_WOWSUNPACK env var
+game-assets location order:
+  1. WOWSP_GAME_ASSETS env var
   2. PATH (`shutil.which`)
 """
 from __future__ import annotations
@@ -53,22 +53,26 @@ def find_game_path() -> str | None:
     return None
 
 
-def find_wowsunpack() -> str | None:
-    env = os.environ.get("WOWSP_WOWSUNPACK")
+def find_game_assets() -> str | None:
+    env = os.environ.get("WOWSP_GAME_ASSETS") or os.environ.get("WOWSP_WOWSUNPACK")
     if env and Path(env).is_file():
         return env
-    found = shutil.which("wowsunpack") or shutil.which("wowsunpack.exe")
+    repo_bin = Path(__file__).resolve().parents[2] / "target" / "release" / (
+        "game-assets.exe" if os.name == "nt" else "game-assets")
+    if repo_bin.is_file():
+        return str(repo_bin)
+    found = shutil.which("game-assets") or shutil.which("game-assets.exe")
     return found
 
 
-def run_wowsunpack(args: list[str]) -> int:
-    """Invoke wowsunpack with the given args (no --game-dir; caller adds it).
+def run_game_assets(args: list[str]) -> int:
+    """Invoke game-assets with the given args (no --game-dir; caller adds it).
     Streams output to the console. Returns the exit code."""
-    exe = find_wowsunpack()
+    exe = find_game_assets()
     if not exe:
         raise SystemExit(
-            "wowsunpack not found. Install it (cargo install wowsunpack) or set "
-            "WOWSP_WOWSUNPACK=/path/to/wowsunpack. See scripts/model_convert/README.md."
+            "game-assets not found. Install it (cargo install game-assets) or set "
+            "WOWSP_GAME_ASSETS=/path/to/game-assets. See scripts/model_convert/README.md."
         )
     cmd = [exe, *args]
     print(f"[model_convert] $ {' '.join(cmd)}")

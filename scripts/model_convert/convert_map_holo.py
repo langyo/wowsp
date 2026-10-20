@@ -4,14 +4,14 @@ elevation (contour-friendly, including sea trenches) + simplified islands.
 
 This supersedes `convert_map.py`, which used `wows-geometry-cli` and produced
 *only* island geometry (terrain.bin was skipped — "requires heightmap DDS
-parsing"). The fix: `wowsunpack export-map` already parses terrain.bin
+parsing"). The fix: `game-assets export-map` already parses terrain.bin
 internally and emits a height-field `Terrain` mesh whose Y spans negative
 (sea floor / trenches) to positive (island peaks). We extract that mesh plus
 the island meshes, decimate both, and write a single small multi-mesh GLB the
 frontend styles as a holographic contour map.
 
 Pipeline:
-  1. `wowsunpack export-map spaces/<id>` → full GLB (terrain + islands, ~54MB,
+  1. `game-assets export-map spaces/<id>` → full GLB (terrain + islands, ~54MB,
      no water/vegetation/textures).
   2. Split by mesh name: `Terrain` (elevation height-field) vs everything else
      (islands/buildings/rocks, typically `TILEDLAND_*`).
@@ -38,7 +38,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import find_game_path, find_wowsunpack  # noqa: E402
+from _common import find_game_path, find_game_assets  # noqa: E402
 from bake_model import (  # noqa: E402
     decimate,
     extract_meshes_by_name,
@@ -58,12 +58,12 @@ def main() -> int:
     parser.add_argument("--name", required=True, help="space id (e.g. 18_NE_ice_islands)")
     parser.add_argument("--output", "-o", default=str(DEFAULT_OUT), help="output GLB path or dir")
     parser.add_argument("--game-dir", default=None, help="game install path (default: auto-detect)")
-    parser.add_argument("--terrain-step", type=int, default=8, help="wowsunpack terrain decimation (1=full, 8=coarse)")
+    parser.add_argument("--terrain-step", type=int, default=8, help="game-assets terrain decimation (1=full, 8=coarse)")
     parser.add_argument(
         "--no-keep-submerged",
         action="store_true",
         help="drop submerged terrain (sea floor/trenches). By default the script keeps it "
-        "(requires a patched wowsunpack with --keep-submerged; see scripts/model_convert/README).",
+        "(requires a patched game-assets with --keep-submerged; see scripts/model_convert/README).",
     )
     args = parser.parse_args()
 
@@ -74,10 +74,10 @@ def main() -> int:
         print("error: World of Warships install not found. Set WOWSP_GAME_PATH.", file=sys.stderr)
         return 1
 
-    wowsunpack = find_wowsunpack()
-    if not wowsunpack:
-        print("error: wowsunpack not found. Install it (cargo install wowsunpack) "
-              "or set WOWSP_WOWSUNPACK.", file=sys.stderr)
+    game_assets = find_game_assets()
+    if not game-assets:
+        print("error: game-assets not found. Install it (cargo install game-assets) "
+              "or set WOWSP_GAME_ASSETS.", file=sys.stderr)
         return 1
 
     out = Path(args.output)
@@ -90,14 +90,14 @@ def main() -> int:
 
         # Step 1: export the full map (terrain + islands, no water/veg/textures).
         # --keep-submerged preserves sea-floor bathymetry (trenches) as real
-        # below-sea-level geometry — requires a patched wowsunpack. If the flag
-        # isn't recognized (stock wowsunpack) the call fails and we retry once
+        # below-sea-level geometry — requires a patched game-assets. If the flag
+        # isn't recognized (stock game-assets) the call fails and we retry once
         # without it so the script still works on an unpatched binary.
         keep_submerged = not args.no_keep_submerged
-        print(f"[convert_map_holo] exporting spaces/{space_id} via wowsunpack export-map "
+        print(f"[convert_map_holo] exporting spaces/{space_id} via game-assets export-map "
               f"(keep_submerged={keep_submerged}) ...")
         export_cmd = [
-            wowsunpack, "--game-dir", game, "export-map", f"spaces/{space_id}",
+            game-assets, "--game-dir", game, "export-map", f"spaces/{space_id}",
             "-o", str(raw_glb),
             "--terrain-step", str(args.terrain_step),
             "--no-water", "--no-vegetation", "--no-textures",
@@ -106,12 +106,12 @@ def main() -> int:
             export_cmd.append("--keep-submerged")
         rc = subprocess.call(export_cmd)
         if rc != 0 and keep_submerged:
-            print("[convert_map_holo] --keep-submerged rejected (stock wowsunpack); "
+            print("[convert_map_holo] --keep-submerged rejected (stock game-assets); "
                   "retrying without it (trenches will be flattened).", file=sys.stderr)
             keep_submerged = False
             rc = subprocess.call([c for c in export_cmd if c != "--keep-submerged"])
         if rc != 0:
-            print(f"error: wowsunpack export-map failed (rc={rc})", file=sys.stderr)
+            print(f"error: game-assets export-map failed (rc={rc})", file=sys.stderr)
             return rc
         if not raw_glb.exists():
             print("error: export-map produced no output file", file=sys.stderr)

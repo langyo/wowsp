@@ -1,7 +1,7 @@
 //! Custom-model 3D preview: player-made ship/gun/aircraft meshes live in
 //! res_mods as BigWorld `.geometry` files (PnFMods skin packs and plain
 //! `content/` overrides alike). This module re-emits them as GLB through
-//! wowsunpack's loose-file geometry parser + raw glTF exporter — no game
+//! game-assets's loose-file geometry parser + raw glTF exporter — no game
 //! `.idx` VFS needed — caching each part under
 //! `%LOCALAPPDATA%\WoWSP\model-previews\`, which the static
 //! `$LOCALDATA/WoWSP/**` asset-protocol scope already serves.
@@ -145,9 +145,9 @@ fn export_part(res_mods: &Path, rel: &str, cache_dir: &Path) -> anyhow::Result<(
     }
     let bytes = fs::read(&path).map_err(|e| anyhow!("read {rel}: {e}"))?;
     let geometry =
-        wowsunpack::models::geometry::parse_geometry(&bytes).map_err(|e| anyhow!("{rel}: {e}"))?;
+        game_assets::models::geometry::parse_geometry(&bytes).map_err(|e| anyhow!("{rel}: {e}"))?;
     let mut glb = std::io::Cursor::new(Vec::new());
-    wowsunpack::export::gltf_export::export_geometry_raw(&geometry, &mut glb)
+    game_assets::export::gltf_export::export_geometry_raw(&geometry, &mut glb)
         .map_err(|e| anyhow!("{rel}: {e}"))?;
     // Write-then-rename so a concurrent request for the same part never
     // reads a half-written GLB. The tmp suffix is unique per invocation
