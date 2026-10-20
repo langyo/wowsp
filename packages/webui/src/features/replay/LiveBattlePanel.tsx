@@ -1389,9 +1389,9 @@ export default defineComponent({
       return (
         <div class="live-battle" ref={root}>
           <div class="live-battle__head live-battle__head--status">
-            {/* The page title — the only "实时对局" on screen (the view-level
-                duplicate was dropped; see LiveView). */}
-            <h1 class="live-battle__title">{t("replay.live.title")}</h1>
+            {/* No heading — the head is all status pills, tags and actions
+                (the "实时对局" name still rides the copy-shot watermark's
+                title). */}
             {props.ended ? (
               <span class="live-battle__pill live-battle__pill--ended">
                 {t("replay.live.ended")}

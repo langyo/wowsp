@@ -303,9 +303,11 @@ export default defineComponent({
 
     return () => (
       <main class="live-view">
-        {/* No page-level header: the panel renders the page title itself
-            ("实时对局" used to appear twice — the slim eyebrow here plus the
-            panel's own heading), and the idle guide carries its own. */}
+        {/* No page-level header, and the panel head carries no heading
+            either ("实时对局" used to appear twice, then once — the slim
+            eyebrow here plus the panel's title; both are gone and the
+            name now rides the copy-shot watermark only). The idle guide
+            carries its own. */}
         <div class="live-view__body">{panel()}</div>
       </main>
     );
