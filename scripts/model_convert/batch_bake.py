@@ -257,12 +257,14 @@ def bake_from_raw(gp_name: str, raw_glb: Path, output_dir: Path,
     ship."""
     out_glb = output_dir / derive_filename(gp_name)
 
-    # Step 2: bake visual model to low-poly.
+    # Step 2: bake visual model to low-poly. The multi-category models
+    # (60–90+ instance groups through the vertex clustering) run 30–90s
+    # on big hulls — an aircraft carrier can pass a minute.
     try:
         rc = subprocess.call(
             [sys.executable, str(BAKE_SCRIPT),
              str(raw_glb), "-o", str(out_glb), "--triangles", "15000"],
-            timeout=30,
+            timeout=300,
         )
         if rc != 0 or not out_glb.exists():
             raw_glb.unlink(missing_ok=True)
