@@ -55,7 +55,7 @@ importers:
   packages/website:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.128
+        specifier: 0.55.128
         version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.46.0
@@ -95,8 +95,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.182
-        version: 0.55.182(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.191
+        version: 0.55.191(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.55.0
         version: 1.57.0(vue@3.5.43(typescript@7.0.2))
@@ -285,15 +285,15 @@ packages:
       three: ^0.185
       vue: ^*
 
-  '@celestia-island/hikari@0.55.182':
-    resolution: {integrity: sha512-rLN3XI4SEmzm/BLefH4x4emd+ERVdpjTqNoK/pF1q8O4r15hUw/Nzx3cZ+nSJoDM4h8zIVg1TBQJ9MXPUFhYZQ==}
+  '@celestia-island/hikari@0.55.191':
+    resolution: {integrity: sha512-8vbCbESQSU2gzx4RDfxxonyCsOXhEBZxPAloty0+vYK/3uBc0nG/5VH7/r4Ilr3oukUfiG5qb+u2ceNOM8dsRQ==}
     peerDependencies:
       '@types/three': ^*
       three: ^0.185
       vue: ^*
 
-  '@celestia-island/tairitsu-transport@0.1.0':
-    resolution: {integrity: sha512-Wba1+h3iyKheU2YZan1LIOCvYdVUZBpMz28NpdewmbrMRy/OUSELey3CQOZmvgMYJrhQtfxL3BWClRUtCP2ptQ==}
+  '@celestia-island/tairitsu-transport@0.2.0':
+    resolution: {integrity: sha512-4pdlaTuVN4J7RnZHQ7LsXFQb9ZXcY5yCPQ2u24TCq2ax1PNB3fX/a4lZycKBb4fPYjX4qWuzvFSkmWyn72tIFA==}
 
   '@cloudflare/kv-asset-handler@0.5.0':
     resolution: {integrity: sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg==}
@@ -1905,18 +1905,10 @@ packages:
   '@xterm/addon-fit@0.11.0':
     resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
 
-  '@xterm/addon-image@0.10.0-beta.301':
-    resolution: {integrity: sha512-PJZL4GlQ1ReIgbffFMaOAFxc3wOit21/G2UEM82RpH3hNHjn6MH8ilz3ToDeBjYuOqU7ienBaeIuMbNktX4/HA==}
-    peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.304
-
   '@xterm/addon-image@0.10.0-beta.310':
     resolution: {integrity: sha512-8fzgYV7HC9iWlw8ChZgnPmCXeBoYkC3Kyo9C0vyOQWD7Cm/bebKNNWhzNlDt5Qxbv+UBPbgkcO4i3dTYnggkRw==}
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.315
-
-  '@xterm/xterm@6.1.0-beta.304':
-    resolution: {integrity: sha512-Wq9d4qFYslYQBIan+riXotdyurtREc6v+HWdAwV6Y2JSDI9eJ1dkWm/fzYb2rCGgGnM3baiYuSK4Z6OLNKLzDw==}
 
   '@xterm/xterm@6.1.0-beta.315':
     resolution: {integrity: sha512-w7MeKxi6vbxE3IOFRiwgugkM6FZonE9gF9KyJ0OiE5HbYZOm38bz+CTGZg3+wqA6porJnHfjzX1KaihInP+iWg==}
@@ -2140,9 +2132,6 @@ packages:
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
-
-  dompurify@3.4.15:
-    resolution: {integrity: sha512-EUBjM+B+lkDE41iE82DDSCfkoPGfXx8IxFxPMjNzm/Uk4xDet77rTN9wqlxlVg71kK7XGuUMv6wUxJUwwv+Xyw==}
 
   dompurify@3.4.17:
     resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
@@ -2527,11 +2516,6 @@ packages:
 
   magic-string@1.4.3:
     resolution: {integrity: sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ==}
-
-  marked@18.0.13:
-    resolution: {integrity: sha512-xTxVzZsBFwunP6HDmtBkabUQEYArnP7/rMDGmPj9SlrKlQ4i8MdYVow+nJL0eOqwpUqhzBoTBRADGN6uYwPyOw==}
-    engines: {node: '>= 20'}
-    hasBin: true
 
   marked@18.1.1:
     resolution: {integrity: sha512-zEGgrtUG8crk+TrMacJSVABU4DYDDkS8uqgU3ohrn/2fW9C2AEfUrO3m6IhpIpQpl7YcVpiXXC9cSMWDANT3dg==}
@@ -3497,19 +3481,19 @@ snapshots:
     dependencies:
       '@types/three': 0.185.4
       '@xterm/addon-fit': 0.11.0
-      '@xterm/addon-image': 0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304)
-      '@xterm/xterm': 6.1.0-beta.304
-      dompurify: 3.4.15
+      '@xterm/addon-image': 0.10.0-beta.310(@xterm/xterm@6.1.0-beta.315)
+      '@xterm/xterm': 6.1.0-beta.315
+      dompurify: 3.4.17
       echarts: 6.1.0
       highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.42(typescript@7.0.2))
-      marked: 18.0.13
+      marked: 18.1.1
       three: 0.185.1
       vue: 3.5.42(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.182(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.191(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
-      '@celestia-island/tairitsu-transport': 0.1.0
+      '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.185.4
       '@xterm/addon-fit': 0.11.0
       '@xterm/addon-image': 0.10.0-beta.310(@xterm/xterm@6.1.0-beta.315)
@@ -3522,7 +3506,7 @@ snapshots:
       three: 0.186.1
       vue: 3.5.43(typescript@7.0.2)
 
-  '@celestia-island/tairitsu-transport@0.1.0': {}
+  '@celestia-island/tairitsu-transport@0.2.0': {}
 
   '@cloudflare/kv-asset-handler@0.5.0': {}
 
@@ -4809,15 +4793,9 @@ snapshots:
 
   '@xterm/addon-fit@0.11.0': {}
 
-  '@xterm/addon-image@0.10.0-beta.301(@xterm/xterm@6.1.0-beta.304)':
-    dependencies:
-      '@xterm/xterm': 6.1.0-beta.304
-
   '@xterm/addon-image@0.10.0-beta.310(@xterm/xterm@6.1.0-beta.315)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.315
-
-  '@xterm/xterm@6.1.0-beta.304': {}
 
   '@xterm/xterm@6.1.0-beta.315': {}
 
@@ -5009,10 +4987,6 @@ snapshots:
   destr@2.0.5: {}
 
   detect-libc@2.1.2: {}
-
-  dompurify@3.4.15:
-    optionalDependencies:
-      '@types/trusted-types': 2.0.7
 
   dompurify@3.4.17:
     optionalDependencies:
@@ -5394,8 +5368,6 @@ snapshots:
   magic-string@1.4.3:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
-
-  marked@18.0.13: {}
 
   marked@18.1.1: {}
 
