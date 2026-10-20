@@ -1,0 +1,166 @@
+// UpdateStrandedToast — the stranded-update recovery card. Sits in
+// hikari's toast column (same fixed top-right slot and z-band as its
+// sibling cards) in the warning variant: amber surface, white text,
+// blur, a body line and two actions — the filled 干净重装 pill (only
+// while the cached installer is still runnable) and the translucent
+// 打开下载页 outline.
+
+.update-stranded {
+  position: fixed;
+  top: 4rem;
+  right: 1rem;
+  z-index: var(--hk-z-toast, 4000);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hi-space-8, 8px);
+  width: 22rem;
+  max-width: calc(100vw - 2rem);
+  padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+  border-radius: var(--hi-radius-sm, 4px);
+  background: var(--hi-color-warning, #d29922);
+  color: #fff;
+  font-size: var(--hi-text-base, 0.875rem);
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+  animation: update-stranded-in var(--hi-duration-normal, 0.3s)
+    cubic-bezier(0.22, 0.61, 0.36, 1);
+  // Leave counterpart of the enter keyframe (delayed unmount in the
+  // component keeps the card alive for the fold-out).
+  transition: opacity 260ms ease, transform 260ms ease;
+
+  &--leave {
+    opacity: 0;
+    transform: translateX(12px);
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-stranded {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes update-stranded-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.update-stranded__row {
+  display: flex;
+  align-items: center;
+  gap: var(--hi-space-8, 8px);
+}
+
+.update-stranded__icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.update-stranded__message {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+// Quiet × next to the title — same translucent outline grammar as the
+// sibling cards' dismiss control.
+.update-stranded__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: var(--hi-radius-sm, 4px);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color var(--hi-duration-fast, 0.15s) ease;
+
+  &:hover {
+    background: rgb(255 255 255 / 18%);
+  }
+
+  &:active {
+    background: rgb(255 255 255 / 28%);
+  }
+}
+
+.update-stranded__body {
+  margin: 0;
+  overflow-wrap: anywhere;
+  opacity: 0.92;
+}
+
+.update-stranded__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--hi-space-8, 8px);
+}
+
+// The 干净重装 action: a filled white pill that reads as the card's
+// primary move (same reasoning as the success card's 查看 pill).
+.update-stranded__reinstall {
+  padding: 0.25rem 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--hi-color-warning, #9e6a03);
+  font-size: var(--hi-text-base, 0.8125rem);
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: opacity var(--hi-duration-fast, 0.15s) ease;
+
+  &:hover {
+    opacity: 0.88;
+  }
+
+  &:active {
+    opacity: 0.78;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
+// The 打开下载页 fallback: a translucent outline pill that stays
+// legible on the amber surface without competing with the primary.
+.update-stranded__download {
+  padding: 0.25rem 0.9rem;
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font-size: var(--hi-text-base, 0.8125rem);
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background-color var(--hi-duration-fast, 0.15s) ease;
+
+  &:hover {
+    background: rgb(255 255 255 / 18%);
+  }
+
+  &:active {
+    background: rgb(255 255 255 / 28%);
+  }
+}

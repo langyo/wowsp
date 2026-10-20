@@ -140,6 +140,8 @@ export const RPC = {
   update_check: "update_check",
   update_download: "update_download",
   update_cancel: "update_cancel",
+  update_stranded_info: "update_stranded_info",
+  update_reinstall_from_cache: "update_reinstall_from_cache",
   duplicate_install_check: "duplicate_install_check",
   duplicate_install_uninstall: "duplicate_install_uninstall",
   get_duplicate_install_config: "get_duplicate_install_config",

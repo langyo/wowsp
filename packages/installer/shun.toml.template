@@ -1,7 +1,9 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.26 (dir-less silent runs upgrade the
-# registered install in place; v0.6.25 minimum for the headless
-# shortcut presence refresh).
+# Requires shun >= 0.6.28 (the silent upgrade retries its directory
+# swap over a lock survivor and degrades to an in-place merge — the
+# 0.6.1 → 0.6.2 stranding; v0.6.26 minimum for dir-less silent runs to
+# upgrade the registered install in place; v0.6.25 minimum for the
+# headless shortcut presence refresh).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
 # staging tree (substituting __WOWSP_VERSION__ with the workspace version)

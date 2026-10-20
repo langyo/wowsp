@@ -48,11 +48,14 @@
 //! the stream against it; no
 //! reachable digest or a mismatch on every mirror means no installer is
 //! spawned.
-//! The hardened installer kills the running app and installs over its
-//! directory, so the frontend treats the command's promise never resolving
-//! (app death) or resolving (installer spawned) as success by design; the
-//! only visible failure modes are `Err` strings (`"update cancelled"` maps
-//! to a clean frontend reset).
+//! The hardened installer stops whatever is left of the app and installs
+//! over its directory — and the app now exits itself right after the
+//! handoff spawn, so the frontend treats the command's promise never
+//! resolving (process exit) or resolving (installer spawned) as success
+//! by design; the only visible failure modes are `Err` strings
+//! (`"update cancelled"` maps to a clean frontend reset). The one-shot
+//! `update-pending.json` marker in the data dir lets the next launch
+//! tell a landed update from a stranded one in the support log.
 //!
 //! Progress flows to the webui on the unified `wowsp://download-progress`
 //! channel (`kind: "update"`): `{ phase: "race" }` while probes settle,
@@ -73,6 +76,7 @@ use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{DOWNLOAD_PROGRESS_EVENT, DownloadProgress};
 
 use crate::commands::download_hub::{self, DownloadRequest};
+use crate::commands::graceful_exit;
 use crate::commands::network::build_http_client;
 use crate::commands::release_digest::asset_sha256;
 
@@ -196,6 +200,141 @@ const CANCEL_MSG: &str = "update cancelled";
 
 /// The hub job id — cancels and progress events address the pass by it.
 const JOB_ID: &str = "update";
+
+/// How long the app stays up after spawning the installer: long enough
+/// for the webui to paint the install phase, short enough that the
+/// handoff reads as immediate. The exit itself is the point — it closes
+/// the WebView2 children with the app so nothing of this process keeps
+/// the install directory pinned for the installer's atomic swap.
+const HANDOFF_EXIT_DELAY: Duration = Duration::from_millis(1200);
+
+/// Name of the one-shot handoff marker inside the data dir. Written just
+/// before the update handoff exits this process; the next launch
+/// reconciles it against the running version to tell a completed update
+/// from a stranded one.
+const PENDING_MARKER: &str = "update-pending.json";
+
+/// The handoff marker: which version the dying build handed off to the
+/// installer, and the temp installer it spawned — the stranded-recovery
+/// card re-runs that installer as a visible wizard when the update never
+/// landed.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PendingMarker {
+    version: String,
+    #[serde(default)]
+    installer: Option<String>,
+}
+
+/// The stranded handoff the previous launch left behind, when the
+/// installer never finished: the expected version plus the spawned
+/// installer path (still on disk or not).
+struct StrandedHandoff {
+    expected: String,
+    installer: Option<std::path::PathBuf>,
+}
+
+/// Set once by [`reconcile_pending_marker`] at startup and read by the
+/// stranded-recovery commands — `None` on a clean boot.
+static STRANDED: std::sync::OnceLock<Option<StrandedHandoff>> = std::sync::OnceLock::new();
+
+/// What startup reconciliation made of the leftover handoff marker.
+#[derive(Debug, PartialEq, Eq)]
+pub enum HandoffOutcome {
+    /// The running build is at (or past) the handed-off version — the
+    /// update landed.
+    Completed,
+    /// The running build is still older — the installer never finished,
+    /// and the update banner will re-offer.
+    Stranded,
+}
+
+/// Write the one-shot marker (best-effort; a failure only costs the
+/// next launch's reconciliation line).
+fn write_pending_marker(version: &str, installer: &std::path::Path) {
+    let Ok(dir) = crate::paths::data_dir() else {
+        tracing::debug!("no writable data dir for the update marker");
+        return;
+    };
+    write_pending_marker_at(&dir, version, installer);
+}
+
+fn write_pending_marker_at(dir: &std::path::Path, version: &str, installer: &std::path::Path) {
+    let path = dir.join(PENDING_MARKER);
+    let marker = PendingMarker {
+        version: version.to_string(),
+        installer: Some(installer.display().to_string()),
+    };
+    let write = serde_json::to_vec_pretty(&marker)
+        .map_err(|e| anyhow!("serialize update marker: {e}"))
+        .and_then(|bytes| {
+            std::fs::write(&path, bytes).map_err(|e| anyhow!("write update marker: {e}"))
+        });
+    if let Err(err) = write {
+        tracing::debug!(%err, path = %path.display(), "update marker not written");
+    }
+}
+
+/// Consume the leftover handoff marker, if any. One-shot by design: the
+/// marker is removed whether or not the update landed, so a failed
+/// install cannot turn into a startup nag in the log — the ordinary
+/// update banner re-offers on its own, and the stranded handoff (when
+/// there is one) is kept for the recovery card's commands.
+pub(crate) fn reconcile_pending_marker() {
+    let dir = match crate::paths::data_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            tracing::debug!(%err, "no data dir to reconcile the update marker");
+            let _ = STRANDED.set(None);
+            return;
+        },
+    };
+    let outcome = reconcile_pending_marker_at(&dir, APP_VERSION);
+    match outcome {
+        HandoffOutcome::Completed => tracing::info!(
+            pending_marker = PENDING_MARKER,
+            "previous update handoff completed"
+        ),
+        HandoffOutcome::Stranded => tracing::warn!(
+            pending_marker = PENDING_MARKER,
+            "previous update handoff stranded — the installer never finished; the recovery card offers the wizard"
+        ),
+    }
+}
+
+fn reconcile_pending_marker_at(dir: &std::path::Path, current: &str) -> HandoffOutcome {
+    let path = dir.join(PENDING_MARKER);
+    let Ok(bytes) = std::fs::read(&path) else {
+        // No marker is the steady state.
+        let _ = STRANDED.set(None);
+        return HandoffOutcome::Completed;
+    };
+    let _ = std::fs::remove_file(&path);
+    let pending = serde_json::from_slice::<PendingMarker>(&bytes).ok();
+    let outcome = match pending.as_ref() {
+        Some(marker) if !is_newer(&marker.version, current) => {
+            tracing::info!(handed_off = %marker.version, running = current);
+            HandoffOutcome::Completed
+        },
+        Some(marker) => {
+            tracing::warn!(handed_off = %marker.version, running = current);
+            HandoffOutcome::Stranded
+        },
+        None => {
+            tracing::warn!("unreadable update marker discarded");
+            // Unreadable says nothing either way; treat as consumed.
+            HandoffOutcome::Completed
+        },
+    };
+    let stranded = match outcome {
+        HandoffOutcome::Stranded => pending.map(|marker| StrandedHandoff {
+            expected: marker.version,
+            installer: marker.installer.map(std::path::PathBuf::from),
+        }),
+        HandoffOutcome::Completed => None,
+    };
+    let _ = STRANDED.set(stranded);
+    outcome
+}
 
 /// The installer artifact URL under a mirror base — the exact name
 /// `scripts/build_installers.py::emit` produces, under the release's
@@ -742,10 +881,11 @@ fn download_sources(version: &str, candidates: &[SourceCandidate]) -> Vec<String
 /// version-scoped part file (resuming across failed/cancelled passes) and
 /// walks its ladder on mirror death. On success the part file becomes
 /// `WoWSP-update-<version>-<pid>.exe`, spawned with
-/// `--silent --dir=<install dir>`; returns after that spawn — the hardened
-/// installer then kills this app, installs over its directory and
-/// relaunches the new build, so the webui treats the unresolved promise /
-/// app exit as success by design.
+/// `--silent --dir=<install dir>`; returns after that spawn — the app
+/// then exits itself (see [`HANDOFF_EXIT_DELAY`]) so the hardened
+/// installer delivers over the directory and relaunches the new build,
+/// and the webui treats the unresolved promise / process exit as success
+/// by design.
 #[tauri::command]
 pub async fn update_download(app: AppHandle) -> CommandResult<()> {
     // Collapse double triggers (banner + About button) into one pass.
@@ -851,8 +991,8 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     cleanup_part_files(None).await;
 
     // Install over the directory the running exe lives in; the hardened
-    // installer takes it from here — it kills this app, extracts, and
-    // relaunches the new build. No shortcut flags ride along: the shun
+    // installer takes it from here — it stops any stragglers, extracts,
+    // and relaunches the new build. No shortcut flags ride along: the shun
     // headless lane resolves the manifest's "ask" policies by presence —
     // launchers the player kept are refreshed in place (paths are
     // stable), and ones they deleted stay deleted instead of being
@@ -862,18 +1002,40 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
         .parent()
         .ok_or_else(|| anyhow!("current exe has no parent directory"))?
         .to_path_buf();
-    // Tell the webui the install phase started even though the spawned
-    // installer may kill this app before the command's promise settles.
+    // Tell the webui the install phase started even though this process
+    // exits before the command's promise settles.
     pass.begin_install()?;
     emit_phase(app, phase::INSTALL);
     std::process::Command::new(&installer_path)
         .args(["--silent", &format!("--dir={}", install_dir.display())])
         .spawn()
         .map_err(|e| anyhow!("spawn installer {}: {e}", installer_path.display()))?;
-    // The last line the running build writes before the installer kills it —
+    // The last lines the running build writes before it exits itself —
     // when an update reports "nothing happened", this is the fork in the
     // trail: present here means the handoff succeeded.
     tracing::info!(%version, installer = %installer_path.display(), "installer spawned; handing off");
+
+    // Leave a one-shot marker so the next launch can tell a completed
+    // handoff from a stranded one (the support log's answer to "the
+    // update did nothing"); best-effort, an unwritable data dir only
+    // costs the reconciliation line.
+    write_pending_marker(&version, &installer_path);
+    // Exit this build on our own terms instead of waiting for the
+    // installer's taskkill. A graceful exit closes the WebView2 children
+    // with us, so nothing of this process keeps the install directory
+    // pinned against the installer's atomic swap — the 0.6.1 → 0.6.2
+    // stranding: the kill felled the host, the surviving children held
+    // the directory, and the silent installer died on its rename having
+    // installed nothing. The spawned installer may still be winding up
+    // behind a Defender first-run scan; it catches up whenever it
+    // starts, and shun's lock-retry window covers the frozen-updater
+    // shape where an older client still waits to be killed.
+    let exiting = app.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(HANDOFF_EXIT_DELAY).await;
+        tracing::info!("update handoff complete; exiting for the installer");
+        graceful_exit(&exiting);
+    });
 
     Ok(())
 }
@@ -894,11 +1056,141 @@ pub fn update_cancel() -> CommandResult<()> {
     Ok(())
 }
 
+/// The stranded-recovery card's answer: what the previous launch handed
+/// off and whether the installer it spawned is still around to re-run.
+#[derive(Debug, Serialize)]
+pub struct UpdateStrandedInfo {
+    /// The version the previous launch handed off to the installer.
+    pub expected: String,
+    /// Whether the spawned installer is still on disk (and plausibly
+    /// intact) for the run-the-wizard recovery action.
+    pub installer_ready: bool,
+}
+
+/// Read the stranded handoff recorded at startup (see
+/// [`reconcile_pending_marker`]). `None` on a clean boot or after a
+/// landed update — the recovery card only rises for a real stranding.
+#[tauri::command]
+pub fn update_stranded_info() -> CommandResult<Option<UpdateStrandedInfo>> {
+    let info = STRANDED
+        .get()
+        .and_then(|stranded| stranded.as_ref())
+        .map(|stranded| UpdateStrandedInfo {
+            expected: stranded.expected.clone(),
+            installer_ready: stranded
+                .installer
+                .as_deref()
+                .is_some_and(cached_installer_runnable),
+        });
+    Ok(info)
+}
+
+/// The stranded-recovery card's 干净重装 action: re-run the installer the
+/// stranded handoff already downloaded — NOT silently this time. The
+/// full wizard opens on its own window, the user clicks through it, and
+/// the wizard's own flow stops this app at the install step.
+#[tauri::command]
+pub fn update_reinstall_from_cache() -> CommandResult<()> {
+    let Some(stranded) = STRANDED.get().and_then(|stranded| stranded.as_ref()) else {
+        return Err(anyhow!("no stranded update to recover").into());
+    };
+    let Some(installer) = stranded.installer.as_deref() else {
+        return Err(anyhow!("the stranded update recorded no installer path").into());
+    };
+    if !cached_installer_runnable(installer) {
+        return Err(anyhow!(
+            "the cached installer is gone or truncated: {}",
+            installer.display()
+        )
+        .into());
+    }
+    std::process::Command::new(installer)
+        .spawn()
+        .map_err(|e| anyhow!("spawn installer {}: {e}", installer.display()))?;
+    tracing::info!(
+        installer = %installer.display(),
+        expected = %stranded.expected,
+        "stranded-update recovery: installer wizard launched"
+    );
+    Ok(())
+}
+
+/// The cached installer is worth re-running only while it still looks
+/// like the verified artifact (an installer is hundreds of MB; a
+/// truncated sweep or an overeager temp cleaner is not).
+fn cached_installer_runnable(installer: &std::path::Path) -> bool {
+    std::fs::metadata(installer)
+        .map(|meta| meta.is_file() && meta.len() >= MIN_INSTALLER_BYTES)
+        .unwrap_or(false)
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir =
+            std::env::temp_dir().join(format!("wowsp-update-{tag}-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn pending_marker_tells_landed_from_stranded_and_consumes_once() {
+        let dir = temp_dir("marker");
+
+        // No marker is the steady state.
+        assert_eq!(
+            reconcile_pending_marker_at(&dir, "0.6.3"),
+            HandoffOutcome::Completed
+        );
+
+        // Handed off 0.6.3, running 0.6.3 — landed, marker consumed.
+        write_pending_marker_at(
+            &dir,
+            "0.6.3",
+            std::path::Path::new("C:/tmp/WoWSP-update-0.6.3-1.exe"),
+        );
+        assert_eq!(
+            reconcile_pending_marker_at(&dir, "0.6.3"),
+            HandoffOutcome::Completed
+        );
+        assert!(!dir.join(PENDING_MARKER).exists());
+
+        // Handed off 0.6.4, running 0.6.3 — stranded, consumed once: a
+        // second launch must not re-report it.
+        write_pending_marker_at(
+            &dir,
+            "0.6.4",
+            std::path::Path::new("C:/tmp/WoWSP-update-0.6.4-2.exe"),
+        );
+        assert_eq!(
+            reconcile_pending_marker_at(&dir, "0.6.3"),
+            HandoffOutcome::Stranded
+        );
+        assert_eq!(
+            reconcile_pending_marker_at(&dir, "0.6.3"),
+            HandoffOutcome::Completed
+        );
+        assert!(!dir.join(PENDING_MARKER).exists());
+
+        // Unreadable marker: consumed without a verdict either way.
+        std::fs::write(dir.join(PENDING_MARKER), "not json").unwrap();
+        assert_eq!(
+            reconcile_pending_marker_at(&dir, "0.6.3"),
+            HandoffOutcome::Completed
+        );
+        assert!(!dir.join(PENDING_MARKER).exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[tokio::test]
     async fn cancellation_interrupts_a_stalled_lookup() {

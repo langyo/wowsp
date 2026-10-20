@@ -260,6 +260,12 @@ pub fn run() {
                 let (data_dir, cache_dir) = (paths::data_dir(), paths::cache_dir());
                 tracing::debug!(?data_dir, ?cache_dir, "writable roots resolved");
             }
+            // The one-shot update-handoff marker: consumed (and logged)
+            // whether or not the handed-off update landed, so the support
+            // log answers "did the auto-update install?" on the very next
+            // line after startup.
+            #[cfg(windows)]
+            commands::update::reconcile_pending_marker();
             // One line of network truth for the support bundles: every CN
             // stats complaint of the "rosters spin forever" class ends up
             // being either a degraded vortex or a system proxy black-holing
@@ -722,6 +728,10 @@ pub fn run() {
             commands::update::update_download,
             #[cfg(windows)]
             commands::update::update_cancel,
+            #[cfg(windows)]
+            commands::update::update_stranded_info,
+            #[cfg(windows)]
+            commands::update::update_reinstall_from_cache,
             #[cfg(feature = "ai")]
             commands::decision_ai::decision_ai_status,
             #[cfg(feature = "ai")]
