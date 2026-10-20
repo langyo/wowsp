@@ -47,6 +47,8 @@ export const EVENT_META: Record<string, EventMeta> = {
   collab_blue_archive: { since: "2025" },
   collab_megadeth: { since: "2023" },
   collab_star_trek: { since: "13.10 · 2025-10" },
+  // RA3: Corona (红警3日冕 MOD) — CN-server exclusive collaboration.
+  collab_corona: { since: "2025-10" },
   // Themed families
   lunar_new_year: { since: "2019" },
   hunt_bismarck: { since: "2017" },

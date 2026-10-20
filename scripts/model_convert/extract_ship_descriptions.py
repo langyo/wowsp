@@ -17,11 +17,16 @@ Sources (same layout as extract_ship_names.py):
     Only the Chinese trio is extracted here — every other language already
     arrives correctly from the WG API, so shipping it would only bloat the
     bundle.
+  - `ship_descriptions_curated.json` (sibling file): hand-curated per-index
+    description overrides applied over the catalog lookup — priority: this
+    file > game texts, and a curated entry keeps the ship in the DB even
+    when no catalog carries text for it.
 
 Output: packages/webui/src/data/ship_descriptions.json
     { "<shipId>": { "descriptions": { "<lang>": "..." } } }
-    Ships with no non-empty description in ANY of the three catalogs are
-    omitted entirely (the caller then keeps the WG API text).
+    Ships with no non-empty description in ANY of the three catalogs (and no
+    curated text) are omitted entirely (the caller then keeps the WG API
+    text).
 
 Usage:
     python scripts/model_convert/extract_ship_descriptions.py
@@ -45,6 +50,12 @@ OUT_PATH = (
     Path(__file__).resolve().parents[2]
     / "packages" / "webui" / "src" / "data" / "ship_descriptions.json"
 )
+
+# Hand-curated description overrides ({ "<index>": { "<langLoc>": "<text>" } });
+# see ship_descriptions_curated.json — CN-exclusive hulls whose zh-SG/zh-TW
+# catalog slots fall back to the untranslated English text carry proper
+# Chinese wording here instead.
+CURATED_PATH = Path(__file__).resolve().parent / "ship_descriptions_curated.json"
 
 # Canonical BCP 47 lang-loc (output key) -> game's texts/<dir> name.
 # Chinese trio only: these are the realms the WG API cannot distinguish.
@@ -88,6 +99,11 @@ def main() -> int:
         help="reuse an existing GameParams JSON (skip wowsunpack pass)",
     )
     parser.add_argument("--out", default=str(OUT_PATH), help="output JSON path")
+    parser.add_argument(
+        "--curated",
+        default=str(CURATED_PATH),
+        help="{ index: { langLoc: text } } hand-curated overrides",
+    )
     args = parser.parse_args()
 
     game = Path(args.game_dir) if args.game_dir else Path(find_game_path() or "")
@@ -128,6 +144,14 @@ def main() -> int:
     print(f"[ship-desc] texts from {texts_root}: "
           + ", ".join(f"{c}({len(v)})" for c, v in catalogs.items()))
 
+    curated_path = Path(args.curated)
+    curated: dict[str, dict[str, str]] = (
+        json.loads(curated_path.read_text(encoding="utf-8"))
+        if curated_path.exists() else {}
+    )
+    print(f"[ship-desc] curated overrides: {len(curated)} indexes"
+          + (f" from {curated_path.name}" if curated else ""))
+
     # 3. Build the DB: every Ship entry -> {lang: IDS_<index>_DESCR} where the
     # catalog carries a non-empty stripped string. Ships with nothing in any
     # language are skipped so the caller's WG-API description stays in charge.
@@ -150,6 +174,9 @@ def main() -> int:
             if text:
                 descriptions[code] = text
                 coverage[code] += 1
+        for code, curated_text in (curated.get(str(index)) or {}).items():
+            if curated_text:
+                descriptions[code] = curated_text
         if descriptions:
             db[str(sid)] = {"descriptions": descriptions}
 

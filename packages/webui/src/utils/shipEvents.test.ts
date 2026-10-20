@@ -60,6 +60,9 @@ describe("event rarity resolution", () => {
   it("pins the map keying with anchor ships", () => {
     expect(authoritativeEvent(4282267344)).toBeNull(); // Shimakaze — no event
     expect(EVENT_MAP["4187927824"]).toBe("halloween_2020"); // 狂风
+    // The RA3: Corona (红警3日冕) CN collab hull is NOT a Lunar New Year ship.
+    expect(authoritativeEvent(3341759696)).toBe("collab_corona"); // 玄冥
+    expect(EVENT_MAP["3751720144"]).toBe("lunar_new_year"); // 悟空
   });
 
   it("leaves non-event ships on their rarity band", () => {
