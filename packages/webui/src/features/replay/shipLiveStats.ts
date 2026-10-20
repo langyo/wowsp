@@ -55,7 +55,9 @@ export function shipTypeLabel(type: string | null | undefined): string | null {
   return hasMsg(key) ? t(key) : type;
 }
 
-/** WG long type → the battle-HUD short code (BB / CA / DD / CV / SS). */
+/** WG long type → the battle-HUD short code (BB / CA / DD / CV / SS).
+ *  Cruisers resolve dynamically in `shipTypeShort` — the static entry is
+ *  the no-caliber fallback. */
 const TYPE_SHORT: Record<string, string> = {
   Battleship: "BB",
   Cruiser: "CA",
@@ -65,8 +67,20 @@ const TYPE_SHORT: Record<string, string> = {
   Auxiliary: "AX",
 };
 
-export function shipTypeShort(type: string | null | undefined): string | null {
+/** Guns at or above this caliber read as the heavy designation — the
+ *  ≤152mm six-inch fleet reads CL. No 153–154mm hull exists, so the
+ *  boundary is unambiguous; cruisers without a baked caliber (slices
+ *  missing the artillery mounts) fall back to the static CA. */
+const CA_CALIBER_MM = 155;
+
+export function shipTypeShort(
+  type: string | null | undefined,
+  mainCaliber?: number,
+): string | null {
   if (!type) return null;
+  if (type === "Cruiser" && mainCaliber != null && mainCaliber > 0) {
+    return mainCaliber >= CA_CALIBER_MM ? "CA" : "CL";
+  }
   return TYPE_SHORT[type] ?? "?";
 }
 

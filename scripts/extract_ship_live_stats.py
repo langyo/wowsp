@@ -24,6 +24,8 @@ Sources, in order of authority per field:
     only carries partially, for skill gating),
   * `maxEquippedFlags` (signal-flag capacity),
   * `ShipUpgradeInfo` (the ship's researchable module kinds),
+  * the widest main-gun caliber (`barrelDiameter`, the `cal` field — the
+    battle HUD reads cruisers CA vs CL from it),
   * and a fallback for the fields the encyclopedia is missing (newer ships).
 * a full GameParams dump (`--ammo-source`, the orchestrator cache by
   default) — torpedo PROJECTILES only: a mount references its ammo by name
@@ -310,14 +312,28 @@ def collect_gameparams_fallback(
     """
     out: dict[str, Any] = {}
     main = 0.0
+    caliber = 0.0
     for key, block in gp.items():
         if not ARTILLERY_BLOCK_RE.match(key) or not isinstance(block, dict):
             continue
         dist = num(block.get("maxDist"))
         if dist is not None and dist > main:
             main = dist
+        # Widest main-gun mount across every hull block — the same
+        # top-configuration convention as every other field here (the
+        # classic upgunnable hulls — Mogami's 155→203 — read by their TOP
+        # fit, which is what the community classification expects).
+        for slot in block.values():
+            if not isinstance(slot, dict) or not isinstance(slot.get("barrelDiameter"), (int, float)):
+                continue
+            d = float(slot["barrelDiameter"])
+            if d > caliber:
+                caliber = d
     if main > 0:
         out["main"] = round(main / 1000.0, 1)
+    if caliber > 0:
+        # barrelDiameter is meters → integer millimeters.
+        out["cal"] = round(caliber * 1000.0)
 
     torp = collect_torp_range(gp, ammo_ranges)
     if torp is not None:

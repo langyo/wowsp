@@ -24,6 +24,9 @@ export interface AswStat {
 export interface ShipLiveStats {
   /** Main-battery range (km). */
   main?: number;
+  /** Widest main-gun caliber (mm, barrelDiameter×1000) — the battle HUD
+   *  reads cruisers as CA (heavy) vs CL (light) from it. */
+  cal?: number;
   /** Secondary-battery range (km). */
   sec?: number;
   /** Torpedo range (km). */

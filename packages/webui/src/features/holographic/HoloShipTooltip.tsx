@@ -205,6 +205,10 @@ export default defineComponent({
 
     // ── Standard loadout + specs (baked ship capabilities) ────────────────
     const liveStats = computed(() => shipLiveStats(props.vehicle.shipId));
+    // Cruisers read CA vs CL from the baked main-gun caliber (fallback CA).
+    const typeCode = computed(() =>
+      shipTypeShort(shipType.value, liveStats.value?.cal),
+    );
     const badges = computed(() =>
       liveStats.value ? badgeFamilies(liveStats.value.load) : [],
     );
@@ -326,8 +330,8 @@ export default defineComponent({
                   size={14}
                 />
                 <span class="holo-ship-tip__ship-name">{shipName.value}</span>
-                {shipTypeShort(shipType.value) ? (
-                  <span class="holo-ship-tip__type">{shipTypeShort(shipType.value)}</span>
+                {typeCode.value ? (
+                  <span class="holo-ship-tip__type">{typeCode.value}</span>
                 ) : null}
                 {nation.value ? (
                   <NationFlag
