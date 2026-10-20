@@ -70,24 +70,30 @@ export function useFileListWindow(hub: ModHubCtx) {
   }
 
   /** From the online pane: the entry drives the package list; a ledger
-   *  record (when installed) renders the merged tree instantly. */
+   *  record (when installed) renders the merged tree instantly. Folded
+   *  style families pair through their superseded legacy ids too. */
   function openForEntry(entry: CatalogEntry) {
     open({
       title: localized(entry).name || entry.title || entry.nameEn || entry.id,
       entry,
-      record: hub.recordOf(entry.id) ?? null,
+      record: hub.recordOfEntry(entry) ?? null,
       preset: hub.activePreset(entry) || undefined,
     });
   }
 
   /** From the installed pane: paired entry when the unit has one, ledger
-   *  record via the unit's identity. */
+   *  record via the paired entry (a folded family's record may sit under
+   *  a superseded legacy id). */
   function openForUnit(mod: InstalledMod) {
     const paired = hub.pairedEntryOf(mod);
     open({
       title: hub.unitDisplayName(mod),
       entry: paired ?? null,
-      record: mod.identity ? (hub.recordOf(mod.identity) ?? null) : null,
+      record: paired
+        ? (hub.recordOfEntry(paired) ?? null)
+        : mod.identity
+          ? (hub.recordOf(mod.identity) ?? null)
+          : null,
       preset: paired ? hub.activePreset(paired) || undefined : undefined,
     });
   }

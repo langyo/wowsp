@@ -23,6 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Sibling module (same directory — sys.path[0] when run as
+# `python scripts/mod_index.py`).
+import mod_hub_families
+
 # Author tag registry (scripts/mod_hub_authors.json, same repo): `authors`
 # maps a display name to its official page. The thread front-matter carries
 # the names (`authors: A, B, C` — or the legacy singular `author:`); this
@@ -335,6 +339,10 @@ def index_discussions(nodes: list[dict]) -> dict:
         entry["game"] = entry["versions"][latest]["game"]
         if entry["versions"][latest].get("delisted"):
             entry["delisted"] = True
+    # Style families (several Aslain variants of one HUD element) fold
+    # into preset-carrying entries AFTER the latest-version pass — the
+    # fold consumes each member's resolved latest payload.
+    mod_hub_families.fold_families(mods)
     return {"schema": 1, "mods": mods}
 
 
@@ -519,6 +527,44 @@ def main(argv: list[str] | None = None) -> int:
         v3 = idx3["mods"]["fx"]["versions"]["1"]
         assert [p["name"] for p in v3["packages"]] == ["ok.zip"], v3
         assert "presets" not in v3, v3
+
+        # Style families fold at index time: several one-thread-per-
+        # variant entries of the same HUD element merge into ONE
+        # preset-carrying entry — per-style preview + description, the
+        # legacy ids mapped in `supersedes`.
+        def fam_node(num, mod_id, asset, img):
+            return {
+                "number": num, "title": "t", "author": {"login": "a"}, "closed": False,
+                "body": "---\n"
+                        f"wowsp-mod: {mod_id}\nversion: 1\ncategory: battle\n---\n"
+                        f"![preview]({img})\n"
+                        f"- [`{asset}`](https://github.com/langyo/wowsp/releases/download/mod-hub/{asset})"
+                        f" — 1 KB · SHA-256 `{sha}`\n",
+                "comments": {"nodes": []}}
+        folded = index_discussions([
+            fam_node(10, "battle.marker.traffic", "t1.zip",
+                     "https://github.com/user-attachments/assets/t1.png"),
+            fam_node(11, "battle.marker.traffic-v2", "t2.zip",
+                     "https://github.com/user-attachments/assets/t2.png"),
+        ])
+        fam_entry = folded["mods"]["battle.marker.traffic"]
+        fv = fam_entry["versions"][fam_entry["latest"]]
+        assert [p["id"] for p in fv["presets"]] == ["classic", "v2"], fv.get("presets")
+        assert (
+            fv["presets"][0]["preview"]
+            == "https://github.com/user-attachments/assets/t1.png"
+        )
+        assert (
+            fv["presets"][1]["preview"]
+            == "https://github.com/user-attachments/assets/t2.png"
+        )
+        assert fv["presets"][0]["desc_zh"], "classic keeps its caveat text"
+        assert fam_entry["supersedes"] == {
+            "battle.marker.traffic": "classic",
+            "battle.marker.traffic-v2": "v2",
+        }, fam_entry.get("supersedes")
+        assert "battle.marker.traffic-v2" not in folded["mods"]
+        mod_hub_families.selftest()
         print("selftest ok")
         return 0
 

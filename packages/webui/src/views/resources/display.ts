@@ -61,10 +61,35 @@ export function presetLabel(p: CatalogPreset): string {
     : p.nameEn || p.nameZh;
 }
 
+/** A preset's own note (zh/en pair): zh locales take the Chinese text,
+ *  everything else the English one; empty when the scheme carries no
+ *  note and the entry description stands. */
+export function presetDesc(p: CatalogPreset): string {
+  const { uiLocale } = useLanguage();
+  return uiLocale.value.toLowerCase().startsWith("zh")
+    ? p.descZh || p.descEn || ""
+    : p.descEn || p.descZh || "";
+}
+
+/** The scheme an installed record represents: its own preset id, else
+ *  the scheme the record's superseded legacy id folded into, else the
+ *  default (first) scheme. Folded style families ship `supersedes`
+ *  (old one-entry-per-variant catalog id → preset id) so records from
+ *  before the fold still answer "which style is installed". */
+export function installedPresetOf(
+  entry: CatalogEntry,
+  record?: ModInstallRecord | null,
+): string {
+  const list = entry.presets ?? [];
+  if (!record) return list[0]?.id ?? "";
+  return record.preset ?? entry.supersedes?.[record.id] ?? list[0]?.id ?? "";
+}
+
 /** Whether the user switched a preset-carrying INSTALLED entry away from
- * its installed scheme — the config effectively changed, so the primary
- * action becomes "save & reinstall" instead of the plain install/update
- * wording. A record without a preset sits on the default (first) scheme. */
+ *  its installed scheme — the config effectively changed, so the primary
+ *  action becomes "save & reinstall" instead of the plain install/update
+ *  wording. A record without a preset sits on the default (first) scheme
+ *  or, under a superseded legacy id, on the scheme it folded into. */
 export function presetSwitched(
   entry: CatalogEntry,
   record: ModInstallRecord | null | undefined,
@@ -72,8 +97,7 @@ export function presetSwitched(
 ): boolean {
   const list = entry.presets ?? [];
   if (list.length === 0 || !record) return false;
-  const installed = record.preset ?? list[0].id;
-  return activePreset !== installed;
+  return activePreset !== installedPresetOf(entry, record);
 }
 
 /** Installer display name for badges/notes. */

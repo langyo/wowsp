@@ -41,6 +41,7 @@ import {
   installerLabel,
   kindLabel,
   localized,
+  presetDesc,
   presetLabel,
   presetSwitched,
   tagLabel,
@@ -173,7 +174,8 @@ function revealUnit(ctx: ResourcesCtx, record: ModInstallRecord | null, relPath:
 
 function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
   const text = localized(entry);
-  const record = ctx.recordOf(entry.id);
+  // Folded style families pair through superseded legacy ids too.
+  const record = ctx.recordOfEntry(entry);
   const foreignCopy = ctx.foreignCopyOf(entry);
   const upToDate = !!record && record.version === entry.version;
   const busyState = ctx.busy.value.get(entry.id);
@@ -184,6 +186,16 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
   const url = discussionUrl(entry.discussion);
   const kb = catalogKb(entry);
   const CatIcon = catIcon(entry.category);
+  // The scheme on the pane drives BOTH the preview image and the note
+  // under the buttons — folded style families carry one screenshot and
+  // their variant caveats per scheme, so flipping the button group
+  // swaps them; plain entries and note-less schemes fall back to the
+  // entry-level media.
+  const activeScheme =
+    (entry.presets ?? []).find((p) => p.id === ctx.activePreset(entry)) ??
+    null;
+  const schemeNote = activeScheme ? presetDesc(activeScheme) : "";
+  const previewSrc = activeScheme?.preview ?? entry.preview;
   return (
     <div class="mod-detail">
       <div class="mod-detail__head">
@@ -278,18 +290,25 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
               }))}
               renderPanels={false}
             />
+            {/* The selected scheme's own caveats (mutual exclusions,
+                replay breakage…) — the reason a style family folds into
+                buttons instead of separate entries is exactly that each
+                variant carries different warnings. */}
+            {schemeNote && <p class="mod-detail__preset-note">{schemeNote}</p>}
           </div>
         )}
         {(text.desc || entry.description) && (
           <p class="mod-detail__desc">{text.desc || entry.description}</p>
         )}
         {/* Preview images route through the media proxy (proxy-aware
-         * client + mirror ladder + disk cache) — the raw GitHub URL is
-         * both outside the CSP's img-src and unreachable for many CN
-         * users when fetched by the webview directly. */}
-        {entry.preview && (
+         *  client + mirror ladder + disk cache) — the raw GitHub URL is
+         *  both outside the CSP's img-src and unreachable for many CN
+         *  users when fetched by the webview directly. Keyed by the
+         *  scheme so switching buttons remounts (not smears) the image. */}
+        {previewSrc && (
           <HkImagePreview
-            src={mediaImageUrl(entry.preview)}
+            key={activeScheme?.id ?? "default"}
+            src={mediaImageUrl(previewSrc)}
             alt={text.name || entry.title}
             objectFit="contain"
           />
@@ -395,7 +414,13 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
   const Icon = meta.icon;
   const state = ctx.unitBusy.value.get(mod.relPath);
   const paired = ctx.pairedEntryOf(mod);
-  const record = mod.identity ? (ctx.recordOf(mod.identity) ?? null) : null;
+  // A folded style family's ledger record may sit under a superseded
+  // legacy id — pair through the entry, not the raw identity string.
+  const record = paired
+    ? (ctx.recordOfEntry(paired) ?? null)
+    : mod.identity
+      ? (ctx.recordOf(mod.identity) ?? null)
+      : null;
   return (
     <div class="mod-detail">
       <div class="mod-detail__head">

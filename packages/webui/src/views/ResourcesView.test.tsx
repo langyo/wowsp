@@ -32,7 +32,7 @@ vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: 
 vi.mock("@/features/modhub/AssetPreview", () => ({ default: { name: "AssetPreview", render: () => null } }));
 vi.mock("@/components/search/AsyncSearchCombo", () => ({ default: { name: "AsyncSearchCombo", render: () => null } }));
 vi.mock("@celestia-island/hikari", () => {
-  const component = (name: string) => ({ name, props: ["modelValue", "open", "footerActions", "items", "tabs"], render: () => null });
+  const component = (name: string) => ({ name, props: ["modelValue", "open", "footerActions", "items", "tabs", "src"], render: () => null });
   return {
     HkTabs: component("HkTabs"), HkSpinner: component("HkSpinner"), HkButton: component("HkButton"),
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
@@ -362,5 +362,77 @@ describe("catalog detail menu", () => {
     presetTabs().vm.$emit("update:modelValue", "classic");
     await flushPromises();
     expect(presetTabs().props("modelValue")).toBe("classic");
+  });
+
+  it("folds style families: legacy record lands its scheme and the preview swaps per button", async () => {
+    // A folded family (scripts/mod_hub_families.py): one card, a scheme
+    // button group, per-scheme preview + note, legacy ids in supersedes.
+    // The ledger record was written under the legacy one-entry-per-
+    // variant id and carries no preset.
+    mocks.catalog.mockResolvedValue({
+      mods: [{
+        id: "battle.panel", version: "1", category: "battle", nameEn: "Team Panels",
+        game: "*", title: "Team Panels", nameZh: "", description: "Family intro.",
+        authors: [], packages: [{ name: "classic.zip", sha256: "ab", size: 2048 }],
+        i18n: {}, aliases: [],
+        preview: "https://github.com/user-attachments/assets/panel-classic.png",
+        supersedes: {
+          "battle.panel.autospy": "classic",
+          "battle.panel.ttaro": "ttaro",
+        },
+        presets: [
+          { id: "classic", nameZh: "经典", nameEn: "Classic", packages: [],
+            preview: "https://github.com/user-attachments/assets/panel-classic.png" },
+          { id: "ttaro", nameZh: "TTaro", nameEn: "TTaro", packages: [],
+            preview: "https://github.com/user-attachments/assets/panel-ttaro.png",
+            descZh: "与剪影图标类插件不兼容。", descEn: "Incompatible with silhouette icon mods." },
+        ],
+      }],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    mocks.records.mockResolvedValue([
+      { id: "battle.panel.ttaro", version: "1", gameRoot: "C:/TestGameA", preset: null },
+    ]);
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+
+    const presetTabs = () =>
+      view
+        .findAllComponents({ name: "HkTabs" })
+        .find(
+          (c) =>
+            (c.props("tabs") as { key: string }[] | undefined)?.some(
+              (tab) => tab.key === "ttaro",
+            ),
+        )!;
+    // The legacy record's folded scheme is the landed (and installed)
+    // one — not the default first scheme, and not a drift.
+    expect(presetTabs().props("modelValue")).toBe("ttaro");
+    // The scheme's own preview + note are on the pane.
+    const previewImg = () =>
+      view.findAllComponents({ name: "HkImagePreview" })[0];
+    expect(previewImg().props("src")).toBe(
+      "https://github.com/user-attachments/assets/panel-ttaro.png",
+    );
+    expect(view.find(".mod-detail__preset-note").text()).toContain(
+      "Incompatible with silhouette icon mods.",
+    );
+    // On the installed (folded) scheme the primary action is NOT the
+    // save-and-reinstall wording — there is no drift.
+    expect(view.text()).not.toContain("resources.presetApplyReinstall");
+
+    // Flipping the button group swaps the preview image and the note;
+    // away from the installed scheme the save-and-reinstall wording arms.
+    presetTabs().vm.$emit("update:modelValue", "classic");
+    await flushPromises();
+    expect(previewImg().props("src")).toBe(
+      "https://github.com/user-attachments/assets/panel-classic.png",
+    );
+    expect(view.find(".mod-detail__preset-note").exists()).toBe(false);
   });
 });

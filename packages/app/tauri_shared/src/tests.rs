@@ -2155,6 +2155,7 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
         .collect(),
         aliases: vec!["TeamHP".into()],
         preview: Some("https://user-images.githubusercontent.com/x/1.jpg".into()),
+        supersedes: None,
     };
     let v = round_trips(entry);
     assert_exact_keys(
@@ -2182,6 +2183,54 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
     );
     assert_eq!(v["i18n"]["zh-CN"]["name"], "zh-name");
     assert_eq!(v["aliases"][0], "TeamHP");
+}
+
+/// Wire-critical payload of a folded style family: per-scheme media on
+/// the presets and the legacy-id map — all optional, so `None` drops out
+/// (see the plain-entry key pin above) and `Some` serializes camelCase.
+#[test]
+fn catalog_entry_serializes_folded_family_media_and_supersedes() {
+    let v = round_trips(CatalogEntry {
+        id: "battle.panel".into(),
+        category: "battle".into(),
+        discussion: None,
+        version: "15.7.0".into(),
+        game: "*".into(),
+        bundled: false,
+        delisted: false,
+        presets: vec![CatalogPreset {
+            id: "ttaro".into(),
+            name_zh: "TTaro 版".into(),
+            name_en: "TTaro".into(),
+            packages: Vec::new(),
+            preview: Some("https://github.com/user-attachments/assets/t.png".into()),
+            desc_zh: Some("与剪影图标不兼容。".into()),
+            desc_en: Some("Incompatible with silhouettes.".into()),
+        }],
+        tags: Vec::new(),
+        title: "Team Panels".into(),
+        name_zh: "侧边面板".into(),
+        name_en: "Team Panels".into(),
+        description: String::new(),
+        authors: Vec::new(),
+        packages: Vec::new(),
+        i18n: std::collections::HashMap::new(),
+        aliases: Vec::new(),
+        preview: None,
+        supersedes: Some(
+            [("battle.panel.ttaro".to_string(), "ttaro".to_string())]
+                .into_iter()
+                .collect(),
+        ),
+    });
+    let preset = &v["presets"][0];
+    assert_eq!(
+        preset["preview"],
+        "https://github.com/user-attachments/assets/t.png"
+    );
+    assert_eq!(preset["descZh"], "与剪影图标不兼容。");
+    assert_eq!(preset["descEn"], "Incompatible with silhouettes.");
+    assert_eq!(v["supersedes"]["battle.panel.ttaro"], "ttaro");
 }
 
 #[test]

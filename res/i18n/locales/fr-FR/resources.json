@@ -43,6 +43,7 @@
   "delistedTitle": "Ce mod a été retiré du catalogue",
   "delistedHint": "« {name} » a été retiré du catalogue et ne peut plus être installé. Les copies déjà installées ne sont pas affectées et restent gérables dans « Installés ».",
   "presetLabel": "Schéma",
+  "presetCount": "{count} styles",
   "foreignCopy": "Ce mod est déjà installé par {source}. « Enregistrer et réinstaller » le place sous la gestion de WoWSP et nettoie la copie externe restée en place (les copies dans res_mods sont d'abord sauvegardées).",
   "foreignSource": {
     "aslain": "le modpack d'Aslain",

@@ -186,6 +186,21 @@
   },
   "text.font.east-asia": {
    "zh-CN": "东亚字库补充（英文端专用）"
+  },
+  "battle.panel": {
+   "zh-CN": "侧边面板（多款式）",
+   "zh-TW": "側邊面板（多款式）",
+   "en-US": "Team Panels (styles)"
+  },
+  "battle.minipanel": {
+   "zh-CN": "迷你侧边面板（多款式）",
+   "zh-TW": "迷你側邊面板（多款式）",
+   "en-US": "Compact Team Panels (styles)"
+  },
+  "battle.marker.traffic": {
+   "zh-CN": "红绿灯动向指示（多款式）",
+   "zh-TW": "紅綠燈動向指示（多款式）",
+   "en-US": "Traffic Lights (SMI, styles)"
   }
  },
  "battle.build.viewer": {
@@ -607,15 +622,15 @@
   "es-ES": "Muestra indicadores de detección sobre las torpedos aliadas cuando el enemigo las ha detectado."
  },
  "battle.marker.traffic": {
-  "en-US": "Adds a traffic-light indicator to ship markers showing whether the ship is moving forward, stopped or reversing.",
-  "zh-CN": "在舰船标记上添加红绿灯式动向指示，显示该舰正在前进、停船还是倒车。",
-  "zh-TW": "在艦船標記上新增紅綠燈式動向指示，顯示該艦正在前進、停船還是倒車。",
-  "ja-JP": "艦マーカーに信号機型の動向インジケーターを追加し、前進・停止・後進を示します。",
-  "ko-KR": "함선 마커에 신호등형 움직임 표시기를 추가해 전진·정지·후진을 나타냅니다.",
-  "ru-RU": "Добавляет к маркерам корабля «светофор», показывающий, идёт корабль вперёд, стоит или движется назад.",
-  "de-DE": "Fügt den Schiffsmarkern eine Ampelanzeige hinzu, die Vorwärtsfahrt, Stopp oder Rückwärtsfahrt zeigt.",
-  "fr-FR": "Ajoute aux marqueurs de navires un feu tricolore indiquant si le navire avance, est à l'arrêt ou marche arrière.",
-  "es-ES": "Añade a los marcadores de barcos un semáforo que indica si el barco avanza, está detenido o marcha atrás."
+  "en-US": "Traffic-light movement indicator on ship markers (ahead / stopped / astern) in one card with a style button group: the classic lights, SMI v2 (plus its colorblind palette), v3 and the four-state v4. Styles are mutually exclusive.",
+  "zh-CN": "在舰船标记上添加红绿灯式动向指示（前进 / 停船 / 倒车），一张卡片内的按钮组切换款式：经典红绿灯、SMI v2（含色盲配色）、v3 以及四态 v4。各款式互斥。",
+  "zh-TW": "在艦船標記上添加紅綠燈式動向指示（前進 / 停船 / 倒車），一張卡片內的按鈕組切換款式：經典紅綠燈、SMI v2（含色盲配色）、v3 以及四態 v4。各款式互斥。",
+  "ja-JP": "艦艇マーカーに信号機式の動向インジケーター（前進／停止／後進）を追加します。カード内のボタングループでスタイルを選択：クラシック、SMI v2（色覚対応配色を含む）、v3、4 状態の v4。スタイルは排他です。",
+  "ko-KR": "함선 마커에 신호등식 움직임 표시(전진/정지/후진)를 추가합니다. 카드 내 버튼 그룹으로 스타일 선택: 클래식, SMI v2(색약 팔레트 포함), v3, 4단계 v4. 스타일은 상호 배타적입니다.",
+  "ru-RU": "Светофорный индикатор движения на маркерах кораблей (вперёд / стоит / назад); стили переключаются группой кнопок на одной карточке: классический, SMI v2 (включая палитру для дальтоников), v3 и четырёхсостоянный v4. Стили взаимоисключающие.",
+  "de-DE": "Ampel-artiger Bewegungsindikator auf Schiffsmarkern (vorwärts / gestoppt / rückwärts); die Stile wechseln Sie über die Buttongruppe einer Karte: die klassischen Lichter, SMI v2 (auch mit farbenblinder Palette), v3 und der vierstufige v4. Die Stile schließen sich gegenseitig aus.",
+  "fr-FR": "Indicateur de mouvement façon feu tricolore sur les marqueurs de navires (avance / arrêt / marche arrière) ; les styles se choisissent via le groupe de boutons d'une seule carte : feux classiques, SMI v2 (avec sa palette daltoniens), v3 et le v4 à quatre états. Les styles s'excluent mutuellement.",
+  "es-ES": "Indicador de movimiento tipo semáforo en los marcadores de barcos (avanza / detenido / marcha atrás); los estilos se eligen con el grupo de botones de una sola tarjeta: luces clásicas, SMI v2 (con su paleta para daltónicos), v3 y el v4 de cuatro estados. Los estilos son excluyentes."
  },
  "battle.marker.traffic-v2": {
   "en-US": "Ship Movement Indicator: green = moving ahead, red = stopped, purple = running astern.",
@@ -1837,5 +1852,27 @@
   "de-DE": "Ersetzt die Besatzungsstimmen durch Abathur aus StarCraft.",
   "fr-FR": "Remplace les répliques d'équipage par celles d'Abathur de StarCraft.",
   "es-ES": "Sustituye las voces de la tripulación por las de Abathur de StarCraft."
+ },
+ "battle.panel": {
+  "en-US": "Replacement team panels for both sides of the battle UI, one card with a style button group: classic HP bars, TTaro, BADoBEST, Roslich, Haka minimal, DeCease blocks. Styles are mutually exclusive — installing one replaces the installed one; per-style notes list the caveats.",
+  "zh-CN": "替换战斗界面两侧的队伍面板，一张卡片内的按钮组切换款式：经典血量条、TTaro、BADoBEST、Roslich、Haka 极简、DeCease 色块。各款式互斥，安装新款会替换已装款式；各款注意事项见款式说明。",
+  "zh-TW": "替換戰鬥介面兩側的隊伍面板，一張卡片內的按鈕組切換款式：經典血量條、TTaro、BADoBEST、Roslich、Haka 極簡、DeCease 色塊。各款式互斥，安裝新款會替換已裝款式；各款注意事項見款式說明。",
+  "ja-JP": "戦闘UI両側のチームパネルを置き換えます。カード内のボタングループでスタイルを選択：クラシックHPバー、TTaro、BADoBEST、Roslich、Haka ミニマル、DeCease ブロック。スタイルは排他で、新規インストール時は既存のものを置き換えます。注意点は各スタイルの説明を参照。",
+  "ko-KR": "전투 화면 양측의 팀 패널을 교체합니다. 카드 내 버튼 그룹으로 스타일 선택: 클래식 HP 바, TTaro, BADoBEST, Roslich, Haka 미니멀, DeCease 블록. 스타일은 상호 배타적이며 새 스타일 설치 시 기존 것을 교체합니다. 주의사항은 각 스타일 설명을 참고하세요.",
+  "ru-RU": "Заменяет панели команд по обеим сторонам боевого интерфейса; стили переключаются группой кнопок на одной карточке: классические полосы HP, TTaro, BADoBEST, Roslich, минималистичные Haka, блоки DeCease. Стили взаимоисключающие — установка нового заменяет установленный; оговорки см. в описании стиля.",
+  "de-DE": "Ersetzt die Team-Panels an beiden Seiten der Gefechts-UI; die Stile wechseln Sie über die Buttongruppe einer Karte: klassische HP-Balken, TTaro, BADoBEST, Roslich, Haka-Minimal, DeCease-Blöcke. Die Stile schließen sich gegenseitig aus — ein neuer Stil ersetzt den installierten; Hinweise stehen in der jeweiligen Stilbeschreibung.",
+  "fr-FR": "Remplace les panneaux d'équipe des deux côtés de l'interface de combat ; les styles se choisissent via le groupe de boutons d'une seule carte : barres de PV classiques, TTaro, BADoBEST, Roslich, Haka minimal, blocs DeCease. Les styles s'excluent mutuellement — en installer un remplace l'existant ; les précautions figurent dans la description de chaque style.",
+  "es-ES": "Sustituye los paneles de equipo de ambos lados de la interfaz de combate; los estilos se eligen con el grupo de botones de una sola tarjeta: barras de PV clásicas, TTaro, BADoBEST, Roslich, Haka minimalista, bloques DeCease. Los estilos son excluyentes: instalar uno reemplaza el instalado; las advertencias están en la descripción de cada estilo."
+ },
+ "battle.minipanel": {
+  "en-US": "Compact mini team panels in one card with a style button group: AutoSpy compact v1 and v2, plus the total-team-HP panel. Styles are mutually exclusive — installing one replaces the installed one.",
+  "zh-CN": "紧凑版迷你侧边面板，一张卡片内的按钮组切换款式：AutoSpy 紧凑面板 v1 / v2，以及双方队伍总血量面板。各款式互斥，安装新款会替换已装款式。",
+  "zh-TW": "緊湊版迷你側邊面板，一張卡片內的按鈕組切換款式：AutoSpy 緊湊面板 v1 / v2，以及雙方隊伍總血量面板。各款式互斥，安裝新款會替換已裝款式。",
+  "ja-JP": "コンパクトなミニチームパネル。カード内のボタングループでスタイルを選択：AutoSpy コンパクト v1 / v2、および両チーム合計HPパネル。スタイルは排他で、新規インストール時は既存のものを置き換えます。",
+  "ko-KR": "컴팩트 미니 팀 패널. 카드 내 버튼 그룹으로 스타일 선택: AutoSpy 컴팩트 v1 / v2, 그리고 양 팀 총 HP 패널. 스타일은 상호 배타적이며 새 스타일 설치 시 기존 것을 교체합니다.",
+  "ru-RU": "Компактные мини-панели команд; стили переключаются группой кнопок на одной карточке: компактные AutoSpy v1 и v2, а также панель суммарного HP команд. Стили взаимоисключающие — установка нового заменяет установленный.",
+  "de-DE": "Kompakte Mini-Team-Panels; die Stile wechseln Sie über die Buttongruppe einer Karte: AutoSpy kompakt v1 und v2 sowie das Panel mit den Team-Gesamt-HP. Die Stile schließen sich gegenseitig aus — ein neuer Stil ersetzt den installierten.",
+  "fr-FR": "Mini-panneaux d'équipe compacts ; les styles se choisissent via le groupe de boutons d'une seule carte : AutoSpy compact v1 et v2, plus le panneau des PV totaux des équipes. Les styles s'excluent mutuellement — en installer un remplace l'existant.",
+  "es-ES": "Mini paneles de equipo compactos; los estilos se eligen con el grupo de botones de una sola tarjeta: AutoSpy compacto v1 y v2, además del panel de PV totales de ambos equipos. Los estilos son excluyentes: instalar uno reemplaza el instalado."
  }
 }

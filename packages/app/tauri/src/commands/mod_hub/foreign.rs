@@ -404,6 +404,7 @@ mod tests {
             .collect(),
             aliases,
             preview: None,
+            supersedes: None,
             packages: vec![CatalogPackage {
                 url: "https://x/a.zip".into(),
                 sha256: String::new(),

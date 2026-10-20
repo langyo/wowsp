@@ -109,13 +109,24 @@ export interface CatalogEntryI18n {
 }
 
 /** One named scheme of a catalog entry — e.g. a marker mod's color
- *  palette. Installing with a preset id downloads its packages instead of
- *  the entry's default list. */
+ *  palette, or one variant of a folded style family (the six team
+ *  panels, five traffic-light forms…). Installing with a preset id
+ *  downloads its packages instead of the entry's default list. */
 export interface CatalogPreset {
   id: string;
   nameZh: string;
   nameEn: string;
   packages: CatalogPackage[];
+  /** This scheme's own preview screenshot (GitHub user-attachment URL):
+   *  folded style families carry one per variant so the detail pane
+   *  swaps images as the button group moves; absent when only the
+   *  entry-level preview exists. */
+  preview?: string | null;
+  /** Scheme note (Chinese) — the variant's caveats (mutual exclusions,
+   *  replay breakage…), rendered under the scheme buttons. */
+  descZh?: string | null;
+  /** Scheme note (English) — the non-zh fallback. */
+  descEn?: string | null;
 }
 
 /** The latest version payload of one mod in `mod-index.json`. */
@@ -163,6 +174,13 @@ export interface CatalogEntry {
   /** First preview screenshot (GitHub user-attachment URL); absent when
    *  the discussion carries no image. */
   preview?: string | null;
+  /** Folded style family: legacy one-entry-per-variant catalog ids →
+   *  preset ids (e.g. `battle.panel.ttaro` → `ttaro`). Ledger pairing
+   *  treats a record under a superseded id as this entry installed with
+   *  that scheme, and install rewinds those records first — family
+   *  styles are mutually exclusive variants of one HUD element. Absent
+   *  on unfolded entries. */
+  supersedes?: Record<string, string> | null;
 }
 
 /** Parsed `mod-index.json` — the online plugin list the hub page renders. */

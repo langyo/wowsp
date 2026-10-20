@@ -226,6 +226,36 @@ pre-preset app builds keep installing something sane. The app renders the
 schemes as a segmented picker on the detail pane and installs the chosen
 preset's packages; a label without packages is dropped by the indexer.
 
+#### Style-family folding and `supersedes`
+
+Historical one-entry-per-variant listings of the same HUD element (six team
+panels, three mini panels, five traffic-light SMIs) read as duplicate rows.
+Both index builders (`build_index` in `scripts/mod_hub_publish.py` and
+`index_discussions` in `scripts/mod_index.py`) run
+`fold_families` from `scripts/mod_hub_families.py` after the
+latest-version pass: family members fold into ONE preset-carrying entry —
+the Discussions threads stay one-per-variant, only the published
+`mod-index.json` merges. Folded entries carry:
+
+- **Per-scheme media**: each preset may carry `preview` (that variant's
+  screenshot) and `desc_zh` / `desc_en` (that variant's caveats — mutual
+  exclusions, replay breakage…). The detail pane swaps the preview image
+  and the note with the segmented picker; entries without scheme media
+  fall back to the entry-level preview/description.
+- **`supersedes` (entry level)**: legacy one-entry-per-variant ids →
+  preset ids. Ledger pairing treats a record under a superseded id as
+  this entry installed with that scheme (records, corner lights, scheme
+  landing, drift detection, uninstall and deep links all follow), and
+  the installer rewinds the family's legacy records before writing the
+  new one — styles are mutually exclusive, installing one replaces the
+  other.
+
+Folding configuration (families, preset ids, bilingual labels) lives in
+the `FAMILIES` table of `mod_hub_families.py`; family intros and
+per-variant descriptions reuse `scripts/mod_hub_desc_i18n.json`. The
+`drop_missing_assets` gate sweeps preset package lists too, and both
+scripts' `selftest` covers the fold and the gate.
+
 ### 3. Installer
 
 Writes strictly follow the Aslain convention:

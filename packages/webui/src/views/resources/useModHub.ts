@@ -35,7 +35,12 @@ import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { useStaleBinsStore } from "@/stores/staleBins";
 import { t } from "@/i18n";
 import { sameGamePath } from "@/utils/gamePath";
-import { entryMatches, installerLabel, localized } from "./display";
+import {
+  entryMatches,
+  installedPresetOf,
+  installerLabel,
+  localized,
+} from "./display";
 import type { Selection, TextureComponent } from "./types";
 
 export function useModHub() {
@@ -289,7 +294,11 @@ export function useModHub() {
   watch(catalog, (mods) => {
     const want = pendingDeepLink.value;
     if (!want || !mods.length) return;
-    const hit = mods.find((m) => m.id === want);
+    // A folded style family answers deep links to its legacy
+    // one-entry-per-variant ids too (old links keep working).
+    const hit = mods.find(
+      (m) => m.id === want || m.supersedes?.[want] !== undefined,
+    );
     if (!hit) {
       // A stale cached index predates the row — force one refresh before
       // giving up (offline / genuinely absent entries stop here).
@@ -300,7 +309,12 @@ export function useModHub() {
       return;
     }
     pendingDeepLink.value = "";
-    selectedPreset.value = "";
+    // Land on the installed scheme (a legacy record's folded preset),
+    // same as a sidebar row click.
+    const deepRecord = recordOfEntry(hit);
+    selectedPreset.value = deepRecord
+      ? installedPresetOf(hit, deepRecord)
+      : "";
     if (hit.delisted) {
       // Force-opened a withdrawn mod (closed discussion thread): explain
       // instead of opening the detail — there is nothing to install. An
@@ -322,6 +336,17 @@ export function useModHub() {
   const recordOf = (id: string) =>
     records.value.find(
       (r) => r.id === id && (!r.gameRoot || r.gameRoot === gameRoot.value),
+    );
+
+  /** The ledger record backing a catalog entry: its exact id, or — for a
+   *  folded style family — a superseded one-entry-per-variant id (the
+   *  record installed under `battle.panel.ttaro` backs `battle.panel`).
+   *  Same-install rule as `recordOf`. */
+  const recordOfEntry = (entry: CatalogEntry) =>
+    records.value.find(
+      (r) =>
+        (r.id === entry.id || entry.supersedes?.[r.id] !== undefined) &&
+        (!r.gameRoot || r.gameRoot === gameRoot.value),
     );
 
   /** Installed units are keyed by their primary path (unique per unit). */
@@ -366,8 +391,12 @@ export function useModHub() {
     }
     confirmTarget.value = null;
     if (!(await requestModOpDisclaimer())) return;
+    // A folded style family's pane may sit on a ledger record written
+    // under a legacy one-entry-per-variant id — uninstall THAT record,
+    // not the merged catalog id it now pairs with.
+    const targetId = recordOfEntry(entry)?.id ?? entry.id;
     try {
-      const r = await pluginUpdates.runModUninstall(entry.id, gameRoot.value);
+      const r = await pluginUpdates.runModUninstall(targetId, gameRoot.value);
       toast.success(
         t("resources.uninstalledDone", {
           name: r.name,
@@ -626,7 +655,7 @@ export function useModHub() {
   /** The non-WoWSP copy of a catalog entry, when a foreign unit paired
    *  against it (and WoWSP itself has no record of installing it). */
   function foreignCopyOf(entry: CatalogEntry): ForeignModUnit | null {
-    if (recordOf(entry.id)) return null;
+    if (recordOfEntry(entry)) return null;
     return foreignUnits.value.find((f) => f.identity === entry.id) ?? null;
   }
 
@@ -689,7 +718,7 @@ export function useModHub() {
    *  installed the files, what the catalog entry is, and what WoWSP
    *  knows about it — the three-way identity story in one line. */
   function pairedRelationOf(unit: InstalledMod, paired: CatalogEntry): string {
-    if (recordOf(paired.id)) return t("resources.pairedRelation.managed");
+    if (recordOfEntry(paired)) return t("resources.pairedRelation.managed");
     if (aslainRowOf(unit)) {
       return t("resources.pairedRelation.aslain", {
         source: installerLabel("aslain"),
@@ -829,7 +858,9 @@ export function useModHub() {
     // Entering an INSTALLED entry's pane lands the preset tabs on the
     // scheme that is actually installed — not the default first one
     // (which would read as a drifted config and arm save-&-reinstall).
-    selectedPreset.value = recordOf(entry.id)?.preset ?? "";
+    // A legacy record under a superseded id lands on its folded scheme.
+    const rec = recordOfEntry(entry);
+    selectedPreset.value = rec ? installedPresetOf(entry, rec) : "";
     source.value = "online";
     selection.value = { mode: "catalog", entry };
   }
@@ -1015,6 +1046,7 @@ export function useModHub() {
     loadCatalog,
     loadRecords,
     recordOf,
+    recordOfEntry,
     unitKey,
     installMod,
     uninstallMod,

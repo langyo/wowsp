@@ -324,6 +324,10 @@ struct RawMod {
     /// row ids and on-disk directory names this entry answers to exactly.
     #[serde(default)]
     aliases: Vec<String>,
+    /// Folded style family: legacy one-entry-per-variant ids → preset
+    /// ids (see `CatalogEntry::supersedes`).
+    #[serde(default)]
+    supersedes: Option<std::collections::BTreeMap<String, String>>,
     #[serde(default)]
     versions: std::collections::HashMap<String, RawVersion>,
 }
@@ -337,6 +341,16 @@ struct RawPreset {
     name_en: String,
     #[serde(default)]
     packages: Option<Vec<RawPackage>>,
+    /// This scheme's own preview screenshot — folded style families
+    /// carry one per variant so the detail pane swaps images with the
+    /// button group.
+    #[serde(default)]
+    preview: Option<String>,
+    /// This scheme's own description pair (the variant's caveats).
+    #[serde(default)]
+    desc_zh: Option<String>,
+    #[serde(default)]
+    desc_en: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -478,6 +492,9 @@ fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogIndex> {
                         name_zh: p.name_zh,
                         name_en: p.name_en,
                         packages: pkgs,
+                        preview: p.preview,
+                        desc_zh: p.desc_zh,
+                        desc_en: p.desc_en,
                     })
                 })
                 .collect(),
@@ -515,6 +532,7 @@ fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogIndex> {
                 }),
             aliases: m.aliases.clone(),
             preview: ver.preview.clone(),
+            supersedes: m.supersedes.clone(),
             i18n: ver
                 .i18n
                 .iter()
@@ -803,6 +821,11 @@ pub async fn mod_catalog_install(
     let unpack_root = game_root.clone();
     let unpack_pkgs = packages.clone();
     let unpack_work = work.0.clone();
+    let unpack_supersedes: Vec<String> = entry
+        .supersedes
+        .as_ref()
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default();
     let (outcome, mut ledger) = tauri::async_runtime::spawn_blocking(move || {
         let outcome = unpack_and_install(
             &unpack_id,
@@ -810,6 +833,7 @@ pub async fn mod_catalog_install(
             &unpack_work,
             &unpack_root,
             &unpack_pkgs,
+            &unpack_supersedes,
             &mut ledger.installs,
         );
         (outcome, ledger)
@@ -1178,6 +1202,10 @@ fn unpack_and_install(
     work: &Path,
     game_root: &str,
     packages: &[CatalogPackage],
+    // Folded style family: the legacy variant ids this entry supersedes
+    // (empty for unfolded entries). Family styles are mutually exclusive
+    // variants of one HUD element, so the rewind spans them too.
+    supersede_ids: &[String],
     installs: &mut Vec<ModInstallRecord>,
 ) -> anyhow::Result<(InstallReport, Vec<String>, Option<PathBuf>)> {
     let extract_root = work.join("unpacked");
@@ -1211,11 +1239,27 @@ fn unpack_and_install(
     // Rewind only once all archives and the classified plan are usable.
     // Corrupt or unsupported replacement packages must leave the installed
     // version, its ledger record and its restore snapshots untouched.
-    let same_install = |r: &ModInstallRecord| {
-        r.id == mod_id && (r.game_root.is_empty() || r.game_root == game_root)
-    };
-    if installs.iter().any(same_install) {
-        uninstall_from_ledger(installs, mod_id, game_root)?;
+    let mut rewind_ids: Vec<&str> = vec![mod_id];
+    for id in supersede_ids {
+        if id != mod_id && !rewind_ids.contains(&id.as_str()) {
+            rewind_ids.push(id.as_str());
+        }
+    }
+    let mut installed_variants: Vec<String> = Vec::new();
+    for r in installs.iter() {
+        // Duplicate same-id records are a legacy-ledger quirk (an older
+        // append wrote one per game root); uninstall_from_ledger sweeps
+        // them together, so collect each id ONCE or the second call
+        // would fail on "no install record" mid-rewind.
+        if (r.game_root.is_empty() || r.game_root == game_root)
+            && rewind_ids.contains(&r.id.as_str())
+            && !installed_variants.contains(&r.id)
+        {
+            installed_variants.push(r.id.clone());
+        }
+    }
+    for id in &installed_variants {
+        uninstall_from_ledger(installs, id, game_root)?;
     }
     let applied = mod_hub::install_plan_with_loose(&plan_root, game_root, &plan, &loose)?;
 
@@ -1943,6 +1987,7 @@ mod tests {
                 &work,
                 &game.to_string_lossy(),
                 &packages,
+                &[],
                 &mut Vec::new()
             )
             .is_err(),
@@ -1959,6 +2004,7 @@ mod tests {
             &work,
             &game.to_string_lossy(),
             &packages,
+            &[],
             &mut Vec::new(),
         )
         .unwrap();
@@ -2018,6 +2064,7 @@ mod tests {
                     &work,
                     &game.to_string_lossy(),
                     &packages,
+                    &[],
                     &mut installs,
                 )
                 .is_err()
@@ -2069,6 +2116,7 @@ mod tests {
             &work,
             &game_root,
             &packages,
+            &[],
             &mut Vec::new(),
         )
         .unwrap();
@@ -2089,6 +2137,7 @@ mod tests {
             &work,
             &game_root,
             &packages,
+            &[],
             &mut Vec::new(),
         )
         .unwrap();
@@ -2189,7 +2238,7 @@ mod tests {
                 size: 0,
                 name: "part1.zip".into(),
             }];
-            unpack_and_install("m", "M", work, &game_root, &packages, &mut Vec::new()).unwrap()
+            unpack_and_install("m", "M", work, &game_root, &packages, &[], &mut Vec::new()).unwrap()
         };
 
         // v1 adds a file the v2 package drops — leftovers must not survive.
@@ -2536,6 +2585,9 @@ mod tests {
     fn preset_entries_parse_with_ordered_schemes() {
         // Presets ride the entry in declaration order; a preset without
         // packages is dropped at the parse boundary (nothing to install).
+        // Folded style families additionally carry per-scheme preview and
+        // description notes plus the entry-level `supersedes` map (legacy
+        // one-entry-per-variant ids → scheme ids).
         let raw = serde_json::json!({
             "schema": 1,
             "mods": {
@@ -2544,6 +2596,10 @@ mod tests {
                     "category": "battle",
                     "discussion": 122,
                     "latest": "15.7.0.10",
+                    "supersedes": {
+                        "battle.marker.traffic": "classic",
+                        "battle.marker.traffic-v4": "sasagcy"
+                    },
                     "versions": {
                         "15.7.0.10": {
                             "game": ">=15.7 <15.8",
@@ -2553,6 +2609,8 @@ mod tests {
                             ],
                             "presets": [
                                 {"id": "sasagcy", "name_zh": "Sasagcy 配色", "name_en": "Sasagcy palette",
+                                 "preview": "https://github.com/user-attachments/assets/v4.png",
+                                 "desc_zh": "四态配色。", "desc_en": "Four-state palette.",
                                  "packages": [{"url": "https://github.com/x/v4.zip", "sha256": "aa", "size": 1, "name": "v4.zip"}]},
                                 {"id": "classic", "name_zh": "经典配色", "name_en": "Classic palette",
                                  "packages": [{"url": "https://github.com/x/v1.zip", "sha256": "bb", "size": 1, "name": "v1.zip"}]},
@@ -2568,10 +2626,138 @@ mod tests {
         assert_eq!(m.presets.len(), 2, "package-less presets are dropped");
         assert_eq!(m.presets[0].id, "sasagcy");
         assert_eq!(m.presets[0].name_zh, "Sasagcy 配色");
+        assert_eq!(
+            m.presets[0].preview.as_deref(),
+            Some("https://github.com/user-attachments/assets/v4.png")
+        );
+        assert_eq!(m.presets[0].desc_zh.as_deref(), Some("四态配色。"));
+        assert_eq!(m.presets[0].desc_en.as_deref(), Some("Four-state palette."));
+        // A scheme without own notes keeps None (the pane falls back to
+        // the entry-level preview/description).
+        assert!(m.presets[1].preview.is_none());
+        assert!(m.presets[1].desc_zh.is_none());
         assert_eq!(m.presets[1].packages[0].name, "v1.zip");
         // The default list mirrors the first preset (indexer backfill).
         assert_eq!(m.packages.len(), 1);
         assert_eq!(m.packages[0].name, "v4.zip");
+        let supersedes = m
+            .supersedes
+            .as_ref()
+            .expect("folded family carries supersedes");
+        assert_eq!(
+            supersedes
+                .get("battle.marker.traffic-v4")
+                .map(String::as_str),
+            Some("sasagcy")
+        );
+        assert_eq!(supersedes.len(), 2);
+    }
+
+    #[test]
+    fn parse_index_leaves_supersedes_absent_on_plain_entries() {
+        // Unfolded entries (and pre-fold indexes) parse with no supersedes
+        // and no per-scheme media — the Option fields stay None.
+        let raw = serde_json::json!({
+            "mods": {
+                "battle.calculator.penetration": {
+                    "category": "battle",
+                    "latest": "1",
+                    "versions": {"1": {"game": "*", "title": "Pen",
+                        "packages": [{"url": "https://github.com/x/p.zip", "sha256": "aa", "size": 1, "name": "p.zip"}]}}
+                }
+            }
+        });
+        let m = &parse_index(&raw).unwrap().mods[0];
+        assert!(m.supersedes.is_none());
+        assert!(m.presets.is_empty());
+    }
+
+    #[test]
+    fn install_of_folded_family_rewinds_superseded_variant_records() {
+        // Family styles are mutually exclusive variants of one HUD
+        // element: installing the folded entry (battle.panel, any
+        // scheme) rewinds ledger rows written under the legacy
+        // one-entry-per-variant ids (battle.panel.ttaro…) — the old
+        // variant's files leave with its record.
+        let tmp = std::env::temp_dir().join("wowsp_catalog_fold_rewind");
+        let _ = fs::remove_dir_all(&tmp);
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        fs::create_dir_all(tmp.join("game/bin/1")).unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let mk = |name: &str| CatalogPackage {
+            url: format!("https://example.com/{name}"),
+            sha256: String::new(),
+            size: 0,
+            name: name.into(),
+        };
+
+        // The legacy variant, installed under its old own id.
+        let work_a = tmp.join("work_a");
+        fs::create_dir_all(&work_a).unwrap();
+        zip_fixture(
+            &package_archive(&work_a, 0),
+            &[("res_mods/gui/a.png", b"a")],
+        );
+        let mut installs = Vec::new();
+        let (rep_a, written_a, _) = unpack_and_install(
+            "battle.panel.ttaro",
+            "TTaro",
+            &work_a,
+            &game_root,
+            &[mk("a.zip")],
+            &[],
+            &mut installs,
+        )
+        .unwrap();
+        installs.push(ModInstallRecord {
+            id: "battle.panel.ttaro".into(),
+            name: "TTaro".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: rep_a.bin_version.clone(),
+            installed_at: String::new(),
+            files: written_a,
+            restore_dir: None,
+            game_root: game_root.clone(),
+        });
+
+        // The folded entry installs another scheme; supersedes names the
+        // legacy ids (one of which, autospy, has no record — tolerated).
+        let work_b = tmp.join("work_b");
+        fs::create_dir_all(&work_b).unwrap();
+        zip_fixture(
+            &package_archive(&work_b, 0),
+            &[("res_mods/gui/b.png", b"b")],
+        );
+        let supersedes: Vec<String> = ["battle.panel.ttaro", "battle.panel.autospy"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let (_rep_b, _written_b, _) = unpack_and_install(
+            "battle.panel",
+            "侧边面板",
+            &work_b,
+            &game_root,
+            &[mk("b.zip")],
+            &supersedes,
+            &mut installs,
+        )
+        .unwrap();
+
+        assert!(
+            installs.iter().all(|r| r.id != "battle.panel.ttaro"),
+            "legacy variant record rewound"
+        );
+        let res_mods = tmp.join("game/bin/1/res_mods");
+        assert!(
+            !res_mods.join("gui/a.png").exists(),
+            "variant A files removed"
+        );
+        assert!(res_mods.join("gui/b.png").exists(), "new scheme installed");
+        fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]
@@ -2781,6 +2967,7 @@ mod tests {
             &work,
             &game.to_string_lossy(),
             &packages,
+            &[],
             &mut Vec::new(),
         )
         .unwrap();
