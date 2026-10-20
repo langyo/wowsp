@@ -72,7 +72,9 @@ PECULIARITY_EVENTS = {
     "post_apocalypse": "postap_2022",
     "first_april_2023": "april_fools_2023",
     "ch_dragons": "lunar_new_year",
-    "corona": "lunar_new_year",
+    # RA3: Corona (红警3日冕 MOD) — the CN-server 2025-10 collaboration, not a
+    # Lunar New Year wave despite the pan_asia hulls.
+    "corona": "collab_corona",
     "reconstruction": "hunt_bismarck",
     "scarlet_future": "scarlet_future",
 }

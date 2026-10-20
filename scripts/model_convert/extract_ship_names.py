@@ -11,6 +11,9 @@ install itself has everything needed:
     `wowsunpack game-params`.
   - `bin/<latest>/res/texts/<lang>/LC_MESSAGES/global.mo`: gettext catalog
     mapping `IDS_<index>` to the localized display name (53k+ entries).
+  - `ship_names_curated.json` (sibling file): hand-curated per-index name
+    overrides applied over the catalog lookup — priority: curated > game
+    texts > prettified entity name.
 
 Output: packages/webui/src/data/ship_names.json
     { "<shipId>": { "index", "tier", "type", "nation",
@@ -38,6 +41,11 @@ OUT_PATH = (
     Path(__file__).resolve().parents[2]
     / "packages" / "webui" / "src" / "data" / "ship_names.json"
 )
+
+# Hand-curated name overrides ({ "<index>": { "<langLoc>": "<name>" } });
+# see ship_names_curated.json — CN-exclusive hulls whose non-Chinese catalog
+# slots are pinyin transliterations carry their own hanzi name here instead.
+CURATED_PATH = Path(__file__).resolve().parent / "ship_names_curated.json"
 
 # Canonical BCP 47 lang-loc (output key) -> game's texts/<dir> name.
 LANG_DIRS = {
@@ -92,6 +100,11 @@ def main() -> int:
         help="reuse an existing GameParams JSON (skip wowsunpack pass)",
     )
     parser.add_argument("--out", default=str(OUT_PATH), help="output JSON path")
+    parser.add_argument(
+        "--curated",
+        default=str(CURATED_PATH),
+        help="{ index: { langLoc: name } } hand-curated overrides",
+    )
     args = parser.parse_args()
 
     game = Path(args.game_dir) if args.game_dir else Path(find_game_path() or "")
@@ -132,6 +145,14 @@ def main() -> int:
     print(f"[ship-names] texts from {texts_root}: "
           + ", ".join(f"{c}({len(v)})" for c, v in catalogs.items()))
 
+    curated_path = Path(args.curated)
+    curated: dict[str, dict[str, str]] = (
+        json.loads(curated_path.read_text(encoding="utf-8"))
+        if curated_path.exists() else {}
+    )
+    print(f"[ship-names] curated overrides: {len(curated)} indexes"
+          + (f" from {curated_path.name}" if curated else ""))
+
     # 3. Build the DB.
     db: dict[str, dict] = {}
     for entity_name, entry in gp.items():
@@ -160,6 +181,9 @@ def main() -> int:
         if not names:
             # No translation anywhere — keep the prettified entity name as en.
             names["en"] = prettify_entity_name(entity_name)
+        for code, curated_name in (curated.get(str(index)) or {}).items():
+            if curated_name:
+                names[code] = curated_name
         db[str(sid)] = {
             "index": index,
             "tier": entry.get("level"),

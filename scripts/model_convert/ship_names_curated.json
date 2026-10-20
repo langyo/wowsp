@@ -1,0 +1,4 @@
+{
+  "_comment": "Hand-curated display-name overrides for the WG-client catalog extraction (consumed by extract_ship_names.py; priority: this file > game texts > prettified entity name). Covers the CN-server exclusive hulls whose non-Chinese catalog slots carry WG's pinyin transliteration instead of the ship's own hanzi name — no official non-Chinese rendering exists, so every language shows the hanzi. Keys: index -> {langLoc: name}. Keep zh-CN and zh-SG values identical (same script).",
+  "PZSB909": { "zh-CN": "玄冥", "zh-SG": "玄冥", "zh-TW": "玄冥", "en-US": "玄冥", "ja-JP": "玄冥", "ko-KR": "玄冥", "ru-RU": "玄冥", "fr-FR": "玄冥", "es-ES": "玄冥" }
+}

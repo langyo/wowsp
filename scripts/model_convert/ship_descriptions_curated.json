@@ -1,0 +1,4 @@
+{
+  "_comment": "Hand-curated ship-description overrides for the WG-client catalog extraction (consumed by extract_ship_descriptions.py; priority: this file > game texts, and a curated entry keeps the ship in the DB even when no catalog has text). Covers the CN-server exclusive hulls whose zh-SG/zh-TW catalog slots fall back to the untranslated English text. Keys: index -> {langLoc: text}.",
+  "PZSB909": { "zh-SG": "神州海军舰队的新锐战舰，有些装备了新型的电磁轨道炮。", "zh-TW": "神州海軍艦隊的新銳戰艦，有些裝備了新型的電磁軌道炮。" }
+}
