@@ -1196,9 +1196,14 @@ def main() -> int:
             # collision, not a real mount. Keep only unsuffixed mounts.
             mounts = {k: v for k, v in raw_mounts.items()
                       if v[0] in hp_ents and k == v[0]}
-        if not mounts and hp_ents and boxes and anchors and sdk_mounts is not None:
+        if not mounts and hp_ents and sdk_mounts is not None:
             # ModsSDK dump source: the ship entity's _ports.visual gun
-            # trees. Mains flow through the standard per-turret splash
+            # trees, keyed by the exact hull dir stem — no splash-box
+            # requirement. The paper DD/SS lines carry mains whose
+            # GameParams blocks reference NO splashBoxes at all, so the
+            # block attribution and the splash fallback never see them;
+            # the dump is their only mount source. Ships that do have
+            # boxes still flow through the standard per-turret splash
             # cross-check below; misses fall through to the next source.
             tree = sdk_mounts["hulls"].get(base.rsplit("/", 1)[-1]) or {}
             mounts = {n: (n, m) for n, m in tree.items() if n in hp_ents}
