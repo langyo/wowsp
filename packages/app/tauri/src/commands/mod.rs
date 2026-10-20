@@ -327,12 +327,22 @@ mod tests {
 /// exits the process. Called from the frontend close-confirm dialog.
 #[tauri::command]
 pub fn quit_app(app: tauri::AppHandle) {
+    tracing::info!("quit_app: beginning graceful drain + exit");
+    graceful_exit(&app);
+}
+
+/// The shared teardown behind every deliberate exit: flush the playtime
+/// ledger's last heartbeat, begin the graceful drain, then exit. A
+/// graceful exit matters as much for the update handoff as for the close
+/// dialog — the WebView2 children close with the app, so nothing of this
+/// process keeps the install directory pinned against the installer's
+/// atomic swap.
+pub(crate) fn graceful_exit(app: &tauri::AppHandle) {
     use tauri::Manager;
     // Flush the playtime ledger's last heartbeat before the drain: the open
     // session stays open (the game may outlive the shell) but its recorded
     // end must not fall an entire shutdown behind.
     playtime::flush();
-    tracing::info!("quit_app: beginning graceful drain + exit");
     if let Some(d) = app.try_state::<malkuth::DrainController>() {
         d.begin_drain(malkuth::ShutdownKind::Graceful);
     }

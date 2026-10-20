@@ -7,8 +7,8 @@
  * single writer streams into a version-scoped part file that SURVIVES
  * failed and cancelled passes, so a retry resumes where the last attempt
  * died instead of restarting from byte 0 — then launches it silently;
- * the hardened installer kills this app and installs the new build over
- * its directory.
+ * the app exits itself right after the handoff, and the hardened
+ * installer delivers over the directory and relaunches the new build.
  *
  * Progress arrives on the unified `wowsp://download-progress` channel
  * (kind "update", the single bus every download context shares):
@@ -55,6 +55,19 @@ interface UpdateInfo {
   version: string | null;
 }
 
+/** Answer shape of the Rust `update_stranded_info` command: the previous
+ *  launch handed off to an update that never landed (see the one-shot
+ *  `update-pending.json` marker), and the downloaded installer may still
+ *  be on disk for the run-the-wizard recovery. */
+interface UpdateStrandedInfo {
+  expected: string;
+  installer_ready: boolean;
+}
+
+/** The website's standalone download page — the stranded-recovery card's
+ *  fallback action when the cached installer is gone. */
+const DOWNLOAD_PAGE_URL = "https://wowsp.langyo.xyz/download";
+
 export const useUpdaterStore = defineStore("updater", () => {
   const available = ref(false);
   const version = ref<string | null>(null);
@@ -82,6 +95,13 @@ export const useUpdaterStore = defineStore("updater", () => {
   let progressBinding: Promise<void> | null = null;
   // Guards a duplicate idle prompt while one is already on screen.
   let promptPending = false;
+  // The stranded handoff recorded by the Rust startup reconciliation
+  // (`update-pending.json`), read once at init. Null on a clean boot or
+  // after a landed update; non-null raises the recovery card.
+  const stranded = ref<UpdateStrandedInfo | null>(null);
+  // True once the recovery card's wizard action launched — the card
+  // folds; the wizard takes it from there.
+  const recovering = ref(false);
 
   // True while the pass card should be on screen (download or spawned
   // installer); drives the AboutModal live pill too.
@@ -148,6 +168,39 @@ export const useUpdaterStore = defineStore("updater", () => {
       })();
     }
     await progressBinding;
+    // Read the startup reconciliation's verdict (desktop only — the
+    // commands are windows-gated; absent in browser dev mode).
+    try {
+      stranded.value = await invoke<UpdateStrandedInfo | null>(RPC.update_stranded_info);
+    } catch {
+      stranded.value = null;
+    }
+  }
+
+  /** The recovery card's 干净重装: re-run the installer the stranded
+   *  handoff already downloaded — visibly, as a standalone wizard. */
+  async function reinstallFromCache() {
+    if (!stranded.value?.installer_ready || recovering.value) return;
+    recovering.value = true;
+    try {
+      await invoke(RPC.update_reinstall_from_cache, {});
+    } catch (e) {
+      // The wizard is the whole point — a failure to launch it leaves
+      // the card up so the download-page fallback stays reachable.
+      recovering.value = false;
+      error.value = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    stranded.value = null;
+  }
+
+  /** The recovery card's fallback: the website's download page. */
+  async function openDownloadPage() {
+    try {
+      await invoke(RPC.open_external, { url: DOWNLOAD_PAGE_URL });
+    } catch {
+      window.open(DOWNLOAD_PAGE_URL, "_blank", "noopener");
+    }
   }
 
   async function check() {
@@ -277,7 +330,11 @@ export const useUpdaterStore = defineStore("updater", () => {
     dismissed,
     running,
     statusText,
+    stranded,
+    recovering,
     init,
+    reinstallFromCache,
+    openDownloadPage,
     check,
     downloadAndInstall,
     cancelDownload,

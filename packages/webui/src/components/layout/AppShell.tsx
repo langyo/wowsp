@@ -43,6 +43,7 @@ import AudioPlayerToast from "./AudioPlayerToast";
 import ModUpdateToast from "./ModUpdateToast";
 import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
+import UpdateStrandedToast from "./UpdateStrandedToast";
 import PiggyReminderToast from "./PiggyReminderToast";
 import ManualLocateOverlay from "@/features/replay/ManualLocateOverlay";
 import WallpaperRenderer from "./WallpaperRenderer";
@@ -501,6 +502,13 @@ export default defineComponent({
             the settings' changelog section. Renders nothing outside the
             desktop Tauri shell, so it mounts unconditionally here. */}
         <UpdateAppliedToast />
+        {/* Stranded-update recovery card (上次自动更新未能完成): raises
+            when the startup reconciliation finds the previous launch
+            handed off to an update that never landed — 干净重装 re-runs
+            the downloaded installer as a visible wizard, 打开下载页
+            falls back to the website. Renders nothing outside the
+            desktop Tauri shell, so it mounts unconditionally here. */}
+        <UpdateStrandedToast />
         {/* Preview-audio controller card (voice-line playback: play/pause,
             seek, stop) — the update pass card's slot and surface. Renders
             nothing while the audioPlayer store is idle, so it mounts

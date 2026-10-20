@@ -62,14 +62,21 @@ mirrors). One such bridge update lands them on a client that fetches
   install in place on dir-less silent runs (shun >= 0.6.26: ARP
   `InstallLocation` leads the resolution, so a silent run without
   `--dir` never relocates a custom-path install to the pinned
-  default-dir), and relaunches the app after unattended updates (`launch-after-install = "always"`).
+  default-dir), survives a lock survivor holding the install directory
+  (shun >= 0.6.28: the atomic swap retries through the survivor — the
+  WebView2 children a taskkilled host leaves behind keep the directory
+  as their working directory — and degrades to an in-place merge when
+  the lock never lifts), and relaunches the app after unattended
+  updates (`launch-after-install = "always"`).
 - The **app** publishes the shipped resource pack into its cache root on
   first launch (`packages/app/tauri/src/resource_pack.rs` — the
   transactional relocation that used to live in the old installer shell),
   stamps `.res-version.json`, and drops the bootstrap `webview2/`
   subtree.
 - The **updater** (`packages/app/tauri/src/commands/update.rs`) keeps
-  fetching the `-lite` artifact and spawning it silently.
+  fetching the `-lite` artifact and spawning it silently — and exits
+  itself right after the handoff, so the WebView2 children close with
+  the app and never pin the install directory in the first place.
 
 ## Building
 

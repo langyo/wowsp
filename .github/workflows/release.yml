@@ -19,8 +19,11 @@ env:
   # the minimum for the headless shortcut presence refresh the
   # manifest's "ask" policies rely on. v0.6.26 is the minimum for
   # dir-less silent runs to upgrade the registered install in place
-  # instead of landing on the pinned default-dir.
-  SHUN_TAG: v0.6.26
+  # instead of landing on the pinned default-dir. v0.6.28 is the
+  # minimum for the silent upgrade to survive a lock survivor holding
+  # the install directory (retry window + in-place merge fallback) —
+  # the 0.6.1 → 0.6.2 stranding.
+  SHUN_TAG: v0.6.28
 
 # One release flow per ref, never cancelled mid-flight: a cancelled run can
 # leave a half-uploaded draft; a re-push of the same tag queues behind this
