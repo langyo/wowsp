@@ -89,7 +89,10 @@ export default defineComponent({
     });
     const stats = computed(() => shipLiveStats(props.shipId));
     const tier = computed(() => tierRoman(entry.value?.tier ?? null));
-    const typeShort = computed(() => shipTypeShort(entry.value?.type ?? null));
+    // Cruisers read CA vs CL from the baked main-gun caliber (fallback CA).
+    const typeShort = computed(() =>
+      shipTypeShort(entry.value?.type ?? null, stats.value?.cal),
+    );
     const typeLabel = computed(() => shipTypeLabel(entry.value?.type ?? null));
     const nation = computed(() => entry.value?.nation ?? null);
     const nationLabel = computed(() =>

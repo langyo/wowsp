@@ -134,4 +134,19 @@ describe("shipLiveStats", () => {
     expect(shipTypeShort("Destroyer")).toBe("DD");
     expect(shipTypeShort(null)).toBeNull();
   });
+
+  it("splits cruisers CA/CL from the baked main-gun caliber", () => {
+    // Six-inch-and-under hulls read CL; 155mm+ reads CA (incl. the large
+    // cruisers). No caliber → the static CA fallback. Caliber never
+    // rewrites a non-cruiser.
+    expect(shipTypeShort("Cruiser", 127)).toBe("CL");
+    expect(shipTypeShort("Cruiser", 150)).toBe("CL");
+    expect(shipTypeShort("Cruiser", 152)).toBe("CL");
+    expect(shipTypeShort("Cruiser", 155)).toBe("CA");
+    expect(shipTypeShort("Cruiser", 203)).toBe("CA");
+    expect(shipTypeShort("Cruiser", 305)).toBe("CA");
+    expect(shipTypeShort("Cruiser", 0)).toBe("CA");
+    expect(shipTypeShort("Cruiser", undefined)).toBe("CA");
+    expect(shipTypeShort("Battleship", 127)).toBe("BB");
+  });
 });
