@@ -241,18 +241,30 @@ function renderCard(card: HintCard): HTMLElement {
   }
 
   if (card.rows && card.rows.length > 0) {
+    // Rows share one grid whose label column lines every content cell up
+    // on the same left edge (see globalTooltip.scss) — cards that use row
+    // icons reserve that column on EVERY row, icon or not.
+    const withIcons = card.rows.some((row) => row.iconUrl != null);
     const rows = document.createElement("div");
-    rows.className = "global-tooltip__card-rows";
+    rows.className = withIcons
+      ? "global-tooltip__card-rows global-tooltip__card-rows--iconed"
+      : "global-tooltip__card-rows";
     for (const row of card.rows) {
       const line = document.createElement("div");
       line.className = "global-tooltip__card-row";
-      if (row.iconUrl) {
-        const icon = document.createElement("img");
-        icon.className = "global-tooltip__card-row-icon";
-        icon.src = row.iconUrl;
-        icon.alt = "";
-        icon.draggable = false;
-        line.appendChild(icon);
+      if (withIcons) {
+        if (row.iconUrl) {
+          const icon = document.createElement("img");
+          icon.className = "global-tooltip__card-row-icon";
+          icon.src = row.iconUrl;
+          icon.alt = "";
+          icon.draggable = false;
+          line.appendChild(icon);
+        } else {
+          const slot = document.createElement("span");
+          slot.className = "global-tooltip__card-row-icon";
+          line.appendChild(slot);
+        }
       }
       const label = document.createElement("span");
       label.className = "global-tooltip__card-row-label";

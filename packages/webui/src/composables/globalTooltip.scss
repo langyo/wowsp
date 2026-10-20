@@ -141,19 +141,30 @@
   border-radius: 2px;
 }
 
+/* One shared grid for ALL of a card's rows: the label column is
+   max-content across rows, so every row's chips (or values) start on the
+   same left edge — a per-row flex layout indents the chips of rows whose
+   label runs past the 5.5em min-width (alternate-fire mode) while every
+   other row stays on the min-width edge, leaving the chip column jagged.
+   Rows render display:contents (three grid cells each: icon slot /
+   label / content); cards that use row icons keep an empty slot on rows
+   without one so the columns stay aligned (--iconed). */
 .global-tooltip__card-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: start;
+  gap: 3px 8px;
   margin-top: 1px;
   padding-top: 6px;
   border-top: 1px solid rgb(0 0 0 / 12%);
+
+  &--iconed {
+    grid-template-columns: auto max-content 1fr;
+  }
 }
 
 .global-tooltip__card-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  display: contents;
   font-size: var(--text-2xs);
 }
 

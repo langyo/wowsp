@@ -7,6 +7,7 @@ import { HkAlert, HkButton, HkInput, HkScrollContainer, HkSpinner, HkTag, HkTabs
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
 import TechTreeView from "@/components/ships/TechTreeView";
+import { useTechTreePan } from "@/components/ships/techTreePan";
 import ShipCompareView from "@/components/ships/ShipCompareView";
 import { nationNodes } from "@/utils/techTreeData";
 import { resolveShipImage } from "@/utils/shipImages";
@@ -75,6 +76,10 @@ export default defineComponent({
     const treeNation = ref<string>("japan");
     /** True once the first load attempt completes (success or fail). */
     const firstLoadDone = ref(false);
+
+    // Tree-body wheel axis rule + background drag-pan (see techTreePan):
+    // `attach` rides the tree HkScrollContainer's template ref below.
+    const treePan = useTechTreePan();
 
     // Realm is followed app-wide from the sidebar server selector; the
     // encyclopedia store watches activeRealm and force-reloads itself.
@@ -486,8 +491,17 @@ export default defineComponent({
             /* The single both-axis scroller: hikari's overlay bars paint
                 over the scrollport's bottom/right edges; the row layout
                 (rail + canvas) lives on __tree-inner so the nation rail
-                keeps sticking to the viewport's top-left corner. */
-            <HkScrollContainer class="ships-view__tree-body" axis="both" key="tree">
+                keeps sticking to the viewport's top-left corner.
+                techTreePan rides the template ref: plain wheel scrolls
+                vertically (Shift = horizontal), dragging the background
+                pans — data-panning swaps the cursor while it does. */
+            <HkScrollContainer
+              class="ships-view__tree-body"
+              axis="both"
+              key="tree"
+              ref={treePan.attach}
+              data-panning={treePan.panning.value ? "" : undefined}
+            >
               <div class="ships-view__tree-inner">
                 {/* nation rail — vertical list of faction crests */}
                 <aside class="ships-view__nation-rail">
