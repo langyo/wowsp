@@ -19,14 +19,24 @@ vi.mock("@/features/holographic/modelLoader", () => ({
 vi.mock("@/utils/shipsBasics", () => ({ loadShipsBasics: vi.fn(), basicsToShipInfo: vi.fn() }));
 
 // The overlay module is exercised by its own test against the generated
-// data; here it stands in deterministically — appending one fake Lesta ship
-// whenever the tree realm is lesta, exactly the contract the store relies on.
+// data; here it stands in deterministically — hiding the fake WG-only hull
+// 777 and appending the fake Lesta ship 9001 while the tree realm is lesta
+// (the display-list contract the store relies on), with the resolution
+// union carrying 9001 in either mode and pruning nothing.
 vi.mock("@/utils/shipsLesta", () => ({
   withLestaOverlay: vi.fn(async (list: ShipInfo[], _lang: string) => {
     const { useShipsUiStore: ui } = await import("@/stores/shipsUi");
     if (ui().treeRealm !== "lesta") return list;
-    return [...list, { shipId: 9001, name: "Lesta ship" } as ShipInfo];
+    return [
+      ...list.filter((s) => s.shipId !== 777),
+      { shipId: 9001, name: "Lesta ship" } as ShipInfo,
+    ];
   }),
+  withLestaResolution: vi.fn(async (list: ShipInfo[], _lang: string) =>
+    list.some((s) => s.shipId === 9001)
+      ? list
+      : [...list, { shipId: 9001, name: "Lesta ship" } as ShipInfo],
+  ),
 }));
 
 function deferred<T>() {
@@ -131,5 +141,32 @@ describe("Lesta overlay", () => {
     await vi.waitFor(() => expect(store.ships.map((s) => s.shipId)).toEqual([1]));
     // One fetch only — the flip never round-tripped the WG API.
     expect(api.getShipEncyclopedia).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps branch-dropped WG-only ships resolvable in byId", async () => {
+    // The 458-battle "unknown type" regression: a WG-only event hull hides
+    // from the Lesta-mode display list, yet the account played it — stats
+    // resolution (byId) must still classify it, alongside the overlay's
+    // Lesta-only ships and the untouched base.
+    const wgOnly = { shipId: 777, name: "WG-only event ship" } as ShipInfo;
+    vi.mocked(api.getShipEncyclopedia).mockResolvedValue([...ASIA_SHIPS, wgOnly]);
+    useShipsUiStore().setTreeRealm("lesta");
+    const store = useEncyclopediaStore();
+    await store.load("asia", true);
+
+    expect(store.ships.map((s) => s.shipId)).toEqual([1, 9001]);
+    expect(store.byId.get(777)?.name).toBe("WG-only event ship");
+    expect(store.byId.get(9001)?.name).toBe("Lesta ship");
+    expect(store.byId.get(1)?.name).toBe("Asia ship");
+  });
+
+  it("resolves Lesta-only ships in WG mode too — byId is branch-independent", async () => {
+    vi.mocked(api.getShipEncyclopedia).mockResolvedValue(ASIA_SHIPS);
+    useShipsUiStore().setTreeRealm("wg");
+    const store = useEncyclopediaStore();
+    await store.load("asia", true);
+
+    expect(store.ships.map((s) => s.shipId)).toEqual([1]);
+    expect(store.byId.get(9001)?.name).toBe("Lesta ship");
   });
 });

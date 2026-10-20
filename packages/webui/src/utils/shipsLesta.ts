@@ -113,6 +113,25 @@ export function lestaToShipInfo(
   };
 }
 
+/** The Lesta-only overlay ships as ShipInfo entries (not deduplicated
+ *  against any WG-sourced list). Degrades to [] when the overlay chunk is
+ *  unavailable (an overlay-less lite build). */
+export async function lestaOverlayShips(lang: string): Promise<ShipInfo[]> {
+  let overlay: ShipsLestaOverlay;
+  try {
+    overlay = await loadShipsLesta();
+  } catch {
+    return [];
+  }
+  const extra: ShipInfo[] = [];
+  for (const [id, entry] of Object.entries(overlay.ships)) {
+    const shipId = Number(id);
+    if (!Number.isFinite(shipId)) continue;
+    extra.push(lestaToShipInfo(shipId, overlay, entry, lang));
+  }
+  return extra;
+}
+
 /** Adapt a WG-sourced encyclopedia list to the branch source: while it is
  *  Lesta, drop the ships only the WG client carries and append the
  *  Lesta-only overlay ships, so the list matches the Lesta client's roster.
@@ -129,18 +148,25 @@ export async function withLestaOverlay(list: ShipInfo[], lang: string): Promise<
   const hide: ReadonlySet<number> =
     rosterIds.size > 0 ? rosterIds : WG_EXCLUSIVE_TREE_SHIP_IDS;
   const kept = list.filter((s) => !hide.has(s.shipId));
-  let overlay: ShipsLestaOverlay;
-  try {
-    overlay = await loadShipsLesta();
-  } catch {
-    return kept;
-  }
+  const overlayShips = await lestaOverlayShips(lang);
+  if (!overlayShips.length) return kept;
   const have = new Set(kept.map((s) => s.shipId));
-  const extra: ShipInfo[] = [];
-  for (const [id, entry] of Object.entries(overlay.ships)) {
-    const shipId = Number(id);
-    if (!Number.isFinite(shipId) || have.has(shipId)) continue;
-    extra.push(lestaToShipInfo(shipId, overlay, entry, lang));
-  }
+  const extra = overlayShips.filter((s) => !have.has(s.shipId));
   return extra.length ? [...kept, ...extra] : kept;
+}
+
+/** The branch-independent id-resolution union: the WG-sourced base PLUS the
+ *  Lesta-only overlay ships, whatever the branch source is. Stats, replay
+ *  and name lookups must classify every ship an account could have played
+ *  on either client — an asia account's WG-only event ships (dropped by
+ *  {@link withLestaOverlay} while the branch source is Lesta) and a ru
+ *  account's Lesta-only lines (absent from the WG base while it is WG).
+ *  The branch source is a tech-tree DISPLAY concern; this list is not
+ *  pruned by it. */
+export async function withLestaResolution(list: ShipInfo[], lang: string): Promise<ShipInfo[]> {
+  const overlayShips = await lestaOverlayShips(lang);
+  if (!overlayShips.length) return list;
+  const have = new Set(list.map((s) => s.shipId));
+  const extra = overlayShips.filter((s) => !have.has(s.shipId));
+  return extra.length ? [...list, ...extra] : list;
 }

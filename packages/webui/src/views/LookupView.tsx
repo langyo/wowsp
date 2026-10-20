@@ -118,7 +118,8 @@ const TYPE_ORDER = ["Battleship", "AirCarrier", "Cruiser", "Destroyer", "Submari
 const TYPE_SHORT: Record<string, string> = {
   Battleship: "BB",
   AirCarrier: "CV",
-  Cruiser: "CA",
+  // Both cruiser hull designations in one code (mirrors SHIP_TYPE_SHORT).
+  Cruiser: "CA/CL",
   Destroyer: "DD",
   Submarine: "SS",
   Unknown: "?",
