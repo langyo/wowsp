@@ -218,7 +218,7 @@
     "muzzleVelocityHint": "砲口から発射された直後の弾速。",
     "airDrag": "空気抵抗",
     "airDragHint": "飛行中に速度が落ちる度合い。低いほど弾道が伸びます。",
-    "penetration": "貫通力 @ {range} km",
+    "penetration": "貫通力 {'@'} {range} km",
     "alphaDamage": "基本ダメージ",
     "ricochetAngles": "跳弾角度",
     "overmatch": "{mm} mm に対するオーバーマッチ"

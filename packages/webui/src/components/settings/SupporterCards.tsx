@@ -8,13 +8,14 @@ import { openExternal } from "@/utils/openExternal";
 import "./SupporterCards.scss";
 
 /**
- * The credits section's leading group (特别致谢): one card per specially
- * thanked helper with their LIVE Bilibili avatar (`commands/supporters.rs`
- * keeps a last-good cache; a total miss falls back to the initial-letter
- * disc), an optional contribution line (what they did, not who they are),
- * and the whole card opening their Bilibili space page in the external
- * browser. Avatars load through the `media://` proxy, so they are
- * disk-cached after the first view.
+ * The credits section's special-thanks group (特别致谢), second after the
+ * sponsor card: one card per specially thanked helper with their LIVE
+ * Bilibili avatar (`commands/supporters.rs` keeps a last-good cache; a
+ * total miss falls back to the initial-letter disc), an optional
+ * contribution line (what they did, not who they are), and the whole
+ * card opening their Bilibili space page in the external browser.
+ * Avatars load through the `media://` proxy, so they are disk-cached
+ * after the first view.
  */
 export default defineComponent({
   name: "SupporterCards",

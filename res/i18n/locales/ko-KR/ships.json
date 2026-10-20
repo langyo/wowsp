@@ -218,7 +218,7 @@
     "muzzleVelocityHint": "포탄이 포구를 나가는 순간의 속도입니다.",
     "airDrag": "공기 저항",
     "airDragHint": "비행 중 속도가 줄어드는 정도입니다. 낮을수록 탄도가 평탄합니다.",
-    "penetration": "관통력 @ {range} km",
+    "penetration": "관통력 {'@'} {range} km",
     "alphaDamage": "알파 데미지",
     "ricochetAngles": "도탄각",
     "overmatch": "{mm} mm 오버매치"
