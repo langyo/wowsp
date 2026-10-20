@@ -48,7 +48,9 @@
 
   /* Dashed-piggy stand-in covering the whole About block: centers the
      pig and is itself the restore click target — the entire area answers
-     the click, not just the image. Purely decorative (empty alt). */
+     the click, not just the image. Purely decorative (empty alt); the
+     overlay is also keyboard-focusable (a held-Enter auto-repeat on the
+     logo can trip the vanish), so it carries a focus ring. */
   &__vanish {
     position: absolute;
     inset: 0;
@@ -60,6 +62,12 @@
     user-select: none;
     opacity: 0;
     transform: scale(1.06);
+    outline: none;
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary) / 60%);
+      outline-offset: -6px;
+    }
     pointer-events: none;
     transition:
       opacity var(--duration-slow) ease,

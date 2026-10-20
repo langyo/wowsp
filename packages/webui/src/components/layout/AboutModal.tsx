@@ -531,8 +531,22 @@ export const AboutContent = defineComponent({
 
         {/* Vanish stand-in: the centered dashed piggy that replaces the
             shrunken About body. Purely decorative (alt=""), and the whole
-            overlay — not just the pig — is the restore click target. */}
-        <div class="about-modal__vanish" onClick={onVanishClick}>
+            overlay — not just the pig — is the restore click target; it
+            is keyboard-reachable too, because a held-Enter auto-repeat
+            on the logo CAN trip the vanish. */}
+        <div
+          class="about-modal__vanish"
+          role="button"
+          tabindex={0}
+          aria-label={t("common.close")}
+          onClick={onVanishClick}
+          onKeydown={(event: KeyboardEvent) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onVanishClick();
+            }
+          }}
+        >
           <img src="/piggy-vanished.webp" alt="" draggable={false} />
         </div>
       </div>
