@@ -3,6 +3,8 @@ export type {
   LearnedCapPoint,
   LearnedCapLayout,
   LearnedReplaySource,
+  SponsorEntry,
+  SponsorListDoc,
   GameInstall,
   GameInstallKind,
   GameProcessInfo,

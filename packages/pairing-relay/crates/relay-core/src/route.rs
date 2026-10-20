@@ -29,6 +29,7 @@
 //!   GET  /api/replays/admin/list         — drain console rows (erp session)
 //!   GET  /api/replays/admin/archive?anon_id=… — one shard (erp session)
 //!   POST /api/replays/admin/drain        — mark drained + free space
+//!   GET  /api/sponsors                   — afdian sponsor list (KV cache)
 
 use crate::room::Side;
 
@@ -76,6 +77,10 @@ pub enum Route<'a> {
     FeedbackUpdate,
     /// POST /api/qqbot/callback — QQ 开放平台 webhook（URL 校验 + 事件）。
     QqBotCallback,
+    /// GET /api/sponsors — the cached afdian sponsor-list document (the
+    /// daily cron that refreshes it lives in the worker's scheduled
+    /// handler; before the first poll this answers 503).
+    Sponsors,
     /// GET /api/feedback/attachment?file_token=… — 302 to a Feishu
     /// temporary download URL; `file_token` is the raw query value.
     FeedbackAttachment { file_token: Option<&'a str> },
@@ -146,6 +151,7 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         },
         "/api/feedback/update" => return Route::FeedbackUpdate,
         "/api/qqbot/callback" => return Route::QqBotCallback,
+        "/api/sponsors" => return Route::Sponsors,
         "/api/erp/login" => return Route::ErpLogin,
         "/api/erp/callback" => return Route::ErpCallback,
         "/api/erp/session" => return Route::ErpSession,
@@ -415,6 +421,15 @@ mod tests {
         // The retired verification endpoints (qq/code, qq/status) stay gone.
         assert_eq!(classify("/api/feedback/qq/code", ""), Route::NotFound);
         assert_eq!(classify("/api/feedback/qq/status", ""), Route::NotFound);
+    }
+
+    #[test]
+    fn classify_sponsors_route() {
+        assert_eq!(classify("/api/sponsors", ""), Route::Sponsors);
+        // Trailing slash routes like the bare path; nothing else is close.
+        assert_eq!(classify("/api/sponsors/", ""), Route::Sponsors);
+        assert_eq!(classify("/api/sponsors/x", ""), Route::NotFound);
+        assert_eq!(classify("/api/sponsor", ""), Route::NotFound);
     }
 
     #[test]
