@@ -182,11 +182,19 @@ pub(super) struct WatchFsm {
     pub(super) last_state_refresh: Option<Instant>,
     /// When the last arena-watcher dir re-check ran (see `watch_tab_tick`).
     pub(super) last_watcher_dir_check: Option<Instant>,
-    /// Whether the overlay mode has been declared in the probe's
-    /// wowsp.toml for the CURRENT game session (barcode = 1):
-    /// the declaration runs once per game-window acquisition so a running
-    /// watcher costs nothing per tick, and re-runs for each new session.
+    /// Mirror of the game window's presence for the CURRENT session — the
+    /// edge detector the per-tick declaration arm runs on (the actual
+    /// declaration latch is [`Self::table_declared`]): flips true when a
+    /// game window is acquired and false when it is lost, so each new
+    /// session re-arms the probe's wowsp.toml declaration exactly once.
     pub(super) declared_overlay_mode: bool,
+    /// Whether the CURRENT game session has actually had `declare_overlay_mode`
+    /// applied. Decoupled from [`Self::declared_overlay_mode`]: with the two
+    /// window switches independent, the aim card can keep the watcher alive
+    /// through a table-off stretch of the same session, and the table's
+    /// declaration must then (re-)run when the table switch flips back on —
+    /// a watcher restart no longer guarantees that edge.
+    pub(super) table_declared: bool,
     /// When the last pinned-anchor revalidation ran.
     pub(super) last_revalidate: Option<Instant>,
     /// When the last sink fast-probe ran (independent of every other stamp:
@@ -217,10 +225,11 @@ pub(super) struct WatchFsm {
     pub(super) last_screen_check: Option<Instant>,
     /// Whether the aim-card window (the second transparent overlay window —
     /// the crosshair target-stats card) is logically shown. The card's want
-    /// is "battle active + game focused + Tab up": while Tab is held the
-    /// table overlay owns the screen, and in port there is nothing to aim
-    /// at. The card PAGE decides its own content visibility from the
-    /// telemetry aim verdict; this flag only drives the native window.
+    /// is "its `aim_card` switch on, battle active, game focused, Tab up,
+    /// no picker layer": while Tab is held the table overlay owns the
+    /// screen, and in port there is nothing to aim at. The card PAGE decides
+    /// its own content visibility from the telemetry aim verdict; this flag
+    /// only drives the native window.
     pub(super) aim_card_shown: bool,
     /// Game rect the aim card was last placed at — placement is skipped
     /// while the game window has not moved/resized. `None` forces the next
@@ -604,25 +613,37 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         fsm.calibration.hold_counted = false;
     }
 
-    // Declare the OVERLAY view mode in the probe's wowsp.toml once per
-    // game session (barcode = 1 — the capture side channel's strips own
-    // the screen): the probe re-reads the table at every battle start.
+    // Overlay switches (`overlay-config.toml`, written by the settings
+    // modal): `table: "off"` keeps the transparent Tab TABLE window down
+    // while `aim_card: false` keeps the stats card down — the two window
+    // switches are independent, and the webui keeps the watcher + windows
+    // up while either is on. These cached reads are the Rust-side
+    // belt-and-suspenders — a stray tick (or a stale watcher outliving the
+    // webui's teardown) must never show a window against its setting, and
+    // an already-shown one hides again as soon as its want flag flips
+    // false below.
+    let table_off = super::overlay_config::table_overlay_off();
+    let aim_card_on = super::overlay_config::aim_card_shown();
+
+    // Declare the OVERLAY view mode in the probe's wowsp.toml (barcode = 1
+    // — the capture side channel's strips own the screen): the probe
+    // re-reads the table at every battle start. The declaration arms once
+    // per game session, and a table-off stretch does NOT consume it — with
+    // the two window switches independent, the aim card can keep this
+    // watcher alive through an off period, so a table flip back on
+    // mid-session must (re-)declare right here instead of waiting for a
+    // watcher restart that no longer happens. Skipped entirely while the
+    // table switch is off — the barcode strips serve the table's capture
+    // pipeline only, and the aim card reads the probe's telemetry without
+    // them.
     if game.is_some() != fsm.declared_overlay_mode {
         fsm.declared_overlay_mode = game.is_some();
-        if fsm.declared_overlay_mode {
-            declare_overlay_mode();
-        }
+        fsm.table_declared = false;
     }
-
-    // View-mode switch (`overlay-config.toml`, written by the settings
-    // modal): `table: "off"` disables the transparent Tab overlay. The
-    // webui never creates the overlay window + watcher while it is set
-    // and tears them down on the off edge; this cached read is the
-    // Rust-side belt-and-suspenders — a stray tick (or a stale watcher
-    // outliving the webui's teardown) must never show the window
-    // against the setting, and an already-shown one hides again as soon
-    // as `want_visible` flips false below.
-    let table_off = super::overlay_config::table_overlay_off();
+    if fsm.declared_overlay_mode && !table_off && !fsm.table_declared {
+        declare_overlay_mode();
+        fsm.table_declared = true;
+    }
 
     // WANT-VISIBLE state machine instead of press-edge triggering: the
     // previous edge-only model did all its work exactly once per press,
@@ -663,14 +684,16 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     }
 
     // AIM-CARD pass — the second transparent window serving the one overlay
-    // mode: shown while a battle is active and the game is focused, hidden
-    // while Tab is held (the table overlay owns the screen then), the
-    // picker is open, or the mode/battle is gone. Placement hangs the card
-    // below the game window's center (the crosshair) and follows every
-    // game-window move; the PAGE decides its own content visibility from
-    // the telemetry aim verdict, so this only drives the native window and
-    // costs two flag compares per idle tick.
-    let want_aim_card = focused_on_game && battle_known && !table_off && !picker_open && !tab_down;
+    // mode: shown while a battle is active and the game is focused and its
+    // OWN switch (`aim_card`, read above) is on — independent of the table
+    // switch, so a table-off player may still run the card. Hidden while
+    // Tab is held (the table overlay owns the screen then), the picker is
+    // open, or the battle is gone. Placement hangs the card below the game
+    // window's center (the crosshair) and follows every game-window move;
+    // the PAGE decides its own content visibility from the telemetry aim
+    // verdict, so this only drives the native window and costs two flag
+    // compares per idle tick.
+    let want_aim_card = focused_on_game && battle_known && aim_card_on && !picker_open && !tab_down;
     if want_aim_card {
         if let Some(g) = game.as_ref() {
             let rect = rect_from_win32(g.rect);

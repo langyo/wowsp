@@ -26,14 +26,14 @@ function deferred() {
 
 let scope = effectScope();
 let game = reactive({ process: { running: true, realm: "asia" as string | null } });
-let config = reactive({ table: "detect", loaded: true, load: vi.fn(async () => {}) });
+let config = reactive({ table: "detect", aimCard: true, loaded: true, load: vi.fn(async () => {}) });
 let installs = reactive({ activeInstall: null as { realm: string } | null });
 
 beforeEach(() => {
   vi.resetAllMocks();
   scope = effectScope();
   game = reactive({ process: { running: true, realm: "asia" as string | null } });
-  config = reactive({ table: "detect", loaded: true, load: vi.fn(async () => {}) });
+  config = reactive({ table: "detect", aimCard: true, loaded: true, load: vi.fn(async () => {}) });
   installs = reactive({ activeInstall: null as { realm: string } | null });
   mocks.game.mockReturnValue(game);
   mocks.config.mockReturnValue(config);
@@ -51,6 +51,7 @@ describe("overlay lifecycle transitions", () => {
     await flushPromises();
     expect(mocks.api.createOverlayWindow).not.toHaveBeenCalled();
     config.table = "off";
+    config.aimCard = false;
     config.loaded = true;
     await flushPromises();
     expect(mocks.api.createOverlayWindow).not.toHaveBeenCalled();
@@ -62,8 +63,12 @@ describe("overlay lifecycle transitions", () => {
     scope.run(useOverlayLifecycle);
     await flushPromises();
     expect(mocks.api.createOverlayWindow).toHaveBeenCalledTimes(1);
-    if (change === "off") config.table = "off";
-    else game.process.running = false;
+    if (change === "off") {
+      config.table = "off";
+      config.aimCard = false;
+    } else {
+      game.process.running = false;
+    }
     await flushPromises();
     creating.resolve();
     await flushPromises();
@@ -100,9 +105,27 @@ describe("overlay lifecycle transitions", () => {
     await flushPromises();
     mocks.api.destroyOverlayWindow.mockRejectedValueOnce(new Error("synthetic window busy"));
     config.table = "off";
+    config.aimCard = false;
     await flushPromises();
     game.process.realm = "eu";
     await flushPromises();
     expect(mocks.api.destroyOverlayWindow).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the mode up while the aim-card switch alone wants a window", async () => {
+    // The two window switches are independent: the mode (windows + watcher)
+    // exists while EITHER switch wants a window — the watcher enforces each
+    // switch per tick — and only both-off tears it down.
+    config.table = "off";
+    config.aimCard = false;
+    scope.run(useOverlayLifecycle);
+    await flushPromises();
+    expect(mocks.api.createOverlayWindow).not.toHaveBeenCalled();
+    config.aimCard = true;
+    await flushPromises();
+    expect(mocks.api.createOverlayWindow).toHaveBeenCalledTimes(1);
+    config.aimCard = false;
+    await flushPromises();
+    expect(mocks.api.destroyOverlayWindow).toHaveBeenCalledTimes(1);
   });
 });
