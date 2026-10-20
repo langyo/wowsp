@@ -23,4 +23,48 @@
     flex: none;
     margin-left: auto;
   }
+
+  // The aim-card hang row's control pair: slider + free-form px box. The
+  // row is the shared stats-prefs__row (label left, controls right, and
+  // its own ≤767px wrap already covers narrow panes); this block only
+  // shapes the pair itself — a fixed-band slider and a narrow numeric
+  // field hugging the row's right edge. HkInput drops pass-through
+  // classes, so the box is sized through the child selector on the
+  // library's own wrapper root (the roster row's `> .hk-tabs` idiom).
+  &__hang-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--hi-space-8, 8px);
+    flex: none;
+    margin-left: auto;
+
+    > .hk-input-wrapper {
+      width: 4.5rem;
+      flex: none;
+    }
+  }
+
+  &__hang-slider {
+    width: 10.5rem;
+    flex: none;
+  }
+}
+
+// Narrow windows (the desktop window has no minWidth): the shared row's
+// own ≤767px wrap has already dropped this block onto its own line — the
+// slider then stretches into the available width while the box keeps its
+// fixed size.
+@media (max-width: 767px) {
+  .overlay-sec__hang-controls {
+    width: 100%;
+
+    > .hk-input-wrapper {
+      flex: none;
+    }
+  }
+
+  .overlay-sec__hang-slider {
+    flex: 1 1 auto;
+    width: auto;
+  }
 }

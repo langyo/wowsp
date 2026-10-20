@@ -129,11 +129,13 @@ export const shellApi = {
   appdataDelete: (file: string) => transport.invoke<null>(RPC.appdata_delete, { file }),
   /** Overlay switches (schema v2) — sanitized + persisted as TOML by the
    *  shell (see commands/overlay_config.rs). Unknown values reset to the
-   *  field's default on the Rust side, so the response is always valid. */
+   *  field's default on the Rust side, so the response is always valid.
+   *  `aimCardHangPx` (logical px below the crosshair) is rounded and
+   *  clamped ≥ 0 shell-side; the slider only offers 60–240. */
   getOverlayConfig: () =>
-    transport.invoke<{ table: string; roster: string; aimCard: boolean }>(RPC.get_overlay_config),
-  setOverlayConfig: (table: string, roster: string, aimCard: boolean) =>
-    transport.invoke<{ table: string; roster: string; aimCard: boolean }>(RPC.set_overlay_config, { table, roster, aimCard }),
+    transport.invoke<{ table: string; roster: string; aimCard: boolean; aimCardHangPx: number }>(RPC.get_overlay_config),
+  setOverlayConfig: (table: string, roster: string, aimCard: boolean, aimCardHangPx: number) =>
+    transport.invoke<{ table: string; roster: string; aimCard: boolean; aimCardHangPx: number }>(RPC.set_overlay_config, { table, roster, aimCard, aimCardHangPx }),
   /** In-game stats plugin presence in a game install (see
    *  commands/ingame_plugin.rs) — powers the roster "plugin detection"
    *  option's enabled state and its Discussions page link. */

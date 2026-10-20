@@ -231,10 +231,11 @@ pub(super) struct WatchFsm {
     /// its own content visibility from the telemetry aim verdict; this flag
     /// only drives the native window.
     pub(super) aim_card_shown: bool,
-    /// Game rect the aim card was last placed at — placement is skipped
-    /// while the game window has not moved/resized. `None` forces the next
-    /// show to place first.
-    pub(super) aim_card_placed: Option<Rect>,
+    /// Game rect and hang the aim card was last placed at — placement is
+    /// skipped while NEITHER the game window nor the `aim_card_hang_px`
+    /// setting has changed (a settings flip re-places the card even on an
+    /// unmoved game window). `None` forces the next show to place first.
+    pub(super) aim_card_placed: Option<(Rect, i32)>,
 }
 
 /// Push a detection-status report to ALL windows — but only when it differs
@@ -624,6 +625,10 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // false below.
     let table_off = super::overlay_config::table_overlay_off();
     let aim_card_on = super::overlay_config::aim_card_shown();
+    // The card's hang below the crosshair (logical px) — read in the same
+    // pass so the placement key below covers a settings change, not just a
+    // game-window move (the TTL cache makes this another mutex memcpy).
+    let aim_hang = super::overlay_config::aim_card_hang_px();
 
     // Declare the OVERLAY view mode in the probe's wowsp.toml (barcode = 1
     // — the capture side channel's strips own the screen): the probe
@@ -689,21 +694,24 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // switch, so a table-off player may still run the card. Hidden while
     // Tab is held (the table overlay owns the screen then), the picker is
     // open, or the battle is gone. Placement hangs the card below the game
-    // window's center (the crosshair) and follows every game-window move;
-    // the PAGE decides its own content visibility from the telemetry aim
-    // verdict, so this only drives the native window and costs two flag
-    // compares per idle tick.
+    // window's center (the crosshair) by the configured hang
+    // (`aim_card_hang_px`, read above with the switches) and follows every
+    // game-window move AND every settings change; the PAGE decides its own
+    // content visibility from the telemetry aim verdict, so this only
+    // drives the native window and costs two flag compares per idle tick.
     let want_aim_card = focused_on_game && battle_known && aim_card_on && !picker_open && !tab_down;
     if want_aim_card {
         if let Some(g) = game.as_ref() {
             let rect = rect_from_win32(g.rect);
-            // A moved/resized game window re-places; a no-op placement
-            // (window not created yet — creation is async) must not stamp
-            // the cache, or the card would stay unplaced after creation.
-            if fsm.aim_card_placed.as_ref() != Some(&rect)
-                && place_aim_card(app, &rect, window_dpi_scale(g.hwnd))
+            // A moved/resized game window OR a changed hang re-places; a
+            // no-op placement (window not created yet — creation is async)
+            // must not stamp the cache, or the card would stay unplaced
+            // after creation.
+            let placed_at = (rect, aim_hang);
+            if fsm.aim_card_placed.as_ref() != Some(&placed_at)
+                && place_aim_card(app, &rect, window_dpi_scale(g.hwnd), aim_hang)
             {
-                fsm.aim_card_placed = Some(rect);
+                fsm.aim_card_placed = Some(placed_at);
             }
             if !fsm.aim_card_shown && app.get_webview_window(AIM_CARD_LABEL).is_some() {
                 show_aim_card(app);

@@ -129,6 +129,8 @@
   "overlayTableToggleDesc": "Tant que Tab est maintenu, superpose le taux de victoire et les dégâts moyens de chaque joueur sur le tableau des scores du jeu.",
   "overlayAimCardToggle": "Afficher la carte de statistiques en visée",
   "overlayAimCardToggleDesc": "Quand vous visez un joueur ennemi en combat, sa carte de statistiques s'affiche juste sous le réticule.",
+  "overlayAimCardHang": "Distance de la carte de visée au réticule",
+  "overlayAimCardHangDesc": "Pixels entre le haut de la carte et le centre du réticule ; 60 par défaut. Le curseur couvre 60–240 — le champ accepte toute valeur à partir de 0, tant que la carte reste visible.",
   "overlayRoster": "Reconnaissance de la liste",
   "overlayRosterPassive": "Détection passive par pixels d'écran",
   "overlayRosterDisabledByTable": "Désactivé par l'interrupteur « Afficher la fenêtre tant que Tab est maintenu » ci-dessus : réactivez-le pour restaurer la reconnaissance de la liste.",

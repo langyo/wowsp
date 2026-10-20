@@ -129,6 +129,8 @@
   "overlayTableToggleDesc": "Tab을 누르고 있는 동안 게임의 전적 패널 위에 모든 플레이어의 승률과 평균 피해량을 색상으로 표시합니다.",
   "overlayAimCardToggle": "조준 시 전적 카드 표시",
   "overlayAimCardToggleDesc": "전투 중 적 플레이어를 조준하면 조준점 아래 중앙 부근에 해당 플레이어의 전적 카드를 표시합니다.",
+  "overlayAimCardHang": "조준 카드와 조준점 사이 거리",
+  "overlayAimCardHangDesc": "카드 상단과 조준점 중심 사이의 픽셀 수, 기본값 60. 슬라이더는 60–240, 입력란에는 0 이상 범위 밖의 값도 입력할 수 있습니다(카드가 보이는 범위 내에서).",
   "overlayRoster": "명단 인식",
   "overlayRosterPassive": "화면 픽셀 수동 감지",
   "overlayRosterDisabledByTable": "위의 \"Tab을 누르는 동안 투명 창 표시\" 스위치에 의해 비활성화되었습니다. 다시 켜면 명단 인식이 복원됩니다.",

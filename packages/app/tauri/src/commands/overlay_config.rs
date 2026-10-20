@@ -17,6 +17,13 @@
 //!   while either is on, each switch suppressing only its own window —
 //!   and only both-off tears the whole mode down (the webui lifecycle's
 //!   decision; see features/overlay/useOverlayLifecycle.ts).
+//! - `aim_card_hang_px` — how far the aim card hangs below the crosshair
+//!   (the game window's vertical center), in logical px before DPI
+//!   scaling: 60 by default; the settings slider offers 60–240 while its
+//!   edit box accepts anything from 0 up (placement clamps the card
+//!   inside the game rect, so an oversized value just pins it to the
+//!   bottom edge). The watcher consults it every tick, so a change
+//!   applies live while the card is up.
 //! - `roster` — roster attribution. `"plugin"` (default) treats the
 //!   in-game plugin's telemetry as the primary detector: authoritative
 //!   alive flags, the TAB screen's own tabModeIn/Out marks and the
@@ -71,8 +78,22 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\", aim_card = true | false.\n\
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\", aim_card = true | false, aim_card_hang_px = <integer px>.\n\
                            # Invalid values are reset to the defaults by the app.\n";
+
+/// Default hang of the aim card's top edge below the game window's vertical
+/// center (where the crosshair sits), in logical px before DPI scaling.
+/// The value the retired hardcoded constant carried was 120; the shipped
+/// setting default is closer to the crosshair. (Private: every consumer —
+/// Default, the resolve path, the tests — lives in this module; the webui
+/// keeps its own DEFAULT_AIM_CARD_HANG_PX twin in stores/overlayConfig.ts.)
+const AIM_CARD_HANG_DEFAULT_PX: i32 = 60;
+
+/// Sanity clamp for a stored/set hang. Generous headroom over any real
+/// monitor: `aim_card_rect` clamps the card inside the game rect anyway, so
+/// an oversized value just pins the card to the game window's bottom edge —
+/// the clamp only keeps absurd hand-edited numbers from overflowing.
+const AIM_CARD_HANG_MAX_PX: i64 = 100_000;
 
 /// How long a cached read stays fresh. The file only changes when the user
 /// flips a settings switch, so a couple of seconds of staleness bounds the
@@ -134,6 +155,11 @@ pub(crate) struct OverlayConfig {
     /// The aimed-player stats card's window switch (schema v2 `aim_card`):
     /// shown during battles unless the user turned it off.
     pub(crate) aim_card: bool,
+    /// The aim card's hang below the crosshair (schema v2
+    /// `aim_card_hang_px`): logical px between the game window's vertical
+    /// center and the card's top edge, before DPI scaling. Already
+    /// sanitized on every path that builds a config ([`sanitize_hang_px`]).
+    pub(crate) aim_card_hang_px: i32,
 }
 
 impl Default for OverlayConfig {
@@ -142,8 +168,17 @@ impl Default for OverlayConfig {
             table: TableAnchor::Detect,
             roster: RosterRecognition::Plugin,
             aim_card: true,
+            aim_card_hang_px: AIM_CARD_HANG_DEFAULT_PX,
         }
     }
+}
+
+/// Clamp a hang value from any integer source (file or IPC) into the sane
+/// range — negatives land at 0 (the card's top edge on the crosshair),
+/// absurd sizes at [`AIM_CARD_HANG_MAX_PX`] (placement pins those to the
+/// game rect's bottom edge anyway).
+fn sanitize_hang_px(raw: i64) -> i32 {
+    raw.clamp(0, AIM_CARD_HANG_MAX_PX) as i32
 }
 
 /// Parse the v2 `table` field. Present-but-unknown values (a typo, a wrong
@@ -182,6 +217,7 @@ struct RawOverlayFields {
     table: Option<String>,
     roster: Option<String>,
     aim_card: Option<bool>,
+    aim_card_hang_px: Option<i64>,
     enabled: Option<bool>,
 }
 
@@ -205,6 +241,10 @@ fn resolve_fields(fields: RawOverlayFields) -> OverlayConfig {
         table,
         roster,
         aim_card: fields.aim_card.unwrap_or(true),
+        aim_card_hang_px: fields
+            .aim_card_hang_px
+            .map(sanitize_hang_px)
+            .unwrap_or(AIM_CARD_HANG_DEFAULT_PX),
     }
 }
 
@@ -224,6 +264,7 @@ fn fields_from_json(raw: &str) -> RawOverlayFields {
             .and_then(|v| v.as_str())
             .map(str::to_string),
         aim_card: map.get("aim_card").and_then(|v| v.as_bool()),
+        aim_card_hang_px: map.get("aim_card_hang_px").and_then(|v| v.as_i64()),
         enabled: map.get("enabled").and_then(|v| v.as_bool()),
     }
 }
@@ -248,6 +289,7 @@ fn fields_from_toml(raw: &str) -> RawOverlayFields {
             .and_then(|v| v.as_str())
             .map(str::to_string),
         aim_card: map.get("aim_card").and_then(|v| v.as_bool()),
+        aim_card_hang_px: map.get("aim_card_hang_px").and_then(|v| v.as_integer()),
         enabled: map.get("enabled").and_then(|v| v.as_bool()),
     }
 }
@@ -264,6 +306,7 @@ struct OverlayConfigTomlFile {
     table: String,
     roster: String,
     aim_card: bool,
+    aim_card_hang_px: i32,
 }
 
 /// Serialize the canonical file text (header + flat TOML keys).
@@ -272,6 +315,7 @@ fn canonical_toml(config: OverlayConfig) -> Result<String> {
         table: config.table.as_str().to_string(),
         roster: config.roster.as_str().to_string(),
         aim_card: config.aim_card,
+        aim_card_hang_px: config.aim_card_hang_px,
     };
     let body = toml::to_string(&file).map_err(|e| anyhow!("serialize overlay config: {e}"))?;
     Ok(format!("{FILE_HEADER}{body}"))
@@ -360,6 +404,14 @@ pub(crate) fn aim_card_shown() -> bool {
     current().aim_card
 }
 
+/// The aim card's configured hang below the crosshair (logical px; DPI
+/// scaling is applied at placement). The watcher's placement pass consults
+/// this every tick together with the game rect, so a settings change
+/// re-places the card live — even while the game window stands still.
+pub(crate) fn aim_card_hang_px() -> i32 {
+    current().aim_card_hang_px
+}
+
 /// Pure core of [`table_overlay_off`], unit-testable without the cache.
 fn overlay_suppressed(table: TableAnchor) -> bool {
     table != TableAnchor::Detect
@@ -376,6 +428,7 @@ pub struct OverlayConfigResponse {
     pub table: String,
     pub roster: String,
     pub aim_card: bool,
+    pub aim_card_hang_px: i32,
 }
 
 impl From<OverlayConfig> for OverlayConfigResponse {
@@ -384,6 +437,7 @@ impl From<OverlayConfig> for OverlayConfigResponse {
             table: config.table.as_str().to_string(),
             roster: config.roster.as_str().to_string(),
             aim_card: config.aim_card,
+            aim_card_hang_px: config.aim_card_hang_px,
         }
     }
 }
@@ -405,15 +459,17 @@ pub fn set_overlay_config(
     table: String,
     roster: String,
     aim_card: bool,
+    aim_card_hang_px: i64,
 ) -> CommandResult<OverlayConfigResponse> {
     let config = OverlayConfig {
         table: parse_table_field(&table),
         roster: parse_roster_field(&roster),
         aim_card,
+        aim_card_hang_px: sanitize_hang_px(aim_card_hang_px),
     };
     let dir = paths::ensure_data_dir()?;
     let canonical = canonical_toml(config)?;
-    tracing::info!(table = ?config.table, roster = ?config.roster, aim_card = config.aim_card, "overlay config saved");
+    tracing::info!(table = ?config.table, roster = ?config.roster, aim_card = config.aim_card, aim_card_hang_px = config.aim_card_hang_px, "overlay config saved");
     settings_store::store(&dir, OVERLAY_CONFIG_FILE, &canonical)?;
     settings_store::retire_legacy_json(&dir, LEGACY_OVERLAY_CONFIG_FILE);
     let mut cache = CACHE
@@ -484,6 +540,7 @@ mod tests {
                 table: TableAnchor::Detect,
                 roster: RosterRecognition::Plugin,
                 aim_card: true,
+                ..Default::default()
             }
         );
         let cfg = parse_config(r#"{"enabled":false}"#);
@@ -493,6 +550,7 @@ mod tests {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Plugin,
                 aim_card: true,
+                ..Default::default()
             }
         );
     }
@@ -536,6 +594,57 @@ mod tests {
         assert!(overlay_suppressed(TableAnchor::Off));
     }
 
+    /// The hang field: honored when valid, clamped into [0, MAX] when out
+    /// of range, defaulted when absent or wrong-typed — on both the JSON
+    /// and TOML read paths and the IPC set path.
+    #[test]
+    fn hang_px_sanitizes() {
+        // In-range values ride through verbatim (the slider's 60–240 plus
+        // the edit box's below/above-range picks).
+        for raw in [0, 1, 59, 60, 240, 540, 4096] {
+            assert_eq!(
+                parse_config(&format!(r#"{{"aim_card_hang_px":{raw}}}"#)).aim_card_hang_px,
+                raw,
+                "raw: {raw}"
+            );
+        }
+        // Negatives clamp to 0 (the card's top edge on the crosshair);
+        // absurd sizes clamp at the sanity ceiling (placement pins those to
+        // the game rect's bottom edge anyway).
+        assert_eq!(
+            parse_config(r#"{"aim_card_hang_px":-50}"#).aim_card_hang_px,
+            0
+        );
+        assert_eq!(
+            parse_config(r#"{"aim_card_hang_px":999999999999}"#).aim_card_hang_px,
+            AIM_CARD_HANG_MAX_PX as i32
+        );
+        // Wrong type / absent → the default (and the read path heals it).
+        assert_eq!(
+            parse_config(r#"{"aim_card_hang_px":"far"}"#).aim_card_hang_px,
+            AIM_CARD_HANG_DEFAULT_PX
+        );
+        assert_eq!(
+            parse_config("{}").aim_card_hang_px,
+            AIM_CARD_HANG_DEFAULT_PX
+        );
+        // The TOML path mirrors the contract, float included (a hand-edited
+        // 60.5 is not an integer and lands on the default like any wrong
+        // type).
+        assert_eq!(
+            resolve_fields(fields_from_toml("aim_card_hang_px = 240\n")).aim_card_hang_px,
+            240
+        );
+        assert_eq!(
+            resolve_fields(fields_from_toml("aim_card_hang_px = 60.5\n")).aim_card_hang_px,
+            AIM_CARD_HANG_DEFAULT_PX
+        );
+        // The IPC set path sanitizes through the same clamp.
+        assert_eq!(sanitize_hang_px(-1), 0);
+        assert_eq!(sanitize_hang_px(130), 130);
+        assert_eq!(sanitize_hang_px(i64::MAX), AIM_CARD_HANG_MAX_PX as i32);
+    }
+
     /// TOML parse: canonical text round-trips (the aim-card boolean
     /// included), garbage/non-table TOML and unknown values fall back per
     /// field, and a v1-style TOML `enabled` key resolves the same way the
@@ -546,15 +655,18 @@ mod tests {
             table: TableAnchor::Off,
             roster: RosterRecognition::Passive,
             aim_card: false,
+            aim_card_hang_px: 240,
         })
         .unwrap();
         assert!(canonical.contains("aim_card = false"));
+        assert!(canonical.contains("aim_card_hang_px = 240"));
         assert_eq!(
             resolve_fields(fields_from_toml(&canonical)),
             OverlayConfig {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Passive,
                 aim_card: false,
+                aim_card_hang_px: 240,
             }
         );
         for raw in ["", "garbage [", "42", "[1,2]", "table = \"plugin\""] {
@@ -570,6 +682,7 @@ mod tests {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Plugin,
                 aim_card: true,
+                ..Default::default()
             }
         );
     }
@@ -593,6 +706,7 @@ mod tests {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Plugin,
                 aim_card: false,
+                ..Default::default()
             }
         );
         assert!(dir.join(OVERLAY_CONFIG_FILE).exists());
@@ -606,6 +720,7 @@ mod tests {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Plugin,
                 aim_card: false,
+                ..Default::default()
             }
         );
         assert_eq!(

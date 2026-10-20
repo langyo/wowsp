@@ -129,6 +129,8 @@
   "overlayTableToggleDesc": "Mientras se mantiene Tab, superpone la tasa de victorias y el daño medio de cada jugador sobre el panel de puntuación del juego.",
   "overlayAimCardToggle": "Mostrar la tarjeta al apuntar",
   "overlayAimCardToggleDesc": "Al apuntar a un jugador enemigo en combate, muestra su tarjeta de estadísticas justo bajo la mira.",
+  "overlayAimCardHang": "Distancia de la tarjeta de puntería a la mira",
+  "overlayAimCardHangDesc": "Píxeles entre el borde superior de la tarjeta y el centro de la mira; 60 por defecto. El deslizador cubre 60–240; el campo acepta cualquier valor desde 0 en adelante, mientras la tarjeta siga visible.",
   "overlayRoster": "Reconocimiento de la lista",
   "overlayRosterPassive": "Detección pasiva por píxeles de pantalla",
   "overlayRosterDisabledByTable": "Desactivado por el interruptor \"Mostrar la ventana al mantener Tab\" de arriba: actívalo de nuevo para restaurar el reconocimiento de la lista.",

@@ -129,6 +129,8 @@
   "overlayTableToggleDesc": "按住 Tab 时，在游戏的战绩面板上叠加全队玩家的彩色胜率与场均伤害。",
   "overlayAimCardToggle": "瞄准时显示战绩卡片",
   "overlayAimCardToggleDesc": "战斗中瞄准敌方玩家时，在准星下方居中偏下的位置显示该玩家的战绩卡片。",
+  "overlayAimCardHang": "瞄准卡片与准星的距离",
+  "overlayAimCardHangDesc": "卡片顶边距准星中心的像素数，默认 60。滑条覆盖 60–240，输入框可填 0 及以上、超出滑条范围的数值——只要卡片仍看得见即可。",
   "overlayRoster": "名单识别",
   "overlayRosterPassive": "屏幕像素被动检测",
   "overlayRosterDisabledByTable": "已由上方“按住 Tab 显示透明窗口”开关停用：重新打开后名单识别即恢复。",
