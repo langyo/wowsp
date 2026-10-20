@@ -74,6 +74,11 @@ def parse_glb(path: Path) -> dict:
 import re
 _GUN_PREFIX = re.compile(r'^[A-Z]G[MAST]', re.IGNORECASE)
 # G M = main, G S = secondary, G A = anti-air, G T = torpedo
+# Submarine radar/sonar "Search" mounts (HP_ARS_*): the client's hydrophone
+# geometry ships SJ-radar meshes (render sets named ARS022_Radar_SJ*), and
+# both mounts render as detached antenna fragments beside the sail at
+# hologram fidelity. Dropped from the bakes entirely.
+_SEARCH_HP = re.compile(r'\(HP_ARS')
 
 def _classify_node(node_name: str) -> str:
     """Map a raw WoWS GLB node name to a mesh-group category.
@@ -418,6 +423,8 @@ def extract_by_instance(gltf: dict, dedup_lods: bool = False) -> dict[str, dict[
     for ni, n in enumerate(nodes):
         name = n.get("name") or ""
         cat = _classify_node(name)
+        if _SEARCH_HP.search(name):
+            cat = "skip"
         if cat in ("turret_part", "misc"):
             low = name.lower()
             if "lod" in low or "turret" in low:
@@ -427,6 +434,16 @@ def extract_by_instance(gltf: dict, dedup_lods: bool = False) -> dict[str, dict[
                     if parent_cat not in ("turret_part", "misc"):
                         cat = parent_cat
         node_cat.append(cat)
+
+    # A skipped Search mount takes its mesh children (the exporter hangs the
+    # geometry off a child node) down with it.
+    pending = [i for i, c in enumerate(node_cat) if c == "skip"]
+    while pending:
+        i = pending.pop()
+        for c in children.get(i, ()):
+            if node_cat[c] != "skip":
+                node_cat[c] = "skip"
+                pending.append(c)
 
     def instance_label(ni: int, cat: str) -> str:
         if cat not in WEAPON_INSTANCE_CATS:
@@ -455,6 +472,8 @@ def extract_by_instance(gltf: dict, dedup_lods: bool = False) -> dict[str, dict[
 
         for ni, world_mat in world_mats:
             cat = node_cat[ni] if ni >= 0 else "misc"
+            if cat == "skip":
+                continue
             inst = instance_label(ni, cat) if ni >= 0 else "0"
             # children of a weapon mount (turret parts, barrels) belong to the
             # SAME instance — walk up to the owning weapon HP node.
