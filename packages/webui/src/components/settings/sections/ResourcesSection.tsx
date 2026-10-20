@@ -11,7 +11,7 @@ import { defineComponent, type PropType } from "vue";
 import { HkButton, HkSettingsGroup, HkSettingsHint } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
-import { formatEta, formatSpeed } from "@/utils/format";
+import { formatEta, formatLocalStamp, formatSpeed } from "@/utils/format";
 import { isMobileApp } from "@/utils/platform";
 import {
   auxDesc,
@@ -61,7 +61,7 @@ export default defineComponent({
                 <span class="settings-modal__pack-desc">{t("settings.dataSourceShipDataDesc")}</span>
                 <span class="settings-modal__pack-meta">
                   {updates.dataPackVersion.value
-                    ? `${t("settings.dataSourceVersion")}: ${updates.dataPackVersion.value.replace("T", " ").slice(0, 16)}`
+                    ? `${t("settings.dataSourceVersion")}: ${formatLocalStamp(updates.dataPackVersion.value)}`
                     : t("settings.dataSourceBundled")}
                 </span>
               </div>
@@ -82,7 +82,7 @@ export default defineComponent({
                 <span class="settings-modal__pack-desc">{t("settings.dataSourceModCatalogDesc")}</span>
                 <span class="settings-modal__pack-meta">
                   {updates.modCatalogStamp.value
-                    ? `${t("settings.dataSourceModCatalogAt")}: ${updates.modCatalogStamp.value.replace("T", " ").slice(0, 16)}`
+                    ? `${t("settings.dataSourceModCatalogAt")}: ${formatLocalStamp(updates.modCatalogStamp.value)}`
                     : t("settings.dataSourceModCatalogNone")}
                 </span>
               </div>

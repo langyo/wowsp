@@ -34,6 +34,7 @@ import {
 import { listedEntries } from "@/features/modhub/catalogListed";
 import ModOpDisclaimer from "@/features/modhub/ModOpDisclaimer";
 import { t } from "@/i18n";
+import { formatLocalStamp } from "@/utils/format";
 import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
 import { useModHub } from "./resources/useModHub";
@@ -445,7 +446,7 @@ export default defineComponent({
               <div class="resources-view__side-foot">
                 {t("resources.catalogMeta", {
                   source: hub.catalogSource.value,
-                  time: hub.catalogFetched.value.slice(0, 10),
+                  time: formatLocalStamp(hub.catalogFetched.value, true),
                 })}
               </div>
             )}
