@@ -32,8 +32,9 @@ pub struct SponsorEntry {
     pub first_pay: i64,
     /// Unix seconds.
     pub last_pay: i64,
-    /// Game ID recognized in an order remark — the credits chip jumps
-    /// to that player's lookup page. Null when no remark carried one.
+    /// Game ID recognized in an order remark. DORMANT: still served by
+    /// the relay, but the UI's chip-to-lookup jump is parked; kept so
+    /// re-enabling needs no wire change. Null when no remark carried one.
     pub game_id: Option<String>,
 }
 

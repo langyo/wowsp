@@ -32,8 +32,10 @@ export interface SponsorEntry {
   firstPay: number;
   /** Unix seconds. */
   lastPay: number;
-  /** Game ID recognized in an order remark — the chip jumps to that
-   *  player's lookup page; null opens the afdian profile instead. */
+  /** Game ID recognized in an order remark. DORMANT: the relay still
+   *  parses and serves it, but the chip-to-lookup jump is parked (the
+   *  UI currently ignores this field) — kept so re-enabling needs no
+   *  worker or DTO change. */
   gameId: string | null;
 }
 

@@ -1,11 +1,8 @@
 import { defineComponent, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import { HkSettingsGroup, HkSettingsHint } from "@celestia-island/hikari";
 
 import { api, type SponsorEntry } from "@/api";
 import { t } from "@/i18n";
-import { useAccountStore } from "@/stores/account";
-import { useSettingsUiStore } from "@/stores/settingsUi";
 import { mediaImageUrl } from "@/utils/media";
 import { openExternal } from "@/utils/openExternal";
 import "./SponsorList.scss";
@@ -16,23 +13,16 @@ import "./SponsorList.scss";
  * (live, else the AppData last-good cache, else nothing — see
  * commands/supporters.rs) ALREADY SORTED by the worker: current-month
  * paid, then all-time paid, then earliest first payment. This component
- * only renders them, as compact chips.
- *
- * A chip whose sponsor left a recognizable GAME ID in an order remark
- * jumps to the lookup page for that player — the remark cannot carry a
- * realm, so the search seeds from the app's active realm (the picker on
- * the lookup page is one tap away if the guess is wrong). Every other
- * chip opens the sponsor's public afdian profile in the external
- * browser. Zero rows (relay cold, offline, browser dev) hides the whole
- * group.
+ * only renders them, as compact chips; a chip opens the sponsor's
+ * public afdian profile in the external browser. The remark-carried
+ * game ID stays DORMANT for now (the worker still parses and serves it,
+ * but the chip-to-lookup jump is parked until the false positives from
+ * free-text remarks are worth solving). Zero rows (relay cold, offline,
+ * browser dev) hides the whole group.
  */
 export default defineComponent({
   name: "SponsorList",
   setup() {
-    const router = useRouter();
-    const settings = useSettingsUiStore();
-    const accounts = useAccountStore();
-
     const sponsors = ref<SponsorEntry[]>([]);
     /** userIds whose <img> failed to decode — back to the initial disc. */
     const broken = ref(new Set<string>());
@@ -47,21 +37,6 @@ export default defineComponent({
           // offline / older shell / browser dev — the group hides
         });
     });
-
-    const openSponsor = (sponsor: SponsorEntry): void => {
-      const gameId = sponsor.gameId?.trim();
-      if (gameId) {
-        // The settings surface must not cover the route this lands on
-        // (the desktop modal overlays the whole app window).
-        settings.hide();
-        void router.push({
-          path: "/lookup",
-          query: { name: gameId, realm: accounts.activeRealm },
-        });
-        return;
-      }
-      void openExternal(`https://afdian.com/u/${sponsor.userId}`);
-    };
 
     return () => {
       if (sponsors.value.length === 0) return null;
@@ -79,8 +54,8 @@ export default defineComponent({
                     "sponsor-chip--active": sponsor.active,
                   }}
                   key={sponsor.userId}
-                  data-hint={sponsor.gameId ? t("settings.sponsorListLookupHint") : url}
-                  onClick={() => openSponsor(sponsor)}
+                  data-hint={url}
+                  onClick={() => void openExternal(url)}
                 >
                   {sponsor.avatar && !broken.value.has(sponsor.userId) ? (
                     <img

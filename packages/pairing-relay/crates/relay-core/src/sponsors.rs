@@ -46,9 +46,11 @@ pub struct SponsorEntry {
     /// Unix seconds, straight from query-sponsor.
     pub first_pay: i64,
     pub last_pay: i64,
-    /// Game ID recognized in one of the sponsor's order remarks (the
-    /// credits chip jumps to that player's lookup page). None when no
-    /// remark carried one.
+    /// Game ID recognized in one of the sponsor's order remarks.
+    /// DORMANT: still parsed and served, but the UI's chip-to-lookup
+    /// jump is parked (free-text remarks misparse too often); keep the
+    /// field so re-enabling needs no wire change. None when no remark
+    /// carried one.
     pub game_id: Option<String>,
 }
 
