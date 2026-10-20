@@ -21,7 +21,8 @@ import type { TextureComponent } from "./types";
  *  full-size preview. */
 export function renderCatalogRow(ctx: ResourcesCtx, entry: CatalogEntry, selKey: string) {
   const text = localized(entry);
-  const record = ctx.recordOf(entry.id);
+  // Folded style families pair through superseded legacy ids too.
+  const record = ctx.recordOfEntry(entry);
   const upToDate = !!record && record.version === entry.version;
   // Corner light — install state at a glance: yellow
   // while a newer catalog version exists, green once
@@ -84,6 +85,12 @@ export function renderCatalogRow(ctx: ResourcesCtx, entry: CatalogEntry, selKey:
           <span class="mod-row__badge mod-row__badge--up">
             {t("resources.update")}
           </span>
+        ) : entry.presets && entry.presets.length > 1 ? (
+          /* Folded style family: say how many buttons the detail pane
+             offers before the row is opened. */
+          <span class="mod-row__badge">
+            {t("resources.presetCount", { count: entry.presets.length })}
+          </span>
         ) : null}
       </span>
     </button>
@@ -128,7 +135,9 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
   // ledger doesn't know fall to the Aslain verdict
   // (blue); everything else is plain-installed green.
   const paired = ctx.pairedEntryOf(m);
-  const ledger = m.identity ? ctx.recordOf(m.identity) : null;
+  // A folded style family's ledger record may sit under a superseded
+  // legacy id — the paired entry resolves it.
+  const ledger = paired ? ctx.recordOfEntry(paired) : null;
   const light: "blue" | "yellow" | "green" =
     paired && ledger
       ? ledger.version !== paired.version

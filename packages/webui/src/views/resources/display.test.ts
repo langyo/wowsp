@@ -5,10 +5,10 @@ vi.mock("@/i18n/useLanguage", () => ({
   useLanguage: () => ({ uiLocale: { value: "en" }, dataLanguage: { value: "en" } }),
 }));
 
-import { presetSwitched } from "./display";
+import { installedPresetOf, presetSwitched } from "./display";
 import type { CatalogEntry, ModInstallRecord } from "@/api";
 
-const entry = (presetIds: string[]): CatalogEntry =>
+const entry = (presetIds: string[], supersedes?: Record<string, string>): CatalogEntry =>
   ({
     id: "smi",
     category: "battle",
@@ -22,6 +22,7 @@ const entry = (presetIds: string[]): CatalogEntry =>
     packages: [],
     i18n: {},
     presets: presetIds.map((id) => ({ id, nameZh: id, nameEn: id, packages: [] })),
+    ...(supersedes ? { supersedes } : {}),
   }) as unknown as CatalogEntry;
 
 const record = (preset?: string | null): ModInstallRecord =>
@@ -45,5 +46,29 @@ describe("presetSwitched", () => {
     expect(presetSwitched(entry([]), record("classic"), "classic")).toBe(false);
     expect(presetSwitched(entry(["classic", "sasagcy"]), null, "sasagcy")).toBe(false);
     expect(presetSwitched(entry(["classic", "sasagcy"]), undefined, "other")).toBe(false);
+  });
+
+  it("maps a superseded legacy record onto its folded scheme", () => {
+    // A folded style family: the record was written under the legacy
+    // one-entry-per-variant id and carries no preset — its scheme is
+    // the one the old id folded into, not the default first one.
+    const folded = entry(["classic", "ttaro", "deceased"], {
+      "battle.panel.ttaro": "ttaro",
+      "battle.panel.deceased": "deceased",
+    });
+    const legacy = {
+      id: "battle.panel.ttaro",
+      version: "1",
+      gameRoot: "C:/G",
+      preset: null,
+    } as ModInstallRecord;
+    expect(installedPresetOf(folded, legacy)).toBe("ttaro");
+    expect(presetSwitched(folded, legacy, "ttaro")).toBe(false);
+    expect(presetSwitched(folded, legacy, "classic")).toBe(true);
+    // An explicit preset on the record still wins over the mapping.
+    expect(installedPresetOf(folded, { ...legacy, preset: "deceased" })).toBe("deceased");
+    // No record → the default scheme; no mapping → the default too.
+    expect(installedPresetOf(folded, null)).toBe("classic");
+    expect(installedPresetOf(entry(["classic", "sasagcy"]), record(null))).toBe("classic");
   });
 });

@@ -231,19 +231,37 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
       return; // offline / cache unreadable — keep the last snapshot
     }
     const byId = new Map(catalog.mods.map((m) => [m.id, m]));
+    // Folded style families: a ledger record may sit under a legacy
+    // one-entry-per-variant id (`battle.panel.ttaro`…) — pair it with
+    // the folded entry through `supersedes` (old id → preset id), the
+    // same rule the mod hub's own rows use, so update badges and the
+    // batch pass keep covering pre-fold installs. The resolved entry's
+    // id is what the update installs, with the mapped scheme carried
+    // over so an update stays on the installed style.
+    const entryOfRecord = (r: ModInstallRecord): CatalogEntry | undefined => {
+      const direct = byId.get(r.id);
+      if (direct) return direct;
+      return catalog.mods.find((m) => m.supersedes?.[r.id] !== undefined);
+    };
     const next: Record<string, PluginUpdateInfo> = {};
     await Promise.all(
       paths.map(async (path) => {
         // Legacy records carry no gameRoot and count for every install,
         // the same pairing rule the mod hub's own rows use.
-        const mods: OutdatedMod[] = records
-          .filter(
-            (r) =>
-              (!r.gameRoot || sameGamePath(r.gameRoot, path)) &&
-              byId.get(r.id)?.version !== undefined &&
-              byId.get(r.id)!.version !== r.version,
-          )
-          .map((r) => ({ id: r.id, name: r.name, preset: r.preset }));
+        const mods: OutdatedMod[] = [];
+        for (const r of records) {
+          if (!(!r.gameRoot || sameGamePath(r.gameRoot, path))) continue;
+          const entry = entryOfRecord(r);
+          if (!entry || entry.version === r.version) continue;
+          // Two legacy variant records of one family resolve to the same
+          // entry — one update step per entry, first record wins.
+          if (mods.some((m) => m.id === entry.id)) continue;
+          mods.push({
+            id: entry.id,
+            name: r.name,
+            preset: r.preset ?? entry.supersedes?.[r.id] ?? null,
+          });
+        }
         let probeOutdated = false;
         try {
           probeOutdated = !!(await api.ingamePluginStatus(path)).outdated;

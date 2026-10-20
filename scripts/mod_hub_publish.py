@@ -53,6 +53,7 @@ from pathlib import Path
 
 # Sibling module (same directory — sys.path[0] when run as
 # `python scripts/mod_hub_publish.py`).
+import mod_hub_families
 import publish_digests
 
 REPO = "langyo/wowsp"
@@ -1235,6 +1236,10 @@ def build_index(state: dict) -> dict:
         latest = sorted(entry["versions"])[-1]
         entry["latest"] = latest
         entry["game"] = entry["versions"][latest]["game"]
+    # Style families (several Aslain variants of one HUD element) fold
+    # into preset-carrying entries AFTER the latest-version pass — the
+    # fold consumes each member's resolved latest payload.
+    mod_hub_families.fold_families(mods)
     return {
         "schema": 1,
         "source": {"kind": "aslain-ingest", "content_version": state["content_version"], "game_version": state["game_version"]},
@@ -1255,7 +1260,9 @@ def drop_missing_assets(index_json: dict, assets: set[str]) -> int:
     app downloads from — a silently missed upload (the live catalog once
     referenced two assets that 404) must shrink the index here, not fail
     every install of that entry. Mods left without any servable package
-    leave the catalog; `latest` is recomputed over the survivors.
+    leave the catalog; `latest` is recomputed over the survivors. Preset
+    package lists (the folded style families) go through the same gate —
+    a preset whose payload died leaves the button group.
     """
     dropped = 0
     for entry in list(index_json["mods"].values()):
@@ -1267,6 +1274,26 @@ def drop_missing_assets(index_json: dict, assets: set[str]) -> int:
                     print(f"warning: dropping {pkg['name']} (missing from release {RELEASE_TAG})",
                           file=sys.stderr, flush=True)
             version["packages"] = keep
+            presets = version.get("presets") or []
+            if presets:
+                kept_presets = []
+                for preset in presets:
+                    keep_p = [pkg for pkg in preset["packages"] if pkg["name"] in assets]
+                    dropped += len(preset["packages"]) - len(keep_p)
+                    for pkg in preset["packages"]:
+                        if pkg["name"] not in assets:
+                            print(f"warning: dropping {pkg['name']} (missing from release {RELEASE_TAG})",
+                                  file=sys.stderr, flush=True)
+                    if keep_p:
+                        preset["packages"] = keep_p
+                        kept_presets.append(preset)
+                version["presets"] = kept_presets
+                # The plain list mirrors the DEFAULT (first) scheme; when
+                # that scheme's payload died, the first surviving scheme
+                # takes over as the default instead of sinking the whole
+                # folded family while its other styles still serve.
+                if kept_presets and not version["packages"]:
+                    version["packages"] = kept_presets[0]["packages"]
         entry["versions"] = {v: body for v, body in entry["versions"].items() if body["packages"]}
         if not entry["versions"]:
             print(f"warning: dropping mod {entry['id']} (no servable packages)", file=sys.stderr, flush=True)
@@ -1275,6 +1302,14 @@ def drop_missing_assets(index_json: dict, assets: set[str]) -> int:
         latest = sorted(entry["versions"])[-1]
         entry["latest"] = latest
         entry["game"] = entry["versions"][latest]["game"]
+        # A dropped scheme leaves its supersedes pair dangling (the old
+        # id maps to a preset that no longer exists) — prune so ledger
+        # pairing never resolves to a ghost scheme.
+        if entry.get("supersedes") is not None:
+            live = {p["id"] for p in entry["versions"][latest].get("presets") or []}
+            entry["supersedes"] = {
+                old: pid for old, pid in entry["supersedes"].items() if pid in live
+            }
     return dropped
 
 
@@ -1293,7 +1328,11 @@ def should_refuse_upload(total: int, dropped: int, mods_left: int) -> bool:
 def index(cache: Path) -> None:
     state = downloaded_state(cache)
     index_json = build_index(state)
-    total = sum(len(v["packages"]) for m in index_json["mods"].values() for v in m["versions"].values())
+    total = sum(
+        len(v["packages"]) + sum(len(p["packages"]) for p in v.get("presets") or [])
+        for m in index_json["mods"].values()
+        for v in m["versions"].values()
+    )
     dropped = drop_missing_assets(index_json, release_asset_names())
     if should_refuse_upload(total, dropped, len(index_json["mods"])):
         sys.exit(
@@ -1410,6 +1449,65 @@ def selftest() -> None:
     assert should_refuse_upload(100, 26, 74), "past the threshold refuses"
     assert should_refuse_upload(10, 10, 0), "no mods left refuses"
     assert should_refuse_upload(0, 0, 0), "empty state refuses"
+
+    # Style families fold at index time: sibling one-entry-per-variant
+    # mods (two traffic-light versions here) merge into one
+    # preset-carrying entry, and the asset gate sweeps preset payloads
+    # like plain ones.
+    def fam_mod(mid, asset, preview):
+        return {
+            "id": mid, "category": "battle", "version": "1", "game": ">=15.7 <15.8",
+            "name_en": mid, "name_zh": "", "description": "", "i18n": {},
+            "preview_attachment": preview,
+            "author_url": "", "discussion_number": 7,
+            "packages": [{
+                "download_url": f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{asset}",
+                "sha256": "a" * 64, "size_bytes": 1, "asset": asset,
+            }],
+        }
+    fam_index = build_index({
+        "content_version": "v.15.7.0 #1", "game_version": "15.7",
+        "mods": [
+            fam_mod("battle.marker.traffic", "t1.zip", "https://github.com/user-attachments/assets/t1.png"),
+            fam_mod("battle.marker.traffic-v2", "t2.zip", "https://github.com/user-attachments/assets/t2.png"),
+            fam_mod("battle.marker.traffic-v4", "gone-4.zip", "https://github.com/user-attachments/assets/t4.png"),
+        ],
+    })
+    fam = fam_index["mods"]["battle.marker.traffic"]
+    fver = fam["versions"][fam["latest"]]
+    assert [p["id"] for p in fver["presets"]] == ["classic", "v2", "v4"], fver.get("presets")
+    assert fver["presets"][1]["preview"] == "https://github.com/user-attachments/assets/t2.png"
+    assert fam["supersedes"] == {
+        "battle.marker.traffic": "classic",
+        "battle.marker.traffic-v2": "v2",
+        "battle.marker.traffic-v4": "v4",
+    }
+    fam_dropped = drop_missing_assets(fam_index, {"t1.zip", "t2.zip"})
+    assert fam_dropped == 1, fam_dropped  # the v4 preset payload, swept like a plain one
+    fver = fam_index["mods"]["battle.marker.traffic"]["versions"]["1"]
+    assert [p["id"] for p in fver["presets"]] == ["classic", "v2"]
+    fam = fam_index["mods"]["battle.marker.traffic"]
+    assert fam["supersedes"] == {
+        "battle.marker.traffic": "classic",
+        "battle.marker.traffic-v2": "v2",
+    }, "the dropped scheme's supersedes pair prunes"
+
+    # Default-scheme death: the first surviving scheme backfills the
+    # plain list (the family stays servable), and only its pair remains.
+    fam_index2 = build_index({
+        "content_version": "v.15.7.0 #1", "game_version": "15.7",
+        "mods": [
+            fam_mod("battle.marker.traffic", "gone-1.zip", "https://github.com/user-attachments/assets/t1.png"),
+            fam_mod("battle.marker.traffic-v2", "t2.zip", "https://github.com/user-attachments/assets/t2.png"),
+        ],
+    })
+    drop_missing_assets(fam_index2, {"t2.zip"})
+    fam2 = fam_index2["mods"]["battle.marker.traffic"]
+    rec2 = fam2["versions"][fam2["latest"]]
+    assert [p["id"] for p in rec2["presets"]] == ["v2"], rec2.get("presets")
+    assert [p["name"] for p in rec2["packages"]] == ["t2.zip"], "first survivor backfills the default"
+    assert fam2["supersedes"] == {"battle.marker.traffic-v2": "v2"}
+    mod_hub_families.selftest()
     print("selftest ok")
 
 

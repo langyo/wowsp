@@ -43,6 +43,7 @@
   "delistedTitle": "此插件已下架",
   "delistedHint": "「{name}」已從外掛目錄中移除，不再提供安裝。已安裝的副本不受影響，可在「已安裝」列表中繼續管理。",
   "presetLabel": "方案",
+  "presetCount": "{count} 款式",
   "foreignCopy": "偵測到本插件已由 {source} 安裝。點擊「註冊並重新安裝」可將其納入 WoWSP 管理，並清理其留下的原副本（res_mods 內的副本會先快照備份）。",
   "foreignSource": {
     "aslain": "Aslain 整合包",

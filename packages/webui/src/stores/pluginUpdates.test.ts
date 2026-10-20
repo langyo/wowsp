@@ -36,7 +36,7 @@ import { usePluginUpdatesStore } from "./pluginUpdates";
 const GAME = "D:\\Games\\World of Warships";
 const OTHER = "E:\\OtherClient";
 
-function entry(id: string, version: string): CatalogEntry {
+function entry(id: string, version: string, supersedes?: Record<string, string>): CatalogEntry {
   return {
     id,
     category: "voice",
@@ -54,6 +54,7 @@ function entry(id: string, version: string): CatalogEntry {
     authors: [],
     packages: [],
     i18n: {},
+    ...(supersedes ? { supersedes } : {}),
   } as CatalogEntry;
 }
 
@@ -128,6 +129,37 @@ describe("usePluginUpdatesStore.refresh", () => {
     // mock reports its probe outdated too — totalCount spans every
     // install now, unlike the old active-install-only count.
     expect(updates.totalCount).toBe(3);
+  });
+
+  it("pairs folded-family legacy records onto the folded entry, once per family", async () => {
+    // A folded style family: pre-fold records sit under legacy ids with
+    // no preset; the update pass must resolve them onto the folded
+    // entry (its id installs, its mapped scheme carries over), and two
+    // legacy records of ONE family collapse into a single step.
+    mocked.refresh.mockResolvedValue({
+      mods: [
+        entry("battle.panel", "2", {
+          "battle.panel.ttaro": "ttaro",
+          "battle.panel.autospy": "classic",
+        }),
+      ],
+      fetchedAt: "",
+      sourceVersion: "",
+      gameVersion: "",
+    } as never);
+    mocked.records.mockResolvedValue([
+      record("battle.panel.ttaro", "1", GAME),
+      record("battle.panel.autospy", "1", GAME), // same family → deduped
+      record("battle.panel", "2", GAME), // post-fold record, current → skip
+    ] as never);
+
+    const updates = usePluginUpdatesStore();
+    await updates.refresh();
+
+    const mods = updates.infoFor(GAME)?.mods ?? [];
+    expect(mods).toHaveLength(1);
+    expect(mods[0].id).toBe("battle.panel");
+    expect(mods[0].preset).toBe("ttaro"); // the first legacy record's folded scheme
   });
 
   it("keeps other installs' records out of this install's snapshot", async () => {

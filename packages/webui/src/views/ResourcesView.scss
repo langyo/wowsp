@@ -1160,6 +1160,16 @@
     letter-spacing: 0.04em;
   }
 
+  /* The selected scheme's own note (variant caveats: mutual exclusions,
+     replay breakage…) — swaps with the button group alongside the
+     preview image. */
+  &__preset-note {
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-text) / 75%);
+  }
+
   &__badges {
     display: flex;
     flex-wrap: wrap;

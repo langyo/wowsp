@@ -43,6 +43,7 @@
   "delistedTitle": "이 모드는 목록에서 제거되었습니다",
   "delistedHint": "\"{name}\" 모드가 카탈로그에서 제거되어 더 이상 설치할 수 없습니다. 이미 설치한 복사본에는 영향이 없으며 \"설치됨\" 목록에서 계속 관리할 수 있습니다.",
   "presetLabel": "스킴",
+  "presetCount": "{count}개 스타일",
   "foreignCopy": "이 mod는 {source}에서 이미 설치했습니다. \"등록 후 다시 설치\"를 누르면 WoWSP 관리로 전환되고 남겨진 사본도 정리됩니다(res_mods 내 사본은 먼저 스냅샷으로 백업).",
   "foreignSource": {
     "aslain": "Aslain 모드팩",

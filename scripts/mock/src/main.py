@@ -487,6 +487,51 @@ _MOCK_CATALOG = {
                           "size": 3450880, "name": "voice.ba.hoshino.zip"}],
         },
         {
+            # Folded style family (scripts/mod_hub_families.py): the six
+            # team-panel variants as ONE entry with a scheme button
+            # group — per-scheme preview + note, legacy ids in
+            # `supersedes` (mocked here with three of the six).
+            "id": "battle.panel", "category": "battle",
+            "discussion": 94, "version": "15.7.0.10",
+            "game": ">=15.7 <15.8",
+            "title": "Team Panels (styles)",
+            "nameZh": "侧边面板（多款式）", "nameEn": "Team Panels (styles)",
+            "description": "Replacement team panels with a style button group; mutually exclusive styles.",
+            "authorUrl": "",
+            "supersedes": {
+                "battle.panel.autospy": "classic",
+                "battle.panel.ttaro": "ttaro",
+                "battle.panel.deceased": "deceased",
+            },
+            "preview": "https://github.com/user-attachments/assets/panel-classic.png",
+            "i18n": {
+                "en-US": {"name": "Team Panels (styles)", "description": "Replacement team panels with a style button group."},
+                "zh-CN": {"name": "侧边面板（多款式）", "description": "按钮组切换款式的侧边队伍面板；各款式互斥。"},
+            },
+            "packages": [{"url": "https://example.com/panel-classic.zip", "sha256": "",
+                          "size": 20480, "name": "panel-classic.zip"}],
+            "presets": [
+                {"id": "classic", "nameZh": "经典（血量条）", "nameEn": "Classic (HP bars)",
+                 "preview": "https://github.com/user-attachments/assets/panel-classic.png",
+                 "descZh": "经典的带血量条侧边队伍面板。选择该面板会自动取消剪影图标类插件——二者互不兼容。",
+                 "descEn": "The classic HP-bar team panels; incompatible with silhouette icon mods.",
+                 "packages": [{"url": "https://example.com/panel-classic.zip", "sha256": "",
+                               "size": 20480, "name": "panel-classic.zip"}]},
+                {"id": "ttaro", "nameZh": "TTaro 版", "nameEn": "TTaro",
+                 "preview": "https://github.com/user-attachments/assets/panel-ttaro.png",
+                 "descZh": "TTaro 版侧边队伍面板，与剪影图标类插件不兼容；会自动关闭原生队伍面板。",
+                 "descEn": "TTaro team panels; disables the native panels option.",
+                 "packages": [{"url": "https://example.com/panel-ttaro.zip", "sha256": "",
+                               "size": 24576, "name": "panel-ttaro.zip"}]},
+                {"id": "deceased", "nameZh": "DeCease 色块", "nameEn": "DeCease blocks",
+                 "preview": "https://github.com/user-attachments/assets/panel-decease.png",
+                 "descZh": "DeCease 色块风格；安装后无法播放回放。",
+                 "descEn": "DeCease block style; replays cannot be watched while installed.",
+                 "packages": [{"url": "https://example.com/panel-decease.zip", "sha256": "",
+                               "size": 18432, "name": "panel-decease.zip"}]},
+            ],
+        },
+        {
             # Withdrawn sample (closed discussion thread): exercises the
             # delisting path — hidden from list/search, deep-link notice.
             "id": "battle-marker-traffic", "category": "battle",
@@ -515,6 +560,16 @@ _MOCK_RECORDS: list[dict] = [
         "installedAt": "2026-01-01T00:00:00Z", "files": [],
         "restoreDir": None, "gameRoot": "",
     },
+    # Pre-fold era record: written under the legacy one-entry-per-variant
+    # id — pairs with the folded battle.panel entry through `supersedes`
+    # and lands the button group on the ttaro scheme.
+    {
+        "id": "battle.panel.ttaro", "name": "TTaro Team Panels",
+        "version": "15.7.0.10", "category": "battle", "source": "mod-hub",
+        "discussion": 94, "preset": None, "binVersion": "13187581",
+        "installedAt": "2026-01-02T00:00:00Z", "files": [],
+        "restoreDir": None, "gameRoot": "",
+    },
 ]
 
 
@@ -527,13 +582,19 @@ async def cmd_mod_catalog_refresh(request: Request) -> dict:
 async def cmd_mod_catalog_install(request: Request) -> dict:
     body = await request.json()
     mod_id = body.get("modId", "?")
+    preset = body.get("preset")
     entry = next((m for m in _MOCK_CATALOG["mods"] if m["id"] == mod_id), None)
-    _MOCK_RECORDS[:] = [r for r in _MOCK_RECORDS if r["id"] != mod_id]
+    # A folded family's install rewinds the legacy one-entry-per-variant
+    # records too (styles are mutually exclusive), mirroring the Rust
+    # installer's supersedes rewind.
+    rewind = {mod_id} | (set((entry or {}).get("supersedes", {})) if entry else set())
+    _MOCK_RECORDS[:] = [r for r in _MOCK_RECORDS if r["id"] not in rewind]
     _MOCK_RECORDS.append({
         "id": mod_id, "name": entry["nameEn"] if entry else mod_id,
         "version": entry["version"] if entry else "0", "category": "battle",
         "source": "mod-hub", "discussion": entry["discussion"] if entry else None,
-        "binVersion": "12668706", "installedAt": "2026-09-01T00:00:00Z",
+        "preset": preset, "binVersion": "12668706",
+        "installedAt": "2026-09-01T00:00:00Z",
         "files": ["res_mods/dummy.xml"], "restoreDir": None,
     })
     return {"name": entry["nameEn"] if entry else mod_id, "binVersion": "12668706",

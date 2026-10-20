@@ -210,6 +210,20 @@ pub struct CatalogPreset {
     /// Scheme label (English) — the non-zh fallback.
     pub name_en: String,
     pub packages: Vec<CatalogPackage>,
+    /// This scheme's own preview screenshot (a GitHub user-attachment
+    /// URL): the detail pane swaps to it while the scheme is selected,
+    /// so a folded style family shows the right image per button.
+    /// `None` when only the entry-level preview exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    /// This scheme's own description (Chinese) — the variant's caveats
+    /// (mutual exclusions, replay breakage…) rendered under the scheme
+    /// buttons. `None` when the scheme has no own notes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desc_zh: Option<String>,
+    /// Scheme description (English) — the non-zh fallback of `desc_zh`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desc_en: Option<String>,
 }
 
 /// One clickable author tag: the credited name plus its official page
@@ -281,6 +295,14 @@ pub struct CatalogEntry {
     /// carries no image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview: Option<String>,
+    /// Legacy one-entry-per-variant catalog ids this folded style
+    /// family replaces, as old id → preset id. Ledger pairing treats a
+    /// record under a superseded id as this entry installed with that
+    /// scheme, and install rewinds those records first (family styles
+    /// are mutually exclusive variants of one HUD element). Absent on
+    /// unfolded entries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<std::collections::BTreeMap<String, String>>,
 }
 
 /// Parsed `mod-index.json` — the online plugin list the hub page renders.
