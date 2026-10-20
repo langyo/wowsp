@@ -590,3 +590,31 @@ can ever load their models.
 node grammar offline. The whole priority chain (node blocks → SDK dump → WG
 reference → splash) is unavailable for them, and the client cannot be made
 to dump what it will never load.
+
+### Phase 12 correction (2026-10-20, same day): the "demo" ships are the active test-ship pool
+
+The claim above that the two holdouts are "unrenderable demo entities" is
+**wrong in an important way**. The `demoWithoutStatsPrem` group (18 members)
+matches 1:1 the 26.10 **tested-ships list** on Lesta's wiki
+(wiki.lesta.ru, "Тестируемые корабли"): Бородино '04, Mikasa '04, Piorun,
+Ханко, 25 de Mayo, I-54, Isonzo, Somme, De Grasse '56, Songun, Hakusan,
+San Giorgio, N. Dakota, Utrecht, Красное Знамя (рубка), Моонзунд,
+Schwaben, Waterloo. These are ships in **active balancing tests** — players
+sail them in real (test-server / test-drive) battles during test windows;
+"without stats" just means test results are not tracked on profiles. The
+replay-patch Weymouth fallback reflects the local client having no battle
+config unlocked for them outside a test window, not an inherent
+unrenderability.
+
+Consequences for the bake:
+
+- The official ModsSDK tracks new ships promptly — 26.10 added 9 ship dumps
+  over 26.9 (the Lukomorye event ships incl. Koschei/Gorynych/Vodyanoi, GDR,
+  Ivan Grozny, Knyaginya Olga). RSB528_Borodino, itself a former test ship,
+  is already dumped. **When PRSC517/PRSB503 graduate from testing, the next
+  ModsSDK release should carry their `_ports.visual` XMLs for free** —
+  worth re-checking each patch before investing in the blob2 decode.
+- Test windows do not help the in-client extraction: extractSources is a
+  static copier (see the Fubuki control above), so even a test-drive ship
+  rendered in port or played in a battle dumps nothing extra. The offline
+  blob2 decode remains the only active route today.
