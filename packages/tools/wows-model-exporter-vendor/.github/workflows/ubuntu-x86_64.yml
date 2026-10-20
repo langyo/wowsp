@@ -1,0 +1,34 @@
+name: Unit Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-slim
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install packages
+      run: |
+        sudo apt update
+        sudo apt install cmake zlib1g-dev libpcre2-dev clang lcov libcunit1-dev valgrind \
+          libmeshoptimizer-dev libtinygltf-dev python3-dev
+    - name: Configure CMake
+      run: cmake -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DCOVERAGE=ON -DBUILD_TESTS=ON -DBUNDLE_WOWS_DEPACK=ON .
+    - name: Build
+      run: make
+    - name: Coverage
+      run: make test
+    - name: Test
+      run: make coverage
+    - name: Memory checks
+      run: valgrind --tool=memcheck --leak-check=yes --show-reachable=yes --num-callers=20 --track-fds=yes --track-origins=yes --error-exitcode=42 ./wows-geometry-test
