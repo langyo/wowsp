@@ -31,6 +31,8 @@ import { ref } from "vue";
 
 import { useTheme } from "@celestia-island/hikari";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
+
 export type ThemeModePreference = "dark" | "light" | "solar";
 
 export const THEME_MODE_PREFERENCE_STORAGE_KEY = "wowsp-theme-mode";
@@ -97,6 +99,7 @@ export function setThemeModePreference(mode: ThemeModePreference) {
   themeModePreference.value = mode;
   try {
     localStorage.setItem(THEME_MODE_PREFERENCE_STORAGE_KEY, mode);
+    notifySettingsSaved();
   } catch {
     // storage unavailable — the preference holds for the session
   }

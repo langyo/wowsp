@@ -21,6 +21,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useToast } from "@celestia-island/hikari";
 
 import { RPC } from "@/rpc";
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { router } from "@/router";
 import { t } from "@/i18n";
@@ -113,6 +114,7 @@ export const useDuplicateInstallStore = defineStore("duplicateInstall", () => {
         config: { promptEnabled: value },
       });
       promptEnabled.value = cfg.promptEnabled;
+      notifySettingsSaved();
     } catch (e) {
       promptEnabled.value = previous;
       const toast = useToast();

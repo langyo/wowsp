@@ -15,7 +15,7 @@
  */
 import { useTheme } from "@celestia-island/hikari";
 
-import { UI_OPACITY_STORAGE_KEY, setUiOpacityPercent } from "@/theme/uiOpacityPreference";
+import { UI_OPACITY_STORAGE_KEY, seedUiOpacityPercent } from "@/theme/uiOpacityPreference";
 
 export const WEBUI_MIGRATION_ACTIONS: Record<string, () => void> = {
   ui_opacity_95_on_default_theme: () => {
@@ -44,6 +44,8 @@ export const WEBUI_MIGRATION_ACTIONS: Record<string, () => void> = {
     // stored value is an explicit dial choice. Only the OLD default moves
     // to the new one.
     if (stored !== String(previousDefault)) return;
-    setUiOpacityPercent(raisedDefault);
+    // Seed (not set): a migration is a historical fact, not a user edit —
+    // it must not flash the title-bar Saved chip.
+    seedUiOpacityPercent(raisedDefault);
   },
 };

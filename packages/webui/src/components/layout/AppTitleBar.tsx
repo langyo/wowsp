@@ -19,6 +19,7 @@ import { useLiveUiStore, type LiveViewMode } from "@/stores/liveUi";
 import TitlebarLoading from "@/components/layout/TitlebarLoading";
 import TitlebarUpstreamFault from "@/components/layout/TitlebarUpstreamFault";
 import TitlebarStreamSlow from "@/components/layout/TitlebarStreamSlow";
+import TitlebarSavedFlash from "@/components/layout/TitlebarSavedFlash";
 import { watchChromeInsets } from "@/composables/popupChrome";
 import { isMobileApp } from "@/utils/platform";
 import { t } from "@/i18n";
@@ -298,11 +299,14 @@ export default defineComponent({
             // never replaces the loading chip; the yellow stream chip
             // (TitlebarStreamSlow) does the same while a fetch is streaming
             // past the slow threshold (degraded transport, partial data).
+            // The saved chip (TitlebarSavedFlash) flashes for one second
+            // whenever a settings write lands (settingsSavedFlash).
             actions: () => (
               <>
                 <TitlebarUpstreamFault />
                 <TitlebarStreamSlow />
                 <TitlebarLoading />
+                <TitlebarSavedFlash />
               </>
             ),
           }}

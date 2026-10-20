@@ -29,6 +29,8 @@
  */
 import { ref } from "vue";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
+
 export const WALLPAPER_BLUR_SIDEBAR_STORAGE_KEY = "wowsp-wallpaper-blur-sidebar";
 export const WALLPAPER_BLUR_MAIN_STORAGE_KEY = "wowsp-wallpaper-blur-main";
 export const WALLPAPER_BLUR_MIN = 0;
@@ -86,6 +88,7 @@ export function setWallpaperSidebarBlurPx(px: number) {
       WALLPAPER_BLUR_SIDEBAR_STORAGE_KEY,
       String(wallpaperSidebarBlurPx.value),
     );
+    notifySettingsSaved();
   } catch {
     // storage unavailable — the choice holds for the session
   }
@@ -97,6 +100,7 @@ export function setWallpaperMainBlurPx(px: number) {
   wallpaperMainBlurPx.value = clampPx(px);
   try {
     localStorage.setItem(WALLPAPER_BLUR_MAIN_STORAGE_KEY, String(wallpaperMainBlurPx.value));
+    notifySettingsSaved();
   } catch {
     // storage unavailable — the choice holds for the session
   }

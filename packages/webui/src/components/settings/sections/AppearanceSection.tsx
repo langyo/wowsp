@@ -35,6 +35,7 @@ import {
 } from "@/theme/themeModePreference";
 import { DPI_MAX, DPI_MIN, DPI_STEP, isDpiRisky } from "@/theme/dpiPrefs";
 import { t } from "@/i18n";
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { isTauri } from "@/utils/platform";
 import FontSizeControl from "@/components/layout/FontSizeControl";
 import ThemeSchemeDialog from "@/components/settings/ThemeSchemeDialog";
@@ -109,7 +110,13 @@ export default defineComponent({
                         type="button"
                         aria-pressed={on}
                         class="settings-modal__theme-pick"
-                        onClick={() => theme.setTheme(th.id)}
+                        onClick={() => {
+                          // The scheme pick persists through hikari's own
+                          // storage (useTheme.setTheme), so the flash is
+                          // raised here at the user-action call site.
+                          theme.setTheme(th.id);
+                          notifySettingsSaved();
+                        }}
                       >
                         {colors ? (
                           <span

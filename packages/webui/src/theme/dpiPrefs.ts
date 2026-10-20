@@ -19,6 +19,8 @@
  */
 import { reactive, readonly, ref, type Ref } from "vue";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
+
 export const DPI_MIN = 100;
 export const DPI_MAX = 300;
 export const DPI_STEP = 25;
@@ -243,7 +245,10 @@ export function keepDpiScale(): void {
   stopCountdownTask();
   const pct = previewedScale;
   previewedScale = null;
-  if (pct != null) saveDpiScale(pct);
+  if (pct != null) {
+    saveDpiScale(pct);
+    notifySettingsSaved();
+  }
 }
 
 /**
@@ -265,6 +270,7 @@ export function revertPreviewDpiScale(): void {
  */
 export function resetDpiScale(): void {
   saveDpiScale(null);
+  notifySettingsSaved();
   revertPreviewDpiScale();
 }
 

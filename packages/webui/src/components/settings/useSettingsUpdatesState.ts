@@ -5,6 +5,7 @@ import { computed, ref } from "vue";
 import { api } from "@/api";
 import { t } from "@/i18n";
 import { useCacheStore } from "@/stores/cache";
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { useUpdaterStore } from "@/stores/updater";
 
 /** Human-readable bytes (1 decimal under GB, integer above). */
@@ -91,6 +92,7 @@ export function useSettingsUpdatesState() {
     try {
       await cacheStore.saveMirror(mirrorDraft.value || null);
       mirrorDraft.value = cacheStore.githubMirror ?? "";
+      notifySettingsSaved();
       mirrorSavedFlash.value = true;
       window.clearTimeout(mirrorFlashTimer);
       mirrorFlashTimer = window.setTimeout(() => (mirrorSavedFlash.value = false), 1600);

@@ -18,6 +18,8 @@
  */
 import { ref } from "vue";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
+
 export type FontScaleLevel = -2 | -1 | 0 | 1 | 2;
 
 export const FONT_SCALE_STORAGE_KEY = "wowsp-font-scale";
@@ -114,6 +116,7 @@ export function setFontScaleLevel(level: FontScaleLevel) {
   fontScaleLevel.value = level;
   try {
     localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(level));
+    notifySettingsSaved();
   } catch {
     // storage unavailable — the preference holds for the session
   }

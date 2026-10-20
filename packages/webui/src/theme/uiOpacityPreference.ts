@@ -21,6 +21,8 @@
  */
 import { ref } from "vue";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
+
 export const UI_OPACITY_STORAGE_KEY = "wowsp-ui-opacity";
 export const UI_OPACITY_DEFAULT = 95;
 export const UI_OPACITY_MIN = 0;
@@ -64,15 +66,26 @@ function applyUiOpacity(percent: number): void {
   else delete html.dataset.uiGlass;
 }
 
-/** Change + persist + apply immediately (settings slider). */
-export function setUiOpacityPercent(percent: number) {
+/** Change + persist + apply WITHOUT the Saved flash, returning whether the
+ *  write landed — the boot-time migration (migrations/definitions.ts)
+ *  rewrites the old default through this path: a migration is a historical
+ *  fact, not a user edit, and must not read as one in the title bar. */
+export function seedUiOpacityPercent(percent: number): boolean {
   uiOpacityPercent.value = clampPercent(percent);
+  let stored = false;
   try {
     localStorage.setItem(UI_OPACITY_STORAGE_KEY, String(uiOpacityPercent.value));
+    stored = true;
   } catch {
     // storage unavailable — the choice holds for the session
   }
   applyUiOpacity(uiOpacityPercent.value);
+  return stored;
+}
+
+/** Change + persist + apply immediately (settings slider). */
+export function setUiOpacityPercent(percent: number) {
+  if (seedUiOpacityPercent(percent)) notifySettingsSaved();
 }
 
 /** Boot hook: re-apply the stored value over the stylesheet default (0.95)

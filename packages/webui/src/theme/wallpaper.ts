@@ -20,6 +20,7 @@
  * rules — and the "solid" source type as body's own background color,
  * with no layer and no scrim.
  */
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 
 export type WallpaperType = "solid" | "image" | "mode-image";
 
@@ -147,10 +148,19 @@ export function loadActiveWallpaperId(): string {
   }
 }
 
-export function saveActiveWallpaperId(id: string): void {
+/** Write the active id WITHOUT the Saved flash, returning whether the write
+ *  landed — the self-heal paths (a persisted custom file that vanished from
+ *  disk) correct storage, they are not user choices. */
+export function saveActiveWallpaperIdQuietly(id: string): boolean {
   try {
     localStorage.setItem(STORAGE_BG_KEY, id);
+    return true;
   } catch {
     // storage unavailable — the choice holds for the session
+    return false;
   }
+}
+
+export function saveActiveWallpaperId(id: string): void {
+  if (saveActiveWallpaperIdQuietly(id)) notifySettingsSaved();
 }
