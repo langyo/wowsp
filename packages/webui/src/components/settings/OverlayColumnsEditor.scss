@@ -36,18 +36,22 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The cards row — every card an EQUAL slice of the full width (flex: 1 1
-   0), 1 to 5 of them; the empty hint stretches across the same row. */
+/* The cards row — the cards share the row's free space while they fit
+   (1 to 5 of them) and WRAP once five natural-width cards don't: a card
+   never shrinks under its own label (min-width: max-content), so the
+   metric / scope lines stay readable at any popup width. The empty hint
+   stretches across the same row. */
 .overlay-columns__row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   min-height: 56px;
   align-items: stretch;
 }
 
 .overlay-columns__card {
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: max-content;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -110,7 +114,10 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  flex: 1 1 0;
+  /* Basis auto (not 0): the label's natural width must count toward the
+     card's max-content, or the card's own max-content floor would ignore
+     it and squeeze the label out anyway. */
+  flex: 1 1 auto;
 }
 
 .overlay-columns__card-metric {

@@ -230,8 +230,9 @@
    (tiny label over a mono value) on a grid mirroring the row cells —
    [name][enabled roster columns][xp], the exact template set INLINE per
    render (rosterColumns() + the 6ch XP cell) because the chip toggles
-   decide which columns exist. The template below is the all-on shape,
-   kept as the fallback/documentation. The grid element carries the mono
+   decide which columns exist. The template below is the all-global
+   shape, kept as the fallback/documentation (scoped columns swap in
+   calc(Nch + 3ch) tracks per render). The grid element carries the mono
    face so its ch matches the cells'. */
 .replay-view__postbattle-col-title--agg {
   display: grid;
