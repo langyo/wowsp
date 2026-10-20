@@ -9,6 +9,7 @@ members = [
     "packages/app/tauri",
     "packages/app/tauri_shared",
     "packages/app/replay_core",
+    "packages/tools/model-exporter",
     "packages/tools/replay-corpus",
     "packages/tools/replay-drain",
     "packages/tools/wowsunpack-vendor/crates/wowsunpack",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bake (simplify) a WoWS GLB model for holographic rendering.
 
-Takes a high-poly GLB from wows-gltf-exporter and produces a **baked** low-poly
+Takes a high-poly GLB from model-exporter and produces a **baked** low-poly
 GLB suitable for three.js holographic display:
   - Merges all mesh primitives into one geometry
   - Drops UV/normal/color attributes (holographic shaders don't need them)
@@ -424,6 +424,11 @@ def extract_by_instance(gltf: dict, dedup_lods: bool = False) -> dict[str, dict[
         name = n.get("name") or ""
         cat = _classify_node(name)
         if _SEARCH_HP.search(name):
+            cat = "skip"
+        # The Rust model-exporter rides the interactive-armor meshes in
+        # the same GLB (its own armor export consumes them separately);
+        # the hologram bake wants none of them.
+        if name == "Armor" or name.startswith("Armor_"):
             cat = "skip"
         if cat in ("turret_part", "misc"):
             low = name.lower()

@@ -3271,6 +3271,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "model-exporter"
+version = "0.6.2"
+dependencies = [
+ "rootcause",
+ "wowsunpack",
+]
+
+[[package]]
 name = "moxcms"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

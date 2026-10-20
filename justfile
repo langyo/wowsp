@@ -74,7 +74,7 @@ dev target='tauri' *FLAGS='':
 #   just build package           → cargo tauri build (app only, no install bundles)
 #   just build installers [--flavors ...] → shun installers (webview2 / lite)
 #   just build wowsunpack        → compile the vendored wowsunpack
-#   just build gltf-exporter     → compile the vendored wows-model-exporter
+#   just build model-exporter    → compile the Rust ship GLB exporter
 #   just build unoodle           → fetch + build the Lesta Oodle decoder
 #   just build all               → webui + site + app
 
@@ -111,16 +111,13 @@ _build-wowsunpack:
     @echo "Building vendored wowsunpack (landaire/wows-toolkit fork, tracked in-tree)..."
     cargo build --release -p wowsunpack
 
-_build-gltf-exporter:
-    @# The vendor tree is TRACKED IN-TREE
-    @# (packages/tools/wows-model-exporter-vendor) — an upstream-0.2.1
-    @# snapshot of wows-tools/wows-model-exporter with WoWSP fixes on top
-    @# (64-bit pkg seeks, hashmap comparators, per-index map namespaces —
-    @# see its README.md). Builds through a bootstrapped vcpkg under
-    @# target/vcpkg and installs the binaries + wows-geometry.dll into
-    @# target/model-tools/, where batch_bake.py picks them up.
-    @echo "Building vendored wows-model-exporter (tracked in-tree)..."
-    python scripts/model_convert/build_gltf_exporter.py
+_build-model-exporter:
+    @# The Rust ship GLB exporter (packages/tools/model-exporter) over the
+    @# vendored game-asset VFS library — the bake pipeline's front end.
+    @# Batch-mode capable: one process pays the GameParams parse for the
+    @# whole fleet. Replaced the C++/CMake wows-model-exporter vendoring.
+    @echo "Building model-exporter (Rust, cargo workspace)..."
+    cargo build --release -p model-exporter
 
 _build-unoodle:
     @# The Lesta Oodle decoder (github.com/lvlvllvlvllvlvl/oozextract, MIT):

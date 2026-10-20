@@ -1,0 +1,12 @@
+[package]
+name = "model-exporter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license = "SySL-1.0"
+description = "Ship model GLB exporter over the game-asset VFS (bake pipeline front end)"
+
+[dependencies]
+rootcause = { workspace = true }
+wowsunpack = { workspace = true }
