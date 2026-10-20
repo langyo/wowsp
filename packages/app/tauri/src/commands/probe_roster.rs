@@ -106,6 +106,41 @@ pub(crate) fn synthesize_for_arena_since(
     parse_roster_raw(&raw, player_name)
 }
 
+/// Synthesize a battle's `vehicles` straight off the probe's `roster_raw`
+/// for a client that never wrote an arena file at all (see
+/// `probe_arena`): `root` is the install the telemetry poller saw the
+/// battle on, `battle_start_unix` the probe session stamp (the frame's
+/// `battle` value, seconds) the roster must postdate, and `self_name` the
+/// telemetry frame's own `self.name` — the SELF anchor for the team split
+/// (there is no arena `playerName` to read it from).
+///
+/// The freshness gate points [`roster_is_fresh`]'s skew at the battle
+/// start instead of an arena mtime, but WIDENED to 30 s for this caller:
+/// the probe's session stamp lands 3 identical roster reads AFTER the
+/// roster first appears (two pre-session ticks ≈ 4 s, one second inside
+/// the 5 s arena-file skew — callback jitter during loading eats that
+/// margin and silently suppresses the whole battle), while a PREVIOUS
+/// battle's roster is minutes old, so 30 s still refuses it (the probe
+/// rewrites `roster_raw` only when its records change — a records-dead
+/// build class never does). `None` = nothing usable.
+pub(crate) fn synthesize_from_probe(
+    root: &Path,
+    self_name: Option<&str>,
+    battle_start_unix: i64,
+) -> Option<Vec<VehicleEntry>> {
+    let res_mods = super::game_context::res_mods_dir(root).ok()?;
+    let roster_path = res_mods.join(PROBE_MOD_DIR).join(ROSTER_RAW_FILE);
+    let roster_mtime = roster_path.metadata().and_then(|m| m.modified()).ok()?;
+    let start =
+        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(battle_start_unix.max(0) as u64);
+    if roster_mtime + std::time::Duration::from_secs(30) < start {
+        return None;
+    }
+    let bytes = std::fs::read(&roster_path).ok()?;
+    let raw: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    parse_roster_raw(&raw, self_name)
+}
+
 /// Same-install guard: the arena file's home is the root's `replays/` tree
 /// (the WG-family location, matched by the same path spelling that produced
 /// it) or the game root itself (`tempArenaInfo.json` next to the executable

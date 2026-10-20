@@ -17,6 +17,18 @@
 //! this dir's freshest already-served battle, or — with no client running
 //! — more than a day) reads as "no battle" instead of rendering as the
 //! live one (see [`arena_read_served`]).
+//!
+//! And the file is no longer the only battle source: the 2026-10-20
+//! field report (Steam build 13357625) showed a client class that never
+//! writes the file AT ALL — six battles, replays written, probe telemetry
+//! alive, the arena mtime never moving off its months-old leftover. For
+//! that class the battle is detected through the in-game probe instead
+//! (see [`probe_arena`]): the telemetry poller synthesizes the roster off
+//! the probe's own bridge files and serves it through the same
+//! recording/event bookkeeping below ([`serve_probe_battle`]), and every
+//! file read that finds no usable file falls back to the live probe
+//! battle ([`probe_fallback`]). The file keeps precedence whenever it
+//! does appear.
 
 use anyhow::anyhow;
 use std::path::{Path, PathBuf};
@@ -260,13 +272,16 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
             dir = %dir.display(),
             "battle-state refresh: no tempArenaInfo.json in the replay dir or the game root"
         );
-        return false;
+        // A build that never writes the file still fights probe-visible
+        // battles — the fallback answers (and records) exactly like the
+        // parse branch below would.
+        return probe_fallback(app, &dir).is_some();
     };
     let Ok(meta) = path.metadata() else {
-        return false;
+        return probe_fallback(app, &dir).is_some();
     };
     let Ok(mtime) = meta.modified() else {
-        return false;
+        return probe_fallback(app, &dir).is_some();
     };
     // The same ghost gate as the poll path, BEFORE any parse: a leftover
     // that predates the owning client (or this dir's freshest served
@@ -282,7 +297,10 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
             mtime = unix_secs(mtime),
             "battle-state refresh gated — stale leftover, no battle"
         );
-        return false;
+        // The ghost predates the client, but a probe battle on this
+        // install is still the live fight — serve it as the file would
+        // have been.
+        return probe_fallback(app, &dir).is_some();
     }
     let at = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
     // A recorded battle whose roster never arrived (Lesta's empty
@@ -329,6 +347,93 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
     }
 }
 
+/// The load-duration window of the probe battle's one-shot ownership
+/// verdict (see `probe_arena`): a client that writes `tempArenaInfo.json`
+/// writes it at battle LOAD, while the probe's battle stamp lands at
+/// roster STABILIZATION — a full map load (tens of seconds) later, far
+/// past any clock-skew scale. A file mtime within this window before a
+/// probe battle's start is the SAME battle's file; anything older is a
+/// previous battle on a client that stopped writing them. Consecutive
+/// battles are minutes apart, so 5 minutes separates the classes with
+/// room to spare.
+const FILE_BATTLE_GRACE_SECS: i64 = 300;
+
+/// The one-shot ownership verdict for a probe-synthesized battle (see
+/// `probe_arena::note_telemetry`): does this dir's freshest arena FILE
+/// postdate the battle's start within the load window? True = the file
+/// pipeline owns the battle (the probe's copy must stay out of the way);
+/// false = no file behind this battle, the probe roster is the app's
+/// only battle source. Both file homes count (the replays tree and the
+/// 360 CN root-level file).
+pub(crate) fn arena_file_owns_battle(dir: &Path, stamp_unix: i64) -> bool {
+    let Some(path) = find_latest_arena_info(&dir.to_path_buf()) else {
+        return false;
+    };
+    let Ok(mtime) = path.metadata().and_then(|m| m.modified()) else {
+        return false;
+    };
+    unix_secs(mtime) >= stamp_unix - FILE_BATTLE_GRACE_SECS
+}
+
+/// Serve a probe-synthesized battle through the same bookkeeping a real
+/// arena file gets: team sizes + the Tab-gate stamp (`note_arena_seen`),
+/// the local player's session attribution, the Tab watcher's
+/// battle-void, and the [`ARENA_INFO_EVENT`] every page lights up on.
+/// Callers must hold the battle's serve claim
+/// (`probe_arena::try_claim_serve` — the check-and-set under the
+/// registry mutex makes the emit exactly-once per battle across the
+/// poller thread and every read path). The file-vs-probe ownership decision already happened
+/// in `probe_arena::note_telemetry` (a file-owned battle never reaches
+/// here), so this path deliberately does NOT touch the per-dir
+/// served-stamp map: the probe's stamp is not a file mtime, and pinning
+/// it there would gate the real file's own battle behind it.
+pub(crate) fn serve_probe_battle(
+    app: &AppHandle,
+    replays_dir: &Path,
+    info: &ArenaInfo,
+    stamp_unix: i64,
+) {
+    tracing::info!(
+        players = info.vehicles.len(),
+        stamp = stamp_unix,
+        dir = %replays_dir.display(),
+        "arena file never appeared — serving the roster synthesized from the in-game probe"
+    );
+    note_arena_seen(
+        info,
+        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(stamp_unix.max(0) as u64),
+    );
+    if let Some(name) = super::session::local_player_of(&info.vehicles) {
+        super::session::note_playing_from_arena(app, name, Some(stamp_unix), Some(replays_dir));
+    }
+    #[cfg(desktop)]
+    super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
+    if let Err(e) = app.emit(ARENA_INFO_EVENT, info) {
+        tracing::warn!(error = %e, "emit arena-info event failed");
+    }
+}
+
+/// The file-read paths' probe fallback (see `probe_arena`): when the
+/// resolved dir holds no arena file at all — or only a gated leftover —
+/// the dir's install may still be fighting a battle the in-game probe
+/// sees. A FILE-OWNED battle answers `None` (the verdict is sticky: the
+/// file pipeline delivered that battle, even where the 360 CN client
+/// already deleted its file again); an unserved one gets its one-time
+/// serve here — a page opened mid-battle heals exactly the way the file
+/// paths' healer does. `None` keeps the caller's honest absent-read
+/// semantics.
+pub(crate) fn probe_fallback(app: &AppHandle, dir: &Path) -> Option<ArenaInfo> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let live = super::probe_arena::live_battle_for_dir(dir, now_ms)?;
+    if let Some(claim) = super::probe_arena::try_claim_serve(dir, now_ms) {
+        serve_probe_battle(app, dir, &claim.info, claim.stamp_unix);
+    }
+    Some(live.info)
+}
+
 /// One-shot read of the most recent `tempArenaInfo.json` under the configured
 /// replay dir. Reuses the replay descriptor parser since the JSON shape is
 /// identical (the file even shares the 8-byte-prefixed variant sometimes).
@@ -353,7 +458,10 @@ pub async fn read_temp_arena_info(
         },
     };
     let Some(path) = find_latest_arena_info(&dir) else {
-        return Ok(None);
+        // No file anywhere (or only ghosts below): the client may be one
+        // of the builds that never writes it — the probe's live battle
+        // serves the read instead (see the module docs).
+        return Ok(probe_fallback(&app, &dir));
     };
     let mtime = path.metadata().and_then(|m| m.modified()).ok();
     // The ghost gate BEFORE parsing: a leftover that predates the owning
@@ -367,7 +475,9 @@ pub async fn read_temp_arena_info(
                 mtime = unix_secs(mtime),
                 "arena read gated — stale leftover served as no battle"
             );
-            return Ok(None);
+            // The ghost is not the battle, but the probe may still be
+            // fighting one on this install — fall through to it.
+            return Ok(probe_fallback(&app, &dir));
         }
     }
     let info = read_arena_file(&path)?;
@@ -1078,6 +1188,49 @@ mod tests {
         // the client's start still counts as this client's battle.
         assert!(arena_read_served(NOW - 604, 0, Some(NOW - 600), NOW));
         assert!(!arena_read_served(NOW - 606, 0, Some(NOW - 600), NOW));
+    }
+
+    /// The probe battle's one-shot ownership verdict: a file mtime inside
+    /// the load window before the probe stamp claims the battle; an older
+    /// file (the never-writes build's months-old ghost) and no file at
+    /// all leave it to the probe.
+    #[test]
+    fn probe_battle_ownership_follows_the_freshest_file() {
+        let game_root = arena_test_tree("wowsp_arena_file_owned_test");
+        let replays = game_root.join("replays");
+        let arena = replays.join("tempArenaInfo.json");
+        let stamp = 1_800_000_000i64;
+        // No file at all: the probe owns the battle.
+        assert!(!arena_file_owns_battle(&replays, stamp));
+        // A months-old ghost: still the probe's.
+        std::fs::write(&arena, b"{}").unwrap();
+        set_mtime(
+            &arena,
+            SystemTime::UNIX_EPOCH
+                + std::time::Duration::from_secs((stamp - 90 * 24 * 3600) as u64),
+        );
+        assert!(!arena_file_owns_battle(&replays, stamp));
+        // The file-writing client: the file dropped at battle load, the
+        // probe stamp a map-load later — inside the window, the file owns.
+        set_mtime(
+            &arena,
+            SystemTime::UNIX_EPOCH + std::time::Duration::from_secs((stamp - 60) as u64),
+        );
+        assert!(arena_file_owns_battle(&replays, stamp));
+        // The window's far edge claims it; one second past does not.
+        set_mtime(
+            &arena,
+            SystemTime::UNIX_EPOCH
+                + std::time::Duration::from_secs((stamp - FILE_BATTLE_GRACE_SECS) as u64),
+        );
+        assert!(arena_file_owns_battle(&replays, stamp));
+        set_mtime(
+            &arena,
+            SystemTime::UNIX_EPOCH
+                + std::time::Duration::from_secs((stamp - FILE_BATTLE_GRACE_SECS - 1) as u64),
+        );
+        assert!(!arena_file_owns_battle(&replays, stamp));
+        std::fs::remove_dir_all(&game_root).ok();
     }
 
     /// The served-stamp regression rule keys by DIR (any spelling of the
