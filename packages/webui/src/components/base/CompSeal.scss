@@ -1,8 +1,9 @@
-/* Square composition seal (成分图标印章 — 空中小人 / 水下小人's glyph+share
-   face on the live panel). Geometry lives in CompSeal.tsx (the frame, the
-   glyph, the figure); like RatingStamp.scss this file only carries the ink
-   color and the tilt, so the icon seal presses exactly like its four-char
-   siblings — one family, one −9° press. */
+/* Square composition seal (成分图标印章 — the live panel's 空中小人 /
+ *  水下小人 glyph face, one glyph over 20% / the big-over-two triangle
+ *  formation over 50%). Geometry lives in CompSeal.tsx (the frame, the
+ *  glyph formation); like RatingStamp.scss this file only carries the ink
+ *  color and the tilt, so the icon seal presses exactly like its four-char
+ *  siblings — one family, one −9° press. */
 
 .comp-seal {
   /* Cinnabar seal ink, full opacity — the same press RatingStamp keeps. */
@@ -19,10 +20,5 @@
 
   &__moire {
     opacity: 0.18;
-  }
-
-  &__pct {
-    fill: currentColor;
-    font-family: var(--font-mono, monospace);
   }
 }

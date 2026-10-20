@@ -487,12 +487,6 @@ pub(crate) fn composition_from_rows(
 /// form of the frontend's float division (battle counts are integers well
 /// below 2^53, so `air * 100 > 20 * career` and `air / career > 0.2` can
 /// never disagree; likewise `> 50` against `> 0.5`).
-///
-/// The verdict also carries the class shares as percents (rounded to
-/// nearest, `None` while the career gate fails): the overlay's icon badges
-/// print the share beside the glyph, so the tier and the exact composition
-/// read in one glance. Shares are filled whenever the verdict was computed —
-/// the flags alone decide whether anything renders.
 pub(crate) fn composition_verdict(
     career_battles: i64,
     air_battles: i64,
@@ -506,20 +500,7 @@ pub(crate) fn composition_verdict(
         sub: sub_battles * 100 > MIN_CLASS_SHARE_PERCENT * career_battles,
         air_veteran: air_battles * 100 > MIN_VETERAN_SHARE_PERCENT * career_battles,
         sub_veteran: sub_battles * 100 > MIN_VETERAN_SHARE_PERCENT * career_battles,
-        air_share: share_percent(air_battles, career_battles),
-        sub_share: share_percent(sub_battles, career_battles),
     }
-}
-
-/// Class share as a percent 0–100, rounded to nearest (half up). Battle
-/// counts are non-negative and `part <= career` by construction, so the
-/// `part * 200` cross-multiplication cannot overflow i64 for any real
-/// career (battles stay well below 2^53).
-fn share_percent(part: i64, career: i64) -> Option<u8> {
-    if career <= 0 {
-        return None;
-    }
-    Some(((part * 200 + career) / (career * 2)).clamp(0, 100) as u8)
 }
 
 #[cfg(test)]
@@ -541,17 +522,14 @@ mod tests {
 
     #[test]
     fn verdict_requires_career_battles_strictly_above_200() {
-        // At the bound — no seal (frontend: `career <= minBattles`), and no
-        // shares either (nothing would render them).
+        // At the bound — no seal (frontend: `career <= minBattles`).
         assert_eq!(
             composition_verdict(200, 200, 200),
             PlayerComposition {
                 air: false,
                 sub: false,
                 air_veteran: false,
-                sub_veteran: false,
-                air_share: None,
-                sub_share: None
+                sub_veteran: false
             }
         );
         assert_eq!(
@@ -559,38 +537,29 @@ mod tests {
             PlayerComposition::default()
         );
         assert_eq!(composition_verdict(0, 0, 0), PlayerComposition::default());
-        // One battle past the bound a 100%-CV career qualifies — share 100%.
-        let v = composition_verdict(201, 201, 0);
-        assert!(v.air);
-        assert_eq!(v.air_share, Some(100));
+        // One battle past the bound a 100%-CV career qualifies.
+        assert!(composition_verdict(201, 201, 0).air);
         assert!(composition_verdict(201, 0, 201).sub);
     }
 
     #[test]
     fn verdict_requires_share_strictly_above_20_percent() {
         // Exactly 20% of 1000 = 200 — NOT above the bound (frontend: `air /
-        // career > minShare` with floats; 200/1000 = 0.2 is not > 0.2). The
-        // verdict was still computed (career gate passed), so the share
-        // rides along for the overlay's percent print.
+        // career > minShare` with floats; 200/1000 = 0.2 is not > 0.2).
         assert_eq!(
             composition_verdict(1000, 200, 200),
             PlayerComposition {
                 air: false,
                 sub: false,
                 air_veteran: false,
-                sub_veteran: false,
-                air_share: Some(20),
-                sub_share: Some(20)
+                sub_veteran: false
             }
         );
         // 201/1000 crosses it.
         assert!(composition_verdict(1000, 201, 0).air);
         assert!(composition_verdict(1000, 0, 201).sub);
-        // Just below: 40/201 ≈ 19.9% stays unsealed (share 19.9 → 20 after
-        // rounding — the printed percent is the display, the flag the rule).
-        let v = composition_verdict(201, 40, 40);
-        assert!(!v.air);
-        assert_eq!(v.air_share, Some(20));
+        // Just below: 40/201 ≈ 19.9% stays unsealed.
+        assert!(!composition_verdict(201, 40, 40).air);
     }
 
     #[test]
@@ -604,18 +573,14 @@ mod tests {
                 air: true,
                 sub: true,
                 air_veteran: false,
-                sub_veteran: false,
-                air_share: Some(50),
-                sub_share: Some(50)
+                sub_veteran: false
             }
         );
         // 501/1000 = 50.1% crosses it; the veteran flag implies the minor
-        // flag by construction (0.5 > 0.2). The printed share rounds 50.1
-        // back to 50 — the tier styling, not the digit, is the verdict.
+        // flag by construction (0.5 > 0.2).
         let v = composition_verdict(1000, 501, 0);
         assert!(v.air_veteran);
         assert!(v.air);
-        assert_eq!(v.air_share, Some(50));
         assert!(!v.sub_veteran);
         assert!(!v.sub);
         let v = composition_verdict(1000, 0, 501);
@@ -624,18 +589,6 @@ mod tests {
         assert!(!v.air_veteran);
         // The 200-battle career gate applies to the veteran tier too.
         assert!(!composition_verdict(200, 200, 0).air_veteran);
-    }
-
-    #[test]
-    fn share_percent_rounds_to_nearest_half_up() {
-        // 254/1000 = 25.4 → 25; 255/1000 = 25.5 → 26 (half up).
-        assert_eq!(share_percent(254, 1000), Some(25));
-        assert_eq!(share_percent(255, 1000), Some(26));
-        // Whole shares stay exact; degenerate careers answer None.
-        assert_eq!(share_percent(500, 1000), Some(50));
-        assert_eq!(share_percent(0, 1000), Some(0));
-        assert_eq!(share_percent(1000, 1000), Some(100));
-        assert_eq!(share_percent(10, 0), None);
     }
 
     #[test]
@@ -680,25 +633,12 @@ mod tests {
                 air: false,
                 sub: false,
                 air_veteran: false,
-                sub_veteran: false,
-                air_share: Some(14),
-                sub_share: Some(0)
+                sub_veteran: false
             }
         );
-        // The unknown 300 alone can never produce a seal — but the career
-        // gate (300 > 200) did pass, so the shares ride along as zeros.
+        // The unknown 300 alone can never produce a seal…
         let v = composition_from_rows(&[row(999, 300)], &types);
-        assert_eq!(
-            v,
-            PlayerComposition {
-                air: false,
-                sub: false,
-                air_veteran: false,
-                sub_veteran: false,
-                air_share: Some(0),
-                sub_share: Some(0)
-            }
-        );
+        assert_eq!(v, PlayerComposition::default());
     }
 
     // ── encyclopedia response parsing ─────────────────────────────────────
@@ -747,31 +687,25 @@ mod tests {
             sub: false,
             air_veteran: true,
             sub_veteran: false,
-            air_share: Some(56),
-            sub_share: None,
         };
-        let json = serde_json::to_value(v).unwrap();
+        let json = serde_json::to_value(&v).unwrap();
         assert_eq!(
             json,
             serde_json::json!({
                 "air": true,
                 "sub": false,
                 "airVeteran": true,
-                "subVeteran": false,
-                "airShare": 56,
-                "subShare": null
+                "subVeteran": false
             })
         );
         let back: PlayerComposition = serde_json::from_value(json).unwrap();
         assert_eq!(back, v);
-        // An older payload without the veteran/share fields deserializes to
-        // the #[serde(default)] falses / Nones.
+        // An older payload without the veteran fields deserializes to the
+        // #[serde(default)] falses.
         let old: PlayerComposition =
             serde_json::from_value(serde_json::json!({ "air": true, "sub": true })).unwrap();
         assert!(old.air && old.sub);
         assert!(!old.air_veteran && !old.sub_veteran);
-        assert_eq!(old.air_share, None);
-        assert_eq!(old.sub_share, None);
     }
 
     // ── name resolution guards (shared rule, local smoke check) ───────────

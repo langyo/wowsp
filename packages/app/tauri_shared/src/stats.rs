@@ -144,12 +144,6 @@ pub struct PlayerSuggestion {
 /// greater on both bounds), and a share over 50% sets the veteran flag —
 /// `*_veteran` implies its base flag by construction. See
 /// `commands::wg_composition::composition_verdict`.
-///
-/// The `*_share` percents (0–100, rounded to nearest, `None` until the career
-/// gate passes and on older payloads) feed the overlay's icon badges, which
-/// print the exact class share beside the plane/submarine glyph instead of
-/// the four-char wording; the water-meter surfaces keep reading the boolean
-/// ladder only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerComposition {
@@ -159,10 +153,6 @@ pub struct PlayerComposition {
     pub air_veteran: bool,
     #[serde(default)]
     pub sub_veteran: bool,
-    #[serde(default)]
-    pub air_share: Option<u8>,
-    #[serde(default)]
-    pub sub_share: Option<u8>,
 }
 
 /// One clan suggestion from the WG clans/list autocomplete.

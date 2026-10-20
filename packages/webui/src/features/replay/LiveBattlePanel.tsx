@@ -232,15 +232,13 @@ export default defineComponent({
       realms: () => (plugin.installed ? plugin.playerRealms : null),
     });
 
-    // ── Composition icon seals (空中小人 / 水下小人 → glyph+share square
-    // seals, CompSeal) ─────────────────────────────────────────────────────
+    // ── Composition icon seals (空中小人 / 水下小人 → square glyph seals,
+    // CompSeal) ────────────────────────────────────────────────────────────
     // The live panel's OWN icon face of the composition verdicts: fetched
     // behind the roster through the same backend command the Tab overlay
     // rides (its process-lifetime cache makes the second consumer free),
     // gated exactly like every seal surface — zh UI, PR master, seals
-    // master — so the pipeline idles when no seal could ever render. The
-    // verdicts carry the class shares (airShare / subShare) the seal
-    // stamps under its glyph.
+    // master — so the pipeline idles when no seal could ever render.
     const sealsShown = computed(
       () =>
         uiLocale.value.startsWith("zh") &&
@@ -1157,38 +1155,25 @@ export default defineComponent({
       };
 
       /** The row's composition icon seals — 空中小人 / 水下小人 (with the
-       *  >50% 奶龙 / 奶蛙 tier) as square glyph+share seals, the live
-       *  panel's icon face of the composition verdicts. The floors of the
-       *  shared merge rule stand (蛆 and 过街老鼠 suppress the composition
-       *  entirely — resolveStamps' rule for the water-meter faces), but no
-       *  merged seal exists HERE: a 神了 / 猴 verdict keeps its own
-       *  RatingStamp beside the icon seals (the merged 空中神人-family
-       *  four-char faces belong to the water meter alone). A verdict still
-       *  in flight (or failed / hidden → null) renders nothing. */
+       *  >50% 奶龙 / 奶蛙 tier's triangle formation) as square glyph seals,
+       *  the live panel's icon face of the composition verdicts. The floors
+       *  of the shared merge rule stand (蛆 and 过街老鼠 suppress the
+       *  composition entirely — resolveStamps' rule for the water-meter
+       *  faces), but no merged seal exists HERE: a 神了 / 猴 verdict keeps
+       *  its own RatingStamp beside the icon seals (the merged
+       *  空中神人-family four-char faces belong to the water meter alone).
+       *  A verdict still in flight (or failed / hidden → null) renders
+       *  nothing. */
       const compSealNodes = (name: string, career: CareerStamp | null): VNode[] => {
         if (!sealsShown.value || career === "maggot" || career === "rat") return [];
         const comp = compositions.value.get(name);
         if (!comp) return [];
         const nodes: VNode[] = [];
         if (comp.air) {
-          nodes.push(
-            <CompSeal
-              key="air"
-              cls="air"
-              veteran={comp.airVeteran}
-              share={comp.airShare}
-            />,
-          );
+          nodes.push(<CompSeal key="air" cls="air" veteran={comp.airVeteran} />);
         }
         if (comp.sub) {
-          nodes.push(
-            <CompSeal
-              key="sub"
-              cls="sub"
-              veteran={comp.subVeteran}
-              share={comp.subShare}
-            />,
-          );
+          nodes.push(<CompSeal key="sub" cls="sub" veteran={comp.subVeteran} />);
         }
         return nodes;
       };
