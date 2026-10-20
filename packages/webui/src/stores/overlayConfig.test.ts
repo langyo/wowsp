@@ -18,13 +18,13 @@ function deferred<T>() {
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
-  apiMock.getOverlayConfig.mockResolvedValue({ table: "detect", roster: "plugin" });
-  apiMock.setOverlayConfig.mockImplementation(async (table: string, roster: string) => ({ table, roster }));
+  apiMock.getOverlayConfig.mockResolvedValue({ table: "detect", roster: "plugin", aimCard: true });
+  apiMock.setOverlayConfig.mockImplementation(async (table: string, roster: string, aimCard: boolean) => ({ table, roster, aimCard }));
 });
 
 describe("overlay settings persistence", () => {
   it("keeps every loader waiting for the same initial settings", async () => {
-    const read = deferred<{ table: string; roster: string }>();
+    const read = deferred<{ table: string; roster: string; aimCard: boolean }>();
     apiMock.getOverlayConfig.mockReturnValueOnce(read.promise);
     const store = useOverlayConfigStore();
     const first = store.load();
@@ -34,33 +34,43 @@ describe("overlay settings persistence", () => {
     expect(store.loaded).toBe(false);
     expect(secondFinished).toBe(false);
     expect(apiMock.getOverlayConfig).toHaveBeenCalledTimes(1);
-    read.resolve({ table: "off", roster: "passive" });
+    read.resolve({ table: "off", roster: "passive", aimCard: false });
     await Promise.all([first, second]);
     expect(store.loaded).toBe(true);
     expect(store.table).toBe("off");
+    expect(store.aimCard).toBe(false);
   });
 
   it("maps a stored in-game panel pick onto the overlay window mode", async () => {
     // The retired "ingame" backend's picks land on the detect default —
     // the overlay window takes over as the display backend (the Rust side
     // heals the stored file to the same value).
-    apiMock.getOverlayConfig.mockResolvedValueOnce({ table: "ingame", roster: "plugin" });
+    apiMock.getOverlayConfig.mockResolvedValueOnce({ table: "ingame", roster: "plugin", aimCard: true });
     const store = useOverlayConfigStore();
     await store.load();
     expect(store.table).toBe("detect");
   });
 
+  it("lands a non-boolean aim-card reply on the enabled default", async () => {
+    // An older shell without the aim-card field (or a corrupted one) must
+    // not flip the card off — the tolerant parse mirrors the Rust side.
+    apiMock.getOverlayConfig.mockResolvedValueOnce({ table: "detect", roster: "plugin", aimCard: "off" });
+    const store = useOverlayConfigStore();
+    await store.load();
+    expect(store.aimCard).toBe(true);
+  });
+
   it("loads the untouched setting before persisting a choice made during startup", async () => {
-    const read = deferred<{ table: string; roster: string }>();
+    const read = deferred<{ table: string; roster: string; aimCard: boolean }>();
     apiMock.getOverlayConfig.mockReturnValueOnce(read.promise);
     const store = useOverlayConfigStore();
     const loading = store.load();
     const changing = store.setTable("off");
     await flushPromises();
     expect(apiMock.setOverlayConfig).not.toHaveBeenCalled();
-    read.resolve({ table: "ingame", roster: "passive" });
+    read.resolve({ table: "ingame", roster: "passive", aimCard: true });
     await Promise.all([loading, changing]);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive");
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
   });
@@ -68,16 +78,16 @@ describe("overlay settings persistence", () => {
   it("orders writes and never applies an older reply over a newer choice", async () => {
     const store = useOverlayConfigStore();
     await store.load();
-    const firstWrite = deferred<{ table: string; roster: string }>();
+    const firstWrite = deferred<{ table: string; roster: string; aimCard: boolean }>();
     apiMock.setOverlayConfig.mockReturnValueOnce(firstWrite.promise);
     const first = store.setTable("off");
     await flushPromises();
     const second = store.setRoster("passive");
     await flushPromises();
     expect(apiMock.setOverlayConfig).toHaveBeenCalledTimes(1);
-    firstWrite.resolve({ table: "off", roster: "plugin" });
+    firstWrite.resolve({ table: "off", roster: "plugin", aimCard: true });
     await Promise.all([first, second]);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive");
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
   });
@@ -88,8 +98,21 @@ describe("overlay settings persistence", () => {
     apiMock.setOverlayConfig.mockRejectedValueOnce(new Error("synthetic locked settings"));
     await store.setTable("off");
     await store.setRoster("passive");
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive");
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
+  });
+
+  it("persists the aim-card switch independently of the table switch", async () => {
+    const store = useOverlayConfigStore();
+    await store.load();
+    await store.setAimCard(false);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", false);
+    expect(store.aimCard).toBe(false);
+    // The table switch stays untouched by an aim-card flip, and the next
+    // write carries both current choices.
+    expect(store.table).toBe("detect");
+    await store.setTable("off");
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "plugin", false);
   });
 });

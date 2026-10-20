@@ -128,9 +128,10 @@ export const shellApi = {
   /** Overlay switches (schema v2) — sanitized + persisted as TOML by the
    *  shell (see commands/overlay_config.rs). Unknown values reset to the
    *  field's default on the Rust side, so the response is always valid. */
-  getOverlayConfig: () => transport.invoke<{ table: string; roster: string }>(RPC.get_overlay_config),
-  setOverlayConfig: (table: string, roster: string) =>
-    transport.invoke<{ table: string; roster: string }>(RPC.set_overlay_config, { table, roster }),
+  getOverlayConfig: () =>
+    transport.invoke<{ table: string; roster: string; aimCard: boolean }>(RPC.get_overlay_config),
+  setOverlayConfig: (table: string, roster: string, aimCard: boolean) =>
+    transport.invoke<{ table: string; roster: string; aimCard: boolean }>(RPC.set_overlay_config, { table, roster, aimCard }),
   /** In-game stats plugin presence in a game install (see
    *  commands/ingame_plugin.rs) — powers the roster "plugin detection"
    *  option's enabled state and its Discussions page link. */

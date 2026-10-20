@@ -104,17 +104,21 @@
 //! TWO windows serve this ONE mode: the table window (`overlay`, everything
 //! above) and the AIM CARD (`aim-card`) — the second transparent window that
 //! hangs below the game window's center (the crosshair) while a battle is
-//! on and Tab is up, showing the aimed player's stats. The card's data is
+//! on and Tab is up, showing the aimed player's stats. Each window has its
+//! OWN switch in `overlay-config.toml` (`table` / `aim_card`): the switches
+//! are independent — either being on keeps the mode (windows + watcher) up,
+//! each suppressing only its own window, and only both-off tears the mode
+//! down (the webui lifecycle's decision). The card's data is
 //! the in-game probe's per-tick `aim` verdict (telemetry.json, relayed to
 //! the page by the telemetry poller's `wowsp://ingame-telemetry` event);
 //! the page resolves the name through the same WG batch command the table
 //! page uses, so the three surfaces share one session cache. The watcher
 //! owns the card's native window only (the per-tick pass at the top of
-//! `watch_tab_tick`): shown while the battle is on, hidden while Tab is
-//! held (the table owns the screen then), placed at the game center + the
-//! [`AIM_CARD_HANG_PX`] hang. What the card DRAWS is the page's own
-//! data-driven decision — the native visibility and the content never
-//! gate each other.
+//! `watch_tab_tick`): shown while the battle is on and `aim_card` is on,
+//! hidden while Tab is held (the table owns the screen then), placed at the
+//! game center + the [`AIM_CARD_HANG_PX`] hang. What the card DRAWS is the
+//! page's own data-driven decision — the native visibility and the content
+//! never gate each other.
 //!
 //! Threading: every command here is `async` so it runs on the Tauri async
 //! runtime, NOT the main/UI thread — sync commands execute inline on the

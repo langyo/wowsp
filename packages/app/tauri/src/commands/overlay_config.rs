@@ -1,14 +1,22 @@
 //! Rust-side read of the overlay settings — the very state the webui's
-//! `overlayConfig` pinia store owns (schema v2). The two INDEPENDENT
-//! switches the settings modal exposes both need enforcement outside the
-//! webui, on threads the store cannot reach:
+//! `overlayConfig` pinia store owns (schema v2). The switches the settings
+//! modal exposes all need enforcement outside the webui, on threads the
+//! store cannot reach:
 //!
-//! - `table` — the live-battle view mode. `"detect"` (default) is the
+//! - `table` — the hold-Tab view mode. `"detect"` (default) is the
 //!   transparent window overlay anchored to the pixel-detected team table;
-//!   `"off"` disables the whole Tab overlay (no window, no watcher shows).
-//!   A stored `"ingame"` value — the retired in-game plugin rendering,
-//!   whose stats bridge this build no longer ships — resolves to the
-//!   `"detect"` default and is healed back to disk like any unknown value.
+//!   `"off"` keeps that window down. A stored `"ingame"` value — the
+//!   retired in-game plugin rendering, whose stats bridge this build no
+//!   longer ships — resolves to the `"detect"` default and is healed back
+//!   to disk like any unknown value.
+//! - `aim_card` — the second transparent window: the aimed player's stats
+//!   card hanging below the crosshair during battles. On (the default)
+//!   unless explicitly `false`; the watcher consults it every tick, so a
+//!   flip applies live without touching the window lifecycle. The two
+//!   window switches are INDEPENDENT — the watcher and windows stay up
+//!   while either is on, each switch suppressing only its own window —
+//!   and only both-off tears the whole mode down (the webui lifecycle's
+//!   decision; see features/overlay/useOverlayLifecycle.ts).
 //! - `roster` — roster attribution. `"plugin"` (default) treats the
 //!   in-game plugin's telemetry as the primary detector: authoritative
 //!   alive flags, the TAB screen's own tabModeIn/Out marks and the
@@ -63,7 +71,7 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\".\n\
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\", aim_card = true | false.\n\
                            # Invalid values are reset to the defaults by the app.\n";
 
 /// How long a cached read stays fresh. The file only changes when the user
@@ -77,7 +85,8 @@ const CONFIG_TTL: Duration = Duration::from_secs(2);
 pub(crate) enum TableAnchor {
     /// Pixel detection + transparent window overlay (the default).
     Detect,
-    /// The whole Tab overlay feature is off.
+    /// The Tab table window is off (the aim card may stay on — the two
+    /// window switches are independent).
     Off,
 }
 
@@ -122,6 +131,9 @@ impl RosterRecognition {
 pub(crate) struct OverlayConfig {
     pub(crate) table: TableAnchor,
     pub(crate) roster: RosterRecognition,
+    /// The aimed-player stats card's window switch (schema v2 `aim_card`):
+    /// shown during battles unless the user turned it off.
+    pub(crate) aim_card: bool,
 }
 
 impl Default for OverlayConfig {
@@ -129,6 +141,7 @@ impl Default for OverlayConfig {
         Self {
             table: TableAnchor::Detect,
             roster: RosterRecognition::Plugin,
+            aim_card: true,
         }
     }
 }
@@ -163,11 +176,12 @@ fn parse_roster_field(raw: &str) -> RosterRecognition {
     }
 }
 
-/// The neutral field trio both file formats reduce to before resolution.
+/// The neutral field set both file formats reduce to before resolution.
 #[derive(Default)]
 struct RawOverlayFields {
     table: Option<String>,
     roster: Option<String>,
+    aim_card: Option<bool>,
     enabled: Option<bool>,
 }
 
@@ -187,11 +201,15 @@ fn resolve_fields(fields: RawOverlayFields) -> OverlayConfig {
         Some(raw) => parse_roster_field(raw),
         None => RosterRecognition::Plugin,
     };
-    OverlayConfig { table, roster }
+    OverlayConfig {
+        table,
+        roster,
+        aim_card: fields.aim_card.unwrap_or(true),
+    }
 }
 
-/// Extract the field trio from a JSON document (legacy file or v1 shape).
-/// Non-object JSON is as good as garbage → empty trio → defaults.
+/// Extract the field set from a JSON document (legacy file or v1 shape).
+/// Non-object JSON is as good as garbage → empty set → defaults.
 fn fields_from_json(raw: &str) -> RawOverlayFields {
     let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(raw) else {
         return RawOverlayFields::default();
@@ -205,12 +223,13 @@ fn fields_from_json(raw: &str) -> RawOverlayFields {
             .get("roster")
             .and_then(|v| v.as_str())
             .map(str::to_string),
+        aim_card: map.get("aim_card").and_then(|v| v.as_bool()),
         enabled: map.get("enabled").and_then(|v| v.as_bool()),
     }
 }
 
-/// Extract the field trio from a TOML document (the canonical file).
-/// Non-table TOML → empty trio → defaults.
+/// Extract the field set from a TOML document (the canonical file).
+/// Non-table TOML → empty set → defaults.
 fn fields_from_toml(raw: &str) -> RawOverlayFields {
     let Ok(value) = toml::from_str::<toml::Value>(raw) else {
         return RawOverlayFields::default();
@@ -228,6 +247,7 @@ fn fields_from_toml(raw: &str) -> RawOverlayFields {
             .get("roster")
             .and_then(|v| v.as_str())
             .map(str::to_string),
+        aim_card: map.get("aim_card").and_then(|v| v.as_bool()),
         enabled: map.get("enabled").and_then(|v| v.as_bool()),
     }
 }
@@ -237,12 +257,13 @@ fn parse_config(raw: &str) -> OverlayConfig {
     resolve_fields(fields_from_json(raw))
 }
 
-/// The on-disk shape (flat TOML table; both fields always present — a
+/// The on-disk shape (flat TOML table; every key always present — a
 /// missing key means the same as an unknown one, the field's default).
 #[derive(Debug, Serialize, Deserialize)]
 struct OverlayConfigTomlFile {
     table: String,
     roster: String,
+    aim_card: bool,
 }
 
 /// Serialize the canonical file text (header + flat TOML keys).
@@ -250,6 +271,7 @@ fn canonical_toml(config: OverlayConfig) -> Result<String> {
     let file = OverlayConfigTomlFile {
         table: config.table.as_str().to_string(),
         roster: config.roster.as_str().to_string(),
+        aim_card: config.aim_card,
     };
     let body = toml::to_string(&file).map_err(|e| anyhow!("serialize overlay config: {e}"))?;
     Ok(format!("{FILE_HEADER}{body}"))
@@ -324,10 +346,18 @@ pub(crate) fn roster_mode() -> RosterRecognition {
     current().roster
 }
 
-/// Whether the transparent Tab overlay must stay down: only the explicit
-/// `"off"` pick suppresses the overlay window and every watcher show.
+/// Whether the transparent Tab TABLE window must stay down: only the
+/// explicit `"off"` pick suppresses that window and every table-side
+/// watcher show (the aim card has its own switch and keeps running).
 pub(crate) fn table_overlay_off() -> bool {
     overlay_suppressed(current().table)
+}
+
+/// Whether the aimed-player stats card must stay up (the default): the
+/// watcher's per-tick aim-card pass consults this, so a flip applies live
+/// while the card's window stays owned by the lifecycle.
+pub(crate) fn aim_card_shown() -> bool {
+    current().aim_card
 }
 
 /// Pure core of [`table_overlay_off`], unit-testable without the cache.
@@ -345,6 +375,7 @@ fn overlay_suppressed(table: TableAnchor) -> bool {
 pub struct OverlayConfigResponse {
     pub table: String,
     pub roster: String,
+    pub aim_card: bool,
 }
 
 impl From<OverlayConfig> for OverlayConfigResponse {
@@ -352,6 +383,7 @@ impl From<OverlayConfig> for OverlayConfigResponse {
         Self {
             table: config.table.as_str().to_string(),
             roster: config.roster.as_str().to_string(),
+            aim_card: config.aim_card,
         }
     }
 }
@@ -364,19 +396,24 @@ pub fn get_overlay_config() -> CommandResult<OverlayConfigResponse> {
     Ok(current().into())
 }
 
-/// Persist both switches. Inputs are sanitized with the same per-field
+/// Persist all switches. Inputs are sanitized with the same per-field
 /// defaults a file read applies — an unknown value from a newer webui can
 /// never poison the file — and the cache is refreshed so the watcher sees
 /// the change immediately instead of after the TTL.
 #[tauri::command]
-pub fn set_overlay_config(table: String, roster: String) -> CommandResult<OverlayConfigResponse> {
+pub fn set_overlay_config(
+    table: String,
+    roster: String,
+    aim_card: bool,
+) -> CommandResult<OverlayConfigResponse> {
     let config = OverlayConfig {
         table: parse_table_field(&table),
         roster: parse_roster_field(&roster),
+        aim_card,
     };
     let dir = paths::ensure_data_dir()?;
     let canonical = canonical_toml(config)?;
-    tracing::info!(table = ?config.table, roster = ?config.roster, "overlay config saved");
+    tracing::info!(table = ?config.table, roster = ?config.roster, aim_card = config.aim_card, "overlay config saved");
     settings_store::store(&dir, OVERLAY_CONFIG_FILE, &canonical)?;
     settings_store::retire_legacy_json(&dir, LEGACY_OVERLAY_CONFIG_FILE);
     let mut cache = CACHE
@@ -402,7 +439,8 @@ mod tests {
         dir
     }
 
-    /// v2 round shape: both fields honored.
+    /// v2 round shape: all fields honored, including the aim-card boolean's
+    /// explicit off.
     #[test]
     fn parses_v2_fields() {
         // Owner-spec migration: stored `ocr`/`inferred` picks (the retired
@@ -410,13 +448,14 @@ mod tests {
         let cfg = parse_config(r#"{"table":"off","roster":"ocr"}"#);
         assert_eq!(cfg.table, TableAnchor::Off);
         assert_eq!(cfg.roster, RosterRecognition::Plugin);
+        assert!(cfg.aim_card);
         let cfg = parse_config(r#"{"roster":"inferred"}"#);
         assert_eq!(cfg.roster, RosterRecognition::Plugin);
         let cfg = parse_config(r#"{"table":"detect","roster":"passive"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Passive);
         // A stored roster "off" lands on passive: the table switch owns the
-        // whole overlay's off state, so the roster pick no longer has one.
+        // table window's off state, so the roster pick no longer has one.
         let cfg = parse_config(r#"{"table":"detect","roster":"off"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Passive);
@@ -426,6 +465,11 @@ mod tests {
         let cfg = parse_config(r#"{"table":"ingame"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Plugin);
+        // An explicit aim-card off survives; absent/false stay the default.
+        let cfg = parse_config(r#"{"table":"detect","aim_card":false}"#);
+        assert!(!cfg.aim_card);
+        let cfg = parse_config(r#"{"aim_card":true}"#);
+        assert!(cfg.aim_card);
     }
 
     /// v1 migration: `{enabled:true}` → detect + plugin,
@@ -439,6 +483,7 @@ mod tests {
             OverlayConfig {
                 table: TableAnchor::Detect,
                 roster: RosterRecognition::Plugin,
+                aim_card: true,
             }
         );
         let cfg = parse_config(r#"{"enabled":false}"#);
@@ -447,6 +492,7 @@ mod tests {
             OverlayConfig {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Plugin,
+                aim_card: true,
             }
         );
     }
@@ -455,14 +501,7 @@ mod tests {
     #[test]
     fn garbage_falls_back_to_defaults() {
         for raw in ["", "   ", "not json", "[1,2]", "42", "null", "{}"] {
-            assert_eq!(
-                parse_config(raw),
-                OverlayConfig {
-                    table: TableAnchor::Detect,
-                    roster: RosterRecognition::Plugin,
-                },
-                "raw: {raw:?}"
-            );
+            assert_eq!(parse_config(raw), OverlayConfig::default(), "raw: {raw:?}");
         }
     }
 
@@ -481,6 +520,9 @@ mod tests {
         let cfg = parse_config(r#"{"table":42,"roster":null}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
         assert_eq!(cfg.roster, RosterRecognition::Plugin);
+        // A wrong-typed aim_card lands on the true default.
+        let cfg = parse_config(r#"{"aim_card":"off"}"#);
+        assert!(cfg.aim_card);
         // v2 field present wins over a leftover legacy `enabled: false`.
         let cfg = parse_config(r#"{"enabled":false,"table":"detect"}"#);
         assert_eq!(cfg.table, TableAnchor::Detect);
@@ -494,21 +536,25 @@ mod tests {
         assert!(overlay_suppressed(TableAnchor::Off));
     }
 
-    /// TOML parse: canonical text round-trips, garbage/non-table TOML and
-    /// unknown values fall back per field, and a v1-style TOML `enabled`
-    /// key resolves the same way the JSON v1 shape does.
+    /// TOML parse: canonical text round-trips (the aim-card boolean
+    /// included), garbage/non-table TOML and unknown values fall back per
+    /// field, and a v1-style TOML `enabled` key resolves the same way the
+    /// JSON v1 shape does.
     #[test]
     fn toml_parse_mirrors_json_contract() {
         let canonical = canonical_toml(OverlayConfig {
             table: TableAnchor::Off,
             roster: RosterRecognition::Passive,
+            aim_card: false,
         })
         .unwrap();
+        assert!(canonical.contains("aim_card = false"));
         assert_eq!(
             resolve_fields(fields_from_toml(&canonical)),
             OverlayConfig {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Passive,
+                aim_card: false,
             }
         );
         for raw in ["", "garbage [", "42", "[1,2]", "table = \"plugin\""] {
@@ -523,6 +569,7 @@ mod tests {
             OverlayConfig {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Plugin,
+                aim_card: true,
             }
         );
     }
@@ -537,7 +584,7 @@ mod tests {
         // Legacy v2 JSON migrates; v1 JSON migrates through the same pipe.
         std::fs::write(
             dir.join(LEGACY_OVERLAY_CONFIG_FILE),
-            r#"{"table":"off","roster":"ocr"}"#,
+            r#"{"table":"off","roster":"ocr","aim_card":false}"#,
         )
         .unwrap();
         assert_eq!(
@@ -545,6 +592,7 @@ mod tests {
             OverlayConfig {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Plugin,
+                aim_card: false,
             }
         );
         assert!(dir.join(OVERLAY_CONFIG_FILE).exists());
@@ -557,12 +605,33 @@ mod tests {
             OverlayConfig {
                 table: TableAnchor::Off,
                 roster: RosterRecognition::Plugin,
+                aim_card: false,
             }
         );
         assert_eq!(
             std::fs::read_to_string(dir.join(OVERLAY_CONFIG_FILE)).unwrap(),
             migrated,
             "steady state: canonical file is not rewritten"
+        );
+        assert!(migrated.contains("aim_card = false"));
+
+        // A pre-aim-card legacy file (the realistic v2 shape older builds
+        // wrote) migrates with the field landing on the true default. The
+        // canonical file from the previous scenario is retired first — the
+        // loader prefers it over the legacy JSON.
+        std::fs::remove_file(dir.join(OVERLAY_CONFIG_FILE)).unwrap();
+        std::fs::write(
+            dir.join(LEGACY_OVERLAY_CONFIG_FILE),
+            r#"{"table":"detect","roster":"plugin"}"#,
+        )
+        .unwrap();
+        assert_eq!(read_uncached_from(&dir), OverlayConfig::default());
+        assert!(dir.join(OVERLAY_CONFIG_FILE).exists());
+        assert!(!dir.join(LEGACY_OVERLAY_CONFIG_FILE).exists());
+        assert!(
+            std::fs::read_to_string(dir.join(OVERLAY_CONFIG_FILE))
+                .unwrap()
+                .contains("aim_card = true")
         );
 
         // Unknown values in the canonical file are corrected on disk.
