@@ -17,6 +17,25 @@ export function formatSpeed(bps?: number | null): string {
 }
 
 /**
+ * Renders a backend UTC stamp (RFC3339: the mod-catalog `fetchedAt`, the
+ * ship-data pack manifest `version`, …) as the machine-local wall clock in
+ * the stable `YYYY-MM-DD HH:MM` shape — or `YYYY-MM-DD` with `dateOnly`.
+ * The backend stays UTC; conversion happens here because only this side
+ * knows the user's timezone. Input that fails to parse keeps the legacy
+ * raw-slice rendering so an unexpected format still shows something.
+ */
+export function formatLocalStamp(stamp: string | null | undefined, dateOnly = false): string {
+  if (!stamp) return "";
+  const d = new Date(stamp);
+  if (Number.isNaN(d.getTime())) {
+    return dateOnly ? stamp.slice(0, 10) : stamp.replace("T", " ").slice(0, 16);
+  }
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const day = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  return dateOnly ? day : `${day} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+/**
  * Formats a download ETA as a compact digital-clock duration (MM:SS,
  * or H:MM:SS past an hour) — locale-neutral, so no plural forms are
  * needed. Non-positive / non-finite inputs render as an empty string;
