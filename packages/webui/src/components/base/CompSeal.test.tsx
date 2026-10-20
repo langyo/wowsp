@@ -53,9 +53,10 @@ describe("CompSeal", () => {
     // the faint inner wash (印底) only the veteran tier carries.
     expect(svg.findAll("path")).toHaveLength(3);
     expect(svg.find("rect[opacity='0.1']").exists()).toBe(true);
-    // All three glyphs are the same class silhouette.
+    // All three glyphs are the same class silhouette (the teardrop hull's
+    // bow point opens the path).
     for (const p of svg.findAll("path")) {
-      expect(p.attributes("d")).toContain("M2.4 13.5");
+      expect(p.attributes("d")).toContain("M1.6 13.8");
     }
     // The formation's transforms: one lead + two equal flanks.
     const transforms = svg
@@ -63,9 +64,9 @@ describe("CompSeal", () => {
       .map((g) => g.attributes("transform"));
     expect(transforms).toHaveLength(3);
     expect(
-      transforms.filter((t) => t?.includes("scale(1.4)")),
+      transforms.filter((t) => t?.includes("scale(1.3)")),
     ).toHaveLength(2);
-    expect(transforms.filter((t) => t?.includes("scale(2.6)"))).toHaveLength(1);
+    expect(transforms.filter((t) => t?.includes("scale(2.4)"))).toHaveLength(1);
   });
 
   it("renders nothing under a non-zh UI locale", () => {
