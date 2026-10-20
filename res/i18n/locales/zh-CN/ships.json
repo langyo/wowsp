@@ -230,7 +230,17 @@
       "torpedoes": "鱼雷",
       "antiAir": "防空",
       "mobility": "机动性",
-      "concealment": "隐蔽"
+      "concealment": "隐蔽",
+      "consumables": "消耗品"
+    },
+    "consumables": {
+      "unlimited": "不限量",
+      "charges": "数量",
+      "workTime": "作用时间",
+      "reloadTime": "装填时间",
+      "slotLabel": "第 {n} 槽",
+      "auto": "自动触发",
+      "keysHint": "按键为游戏默认消耗品键位，可在游戏内设置中修改。"
     },
     "hp": "血量",
     "hpHint": "舰艇被击沉前可承受的总伤害。",

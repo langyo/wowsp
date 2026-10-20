@@ -230,7 +230,17 @@
       "torpedoes": "魚雷",
       "antiAir": "対空",
       "mobility": "機動性",
-      "concealment": "隠蔽"
+      "concealment": "隠蔽",
+      "consumables": "消耗品"
+    },
+    "consumables": {
+      "unlimited": "無制限",
+      "charges": "使用回数",
+      "workTime": "効果時間",
+      "reloadTime": "再装填時間",
+      "slotLabel": "スロット{n}",
+      "auto": "自動発動",
+      "keysHint": "キーはゲームのデフォルトの消耗品キー設定です（ゲーム内で変更可能）。"
     },
     "hp": "耐久値",
     "hpHint": "沈没するまでに耐えられる総ダメージ。",

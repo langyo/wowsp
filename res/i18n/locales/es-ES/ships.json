@@ -230,7 +230,17 @@
       "torpedoes": "Torpedos",
       "antiAir": "Antiaérea",
       "mobility": "Movilidad",
-      "concealment": "Detección"
+      "concealment": "Detección",
+      "consumables": "Consumibles"
+    },
+    "consumables": {
+      "unlimited": "Ilimitado",
+      "charges": "Cargas",
+      "workTime": "Tiempo activo",
+      "reloadTime": "Tiempo de recarga",
+      "slotLabel": "Ranura {n}",
+      "auto": "Activación automática",
+      "keysHint": "Las teclas siguen las asignaciones de consumibles predeterminadas del juego (se pueden cambiar en el juego)."
     },
     "hp": "Puntos de salud",
     "hpHint": "Daño total que el buque puede recibir antes de hundirse.",

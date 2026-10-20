@@ -230,7 +230,17 @@
       "torpedoes": "Torpilles",
       "antiAir": "Anti-aérien",
       "mobility": "Mobilité",
-      "concealment": "Furtivité"
+      "concealment": "Furtivité",
+      "consumables": "Consommables"
+    },
+    "consumables": {
+      "unlimited": "Illimité",
+      "charges": "Charges",
+      "workTime": "Durée active",
+      "reloadTime": "Temps de rechargement",
+      "slotLabel": "Emplacement {n}",
+      "auto": "Déclenchement auto",
+      "keysHint": "Les touches suivent les affectations par défaut des consommables du jeu (modifiables en jeu)."
     },
     "hp": "Points de vie",
     "hpHint": "Dégâts totaux que le navire peut encaisser avant de couler.",
