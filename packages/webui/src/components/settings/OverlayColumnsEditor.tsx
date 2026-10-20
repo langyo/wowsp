@@ -1,6 +1,7 @@
 /**
  * The water-table column editor: the configured roster columns as
- * DRAGGABLE CARDS in one auto-splitting row (1–5 cards, equal widths),
+ * DRAGGABLE CARDS in one wrapping row (1–5 cards; one shared row while
+ * they fit, wrapped once they don't),
  * plus the add-connector — a plus icon button on the cluster header's
  * right end opening a tooltip-style popover with two segmented button
  * groups (数据范围: 全局/仅单人/仅单船/仅当前舰种; 指标: 场均/PR/胜率/
@@ -206,19 +207,50 @@ export default defineComponent({
       ghost.style.transform = `translate3d(${gx}px, ${gy}px, 0)`;
     }
 
-    /** Which slot the pointer x marks as the drop target — hikari's
-     *  adjacent-midpoint rule, horizontal: the first card whose midpoint
-     *  the pointer has not yet passed, the last card past every midpoint,
-     *  with the same fallback wrinkle (resting between cards resolves to
-     *  the last candidate, never back onto the source). */
-    function recomputePlaceholder(s: DragState, clientX: number) {
-      let target = s.fromIndex;
-      let fallback = s.fromIndex;
+    /** Which slot the pointer marks as the drop target — hikari's
+     *  adjacent-midpoint rule, horizontal, scoped to the pointer's LINE:
+     *  the first card whose midpoint the pointer has not yet passed, the
+     *  last card past every midpoint, with the same fallback wrinkle
+     *  (resting between cards resolves to the last candidate, never back
+     *  onto the source). The line scoping matters because the row wraps —
+     *  a same-x card on the other line must never light up. The line is
+     *  the band of cards whose top-edge row contains clientY; between
+     *  lines the nearest band center wins; a one-line row reduces to the
+     *  plain rule over every card. */
+    function recomputePlaceholder(s: DragState, clientX: number, clientY: number) {
+      const rects = new Map<number, DOMRect>();
       for (let i = 0; i < cardEls.value.length; i += 1) {
         if (i === s.fromIndex) continue;
         const el = cardEls.value[i];
-        if (!el) continue;
-        const rect = el.getBoundingClientRect();
+        if (el) rects.set(i, el.getBoundingClientRect());
+      }
+      const bands = new Map<number, { top: number; bottom: number; cards: number[] }>();
+      for (const [i, rect] of rects) {
+        const key = Math.round(rect.top);
+        const band = bands.get(key) ?? { top: key, bottom: Math.round(rect.bottom), cards: [] };
+        band.bottom = Math.max(band.bottom, Math.round(rect.bottom));
+        band.cards.push(i);
+        bands.set(key, band);
+      }
+      let line: number[] | null = null;
+      let nearest = Infinity;
+      for (const band of bands.values()) {
+        if (clientY >= band.top && clientY <= band.bottom) {
+          line = band.cards;
+          break;
+        }
+        const center = (band.top + band.bottom) / 2;
+        const dist = Math.abs(clientY - center);
+        if (dist < nearest) {
+          nearest = dist;
+          line = band.cards;
+        }
+      }
+      if (!line) return;
+      let target = s.fromIndex;
+      let fallback = s.fromIndex;
+      for (const i of line) {
+        const rect = rects.get(i)!;
         const mid = rect.left + rect.width / 2;
         fallback = i;
         if (clientX < mid) {
@@ -256,7 +288,7 @@ export default defineComponent({
       }
       e.preventDefault();
       moveGhost(s, e);
-      recomputePlaceholder(s, e.clientX);
+      recomputePlaceholder(s, e.clientX, e.clientY);
     }
 
     function detachDrag() {
@@ -498,8 +530,9 @@ export default defineComponent({
               </div>
             </HkPopover>
           </div>
-          {/* The cards row — one line, every card an equal slice of the
-              whole width (flex: 1 1 0), 1 to 5 of them. */}
+          {/* The cards row — 1 to 5 cards sharing the width while they
+              fit, wrapping once they don't (a card never shrinks under
+              its label). */}
           <div
             class="overlay-columns__row"
             data-dragging={s ? "" : undefined}
