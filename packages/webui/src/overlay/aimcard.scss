@@ -1,8 +1,17 @@
 /* Aim-card window — self-contained styles, same conventions as the table
    overlay's overlay.scss (this page does NOT load the app theme, colors are
    literal, nothing may interact with the pointer). The card hangs below the
-   crosshair; one dark translucent block: the aimed player's name + ship on
-   the text face, the four career figures on the mono face. */
+   crosshair: the aimed player's name, then the career figures and the
+   battle ship's own figures on a SHARED four-column grid (the two rows
+   read as aligned columns), then the seal cluster — the tab table's stamps
+   — as one horizontal line.
+
+   The card block hugs its content: the native window is a fixed 380×120
+   bounding box, and the dark glass wraps only the drawn lines — the box's
+   remainder stays transparent, so a one-line card never paints a tall
+   empty slab. Every inner size is em: the root font-size (set inline by
+   aimcard.ts) IS the tab table's own face, so the card's text matches the
+   Tab overlay's chips line for line. */
 
 html,
 body {
@@ -21,30 +30,34 @@ body {
 }
 
 .aim-card {
+  /* Content-hugging, top-center anchored: the window's top edge is the
+     crosshair's hang line, so the card parks exactly where the old fixed
+     block started — it just stops where its content stops. */
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 4px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  gap: 2px;
-  padding: 6px 10px;
+  gap: 0.15em;
+  padding: 0.2em 0.6em;
   box-sizing: border-box;
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgb(10 14 20 / 62%);
   border: 1px solid rgb(255 255 255 / 10%);
   color: rgb(236 241 246);
   text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
   white-space: nowrap;
+  overflow: hidden;
 }
 
+/* Line 1 — the clan tag + nickname (the identity line, text face). */
 .aim-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5em;
   max-width: 100%;
   overflow: hidden;
-  font-size: 15px;
   line-height: 1.3;
 }
 
@@ -55,40 +68,151 @@ body {
 
 .aim-name {
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.aim-ship {
-  color: rgb(168 178 190);
-  font-size: 0.85em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.aim-chips {
-  display: flex;
+/* Lines 2 and 3 — the figure rows live in ONE shared four-column grid
+   (winrate → PR → battles → damage, the tab chips' column order): each
+   row's cells are direct grid children, so the two rows' columns hold one
+   alignment line regardless of each row's digit count. Digits are
+   right-aligned WITHIN the grid; the grid block itself centers as a whole
+   (the card centers every line — the rows are centered blocks of
+   right-aligned columns). The mono face rides the bold values. The ship
+   line's muted name tag rides INSIDE its first cell (.aim-ship-cell, the
+   tab scope tag's same trick), so the ship row also counts exactly four. */
+.aim-grid {
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  column-gap: 0.9em;
+  row-gap: 0.15em;
+  justify-items: end;
   align-items: baseline;
-  gap: 0.9em;
+  max-width: 100%;
+  overflow: hidden;
   font-family: var(--overlay-num-font);
-  font-size: 14px;
   line-height: 1.3;
 }
 
-/* .aim-num is the figure hook inside a chip: the bold mono value (the
+/* .aim-num is the figure hook inside a cell: the bold mono value (the
    color arrives inline from the tier helpers, or .aim-none's muted gray
-   for a missing figure). .aim-unit is the locale's battle-count word. */
+   for a missing figure). The battles cell's count AND its unit word ride
+   inside one .aim-num cell; .aim-unit drops to the text face. */
 .aim-num {
   font-weight: 700;
 }
 
 .aim-none,
-.aim-chip .aim-unit {
+.aim-grid .aim-unit {
   color: rgb(168 178 190);
   font-weight: 400;
 }
 
-.aim-chip .aim-unit {
+.aim-grid .aim-unit {
   font-family: var(--overlay-text-font);
-  font-size: 0.8em;
+  font-size: 0.85em;
+}
+
+/* The battle ship's readable name, riding as the ship row's scope tag:
+   the text face, one size down, muted — same treatment as the tab chips'
+   scope tags. Capped so a long localized name ellipsizes instead of
+   stretching the first column (the two rows must keep one grid). */
+.aim-ship-cell {
+  white-space: nowrap;
+}
+
+.aim-ship-tag {
+  font-family: var(--overlay-text-font);
+  font-size: 0.85em;
+  color: rgb(168 178 190);
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  margin-right: 0.5em;
+}
+
+/* The chasing three-dot loading face (the table page's loadingDots twin):
+   three beads whose brightness runs one after another while a per-ship
+   list is still owed — dashes would read as "never played this ship",
+   which the landing numbers would contradict a beat later. Beads take
+   the surrounding text color and size in em; the animation-delay arrives
+   INLINE per bead (phase-locked to the shared clock so render() rebuilds
+   never restart the chase — main.ts's loadingDots, renamed). */
+.aim-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24em;
+  height: 0.9em;
+}
+
+.aim-dots i {
+  width: 0.3em;
+  height: 0.3em;
+  border-radius: 50%;
+  background: currentColor;
+  /* 1.2s = DOTS_PERIOD_MS in overlay/aimcardLines.ts (the table page
+     keeps its own copy of the same clock) — the phase-lock math splits
+     the period into three beats; change the two together. */
+  animation: aim-dots-chase 1.2s ease-in-out infinite;
+}
+
+@keyframes aim-dots-chase {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion: the beads rest at mid brightness, still readable as a
+   loading mark (the same house pattern as the table page). */
+@media (prefers-reduced-motion: reduce) {
+  .aim-dots i {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/* Line 4 — the seal cluster: the tab chips' verdict seals as one
+   horizontal line. Default face is CINNABAR TEXT ON A TAG PLATE (the
+   table page's .overlay-stamp face, copied literal); a user-imported
+   custom picture keeps its bare <img> at the text seal's line-box height.
+   The plate rides the row's shared baseline so the ink sits on the same
+   line as its neighbors. */
+.aim-seals {
+  display: flex;
+  max-width: 100%;
+  overflow: hidden;
+  line-height: 1.3;
+}
+
+.aim-stamp {
+  color: rgb(226 74 66);
+  font-weight: 700;
+  white-space: nowrap;
+  /* One step below the card's own text size: the framed face reads as a
+     tag, not a second headline (the table page's same calibration). */
+  font-size: 0.92em;
+  font-family: var(--overlay-text-font);
+  /* The tag plate: a faint cinnabar wash over the card's own dark glass,
+     edged by a matching border. Padding is hairline (the plate hugs the
+     ink); radius in em keeps the rounding proportional at every face. */
+  padding: 0.04em 0.4em;
+  border: 1px solid rgb(226 74 66 / 50%);
+  border-radius: 0.45em;
+  background: rgb(226 74 66 / 14%);
+  line-height: 1.2em;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+}
+
+.aim-stamp + .aim-stamp {
+  margin-left: 0.4em;
+}
+
+img.aim-stamp {
+  /* Match the text seal's line box (1em font × 1.2 line height) so a
+     custom picture presses at the same visual size. */
+  height: 1.2em;
+  width: auto;
 }
