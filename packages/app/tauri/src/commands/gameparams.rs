@@ -281,7 +281,10 @@ fn read_game_params_bytes(vfs: &game_assets::vfs::VfsPath) -> Result<Vec<u8>> {
         let mut file = match node.open_file() {
             Ok(file) => file,
             Err(e) => {
-                if !matches!(e.kind(), game_assets::vfs::error::VfsErrorKind::FileNotFound) {
+                if !matches!(
+                    e.kind(),
+                    game_assets::vfs::error::VfsErrorKind::FileNotFound
+                ) {
                     read_errors.push(format!("打开 {path} 失败（游戏可能正在更新）：{e}"));
                 }
                 continue;
