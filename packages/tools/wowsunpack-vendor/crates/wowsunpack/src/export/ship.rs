@@ -741,12 +741,22 @@ impl ShipAssets {
             let geom_full_path = db.reconstruct_path(*geom_path_idx, self_id_index);
 
             let mut geom_bytes = Vec::new();
-            self.vfs
-                .join(&geom_full_path)
-                .context("VFS path error")?
-                .open_file()
-                .context_with(|| format!("Could not open geometry: {geom_full_path}"))?
-                .read_to_end(&mut geom_bytes)?;
+            // A hull part's .visual can outlive its .geometry in the VFS
+            // (the unsuffixed base part especially) — that part is simply
+            // absent, not fatal for the ship.
+            let mut geom_file =
+                match self.vfs.join(&geom_full_path).context("VFS path error")?.open_file() {
+                    Ok(f) => f,
+                    Err(_) => {
+                        eprintln!(
+                            "Warning: skipping '{sub_name}': geometry {geom_full_path} not in VFS"
+                        );
+                        continue;
+                    }
+                };
+            geom_file
+                .read_to_end(&mut geom_bytes)
+                .context_with(|| format!("Could not read geometry: {geom_full_path}"))?;
 
             // Try loading the .splash file (same directory, same base name).
             let splash_bytes = if geom_full_path.ends_with(".geometry") {
@@ -1575,7 +1585,10 @@ impl ShipModelContext {
             let turret_geom = &turret_geoms[mount.turret_model_index];
 
             sub_models.push(SubModel {
-                name: format!("{} ({})", mount.hp_name, turret_data.name),
+                // Model-stem-first, hardpoint in parens — the convention the
+                // hologram bake's classifier keys on (gun-model prefix at
+                // the name start, "(HP_…" markers).
+                name: format!("{} ({})", turret_data.name, mount.hp_name),
                 visual: &turret_data.visual,
                 geometry: turret_geom,
                 transform: mount.transform,

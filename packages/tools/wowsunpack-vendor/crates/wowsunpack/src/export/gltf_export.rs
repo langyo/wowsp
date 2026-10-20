@@ -3423,18 +3423,15 @@ pub fn export_ship_glb(
     let self_id_index = db.build_self_id_index();
 
     for sub in sub_models {
-        // Validate LOD — skip sub-models that don't have enough LODs.
-        if sub.visual.lods.is_empty() || lod >= sub.visual.lods.len() {
-            eprintln!(
-                "Warning: sub-model '{}' has {} LODs, skipping (requested LOD {})",
-                sub.name,
-                sub.visual.lods.len(),
-                lod
-            );
+        // Validate LOD — sub-models without any LOD are unusable; a
+        // sub-model with fewer LODs than requested (single-LOD invisible
+        // torpedo tubes and the like) falls back to its best available
+        // one instead of dropping the mount entirely.
+        if sub.visual.lods.is_empty() {
+            eprintln!("Warning: sub-model '{}' has no LODs, skipping", sub.name);
             continue;
         }
-
-        let lod_entry = &sub.visual.lods[lod];
+        let lod_entry = &sub.visual.lods[lod.min(sub.visual.lods.len() - 1)];
         let primitives = collect_primitives(
             sub.visual,
             sub.geometry,

@@ -1,9 +1,0 @@
-{
-  "name": "wows-depack",
-  "version-string": "0.4.0",
-  "dependencies": [
-    "zlib",
-    "pcre2",
-    "cunit"
-  ]
-}

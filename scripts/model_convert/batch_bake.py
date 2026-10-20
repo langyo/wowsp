@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Batch-bake ALL ships in the current game version to low-poly holographic GLBs.
 
-Uses wows-list-ships to get the authoritative list of GameParams ship names,
-then converts + bakes each one. Tools are cached under target/model-tools/.
+Ship list comes from the extract cache's GameParams.json; export runs
+through the Rust model-exporter in ONE --batch process (GameParams parse
+paid once), then every ship bakes to low-poly.
 
 The conversion takes ~10s per ship (1196 ships ≈ 3h). The script is idempotent
 and checkpoints progress, so it can be interrupted and resumed.
@@ -34,8 +35,12 @@ TOOLS_DIR = REPO_ROOT / "target" / "model-tools"
 SHIPS_OUT = REPO_ROOT / "packages" / "webui" / "src" / "res" / "models" / "ships"
 TEMP_DIR = REPO_ROOT / "target" / "model-tmp"
 
-EXPORTER_BIN = TOOLS_DIR / "wows-gltf-exporter.exe"
-LIST_SHIPS_BIN = TOOLS_DIR / "wows-list-ships.exe"
+# The Rust ship-export front end (packages/tools/model-exporter) built by
+# `just build model-exporter` straight into the cargo target dir.
+EXPORTER_BIN = REPO_ROOT / "target" / "release" / "model-exporter.exe"
+GAMEPARAMS_JSON = Path(
+    os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/share"))
+) / "WoWSP-extract" / "GameParams.json"
 BAKE_SCRIPT = SCRIPT_DIR / "bake_model.py"
 WOWSUNPACK_BIN = TOOLS_DIR / "wowsunpack.exe"   # built from cargo workspace
 
@@ -46,44 +51,35 @@ def find_game_path() -> str | None:
 
 
 def ensure_tools():
-    """Ensure the exporter + list-ships binaries exist in target/model-tools/.
-
-    The binaries come from the TRACKED-IN-TREE vendor fork
-    (packages/tools/wows-model-exporter-vendor — WoWSP fixes on top of
-    upstream 0.2.1; upstream's release zip ships without them, so never
-    download over this). `just build gltf-exporter` runs the build.
-    """
-    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
-    if EXPORTER_BIN.exists() and LIST_SHIPS_BIN.exists():
+    """Ensure the Rust model-exporter binary exists (cargo release build)."""
+    if EXPORTER_BIN.is_file():
         return
-    print("[batch_bake] exporter binaries missing — building the vendored "
-          "wows-model-exporter (just build gltf-exporter) ...")
+    print("[batch_bake] model-exporter missing — building (just build model-exporter) ...")
     rc = subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "build_gltf_exporter.py")],
+        ["cargo", "build", "--release", "-p", "model-exporter"],
+        cwd=str(REPO_ROOT),
     ).returncode
-    if rc != 0 or not (EXPORTER_BIN.exists() and LIST_SHIPS_BIN.exists()):
+    if rc != 0 or not EXPORTER_BIN.is_file():
         raise FileNotFoundError(
-            f"{EXPORTER_BIN.name} / {LIST_SHIPS_BIN.name} unavailable — "
-            "run `just build gltf-exporter` and retry")
+            f"{EXPORTER_BIN} unavailable — run `just build model-exporter` and retry")
 
 
 def get_ship_names(game: str) -> list[str]:
-    """Get all GameParams ship names via wows-list-ships."""
-    print("[batch_bake] listing ships from GameParams ...")
-    result = subprocess.run(
-        [str(LIST_SHIPS_BIN), "-W", game],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
-    )
-    if result.returncode != 0:
-        print(f"error: wows-list-ships failed: {result.stderr}", file=sys.stderr)
+    """All GameParams ship keys, from the extract cache's GameParams.json
+    (`just extract` produces it; the old wows-list-ships binary is gone
+    with the C++ exporter it came from)."""
+    if not GAMEPARAMS_JSON.is_file():
+        print(f"error: {GAMEPARAMS_JSON} missing — run `just extract` first.",
+              file=sys.stderr)
         sys.exit(1)
-    # Parse the table output: skip header rows, take column 1 (the key).
-    lines = result.stdout.strip().split("\n")
-    names = []
-    for line in lines:
-        parts = line.split()
-        if parts and parts[0] != "Key" and not line.startswith("-"):
-            names.append(parts[0])
+    dump = json.loads(GAMEPARAMS_JSON.read_text(encoding="utf-8"))
+    names = [
+        key
+        for key, entry in dump.items()
+        if isinstance(entry, dict)
+        and isinstance(entry.get("typeinfo"), dict)
+        and entry["typeinfo"].get("type") == "Ship"
+    ]
     print(f"[batch_bake] found {len(names)} ships in GameParams")
     return names
 
@@ -191,6 +187,13 @@ def _is_old_dual_mesh(path: Path) -> bool:
         return False
 
 
+def raw_path_for(gp_name: str) -> Path:
+    """Unique temp raw-GLB path per ship (collision-safe across runs)."""
+    import hashlib
+    tag = hashlib.md5(gp_name.encode()).hexdigest()[:8]
+    return TEMP_DIR / f"raw_{tag}.glb"
+
+
 def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
              resume_min_tris: int = 0, model_dir_name: str | None = None) -> bool:
     """Convert + bake a single ship. Returns True on success (including skip).
@@ -217,23 +220,15 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
             return _bake_armor_if_stale(game, gp_name, output_dir, force, model_dir_name)
 
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    # Use a unique temp file per ship to avoid collision if a previous run
-    # was interrupted mid-bake.
-    import hashlib
-    tag = hashlib.md5(gp_name.encode()).hexdigest()[:8]
-    raw_glb = TEMP_DIR / f"raw_{tag}.glb"
+    raw_glb = raw_path_for(gp_name)
 
-    # Step 1: export raw GLB (no textures, LOD2, include turrets).
-    # Convert underscores to spaces — the exporter uses a regex pattern matcher
-    # where each space-separated word becomes .*word.*, and underscores in a
-    # single word won't disambiguate when the GP key itself contains both the
-    # index prefix and the ship name (e.g. PASA002_Bogue_1942 vs PXSX815_Bogue_Clone).
-    exporter_ship = gp_name.replace("_", " ")
+    # Step 1: single-ship export (the batch driver uses --batch instead,
+    # paying the GameParams warm-up once for the whole fleet).
     try:
         rc = subprocess.call(
-            [str(EXPORTER_BIN), "-W", game, "-s", exporter_ship,
-             "-o", str(raw_glb), "-T", "-L", "2"],
-            timeout=45,
+            [str(EXPORTER_BIN), "-W", game, "-s", gp_name,
+             "-o", str(raw_glb), "-L", "2"],
+            timeout=180,
         )
         if rc != 0 or not raw_glb.exists():
             raw_glb.unlink(missing_ok=True)
@@ -247,6 +242,20 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
         raw_glb.unlink(missing_ok=True)
         print(f"     ↳ exporter crashed")
         return False
+
+    return bake_from_raw(gp_name, raw_glb, output_dir, model_dir_name,
+                         game=game, force=force)
+
+
+def bake_from_raw(gp_name: str, raw_glb: Path, output_dir: Path,
+                  model_dir_name: str | None, game: str | None = None,
+                  force: bool = False) -> bool:
+    """Bake an exported raw GLB into the pack format + refresh armor.
+
+    Steps 2+3 of the bake; separate from the export so the batch driver
+    can run one exporter process for the whole fleet and then bake per
+    ship."""
+    out_glb = output_dir / derive_filename(gp_name)
 
     # Step 2: bake visual model to low-poly.
     try:
@@ -268,9 +277,9 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
         raw_glb.unlink(missing_ok=True)
 
     # Step 3: export armor mesh GLB (from game .geometry file).
-    prefix = gp_name.split("_")[0]
-    armor_glb = output_dir / f"{prefix}_armor.glb"
-    return _bake_armor_if_stale(game, gp_name, output_dir, force, model_dir_name)
+    if game:
+        return _bake_armor_if_stale(game, gp_name, output_dir, force, model_dir_name)
+    return True
 
 
 def _bake_armor_if_stale(game: str, gp_name: str, output_dir: Path, force: bool,
@@ -397,12 +406,42 @@ def main() -> int:
         print("[batch_bake] nothing to do. Use --force to re-bake everything.")
         return 0
 
+    start = time.time()
+
+    # Phase 1 — one exporter process for the whole fleet: the GameParams
+    # parse + VFS mount are paid once, then every ship costs just its
+    # geometry read. (A per-ship process would add ~20s × N.)
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    manifest = TEMP_DIR / "export_batch.txt"
+    manifest.write_text(
+        "\n".join(f"{n} {raw_path_for(n)}" for n in todo) + "\n", encoding="utf-8")
+    print(f"[batch_bake] exporting {len(todo)} ships via model-exporter --batch ...", flush=True)
+    try:
+        subprocess.call([str(EXPORTER_BIN), "-W", game,
+                         "--batch", str(manifest), "-L", "2"])
+    except Exception as e:
+        print(f"[batch_bake] exporter batch crashed: {e}", file=sys.stderr)
+    results_path = Path(str(manifest) + ".results.txt")
+    exported: set[str] = set()
+    if results_path.is_file():
+        for line in results_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("OK "):
+                exported.add(line[3:].split("\t", 1)[0].strip())
+    print(f"[batch_bake] export phase: {len(exported)}/{len(todo)} raw GLBs "
+          f"in {(time.time()-start)/60:.1f}min", flush=True)
+
+    # Phase 2 — bake each exported raw into the pack format (+ armor).
     ok = 0
     fail = 0
-    start = time.time()
     for i, gp_name in enumerate(todo):
-        success = bake_one(game, gp_name, SHIPS_OUT, args.force, resume_min_tris,
-                           model_dir_name=model_name_by_prefix.get(gp_name.split("_")[0]))
+        raw = raw_path_for(gp_name)
+        if gp_name in exported and raw.is_file():
+            success = bake_from_raw(
+                gp_name, raw, SHIPS_OUT,
+                model_name_by_prefix.get(gp_name.split("_")[0]),
+                game=game, force=args.force)
+        else:
+            success = False
         if success:
             ok += 1
         else:

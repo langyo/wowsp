@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Convert one WoWS ship hull into a GLB via wows-gltf-exporter.
+"""Convert one WoWS ship hull into a GLB via the Rust model-exporter.
 
-Drives the `wows-gltf-exporter` binary (from wows-tools/wows-geometry, releases
-at https://github.com/wows-tools/wows-model-exporter). The exporter reads the
-game's .pkg VFS, parses GameParams.data + .geometry/.visual files, stitches
-hull parts, applies textures, and writes a single GLB.
+Drives the `model-exporter` binary (packages/tools/model-exporter, built
+by `just build model-exporter`) over the game's idx/pkg VFS: GameParams
+hull selection, mounted sub-models at their hardpoint transforms,
+optional texture embedding — one GLB.
 
 Usage:
     python scripts/model_convert/convert_ship.py --name Montana
-    python scripts/model_convert/convert_ship.py --name PASB017_Montana_1945 --lod 2 --no-turrets
-    python scripts/model_convert/convert_ship.py --name Yamato --no-textures --texture-size 512
+    python scripts/model_convert/convert_ship.py --name PASB017_Montana_1945 --lod 2
+    python scripts/model_convert/convert_ship.py --name Yamato --no-textures
 
     just convert-ship --name Montana
 """
@@ -26,26 +26,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _common import find_game_path  # noqa: E402
 
 DEFAULT_OUT = Path(__file__).resolve().parents[2] / "packages" / "webui" / "src" / "res" / "models" / "ships"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def find_exporter() -> str | None:
-    """Find the wows-gltf-exporter binary."""
-    env_path = os.environ.get("WOWSP_GLTF_EXPORTER") or os.environ.get("WOWSP_WOWSUNPACK")
+    """Find the Rust model-exporter binary."""
+    env_path = os.environ.get("WOWSP_MODEL_EXPORTER")
     if env_path and Path(env_path).exists():
         return env_path
-    return shutil.which("wows-gltf-exporter")
+    cargo_bin = REPO_ROOT / "target" / "release" / (
+        "model-exporter.exe" if os.name == "nt" else "model-exporter")
+    if cargo_bin.exists():
+        return str(cargo_bin)
+    return shutil.which("model-exporter")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Convert a WoWS ship to GLB")
     parser.add_argument("--name", required=True, help="ship name pattern (e.g. Montana, PASB017_Montana_1945)")
     parser.add_argument("--output", "-o", default=str(DEFAULT_OUT), help="output GLB path or dir (default: ships/)")
-    parser.add_argument("--lod", type=int, default=-1, help="LOD level (-1=auto, default: -1)")
-    parser.add_argument("--hull", default=None, help="hull upgrade name substring (default: latest)")
+    parser.add_argument("--lod", type=int, default=2, help="LOD level (default: 2)")
+    parser.add_argument("--hull", default=None, help="hull upgrade name substring (default: top hull)")
     parser.add_argument("--damaged", action="store_true", help="include damage/crack geometry")
-    parser.add_argument("--no-turrets", action="store_true", help="exclude turret/mounted models")
     parser.add_argument("--no-textures", action="store_true", help="skip textures")
-    parser.add_argument("--texture-size", type=int, default=2048, help="max texture dimension (default: 2048)")
     args = parser.parse_args()
 
     game = find_game_path()
@@ -55,9 +58,8 @@ def main() -> int:
 
     exporter = find_exporter()
     if not exporter:
-        print("error: wows-gltf-exporter not found. Download from "
-              "https://github.com/wows-tools/wows-model-exporter/releases and "
-              "set WOWSP_GLTF_EXPORTER or add to PATH.", file=sys.stderr)
+        print("error: model-exporter not found. Run `just build model-exporter` "
+              "or set WOWSP_MODEL_EXPORTER.", file=sys.stderr)
         return 1
 
     # Resolve output: if a directory, derive filename from --name.
@@ -73,14 +75,14 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [exporter, "-W", game, "-s", args.name, "-o", str(out),
-           "-L", str(args.lod), "-Z", str(args.texture_size)]
+           "-L", str(args.lod)]
     if args.hull:
-        cmd += ["-H", args.hull]
+        cmd += ["--hull", args.hull]
     if args.damaged:
-        cmd.append("-D")
-    if args.no_turrets:
-        cmd.append("-t")
-    if args.no_textures:
+        cmd.append("--damaged")
+    if not args.no_textures:
+        # The Rust exporter embeds textures only when asked (the bake
+        # pipeline runs textureless; this interactive path keeps them).
         cmd.append("-T")
 
     print(f"[convert_ship] {' '.join(cmd)}")

@@ -43,7 +43,7 @@ The game install is auto-detected the same way WoWSP's desktop shell does it
 | `bake_planes.py` | `export-model` | `GLB` under `packages/webui/src/res/models/planes/` + `props/` |
 | `extract_lesta_planes.py` | — (GameParams → tables) | rows in `src/data/plane_types.json` + `plane_models.json` |
 | `bake_lesta_planes.py` | `export-model` (staged Lesta) | `GLB` under `packages/webui/src/res/models/planes/` (Lesta airframes) |
-| `bake_missing_ships.py` | (wows-gltf-exporter) | backfills specific ship GLBs under `ships/` |
+| `bake_missing_ships.py` | (model-exporter) | backfills specific ship GLBs under `ships/` |
 
 ## Battle-effect models (planes / shells / torpedoes)
 
@@ -138,11 +138,12 @@ decimation, texture downsampling — all forwarded to `wowsunpack`).
 `bake_model.py` simplifies a high-poly exporter GLB down to a small low-poly
 GLB (~60–150 KB) for the holographic viewer, using vertex-clustering
 decimation that keeps surfaces continuous. `batch_bake.py` runs the full
-export→bake pipeline for every playable ship. The exporter binaries come
-from the tracked-in-tree fork
-(`packages/tools/wows-model-exporter-vendor` — build with
-`just build gltf-exporter`; never fetch upstream release binaries over
-it, they lack the WoWSP fixes).
+export→bake pipeline for every playable ship: the ship list comes from
+the extract cache's `GameParams.json`, and export goes through the Rust
+`model-exporter` tool package (`packages/tools/model-exporter`, built by
+`just build model-exporter`) in one `--batch` process — the GameParams
+parse is paid once for the whole fleet. It replaced the vendored C++
+wows-model-exporter (and its CMake/vcpkg chain) outright.
 
 ### Resumable / batched runs
 
