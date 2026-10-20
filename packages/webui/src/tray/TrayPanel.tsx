@@ -3,6 +3,7 @@ import { Eye, LogOut } from "@lucide/vue";
 
 import { HkTag } from "@celestia-island/hikari";
 
+import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import PlatformIcon from "@/components/base/PlatformIcon";
 import { useSessionStore } from "@/stores/session";
@@ -115,12 +116,19 @@ export default defineComponent({
             {display.value ? (
               <>
                 <div class="tray-panel__player-row">
+                  {/* Emblem when the cached stats carry a dog tag, else the
+                      neutral disc — same policy as the sidebar footer; the
+                      numbered tier fallback is gone there too. */}
                   {display.value.accountId != null ? (
-                    <PlayerBadge
-                      tier={displayStats.value?.levelingTier ?? 0}
-                      dogTag={displayStats.value?.dogTag ?? null}
-                      size={22}
-                    />
+                    displayStats.value?.dogTag ? (
+                      <PlayerBadge
+                        dogTag={displayStats.value.dogTag}
+                        tier={displayStats.value.levelingTier ?? 0}
+                        size={22}
+                      />
+                    ) : (
+                      <AccountAvatar size={22} />
+                    )
                   ) : null}
                   <span class="tray-panel__player-name">{display.value.nickname}</span>
                   <HkTag variant="default" size="sm">

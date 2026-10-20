@@ -1,0 +1,19 @@
+/* AccountAvatar — neutral disc for account rows without a dog-tag emblem.
+   Chrome mirrors PlatformIcon's fallback badge (translucent border + muted
+   fill, rounded full) so an account avatar and a platform badge of the
+   same size read as a matched pair in the footer rows. */
+
+.account-avatar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-border) / 30%);
+  background: rgb(var(--color-border) / 40%);
+
+  &__glyph {
+    color: rgb(var(--color-muted));
+  }
+}

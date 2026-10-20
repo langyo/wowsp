@@ -4,6 +4,7 @@ import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle
 
 import { HkTag, HkTooltip } from "@celestia-island/hikari";
 
+import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import PluginUpdateHint from "@/components/layout/PluginUpdateHint";
 import PlatformIcon from "@/components/base/PlatformIcon";
@@ -111,6 +112,20 @@ export default defineComponent({
       },
       { immediate: true },
     );
+
+    // The account row's avatar: the real dog-tag emblem when the cached
+    // stats carry one, else the neutral AccountAvatar disc. The old
+    // service-record-tier fallback (a numbered ring) is gone — at 22px its
+    // number read like a permission rank, and the 3px metallic ring
+    // shrank the visible disc below the platform badge beside it.
+    const accountAvatar = computed(() => {
+      const s = activeStats.value;
+      return s?.dogTag ? (
+        <PlayerBadge dogTag={s.dogTag} tier={s.levelingTier ?? 0} size={22} />
+      ) : (
+        <AccountAvatar size={22} />
+      );
+    });
 
     const proc = computed(() => gameStatus.process);
 
@@ -297,8 +312,8 @@ export default defineComponent({
             >
               <span class="sidebar__footer-btn-key">{t("common.game.versionLabel")}</span>
               <span class="sidebar__footer-btn-value">
-                {/* 22px matches the PlayerBadge on the account row below so
-                    the two text columns share one left edge. */}
+                {/* 22px matches the account avatar on the row below so the
+                    two text columns share one left edge. */}
                 <PlatformIcon kind={activeInstall.value?.kind} size={22} />
                 <span class="sidebar__footer-btn-text">
                   {activeInstall.value
@@ -326,8 +341,8 @@ export default defineComponent({
             >
               <span class="sidebar__footer-btn-key">{t("common.game.versionLabel")}</span>
               <span class="sidebar__footer-btn-value">
-                {/* 22px matches the PlayerBadge on the account row below so
-                    the two text columns share one left edge. */}
+                {/* 22px matches the account avatar on the row below so the
+                    two text columns share one left edge. */}
                 <PlatformIcon kind={activeInstall.value?.kind} size={22} />
                 <span class="sidebar__footer-btn-text">
                   {activeInstall.value
@@ -354,11 +369,7 @@ export default defineComponent({
               {shownPlayer.value ? (
                 <>
                   {shownPlayer.value.accountId != null ? (
-                    <PlayerBadge
-                      tier={activeStats.value?.levelingTier ?? 0}
-                      dogTag={activeStats.value?.dogTag ?? null}
-                      size={22}
-                    />
+                    accountAvatar.value
                   ) : null}
                   <span class="sidebar__footer-btn-text">
                     {shownPlayer.value.nickname}
