@@ -107,6 +107,7 @@ import {
   damageColor,
   prTier,
   winrateColor,
+  type CareerStamp,
 } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
 import {
@@ -124,9 +125,11 @@ import {
   type OverlayColumnScope,
 } from "@/stores/statsPrefs";
 import { useRosterStats, isAiName, type RosterStat } from "@/composables/useRosterStats";
+import { useLiveCompositions } from "@/composables/useLiveCompositions";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
+import CompSeal from "@/components/base/CompSeal";
 import { HkSpinner } from "@celestia-island/hikari";
 import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
 import "./LiveBattlePanel.scss";
@@ -172,7 +175,7 @@ export default defineComponent({
      *  compact one-line rows — a persisted stats pref flipped from the
      *  head's density toggle. */
     const compact = computed(() => prefs.prefs.liveRosterCompact);
-    const { dataLanguage } = useLanguage();
+    const { uiLocale, dataLanguage } = useLanguage();
     // Declared BEFORE useRosterStats below: the composable's watches run
     // their getters synchronously at registration, and the `realms` option
     // closes over this store — a later declaration would be a TDZ throw
@@ -228,6 +231,33 @@ export default defineComponent({
       // (older build / roster mode without the plugin).
       realms: () => (plugin.installed ? plugin.playerRealms : null),
     });
+
+    // ── Composition icon seals (空中小人 / 水下小人 → glyph+share square
+    // seals, CompSeal) ─────────────────────────────────────────────────────
+    // The live panel's OWN icon face of the composition verdicts: fetched
+    // behind the roster through the same backend command the Tab overlay
+    // rides (its process-lifetime cache makes the second consumer free),
+    // gated exactly like every seal surface — zh UI, PR master, seals
+    // master — so the pipeline idles when no seal could ever render. The
+    // verdicts carry the class shares (airShare / subShare) the seal
+    // stamps under its glyph.
+    const sealsShown = computed(
+      () =>
+        uiLocale.value.startsWith("zh") &&
+        prefs.prefs.prEnabled &&
+        prefs.prefs.sealsEnabled,
+    );
+    const compNames = computed(() => {
+      if (!sealsShown.value || !props.arena) return [];
+      return [
+        ...new Set(
+          props.arena.vehicles
+            .filter((v) => !isAiName(v.name))
+            .map((v) => v.name),
+        ),
+      ];
+    });
+    const compositions = useLiveCompositions(compNames, () => realm.value);
 
     /** Localized realm label (replay.realm.*) with an uppercase-code
      *  fallback for unknown codes. */
@@ -1126,6 +1156,43 @@ export default defineComponent({
         } as CSSProperties;
       };
 
+      /** The row's composition icon seals — 空中小人 / 水下小人 (with the
+       *  >50% 奶龙 / 奶蛙 tier) as square glyph+share seals, the live
+       *  panel's icon face of the composition verdicts. The floors of the
+       *  shared merge rule stand (蛆 and 过街老鼠 suppress the composition
+       *  entirely — resolveStamps' rule for the water-meter faces), but no
+       *  merged seal exists HERE: a 神了 / 猴 verdict keeps its own
+       *  RatingStamp beside the icon seals (the merged 空中神人-family
+       *  four-char faces belong to the water meter alone). A verdict still
+       *  in flight (or failed / hidden → null) renders nothing. */
+      const compSealNodes = (name: string, career: CareerStamp | null): VNode[] => {
+        if (!sealsShown.value || career === "maggot" || career === "rat") return [];
+        const comp = compositions.value.get(name);
+        if (!comp) return [];
+        const nodes: VNode[] = [];
+        if (comp.air) {
+          nodes.push(
+            <CompSeal
+              key="air"
+              cls="air"
+              veteran={comp.airVeteran}
+              share={comp.airShare}
+            />,
+          );
+        }
+        if (comp.sub) {
+          nodes.push(
+            <CompSeal
+              key="sub"
+              cls="sub"
+              veteran={comp.subVeteran}
+              share={comp.subShare}
+            />,
+          );
+        }
+        return nodes;
+      };
+
       // Compact mode reuses the post-battle matrix's row look verbatim —
       // including the shared rosterStatCols — so it needs a name-keyed view
       // of this panel's id-keyed stats. Rows still loading drop out of the
@@ -1170,6 +1237,7 @@ export default defineComponent({
               class="live-battle__crow-stamp"
             />
           ) : null;
+        const compSeals = compSealNodes(v.name, stamp);
         const content = (
           <>
             <span class="live-battle__crow-ico">
@@ -1202,6 +1270,13 @@ export default defineComponent({
               </span>
               <span class="live-battle__crow-ship">{shipName}</span>
             </span>
+            {/* Composition icon seals — placed BEFORE the fixed stat columns
+                so their per-row width (none / one / two seals) is absorbed
+                by the flexible name track and the columns keep their x on
+                every row; the career seal keeps its reserved end slot. */}
+            {compSeals.length > 0 ? (
+              <span class="live-battle__crow-comp">{compSeals}</span>
+            ) : null}
             {rosterStatCols(
               v.name,
               nameStats,
@@ -1283,12 +1358,18 @@ export default defineComponent({
         ];
         const seal =
           stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
-            <RatingStamp
-              kind={stamp}
-              size={34}
-              variant="mini"
-              class="live-battle__player-stamp"
-            />
+            <RatingStamp kind={stamp} size={34} variant="mini" />
+          ) : null;
+        // The card's right edge stacks the career seal over the composition
+        // icon seals — one seal column pressed onto the card (the icon
+        // seals only ever ride beside a card tall enough for them).
+        const compSeals = compSealNodes(v.name, stamp);
+        const sealStack =
+          seal || compSeals.length > 0 ? (
+            <span class="live-battle__player-stampstack">
+              {seal}
+              {compSeals}
+            </span>
           ) : null;
         // The row's per-scope resolvers for the bottom stat strip — null
         // while any gate holds (loading / hidden); LiveStatLine owns those
@@ -1352,7 +1433,7 @@ export default defineComponent({
                 summary. Enemies get parameters only — and operations have
                 no enemies at all. */}
             <LiveShipMeta shipId={v.shipId} ally={v.relation <= 1} />
-            {seal}
+            {sealStack}
             {/* The stat strip is the card's SECOND row, spanning all three
                 tracks (see LiveStatLine): the one line long enough to matter
                 at full width, it borrows the middle ground's and the seal's

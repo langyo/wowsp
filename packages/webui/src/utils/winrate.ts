@@ -117,11 +117,9 @@ export function isMergedStamp(kind: StampKind): boolean {
   );
 }
 
-/** The one merge rule, shared by the bitmap-seal surfaces (account
- *  StatsCard, share shots — all route through here so the merge can never
- *  disagree between them; the Tab overlay chips keep the FLOOR semantics
- *  only and decompose the merge ladder into verdict text + icon badges,
- *  see overlay/main.ts sealNodes):
+/** The one merge rule, shared by every seal surface (account StatsCard,
+ *  share shots, the Tab overlay chips — all route through here so the
+ *  merge can never disagree between surfaces):
  *   - miracle + sub → 水下神人; miracle + air → 空中神人; ape likewise
  *     merges into 水下小猴 / 空中小猴 (both orders normalized sub-first).
  *   - Any merged kind CONSUMES its constituents: the return carries ONLY

@@ -1,32 +1,34 @@
-/** Composition icon glyphs (实时对局的成分图标印章 — the live Tab overlay's
- *  空中小人 / 水下小人 faces). Original in-house vector silhouettes, drawn
- *  for this repo (no icon-font dependency, no licensed asset): a carrier
- *  aviation plane (nose up, plan view) for the CV share, a side-view
- *  submarine (bow left) for the SS share.
+/** Composition icon glyphs (成分图标印章 — the live panel's 空中小人 /
+ *  水下小人 faces). Original in-house vector silhouettes, drawn for this
+ *  repo (no icon-font dependency, no licensed asset): a carrier-aviation
+ *  plane (nose up, plan view) for the CV share, a side-view submarine (bow
+ *  left) for the SS share.
  *
  *  Dual-track by design, the same contract RatingStamp's "full"/"mini"
  *  faces keep: the ONE identity renders as two prepared detail levels so
  *  each size gets a drawing made for it, never a scaled-down wrong one.
  *   - "mini" (缩略图场景): a single chunky filled silhouette on a 24×24
- *     grid — reads at the overlay chips' ~1em line size where any interior
+ *     grid — reads at the live rows' 34px seal size where any interior
  *     detail would smear into noise.
  *   - "full" (大图场景): the same silhouette scaled to 48×48 plus a
  *     subdued detail layer (prop arc + canopy + nacelles for the plane,
- *     periscope + fin + portholes + waterline for the submarine) for
- *     review surfaces and any future large rendering.
+ *     periscope + fin + portholes + waterline for the submarine) for any
+ *     future large rendering.
  *
- *  Everything is plain SVG markup strings with `currentColor`, so the bare
- *  DOM overlay page and Vue consumers skin them from CSS alike. Tier
- *  coloring (>=20% minor cinnabar / >=50% veteran gold) is the CALLER's
- *  styling — the glyph itself is monochrome. */
+ *  The primary consumer is the square seal component (components/base/
+ *  CompSeal), which embeds [`COMP_ICON_BODY`] inside its own stamped SVG
+ *  frame — this module carries only the glyph geometry, monochrome and
+ *  `currentColor`-skinned everywhere (tier coloring is the caller's). The
+ *  in-game Tab overlay keeps its TEXT seals; the water-meter faces keep the
+ *  four-char bitmap seals (RatingStamp) — neither consumes this module. */
 
 export type CompIconKind = "air" | "sub";
-export type CompIconVariant = "full" | "mini";
 
 /** The chunky one-path silhouettes (24×24, nose-up plane / bow-left
  *  submarine). The submarine carries its sail as a second subpath inside
- *  the same fill. */
-const MINI_BODY: Record<CompIconKind, string> = {
+ *  the same fill. CompSeal scales this onto its face with an SVG group
+ *  transform — the path coordinates stay on the 24 grid. */
+export const COMP_ICON_BODY: Record<CompIconKind, string> = {
   // Plane, plan view, nose up: tapered fuselage, swept wings out to the
   // 22-unit tips, smaller mirrored tailplane, all one closed path.
   air: "M12 1.5C12.9 2.7 13.5 4.5 13.5 6.5L13.5 9L22 14.2L22 16.4L13.5 13.6"
@@ -41,16 +43,10 @@ const MINI_BODY: Record<CompIconKind, string> = {
     + " 6.7 13.8 7.2L14.6 10.6Z",
 };
 
-/** The large-track body: the same silhouette at 2× (the 24-grid geometry
- *  scaled onto the 48 grid), so both tracks keep one shape identity. */
-const FULL_BODY: Record<CompIconKind, string> = {
-  air: scalePath24to48(MINI_BODY.air),
-  sub: scalePath24to48(MINI_BODY.sub),
-};
-
-/** Detail layer markup for the large track (48 grid): stroked/filled
- *  accents at reduced opacity — present in "full" only. */
-const FULL_DETAIL: Record<CompIconKind, string> = {
+/** Detail-layer markup for the large track (48 grid): stroked/filled
+ *  accents at reduced opacity — embedded by the seal component's "full"
+ *  variant beside the 48-grid body. */
+export const COMP_ICON_DETAIL: Record<CompIconKind, string> = {
   // Plane: spinning-prop arc + spinner at the nose, cockpit bubble, two
   // engine nacelles on the wings, wing-spar lines.
   air: '<circle cx="24" cy="7.4" r="2" fill="currentColor"/>'
@@ -77,31 +73,18 @@ const FULL_DETAIL: Record<CompIconKind, string> = {
     + ' fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.3"/>',
 };
 
-/** Scale a 24-grid path string onto the 48 grid. The mini bodies are built
- *  from one-decimal coordinates, so a token-wise ×2 keeps the curves exact.
+/** Scale a 24-grid path string onto the 48 grid. The bodies are built from
+ *  one-decimal coordinates, so a token-wise ×2 keeps the curves exact.
  *  This holds because both paths use only M/C/L/Z commands, whose tokens
  *  are all coordinates — an elliptical-arc `A` command's large-arc/sweep
  *  flags are single DIGITS a numeric doubling would corrupt, so introducing
- *  one into MINI_BODY means replacing this with an arc-aware scaler. */
+ *  one into COMP_ICON_BODY means replacing this with an arc-aware scaler. */
 function scalePath24to48(path: string): string {
   return path.replace(/-?\d+(?:\.\d+)?/g, (n) => String(Number(n) * 2));
 }
 
-/** One composition glyph as standalone `<svg>` markup, colored by
- *  `currentColor` and sized by the caller's CSS (the svg itself carries no
- *  width/height). `aria-hidden` — the surrounding badge carries the
- *  accessible label. */
-export function compIconSvg(kind: CompIconKind, variant: CompIconVariant): string {
-  if (variant === "mini") {
-    return (
-      `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">` +
-      `<path d="${MINI_BODY[kind]}"/></svg>`
-    );
-  }
-  return (
-    `<svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">` +
-    `<path fill="currentColor" d="${FULL_BODY[kind]}"/>` +
-    `<g class="comp-icon__detail">${FULL_DETAIL[kind]}</g>` +
-    `</svg>`
-  );
+/** The large track's body path (48 grid) — the mini silhouette scaled
+ *  whole, the detail layer (COMP_ICON_DETAIL) riding beside it. */
+export function compIconBody48(kind: CompIconKind): string {
+  return scalePath24to48(COMP_ICON_BODY[kind]);
 }

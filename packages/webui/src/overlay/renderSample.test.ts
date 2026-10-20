@@ -87,15 +87,11 @@ beforeAll(async () => {
           });
         }
         if (cmd === "lookup_players_composition") {
-          // A spread of composition faces so the sample shows the icon
-          // badges' tiers and the merge decompose too: a veteran CV main
-          // (gold plane 56%), a minor SS main (cinnabar submarine 24%),
-          // and a minor CV share riding an ape verdict (猴 + plane badge
-          // instead of the merged 空中小猴 the water meter shows).
+          // A pair of composition seals so the sample shows the trim
+          // targets too (空中小人 on the first name, 水下小人 on langyo).
           const comps: Record<string, unknown> = {
-            "[HERO]wersskysks": { air: true, sub: false, airVeteran: true, subVeteran: false, airShare: 56, subShare: 0 },
-            langyo: { air: false, sub: true, airVeteran: false, subVeteran: false, airShare: 0, subShare: 24 },
-            korea4950: { air: true, sub: false, airVeteran: false, subVeteran: false, airShare: 31, subShare: 0 },
+            "[HERO]wersskysks": { air: true, sub: false, airVeteran: false, subVeteran: false },
+            langyo: { air: false, sub: true, airVeteran: false, subVeteran: false },
           };
           return ((args?.names as string[]) ?? []).map((n) => comps[n] ?? null);
         }
@@ -153,30 +149,8 @@ describe("overlay sample frame", () => {
       expect(document.querySelectorAll(".overlay-dots").length).toBe(0),
     );
     await vi.waitFor(() =>
-      expect(document.querySelectorAll(".overlay-comp").length).toBe(3),
+      expect(document.querySelectorAll('.overlay-stamp[data-stamp="air"]').length).toBe(1),
     );
-
-    // The composition icon badges' contract: three faces — the veteran
-    // tier (gold, data-tier), the two minor tiers — each a built-in glyph
-    // plus the mono share figure; and the merge decompose: the ape
-    // verdict's chip carries the 猴 text seal BESIDE its plane badge, not
-    // the merged four-char 空中小猴 the water meter presses.
-    const badges = [...document.querySelectorAll<HTMLElement>(".overlay-comp")];
-    for (const badge of badges) {
-      expect(badge.querySelector(".overlay-comp__glyph svg")).not.toBeNull();
-      expect(badge.querySelector(".overlay-comp__pct")).not.toBeNull();
-    }
-    expect(
-      document.querySelectorAll('.overlay-comp[data-tier="veteran"]').length,
-    ).toBe(1);
-    expect(document.querySelector(".overlay-comp__pct")!.textContent).toBe("56%");
-    // mkwp22 is an ape holder too (PR 499) — pin the row by NAME.
-    const apeChip = rowChips().find((c) =>
-      c.querySelector(".overlay-chip__name")?.textContent === "korea4950",
-    );
-    expect(apeChip).toBeDefined();
-    expect(apeChip!.querySelector('.overlay-stamp[data-stamp="ape"]')).not.toBeNull();
-    expect(apeChip!.querySelectorAll(".overlay-stamp")).toHaveLength(2);
 
     // The markup contract the picture depends on: five numbered rows carry
     // the four mono figures (winrate / PR / battles / damage), every
