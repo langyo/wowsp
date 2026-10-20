@@ -13,7 +13,10 @@ import {
 import { useWallpaper } from "@/theme/useWallpaper";
 import { imageSourceUrl, wallpaperNameKey } from "@/theme/wallpaper";
 import { isTauri } from "@/transport";
-import { useStatsPrefsStore, STATS_PREFS_STORAGE_KEY } from "@/stores/statsPrefs";
+import {
+  seedStatsPrefs,
+  STATS_PREFS_STORAGE_KEY,
+} from "@/stores/statsPrefs";
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
@@ -133,7 +136,6 @@ export default defineComponent({
     const theme = useTheme();
     const wallpaper = useWallpaper();
     const toast = useToast();
-    const prefs = useStatsPrefsStore();
     const config = useConfigStore();
     const accounts = useAccountStore();
     const plugin = useIngamePluginStore();
@@ -167,7 +169,9 @@ export default defineComponent({
     // on at boot, and users with stored prefs keep their earlier decisions.
     try {
       if (localStorage.getItem(COMPLETED_KEY) == null && localStorage.getItem(STATS_PREFS_STORAGE_KEY) == null) {
-        prefs.setPrEnabled(true);
+        // Seed (not set): the untouched default must not flash the
+        // title-bar Saved chip — only an explicit flip counts as an edit.
+        seedStatsPrefs({ prEnabled: true });
       }
     } catch {
       // storage unavailable — skip the default, the switch stays as stored

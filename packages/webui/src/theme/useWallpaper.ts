@@ -17,6 +17,7 @@ import {
   imageSourceUrl,
   loadActiveWallpaperId,
   saveActiveWallpaperId,
+  saveActiveWallpaperIdQuietly,
   type WallpaperPreset,
 } from "./wallpaper";
 import {
@@ -77,12 +78,14 @@ async function refreshCustom(): Promise<void> {
     // built-ins stay available regardless).
   }
   // Self-heal: a persisted id that is neither a built-in nor a file still
-  // on disk falls back to the default.
+  // on disk falls back to the default — a quiet write (no Saved flash; the
+  // heal corrects storage, it is not a user choice).
   if (
     !BUILTIN_WALLPAPER_IDS.has(activeWallpaperId.value) &&
     !customWallpapers.value.some((w) => w.id === activeWallpaperId.value)
   ) {
-    setActiveWallpaper(DEFAULT_WALLPAPER_ID);
+    activeWallpaperId.value = DEFAULT_WALLPAPER_ID;
+    saveActiveWallpaperIdQuietly(DEFAULT_WALLPAPER_ID);
   }
 }
 

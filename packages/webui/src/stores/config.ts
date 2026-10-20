@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api, type GameInstall } from "@/api";
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { normalizeGamePath, sameGamePath } from "@/utils/gamePath";
 
 /**
@@ -228,6 +229,7 @@ export const useConfigStore = defineStore("config", () => {
         installs.value = [...installs.value, found];
       }
     });
+    notifySettingsSaved();
   }
 
   /** Validate a folder through the backend and pin it as the active install
@@ -242,7 +244,7 @@ export const useConfigStore = defineStore("config", () => {
       if (selection !== selectionSequence) return null;
       throw error;
     }
-    return enqueue(async () => {
+    const saved = await enqueue(async () => {
       // Another explicit choice superseded this folder validation. Callers
       // can quietly leave the newer choice in place without an error toast.
       if (selection !== selectionSequence) return null;
@@ -257,6 +259,9 @@ export const useConfigStore = defineStore("config", () => {
       }
       return resolved;
     });
+    // A superseded no-op persisted nothing — the superseding action flashes.
+    if (saved) notifySettingsSaved();
+    return saved;
   }
 
   /** Drop an install from the list (settings 游戏路径 table's per-row
@@ -283,6 +288,7 @@ export const useConfigStore = defineStore("config", () => {
         saveGamePathOrder(gamePathOrder);
       }
     });
+    notifySettingsSaved();
   }
 
   /** Reorder the install list (settings 游戏路径 rows, drag handles). The
@@ -296,6 +302,7 @@ export const useConfigStore = defineStore("config", () => {
     installs.value = arr;
     gamePathOrder = arr.map((i) => i.path);
     saveGamePathOrder(gamePathOrder);
+    notifySettingsSaved();
   }
 
   /** Pin an extra replay folder into the scan (游玩时间 view's 录像来源
@@ -304,6 +311,7 @@ export const useConfigStore = defineStore("config", () => {
   async function addReplayDir(path: string) {
     const cfg = await api.addReplayDir(path);
     replayDirs.value = cfg?.replayDirs ?? replayDirs.value;
+    notifySettingsSaved();
   }
 
   /** Unpin an extra replay folder (any spelling of its path). Its
@@ -312,6 +320,7 @@ export const useConfigStore = defineStore("config", () => {
   async function removeReplayDir(path: string) {
     const cfg = await api.removeReplayDir(path);
     replayDirs.value = cfg?.replayDirs ?? replayDirs.value;
+    notifySettingsSaved();
   }
 
   /** Whether an install path was removed from the list (settings 游戏路径

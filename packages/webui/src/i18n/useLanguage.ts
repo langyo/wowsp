@@ -36,6 +36,7 @@
 import { computed, ref } from "vue";
 
 import { RPC } from "@/rpc";
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { isTauri, transport } from "@/transport";
 
 import { i18n, setLocale, SUPPORTED_LOCALES, type Locale } from "./index";
@@ -244,6 +245,7 @@ export const effectiveWgLanguage = computed(() => wgApiLanguage(dataLanguage.val
 function setUiLocale(locale: Locale): void {
   uiLocale.value = locale;
   localStorage.setItem(UI_KEY, locale);
+  notifySettingsSaved();
   // Fire-and-forget: a settings-dropdown toggle. Nothing here reads
   // messages synchronously after the switch, and reactive t() callers
   // re-render once the bundle lands and the locale ref flips.
@@ -253,6 +255,7 @@ function setUiLocale(locale: Locale): void {
 function setDataLanguage(code: string): void {
   dataLanguage.value = code;
   localStorage.setItem(DATA_KEY, code);
+  notifySettingsSaved();
 }
 
 export function useLanguage() {

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { emitTauriEvent } from "@/utils/appEvents";
 import type { StampKind } from "@/utils/winrate";
 
@@ -422,15 +423,20 @@ function readStored(): string | null {
  *  listens for exactly this event and re-reads via readOverlayDisplayPrefs). */
 const STATS_PREFS_CHANGED_EVENT = "wowsp://stats-prefs-changed";
 
-function persist(p: StatsPrefs): void {
+/** Returns whether the write landed — the store's save() flashes the
+ *  title-bar Saved chip only on a real persist (a throwing storage keeps
+ *  the choice session-only and stays silent, see readStored). */
+function persist(p: StatsPrefs): boolean {
   try {
     localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify(p));
     // Broadcast only after a successful write: the overlay re-reads the
     // blob off localStorage, so announcing a write that threw would show
     // it a stale blob as if it were current.
     emitTauriEvent(STATS_PREFS_CHANGED_EVENT);
+    return true;
   } catch {
     // see readStored
+    return false;
   }
 }
 
@@ -465,54 +471,70 @@ export function prAlgoForRequest(): PrAlgo | undefined {
   return statsPrefsState.value.prEnabled ? statsPrefsState.value.prAlgo : undefined;
 }
 
+/** First-run seed path (the onboarding wizard's PR default): apply a
+ *  partial patch and persist WITHOUT the Saved flash — a seeded default is
+ *  not a user edit, and the wizard fires it before the user has touched
+ *  anything. */
+export function seedStatsPrefs(patch: Partial<StatsPrefs>): void {
+  Object.assign(statsPrefsState.value, patch);
+  persist({ ...statsPrefsState.value });
+}
+
 export const useStatsPrefsStore = defineStore("statsPrefs", () => {
   /** Shared with the module-level ref — the store is the (only) write API,
    *  persisting on every mutation. */
   const prefs = statsPrefsState;
 
+  /** The user-action write path: persist + flash the title-bar Saved chip
+   *  on success. Boot-time heal-writes (loadStatsPrefs) call persist()
+   *  directly and stay silent — the chip belongs to real edits only. */
+  function save() {
+    if (persist({ ...prefs.value })) notifySettingsSaved();
+  }
+
   function setPrEnabled(v: boolean) {
     prefs.value.prEnabled = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setPrAlgo(v: PrAlgo) {
     prefs.value.prAlgo = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setSealsEnabled(v: boolean) {
     prefs.value.sealsEnabled = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setLocalizedTiers(v: boolean) {
     prefs.value.localizedTiers = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setWeightedTeamWr(v: boolean) {
     prefs.value.weightedTeamWr = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setLiveRosterCompact(v: boolean) {
     prefs.value.liveRosterCompact = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setLiveRosterPrTint(v: boolean) {
     prefs.value.liveRosterPrTint = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setPostbattleRosterFull(v: boolean) {
     prefs.value.postbattleRosterFull = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setTeamIntelEnabled(v: boolean) {
     prefs.value.teamIntelEnabled = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setSealDisabled(kind: StampKind, disabled: boolean) {
@@ -520,7 +542,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     if (disabled) next[kind] = true;
     else delete next[kind];
     prefs.value.sealDisabled = next;
-    persist({ ...prefs.value });
+    save();
   }
 
   /** The one write path for the column list — add / remove / reorder all
@@ -530,7 +552,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     const next = parseOverlayColumns(cols);
     if (next.length === cols.length) {
       prefs.value.overlayColumns = next;
-      persist({ ...prefs.value });
+      save();
     }
     // A rejected write (dup / over-limit) silently no-ops: the editor UI
     // prevents those states, so this is only the hand-edited-blob guard.
@@ -538,12 +560,12 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
 
   function setOverlayBattleScope(v: RosterBattleScope) {
     prefs.value.overlayBattleScope = v;
-    persist({ ...prefs.value });
+    save();
   }
 
   function setOverlayIntel<K extends keyof OverlayIntelToggles>(key: K, v: boolean) {
     prefs.value.overlayIntel = { ...prefs.value.overlayIntel, [key]: v };
-    persist({ ...prefs.value });
+    save();
   }
 
   function setOverlayTeamAvg<K extends keyof OverlayTeamAvgToggles>(
@@ -551,7 +573,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     v: boolean,
   ) {
     prefs.value.overlayTeamAvg = { ...prefs.value.overlayTeamAvg, [key]: v };
-    persist({ ...prefs.value });
+    save();
   }
 
   return {

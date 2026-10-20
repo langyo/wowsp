@@ -14,6 +14,8 @@
  */
 import { ref } from "vue";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
+
 export const WALLPAPER_OVERLAY_STORAGE_KEY = "wowsp-wallpaper-overlay";
 export const WALLPAPER_OVERLAY_DEFAULT = 80;
 export const WALLPAPER_OVERLAY_MIN = 0;
@@ -51,6 +53,7 @@ export function setWallpaperOverlayPercent(percent: number) {
   wallpaperOverlayPercent.value = clampPercent(percent);
   try {
     localStorage.setItem(WALLPAPER_OVERLAY_STORAGE_KEY, String(wallpaperOverlayPercent.value));
+    notifySettingsSaved();
   } catch {
     // storage unavailable — the choice holds for the session
   }

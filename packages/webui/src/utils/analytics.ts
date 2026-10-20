@@ -20,6 +20,8 @@
  */
 import { readonly, ref } from "vue";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
+
 const APP_MEASUREMENT_ID = "G-BGD43VPDEJ";
 
 /** Virtual canonical origin every app hit is reported under. */
@@ -150,6 +152,7 @@ export function setAnalyticsEnabled(value: boolean): void {
   try {
     if (value) localStorage.removeItem(DISABLED_KEY);
     else localStorage.setItem(DISABLED_KEY, "1");
+    notifySettingsSaved();
   } catch {
     // Unpersistable storage: the session preference above still applies.
   }

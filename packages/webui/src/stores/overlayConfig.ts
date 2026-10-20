@@ -33,6 +33,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { api } from "@/api";
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 
 /** Live-battle view modes (schema v2 `table` field). */
 export type TableAnchorMode = "detect" | "off";
@@ -110,6 +111,7 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
         table.value = parseTable(saved?.table);
         roster.value = parseRoster(saved?.roster);
         aimCard.value = parseAimCard(saved?.aimCard);
+        notifySettingsSaved();
       } catch {
         // best-effort persistence; the in-memory flag still applies
       }

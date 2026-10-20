@@ -1,6 +1,8 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
+
 /** What the window close button does. "ask" is never written to storage —
  *  it IS the absence of the key, so builds that only understand the two
  *  concrete actions keep working against the same slot. */
@@ -27,13 +29,16 @@ export function loadCloseAction(): CloseAction {
 
 /** Persist one action. "ask" removes the key rather than writing the string
  *  — absent IS the ask state, and older builds only understand the two
- *  concrete values. Failures are silent: the choice holds for the session. */
-function persist(action: CloseAction): void {
+ *  concrete values. Failures are silent: the choice holds for the session.
+ *  Returns whether the write landed (the Saved chip flashes on success). */
+function persist(action: CloseAction): boolean {
   try {
     if (action === "ask") localStorage.removeItem(CLOSE_ACTION_STORAGE_KEY);
     else localStorage.setItem(CLOSE_ACTION_STORAGE_KEY, action);
+    return true;
   } catch {
     // see loadCloseAction
+    return false;
   }
 }
 
@@ -52,7 +57,7 @@ export const useCloseBehaviorStore = defineStore("closeBehavior", () => {
 
   function setAction(a: CloseAction) {
     action.value = a;
-    persist(a);
+    if (persist(a)) notifySettingsSaved();
   }
 
   return { action, setAction };

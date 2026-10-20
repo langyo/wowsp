@@ -4,6 +4,7 @@
 import { computed, onMounted, ref } from "vue";
 
 import { api, type NetworkConfig } from "@/api";
+import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 
 export function useSettingsNetworkState() {
   // ── Network proxy (global for all outbound requests) ──────────────────
@@ -79,6 +80,7 @@ export function useSettingsNetworkState() {
       const effective = saved ?? payload;
       netCfg.value = { ...effective };
       netLastSaved.value = { ...effective };
+      notifySettingsSaved();
       netSavedFlash.value = true;
       window.clearTimeout(netFlashTimer);
       netFlashTimer = window.setTimeout(() => (netSavedFlash.value = false), 1600);
