@@ -218,7 +218,7 @@
     "muzzleVelocityHint": "Initial shell speed at the muzzle.",
     "airDrag": "Air Drag",
     "airDragHint": "How quickly the shell loses speed in flight. Lower = flatter trajectory.",
-    "penetration": "Penetration @ {range} km",
+    "penetration": "Penetration {'@'} {range} km",
     "alphaDamage": "Alpha Damage",
     "ricochetAngles": "Ricochet Angles",
     "overmatch": "Overmatch vs {mm} mm"

@@ -1,4 +1,4 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { Check, Download, MessageCircle, RefreshCw } from "@lucide/vue";
 
@@ -7,6 +7,7 @@ import { HkButton, HkModal } from "@celestia-island/hikari";
 import { t } from "@/i18n";
 import { SPECIAL_THANKS } from "@/data/attributions";
 import { useUpdaterStore } from "@/stores/updater";
+import { usePiggyReminderStore } from "@/stores/piggyReminder";
 import { openExternal } from "@/utils/openExternal";
 import AnnouncementContent from "./AnnouncementContent";
 import "./AboutModal.scss";
@@ -25,9 +26,12 @@ import "./AboutModal.scss";
  * values shared by every locale via the en-US fallback.
  * Two piggy easter eggs ride along: hovering the subtitle crossfades it
  * into its pig persona (and lights a skin-tone glow behind the logo),
- * clicking the logo pops a localized "hmph" bubble at a random nearby
- * spot and crossfades the description into a random localized "did you
- * know" trivia (click the trivia to get the plain description back).
+ * clicking the logo pops a localized bubble at a random nearby spot (a
+ * "hmph", or a poke invitation) and crossfades the description into a
+ * random localized "did you know" trivia (click the trivia to get the
+ * plain description back). The piggy's periodic reminder toast
+ * (PiggyReminderToast) can land the user here and arms a hmph-then-poke
+ * greeting through the piggyReminder store's flag.
  */
 
 const TECH_LINKS = [
@@ -40,7 +44,9 @@ const TECH_LINKS = [
 ];
 
 /** Piggy easter-egg message pools: the hums barked in the click bubble
- *  (about.hum1..5) and the cold-knowledge facts swapped in under the logo
+ *  (about.hum1..5), the poke invitations mixed into the same pool
+ *  (about.poke1..3 — besides hmphing, the piggy now and then invites a
+ *  poke), and the cold-knowledge facts swapped in under the logo
  *  (about.trivia01..N). Enumerated message keys instead of JSON arrays so
  *  per-item key parity across all eight locales stays enforced by
  *  scripts/check_i18n.py and t() remains the only lookup path. */
@@ -51,6 +57,14 @@ const HUM_KEYS = [
   "about.hum4",
   "about.hum5",
 ];
+const POKE_KEYS = [
+  "about.poke1",
+  "about.poke2",
+  "about.poke3",
+];
+/** What a logo click draws its bubble from: the hums plus the poke
+ *  invitations, uniformly. */
+const BUBBLE_KEYS = [...HUM_KEYS, ...POKE_KEYS];
 const TRIVIA_KEYS = [
   "about.trivia01",
   "about.trivia02",
@@ -97,7 +111,16 @@ const TRIVIA_KEYS = [
   "about.trivia46",
   "about.trivia47",
   "about.trivia48",
+  "about.trivia49",
 ];
+
+/** Per-key draw weights over the uniform trivia pool. The credits
+ *  pointer (trivia49 — the settings rail's bottom-left Supporters &
+ *  credits section is worth a look) rides 4x the default chance, so
+ *  pokes surface it regularly without it drowning out the rest. */
+const TRIVIA_WEIGHTS: Record<string, number> = {
+  "about.trivia49": 4,
+};
 
 /** The one trivia entry that name-drops a credited helper: @BestNaomi is
  *  rendered as an external link to his Bilibili space — the same URL the
@@ -136,10 +159,10 @@ function renderTriviaFact(text: string) {
 }
 
 /** One floating bubble around the logo — the point it grows from, in px
- *  offsets from the logo centre, and the hum message key it renders. */
+ *  offsets from the logo centre, and the message key it renders. */
 interface PiggyBubble {
   id: number;
-  humKey: string;
+  key: string;
   x: number;
   y: number;
 }
@@ -154,6 +177,24 @@ function randomKey(keys: string[], last: string): string {
   return key;
 }
 
+/** Pick a key at random with per-key weights (an unlisted key weighs 1),
+ *  dodging `last` the same way randomKey does. */
+function weightedRandomKey(
+  keys: string[],
+  weights: Record<string, number>,
+  last: string,
+): string {
+  const pool = keys.filter((key) => key !== last);
+  let total = 0;
+  for (const key of pool) total += weights[key] ?? 1;
+  let roll = Math.random() * total;
+  for (const key of pool) {
+    roll -= weights[key] ?? 1;
+    if (roll < 0) return key;
+  }
+  return pool[pool.length - 1];
+}
+
 /** The About body — logo, version + updater, tech tags, links, license
  *  footer, QQ line, then the mandatory free & open-source notice (the
  *  user's own language) as the last card. Rendered inside the AboutModal
@@ -163,6 +204,7 @@ export const AboutContent = defineComponent({
   setup() {
     const version = ref("0.1.0");
     const updater = useUpdaterStore();
+    const piggyReminder = usePiggyReminderStore();
 
     // --- piggy easter eggs ---
     /** True while the subtitle is hovered — flips the pig label and the
@@ -177,10 +219,13 @@ export const AboutContent = defineComponent({
     const bubbles = ref<PiggyBubble[]>([]);
     let bubbleSeq = 0;
     const bubbleTimers = new Set<number>();
-    let lastHumKey = "";
+    let lastBubbleKey = "";
     let lastTriviaKey = "";
 
-    const popBubble = (): void => {
+    /** Pop a bubble at a random spot around the logo. The key is drawn
+     *  from the mixed bubble pool unless the caller pins one (the toast
+     *  greeting pins its messages so the visit always reads as planned). */
+    const popBubble = (key?: string): void => {
       const id = ++bubbleSeq;
       // Random spot around the logo — resample while the anchor would sit
       // inside the logo box, or high enough above it to clip against the
@@ -193,9 +238,9 @@ export const AboutContent = defineComponent({
         x = Math.round(Math.cos(angle) * radius);
         y = Math.round(Math.sin(angle) * radius);
       } while ((Math.abs(x) < 46 && Math.abs(y) < 46) || y < -40);
-      const humKey = randomKey(HUM_KEYS, lastHumKey);
-      lastHumKey = humKey;
-      bubbles.value = [...bubbles.value, { id, humKey, x, y }];
+      const bubbleKey = key ?? randomKey(BUBBLE_KEYS, lastBubbleKey);
+      lastBubbleKey = bubbleKey;
+      bubbles.value = [...bubbles.value, { id, key: bubbleKey, x, y }];
       const timer = window.setTimeout(() => {
         bubbleTimers.delete(timer);
         bubbles.value = bubbles.value.filter((bubble) => bubble.id !== id);
@@ -204,9 +249,39 @@ export const AboutContent = defineComponent({
     };
 
     const swapTrivia = (): void => {
-      triviaKey.value = randomKey(TRIVIA_KEYS, lastTriviaKey);
+      triviaKey.value = weightedRandomKey(TRIVIA_KEYS, TRIVIA_WEIGHTS, lastTriviaKey);
       lastTriviaKey = triviaKey.value;
     };
+
+    /** Greeting for a reminder-toast arrival: one hmph, then a poke
+     *  invitation drawn from POKE_KEYS (guaranteed, not the mixed pool)
+     *  so the visit always teaches that the logo can be poked. The poke
+     *  fires once the hum's 1.6 s life has ended. */
+    const greetArrival = (): void => {
+      const humTimer = window.setTimeout(() => {
+        bubbleTimers.delete(humTimer);
+        popBubble(randomKey(HUM_KEYS, lastBubbleKey));
+      }, 700);
+      bubbleTimers.add(humTimer);
+      const pokeTimer = window.setTimeout(() => {
+        bubbleTimers.delete(pokeTimer);
+        popBubble(randomKey(POKE_KEYS, lastBubbleKey));
+      }, 2300);
+      bubbleTimers.add(pokeTimer);
+    };
+
+    // The reminder toast arms the hand-off right before landing here;
+    // watch (with immediate) covers both orders — section already
+    // mounted vs. mounted after the click. The store's latch makes the
+    // consume single-shot, so exactly one AboutContent greets even when
+    // several are alive (desktop /settings page + settings modal).
+    watch(
+      () => piggyReminder.arrivedFromToast,
+      (arrived) => {
+        if (arrived && piggyReminder.consumeArrival()) greetArrival();
+      },
+      { immediate: true },
+    );
 
     const onLogoClick = (): void => {
       popBubble();
@@ -252,7 +327,7 @@ export const AboutContent = defineComponent({
                   top: `calc(50% + ${bubble.y}px)`,
                 }}
               >
-                {t(bubble.humKey)}
+                {t(bubble.key)}
               </span>
             ))}
           </button>

@@ -1,4 +1,4 @@
-/** Attributions settings section: supporters, sponsor, upstream projects
+/** Attributions settings section: sponsor, supporters, upstream projects
  *  and resource partners. */
 import { defineComponent } from "vue";
 import { HkSettingsGroup, HkSettingsHint } from "@celestia-island/hikari";
@@ -17,17 +17,13 @@ export default defineComponent({
   setup() {
     return () => (
           <>
-          {/* attributions — the categorized supporter page: SPECIAL
-              THANKS first (cards with live Bilibili avatars, the whole
-              card opens their space page), then the author's afdian
-              SPONSOR card, then the upstream projects, and the asset /
-              resource partners LAST. The same AuthorMark component
-              annotates the desktop wallpaper. */}
-          <HkSettingsGroup title={t("settings.supportersTitle")}>
-            <HkSettingsHint>{t("settings.supportersHint")}</HkSettingsHint>
-            <SupporterCards />
-          </HkSettingsGroup>
-          {/* sponsor — second group: one wide card opening the author's
+          {/* attributions — the categorized supporter page: the author's
+              afdian SPONSOR card FIRST, then SPECIAL THANKS (cards with
+              live Bilibili avatars, the whole card opens their space
+              page), then the upstream projects, and the asset / resource
+              partners LAST. The same AuthorMark component annotates the
+              desktop wallpaper. */}
+          {/* sponsor — leading group: one wide card opening the author's
               afdian page, carrying the per-locale sponsor disclaimers
               (what the funds buy, voluntary, no hiring relation, open
               source with no sponsor-gated features, no WG/Lesta/360
@@ -35,6 +31,11 @@ export default defineComponent({
           <HkSettingsGroup title={t("settings.sponsorTitle")}>
             <HkSettingsHint>{t("settings.sponsorHint")}</HkSettingsHint>
             <SponsorCard />
+          </HkSettingsGroup>
+          {/* special thanks — second group. */}
+          <HkSettingsGroup title={t("settings.supportersTitle")}>
+            <HkSettingsHint>{t("settings.supportersHint")}</HkSettingsHint>
+            <SupporterCards />
           </HkSettingsGroup>
           <HkSettingsGroup title={t("settings.upstreamTitle")}>
             <HkSettingsHint>{t("settings.upstreamHint")}</HkSettingsHint>

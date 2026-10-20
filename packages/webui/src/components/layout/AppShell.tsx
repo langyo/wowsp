@@ -43,6 +43,7 @@ import AudioPlayerToast from "./AudioPlayerToast";
 import ModUpdateToast from "./ModUpdateToast";
 import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
+import PiggyReminderToast from "./PiggyReminderToast";
 import ManualLocateOverlay from "@/features/replay/ManualLocateOverlay";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -509,6 +510,12 @@ export default defineComponent({
             selector): renders nothing while the pluginUpdates store is
             idle, so it mounts unconditionally in the same column. */}
         <ModUpdateToast />
+        {/* The piggy's periodic visitation card (猪猪找你有点事儿): one
+            card per period — first use + 7 days, then monthly — whose
+            action lands in the settings' About section and arms the
+            piggy's greeting there. Renders nothing outside the desktop
+            Tauri shell, so it mounts unconditionally in the same column. */}
+        <PiggyReminderToast />
 
         {/* In-game manual-locate picker (cached-frame drag box for the
             live-battle panel's 手动定位 flow): renders nothing until the

@@ -218,7 +218,7 @@
     "muzzleVelocityHint": "炮弹出膛时的速度。",
     "airDrag": "空气阻力",
     "airDragHint": "飞行中速度衰减的快慢。越低弹道越平直。",
-    "penetration": "穿深 @ {range} km",
+    "penetration": "穿深 {'@'} {range} km",
     "alphaDamage": "标伤",
     "ricochetAngles": "跳弹角",
     "overmatch": "对 {mm} mm 碾压"
