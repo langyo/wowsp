@@ -3,14 +3,40 @@
  * the one overlay mode (the Tab-table window's main.ts is the first). Bare
  * DOM like the table page.
  *
- * The card shows the player the crosshair is locked on: the in-game probe
- * latches the aimed avatar every tick (`aim: {name, flags}` in
- * telemetry.json, the same verdict that feeds nothing else anymore — the
- * in-game panel it once powered is retired) and the app's telemetry poller
- * relays it here as `wowsp://ingame-telemetry`. Career figures come through
- * the SAME backend command the table window and the main window use
- * (`lookup_players_stats_batch`), whose process-level session cache makes
- * names those windows already resolved cost zero WG traffic.
+ * The card shows the player the crosshair is locked on, as FOUR stacked
+ * lines (the tab table's own face, shrunken to one player):
+ *   1. the clan tag + nickname;
+ *   2. the career (overall average) figures;
+ *   3. the per-ship figures for the ship that player is sailing THIS
+ *      battle — the same `lookup_player_ship_stats` facility the table
+ *      window's ship-scoped columns use, sharing its process-lifetime
+ *      session cache so both windows together still cost ONE WG request
+ *      per player;
+ *   4. the seal cluster — the SAME verdict stamps the tab chips flank
+ *      their numbers with (career verdict through the hidden-profile clan
+ *      gate + composition tags through the shared merge rule), as one
+ *      horizontal line. Chinese-locale faces only, like the table's.
+ *
+ * Data intake (unchanged contract): the in-game probe latches the aimed
+ * avatar every tick (`aim: {name, flags}` in telemetry.json) and the app's
+ * telemetry poller relays it here as `wowsp://ingame-telemetry`. Career
+ * figures come through the SAME backend command the table window and the
+ * main window use (`lookup_players_stats_batch`), whose process-level
+ * session cache makes names those windows already resolved cost zero WG
+ * traffic.
+ *
+ * The text face is the TAB TABLE's own size: the same row-pitch formula
+ * the table's chips derive from the game's Tab geometry
+ * (min(15, max(9, pitch * 0.42))), fed by the `wowsp://overlay-anchor`
+ * event the backend already broadcasts to every overlay window on each
+ * Tab press; until the first anchor of the session the card wears the
+ * table's own fallback pitch. One root font-size drives every line (all
+ * inner sizes are em).
+ *
+ * The card block hugs its content — the native window is a fixed 380×120
+ * bounding box, but the dark glass wraps only the drawn lines (the box's
+ * remainder stays transparent), so a bare card never paints a tall empty
+ * slab.
  *
  * Content visibility is data-driven and deliberately dumb:
  *   - telemetry fresh + aim.name non-empty → the card renders;
@@ -22,13 +48,24 @@
  * The window itself hangs below the game window's center (the crosshair);
  * placement never crosses into this page.
  */
-import { battlesColor, damageColor, prTier, winrateColor } from "@/utils/winrate";
+import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 import { AI_NAME } from "@/utils/aiNames";
 import { isKnownRealm } from "@/utils/realms";
-// Display prefs (the PR-algo param) — the same tolerant read the table page
-// uses, so the card's PR can never disagree with the chips' under the
-// configured algorithm.
+import { careerStamp, type CareerStamp, type StampKind } from "@/utils/winrate";
+// Display prefs — the same tolerant read the table page uses, so the
+// card's PR can never disagree with the chips' under the configured
+// algorithm, and the seal kill switches gate the same kinds.
 import { readOverlayDisplayPrefs } from "./overlayPrefs";
+import {
+  careerLineHtml,
+  sealLineHtml,
+  shipLineHtml,
+  type AimComposition,
+  type AimShipRow,
+  type BatchStat,
+  type SealLineOptions,
+  STAMP_TEXT,
+} from "./aimcardLines";
 import "./aimcard.scss";
 
 // The one locale string the card needs: the battle-count unit pattern
@@ -63,17 +100,6 @@ interface OverlayTauriApi {
   };
 }
 const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
-
-/** Wire shape of one `lookup_players_stats_batch` row (the fields the card
- *  reads; the rest of the row is ignored here). */
-interface BatchStat {
-  winrate?: number | null;
-  avgDamage?: number | null;
-  pr?: number | null;
-  battles?: number | null;
-  clanTag?: string | null;
-  hidden: boolean;
-}
 
 /** Telemetry payload (the fields the card reads — see Main.py's
  *  write_telemetry for the full body). */
@@ -112,6 +138,40 @@ let fetchGen = 0;
 let inFlight = false;
 let refetchTimer: number | undefined;
 
+// Per-ship lists (per battle), keyed `${realm}:${accountId}`: undefined =
+// not fetched yet, null = the one attempt this battle failed (or the
+// backend answered nothing). The fetch rides sessionCache so the table
+// window's list answers here for free (and vice versa).
+const shipsByAccount = new Map<string, AimShipRow[] | null>();
+let shipsInFlight = false;
+
+// Composition seals, keyed by name — success values (including null, the
+// backend's per-name "no data") cache per battle; a failed call stays
+// uncached and re-arms only when the crosshair re-enters the name.
+const compositions = new Map<string, AimComposition | null>();
+let compInFlight = false;
+
+// Hidden-profile 过街老鼠 clan gate, keyed `${realm}:${clanId}` — the
+// table page's same map shape (two hidden clanmates share one verdict,
+// and the shared lookupClanWinrate module dedupes them onto one
+// clans/info request). An ABSENT key = verdict not in yet → the seal
+// line holds; a stored null = the lookup failed → fail-open stamp.
+const clanWinrates = new Map<string, number | null>();
+const clanGateOut = new Set<string>();
+
+// The user's custom seal pictures (kind → asset URL), synced from the
+// stamps folder exactly like the table page: read once at startup and
+// re-read on `wowsp://stamps-changed`. A kind absent here shows the
+// plain text seal.
+const customStamps: Partial<Record<StampKind, string>> = {};
+let stampsSequence = 0;
+
+// The card's text face, derived from the game's Tab row pitch — the
+// table page's exact formula, latched from the anchor event. null = wear
+// the fallback pitch (the table's own default) until the first anchor.
+const FALLBACK_PITCH = 24;
+let anchorPitch: number | null = null;
+
 /** Whether the current battle is a Clan Battle (军团战) — cross-server
  *  possible, so unreported names ride the backend's cross-realm pass. Same
  *  semantics as the table page's crossRealmBattle. */
@@ -122,12 +182,31 @@ let crossRealmBattle = false;
 interface ArenaInfo {
   matchGroup?: string | null;
   dateTime?: string | null;
-  vehicles: Array<{ name: string }>;
+  vehicles: Array<{ name: string; shipId?: number }>;
 }
 let arenaDate: string | null = null;
+let arenaVehicles: Array<{ name: string; shipId?: number }> = [];
+
+/** The battle ship's id for a nickname (the arena's vehicles carry it —
+ *  per-ship scoping keys off the ship that player is sailing THIS
+ *  battle). Same scan-per-call convention as the table page. */
+function shipIdOfName(name: string): number | null {
+  for (const v of arenaVehicles) {
+    if (v.name === name) return v.shipId ?? null;
+  }
+  return null;
+}
 
 function resetBattleState() {
+  // Invalidate any fetch still straddling the switch: a career landing
+  // from the previous battle must not answer the new one's first aim of
+  // the same name (its clan tag rides the landing).
+  fetchGen += 1;
   stats.clear();
+  shipsByAccount.clear();
+  compositions.clear();
+  clanWinrates.clear();
+  clanGateOut.clear();
   pendingClear();
   identityRealms = {};
   rosterNames.clear();
@@ -143,7 +222,7 @@ function pendingClear() {
   }
 }
 
-// ── Lookup (single name, on demand) ──────────────────────────────────────
+// ── Career lookup (single name, on demand) ───────────────────────────────
 
 function scheduleAimFetch() {
   if (!tauri || !realm || !aimName) return;
@@ -182,6 +261,12 @@ async function runAimFetch() {
       r ?? { winrate: null, avgDamage: null, pr: null, battles: null, hidden: false },
     );
     if (r?.clanTag) aimClanTag = r.clanTag;
+    // The landed row feeds the three dependent lines: the per-ship list,
+    // the composition verdict and (hidden profiles with a clan) the rat
+    // gate. All three re-render on their own landing.
+    scheduleShipFetch(name);
+    scheduleCompFetch(name);
+    scheduleClanGate(name);
   } catch {
     // Transport hiccup: leave uncached — the finally below applies the
     // no-retry-loop rule (re-arm only for a name no longer aimed).
@@ -207,28 +292,157 @@ async function runAimFetch() {
   }
 }
 
-// ── Formatting (the table page's same conventions) ───────────────────────
+// ── Per-ship lookup (the battle ship's line) ─────────────────────────────
 
-function fmtDamage(avg: number): string {
-  return avg >= 100000 ? `${Math.round(avg / 1000)}k` : `${(avg / 1000).toFixed(1)}k`;
+function scheduleShipFetch(name: string) {
+  if (!tauri || !realm) return;
+  const st = stats.get(name);
+  if (!st || st.hidden || st.accountId == null) return;
+  const accountId = st.accountId;
+  const entryRealm = st.realm ?? realm;
+  const key = `${entryRealm}:${accountId}`;
+  if (shipsByAccount.has(key) || shipsInFlight) return;
+  shipsInFlight = true;
+  void (async () => {
+    try {
+      const prAlgo = readOverlayDisplayPrefs().prAlgo;
+      const ships = (await tauri!.core.invoke("lookup_player_ship_stats", {
+        accountId,
+        realm: entryRealm,
+        // camelCase keys (ArgumentCase::Camel) — see runAimFetch.
+        ...(prAlgo != null ? { prAlgo } : {}),
+        // The shared read-through cache: the table window's ship-scoped
+        // columns fetch the same player's list — whoever asks first pays.
+        sessionCache: true,
+      })) as AimShipRow[];
+      // Cache REGARDLESS of the aim generation: the list is keyed by
+      // account (aim-independent) and session-stable, so a landed answer
+      // serves whichever name the crosshair sits on now — discarding it
+      // would leave that player's line on dots until the target cycled.
+      shipsByAccount.set(key, ships ?? null);
+    } catch {
+      // One attempt per account per battle (the table pipeline's same
+      // budget): cache the null verdict so the card does not re-probe a
+      // hard-down API on every aim tick; the battle switch clears it.
+      shipsByAccount.set(key, null);
+    } finally {
+      shipsInFlight = false;
+      // Render and re-arm REGARDLESS of the aim generation: the cache is
+      // aim-independent, and the bounced aim may be a NEWER generation
+      // than this landing — gating here is exactly what would leave that
+      // player's line on dots until the target cycled.
+      render();
+      const cur = aimName ? stats.get(aimName) : undefined;
+      if (
+        cur &&
+        !cur.hidden &&
+        cur.accountId != null &&
+        !shipsByAccount.has(`${cur.realm ?? realm}:${cur.accountId}`)
+      ) {
+        scheduleShipFetch(aimName);
+      }
+    }
+  })();
 }
 
-function fmtBattles(n: number): string {
-  return n >= 100000 ? `${Math.round(n / 1000)}k` : n >= 10000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+// ── Composition + clan gate (the seal line) ──────────────────────────────
+
+/** The seal pipeline's master gate, the table page's same rule: the prefs
+ *  switch AND the Chinese locales (the seal vocabulary is CJK wordplay —
+ *  an English face has no wording for it). */
+function sealsShown(): boolean {
+  return readOverlayDisplayPrefs().sealsOn && locale.startsWith("zh");
 }
 
-/** The battle count wearing its locale's unit (split around {n} so the
- *  count stays on the mono face and the unit word drops to the text face —
- *  the table page's battlesText, shrunk to the card's needs; the optional
- *  color rides the figure, the thin-sample red the table chips use). */
-function battlesText(n: number, color?: string): string {
-  const pattern = localized("battlesCount");
-  const at = pattern.indexOf("{n}");
-  const style = color ? ` style="color:${color}"` : "";
-  const number = `<span class="aim-num"${style}>${fmtBattles(n)}</span>`;
-  if (at < 0) return number;
-  const unit = (text: string) => (text ? `<span class="aim-unit">${text}</span>` : "");
-  return (at > 0 ? unit(pattern.slice(0, at)) : "") + number + unit(pattern.slice(at + 3));
+function scheduleCompFetch(name: string) {
+  if (!tauri || !realm || !sealsShown() || compInFlight) return;
+  if (compositions.has(name)) return;
+  const st = stats.get(name);
+  // Only resolvable profiles get a composition verdict: a hidden one is
+  // ungradeable (the rat verdict stands alone) and AI names have none.
+  if (!st || st.hidden) return;
+  compInFlight = true;
+  let threw = false;
+  void (async () => {
+    try {
+      const results = (await tauri!.core.invoke("lookup_players_composition", {
+        names: [name],
+        realm,
+      })) as Array<AimComposition | null>;
+      // Cache REGARDLESS of the aim generation: the verdict is keyed by
+      // name (aim-independent) and battle-stable — discarding a landed
+      // answer would leave the re-aimed name's merged seals unfetchable
+      // (its career row is already cached, so nothing re-asks).
+      compositions.set(name, results[0] ?? null);
+    } catch {
+      // Leave uncached: ONE attempt per name per battle (re-entry cannot
+      // re-arm — the career row is cached by then), the same budget the
+      // per-ship lane keeps. A seal is decoration; the next battle re-asks.
+      threw = true;
+    } finally {
+      compInFlight = false;
+      // Render and re-arm REGARDLESS of the aim generation: the bounced
+      // aim may be a NEWER generation than this landing. The re-arm fires
+      // only after a CLEAN landing for a name that still lacks a verdict
+      // (a throw must not re-run against a hard-down API — no loop).
+      render();
+      const cur = aimName ? stats.get(aimName) : undefined;
+      if (!threw && aimName && cur && !cur.hidden && !compositions.has(aimName)) {
+        scheduleCompFetch(aimName);
+      }
+    }
+  })();
+}
+
+function scheduleClanGate(name: string) {
+  if (!tauri || !realm || !sealsShown()) return;
+  const st = stats.get(name);
+  if (!st?.hidden || st.clanId == null) return;
+  // Cross-server rows resolved on a foreign cluster gate on THAT realm's
+  // clans/info (the table page's same key).
+  const key = clanWinrateKey(st.realm ?? realm, st.clanId);
+  if (clanWinrates.has(key) || clanGateOut.has(key)) return;
+  clanGateOut.add(key);
+  void lookupClanWinrate(st.realm ?? realm, st.clanId).then((wr) => {
+    clanGateOut.delete(key);
+    // Only the first verdict for a clan wins the slot — later duplicates
+    // (there shouldn't be any) must not resurrect a failed verdict.
+    if (!clanWinrates.has(key)) clanWinrates.set(key, wr);
+    render();
+  });
+}
+
+// ── Custom seal pictures ─────────────────────────────────────────────────
+
+async function loadCustomStamps() {
+  if (!tauri) return;
+  const sequence = ++stampsSequence;
+  try {
+    const files = (await tauri.core.invoke("stamp_list")) as Array<{
+      kind: string;
+      path: string;
+    }>;
+    const { convertFileSrc } = await import("@tauri-apps/api/core");
+    // Rebuild wholesale (the table page's same rule): the listing IS the
+    // state, and a reset deletes the kind's file — a merge-only update
+    // would keep the reset kind's stale URL rendering a dead image
+    // instead of falling back to the text seal.
+    const next: Partial<Record<StampKind, string>> = {};
+    for (const f of files) {
+      if ((Object.keys(STAMP_TEXT) as string[]).includes(f.kind)) {
+        next[f.kind as StampKind] = convertFileSrc(f.path);
+      }
+    }
+    // A newer import/reset owns the display even if this read finishes last.
+    if (sequence !== stampsSequence) return;
+    for (const key of Object.keys(customStamps) as StampKind[]) {
+      if (next[key] === undefined) delete customStamps[key];
+    }
+    Object.assign(customStamps, next);
+    render();
+  } catch {
+    // No stamps command / no customizations — the text seals stand.
+  }
 }
 
 // ── Render ───────────────────────────────────────────────────────────────
@@ -243,38 +457,78 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+/** The career verdict for the aimed name, or `"held"` while a hidden
+ *  profile's clan verdict is still owed — the table page's rule: a stamp
+ *  that flashes first and retracts a beat later is worse than none. */
+function careerVerdictFor(name: string): CareerStamp | null | "held" {
+  const st = stats.get(name);
+  if (!st) return null;
+  const clanId = st.hidden ? st.clanId : null;
+  const verdict =
+    clanId != null ? clanWinrates.get(clanWinrateKey(st.realm ?? realm, clanId)) : undefined;
+  if (clanId != null && verdict === undefined) return "held";
+  return careerStamp(st.pr, st.battles, st.winrate, st.hidden, verdict);
+}
+
 function render() {
   const body = document.body;
   if (!aimName) {
     body.innerHTML = "";
     return;
   }
+  const prefs = readOverlayDisplayPrefs();
   const s = stats.get(aimName);
-  const ship = shipNames[aimName] ?? "";
   const tag = aimClanTag ? `<span class="aim-tag">[${escapeHtml(aimClanTag)}]</span>` : "";
-  const head = `<div class="aim-head"><span class="aim-name">${tag}${escapeHtml(aimName)}</span>${
-    ship ? `<span class="aim-ship">${escapeHtml(ship)}</span>` : ""
-  }</div>`;
-  // Every figure degrades to the same em dash the table chips use when the
-  // answer hasn't landed or the profile is hidden — never a zero.
-  const fig = (inner: string, color?: string) =>
-    `<b class="aim-num${color ? "" : " aim-none"}"${color ? ` style="color:${color}"` : ""}>${inner}</b>`;
-  const wr = !s || s.hidden ? null : s.winrate;
-  const pr = !s || s.hidden ? null : s.pr;
-  const battles = !s || s.hidden ? null : s.battles;
-  const dmg = !s || s.hidden ? null : s.avgDamage;
-  const prBand = prTier(pr);
-  const chips = [
-    fig(wr != null ? `${wr.toFixed(1)}%` : "—", wr != null ? winrateColor(wr) : undefined),
-    fig(pr != null ? `${Math.round(pr)}` : "—", pr != null ? prBand.color : undefined),
-    battles != null
-      ? battlesText(battles, battlesColor(battles))
-      : `<b class="aim-num aim-none">—</b>`,
-    fig(dmg != null ? fmtDamage(dmg) : "—", dmg != null ? damageColor(dmg) : undefined),
-  ]
-    .map((inner) => `<span class="aim-chip">${inner}</span>`)
-    .join("");
-  body.innerHTML = `<div class="aim-card">${head}<div class="aim-chips">${chips}</div></div>`;
+  const head = `<div class="aim-head"><span class="aim-name">${tag}${escapeHtml(aimName)}</span></div>`;
+  const pattern = localized("battlesCount");
+  // Line 3 needs the stats row (account id) and the battle ship id; the
+  // readable label prefers the per-ship row's own name (the encyclopedia
+  // map's), falling back to the telemetry's roster ship name.
+  const shipId = shipIdOfName(aimName);
+  const entryRealm = s?.realm ?? realm;
+  const ships =
+    s?.accountId != null ? shipsByAccount.get(`${entryRealm}:${s.accountId}`) : undefined;
+  const shipRow = ships?.find((r) => r.shipId === shipId) ?? null;
+  const shipLabel = shipRow?.name ?? shipNames[aimName] ?? "";
+  // Lines 2+3 share ONE four-column grid (one .aim-grid, the ship cells
+  // simply absent when the line doesn't apply) so the two figure rows read
+  // as aligned columns regardless of each row's digit count.
+  let shipCells = "";
+  if (shipId != null && s && !s.hidden && s.accountId != null && shipLabel) {
+    shipCells = shipLineHtml(
+      ships,
+      shipId,
+      escapeHtml(shipLabel),
+      pattern,
+      // The shared clock phase-locks the dots' chase across rebuilds.
+      performance.now(),
+    );
+  }
+  // The seal line: the career verdict through the clan gate + the
+  // composition tags, the table chips' same merge. A held verdict renders
+  // nothing yet (no flash-then-retract).
+  let sealLine = "";
+  if (sealsShown() && !AI_NAME.test(aimName)) {
+    const verdict = careerVerdictFor(aimName);
+    if (verdict !== "held") {
+      const html = sealLineHtml(verdict, compositions.get(aimName) ?? null, {
+        disabled: prefs.sealsDisabled,
+        custom: customStamps,
+      } satisfies SealLineOptions);
+      if (html) sealLine = `<div class="aim-seals">${html}</div>`;
+    }
+  }
+  // One root font-size drives every line: the tab table's own face — the
+  // anchor's row pitch while one is known, the table's fallback pitch
+  // until then (same formula, same clamp).
+  const pitch = anchorPitch ?? FALLBACK_PITCH;
+  const fontSize = Math.min(15, Math.max(9, pitch * 0.42));
+  body.innerHTML =
+    `<div class="aim-card" style="font-size:${fontSize.toFixed(1)}px">` +
+    `${head}` +
+    `<div class="aim-grid">${careerLineHtml(s, pattern)}${shipCells}</div>` +
+    `${sealLine}` +
+    `</div>`;
 }
 
 // ── Wiring ───────────────────────────────────────────────────────────────
@@ -294,9 +548,13 @@ async function main() {
       resetBattleState();
     }
     crossRealmBattle = (a.matchGroup ?? "").toLowerCase().includes("clan");
-    for (const v of a.vehicles) {
+    arenaVehicles = a.vehicles ?? [];
+    for (const v of arenaVehicles) {
       if (!AI_NAME.test(v.name)) rosterNames.add(v.name);
     }
+    // A snapshot carrying shipIds arms the per-ship line for an aim that
+    // latched before the arena read.
+    render();
   });
   await listen("wowsp://ingame-telemetry", (e: { payload: unknown }) => {
     const payload = e.payload as TelemetryPayload | null;
@@ -345,6 +603,41 @@ async function main() {
       render();
     }
   });
+  // The tab table's geometry rides the anchor the backend already
+  // broadcasts to every overlay window on each Tab press — the card's
+  // text face IS the table's face. One latch is enough (the pitch never
+  // changes mid-session); later anchors just re-confirm it. The pitch
+  // measures the first two rows, which are ALLY rows (rowCenters is
+  // allies-first; the table page's allyBlock does the same) — with fewer
+  // than two ally rows the first gap spans the team split, and the card
+  // falls back to the table's default pitch instead of measuring across
+  // two different sub-tables.
+  await listen("wowsp://overlay-anchor", (e: { payload: unknown }) => {
+    const a = e.payload as {
+      rowCenters?: number[];
+      teamSplit?: number;
+      tableDetected?: boolean;
+    } | null;
+    if (!a?.rowCenters || a.tableDetected === false) return;
+    // teamSplit is the ally block's FRACTION of the rows (0.2..=1.0 on
+    // the wire) — derive the ally-row count from it.
+    const allyRows = Math.round((a.teamSplit ?? 0) * a.rowCenters.length);
+    if (allyRows < 2 || a.rowCenters.length < 2) return;
+    const dpr = window.devicePixelRatio || 1;
+    const pitch = Math.abs(a.rowCenters[1] - a.rowCenters[0]) / dpr;
+    if (!Number.isFinite(pitch) || pitch <= 0) return;
+    anchorPitch = pitch;
+    render();
+  });
+  // The stamps folder and the display prefs live-broadcast their writes —
+  // the card keeps pace with the table window (a seal customization or a
+  // PR-algorithm flip applies to the live card, not only the next one).
+  await listen("wowsp://stamps-changed", () => {
+    void loadCustomStamps();
+  });
+  await listen("wowsp://stats-prefs-changed", () => {
+    render();
+  });
   // Freshness watchdog: a dead probe (or Tab held past the poller's stale
   // window) must not leave a stale card hanging under the crosshair —
   // mirror the intake's 30 s rule on a slow interval.
@@ -354,6 +647,8 @@ async function main() {
       render();
     }
   }, 5_000);
+  // The card's own initial reads: whatever custom seals exist already.
+  await loadCustomStamps();
 }
 
 void main();
