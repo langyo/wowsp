@@ -42,12 +42,15 @@
    top-level on purpose — the flat classes reach it there. The popup
    hosts the columns editor alone (the dimension filter rows are gone —
    the battle scope keeps its settings row only), so the width serves
-   the editor's card row and nothing else. */
+   the editor's card row and nothing else: 30rem lets a full five-card
+   row read its metric and its common (≤3-glyph) scope labels where
+   24rem ellipsized them into "胜.." / "全.."; only the five-glyph
+   仅当前舰种 scope still truncates. */
 .live-battle__mode-pop {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  width: min(24rem, calc(100vw - 2.5rem));
+  width: min(30rem, calc(100vw - 2.5rem));
   /* Content inset rides the popover's own `padding` prop (hikari
      --hk-pad) since 0.55.176 — no hand-padded slot anymore. */
 
