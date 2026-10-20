@@ -39,9 +39,6 @@ LIST_SHIPS_BIN = TOOLS_DIR / "wows-list-ships.exe"
 BAKE_SCRIPT = SCRIPT_DIR / "bake_model.py"
 WOWSUNPACK_BIN = TOOLS_DIR / "wowsunpack.exe"   # built from cargo workspace
 
-EXPORTER_URL = "https://github.com/wows-tools/wows-model-exporter/releases/download/0.2.1/wows-model-exporter-windows-x86_64.zip"
-
-
 def find_game_path() -> str | None:
     sys.path.insert(0, str(SCRIPT_DIR))
     from _common import find_game_path as _fgp
@@ -49,20 +46,25 @@ def find_game_path() -> str | None:
 
 
 def ensure_tools():
-    """Ensure the exporter + list-ships binaries exist in target/model-tools/."""
+    """Ensure the exporter + list-ships binaries exist in target/model-tools/.
+
+    The binaries come from the TRACKED-IN-TREE vendor fork
+    (packages/tools/wows-model-exporter-vendor — WoWSP fixes on top of
+    upstream 0.2.1; upstream's release zip ships without them, so never
+    download over this). `just build gltf-exporter` runs the build.
+    """
     TOOLS_DIR.mkdir(parents=True, exist_ok=True)
     if EXPORTER_BIN.exists() and LIST_SHIPS_BIN.exists():
         return
-    print(f"[batch_bake] downloading tools to {TOOLS_DIR} ...")
-    import urllib.request
-    import zipfile
-    zip_path = TOOLS_DIR / "exporter.zip"
-    urllib.request.urlretrieve(EXPORTER_URL, str(zip_path))
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(TOOLS_DIR)
-    zip_path.unlink()
-    if not EXPORTER_BIN.exists():
-        raise FileNotFoundError(f"{EXPORTER_BIN.name} not found after extraction")
+    print("[batch_bake] exporter binaries missing — building the vendored "
+          "wows-model-exporter (just build gltf-exporter) ...")
+    rc = subprocess.run(
+        [sys.executable, str(SCRIPT_DIR / "build_gltf_exporter.py")],
+    ).returncode
+    if rc != 0 or not (EXPORTER_BIN.exists() and LIST_SHIPS_BIN.exists()):
+        raise FileNotFoundError(
+            f"{EXPORTER_BIN.name} / {LIST_SHIPS_BIN.name} unavailable — "
+            "run `just build gltf-exporter` and retry")
 
 
 def get_ship_names(game: str) -> list[str]:

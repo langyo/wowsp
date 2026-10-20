@@ -267,7 +267,11 @@ Before submitting, the relevant subset of `just lint` (or scoped
   `wows-core` are dependency sources and keep their historical formatting
   (the whole `packages/tools/wowsunpack-vendor` tree is an independent
   in-repo fork — no upstream sync; dependency bumps and fixes there are
-  WoWSP's own, see its workspace-root header comment).
+  WoWSP's own, see its workspace-root header comment). The same policy
+  covers `packages/tools/wows-model-exporter-vendor` (the WG ship GLB
+  exporter snapshot with WoWSP fixes on top; build via
+  `just build gltf-exporter` — never fetch upstream release binaries
+  over it).
 - **Cross-repo dependencies**: always consume published artifacts or
   vendored checkouts — never path dependencies pointing at local directories
   outside this repo. hikari comes from the npm package

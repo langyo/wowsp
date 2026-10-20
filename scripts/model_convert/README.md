@@ -138,7 +138,11 @@ decimation, texture downsampling — all forwarded to `wowsunpack`).
 `bake_model.py` simplifies a high-poly exporter GLB down to a small low-poly
 GLB (~60–150 KB) for the holographic viewer, using vertex-clustering
 decimation that keeps surfaces continuous. `batch_bake.py` runs the full
-export→bake pipeline for every playable ship.
+export→bake pipeline for every playable ship. The exporter binaries come
+from the tracked-in-tree fork
+(`packages/tools/wows-model-exporter-vendor` — build with
+`just build gltf-exporter`; never fetch upstream release binaries over
+it, they lack the WoWSP fixes).
 
 ### Resumable / batched runs
 
