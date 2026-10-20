@@ -48,23 +48,24 @@ describe("CompSeal", () => {
     const wrapper = mountSeal({ cls: "sub", veteran: true });
     const svg = svgOf(wrapper);
     expect(svg.attributes("aria-label")).toBe("水下奶蛙");
-    // Three glyphs — one big above, two small below — and the faint inner
-    // wash (印底) only the veteran tier carries.
+    // Three glyphs — the lead above, riding OVER its two flanks (the
+    // formation overlaps by design; the lead paints last, on top) — plus
+    // the faint inner wash (印底) only the veteran tier carries.
     expect(svg.findAll("path")).toHaveLength(3);
     expect(svg.find("rect[opacity='0.1']").exists()).toBe(true);
     // All three glyphs are the same class silhouette.
     for (const p of svg.findAll("path")) {
       expect(p.attributes("d")).toContain("M2.4 13.5");
     }
-    // The formation's transforms: one big (upper) + two equal smalls.
+    // The formation's transforms: one lead + two equal flanks.
     const transforms = svg
       .findAll("g[transform]")
       .map((g) => g.attributes("transform"));
     expect(transforms).toHaveLength(3);
     expect(
-      transforms.filter((t) => t?.includes("scale(1.02)")),
+      transforms.filter((t) => t?.includes("scale(1.4)")),
     ).toHaveLength(2);
-    expect(transforms.filter((t) => t?.includes("scale(1.8)"))).toHaveLength(1);
+    expect(transforms.filter((t) => t?.includes("scale(2.6)"))).toHaveLength(1);
   });
 
   it("renders nothing under a non-zh UI locale", () => {

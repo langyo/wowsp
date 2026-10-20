@@ -1,4 +1,4 @@
-import { defineComponent, type PropType } from "vue";
+import { defineComponent, Fragment, type PropType } from "vue";
 
 import { useLanguage } from "@/i18n/useLanguage";
 import { statsPrefsState } from "@/stores/statsPrefs";
@@ -25,6 +25,72 @@ const SEAL_LABEL: Record<"air" | "sub" | "airVeteran" | "subVeteran", string> = 
  *  the glyph and therefore the seed (its stronger verdict speaks through
  *  the formation and the wash, not a different grain). */
 const SEAL_SEED: Record<CompIconKind, number> = { air: 21, sub: 5 };
+
+/** One glyph placement: translate-x / translate-y / scale. */
+type GlyphPlace = [number, number, number];
+/** A tier's glyph arrangement: the lead glyph (the only one over 20%) and,
+ *  for the veteran tier, the two flanking glyphs — pressed UP INTO the
+ *  lead's lower arc so the formation OVERLAPS (a tight flight / wolfpack,
+ *  never three loose marks side by side). */
+interface GlyphFormation {
+  lead: GlyphPlace;
+  flanks?: [GlyphPlace, GlyphPlace];
+}
+
+/** Formations per class × variant — coordinates on the 100-unit seal face.
+ *  The lead rides the 24-grid silhouette at its mini scale and the 48-grid
+ *  body at its full scale (detail layer included); the flanks always ride
+ *  the plain 24-grid silhouette. Each class keeps its own proportions: the
+ *  plane fills the face tall, the squat submarine presses wider. */
+const FORMATIONS: Record<
+  CompIconKind,
+  Record<"mini" | "full", { minor: GlyphFormation; veteran: GlyphFormation }>
+> = {
+  air: {
+    mini: {
+      minor: { lead: [21.8, 21.8, 2.35] },
+      veteran: {
+        lead: [28.4, 22.2, 1.8],
+        flanks: [
+          [20.8, 52.9, 1.02],
+          [54.8, 52.9, 1.02],
+        ],
+      },
+    },
+    full: {
+      minor: { lead: [26, 26, 1] },
+      veteran: {
+        lead: [28.4, 21.4, 0.9],
+        flanks: [
+          [18.7, 50.9, 1.15],
+          [53.7, 50.9, 1.15],
+        ],
+      },
+    },
+  },
+  sub: {
+    mini: {
+      minor: { lead: [11.6, 13.2, 3.2] },
+      veteran: {
+        lead: [18.8, 17.5, 2.6],
+        flanks: [
+          [19, 43, 1.4],
+          [47.5, 43, 1.4],
+        ],
+      },
+    },
+    full: {
+      minor: { lead: [14, 15.5, 1.5] },
+      veteran: {
+        lead: [18.8, 15.5, 1.3],
+        flanks: [
+          [10, 41.5, 1.6],
+          [42, 41.5, 1.6],
+        ],
+      },
+    },
+  },
+};
 
 /**
  * Square composition SEAL (印章样式的成分图标) — the live panel's 空中小人 /
@@ -85,10 +151,19 @@ export default defineComponent({
       const url = (part: string) => `url(#${id(part)})`;
       const custom = stampOverrideUrl(kind) ?? stampOverrideUrl(props.cls);
       const body = COMP_ICON_BODY[props.cls];
-      /** The glyph zone — one centered glyph over 20%, the big-over-two
-       *  triangle formation over 50%. Full-variant coordinates press the
-       *  detailed 48-grid track for the lead glyph (scaled whole, so its
-       *  detail layer rides along); the flanks stay plain silhouettes. */
+      const formation = FORMATIONS[props.cls][mini ? "mini" : "full"][
+        props.veteran ? "veteran" : "minor"
+      ];
+      /** One placed glyph on the plain 24-grid silhouette track. */
+      const glyph24 = ([tx, ty, s]: GlyphPlace) => (
+        <g transform={`translate(${tx} ${ty}) scale(${s})`}>
+          <path d={body} fill="currentColor" />
+        </g>
+      );
+      /** The glyph zone — one centered glyph over 20%, the overlapping
+       *  big-over-two formation over 50%. The full variant's lead presses
+       *  the detailed 48-grid track (scaled whole, so its detail layer
+       *  rides along); everything else stays the plain silhouette. */
       const glyphZone = () => {
         if (custom != null) {
           return (
@@ -102,45 +177,25 @@ export default defineComponent({
             />
           );
         }
-        if (mini) {
-          return props.veteran ? (
-            <>
-              <g transform="translate(28.4 13.5) scale(1.8)">
-                <path d={body} fill="currentColor" />
-              </g>
-              <g transform="translate(20.5 62.5) scale(1.02)">
-                <path d={body} fill="currentColor" />
-              </g>
-              <g transform="translate(54.5 62.5) scale(1.02)">
-                <path d={body} fill="currentColor" />
-              </g>
-            </>
-          ) : (
-            <g transform="translate(21.8 21.8) scale(2.35)">
-              <path d={body} fill="currentColor" />
-            </g>
-          );
-        }
-        return props.veteran ? (
-          <>
-            <g transform="translate(29.6 15) scale(0.85)">
-              <path d={compIconBody48(props.cls)} fill="currentColor" />
-              {/* The detail layer (prop arc / periscope / portholes …) —
-                  static trusted markup from utils/compIcons. */}
-              <g class="comp-seal__detail" innerHTML={COMP_ICON_DETAIL[props.cls]} />
-            </g>
-            <g transform="translate(17.6 59.5) scale(1.1)">
-              <path d={body} fill="currentColor" />
-            </g>
-            <g transform="translate(56 59.5) scale(1.1)">
-              <path d={body} fill="currentColor" />
-            </g>
-          </>
+        const lead = mini ? (
+          glyph24(formation.lead)
         ) : (
-          <g transform="translate(26 26)">
+          <g transform={`translate(${formation.lead[0]} ${formation.lead[1]}) scale(${formation.lead[2]})`}>
             <path d={compIconBody48(props.cls)} fill="currentColor" />
+            {/* The detail layer (prop arc / periscope / portholes …) —
+                static trusted markup from utils/compIcons. */}
             <g class="comp-seal__detail" innerHTML={COMP_ICON_DETAIL[props.cls]} />
           </g>
+        );
+        return formation.flanks ? (
+          <>
+            {formation.flanks.map((place, i) => (
+              <Fragment key={i}>{glyph24(place)}</Fragment>
+            ))}
+            {lead}
+          </>
+        ) : (
+          lead
         );
       };
       return (
