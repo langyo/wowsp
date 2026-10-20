@@ -230,7 +230,17 @@
       "torpedoes": "Torpedoes",
       "antiAir": "Anti-Aircraft",
       "mobility": "Mobility",
-      "concealment": "Concealment"
+      "concealment": "Concealment",
+      "consumables": "Consumables"
+    },
+    "consumables": {
+      "unlimited": "Unlimited",
+      "charges": "Charges",
+      "workTime": "Active Time",
+      "reloadTime": "Reload Time",
+      "slotLabel": "Slot {n}",
+      "auto": "Auto-triggered",
+      "keysHint": "Keys follow the game's default consumable bindings (remappable in-game)."
     },
     "hp": "Hit Points",
     "hpHint": "Total damage the ship can take before sinking.",

@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
-import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
+import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpCircle } from "@lucide/vue";
 
 import { HkButton, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
@@ -19,6 +19,7 @@ import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
+import { buildConsumableSlots, consumableHintCard, type ConsumableSlotGroup } from "./consumables";
 import BuildPlanner from "./BuildPlanner";
 import ShipMyStatsPanel from "./ShipMyStatsPanel";
 import ServerTrendPanel from "./ServerTrendPanel";
@@ -651,6 +652,12 @@ const SpecsPanel = defineComponent({
   setup(props) {
     const toast = useToast();
     const groups = computed(() => buildShipSpecs(props.profile, props.nation, props.gameparams));
+    // Consumable slot groups join the unpacked GameParams (slot layout) with
+    // the baked entity dictionary; names follow the 素材翻译 data language.
+    const dataLanguage = useLanguage().dataLanguage;
+    const consumables = computed(() =>
+      buildConsumableSlots(props.gameparams, dataLanguage.value),
+    );
     const iconFor = (name: string) => {
       switch (name) {
         case "Shield": return Shield;
@@ -666,7 +673,7 @@ const SpecsPanel = defineComponent({
       navigator.clipboard.writeText(val).then(() => toast.info(t("ships.copied")), () => {});
     }
     return () => {
-      if (groups.value.length === 0) {
+      if (groups.value.length === 0 && consumables.value.length === 0) {
         return <p class="ship-detail__empty">{t("ships.detail.noSpecs")}</p>;
       }
       return (
@@ -701,6 +708,7 @@ const SpecsPanel = defineComponent({
               </section>
             );
           })}
+          {consumables.value.length ? <ConsumablesCard groups={consumables.value} /> : null}
         </div>
       );
     };
@@ -708,6 +716,66 @@ const SpecsPanel = defineComponent({
 });
 
 
+
+/** The specs tab's consumables card: one row per battle slot — the slot's
+ *  default key on the left, the mountable consumable(s) as name + count
+ *  chips on the right. Same-slot alternatives are wrapped in a rounded
+ *  bracket (the key centers on it) to read as "one of these"; every entry
+ *  carries a structured hover card (icon, charges, duration/cooldown and
+ *  the in-game description). */
+const ConsumablesCard = defineComponent({
+  name: "ConsumablesCard",
+  props: {
+    groups: { type: Array as () => ConsumableSlotGroup[], required: true },
+  },
+  setup(props) {
+    return () => (
+      <section class="specs-group specs-consum">
+        <header class="specs-group__head">
+          <LifeBuoy size={14} />
+          <h5 class="specs-group__title">{t("ships.spec.group.consumables")}</h5>
+        </header>
+        <div class="specs-consum__rows">
+          {props.groups.map((g) => (
+            <div class="specs-consum__group" key={g.slot}>
+              <div class="specs-consum__lead">
+                {g.key ? (
+                  <span
+                    class="specs-consum__key"
+                    data-hint={t("ships.spec.consumables.slotLabel", { n: g.slot + 1 })}
+                  >
+                    {g.key}
+                  </span>
+                ) : null}
+                <span
+                  class={{ "specs-consum__brace": true, "is-hidden": g.entries.length < 2 }}
+                  aria-hidden="true"
+                />
+              </div>
+              <div class="specs-consum__entries">
+                {g.entries.map((e) => (
+                  <div
+                    class="specs-consum__entry"
+                    key={`${e.entity}:${e.variant}`}
+                    data-hint-card={JSON.stringify(consumableHintCard(e, g))}
+                  >
+                    <span class={`specs-consum__name is-${e.tone}`}>{e.name}</span>
+                    <span class="specs-consum__count">
+                      {e.charges < 0
+                        ? t("ships.spec.consumables.unlimited")
+                        : `× ${e.charges}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p class="specs-consum__note">{t("ships.spec.consumables.keysHint")}</p>
+      </section>
+    );
+  },
+});
 
 const TrendBars = defineComponent({
   name: "TrendBars",

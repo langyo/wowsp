@@ -244,6 +244,145 @@
   }
 }
 
+/* ── Consumables card ──────────────────────────────────────────────────────
+   One row per battle slot inside a .specs-group card: the slot's default
+   battle key on the left edge, the mountable consumable(s) right-aligned as
+   name + count chips. Same-slot alternatives are wrapped in a rounded
+   bracket drawn open to the right; the key centers vertically across the
+   whole group (one key per slot, one-or-more alternatives). */
+.specs-consum {
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  &__group {
+    display: flex;
+    align-items: stretch;
+    gap: 0.3rem;
+  }
+
+  /* Fixed-width lead column so keys align across groups whether or not the
+     bracket is drawn; the key centers on the full group height. */
+  &__lead {
+    flex: none;
+    width: 1.9rem;
+    display: flex;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 0.25rem;
+  }
+
+  &__key {
+    align-self: center;
+    min-width: 1.05rem;
+    text-align: center;
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    line-height: 1.25;
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-muted) / 10%);
+    border: 1px solid rgb(var(--color-border) / 45%);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0.02rem 0.18rem;
+    cursor: default;
+  }
+
+  /* The switch-group bracket: a hairline arc hugging the alternatives'
+     left edge. Kept in the layout when a slot holds a single consumable
+     (visibility, not display) so the lead column never shifts. */
+  &__brace {
+    flex: none;
+    width: 0.42rem;
+    border: 2px solid rgb(var(--color-muted) / 45%);
+    border-right: none;
+    border-radius: 0.55rem 0 0 0.55rem;
+
+    &.is-hidden {
+      visibility: hidden;
+    }
+  }
+
+  &__entries {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.2rem;
+  }
+
+  &__entry {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    min-width: 0;
+    cursor: help;
+  }
+
+  /* Name pill tinted by the consumable's purpose; the default tone stays
+     neutral so unknown/event families don't scream for attention. */
+  &__name {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    padding: 0.05rem 0.35rem;
+    border-radius: var(--radius-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-muted) / 10%);
+
+    &.is-primary {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 10%);
+    }
+
+    &.is-success {
+      color: rgb(var(--color-success));
+      background: rgb(var(--color-success) / 10%);
+    }
+
+    &.is-warning {
+      color: rgb(var(--color-warning));
+      background: rgb(var(--color-warning) / 12%);
+    }
+
+    &.is-danger {
+      color: rgb(var(--color-danger));
+      background: rgb(var(--color-danger) / 10%);
+    }
+
+    &.is-info {
+      color: rgb(var(--color-info));
+      background: rgb(var(--color-info) / 10%);
+    }
+  }
+
+  /* Fixed grey quantity chip — deliberately NOT tone-tinted so charges stay
+     comparable across consumables at a glance ("× 3" / the unlimited word). */
+  &__count {
+    flex: none;
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-muted) / 12%);
+    padding: 0.05rem 0.3rem;
+    border-radius: var(--radius-xs);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__note {
+    margin: 0.1rem 0 0;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted) / 70%);
+  }
+}
+
 /* ── Armor & ballistics panel ─────────────────────────────────────────────
    Reuses the `.specs-group` card layout from SpecsPanel. Just wraps the
    groups + an approximation disclaimer. */
