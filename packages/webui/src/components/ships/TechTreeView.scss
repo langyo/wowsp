@@ -142,11 +142,13 @@
   border-radius: var(--radius-sm);
   background: rgb(var(--color-surface));
   cursor: pointer;
-  transition: border-color var(--duration-short), transform var(--duration-short);
+  /* Border-only hover: the connector geometry is measured against the
+     cards' resting boxes, so a hover translate would visibly detach the
+     dots/lines from a hovered card. */
+  transition: border-color var(--duration-short);
 
   &:hover {
     border-color: rgb(var(--color-primary) / 50%);
-    transform: translateY(-2px);
   }
 
   &--premium {

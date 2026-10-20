@@ -317,6 +317,24 @@
   &__tree-body {
     flex: 1 1 0%;
     min-height: 0;
+
+    // The background drags to pan (techTreePan), so the whole body
+    // advertises it — cards, ⓘ badges and the rail buttons override with
+    // their own cursors. Buttons and hint anchors never start a pan, so
+    // plain clicks keep landing on them.
+    cursor: grab;
+
+    &[data-panning] {
+      cursor: grabbing;
+      user-select: none;
+
+      // A pressed card sliding under the pointer must not light up as if
+      // hoverable while the drag owns the gesture; premium/special keep
+      // their own resting border colors.
+      .tech-card-v3:not(.tech-card-v3--premium):not(.tech-card-v3--special):hover {
+        border-color: rgb(var(--color-border) / 25%);
+      }
+    }
   }
 
   // The tree's row layout (rail + canvas side by side) moved here from
