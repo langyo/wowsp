@@ -1,5 +1,5 @@
 import { defineComponent, ref } from "vue";
-import { HkButton, HkSwitch, useToast } from "@celestia-island/hikari";
+import { HkSwitch, useToast } from "@celestia-island/hikari";
 import { ImagePlus, RotateCcw } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -7,7 +7,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import RatingStamp from "@/components/base/RatingStamp";
 import ImageSquareCropModal, { type ImageCropResult } from "@/components/base/ImageSquareCropModal";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
-import { importStampImage, resetStampImage } from "@/stores/stampOverrides";
+import { importStampImage, resetStampImage, stampOverrideUrl } from "@/stores/stampOverrides";
 import type { StampKind } from "@/utils/winrate";
 import "./SealCustomizer.scss";
 
@@ -34,11 +34,13 @@ const SEALS: Array<{ kind: StampKind; descKey: string }> = [
 ];
 
 /**
- * Per-seal customization rows for the settings modal's stats section: each
- * seal gets a live preview (default glyph, or the user's custom picture the
- * moment it lands), a show/hide switch (statsPrefs sealDisabled) and a
- * pick/reset pair for the custom image (commands::stamps — reset deletes
- * the file, which IS the fallback to the default glyph).
+ * Per-seal customization rows for the settings modal's stats section. The
+ * preview IS the control — no pick/reset button pair beside it: a seal on
+ * its default glyph opens the crop dialog on click, and a customized seal
+ * deletes its picture and falls back to the default glyph on click
+ * (re-customizing is simply the next click). The hover veil (an image /
+ * restore glyph over the preview) carries the affordance; each row keeps
+ * its show/hide switch (statsPrefs sealDisabled).
  *
  * The whole block renders only while seals can show at all — zh UI locale
  * AND the PR master AND the seals toggle on — mirroring RatingStamp's own
@@ -59,12 +61,15 @@ export default defineComponent({
     const visible = () =>
       uiLocale.value.startsWith("zh") && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled;
 
-    /** "自定义图片" opens the crop dialog instead of a bare file picker: the
+    /** The preview click: still on the default glyph → the crop dialog (the
      *  seal face is a square shown at 34–64px, so the dialog enforces the
-     *  square + min/max-side rules and previews the crop at real seal sizes
-     *  (with the shared −9° press) before anything lands on disk. */
-    function pick(kind: StampKind) {
-      dialogKind.value = kind;
+     *  square + min/max-side rules and previews the crop at real seal sizes,
+     *  with the shared −9° press, before anything lands on disk); already
+     *  customized → reset — deleting the file IS the fallback to the default
+     *  glyph. */
+    function onPreviewClick(kind: StampKind) {
+      if (stampOverrideUrl(kind) != null) void reset(kind);
+      else dialogKind.value = kind;
     }
 
     async function onCropConfirm({ bytes, ext }: ImageCropResult) {
@@ -99,34 +104,32 @@ export default defineComponent({
           <p class="seal-customizer__hint">{t("settings.sealCustomizer.desc")}</p>
           {SEALS.map(({ kind, descKey }) => {
             const disabled = prefs.prefs.sealDisabled[kind] === true;
+            const custom = stampOverrideUrl(kind) != null;
+            const hint = custom
+              ? t("settings.sealCustomizer.clickRemove")
+              : t("settings.sealCustomizer.clickEdit");
             return (
               <div
                 class={["seal-customizer__row", { "seal-customizer__row--off": disabled }]}
                 key={kind}
               >
-                <span class="seal-customizer__preview">
+                <button
+                  type="button"
+                  class={[
+                    "seal-customizer__preview",
+                    { "seal-customizer__preview--custom": custom },
+                  ]}
+                  disabled={disabled || busy.value === kind}
+                  title={hint}
+                  aria-label={hint}
+                  onClick={() => onPreviewClick(kind)}
+                >
                   <RatingStamp kind={kind} size={40} />
-                </span>
+                  <span class="seal-customizer__afford" aria-hidden="true">
+                    {custom ? <RotateCcw size={14} /> : <ImagePlus size={13} />}
+                  </span>
+                </button>
                 <span class="seal-customizer__desc">{t(`stats.${descKey}`)}</span>
-                <span class="seal-customizer__actions">
-                  <HkButton
-                    variant="secondary"
-                    size="sm"
-                    loading={busy.value === kind}
-                    disabled={disabled}
-                    onClick={() => void pick(kind)}
-                  >
-                    <ImagePlus size={13} /> {t("settings.sealCustomizer.pickImage")}
-                  </HkButton>
-                  <HkButton
-                    variant="ghost"
-                    size="sm"
-                    disabled={disabled}
-                    onClick={() => void reset(kind)}
-                  >
-                    <RotateCcw size={13} /> {t("settings.sealCustomizer.resetDefault")}
-                  </HkButton>
-                </span>
                 <HkSwitch
                   modelValue={!disabled}
                   onUpdate:modelValue={(v: boolean) => prefs.setSealDisabled(kind, !v)}

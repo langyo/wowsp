@@ -80,12 +80,16 @@ export interface PlayerSuggestion {
 /** 空中小人/水下小人 composition verdict for one player (Tab overlay seals).
  *  Mirrors `wowsp_tauri_shared::PlayerComposition`; the thresholds (career
  *  battles > 200, class share > 20%, veteran tier > 50%) are enforced
- *  backend-side. A veteran flag implies its base flag. */
+ *  backend-side. A veteran flag implies its base flag. The share percents
+ *  (0–100, rounded) feed the overlay's icon-badge figures; absent on older
+ *  payloads. */
 export interface PlayerComposition {
   air: boolean;
   sub: boolean;
   airVeteran: boolean;
   subVeteran: boolean;
+  airShare?: number | null;
+  subShare?: number | null;
 }
 
 /** Clan autocomplete item (WG clans/list). Mirrors `wowsp_tauri_shared::ClanSuggestion`. */

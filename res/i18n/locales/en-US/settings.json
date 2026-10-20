@@ -182,9 +182,9 @@
     "prTintToggleDesc": "Wash each live-roster row with the player's PR-tier color (red band red, purple band purple); on by default."
   },
   "sealCustomizer": {
-    "desc": "Toggle each seal individually, or set a custom picture per seal (stored in the stamps folder of the app data directory). Previews update live; resetting deletes the custom picture.",
-    "pickImage": "Custom image",
-    "resetDefault": "Reset to default",
+    "desc": "Click a seal to set a custom picture for it; a customized seal goes back to its default face with one click (pictures live in the stamps folder of the app data directory). The switch toggles each seal; previews update live.",
+    "clickEdit": "Click to set a custom image",
+    "clickRemove": "Click to remove the custom image and restore the default",
     "pickFailed": "Failed to import the custom seal image",
     "resetFailed": "Failed to reset the seal to its default",
     "dialogTitle": "Custom seal image"

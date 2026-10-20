@@ -54,9 +54,10 @@ let stampSeq = 0;
  *  keys) as the native tooltip — the same copy the seal customizer rows use.
  *
  *  Every surface outside the in-game Tab overlay shows the square 2x2
- *  faces; the Tab overlay chips press the verdict wording as PLAIN TEXT
- *  instead — their rows are far too short for a 2x2 face and the calligraphy
- *  is wasted at that size — see overlay/main.ts.
+ *  faces; the Tab overlay chips press the CAREER verdict wording as plain
+ *  text and the composition tags as glyph+share icon badges instead — their
+ *  rows are far too short for a 2x2 face and the calligraphy is wasted at
+ *  that size — see overlay/main.ts and utils/compIcons.ts.
  *
  * The seals are a Chinese-community artifact — they render nothing under any
  * other UI language, and a seal switched off individually (statsPrefs

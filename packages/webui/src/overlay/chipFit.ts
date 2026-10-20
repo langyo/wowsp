@@ -183,10 +183,16 @@ export function alignStatColumns(root: ParentNode): void {
  *  so a re-render between arm and fire stays safe (the stale img's event
  *  just re-runs the pass over the new tree, no debounce needed). Text
  *  seals (the default face) settle at layout time and need nothing here.
- *  `viewport` is read at fire time — the width the window has THEN is the
- *  one that clips. */
+ *  Both picture shapes count: the custom career-seal face (a bare
+ *  img.overlay-stamp) and the composition icon badge's inner glyph (an
+ *  img.overlay-comp__glyph riding `width:auto`, so its decode widens the
+ *  badge the same way). `viewport` is read at fire time — the width the
+ *  window has THEN is the one that clips. */
 export function refitWhenSealsSettle(root: ParentNode, viewport: () => number): void {
-  for (const img of root.querySelectorAll<HTMLImageElement>("img.overlay-stamp[data-stamp]")) {
+  const settling = root.querySelectorAll<HTMLImageElement>(
+    "img.overlay-stamp[data-stamp], img.overlay-comp__glyph--img",
+  );
+  for (const img of settling) {
     if (img.complete) continue;
     const refit = (): void => fitChips(root, viewport());
     img.addEventListener("load", refit, { once: true });

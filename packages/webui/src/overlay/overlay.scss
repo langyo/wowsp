@@ -341,6 +341,66 @@ html.overlay-hidden body {
   width: auto;
 }
 
+/* Composition ICON badges — the live-battle faces of 空中小人 / 水下小人
+   (compIconNode in overlay/main.ts): the class glyph (plane / submarine,
+   utils/compIcons mini track) plus the career share figure, replacing the
+   four-char wording the rows cannot spare the width for. The minor tier
+   (share > 20%) keeps the text seals' cinnabar plate; the veteran tier
+   (> 50%) recolors the whole badge — ink, figure and plate — into the warm
+   gold the team-average numbers already own, so the tier lands with the
+   number itself. Sized in em like the text seals; the badge box carries
+   its own padding/plate, overriding the span.overlay-stamp text-plate
+   rules it would otherwise inherit (same specificity, later in the file). */
+.overlay-chip span.overlay-comp {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24em;
+  color: rgb(226 74 66);
+  font-weight: 700;
+  white-space: nowrap;
+  /* Same one-step-below-chip scale as the text seals. */
+  font-size: 0.92em;
+  line-height: 1.2em;
+  padding: 0.05em 0.4em 0.05em 0.14em;
+  border: 1px solid rgb(226 74 66 / 50%);
+  border-radius: 0.45em;
+  background: rgb(226 74 66 / 14%);
+}
+
+.overlay-chip span.overlay-comp[data-tier="veteran"] {
+  color: rgb(255 210 122);
+  border-color: rgb(255 210 122 / 55%);
+  background: rgb(255 210 122 / 15%);
+}
+
+/* The glyph box: a fixed square the inline svg fills; a custom user
+   picture keeps its own aspect (width auto, same height). */
+.overlay-comp__glyph {
+  flex: none;
+  width: 1.16em;
+  height: 1.16em;
+  display: inline-flex;
+}
+
+.overlay-comp__glyph svg {
+  width: 100%;
+  height: 100%;
+}
+
+img.overlay-comp__glyph {
+  width: auto;
+  height: 1.18em;
+  border-radius: 0.2em;
+}
+
+/* The share figure rides the monospaced stack like every other number on
+   the chip — the percent is a figure first, a label second. */
+.overlay-comp__pct {
+  font-family: var(--overlay-num-font);
+  font-weight: 700;
+}
+
 /* Team summary card — the consumable intel estimate and/or the team
    averages flanking the table (one per side, at the blocks' outer ends).
    Same dark-glass chip skin and side anchoring as the row chips, stacked

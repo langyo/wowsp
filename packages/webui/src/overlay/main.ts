@@ -34,10 +34,11 @@ import {
   careerStamp,
   damageColor,
   prTier,
-  resolveStamps,
   winrateColor,
   type StampKind,
 } from "@/utils/winrate";
+// Composition icon glyphs (纯 TS 字符串 SVG — no Vue, safe on this bare page).
+import { compIconSvg, type CompIconKind } from "@/utils/compIcons";
 // Pure-TS transport wrapper (no Vue/Pinia) — safe for this bare-DOM page,
 // same as @/utils/winrate above.
 import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
@@ -243,13 +244,18 @@ interface BatchStat {
 /** Composition-seal verdict from `lookup_players_composition` (mirrors
  *  `wowsp_tauri_shared::PlayerComposition`; the >200 battles gate, the >20%
  *  minor share and the >50% veteran tier are enforced backend-side — a
- *  veteran flag implies its base flag). null = no data / hidden profile /
- *  that player's lookup failed. */
+ *  veteran flag implies its base flag). The `*Share` percents feed the icon
+ *  badge's figure beside the glyph. null = no data / hidden profile / that
+ *  player's lookup failed. */
 interface PlayerComposition {
   air: boolean;
   sub: boolean;
   airVeteran: boolean;
   subVeteran: boolean;
+  /** Career share of the class, percent 0–100 (absent on older payloads —
+   *  the badge then renders the glyph without the figure). */
+  airShare?: number | null;
+  subShare?: number | null;
 }
 
 // main.ts declares Window.__TAURI__ as `unknown` for the whole project —
@@ -618,13 +624,14 @@ function statPending(name: string): boolean {
   );
 }
 
-/** The seal node beside the chip numbers: the verdict wording as PLAIN
- *  TEXT in cinnabar — the overlay deliberately skips the calligraphy
- *  bitmaps the in-app RatingStamp faces press (chips are too small for
- *  the 2x2 face) — or the user's custom picture when the seal customizer
- *  imported one. data-stamp carries the kind to chipFit's trim pass (comp
- *  seals before career verdicts when a chip must shrink to stay inside
- *  the window). */
+/** The seal node beside the chip numbers: the CAREER verdict wording as
+ *  plain cinnabar text (the overlay deliberately skips the calligraphy
+ *  bitmaps the in-app RatingStamp faces press — chips are too small for a
+ *  2x2 face) — or the user's custom picture when the seal customizer
+ *  imported one. Composition tags do NOT come through here: they press as
+ *  icon badges (compIconNode below). data-stamp carries the kind to
+ *  chipFit's trim pass (comp badges before career verdicts when a chip must
+ *  shrink to stay inside the window). */
 function stampNode(kind: StampKind): string {
   if (PREFS.sealsDisabled.has(kind)) return "";
   const label = STAMP_TEXT[kind];
@@ -633,6 +640,40 @@ function stampNode(kind: StampKind): string {
     return `<img class="overlay-stamp" data-stamp="${kind}" src="${custom}" alt="${label}" title="${label}">`;
   }
   return `<span class="overlay-stamp" data-stamp="${kind}" title="${label}">${label}</span>`;
+}
+
+/** One live-battle composition icon badge — the face 空中小人 / 水下小人
+ *  wear in the overlay instead of the four-char wording: the class glyph
+ *  (plane / submarine) plus the career share figure ("34%"), so the tier
+ *  story (share > 20% minor, > 50% veteran) and the exact composition read
+ *  in one glance. The veteran tier recolors the whole badge gold
+ *  (data-tier, overlay.scss). data-stamp carries the TIER's own kind
+ *  (air / airVeteran / sub / subVeteran): the per-kind kill switch gates the
+ *  badge and chipFit's trim pass still sheds composition faces before
+ *  career verdicts. A custom picture imported for the kind — falling back
+ *  to its minor-tier sibling, so one picture covers both tiers — replaces
+ *  the glyph; the percent figure always rides beside it. */
+function compIconNode(cls: CompIconKind, comp: PlayerComposition): string {
+  const veteran = cls === "air" ? comp.airVeteran : comp.subVeteran;
+  const kind: StampKind =
+    cls === "air" ? (veteran ? "airVeteran" : "air") : veteran ? "subVeteran" : "sub";
+  if (PREFS.sealsDisabled.has(kind)) return "";
+  const base = cls === "air" ? "air" : "sub";
+  const custom = CUSTOM_STAMPS[kind] ?? CUSTOM_STAMPS[base];
+  const share = cls === "air" ? comp.airShare : comp.subShare;
+  const pct = share != null ? Math.round(share) : null;
+  const glyph =
+    custom != null
+      ? `<img class="overlay-comp__glyph overlay-comp__glyph--img" src="${custom}" alt="">`
+      : `<span class="overlay-comp__glyph">${compIconSvg(cls, "mini")}</span>`;
+  return (
+    `<span class="overlay-stamp overlay-comp" data-stamp="${kind}"` +
+    ` data-tier="${veteran ? "veteran" : "minor"}"` +
+    ` title="${STAMP_TEXT[kind]}${pct != null ? ` ${pct}%` : ""}">` +
+    glyph +
+    (pct != null ? `<b class="overlay-comp__pct">${pct}%</b>` : "") +
+    `</span>`
+  );
 }
 
 /** Scope → the muted tag a non-global column carries before its figure
@@ -751,15 +792,18 @@ function statFace(name: string, side: "ally" | "enemy"): string {
   return chipColumns(name, side);
 }
 
-/** The row's seal cluster (career verdict + composition tags through the
- *  shared merge rule, resolveStamps). Every seal of a side sits on ONE
- *  flank — the outermost one, past the name column — so the stats and name
- *  columns stay clean for every row; the cluster rides the same merge
- *  semantics as ever: a 神了 or 猴 verdict alongside comp tags collapses
- *  into the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴 seals, which
- *  replace (consume) their constituents; 蛆 and 过街老鼠 each suppress the
- *  comp tags entirely, and a >50% class share upgrades the minor tag to
- *  the veteran 奶龙 / 奶蛙 seal in the career-leads-then-air-then-sub order.
+/** The row's seal cluster (career verdict text + the composition icon
+ *  badges). Every seal of a side sits on ONE flank — the outermost one,
+ *  past the name column — so the stats and name columns stay clean for
+ *  every row. The cluster rides resolveStamps' merge SEMANTICS with one
+ *  overlay-specific turn: the floor verdicts stand verbatim (蛆 and
+ *  过街老鼠 each suppress the composition entirely — a hidden profile's
+ *  composition is ungradeable), but the merge LADDER decomposes, because
+ *  the icon badge IS the composition face here: a 神了 / 猴 verdict rides
+ *  its own text seal BESIDE the badge(s) instead of collapsing into the
+ *  空中神人 / 水下神人 / 空中小猴 / 水下小猴 four-char seals, which stay the
+ *  water-meter faces' wording (RatingStamp / resolveStamps). Career-leads-
+ *  then-air-then-sub order as ever.
  *  A name without stats yet shows no seal at all — the verdicts are
  *  derived from data the stats/composition batches bring. Hidden profiles
  *  with a clan additionally HOLD their seal until the clan verdict lands
@@ -787,13 +831,19 @@ function sealNodes(name: string): string {
     }
   }
   const comp = compositions.get(cacheKey(name)) ?? null;
-  return resolveStamps(career, comp).map(stampNode).join("");
+  // resolveStamps' floors: 蛆 / 过街老鼠 suppress the composition tags.
+  if (career === "maggot" || career === "rat") return stampNode(career);
+  let out = career ? stampNode(career) : "";
+  if (comp?.air) out += compIconNode("air", comp);
+  if (comp?.sub) out += compIconNode("sub", comp);
+  return out;
 }
 
 /** Whether a rendered seal cluster is exactly the lone 过街老鼠 stamp: both
- *  the text face and a custom picture carry data-stamp, and resolveStamps
- *  guarantees a rat verdict stands alone (a hidden profile's composition is
- *  ungradeable), so one rat marker and no other stamp is the whole check. */
+ *  the text face and a custom picture carry data-stamp, and sealNodes'
+ *  floor pass guarantees a rat verdict stands alone (a hidden profile's
+ *  composition is ungradeable), so one rat marker and no other stamp is the
+ *  whole check. */
 function isRatAloneFace(seals: string): boolean {
   return (
     seals !== "" &&

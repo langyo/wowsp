@@ -1654,8 +1654,22 @@ fn player_suggestion_and_composition_rename_account_id() {
         sub: false,
         air_veteran: true,
         sub_veteran: false,
+        air_share: Some(56),
+        sub_share: None,
     });
-    assert_exact_keys(&v, &["air", "sub", "airVeteran", "subVeteran"]);
+    assert_exact_keys(
+        &v,
+        &[
+            "air",
+            "sub",
+            "airVeteran",
+            "subVeteran",
+            "airShare",
+            "subShare",
+        ],
+    );
+    assert_eq!(v["airShare"], 56);
+    assert_eq!(v["subShare"], serde_json::Value::Null);
 }
 
 #[test]
