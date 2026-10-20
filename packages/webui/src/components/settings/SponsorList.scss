@@ -1,0 +1,74 @@
+// Afdian sponsor chips (credits section's bottom group) — a compact
+// wrap-row variant of the special-thanks card grammar: live afdian
+// avatar (initial-letter disc fallback), name, and a small dot marking
+// sponsors with a live monthly plan.
+
+.sponsor-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.sponsor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0.25rem 0.7rem 0.25rem 0.3rem;
+  border: 1px solid rgb(var(--color-border) / 22%);
+  border-radius: 999px;
+  background: rgb(var(--color-surface) / 82%);
+  background: rgb(var(--color-surface) / min(100%, calc(82% * var(--ui-opacity, 1))));
+  color: rgb(var(--color-text));
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: rgb(var(--color-border) / 45%);
+  }
+
+  &__avatar {
+    flex: none;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    object-fit: cover;
+    background: rgb(var(--color-border) / 25%);
+
+    &--initial {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--text-2xs, 0.7rem);
+      font-weight: 600;
+      /* Solid primary + the theme's on-primary ink: an alpha-blended
+         disc lightens under light themes and drops the glyph below AA. */
+      color: rgb(var(--color-on-primary));
+      background: rgb(var(--color-primary));
+    }
+  }
+
+  &__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs, 0.75rem);
+  }
+
+  // The active-monthly marker: a quiet primary dot (not a badge with
+  // text — the group hint already explains the ordering, the dot only
+  // reads as "currently subscribed").
+  &__dot {
+    flex: none;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background: rgb(var(--color-primary) / 75%);
+  }
+
+  // An active plan also warms the chip's border so the leading rows
+  // carry a little more presence than their one-off neighbours.
+  &--active {
+    border-color: rgb(var(--color-primary) / 38%);
+  }
+}

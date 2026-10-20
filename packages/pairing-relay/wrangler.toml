@@ -165,5 +165,19 @@ FEEDBACK_LATEST_VERSION = "0.6.2"
 # event-emit.html / sign.html：Secret 翻倍到 32 字节作种子），无需任何
 # 控制台密钥；把回调地址设为 https://wowsp.langyo.xyz/api/qqbot/callback
 # 即可通过平台的 URL 校验。
+# ── 爱发电赞助名单（可选，缺失即 cron 静默跳过、/api/sponsors 答 503、
+#    app 端用本地 last-good 缓存兜底）────────────────────────────────
+# AFDIAN_USER_ID — 创作者 user_id（公开句柄性质，非机密；与 token 一起
+# 参与 open API 的 md5 签名）。AFDIAN_API_TOKEN 是 worker secret：
+#   npx wrangler secret put AFDIAN_API_TOKEN
+# 每日 cron 拉取 query-sponsor + query-order，归并成公开名单写入
+# FEEDBACK_KV 的 sponsors:afdian 槽（内容不变不写）。
+AFDIAN_USER_ID = "174593ccd13211e8831352540025c377"
 # GATEWAY_UPSTREAM = ""
 # GATEWAY_NOTICE = ""
+
+# 每日 19:33 UTC（北京 03:33）拉一次爱发电赞助者/订单——刷新
+# /api/sponsors 的 KV 文档（src/sponsors.rs；变更才写，免费版 KV
+# 1000 写/天绰绰有余）。
+[triggers]
+crons = ["33 19 * * *"]

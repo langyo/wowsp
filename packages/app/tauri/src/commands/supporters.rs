@@ -1,4 +1,5 @@
-//! Supporter Bilibili avatars for the About page's special-thanks cards.
+//! Supporter Bilibili avatars for the About page's special-thanks cards,
+//! plus the afdian sponsor list for the credits section's bottom group.
 //!
 //! The credits section leads with the special-thanks cards, each showing
 //! their CURRENT Bilibili avatar — "current" as in fetched live, so a
@@ -19,12 +20,20 @@
 //!   - The FACE URL is then loaded through the `media://` image proxy
 //!     (allowlisted for `*.hdslb.com`), which disk-caches it — repeated
 //!     About opens cost nothing.
+//!
+//! The sponsor list follows the same never-fail shape: it is pulled from
+//! the pairing relay's `/api/sponsors` (the worker's daily cron refreshes
+//! it from afdian's open API — see packages/pairing-relay
+//! crates/relay-core/src/sponsors.rs for the document's meaning), cached
+//! last-good under `supporters/sponsors.json`, and answered empty when
+//! neither exists (the frontend then hides the group).
 
+use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
 use futures::future::join_all;
-use wowsp_tauri_shared::{CommandResult, SupporterAvatar};
+use wowsp_tauri_shared::{CommandResult, SponsorListDoc, SupporterAvatar};
 
 use super::appdata;
 
@@ -134,6 +143,91 @@ pub async fn get_supporter_avatars(uids: Vec<u64>) -> CommandResult<Vec<Supporte
     Ok(results)
 }
 
+// ── afdian sponsor list (relay-served, last-good cached) ────────────────
+
+const SPONSORS_PATH: &str = "/api/sponsors";
+const SPONSORS_CACHE: &str = "supporters/sponsors.json";
+const SPONSORS_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Shape gate on a sponsor document fresh off the wire — the relay
+/// validates its own store, this re-checks what actually arrived (a
+/// hijacked or broken response must never reach the UI). Pure and
+/// unit-tested.
+fn sponsors_doc_sane(doc: &SponsorListDoc) -> bool {
+    doc.updated_at >= 0
+        && doc.sponsors.len() <= 10_000
+        && doc.sponsors.iter().all(|s| {
+            !s.name.trim().is_empty()
+                && !s.user_id.is_empty()
+                && s.all_sum.is_finite()
+                && s.all_sum >= 0.0
+                && s.month_sum.is_finite()
+                && s.month_sum >= 0.0
+                && s.game_id.as_deref().is_none_or(game_id_plausible)
+        })
+}
+
+/// The nickname alphabet the relay's remark parser whitelists — a game
+/// id off the wire must still read as one.
+fn game_id_plausible(id: &str) -> bool {
+    (2..=24).contains(&id.chars().count())
+        && id
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.'))
+}
+
+/// Live pull from the relay (the contribution module's relay-fetch
+/// grammar: shared proxy-aware client, explicit timeouts, HTTP-status
+/// and shape gates). Any failure answers Err — the command decides the
+/// fallback.
+async fn fetch_sponsor_list() -> Result<SponsorListDoc> {
+    let client = super::network::build_http_client().context("build http client")?;
+    let resp = client
+        .get(format!(
+            "{}{SPONSORS_PATH}",
+            super::pairing_relay::builtin_relay_root()
+        ))
+        .header("User-Agent", USER_AGENT)
+        .timeout(SPONSORS_TIMEOUT)
+        .send()
+        .await
+        .context("fetch sponsor list")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("fetch sponsor list: HTTP {}", resp.status());
+    }
+    let doc = resp
+        .json::<SponsorListDoc>()
+        .await
+        .context("parse sponsor list")?;
+    if !sponsors_doc_sane(&doc) {
+        anyhow::bail!("sponsor list failed validation");
+    }
+    Ok(doc)
+}
+
+/// The afdian sponsor list for the credits section's bottom group (see
+/// the module docs): live relay answer, else the AppData last-good
+/// cache, else an empty document. Never fails — an unreachable relay
+/// merely freezes yesterday's list.
+#[tauri::command]
+pub async fn get_sponsor_list() -> CommandResult<SponsorListDoc> {
+    match fetch_sponsor_list().await {
+        Ok(doc) => {
+            if let Ok(body) = serde_json::to_string(&doc) {
+                // Best-effort: a failed cache write only costs a re-fetch.
+                let _ = appdata::write_appdata_json(SPONSORS_CACHE, &body);
+            }
+            Ok(doc)
+        },
+        Err(_) => Ok(appdata::read_appdata_json(SPONSORS_CACHE)
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_str::<SponsorListDoc>(&raw).ok())
+            .filter(sponsors_doc_sane)
+            .unwrap_or_default()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +253,60 @@ mod tests {
         assert_eq!(normalize_face("ftp://i2.hdslb.com/a.gif"), None);
         assert_eq!(normalize_face("javascript:alert(1)"), None);
         assert_eq!(normalize_face(""), None);
+    }
+
+    fn entry(name: &str) -> wowsp_tauri_shared::SponsorEntry {
+        wowsp_tauri_shared::SponsorEntry {
+            user_id: "u1".into(),
+            name: name.into(),
+            avatar: None,
+            all_sum: 1.0,
+            month_sum: 0.0,
+            active: false,
+            first_pay: 1,
+            last_pay: 1,
+            game_id: None,
+        }
+    }
+
+    #[test]
+    fn sponsors_doc_sane_gates_the_wire_shape() {
+        let doc = SponsorListDoc {
+            updated_at: 10,
+            sponsors: vec![entry("猪猪子zy")],
+        };
+        assert!(sponsors_doc_sane(&doc));
+        // Negative amounts, negative timestamps and blank names all
+        // refuse — a hijacked response never reaches the UI.
+        let mut bad = doc.clone();
+        bad.sponsors[0].all_sum = -0.01;
+        assert!(!sponsors_doc_sane(&bad));
+        let mut blank = doc;
+        blank.sponsors[0].name = " ".into();
+        assert!(!sponsors_doc_sane(&blank));
+        let mut junk_id = SponsorListDoc {
+            updated_at: 10,
+            sponsors: vec![entry("n")],
+        };
+        junk_id.sponsors[0].game_id = Some("not an id!".into());
+        assert!(!sponsors_doc_sane(&junk_id));
+        let mut stale = SponsorListDoc::default();
+        stale.updated_at = -1;
+        assert!(!sponsors_doc_sane(&stale));
+        // The default (empty) document is a valid cold-start answer.
+        assert!(sponsors_doc_sane(&SponsorListDoc::default()));
+    }
+
+    #[test]
+    fn sponsors_doc_camel_case_wire_names_round_trip() {
+        let doc = SponsorListDoc {
+            updated_at: 12,
+            sponsors: vec![entry("SomePlayer_01")],
+        };
+        let wire = serde_json::to_string(&doc).unwrap();
+        assert!(wire.contains("\"updatedAt\""));
+        assert!(wire.contains("\"allSum\""));
+        assert!(wire.contains("\"gameId\""));
+        assert_eq!(serde_json::from_str::<SponsorListDoc>(&wire).unwrap(), doc);
     }
 }

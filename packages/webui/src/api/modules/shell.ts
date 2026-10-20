@@ -13,6 +13,38 @@ export interface SupporterAvatar {
   face: string | null;
 }
 
+/** One row of the afdian sponsor list (mirrors
+ *  `wowsp_tauri_shared::SponsorEntry` — the relay worker's public
+ *  document; rows arrive pre-sorted by current-month paid, then
+ *  all-time paid, then earliest first payment). */
+export interface SponsorEntry {
+  userId: string;
+  name: string;
+  /** https afdian CDN URL; null renders the initial-letter disc. */
+  avatar: string | null;
+  /** All-time actually-charged total, CNY. */
+  allSum: number;
+  /** Actually-charged total inside the current calendar month, CNY. */
+  monthSum: number;
+  /** A monthly plan was live when the relay last polled. */
+  active: boolean;
+  /** Unix seconds. */
+  firstPay: number;
+  /** Unix seconds. */
+  lastPay: number;
+  /** Game ID recognized in an order remark — the chip jumps to that
+   *  player's lookup page; null opens the afdian profile instead. */
+  gameId: string | null;
+}
+
+/** The sponsor-list document (mirrors
+ *  `wowsp_tauri_shared::SponsorListDoc`). */
+export interface SponsorListDoc {
+  /** Unix seconds of the relay poll that produced the document. */
+  updatedAt: number;
+  sponsors: SponsorEntry[];
+}
+
 /** Mirrors `commands::wallpaper::WallpaperFile` — one user-imported wallpaper
  *  image under `<data_dir>/wallpapers/`. `id` doubles as the file name and
  *  the persisted selection key. */
@@ -130,6 +162,10 @@ export const shellApi = {
    *  letter). Never rejects on network failure. */
   getSupporterAvatars: (uids: number[]) =>
     transport.invoke<SupporterAvatar[]>(RPC.get_supporter_avatars, { uids }),
+  /** The afdian sponsor list (credits section's bottom group) — live
+   *  relay answer, else the AppData last-good cache, else an empty
+   *  document. Rows are pre-sorted; never rejects on network failure. */
+  getSponsorList: () => transport.invoke<SponsorListDoc>(RPC.get_sponsor_list),
   /** List customized seals (kind-keyed pictures in the AppData `stamps/`
    *  folder). Kinds without a file fall back to the bundled glyph. */
   stampList: () => transport.invoke<StampOverride[]>(RPC.stamp_list),

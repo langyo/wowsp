@@ -45,6 +45,9 @@ const DEFAULT_CDN_HOST: &str = "wows-gloss-icons.wgcdn.co";
 const MEDIA_HOST_SUFFIX: &str = "wgcdn.co";
 /// Bilibili's static CDN (`i0/i1/i2.hdslb.com` — avatars).
 const BILIBILI_HOST_SUFFIX: &str = "hdslb.com";
+/// afdian's static/avatar CDN (`pic1/pic2…/afdiancdn.com` — the credits
+/// list's sponsor avatars).
+const AFDIAN_CDN_SUFFIX: &str = "afdiancdn.com";
 /// GitHub's user-attachment uploads (`github.com/user-attachments/assets/…`,
 /// extension-less) — what `uploads.github.com` hands the mod-hub publisher.
 const GITHUB_ATTACHMENTS_PATH: &str = "/user-attachments/";
@@ -100,6 +103,9 @@ pub fn is_allowed(url: &str, resource_cdn: Option<&str>) -> bool {
         return true;
     }
     if host.ends_with(&format!(".{BILIBILI_HOST_SUFFIX}")) {
+        return true;
+    }
+    if host.ends_with(&format!(".{AFDIAN_CDN_SUFFIX}")) {
         return true;
     }
     let base = resource_cdn.map(str::trim).filter(|b| !b.is_empty());
@@ -428,6 +434,23 @@ mod tests {
         // The bare apex is NOT allowlisted — only subdomains serve images.
         assert!(!is_allowed("https://hdslb.com/a.png", None));
         assert!(!is_allowed("https://evil-hdslb.com/a.png", None));
+    }
+
+    #[test]
+    fn allows_afdian_avatar_cdn() {
+        // The sponsor list's avatars (query-sponsor user.avatar).
+        assert!(is_allowed(
+            "https://pic1.afdiancdn.com/user/abc/avatar.png",
+            None
+        ));
+        assert!(is_allowed(
+            "https://pic2.afdiancdn.com/default/avatar/avatar-purple.png",
+            None
+        ));
+        // Same grammar as the other suffixes: bare apex and look-alikes
+        // refuse.
+        assert!(!is_allowed("https://afdiancdn.com/a.png", None));
+        assert!(!is_allowed("https://evil-afdiancdn.com/a.png", None));
     }
 
     #[test]

@@ -23,6 +23,7 @@ pub mod multipart;
 pub mod protocol;
 pub mod qqbot;
 pub mod replay;
+pub mod sponsors;
 pub mod room;
 pub mod route;
 

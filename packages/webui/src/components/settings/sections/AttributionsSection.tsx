@@ -1,5 +1,5 @@
-/** Attributions settings section: sponsor, supporters, upstream projects
- *  and resource partners. */
+/** Attributions settings section: sponsor, supporters, upstream
+ *  projects, resource partners and the afdian sponsor list. */
 import { defineComponent } from "vue";
 import { HkSettingsGroup, HkSettingsHint } from "@celestia-island/hikari";
 
@@ -7,6 +7,7 @@ import { t } from "@/i18n";
 import AuthorMark from "@/components/base/AuthorMark";
 import SupporterCards from "@/components/settings/SupporterCards";
 import SponsorCard from "@/components/settings/SponsorCard";
+import SponsorList from "@/components/settings/SponsorList";
 import {
   RESOURCE_ATTRIBUTIONS,
   UPSTREAM_ATTRIBUTIONS,
@@ -20,9 +21,10 @@ export default defineComponent({
           {/* attributions — the categorized supporter page: the author's
               afdian SPONSOR card FIRST, then SPECIAL THANKS (cards with
               live Bilibili avatars, the whole card opens their space
-              page), then the upstream projects, and the asset / resource
-              partners LAST. The same AuthorMark component annotates the
-              desktop wallpaper. */}
+              page), then the upstream projects, the asset / resource
+              partners, and the afdian sponsor list LAST (relay-served,
+              self-hiding while empty). The same AuthorMark component
+              annotates the desktop wallpaper. */}
           {/* sponsor — leading group: one wide card opening the author's
               afdian page, carrying the per-locale sponsor disclaimers
               (what the funds buy, voluntary, no hiring relation, open
@@ -59,6 +61,10 @@ export default defineComponent({
               ))}
             </div>
           </HkSettingsGroup>
+          {/* afdian sponsor list — the very bottom group, pulled live
+              from the relay's /api/sponsors; renders nothing at all
+              (group included) while the list is empty. */}
+          <SponsorList />
           </>
     );
   },

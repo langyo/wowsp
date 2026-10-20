@@ -27,6 +27,7 @@ pub mod qqbot;
 pub mod replay;
 pub mod replay_index;
 pub mod room;
+pub mod sponsors;
 
 pub use directory::Directory;
 pub use replay_index::ReplayIndex;
@@ -48,6 +49,14 @@ const RESOLVE_SOCKET_LIFETIME_MS: u32 = 10_000;
 #[event(fetch)]
 async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     with_security_headers(route(req, env).await?).await
+}
+
+/// The daily cron (wrangler.toml `[triggers]`): refresh the cached
+/// afdian sponsor document (see src/sponsors.rs). Every failure logs
+/// inside the poll and keeps yesterday's document serving.
+#[event(scheduled)]
+async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    sponsors::poll(&env).await;
 }
 
 /// The request router (every response this worker answers itself).
@@ -95,6 +104,7 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         Route::FeedbackHistory { contact: _ } => feedback::handle_history(req, env).await,
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,
         Route::QqBotCallback => qqbot::handle_callback(req, &env).await,
+        Route::Sponsors => sponsors::handle(req, env).await,
         Route::FeedbackAttachment { file_token: _ } => feedback::handle_attachment(req, env).await,
 
         // ── replay share (see src/replay.rs) ─────────────────────────────

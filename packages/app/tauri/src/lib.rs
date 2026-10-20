@@ -644,6 +644,7 @@ pub fn run() {
             commands::stamps::stamp_import_bytes,
             commands::stamps::stamp_reset,
             commands::supporters::get_supporter_avatars,
+            commands::supporters::get_sponsor_list,
             commands::trends::get_player_trend,
             commands::trends::get_patches,
             commands::trends::get_community_ship_trend,
