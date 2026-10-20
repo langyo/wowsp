@@ -5,6 +5,85 @@
   gap: 0.6rem;
   text-align: center;
   padding: 0.5rem 0;
+  /* Positioning context for the vanish easter egg's dashed-piggy overlay
+     (its absolutely-positioned sibling of the body wrapper below). */
+  position: relative;
+
+  /* Every visible About row sits in this body wrapper so the vanish
+     easter egg can shrink/fade them as one unit; the root's flex column
+     is mirrored here (full width, so the width:100% rows — notice,
+     footer — behave exactly as they did as direct root children). */
+  &__body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    transform-origin: center;
+    transition:
+      opacity var(--duration-slow) ease,
+      transform var(--duration-slow) ease,
+      visibility 0s linear 0s;
+  }
+
+  /* Rapid-click vanish: the whole About body shrinks toward its centre
+     and fades while the dashed-piggy overlay fades in. The layout box is
+     kept (a transform never affects layout), so the modal keeps its
+     height and never scroll-jumps mid-trick. visibility rides along with
+     a delay equal to the fade so the body only leaves the accessibility
+     tree / tab order once it is fully gone, and flips back instantly on
+     restore. The --duration-* tokens are zeroed under
+     prefers-reduced-motion (theme.scss), collapsing the shrink to an
+     instant content swap there. */
+  &--vanished &__body {
+    opacity: 0;
+    transform: scale(0.72);
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      opacity var(--duration-slow) ease,
+      transform var(--duration-slow) ease,
+      visibility 0s linear var(--duration-slow);
+  }
+
+  /* Dashed-piggy stand-in covering the whole About block: centers the
+     pig and is itself the restore click target — the entire area answers
+     the click, not just the image. Purely decorative (empty alt); the
+     overlay is also keyboard-focusable (a held-Enter auto-repeat on the
+     logo can trip the vanish), so it carries a focus ring. */
+  &__vanish {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    opacity: 0;
+    transform: scale(1.06);
+    outline: none;
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary) / 60%);
+      outline-offset: -6px;
+    }
+    pointer-events: none;
+    transition:
+      opacity var(--duration-slow) ease,
+      transform var(--duration-slow) ease;
+
+    img {
+      width: 120px;
+      height: 120px;
+    }
+  }
+
+  &--vanished &__vanish {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+  }
 
   &__logo {
     position: relative;
@@ -389,7 +468,9 @@
 
 /* Reduced motion: the crossfades are plain opacity and stay, but the
    continuous glow flow is dropped and the bubble pop is shortened —
-   matching the toasts' convention. */
+   matching the toasts' convention. The vanish swap needs no rule here:
+   its scale/fade rides the --duration-* tokens, which theme.scss zeroes
+   under reduced motion, so the content just swaps instantly. */
 @media (prefers-reduced-motion: reduce) {
   .about-modal--piggy .about-modal__logo::before {
     animation: none;

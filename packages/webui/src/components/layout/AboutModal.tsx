@@ -24,12 +24,15 @@ import "./AboutModal.scss";
  * is used (the webview itself never navigates remotely). Link URLs live
  * only in the en-US locale (`about.links.*`) — they are language-invariant
  * values shared by every locale via the en-US fallback.
- * Two piggy easter eggs ride along: hovering the subtitle crossfades it
+ * Three piggy easter eggs ride along: hovering the subtitle crossfades it
  * into its pig persona (and lights a skin-tone glow behind the logo),
  * clicking the logo pops a localized bubble at a random nearby spot (a
  * "hmph", or a poke invitation) and crossfades the description into a
  * random localized "did you know" trivia (click the trivia to get the
- * plain description back). The piggy's periodic reminder toast
+ * plain description back), and clicking the logo very fast repeatedly
+ * (VANISH_BURST_CLICKS clicks chained inside VANISH_GAP_MS) shrinks the
+ * whole About body away and stands a centered dashed piggy in its place
+ * until another click restores it. The piggy's periodic reminder toast
  * (PiggyReminderToast) can land the user here and arms a hmph-then-poke
  * greeting through the piggyReminder store's flag.
  */
@@ -65,6 +68,14 @@ const POKE_KEYS = [
 /** What a logo click draws its bubble from: the hums plus the poke
  *  invitations, uniformly. */
 const BUBBLE_KEYS = [...HUM_KEYS, ...POKE_KEYS];
+
+/** Rapid-click vanish rule: 5 or more logo clicks, each landing within
+ *  400 ms of its predecessor, trips the vanish easter egg — a deliberate
+ *  spam of the piggy. An ordinary double- or triple-click only chains 2–3
+ *  clicks, and the burst count restarts from one the moment any gap
+ *  exceeds the window, so normal poking never trips it. */
+const VANISH_BURST_CLICKS = 5;
+const VANISH_GAP_MS = 400;
 const TRIVIA_KEYS = [
   "about.trivia01",
   "about.trivia02",
@@ -253,6 +264,17 @@ export const AboutContent = defineComponent({
       lastTriviaKey = triviaKey.value;
     };
 
+    /** True while the rapid-click vanish easter egg is active: the About
+     *  body has shrunk away and the centered dashed piggy stands in for
+     *  it; clicking the dashed piggy (or its overlay area) restores. */
+    const vanished = ref(false);
+    /** Rapid-click burst bookkeeping: when the last logo click happened
+     *  (performance.now()) and how many clicks the current burst counts.
+     *  A click extends the burst only inside VANISH_GAP_MS of its
+     *  predecessor; a slower click restarts the chain from one. */
+    let lastLogoClickAt = 0;
+    let burstCount = 0;
+
     /** Greeting for a reminder-toast arrival: one hmph, then a poke
      *  invitation drawn from POKE_KEYS (guaranteed, not the mixed pool)
      *  so the visit always teaches that the logo can be poked. The poke
@@ -284,8 +306,36 @@ export const AboutContent = defineComponent({
     );
 
     const onLogoClick = (): void => {
+      // While vanished the overlay owns every pointer event, but guard
+      // explicitly so the suppress rule never depends on stacking alone.
+      if (vanished.value) return;
+      // Chain the click into the rapid-click burst; the count restarts
+      // from one whenever the gap to the previous click exceeds the
+      // window (see VANISH_BURST_CLICKS for why normal clicks stay safe).
+      const now = performance.now();
+      burstCount = now - lastLogoClickAt < VANISH_GAP_MS ? burstCount + 1 : 1;
+      lastLogoClickAt = now;
+      if (burstCount >= VANISH_BURST_CLICKS) {
+        // The vanish IS the reaction to the triggering click: no bubble,
+        // no trivia swap — and live bubbles are dropped so none keeps
+        // floating over a body that is fading out (their pending expiry
+        // timers then filter an empty list and no-op).
+        burstCount = 0;
+        bubbles.value = [];
+        vanished.value = true;
+        return;
+      }
       popBubble();
       swapTrivia();
+    };
+
+    /** Clicking the dashed piggy — or anywhere over its overlay — brings
+     *  the shrunken About body back and re-arms the burst counter from
+     *  zero, so the restored content starts a fresh click chain. */
+    const onVanishClick = (): void => {
+      vanished.value = false;
+      burstCount = 0;
+      lastLogoClickAt = 0;
     };
 
     onBeforeUnmount(() => {
@@ -309,8 +359,13 @@ export const AboutContent = defineComponent({
         class={{
           "about-modal": true,
           "about-modal--piggy": piggy.value,
+          "about-modal--vanished": vanished.value,
         }}
       >
+        {/* Every visible About row lives in one body wrapper so the vanish
+            easter egg can shrink/fade them as a unit; the dashed-piggy
+            overlay below is the wrapper's absolutely-positioned sibling. */}
+        <div class="about-modal__body">
           <button
             type="button"
             class="about-modal__logo"
@@ -473,6 +528,28 @@ export const AboutContent = defineComponent({
             <AnnouncementContent />
           </div>
         </div>
+
+        {/* Vanish stand-in: the centered dashed piggy that replaces the
+            shrunken About body. Purely decorative (alt=""), and the whole
+            overlay — not just the pig — is the restore click target; it
+            is keyboard-reachable too, because a held-Enter auto-repeat
+            on the logo CAN trip the vanish. */}
+        <div
+          class="about-modal__vanish"
+          role="button"
+          tabindex={0}
+          aria-label={t("common.close")}
+          onClick={onVanishClick}
+          onKeydown={(event: KeyboardEvent) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onVanishClick();
+            }
+          }}
+        >
+          <img src="/piggy-vanished.webp" alt="" draggable={false} />
+        </div>
+      </div>
     );
   },
 });
