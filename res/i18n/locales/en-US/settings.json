@@ -129,6 +129,8 @@
   "overlayTableToggleDesc": "While Tab is held, overlay each player's colored win rate and average damage on the game's score panel.",
   "overlayAimCardToggle": "Show the stats card while aiming",
   "overlayAimCardToggleDesc": "While aiming at an enemy player in battle, hang their stats card just below the crosshair.",
+  "overlayAimCardHang": "Aim card distance from the crosshair",
+  "overlayAimCardHangDesc": "Pixels between the card's top edge and the crosshair center; default 60. The slider covers 60–240 — the box accepts any value from 0 up, as long as the card stays visible.",
   "overlayRoster": "Roster recognition",
   "overlayRosterPassive": "Screen pixel passive detection",
   "overlayRosterDisabledByTable": "Disabled by the Tab-window switch above: turn it back on to restore roster recognition.",

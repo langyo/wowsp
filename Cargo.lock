@@ -3272,7 +3272,7 @@ dependencies = [
 
 [[package]]
 name = "model-exporter"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "rootcause",
  "wowsunpack",

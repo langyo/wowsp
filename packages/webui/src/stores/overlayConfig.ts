@@ -13,6 +13,13 @@
  *   crosshair during battles): on unless the user turned it off. The
  *   watcher consults the persisted flag every tick, so a flip applies
  *   live without touching the window lifecycle.
+ * - `aimCardHangPx` — how far that card hangs below the crosshair
+ *   (logical px, DPI-scaled at placement): 60 by default. The settings
+ *   slider offers 60–240; the edit box beside it commits any value ≥ 0
+ *   (the Rust side sanity-clamps at 100 000 and the placement pins
+ *   oversized hangs to the game window's bottom edge). Same live path:
+ *   the watcher re-reads the config every tick, so a change re-places
+ *   the card immediately — no window reload, no restart.
  * - `roster` — roster attribution: "plugin" (the default and preferred:
  *   the in-game plugin's telemetry is the primary detector) or "passive"
  *   (the screen-capture pipeline; a stored "off" pick lands here — the
@@ -46,6 +53,14 @@ export type RosterRecognitionMode = "plugin" | "passive";
 const DEFAULT_TABLE: TableAnchorMode = "detect";
 const DEFAULT_ROSTER: RosterRecognitionMode = "plugin";
 const DEFAULT_AIM_CARD = true;
+/** Default hang of the aim card below the crosshair, in logical px (the
+ *  Rust-side `AIM_CARD_HANG_DEFAULT_PX`; must stay in sync). */
+export const DEFAULT_AIM_CARD_HANG_PX = 60;
+/** The settings slider's selectable band; the edit box beside it is
+ *  deliberately NOT bounded by this (any value ≥ 0 commits — the
+ *  placement clamps the card inside the game rect). */
+export const AIM_CARD_HANG_SLIDER_MIN = 60;
+export const AIM_CARD_HANG_SLIDER_MAX = 240;
 
 /** Unknown values (incl. future ones) → the safe default. A stored
  *  "ingame" pick — the retired in-game plugin rendering — lands on the
@@ -71,10 +86,20 @@ function parseAimCard(raw: unknown): boolean {
   return typeof raw === "boolean" ? raw : DEFAULT_AIM_CARD;
 }
 
+/** The hang in whole logical px; anything but a non-negative finite number
+ *  (older shell, wrong type, junk) lands on the default — the Rust read
+ *  path heals the file to the same value. */
+function parseAimCardHangPx(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number.NaN;
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_AIM_CARD_HANG_PX;
+  return Math.round(n);
+}
+
 export const useOverlayConfigStore = defineStore("overlayConfig", () => {
   const table = ref<TableAnchorMode>(DEFAULT_TABLE);
   const roster = ref<RosterRecognitionMode>(DEFAULT_ROSTER);
   const aimCard = ref(DEFAULT_AIM_CARD);
+  const aimCardHangPx = ref(DEFAULT_AIM_CARD_HANG_PX);
   const loaded = ref(false);
   let pendingLoad: Promise<void> | null = null;
   let pendingSave = Promise.resolve();
@@ -88,6 +113,7 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
           table.value = parseTable(cfg?.table);
           roster.value = parseRoster(cfg?.roster);
           aimCard.value = parseAimCard(cfg?.aimCard);
+          aimCardHangPx.value = parseAimCardHangPx(cfg?.aimCardHangPx);
         } catch {
           // missing command / mock backend — keep the defaults
         } finally {
@@ -103,14 +129,25 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
    *  roll back a choice the user made while that write was pending. */
   function persist(): Promise<void> {
     const sequence = ++saveSequence;
-    const snapshot = { table: table.value, roster: roster.value, aimCard: aimCard.value };
+    const snapshot = {
+      table: table.value,
+      roster: roster.value,
+      aimCard: aimCard.value,
+      aimCardHangPx: aimCardHangPx.value,
+    };
     pendingSave = pendingSave.then(async () => {
       try {
-        const saved = await api.setOverlayConfig(snapshot.table, snapshot.roster, snapshot.aimCard);
+        const saved = await api.setOverlayConfig(
+          snapshot.table,
+          snapshot.roster,
+          snapshot.aimCard,
+          snapshot.aimCardHangPx,
+        );
         if (sequence !== saveSequence) return;
         table.value = parseTable(saved?.table);
         roster.value = parseRoster(saved?.roster);
         aimCard.value = parseAimCard(saved?.aimCard);
+        aimCardHangPx.value = parseAimCardHangPx(saved?.aimCardHangPx);
         notifySettingsSaved();
       } catch {
         // best-effort persistence; the in-memory flag still applies
@@ -137,5 +174,31 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
     await persist();
   }
 
-  return { table, roster, aimCard, loaded, load, setTable, setRoster, setAimCard };
+  /** Set the hang (logical px). Input is rounded to whole pixels and
+   *  clamped ≥ 0 (the box can sit BELOW the slider's 60 floor, but not
+   *  above the crosshair) and deliberately NOT capped on this side — the
+   *  shell sanity-clamps at 100 000 and the placement pins oversized
+   *  values to the game window's bottom edge, so "as far as the screen
+   *  allows" degrades gracefully instead of erroring. */
+  async function setAimCardHangPx(v: number) {
+    await load();
+    if (!Number.isFinite(v)) return;
+    const next = Math.max(0, Math.round(v));
+    if (next === aimCardHangPx.value) return;
+    aimCardHangPx.value = next;
+    await persist();
+  }
+
+  return {
+    table,
+    roster,
+    aimCard,
+    aimCardHangPx,
+    loaded,
+    load,
+    setTable,
+    setRoster,
+    setAimCard,
+    setAimCardHangPx,
+  };
 });

@@ -129,6 +129,8 @@
   "overlayTableToggleDesc": "Tab を押し続けている間、ゲームの戦績パネルに全プレイヤーの勝率と平均ダメージを色付きで重ねて表示します。",
   "overlayAimCardToggle": "照準時に戦績カードを表示",
   "overlayAimCardToggleDesc": "戦闘中に敵プレイヤーを照準に収めると、照星のやや下中央にそのプレイヤーの戦績カードを表示します。",
+  "overlayAimCardHang": "照準カードと照準中心の距離",
+  "overlayAimCardHangDesc": "カード上端と照準中心までのピクセル数。既定は 60。スライダーは 60–240、入力欄には 0 以上の範囲外の値も入力できます（カードが見える範囲で）。",
   "overlayRoster": "名簿認識",
   "overlayRosterPassive": "画面ピクセル受動検出",
   "overlayRosterDisabledByTable": "上の「Tab 押下中は透明ウィンドウを表示」スイッチにより無効化されています。再度オンにすると名簿認識が復帰します。",

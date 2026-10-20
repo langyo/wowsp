@@ -18,8 +18,8 @@ function deferred<T>() {
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
-  apiMock.getOverlayConfig.mockResolvedValue({ table: "detect", roster: "plugin", aimCard: true });
-  apiMock.setOverlayConfig.mockImplementation(async (table: string, roster: string, aimCard: boolean) => ({ table, roster, aimCard }));
+  apiMock.getOverlayConfig.mockResolvedValue({ table: "detect", roster: "plugin", aimCard: true, aimCardHangPx: 60 });
+  apiMock.setOverlayConfig.mockImplementation(async (table: string, roster: string, aimCard: boolean, aimCardHangPx: number) => ({ table, roster, aimCard, aimCardHangPx }));
 });
 
 describe("overlay settings persistence", () => {
@@ -70,7 +70,7 @@ describe("overlay settings persistence", () => {
     expect(apiMock.setOverlayConfig).not.toHaveBeenCalled();
     read.resolve({ table: "ingame", roster: "passive", aimCard: true });
     await Promise.all([loading, changing]);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
   });
@@ -87,7 +87,7 @@ describe("overlay settings persistence", () => {
     expect(apiMock.setOverlayConfig).toHaveBeenCalledTimes(1);
     firstWrite.resolve({ table: "off", roster: "plugin", aimCard: true });
     await Promise.all([first, second]);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
   });
@@ -98,7 +98,7 @@ describe("overlay settings persistence", () => {
     apiMock.setOverlayConfig.mockRejectedValueOnce(new Error("synthetic locked settings"));
     await store.setTable("off");
     await store.setRoster("passive");
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
   });
@@ -107,12 +107,48 @@ describe("overlay settings persistence", () => {
     const store = useOverlayConfigStore();
     await store.load();
     await store.setAimCard(false);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", false);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", false, 60);
     expect(store.aimCard).toBe(false);
     // The table switch stays untouched by an aim-card flip, and the next
     // write carries both current choices.
     expect(store.table).toBe("detect");
     await store.setTable("off");
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "plugin", false);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "plugin", false, 60);
+  });
+
+  it("commits the aim-card hang with rounding, a zero floor and no ceiling", async () => {
+    const store = useOverlayConfigStore();
+    await store.load();
+    // Below the slider's 60 floor and far above its 240 ceiling both ride
+    // through — the box is deliberately unbounded; only negatives clamp.
+    await store.setAimCardHangPx(30);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 30);
+    await store.setAimCardHangPx(480);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 480);
+    expect(store.aimCardHangPx).toBe(480);
+    await store.setAimCardHangPx(-25);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 0);
+    expect(store.aimCardHangPx).toBe(0);
+    await store.setAimCardHangPx(137.6);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 138);
+    // A non-finite input is ignored outright (the box reverts its draft).
+    await store.setAimCardHangPx(Number.NaN);
+    expect(store.aimCardHangPx).toBe(138);
+    // A no-op value (already current) skips the IPC round-trip entirely.
+    apiMock.setOverlayConfig.mockClear();
+    await store.setAimCardHangPx(138);
+    expect(apiMock.setOverlayConfig).not.toHaveBeenCalled();
+  });
+
+  it("lands a missing or junk hang reply on the 60 default", async () => {
+    // An older shell without the field (or a corrupted one) must not drag
+    // the hang to NaN/0 — the tolerant parse mirrors the Rust heal.
+    apiMock.getOverlayConfig.mockResolvedValueOnce({ table: "detect", roster: "plugin", aimCard: true });
+    const store = useOverlayConfigStore();
+    await store.load();
+    expect(store.aimCardHangPx).toBe(60);
+    apiMock.getOverlayConfig.mockResolvedValueOnce({ table: "detect", roster: "plugin", aimCard: true, aimCardHangPx: "far" });
+    await store.load();
+    expect(store.aimCardHangPx).toBe(60);
   });
 });

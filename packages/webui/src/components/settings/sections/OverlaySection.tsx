@@ -2,13 +2,24 @@
  *  attribution and the display-content controls. Rendered as the leading
  *  card of the calibration section's page (the anchor calibrations follow
  *  below). */
-import { defineComponent, type PropType } from "vue";
+import { defineComponent, ref, watch, type PropType } from "vue";
 import { ExternalLink } from "@lucide/vue";
-import { HkButton, HkSettingsGroup, HkSettingsHint, HkSettingsSub, HkSwitch, HkTabs } from "@celestia-island/hikari";
+import {
+  HkButton,
+  HkInput,
+  HkSettingsGroup,
+  HkSettingsHint,
+  HkSettingsSub,
+  HkSlider,
+  HkSwitch,
+  HkTabs,
+} from "@celestia-island/hikari";
 import { useRouter } from "vue-router";
 
 import { t } from "@/i18n";
 import {
+  AIM_CARD_HANG_SLIDER_MAX,
+  AIM_CARD_HANG_SLIDER_MIN,
   useOverlayConfigStore,
   type RosterRecognitionMode,
   type TableAnchorMode,
@@ -32,6 +43,34 @@ export default defineComponent({
     const ui = useSettingsUiStore();
     const router = useRouter();
     const { gamePaths } = props.ctx;
+
+    // ── aim-card hang (logical px below the crosshair) ───────────────────
+    // The slider commits live on every notch — the watcher re-reads the
+    // config on its next tick and re-places the card, so the card tracks
+    // the thumb. The edit box stages a DRAFT that commits on Enter / blur
+    // (the network rows' grammar) and is deliberately NOT bounded by the
+    // slider's 60–240 band: any value ≥ 0 goes (the store clamps negatives
+    // to 0, the shell sanity-clamps at 100 000, and the placement pins
+    // oversized hangs to the game window's bottom edge).
+    const hangDraft = ref(String(overlayCfg.aimCardHangPx));
+    watch(
+      () => overlayCfg.aimCardHangPx,
+      (v) => {
+        hangDraft.value = String(v);
+      },
+    );
+
+    function commitHangDraft() {
+      const raw = hangDraft.value.trim();
+      const parsed = Math.round(Number(raw));
+      if (raw === "" || !Number.isFinite(parsed)) {
+        // Empty / non-numeric — revert to what the store holds.
+        hangDraft.value = String(overlayCfg.aimCardHangPx);
+        return;
+      }
+      void overlayCfg.setAimCardHangPx(parsed);
+    }
+
     return () => (
           <>
           {/* The in-game water meter — the window switches pick which of
@@ -76,6 +115,42 @@ export default defineComponent({
                     modelValue={overlayCfg.aimCard}
                     onUpdate:modelValue={(v: boolean) => void overlayCfg.setAimCard(v)}
                   />
+                </div>
+                {/* The card's hang below the crosshair — a dedicated row per
+                    the switch above: slider (the 60–240 band) + a free-form
+                    px box. Both persist and apply immediately (the watcher
+                    re-places the card on its next tick); the Saved flash in
+                    the title bar confirms each write. The whole row greys
+                    out with the card's switch off. */}
+                <div class="stats-prefs__row">
+                  <span class="stats-prefs__row-text">
+                    <span class="stats-prefs__row-label">{t("settings.overlayAimCardHang")}</span>
+                    <span class="stats-prefs__row-desc">{t("settings.overlayAimCardHangDesc")}</span>
+                  </span>
+                  <div class="overlay-sec__hang-controls">
+                    <HkSlider
+                      class="overlay-sec__hang-slider"
+                      min={AIM_CARD_HANG_SLIDER_MIN}
+                      max={AIM_CARD_HANG_SLIDER_MAX}
+                      step={1}
+                      modelValue={overlayCfg.aimCardHangPx}
+                      onUpdate:modelValue={(v: number) => void overlayCfg.setAimCardHangPx(v)}
+                      disabled={!overlayCfg.aimCard}
+                      ariaLabel={t("settings.overlayAimCardHang")}
+                    />
+                    {/* HkInput drops pass-through classes (inheritAttrs:
+                        false, class stripped) — size it from the SCSS via
+                        the wrapper's child selector instead. */}
+                    <HkInput
+                      modelValue={hangDraft.value}
+                      onUpdate:modelValue={(v: string) => (hangDraft.value = v)}
+                      type="number"
+                      disabled={!overlayCfg.aimCard}
+                      submitOnEnter={commitHangDraft}
+                      onBlur={commitHangDraft}
+                      aria-label={t("settings.overlayAimCardHang")}
+                    />
+                  </div>
                 </div>
               </div>
               {/* Fullscreen limits the overlay windows only — with both

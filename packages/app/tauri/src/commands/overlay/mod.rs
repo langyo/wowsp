@@ -116,7 +116,8 @@
 //! owns the card's native window only (the per-tick pass at the top of
 //! `watch_tab_tick`): shown while the battle is on and `aim_card` is on,
 //! hidden while Tab is held (the table owns the screen then), placed at the
-//! game center + the [`AIM_CARD_HANG_PX`] hang. What the card DRAWS is the
+//! game center + the configured hang (overlay-config's `aim_card_hang_px`,
+//! default 60 logical px). What the card DRAWS is the
 //! page's own data-driven decision — the native visibility and the content
 //! never gate each other.
 //!
@@ -158,10 +159,6 @@ const AIM_CARD_LABEL: &str = "aim-card";
 /// physical rect on every game-window change anyway; this only sizes the
 /// first paint.
 const AIM_CARD_LOGICAL_SIZE: (f64, f64) = (380.0, 120.0);
-/// Physical-px hang of the card's top edge below the game window's vertical
-/// center (where the crosshair sits), before DPI scaling — the same offset
-/// the retired in-game panel hung below the stage center.
-const AIM_CARD_HANG_PX: f32 = 120.0;
 
 /// Minimum accepted size (physical px) of a manual roster selection, per
 /// axis — anything smaller cannot carry a readable table row.

@@ -734,9 +734,9 @@ fn revalidation_stands_down_only_when_certified() {
     assert!(!watch::revalidate_due(Some(mature), true, now));
 }
 
-/// The aim card's placement math: centered on the game window, hanging
-/// [`AIM_CARD_HANG_PX`] (DPI-scaled) below the vertical center — the
-/// crosshair's neighborhood — and clamped so the card never leaves the
+/// The aim card's placement math: centered on the game window, hanging the
+/// configured `aim_card_hang_px` (DPI-scaled) below the vertical center —
+/// the crosshair's neighborhood — and clamped so the card never leaves the
 /// game rect.
 #[test]
 fn aim_card_hangs_below_the_game_center() {
@@ -746,15 +746,25 @@ fn aim_card_hangs_below_the_game_center() {
         width: 3072,
         height: 1920,
     };
-    let r = placement::aim_card_rect(&game, 1.0);
+    let r = placement::aim_card_rect(&game, 1.0, 60);
     assert_eq!((r.width, r.height), (380, 120), "logical size at 1.0 DPI");
     assert_eq!(r.x, (3072 - 380) / 2, "centered horizontally");
-    // 960 center + the 120-px hang → top at 1080.
-    assert_eq!(r.y, 1080);
+    // 960 center + the 60-px default hang → top at 1020.
+    assert_eq!(r.y, 1020);
     // DPI scaling grows the rect and the hang proportionally.
-    let r2 = placement::aim_card_rect(&game, 2.0);
+    let r2 = placement::aim_card_rect(&game, 2.0, 60);
     assert_eq!((r2.width, r2.height), (760, 240));
-    assert_eq!(r2.y, 960 + 240);
+    assert_eq!(r2.y, 960 + 120);
+    // A bigger hang moves the card further down; hang 0 puts the card's
+    // top edge right on the crosshair.
+    let r4 = placement::aim_card_rect(&game, 1.0, 240);
+    assert_eq!(r4.y, 960 + 240);
+    let r0 = placement::aim_card_rect(&game, 1.0, 0);
+    assert_eq!(r0.y, 960);
+    // An oversized hang (the edit box is deliberately unbounded above the
+    // slider's 240) pins the card to the game window's bottom edge.
+    let r_big = placement::aim_card_rect(&game, 1.0, 100_000);
+    assert_eq!(r_big.y + r_big.height, game.y + game.height);
     // A short game window clamps the card's bottom edge to the window's
     // bottom (the hang never pushes it off-window).
     let small = Rect {
@@ -763,7 +773,7 @@ fn aim_card_hangs_below_the_game_center() {
         width: 800,
         height: 300,
     };
-    let r3 = placement::aim_card_rect(&small, 1.0);
+    let r3 = placement::aim_card_rect(&small, 1.0, 60);
     assert_eq!(r3.y + r3.height, small.y + small.height);
     assert!(r3.x >= small.x && r3.x + r3.width <= small.x + small.width);
 }
