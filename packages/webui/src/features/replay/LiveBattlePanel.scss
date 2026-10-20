@@ -712,17 +712,6 @@
     flex: 0 0 auto;
   }
 
-  /* Composition icon seals (CompSeal) on the compact rows: they sit BEFORE
-     the fixed stat columns — their per-row width (none / one / two seals)
-     is absorbed by the flexible name track, so the shared columns and the
-     reserved career slot keep their x on every row. */
-  &__crow-comp {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-  }
-
   &__crow--link {
     color: rgb(var(--color-text));
     cursor: pointer;

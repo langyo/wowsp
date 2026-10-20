@@ -1178,6 +1178,32 @@ export default defineComponent({
         return nodes;
       };
 
+      /** The COMPACT row's single composition icon — the highest tier the
+       *  player carries: a 奶龙 / 奶蛙 (veteran) icon outranks a minor one,
+       *  and air wins a same-tier tie (resolveStamps' canonical order).
+       *  The compact row shows exactly ONE seal in total — the career
+       *  verdict first (careerStamp's four verdicts are mutually
+       *  exclusive, and its 蛆 / 老鼠 floors suppress the icons outright),
+       *  this icon only when no verdict stamp applies. Null when nothing
+       *  qualifies. The full cards keep the whole stack (compSealNodes). */
+      const highestCompSeal = (
+        name: string,
+        career: CareerStamp | null,
+      ): VNode | null => {
+        if (!sealsShown.value || career === "maggot" || career === "rat") return null;
+        const comp = compositions.value.get(name);
+        if (!comp) return null;
+        if (comp.air && comp.sub) {
+          const cls = comp.subVeteran && !comp.airVeteran ? "sub" : "air";
+          return (
+            <CompSeal cls={cls} veteran={cls === "air" ? comp.airVeteran : comp.subVeteran} />
+          );
+        }
+        if (comp.air) return <CompSeal cls="air" veteran={comp.airVeteran} />;
+        if (comp.sub) return <CompSeal cls="sub" veteran={comp.subVeteran} />;
+        return null;
+      };
+
       // Compact mode reuses the post-battle matrix's row look verbatim —
       // including the shared rosterStatCols — so it needs a name-keyed view
       // of this panel's id-keyed stats. Rows still loading drop out of the
@@ -1222,7 +1248,9 @@ export default defineComponent({
               class="live-battle__crow-stamp"
             />
           ) : null;
-        const compSeals = compSealNodes(v.name, stamp);
+        // The compact row carries exactly ONE seal — the cluster's highest
+        // face (the full card keeps the whole stack).
+        const sealSlot = seal ?? highestCompSeal(v.name, stamp);
         const content = (
           <>
             <span class="live-battle__crow-ico">
@@ -1255,13 +1283,6 @@ export default defineComponent({
               </span>
               <span class="live-battle__crow-ship">{shipName}</span>
             </span>
-            {/* Composition icon seals — placed BEFORE the fixed stat columns
-                so their per-row width (none / one / two seals) is absorbed
-                by the flexible name track and the columns keep their x on
-                every row; the career seal keeps its reserved end slot. */}
-            {compSeals.length > 0 ? (
-              <span class="live-battle__crow-comp">{compSeals}</span>
-            ) : null}
             {rosterStatCols(
               v.name,
               nameStats,
@@ -1274,10 +1295,11 @@ export default defineComponent({
             )}
             {/* Seal slot reserved whenever seals show at all (PR + settings
                 master) — the matrix's own alignment rule: rows without a
-                stamp (bots, misses, verdict holds) keep the stat columns
-                at the same x as sealed rows instead of zigzagging. */}
+                seal (bots, misses, verdict holds) keep the stat columns
+                at the same x as sealed rows instead of zigzagging. The
+                compact row's one seal is the cluster's HIGHEST face. */}
             {prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
-              <span class="live-battle__crow-stampslot">{seal}</span>
+              <span class="live-battle__crow-stampslot">{sealSlot}</span>
             ) : null}
           </>
         );
