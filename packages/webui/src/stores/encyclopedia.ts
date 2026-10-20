@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
 import { basicsToShipInfo, loadShipsBasics } from "@/utils/shipsBasics";
-import { withLestaOverlay } from "@/utils/shipsLesta";
+import { withLestaOverlay, withLestaResolution } from "@/utils/shipsLesta";
 import { useAccountStore } from "@/stores/account";
 import { useShipsUiStore } from "@/stores/shipsUi";
 import { useLanguage, wgApiLanguage } from "@/i18n/useLanguage";
@@ -96,11 +96,24 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     );
   });
 
+  /** Branch-independent id-resolution list: the WG-sourced base PLUS the
+   *  Lesta-only overlay ships (withLestaResolution), whatever the branch
+   *  source. The branch source prunes only the DISPLAY list (`ships`);
+   *  pruning it here too made every WG-only ship an account actually played
+   *  (asia event/collab hulls — 458 battles on the bound account alone)
+   *  unresolvable for stats, landing them in the "unknown type" bucket. */
+  const resolutionShips = ref<ShipInfo[]>([]);
+
   /** Lookup map: shipId → ShipInfo (for back-filling names in stats).
-   *  Includes ALL ships including bracketed event ships for replay resolution. */
+   *  Built from the UNION of the display list and the resolution list, so
+   *  every ship any realm's account could have played resolves — including
+   *  bracketed event ships for replay resolution and each client's
+   *  exclusive hulls (the union also keeps hand-poked `ships` — tests,
+   *  tooling — flowing into the map as before). */
   const byId = computed(() => {
     const m = new Map<number, ShipInfo>();
     for (const s of ships.value) m.set(s.shipId, s);
+    for (const s of resolutionShips.value) m.set(s.shipId, s);
     return m;
   });
 
@@ -213,11 +226,16 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     for (;;) {
       const realmAtStart = useShipsUiStore().treeRealm;
       const overlaid = await withLestaOverlay(fresh, lang);
+      // The resolution union does not read the branch source — one await
+      // races the same watcher the overlay does, and the identity re-check
+      // below covers both.
+      const resolution = await withLestaResolution(fresh, lang);
       if (seq !== loadSeq) return false;
       if (useShipsUiStore().treeRealm !== realmAtStart) continue;
       baseShips = fresh;
       baseLang = lang;
       ships.value = localizeShips(overlaid, lang);
+      resolutionShips.value = localizeShips(resolution, lang);
       return true;
     }
   }

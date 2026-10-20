@@ -362,10 +362,11 @@ export const SHIP_TYPE_ORDER = [
   "Unknown",
 ] as const;
 
-/** Ship type short labels (for compact display). */
+/** Ship type short labels (for compact display). Cruisers carry both hull
+ *  designations — heavy CA, light CL — shown as one combined code. */
 export const SHIP_TYPE_SHORT: Record<string, string> = {
   Battleship: "BB",
-  Cruiser: "CA",
+  Cruiser: "CA/CL",
   Destroyer: "DD",
   AirCarrier: "CV",
   Submarine: "SS",

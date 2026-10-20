@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useShipsUiStore } from "@/stores/shipsUi";
 import { allTechTreeNodes } from "@/utils/techTreeData";
-import { lestaToShipInfo, loadShipsLesta, withLestaOverlay, type WgOnlyRoster } from "./shipsLesta";
+import { lestaToShipInfo, loadShipsLesta, withLestaOverlay, withLestaResolution, type WgOnlyRoster } from "./shipsLesta";
 import type { ShipInfo } from "@/api";
 import wgOnlyRoster from "@/data/ships_wg_only.json";
 
@@ -240,5 +240,47 @@ describe("withLestaOverlay merge", () => {
     const cw = Object.values(allTechTreeNodes("wg")).find((n) => n.nation === "commonwealth")!;
     const list: ShipInfo[] = [{ shipId: 1, name: "WG ship" } as ShipInfo, { shipId: cw.shipId, name: cw.name } as ShipInfo];
     expect(await withLestaOverlay(list, "zh-CN")).toBe(list);
+  });
+});
+
+describe("withLestaResolution union", () => {
+  /** One WG-only hull no tree records (a played event/collab premium) —
+   *  exactly the class of ships the 458-battle "unknown type" regression
+   *  hid from stats resolution. */
+  async function wgOnlyPremium(): Promise<ShipInfo> {
+    const wgTreeIds = new Set(Object.values(allTechTreeNodes("wg")).map((n) => n.shipId));
+    const id = Object.keys((wgOnlyRoster as WgOnlyRoster).ships)
+      .map(Number)
+      .find((wid) => !wgTreeIds.has(wid))!;
+    return { shipId: id, name: "WG-only premium" } as ShipInfo;
+  }
+
+  it("keeps WG-only ships and appends the overlay ships in Lesta mode", async () => {
+    const overlay = await loadShipsLesta();
+    const [overlayId, overlayEntry] = Object.entries(overlay.ships)[0]!;
+    const premium = await wgOnlyPremium();
+    const union = await withLestaResolution([premium], "en-US");
+    // The display list drops the premium in Lesta mode — the resolution
+    // union must not: accounts played it on the WG client.
+    expect(union.some((s) => s.shipId === premium.shipId)).toBe(true);
+    expect(union.some((s) => s.shipId === Number(overlayId))).toBe(true);
+    // No duplicate when the base already carries an overlay id.
+    const withExisting = await withLestaResolution(
+      [lestaToShipInfo(Number(overlayId), overlay, overlayEntry, "en-US")],
+      "en-US",
+    );
+    expect(withExisting.filter((s) => s.shipId === Number(overlayId))).toHaveLength(1);
+  });
+
+  it("also unions the overlay ships in WG mode", async () => {
+    useShipsUiStore().setTreeRealm("wg");
+    const overlay = await loadShipsLesta();
+    const [overlayId] = Object.entries(overlay.ships)[0]!;
+    const premium = await wgOnlyPremium();
+    const union = await withLestaResolution([premium], "en-US");
+    // A ru-realm account's Lesta-only ships resolve in WG mode too —
+    // the union is branch-independent.
+    expect(union.some((s) => s.shipId === premium.shipId)).toBe(true);
+    expect(union.some((s) => s.shipId === Number(overlayId))).toBe(true);
   });
 });
