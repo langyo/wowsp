@@ -33,16 +33,16 @@ pub mod game_data;
 #[cfg(feature = "parsing")]
 pub mod game_params;
 /// Game concept types (entities, positions, enums) useful across WoWS tools.
-/// Live in `wows-core`; re-exported so existing `wowsunpack::game_types` paths
+/// Live in `game-assets-core`; re-exported so existing `game_assets::game_types` paths
 /// keep working.
-pub use wows_core::game_types;
+pub use game_assets_core::game_types;
 /// 3D model formats (geometry, visual, etc.)
 #[cfg(feature = "parsing")]
 pub mod models;
 /// Generic wrapper for values that may or may not match a known variant.
-/// Lives in `wows-core`; re-exported here so existing `wowsunpack::recognized`
+/// Lives in `game-assets-core`; re-exported here so existing `game_assets::recognized`
 /// paths keep working.
-pub use wows_core::recognized;
+pub use game_assets_core::recognized;
 /// Utilities involving the game's RPC functions -- useful for parsing entity defs and RPC definitions.
 #[cfg(feature = "parsing")]
 pub mod rpc;

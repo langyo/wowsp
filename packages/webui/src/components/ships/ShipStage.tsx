@@ -70,7 +70,7 @@ export interface PlaneModelOption {
 export type FocusZone = "default" | "bow" | "midship" | "stern" | "deck" | "waterline";
 
 // ── Armor thickness scale ────────────────────────────────────────────────
-// Mirrors the exporter's ARMOR_COLOR_SCALE (wowsunpack gltf_export.rs) —
+// Mirrors the exporter's ARMOR_COLOR_SCALE (game-assets gltf_export.rs) —
 // the authoritative table baked into the *_armor.glb vertex colors. Each
 // entry: (maxThickness_mm, r, g, b); assignment uses bisect_left.
 const ARMOR_SCALE: [number, number, number, number][] = [
@@ -522,7 +522,7 @@ export default defineComponent({
                     ud.armorBaseMat = mat;
                     mesh.material = split.buckets.map(() => mat);
                   }
-                  // Armor GLBs come from wowsunpack in the game's own
+                  // Armor GLBs come from game-assets in the game's own
                   // orientation (bow at -Z), while visual GLBs from
                   // wows-gltf-exporter face bow at +Z — rotate 180° about Y so
                   // the two models face the same way. The rotation must live

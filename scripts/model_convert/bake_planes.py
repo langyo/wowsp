@@ -3,7 +3,7 @@
 Planes are keyed by their GameParams index (from plane_types.json) so the
 frontend can map a squadron's paramsId -> index -> GLB. The GameParams ->
 VFS geometry path map lives in `packages/webui/src/data/plane_models.json`
-(regenerate with `wowsunpack game-params` + the `model` field on each entry).
+(regenerate with `game-assets game-params` + the `model` field on each entry).
 
 Usage:
     # Bake the planes that appear in a replay dump (from the dump_replay_json
@@ -51,22 +51,22 @@ PROP_TRIS = {"shell": 300, "torpedo": 600}
 PLANE_TRIS = 1200
 
 
-def find_wowsunpack() -> Path:
-    exe = REPO_ROOT / "target" / "release" / "wowsunpack.exe"
+def find_game_assets() -> Path:
+    exe = REPO_ROOT / "target" / "release" / "game-assets.exe"
     if exe.exists():
         return exe
-    exe = REPO_ROOT / "target" / "model-tools" / "wowsunpack.exe"
+    exe = REPO_ROOT / "target" / "model-tools" / "game-assets.exe"
     if exe.exists():
         return exe
-    raise FileNotFoundError("wowsunpack.exe not found — run just build wowsunpack")
+    raise FileNotFoundError("game-assets.exe not found — run just build game-assets")
 
 
-def export_and_bake(wowsunpack: Path, game: str, vfs_path: str, out_glb: Path,
+def export_and_bake(game_assets: Path, game: str, vfs_path: str, out_glb: Path,
                     triangles: int, tag: str) -> bool:
     raw = TEMP_DIR / f"raw_{tag}.glb"
     try:
         rc = subprocess.call(
-            [str(wowsunpack), "-g", game, "export-model", vfs_path,
+            [str(game_assets), "-g", game, "export-model", vfs_path,
              "-o", str(raw), "--no-textures"],
             timeout=60,
         )
@@ -118,7 +118,7 @@ def main() -> int:
     if not game:
         print("game install not found", file=sys.stderr)
         return 1
-    wowsunpack = find_wowsunpack()
+    game_assets = find_game_assets()
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
     PLANES_OUT.mkdir(parents=True, exist_ok=True)
     PROPS_OUT.mkdir(parents=True, exist_ok=True)
@@ -131,7 +131,7 @@ def main() -> int:
         if out.exists() and not args.force:
             continue
         print(f"[props] {name} ...")
-        if export_and_bake(wowsunpack, game, vfs, out, PROP_TRIS[name], name):
+        if export_and_bake(game_assets, game, vfs, out, PROP_TRIS[name], name):
             print(f"[props] {name} -> {out.name} ({out.stat().st_size // 1024} KB)")
         else:
             print(f"[props] {name} FAILED")
@@ -174,7 +174,7 @@ def main() -> int:
             done += 1
             continue
         print(f"[planes] {index} ({n}) ...")
-        if export_and_bake(wowsunpack, game, vfs, out, PLANE_TRIS, index):
+        if export_and_bake(game_assets, game, vfs, out, PLANE_TRIS, index):
             done += 1
             print(f"[planes] {index} -> {out.name} ({out.stat().st_size // 1024} KB)")
         else:

@@ -1,6 +1,6 @@
 //! TTX data model: stat newtypes plus the `ShipStats` struct tree.
 //!
-//! Distance units (`Meters`, `Millimeters`, ...) are reused from `wows-core`
+//! Distance units (`Meters`, `Millimeters`, ...) are reused from `game-assets-core`
 //! (re-exported by `game_params::types`). The newtypes defined here cover the
 //! remaining TTX quantities. Leaf structs hold `Option` fields (absent when not
 //! computable); per-species fields are filled in by later milestones.

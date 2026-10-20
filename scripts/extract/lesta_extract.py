@@ -3,11 +3,11 @@
 
 The 26.x Lesta client's vehicle packs wrap entries in an Oodle-Kraken chunk
 container (compression_info 0x0000000700000006) that the vendored
-wowsunpack's deflate-only pkg reader cannot decode, so this tool performs
+game-assets's deflate-only pkg reader cannot decode, so this tool performs
 the extraction itself:
 
   idx v40 (48-byte records)  →  per-file {volume, offset, size, crc}
-  wowsunpack `metadata`      →  path → {crc32, sizes} (idx-only, no pkgs)
+  game-assets `metadata`      →  path → {crc32, sizes} (idx-only, no pkgs)
   join on crc+sizes          →  the volume + offset for each path
   powzix/ooz                 →  chunk decoding (see --ooz)
 
@@ -85,17 +85,17 @@ def latest_idx_dir(game: Path) -> Path:
     return max(builds, key=lambda p: int(p.name)) / "idx"
 
 
-def ensure_metadata(game: Path, wowsunpack: str) -> Path:
+def ensure_metadata(game: Path, game_assets: str) -> Path:
     """The path→crc/size map (idx-only pass; regenerated when missing)."""
     if META_JSON.is_file():
         return META_JSON
     META_JSON.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[lesta-extract] generating {META_JSON} via wowsunpack metadata ...")
+    print(f"[lesta-extract] generating {META_JSON} via game-assets metadata ...")
     rc = subprocess.call(
-        [wowsunpack, "--game-dir", str(game), "metadata", str(META_JSON), "--format", "json"]
+        [game-assets, "--game-dir", str(game), "metadata", str(META_JSON), "--format", "json"]
     )
     if rc != 0 or not META_JSON.is_file():
-        raise SystemExit("wowsunpack metadata failed for the Lesta install")
+        raise SystemExit("game-assets metadata failed for the Lesta install")
     return META_JSON
 
 
@@ -227,8 +227,8 @@ def main() -> int:
         "with --no-fetch-decoder or WOWSP_OODLE_NO_BUILD=1",
     )
     ap.add_argument(
-        "--wowsunpack",
-        help="wowsunpack binary for the metadata pass (default: repo target/release)",
+        "--game-assets",
+        help="game-assets binary for the metadata pass (default: repo target/release)",
     )
     ap.add_argument("patterns", nargs="+", help="glob patterns against pkg-internal paths")
     args = ap.parse_args()
@@ -247,22 +247,22 @@ def main() -> int:
     decoder = OozDecoder(cand_bin, mode)
     print(f"[lesta-extract] oodle backend: {mode} ({cand_bin})")
 
-    wowsunpack = args.wowsunpack
-    if not wowsunpack:
+    game_assets = args.game-assets
+    if not game-assets:
         for cand in (
-            ROOT / "target/release/wowsunpack.exe",
-            ROOT / "target/release/wowsunpack",
+            ROOT / "target/release/game-assets.exe",
+            ROOT / "target/release/game-assets",
         ):
             if cand.is_file():
-                wowsunpack = str(cand)
+                game_assets = str(cand)
                 break
-    if not wowsunpack:
-        raise SystemExit("wowsunpack not found (build: just build wowsunpack)")
+    if not game-assets:
+        raise SystemExit("game-assets not found (build: just build game-assets)")
 
     idx_dir = latest_idx_dir(game)
     pkg_dir = game / "res_packages"
     print(f"[lesta-extract] game: {game} (idx: {idx_dir.name})")
-    meta = load_meta(ensure_metadata(game, wowsunpack))
+    meta = load_meta(ensure_metadata(game, game_assets))
     by_crc, volnames = build_index(idx_dir)
 
     outdir = Path(args.out)

@@ -32,7 +32,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import find_game_path, find_wowsunpack  # noqa: E402
+from _common import find_game_path, find_game_assets  # noqa: E402
 
 MAPS_DIR = (
     Path(__file__).resolve().parents[2]
@@ -107,9 +107,9 @@ def main() -> int:
     if not game:
         print("error: World of Warships install not found. Set WOWSP_GAME_PATH.", file=sys.stderr)
         return 1
-    wowsunpack = find_wowsunpack()
-    if not wowsunpack:
-        print("error: wowsunpack not found. Set WOWSP_WOWSUNPACK.", file=sys.stderr)
+    game_assets = find_game_assets()
+    if not game-assets:
+        print("error: game-assets not found. Set WOWSP_GAME_ASSETS.", file=sys.stderr)
         return 1
 
     out_dir = MAPS_DIR / "minimaps"
@@ -138,7 +138,7 @@ def main() -> int:
         return 0
     print(f"[extract_minimaps] {len(space_ids)} maps to extract")
 
-    # One wowsunpack pass for all three file types (each invocation re-opens
+    # One game-assets pass for all three file types (each invocation re-opens
     # the game idx, which costs several seconds).
     with tempfile.TemporaryDirectory() as tmp:
         patterns = [
@@ -147,10 +147,10 @@ def main() -> int:
             "/spaces/*/space.settings",
         ]
         rc = subprocess.call(
-            [str(wowsunpack), "--game-dir", game, "extract", "-o", tmp, *patterns]
+            [str(game_assets), "--game-dir", game, "extract", "-o", tmp, *patterns]
         )
         if rc != 0:
-            print(f"error: wowsunpack extract failed (rc={rc})", file=sys.stderr)
+            print(f"error: game-assets extract failed (rc={rc})", file=sys.stderr)
             return rc
 
         # Delayed import: PIL is only needed for the composite step.

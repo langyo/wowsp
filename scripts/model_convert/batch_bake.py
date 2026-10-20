@@ -42,7 +42,7 @@ GAMEPARAMS_JSON = Path(
     os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/share"))
 ) / "WoWSP-extract" / "GameParams.json"
 BAKE_SCRIPT = SCRIPT_DIR / "bake_model.py"
-WOWSUNPACK_BIN = TOOLS_DIR / "wowsunpack.exe"   # built from cargo workspace
+WOWSUNPACK_BIN = REPO_ROOT / "target" / "release" / "game-assets.exe"  # cargo workspace build
 
 def find_game_path() -> str | None:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -204,7 +204,7 @@ def bake_one(game: str, gp_name: str, output_dir: Path, force: bool,
                          This makes the run safely resumable: re-invoking it
                          only touches files still needing work.
     `model_dir_name`  — internal model directory name (e.g. 'USB001_Yukon_1941')
-                         for armor GLB export via wowsunpack.
+                         for armor GLB export via game-assets.
     """
     filename = derive_filename(gp_name)
     out_glb = output_dir / filename

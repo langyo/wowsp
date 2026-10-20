@@ -29,7 +29,7 @@ Sources:
 * the full `GameParams.json` (`%LOCALAPPDATA%/WoWSP-extract`, produced by
   `just extract`) — the ability ENTITY definitions, whose per-variant
   `logic.distShip` is the radar / hydro detection radius in BigWorld units
-  (1 BW unit = 30 m — same conversion the vendored wowsunpack
+  (1 BW unit = 30 m — same conversion the vendored game-assets
   `AbilityCategory::detection_radius()` applies).
 
 Families counted: `RLSSearch` (radar), `SonarSearch` (hydro),
@@ -73,8 +73,8 @@ FAMILY_HYDRO = "SonarSearch"
 FAMILY_SMOKE = "SmokeGenerator"
 COUNTED = (FAMILY_RADAR, FAMILY_HYDRO, FAMILY_SMOKE)
 
-# BigWorld distance unit → meters (wows-core units.rs BW_TO_METERS; the
-# vendored wowsunpack `detection_radius()` applies the same factor).
+# BigWorld distance unit → meters (game-assets-core units.rs BW_TO_METERS; the
+# vendored game-assets `detection_radius()` applies the same factor).
 BW_TO_METERS = 30.0
 
 

@@ -5,7 +5,7 @@
 //!
 //! # Quick start
 //! ```no_run
-//! use wowsunpack::export::ship::{ShipAssets, ShipExportOptions};
+//! use game_assets::export::ship::{ShipAssets, ShipExportOptions};
 //! # fn main() -> rootcause::Result<()> {
 //! # let vfs: vfs::VfsPath = todo!();
 //! let assets = ShipAssets::load(&vfs)?;

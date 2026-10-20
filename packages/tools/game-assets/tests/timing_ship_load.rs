@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use wowsunpack::export::ship::{ShipAssets, ShipExportOptions};
-use wowsunpack::game_params::types::GameParamProvider;
+use game_assets::export::ship::{ShipAssets, ShipExportOptions};
+use game_assets::game_params::types::GameParamProvider;
 
 #[test]
 #[ignore = "requires a World of Warships install; profiling only"]

@@ -7,8 +7,8 @@
 //! WG achievement id collides with a Lesta method firing per shell).
 //!
 //! NOT auto-generated: the WG generator's reference checkout ships no Lesta
-//! defs. This table was computed by running the vendored wowsunpack entity-def
-//! parser (`wowsunpack::rpc::entitydefs::parse_scripts` — the engine's own
+//! defs. This table was computed by running the game-assets entity-def
+//! parser (`game_assets::rpc::entitydefs::parse_scripts` — the engine's own
 //! exposed-index rule: client methods stable-sorted by arg wire size) over a
 //! local 26.10 install's `scripts/entity_defs`, then cross-validated twice:
 //!

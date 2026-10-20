@@ -14,7 +14,7 @@ ship keyed by `ship_id` and includes the matching `index`. So the join is:
                               (GameParams.json, by index) → RarityCategory.name
 
 Inputs:
-  --gameparams  : unpacked GameParams.json (from `wowsunpack game-params`)
+  --gameparams  : unpacked GameParams.json (from `game-assets game-params`)
   --bridge      : wowsinfo.json (from github.com/wowsinfo/data, live/app/data)
    --out         : packages/webui/src/data/ship_rarity.json
 

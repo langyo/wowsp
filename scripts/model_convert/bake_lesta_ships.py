@@ -44,7 +44,7 @@ Pipeline per ship (the Lesta-only indexes of tech_tree_lesta.json):
   1. ship + gun model dirs from ship_models.json / GameParams;
   2. extract the dirs' .geometry files + the .splash (+ content/
      assets.bin once per stage) via lesta_extract.py (Oodle pkgs);
-  3. `wowsunpack export-model --no-vfs` per part (skips lod*/wire/ports
+  3. `game-assets export-model --no-vfs` per part (skips lod*/wire/ports
      duplicates and degenerate <10-tri marker meshes);
   4. merge the parts into one GLB (one node per part, named by stem —
      gun parts are named `<GUN_STEM>_<HP>` so bake_model classifies
@@ -101,7 +101,7 @@ WG_GAMEPARAMS = Path(
 # ── turret placement (GameParams artillery HP → .splash boxes) ─────────
 def parse_splash_boxes(data: bytes) -> dict[str, tuple[list, list]]:
     """`u32 count`, then per box `u32 name_len, name, 6×f32 (min, max)` —
-    the same layout wowsunpack's parse_splash_file reads (models/geometry.rs)."""
+    the same layout game-assets's parse_splash_file reads (models/geometry.rs)."""
     pos = 0
     (count,) = struct.unpack_from("<I", data, pos)
     pos += 4
@@ -175,7 +175,7 @@ GUN_TRI_CAP = {"main": 1500, "secondary": 400, "aa": 150}
 
 
 def load_node_blocks(stage: Path, game_dir: str, ooz: str | None,
-                     wowsunpack: str) -> list[dict] | None:
+                     game_assets: str) -> list[dict] | None:
     """HP-node digest of every assets.bin node block, cached under the
     stage. Each entry: {off, mounts: {HP_name: 16 row-major floats}} for
     blocks carrying at least one gun hardpoint. Returns None when the
@@ -197,7 +197,7 @@ def load_node_blocks(stage: Path, game_dir: str, ooz: str | None,
     if not assets.is_file():
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
-             "--game-dir", game_dir, "--out", str(stage), "--wowsunpack", wowsunpack]
+             "--game-dir", game_dir, "--out", str(stage), "--game-assets", game-assets]
             + (["--ooz", ooz] if ooz else []) + ["content/assets.bin"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
@@ -400,7 +400,7 @@ def sdk_dump_mounts(sdk_path: Path, stage: Path) -> dict[str, dict[str, list[flo
 def wg_reference_mounts(hull_dir: str, hp_ents: dict[str, dict],
                         anchors: list[dict],
                         boxes: dict[str, tuple[list, list]],
-                        wowsunpack: str, wg_game: str | None,
+                        game_assets: str, wg_game: str | None,
                         raw_dir: Path) -> dict[str, tuple[str, list[float]]]:
     """Cross-client fallback for hulls with no readable node blocks:
     the WG client's own export-ship of a hull sharing the Lesta hull
@@ -445,7 +445,7 @@ def wg_reference_mounts(hull_dir: str, hp_ents: dict[str, dict],
         if not wg_dir:
             return {}
         r = subprocess.run(
-            [wowsunpack, "-g", wg_game, "export-ship", wg_dir,
+            [game-assets, "-g", wg_game, "export-ship", wg_dir,
              "--no-textures", "-o", str(ref_glb)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
@@ -962,17 +962,17 @@ def merge_glbs(parts: list[tuple[str, Path]], out: Path) -> None:
 
 
 # ── pipeline ───────────────────────────────────────────────────────────
-def find_wowsunpack(explicit: str | None) -> str | None:
+def find_game_assets(explicit: str | None) -> str | None:
     if explicit:
         return explicit
     for cand in (
-        REPO_ROOT / "target/release/wowsunpack.exe",
-        REPO_ROOT.parent / "wowsp/target/release/wowsunpack.exe",
+        REPO_ROOT / "target/release/game-assets.exe",
+        REPO_ROOT.parent / "wowsp/target/release/game-assets.exe",
     ):
         if cand.is_file():
             return str(cand)
     import shutil
-    return shutil.which("wowsunpack") or shutil.which("wowsunpack.exe")
+    return shutil.which("game-assets") or shutil.which("game-assets.exe")
 
 
 def main() -> int:
@@ -980,7 +980,7 @@ def main() -> int:
     ap.add_argument("--game-dir", required=True, help="Lesta client install root")
     ap.add_argument("--stage", required=True, help="extraction dir (content/ tree + raw glbs)")
     ap.add_argument("--ooz", default=None, help="ooz decoder for lesta_extract")
-    ap.add_argument("--wowsunpack", default=None)
+    ap.add_argument("--game-assets", default=None)
     ap.add_argument("--gameparams", type=Path, default=LESTA_GAMEPARAMS,
                     help="decoded Lesta GameParams.json (turret anchors; "
                          "hull-only bakes when absent)")
@@ -996,9 +996,9 @@ def main() -> int:
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
-    wowsunpack = find_wowsunpack(args.wowsunpack)
-    if not wowsunpack:
-        print("error: wowsunpack not found (build it: just build wowsunpack).", file=sys.stderr)
+    game_assets = find_game_assets(args.game-assets)
+    if not game-assets:
+        print("error: game-assets not found (build it: just build game-assets).", file=sys.stderr)
         return 1
     if not LESTA_META.is_file():
         print(f"error: {LESTA_META} missing — run lesta_extract.py once to generate it.",
@@ -1080,7 +1080,7 @@ def main() -> int:
     raw_dir.mkdir(parents=True, exist_ok=True)
     # Node blocks: every mount's exact transform (secondary/AA rely on it
     # entirely; mains use it with the splash anchor as cross-check).
-    blocks = load_node_blocks(Path(args.stage), args.game_dir, args.ooz, wowsunpack)
+    blocks = load_node_blocks(Path(args.stage), args.game_dir, args.ooz, game_assets)
     sdk_mounts = None
     if args.sdk_dump is not None and args.sdk_dump.exists():
         sdk_mounts = sdk_dump_mounts(args.sdk_dump, Path(args.stage))
@@ -1101,7 +1101,7 @@ def main() -> int:
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
              "--game-dir", args.game_dir, "--out", str(args.stage),
-             "--wowsunpack", wowsunpack]
+             "--game-assets", game-assets]
             + (["--ooz", args.ooz] if args.ooz else [])
             + [p.lstrip("/") for p in splash_paths.values()],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -1216,7 +1216,7 @@ def main() -> int:
             from _common import find_game_path  # noqa: PLC0415
 
             mounts = wg_reference_mounts(
-                base, hp_ents, anchors, boxes, wowsunpack,
+                base, hp_ents, anchors, boxes, game_assets,
                 find_game_path(), raw_dir)
             if mounts:
                 print(f"[bake-lesta]   {idx}: {len(mounts)} mounts from a WG "
@@ -1235,7 +1235,7 @@ def main() -> int:
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
              "--game-dir", args.game_dir, "--out", str(args.stage),
-             "--wowsunpack", wowsunpack]
+             "--game-assets", game-assets]
             + (["--ooz", args.ooz] if args.ooz else []) + keep + extra,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
@@ -1254,7 +1254,7 @@ def main() -> int:
             out = raw_dir / f"{idx}__{stem}.glb"
             if not out.is_file() or args.force:
                 r = subprocess.run(
-                    [wowsunpack, "export-model", str(p), "--no-vfs", "-o", str(out)],
+                    [game-assets, "export-model", str(p), "--no-vfs", "-o", str(out)],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                 )
                 if r.returncode != 0 or not out.is_file():
@@ -1280,7 +1280,7 @@ def main() -> int:
                 if not src.is_file():
                     return None
                 r = subprocess.run(
-                    [wowsunpack, "export-model", str(src), "--no-vfs", "-o", str(raw)],
+                    [game-assets, "export-model", str(src), "--no-vfs", "-o", str(raw)],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                 )
                 if r.returncode != 0 or not raw.is_file():
@@ -1409,7 +1409,7 @@ def main() -> int:
                 if src is None:
                     if not raw.is_file() or args.force:
                         r = subprocess.run(
-                            [wowsunpack, "export-model", str(gun_src), "--no-vfs", "-o", str(raw)],
+                            [game-assets, "export-model", str(gun_src), "--no-vfs", "-o", str(raw)],
                             capture_output=True, text=True, encoding="utf-8", errors="replace",
                         )
                         if r.returncode != 0 or not raw.is_file():

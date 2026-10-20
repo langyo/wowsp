@@ -4,30 +4,30 @@ WoWS ships its assets in a proprietary `.pkg` container format (NOT zip — it
 uses a per-version `idx` index plus binary volumes in `res_packages/`), and the
 mesh data inside is a custom `.geometry` format. Reverse-engineering that stack
 from scratch is multi-week work, so WoWSP drives
-[`wowsunpack`](https://github.com/landaire/wows-toolkit) (from landaire's
+[`game-assets`](https://github.com/landaire/wows-toolkit) (from landaire's
 wows-toolkit) — a mature, actively-maintained Rust tool that reads the idx/pkg
 VFS and exports `.geometry` + `.visual` straight to GLB.
 
 These two scripts are **thin orchestrators**: they auto-detect the game install
-(reusing WoWSP's registry + Steam logic), locate `wowsunpack`, and invoke its
+(reusing WoWSP's registry + Steam logic), locate `game-assets`, and invoke its
 `export-ship` / `export-map` subcommands. Adding a new map or ship is a
 data-only operation — drop the name into a call and run.
 
 ## Prerequisites
 
-Install `wowsunpack` once (any one method):
+Install `game-assets` once (any one method):
 
 ```bash
 # Option A: prebuilt binary (Windows) — download from
 #   https://github.com/landaire/wows-toolkit/releases/latest
-#   (look for wows_toolkit_tools_<platform>.zip), then put wowsunpack.exe on PATH
-#   or set WOWSP_WOWSUNPACK=/path/to/wowsunpack.exe
+#   (look for wows_toolkit_tools_<platform>.zip), then put game-assets.exe on PATH
+#   or set WOWSP_GAME_ASSETS=/path/to/game-assets.exe
 
 # Option B: from crates.io
-cargo install wowsunpack
+cargo install game-assets
 
 # Option C: from source
-cargo install --git https://github.com/landaire/wows-toolkit wowsunpack
+cargo install --git https://github.com/landaire/wows-toolkit game-assets
 ```
 
 The game install is auto-detected the same way WoWSP's desktop shell does it
@@ -36,7 +36,7 @@ The game install is auto-detected the same way WoWSP's desktop shell does it
 
 ## Scripts
 
-| Script | wowsunpack subcommand | Output |
+| Script | game-assets subcommand | Output |
 |---|---|---|
 | `convert_ship.py` | `export-ship` | `GLB` under `packages/webui/src/res/models/ships/` |
 | `convert_map.py` | `export-map` | `GLB` under `packages/webui/src/res/models/maps/` |
@@ -79,7 +79,7 @@ python scripts/model_convert/bake_planes.py --props-only
   geometry, scattering the unplaced sets around the airframe. Seeing
   `No matching .visual found; exporting raw geometry` for a WG-client airframe
   in the bake log means that resolution broke again.
-- Requires the in-tree patched `wowsunpack` (`target/release/wowsunpack.exe`):
+- Requires the in-tree patched `game-assets` (`target/release/game-assets.exe`):
   stock `export-model` pairs vertex/index mappings positionally, which corrupts
   multi-buffer raw exports (most planes). The vendored patch pairs them by the
   mappings' shared `packed_texel_density` render-set hash instead.
@@ -131,7 +131,7 @@ python scripts/model_convert/convert_map.py --name 15_NE_north
 ```
 
 Run `--help` on either script for all flags (LOD, hull selection, terrain
-decimation, texture downsampling — all forwarded to `wowsunpack`).
+decimation, texture downsampling — all forwarded to `game-assets`).
 
 ## Baking (low-poly holographic GLBs)
 
@@ -177,7 +177,7 @@ finished in a valid state.
 
 ## How to add a new map or ship
 
-1. Make sure `wowsunpack` is installed and the game is detected (run WoWSP once
+1. Make sure `game-assets` is installed and the game is detected (run WoWSP once
    or set `WOWSP_GAME_PATH`).
 2. `just convert-ship --name <ShipName>` (or `just convert-map --name <space_id>`).
 3. Commit the resulting GLB under `packages/webui/src/res/models/ships/` or
@@ -204,34 +204,34 @@ viewer renders: a multi-mesh GLB with a decimated `Terrain` height-field
 terrain — use `convert_map_holo.py` for the full topographic result.
 
 ```bash
-# Requires the patched wowsunpack (below). One map at a time:
+# Requires the patched game-assets (below). One map at a time:
 just convert-map-holo --name 18_NE_ice_islands
 just convert-map-holo --name 15_NE_north
 
 # Or directly (set the patched binary path):
-WOWSP_WOWSUNPACK=target/model-tools-patched/wowsunpack.exe \
+WOWSP_GAME_ASSETS=target/model-tools-patched/game-assets.exe \
   python scripts/model_convert/convert_map_holo.py --name 18_NE_ice_islands
 ```
 
-### Why `wowsunpack`?
+### Why `game-assets`?
 
-Stock `wowsunpack export-map` clamps terrain to sea level (Y >= 0) and culls
+Stock `game-assets export-map` clamps terrain to sea level (Y >= 0) and culls
 fully-submerged triangles — so sea-floor bathymetry and trenches are discarded
 before the GLB is written. The raw `terrain.bin` heightmap *does* contain
 negative depths; the exporter just throws them away with no flag to disable it.
 
-`wowsunpack` is vendored as a workspace member (`packages/tools/wowsunpack-vendor/`)
+`game-assets` is vendored as a workspace member (`packages/tools/game-assets tree/`)
 from the official [`landaire/wows-toolkit`](https://github.com/landaire/wows-toolkit)
 repo. Build it once:
 
 ```bash
-just build wowsunpack
+just build game-assets
 ```
 
 The vendor tree is tracked in-tree (an independent fork of landaire's
 wows-toolkit, slimmed to the library crates — never a nested clone inside
-this checkout) and the build compiles the `wowsunpack`
-workspace member into `target/release/wowsunpack.exe`.
+this checkout) and the build compiles the `game-assets`
+workspace member into `target/release/game-assets.exe`.
 `convert_map_holo.py` auto-detects and uses it. The script gracefully
 degrades without `--keep-submerged` (trenches flattened, contours still work).
 
@@ -241,5 +241,5 @@ densest contour lines.
 
 ## Status
 
-Working orchestrators. The actual format decoding is `wowsunpack`'s job; these
+Working orchestrators. The actual format decoding is `game-assets`'s job; these
 scripts add WoWSP-specific game detection, output placement, and friendly CLI.

@@ -1921,6 +1921,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "game-assets"
+version = "0.43.0"
+dependencies = [
+ "async-std",
+ "async-trait",
+ "bon",
+ "ciborium",
+ "clap",
+ "convert_case",
+ "csv",
+ "dhat",
+ "flate2",
+ "futures",
+ "game-assets-core",
+ "gettext",
+ "glob",
+ "gltf",
+ "gltf-json",
+ "half",
+ "image",
+ "image_dds",
+ "indicatif",
+ "insta",
+ "itertools",
+ "memmap2",
+ "meshopt-rs",
+ "paste",
+ "pickled",
+ "rayon",
+ "regex",
+ "rkyv",
+ "rootcause",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror 2.0.21",
+ "thread_local",
+ "toml 1.1.3+spec-1.1.0",
+ "tracing",
+ "unidecode",
+ "vfs",
+ "winnow 1.0.4",
+]
+
+[[package]]
+name = "game-assets-core"
+version = "0.11.0"
+dependencies = [
+ "rkyv",
+ "roxmltree",
+ "serde",
+]
+
+[[package]]
 name = "gdk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3272,10 +3327,10 @@ dependencies = [
 
 [[package]]
 name = "model-exporter"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
+ "game-assets",
  "rootcause",
- "wowsunpack",
 ]
 
 [[package]]
@@ -7223,15 +7278,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wows-core"
-version = "0.11.0"
-dependencies = [
- "rkyv",
- "roxmltree",
- "serde",
-]
-
-[[package]]
 name = "wowsp_replay_core"
 version = "0.6.3"
 dependencies = [
@@ -7258,6 +7304,7 @@ dependencies = [
  "ed25519-dalek",
  "flate2",
  "futures",
+ "game-assets",
  "getrandom 0.4.3",
  "hex",
  "hifumi",
@@ -7292,7 +7339,6 @@ dependencies = [
  "wmi",
  "wowsp_replay_core",
  "wowsp_tauri_shared",
- "wowsunpack",
  "ww2ogg",
  "zip",
  "zstd",
@@ -7306,52 +7352,6 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "wowsunpack"
-version = "0.43.0"
-dependencies = [
- "async-std",
- "async-trait",
- "bon",
- "ciborium",
- "clap",
- "convert_case",
- "csv",
- "dhat",
- "flate2",
- "futures",
- "gettext",
- "glob",
- "gltf",
- "gltf-json",
- "half",
- "image",
- "image_dds",
- "indicatif",
- "insta",
- "itertools",
- "memmap2",
- "meshopt-rs",
- "paste",
- "pickled",
- "rayon",
- "regex",
- "rkyv",
- "rootcause",
- "roxmltree",
- "serde",
- "serde_json",
- "sha2 0.11.1",
- "thiserror 2.0.21",
- "thread_local",
- "toml 1.1.3+spec-1.1.0",
- "tracing",
- "unidecode",
- "vfs",
- "winnow 1.0.4",
- "wows-core",
 ]
 
 [[package]]

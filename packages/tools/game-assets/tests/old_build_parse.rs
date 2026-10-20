@@ -4,17 +4,17 @@
 //! `OLD_BUILD_VFS`). Run explicitly:
 //!   cargo test -p wowsunpack --test old_build_parse -- --ignored --nocapture
 
-use wowsunpack::game_params::provider::GameMetadataProvider;
-use wowsunpack::game_params::types::GameParamProvider;
-use wowsunpack::vfs::VfsPath;
-use wowsunpack::vfs::impls::physical::PhysicalFS;
+use game_assets::game_params::provider::GameMetadataProvider;
+use game_assets::game_params::types::GameParamProvider;
+use game_assets::vfs::VfsPath;
+use game_assets::vfs::impls::physical::PhysicalFS;
 
 /// Decode an old build's GameParams.data to JSON for inspection (jaq/jq).
 ///   cargo test -p wowsunpack --test old_build_parse dump_gameparams_json -- --ignored --nocapture
 #[test]
 #[ignore]
 fn dump_gameparams_json() {
-    use wowsunpack::game_params::convert::game_params_to_pickle;
+    use game_assets::game_params::convert::game_params_to_pickle;
     let dir = std::env::var("OLD_BUILD_VFS").unwrap_or_else(|_| r"G:\wows_builds\0.6.13_296659\vfs".to_string());
     let out = std::env::var("GP_JSON_OUT").unwrap_or_else(|_| r"G:\temp_gp.json".to_string());
     let data = std::fs::read(format!("{dir}/content/GameParams.data")).expect("read GameParams.data");
@@ -61,8 +61,8 @@ fn ttx_across_historical_builds() {
     use std::panic::AssertUnwindSafe;
     use std::panic::catch_unwind;
 
-    use wowsunpack::game_params::ttx::ship_stats_stock;
-    use wowsunpack::game_params::types::Species;
+    use game_assets::game_params::ttx::ship_stats_stock;
+    use game_assets::game_params::types::Species;
 
     // A spread across eras: pre-rework (0.6/0.7), the 10.x renumbering, and the
     // 11.x subs era. Each must have a dumped `<name>\vfs` tree under the root.

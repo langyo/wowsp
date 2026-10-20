@@ -12,7 +12,7 @@ game VFS, reads the translated names for the supported languages, and writes
     }
 
 The frontend falls back to the prettified space id when a language is
-missing. Run `wowsunpack list` on the spaces root to discover the ids.
+missing. Run `game-assets list` on the spaces root to discover the ids.
 """
 
 from __future__ import annotations
@@ -34,10 +34,10 @@ from extract_ship_names import LANG_DIRS, latest_bin_dir, load_mo  # noqa: E402
 DEFAULT_OUT = REPO_ROOT / "packages" / "webui" / "src" / "data" / "map_names.json"
 
 
-def list_spaces(game: str, wowsunpack: Path) -> list[str]:
+def list_spaces(game: str, game_assets: Path) -> list[str]:
     """Space ids from the VFS `spaces/` root (each is a directory)."""
     out = subprocess.run(
-        [str(wowsunpack), "-g", game, "list"],
+        [str(game_assets), "-g", game, "list"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     ).stdout
     ids: set[str] = set()
@@ -61,12 +61,12 @@ def main() -> int:
     if not game:
         print("error: game install not found", file=sys.stderr)
         return 1
-    wowsunpack = REPO_ROOT / "target" / "release" / "wowsunpack.exe"
-    if not wowsunpack.exists():
-        print(f"error: {wowsunpack} missing — build the patched wowsunpack", file=sys.stderr)
+    game_assets = REPO_ROOT / "target" / "release" / "game-assets.exe"
+    if not game-assets.exists():
+        print(f"error: {game-assets} missing — build the patched game-assets", file=sys.stderr)
         return 1
 
-    spaces = list_spaces(game, wowsunpack)
+    spaces = list_spaces(game, game_assets)
     print(f"[map-names] {len(spaces)} spaces")
 
     bin_dir = latest_bin_dir(Path(game))

@@ -73,13 +73,13 @@ export const UPSTREAM_ATTRIBUTIONS: Attribution[] = [
   },
   {
     id: "wowsunpack",
-    name: "wowsunpack",
+    name: "game-assets (wowsunpack fork)",
     url: "https://github.com/landaire/wows-toolkit",
     roleKey: "wowsunpackRole",
   },
   {
     id: "wows-core",
-    name: "wows-core",
+    name: "game-assets-core (wows-core fork)",
     url: "https://github.com/landaire/wows-toolkit",
     roleKey: "wowscoreRole",
   },

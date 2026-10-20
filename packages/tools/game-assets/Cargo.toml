@@ -1,5 +1,5 @@
 [package]
-name = "wowsunpack"
+name = "game-assets"
 description = "Utility for interacting with World of Warships game assets"
 version = "0.43.0"
 repository = "https://github.com/landaire/wows-toolkit"
@@ -10,11 +10,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [lib]
-name = "wowsunpack"
+name = "game_assets"
 path = "src/lib.rs"
 
 [[bin]]
-name = "wowsunpack"
+name = "game-assets"
 path = "src/main.rs"
 required-features = ["bin"]
 
@@ -24,7 +24,7 @@ path = "src/bin/dhat_parse.rs"
 required-features = ["dhat-heap"]
 
 [dependencies]
-wows-core = { workspace = true }
+game-assets-core = { workspace = true }
 clap = { workspace = true, optional = true }
 flate2 = { workspace = true }
 rootcause = { workspace = true }
@@ -72,9 +72,9 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 
 [features]
-arc = ["wows-core/arc"]
-serde = ["dep:serde", "wows-core/serde"]
-rkyv = ["dep:rkyv", "wows-core/rkyv"]
+arc = ["game-assets-core/arc"]
+serde = ["dep:serde", "game-assets-core/serde"]
+rkyv = ["dep:rkyv", "game-assets-core/rkyv"]
 json = ["dep:serde_json", "serde"]
 # Core parsing/processing: sans-io. Gates pickled, winnow, roxmltree, etc. and
 # the modules that use them. Compiles for wasm32 (no memmap2, no filesystem VFS).
@@ -88,7 +88,7 @@ parsing = [
     "dep:bon",
     "dep:convert_case",
     "dep:itertools",
-    "wows-core/parsing",
+    "game-assets-core/parsing",
 ]
 # VFS abstraction over IDX/PKG archives. Pure Rust, wasm-compatible. Bring your
 # own `Prime` source: BytesPkgSource (in-memory) always, MmapPkgSource via vfs-mmap.

@@ -3,7 +3,7 @@
 
 Two-step process:
   1. Extract the space's `models.geometry` file from the game's .pkg VFS using
-     `wowsunpack` (landaire/wowsunpack).
+     `game-assets` (landaire/game-assets).
   2. Convert the `models.geometry` → GLB using `wows-geometry-cli` (from
      wows-tools/wows-geometry).
 
@@ -54,10 +54,10 @@ def main() -> int:
         print("error: World of Warships install not found. Set WOWSP_GAME_PATH.", file=sys.stderr)
         return 1
 
-    wowsunpack = find_tool("wowsunpack", "WOWSP_WOWSUNPACK")
-    if not wowsunpack:
-        print("error: wowsunpack not found. Download from "
-              "https://github.com/landaire/wowsunpack/releases and set WOWSP_WOWSUNPACK.",
+    game_assets = find_tool("game-assets", "WOWSP_GAME_ASSETS")
+    if not game-assets:
+        print("error: game-assets not found. Download from "
+              "https://github.com/landaire/game-assets/releases and set WOWSP_GAME_ASSETS.",
               file=sys.stderr)
         return 1
 
@@ -79,12 +79,12 @@ def main() -> int:
         extract_dir = Path(tmpdir)
         print(f"[convert_map] extracting spaces/{space_id}/models.geometry ...")
         rc = subprocess.call([
-            wowsunpack, "--game-dir", game, "extract",
+            game-assets, "--game-dir", game, "extract",
             f"spaces/{space_id}/models.geometry",
             "-o", str(extract_dir), "--strip-prefix",
         ])
         if rc != 0:
-            print(f"error: wowsunpack extract failed (rc={rc})", file=sys.stderr)
+            print(f"error: game-assets extract failed (rc={rc})", file=sys.stderr)
             return rc
 
         geo_file = extract_dir / "models.geometry"

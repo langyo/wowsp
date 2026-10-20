@@ -12,8 +12,8 @@ members = [
     "packages/tools/model-exporter",
     "packages/tools/replay-corpus",
     "packages/tools/replay-drain",
-    "packages/tools/wowsunpack-vendor/crates/wowsunpack",
-    "packages/tools/wowsunpack-vendor/crates/wows-core",
+    "packages/tools/game-assets",
+    "packages/tools/game-assets-core",
 ]
 
 exclude = [
@@ -33,7 +33,7 @@ version = "0.6.3"
 edition = "2024"
 rust-version = "1.85"
 authors = ["langyo <langyo.china@gmail.com>"]
-license = "MIT"  # inherited ONLY by the vendored wowsunpack/wows-core members
+license = "MIT"  # inherited ONLY by the game-assets / game-assets-core members
 # (upstream wows-toolkit is MIT — their own workspace root declares the
 # same). Every first-party crate in this workspace pins `license = "SySL-1.0"`
 # in its own manifest, so nothing first-party can inherit this field
@@ -57,9 +57,8 @@ wowsp_replay_core = { version = "^0.6", path = "packages/app/replay_core" }
 anyhow = "^1"
 async-trait = "^0.1"
 # Not used by first-party crates, but inherited via `thiserror.workspace`
-# by the vendored wowsunpack member (root-workspace inheritance — the
-# vendor's own [workspace.dependencies] only applies when building from
-# inside packages/tools/wowsunpack-vendor), so it must stay declared here.
+# by the game-assets member (root-workspace inheritance), so it must stay
+# declared here.
 thiserror = "^2"
 # Data and serialization
 chrono = { version = "^0.4", features = ["serde", "clock"] }
@@ -204,15 +203,14 @@ tauri-build = "^2"
 # AppData directory resolution (cross-platform %APPDATA%)
 dirs-next = "^2"
 
-# wowsunpack / wows-core vendor deps (inherited via workspace = true;
-# versioned so the path requirements are not wildcards — see the aliases
-# note above)
-wows-core = { version = "^0.11", path = "packages/tools/wowsunpack-vendor/crates/wows-core", default-features = false }
+# game-asset library deps (inherited via workspace = true; versioned so
+# the path requirements are not wildcards — see the aliases note above)
+game-assets-core = { version = "^0.11", path = "packages/tools/game-assets-core", default-features = false }
 # In-app GameParams unpacking: vfs-mmap = idx/pkg VFS over the game install
 # (parsing + arc come in transitively). `models` additionally compiles the
 # geometry/gltf exporters the mod-hub custom-model preview parses loose
 # res_mods `.geometry` files with. The `bin` CLI feature stays off.
-wowsunpack = { version = "^0.43", path = "packages/tools/wowsunpack-vendor/crates/wowsunpack", default-features = false, features = [
+game-assets = { version = "^0.43", path = "packages/tools/game-assets", default-features = false, features = [
     "vfs-mmap",
     "models",
 ] }

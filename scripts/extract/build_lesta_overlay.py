@@ -32,7 +32,7 @@ replay rosters and dashboards resolve Lesta-cluster premiums/collabs too.
 The WG entries are never touched.
 
 Sources:
-  --gameparams  decoded Lesta GameParams.json (wowsunpack game-params from
+  --gameparams  decoded Lesta GameParams.json (game-assets game-params from
                 the Lesta client, list- or namespace-wrapped roots accepted)
   --texts       { "<langLoc>": { "<IDS key>": "<text>" } } — e.g. the
                 lesta_texts.json produced from the client's gettext catalogs

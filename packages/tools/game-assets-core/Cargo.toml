@@ -1,5 +1,5 @@
 [package]
-name = "wows-core"
+name = "game-assets-core"
 description = "Lightweight domain core (shared types and small derived data) for the WoWS toolkit"
 version = "0.11.0"
 repository = "https://github.com/landaire/wows-toolkit"
@@ -8,7 +8,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [lib]
-name = "wows_core"
+name = "game_assets_core"
 path = "src/lib.rs"
 
 [dependencies]

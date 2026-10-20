@@ -58,7 +58,7 @@ _GAMEPARAMS_NATION_RENAMES = {
 
 
 def _params_root(raw: object) -> dict:
-    """Normalize the wowsunpack game-params dump to the entry dict.
+    """Normalize the game-assets game-params dump to the entry dict.
 
     The pickled root's shape drifts across clients and decoder versions —
     modern WG builds wrap everything in a `{"": {…}}` namespace dict, and

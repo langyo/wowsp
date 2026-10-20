@@ -1,6 +1,6 @@
 """Inspect GameParams.json structure: find rarity / class-related fields.
 
-GameParams.json (from `wowsunpack game-params`) is a 354MB object mapping
+GameParams.json (from `game-assets game-params`) is a 354MB object mapping
 internal ship names (e.g. "PAAB001_Douglas_TBD") to their param blobs. We
 stream-scan it to collect:
   - every distinct top-level key inside a ship param object

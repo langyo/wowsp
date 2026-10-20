@@ -34,7 +34,7 @@ Usage:
       --gameparams "$LOCALAPPDATA/WoWSP-extract/GameParams.json" \
       --mo-zh "<WG client>/bin/<build>/res/texts/zh/LC_MESSAGES/global.mo" \
       --mo-ru "<Lesta client>/bin/<build>/res/texts/ru/LC_MESSAGES/global.mo" \
-      --icons-dir <dir from: wowsunpack extract "/gui/ships_tree_features/*.png"> \
+      --icons-dir <dir from: game-assets extract "/gui/ships_tree_features/*.png"> \
       --out packages/webui/src/data/tech_tree_branch_features.json
 
 The mo carries the official strings (a plain GNU gettext file — mind the
@@ -438,7 +438,7 @@ def bundle_icons(
 ) -> dict:
     """Resolve, re-encode and copy the feature icons (small variants
     preferred — the tree cards and the tooltip render at 12-20px). The
-    source pool is the raw wowsunpack extraction (.png); each icon is
+    source pool is the raw game-assets extraction (.png); each icon is
     re-encoded to WebP (q85 — the res WebP settings, see
     convert_res_webp.py) and the manifest records the .webp filename, which
     the webui resolves against `${BASE_URL}images/tech-tree-features/`."""
@@ -516,7 +516,7 @@ def main() -> None:
     ap.add_argument(
         "--icons-dir",
         help="dir holding the extracted gui/ships_tree_features tree "
-        "(wowsunpack extract \"/gui/ships_tree_features/*.png\")",
+        "(game-assets extract \"/gui/ships_tree_features/*.png\")",
     )
     ap.add_argument(
         "--icons-out",

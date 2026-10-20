@@ -17,7 +17,7 @@ yanked = "warn"
 
 [[advisories.ignore]]
 id = "RUSTSEC-2024-0436"
-reason = "paste is unmaintained but functional; it is a direct dependency of the vendored wows-toolkit sources (packages/tools/wowsunpack-vendor). The vendor tree is now WoWSP's own independent fork (2026-10 decision — no upstream sync), so swapping in the drop-in pastey fork is unblocked whenever wanted; not urgent while paste keeps compiling."
+reason = "paste is unmaintained but functional; it is a direct dependency of the vendored wows-toolkit sources (packages/tools/game-assets tree). The vendor tree is now WoWSP's own independent fork (2026-10 decision — no upstream sync), so swapping in the drop-in pastey fork is unblocked whenever wanted; not urgent while paste keeps compiling."
 
 [licenses]
 # Removed keys (vulnerability/notice/unlicensed/copyleft/default) are built

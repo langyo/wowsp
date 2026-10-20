@@ -1,7 +1,7 @@
 //! Ship model GLB exporter — the bake pipeline's front end over the
 //! game-asset VFS.
 //!
-//! A thin CLI around `wowsunpack::export::ship` with this repo's
+//! A thin CLI around `game_assets::export::ship` with this repo's
 //! conventions baked in: the TOP hull upgrade by default (sorted
 //! upgrade-name order, matching the exporter this tool replaced),
 //! textures off (the hologram bakes read positions only), and an exact
@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use rootcause::prelude::*;
-use wowsunpack::export::ship::{ShipAssets, ShipExportOptions};
-use wowsunpack::game_params::types::GameParamProvider;
+use game_assets::export::ship::{ShipAssets, ShipExportOptions};
+use game_assets::game_params::types::GameParamProvider;
 
 struct Args {
     game_dir: PathBuf,

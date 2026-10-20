@@ -1,6 +1,6 @@
 /** Tests for the post-battle parser's CLIENT_PUBLIC_RESULTS field mapping.
  *
- * The index semantics come from the wowsunpack constants layout (client
+ * The index semantics come from the game-assets constants layout (client
  * 15.2; the vendored constants.json copy is gone — these tests are the
  * in-repo authority) and were verified against 126 replays / 417 players
  * on client 15.8 — see postBattle.ts. These tests pin

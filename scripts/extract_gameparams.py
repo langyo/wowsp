@@ -35,7 +35,7 @@ Inputs:
   --input  : unpacked GameParams.json (default: the shared orchestrator
              cache at %LOCALAPPDATA%/WoWSP-extract/GameParams.json; when
              missing but a game install is found, one is generated via
-             the vendored wowsunpack CLI — a one-time ~350 MB dump)
+             the vendored game-assets CLI — a one-time ~350 MB dump)
   --game   : game install root (build detection; auto-detected otherwise)
   --build  : explicit source build number (overrides --game detection)
   --out    : output directory (default below)
@@ -88,7 +88,7 @@ def _has_weapon_block(entity: dict) -> bool:
 def _entities(raw: object) -> list[dict]:
     """Normalize the unpacked GameParams root to the entity list.
 
-    `wowsunpack game-params --full` emits a dict keyed by internal name
+    `game-assets game-params --full` emits a dict keyed by internal name
     (shape 4 in extract_ship_slice); the array / "ships"-wrapper shapes
     are handled defensively so an alternate unpacker still works.
     """
@@ -173,19 +173,19 @@ def _write_json(path: Path, value: object, pretty: bool) -> None:
 
 
 def ensure_source_json(game: str | None) -> Path:
-    """Locate (or generate via wowsunpack) the unpacked GameParams.json."""
+    """Locate (or generate via game-assets) the unpacked GameParams.json."""
     if GAMEPARAMS_JSON.is_file():
         return GAMEPARAMS_JSON
     if not game:
         raise SystemExit(
             f"GameParams.json not found at {GAMEPARAMS_JSON} and no game install "
             "detected. Open the desktop app once (it caches the unpacked JSON) "
-            "or pass --game <WoWS install root> so wowsunpack can generate it."
+            "or pass --game <WoWS install root> so game-assets can generate it."
         )
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     print(f"[extract-gameparams] generating {GAMEPARAMS_JSON} (one-time, ~350 MB) ...")
     if run_game_params(GAMEPARAMS_JSON, game) != 0:
-        raise SystemExit("wowsunpack game-params failed; cannot build the offline pack.")
+        raise SystemExit("game-assets game-params failed; cannot build the offline pack.")
     return GAMEPARAMS_JSON
 
 
