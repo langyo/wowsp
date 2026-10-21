@@ -13,6 +13,7 @@ import { HkButton, HkSettingsGroup, HkSettingsHint } from "@celestia-island/hika
 import { t } from "@/i18n";
 import { formatEta, formatLocalStamp, formatSpeed } from "@/utils/format";
 import { isMobileApp } from "@/utils/platform";
+import { SETTINGS_ANCHOR_BAKED_MODELS } from "@/stores/settingsUi";
 import {
   auxDesc,
   auxTitle,
@@ -131,8 +132,15 @@ export default defineComponent({
             ))}
           </HkSettingsGroup>
 
-          {/* ── Baked model resources ───────────────────────────────────── */}
-          <HkSettingsGroup title={t("settings.resourcesBakedTitle")}>
+          {/* ── Baked model resources ─────────────────────────────────────
+              data-settings-anchor: the pack-update toast's glide target
+              (settingsUi.show("resources", SETTINGS_ANCHOR_BAKED_MODELS)
+              slides the pane onto this card, where the live progress bar
+              lives). */}
+          <HkSettingsGroup
+            title={t("settings.resourcesBakedTitle")}
+            data-settings-anchor={SETTINGS_ANCHOR_BAKED_MODELS}
+          >
             <HkSettingsHint>{t("settings.resourcesBakedHint")}</HkSettingsHint>
             <div class="settings-modal__packs-head">
               <span class="settings-modal__pack-name">{t("settings.resPackTitle")}</span>
