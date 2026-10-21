@@ -78,13 +78,12 @@ mirrors). One such bridge update lands them on a client that fetches
   child's working directory re-homed to the temp dir (an inherited
   install-dir CWD pins the swap target: Windows refuses to rename a
   directory any process holds as its CWD, so the installer would fight
-  its own swap through shun's lock-retry window), and with the update
-  sentinel (`wowsp-update-sentinel.exe`, staged beside `wowsp.exe` in
-  both payloads — see `packages/app/update_sentinel`) watching the
-  installer from a topmost window so the automatic install is never a
-  silent black box — and exits itself right after the handoff, so the
-  WebView2 children close with the app and never pin the install
-  directory in the first place.
+  its own swap through shun's lock-retry window) — and exits itself
+  right after the handoff, so the WebView2 children close with the app
+  and never pin the install directory in the first place. The install's
+  visibility is the installer's own job (shun's `silent-progress`
+  window, adopted here once the shun tag that carries it is pinned) —
+  never the old build's.
 
 ## Building
 

@@ -9,7 +9,6 @@ members = [
     "packages/app/tauri",
     "packages/app/tauri_shared",
     "packages/app/replay_core",
-    "packages/app/update_sentinel",
     "packages/tools/model-exporter",
     "packages/tools/replay-corpus",
     "packages/tools/replay-drain",
@@ -166,15 +165,8 @@ windows = { version = "^0.61", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
-    # The update sentinel's watcher window: the themed marquee progress
-    # bar (InitCommonControlsEx / PROGRESS_CLASS / PBM_SETMARQUEE) and
-    # GetUserDefaultUILanguage for its locale pick.
-    "Win32_UI_Controls",
-    "Win32_Globalization",
     "Win32_System_Diagnostics_ToolHelp",
-    "Win32_System_LibraryLoader",
     "Win32_System_Registry",
-    "Win32_System_SystemServices",
     "Win32_System_Threading",
     "Win32_Storage_Xps",
 ] }
