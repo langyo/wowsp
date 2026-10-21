@@ -182,9 +182,9 @@
     "prTintToggleDesc": "Teinte chaque ligne du roster en direct avec la couleur du palier PR du joueur (palier rouge → rouge, violet → violet) ; activé par défaut."
   },
   "sealCustomizer": {
-    "desc": "Activez ou désactivez chaque sceau individuellement, ou définissez une image personnalisée par sceau (stockée dans le dossier stamps du répertoire de données de l'application). L'aperçu est immédiat ; la réinitialisation supprime l'image personnalisée.",
-    "pickImage": "Image personnalisée",
-    "resetDefault": "Rétablir",
+    "desc": "Cliquez sur un sceau pour lui associer une image personnalisée ; un sceau déjà personnalisé supprime son image et retrouve son visage par défaut en un seul clic (les images sont stockées dans le dossier stamps du répertoire de données de l'application). L'interrupteur à droite affiche ou masque chaque sceau ; l'aperçu est immédiat.",
+    "clickEdit": "Cliquez pour définir une image personnalisée",
+    "clickRemove": "Cliquez pour supprimer l'image personnalisée et restaurer la valeur par défaut",
     "pickFailed": "Échec de l'import de l'image du sceau",
     "resetFailed": "Échec de la réinitialisation du sceau",
     "dialogTitle": "Image de sceau personnalisée"

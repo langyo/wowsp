@@ -361,6 +361,17 @@
 .replay-view__postbattle-cell-stamp {
   flex: 0 0 auto;
 }
+/* The full card's seal column — the career seal stacked over the
+   composition icon seals (CompSeal), the live card's right-edge stack.
+   The slot keeps its reserved width; the stack only ever grows downward
+   past the card's center line (the rare career+air+sub row stretches the
+   card, never the slot). */
+.replay-view__postbattle-cell-stampstack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
 /* Per-row nickname mask toggle. Muted until hovered — the share flow's
    discoverability lives in the toolbar hint. */
 .replay-view__postbattle-cell-eye {
