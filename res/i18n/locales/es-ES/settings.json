@@ -324,7 +324,7 @@
     "sealToggleDesc": "Sellos de veredicto 神了/猴/蛆 en texto normal junto a los nombres — solo con la interfaz en chino y requiere la valoración PR.",
     "sealNeedsPr": "Activa primero la valoración PR en la sección de estadísticas — los sellos valoran esa puntuación.",
     "avgToggle": "Medias de equipo",
-    "avgToggleDesc": "Muestra bajo cada lista de equipo el porcentaje de victorias medio · el PR medio · el daño medio; el lado más alto en verde, el más bajo en rojo; la ponderación por tier sigue los ajustes de estadísticas.",
+    "avgToggleDesc": "Muestra bajo cada lista de equipo el porcentaje de victorias medio · el PR medio · el daño medio; el lado más alto en verde, el más bajo en rojo; la ponderación por tier sigue los ajustes de estadísticas, y el PR medio requiere la valoración PR.",
     "columnsLabel": "Columnas",
     "colAdd": "Añadir columna",
     "colAddConfirm": "Añadir",

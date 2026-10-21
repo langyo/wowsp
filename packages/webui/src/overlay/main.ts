@@ -137,7 +137,8 @@ interface OverlayMessages {
   intelHydro: string;
   intelSmoke: string;
   intelRange: string;
-  /** Team-average line labels (the per-side summary card's third line). */
+  /** Team-average line labels (the per-side summary card's averages
+   *  line — its second line, or the first on the story layout). */
   avgWinrate: string;
   avgPr: string;
   avgDmg: string;
@@ -1401,7 +1402,7 @@ function render() {
   // the column's outer edge and growing inward. The card is TOP-anchored a
   // full row pitch under the last row's center: that clears the table's
   // bottom frame whatever the card's line count (center-anchoring let a
-  // three-line card ride back up onto the frame). Match-start capability
+  // multi-line card ride back up onto the frame). Match-start capability
   // BY DESIGN: the intel numbers do not decrement as ships sink — the
   // mid-battle row→ship attribution is inferred, and silently
   // miscounting radars would be worse than a static "what each team

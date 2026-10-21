@@ -324,7 +324,7 @@
     "sealToggleDesc": "Sceaux de verdict 神了/猴/蛆 en texte simple à côté des pseudos — interface chinoise uniquement, et cela requiert le rating PR.",
     "sealNeedsPr": "Activez d'abord le rating PR dans la section Statistiques — les sceaux notent ce rating.",
     "avgToggle": "Moyennes d'équipe",
-    "avgToggleDesc": "Affiche sous chaque liste d'équipe le taux de victoire moyen · le PR moyen · les dégâts moyens ; le côté le plus élevé en vert, le plus bas en rouge ; la pondération par tier suit les réglages Stats.",
+    "avgToggleDesc": "Affiche sous chaque liste d'équipe le taux de victoire moyen · le PR moyen · les dégâts moyens ; le côté le plus élevé en vert, le plus bas en rouge ; la pondération par tier suit les réglages Stats, et le PR moyen requiert le rating PR.",
     "columnsLabel": "Colonnes",
     "colAdd": "Ajouter une colonne",
     "colAddConfirm": "Ajouter",

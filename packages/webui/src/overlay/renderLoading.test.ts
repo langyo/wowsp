@@ -1,8 +1,9 @@
 /**
  * Page-level regression for the overlay's LOADING faces: while the stats
  * batch is still owed, every waiting number renders the chasing three-dot
- * marquee (overlay-dots) — each row chip's stat cell AND every enabled
- * value in the team summary cards' average line. The settled faces follow
+ * marquee (overlay-dots) — each row chip's stat cell AND every value of
+ * the team summary cards' averages line (one all-or-nothing switch). The
+ * settled faces follow
  * the answer: real rows swap the dots for numbers, a not-found answer
  * swaps them for the honest muted dashes, and a PR-algo flip (which clears
  * the cache wholesale) lights the dots back up for the re-query. Also pins

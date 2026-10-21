@@ -324,7 +324,7 @@
     "sealToggleDesc": "Press the 神了/猴/蛆 verdict stamps beside the names as plain text — Chinese interface only, and it requires the PR rating master switch.",
     "sealNeedsPr": "Turn on the PR rating switch in the stats section first — the seals grade that rating.",
     "avgToggle": "Team averages",
-    "avgToggleDesc": "Show both teams' mean winrate · mean PR · mean damage under their roster; the higher side renders green, the lower red; tier weighting follows the Stats setting.",
+    "avgToggleDesc": "Show both teams' mean winrate · mean PR · mean damage under their roster; the higher side renders green, the lower red; tier weighting follows the Stats setting, and the PR item needs the stats section's PR rating switch.",
     "columnsLabel": "Columns",
     "colAdd": "Add column",
     "colAddConfirm": "Add",
