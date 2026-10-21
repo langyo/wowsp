@@ -28,7 +28,9 @@ import {
   HkSearchInput,
   useBreakpoint,
 } from "@celestia-island/hikari";
-import { Search, X } from "@lucide/vue";
+import { Search } from "@lucide/vue";
+
+import { t } from "@/i18n";
 
 import "./AsyncSearchCombo.scss";
 
@@ -208,13 +210,14 @@ export default defineComponent({
               {props.title ? (
                 <div class="async-search-combo__panel-head">
                   <span>{props.title}</span>
-                  <button
-                    type="button"
-                    class="async-search-combo__close"
+                  <HkIconButton
+                    class="hk-window-close async-search-combo__close"
+                    size={24}
+                    variant="ghost"
+                    icon="close"
+                    aria-label={t("common.close")}
                     onClick={() => (open.value = false)}
-                  >
-                    <X size={12} />
-                  </button>
+                  />
                 </div>
               ) : null}
               <HkSearchInput
