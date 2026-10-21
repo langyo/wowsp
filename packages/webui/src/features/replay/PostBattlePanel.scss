@@ -374,11 +374,29 @@
 .replay-view__postbattle-cell-stamp {
   flex: 0 0 auto;
 }
-/* The full card's seal column — the career seal stacked over the
-   composition icon seals (CompSeal), the live card's right-edge stack.
-   The slot keeps its reserved width; the stack only ever grows downward
-   past the card's center line (the rare career+air+sub row stretches the
-   card, never the slot). */
+/* The compact row's secondary tag presses a STEP smaller: the four-char
+   wording at the row's own size would overhang the fixed 44px slot into
+   the XP digits — the tier's small-tag face shrinks to fit the slot (the
+   full cards' score track has room for the full-size face). */
+.replay-view__postbattle-cell-stampslot .stamp-tag {
+  font-size: 0.7em;
+  padding: 0.04em 0.3em;
+}
+/* The secondary seals (成分章, StampTag) riding beside the XP score — the
+   horizontal transparent tag face, NOT a square face: the row is far too
+   short for one. Flex none at the XP cell's end so the score never wraps
+   around them; the reserved stampslot follows. */
+.replay-view__postbattle-fcell-stamptags {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+/* The full card's seal column — ONLY the primary seal (一级章, the
+   single-character verdict picture) in the live card's right-edge slot.
+   The secondary tier (成分章) rides beside the XP score instead (see the
+   stamptags rule above). */
 .replay-view__postbattle-cell-stampstack {
   display: flex;
   flex-direction: column;
@@ -538,12 +556,21 @@
   display: block;
   min-width: 0;
 }
-/* This panel's XP cell, pinned onto its track (the configured stat
-   columns ride the stat text strip inside the main track now — damage
-   included, so no dedicated dmg track remains). */
-.replay-view__postbattle-fcell-xp {
+/* This panel's score track: the XP cell + the secondary seals (成分章,
+   StampTag) wrapped into ONE grid item pinned onto track 3 — the tags ride
+   beside the XP without spilling into the seal track (auto-placement would
+   steal the 2.5rem slot and shove the primary stamp onto an implicit
+   second row). The configured stat columns ride the stat text strip inside
+   the main track now — damage included, so no dedicated dmg track remains. */
+.replay-view__postbattle-fcell-score {
   grid-column: 3;
   justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.replay-view__postbattle-fcell-xp {
   text-align: right;
   font-family: var(--font-mono);
 }
@@ -796,8 +823,13 @@
     min-height: 44px;
   }
   .replay-view__postbattle-fcell-btn {
+    /* FOUR tracks on phones (the desktop template's shape, narrower name
+       + meta): the score track (XP + the secondary tags) must stay
+       ELASTIC — pinning it to a fixed 7.5ch would overflow the XP+tag
+       pair into the seal track. main → 1, meta → 2, score → 3, seal → 4,
+       same pins as desktop. */
     grid-template-columns:
-      minmax(0, 42%) minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 2.5rem;
+      minmax(0, 42%) minmax(0, 1fr) minmax(6ch, max-content) 2.5rem;
     padding: 0.4rem 0.5rem;
   }
   .replay-view__postbattle-jump {

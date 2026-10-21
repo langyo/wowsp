@@ -182,7 +182,9 @@
     "prTintToggleDesc": "Wash each live-roster row with the player's PR-tier color (red band red, purple band purple); on by default."
   },
   "sealCustomizer": {
-    "desc": "Click a seal to set a custom picture for it; a customized seal goes back to its default face with one click (pictures live in the stamps folder of the app data directory). The switch toggles each seal; previews update live.",
+    "desc": "Seals come in two tiers: tier-1 single-character stamps (过街老鼠 included) and tier-2 four-character tags (the composition and merged seals). On the live / post-battle rosters, tier-1 seals press as the square stamp image at each entry's side, tier-2 seals as the small horizontal tag beside the score. Click a seal to set a custom picture for it; a customized seal goes back to its default face with one click (pictures live in the stamps folder of the app data directory). The switch toggles each seal; previews update live.",
+    "tier1": "Tier-1 seals (single-character)",
+    "tier2": "Tier-2 seals (four-character)",
     "clickEdit": "Click to set a custom image",
     "clickRemove": "Click to remove the custom image and restore the default",
     "pickFailed": "Failed to import the custom seal image",

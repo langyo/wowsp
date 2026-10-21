@@ -51,7 +51,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import RatingStamp from "@/components/base/RatingStamp";
-import CompSeal from "@/components/base/CompSeal";
+import StampTag from "@/components/base/StampTag";
 import StatsCard from "@/components/stats/StatsCard";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
@@ -324,13 +324,12 @@ export default defineComponent({
      *  the header pad and the share shot alike. */
     const sealsShown = computed(() => prefs.value.prEnabled && prefs.value.sealsEnabled);
 
-    // ── Composition icon seals (空中小人 / 水下小人 → square glyph seals,
-    // CompSeal) ────────────────────────────────────────────────────────────
-    // The matrix's icon face of the composition verdicts, fetched through
-    // the same backend command the Tab overlay and the live panel ride
-    // (its process-lifetime cache makes the third consumer free), gated
-    // exactly like every seal surface — zh UI on top of the seals master
-    // gates — so the pipeline idles when no seal could ever render.
+    // ── Secondary seals (成分章 → the horizontal StampTag face) ──────────
+    // The composition verdicts' secondary face, fetched through the same
+    // backend command the Tab overlay and the live panel ride (its
+    // process-lifetime cache makes the third consumer free), gated exactly
+    // like every seal surface — zh UI on top of the seals master gates —
+    // so the pipeline idles when no seal could ever render.
     const compSealsOn = computed(
       () => sealsShown.value && uiLocale.value.startsWith("zh"),
     );
@@ -816,16 +815,16 @@ export default defineComponent({
           />
         ) : null;
       };
-      /** The row's composition icon seals — 空中小人 / 水下小人 (with the
-       *  >50% 奶龙 / 奶蛙 tier's triangle formation) as square glyph
-       *  seals. The floors of the shared merge rule stand (蛆 and 过街老
-       *  鼠 suppress the composition entirely — resolveStamps' rule for
-       *  the water-meter faces), but no merged seal exists HERE: a 神了 /
-       *  猴 verdict keeps its own RatingStamp beside the icon seals (the
-       *  merged 空中神人-family four-char faces belong to the water meter
-       *  alone). A verdict still in flight (or failed / hidden → null)
-       *  renders nothing. */
-      const compSealNodes = (
+      /** The row's secondary seals (成分章) — 空中小人 / 水下小人 (with the
+       *  >50% 奶龙 / 奶蛙 veteran tier) as horizontal StampTag faces riding
+       *  BESIDE the row's XP score (the rows are far too short for a square
+       *  2x2 face). No merge exists on the rosters: a 神了 / 猴 verdict
+       *  keeps its own primary RatingStamp in the row-end slot while the
+       *  comp tags press beside the XP (the merged 空中神人-family faces
+       *  belong to the water meter alone, as before); the 蛆 / 过街老鼠
+       *  floors suppress the composition entirely. A verdict still in
+       *  flight (or failed / hidden → null) renders nothing. */
+      const stampTagNodes = (
         p: (typeof rows.value)[number],
         career: CareerStamp | null,
       ): VNode[] => {
@@ -834,21 +833,22 @@ export default defineComponent({
         if (!comp) return [];
         const nodes: VNode[] = [];
         if (comp.air) {
-          nodes.push(<CompSeal key="air" cls="air" veteran={comp.airVeteran} />);
+          nodes.push(
+            <StampTag key="air" kind={comp.airVeteran ? "airVeteran" : "air"} />,
+          );
         }
         if (comp.sub) {
-          nodes.push(<CompSeal key="sub" cls="sub" veteran={comp.subVeteran} />);
+          nodes.push(
+            <StampTag key="sub" kind={comp.subVeteran ? "subVeteran" : "sub"} />,
+          );
         }
         return nodes;
       };
-      /** The COMPACT row's single composition icon — the highest tier the
-       *  player carries: a 奶龙 / 奶蛙 (veteran) icon outranks a minor
+      /** The COMPACT row's single secondary seal — the highest tier the
+       *  player carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor
        *  one, and air wins a same-tier tie (resolveStamps' canonical
-       *  order). The compact row shows exactly ONE seal in total — the
-       *  career verdict first, this icon only when no verdict stamp
-       *  applies. Null when nothing qualifies. The full cards keep the
-       *  whole stack (compSealNodes). */
-      const highestCompSeal = (
+       *  order). Null when nothing qualifies or a verdict stamp applies. */
+      const highestStampTag = (
         p: (typeof rows.value)[number],
         career: CareerStamp | null,
       ): VNode | null => {
@@ -856,33 +856,37 @@ export default defineComponent({
         const comp = compositions.value.get(p.name);
         if (!comp) return null;
         if (comp.air && comp.sub) {
-          const cls = comp.subVeteran && !comp.airVeteran ? "sub" : "air";
-          return (
-            <CompSeal cls={cls} veteran={cls === "air" ? comp.airVeteran : comp.subVeteran} />
-          );
+          // Both classes: air wins the same-tier tie, but a sub-veteran
+          // (奶蛙) outranks a minor air tag — the veteran face survives.
+          if (comp.subVeteran && !comp.airVeteran) return <StampTag kind="subVeteran" />;
+          return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
         }
-        if (comp.air) return <CompSeal cls="air" veteran={comp.airVeteran} />;
-        if (comp.sub) return <CompSeal cls="sub" veteran={comp.subVeteran} />;
+        if (comp.air) return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
+        if (comp.sub) return <StampTag kind={comp.subVeteran ? "subVeteran" : "sub"} />;
         return null;
       };
       /** The compact row's ONE seal — the cluster's highest face: the
-       *  career verdict first, the composition icon only when no verdict
-       *  stamp applies (the live panel's compact rule, verbatim). */
+       *  career verdict first (the primary square stamp), the secondary
+       *  composition tag only when no verdict stamp applies (the live
+       *  panel's compact rule, verbatim). */
       const sealSlotOf = (p: (typeof rows.value)[number]) =>
-        sealOf(p) ?? highestCompSeal(p, stampOf(p));
-      /** The full card's seal column — the career seal stacked over the
-       *  composition icons (the live card's right-edge stack, one
-       *  column). Null when the row carries neither. */
+        sealOf(p) ?? highestStampTag(p, stampOf(p));
+      /** The full card's seal column — ONLY the primary seal (一级章, the
+       *  single-character verdict picture). The secondary tier (成分章)
+       *  rides beside the XP score instead: the card's right edge is too
+       *  short for a stack of square faces. Null when the row carries
+       *  none. */
       const sealStackOf = (p: (typeof rows.value)[number]) => {
         const seal = sealOf(p);
-        const comps = compSealNodes(p, stampOf(p));
-        return seal || comps.length > 0 ? (
-          <span class="replay-view__postbattle-cell-stampstack">
-            {seal}
-            {comps}
-          </span>
+        return seal ? (
+          <span class="replay-view__postbattle-cell-stampstack">{seal}</span>
         ) : null;
       };
+      /** The full card's secondary seals (成分章) beside the XP score — the
+       *  horizontal StampTag faces (stampTagNodes, the merge rule
+       *  included). */
+      const fcellStampTagsOf = (p: (typeof rows.value)[number]): VNode[] =>
+        stampTagNodes(p, stampOf(p));
       /** Per-row nickname-mask eye — a sibling AFTER the row button so it
        *  stays a real button (no nested buttons). */
       const eyeBtn = (name: string) => (
@@ -977,7 +981,10 @@ export default defineComponent({
                   INSIDE the button keeps the hover highlight and the click
                   target on the row's full width — the seal is part of the
                   row, not an ornament bolted past its hit area. The
-                  compact row's ONE seal is the cluster's highest face. */}
+                  compact row's ONE seal is the cluster's highest face: the
+                  primary square stamp, else the secondary horizontal
+                  StampTag (one face per row — the full cards carry the
+                  whole split instead). */}
               {sealsShown.value ? (
                 <span class="replay-view__postbattle-cell-stampslot">
                   {sealSlotOf(p)}
@@ -997,6 +1004,7 @@ export default defineComponent({
         const enemy = !props.operation && isEnemy(p);
         const ai = isAiName(p.name);
         const stat = ai ? undefined : nameStats.value.get(p.name);
+        const stampTags = fcellStampTagsOf(p);
         const statLine = () => {
           if (ai) return "—";
           // Absent = still querying (progressive arrival: the row spins
@@ -1058,11 +1066,23 @@ export default defineComponent({
                   <LiveShipMeta shipId={p.shipId} ally={!enemy} />
                 ) : null}
               </span>
-              <span
-                class="replay-view__postbattle-fcell-xp"
-                data-hint={t("replay.postbattle.xp")}
-              >
-                {p.xp.toLocaleString()}
+              {/* XP + the secondary seals (成分章) share the score track —
+                  one grid item, so the horizontal StampTag faces ride beside
+                  the XP WITHOUT spilling into the seal track (auto-placement
+                  would steal the 2.5rem slot and shove the primary stamp
+                  onto an implicit second row). */}
+              <span class="replay-view__postbattle-fcell-score">
+                <span
+                  class="replay-view__postbattle-fcell-xp"
+                  data-hint={t("replay.postbattle.xp")}
+                >
+                  {p.xp.toLocaleString()}
+                </span>
+                {sealsShown.value && stampTags.length > 0 ? (
+                  <span class="replay-view__postbattle-fcell-stamptags">
+                    {stampTags}
+                  </span>
+                ) : null}
               </span>
               {sealsShown.value ? (
                 <span class="replay-view__postbattle-cell-stampslot">

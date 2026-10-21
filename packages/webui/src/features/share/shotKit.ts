@@ -299,6 +299,43 @@ export function drawStampSeal(
   ctx.restore();
 }
 
+/** The secondary seal face (StampTag, 二级章) redrawn in canvas — the
+ *  verdict wording as a horizontal transparent tag with a rounded cinnabar
+ *  border (the DOM face is StampTag.scss). `cx`/`cy` center the tag; the
+ *  caller measures the text at the shared tag font first when it needs the
+ *  extent (see postBattleShot's slot reservation). */
+export const SEAL_TAG_FONT_PX = 11;
+export const sealTagFont = (): string => font(SEAL_TAG_FONT_PX, 700);
+/** The tag's outer extent for `label` at the shared tag font: text width
+ *  plus the horizontal padding and the two hairline borders. */
+export function sealTagWidth(ctx: CanvasRenderingContext2D, label: string): number {
+  ctx.font = sealTagFont();
+  return ctx.measureText(label).width + 16;
+}
+export function drawSealTag(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  label: string,
+): void {
+  ctx.save();
+  ctx.font = sealTagFont();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const w = sealTagWidth(ctx, label);
+  const h = SEAL_TAG_FONT_PX * 1.6;
+  // The transparent plate: ground shows through, border + ink carry the
+  // stamp (the DOM face's recipe, StampTag.scss).
+  ctx.strokeStyle = rgba(STAMP_INK, 0.6);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2.6);
+  ctx.stroke();
+  ctx.fillStyle = rgba(STAMP_INK, 1);
+  ctx.fillText(label, cx, cy + 0.5);
+  ctx.restore();
+}
+
 /** Truncate `text` with an ellipsis so it fits `maxWidth` at the active
  *  font (canvas's own fillText maxWidth arg squishes glyphs instead). */
 export function ellipsize(

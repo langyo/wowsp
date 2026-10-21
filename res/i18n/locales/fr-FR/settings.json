@@ -182,7 +182,9 @@
     "prTintToggleDesc": "Teinte chaque ligne du roster en direct avec la couleur du palier PR du joueur (palier rouge → rouge, violet → violet) ; activé par défaut."
   },
   "sealCustomizer": {
-    "desc": "Cliquez sur un sceau pour lui associer une image personnalisée ; un sceau déjà personnalisé supprime son image et retrouve son visage par défaut en un seul clic (les images sont stockées dans le dossier stamps du répertoire de données de l'application). L'interrupteur à droite affiche ou masque chaque sceau ; l'aperçu est immédiat.",
+    "desc": "Les sceaux se répartissent en deux niveaux : les sceaux de niveau 1 sont à un seul caractère (« 过街老鼠 » compris) et ceux de niveau 2 à quatre caractères (sceaux de composition et fusionnés). Sur les panneaux de combat en direct et d'après-combat, les sceaux de niveau 1 s'impriment comme l'image carrée du sceau à côté de chaque entrée et ceux de niveau 2 comme une petite étiquette horizontale près du score. Cliquez sur un sceau pour lui associer une image personnalisée ; un sceau déjà personnalisé supprime son image et retrouve son visage par défaut en un seul clic (les images sont stockées dans le dossier stamps du répertoire de données de l'application). L'interrupteur à droite affiche ou masque chaque sceau ; l'aperçu est immédiat.",
+    "tier1": "Sceaux de niveau 1 (un caractère)",
+    "tier2": "Sceaux de niveau 2 (quatre caractères)",
     "clickEdit": "Cliquez pour définir une image personnalisée",
     "clickRemove": "Cliquez pour supprimer l'image personnalisée et restaurer la valeur par défaut",
     "pickFailed": "Échec de l'import de l'image du sceau",

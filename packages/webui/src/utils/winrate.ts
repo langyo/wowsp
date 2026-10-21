@@ -107,6 +107,26 @@ export type MergedStamp = "airMiracle" | "subMiracle" | "airApe" | "subApe";
 
 export type StampKind = CareerStamp | CompositionStamp | MergedStamp | VeteranStamp;
 
+/** Which FACE a seal renders with — the seal-tier system (图章分级制度):
+ *  - "primary" (一级章): the single-character calligraphy verdicts (神 / 猴 /
+ *    蛆) plus 过街老鼠 — the square 2x2 red-stamp picture pressed onto a card.
+ *  - "secondary" (二级章): the four-character composition tags (空中小人 /
+ *    水下小人 / 空中奶龙 / 水下奶蛙) and the merged seals (空中神人 family) —
+ *    a horizontal cinnabar-bordered transparent tag (印章样式的小标签)
+ *    riding BESIDE the row's score line on the live / post-battle rosters.
+ *  The water-table surfaces (我的水表 / 水表查询) render BOTH tiers. */
+export type StampTier = "primary" | "secondary";
+
+/** The one tier rule, shared by every seal surface. */
+export function stampTier(kind: StampKind): StampTier {
+  return kind === "miracle" ||
+    kind === "ape" ||
+    kind === "maggot" ||
+    kind === "rat"
+    ? "primary"
+    : "secondary";
+}
+
 /** Whether `kind` is one of the merged composition+career seals. Consumers
  *  with merged-kind-specific behavior (the share shots' seal sizing, and
  *  anything else that used to hardcode the miracle equalities) route through
@@ -117,9 +137,12 @@ export function isMergedStamp(kind: StampKind): boolean {
   );
 }
 
-/** The one merge rule, shared by every seal surface (account StatsCard,
- *  share shots, the Tab overlay chips — all route through here so the
- *  merge can never disagree between surfaces):
+/** The one merge rule, shared by every seal surface that resolves the full
+ *  cluster (account StatsCard, the water-table share shots, the Tab overlay
+ *  chips — all route through here so the merge can never disagree between
+ *  surfaces; the live / post-battle rosters keep their split
+ *  verdict-stamp-plus-comp-tags display, so they cite the tie orders but do
+ *  not merge):
  *   - miracle + sub → 水下神人; miracle + air → 空中神人; ape likewise
  *     merges into 水下小猴 / 空中小猴 (both orders normalized sub-first).
  *   - Any merged kind CONSUMES its constituents: the return carries ONLY

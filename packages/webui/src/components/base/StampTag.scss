@@ -1,0 +1,31 @@
+/* The SECONDARY seal face (二级章, 印章样式的小标签) — the tag's content
+   (wording, gates, the custom-picture branch) lives in StampTag.tsx; this
+   file carries the ink, the transparent tag plate and the rounded border.
+   The voice is a rubber-stamp impression in the small tag mode: cinnabar
+   ink over a transparent ground, edged by a rounded cinnabar border —
+   never a filled pill, the ground shows through. */
+
+.stamp-tag {
+  /* Cinnabar seal ink — the same tone RatingStamp presses (RatingStamp.scss). */
+  color: rgb(202 44 38);
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1.2em;
+  flex: none;
+  /* The transparent tag plate: the ground shows through, only the border
+     and the ink carry the stamp — the horizontal small-tag face the
+     secondary tier renders with on the live / post-battle rosters. */
+  padding: 0.04em 0.4em;
+  border: 1px solid rgb(202 44 38 / 50%);
+  border-radius: 0.45em;
+  background: transparent;
+  /* Keep the ink legible over bright sea/sky backgrounds. */
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+}
+
+/* A user-imported custom picture replaces the text, pressed at the text
+   seal's line box (1em font × 1.2 line height). */
+img.stamp-tag {
+  height: 1.2em;
+  width: auto;
+}
