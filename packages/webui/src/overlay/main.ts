@@ -47,6 +47,9 @@ import { aggregateTeamStats, type TeamAggregate } from "@/utils/teamAggregate";
 // The per-side row list (believed Tab order, [alive] ++ [sunk] by the
 // trusted set) — see rowList.ts.
 import { splitRowsBySunk, type RosterRow } from "./rowList";
+// The team-averages line's comparative tone verdict (hi/lo/none) — see
+// teamAvgTone.ts.
+import { teamAvgTone } from "./teamAvgTone";
 // Post-layout passes keeping the row columns aligned and the rows inside
 // the overlay window — a row wider than the reserved side pad would
 // otherwise clip flat at the window edge.
@@ -842,6 +845,15 @@ function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): str
   return side === "ally" ? seals + label + cell : cell + label + seals;
 }
 
+/** One side's team aggregate + the loading state around it (see
+ *  teamAggregateFor) — what both summary cards consume for the averages
+ *  line, their OWN side's and (for the comparative tone) the opposing
+ *  side's alike. */
+interface SideTeamStats {
+  agg: TeamAggregate;
+  loading: boolean;
+}
+
 /** One side's team averages + the loading state around them. Called once
  *  per side in the render block, BEFORE either card renders, so each card
  *  can color its figures against the other's (see teamSummaryCard). The
@@ -854,10 +866,7 @@ function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): str
  *  whose lookups are disabled or budget-spent (statPending false
  *  everywhere) settles to the partial mean with the honest dashes, exactly
  *  as before. */
-function teamAggregateFor(vehicles: Vehicle[]): {
-  agg: TeamAggregate;
-  loading: boolean;
-} {
+function teamAggregateFor(vehicles: Vehicle[]): SideTeamStats {
   const loading = vehicles.some((v) => {
     if (AI_NAME.test(v.name)) return false;
     const st = stats.get(cacheKey(v.name));
@@ -894,8 +903,10 @@ function teamAggregateFor(vehicles: Vehicle[]): {
  *  switch, everything on it unconditional. When the averages render they
  *  color COMPARATIVELY: per metric the higher side's settled figure goes
  *  green and the lower red (the winrate-tier pair) — equal figures,
- *  missing ones ("—"), a missing opposite card (`otherAgg` null) or this
- *  side's own loading dots keep the warm accent.
+ *  missing ones ("—"), a missing opposite card (`other` null) or a
+ *  still-loading side on EITHER end keep the warm accent: the other
+ *  side's mean owed rows would shift as they land, and a verdict painted
+ *  off a partial aggregate would flip with them (see teamAvgTone).
  *  On the story layout (storyLayout — single-team, co-op excluded) line 1
  *  is skipped wholesale: radar/hydro/smoke counting is a versus-human aid,
  *  and a script-driven roster's numbers are aux noise. The averages half
@@ -906,16 +917,16 @@ function teamAggregateFor(vehicles: Vehicle[]): {
  *  CSS-px TOP edge — `.overlay-chip--intel` opts out of the base chip's
  *  centering transform, so a tall card grows downward from it instead of
  *  straddling the anchor. `own` is this side's aggregate + loading state
- *  (see teamAggregateFor), `otherAgg` the opposing side's aggregate —
- *  null when the opposing card will not render. */
+ *  (see teamAggregateFor), `other` the opposing side's — null when the
+ *  opposing card will not render. */
 function teamSummaryCard(
   side: "ally" | "enemy",
   vehicles: Vehicle[],
   topCss: number,
   fontSize: number,
   storyLayout: boolean,
-  own: { agg: TeamAggregate; loading: boolean },
-  otherAgg: TeamAggregate | null,
+  own: SideTeamStats,
+  other: SideTeamStats | null,
 ): HTMLDivElement | null {
   const sideLabel = `<span class="overlay-intel-team">${localized(
     side === "ally" ? "intelAlly" : "intelEnemy",
@@ -946,12 +957,10 @@ function teamSummaryCard(
   if (PREFS.teamAvgEnabled) {
     // Per-metric comparative tone against the opposite card's settled
     // figure: mine higher → hi (green), mine lower → lo (red); equal,
-    // either side missing, or the loading dots → no tone (the warm
-    // accent stands).
-    const tone = (mine: number | null, other: number | null): string => {
-      if (own.loading || mine == null || other == null || mine === other) return "";
-      return mine > other ? "overlay-intel-b--hi" : "overlay-intel-b--lo";
-    };
+    // either side missing, or EITHER side still loading → no tone (the
+    // warm accent stands; see teamAvgTone).
+    const tone = (mine: number | null, theirs: number | null): string =>
+      teamAvgTone(mine, theirs, own.loading || (other?.loading ?? false));
     const avgItem = (label: string, value: string, toneCls = "") =>
       `<span class="overlay-intel-k">${label}</span><b${
         toneCls === "" ? "" : ` class="${toneCls}"`
@@ -963,19 +972,19 @@ function teamSummaryCard(
       avgItem(
         localized("avgWinrate"),
         value(own.agg.winrate != null ? `${own.agg.winrate.toFixed(1)}%` : "—"),
-        tone(own.agg.winrate, otherAgg?.winrate ?? null),
+        tone(own.agg.winrate, other?.agg.winrate ?? null),
       ),
       PREFS.prOn
         ? avgItem(
             localized("avgPr"),
             value(own.agg.avgPr != null ? `${Math.round(own.agg.avgPr)}` : "—"),
-            tone(own.agg.avgPr, otherAgg?.avgPr ?? null),
+            tone(own.agg.avgPr, other?.agg.avgPr ?? null),
           )
         : "",
       avgItem(
         localized("avgDmg"),
         value(own.agg.avgDamage != null ? fmtDamage(own.agg.avgDamage) : "—"),
-        tone(own.agg.avgDamage, otherAgg?.avgDamage ?? null),
+        tone(own.agg.avgDamage, other?.agg.avgDamage ?? null),
       ),
     ].filter(Boolean);
     if (items.length > 0) {
@@ -1397,14 +1406,16 @@ function render() {
   // mid-battle row→ship attribution is inferred, and silently
   // miscounting radars would be worse than a static "what each team
   // brought" summary. Both sides' aggregates are computed BEFORE either
-  // card renders, and each card receives the opposing side's aggregate (or
-  // null when that card will not render) so its averages can color against
-  // the other side's. Operations (行动) render no enemy list — the ally
-  // card alone, with nothing to compare against. On the story layout
-  // (storyLayout) the ally card carries the averages only — the
-  // consumable-intel half is aux noise on a script-driven story/operation
-  // roster — and the enemy card has no column to hang under anyway (no
-  // enemy rows).
+  // card renders, and each card receives the opposing side's aggregate +
+  // loading state (or null when that card will not render) so its averages
+  // can color against the other side's — with the loading flag riding
+  // along so a side still owing rows suppresses the verdict on BOTH cards
+  // until it settles (see teamAvgTone). Operations (行动) render no enemy
+  // list — the ally card alone, with nothing to compare against. On the
+  // story layout (storyLayout) the ally card carries the averages only —
+  // the consumable-intel half is aux noise on a script-driven
+  // story/operation roster — and the enemy card has no column to hang
+  // under anyway (no enemy rows).
   {
     const intelFontSize = Math.min(13, Math.max(9, pitch * 0.4));
     // The window's top/bottom edges can crowd the table in odd aspect
@@ -1437,7 +1448,7 @@ function render() {
         intelFontSize,
         storyLayout,
         allyStats,
-        enemyCardRenders ? enemyStats.agg : null,
+        enemyCardRenders ? enemyStats : null,
       );
       if (el) {
         el.style.left = `${tableLeft + gap}px`;
@@ -1454,7 +1465,7 @@ function render() {
         intelFontSize,
         storyLayout,
         enemyStats,
-        allyCardRenders ? allyStats.agg : null,
+        allyCardRenders ? allyStats : null,
       );
       if (el) {
         el.style.right = `${Math.max(0, overlayW - tableRight + gap)}px`;

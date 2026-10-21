@@ -138,6 +138,10 @@ describe("overlay page loading faces", () => {
     expect(avgLines().length).toBe(2);
     for (const line of avgLines()) {
       expect(line.querySelectorAll(".overlay-dots")).toHaveLength(3);
+      // The waiting figures carry no comparative tone — a verdict needs
+      // both sides settled (see teamAvgTone).
+      expect(line.querySelectorAll(".overlay-intel-b--hi")).toHaveLength(0);
+      expect(line.querySelectorAll(".overlay-intel-b--lo")).toHaveLength(0);
     }
     // Phase-locked delays: every bead's inline animation-delay off the
     // shared clock (negative = mid-cycle start) — the reason render()
@@ -188,9 +192,20 @@ describe("overlay page loading faces", () => {
     await vi.waitFor(() =>
       expect(document.querySelectorAll(".overlay-dots").length).toBeGreaterThan(0),
     );
-    // …and the second batch settles them into the real numbers.
+    // …and the second batch settles them into the real numbers — the two
+    // sides graded APART so the settled faces carry the comparative tone
+    // (see teamAvgTone): every ally figure beats every enemy figure
+    // (48.5 / 1234 / 43.2k vs 45.1 / 1100 / 38k), so the ally card's
+    // three figures grade hi and the enemy card's lo.
     await vi.waitFor(() => expect(batchCalls).toBe(2));
-    resolveBatch!(statRows());
+    resolveBatch!(
+      batchNames.map((name) => {
+        const row = statRows()[0]!;
+        return name.startsWith("enemy")
+          ? { ...row, winrate: 45.1, pr: 1100, avgDamage: 38000 }
+          : row;
+      }),
+    );
     await vi.waitFor(() =>
       expect(document.querySelectorAll(".overlay-dots").length).toBe(0),
     );
@@ -199,5 +214,19 @@ describe("overlay page loading faces", () => {
     // The average line shows the settled mean, not a dash.
     expect(avgLines()[0]!.textContent).toContain("48.5%");
     expect(avgLines()[0]!.textContent).toContain("43.2k");
+    // Both sides settled → the comparative tone lands: the ally card
+    // grades hi on all three metrics, the enemy card lo.
+    const intelCard = (side: string) =>
+      document.querySelector<HTMLElement>(
+        `.overlay-chip--${side}.overlay-chip--intel`,
+      )!;
+    for (const b of intelCard("ally")!.querySelectorAll(".overlay-intel-line--avg b")) {
+      expect(b.classList.contains("overlay-intel-b--hi")).toBe(true);
+      expect(b.classList.contains("overlay-intel-b--lo")).toBe(false);
+    }
+    for (const b of intelCard("enemy")!.querySelectorAll(".overlay-intel-line--avg b")) {
+      expect(b.classList.contains("overlay-intel-b--lo")).toBe(true);
+      expect(b.classList.contains("overlay-intel-b--hi")).toBe(false);
+    }
   });
 });
