@@ -309,7 +309,15 @@
 
   &__matrix__inner {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* minmax(0, 1fr), not bare 1fr — bare 1fr is minmax(auto, 1fr), and the
+       auto minimum lets a roster row's min-content (the five fixed-width
+       stat columns + the icon + the seal slot) EXPAND the track past the
+       free space. The blown-out columns then overflow the panel's right
+       edge — the vertical-only scroller can neither show nor scroll that
+       overflow, so the last mirrored stat cells vanished off-screen. With
+       min 0 the tracks always split the free space and the rows' name
+       track (min-width: 0) absorbs the deficit by ellipsizing instead. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px;
     padding: 0 1.5rem 1rem 0;
 
@@ -332,6 +340,11 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    /* A grid item's automatic min-width is its min-content — without this
+       the column box refuses to shrink below the roster row's fixed pieces
+       even inside the minmax(0, 1fr) track above and still overflows the
+       panel's right edge. */
+    min-width: 0;
   }
 
   &__col-title {
