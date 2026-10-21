@@ -638,6 +638,7 @@ pub fn run() {
             commands::model_pack::res_report_bundled,
             commands::model_pack::get_res_status,
             commands::model_pack::check_res_update,
+            commands::model_pack::res_verify_integrity,
             commands::model_pack::res_download,
             commands::model_pack::res_cancel,
             commands::model_pack::clear_res,

@@ -8,9 +8,12 @@
  *
  * The pack is content-addressed: `checkResUpdate` compares the local tree
  * hash against the `res-latest` manifest and reports the chain-patch path
- * (`deltaSteps`) when one exists — the panel then says "incremental, N
- * patches" instead of promising a ~1.2 GB re-download. `download` runs the
- * pass on the Rust side (which itself picks patches over the full archive).
+ * (`deltaSteps`) when one exists — the update flavour ("incremental, N
+ * patches" / "full download required") is announced as a transient toast
+ * instead of promising a ~1.2 GB re-download in the card itself.
+ * `download` runs the pass on the Rust side (which itself picks patches
+ * over the full archive); `verifyIntegrity` re-hashes a current pack on
+ * demand and re-downloads automatically when the tree drifted.
  *
  * Startup policy lives in AppShell: the pack auto-downloads only when
  * ENTIRELY missing (lite install / wiped cache) AND the app itself is
@@ -24,7 +27,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
-import { showBlockingToast } from "@celestia-island/hikari";
+import { showBlockingToast, useToast } from "@celestia-island/hikari";
 
 import { api, type DownloadProgress, type NetworkConfig, type ResStatus, type ResUpdate } from "@/api";
 import { t } from "@/i18n";
@@ -61,6 +64,9 @@ export const useCacheStore = defineStore("resourceCache", () => {
   const speedBps = ref<number | null>(null);
   const updatesLoading = ref(false);
   const updatesCheckedAt = ref(0);
+  /** Whether the on-demand integrity check is running (the panel's
+   *  check-integrity button spins while it does). */
+  const integrityChecking = ref(false);
   /** ghproxy-style mirror prefix; saved through setNetworkConfig so the
    *  rest of the network config round-trips untouched. */
   const githubMirror = ref<string | null>(null);
@@ -156,7 +162,9 @@ export const useCacheStore = defineStore("resourceCache", () => {
     }
   }
 
-  /** Refresh the REMOTE manifest (GitHub / mirror reachability required). */
+  /** Refresh the REMOTE manifest (GitHub / mirror reachability required).
+   *  Silent: the persistent banner covers plain availability — the update
+   *  flavour is only announced by the explicit `checkUpdates`. */
   async function refreshUpdates() {
     updatesLoading.value = true;
     try {
@@ -166,6 +174,63 @@ export const useCacheStore = defineStore("resourceCache", () => {
       // offline / older shell — keep previous snapshot
     } finally {
       updatesLoading.value = false;
+    }
+  }
+
+  /** The user-initiated 检查更新 pass: refresh the manifest AND announce
+   *  the update flavour as a transient toast (chain-patch count / full
+   *  download / plain availability). The passive refreshes (boot,
+   *  section-open, post-pass) must stay silent — a toast on every boot
+   *  with the panel closed would be spam; the banner suffices there. */
+  async function checkUpdates() {
+    await refreshUpdates();
+    announceUpdateKind();
+  }
+
+  /** Announce the flavour of an available update as a transient toast —
+   *  the chain-patch count (or "full download required") is momentary
+   *  information, not card layout. */
+  function announceUpdateKind() {
+    const upd = update.value;
+    if (!upd?.updateAvailable) return;
+    const steps = upd.deltaSteps;
+    const toast = useToast();
+    if (steps == null) toast.info(t("settings.cacheUpdateAvailable"));
+    else if (steps.length > 0)
+      toast.info(t("settings.resDeltaAvailable", { n: steps.length }));
+    else toast.info(t("settings.resFullDownload"));
+  }
+
+  /**
+   * On-demand integrity check for a pack that is already current:
+   * recompute the on-disk tree hash and compare with the install-time
+   * stamp. Intact → a success toast; NOT intact → a warning toast and an
+   * automatic re-download (the pass re-applies the pack, repairing the
+   * tree). Rejections (unstamped cache, refused while a pass runs)
+   * surface as error toasts — the button only shows for hash-stamped,
+   * idle packs, so they indicate genuine surprise.
+   */
+  async function verifyIntegrity() {
+    if (integrityChecking.value) return;
+    integrityChecking.value = true;
+    const toast = useToast();
+    try {
+      const report = await api.resVerifyIntegrity();
+      if (report.intact) {
+        toast.success(t("settings.resIntegrityOk"));
+      } else {
+        toast.warning(t("settings.resIntegrityBroken"));
+        // Release BEFORE the repair pass takes over — download()'s
+        // busy-guard would otherwise swallow the auto-repair (the
+        // shell-side VERIFY_ACTIVE flag is already cleared by then:
+        // the walk finished before this command resolved).
+        integrityChecking.value = false;
+        void download(true);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      integrityChecking.value = false;
     }
   }
 
@@ -195,13 +260,21 @@ export const useCacheStore = defineStore("resourceCache", () => {
 
   /** Explicit pack pass (initial / migration / update — the Rust side
    *  picks chain patches when possible). Progress arrives through the
-   *  event stream; the panel derives its buttons from `progress`. */
-  async function download() {
+   *  event stream; the panel derives its buttons from `progress`. The
+   *  integrity repair passes `force`: a corrupt tree carries a correct
+   *  stamp, so the shell's already-current fast path must not swallow
+   *  the reinstall. */
+  async function download(force = false) {
+    // An integrity walk owns the tree right now — a pass started under it
+    // would both race the hash and refuse itself backend-side. (The
+    // repair caller releases the flag before handing off, so `force`
+    // never needs to bypass this.)
+    if (integrityChecking.value) return;
     wireProgressStream();
     resetSpeedSampler();
     progress.value = { phase: "download", received: 0, total: 0, segment: 1, segments: 1 };
     try {
-      await api.resDownload();
+      await api.resDownload(force);
     } catch (e) {
       // Early rejections (busy guard, network-stack failure) never reach
       // the install pass, so no error EVENT arrives — surface the
@@ -309,6 +382,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
     speedBps,
     updatesLoading,
     updatesCheckedAt,
+    integrityChecking,
     githubMirror,
     anyUpdateAvailable,
     bundledServing,
@@ -316,6 +390,8 @@ export const useCacheStore = defineStore("resourceCache", () => {
     reportBundledBaseline,
     refreshStatus,
     refreshUpdates,
+    checkUpdates,
+    verifyIntegrity,
     loadMirror,
     saveMirror,
     download,
