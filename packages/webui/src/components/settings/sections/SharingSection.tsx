@@ -225,6 +225,35 @@ export default defineComponent({
       },
     );
 
+    /** The recorder nicknames this machine's scanned replays carry, per
+     *  ROW (not deduped): the busiest recorder is the machine's primary
+     *  player, and the replay list rows plus any planner output (manual
+     *  picks outside the scanned folders too) both feed the count. */
+    const recorderNames = computed(() => {
+      const counts = new Map<string, number>();
+      const bump = (name: string | null | undefined) => {
+        const n = name?.trim();
+        if (n) counts.set(n, (counts.get(n) ?? 0) + 1);
+      };
+      for (const r of replays.list) bump(r.playerName);
+      for (const p of planByPath.value.values()) bump(p.playerName);
+      return counts;
+    });
+    /** The recorder name to warn about (null = the draft is fine): a
+     *  credited identity matching NONE of the scanned recorders is
+     *  almost certainly a typo (a lookalike character standing in for
+     *  the real one), and the lookup behind the credits list then finds
+     *  nobody. Advisory — sharing on someone's behalf stays possible. */
+    const identityNameMismatch = computed(() => {
+      const draft = idName.value.trim().toLowerCase();
+      const counts = recorderNames.value;
+      if (!draft || counts.size === 0) return null;
+      for (const name of counts.keys()) {
+        if (name.toLowerCase() === draft) return null;
+      }
+      return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    });
+
     const syncing = ref(false);
     async function syncMine() {
       if (syncing.value) return;
@@ -1102,6 +1131,17 @@ export default defineComponent({
                     </span>
                   </div>
                   <HkSettingsHint>{t("sharing.wizard.identityHint")}</HkSettingsHint>
+                  {identityNameMismatch.value ? (
+                    <HkAlert
+                      variant="warning"
+                      size="sm"
+                      title={t("sharing.wizard.identityMismatchTitle")}
+                      message={t("sharing.wizard.identityMismatch", {
+                        recorded: identityNameMismatch.value,
+                        declared: idName.value.trim(),
+                      })}
+                    />
+                  ) : null}
                 </div>
               ),
               select: () => (

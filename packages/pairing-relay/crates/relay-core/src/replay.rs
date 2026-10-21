@@ -1156,6 +1156,30 @@ impl Ledger {
         delta
     }
 
+    /// Rename: correct one contributor's credited name. The identity is
+    /// self-reported free text, so a typo (an ASCII `_` standing in for a
+    /// lookalike CJK character, say) only surfaces once the credits list
+    /// ships and a lookup by that name finds nobody. Every other meta
+    /// field is kept; the DO writes the returned row through. Renaming
+    /// onto another anon's (realm, name) folds the two ids into one
+    /// credits row — `credits` merges by identity by design.
+    pub fn rename(
+        &mut self,
+        anon: &str,
+        name: &str,
+        now_ms: u64,
+    ) -> Result<ContributorMeta, RenameError> {
+        if !valid_credited_name(name) {
+            return Err(RenameError::BadName);
+        }
+        let Some(meta) = self.meta.get_mut(anon) else {
+            return Err(RenameError::UnknownAnon);
+        };
+        meta.credited_name = name.to_string();
+        meta.updated_at = now_ms;
+        Ok(meta.clone())
+    }
+
     /// /admin-list rows: every known contributor, newest activity
     /// first, plus its live staged count.
     pub fn admin_list(&self) -> Vec<AdminContributor> {
@@ -1293,6 +1317,15 @@ pub struct DrainDelta {
     pub drained: Vec<String>,
     pub bytes: u64,
     pub wm: u64,
+}
+
+/// `Ledger::rename` failures (the DO maps them 1:1 onto statuses).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameError {
+    /// The name fails `valid_credited_name` (the DO pre-checks too).
+    BadName,
+    /// No contributor registered under that anon id.
+    UnknownAnon,
 }
 
 /// One /credits row: a credited identity's lifetime share count (the
@@ -2512,6 +2545,73 @@ mod tests {
         fresh.archive_bytes = 100;
         let delta = led.apply_claim(&fresh.input(), T0 + 10).unwrap();
         assert_eq!(delta.plan.wm, 100);
+    }
+
+    // ── ledger: rename ────────────────────────────────────────────────
+
+    #[test]
+    fn rename_corrects_the_credited_name_and_feeds_credits() {
+        let mut led = Ledger::new();
+        let f = fx(ANON, TOKEN, vec![member(&"a".repeat(64))]);
+        led.apply_claim(&f.input(), T0).unwrap();
+        let meta = led.rename(ANON, "新名字", T0 + 7).unwrap();
+        assert_eq!(meta.credited_name, "新名字");
+        assert_eq!(meta.updated_at, T0 + 7);
+        assert_eq!(meta.credit_count, 1, "everything but the name is kept");
+        assert_eq!(meta.archive_bytes, 100);
+        assert_eq!(led.admin_list()[0].credited_name, "新名字");
+        assert_eq!(
+            led.credits(),
+            vec![CreditRow {
+                name: "新名字".into(),
+                realm: "asia".into(),
+                count: 1
+            }]
+        );
+    }
+
+    #[test]
+    fn rename_onto_another_identity_merges_the_credits_rows() {
+        let mut led = Ledger::new();
+        // ANON's typo'd self-report vs ANON2's real one — the same person
+        // behind two anon ids, folded into one credits row by the rename.
+        let a = fx(ANON, TOKEN, vec![member(&"a".repeat(64))]);
+        led.apply_claim(&a.input(), 100).unwrap();
+        let mut b = fx(ANON2, TOKEN, vec![member(&"b".repeat(64))]);
+        b.credited_name = "Real";
+        b.realm = "asia";
+        led.apply_claim(&b.input(), 200).unwrap();
+        led.rename(ANON, "Real", 300).unwrap();
+        assert_eq!(
+            led.credits(),
+            vec![CreditRow {
+                name: "Real".into(),
+                realm: "asia".into(),
+                count: 2
+            }]
+        );
+        // Both anon ids survive individually (admin list stays per-anon).
+        assert_eq!(led.admin_list().len(), 2);
+    }
+
+    #[test]
+    fn rename_rejects_unknown_anon_and_bad_names_without_touching_meta() {
+        let mut led = Ledger::new();
+        let f = fx(ANON, TOKEN, vec![member(&"a".repeat(64))]);
+        led.apply_claim(&f.input(), T0).unwrap();
+        assert_eq!(
+            led.rename(ANON3, "Real", T0 + 1),
+            Err(RenameError::UnknownAnon)
+        );
+        assert_eq!(led.rename(ANON, "ab", T0 + 1), Err(RenameError::BadName));
+        assert_eq!(
+            led.rename(ANON, &"x".repeat(25), T0 + 1),
+            Err(RenameError::BadName)
+        );
+        assert_eq!(led.rename(ANON, "a\tb", T0 + 1), Err(RenameError::BadName));
+        // The failed attempts left the stored name and stamp untouched.
+        assert_eq!(led.admin_list()[0].credited_name, "Player");
+        assert_eq!(led.admin_list()[0].updated_at, T0);
     }
 
     // ── admin list + counters + responses ─────────────────────────────

@@ -39,6 +39,9 @@
     "identityHint": "L'identité créditée est envoyée avec votre paquet et figure dans la liste des participants.",
     "identityMissing": "Choisissez d’abord le compte crédité",
     "identitySource": "Compte crédité",
+    "identityCustom": "Saisie manuelle…",
+    "identityMismatchTitle": "Le nom de signature ne correspond pas à vos replays",
+    "identityMismatch": "Les replays de cette machine ont été enregistrés sous {recorded}, mais l'identité signée est {declared}. La liste des contributeurs affiche — et recherche les statistiques par — le nom signé. S'il s'agit d'une faute de frappe (un caractère ressemblant), corrigez-le avec l'ID exact du jeu.",
     "identityChoose": "Choisir un compte…"
   },
   "select": {

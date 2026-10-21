@@ -39,6 +39,9 @@
     "identityHint": "La identidad acreditada se sube con tu paquete y aparece en la lista de participantes.",
     "identityMissing": "Elige primero la cuenta acreditada",
     "identitySource": "Cuenta acreditada",
+    "identityCustom": "Introducir manualmente…",
+    "identityMismatchTitle": "El nombre de firma no coincide con tus repeticiones",
+    "identityMismatch": "Las repeticiones de este equipo fueron grabadas como {recorded}, pero la identidad firmada es {declared}. La lista de colaboradores muestra — y busca las estadísticas por — el nombre firmado. Si es una errata (un carácter parecido), cámbialo por el ID exacto del juego.",
     "identityChoose": "Elegir una cuenta…"
   },
   "select": {

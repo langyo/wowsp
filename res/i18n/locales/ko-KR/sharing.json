@@ -39,6 +39,9 @@
     "identityHint": "표기 신원은 공유 패키지와 함께 업로드되어 참여자 목록에 게재됩니다.",
     "identityMissing": "먼저 표기 계정을 선택하세요",
     "identitySource": "표기 계정",
+    "identityCustom": "직접 입력…",
+    "identityMismatchTitle": "서명이 리플레이와 일치하지 않음",
+    "identityMismatch": "이 컴퓨터의 리플레이에는 '{recorded}'(으)로 기록되어 있지만, 현재 서명은 '{declared}'입니다. 크레딧 목록은 서명 이름으로 표시되고 전적 조회도 해당 이름으로 이루어집니다. 오타(비슷한 문자)라면 게임 내 ID와 정확히 일치하도록 수정해 주세요.",
     "identityChoose": "계정 선택…"
   },
   "select": {
