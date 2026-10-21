@@ -4,8 +4,8 @@
 
 use anyhow::{Context, bail};
 use replay_drain::{
-    AdminListDoc, Command, CreditsArgs, CreditsDoc, PullArgs, parse_args, verify_and_store,
-    write_contributors_envelope,
+    AdminListDoc, Command, CreditsArgs, CreditsDoc, PullArgs, RenameArgs, parse_args,
+    verify_and_store, write_contributors_envelope,
 };
 use std::io::Write;
 use std::time::Duration;
@@ -17,6 +17,10 @@ replay-drain — the replay-share maintainer CLI
                                       (per-member sha256) → archive → drain
   replay-drain credits  [options]   export contributors.json (per-identity
                                       lifetime counts) for the webui res
+  replay-drain rename   [options]   correct one contributor's credited name
+                                      (the self-reported identity is free
+                                      text; typos surface when a lookup by
+                                      that name finds nobody)
 
 Options (env fallbacks in parentheses):
   --relay <url>    relay base (WOWSP_RELAY_URL, default https://wowsp.langyo.xyz)
@@ -27,6 +31,9 @@ Options (env fallbacks in parentheses):
   --only <anon>    pull only this contributor (repeatable)
   --min-staged <n> pull only contributors with ≥ n staged members (default 1)
   --dry-run        verify + archive, never call drain
+  --anon <id>      rename: the contributor's anon id (from the drain
+                   console's list or `pull`'s per-contributor lines)
+  --name <new>     rename: the corrected credited name
 ";
 
 #[tokio::main]
@@ -42,6 +49,7 @@ async fn main() {
     let run = match cmd {
         Command::Pull(args) => pull(args).await,
         Command::Credits(args) => credits(args).await,
+        Command::Rename(args) => rename(args).await,
     };
     if let Err(e) = run {
         eprintln!("error: {e:#}");
@@ -211,6 +219,36 @@ async fn credits(args: CreditsArgs) -> anyhow::Result<()> {
     );
     if args.out != std::path::Path::new("packages/webui/src/res/contributors.json") {
         println!("copy it to packages/webui/src/res/contributors.json before building the webui");
+    }
+    Ok(())
+}
+
+async fn rename(args: RenameArgs) -> anyhow::Result<()> {
+    let client = client().await?;
+    let resp = client
+        .post(format!("{}/api/replays/admin/rename", args.relay))
+        .header("x-admin-key", &args.key)
+        .json(&serde_json::json!({ "anonId": args.anon, "name": args.name }))
+        .send()
+        .await
+        .context("POST /api/replays/admin/rename")?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+    match status {
+        reqwest::StatusCode::OK => {
+            println!("renamed {} → {}", args.anon, body);
+        },
+        // The DO's own verdicts, kept distinct so the operator can tell a
+        // wrong anon id from a rejected name from an auth problem.
+        reqwest::StatusCode::NOT_FOUND => bail!(
+            "no contributor under {} — the anon id comes from the drain \
+             console's list or `pull`'s per-contributor lines",
+            args.anon
+        ),
+        reqwest::StatusCode::UNAUTHORIZED => {
+            bail!("relay answered 401 — the admin key is missing or wrong")
+        },
+        _ => bail!("relay answered {status}: {body}"),
     }
     Ok(())
 }

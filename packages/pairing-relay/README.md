@@ -400,6 +400,7 @@ tested); `crates/relay-worker/src/replay.rs` is the plumbing and
 | `GET /api/replays/admin/list` | contributor rows + watermark (erp session) |
 | `GET /api/replays/admin/archive?anon_id=…` | one contributor's shard (erp session) |
 | `POST /api/replays/admin/drain` | `{anonIds}` → mark drained, free space (erp session) |
+| `POST /api/replays/admin/rename` | `{anonId, name}` → correct a credited name, 404 unknown anon (erp session or x-admin-key) |
 
 What the server accepts is **server-authoritative**: the maintainer
 writes ONE KV value — `FEEDBACK_KV` key `replays:wanted` — holding the
@@ -470,6 +471,19 @@ per-identity lifetime counts (`GET /api/replays/admin/credits`) as the
 webui's `contributors.json` envelope (auto-incrementing `version`,
 RFC3339 `generatedAt`) — copy it to
 `packages/webui/src/res/contributors.json` before building a release.
+
+`replay-drain rename --anon <id> --name <corrected>` fixes a credited
+name in place (`POST /api/replays/admin/rename`): the identity is
+self-reported free text, so typos surface only when the credits list
+ships and a lookup by that name finds nobody. Everything but the name
+(credit count, blob totals, staged set) is kept, and a rename landing
+on another anon's (realm, name) folds the two into one credits row.
+The fix holds until THAT contributor's next upload — every claim
+re-declares the identity from its manifest, so a stale client would
+revert it (the app's share wizard now warns when its credited name
+matches none of the scanned recorders, so re-declarations should
+carry the corrected name). Re-run `credits` afterwards so the next
+res pack carries the fix.
 
 The admin routes accept EITHER a logged-in erp session OR an
 `x-admin-key` header matching the `REPLAY_ADMIN_KEY` secret

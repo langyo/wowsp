@@ -81,6 +81,14 @@ pub(crate) struct DoDrain {
     pub anon_ids: Vec<String>,
 }
 
+/// POST /rename body.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DoRename {
+    pub anon: String,
+    pub name: String,
+}
+
 // ── DO plumbing ────────────────────────────────────────────────────────
 
 async fn index_stub(env: &Env) -> Result<Stub> {
@@ -618,6 +626,59 @@ pub async fn handle_admin_drain(mut req: Request, env: Env) -> Result<Response> 
         }
     }
     ok(json!({ "drained": drained, "bytes": v.get("bytes").and_then(Value::as_u64).unwrap_or(0) }))
+}
+
+/// POST /api/replays/admin/rename {anonId, name} — correct one
+/// contributor's credited name. The identity is self-reported free
+/// text, so a typo (an ASCII `_` standing in for a lookalike CJK
+/// character, say) only surfaces once the credits list ships and a
+/// lookup by that name finds nobody. The DO re-validates both fields —
+/// the faces agree by construction.
+pub async fn handle_admin_rename(mut req: Request, env: Env) -> Result<Response> {
+    if req.method() != Method::Post {
+        return err(405, "method_not_allowed");
+    }
+    if !admin_authed(&req, &env) {
+        return err(401, "unauthorized");
+    }
+    let body: Value = req.json().await.unwrap_or(Value::Null);
+    let Some(anon) = body
+        .get("anonId")
+        .and_then(Value::as_str)
+        .filter(|a| valid_anon_id(a))
+    else {
+        return err(400, "bad_request");
+    };
+    let Some(name) = body
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|n| relay_core::replay::valid_credited_name(n))
+    else {
+        return err(400, "bad_request");
+    };
+    let mut resp = do_post(
+        &env,
+        "/rename",
+        &DoRename {
+            anon: anon.to_string(),
+            name: name.to_string(),
+        },
+    )
+    .await?;
+    match resp.status_code() {
+        200 => {
+            let v: Value = resp.json().await.unwrap_or(Value::Null);
+            ok(v)
+        },
+        // The ledger's own verdicts, passed through verbatim — the DO
+        // is the authority on whether the anon id exists at all (its
+        // 400 cannot fire past this handler's identical pre-check, but
+        // a DO-side storage failure surfaces as 500 and must not read
+        // as the operator's mistake).
+        404 => err(404, "unknown_contributor"),
+        400 => err(400, "bad_request"),
+        _ => err(500, "index_unavailable"),
+    }
 }
 
 fn now_ms() -> i64 {

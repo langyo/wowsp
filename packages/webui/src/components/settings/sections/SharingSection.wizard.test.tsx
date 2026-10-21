@@ -208,6 +208,146 @@ describe("SharingSection wizard", () => {
     err.mockRestore();
   });
 
+  /** The field report that motivated the mismatch warning: the credits
+   *  list held an ASCII `_` where the replays record the CJK lookalike
+   *  灬, and a lookup by the credited name found nobody. */
+  const typoState = {
+    identity: { realm: "cn", name: "万州烤鱼_椒盐味丨蓝博" },
+    uploaders: [{ realm: "cn", name: "万州烤鱼_椒盐味丨蓝博" }],
+    consentVersion: 1,
+    anonId: null,
+    hasUploadToken: false,
+    creditCount: 1,
+    stagedCount: 0,
+    stagedBytes: 0,
+    lastSyncAt: null,
+  };
+  function replayRow(playerName: string | null) {
+    return [
+      {
+        path: "D:\\Replays\\20261018_231227.wowsreplay",
+        dateTime: "18.10.2026 23:12:27",
+        matchGroup: "pvp",
+        mapName: "35_NE_no",
+        mapId: 15,
+        scenario: null,
+        eventType: null,
+        botCount: 0,
+        scriptedUnitCount: 0,
+        ownShipId: 4065212112,
+        playerName,
+        playerCount: 24,
+        installPath: null,
+        installKind: null,
+        installRealm: null,
+      },
+    ];
+  }
+
+  it("warns when the credited name matches none of the scanned recorders", async () => {
+    const errors: unknown[][] = [];
+    const err = vi.spyOn(console, "error").mockImplementation((...a) => {
+      errors.push(a);
+    });
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "contribution_state") return Promise.resolve(typoState);
+      if (cmd === "contribution_queue") {
+        return Promise.resolve({
+          running: false,
+          stage: "idle",
+          message: null,
+          totalBytes: 0,
+          doneItems: 0,
+          totalItems: 0,
+          results: [],
+        });
+      }
+      if (cmd === "list_replays_meta") {
+        return Promise.resolve(replayRow("万州烤鱼灬椒盐味丨蓝博"));
+      }
+      if (cmd === "appdata_read") return Promise.resolve(JSON.stringify({ accounts: [], activeAccountId: null, activeRealm: null }));
+      return Promise.resolve(undefined);
+    });
+
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const wrapper = mount(SharingSection, {
+      attachTo: document.body,
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    const btn = wrapper
+      .findAll("button")
+      .find((b) => /share replays|共享录像/i.test(b.text()));
+    expect(btn, "share-replays entry exists").toBeTruthy();
+    await btn!.trigger("click");
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const modalText =
+      document.body.querySelector(".hk-modal-content")?.textContent ?? "";
+    expect(modalText).toMatch(/credit name|署名与录像不一致/i);
+    // The warning names the REAL recorder the replays carry — the exact
+    // string the credited identity should become.
+    expect(modalText).toContain("万州烤鱼灬椒盐味丨蓝博");
+    expect(errors, `render errors: ${JSON.stringify(errors)}`).toHaveLength(0);
+    err.mockRestore();
+  });
+
+  it("stays silent when the credited name matches a scanned recorder", async () => {
+    const errors: unknown[][] = [];
+    const err = vi.spyOn(console, "error").mockImplementation((...a) => {
+      errors.push(a);
+    });
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "contribution_state") {
+        return Promise.resolve({
+          ...typoState,
+          identity: { realm: "cn", name: "万州烤鱼灬椒盐味丨蓝博" },
+          uploaders: [{ realm: "cn", name: "万州烤鱼灬椒盐味丨蓝博" }],
+        });
+      }
+      if (cmd === "contribution_queue") {
+        return Promise.resolve({
+          running: false,
+          stage: "idle",
+          message: null,
+          totalBytes: 0,
+          doneItems: 0,
+          totalItems: 0,
+          results: [],
+        });
+      }
+      if (cmd === "list_replays_meta") {
+        return Promise.resolve(replayRow("万州烤鱼灬椒盐味丨蓝博"));
+      }
+      if (cmd === "appdata_read") return Promise.resolve(JSON.stringify({ accounts: [], activeAccountId: null, activeRealm: null }));
+      return Promise.resolve(undefined);
+    });
+
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const wrapper = mount(SharingSection, {
+      attachTo: document.body,
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    const btn = wrapper
+      .findAll("button")
+      .find((b) => /share replays|共享录像/i.test(b.text()));
+    await btn!.trigger("click");
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const modalText =
+      document.body.querySelector(".hk-modal-content")?.textContent ?? "";
+    expect(modalText).not.toMatch(/credit name|署名与录像不一致/i);
+    expect(errors, `render errors: ${JSON.stringify(errors)}`).toHaveLength(0);
+    err.mockRestore();
+  });
+
   it("lists every uploader tag, drops the stop-participating button, and closes settings on a volunteer chip", async () => {
     const errors: unknown[][] = [];
     const err = vi.spyOn(console, "error").mockImplementation((...a) => {

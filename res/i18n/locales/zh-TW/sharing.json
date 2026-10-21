@@ -39,6 +39,9 @@
     "identityHint": "署名身分將隨共享包上傳,並出現在參與人員名單中。",
     "identityMissing": "請先選擇署名帳戶",
     "identitySource": "署名帳戶",
+    "identityCustom": "手動輸入…",
+    "identityMismatchTitle": "署名與錄影不一致",
+    "identityMismatch": "本機錄影的署名是「{recorded}」，與目前署名身分「{declared}」不同。致謝名單按署名顯示、點擊後也按署名查詢戰績——若這是手誤（如形近字元），請改回與遊戲內完全一致的 ID。",
     "identityChoose": "選擇署名帳戶…"
   },
   "select": {

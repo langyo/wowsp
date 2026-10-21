@@ -39,6 +39,9 @@
     "identityHint": "クレジット表記は共有パッケージとともにアップロードされ、貢献者一覧に掲載されます。",
     "identityMissing": "先にクレジット対象アカウントを選択してください",
     "identitySource": "クレジット対象アカウント",
+    "identityCustom": "手動で入力…",
+    "identityMismatchTitle": "署名と録画の不一致",
+    "identityMismatch": "このマシンの録画には「{recorded}」が記録されていますが、現在の署名は「{declared}」です。クレジット一覧は署名名で表示され、戦績の照会もその名前で行われます。誤字（似た文字の打ち間違い）であれば、ゲーム内の ID と完全に一致するよう修正してください。",
     "identityChoose": "アカウントを選択…"
   },
   "select": {

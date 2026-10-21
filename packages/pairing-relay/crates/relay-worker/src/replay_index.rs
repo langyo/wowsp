@@ -15,6 +15,7 @@
 //!   GET  /token?anon&thash                        → {known, matched}
 //!   POST /claim   {phase: prepare|commit, …}      → 200 | 409 | 422 | 503
 //!   GET  /admin-list                              → {contributors, watermark}
+//!   POST /rename   {anon, name}                   → {ok, name} | 404 | 400
 //!   POST /drain   {anonIds}                       → {drained, bytes}
 //!   GET  /counters                                → {wm, rules}
 //!
@@ -26,11 +27,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use relay_core::replay::{self, ClaimError, ClaimInput, ContributorMeta, HashRow, Ledger};
+use relay_core::replay::{
+    self, ClaimError, ClaimInput, ContributorMeta, HashRow, Ledger, RenameError,
+};
 use serde_json::json;
 use worker::*;
 
-use crate::replay::{DoCheck, DoClaim, DoDrain};
+use crate::replay::{DoCheck, DoClaim, DoDrain, DoRename};
 
 /// Durable Object state is hydrated lazily on first use: rows are
 /// listed from storage and folded into the pure [`Ledger`] machine,
@@ -81,6 +84,16 @@ impl DurableObject for ReplayIndex {
             },
             "/admin-list" => self.admin_list().await,
             "/credits" => self.credits().await,
+            "/rename" => {
+                if let Some(resp) = Self::require_post(&req) {
+                    return Ok(resp);
+                }
+                let body: DoRename = match req.json().await {
+                    Ok(b) => b,
+                    Err(_) => return Response::error("bad request", 400),
+                };
+                self.rename(body).await
+            },
             "/drain" => {
                 if let Some(resp) = Self::require_post(&req) {
                     return Ok(resp);
@@ -333,6 +346,37 @@ impl ReplayIndex {
             return not_hydrated();
         };
         Response::from_json(&relay_core::replay::credits_response(&ledger.credits()))
+    }
+
+    /// POST /rename — correct one contributor's credited name (the
+    /// maintainer's fix for self-report typos; the ledger keeps every
+    /// other meta field and `credits` folds identity collisions).
+    async fn rename(&self, body: DoRename) -> Result<Response> {
+        if !relay_core::replay::valid_anon_id(&body.anon)
+            || !relay_core::replay::valid_credited_name(&body.name)
+        {
+            return Response::error("bad request", 400);
+        }
+        let now = Date::now().as_millis();
+        let meta = {
+            let mut slot = self.ledger.borrow_mut();
+            let Some(ledger) = slot.as_mut() else {
+                return not_hydrated();
+            };
+            ledger.rename(&body.anon, &body.name, now)
+        };
+        match meta {
+            Ok(meta) => {
+                let _ = self
+                    .state
+                    .storage()
+                    .put(&replay::meta_key(&body.anon), meta)
+                    .await;
+                Response::from_json(&json!({ "ok": true, "name": body.name }))
+            },
+            Err(RenameError::UnknownAnon) => Response::error("unknown contributor", 404),
+            Err(RenameError::BadName) => Response::error("bad request", 400),
+        }
     }
 
     /// POST /drain — mark staged members drained, zero blob totals,

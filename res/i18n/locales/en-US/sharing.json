@@ -39,6 +39,9 @@
     "identityHint": "The credited identity uploads with your package and lands in the contributor list.",
     "identityMissing": "Choose the credited account first",
     "identitySource": "Credited as",
+    "identityCustom": "Enter manually…",
+    "identityMismatchTitle": "Credit name doesn't match your replays",
+    "identityMismatch": "This machine's replays record {recorded}, but the credited identity is {declared}. The credits list shows — and the stats lookup runs against — the credited name. If that's a typo (a lookalike character), change it to the exact in-game ID.",
     "identityChoose": "Choose an account…"
   },
   "select": {

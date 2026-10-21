@@ -187,6 +187,7 @@ pub fn write_contributors_envelope(
 pub enum Command {
     Pull(PullArgs),
     Credits(CreditsArgs),
+    Rename(RenameArgs),
 }
 
 #[derive(Debug, PartialEq)]
@@ -206,12 +207,20 @@ pub struct CreditsArgs {
     pub out: PathBuf,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct RenameArgs {
+    pub relay: String,
+    pub key: String,
+    pub anon: String,
+    pub name: String,
+}
+
 pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
     let env_relay = std::env::var("WOWSP_RELAY_URL").unwrap_or_else(|_| DEFAULT_RELAY.into());
     let env_key = std::env::var("WOWSP_REPLAY_ADMIN_KEY").unwrap_or_default();
     let mut it = argv.iter();
     let Some(cmd) = it.next() else {
-        bail!("usage: replay-drain <pull|credits> [options] (see --help)");
+        bail!("usage: replay-drain <pull|credits|rename> [options] (see --help)");
     };
     let mut relay = env_relay;
     let mut key = env_key;
@@ -219,6 +228,8 @@ pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
     let mut dry_run = false;
     let mut only = Vec::new();
     let mut min_staged = 1u64;
+    let mut anon: Option<String> = None;
+    let mut name: Option<String> = None;
     while let Some(a) = it.next() {
         match a.as_str() {
             "--relay" => relay = take(&mut it, "--relay")?,
@@ -231,6 +242,8 @@ pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
                     .parse()
                     .context("--min-staged needs a number")?;
             },
+            "--anon" => anon = Some(take(&mut it, "--anon")?),
+            "--name" => name = Some(take(&mut it, "--name")?),
             other => bail!("unknown option {other}"),
         }
     }
@@ -254,7 +267,17 @@ pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
             key,
             out: out.unwrap_or_else(|| PathBuf::from("contributors.json")),
         })),
-        other => bail!("unknown command {other} (pull | credits)"),
+        "rename" => Ok(Command::Rename(RenameArgs {
+            relay,
+            key,
+            anon: anon
+                .filter(|a| !a.trim().is_empty())
+                .ok_or_else(|| anyhow::anyhow!("rename needs --anon <contributor anon id>"))?,
+            name: name
+                .filter(|n| !n.trim().is_empty())
+                .ok_or_else(|| anyhow::anyhow!("rename needs --name <corrected credited name>"))?,
+        })),
+        other => bail!("unknown command {other} (pull | credits | rename)"),
     }
 }
 
@@ -426,6 +449,38 @@ mod tests {
                 assert_eq!(c.out, PathBuf::from("contributors.json"));
             },
             other => panic!("wrong command {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rename_parses_the_anon_and_name() {
+        let argv: Vec<String> = [
+            "rename",
+            "--key",
+            "k3",
+            "--anon",
+            "01234567-89ab-4cde-8f01-23456789abcd",
+            "--name",
+            "万州烤鱼灬椒盐味丨蓝博",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        match parse_args(&argv).unwrap() {
+            Command::Rename(r) => {
+                assert_eq!(r.key, "k3");
+                assert_eq!(r.anon, "01234567-89ab-4cde-8f01-23456789abcd");
+                assert_eq!(r.name, "万州烤鱼灬椒盐味丨蓝博");
+            },
+            other => panic!("wrong command {other:?}"),
+        }
+        // Either required flag missing is a usage error.
+        for argv in [
+            vec!["rename", "--key", "k", "--name", "Real"],
+            vec!["rename", "--key", "k", "--anon", "anon-id"],
+        ] {
+            let argv: Vec<String> = argv.into_iter().map(String::from).collect();
+            assert!(parse_args(&argv).is_err());
         }
     }
 }

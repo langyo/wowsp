@@ -118,6 +118,9 @@ pub enum Route<'a> {
     /// POST /api/replays/admin/drain — mark staged members drained,
     /// decrement the watermark, delete the shards (erp session).
     ReplaysAdminDrain,
+    /// POST /api/replays/admin/rename — correct one contributor's
+    /// credited name (erp session or machine key; the handler gates).
+    ReplaysAdminRename,
     /// Nothing we serve — every path outside `run_worker_first` is
     /// answered by the static-assets layer (any miss gets the SPA
     /// shell, navigation or not), so in production this only happens
@@ -175,6 +178,7 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         "/api/replays/admin/wanted" => return Route::ReplaysAdminWanted,
         "/api/replays/admin/credits" => return Route::ReplaysAdminCredits,
         "/api/replays/admin/drain" => return Route::ReplaysAdminDrain,
+        "/api/replays/admin/rename" => return Route::ReplaysAdminRename,
         "/api/relay/control" => {
             return Route::Control {
                 room: query_get(query, "room"),
@@ -516,6 +520,10 @@ mod tests {
         assert_eq!(
             classify("/api/replays/admin/drain", ""),
             Route::ReplaysAdminDrain
+        );
+        assert_eq!(
+            classify("/api/replays/admin/rename", ""),
+            Route::ReplaysAdminRename
         );
         // Unknown replays subpaths stay NotFound.
         assert_eq!(classify("/api/replays/other", ""), Route::NotFound);
