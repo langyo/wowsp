@@ -60,11 +60,16 @@ export default defineComponent({
             switch-restarts-at-top behavior follow the shared component's
             contract; this body keeps only the section content. Section
             identity stays in the settingsUi store so openers can land on
-            a specific section. */}
+            a specific section; a one-shot focusAnchor rides the same
+            store (the shell reports it consumed, back to null) so an
+            opener can also glide the pane onto one of the section's
+            cards. */}
         <SettingsShell
           groups={ctx.railGroups.value}
           section={ui.section}
+          focusAnchor={ui.focusAnchor ?? undefined}
           onUpdate:section={(key: string) => (ui.section = key as SettingsSection)}
+          onUpdate:focusAnchor={(anchor: string | null) => (ui.focusAnchor = anchor)}
           navLabel={t("settings.title")}
         >
           {{

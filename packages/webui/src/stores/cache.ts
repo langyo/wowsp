@@ -31,7 +31,7 @@ import { showBlockingToast, useToast } from "@celestia-island/hikari";
 
 import { api, type DownloadProgress, type NetworkConfig, type ResStatus, type ResUpdate } from "@/api";
 import { t } from "@/i18n";
-import { useSettingsUiStore } from "@/stores/settingsUi";
+import { useSettingsUiStore, SETTINGS_ANCHOR_BAKED_MODELS } from "@/stores/settingsUi";
 import { isMobileApp } from "@/utils/platform";
 
 /** The pack-pass progress projection the resources panel renders — the
@@ -309,9 +309,10 @@ export const useCacheStore = defineStore("resourceCache", () => {
    * first boot of a NEW build when the manifest reports an outdated
    * pack). Same grammar as the updater's idle prompt: a hikari
    * blocking toast with 立即更新 / 稍后. 立即更新 opens Settings →
-   * resources (where the live progress bar lives) and starts the pass;
-   * 稍后 just dismisses — the panel banner remains, and the next
-   * post-update restart asks again.
+   * resources, gliding the pane onto the baked-models card (where the
+   * live progress bar lives), and starts the pass; 稍后 just dismisses
+   * — the panel banner remains, and the next post-update restart asks
+   * again.
    */
   async function offerUpdatePrompt() {
     const upd = update.value;
@@ -340,7 +341,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
     );
     promptPending = false;
     if (answered) {
-      useSettingsUiStore().show("resources");
+      useSettingsUiStore().show("resources", SETTINGS_ANCHOR_BAKED_MODELS);
       void download();
     }
   }
