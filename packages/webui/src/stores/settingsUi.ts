@@ -55,6 +55,15 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = SETTINGS_GROUPS.
   (group) => group.sections,
 );
 
+/** One-shot pane-focus anchors: the card an opener can ask the settings
+ *  surface to glide onto after landing its section (the pack-update
+ *  toast uses this to bring the card with the live progress bar into
+ *  view). A value matches the target card's `data-settings-anchor`
+ *  attribute; SettingsShell consumes the request and reports it done
+ *  (`update:focusAnchor` = null), so it never replays on a later plain
+ *  open. */
+export const SETTINGS_ANCHOR_BAKED_MODELS = "baked-models";
+
 /** Sections that make no sense on the phone app build: no local game
  *  install to pick (gamePath) and no tray or close button to configure a
  *  close behavior for. The PAIRING section shows on BOTH builds — a
@@ -116,13 +125,20 @@ export function availableSettingsGroups(): SettingsGroupView[] {
 export const useSettingsUiStore = defineStore("settingsUi", () => {
   const visible = ref(false);
   const section = ref<SettingsSection>("language");
+  /** Pending one-shot card glide (a SETTINGS_ANCHOR_* value) consumed by
+   *  SettingsShell when the landed section renders; null when idle. */
+  const focusAnchor = ref<string | null>(null);
 
-  /** Open settings, optionally landing on a specific section. Without an
-   *  argument the last-viewed section stays selected. Phone layout goes to
-   *  the settings page (a real route, so the system back gesture works);
-   *  desktop layout raises the app-singleton modal. */
-  function show(at?: SettingsSection) {
+  /** Open settings, optionally landing on a specific section — and
+   *  optionally gliding the pane onto one of that section's cards (a
+   *  SETTINGS_ANCHOR_* value; consumed by SettingsShell, see its
+   *  focusAnchor prop). Without arguments the last-viewed section stays
+   *  selected and no glide is pending. Phone layout goes to the settings
+   *  page (a real route, so the system back gesture works); desktop
+   *  layout raises the app-singleton modal. */
+  function show(at?: SettingsSection, anchor?: string) {
     if (at) section.value = normalizeSettingsSection(at);
+    focusAnchor.value = anchor ?? null;
     if (isPhoneLayout()) {
       void router.push({ path: "/settings", query: { section: section.value } });
       return;
@@ -134,5 +150,5 @@ export const useSettingsUiStore = defineStore("settingsUi", () => {
     visible.value = false;
   }
 
-  return { visible, section, show, hide };
+  return { visible, section, focusAnchor, show, hide };
 });
