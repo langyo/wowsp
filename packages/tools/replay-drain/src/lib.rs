@@ -187,6 +187,8 @@ pub fn write_contributors_envelope(
 pub enum Command {
     Pull(PullArgs),
     Credits(CreditsArgs),
+    Rename(RenameArgs),
+    Backfill(BackfillArgs),
 }
 
 #[derive(Debug, PartialEq)]
@@ -206,12 +208,30 @@ pub struct CreditsArgs {
     pub out: PathBuf,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct RenameArgs {
+    pub relay: String,
+    pub key: String,
+    pub anon: String,
+    pub name: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct BackfillArgs {
+    pub relay: String,
+    pub key: String,
+    pub realm: String,
+    pub paths: Vec<PathBuf>,
+    pub force: bool,
+    pub dry_run: bool,
+}
+
 pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
     let env_relay = std::env::var("WOWSP_RELAY_URL").unwrap_or_else(|_| DEFAULT_RELAY.into());
     let env_key = std::env::var("WOWSP_REPLAY_ADMIN_KEY").unwrap_or_default();
     let mut it = argv.iter();
     let Some(cmd) = it.next() else {
-        bail!("usage: replay-drain <pull|credits> [options] (see --help)");
+        bail!("usage: replay-drain <pull|credits|rename|backfill> [options] (see --help)");
     };
     let mut relay = env_relay;
     let mut key = env_key;
@@ -219,6 +239,11 @@ pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
     let mut dry_run = false;
     let mut only = Vec::new();
     let mut min_staged = 1u64;
+    let mut anon: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut realm: Option<String> = None;
+    let mut force = false;
+    let mut paths: Vec<PathBuf> = Vec::new();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--relay" => relay = take(&mut it, "--relay")?,
@@ -230,6 +255,16 @@ pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
                 min_staged = take(&mut it, "--min-staged")?
                     .parse()
                     .context("--min-staged needs a number")?;
+            },
+            "--anon" => anon = Some(take(&mut it, "--anon")?),
+            "--name" => name = Some(take(&mut it, "--name")?),
+            "--realm" => realm = Some(take(&mut it, "--realm")?),
+            "--force" => force = true,
+            // Positionals belong to backfill alone — the other commands
+            // keep their old strictness (a stray word is a typo, not a
+            // silently-ignored argument).
+            other if !other.starts_with('-') && cmd == "backfill" => {
+                paths.push(PathBuf::from(other));
             },
             other => bail!("unknown option {other}"),
         }
@@ -254,7 +289,34 @@ pub fn parse_args(argv: &[String]) -> anyhow::Result<Command> {
             key,
             out: out.unwrap_or_else(|| PathBuf::from("contributors.json")),
         })),
-        other => bail!("unknown command {other} (pull | credits)"),
+        "rename" => Ok(Command::Rename(RenameArgs {
+            relay,
+            key,
+            anon: anon
+                .filter(|a| !a.trim().is_empty())
+                .ok_or_else(|| anyhow::anyhow!("rename needs --anon <contributor anon id>"))?,
+            name: name
+                .filter(|n| !n.trim().is_empty())
+                .ok_or_else(|| anyhow::anyhow!("rename needs --name <corrected credited name>"))?,
+        })),
+        "backfill" => {
+            const REALMS: [&str; 5] = ["ru", "eu", "na", "asia", "cn"];
+            let realm = realm
+                .filter(|r| REALMS.contains(&r.as_str()))
+                .ok_or_else(|| anyhow::anyhow!("backfill needs --realm <ru|eu|na|asia|cn>"))?;
+            if paths.is_empty() {
+                bail!("backfill needs at least one replay file or folder");
+            }
+            Ok(Command::Backfill(BackfillArgs {
+                relay,
+                key,
+                realm,
+                paths,
+                force,
+                dry_run,
+            }))
+        },
+        other => bail!("unknown command {other} (pull | credits | rename | backfill)"),
     }
 }
 
@@ -263,6 +325,127 @@ fn take<'a>(it: &mut impl Iterator<Item = &'a String>, flag: &str) -> anyhow::Re
         .map(String::as_str)
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("{flag} needs a value"))
+}
+
+// ── backfill planning (pure — unit-tested below) ────────────────────────
+
+/// One scanned replay: the wire facts JSON the /check call consumes plus
+/// the recorder identity the grouping needs. Built by main's scan pass.
+#[derive(Debug, PartialEq)]
+pub struct ScannedReplay {
+    pub sha256: String,
+    pub file_name: String,
+    pub size_bytes: u64,
+    pub player_name: Option<String>,
+    pub facts: serde_json::Value,
+}
+
+/// One /check result row — `verdict` is the server's spelling
+/// (`accept` | `own_staged` | `duplicate` | `unwanted`).
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckRow {
+    pub sha256: String,
+    pub verdict: String,
+    pub rule_id: Option<String>,
+}
+
+/// One contributor's credit plan: the members to submit under one
+/// (realm, name) identity in a single admin/backfill call. The member
+/// shape mirrors the relay's `BackfillMember` wire (camelCase JSON) —
+/// deliberately local: the drain CLI stays out of the relay workspace.
+pub struct BackfillGroupPlan {
+    pub name: String,
+    pub realm: String,
+    pub members: Vec<BackfillMemberPlan>,
+}
+
+pub struct BackfillMemberPlan {
+    pub sha256: String,
+    pub file_name: String,
+    pub size_bytes: u64,
+    pub rule_id: Option<String>,
+}
+
+/// A replay that will NOT be backfilled, and why.
+pub struct BackfillSkip {
+    pub sha256: String,
+    pub file_name: String,
+    pub reason: String,
+}
+
+/// Fold /check verdicts into per-identity backfill plans. `accept`
+/// groups under the file's recorder; `duplicate` / `own_staged` /
+/// `unwanted` skip with the reason — unless `force` credits unwanted
+/// members anyway (rule-less), for collections made under an earlier
+/// ruleset. Members carry the matched rule id when there is one.
+pub fn plan_backfill(
+    scanned: &[ScannedReplay],
+    results: &[CheckRow],
+    realm: &str,
+    force: bool,
+) -> (Vec<BackfillGroupPlan>, Vec<BackfillSkip>) {
+    let mut groups: Vec<BackfillGroupPlan> = Vec::new();
+    let mut skips: Vec<BackfillSkip> = Vec::new();
+    let group_member = |groups: &mut Vec<BackfillGroupPlan>, name: &str, m: BackfillMemberPlan| {
+        if let Some(g) = groups.iter_mut().find(|g| g.name == name) {
+            g.members.push(m);
+        } else {
+            groups.push(BackfillGroupPlan {
+                name: name.to_string(),
+                realm: realm.to_string(),
+                members: vec![m],
+            });
+        }
+    };
+    for s in scanned {
+        let skip = |reason: &str| BackfillSkip {
+            sha256: s.sha256.clone(),
+            file_name: s.file_name.clone(),
+            reason: reason.to_string(),
+        };
+        let Some(row) = results.iter().find(|r| r.sha256 == s.sha256) else {
+            skips.push(skip("no verdict returned"));
+            continue;
+        };
+        let record = |rule_id: Option<String>| BackfillMemberPlan {
+            sha256: s.sha256.clone(),
+            file_name: s.file_name.clone(),
+            size_bytes: s.size_bytes,
+            rule_id,
+        };
+        match row.verdict.as_str() {
+            "accept" => {
+                let Some(name) = s
+                    .player_name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty())
+                else {
+                    skips.push(skip("no recorder name in the header"));
+                    continue;
+                };
+                group_member(&mut groups, name, record(row.rule_id.clone()));
+            },
+            "duplicate" => skips.push(skip("already in the ledger")),
+            "own_staged" => skips.push(skip("staged by its contributor")),
+            "unwanted" if force => {
+                let Some(name) = s
+                    .player_name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty())
+                else {
+                    skips.push(skip("no recorder name in the header"));
+                    continue;
+                };
+                group_member(&mut groups, name, record(None));
+            },
+            "unwanted" => skips.push(skip("no wanted rule matches (use --force)")),
+            other => skips.push(skip(&format!("unknown verdict {other}"))),
+        }
+    }
+    (groups, skips)
 }
 
 #[cfg(test)]
@@ -427,5 +610,158 @@ mod tests {
             },
             other => panic!("wrong command {other:?}"),
         }
+    }
+
+    #[test]
+    fn rename_parses_the_anon_and_name() {
+        let argv: Vec<String> = [
+            "rename",
+            "--key",
+            "k3",
+            "--anon",
+            "01234567-89ab-4cde-8f01-23456789abcd",
+            "--name",
+            "万州烤鱼灬椒盐味丨蓝博",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        match parse_args(&argv).unwrap() {
+            Command::Rename(r) => {
+                assert_eq!(r.key, "k3");
+                assert_eq!(r.anon, "01234567-89ab-4cde-8f01-23456789abcd");
+                assert_eq!(r.name, "万州烤鱼灬椒盐味丨蓝博");
+            },
+            other => panic!("wrong command {other:?}"),
+        }
+        // Either required flag missing is a usage error.
+        for argv in [
+            vec!["rename", "--key", "k", "--name", "Real"],
+            vec!["rename", "--key", "k", "--anon", "anon-id"],
+        ] {
+            let argv: Vec<String> = argv.into_iter().map(String::from).collect();
+            assert!(parse_args(&argv).is_err());
+        }
+    }
+
+    fn scanned(sha: &str, name: Option<&str>) -> ScannedReplay {
+        ScannedReplay {
+            sha256: sha.to_string(),
+            file_name: format!("replay-{sha}.wowsreplay"),
+            size_bytes: 5_000_000,
+            player_name: name.map(str::to_string),
+            facts: serde_json::json!({ "sha256": sha }),
+        }
+    }
+
+    fn check_row(sha: &str, verdict: &str, rule: Option<&str>) -> CheckRow {
+        CheckRow {
+            sha256: sha.to_string(),
+            verdict: verdict.to_string(),
+            rule_id: rule.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn plan_groups_accepts_under_their_recorders() {
+        let scanned = [
+            scanned("a", Some("玩家一号")),
+            scanned("b", Some("玩家一号")),
+            scanned("c", Some("玩家二号")),
+        ];
+        let results = [
+            check_row("a", "accept", Some("r-all")),
+            check_row("b", "accept", Some("r-all")),
+            check_row("c", "accept", None),
+        ];
+        let (groups, skips) = plan_backfill(&scanned, &results, "cn", false);
+        assert!(skips.is_empty());
+        assert_eq!(groups.len(), 2);
+        let g1 = groups.iter().find(|g| g.name == "玩家一号").unwrap();
+        assert_eq!(g1.realm, "cn");
+        assert_eq!(g1.members.len(), 2);
+        assert_eq!(g1.members[0].rule_id.as_deref(), Some("r-all"));
+        let g2 = groups.iter().find(|g| g.name == "玩家二号").unwrap();
+        assert_eq!(g2.members[0].rule_id, None);
+    }
+
+    #[test]
+    fn plan_skips_duplicates_and_unwanted_unless_forced() {
+        let scanned = [
+            scanned("a", Some("玩家一号")),
+            scanned("b", Some("玩家一号")),
+            scanned("c", Some("玩家一号")),
+            scanned("d", None),
+        ];
+        let results = [
+            check_row("a", "duplicate", None),
+            check_row("b", "unwanted", None),
+            check_row("c", "accept", Some("r-all")),
+            check_row("d", "accept", Some("r-all")),
+        ];
+        let (groups, skips) = plan_backfill(&scanned, &results, "cn", false);
+        assert!(groups.len() == 1 && groups[0].members.len() == 1);
+        assert_eq!(skips.len(), 3);
+        assert!(
+            skips
+                .iter()
+                .any(|s| s.reason.contains("already in the ledger"))
+        );
+        assert!(skips.iter().any(|s| s.reason.contains("no wanted rule")));
+        assert!(skips.iter().any(|s| s.reason.contains("no recorder name")));
+
+        // --force credits the unwanted member too (rule-less), still
+        // skipping true duplicates and the nameless header.
+        let (groups, skips) = plan_backfill(&scanned, &results, "cn", true);
+        assert_eq!(groups[0].members.len(), 2);
+        assert_eq!(skips.len(), 2);
+        let unwanted = groups[0].members.iter().find(|m| m.sha256 == "b").unwrap();
+        assert_eq!(unwanted.rule_id, None);
+    }
+
+    #[test]
+    fn backfill_parses_realm_paths_and_flags() {
+        let argv: Vec<String> = [
+            "backfill",
+            "--key",
+            "k",
+            "--realm",
+            "cn",
+            "--force",
+            "D:\\collected",
+            "D:\\more\\one.wowsreplay",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        match parse_args(&argv).unwrap() {
+            Command::Backfill(b) => {
+                assert_eq!(b.realm, "cn");
+                assert!(b.force);
+                assert_eq!(b.paths.len(), 2);
+            },
+            other => panic!("wrong command {other:?}"),
+        }
+        // The realm flag is mandatory and whitelist-checked.
+        assert!(
+            parse_args(&[
+                "backfill".to_string(),
+                "--key".into(),
+                "k".into(),
+                "x".into()
+            ])
+            .is_err()
+        );
+        assert!(
+            parse_args(&[
+                "backfill".to_string(),
+                "--key".into(),
+                "k".into(),
+                "--realm".into(),
+                "mars".into(),
+                "x".into()
+            ])
+            .is_err()
+        );
     }
 }

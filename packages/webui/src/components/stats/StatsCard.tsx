@@ -177,7 +177,6 @@ export default defineComponent({
           v-slots={{
             avatar: () => (
               <PlayerBadge
-                tier={props.stats.levelingTier ?? 0}
                 dogTag={props.stats.dogTag ?? null}
                 size={36}
               />
@@ -220,7 +219,9 @@ export default defineComponent({
           {sealsVisible.value && stamps.value.length > 0 ? (
             <div class="stats-card__stamps">
               {stamps.value.map((kind) => (
-                <RatingStamp class="stats-card__stamp" kind={kind} size={70} />
+                // The water-table surfaces are OUTSIDE the tier restyle:
+                // every tier presses as the square stamp picture here.
+                <RatingStamp key={kind} class="stats-card__stamp" kind={kind} size={70} />
               ))}
             </div>
           ) : null}

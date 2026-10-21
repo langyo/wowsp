@@ -82,22 +82,6 @@ export function legacyBattleScopeOf(v: unknown): RosterBattleScope | null {
   return null;
 }
 
-/** Team-intel card item switches (radar / hydro / smoke estimates). The
- *  card's master switch is `teamIntelEnabled`. */
-export interface OverlayIntelToggles {
-  radar: boolean;
-  hydro: boolean;
-  smoke: boolean;
-}
-
-/** Team-average line items under each team (mean winrate / mean PR / mean
- *  avg damage over the players whose stats landed). */
-export interface OverlayTeamAvgToggles {
-  winrate: boolean;
-  pr: boolean;
-  damage: boolean;
-}
-
 /** Water-table display preferences. Persisted as one JSON blob so the
  *  knobs always travel together (the onboarding wizard and the settings
  *  section write the same object). */
@@ -132,9 +116,12 @@ export interface StatsPrefs {
    *  XP column; the live panel's own cards carry their stat line as a
    *  full-width bottom strip instead). Compact rows stay the default. */
   postbattleRosterFull: boolean;
-  /** Tab overlay team-intel cards flanking the roster (radar/hydro/smoke
-   *  estimate counts + the side's longest radar range). */
-  teamIntelEnabled: boolean;
+  /** The Tab overlay's team-averages line under each side (mean winrate /
+   *  mean PR / mean damage, one line, all-or-nothing). Ships off — the
+   *  roster is dense already. The consumable-intel line above it (radar /
+   *  hydro / smoke + the longest radar range) renders unconditionally and
+   *  has no switch. */
+  teamAvgEnabled: boolean;
   /** Per-seal visibility toggles (settings' seal customizer). */
   sealDisabled: SealDisableMap;
   /** The ordered roster columns every water-table surface renders (scope
@@ -145,10 +132,6 @@ export interface StatsPrefs {
   /** Stats-source battle-type scope — the panel-wide dimension every
    *  column reads (see `RosterBattleScope`). */
   overlayBattleScope: RosterBattleScope;
-  /** Team-intel card items (master switch `teamIntelEnabled`). */
-  overlayIntel: OverlayIntelToggles;
-  /** Team-average line items under each team. */
-  overlayTeamAvg: OverlayTeamAvgToggles;
 }
 
 export const STATS_PREFS_STORAGE_KEY = "wowsp-stats-prefs";
@@ -181,7 +164,7 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   liveRosterCompact: false,
   liveRosterPrTint: true,
   postbattleRosterFull: false,
-  teamIntelEnabled: true,
+  teamAvgEnabled: false,
   sealDisabled: {},
   // The four shipped columns — global career winrate / PR / battles /
   // avg damage, left to right — exactly what the retired chip toggles
@@ -194,8 +177,6 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
     { scope: "global", metric: "damage" },
   ],
   overlayBattleScope: "follow",
-  overlayIntel: { radar: true, hydro: true, smoke: true },
-  overlayTeamAvg: { winrate: false, pr: false, damage: false },
 };
 
 function isPrAlgo(v: unknown): v is PrAlgo {
@@ -289,18 +270,14 @@ export function legacyChipsOf(raw: unknown): LegacyOverlayChips {
   return out;
 }
 
-/** Read a toggles object of shape T off a raw blob: known boolean keys are
- *  kept, everything else falls back to the default entry — a hand-edited
- *  blob can never smuggle in junk keys or lose a newly added toggle. */
-function parseToggles<T extends object>(raw: unknown, defaults: T): T {
-  const out = { ...defaults };
-  if (raw == null || typeof raw !== "object") return out;
+/** The retired per-item team-average toggles (winrate / pr / damage), as
+ *  last written by a pre-`teamAvgEnabled` build — read off the raw blob
+ *  only, as a migration seed: ANY of the three booleans on means the user
+ *  had averages showing, and keeps them on under the single switch. */
+export function legacyTeamAvgEnabledOf(raw: unknown): boolean {
+  if (raw == null || typeof raw !== "object") return false;
   const src = raw as Record<string, unknown>;
-  const dst = out as Record<string, unknown>;
-  for (const key of Object.keys(defaults) as Array<keyof T & string>) {
-    if (typeof src[key] === "boolean") dst[key] = src[key];
-  }
-  return out;
+  return src.winrate === true || src.pr === true || src.damage === true;
 }
 
 /** Validate a raw JSON blob into prefs. Corrupt/wrong-shaped input returns
@@ -320,15 +297,17 @@ function parseSealDisabled(v: unknown): SealDisableMap {
 function parsePrefs(raw: string | null): StatsPrefs | null {
   if (raw == null) return null;
   try {
-    // `overlayStatsMode` (the pre-split battle enum) and the
-    // chips/ship/solo trio (pre-columns) are RETIRED keys — kept on the
-    // raw shape only, as migration seeds (see the columns parse below).
+    // `overlayStatsMode` (the pre-split battle enum), the chips/ship/solo
+    // trio (pre-columns) and `overlayTeamAvg` (the retired per-item
+    // team-average toggles) are RETIRED keys — kept on the raw shape only,
+    // as migration seeds (see the columns / teamAvgEnabled parses below).
     const j = JSON.parse(raw) as Partial<StatsPrefs> & {
       avgStatsEnabled?: unknown;
       overlayStatsMode?: unknown;
       overlayChips?: unknown;
       overlayShipScope?: unknown;
       overlaySoloScope?: unknown;
+      overlayTeamAvg?: unknown;
     };
     if (j == null || typeof j !== "object") return null;
     // Migration: the old single "per-row avg stats" switch seeds the
@@ -385,10 +364,14 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.postbattleRosterFull === "boolean"
           ? j.postbattleRosterFull
           : DEFAULT_STATS_PREFS.postbattleRosterFull,
-      teamIntelEnabled:
-        typeof j.teamIntelEnabled === "boolean"
-          ? j.teamIntelEnabled
-          : DEFAULT_STATS_PREFS.teamIntelEnabled,
+      // Migration: a blob written before the single-switch simplification
+      // carries only the retired `overlayTeamAvg` per-item toggles — any
+      // of them on seeds the whole line on; the healed rewrite then drops
+      // the legacy key for good.
+      teamAvgEnabled:
+        typeof j.teamAvgEnabled === "boolean"
+          ? j.teamAvgEnabled
+          : legacyTeamAvgEnabledOf(j.overlayTeamAvg),
       sealDisabled: parseSealDisabled(j.sealDisabled),
       overlayColumns,
       // Migration: a blob written before the battle-dimension split only
@@ -399,8 +382,6 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
           ? j.overlayBattleScope
           : legacyBattleScopeOf(j.overlayStatsMode) ??
             DEFAULT_STATS_PREFS.overlayBattleScope,
-      overlayIntel: parseToggles(j.overlayIntel, DEFAULT_STATS_PREFS.overlayIntel),
-      overlayTeamAvg: parseToggles(j.overlayTeamAvg, DEFAULT_STATS_PREFS.overlayTeamAvg),
     };
   } catch {
     return null;
@@ -532,8 +513,8 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     save();
   }
 
-  function setTeamIntelEnabled(v: boolean) {
-    prefs.value.teamIntelEnabled = v;
+  function setTeamAvgEnabled(v: boolean) {
+    prefs.value.teamAvgEnabled = v;
     save();
   }
 
@@ -563,19 +544,6 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     save();
   }
 
-  function setOverlayIntel<K extends keyof OverlayIntelToggles>(key: K, v: boolean) {
-    prefs.value.overlayIntel = { ...prefs.value.overlayIntel, [key]: v };
-    save();
-  }
-
-  function setOverlayTeamAvg<K extends keyof OverlayTeamAvgToggles>(
-    key: K,
-    v: boolean,
-  ) {
-    prefs.value.overlayTeamAvg = { ...prefs.value.overlayTeamAvg, [key]: v };
-    save();
-  }
-
   return {
     prefs,
     setPrEnabled,
@@ -586,11 +554,9 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setLiveRosterCompact,
     setLiveRosterPrTint,
     setPostbattleRosterFull,
-    setTeamIntelEnabled,
+    setTeamAvgEnabled,
     setSealDisabled,
     setOverlayColumns,
     setOverlayBattleScope,
-    setOverlayIntel,
-    setOverlayTeamAvg,
   };
 });

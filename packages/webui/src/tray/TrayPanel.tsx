@@ -123,7 +123,6 @@ export default defineComponent({
                     displayStats.value?.dogTag ? (
                       <PlayerBadge
                         dogTag={displayStats.value.dogTag}
-                        tier={displayStats.value.levelingTier ?? 0}
                         size={22}
                       />
                     ) : (

@@ -19,8 +19,8 @@
     font-size: var(--hi-text-sm, 0.8125rem);
   }
 
-  // Wizard-only row now (the intro step's realm/name picker); the status
-  // card displays identity as a read-only tag instead.
+  // Wizard-only row now (the intro step's 署名账户 picker field); the
+  // status card displays identity as a read-only tag instead.
   &__identity {
     display: flex;
     flex-wrap: wrap;
@@ -30,6 +30,18 @@
     &--wizard {
       margin-top: var(--hi-space-12, 12px);
     }
+  }
+
+  // The 署名账户 trigger spans the row like the select field it replaced
+  // (the button reuses hikari's .hk-select-* chrome — full-width and
+  // centered ink come from there; only the wrapper and the empty-value
+  // reading are ours).
+  &__identity-field {
+    flex: 1 1 100%;
+  }
+
+  &__identity-placeholder {
+    color: rgb(var(--color-muted));
   }
 
   &__meta {

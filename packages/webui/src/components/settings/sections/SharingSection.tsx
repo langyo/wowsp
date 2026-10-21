@@ -16,6 +16,7 @@ import {
 import { useRouter } from "vue-router";
 import {
   Check,
+  ChevronDown,
   FolderOpen,
   RefreshCw,
   Upload,
@@ -27,10 +28,8 @@ import {
   HkEmptyState,
   HkModal,
   HkCheckbox,
-  HkInput,
   HkProgressBar,
   HkScrollContainer,
-  HkSelect,
   HkSettingsGroup,
   HkSettingsHint,
   HkSpinner,
@@ -43,7 +42,8 @@ import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { api, type ContributionState, type PlanCandidate, type PlanItem, type QueueSnapshot } from "@/api";
 import { useReplayStore } from "@/stores/replay";
-import { useAccountStore } from "@/stores/account";
+import { useAccountStore, type AccountProfile } from "@/stores/account";
+import AccountPickerModal from "@/components/account/AccountPickerModal";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import ReplayListFilter, {
   FILTER_ANY,
@@ -73,9 +73,10 @@ import type { ReplayMetaLite } from "@/api";
 import shipNamesDbRaw from "@/data/ship_names.json";
 import "./SharingSection.scss";
 
-/** Both sides pin the consent version (contract §11). */
+/** Both sides pin the consent version (contract §11; the relay validates
+ *  it by equality — bumping requires shipping webui + relay in lockstep). */
 const CONSENT_VERSION = 1;
-/** The five realms the identity picker offers (contract §2/§3). */
+/** The five realms the contributors list groups by (contract §2/§3). */
 const REALM_CODES = ["asia", "cn", "ru", "eu", "na"] as const;
 /** The ship classes a plan hint may carry (tauri_shared SHIP_CLASSES). */
 const SHIP_CLASS_KEYS = [
@@ -165,11 +166,14 @@ export default defineComponent({
     // Identity draft — pre-filled from the declared identity once loaded.
     const idRealm = ref<string>("asia");
     const idName = ref("");
-    /** The wizard's identity source: a registered account key
-     *  (`realm:accountId`) or "custom" for free-form entry. */
-    const idSource = ref<string>("custom");
+    /** The wizard's credited identity: a bound-account key
+     *  (`realm:accountId`) once a card is picked, or null while the
+     *  declared identity is still a legacy free-form one (kept until a
+     *  card is picked — the old inline realm/name editor is gone). */
+    const pickedKey = ref<string | null>(null);
     const identityAccounts = computed(() => accountStore.accounts);
-    const ACCOUNT_CUSTOM = "custom";
+    /** The picker window's open state. */
+    const pickerOpen = ref(false);
     function accountKeyOf(realm: string, name: string): string | null {
       const hit = accountStore.accounts.find(
         (a) => a.realm === realm && a.nickname === name,
@@ -178,29 +182,36 @@ export default defineComponent({
     }
     /** Re-point the picker at the declared identity whenever it (or the
      *  account list) changes; a match selects the account, anything else
-     *  reads as free-form. */
+     *  reads as the legacy free-form identity. */
     function watchIdentitySource() {
       watch(
         () => [state.value?.identity, identityAccounts.value.length] as const,
         () => {
           const id = state.value?.identity;
-          idSource.value =
-            id ? accountKeyOf(id.realm, id.name) ?? ACCOUNT_CUSTOM : ACCOUNT_CUSTOM;
+          pickedKey.value = id ? accountKeyOf(id.realm, id.name) : null;
         },
         { immediate: true },
       );
     }
-    function onIdentitySourcePick(key: string) {
-      idSource.value = key;
-      if (key === ACCOUNT_CUSTOM) return;
-      const [realm, id] = key.split(":");
-      const hit = accountStore.accounts.find(
-        (a) => a.realm === realm && String(a.accountId) === id,
-      );
-      if (hit) {
-        idRealm.value = hit.realm;
-        idName.value = hit.nickname;
+    /** The trigger's label: the picked account, else the legacy free-form
+     *  name, else nothing (the placeholder prompt shows). */
+    const pickedLabel = computed(() => {
+      const key = pickedKey.value;
+      if (key != null) {
+        const [realm, id] = key.split(":");
+        const hit = accountStore.accounts.find(
+          (a) => a.realm === realm && String(a.accountId) === id,
+        );
+        if (hit) return `${hit.nickname} (${hit.realm.toUpperCase()})`;
       }
+      return idName.value.trim() || null;
+    });
+    /** A picker card (or a fresh bind inside it) becomes the credited
+     *  identity draft; the intro step's 下一步 persists it. */
+    function onPickerPick(a: AccountProfile) {
+      pickedKey.value = `${a.realm}:${a.accountId}`;
+      idRealm.value = a.realm;
+      idName.value = a.nickname;
     }
     // The identity draft follows the declared one — the wizard's intro
     // step is the single editing surface (the status card only displays).
@@ -213,6 +224,35 @@ export default defineComponent({
         }
       },
     );
+
+    /** The recorder nicknames this machine's scanned replays carry, per
+     *  ROW (not deduped): the busiest recorder is the machine's primary
+     *  player, and the replay list rows plus any planner output (manual
+     *  picks outside the scanned folders too) both feed the count. */
+    const recorderNames = computed(() => {
+      const counts = new Map<string, number>();
+      const bump = (name: string | null | undefined) => {
+        const n = name?.trim();
+        if (n) counts.set(n, (counts.get(n) ?? 0) + 1);
+      };
+      for (const r of replays.list) bump(r.playerName);
+      for (const p of planByPath.value.values()) bump(p.playerName);
+      return counts;
+    });
+    /** The recorder name to warn about (null = the draft is fine): a
+     *  credited identity matching NONE of the scanned recorders is
+     *  almost certainly a typo (a lookalike character standing in for
+     *  the real one), and the lookup behind the credits list then finds
+     *  nobody. Advisory — sharing on someone's behalf stays possible. */
+    const identityNameMismatch = computed(() => {
+      const draft = idName.value.trim().toLowerCase();
+      const counts = recorderNames.value;
+      if (!draft || counts.size === 0) return null;
+      for (const name of counts.keys()) {
+        if (name.toLowerCase() === draft) return null;
+      }
+      return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    });
 
     const syncing = ref(false);
     async function syncMine() {
@@ -968,8 +1008,11 @@ export default defineComponent({
                 ))}
               </>
             ) : null}
-            <HkTag variant={(state.value?.consentVersion ?? 0) >= 1 ? "success" : "warning"} size="sm">
-              {(state.value?.consentVersion ?? 0) >= 1
+            <HkTag
+              variant={(state.value?.consentVersion ?? 0) >= CONSENT_VERSION ? "success" : "warning"}
+              size="sm"
+            >
+              {(state.value?.consentVersion ?? 0) >= CONSENT_VERSION
                 ? t("sharing.status.consentRecorded", { version: state.value?.consentVersion ?? CONSENT_VERSION })
                 : t("sharing.status.consentMissing")}
             </HkTag>
@@ -1057,43 +1100,48 @@ export default defineComponent({
                    *  uploads (the Rust side refuses without one) — so it
                    *  is captured here, on the consent step, instead of
                    *  erroring two steps later at the upload door. */}
-                  {/* Identity source: pick a registered player (the
-                      accounts section's list) or fall back to free-form
-                      entry when nothing is bound / 手动输入 is chosen. */}
+                  {/* Identity source: the single field of the intro step.
+                      Clicking it opens the account picker window (the same
+                      cards as the accounts section, minus reorder /
+                      preferred / remove); the old inline realm/name
+                      free-form editor is gone — new identities are bound
+                      through the picker's add-player row. The trigger
+                      reuses hikari's select chrome so it reads as the
+                      dropdown field it replaced. */}
                   <div class="sharing-sec__identity sharing-sec__identity--wizard">
-                    {identityAccounts.value.length > 0 ? (
-                      <HkSelect
-                        label={t("sharing.wizard.identitySource")}
-                        options={[
-                          ...identityAccounts.value.map((a) => ({
-                            value: `${a.realm}:${a.accountId}`,
-                            label: `${a.nickname} (${a.realm.toUpperCase()})`,
-                          })),
-                          { value: ACCOUNT_CUSTOM, label: t("sharing.wizard.identityCustom") },
-                        ]}
-                        modelValue={idSource.value}
-                        onUpdate:modelValue={onIdentitySourcePick}
-                      />
-                    ) : null}
-                    {identityAccounts.value.length === 0 ||
-                    idSource.value === ACCOUNT_CUSTOM ? (
-                      <>
-                        <HkSelect
-                          label={t("sharing.status.realm")}
-                          options={REALM_CODES.map((r) => ({ value: r, label: r.toUpperCase() }))}
-                          modelValue={idRealm.value}
-                          onUpdate:modelValue={(v: string) => (idRealm.value = v)}
-                        />
-                        <HkInput
-                          label={t("sharing.status.name")}
-                          placeholder={t("sharing.status.namePlaceholder")}
-                          modelValue={idName.value}
-                          onUpdate:modelValue={(v: string) => (idName.value = v)}
-                        />
-                      </>
-                    ) : null}
+                    <span class="sharing-sec__identity-field">
+                      <label class="hk-select-label">
+                        {t("sharing.wizard.identitySource")}
+                      </label>
+                      <button
+                        type="button"
+                        class="hk-select-trigger"
+                        onClick={() => (pickerOpen.value = true)}
+                      >
+                        <span
+                          class={[
+                            "hk-select-value",
+                            pickedLabel.value ? null : "sharing-sec__identity-placeholder",
+                          ]}
+                        >
+                          {pickedLabel.value ?? t("sharing.wizard.identityChoose")}
+                        </span>
+                        <ChevronDown size={16} class="hk-select-arrow" />
+                      </button>
+                    </span>
                   </div>
                   <HkSettingsHint>{t("sharing.wizard.identityHint")}</HkSettingsHint>
+                  {identityNameMismatch.value ? (
+                    <HkAlert
+                      variant="warning"
+                      size="sm"
+                      title={t("sharing.wizard.identityMismatchTitle")}
+                      message={t("sharing.wizard.identityMismatch", {
+                        recorded: identityNameMismatch.value,
+                        declared: idName.value.trim(),
+                      })}
+                    />
+                  ) : null}
                 </div>
               ),
               select: () => (
@@ -1337,6 +1385,17 @@ export default defineComponent({
             }}
           />
       </HkModal>
+
+      {/* The 署名账户 field's picker window — a third surface stacked over
+          the wizard (both teleport to body, so nesting stays clean). A
+          pick updates the intro step's draft; the footer's 下一步 still
+          owns the persist. */}
+      <AccountPickerModal
+        modelValue={pickerOpen.value}
+        onUpdate:modelValue={(v: boolean) => (pickerOpen.value = v)}
+        selectedKey={pickedKey.value}
+        onPick={onPickerPick}
+      />
 
       {/* ── contributors list (res-pack insights rail / bundled fallback) ── */}
       <HkSettingsGroup title={t("sharing.contributors.title")}>

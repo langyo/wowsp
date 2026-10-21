@@ -148,6 +148,22 @@ pub fn run() {
         // Default-browser hand-off for http(s) URLs (open_external) —
         // mobile-supported, replaces the Windows-only ShellExecuteW path.
         .plugin(tauri_plugin_opener::init())
+        // Clipboard reads (the manual-locate picker's paste-image button
+        // rides `navigator.clipboard.read()`) otherwise fall into WebView2's
+        // default permission flow: the Edge "let this site see your
+        // clipboard?" flyout pops up AND the very first read rejects, which
+        // the picker surfaces as a load-failed toast — an awkward one-two
+        // for a paste the user just deliberately clicked. Clipboard READ is
+        // the only permission the webui ever requests and it only ever
+        // fires from that button, so grant it up front on every window
+        // (config-declared main/tray included); anything else keeps the
+        // platform's default flow.
+        .on_permission_request(|_webview, kind| match kind {
+            tauri::webview::PermissionKind::ClipboardRead => {
+                tauri::webview::PermissionResponse::Allow
+            },
+            _ => tauri::webview::PermissionResponse::Default,
+        })
         // Remote ship portraits ride the proxy-aware, disk-cached `media`
         // scheme instead of the webview hitting the WG CDN directly (see
         // commands::media + webui utils/media.ts).
@@ -638,6 +654,7 @@ pub fn run() {
             commands::model_pack::res_report_bundled,
             commands::model_pack::get_res_status,
             commands::model_pack::check_res_update,
+            commands::model_pack::res_verify_integrity,
             commands::model_pack::res_download,
             commands::model_pack::res_cancel,
             commands::model_pack::clear_res,
@@ -819,6 +836,34 @@ mod tests {
         assert!(
             media_src.split_whitespace().any(|t| t == "data:"),
             "media-src must allow data: URLs (preview audio): {media_src}"
+        );
+    }
+
+    /// The pack's GLBs are meshopt-compressed, and three.js' MeshoptDecoder
+    /// instantiates its embedded WASM on the main thread — WebView2 gates
+    /// WebAssembly compile on script-src carrying the CSP3 keyword. Like
+    /// the media-src case above, Tauri injects this CSP only in production
+    /// (dev runs without one), so dropping the keyword ships unnoticed
+    /// until every release WebView refuses the instantiate and ALL 3D
+    /// models die (replay terrain, ship hulls, the default fallback hull
+    /// included — user report 2026-10-21). Keep the keyword in place.
+    #[test]
+    fn csp_permits_wasm_unsafe_eval() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = conf["app"]["security"]["csp"]
+            .as_str()
+            .expect("app.security.csp stays a string");
+        let script_src = csp
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.starts_with("script-src "))
+            .unwrap_or_else(|| panic!("csp lost its script-src directive: {csp}"));
+        assert!(
+            script_src
+                .split_whitespace()
+                .any(|t| t == "'wasm-unsafe-eval'"),
+            "script-src must allow WebAssembly (meshopt GLB decoder): {script_src}"
         );
     }
 }

@@ -1,44 +1,60 @@
 import { defineComponent, ref } from "vue";
-import { HkButton, HkSwitch, useToast } from "@celestia-island/hikari";
+import { HkSwitch, useToast } from "@celestia-island/hikari";
 import { ImagePlus, RotateCcw } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import RatingStamp from "@/components/base/RatingStamp";
+import StampTag from "@/components/base/StampTag";
 import ImageSquareCropModal, { type ImageCropResult } from "@/components/base/ImageSquareCropModal";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
-import { importStampImage, resetStampImage } from "@/stores/stampOverrides";
-import type { StampKind } from "@/utils/winrate";
+import { importStampImage, resetStampImage, stampOverrideUrl } from "@/stores/stampOverrides";
+import { stampTier, type StampKind } from "@/utils/winrate";
 import "./SealCustomizer.scss";
 
-/** The customizer's rows, in RatingStamp's canonical kind order (career
- *  verdicts, then the composition tags with their 奶龙 / 奶蛙 veteran tiers, then
- *  the merged 空中神人 / 水下神人 / 空中小猴 / 水下小猴 seals — the same
- *  order commands::stamps lists); each row renders its award-criteria
- *  description (stats.json `stats.seal*Desc` keys) — the stamps already
- *  carry their own name glyph, and the same copy serves as RatingStamp's
- *  hover tooltip. */
-const SEALS: Array<{ kind: StampKind; descKey: string }> = [
-  { kind: "miracle", descKey: "sealMiracleDesc" },
-  { kind: "ape", descKey: "sealApeDesc" },
-  { kind: "maggot", descKey: "sealMaggotDesc" },
-  { kind: "rat", descKey: "sealRatDesc" },
-  { kind: "air", descKey: "sealAirDesc" },
-  { kind: "sub", descKey: "sealSubDesc" },
-  { kind: "airVeteran", descKey: "sealAirVeteranDesc" },
-  { kind: "subVeteran", descKey: "sealSubVeteranDesc" },
-  { kind: "airMiracle", descKey: "sealAirMiracleDesc" },
-  { kind: "subMiracle", descKey: "sealSubMiracleDesc" },
-  { kind: "airApe", descKey: "sealAirApeDesc" },
-  { kind: "subApe", descKey: "sealSubApeDesc" },
+/** The customizer's rows in the seal-tier order (utils/winrate stampTier),
+ *  grouped under the 一级章 / 二级章 headers: the primary tier — the
+ *  single-character verdicts (神 / 猴 / 蛆) plus 过街老鼠, the square stamp
+ *  faces — then the secondary tier — the four-character composition tags
+ *  with their 奶龙 / 奶蛙 veteran tiers and the merged 空中神人 / 水下神人 /
+ *  空中小猴 / 水下小猴 seals (the same order commands::stamps lists within
+ *  each group); each row renders its award-criteria description
+ *  (stats.json `stats.seal*Desc` keys) — the stamps already carry their own
+ *  name glyph, and the same copy serves as the hover tooltip. */
+const SEAL_TIERS: Array<{ tier: 1 | 2; kinds: Array<{ kind: StampKind; descKey: string }> }> = [
+  {
+    tier: 1,
+    kinds: [
+      { kind: "miracle", descKey: "sealMiracleDesc" },
+      { kind: "ape", descKey: "sealApeDesc" },
+      { kind: "maggot", descKey: "sealMaggotDesc" },
+      { kind: "rat", descKey: "sealRatDesc" },
+    ],
+  },
+  {
+    tier: 2,
+    kinds: [
+      { kind: "air", descKey: "sealAirDesc" },
+      { kind: "sub", descKey: "sealSubDesc" },
+      { kind: "airVeteran", descKey: "sealAirVeteranDesc" },
+      { kind: "subVeteran", descKey: "sealSubVeteranDesc" },
+      { kind: "airMiracle", descKey: "sealAirMiracleDesc" },
+      { kind: "subMiracle", descKey: "sealSubMiracleDesc" },
+      { kind: "airApe", descKey: "sealAirApeDesc" },
+      { kind: "subApe", descKey: "sealSubApeDesc" },
+    ],
+  },
 ];
 
 /**
- * Per-seal customization rows for the settings modal's stats section: each
- * seal gets a live preview (default glyph, or the user's custom picture the
- * moment it lands), a show/hide switch (statsPrefs sealDisabled) and a
- * pick/reset pair for the custom image (commands::stamps — reset deletes
- * the file, which IS the fallback to the default glyph).
+ * Per-seal customization rows for the settings modal's stats section,
+ * grouped under the seal-tier headers (一级章 / 二级章). The preview IS the
+ * control — no pick/reset button pair beside it: a seal on
+ * its default glyph opens the crop dialog on click, and a customized seal
+ * deletes its picture and falls back to the default glyph on click
+ * (re-customizing is simply the next click). The hover veil (an image /
+ * restore glyph over the preview) carries the affordance; each row keeps
+ * its show/hide switch (statsPrefs sealDisabled).
  *
  * The whole block renders only while seals can show at all — zh UI locale
  * AND the PR master AND the seals toggle on — mirroring RatingStamp's own
@@ -59,12 +75,15 @@ export default defineComponent({
     const visible = () =>
       uiLocale.value.startsWith("zh") && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled;
 
-    /** "自定义图片" opens the crop dialog instead of a bare file picker: the
+    /** The preview click: still on the default glyph → the crop dialog (the
      *  seal face is a square shown at 34–64px, so the dialog enforces the
-     *  square + min/max-side rules and previews the crop at real seal sizes
-     *  (with the shared −9° press) before anything lands on disk. */
-    function pick(kind: StampKind) {
-      dialogKind.value = kind;
+     *  square + min/max-side rules and previews the crop at real seal sizes,
+     *  with the shared −9° press, before anything lands on disk); already
+     *  customized → reset — deleting the file IS the fallback to the default
+     *  glyph. */
+    function onPreviewClick(kind: StampKind) {
+      if (stampOverrideUrl(kind) != null) void reset(kind);
+      else dialogKind.value = kind;
     }
 
     async function onCropConfirm({ bytes, ext }: ImageCropResult) {
@@ -97,43 +116,55 @@ export default defineComponent({
       return (
         <div class="seal-customizer">
           <p class="seal-customizer__hint">{t("settings.sealCustomizer.desc")}</p>
-          {SEALS.map(({ kind, descKey }) => {
-            const disabled = prefs.prefs.sealDisabled[kind] === true;
-            return (
-              <div
-                class={["seal-customizer__row", { "seal-customizer__row--off": disabled }]}
-                key={kind}
-              >
-                <span class="seal-customizer__preview">
-                  <RatingStamp kind={kind} size={40} />
-                </span>
-                <span class="seal-customizer__desc">{t(`stats.${descKey}`)}</span>
-                <span class="seal-customizer__actions">
-                  <HkButton
-                    variant="secondary"
-                    size="sm"
-                    loading={busy.value === kind}
-                    disabled={disabled}
-                    onClick={() => void pick(kind)}
+          {SEAL_TIERS.map(({ tier, kinds }) => (
+            <div class="seal-customizer__tier" key={tier}>
+              <p class="seal-customizer__tier-title">
+                {t(tier === 1 ? "settings.sealCustomizer.tier1" : "settings.sealCustomizer.tier2")}
+              </p>
+              {kinds.map(({ kind, descKey }) => {
+                const disabled = prefs.prefs.sealDisabled[kind] === true;
+                const custom = stampOverrideUrl(kind) != null;
+                const hint = custom
+                  ? t("settings.sealCustomizer.clickRemove")
+                  : t("settings.sealCustomizer.clickEdit");
+                return (
+                  <div
+                    class={["seal-customizer__row", { "seal-customizer__row--off": disabled }]}
+                    key={kind}
                   >
-                    <ImagePlus size={13} /> {t("settings.sealCustomizer.pickImage")}
-                  </HkButton>
-                  <HkButton
-                    variant="ghost"
-                    size="sm"
-                    disabled={disabled}
-                    onClick={() => void reset(kind)}
-                  >
-                    <RotateCcw size={13} /> {t("settings.sealCustomizer.resetDefault")}
-                  </HkButton>
-                </span>
-                <HkSwitch
-                  modelValue={!disabled}
-                  onUpdate:modelValue={(v: boolean) => prefs.setSealDisabled(kind, !v)}
-                />
-              </div>
-            );
-          })}
+                    <button
+                      type="button"
+                      class={[
+                        "seal-customizer__preview",
+                        { "seal-customizer__preview--custom": custom },
+                      ]}
+                      disabled={disabled || busy.value === kind}
+                      title={hint}
+                      aria-label={hint}
+                      onClick={() => onPreviewClick(kind)}
+                    >
+                      {/* Each tier previews its own face: the primary tier
+                          the square stamp picture, the secondary tier the
+                          horizontal StampTag (the face the rosters show). */}
+                      {stampTier(kind) === "primary" ? (
+                        <RatingStamp kind={kind} size={40} />
+                      ) : (
+                        <StampTag kind={kind} />
+                      )}
+                      <span class="seal-customizer__afford" aria-hidden="true">
+                        {custom ? <RotateCcw size={14} /> : <ImagePlus size={13} />}
+                      </span>
+                    </button>
+                    <span class="seal-customizer__desc">{t(`stats.${descKey}`)}</span>
+                    <HkSwitch
+                      modelValue={!disabled}
+                      onUpdate:modelValue={(v: boolean) => prefs.setSealDisabled(kind, !v)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ))}
           <ImageSquareCropModal
             modelValue={dialogKind.value != null}
             title={t("settings.sealCustomizer.dialogTitle")}

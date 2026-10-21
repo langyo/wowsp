@@ -174,7 +174,15 @@
 
 .replay-view__postbattle-matrix {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr), not bare 1fr — bare 1fr is minmax(auto, 1fr), and the
+     auto minimum lets a roster row's min-content (the fixed-width stat
+     columns + the icon + the seal slot) EXPAND the track past the free
+     space; the blown-out columns then overflow the sheet's right edge
+     where the vertical-only scroller can neither show nor scroll them,
+     clipping the last mirrored stat cells. With min 0 the tracks always
+     split the free space and the rows' name track (min-width: 0) absorbs
+     the deficit by ellipsizing instead. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
 
@@ -188,6 +196,11 @@
    so the column title scrolls with the rows. */
 .replay-view__postbattle-col {
   min-height: 0;
+  /* A grid item's automatic min-width is its min-content — without this
+     the column box refuses to shrink below the roster row's fixed pieces
+     even inside the minmax(0, 1fr) track above and still overflows the
+     sheet's right edge. */
+  min-width: 0;
 }
 .replay-view__postbattle-col__inner {
   display: flex;
@@ -361,6 +374,35 @@
 .replay-view__postbattle-cell-stamp {
   flex: 0 0 auto;
 }
+/* The compact row's secondary tag presses a STEP smaller: the four-char
+   wording at the row's own size would overhang the fixed 44px slot into
+   the XP digits — the tier's small-tag face shrinks to fit the slot (the
+   full cards' score track has room for the full-size face). */
+.replay-view__postbattle-cell-stampslot .stamp-tag {
+  font-size: 0.7em;
+  padding: 0.04em 0.3em;
+}
+/* The secondary seals (成分章, StampTag) riding beside the XP score — the
+   horizontal transparent tag face, NOT a square face: the row is far too
+   short for one. Flex none at the XP cell's end so the score never wraps
+   around them; the reserved stampslot follows. */
+.replay-view__postbattle-fcell-stamptags {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+/* The full card's seal column — ONLY the primary seal (一级章, the
+   single-character verdict picture) in the live card's right-edge slot.
+   The secondary tier (成分章) rides beside the XP score instead (see the
+   stamptags rule above). */
+.replay-view__postbattle-cell-stampstack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
 /* Per-row nickname mask toggle. Muted until hovered — the share flow's
    discoverability lives in the toolbar hint. */
 .replay-view__postbattle-cell-eye {
@@ -514,12 +556,21 @@
   display: block;
   min-width: 0;
 }
-/* This panel's XP cell, pinned onto its track (the configured stat
-   columns ride the stat text strip inside the main track now — damage
-   included, so no dedicated dmg track remains). */
-.replay-view__postbattle-fcell-xp {
+/* This panel's score track: the XP cell + the secondary seals (成分章,
+   StampTag) wrapped into ONE grid item pinned onto track 3 — the tags ride
+   beside the XP without spilling into the seal track (auto-placement would
+   steal the 2.5rem slot and shove the primary stamp onto an implicit
+   second row). The configured stat columns ride the stat text strip inside
+   the main track now — damage included, so no dedicated dmg track remains. */
+.replay-view__postbattle-fcell-score {
   grid-column: 3;
   justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.replay-view__postbattle-fcell-xp {
   text-align: right;
   font-family: var(--font-mono);
 }
@@ -527,24 +578,6 @@
   grid-column: 4;
   flex-basis: auto;
   justify-self: center;
-}
-.replay-view__postbattle-detail {
-  position: relative;
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgb(var(--color-text) / 0.05);
-  border: 1px solid rgb(var(--color-text) / 0.12);
-}
-.replay-view__postbattle-detail-close {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  border: none;
-  background: none;
-  color: rgb(var(--color-text) / 0.6);
-  cursor: pointer;
-  font-size: var(--text-base);
 }
 .replay-view__postbattle-detail-head {
   display: flex;
@@ -567,6 +600,33 @@
   color: #ff6b6b;
   font-size: var(--text-xs);
   margin-bottom: 6px;
+}
+/* The killer chip: nick + white class icon + ship name in one inline run —
+   a real button when the killer sits in this roster (opens their stats),
+   plain text for scripted NPCs. Inherits the line's red; hover underlines
+   the run and warms the ship name. */
+.replay-view__postbattle-killed-btn,
+.replay-view__postbattle-killed-plain {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  vertical-align: baseline;
+}
+.replay-view__postbattle-killed-btn {
+  cursor: pointer;
+  &:hover {
+    text-decoration: underline;
+    .replay-view__postbattle-killed-ship { color: rgb(var(--color-text)); }
+  }
+  img { vertical-align: -3px; margin: 0 1px 0 3px; }
+}
+.replay-view__postbattle-killed-ship {
+  font-style: normal;
+  color: rgb(var(--color-text) / 0.75);
+  margin-left: 3px;
 }
 .replay-view__postbattle-detail-body {
   display: flex;
@@ -662,17 +722,17 @@
   justify-content: space-between;
   margin-bottom: 8px;
   font-weight: 600;
-  button {
-    border: none;
-    background: none;
-    color: rgb(var(--color-text) / 0.6);
-    cursor: pointer;
-    font-size: var(--text-base);
-  }
+}
+/* The head's close control is hikari's unified window-close affordance
+   (HkIconButton + hk-window-close, the HkModal grammar) — the class here is
+   only the placement hook; the chrome is the package's. */
+.replay-view__postbattle-modal-close {
+  flex: none;
+  margin: -4px -6px -4px 0;
 }
 /* Player-detail body scrolls between the fixed head and the jump button —
-   StatsCard + tier/class charts overflow the 82vh cap on short viewports.
-   The hikari container owns the scrollbar (auto-hiding overlay track). */
+   the global StatsCard overflows the 82vh cap on short viewports. The
+   hikari container owns the scrollbar (auto-hiding overlay track). */
 .replay-view__postbattle-modal-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -718,30 +778,6 @@
   align-self: flex-start;
   &:hover { background: rgb(var(--color-accent) / 35%); }
 }
-.replay-view__postbattle-dist {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgb(var(--color-text) / 0.1);
-  /* Named inline-size container `ship-dist-host` — the chart-row
-     collapse query in ShipDistCharts.scss binds to this name. */
-  container: ship-dist-host / inline-size;
-}
-.replay-view__postbattle-dist-title {
-  color: rgb(var(--color-text) / 0.55);
-  font-size: var(--text-xs);
-  margin-bottom: 5px;
-}
-.replay-view__postbattle-dist-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px 10px;
-  margin-bottom: 3px;
-}
-.replay-view__postbattle-dist-item {
-  font-size: var(--text-xs);
-  color: rgb(var(--color-text) / 0.7);
-  b { color: #ffd93d; font-family: var(--font-mono); margin-right: 2px; }
-}
 
 /* ── Phone layout (≤767px): the post-battle drill-down docks as a bottom
  sheet (same shape the replay view's own overlays use). */
@@ -762,7 +798,8 @@
   }
   .replay-view__postbattle-modal-head {
     padding: 0.55rem 0.75rem;
-    button {
+    /* Keep the unified close control at the 44px tap target. */
+    .replay-view__postbattle-modal-close {
       min-width: 44px;
       min-height: 44px;
       margin: -0.35rem -0.5rem -0.35rem 0;
@@ -786,8 +823,13 @@
     min-height: 44px;
   }
   .replay-view__postbattle-fcell-btn {
+    /* FOUR tracks on phones (the desktop template's shape, narrower name
+       + meta): the score track (XP + the secondary tags) must stay
+       ELASTIC — pinning it to a fixed 7.5ch would overflow the XP+tag
+       pair into the seal track. main → 1, meta → 2, score → 3, seal → 4,
+       same pins as desktop. */
     grid-template-columns:
-      minmax(0, 42%) minmax(0, 1fr) 7.5ch minmax(6ch, max-content) 2.5rem;
+      minmax(0, 42%) minmax(0, 1fr) minmax(6ch, max-content) 2.5rem;
     padding: 0.4rem 0.5rem;
   }
   .replay-view__postbattle-jump {

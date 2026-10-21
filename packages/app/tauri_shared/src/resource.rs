@@ -66,6 +66,22 @@ pub struct ResUpdate {
     pub delta_steps: Option<Vec<ResDeltaStep>>,
 }
 
+/// Result of an on-demand integrity check over the installed pack
+/// (Settings → resources panel). Mirrored by `ResIntegrity` in the webui
+/// api client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResIntegrity {
+    /// Whether the tree hash recomputed from disk matches the stamp the
+    /// pack was installed with.
+    pub intact: bool,
+    /// The install-time stamp the check compared against.
+    pub expected: String,
+    /// The hash recomputed from the on-disk tree (`None` when the walk
+    /// failed — reported as not intact, the reason is in the logs).
+    pub actual: Option<String>,
+}
+
 /// A clearable auxiliary cache directory (cache-management panel).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

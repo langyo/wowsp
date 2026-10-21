@@ -46,18 +46,24 @@
       visibility 0s linear var(--duration-slow);
   }
 
-  /* Dashed-piggy stand-in covering the whole About block: centers the
-     pig and is itself the restore click target — the entire area answers
-     the click, not just the image. Purely decorative (empty alt); the
-     overlay is also keyboard-focusable (a held-Enter auto-repeat on the
-     logo can trip the vanish), so it carries a focus ring. */
+  /* Dashed-piggy stand-in covering the whole About block; it is itself
+     the restore click target — the entire area answers the click, not
+     just the image. Purely decorative (empty alt); the overlay is also
+     keyboard-focusable (a held-Enter auto-repeat on the logo can trip
+     the vanish), so it carries a focus ring. */
   &__vanish {
     position: absolute;
     inset: 0;
     z-index: 20;
     display: flex;
-    align-items: center;
+    /* The pig stands on the floor instead of floating at the block's
+       mid-height: the About block keeps its full layout box while
+       vanished and is usually taller than the host pane (settings
+       section), so a centered pig lands on an arbitrary spot that can
+       sit far above the fold or drift as the pane scrolls. */
+    align-items: flex-end;
     justify-content: center;
+    padding-bottom: var(--space-16);
     cursor: pointer;
     user-select: none;
     opacity: 0;
@@ -76,6 +82,13 @@
     img {
       width: 120px;
       height: 120px;
+      /* Keep the standing height stable while the host pane scrolls:
+         the pig sticks one floor-gap above the scroller's visible bottom
+         (bounded by this overlay, so it never leaves the About block)
+         and only settles onto the block's own bottom edge once that edge
+         actually scrolls into view. */
+      position: sticky;
+      bottom: var(--space-16);
     }
   }
 

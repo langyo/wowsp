@@ -70,9 +70,9 @@ export default defineComponent({
       img.onload = () => {
         if (artSrc.value === url) artImg.value = img;
       };
-      // Defensive era flip (the stage only publishes artUrl after a load
+      // Defensive era probe (the stage only publishes artUrl after a load
       // succeeded, so this is nearly unreachable — but a stale-cache miss
-      // here should still re-point the family at .png for the next pass).
+      // here should still re-probe the pack before re-pointing the family).
       img.onerror = () => {
         if (artSrc.value === url) {
           noteMapMinimapLoadError();

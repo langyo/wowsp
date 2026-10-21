@@ -240,9 +240,29 @@ pub(crate) fn note_telemetry(
 /// (`DD.MM.YYYY HH:MM:SS` — `useBattleClock` parses exactly that) from the
 /// battle stamp, so it is stable for the whole battle and unique per
 /// battle: the frontend's new-battle transitions and the battle-realm
-/// latch key on that stability. `match_group`/map fields stay `None` —
-/// the probe does not bridge them, and every consumer already tolerates
-/// their absence (the mode pill falls back through its layered keys).
+/// latch key on that stability. `map` fields stay `None` — the probe does
+/// not bridge them, and every consumer already tolerates their absence
+/// (the mode pill falls back through its layered keys).
+///
+/// `match_group` is DERIVED off the synthesized roster: an enemy side that
+/// exists and reads ALL-AI (`:Name:` bots or `IDS_*` / `#` scripted units,
+/// the same families the frontend's `AI_NAME` matches) reads `Some("pve")`
+/// — co-op and the scripted operation waves are the modes that field a
+/// whole AI enemy team against the human side — and any human enemy keeps
+/// `None` (random / ranked / clan / brawl / mixed rooms). This is what
+/// lets the file-less client class reach the PVE surfaces:
+/// `note_arena_seen` flags `LAST_BATTLE_PVE` off it (the aim-card
+/// suppression and the calibration's `BattleClass` slot ride that flag),
+/// and the frontend's `modeKey` buckets it into the co-op family instead
+/// of falling through to the raw `mg` string. The enemy-side shape decides
+/// rather than the roster's overall AI count — the ALL-scripted operation
+/// rosters and the plain co-op shape must both read pve, while a roster
+/// that is mostly bots but sails against humans (a bot-heavy room) must
+/// not. One inherent limit worth naming: a custom room deliberately set
+/// humans-vs-bots is roster-identical to co-op and reads pve too — on a
+/// file-writing build its arena file would say pvp-family, but on this
+/// path the roster is all there is, and hiding the intel card over a
+/// bot enemy team is the right call anyway.
 fn synthesize_arena_info(
     vehicles: Vec<wowsp_tauri_shared::VehicleEntry>,
     self_name: Option<&str>,
@@ -260,6 +280,19 @@ fn synthesize_arena_info(
         .iter()
         .filter(|v| super::replay::is_scripted_unit_nickname(&v.name))
         .count() as u32;
+    // The enemy side (relation 2, the split `parse_roster_raw` derives
+    // around the self row): PVE-class when it exists and is entirely AI.
+    let enemies: Vec<&wowsp_tauri_shared::VehicleEntry> =
+        vehicles.iter().filter(|v| v.relation == 2).collect();
+    let match_group = if !enemies.is_empty()
+        && enemies
+            .iter()
+            .all(|v| super::replay::is_bot_nickname(&v.name))
+    {
+        Some("pve".to_string())
+    } else {
+        None
+    };
     let date_time = chrono::DateTime::<chrono::Local>::from(
         SystemTime::UNIX_EPOCH + Duration::from_secs(stamp_unix.max(0) as u64),
     )
@@ -273,7 +306,7 @@ fn synthesize_arena_info(
         "battle": battle_id,
     });
     ArenaInfo {
-        match_group: None,
+        match_group,
         date_time: Some(date_time),
         map_name: None,
         scenario: None,
@@ -345,6 +378,7 @@ pub(crate) fn try_claim_serve(dir: &Path, now_ms: i64) -> Option<LiveProbeBattle
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::probe_roster;
 
     /// A minimal install whose `res_mods_dir` resolves: one numeric
     /// `bin/<build>` (the plain-newest fallback of `latest_bin_dir` needs
@@ -427,6 +461,13 @@ mod tests {
         assert!(
             date_time.len() == 19 && date_time.contains('.'),
             "the arena file's local-time layout: {date_time}"
+        );
+        // The plain co-op shape (a human foe) does NOT derive pve —
+        // `Foe` carries a real account and no bot markers.
+        assert_eq!(
+            info.match_group.as_deref(),
+            None,
+            "a human enemy keeps the match group unbridged"
         );
         // The read fallback serves the install's replays dir while live.
         let replays = root.join("replays");
@@ -679,5 +720,85 @@ mod tests {
             .info;
         assert_ne!(first.date_time, second.date_time);
         std::fs::remove_dir_all(root.parent().unwrap()).ok();
+    }
+
+    /// `synthesize_arena_info` derives `match_group` off the synthesized
+    /// roster's enemy side — the file-less client class's only mode
+    /// signal, feeding `note_arena_seen`'s `LAST_BATTLE_PVE` (the
+    /// aim-card suppression) and the frontend's co-op buckets. Verified
+    /// against `parse_roster_raw`'s real projection (relation derived
+    /// around the self row by teamId).
+    #[test]
+    fn match_group_follows_the_enemy_side() {
+        // Co-op shape: the colon-wrapped bot team against the self side —
+        // PVE-class, the aim card stays down on these builds too.
+        let coop = synthesize_arena_info(
+            probe_roster::parse_roster_raw(
+                &serde_json::json!({
+                    "players": {
+                        "1": { "name": "langyo", "accountDBID": 1, "teamId": 1, "shipParamsId": 9 },
+                        "2": { "name": ":Sturdee:", "accountDBID": 0, "isBot": true, "teamId": 2, "shipParamsId": 9 },
+                        "3": { "name": ":Barham:", "accountDBID": 0, "isBot": true, "teamId": 2, "shipParamsId": 9 },
+                    },
+                }),
+                Some("langyo"),
+            )
+            .expect("the co-op roster splits"),
+            Some("langyo"),
+            1_792_496_000,
+            "1792496000000",
+        );
+        assert_eq!(
+            coop.match_group.as_deref(),
+            Some("pve"),
+            "an all-AI enemy team is the co-op family"
+        );
+
+        // A bot-heavy room that still sails humans against the self side:
+        // the enemy human keeps the match group unbridged.
+        let mixed = synthesize_arena_info(
+            probe_roster::parse_roster_raw(
+                &serde_json::json!({
+                    "players": {
+                        "1": { "name": "langyo", "accountDBID": 1, "teamId": 1, "shipParamsId": 9 },
+                        "2": { "name": "Foe", "accountDBID": 2, "teamId": 2, "shipParamsId": 9 },
+                        "3": { "name": ":Sturdee:", "accountDBID": 0, "isBot": true, "teamId": 2, "shipParamsId": 9 },
+                    },
+                }),
+                Some("langyo"),
+            )
+            .expect("the mixed roster splits"),
+            Some("langyo"),
+            1_792_496_000,
+            "1792496000000",
+        );
+        assert_eq!(
+            mixed.match_group.as_deref(),
+            None,
+            "a human enemy is not the co-op family"
+        );
+
+        // The all-scripted operation roster: the enemy side reads all-AI
+        // through the scripted-unit half of `is_bot_nickname`.
+        let operation = synthesize_arena_info(
+            probe_roster::parse_roster_raw(
+                &serde_json::json!({
+                    "players": {
+                        "1": { "name": "langyo", "accountDBID": 1, "teamId": 1, "shipParamsId": 9 },
+                        "2": { "name": "IDS_OP_02_03_AT_ATTAKA_US_A1", "accountDBID": 0, "teamId": 2, "shipParamsId": 9 },
+                    },
+                }),
+                Some("langyo"),
+            )
+            .expect("the operation roster splits"),
+            Some("langyo"),
+            1_792_496_000,
+            "1792496000000",
+        );
+        assert_eq!(
+            operation.match_group.as_deref(),
+            Some("pve"),
+            "a scripted enemy wave is PVE-class"
+        );
     }
 }

@@ -382,13 +382,11 @@
     letter-spacing: 0.02em;
     color: #ffd93d;
   }
+  /* The close control is hikari's unified window-close affordance
+     (HkIconButton + hk-window-close, the HkModal grammar) — the class here
+     is only the placement hook; the chrome is the package's. */
   &__modal-close {
-    border: none;
-    background: transparent;
-    color: rgb(var(--color-text) / 0.7);
-    cursor: pointer;
-    font-size: var(--text-base);
-    &:hover { color: rgb(var(--color-text)); }
+    flex: none;
   }
   /* Results-body scroller: the hikari container owns the scrollbar, so
      the body's padding moved to the inner wrapper (it scrolls with the
@@ -1028,7 +1026,7 @@
       /* Grip-style breathing room; keep the close affordance ≥44px. */
       padding: 0.55rem 0.75rem;
 
-      button {
+      .replay-view__modal-close {
         min-width: 44px;
         min-height: 44px;
         margin: -0.35rem -0.5rem -0.35rem 0;

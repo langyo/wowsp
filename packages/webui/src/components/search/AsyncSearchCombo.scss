@@ -64,19 +64,10 @@
   color: rgb(var(--color-text));
 }
 
+/* The heading row's close control is hikari's unified window-close
+   affordance (HkIconButton + hk-window-close) — placement hook only. */
 .async-search-combo__close {
-  border: none;
-  background: none;
-  color: rgb(var(--color-muted));
-  cursor: pointer;
-  font-size: var(--text-sm);
-  padding: 2px 4px;
-  border-radius: 4px;
-
-  &:hover {
-    color: rgb(var(--color-text));
-    background: rgb(var(--color-primary) / 10%);
-  }
+  flex: none;
 }
 
 .async-search-combo__hint {

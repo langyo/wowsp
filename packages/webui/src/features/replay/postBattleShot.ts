@@ -22,6 +22,7 @@ import {
   STAMP_URL,
   canvasToPngBytes,
   drawFooter,
+  drawSealTag,
   drawStampSeal,
   font,
   footerMinWidth,
@@ -29,10 +30,24 @@ import {
   newShotCanvas,
   readPalette,
   rgba,
+  sealTagWidth,
   statCellOrigins,
   type ShotFooterStrings,
 } from "@/features/share/shotKit";
-import type { CareerStamp } from "@/utils/winrate";
+import { stampTier, type CareerStamp } from "@/utils/winrate";
+
+/** The career verdicts' wording — drawn when a stamp presses as the
+ *  horizontal tag face. The shot only ever carries the career verdicts,
+ *  ALL of which are primary seals today (utils/winrate stampTier), so the
+ *  tag branch below is the tier system's future-proofing, not a live
+ *  path; the map stays total over StampKind's career half so a kind can
+ *  never arrive unlabelled. */
+const STAMP_LABEL: Record<CareerStamp, string> = {
+  miracle: "神了",
+  ape: "猴",
+  maggot: "蛆",
+  rat: "过街老鼠",
+};
 
 /** One right-aligned stat cell of a row (WR / PR / battles / avg damage
  *  / base XP — whichever columns the chip toggles admit). */
@@ -56,7 +71,11 @@ export interface ShotRow {
   iconVariant?: ShipIconVariant;
   /** Career seal (神了/猴/蛆/过街老鼠) pressed onto the row-end slot the
    *  renderer reserves whenever ANY row carries one — the caller applies
-   *  the settings gates, so a disabled seal never arrives here. */
+   *  the settings gates, so a disabled seal never arrives here. All four
+   *  career kinds are PRIMARY seals (utils/winrate stampTier): the square
+   *  stamp picture at the row end. A secondary kind (composition/merged,
+   *  never produced by the current shot models) would press as the
+   *  horizontal StampTag face instead. */
   stamp?: CareerStamp | null;
   stats: ShotStat[];
 }
@@ -193,8 +212,22 @@ export async function renderPostBattleShot(
   const origins = statOrigins(ctx, cols);
   // The seal column rides the right edge: reserve its slot only when some
   // row actually carries a stamp, so seal-less shots keep today's metrics.
+  // The slot fits the WIDEST face on any row — a secondary-tier stamp
+  // (a horizontal tag, e.g. the 空中小人 family) is wider than the square
+  // 34px stamp, so its measured tag width takes the slot when present
+  // (no secondary kind is reachable through the current career-only shot
+  // models — the branch keeps the renderer tier-honest anyway).
   const hasStamps = cols.some((c) => c.rows.some((r) => r.stamp));
-  const statsW = (origins[origins.length - 1] ?? 0) + 24 + (hasStamps ? STAMP_SLOT : 0);
+  let tagSlot = 0;
+  for (const c of cols) {
+    for (const r of c.rows) {
+      if (r.stamp && stampTier(r.stamp) === "secondary") {
+        tagSlot = Math.max(tagSlot, sealTagWidth(ctx, STAMP_LABEL[r.stamp]));
+      }
+    }
+  }
+  const statsW =
+    (origins[origins.length - 1] ?? 0) + 24 + (hasStamps ? Math.max(STAMP_SLOT, tagSlot + 8) : 0);
 
   // Column titles (+ aggregate) and rows. The footer's logo loads alongside
   // the class icons so the paint never waits twice on the network.
@@ -296,17 +329,30 @@ export async function renderPostBattleShot(
         ctx.fillStyle = s.color ?? rgba(palette.text, 0.85);
         ctx.fillText(s.text, x, cy);
       });
-      // The career seal: RatingStamp's face redrawn in canvas, pressed onto
-      // the row-end slot reserved above (mini variant, see drawStampSeal).
+      // The career seal, pressed onto the row-end slot reserved above, in
+      // the seal-tier faces: a primary kind (the four career verdicts) as
+      // RatingStamp's square face redrawn in canvas (mini variant, see
+      // drawStampSeal); a secondary kind as the horizontal StampTag face
+      // (drawSealTag) — the exact faces the DOM row beside the copy button
+      // renders.
       if (row.stamp) {
-        drawStampSeal(
-          ctx,
-          cx + COL_WIDTH - 14 - STAMP_SIZE / 2,
-          cy,
-          STAMP_SIZE,
-          stampImages.get(row.stamp) ?? null,
-          "mini",
-        );
+        if (stampTier(row.stamp) === "secondary") {
+          drawSealTag(
+            ctx,
+            cx + COL_WIDTH - 14 - Math.max(STAMP_SLOT, tagSlot + 8) / 2,
+            cy,
+            STAMP_LABEL[row.stamp],
+          );
+        } else {
+          drawStampSeal(
+            ctx,
+            cx + COL_WIDTH - 14 - STAMP_SIZE / 2,
+            cy,
+            STAMP_SIZE,
+            stampImages.get(row.stamp) ?? null,
+            "mini",
+          );
+        }
       }
       ctx.globalAlpha = 1;
       y += ROW_H + 6;

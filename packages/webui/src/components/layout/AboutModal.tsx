@@ -31,8 +31,9 @@ import "./AboutModal.scss";
  * random localized "did you know" trivia (click the trivia to get the
  * plain description back), and clicking the logo very fast repeatedly
  * (VANISH_BURST_CLICKS clicks chained inside VANISH_GAP_MS) shrinks the
- * whole About body away and stands a centered dashed piggy in its place
- * until another click restores it. The piggy's periodic reminder toast
+ * whole About body away and stands a dashed piggy on the visible floor
+ * in its place until another click restores it. The piggy's periodic
+ * reminder toast
  * (PiggyReminderToast) can land the user here and arms a hmph-then-poke
  * greeting through the piggyReminder store's flag.
  */
@@ -265,8 +266,9 @@ export const AboutContent = defineComponent({
     };
 
     /** True while the rapid-click vanish easter egg is active: the About
-     *  body has shrunk away and the centered dashed piggy stands in for
-     *  it; clicking the dashed piggy (or its overlay area) restores. */
+     *  body has shrunk away and the dashed piggy standing on the visible
+     *  floor takes its place; clicking the dashed piggy (or its overlay
+     *  area) restores. */
     const vanished = ref(false);
     /** Rapid-click burst bookkeeping: when the last logo click happened
      *  (performance.now()) and how many clicks the current burst counts.
@@ -529,11 +531,11 @@ export const AboutContent = defineComponent({
           </div>
         </div>
 
-        {/* Vanish stand-in: the centered dashed piggy that replaces the
-            shrunken About body. Purely decorative (alt=""), and the whole
-            overlay — not just the pig — is the restore click target; it
-            is keyboard-reachable too, because a held-Enter auto-repeat
-            on the logo CAN trip the vanish. */}
+        {/* Vanish stand-in: the dashed piggy standing on the visible
+            floor that replaces the shrunken About body. Purely decorative
+            (alt=""), and the whole overlay — not just the pig — is the
+            restore click target; it is keyboard-reachable too, because
+            a held-Enter auto-repeat on the logo CAN trip the vanish. */}
         <div
           class="about-modal__vanish"
           role="button"

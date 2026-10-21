@@ -66,6 +66,17 @@ function cleanOutDirContents(outDir: string): Plugin {
 // shittim-chest; regexes use [\\/] to match both POSIX and Windows separators.
 function vendorChunks(id: string): string | undefined {
   if (!id.includes('node_modules')) return;
+  // The meshopt decoder must stay OUT of the 'three' chunk: modelLoader
+  // imports it DYNAMICALLY (inside getLoader) so pages that never parse a
+  // GLB don't evaluate its import-time WebAssembly.instantiate — but
+  // manualChunks ignores import dynamism, and folding it into the
+  // eagerly-imported 'three' chunk would undo that and re-expose every
+  // three-importing page (the tech tree included) to a blocked-WASM
+  // rejection under a CSP without 'wasm-unsafe-eval'. Returning undefined
+  // leaves it to Rollup's default: a dedicated lazy chunk.
+  if (/[\\/]node_modules[\\/]three[\\/]examples[\\/]jsm[\\/]libs[\\/]meshopt_decoder/.test(id)) {
+    return;
+  }
   if (/[\\/]node_modules[\\/](three|@types[\\/]three)[\\/]/.test(id)) return 'three';
   if (/[\\/]node_modules[\\/](lucide-vue-next)[\\/]/.test(id)) return 'icons';
   return;

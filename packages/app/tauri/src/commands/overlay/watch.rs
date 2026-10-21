@@ -693,13 +693,23 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // OWN switch (`aim_card`, read above) is on — independent of the table
     // switch, so a table-off player may still run the card. Hidden while
     // Tab is held (the table overlay owns the screen then), the picker is
-    // open, or the battle is gone. Placement hangs the card below the game
+    // open, or the battle is gone. PvE battles keep it down for their WHOLE
+    // duration (`arena_info::last_battle_pve`, the anchor calibration's own
+    // class flag): the crosshair can only lock AI ships there — co-op bots
+    // or scripted operation units — so the card would hang a raw bot name
+    // over dash placeholders with nothing real to look up. Placement hangs
+    // the card below the game
     // window's center (the crosshair) by the configured hang
     // (`aim_card_hang_px`, read above with the switches) and follows every
     // game-window move AND every settings change; the PAGE decides its own
     // content visibility from the telemetry aim verdict, so this only
-    // drives the native window and costs two flag compares per idle tick.
-    let want_aim_card = focused_on_game && battle_known && aim_card_on && !picker_open && !tab_down;
+    // drives the native window and costs a few flag compares per idle tick.
+    let want_aim_card = focused_on_game
+        && battle_known
+        && aim_card_on
+        && !picker_open
+        && !tab_down
+        && !super::arena_info::last_battle_pve();
     if want_aim_card {
         if let Some(g) = game.as_ref() {
             let rect = rect_from_win32(g.rect);

@@ -39,7 +39,6 @@ import { isTauri } from "@/utils/platform";
 import { wireInsightsPack } from "./insightsLoader";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 
 // ── Model-pack cache (populated by initModelPack) ───────────────────────
 let _modelCacheRoot: string | null = null;
@@ -490,43 +489,72 @@ for (const path of _minimapGlobKeys) {
 // before the migration still holds an all-.png tree on disk. A .webp URL
 // into a .png pack 404s every 2D map image (user report 2026-10-19: all
 // map art went blank). One producer run generates the whole subtree, so
-// ONE representative probe per wiring decides the family's extension; a
-// failed <img>/Image load can still flip it later (the dogtagPngFallback
-// idiom in PlayerBadge) as belt-and-braces.
+// ONE representative probe decides the family's extension — and the flag
+// only ever flips on a CONFIRMED .png hit (a probe 200, or the cross-era
+// <img>/Image retry actually loading). A blind flip on any load error
+// poisoned the whole session off one transient miss (user report
+// 2026-10-21: a resource-pack delta rewriting the cache files while the
+// replay view loaded its art flipped the family to .png, and every later
+// map's webp art 404'd until the app restarted).
 const minimapPackPng = ref(false);
 
-/** One-way: the pack tree carries .png minimaps (called from a minimap
- *  load error; reactive URL derivations re-render with .png). */
-export function noteMapMinimapLoadError(): void {
-  minimapPackPng.value = true;
+let _pngEraProbe: Promise<void> | null = null;
+
+/** Fetch-probe whether the wired pack carries .png minimaps for one
+ *  representative stem, flipping the family when it does. Shared by the
+ *  wiring-time probe and the load-error backstop; concurrent callers ride
+ *  the same in-flight fetch. */
+function probeMinimapPngEra(): Promise<void> {
+  if (!_pngEraProbe) {
+    const run = async (): Promise<void> => {
+      if (!_modelCacheRoot || !_convertFileSrc) return;
+      const stem = minimapExtByCased.keys().next().value;
+      if (!stem) return;
+      const url = _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps/${stem}.png`);
+      try {
+        if ((await fetch(url)).ok) minimapPackPng.value = true;
+      } catch {
+        // Unreadable cache — the per-file retries remain as the backstop.
+      }
+    };
+    _pngEraProbe = run().finally(() => {
+      _pngEraProbe = null;
+    });
+  }
+  return _pngEraProbe;
 }
 
 /** Probe the pack's actual minimap extension once it is wired: if any
- *  known stem exists as .png in the cache, the family is pre-WebP. Called
- *  by initModelPack (and by tests); fire-and-forget by design. */
+ * known stem exists as .png in the cache, the family is pre-WebP. Called
+ * by initModelPack (and by tests); fire-and-forget by design. */
 export function probeMinimapPackEra(): void {
-  if (!_modelCacheRoot || !_convertFileSrc) return;
-  const stem = minimapExtByCased.keys().next().value;
-  if (!stem) return;
-  const url = _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps/${stem}.png`);
-  void fetch(url)
-    .then((r) => {
-      if (r.ok) minimapPackPng.value = true;
-    })
-    .catch(() => {
-      // Unreadable cache — the load-error flip stays as the backstop.
-    });
+  void probeMinimapPngEra();
+}
+
+/** Backstop for reactive minimap <img> tags (their onError lands here):
+ * re-probe instead of flipping blindly, so a transient miss (pack
+ * mid-update) cannot 404 every later map's art for the whole session. */
+export function noteMapMinimapLoadError(): void {
+  void probeMinimapPngEra();
 }
 
 /** URL of the game's own minimap art for a space id, if extracted. */
 export function resolveMapMinimapUrl(spaceId: string | undefined): string | null {
+  return resolveMapMinimapUrlForExt(spaceId, null);
+}
+
+/** Same URL with an explicit extension override — `null` keeps the
+ *  era-derived default (the pack era decides first; the repo glob's
+ *  extension — .webp today — is the default). */
+function resolveMapMinimapUrlForExt(
+  spaceId: string | undefined,
+  extOverride: string | null,
+): string | null {
   if (!spaceId) return null;
   const clean = spaceId.replace(/^spaces\//, "").toLowerCase();
   const cased = minimapCasedByLower.get(clean);
   if (!cased) return null;
-  // The pack era decides first (pre-WebP packs hold .png); the glob's
-  // extension (repo tree, now .webp) is the default.
-  const ext = minimapPackPng.value ? ".png" : (minimapExtByCased.get(cased) ?? ".webp");
+  const ext = extOverride ?? minimapEraExt(spaceId) ?? ".webp";
   const withExt = `${cased}${ext}`;
   if (!import.meta.env.DEV && _modelCacheRoot && _convertFileSrc) {
     return _convertFileSrc(`${_modelCacheRoot}/models/maps/minimaps/${withExt}`);
@@ -534,30 +562,52 @@ export function resolveMapMinimapUrl(spaceId: string | undefined): string | null
   return `/models/maps/minimaps/${withExt}`;
 }
 
+/** The era-derived extension for a known space id — null when the repo
+ *  glob doesn't know the space. The cross-era retry's starting point. */
+function minimapEraExt(spaceId: string | undefined): string | null {
+  if (!spaceId) return null;
+  const clean = spaceId.replace(/^spaces\//, "").toLowerCase();
+  const cased = minimapCasedByLower.get(clean);
+  if (!cased) return null;
+  return minimapPackPng.value ? ".png" : (minimapExtByCased.get(cased) ?? ".webp");
+}
+
 /** Load one minimap's art for canvas pipelines (drawImage feeders), with
- *  the pack-era fallback built in: a failed first attempt flips the family
- *  to .png once and retries; resolves null when both eras fail (callers
- *  keep their designed dark-sea paint). */
+ * the pack-era fallback built in: a failed first attempt retries the
+ * OTHER extension once, and only a .png retry that actually loads locks
+ * the family; resolves null when both attempts fail (callers keep their
+ * designed dark-sea paint) without flipping anything. */
 export function loadMapMinimapImage(
   spaceId: string | undefined | null,
 ): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
-    const attempt = (retried: boolean): void => {
-      const url = resolveMapMinimapUrl(spaceId ?? undefined);
+    // Derive the era-chosen FIRST extension up front so the retry always
+    // aims at the other one — even when the family is already png-locked.
+    const firstExt = minimapEraExt(spaceId ?? undefined);
+    if (!firstExt) return resolve(null); // unknown space — no art either era
+    const attempt = (ext: string, retried: boolean): void => {
+      const url = resolveMapMinimapUrlForExt(spaceId ?? undefined, ext);
       if (!url) return resolve(null);
       const img = new Image();
-      img.onload = () => resolve(img);
+      img.onload = () => {
+        // The cross-era retry hit: the pack really holds .png — lock the
+        // family so later loads skip the doomed .webp miss.
+        if (retried && ext === ".png") minimapPackPng.value = true;
+        resolve(img);
+      };
       img.onerror = () => {
-        if (!retried && !minimapPackPng.value) {
-          minimapPackPng.value = true;
-          attempt(true);
+        if (!retried) {
+          // Retry the other extension WITHOUT flipping the family first —
+          // a transient miss (the pack mid-update) must resolve null for
+          // THIS map only, not 404 every later map's art too.
+          attempt(ext === ".png" ? ".webp" : ".png", true);
         } else {
           resolve(null);
         }
       };
       img.src = url;
     };
-    attempt(false);
+    attempt(firstExt, false);
   });
 }
 
@@ -715,18 +765,36 @@ export function resolveShipModelForEntry(
 // spec-mandated 0x20 (space).  fetch + fix the buffer before handing it to
 // GLTFLoader so all generated models load regardless.
 
-let _loader: GLTFLoader | null = null;
-function getLoader(): GLTFLoader {
-  if (!_loader) {
-    _loader = new GLTFLoader();
-    // Pack GLBs are meshopt+quantized by scripts/model_convert/
-    // optimize_glbs.py — the decoder only engages when the
-    // EXT_meshopt_compression extension is present, so legacy uncompressed
-    // packs keep loading unchanged. Same wiring as the site's replay3d
-    // loader (packages/website glb.ts) and packages/holo's glbLoader.
-    _loader.setMeshoptDecoder(MeshoptDecoder);
+let _loaderPromise: Promise<GLTFLoader> | null = null;
+function getLoader(): Promise<GLTFLoader> {
+  if (!_loaderPromise) {
+    _loaderPromise = (async () => {
+      // Pack GLBs are meshopt+quantized by scripts/model_convert/
+      // optimize_glbs.py — the decoder only engages when the
+      // EXT_meshopt_compression extension is present, so legacy
+      // uncompressed packs keep loading unchanged. Same wiring as the
+      // site's replay3d loader (packages/website glb.ts) and
+      // packages/holo's glbLoader.
+      //
+      // The decoder module is imported DYNAMICALLY, only when a GLB is
+      // actually about to parse: it instantiates its embedded WASM at
+      // module-evaluation time on the main thread, and this file rides
+      // into chunks that never load a GLB (the tech-tree view shares
+      // ShipsView's chunk) — a static import made every such page pay
+      // the WASM init, and under a CSP without 'wasm-unsafe-eval' eat
+      // its rejection as an unhandled promise error before any 3D view
+      // even opened. Awaiting `ready` surfaces a blocked decoder as
+      // this chain's readable error instead of a per-GLB mystery.
+      const { MeshoptDecoder } = await import(
+        "three/examples/jsm/libs/meshopt_decoder.module.js"
+      );
+      await MeshoptDecoder.ready;
+      const loader = new GLTFLoader();
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      return loader;
+    })();
   }
-  return _loader;
+  return _loaderPromise;
 }
 
 /**
@@ -852,8 +920,9 @@ async function loadGlbFromUrl(url: string): Promise<THREE.Group> {
   const fixed = fixGlbPadding(raw);
   const blob = new Blob([fixed], { type: "model/gltf-binary" });
   const blobUrl = URL.createObjectURL(blob);
+  const loader = await getLoader();
   return new Promise<THREE.Group>((resolve, reject) => {
-    getLoader().load(
+    loader.load(
       blobUrl,
       (gltf) => {
         URL.revokeObjectURL(blobUrl);

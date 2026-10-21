@@ -48,6 +48,11 @@
 //! the stream against it; no
 //! reachable digest or a mismatch on every mirror means no installer is
 //! spawned.
+//! The installer spawn is re-homed onto a temp working directory: a child
+//! inherits the app's CWD — the install directory — and Windows refuses
+//! to rename a directory any process holds as its CWD, so the installer
+//! would otherwise pin its own swap target through shun's whole
+//! lock-retry window and degrade to the file-by-file in-place merge.
 //! The hardened installer stops whatever is left of the app and installs
 //! over its directory — and the app now exits itself right after the
 //! handoff spawn, so the frontend treats the command's promise never
@@ -997,6 +1002,17 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     // launchers the player kept are refreshed in place (paths are
     // stable), and ones they deleted stay deleted instead of being
     // force-recreated (the uninvited .lnk spray AV tools flag).
+    //
+    // The spawn re-homes the child's working directory to the temp dir: a
+    // spawned process inherits this app's CWD, which is the install
+    // directory (Explorer and shun's shortcuts both start us there), and
+    // Windows refuses to rename a directory any process holds as its CWD —
+    // an installer parked on its own swap target spins shun's whole 30 s
+    // lock-retry window and then degrades to the file-by-file in-place
+    // merge. shun never relocates its own CWD (v0.6.28), so the handoff
+    // does it for the child. The install's VISIBILITY lives in the
+    // installer itself from the next shun build (the manifest's
+    // `silent-progress` window) — the running build only hands off.
     let install_dir = std::env::current_exe()
         .map_err(|e| anyhow!("resolve current exe: {e}"))?
         .parent()
@@ -1008,6 +1024,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     emit_phase(app, phase::INSTALL);
     std::process::Command::new(&installer_path)
         .args(["--silent", &format!("--dir={}", install_dir.display())])
+        .current_dir(&temp)
         .spawn()
         .map_err(|e| anyhow!("spawn installer {}: {e}", installer_path.display()))?;
     // The last lines the running build writes before it exits itself —
@@ -1104,7 +1121,11 @@ pub fn update_reinstall_from_cache() -> CommandResult<()> {
         )
         .into());
     }
+    // Temp CWD for the same reason the handoff installer gets one: the
+    // wizard's install step swaps this very directory, and a wizard
+    // parked on it as its working directory would fight its own swap.
     std::process::Command::new(installer)
+        .current_dir(std::env::temp_dir())
         .spawn()
         .map_err(|e| anyhow!("spawn installer {}: {e}", installer.display()))?;
     tracing::info!(

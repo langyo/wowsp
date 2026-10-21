@@ -13,6 +13,7 @@ import { HkButton, HkSettingsGroup, HkSettingsHint } from "@celestia-island/hika
 import { t } from "@/i18n";
 import { formatEta, formatLocalStamp, formatSpeed } from "@/utils/format";
 import { isMobileApp } from "@/utils/platform";
+import { SETTINGS_ANCHOR_BAKED_MODELS } from "@/stores/settingsUi";
 import {
   auxDesc,
   auxTitle,
@@ -44,7 +45,6 @@ export default defineComponent({
         prog && prog.phase === "download" && prog.total > 0
           ? Math.min(100, Math.round((prog.received / prog.total) * 100))
           : 0;
-      const deltaSteps = upd?.deltaSteps;
       const d = resources.decisions.value;
       const caps = resources.capabilities;
       // The capability probe is async; render "checking" instead of a
@@ -131,15 +131,22 @@ export default defineComponent({
             ))}
           </HkSettingsGroup>
 
-          {/* ── Baked model resources ───────────────────────────────────── */}
-          <HkSettingsGroup title={t("settings.resourcesBakedTitle")}>
+          {/* ── Baked model resources ─────────────────────────────────────
+              data-settings-anchor: the pack-update toast's glide target
+              (settingsUi.show("resources", SETTINGS_ANCHOR_BAKED_MODELS)
+              slides the pane onto this card, where the live progress bar
+              lives). */}
+          <HkSettingsGroup
+            title={t("settings.resourcesBakedTitle")}
+            data-settings-anchor={SETTINGS_ANCHOR_BAKED_MODELS}
+          >
             <HkSettingsHint>{t("settings.resourcesBakedHint")}</HkSettingsHint>
             <div class="settings-modal__packs-head">
               <span class="settings-modal__pack-name">{t("settings.resPackTitle")}</span>
               <HkButton
                 size="sm"
                 loading={cacheStore.updatesLoading}
-                onClick={() => void cacheStore.refreshUpdates()}
+                onClick={() => void cacheStore.checkUpdates()}
               >
                 {t("settings.cacheCheckUpdates")}
               </HkButton>
@@ -173,15 +180,6 @@ export default defineComponent({
                   {": "}
                   {hash6(upd?.latestTreeSha256)}
                 </span>
-                {upd?.updateAvailable && !downloading ? (
-                  <span class="settings-modal__pack-update">
-                    {deltaSteps == null
-                      ? t("settings.cacheUpdateAvailable")
-                      : deltaSteps.length > 0
-                        ? t("settings.resDeltaAvailable", { n: deltaSteps.length })
-                        : t("settings.resFullDownload")}
-                  </span>
-                ) : null}
                 {downloading ? (
                   <>
                     <div class="settings-modal__pack-progress">
@@ -236,25 +234,49 @@ export default defineComponent({
               </div>
               <div class="settings-modal__pack-actions">
                 {downloading ? (
-                  <HkButton size="sm" onClick={() => void cacheStore.cancel()}>
-                    {prog?.phase === "apply"
-                      ? t("settings.cacheApplying")
-                      : t("settings.cacheCancel")}
-                  </HkButton>
+                  prog?.phase === "apply" ? (
+                    // The swap-based apply runs to completion (no cancel):
+                    // a busy ring on a disabled button says so.
+                    <HkButton size="sm" loading>
+                      {t("settings.cacheApplying")}
+                    </HkButton>
+                  ) : (
+                    <HkButton size="sm" onClick={() => void cacheStore.cancel()}>
+                      {t("settings.cacheCancel")}
+                    </HkButton>
+                  )
                 ) : st?.present ? (
                   <>
-                    <HkButton
-                      variant="primary"
-                      size="sm"
-                      disabled={upd == null || !upd.updateAvailable || updates.appUpdatePending.value}
-                      onClick={() => void cacheStore.download()}
-                    >
-                      {t("settings.cacheUpdate")}
-                    </HkButton>
+                    {upd != null && !upd.updateAvailable && !st.bundled && !st.legacyStamp ? (
+                      // Already current: the update slot becomes the
+                      // integrity check — re-hash the tree on demand and
+                      // repair via an automatic re-download when it drifted
+                      // (see the store's verifyIntegrity). Hidden when the
+                      // APK bundle serves (mobile) or the cache predates
+                      // the hash scheme (nothing to compare against).
+                      <HkButton
+                        variant="secondary"
+                        size="sm"
+                        loading={cacheStore.integrityChecking}
+                        onClick={() => void cacheStore.verifyIntegrity()}
+                      >
+                        {t("settings.resCheckIntegrity")}
+                      </HkButton>
+                    ) : (
+                      <HkButton
+                        variant="primary"
+                        size="sm"
+                        disabled={upd == null || !upd.updateAvailable || updates.appUpdatePending.value}
+                        onClick={() => void cacheStore.download()}
+                      >
+                        {t("settings.cacheUpdate")}
+                      </HkButton>
+                    )}
                     {updates.clearArmed.value === "res" ? (
                       <HkButton
                         variant="danger"
                         size="sm"
+                        disabled={cacheStore.integrityChecking}
                         onClick={() => {
                           updates.clearArmed.value = null;
                           void cacheStore.clearRes();
@@ -266,6 +288,7 @@ export default defineComponent({
                       <HkButton
                         variant="secondary"
                         size="sm"
+                        disabled={cacheStore.integrityChecking}
                         onClick={() => (updates.clearArmed.value = "res")}
                       >
                         {t("settings.cacheDelete")}

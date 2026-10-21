@@ -190,10 +190,9 @@
 
   /* Head action pills (copy-shot / hide-nicknames / density) share one
      voice: a quiet neutral pill; the nicknames and density toggles flip
-     green while their mode is on. The read-only locate-status pill at the
-     row's end picks up its own state voices below. (The stats-source mode
-     tag keeps the same voice from its own sheet —
-     LiveStatsModeChip.scss.) */
+     green while their mode is on. The locate pill at the row's end picks
+     up its own state voices below. (The stats-source mode tag keeps the
+     same voice from its own sheet — LiveStatsModeChip.scss.) */
   &__shot-btn,
   &__mask-btn,
   &__density-btn {
@@ -238,9 +237,10 @@
     color: rgb(var(--color-success, 74 222 128));
   }
 
-  /* Read-only locate-status pill (was the clickable manual-locate button;
-     calibrating now lives in Settings → 游戏内显示校准): the same pill
-     voice as the head's status pills, non-interactive. */
+  /* Locate pill — the head's manual-locate entry point as well as its
+     detection status display: a button again (the #1204 read-only stretch
+     is over), opening Settings → 游戏内显示校准 glided onto the anchor
+     list. Same pill voice as the head's action pills. */
   &__locate-pill {
     display: inline-flex;
     align-items: center;
@@ -254,6 +254,21 @@
     font-weight: 600;
     line-height: 1.5;
     white-space: nowrap;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 1px solid rgb(var(--color-text) / 0.4);
+    }
+  }
+
+  /* Idle hover: warm the quiet pill up to the action pills' resting voice.
+     Scoped to --idle on purpose — a bare &__locate-pill:hover would
+     out-specify the voiced states' base rules and wash their green/amber
+     label text to neutral on hover (their own hover blocks re-own only
+     border and background). */
+  &__locate-pill--idle:hover {
+    border-color: rgb(var(--color-text) / 35%);
+    color: rgb(var(--color-text) / 75%);
   }
 
   /* An anchored (manually calibrated) or automatically located roster
@@ -264,6 +279,11 @@
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
+
+    &:hover {
+      border-color: rgb(var(--color-success, 74 222 128) / 80%);
+      background: rgb(var(--color-success, 74 222 128) / 24%);
+    }
   }
 
   /* A settling automatic Tab pass — the warning amber the head's other
@@ -272,6 +292,11 @@
     border-color: rgb(var(--color-warning, 251 191 36) / 55%);
     background: rgb(var(--color-warning, 251 191 36) / 16%);
     color: rgb(var(--color-warning, 251 191 36));
+
+    &:hover {
+      border-color: rgb(var(--color-warning, 251 191 36) / 80%);
+      background: rgb(var(--color-warning, 251 191 36) / 24%);
+    }
   }
 
   /* Roster scroller — the hikari container owns the scrollbar (auto-hiding
@@ -284,7 +309,15 @@
 
   &__matrix__inner {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* minmax(0, 1fr), not bare 1fr — bare 1fr is minmax(auto, 1fr), and the
+       auto minimum lets a roster row's min-content (the five fixed-width
+       stat columns + the icon + the seal slot) EXPAND the track past the
+       free space. The blown-out columns then overflow the panel's right
+       edge — the vertical-only scroller can neither show nor scroll that
+       overflow, so the last mirrored stat cells vanished off-screen. With
+       min 0 the tracks always split the free space and the rows' name
+       track (min-width: 0) absorbs the deficit by ellipsizing instead. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px;
     padding: 0 1.5rem 1rem 0;
 
@@ -307,6 +340,11 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    /* A grid item's automatic min-width is its min-content — without this
+       the column box refuses to shrink below the roster row's fixed pieces
+       even inside the minmax(0, 1fr) track above and still overflows the
+       panel's right edge. */
+    min-width: 0;
   }
 
   &__col-title {
@@ -428,13 +466,31 @@
     gap: 1px;
   }
 
-  /* Career seal pinned to the card's right edge, vertically centered — the
-     same "pressed onto the card" look as the account card's stamp. Its grid
-     track stays reserved even for cards without a seal (hidden stats, prefs
-     off), so both rosters keep identical column geometry. */
-  &__player-stamp {
+  /* The card's seal column: the primary career seal (RatingStamp, 一级章)
+     pinned to the right edge — the same "pressed onto the card" look as
+     the account card's stamp. Its grid track stays reserved even for cards
+     without a seal (hidden stats, prefs off), so both rosters keep
+     identical column geometry. The secondary tier (成分章, StampTag) does
+     NOT live here — it rides beside the bottom score strip instead. */
+  &__player-stampstack {
     grid-column: 3;
     justify-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* The secondary seals (成分章, StampTag) riding the bottom stat strip's
+     right end — beside the WR/PR/battles score line (the strip spans all
+     three tracks, so there is room here that the name track never has).
+     The strip's statline stays ellipsized; the tags flex none at its end. */
+  &__player-stat-tags {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
   }
 
   /* Human players: the whole card jumps to the lookup view. */
@@ -703,6 +759,15 @@
 
   &__crow-stamp {
     flex: 0 0 auto;
+  }
+
+  /* The compact row's secondary tag presses a STEP smaller: the four-char
+     wording at the row's own size would overhang the fixed 44px slot into
+     the stat columns — the tier's small-tag face shrinks to fit the slot
+     (the full cards' stat strip has room for the full-size face). */
+  &__crow-stampslot .stamp-tag {
+    font-size: 0.7em;
+    padding: 0.04em 0.3em;
   }
 
   &__crow--link {

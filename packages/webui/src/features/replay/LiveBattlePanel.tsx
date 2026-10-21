@@ -75,6 +75,7 @@ import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
+import { SETTINGS_ANCHOR_CALIBRATION_LIST, useSettingsUiStore } from "@/stores/settingsUi";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -107,6 +108,7 @@ import {
   damageColor,
   prTier,
   winrateColor,
+  type CareerStamp,
 } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
 import {
@@ -124,9 +126,11 @@ import {
   type OverlayColumnScope,
 } from "@/stores/statsPrefs";
 import { useRosterStats, isAiName, type RosterStat } from "@/composables/useRosterStats";
+import { useLiveCompositions } from "@/composables/useLiveCompositions";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
+import StampTag from "@/components/base/StampTag";
 import { HkSpinner } from "@celestia-island/hikari";
 import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
 import "./LiveBattlePanel.scss";
@@ -172,7 +176,7 @@ export default defineComponent({
      *  compact one-line rows — a persisted stats pref flipped from the
      *  head's density toggle. */
     const compact = computed(() => prefs.prefs.liveRosterCompact);
-    const { dataLanguage } = useLanguage();
+    const { uiLocale, dataLanguage } = useLanguage();
     // Declared BEFORE useRosterStats below: the composable's watches run
     // their getters synchronously at registration, and the `realms` option
     // closes over this store — a later declaration would be a TDZ throw
@@ -229,6 +233,30 @@ export default defineComponent({
       realms: () => (plugin.installed ? plugin.playerRealms : null),
     });
 
+    // ── Secondary seals (成分章 → the horizontal StampTag face) ──────────
+    // The composition verdicts' secondary face, fetched behind the roster
+    // through the same backend command the Tab overlay rides (its
+    // process-lifetime cache makes the second consumer free), gated exactly
+    // like every seal surface — zh UI, PR master, seals master — so the
+    // pipeline idles when no seal could ever render.
+    const sealsShown = computed(
+      () =>
+        uiLocale.value.startsWith("zh") &&
+        prefs.prefs.prEnabled &&
+        prefs.prefs.sealsEnabled,
+    );
+    const compNames = computed(() => {
+      if (!sealsShown.value || !props.arena) return [];
+      return [
+        ...new Set(
+          props.arena.vehicles
+            .filter((v) => !isAiName(v.name))
+            .map((v) => v.name),
+        ),
+      ];
+    });
+    const compositions = useLiveCompositions(compNames, () => realm.value);
+
     /** Localized realm label (replay.realm.*) with an uppercase-code
      *  fallback for unknown codes. */
     const realmLabelOf = (code: string): string => {
@@ -259,12 +287,14 @@ export default defineComponent({
 
     // Overlay detection state, streamed by the Rust Tab watcher as
     // transition-only `wowsp://overlay-status` events. Rendered by the
-    // read-only locate pill in the panel's head (right corner) — a status
-    // display, not an entry point; calibrating the anchor happens in
-    // Settings → 游戏内显示校准. `null` = nothing received yet → the pill
-    // reads plain "manual locate" in its subdued idle voice (it is
-    // permanent — idle stretches between battles must not look broken).
+    // locate pill in the panel's head (right corner): a status display
+    // that doubles as the manual-locate entry point — clicking it opens
+    // Settings → 游戏内显示校准 glided onto the anchor list. `null` =
+    // nothing received yet → the pill reads plain "manual locate" in its
+    // subdued idle voice (it is permanent — idle stretches between
+    // battles must not look broken).
     const overlayStatus = ref<OverlayStatus | null>(null);
+    const settingsUi = useSettingsUiStore();
     let unlistenStatus: (() => void) | null = null;
     // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
     // strip-fingerprint matching) — feed the predicted order below so the
@@ -557,10 +587,18 @@ export default defineComponent({
         return { cls: "searching", spin: true, text: t("replay.live.searching") };
       }
       // Nothing received yet, or idle between battles: the subdued resting
-      // voice (the pill is permanent — the calibration entry point it used
-      // to open now lives in Settings → 游戏内显示校准).
+      // voice (the pill is permanent — idle stretches between battles must
+      // not look broken, and the entry point stays reachable there).
       return { cls: "idle", spin: false, text: t("replay.live.manualLocate") };
     });
+
+    // The pill's one action: raise the settings surface on the 游戏内显示
+    // 校准 section, glided onto the anchor list (the 手动定位 readouts the
+    // pill reports about). Same store call the pack-update toast uses for
+    // its glide, so the modal/page host split comes for free.
+    function openLocateSettings() {
+      settingsUi.show("overlayCalibration", SETTINGS_ANCHOR_CALIBRATION_LIST);
+    }
 
     // ── Telemetry-source grade (the head's state pill) ───────────────────
     // Staged per the roster mode, the plugin's presence and the battle's
@@ -945,9 +983,9 @@ export default defineComponent({
                 "live-battle__col-title",
                 "live-battle__col-title--agg",
                 // Right-edge compensation: compact rows spend width on the
-                // career-seal slot (44px + one flex gap) beyond the stat
-                // columns whenever seals show — the header reserves the
-                // same run so its columns land on the cells below.
+                // seal slot (44px + one flex gap) beyond the stat columns
+                // whenever seals show — the header reserves the same run so
+                // its columns land on the cells below.
                 {
                   "live-battle__col-title--pad-seal":
                     prefs.prefs.prEnabled && prefs.prefs.sealsEnabled,
@@ -1126,6 +1164,59 @@ export default defineComponent({
         } as CSSProperties;
       };
 
+      /** The row's secondary seals (成分章) — 空中小人 / 水下小人 (with the
+       *  >50% 奶龙 / 奶蛙 veteran tier) as horizontal StampTag faces riding
+       *  BESIDE the card's bottom score strip (the rows are too short for a
+       *  square 2x2 face). No merge exists on the rosters: a 神了 / 猴
+       *  verdict keeps its own primary RatingStamp on the card's right edge
+       *  while the comp tags press here (the merged 空中神人-family faces
+       *  belong to the water meter alone, as before); the 蛆 / 过街老鼠
+       *  floors suppress the composition entirely. A verdict still in
+       *  flight (or failed / hidden → null) renders nothing. */
+      const stampTagNodes = (name: string, career: CareerStamp | null): VNode[] => {
+        if (!sealsShown.value || career === "maggot" || career === "rat") return [];
+        const comp = compositions.value.get(name);
+        if (!comp) return [];
+        const nodes: VNode[] = [];
+        if (comp.air) {
+          nodes.push(
+            <StampTag key="air" kind={comp.airVeteran ? "airVeteran" : "air"} />,
+          );
+        }
+        if (comp.sub) {
+          nodes.push(
+            <StampTag key="sub" kind={comp.subVeteran ? "subVeteran" : "sub"} />,
+          );
+        }
+        return nodes;
+      };
+
+      /** The COMPACT row's single secondary seal — the highest tier the
+       *  player carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor one,
+       *  and air wins a same-tier tie (resolveStamps' canonical order).
+       *  The compact row shows exactly ONE seal in total — the career
+       *  verdict first (careerStamp's four verdicts are mutually
+       *  exclusive, and its 蛆 / 老鼠 floors suppress the tags outright),
+       *  this tag only when no verdict stamp applies. Null when nothing
+       *  qualifies. The full cards keep the whole stack (stampTagNodes). */
+      const highestStampTag = (
+        name: string,
+        career: CareerStamp | null,
+      ): VNode | null => {
+        if (!sealsShown.value || career === "maggot" || career === "rat") return null;
+        const comp = compositions.value.get(name);
+        if (!comp) return null;
+        if (comp.air && comp.sub) {
+          // Both classes: air wins the same-tier tie, but a sub-veteran
+          // (奶蛙) outranks a minor air tag — the veteran face survives.
+          if (comp.subVeteran && !comp.airVeteran) return <StampTag kind="subVeteran" />;
+          return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
+        }
+        if (comp.air) return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
+        if (comp.sub) return <StampTag kind={comp.subVeteran ? "subVeteran" : "sub"} />;
+        return null;
+      };
+
       // Compact mode reuses the post-battle matrix's row look verbatim —
       // including the shared rosterStatCols — so it needs a name-keyed view
       // of this panel's id-keyed stats. Rows still loading drop out of the
@@ -1170,6 +1261,10 @@ export default defineComponent({
               class="live-battle__crow-stamp"
             />
           ) : null;
+        // The compact row carries exactly ONE seal — the cluster's highest
+        // face (the full card keeps the whole stack). The secondary tier
+        // presses as the horizontal StampTag beside the stat columns.
+        const sealSlot = seal ?? highestStampTag(v.name, stamp);
         const content = (
           <>
             <span class="live-battle__crow-ico">
@@ -1214,10 +1309,11 @@ export default defineComponent({
             )}
             {/* Seal slot reserved whenever seals show at all (PR + settings
                 master) — the matrix's own alignment rule: rows without a
-                stamp (bots, misses, verdict holds) keep the stat columns
-                at the same x as sealed rows instead of zigzagging. */}
+                seal (bots, misses, verdict holds) keep the stat columns
+                at the same x as sealed rows instead of zigzagging. The
+                compact row's one seal is the cluster's HIGHEST face. */}
             {prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
-              <span class="live-battle__crow-stampslot">{seal}</span>
+              <span class="live-battle__crow-stampslot">{sealSlot}</span>
             ) : null}
           </>
         );
@@ -1281,15 +1377,14 @@ export default defineComponent({
           // whole row reads uniformly gray (see the SCSS sunk rules).
           { "live-battle__player--sunk": entry.sunk },
         ];
-        const seal =
-          stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
-            <RatingStamp
-              kind={stamp}
-              size={34}
-              variant="mini"
-              class="live-battle__player-stamp"
-            />
-          ) : null;
+        // The card's right edge keeps ONLY the primary seal — the
+        // single-character verdict picture (一级章). The secondary tier
+        // (成分章) moved beside the bottom score strip: the cards are far
+        // too short for a stack of square faces there.
+        const seal = stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
+          <RatingStamp kind={stamp} size={34} variant="mini" />
+        ) : null;
+        const sealTags = stampTagNodes(v.name, stamp);
         // The row's per-scope resolvers for the bottom stat strip — null
         // while any gate holds (loading / hidden); LiveStatLine owns those
         // faces.
@@ -1352,11 +1447,18 @@ export default defineComponent({
                 summary. Enemies get parameters only — and operations have
                 no enemies at all. */}
             <LiveShipMeta shipId={v.shipId} ally={v.relation <= 1} />
-            {seal}
+            {/* The primary seal's host: the stampstack span PINS grid track
+                3 (auto-placement would slide the seal into the elastic
+                middle track whenever the meta strip renders nothing). The
+                secondary seals (成分章) do NOT live here — they ride beside
+                the bottom score strip instead. */}
+            <span class="live-battle__player-stampstack">{seal}</span>
             {/* The stat strip is the card's SECOND row, spanning all three
                 tracks (see LiveStatLine): the one line long enough to matter
                 at full width, it borrows the middle ground's and the seal's
-                air instead of ellipsizing inside the fixed name track. */}
+                air instead of ellipsizing inside the fixed name track. The
+                secondary seals (成分章) ride at its right end — beside the
+                score line, the horizontal StampTag face. */}
             <LiveStatLine
               ai={!clickable}
               loading={Boolean(
@@ -1364,7 +1466,11 @@ export default defineComponent({
               )}
               hidden={Boolean(st?.hidden)}
               views={statViews}
-            />
+            >
+              {sealTags.length > 0 ? (
+                <span class="live-battle__player-stat-tags">{sealTags}</span>
+              ) : null}
+            </LiveStatLine>
           </>
         );
         const tint = prTintVars(st, v.shipId);
@@ -1537,22 +1643,27 @@ export default defineComponent({
               )}
               {t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}`)}
             </span>
-            {/* Read-only locate-status pill — one widget, four voices:
-                idle reads subdued ("manual locate" resting), searching
-                carries the automatic Tab pass's settling spinner, detected
-                the located row count, and a live manual/calibrated anchor
-                reads green. It replaced the old clickable manual-locate
-                button (which absorbed a separate status pill in its day):
-                calibrating the anchor now lives in Settings → 游戏内显示
-                校准, so this surface only REPORTS the detection state. The
-                pill is permanent — idle stretches between battles (and
-                battles where Tab was never held) leave no overlay status at
-                all, and dropping the widget there would look flaky. */}
-            <span
+            {/* Locate pill — one widget, four voices, and the manual-locate
+                entry point: idle reads subdued ("manual locate" resting),
+                searching carries the automatic Tab pass's settling spinner,
+                detected the located row count, and a live manual/calibrated
+                anchor reads green. It spent a while as a read-only status
+                pill (#1204 moved calibrating into Settings → 游戏内显示校
+                准); the click is back as a deep link into exactly that
+                surface — it opens the section glided onto the anchor list,
+                so the 手动定位 entries are in view without hunting for
+                them. The pill is permanent — idle stretches between battles
+                (and battles where Tab was never held) leave no overlay
+                status at all, and dropping the widget there would look
+                flaky. */}
+            <button
+              type="button"
               class={[
                 "live-battle__locate-pill",
                 `live-battle__locate-pill--${locateState.value.cls}`,
               ]}
+              data-hint={t("replay.live.locateHint")}
+              onClick={openLocateSettings}
             >
               {locateState.value.spin ? (
                 <HkSpinner size="xs" tone="current" />
@@ -1560,7 +1671,7 @@ export default defineComponent({
                 <LocateFixed size={13} />
               )}
               {locateState.value.text}
-            </span>
+            </button>
           </div>
           {/* Operations (行动) have no enemy list — the enemy side is all
               scripted spawns — so the roster renders as one centered

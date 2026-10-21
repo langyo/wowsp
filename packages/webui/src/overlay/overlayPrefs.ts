@@ -20,12 +20,11 @@ import {
   legacyBattleScopeOf,
   legacyChipsOf,
   legacyColumnsSeed,
+  legacyTeamAvgEnabledOf,
   parseOverlayColumns,
   type OverlayColumn,
   type OverlayColumnMetric,
   type OverlayColumnScope,
-  type OverlayIntelToggles,
-  type OverlayTeamAvgToggles,
   type PrAlgo,
   type RosterBattleScope,
 } from "@/stores/statsPrefs";
@@ -97,10 +96,9 @@ export interface OverlayDisplayPrefs {
   /** The panel-wide battle-type scope ("follow" resolved per battle in
    *  main.ts). */
   battleScope: RosterBattleScope;
-  intel: OverlayIntelToggles;
-  /** Team-intel card master switch. */
-  teamIntel: boolean;
-  teamAvg: OverlayTeamAvgToggles;
+  /** The team-averages line under each side — one all-or-nothing switch
+   *  (the consumable-intel line above it renders unconditionally). */
+  teamAvgEnabled: boolean;
   /** Team winrate aggregation shared with the live panel. */
   weightedTeamWr: boolean;
   /** `prEnabled && sealsEnabled` — the seal pipeline's master gate. */
@@ -148,22 +146,6 @@ function readFlag(j: Record<string, unknown> | null, key: string, fallback: bool
   return typeof v === "boolean" ? v : fallback;
 }
 
-function readToggles<T extends object>(
-  j: Record<string, unknown> | null,
-  key: string,
-  defaults: T,
-): T {
-  const out = { ...defaults };
-  const raw = j?.[key];
-  if (raw == null || typeof raw !== "object") return out;
-  const src = raw as Record<string, unknown>;
-  const dst = out as Record<string, unknown>;
-  for (const k of Object.keys(defaults) as Array<keyof T & string>) {
-    if (typeof src[k] === "boolean") dst[k] = src[k];
-  }
-  return out;
-}
-
 /** The one-shot prefs snapshot. See the module doc for the contract. */
 export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
   const j = readBlob();
@@ -178,9 +160,8 @@ export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
   // they seed the column list through the SAME helper the store uses, so
   // the overlay agrees with the main window even before its heal-write
   // lands. A blob (or storage) without even the chips key answers the
-  // shipped default: all four chips on (readToggles' old fallback).
-  // A blob carrying `overlayStatsMode` (pre-split) seeds the battle scope
-  // the same way.
+  // shipped default: all four chips on. A blob carrying `overlayStatsMode`
+  // (pre-split) seeds the battle scope the same way.
   const battle: RosterBattleScope =
     j?.overlayBattleScope === "follow" ||
     j?.overlayBattleScope === "random" ||
@@ -205,9 +186,14 @@ export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
   return {
     columns,
     battleScope: battle,
-    intel: readToggles(j, "overlayIntel", DEFAULT_STATS_PREFS.overlayIntel),
-    teamIntel: readFlag(j, "teamIntelEnabled", DEFAULT_STATS_PREFS.teamIntelEnabled),
-    teamAvg: readToggles(j, "overlayTeamAvg", DEFAULT_STATS_PREFS.overlayTeamAvg),
+    // Migration parity with the store's parsePrefs: the single
+    // team-averages switch, seeded by the retired per-item toggles of a
+    // pre-simplification blob through the SAME helper the store uses.
+    teamAvgEnabled: readFlag(
+      j,
+      "teamAvgEnabled",
+      legacyTeamAvgEnabledOf(j?.overlayTeamAvg),
+    ),
     weightedTeamWr: readFlag(j, "weightedTeamWr", DEFAULT_STATS_PREFS.weightedTeamWr),
     sealsOn: prEnabled && readFlag(j, "sealsEnabled", DEFAULT_STATS_PREFS.sealsEnabled),
     sealsDisabled: new Set(

@@ -5,9 +5,6 @@
     "enrollCopy": "参与录像共享计划，帮助 WoWSP 收集战术分析所需的比赛录像。整个过程匿名进行。",
     "enroll": "参与共享",
     "uploaders": "上传人",
-    "realm": "服务器",
-    "name": "游戏 ID",
-    "namePlaceholder": "用于致谢署名的昵称（3-24 个字符）",
     "consentRecorded": "已同意条款（v{version}）",
     "consentMissing": "尚未同意共享条款",
     "credits": "已收录份数",
@@ -22,7 +19,7 @@
     "usedFor": "征集到的录像仅用于地图与点位分析、战绩校准追踪，以及 AI 辅助研究。",
     "noRedistribution": "原始录像永远不会被重新分发；对外发布的只有派生统计（舰船、队伍、坐标与事件序列），不含任何个人信息。",
     "contributorList": "每个版本发布时，本页下方的「参与共享的人员」名单会随之更新：按服务器与游戏 ID 排列，每人标签右侧的数字为其共享份数；点击任意人员可跳转水表查询查看其公开战绩。",
-    "identity": "署名身份为自报的服务器与游戏 ID，不绑定任何账户，可在上方随时修改。",
+    "identity": "署名身份为自报的服务器与游戏 ID，可在「署名账户」中随时更换。",
     "agree": "我已阅读并同意以上全部条款"
   },
   "wizard": {
@@ -40,9 +37,12 @@
     "doneLabel": "完成",
     "open": "共享录像…",
     "identityHint": "署名身份将随共享包上传,并出现在参与人员名单中。",
-    "identityMissing": "请先填写署名身份(服务器 + 游戏 ID)",
+    "identityMissing": "请先选择署名账户",
     "identitySource": "署名账户",
-    "identityCustom": "手动输入…"
+    "identityCustom": "手动输入…",
+    "identityMismatchTitle": "署名与录像不一致",
+    "identityMismatch": "本机录像的署名是「{recorded}」，与当前署名身份「{declared}」不同。致谢名单按署名显示、点击后也按署名查询战绩——若这是手误（如形近字符），请改回与游戏内完全一致的 ID。",
+    "identityChoose": "选择署名账户…"
   },
   "select": {
     "checkCard": "选择{name}的录像",

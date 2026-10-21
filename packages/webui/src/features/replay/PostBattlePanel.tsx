@@ -33,6 +33,7 @@
 import {
   computed,
   defineComponent,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
@@ -41,8 +42,8 @@ import {
   type VNode,
 } from "vue";
 import { useRouter } from "vue-router";
-import { Eye, EyeOff, X } from "@lucide/vue";
-import { HkSpinner } from "@celestia-island/hikari";
+import { Eye, EyeOff } from "@lucide/vue";
+import { HkIconButton, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import { type PlayerStats, type VehicleEntry } from "@/api";
 import { t } from "@/i18n";
@@ -50,14 +51,13 @@ import { useLanguage } from "@/i18n/useLanguage";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import RatingStamp from "@/components/base/RatingStamp";
+import StampTag from "@/components/base/StampTag";
 import StatsCard from "@/components/stats/StatsCard";
-import ShipDistCharts, { type DistDatum } from "@/components/stats/ShipDistCharts";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useStatsStore } from "@/stores/stats";
-import { useShipStatsStore } from "@/stores/shipStats";
 import { prAlgoForRequest, statsPrefsState, useStatsPrefsStore } from "@/stores/statsPrefs";
 import { battlesColor, careerStamp, damageColor, prTier, winrateColor, type CareerStamp } from "@/utils/winrate";
 import { formatEta } from "@/utils/format";
@@ -67,6 +67,7 @@ import { isScriptedUnitName } from "@/utils/aiNames";
 import { isListedPlayer } from "@/utils/rosterSides";
 import { modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName } from "@/utils/mapNames";
+import { useLiveCompositions } from "@/composables/useLiveCompositions";
 import {
   AI_NAME,
   fetchRosterStatsByNames,
@@ -191,7 +192,6 @@ export default defineComponent({
     const { dataLanguage, uiLocale } = useLanguage();
     const loadingTasks = useLoadingTasksStore();
     const stats = useStatsStore();
-    const shipStats = useShipStatsStore();
     const router = useRouter();
     const root = ref<HTMLElement | null>(null);
     const rows = computed(() => {
@@ -210,6 +210,11 @@ export default defineComponent({
             : p.name,
         ]),
       );
+      const shipIds = new Map(
+        pb.players
+          .filter((p) => p.shipId != null)
+          .map((p) => [p.accountId, p.shipId as number]),
+      );
       // The results packet carries the story/operation scripted NPCs as
       // team members — they are not players and get no matrix row.
       return pb.players.filter(isListedPlayer).map((p) => ({
@@ -218,6 +223,7 @@ export default defineComponent({
           (p.shipId != null ? shipNameFromOfflineDb(p.shipId, dataLanguage.value) : null) ??
           "",
         killerName: p.killerId != null ? names.get(p.killerId) ?? null : null,
+        killerShipId: p.killerId != null ? shipIds.get(p.killerId) ?? null : null,
         // Settlement XP: the real base exp streamed per player (bots carry
         // 0); falls back to a rough estimate for legacy short arrays only.
         xp: p.exp ?? Math.round(p.damage * 0.1 + p.frags * 250 + (p.alive ? 100 : 0)),
@@ -237,21 +243,6 @@ export default defineComponent({
     const globalStats = ref<PlayerStats | null>(null);
     const globalLoading = ref(false);
     const globalError = ref(false);
-    /** Battles per tier (index 1..11, superships in the 11th bin) and per
-     *  ship type — for spotting low-tier farmers / CV-SS specialists. */
-    const shipDistList = ref<DistDatum[]>([]);
-
-    /** Load the player's per-ship stats and aggregate tier/type distribution. */
-    async function loadShipDist(p: (typeof rows.value)[number]) {
-      shipDistList.value = [];
-      if (!p.realm) return;
-      try {
-        const list = await shipStats.load(p.accountId, p.realm);
-        shipDistList.value = list.map((s) => ({ shipId: s.shipId, battles: s.battles }));
-      } catch {
-        /* distribution unavailable — hide */
-      }
-    }
 
     /** Roster WR / PR / avg-damage per player name for the matrix columns
      *  (one batched lookup on mount, warm-served from the shared roster-stats
@@ -332,6 +323,39 @@ export default defineComponent({
      *  under it) and need PR data to grade — one gate for the DOM slot,
      *  the header pad and the share shot alike. */
     const sealsShown = computed(() => prefs.value.prEnabled && prefs.value.sealsEnabled);
+
+    // ── Secondary seals (成分章 → the horizontal StampTag face) ──────────
+    // The composition verdicts' secondary face, fetched through the same
+    // backend command the Tab overlay and the live panel ride (its
+    // process-lifetime cache makes the third consumer free), gated exactly
+    // like every seal surface — zh UI on top of the seals master gates —
+    // so the pipeline idles when no seal could ever render.
+    const compSealsOn = computed(
+      () => sealsShown.value && uiLocale.value.startsWith("zh"),
+    );
+    /** Each row's own realm for the sweep, riders without one taking the
+     *  roster's dominant (the rule loadNameStats applies — a battle is
+     *  single-realm in practice, but strays exist). Names without any
+     *  realm never get asked; null (gate off / no battle) idles it. */
+    const compRealms = computed<Record<string, string> | null>(() => {
+      if (!compSealsOn.value) return null;
+      const pb = parsed.value;
+      if (!pb) return null;
+      const dominant = pb.players.find((p) => p.realm)?.realm ?? "";
+      const map: Record<string, string> = {};
+      for (const p of pb.players) {
+        if (AI_NAME.test(p.name)) continue;
+        const realm = p.realm ?? dominant;
+        if (realm) map[p.name] = realm;
+      }
+      return map;
+    });
+    const compositions = useLiveCompositions(
+      computed(() => Object.keys(compRealms.value ?? {})),
+      // No base realm — the per-name map above covers every name asked.
+      "",
+      compRealms,
+    );
 
     /** Roster density: compact rows (the default) or the live panel's full
      *  cards — a persisted stats pref, flipped from the share bar's mode
@@ -438,7 +462,15 @@ export default defineComponent({
       selected.value = p;
       detailOpen.value = true;
       void loadGlobal(p);
-      void loadShipDist(p);
+      // A fresh drill-down (killer jumps included) lands scrolled to the
+      // head, not wherever the previous player's body had been left —
+      // the hikari container owns the scrollport, so reset its viewport.
+      void nextTick(() => {
+        const vp = root.value?.querySelector<HTMLElement>(
+          ".replay-view__postbattle-modal-scroll .hk-scroll-container-viewport",
+        );
+        if (vp) vp.scrollTop = 0;
+      });
     }
 
     /** Jump into the lookup screen for this player, closing the modal. */
@@ -759,17 +791,21 @@ export default defineComponent({
           </div>
         );
       };
+      /** Career verdict for one row — null while its stats load or a
+       *  hidden profile's clan verdict is pending (the same hold the live
+       *  panel keeps). */
+      const stampOf = (p: (typeof rows.value)[number]): CareerStamp | null => {
+        const stat = isAiName(p.name) ? undefined : nameStats.value.get(p.name);
+        return stat &&
+          !stat.loading &&
+          !(stat.hidden && stat.clanId != null && stat.clanWinrate === undefined)
+          ? careerStamp(stat.pr, stat.battles, stat.winrate, stat.hidden, stat.clanWinrate)
+          : null;
+      };
       /** Career seal for one row — the same guard chain the live panel uses
        *  (verdict-pending hidden profiles hold their stamp). */
       const sealOf = (p: (typeof rows.value)[number]) => {
-        const ai = isAiName(p.name);
-        const stat = ai ? undefined : nameStats.value.get(p.name);
-        const stamp =
-          stat &&
-          !stat.loading &&
-          !(stat.hidden && stat.clanId != null && stat.clanWinrate === undefined)
-            ? careerStamp(stat.pr, stat.battles, stat.winrate, stat.hidden, stat.clanWinrate)
-            : null;
+        const stamp = stampOf(p);
         return stamp && sealsShown.value ? (
           <RatingStamp
             kind={stamp}
@@ -779,6 +815,78 @@ export default defineComponent({
           />
         ) : null;
       };
+      /** The row's secondary seals (成分章) — 空中小人 / 水下小人 (with the
+       *  >50% 奶龙 / 奶蛙 veteran tier) as horizontal StampTag faces riding
+       *  BESIDE the row's XP score (the rows are far too short for a square
+       *  2x2 face). No merge exists on the rosters: a 神了 / 猴 verdict
+       *  keeps its own primary RatingStamp in the row-end slot while the
+       *  comp tags press beside the XP (the merged 空中神人-family faces
+       *  belong to the water meter alone, as before); the 蛆 / 过街老鼠
+       *  floors suppress the composition entirely. A verdict still in
+       *  flight (or failed / hidden → null) renders nothing. */
+      const stampTagNodes = (
+        p: (typeof rows.value)[number],
+        career: CareerStamp | null,
+      ): VNode[] => {
+        if (!compSealsOn.value || career === "maggot" || career === "rat") return [];
+        const comp = compositions.value.get(p.name);
+        if (!comp) return [];
+        const nodes: VNode[] = [];
+        if (comp.air) {
+          nodes.push(
+            <StampTag key="air" kind={comp.airVeteran ? "airVeteran" : "air"} />,
+          );
+        }
+        if (comp.sub) {
+          nodes.push(
+            <StampTag key="sub" kind={comp.subVeteran ? "subVeteran" : "sub"} />,
+          );
+        }
+        return nodes;
+      };
+      /** The COMPACT row's single secondary seal — the highest tier the
+       *  player carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor
+       *  one, and air wins a same-tier tie (resolveStamps' canonical
+       *  order). Null when nothing qualifies or a verdict stamp applies. */
+      const highestStampTag = (
+        p: (typeof rows.value)[number],
+        career: CareerStamp | null,
+      ): VNode | null => {
+        if (!compSealsOn.value || career === "maggot" || career === "rat") return null;
+        const comp = compositions.value.get(p.name);
+        if (!comp) return null;
+        if (comp.air && comp.sub) {
+          // Both classes: air wins the same-tier tie, but a sub-veteran
+          // (奶蛙) outranks a minor air tag — the veteran face survives.
+          if (comp.subVeteran && !comp.airVeteran) return <StampTag kind="subVeteran" />;
+          return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
+        }
+        if (comp.air) return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
+        if (comp.sub) return <StampTag kind={comp.subVeteran ? "subVeteran" : "sub"} />;
+        return null;
+      };
+      /** The compact row's ONE seal — the cluster's highest face: the
+       *  career verdict first (the primary square stamp), the secondary
+       *  composition tag only when no verdict stamp applies (the live
+       *  panel's compact rule, verbatim). */
+      const sealSlotOf = (p: (typeof rows.value)[number]) =>
+        sealOf(p) ?? highestStampTag(p, stampOf(p));
+      /** The full card's seal column — ONLY the primary seal (一级章, the
+       *  single-character verdict picture). The secondary tier (成分章)
+       *  rides beside the XP score instead: the card's right edge is too
+       *  short for a stack of square faces. Null when the row carries
+       *  none. */
+      const sealStackOf = (p: (typeof rows.value)[number]) => {
+        const seal = sealOf(p);
+        return seal ? (
+          <span class="replay-view__postbattle-cell-stampstack">{seal}</span>
+        ) : null;
+      };
+      /** The full card's secondary seals (成分章) beside the XP score — the
+       *  horizontal StampTag faces (stampTagNodes, the merge rule
+       *  included). */
+      const fcellStampTagsOf = (p: (typeof rows.value)[number]): VNode[] =>
+        stampTagNodes(p, stampOf(p));
       /** Per-row nickname-mask eye — a sibling AFTER the row button so it
        *  stays a real button (no nested buttons). */
       const eyeBtn = (name: string) => (
@@ -867,15 +975,19 @@ export default defineComponent({
               >
                 {p.xp.toLocaleString()}
               </span>
-              {/* Career-seal slot: reserved whenever seals show at all (PR +
-                  settings master), so the mask eyes align across rows whether
-                  or not a given player earned a stamp. Living INSIDE the
-                  button keeps the hover highlight and the click target on
-                  the row's full width — the seal is part of the row, not an
-                  ornament bolted past its hit area. */}
+              {/* Seal slot: reserved whenever seals show at all (PR +
+                  settings master), so the mask eyes align across rows
+                  whether or not a given player earned a stamp. Living
+                  INSIDE the button keeps the hover highlight and the click
+                  target on the row's full width — the seal is part of the
+                  row, not an ornament bolted past its hit area. The
+                  compact row's ONE seal is the cluster's highest face: the
+                  primary square stamp, else the secondary horizontal
+                  StampTag (one face per row — the full cards carry the
+                  whole split instead). */}
               {sealsShown.value ? (
                 <span class="replay-view__postbattle-cell-stampslot">
-                  {sealOf(p)}
+                  {sealSlotOf(p)}
                 </span>
               ) : null}
             </button>
@@ -892,6 +1004,7 @@ export default defineComponent({
         const enemy = !props.operation && isEnemy(p);
         const ai = isAiName(p.name);
         const stat = ai ? undefined : nameStats.value.get(p.name);
+        const stampTags = fcellStampTagsOf(p);
         const statLine = () => {
           if (ai) return "—";
           // Absent = still querying (progressive arrival: the row spins
@@ -953,15 +1066,27 @@ export default defineComponent({
                   <LiveShipMeta shipId={p.shipId} ally={!enemy} />
                 ) : null}
               </span>
-              <span
-                class="replay-view__postbattle-fcell-xp"
-                data-hint={t("replay.postbattle.xp")}
-              >
-                {p.xp.toLocaleString()}
+              {/* XP + the secondary seals (成分章) share the score track —
+                  one grid item, so the horizontal StampTag faces ride beside
+                  the XP WITHOUT spilling into the seal track (auto-placement
+                  would steal the 2.5rem slot and shove the primary stamp
+                  onto an implicit second row). */}
+              <span class="replay-view__postbattle-fcell-score">
+                <span
+                  class="replay-view__postbattle-fcell-xp"
+                  data-hint={t("replay.postbattle.xp")}
+                >
+                  {p.xp.toLocaleString()}
+                </span>
+                {sealsShown.value && stampTags.length > 0 ? (
+                  <span class="replay-view__postbattle-fcell-stamptags">
+                    {stampTags}
+                  </span>
+                ) : null}
               </span>
               {sealsShown.value ? (
                 <span class="replay-view__postbattle-cell-stampslot">
-                  {sealOf(p)}
+                  {sealStackOf(p)}
                 </span>
               ) : null}
             </button>
@@ -972,6 +1097,60 @@ export default defineComponent({
       const rowOf = fullMode.value ? fullCell : cell;
       const sel = selected.value;
       const enemyRows = props.operation ? [] : enemies.value;
+      /** The killer attribution line — pre-text + killer chip + post-text
+       *  (word order varies per locale). The chip carries the killer's
+       *  white class icon and ship name; when the killer sits in this
+       *  roster it renders as one button that swaps this modal to the
+       *  killer's own stats (scripted NPCs have no stats window — their
+       *  chip stays plain text, the ship name IS the display name). */
+      const killedLine = (() => {
+        if (!sel || sel.alive || !sel.killerName) return null;
+        // A self-kill (beached, detonation) has its id as the killerId —
+        // this modal already IS that player's stats window, so the chip
+        // stays plain text instead of a re-opening button.
+        const killerRow =
+          sel.killerId != null && sel.killerId !== sel.accountId
+            ? rows.value.find((r) => r.accountId === sel.killerId) ?? null
+            : null;
+        const ship =
+          sel.killerShipId != null
+            ? shipNameFromOfflineDb(sel.killerShipId, dataLanguage.value)
+            : null;
+        const chip = (
+          <>
+            {masking.maskOf(sel.killerName)}
+            {sel.killerShipId != null ? (
+              <BattleIcon
+                type={shipOfflineEntry(sel.killerShipId)?.type ?? ""}
+                variant="white"
+                size={16}
+              />
+            ) : null}
+            {killerRow && ship ? (
+              <em class="replay-view__postbattle-killed-ship">{ship}</em>
+            ) : null}
+          </>
+        );
+        return (
+          <div class="replay-view__postbattle-killed">
+            {t("replay.postbattle.destroyedByPre")}
+            {killerRow ? (
+              <button
+                class="replay-view__postbattle-killed-btn"
+                type="button"
+                data-hint={t("replay.postbattle.killerJump")}
+                aria-label={t("replay.postbattle.killerJump")}
+                onClick={() => openDetail(killerRow)}
+              >
+                {chip}
+              </button>
+            ) : (
+              <span class="replay-view__postbattle-killed-plain">{chip}</span>
+            )}
+            {t("replay.postbattle.destroyedByPost")}
+          </div>
+        );
+      })();
       return (
         <div class="replay-view__postbattle" ref={root}>
           {head && (head.matchGroup || head.mapName) ? (
@@ -1081,16 +1260,21 @@ export default defineComponent({
                       <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                     </span>
                   </span>
-                  <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
+                  <HkIconButton
+                    class="hk-window-close replay-view__postbattle-modal-close"
+                    size={32}
+                    variant="ghost"
+                    icon="close"
+                    aria-label={t("common.close")}
+                    onClick={() => (detailOpen.value = false)}
+                  />
                 </div>
-                <div class="replay-view__postbattle-modal-scroll">
-                  {!sel.alive && sel.killerName ? (
-                    <div class="replay-view__postbattle-killed">
-                      {t("replay.postbattle.destroyedBy", {
-                        name: masking.maskOf(sel.killerName),
-                      })}
-                    </div>
-                  ) : null}
+                {/* Drill-down scroller: the hikari container owns the
+                    scrollbar (auto-hiding overlay track); the body blocks
+                    stack directly in its viewport. The same shape the
+                    fallback panel's own detail modal rides. */}
+                <HkScrollContainer class="replay-view__postbattle-modal-scroll">
+                  {killedLine}
                   <div class="replay-view__postbattle-detail-body">
                     <div class="replay-view__postbattle-detail-damage">
                       <span class="replay-view__postbattle-detail-damage-num">
@@ -1154,18 +1338,7 @@ export default defineComponent({
                       </span>
                     )}
                   </div>
-                  {/* Ship distribution: tier histogram + class and nation
-                      pies — spot low-tier farmers / CV-SS specialists and
-                      one-nation grinders. */}
-                  {shipDistList.value.length > 0 ? (
-                    <div class="replay-view__postbattle-dist">
-                      <div class="replay-view__postbattle-dist-title">
-                        {t("replay.postbattle.tierDist")}
-                      </div>
-                      <ShipDistCharts ships={shipDistList.value} />
-                    </div>
-                  ) : null}
-                </div>
+                </HkScrollContainer>
                 <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
                   {t("replay.postbattle.fullStats")}
                 </button>

@@ -88,3 +88,20 @@ export function dogtagAssetUrl(relPath: string): string {
   if (root == null || convertFileSrc == null) return "/dogtags/" + relPath;
   return convertFileSrc(`${root}/dogtags/${relPath}`);
 }
+
+/** Candidate URLs for one dog-tag part image, best-first: the wired pack's
+ *  .webp, then the same path as .png (a legacy all-.png pack generation),
+ *  then the bundled same-origin snapshot. Callers walk the chain on load
+ *  errors, so one missing file degrades its own badge part instead of —
+ *  like the old global WebP→PNG flip — flipping every badge's URLs onto an
+ *  extension the pack doesn't carry. */
+export function dogtagUrlChain(relPath: string): string[] {
+  const urls: string[] = [];
+  const root = packRoot.value;
+  if (root != null && convertFileSrc != null) {
+    const webp = convertFileSrc(`${root}/dogtags/${relPath}`);
+    urls.push(webp, webp.replace(/\.webp$/, ".png"));
+  }
+  urls.push("/dogtags/" + relPath);
+  return urls;
+}

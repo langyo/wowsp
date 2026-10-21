@@ -2,9 +2,10 @@ target/
 crates/relay-worker/build/
 .wrangler/
 .dev.vars
-# Generated lockfile of this standalone workspace (the ROOT Cargo.lock is
-# tracked; this nested one stays local)
-Cargo.lock
+# The lockfile IS tracked since the credit-backfill wave: the worker
+# compiles to wasm from whatever the resolver picks, and an unpinned
+# tree once shipped a silently-broken hydration build. Same policy as
+# the root workspace's tracked lock.
 /assets/
 
 # Feedback-page hikari token sheet, generated at build time by

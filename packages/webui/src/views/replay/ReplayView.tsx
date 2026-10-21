@@ -63,7 +63,7 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
-import { HkButton, HkScrollContainer, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
+import { HkButton, HkIconButton, HkScrollContainer, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import {
@@ -648,7 +648,14 @@ const PostBattleFallbackPanel = defineComponent({
                       <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                     </span>
                   </span>
-                  <button onClick={() => (detailOpen.value = false)}><X size={12} /></button>
+                  <HkIconButton
+                    class="hk-window-close replay-view__postbattle-modal-close"
+                    size={32}
+                    variant="ghost"
+                    icon="close"
+                    aria-label={t("common.close")}
+                    onClick={() => (detailOpen.value = false)}
+                  />
                 </div>
                 {/* Drill-down scroller: the hikari container owns the
                     scrollbar; the body blocks stack directly in its
@@ -1242,7 +1249,14 @@ const ChatLogPanel = defineComponent({
                       <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                     </span>
                   </span>
-                  <button onClick={() => (selected.value = null)}><X size={12} /></button>
+                  <HkIconButton
+                    class="hk-window-close replay-view__postbattle-modal-close"
+                    size={32}
+                    variant="ghost"
+                    icon="close"
+                    aria-label={t("common.close")}
+                    onClick={() => (selected.value = null)}
+                  />
                 </div>
                 {/* Drill-down scroller (hikari container owns the scrollbar;
                     the note blocks stack directly in its viewport). */}
@@ -2168,13 +2182,14 @@ export default defineComponent({
                               </span>
                             ) : null}
                           </div>
-                          <button
-                            class="replay-view__modal-close"
+                          <HkIconButton
+                            class="hk-window-close replay-view__modal-close"
+                            size={32}
+                            variant="ghost"
+                            icon="close"
+                            aria-label={t("common.close")}
                             onClick={() => (showResults.value = false)}
-                            aria-label="Close"
-                          >
-                            <X size={14} />
-                          </button>
+                          />
                         </div>
                         {/* Results-body scroller: the hikari container owns the
                             scrollbar (auto-hiding overlay track); the panel
@@ -2245,13 +2260,14 @@ export default defineComponent({
                           <div class="replay-view__modal-title">
                             <strong>{t("replay.chatLog")}</strong>
                           </div>
-                          <button
-                            class="replay-view__modal-close"
+                          <HkIconButton
+                            class="hk-window-close replay-view__modal-close"
+                            size={32}
+                            variant="ghost"
+                            icon="close"
+                            aria-label={t("common.close")}
                             onClick={() => (showChat.value = false)}
-                            aria-label="Close"
-                          >
-                            <X size={14} />
-                          </button>
+                          />
                         </div>
                         <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
                           <ChatLogPanel

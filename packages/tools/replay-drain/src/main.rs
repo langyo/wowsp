@@ -4,9 +4,10 @@
 
 use anyhow::{Context, bail};
 use replay_drain::{
-    AdminListDoc, Command, CreditsArgs, CreditsDoc, PullArgs, parse_args, verify_and_store,
-    write_contributors_envelope,
+    AdminListDoc, BackfillArgs, BackfillSkip, Command, CreditsArgs, CreditsDoc, PullArgs,
+    RenameArgs, ScannedReplay, parse_args, verify_and_store, write_contributors_envelope,
 };
+use sha2::Digest;
 use std::io::Write;
 use std::time::Duration;
 
@@ -17,6 +18,16 @@ replay-drain — the replay-share maintainer CLI
                                       (per-member sha256) → archive → drain
   replay-drain credits  [options]   export contributors.json (per-identity
                                       lifetime counts) for the webui res
+  replay-drain rename   [options]   correct one contributor's credited name
+                                      (the self-reported identity is free
+                                      text; typos surface when a lookup by
+                                      that name finds nobody)
+  replay-drain backfill [options] <paths...>
+                                      credit manually collected replays:
+                                      parse each header → /check against
+                                      the wanted ruleset → one submit per
+                                      recorder identity (duplicates skip;
+                                      --force credits rule-less ones)
 
 Options (env fallbacks in parentheses):
   --relay <url>    relay base (WOWSP_RELAY_URL, default https://wowsp.langyo.xyz)
@@ -26,7 +37,14 @@ Options (env fallbacks in parentheses):
                    packages/webui/src/res/contributors.json before building)
   --only <anon>    pull only this contributor (repeatable)
   --min-staged <n> pull only contributors with ≥ n staged members (default 1)
-  --dry-run        verify + archive, never call drain
+  --dry-run        verify + archive, never call drain; backfill: print the
+                   per-recorder plan, never submit
+  --anon <id>      rename: the contributor's anon id (from the drain
+                   console's list or `pull`'s per-contributor lines)
+  --name <new>     rename: the corrected credited name
+  --realm <code>   backfill: the replays' realm (ru|eu|na|asia|cn) — a file
+                   carries no server identity, so this is declared once
+  --force          backfill: credit replays no current rule wants
 ";
 
 #[tokio::main]
@@ -42,6 +60,8 @@ async fn main() {
     let run = match cmd {
         Command::Pull(args) => pull(args).await,
         Command::Credits(args) => credits(args).await,
+        Command::Rename(args) => rename(args).await,
+        Command::Backfill(args) => backfill(args).await,
     };
     if let Err(e) = run {
         eprintln!("error: {e:#}");
@@ -212,5 +232,285 @@ async fn credits(args: CreditsArgs) -> anyhow::Result<()> {
     if args.out != std::path::Path::new("packages/webui/src/res/contributors.json") {
         println!("copy it to packages/webui/src/res/contributors.json before building the webui");
     }
+    Ok(())
+}
+
+async fn rename(args: RenameArgs) -> anyhow::Result<()> {
+    let client = client().await?;
+    let resp = client
+        .post(format!("{}/api/replays/admin/rename", args.relay))
+        .header("x-admin-key", &args.key)
+        .json(&serde_json::json!({ "anonId": args.anon, "name": args.name }))
+        .send()
+        .await
+        .context("POST /api/replays/admin/rename")?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+    match status {
+        reqwest::StatusCode::OK => {
+            println!("renamed {} → {}", args.anon, body);
+        },
+        // The DO's own verdicts, kept distinct so the operator can tell a
+        // wrong anon id from a rejected name from an auth problem.
+        reqwest::StatusCode::NOT_FOUND => bail!(
+            "no contributor under {} — the anon id comes from the drain \
+             console's list or `pull`'s per-contributor lines",
+            args.anon
+        ),
+        reqwest::StatusCode::UNAUTHORIZED => {
+            bail!("relay answered 401 — the admin key is missing or wrong")
+        },
+        _ => bail!("relay answered {status}: {body}"),
+    }
+    Ok(())
+}
+
+async fn backfill(args: BackfillArgs) -> anyhow::Result<()> {
+    // 1. Collect candidate files: explicit files plus top-level scans of
+    // explicit directories (no recursion — a replays/ folder walk is the
+    // app's job; this path is for the maintainer's collection folders).
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    for p in &args.paths {
+        if p.is_dir() {
+            let mut found: Vec<std::path::PathBuf> = std::fs::read_dir(p)
+                .with_context(|| format!("reading {}", p.display()))?
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|path| {
+                    path.is_file()
+                        && matches!(
+                            path.extension().and_then(|e| e.to_str()),
+                            Some("wowsreplay") | Some("korablireplay")
+                        )
+                })
+                .collect();
+            found.sort();
+            if found.is_empty() {
+                eprintln!("  ! {} holds no replay files", p.display());
+            }
+            files.extend(found);
+        } else {
+            files.push(p.clone());
+        }
+    }
+    files.sort();
+    files.dedup();
+    if files.is_empty() {
+        bail!("no .wowsreplay/.korablireplay files found in the given paths");
+    }
+
+    // 2. Scan: sha256 + the lite header projection (the same reader the
+    // app's share wizard plans with, so the facts match its shape).
+    let mut scanned: Vec<ScannedReplay> = Vec::new();
+    let mut skips: Vec<BackfillSkip> = Vec::new();
+    for f in &files {
+        let file_name = f
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
+            .with_context(|| format!("unusable file name {}", f.display()))?;
+        let mut hasher = sha2::Sha256::new();
+        let mut size = 0u64;
+        let mut file =
+            std::fs::File::open(f).with_context(|| format!("opening {}", f.display()))?;
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = std::io::Read::read(&mut file, &mut buf)?;
+            if n == 0 {
+                break;
+            }
+            sha2::Digest::update(&mut hasher, &buf[..n]);
+            size += n as u64;
+        }
+        let sha256 = hex::encode(sha2::Digest::finalize(hasher));
+        let scan = std::panic::catch_unwind(|| wowsp_replay_core::meta::lite_and_client_version(f));
+        let Ok((lite, client_version)) = scan else {
+            skips.push(BackfillSkip {
+                sha256,
+                file_name,
+                reason: "the header did not survive parsing".into(),
+            });
+            continue;
+        };
+        // The server validates EVERY fact in a batch and 400s the whole
+        // call on the first bad row, so mirror the plausibility gate here
+        // and skip degraded parses per-file (a swept folder is exactly
+        // where corrupt or foreign files live).
+        let map = lite.map_name.clone().unwrap_or_default();
+        let mode = lite.match_group.clone().unwrap_or_default();
+        let client_version = client_version.unwrap_or_default();
+        let plausibility: Option<&str> = if map.is_empty() || map.chars().count() > 64 {
+            Some("the header carries no usable map name")
+        } else if mode.is_empty() || mode.chars().count() > 32 {
+            Some("the header carries no usable match group")
+        } else if lite.player_count == 0 || lite.player_count > 64 {
+            Some("the header carries no usable player count")
+        } else if lite.bot_count > 64 {
+            Some("implausible bot count")
+        } else if !(1024..=67_108_864).contains(&size) {
+            Some("file size outside the accepted range")
+        } else if file_name.chars().count() > 128 {
+            Some("file name longer than the server accepts")
+        } else if lite
+            .scenario
+            .as_deref()
+            .is_some_and(|s| s.is_empty() || s.chars().count() > 64)
+        {
+            Some("implausible scenario tag")
+        } else if client_version.chars().count() > 32 {
+            Some("implausible client version stamp")
+        } else {
+            None
+        };
+        if let Some(reason) = plausibility {
+            skips.push(BackfillSkip {
+                sha256,
+                file_name,
+                reason: reason.into(),
+            });
+            continue;
+        }
+        let facts = serde_json::json!({
+            "sha256": sha256,
+            "fileName": file_name,
+            "sizeBytes": size,
+            "map": map,
+            "mode": mode,
+            "scenario": lite.scenario,
+            "realm": args.realm,
+            "ownShipId": lite.own_ship_id.map_or(0, |id| id.max(0) as u64),
+            "shipClass": serde_json::Value::Null,
+            "tier": serde_json::Value::Null,
+            "playerCount": lite.player_count,
+            "botCount": lite.bot_count,
+            "clientVersion": client_version,
+            "battleTime": "",
+        });
+        scanned.push(ScannedReplay {
+            sha256,
+            file_name,
+            size_bytes: size,
+            player_name: lite.player_name,
+            facts,
+        });
+    }
+    println!(
+        "scanned {} file(s), {} unusable for backfill",
+        scanned.len(),
+        skips.len()
+    );
+    if scanned.is_empty() {
+        return Ok(());
+    }
+
+    // 3. One batched /check (public — the same matching the upload
+    // pipeline uses, rate-limited per IP, so never per-file).
+    let client = client().await?;
+    let facts: Vec<serde_json::Value> = scanned.iter().map(|s| s.facts.clone()).collect();
+    let resp: serde_json::Value = client
+        .post(format!("{}/api/replays/check", args.relay))
+        .json(&serde_json::json!({ "facts": facts }))
+        .send()
+        .await
+        .context("POST /api/replays/check")?
+        .error_for_status()
+        .context("POST /api/replays/check")?
+        .json()
+        .await
+        .context("parsing the check reply")?;
+    let results: Vec<replay_drain::CheckRow> = serde_json::from_value(
+        resp.get("results")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+    )
+    .context("parsing the check results")?;
+
+    // 4. Plan per recorder identity.
+    let (groups, mut plan_skips) =
+        replay_drain::plan_backfill(&scanned, &results, &args.realm, args.force);
+    plan_skips.extend(skips);
+    for s in &plan_skips {
+        println!("  - {} ({})", s.file_name, s.reason);
+    }
+    if groups.is_empty() {
+        println!("nothing to backfill");
+        return Ok(());
+    }
+    for g in &groups {
+        println!(
+            "[{}] {} — {} member(s) to credit",
+            g.realm,
+            g.name,
+            g.members.len()
+        );
+    }
+    if args.dry_run {
+        println!("dry-run — nothing submitted");
+        return Ok(());
+    }
+
+    // 5. One admin/backfill submit per recorder identity. A group that
+    // fails records the failure and the loop CONTINUES — one malformed
+    // name must not orphan the identities queued behind it (re-runs are
+    // cheap: duplicate hashes skip themselves).
+    let mut failures = 0usize;
+    for g in &groups {
+        let members: Vec<serde_json::Value> = g
+            .members
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "sha256": m.sha256,
+                    "fileName": m.file_name,
+                    "sizeBytes": m.size_bytes,
+                    "ruleId": m.rule_id,
+                })
+            })
+            .collect();
+        // The DO caps a submission at MEMBERS_MAX (400) — a hoarder-scale
+        // collection splits into sequential chunks.
+        for chunk in members.chunks(400) {
+            let resp = client
+                .post(format!("{}/api/replays/admin/backfill", args.relay))
+                .header("x-admin-key", &args.key)
+                .json(&serde_json::json!({
+                    "name": g.name,
+                    "realm": g.realm,
+                    "members": chunk,
+                }))
+                .send()
+                .await
+                .context("POST /api/replays/admin/backfill")?;
+            let status = resp.status();
+            let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+            match status {
+                reqwest::StatusCode::OK => println!("  credited: {body}"),
+                // Auth is broken for every group — stop immediately.
+                reqwest::StatusCode::UNAUTHORIZED => {
+                    bail!("relay answered 401 — the admin key is missing or wrong")
+                },
+                _ => {
+                    eprintln!(
+                        "  ! [{}] {} failed ({}: {body})",
+                        g.realm,
+                        g.name,
+                        if status == reqwest::StatusCode::CONFLICT {
+                            "identity conflict — rename instead".to_string()
+                        } else {
+                            format!("{status}")
+                        }
+                    );
+                    failures += 1;
+                },
+            }
+        }
+    }
+    if failures > 0 {
+        bail!(
+            "{failures} of {} identity group(s) failed to backfill",
+            groups.len()
+        );
+    }
+    println!("done — {} identity(ies) credited", groups.len());
     Ok(())
 }

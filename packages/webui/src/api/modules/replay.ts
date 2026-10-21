@@ -926,10 +926,11 @@ export const replayApi = {
    *  exactly like `setManualRosterRect`): the selection is scaled from the
    *  reference image's pixels onto the stored entry's window size — the
    *  entry's identity is KEPT, so editing never depends on the client
-   *  currently running. `source` describes the reference image the
-   *  drawing was made against (omitted = the newest capture). Refusals
-   *  (e.g. "no stored calibration for this client yet") reject with the
-   *  backend's message. */
+   *  currently running. A target with no stored entry yet is CREATED from
+   *  the drawing (placeholder identity, remap-usable immediately) — `kind`
+   *  (the install's client kind) is required only for that case. `source`
+   *  describes the reference image the drawing was made against (omitted =
+   *  the newest capture). Refusals reject with the backend's message. */
   setCalibrationAnchor: (
     clientKey: string,
     cls: "pvp" | "pve",
@@ -938,6 +939,7 @@ export const replayApi = {
     width: number,
     height: number,
     source?: ManualLocateSource,
+    kind?: string,
   ) =>
     transport.invoke<null>(RPC.set_calibration_anchor, {
       clientKey,
@@ -947,6 +949,7 @@ export const replayApi = {
       width,
       height,
       source: source ?? null,
+      kind: kind ?? null,
     }),
   /** Backend force-close push for the picker layer: the game window vanished
    *  underneath it (or overlay mode ended) — unmount the layer. */

@@ -74,6 +74,15 @@
 
 /* ── Re-hosting the shared .settings-modal shell in a page context ────── */
 
+/* Focus-anchor glides (SettingsShell's focusAnchor prop) land the target
+   card via native scrollIntoView, which aligns it with the page scroller's
+   visible top — under this page's sticky bar. Give the anchor cards their
+   clearance HERE only: the modal's pane has no sticky chrome, and the
+   shared shell must stay host-agnostic. */
+.settings-page__body [data-settings-anchor] {
+  scroll-margin-top: 3.5rem;
+}
+
 /* The shell is the local SettingsShell (.hk-settings*, the grouped rail
    over hikari's settings grammar); the page still needs the modal-host
    assumptions neutralized — the host class is absent on the page (those

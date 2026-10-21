@@ -19,3 +19,4 @@ sha2.workspace = true
 hex.workspace = true
 tar.workspace = true
 zstd.workspace = true
+wowsp_replay_core.workspace = true
