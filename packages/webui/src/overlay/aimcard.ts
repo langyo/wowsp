@@ -42,7 +42,9 @@
  *   - telemetry fresh + aim.name non-empty → the card renders;
  *   - aim empty, stream stale (30 s, the poller's own staleness rule), or
  *     the battle rolled over → the card empties. The native window's
- *     show/hide is the Rust watcher's job (battle on, Tab up) — this page
+ *     show/hide is the Rust watcher's job (battle on, Tab up; a PvE battle
+ *     keeps the window down for its whole duration — every lockable target
+ *     there is AI, nothing resolvable to show) — this page
  *     only ever draws content.
  *
  * The window itself hangs below the game window's center (the crosshair);
