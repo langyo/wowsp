@@ -496,10 +496,15 @@ export default defineComponent({
     };
 
     // Jump-in support: /lookup?name=..&realm=.. (from the replay post-battle
-    // player detail) starts a player search, and /lookup?clan=..&realm=..
-    // (from the dashboard's clan tag) lands in clan mode — either starts
-    // immediately on mount.
-    onMounted(() => {
+    // player detail and the sharing section's contributor chips) starts a
+    // player search, and /lookup?clan=..&realm=.. (from the dashboard's clan
+    // tag) lands in clan mode — either starts immediately on mount. The
+    // watcher repeats the jump for later query-only hops: the shell keys
+    // pages by route.path, so /lookup?name=A → /lookup?name=B keeps this
+    // instance mounted and a mount-time-only jump would silently drop the
+    // second hop (the contributor chips' dead click).
+    function jumpFromQuery() {
+      if (route.path !== "/lookup") return;
       const q = route.query;
       const r = typeof q.realm === "string" && realms.includes(q.realm) ? q.realm : "asia";
       const clan = typeof q.clan === "string" ? Number(q.clan) : NaN;
@@ -510,7 +515,9 @@ export default defineComponent({
       const name = typeof q.name === "string" ? q.name : "";
       if (!name) return;
       void doSearch(name, r);
-    });
+    }
+    onMounted(jumpFromQuery);
+    watch(() => route.query, jumpFromQuery);
 
     // ── Share shots ───────────────────────────────────────────────────
     // One per lookup mode, mirroring the result the user currently sees.
