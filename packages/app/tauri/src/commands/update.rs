@@ -48,14 +48,11 @@
 //! the stream against it; no
 //! reachable digest or a mismatch on every mirror means no installer is
 //! spawned.
-//! The installer spawn is re-homed onto a temp working directory (a child
+//! The installer spawn is re-homed onto a temp working directory: a child
 //! inherits the app's CWD — the install directory — and Windows refuses
 //! to rename a directory any process holds as its CWD, so the installer
 //! would otherwise pin its own swap target through shun's whole
-//! lock-retry window) and paired with the update sentinel, the watcher
-//! exe shipped beside the app: a small topmost window that makes the
-//! automatic install visible ("installing v<version>… don't launch the
-//! old build"), follows the installer process and folds when it exits.
+//! lock-retry window and degrade to the file-by-file in-place merge.
 //! The hardened installer stops whatever is left of the app and installs
 //! over its directory — and the app now exits itself right after the
 //! handoff spawn, so the frontend treats the command's promise never
@@ -843,18 +840,12 @@ fn emit_phase(app: &AppHandle, progress_phase: &str) {
 }
 
 /// Best-effort removal of stale `.part` leftovers (other versions/pids,
-/// and the pre-hub per-racer layout) and of spent sentinel copies:
-/// without this, the temp dir would accumulate one orphaned
-/// multi-hundred-MB part per aborted launch. Files still open on Windows
-/// fail to delete and are left for the OS temp dir to reclaim.
+/// and the pre-hub per-racer layout): without this, the temp dir would
+/// accumulate one orphaned multi-hundred-MB part per aborted launch.
+/// Files still open on Windows fail to delete and are left for the OS
+/// temp dir to reclaim.
 async fn cleanup_part_files(keep: Option<&std::path::Path>) {
-    cleanup_part_files_at(&std::env::temp_dir(), keep);
-}
-
-/// The [`cleanup_part_files`] sweep against an explicit directory (the
-/// test seam — the real one always scans the temp dir).
-fn cleanup_part_files_at(dir: &std::path::Path, keep: Option<&std::path::Path>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
         return;
     };
     for entry in entries.flatten() {
@@ -863,62 +854,13 @@ fn cleanup_part_files_at(dir: &std::path::Path, keep: Option<&std::path::Path>) 
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or_default();
-        let part = name.starts_with("WoWSP-update-")
+        if name.starts_with("WoWSP-update-")
             && name.ends_with(".part")
-            && Some(path.as_path()) != keep;
-        // The watcher's staged copy from a previous pass (see
-        // [`SENTINEL_TEMP_PREFIX`]). Never the installer artifact itself:
-        // the stranded-recovery card re-runs that from temp.
-        let sentinel = name.starts_with(SENTINEL_TEMP_PREFIX) && name.ends_with(".exe");
-        if part || sentinel {
+            && Some(path.as_path()) != keep
+        {
             let _ = std::fs::remove_file(&path);
         }
     }
-}
-
-/// The visible handoff watcher shipped beside the app exe (the
-/// `wowsp_update_sentinel` crate, staged into both installer payloads):
-/// a small topmost window that names the version being installed, asks
-/// the player not to launch the old build while it runs, and folds when
-/// the installer process exits — the automatic install stops being
-/// silent without gaining a single click.
-const SENTINEL_EXE: &str = "wowsp-update-sentinel.exe";
-
-/// Temp-file prefix for the staged copy of [`SENTINEL_EXE`] (pid-suffixed;
-/// swept with the part files on the next pass).
-const SENTINEL_TEMP_PREFIX: &str = "WoWSP-update-sentinel-";
-
-/// Copy the sentinel exe beside the app into the temp dir. A running exe
-/// locks its file on Windows, and a locked file inside the install
-/// directory is exactly the pin the installer's atomic swap cannot
-/// survive — so the watcher always runs from its own copy. `None` when
-/// the payload carries no sentinel (an AV stripped it, or a hand-assembled
-/// install): the handoff then stays fully silent, exactly as it ran
-/// before the watcher existed.
-fn stage_sentinel_copy(install_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let source = install_dir.join(SENTINEL_EXE);
-    if !source.is_file() {
-        return None;
-    }
-    let copy = std::env::temp_dir().join(format!(
-        "{}{}.exe",
-        SENTINEL_TEMP_PREFIX,
-        std::process::id()
-    ));
-    std::fs::copy(&source, &copy).ok().map(|_| copy)
-}
-
-/// Spawn the staged watcher on the installer process. The CWD re-home
-/// matters for the same reason as the installer spawn's: the watcher
-/// outlives this app straight through the directory swap and must not
-/// pin the install directory as its working directory.
-fn spawn_sentinel(copy: &std::path::Path, installer_pid: u32, version: &str) -> Result<()> {
-    std::process::Command::new(copy)
-        .args(["--pid", &installer_pid.to_string(), "--version", version])
-        .current_dir(std::env::temp_dir())
-        .spawn()
-        .map_err(|e| anyhow!("spawn sentinel {}: {e}", copy.display()))?;
-    Ok(())
 }
 
 /// The download ladder for `version`: every reachable source, the ones whose
@@ -1068,7 +1010,9 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     // an installer parked on its own swap target spins shun's whole 30 s
     // lock-retry window and then degrades to the file-by-file in-place
     // merge. shun never relocates its own CWD (v0.6.28), so the handoff
-    // does it for the child.
+    // does it for the child. The install's VISIBILITY lives in the
+    // installer itself from the next shun build (the manifest's
+    // `silent-progress` window) — the running build only hands off.
     let install_dir = std::env::current_exe()
         .map_err(|e| anyhow!("resolve current exe: {e}"))?
         .parent()
@@ -1078,27 +1022,11 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     // exits before the command's promise settles.
     pass.begin_install()?;
     emit_phase(app, phase::INSTALL);
-    let installer = std::process::Command::new(&installer_path)
+    std::process::Command::new(&installer_path)
         .args(["--silent", &format!("--dir={}", install_dir.display())])
         .current_dir(&temp)
         .spawn()
         .map_err(|e| anyhow!("spawn installer {}: {e}", installer_path.display()))?;
-    let installer_pid = installer.id();
-    // The install stays automatic but stops being a black box: the
-    // watcher window parks on top of the screen for the installer's whole
-    // lifetime (see [`stage_sentinel_copy`]); when it cannot be staged or
-    // spawned the handoff falls back to the silent lane unchanged.
-    match stage_sentinel_copy(&install_dir) {
-        Some(copy) if spawn_sentinel(&copy, installer_pid, &version).is_ok() => {
-            tracing::info!(sentinel = %copy.display(), "update sentinel watching the installer");
-        },
-        _ => tracing::warn!("update sentinel unavailable — the install continues silently"),
-    }
-    // Dropping the Child never kills the process — it only held the pid
-    // the watcher needs. Held through the sentinel spawn on purpose: the
-    // open handle keeps the pid un-reusable, so the watcher's OpenProcess
-    // cannot race into an unrelated process.
-    drop(installer);
     // The last lines the running build writes before it exits itself —
     // when an update reports "nothing happened", this is the fork in the
     // trail: present here means the handoff succeeded.
@@ -1386,57 +1314,6 @@ mod tests {
         let retry = UpdateGuard::begin(&registry).unwrap();
         previous.cancel();
         assert!(retry.pass.check_cancelled().is_ok());
-    }
-
-    #[test]
-    fn sentinel_copy_stages_into_temp_with_pid_suffix() {
-        let install = temp_dir("sentinel-src");
-        std::fs::write(install.join(SENTINEL_EXE), b"sentinel-payload").unwrap();
-        let copy = stage_sentinel_copy(&install).expect("the exe beside the app stages");
-        let name = copy.file_name().unwrap().to_str().unwrap().to_string();
-        assert!(
-            name.starts_with(SENTINEL_TEMP_PREFIX) && name.ends_with(".exe"),
-            "pid-suffixed temp name: {name}"
-        );
-        assert_eq!(
-            std::fs::read(&copy).unwrap(),
-            b"sentinel-payload",
-            "the copy carries the payload bytes"
-        );
-        let _ = std::fs::remove_file(&copy);
-        let _ = std::fs::remove_dir_all(&install);
-    }
-
-    #[test]
-    fn sentinel_copy_falls_back_to_silent_when_exe_missing() {
-        let install = temp_dir("sentinel-none");
-        assert!(stage_sentinel_copy(&install).is_none());
-        let _ = std::fs::remove_dir_all(&install);
-    }
-
-    #[test]
-    fn sweep_takes_spent_sentinels_but_keeps_the_installer_artifact() {
-        let temp = temp_dir("sweep");
-        // A previous pass's spent watcher copy, the retained installer
-        // artifact (the stranded-recovery card re-runs it from temp), and
-        // a stale part of another version.
-        std::fs::write(temp.join(format!("{SENTINEL_TEMP_PREFIX}4242.exe")), b"x").unwrap();
-        let installer = temp.join("WoWSP-update-0.6.4-108.exe");
-        std::fs::write(&installer, b"installer").unwrap();
-        let part = temp.join("WoWSP-update-0.6.3-9.part");
-        std::fs::write(&part, b"part").unwrap();
-        let kept = temp.join("WoWSP-update-0.6.4-110.part");
-        std::fs::write(&kept, b"live").unwrap();
-        cleanup_part_files_at(&temp, Some(&kept));
-        assert!(
-            !temp
-                .join(format!("{SENTINEL_TEMP_PREFIX}4242.exe"))
-                .exists()
-        );
-        assert!(installer.exists(), "the installer artifact survives");
-        assert!(!part.exists(), "a foreign part is swept");
-        assert!(kept.exists(), "the pass's own part is kept");
-        let _ = std::fs::remove_dir_all(&temp);
     }
 
     #[test]
