@@ -190,10 +190,9 @@
 
   /* Head action pills (copy-shot / hide-nicknames / density) share one
      voice: a quiet neutral pill; the nicknames and density toggles flip
-     green while their mode is on. The read-only locate-status pill at the
-     row's end picks up its own state voices below. (The stats-source mode
-     tag keeps the same voice from its own sheet —
-     LiveStatsModeChip.scss.) */
+     green while their mode is on. The locate pill at the row's end picks
+     up its own state voices below. (The stats-source mode tag keeps the
+     same voice from its own sheet — LiveStatsModeChip.scss.) */
   &__shot-btn,
   &__mask-btn,
   &__density-btn {
@@ -238,9 +237,10 @@
     color: rgb(var(--color-success, 74 222 128));
   }
 
-  /* Read-only locate-status pill (was the clickable manual-locate button;
-     calibrating now lives in Settings → 游戏内显示校准): the same pill
-     voice as the head's status pills, non-interactive. */
+  /* Locate pill — the head's manual-locate entry point as well as its
+     detection status display: a button again (the #1204 read-only stretch
+     is over), opening Settings → 游戏内显示校准 glided onto the anchor
+     list. Same pill voice as the head's action pills. */
   &__locate-pill {
     display: inline-flex;
     align-items: center;
@@ -254,6 +254,21 @@
     font-weight: 600;
     line-height: 1.5;
     white-space: nowrap;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 1px solid rgb(var(--color-text) / 0.4);
+    }
+  }
+
+  /* Idle hover: warm the quiet pill up to the action pills' resting voice.
+     Scoped to --idle on purpose — a bare &__locate-pill:hover would
+     out-specify the voiced states' base rules and wash their green/amber
+     label text to neutral on hover (their own hover blocks re-own only
+     border and background). */
+  &__locate-pill--idle:hover {
+    border-color: rgb(var(--color-text) / 35%);
+    color: rgb(var(--color-text) / 75%);
   }
 
   /* An anchored (manually calibrated) or automatically located roster
@@ -264,6 +279,11 @@
     border-color: rgb(var(--color-success, 74 222 128) / 55%);
     background: rgb(var(--color-success, 74 222 128) / 16%);
     color: rgb(var(--color-success, 74 222 128));
+
+    &:hover {
+      border-color: rgb(var(--color-success, 74 222 128) / 80%);
+      background: rgb(var(--color-success, 74 222 128) / 24%);
+    }
   }
 
   /* A settling automatic Tab pass — the warning amber the head's other
@@ -272,6 +292,11 @@
     border-color: rgb(var(--color-warning, 251 191 36) / 55%);
     background: rgb(var(--color-warning, 251 191 36) / 16%);
     color: rgb(var(--color-warning, 251 191 36));
+
+    &:hover {
+      border-color: rgb(var(--color-warning, 251 191 36) / 80%);
+      background: rgb(var(--color-warning, 251 191 36) / 24%);
+    }
   }
 
   /* Roster scroller — the hikari container owns the scrollbar (auto-hiding

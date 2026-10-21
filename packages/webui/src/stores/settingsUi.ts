@@ -64,6 +64,13 @@ export const SETTINGS_SECTION_IDS: readonly SettingsSection[] = SETTINGS_GROUPS.
  *  open. */
 export const SETTINGS_ANCHOR_BAKED_MODELS = "baked-models";
 
+/** The overlayCalibration section's anchor list (游戏内显示校准's bottom
+ *  card — the per-client PvP/PvE Tab-anchor readouts): the live battle
+ *  panel's locate pill opens the section glided onto this card, so the
+ *  手动定位 surface is in view instead of the water-meter toggles above
+ *  it. */
+export const SETTINGS_ANCHOR_CALIBRATION_LIST = "calibration-list";
+
 /** Sections that make no sense on the phone app build: no local game
  *  install to pick (gamePath) and no tray or close button to configure a
  *  close behavior for. The PAIRING section shows on BOTH builds — a

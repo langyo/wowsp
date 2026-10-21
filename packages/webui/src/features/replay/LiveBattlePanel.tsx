@@ -75,6 +75,7 @@ import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
+import { SETTINGS_ANCHOR_CALIBRATION_LIST, useSettingsUiStore } from "@/stores/settingsUi";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -259,12 +260,14 @@ export default defineComponent({
 
     // Overlay detection state, streamed by the Rust Tab watcher as
     // transition-only `wowsp://overlay-status` events. Rendered by the
-    // read-only locate pill in the panel's head (right corner) — a status
-    // display, not an entry point; calibrating the anchor happens in
-    // Settings → 游戏内显示校准. `null` = nothing received yet → the pill
-    // reads plain "manual locate" in its subdued idle voice (it is
-    // permanent — idle stretches between battles must not look broken).
+    // locate pill in the panel's head (right corner): a status display
+    // that doubles as the manual-locate entry point — clicking it opens
+    // Settings → 游戏内显示校准 glided onto the anchor list. `null` =
+    // nothing received yet → the pill reads plain "manual locate" in its
+    // subdued idle voice (it is permanent — idle stretches between
+    // battles must not look broken).
     const overlayStatus = ref<OverlayStatus | null>(null);
+    const settingsUi = useSettingsUiStore();
     let unlistenStatus: (() => void) | null = null;
     // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
     // strip-fingerprint matching) — feed the predicted order below so the
@@ -557,10 +560,18 @@ export default defineComponent({
         return { cls: "searching", spin: true, text: t("replay.live.searching") };
       }
       // Nothing received yet, or idle between battles: the subdued resting
-      // voice (the pill is permanent — the calibration entry point it used
-      // to open now lives in Settings → 游戏内显示校准).
+      // voice (the pill is permanent — idle stretches between battles must
+      // not look broken, and the entry point stays reachable there).
       return { cls: "idle", spin: false, text: t("replay.live.manualLocate") };
     });
+
+    // The pill's one action: raise the settings surface on the 游戏内显示
+    // 校准 section, glided onto the anchor list (the 手动定位 readouts the
+    // pill reports about). Same store call the pack-update toast uses for
+    // its glide, so the modal/page host split comes for free.
+    function openLocateSettings() {
+      settingsUi.show("overlayCalibration", SETTINGS_ANCHOR_CALIBRATION_LIST);
+    }
 
     // ── Telemetry-source grade (the head's state pill) ───────────────────
     // Staged per the roster mode, the plugin's presence and the battle's
@@ -1537,22 +1548,27 @@ export default defineComponent({
               )}
               {t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}`)}
             </span>
-            {/* Read-only locate-status pill — one widget, four voices:
-                idle reads subdued ("manual locate" resting), searching
-                carries the automatic Tab pass's settling spinner, detected
-                the located row count, and a live manual/calibrated anchor
-                reads green. It replaced the old clickable manual-locate
-                button (which absorbed a separate status pill in its day):
-                calibrating the anchor now lives in Settings → 游戏内显示
-                校准, so this surface only REPORTS the detection state. The
-                pill is permanent — idle stretches between battles (and
-                battles where Tab was never held) leave no overlay status at
-                all, and dropping the widget there would look flaky. */}
-            <span
+            {/* Locate pill — one widget, four voices, and the manual-locate
+                entry point: idle reads subdued ("manual locate" resting),
+                searching carries the automatic Tab pass's settling spinner,
+                detected the located row count, and a live manual/calibrated
+                anchor reads green. It spent a while as a read-only status
+                pill (#1204 moved calibrating into Settings → 游戏内显示校
+                准); the click is back as a deep link into exactly that
+                surface — it opens the section glided onto the anchor list,
+                so the 手动定位 entries are in view without hunting for
+                them. The pill is permanent — idle stretches between battles
+                (and battles where Tab was never held) leave no overlay
+                status at all, and dropping the widget there would look
+                flaky. */}
+            <button
+              type="button"
               class={[
                 "live-battle__locate-pill",
                 `live-battle__locate-pill--${locateState.value.cls}`,
               ]}
+              data-hint={t("replay.live.locateHint")}
+              onClick={openLocateSettings}
             >
               {locateState.value.spin ? (
                 <HkSpinner size="xs" tone="current" />
@@ -1560,7 +1576,7 @@ export default defineComponent({
                 <LocateFixed size={13} />
               )}
               {locateState.value.text}
-            </span>
+            </button>
           </div>
           {/* Operations (行动) have no enemy list — the enemy side is all
               scripted spawns — so the roster renders as one centered

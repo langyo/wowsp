@@ -237,7 +237,7 @@
     "refreshStatsHint": "Clears the cache and re-requests every roster stat from scratch; loaded data stays on screen until the request succeeds",
     "statsSourceTitle": "Stats filter",
     "manualLocate": "Manual locate",
-    "manualClearHint": "Click to clear the manual anchor and return to automatic detection",
+    "locateHint": "Opens Settings → In-game overlay calibration, scrolled to the manual-locate anchor list",
     "manualRows": "Manually located · {n} rows",
     "hideNicks": "Hide nicknames",
     "showNicks": "Show nicknames",
