@@ -9,7 +9,12 @@ import {
   type PropType,
 } from "vue";
 
-import { HkScrollContainer, type HkSettingsSection } from "@celestia-island/hikari";
+import {
+  HkScrollContainer,
+  type HkSettingsSection,
+} from "@celestia-island/hikari";
+
+import { useSelectionEdgeHint } from "@/composables/useSelectionEdgeHint";
 
 // The rail+pane anatomy and its stylesheet are hikari's settings-window
 // grammar; the grouped rail is a wowsp-local extension (the upstream
@@ -58,10 +63,15 @@ export interface SettingsRailGroup {
  *
  * Both scrollers are hikari HkScrollContainers (the app-wide overlay
  * scrollbar contract): the hosts keep the shell geometry (rail width,
- * pane flex, the modal host's flush-edge trick), the viewports scroll —
+ * pane flex, the modal host's flush-edge trick), the viewports scroll –
  * native bars hidden, the auto-hiding overlay chrome drawn by the
  * library. The rail+pane BEM classes stay on the hosts so every shell
  * selector (here, the modal's and the page's) keeps working unchanged.
+ *
+ * The rail carries a selection edge hint (useSelectionEdgeHint): with a
+ * long grouped section list, an active section scrolled out of the
+ * rail's band lights a primary-color gradient at the edge it lies
+ * beyond, so "where did the selection go" never hides behind the fold.
  */
 /** Consumed slice of HkScrollContainer's exposed component ref (the ref
  *  yields the exposed handle, not an element — see the scrollers below). */
@@ -112,7 +122,9 @@ export const SettingsShell = defineComponent({
       { immediate: true },
     );
     const active = () =>
-      entries().some((s) => s.key === internal.value) ? internal.value : firstEnabled();
+      entries().some((s) => s.key === internal.value)
+        ? internal.value
+        : firstEnabled();
 
     const railRef = ref<ScrollHandle | null>(null);
     const paneRef = ref<ScrollHandle | null>(null);
@@ -133,22 +145,30 @@ export const SettingsShell = defineComponent({
     function centerActiveRailItem() {
       void nextTick(() => {
         const vp = railRef.value?.getScrollElement();
-        const el = vp?.querySelector<HTMLElement>(".hk-settings__rail-item.is-active");
+        const el = vp?.querySelector<HTMLElement>(
+          ".hk-settings__rail-item.is-active",
+        );
         if (!vp || !el) return;
         const vpRect = vp.getBoundingClientRect();
         const elRect = el.getBoundingClientRect();
         const scaleX = vp.offsetWidth > 0 ? vpRect.width / vp.offsetWidth : 1;
-        const scaleY = vp.offsetHeight > 0 ? vpRect.height / vp.offsetHeight : 1;
-        const clamp = (v: number, max: number) => Math.min(Math.max(v, 0), Math.max(max, 0));
+        const scaleY =
+          vp.offsetHeight > 0 ? vpRect.height / vp.offsetHeight : 1;
+        const clamp = (v: number, max: number) =>
+          Math.min(Math.max(v, 0), Math.max(max, 0));
         vp.scrollTo({
           top: clamp(
             vp.scrollTop +
-              (elRect.top - (vpRect.top + (vpRect.height - elRect.height) / 2)) / scaleY,
+              (elRect.top -
+                (vpRect.top + (vpRect.height - elRect.height) / 2)) /
+                scaleY,
             vp.scrollHeight - vp.clientHeight,
           ),
           left: clamp(
             vp.scrollLeft +
-              (elRect.left - (vpRect.left + (vpRect.width - elRect.width) / 2)) / scaleX,
+              (elRect.left -
+                (vpRect.left + (vpRect.width - elRect.width) / 2)) /
+                scaleX,
             vp.scrollWidth - vp.clientWidth,
           ),
         });
@@ -160,9 +180,15 @@ export const SettingsShell = defineComponent({
     /** The card currently rendered in the pane that carries
      *  `data-settings-anchor` (dataset comparison, so anchor values stay
      *  free-form — no selector escaping to get right). */
-    function findAnchorCard(vp: HTMLElement | undefined, anchor: string): HTMLElement | null {
+    function findAnchorCard(
+      vp: HTMLElement | undefined,
+      anchor: string,
+    ): HTMLElement | null {
       const cards = vp?.querySelectorAll<HTMLElement>("[data-settings-anchor]");
-      return cards ? (Array.from(cards).find((c) => c.dataset.settingsAnchor === anchor) ?? null) : null;
+      return cards
+        ? (Array.from(cards).find((c) => c.dataset.settingsAnchor === anchor) ??
+            null)
+        : null;
     }
 
     /** Glide onto the anchor card with native scrollIntoView, because
@@ -294,6 +320,17 @@ export const SettingsShell = defineComponent({
     );
     onBeforeUnmount(stopGlide);
 
+    // Selection edge hint on the rail: an active section scrolled out of
+    // the rail's visible band lights a primary gradient at the offending
+    // edge (the state binds onto the container ROOT through fallthrough
+    // attrs — the positioned non-scrolling box the gradient paints on).
+    // Senses through the same railRef centerActiveRailItem centers with.
+    // App-local twin of hikari's upstream selectionHint prop; retires
+    // when a published hikari ships it (see the composable).
+    const railBeyond = useSelectionEdgeHint(
+      () => railRef.value?.getScrollElement() ?? null,
+    );
+
     function pick(key: string) {
       const entry = entries().find((s) => s.key === key);
       if (!entry || entry.disabled) return;
@@ -303,7 +340,13 @@ export const SettingsShell = defineComponent({
 
     return () => (
       <div class="hk-settings">
-        <HkScrollContainer as="nav" class="hk-settings__rail" aria-label={props.navLabel} ref={railRef}>
+        <HkScrollContainer
+          as="nav"
+          class="hk-settings__rail"
+          ref={railRef}
+          data-selection-beyond={railBeyond.value}
+          aria-label={props.navLabel}
+        >
           {props.groups.map((group) => (
             <Fragment key={group.key}>
               <div class="hk-settings__rail-heading">{group.label}</div>
