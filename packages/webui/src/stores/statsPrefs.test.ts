@@ -46,10 +46,11 @@ describe("loadStatsPrefs", () => {
     expect(loadStatsPrefs()).toEqual(DEFAULT_STATS_PREFS);
     // The PR rating and the four shipped stat columns (global winrate /
     // PR / battles / avg damage) ship on; the fun wording, seals and the
-    // tier-weighted team winrate ship on. Team averages ship off (dense
-    // already). Both roster-density overrides ship off: full cards on the
-    // live panel and compact rows post-battle are the defaults. The
-    // PR-tier row wash ships on.
+    // tier-weighted team winrate ship on. The team-averages line ships
+    // off (dense already); the consumable-intel line above it has no
+    // switch at all. Both roster-density overrides ship off: full cards
+    // on the live panel and compact rows post-battle are the defaults.
+    // The PR-tier row wash ships on.
     expect(DEFAULT_STATS_PREFS).toEqual({
       prEnabled: true,
       prAlgo: "winrate",
@@ -59,7 +60,7 @@ describe("loadStatsPrefs", () => {
       liveRosterCompact: false,
       liveRosterPrTint: true,
       postbattleRosterFull: false,
-      teamIntelEnabled: true,
+      teamAvgEnabled: false,
       sealDisabled: {},
       overlayColumns: [
         { scope: "global", metric: "winrate" },
@@ -68,8 +69,6 @@ describe("loadStatsPrefs", () => {
         { scope: "global", metric: "damage" },
       ],
       overlayBattleScope: "follow",
-      overlayIntel: { radar: true, hydro: true, smoke: true },
-      overlayTeamAvg: { winrate: false, pr: false, damage: false },
     });
   });
 
@@ -216,12 +215,10 @@ describe("loadStatsPrefs", () => {
     expect(prefs.sealsEnabled).toBe(true);
     expect(prefs.localizedTiers).toBe(true);
     expect(prefs.weightedTeamWr).toBe(true);
-    expect(prefs.teamIntelEnabled).toBe(true);
+    expect(prefs.teamAvgEnabled).toBe(false);
     expect(prefs.sealDisabled).toEqual({});
     expect(prefs.overlayColumns).toEqual(DEFAULT_STATS_PREFS.overlayColumns);
     expect(prefs.overlayBattleScope).toBe("follow");
-    expect(prefs.overlayIntel).toEqual(DEFAULT_STATS_PREFS.overlayIntel);
-    expect(prefs.overlayTeamAvg).toEqual(DEFAULT_STATS_PREFS.overlayTeamAvg);
   });
 
   it("keeps only known boolean keys in sealDisabled", () => {
@@ -234,21 +231,47 @@ describe("loadStatsPrefs", () => {
     expect(loadStatsPrefs().sealDisabled).toEqual({ rat: true, air: false });
   });
 
-  it("keeps only known boolean keys in the toggle objects", () => {
+  it("migrates the retired per-item team-average toggles onto the single switch", () => {
+    // A pre-`teamAvgEnabled` blob carried `overlayTeamAvg` as three
+    // booleans: ANY of them on means the user had averages showing, and
+    // keeps them on under the single switch.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ overlayTeamAvg: { pr: true } }),
+    );
+    expect(loadStatsPrefs().teamAvgEnabled).toBe(true);
+    // The normalized rewrite drops the legacy key so it never comes back.
+    expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).not.toContain(
+      "overlayTeamAvg",
+    );
+
+    // All-false toggles stay off.
     localStorage.setItem(
       STATS_PREFS_STORAGE_KEY,
       JSON.stringify({
-        overlayIntel: { radar: false, smoke: true, sonar: true },
-        overlayTeamAvg: { pr: true, damage: true, karma: true },
+        overlayTeamAvg: { winrate: false, pr: false, damage: false },
       }),
     );
-    const prefs = loadStatsPrefs();
-    expect(prefs.overlayIntel).toEqual({ radar: false, hydro: true, smoke: true });
-    expect(prefs.overlayTeamAvg).toEqual({
-      ...DEFAULT_STATS_PREFS.overlayTeamAvg,
-      pr: true,
-      damage: true,
-    });
+    expect(loadStatsPrefs().teamAvgEnabled).toBe(false);
+
+    // Junk keys are not on-toggles — only the three known booleans count.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ overlayTeamAvg: { karma: true } }),
+    );
+    expect(loadStatsPrefs().teamAvgEnabled).toBe(false);
+
+    // An explicit boolean always wins over the legacy seed.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ teamAvgEnabled: false, overlayTeamAvg: { pr: true } }),
+    );
+    expect(loadStatsPrefs().teamAvgEnabled).toBe(false);
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ teamAvgEnabled: true, overlayTeamAvg: { pr: false } }),
+    );
+    expect(loadStatsPrefs().teamAvgEnabled).toBe(true);
   });
 
   it("rejects an unknown algorithm value", () => {
@@ -330,15 +353,13 @@ describe("statsPrefs store", () => {
     store.setLiveRosterCompact(true);
     store.setLiveRosterPrTint(false);
     store.setPostbattleRosterFull(true);
-    store.setTeamIntelEnabled(false);
+    store.setTeamAvgEnabled(true);
     store.setOverlayColumns([
       { scope: "solo", metric: "winrate" },
       { scope: "ship", metric: "pr" },
       { scope: "class", metric: "damage" },
     ]);
     store.setOverlayBattleScope("ranked");
-    store.setOverlayIntel("radar", false);
-    store.setOverlayTeamAvg("pr", true);
 
     const raw = localStorage.getItem(STATS_PREFS_STORAGE_KEY);
     expect(raw).toBeTruthy();
@@ -351,7 +372,7 @@ describe("statsPrefs store", () => {
       liveRosterCompact: true,
       liveRosterPrTint: false,
       postbattleRosterFull: true,
-      teamIntelEnabled: false,
+      teamAvgEnabled: true,
       sealDisabled: {},
       overlayColumns: [
         { scope: "solo", metric: "winrate" },
@@ -359,8 +380,6 @@ describe("statsPrefs store", () => {
         { scope: "class", metric: "damage" },
       ],
       overlayBattleScope: "ranked",
-      overlayIntel: { radar: false, hydro: true, smoke: true },
-      overlayTeamAvg: { winrate: false, pr: true, damage: false },
     };
     expect(JSON.parse(raw!)).toEqual(expected);
     // Same values read back through the pure loader (the round trip).

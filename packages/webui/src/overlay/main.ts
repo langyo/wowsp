@@ -43,10 +43,13 @@ import {
 import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 // Team aggregates for the per-side summary cards (same helper the live
 // panel's column titles use).
-import { aggregateTeamStats } from "@/utils/teamAggregate";
+import { aggregateTeamStats, type TeamAggregate } from "@/utils/teamAggregate";
 // The per-side row list (believed Tab order, [alive] ++ [sunk] by the
 // trusted set) — see rowList.ts.
 import { splitRowsBySunk, type RosterRow } from "./rowList";
+// The team-averages line's comparative tone verdict (hi/lo/none) — see
+// teamAvgTone.ts.
+import { teamAvgTone } from "./teamAvgTone";
 // Post-layout passes keeping the row columns aligned and the rows inside
 // the overlay window — a row wider than the reserved side pad would
 // otherwise clip flat at the window edge.
@@ -134,7 +137,8 @@ interface OverlayMessages {
   intelHydro: string;
   intelSmoke: string;
   intelRange: string;
-  /** Team-average line labels (the per-side summary card's third line). */
+  /** Team-average line labels (the per-side summary card's averages
+   *  line — its second line, or the first on the story layout). */
   avgWinrate: string;
   avgPr: string;
   avgDmg: string;
@@ -842,123 +846,147 @@ function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): str
   return side === "ally" ? seals + label + cell : cell + label + seals;
 }
 
-/** One side's summary card, directly below that side's column. Line 1
- *  carries the side label, the radar estimate (when its item toggle is on)
- *  and the LONGEST radar range (the distance a player must respect); line
- *  2 stacks hydro and smoke (each behind its own toggle); line 3 carries
- *  the optional team averages (mean winrate — tier-weighted per the stats
- *  prefs, the same aggregate the live panel's column titles use — mean PR
- *  and mean avg damage). Item toggles can switch any line's contents off;
- *  when neither the intel items nor the averages survive, the card itself
- *  is gone (null) — the side label rides whichever line renders first.
- *  On the story layout (storyLayout — single-team, co-op excluded) the
- *  consumable-intel half is skipped wholesale: radar/hydro/smoke counting
- *  is a versus-human aid, and a script-driven roster's numbers are aux
- *  noise. The averages half stays — it grades the human roster and rides
- *  its own prefs switches.
+/** One side's team aggregate + the loading state around it (see
+ *  teamAggregateFor) — what both summary cards consume for the averages
+ *  line, their OWN side's and (for the comparative tone) the opposing
+ *  side's alike. */
+interface SideTeamStats {
+  agg: TeamAggregate;
+  loading: boolean;
+}
+
+/** One side's team averages + the loading state around them. Called once
+ *  per side in the render block, BEFORE either card renders, so each card
+ *  can color its figures against the other's (see teamSummaryCard). The
+ *  aggregate grades the ACCOUNT careers (the global column scope) — the
+ *  per-column scoped numbers ride the rows and the live panel's per-column
+ *  headers instead. The loading flag: any human on the side still owes the
+ *  batch (or, ship-scoped, its per-ship list). A mean over the rows landed
+ *  so far would read as a verdict and then shift as the rest arrives, so
+ *  while the loading holds every average renders the chasing dots; a side
+ *  whose lookups are disabled or budget-spent (statPending false
+ *  everywhere) settles to the partial mean with the honest dashes, exactly
+ *  as before. */
+function teamAggregateFor(vehicles: Vehicle[]): SideTeamStats {
+  const loading = vehicles.some((v) => {
+    if (AI_NAME.test(v.name)) return false;
+    const st = stats.get(cacheKey(v.name));
+    if (!st) return statPending(v.name);
+    return SHIP_SCOPE_ON && !st.hidden && st.accountId != null && st.ships === undefined;
+  });
+  const agg = aggregateTeamStats(
+    vehicles
+      .filter((v) => !AI_NAME.test(v.name))
+      .map((v) => {
+        const st = stats.get(cacheKey(v.name));
+        const v2 = st && !st.hidden ? rosterStatView(st, statsMode) : null;
+        return {
+          winrate: v2?.winrate ?? null,
+          pr: v2?.pr ?? null,
+          battles: v2?.battles ?? null,
+          damage: v2?.avgDamage ?? null,
+          tier: shipTierOf(v.shipId),
+        };
+      }),
+    PREFS.weightedTeamWr,
+  );
+  return { agg, loading };
+}
+
+/** One side's summary card, directly below that side's column — two lines.
+ *  Line 1 carries the side label and the consumable intel (radar / hydro /
+ *  smoke estimate counts, then the LONGEST radar range — the distance a
+ *  player must respect — joined into the same separator chain), one
+ *  unconditional line with no settings switch. Line 2 carries the optional
+ *  team averages (mean winrate — tier-weighted per the stats prefs, the
+ *  same aggregate the live panel's column titles use — mean PR gated by
+ *  the PR master, and mean avg damage) behind the single `teamAvgEnabled`
+ *  switch, everything on it unconditional. When the averages render they
+ *  color COMPARATIVELY: per metric the higher side's settled figure goes
+ *  green and the lower red (the winrate-tier pair) — equal figures,
+ *  missing ones ("—"), a missing opposite card (`other` null) or a
+ *  still-loading side on EITHER end keep the warm accent: the other
+ *  side's mean owed rows would shift as they land, and a verdict painted
+ *  off a partial aggregate would flip with them (see teamAvgTone).
+ *  On the story layout (storyLayout — single-team, co-op excluded) line 1
+ *  is skipped wholesale: radar/hydro/smoke counting is a versus-human aid,
+ *  and a script-driven roster's numbers are aux noise. The averages half
+ *  stays — it grades the human roster — and the side label then rides it;
+ *  with the averages off too, the card is gone (null).
  *  Styled and anchored as a chip of the same side, so chipFit's clamp pass
  *  covers this card exactly like the row chips; `topCss` is the desired
  *  CSS-px TOP edge — `.overlay-chip--intel` opts out of the base chip's
  *  centering transform, so a tall card grows downward from it instead of
- *  straddling the anchor. */
+ *  straddling the anchor. `own` is this side's aggregate + loading state
+ *  (see teamAggregateFor), `other` the opposing side's — null when the
+ *  opposing card will not render. */
 function teamSummaryCard(
   side: "ally" | "enemy",
   vehicles: Vehicle[],
   topCss: number,
   fontSize: number,
   storyLayout: boolean,
+  own: SideTeamStats,
+  other: SideTeamStats | null,
 ): HTMLDivElement | null {
   const sideLabel = `<span class="overlay-intel-team">${localized(
     side === "ally" ? "intelAlly" : "intelEnemy",
   )}</span>`;
   const lines: string[] = [];
-  const intel = teamIntelFor(vehicles.map((v) => v.shipId));
-  const intelItem = (label: string, c: TeamIntelCount) =>
-    `<span class="overlay-intel-k">${label}</span><b>${formatIntelCount(c)}</b>`;
-  if (!storyLayout && PREFS.teamIntel && (PREFS.intel.radar || PREFS.intel.hydro || PREFS.intel.smoke)) {
+  if (!storyLayout) {
+    const intel = teamIntelFor(vehicles.map((v) => v.shipId));
+    const intelItem = (label: string, c: TeamIntelCount) =>
+      `<span class="overlay-intel-k">${label}</span><b>${formatIntelCount(c)}</b>`;
+    // One consumables line, every item unconditional: label · radar ·
+    // hydro · smoke, and the longest radar range joined into the same
+    // separator chain when the side fields a radar at all.
     const range =
-      PREFS.intel.radar && intel.radarMaxM != null && intel.radarMaxM > 0
+      intel.radarMaxM != null && intel.radarMaxM > 0
         ? `<span class="overlay-intel-range">${localized("intelRange")} <span class="overlay-intel-num">${formatIntelKm(intel.radarMaxM)}km</span></span>`
         : "";
-    const line1 =
-      `<span class="overlay-intel-line">${sideLabel}` +
-      (PREFS.intel.radar ? intelItem(localized("intelRadar"), intel.radar) + range : "") +
-      `</span>`;
-    lines.push(line1);
-    const line2Items = [
-      PREFS.intel.hydro ? intelItem(localized("intelHydro"), intel.hydro) : "",
-      PREFS.intel.smoke ? intelItem(localized("intelSmoke"), intel.smoke) : "",
-    ].filter(Boolean);
-    if (line2Items.length > 0) {
-      lines.push(
-        `<span class="overlay-intel-line">${line2Items.join(`<span class="sep">·</span>`)}</span>`,
-      );
-    }
-  }
-  // The averages' loading state: any human on the side still owes the
-  // batch (or, ship-scoped, its per-ship list). A mean over the rows
-  // landed so far would read as a verdict and then shift as the rest
-  // arrives, so while the loading holds every enabled average renders the
-  // chasing dots; a side whose lookups are disabled or budget-spent
-  // (statPending false everywhere) keeps the partial mean with the honest
-  // dashes, exactly as before.
-  const avgLoading = vehicles.some((v) => {
-    if (AI_NAME.test(v.name)) return false;
-    const st = stats.get(cacheKey(v.name));
-    if (!st) return statPending(v.name);
-    return SHIP_SCOPE_ON && !st.hidden && st.accountId != null && st.ships === undefined;
-  });
-  const agg =
-    PREFS.teamAvg.winrate || PREFS.teamAvg.pr || PREFS.teamAvg.damage
-      ? aggregateTeamStats(
-          vehicles
-            .filter((v) => !AI_NAME.test(v.name))
-            .map((v) => {
-              const st = stats.get(cacheKey(v.name));
-              // The team averages grade the ACCOUNT careers (the global
-              // column scope) — the per-column scoped numbers ride the
-              // rows and the live panel's per-column headers instead.
-              const v2 =
-                st && !st.hidden
-                  ? rosterStatView(st, statsMode)
-                  : null;
-              return {
-                winrate: v2?.winrate ?? null,
-                pr: v2?.pr ?? null,
-                battles: v2?.battles ?? null,
-                damage: v2?.avgDamage ?? null,
-                tier: shipTierOf(v.shipId),
-              };
-            }),
-          PREFS.weightedTeamWr,
-        )
-      : null;
-  if (agg != null) {
-    const avgItem = (label: string, value: string) =>
-      `<span class="overlay-intel-k">${label}</span><b>${value}</b>`;
-    // While the side's stats load, every enabled average shows the
-    // chasing dots (see avgLoading above); the branches below are the
-    // settled faces.
-    const value = (settled: string) => (avgLoading ? loadingDots() : settled);
     const items = [
-      PREFS.teamAvg.winrate
-        ? avgItem(
-            localized("avgWinrate"),
-            value(agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"),
-          )
-        : "",
-      PREFS.teamAvg.pr && PREFS.prOn
+      sideLabel,
+      intelItem(localized("intelRadar"), intel.radar),
+      intelItem(localized("intelHydro"), intel.hydro),
+      intelItem(localized("intelSmoke"), intel.smoke),
+      ...(range === "" ? [] : [range]),
+    ];
+    lines.push(
+      `<span class="overlay-intel-line">${items.join(`<span class="sep">·</span>`)}</span>`,
+    );
+  }
+  if (PREFS.teamAvgEnabled) {
+    // Per-metric comparative tone against the opposite card's settled
+    // figure: mine higher → hi (green), mine lower → lo (red); equal,
+    // either side missing, or EITHER side still loading → no tone (the
+    // warm accent stands; see teamAvgTone).
+    const tone = (mine: number | null, theirs: number | null): string =>
+      teamAvgTone(mine, theirs, own.loading || (other?.loading ?? false));
+    const avgItem = (label: string, value: string, toneCls = "") =>
+      `<span class="overlay-intel-k">${label}</span><b${
+        toneCls === "" ? "" : ` class="${toneCls}"`
+      }>${value}</b>`;
+    // While the side's stats load, every average shows the chasing dots
+    // (see teamAggregateFor); the branches below are the settled faces.
+    const value = (settled: string) => (own.loading ? loadingDots() : settled);
+    const items = [
+      avgItem(
+        localized("avgWinrate"),
+        value(own.agg.winrate != null ? `${own.agg.winrate.toFixed(1)}%` : "—"),
+        tone(own.agg.winrate, other?.agg.winrate ?? null),
+      ),
+      PREFS.prOn
         ? avgItem(
             localized("avgPr"),
-            value(agg.avgPr != null ? `${Math.round(agg.avgPr)}` : "—"),
+            value(own.agg.avgPr != null ? `${Math.round(own.agg.avgPr)}` : "—"),
+            tone(own.agg.avgPr, other?.agg.avgPr ?? null),
           )
         : "",
-      PREFS.teamAvg.damage
-        ? avgItem(
-            localized("avgDmg"),
-            value(agg.avgDamage != null ? fmtDamage(agg.avgDamage) : "—"),
-          )
-        : "",
+      avgItem(
+        localized("avgDmg"),
+        value(own.agg.avgDamage != null ? fmtDamage(own.agg.avgDamage) : "—"),
+        tone(own.agg.avgDamage, other?.agg.avgDamage ?? null),
+      ),
     ].filter(Boolean);
     if (items.length > 0) {
       const label = lines.length === 0 ? sideLabel : "";
@@ -1365,22 +1393,28 @@ function render() {
   alignStatColumns(root);
 
   // Two-sided summary cards — each side's consumable intel (radar/hydro/
-  // smoke estimates plus its longest radar range) and/or team averages
-  // (mean winrate / PR / avg damage), one card directly BELOW its own
-  // column (ally card under the allies, enemy card under the enemies) in
-  // the empty band the game leaves under the table, aligned to the
-  // column's outer edge and growing inward. The card is TOP-anchored a
+  // smoke estimates plus its longest radar range, ONE unconditional line)
+  // and — behind the single teamAvgEnabled switch — the team averages
+  // (mean winrate / PR / avg damage, colored comparatively: per metric the
+  // higher side's figure green, the lower red), one card directly BELOW
+  // its own column (ally card under the allies, enemy card under the
+  // enemies) in the empty band the game leaves under the table, aligned to
+  // the column's outer edge and growing inward. The card is TOP-anchored a
   // full row pitch under the last row's center: that clears the table's
   // bottom frame whatever the card's line count (center-anchoring let a
-  // three-line card ride back up onto the frame). Match-start capability
+  // multi-line card ride back up onto the frame). Match-start capability
   // BY DESIGN: the intel numbers do not decrement as ships sink — the
   // mid-battle row→ship attribution is inferred, and silently
   // miscounting radars would be worse than a static "what each team
-  // brought" summary. Every item (and both halves wholesale) is
-  // switchable in settings; a side whose card renders nothing is simply
-  // absent. Operations (行动) render no enemy list — the ally card alone.
-  // On the story layout (storyLayout) the ally card carries the averages
-  // only — the consumable-intel half is aux noise on a script-driven
+  // brought" summary. Both sides' aggregates are computed BEFORE either
+  // card renders, and each card receives the opposing side's aggregate +
+  // loading state (or null when that card will not render) so its averages
+  // can color against the other side's — with the loading flag riding
+  // along so a side still owing rows suppresses the verdict on BOTH cards
+  // until it settles (see teamAvgTone). Operations (行动) render no enemy
+  // list — the ally card alone, with nothing to compare against. On the
+  // story layout (storyLayout) the ally card carries the averages only —
+  // the consumable-intel half is aux noise on a script-driven
   // story/operation roster — and the enemy card has no column to hang
   // under anyway (no enemy rows).
   {
@@ -1400,7 +1434,12 @@ function render() {
         )}px`;
       }
     };
-    if (allyBlock.length > 0 && allies.length > 0) {
+    const allyCardRenders = allyBlock.length > 0 && allies.length > 0;
+    const enemyCardRenders =
+      !operation && !singleTable && enemies.length > 0 && enemyBlock.length > 0;
+    const allyStats = teamAggregateFor(allies);
+    const enemyStats = teamAggregateFor(enemies);
+    if (allyCardRenders) {
       const el = teamSummaryCard(
         "ally",
         allies,
@@ -1409,6 +1448,8 @@ function render() {
         allyBlock[allyBlock.length - 1] / dpr + pitch,
         intelFontSize,
         storyLayout,
+        allyStats,
+        enemyCardRenders ? enemyStats : null,
       );
       if (el) {
         el.style.left = `${tableLeft + gap}px`;
@@ -1416,7 +1457,7 @@ function render() {
         clampVertically(el);
       }
     }
-    if (!operation && !singleTable && enemies.length > 0 && enemyBlock.length > 0) {
+    if (enemyCardRenders) {
       const el = teamSummaryCard(
         "enemy",
         enemies,
@@ -1424,6 +1465,8 @@ function render() {
         enemyBlock[enemyBlock.length - 1] / dpr + pitch,
         intelFontSize,
         storyLayout,
+        enemyStats,
+        allyCardRenders ? allyStats : null,
       );
       if (el) {
         el.style.right = `${Math.max(0, overlayW - tableRight + gap)}px`;
