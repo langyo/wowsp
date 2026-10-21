@@ -148,6 +148,22 @@ pub fn run() {
         // Default-browser hand-off for http(s) URLs (open_external) —
         // mobile-supported, replaces the Windows-only ShellExecuteW path.
         .plugin(tauri_plugin_opener::init())
+        // Clipboard reads (the manual-locate picker's paste-image button
+        // rides `navigator.clipboard.read()`) otherwise fall into WebView2's
+        // default permission flow: the Edge "let this site see your
+        // clipboard?" flyout pops up AND the very first read rejects, which
+        // the picker surfaces as a load-failed toast — an awkward one-two
+        // for a paste the user just deliberately clicked. Clipboard READ is
+        // the only permission the webui ever requests and it only ever
+        // fires from that button, so grant it up front on every window
+        // (config-declared main/tray included); anything else keeps the
+        // platform's default flow.
+        .on_permission_request(|_webview, kind| match kind {
+            tauri::webview::PermissionKind::ClipboardRead => {
+                tauri::webview::PermissionResponse::Allow
+            },
+            _ => tauri::webview::PermissionResponse::Default,
+        })
         // Remote ship portraits ride the proxy-aware, disk-cached `media`
         // scheme instead of the webview hitting the WG CDN directly (see
         // commands::media + webui utils/media.ts).

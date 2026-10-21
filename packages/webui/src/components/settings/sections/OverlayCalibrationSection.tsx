@@ -1,14 +1,20 @@
 /** Overlay calibration settings section (游戏内显示校准): the in-game
  *  water meter's card leads (view mode / roster attribution / display
  *  content — see OverlaySection), then the persistent per-client
- *  Tab-anchor calibrations the overlay detector stores. One card
- *  per client install — client key, kind badge, last-updated stamp — with
- *  its independent PvP / PvE entries (table rect, row count, team split,
- *  window identity, state badges). Each entry's edit button reopens the
- *  shared manual-locate picker in calibration mode (see ManualLocateOverlay)
- *  against any reference image; the submitted box rescales onto the STORED
- *  entry, so editing never depends on the client currently running. */
-import { defineComponent, onMounted, ref, type PropType } from "vue";
+ *  Tab-anchor calibrations the overlay detector stores. One card per
+ *  REGISTERED client — the client selector's own anatomy (platform badge,
+ *  localized name, realm tag, twin-disambiguating path tail) plus a
+ *  last-updated stamp — with its independent PvP / PvE entries as labeled
+ *  readouts (table rect, rows, teams, window identity) behind state badges
+ *  and a right-aligned icon-only edit button. Calibration files whose
+ *  install left the registry keep trailing cards so existing data stays
+ *  visible and editable. An entry nobody measured yet is STILL editable
+ *  (提前编辑): the submit creates it from the drawing (see
+ *  set_calibration_anchor). Editing reopens the shared manual-locate
+ *  picker in calibration mode (see ManualLocateOverlay) against any
+ *  reference image; the submitted box rescales onto the STORED entry, so
+ *  editing never depends on the client currently running. */
+import { computed, defineComponent, onMounted, ref, watch, type PropType } from "vue";
 import { RefreshCw, SquarePen } from "@lucide/vue";
 import {
   HkButton,
@@ -19,23 +25,41 @@ import {
   useToast,
 } from "@celestia-island/hikari";
 
-import { api, type CalibrationClientInfo, type CalibrationEntryInfo } from "@/api";
+import {
+  api,
+  type CalibrationClientInfo,
+  type CalibrationEntryInfo,
+  type GameInstallKind,
+} from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { useConfigStore } from "@/stores/config";
 import { useManualLocateStore } from "@/stores/manualLocate";
+import PlatformIcon from "@/components/base/PlatformIcon";
 import OverlaySection from "@/components/settings/sections/OverlaySection";
+import { clientMenuOptions } from "@/utils/installLabel";
+import { normalizeGamePath, sameGamePath } from "@/utils/gamePath";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
 import "./OverlayCalibrationSection.scss";
 
-/** Rust's `kind_name` spells kongzhong without the cn- prefix the i18n
- *  table's key uses; every other kind string matches `common.game.kind.*`
- *  directly. Unknown kinds fall back to the raw string. */
-const KIND_KEY_FIX: Record<string, string> = { kongzhong: "cnKongzhong" };
+/** Rust's `kind_name` spells kongzhong without the cn- prefix the webui's
+ *  kind union uses; every other kind string matches directly, and unknown
+ *  kinds fall back to `manual` (the neutral platform badge). */
+const KIND_FIX: Record<string, GameInstallKind> = { kongzhong: "cnKongzhong" };
+const KNOWN_KINDS: readonly string[] = [
+  "wargaming",
+  "steam",
+  "lesta",
+  "cn360",
+  "cnKongzhong",
+  "manual",
+];
 
-function kindLabelOf(kind: string): string {
-  const key = `common.game.kind.${KIND_KEY_FIX[kind] ?? kind}`;
-  const lbl = t(key);
-  return lbl === key ? kind : lbl;
+function normalizeKind(kind: string): GameInstallKind {
+  return (
+    KIND_FIX[kind] ??
+    (KNOWN_KINDS.includes(kind) ? (kind as GameInstallKind) : "manual")
+  );
 }
 
 /** Locale-aware relative time (Intl.RelativeTimeFormat — no hand-rolled
@@ -50,6 +74,22 @@ function relativeTime(at: number, locale: string): string {
   return rtf.format(Math.round(diff / 86_400_000), "day");
 }
 
+/** One card: a registered install (whether or not the detector has written
+ *  a calibration file for it yet), or a calibration file whose install no
+ *  longer sits in the registry (kept so existing data stays visible and
+ *  editable). */
+interface CalibCard {
+  kind: GameInstallKind;
+  /** Install root path — the display identity; submits prefer the
+   *  calibration file's own stored key (the backend normalizes either
+   *  spelling before it hashes the file name). */
+  path: string;
+  realm?: string | null;
+  cal: CalibrationClientInfo | null;
+  /** No registered install matches this calibration file. */
+  unregistered: boolean;
+}
+
 export default defineComponent({
   name: "SettingsOverlayCalibrationSection",
   props: {
@@ -57,27 +97,89 @@ export default defineComponent({
   },
   setup(props) {
     const manualLocate = useManualLocateStore();
+    const configStore = useConfigStore();
     const { uiLocale } = useLanguage();
     const toast = useToast();
     const clients = ref<CalibrationClientInfo[]>([]);
     const loading = ref(false);
+    const loaded = ref(false);
+    /** Last list-fetch failure (`null` once any fetch has succeeded) —
+     *  while set, the card list must not render: install-only cards would
+     *  read as "not calibrated" and their pre-edit buttons could create
+     *  entries over state the section never managed to show. */
+    const loadError = ref<string | null>(null);
 
     async function refresh() {
       loading.value = true;
       try {
         clients.value = await api.fetchOverlayCalibrationList();
+        loaded.value = true;
+        loadError.value = null;
       } catch (err) {
-        toast.error(`${t("settings.overlayCalibration")}: ${(err as Error).message || err}`);
+        const msg = (err as Error).message || String(err);
+        loadError.value = loaded.value ? null : msg;
+        toast.error(`${t("settings.overlayCalibration")}: ${msg}`);
       } finally {
         loading.value = false;
       }
     }
     onMounted(() => void refresh());
+    // A successful calibration submit bumps the picker store's version
+    // (the picker layer and this section are otherwise decoupled) — re-read
+    // the list so the edited card reflects the write without a manual
+    // refresh. The section may not be mounted at submit time; that is
+    // fine, the next mount re-reads anyway.
+    watch(() => manualLocate.calibrationVersion, () => void refresh());
+
+    /** Registered installs first (the game-path list's own order), then
+     *  calibration files whose install is gone (backend's newest-first
+     *  order kept). Matching goes through the case/separator-insensitive
+     *  compare — the watcher stores a normalized path spelling. */
+    const cards = computed<CalibCard[]>(() => {
+      const byKey = new Map(
+        clients.value.map((c) => [normalizeGamePath(c.clientKey), c] as const),
+      );
+      const rows: CalibCard[] = configStore.installs.map((i) => ({
+        kind: i.kind,
+        path: i.path,
+        realm: i.realm,
+        cal: byKey.get(normalizeGamePath(i.path)) ?? null,
+        unregistered: false,
+      }));
+      for (const c of clients.value) {
+        if (!configStore.installs.some((i) => sameGamePath(i.path, c.clientKey))) {
+          rows.push({
+            kind: normalizeKind(c.kind),
+            path: c.clientKey,
+            realm: null,
+            cal: c,
+            unregistered: true,
+          });
+        }
+      }
+      return rows;
+    });
+
+    /** Card titles through the client-menu labeller — localized kind name
+     *  (+ realm), with the shortest distinguishing path tail when two
+     *  cards would otherwise read identically (twin installs). */
+    const cardLabels = computed(() => {
+      const pseudo = cards.value.map((c) => ({
+        kind: c.kind,
+        path: c.path,
+        realm: c.realm ?? undefined,
+      }));
+      return new Map(
+        clientMenuOptions(pseudo).map((o) => [normalizeGamePath(o.value), o.label] as const),
+      );
+    });
 
     /** One entry's edit button: arm the backend's picker-open flag (no
      *  battle gates here), then raise the shared picker layer in
-     *  calibration mode with this client + class as the submit target. */
-    async function editEntry(c: CalibrationClientInfo, cls: "pvp" | "pve") {
+     *  calibration mode with this client + class as the submit target —
+     *  an empty target CREATES its entry from the drawing, so the
+     *  install's kind rides along for exactly that case. */
+    async function editEntry(c: CalibCard, cls: "pvp" | "pve") {
       try {
         await api.startCalibrationLocate();
       } catch (err) {
@@ -86,13 +188,30 @@ export default defineComponent({
       }
       manualLocate.openPicker({
         mode: "calibration",
-        calibration: { clientKey: c.clientKey, class: cls },
+        calibration: {
+          clientKey: c.cal?.clientKey ?? c.path,
+          class: cls,
+          kind: c.kind,
+        },
       });
     }
 
+    /** One labeled readout of an entry row (value in mono/tabular; the
+     *  optional tooltip carries the screen fingerprint etc.). */
+    function field(label: string, value: string, title?: string) {
+      return (
+        <span class="calib-sec__field" title={title}>
+          <span class="calib-sec__field-label">{label}</span>
+          <span class="calib-sec__field-value">{value}</span>
+        </span>
+      );
+    }
+
     /** One battle-class row of a client card. */
-    function classRow(c: CalibrationClientInfo, cls: "pvp" | "pve") {
-      const e: CalibrationEntryInfo | null = cls === "pvp" ? c.pvp : c.pve;
+    function classRow(c: CalibCard, cls: "pvp" | "pve") {
+      const e: CalibrationEntryInfo | null =
+        cls === "pvp" ? (c.cal?.pvp ?? null) : (c.cal?.pve ?? null);
+      const edit = t("settings.overlayCalibrationEdit");
       return (
         <div class="calib-sec__class" key={cls}>
           <span class="calib-sec__class-label">
@@ -124,31 +243,45 @@ export default defineComponent({
               {/* The stored table rectangle, game-window relative
                   (physical px) — the "key feature points" the detector
                   anchored. */}
-              <span class="calib-sec__num" title={e.screen}>
-                {e.rosterRect.x},{e.rosterRect.y} · {e.rosterRect.width}×{e.rosterRect.height}
-              </span>
-              <span class="calib-sec__meta">{t("replay.live.detectedRows", { n: e.rowCenters.length })}</span>
-              <span class="calib-sec__num">
-                {e.teamSizes[0]}v{e.teamSizes[1]}
-              </span>
+              {field(
+                t("settings.overlayCalibrationFieldRect"),
+                `${e.rosterRect.x},${e.rosterRect.y} · ${e.rosterRect.width}×${e.rosterRect.height}`,
+              )}
+              {field(
+                t("settings.overlayCalibrationFieldRows"),
+                String(e.rowCenters.length),
+              )}
+              {field(
+                t("settings.overlayCalibrationFieldTeams"),
+                `${e.teamSizes[0]}v${e.teamSizes[1]}`,
+              )}
               {/* Window identity the entry was measured at — editing keeps
                   it, so mismatches here explain a remap rather than block
-                  one. */}
-              <span class="calib-sec__num">
-                @{e.gameOrigin[0]},{e.gameOrigin[1]} · {e.gameSize[0]}×{e.gameSize[1]}
-              </span>
-              <HkButton
-                size="sm"
-                variant="secondary"
-                onClick={() => void editEntry(c, cls)}
-              >
-                <SquarePen size={13} />
-                {t("settings.overlayCalibrationEdit")}
-              </HkButton>
+                  one. The monitor fingerprint rides the tooltip. */}
+              {field(
+                t("settings.overlayCalibrationFieldWindow"),
+                `@${e.gameOrigin[0]},${e.gameOrigin[1]} · ${e.gameSize[0]}×${e.gameSize[1]}`,
+                e.screen,
+              )}
             </>
           ) : (
-            <span class="calib-sec__missing">—</span>
+            // Never calibrated (or this class never ran): the edit button
+            // still creates the entry from a drawing (提前编辑).
+            <span class="calib-sec__missing">{t("settings.overlayCalibrationNone")}</span>
           )}
+          {/* Icon-only control — the wrapping span carries the hover
+              tooltip (HkButton takes ariaLabel, not title) and pins the
+              row's right edge. */}
+          <span class="calib-sec__edit" title={edit}>
+            <HkButton
+              size="sm"
+              variant="secondary"
+              ariaLabel={edit}
+              onClick={() => void editEntry(c, cls)}
+            >
+              <SquarePen size={13} />
+            </HkButton>
+          </span>
         </div>
       );
     }
@@ -160,11 +293,13 @@ export default defineComponent({
               only matters once the overlay is on. */}
           <OverlaySection ctx={props.ctx} />
           {/* in-game overlay anchor calibration — the detector's persistent
-              per-client memory of where the Tab table sat. The list is a
-              pure read (overlay_calibration_list); the edit flow reopens
-              the shared picker in calibration mode. Unreachable on the
-              phone app build (no overlay window there — the rail filters
-              the section out). */}
+              per-client memory of where the Tab table sat, one card per
+              registered client (plus orphaned calibration files at the
+              end). The list is a pure read (overlay_calibration_list)
+              merged with the install registry; the edit flow reopens the
+              shared picker in calibration mode and creates empty entries
+              from the drawing. Unreachable on the phone app build (no
+              overlay window there — the rail filters the section out). */}
           <HkSettingsGroup title={t("settings.overlayCalibration")}>
             <HkSettingsHint>{t("settings.overlayCalibrationDesc")}</HkSettingsHint>
             <div class="calib-sec__toolbar">
@@ -173,23 +308,42 @@ export default defineComponent({
                 {t("settings.overlayCalibrationRefresh")}
               </HkButton>
             </div>
-            {loading.value && clients.value.length === 0 ? (
+            {loading.value && !loaded.value ? (
               <div class="calib-sec__state">
                 <HkSpinner size={16} tone="current" />
               </div>
-            ) : clients.value.length === 0 ? (
+            ) : loadError.value != null ? (
+              // Never fetched successfully: show the failure instead of
+              // cards (see loadError) — the refresh button retries.
+              <HkSettingsHint>{`${t("settings.overlayCalibration")}: ${loadError.value}`}</HkSettingsHint>
+            ) : cards.value.length === 0 ? (
               <HkSettingsHint>{t("settings.overlayCalibrationEmpty")}</HkSettingsHint>
             ) : (
               <div class="calib-sec__clients">
-                {clients.value.map((c) => (
-                  <div class="calib-sec__client" key={c.clientKey}>
-                    <div class="calib-sec__head">
-                      <span class="calib-sec__key" title={c.clientKey}>{c.clientKey}</span>
-                      <HkTag variant="default" size="sm">{kindLabelOf(c.kind)}</HkTag>
-                      {c.updatedAtMs != null ? (
+                {cards.value.map((c) => (
+                  <div class="calib-sec__client" key={c.path}>
+                    {/* Title row mirrors the client selector: platform
+                        badge, localized client name (+ realm tag), the
+                        twin-disambiguating tail baked into the label; the
+                        full install path rides the title tooltip, and the
+                        last-updated stamp sits top-right. */}
+                    <div class="calib-sec__head" title={c.path}>
+                      <PlatformIcon kind={c.kind} size={22} />
+                      <span class="calib-sec__name">
+                        {cardLabels.value.get(normalizeGamePath(c.path)) ?? c.path}
+                      </span>
+                      {c.realm ? (
+                        <HkTag variant="default" size="sm">{c.realm.toUpperCase()}</HkTag>
+                      ) : null}
+                      {c.unregistered ? (
+                        <HkTag variant="warning" size="sm">
+                          {t("settings.overlayCalibrationUnregistered")}
+                        </HkTag>
+                      ) : null}
+                      {c.cal?.updatedAtMs != null ? (
                         <span class="calib-sec__updated">
                           {t("settings.overlayCalibrationUpdated", {
-                            time: relativeTime(c.updatedAtMs, uiLocale.value),
+                            time: relativeTime(c.cal.updatedAtMs, uiLocale.value),
                           })}
                         </span>
                       ) : null}

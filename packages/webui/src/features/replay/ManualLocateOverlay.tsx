@@ -465,12 +465,17 @@ export default defineComponent({
         return;
       }
       submitting.value = true;
+      // Which branch ran — only a calibration submit bumps the store's
+      // version (the settings section watches it to re-read its list).
+      let calibrationSubmit = false;
       try {
         if (manual.mode === "calibration" && manual.calibration) {
           // Calibration editor submit: the frame-space box plus the
           // displayed reference image's identity — the backend rescales
           // onto the STORED entry's window size, so the game need not be
-          // running (or even installed at this window size) right now.
+          // running (or even installed at this window size) right now. An
+          // empty target is CREATED from the drawing; the install's kind
+          // rides along for exactly that case.
           await api.setCalibrationAnchor(
             manual.calibration.clientKey,
             manual.calibration.class,
@@ -479,7 +484,9 @@ export default defineComponent({
             Math.round(b.w),
             Math.round(b.h),
             submitSource(),
+            manual.calibration.kind,
           );
+          calibrationSubmit = true;
         } else {
           await api.setManualRosterRect(
             Math.round(b.x),
@@ -496,10 +503,11 @@ export default defineComponent({
         // Success: the backend armed the anchor and cleared its open flag —
         // drop the picker. `submitting` stays true until the close reset: no
         // further input is accepted meanwhile.
+        if (calibrationSubmit) manual.noteCalibrationSaved();
         manual.closePicker();
       } catch (err) {
-        // Validation failed (too small / no battle / no stored calibration
-        // entry / reference frame gone). Keep the picker open so the user
+        // Validation failed (too small / no battle / unknown client kind /
+        // reference frame gone). Keep the picker open so the user
         // can retry or hit Esc — surface the reason inline, and (calibration
         // mode) as a toast carrying the raw backend string behind a generic
         // prefix so it reads as the editor's failure, not a stray code.

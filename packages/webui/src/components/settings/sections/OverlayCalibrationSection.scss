@@ -1,8 +1,9 @@
-// OverlayCalibrationSection — the settings' 游戏内显示校准 pane: the stored
-// per-client Tab-anchor calibrations as one card per install (client key in
-// mono, kind tag, relative updated stamp) with its PvP / PvE entry rows.
-// Surface colors come from the hikari tokens so both theme modes read
-// correctly (same idiom as SharingSection).
+// OverlayCalibrationSection — the settings' 游戏内显示校准 pane: one card
+// per registered client (the client selector's anatomy — platform badge,
+// localized name, realm tag, relative updated stamp top-right) with its
+// PvP / PvE entry rows of labeled readouts and a right-aligned icon-only
+// edit button. Surface colors come from the hikari tokens so both theme
+// modes read correctly (same idiom as SharingSection).
 
 .calib-sec {
   &__toolbar {
@@ -39,20 +40,21 @@
     min-width: 0;
   }
 
-  // The install-identity key (the install root path) — mono, ellipsized;
-  // the full path rides the title tooltip.
-  &__key {
-    flex: 1 1 auto;
+  // Localized client name (twin installs get a distinguishing path tail
+  // baked in by the client-menu labeller) — ellipsized when narrow.
+  &__name {
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--hi-text-sm, 0.8125rem);
+    font-weight: 600;
   }
 
   &__updated {
     flex: 0 0 auto;
+    margin-left: auto;
     color: var(--hi-color-text-secondary);
     font-size: var(--hi-text-xs, 0.75rem);
     white-space: nowrap;
@@ -62,7 +64,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
   }
 
   &__class-label {
@@ -76,10 +78,24 @@
     gap: 4px;
   }
 
-  // Numeric readouts (rect / team sizes / window identity) — mono and
-  // tabular so columns of cards read scanable; the window identity row
-  // carries the screen fingerprint as its tooltip.
-  &__num {
+  // Labeled readouts (table rect / rows / teams / window identity): a
+  // muted label before each mono, tabular value so a column of cards reads
+  // scanable; the window identity's tooltip carries the screen fingerprint.
+  &__field {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  &__field-label {
+    flex: 0 0 auto;
+    color: var(--hi-color-text-secondary);
+    font-size: var(--hi-text-xs, 0.75rem);
+    white-space: nowrap;
+  }
+
+  &__field-value {
     flex: 0 0 auto;
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: var(--hi-text-xs, 0.75rem);
@@ -87,11 +103,14 @@
     white-space: nowrap;
   }
 
-  &__meta {
+  // Icon-only edit control pinned to the row's right edge (also the row's
+  // trailing anchor when the entry is empty — pre-editing stays one click
+  // away). The wrapper span carries the hover tooltip (HkButton takes
+  // ariaLabel, not title).
+  &__edit {
+    display: inline-flex;
     flex: 0 0 auto;
-    color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
-    white-space: nowrap;
+    margin-left: auto;
   }
 
   &__missing {
