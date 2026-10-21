@@ -66,8 +66,14 @@ mirrors). One such bridge update lands them on a client that fetches
   (shun >= 0.6.28: the atomic swap retries through the survivor — the
   WebView2 children a taskkilled host leaves behind keep the directory
   as their working directory — and degrades to an in-place merge when
-  the lock never lifts), and relaunches the app after unattended
-  updates (`launch-after-install = "always"`).
+  the lock never lifts), parks its own working directory off the
+  install target (shun >= 0.6.29: an installer spawned from inside the
+  install directory no longer pins its own swap), renders the
+  `silent-progress` window over unattended updates (shun >= 0.6.29:
+  the visible auto-update — every artifact built from this manifest
+  shows its own progress, whatever frozen updater spawned it), and
+  relaunches the app after unattended updates
+  (`launch-after-install = "always"`).
 - The **app** publishes the shipped resource pack into its cache root on
   first launch (`packages/app/tauri/src/resource_pack.rs` — the
   transactional relocation that used to live in the old installer shell),
@@ -81,9 +87,8 @@ mirrors). One such bridge update lands them on a client that fetches
   its own swap through shun's lock-retry window) — and exits itself
   right after the handoff, so the WebView2 children close with the app
   and never pin the install directory in the first place. The install's
-  visibility is the installer's own job (shun's `silent-progress`
-  window, adopted here once the shun tag that carries it is pinned) —
-  never the old build's.
+  visibility is the installer's own job — the manifest's
+  `silent-progress` window (shun >= 0.6.29) — never the old build's.
 
 ## Building
 
