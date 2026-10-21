@@ -1,8 +1,10 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.28 (the silent upgrade retries its directory
-# swap over a lock survivor and degrades to an in-place merge — the
-# 0.6.1 → 0.6.2 stranding; v0.6.26 minimum for dir-less silent runs to
-# upgrade the registered install in place; v0.6.25 minimum for the
+# Requires shun >= 0.6.29 (the `[shell] silent-progress` passive window
+# — the visible auto-update — and the shell parking its CWD off the
+# install target; v0.6.28 minimum for the silent upgrade to retry its
+# directory swap over a lock survivor and degrade to an in-place merge —
+# the 0.6.1 → 0.6.2 stranding; v0.6.26 minimum for dir-less silent runs
+# to upgrade the registered install in place; v0.6.25 minimum for the
 # headless shortcut presence refresh).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
@@ -26,6 +28,14 @@ logo = "logo.webp"
 # Each published artifact is one variant; the base payload exists only so
 # `shun config` has a default (every build pins --variant).
 payload = "payload-lite"
+
+# The silent lane renders its passive progress window: an auto-update
+# spawned by ANY build's updater (the handoff only ever passes
+# `--silent --dir`) shows "installing WoWSP <version>…" on its own, so
+# nobody launches the old build into the directory mid-swap. No pages,
+# no clicks; stdout unchanged; window-less sessions stay console-only.
+[shell]
+silent-progress = true
 
 # The complete flavor carries the Evergreen offline runtime under its
 # payload's webview2/ subtree: on a machine the WebView2 loader rejects,
