@@ -4,7 +4,7 @@ import { h, reactive, type VNode } from "vue";
 import type { ClanInfo, PlayerStats } from "@/api";
 
 const mocks = vi.hoisted(() => ({
-  route: { query: {} as Record<string, string> },
+  route: { path: "/lookup", query: {} as Record<string, string> },
   player: vi.fn(), clan: vi.fn(), ranked: vi.fn(), ships: vi.fn(),
   stores: {} as Record<string, unknown>,
 }));
@@ -122,6 +122,9 @@ function mountLookup(query: Record<string, string> = {}) {
 beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
+  // A reactive route swap-in: the real router replaces route.query on every
+  // navigation, and the jump-in watcher must see those swaps the same way.
+  mocks.route = reactive({ path: "/lookup", query: {} as Record<string, string> });
   mocks.stores.stats = reactive({ cache: new Map(), lookup: mocks.player, loading: false, error: null, lookupError: null });
   mocks.stores.clan = reactive({ cache: new Map(), lookup: mocks.clan, loading: false, error: null, lookupError: null });
   mocks.stores.ships = reactive({ cache: new Map([["asia_101", [{ shipId: 1, battles: 10 }]]]), history: new Map(), load: mocks.ships });
@@ -249,6 +252,46 @@ describe("lookup result ownership", () => {
     view.findComponent({ name: "ClanCard" }).vm.$emit("memberClick", { accountId: 101 });
     await flushPromises();
     expect(mocks.player).toHaveBeenCalledExactlyOnceWith("101", "asia", { force: true });
+  });
+});
+
+describe("jump-in on query change", () => {
+  it("re-runs a player jump-in when a query-only hop lands while the page stays mounted", async () => {
+    mocks.player.mockResolvedValueOnce(player(101)).mockResolvedValueOnce(player(202));
+    const view = mountLookup({ name: "Solo", realm: "asia" });
+    await flushPromises();
+    expect(mocks.player).toHaveBeenCalledExactlyOnceWith("Solo", "asia", { force: true });
+    // A second contributor-chip push: same path, different query — the
+    // shell keys pages by route.path, so this instance is NOT remounted
+    // and only the query watcher can service the hop.
+    mocks.route.query = { name: "Duos", realm: "cn" };
+    await flushPromises();
+    expect(mocks.player).toHaveBeenCalledTimes(2);
+    expect(mocks.player).toHaveBeenLastCalledWith("Duos", "cn", { force: true });
+    expect(view.findComponent({ name: "StatsCard" }).props("stats").accountId).toBe(202);
+  });
+
+  it("re-runs a clan jump-in across a query-only hop too", async () => {
+    mocks.clan.mockResolvedValueOnce(clan(1)).mockResolvedValueOnce(clan(2));
+    const view = mountLookup({ clan: "1", realm: "asia" });
+    await flushPromises();
+    expect(mocks.clan).toHaveBeenCalledExactlyOnceWith(1, "asia", { force: true });
+    mocks.route.query = { clan: "2", realm: "eu" };
+    await flushPromises();
+    expect(mocks.clan).toHaveBeenLastCalledWith(2, "eu", { force: true });
+    expect(view.findComponent({ name: "ClanCard" }).props("clan").clanId).toBe(2);
+  });
+
+  it("ignores a query swap that belongs to another route during the leave", async () => {
+    mocks.player.mockResolvedValueOnce(player(101));
+    mountLookup({ name: "Solo", realm: "asia" });
+    await flushPromises();
+    // The route object flips to the target route before this instance
+    // unmounts — the jump must not fire for a foreign route's query.
+    mocks.route.path = "/replay";
+    mocks.route.query = { name: "Duos" };
+    await flushPromises();
+    expect(mocks.player).toHaveBeenCalledExactlyOnceWith("Solo", "asia", { force: true });
   });
 });
 
