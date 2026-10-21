@@ -237,7 +237,7 @@
     "refreshStatsHint": "清空快取並從頭重新請求全部名單戰績；已載入的資料在請求成功前保持顯示",
     "statsSourceTitle": "戰績篩選",
     "manualLocate": "手動定位",
-    "manualClearHint": "點擊清除手動定位，恢復自動識別",
+    "locateHint": "開啟設定中的「遊戲內顯示校準」，定位到手動定位錨點清單",
     "manualRows": "已手動定位 · {n} 行",
     "hideNicks": "隱藏暱稱",
     "showNicks": "顯示暱稱",

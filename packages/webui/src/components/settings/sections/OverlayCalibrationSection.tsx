@@ -35,6 +35,7 @@ import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useConfigStore } from "@/stores/config";
 import { useManualLocateStore } from "@/stores/manualLocate";
+import { SETTINGS_ANCHOR_CALIBRATION_LIST } from "@/stores/settingsUi";
 import PlatformIcon from "@/components/base/PlatformIcon";
 import OverlaySection from "@/components/settings/sections/OverlaySection";
 import { clientMenuOptions } from "@/utils/installLabel";
@@ -299,8 +300,15 @@ export default defineComponent({
               merged with the install registry; the edit flow reopens the
               shared picker in calibration mode and creates empty entries
               from the drawing. Unreachable on the phone app build (no
-              overlay window there — the rail filters the section out). */}
-          <HkSettingsGroup title={t("settings.overlayCalibration")}>
+              overlay window there — the rail filters the section out).
+              data-settings-anchor: the live battle panel's locate pill
+              glide target (settingsUi.show("overlayCalibration",
+              SETTINGS_ANCHOR_CALIBRATION_LIST) slides the pane onto this
+              card — the 手动定位 list, not the water-meter toggles above). */}
+          <HkSettingsGroup
+            title={t("settings.overlayCalibration")}
+            data-settings-anchor={SETTINGS_ANCHOR_CALIBRATION_LIST}
+          >
             <HkSettingsHint>{t("settings.overlayCalibrationDesc")}</HkSettingsHint>
             <div class="calib-sec__toolbar">
               <HkButton size="sm" variant="secondary" loading={loading.value} onClick={() => void refresh()}>
