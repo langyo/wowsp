@@ -973,9 +973,9 @@ export default defineComponent({
                 "live-battle__col-title",
                 "live-battle__col-title--agg",
                 // Right-edge compensation: compact rows spend width on the
-                // career-seal slot (44px + one flex gap) beyond the stat
-                // columns whenever seals show — the header reserves the
-                // same run so its columns land on the cells below.
+                // seal slot (44px + one flex gap) beyond the stat columns
+                // whenever seals show — the header reserves the same run so
+                // its columns land on the cells below.
                 {
                   "live-battle__col-title--pad-seal":
                     prefs.prefs.prEnabled && prefs.prefs.sealsEnabled,
