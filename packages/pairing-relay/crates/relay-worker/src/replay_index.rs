@@ -16,6 +16,8 @@
 //!   POST /claim   {phase: prepare|commit, …}      → 200 | 409 | 422 | 503
 //!   GET  /admin-list                              → {contributors, watermark}
 //!   POST /rename   {anon, name}                   → {ok, name} | 404 | 400
+//!   POST /backfill {anon, name, realm, members}   → {ok, credited,
+//!                                                   duplicates} | 409 | 400
 //!   POST /drain   {anonIds}                       → {drained, bytes}
 //!   GET  /counters                                → {wm, rules}
 //!
@@ -28,12 +30,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use relay_core::replay::{
-    self, ClaimError, ClaimInput, ContributorMeta, HashRow, Ledger, RenameError,
+    self, BackfillError, ClaimError, ClaimInput, ContributorMeta, HashRow, Ledger, RenameError,
 };
 use serde_json::json;
 use worker::*;
 
-use crate::replay::{DoCheck, DoClaim, DoDrain, DoRename};
+use crate::replay::{DoBackfill, DoCheck, DoClaim, DoDrain, DoRename};
 
 /// Durable Object state is hydrated lazily on first use: rows are
 /// listed from storage and folded into the pure [`Ledger`] machine,
@@ -93,6 +95,16 @@ impl DurableObject for ReplayIndex {
                     Err(_) => return Response::error("bad request", 400),
                 };
                 self.rename(body).await
+            },
+            "/backfill" => {
+                if let Some(resp) = Self::require_post(&req) {
+                    return Ok(resp);
+                }
+                let body: DoBackfill = match req.json().await {
+                    Ok(b) => b,
+                    Err(_) => return Response::error("bad request", 400),
+                };
+                self.backfill(body).await
             },
             "/drain" => {
                 if let Some(resp) = Self::require_post(&req) {
@@ -376,6 +388,58 @@ impl ReplayIndex {
             },
             Err(RenameError::UnknownAnon) => Response::error("unknown contributor", 404),
             Err(RenameError::BadName) => Response::error("bad request", 400),
+        }
+    }
+
+    /// POST /backfill — credit manually collected replays (the
+    /// maintainer's offline collect flow): drained-status rows + meta
+    /// create-or-update; duplicate hashes skip, the watermark and rule
+    /// counters stay untouched (see `Ledger::backfill`).
+    async fn backfill(&self, body: DoBackfill) -> Result<Response> {
+        if !relay_core::replay::valid_anon_id(&body.anon)
+            || !relay_core::replay::valid_credited_name(&body.name)
+            || !relay_core::replay::valid_realm(&body.realm)
+            || body.members.is_empty()
+            || body.members.len() > replay::MEMBERS_MAX
+        {
+            return Response::error("bad request", 400);
+        }
+        for m in &body.members {
+            if !relay_core::replay::valid_hex64(&m.sha256)
+                || !relay_core::replay::valid_file_name(&m.file_name)
+                || !(replay::SIZE_MIN..=replay::SIZE_MAX).contains(&m.size_bytes)
+            {
+                return Response::error("bad request", 400);
+            }
+        }
+        let now = Date::now().as_millis();
+        let outcome = {
+            let mut slot = self.ledger.borrow_mut();
+            let Some(ledger) = slot.as_mut() else {
+                return not_hydrated();
+            };
+            ledger.backfill(&body.anon, &body.name, &body.realm, &body.members, now)
+        };
+        match outcome {
+            Ok(outcome) => {
+                let storage = self.state.storage();
+                for (sha, row) in &outcome.rows {
+                    let _ = storage.put(&replay::h_key(sha), row.clone()).await;
+                }
+                let _ = storage
+                    .put(&replay::meta_key(&body.anon), outcome.meta.clone())
+                    .await;
+                Response::from_json(&json!({
+                    "ok": true,
+                    "credited": outcome.credited,
+                    "duplicates": outcome.duplicates,
+                    "name": body.name,
+                }))
+            },
+            Err(BackfillError::IdentityConflict) => {
+                Response::error("identity conflict", 409)
+            },
+            Err(_) => Response::error("bad request", 400),
         }
     }
 

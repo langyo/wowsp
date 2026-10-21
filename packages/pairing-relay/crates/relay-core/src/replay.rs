@@ -25,7 +25,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 // ── constants: keys, quotas, caps ──────────────────────────────────────
@@ -361,8 +361,8 @@ pub fn validate_wanted_save(raw: &str, now_ms: u64) -> Result<WantedDoc, String>
         }
     }
     for (i, rule_v) in rules_v.iter().enumerate() {
-        let rule: WantedRule = serde_json::from_value(rule_v.clone())
-            .map_err(|e| format!("rules[{i}]: {e}"))?;
+        let rule: WantedRule =
+            serde_json::from_value(rule_v.clone()).map_err(|e| format!("rules[{i}]: {e}"))?;
         if !valid_rule_id(&rule.id) {
             return Err(format!(
                 "rules[{i}]: id {:?} must match ^[a-z0-9-]{{1,64}}$",
@@ -385,7 +385,9 @@ pub fn validate_wanted_save(raw: &str, now_ms: u64) -> Result<WantedDoc, String>
         }
         if let Some(max) = rule.max_count {
             if max > 1_000_000 {
-                return Err(format!("rules[{i}]: maxCount {max} is absurd (cap 1,000,000)"));
+                return Err(format!(
+                    "rules[{i}]: maxCount {max} is absurd (cap 1,000,000)"
+                ));
             }
         }
         if let Some(min) = rule.client_version_min.as_deref() {
@@ -533,7 +535,7 @@ pub fn valid_hex64(s: &str) -> bool {
 }
 
 /// Path-free display name (no separators, no empty).
-fn valid_file_name(name: &str) -> bool {
+pub fn valid_file_name(name: &str) -> bool {
     !name.is_empty() && name.chars().count() <= FILENAME_MAX && !name.contains(['/', '\\'])
 }
 
@@ -1180,6 +1182,92 @@ impl Ledger {
         Ok(meta.clone())
     }
 
+    /// Backfill: credit manually collected replays (the maintainer's
+    /// offline collect flow — the contributor sent the files outright, so
+    /// no upload ever rode the pipeline and the ledger knows nobody).
+    /// Every member lands directly at [`RowStatus::Drained`]: credited,
+    /// duplicate-protected forever, and watermarked NOT at all (no blob
+    /// ever exists in R2). Rule counters are untouched — quota accounting
+    /// stays the operator's call, and a backfill against today's wanted
+    /// doc must not undercount rules seeded from an earlier era. Members
+    /// whose hash the ledger already knows (any status, any contributor)
+    /// are skipped as duplicates; an existing identity is kept as-is and
+    /// a conflicting (realm, name) is an error — renames fix names.
+    pub fn backfill(
+        &mut self,
+        anon: &str,
+        name: &str,
+        realm: &str,
+        members: &[BackfillMember],
+        now_ms: u64,
+    ) -> Result<BackfillOutcome, BackfillError> {
+        if !valid_credited_name(name) {
+            return Err(BackfillError::BadName);
+        }
+        if !valid_realm(realm) {
+            return Err(BackfillError::BadRealm);
+        }
+        if members.is_empty() {
+            return Err(BackfillError::BadMember("empty_members"));
+        }
+        for m in members {
+            if !valid_hex64(&m.sha256) {
+                return Err(BackfillError::BadMember("bad_sha256"));
+            }
+            if !valid_file_name(&m.file_name) {
+                return Err(BackfillError::BadMember("bad_file_name"));
+            }
+            if !(SIZE_MIN..=SIZE_MAX).contains(&m.size_bytes) {
+                return Err(BackfillError::BadMember("bad_size"));
+            }
+        }
+        if let Some(existing) = self.meta.get(anon) {
+            if existing.realm != realm || existing.credited_name != name {
+                return Err(BackfillError::IdentityConflict);
+            }
+        }
+        let mut outcome = BackfillOutcome {
+            rows: Vec::new(),
+            duplicates: Vec::new(),
+            credited: 0,
+            meta: ContributorMeta {
+                credited_name: name.to_string(),
+                realm: realm.to_string(),
+                archive_bytes: 0,
+                credit_count: 0,
+                updated_at: now_ms,
+            },
+        };
+        let mut inserted = 0u64;
+        for m in members {
+            if self.hashes.contains_key(&m.sha256) {
+                outcome.duplicates.push(m.sha256.clone());
+                continue;
+            }
+            let row = HashRow {
+                contributor: anon.to_string(),
+                status: RowStatus::Drained,
+                // Empty = credited outside any wanted rule (the force path).
+                rule_id: m.rule_id.clone().unwrap_or_default(),
+                size: m.size_bytes,
+                file_name: m.file_name.clone(),
+                at: now_ms,
+            };
+            self.hashes.insert(m.sha256.clone(), row.clone());
+            outcome.rows.push((m.sha256.clone(), row));
+            inserted += 1;
+        }
+        let meta = self
+            .meta
+            .entry(anon.to_string())
+            .or_insert_with(|| outcome.meta.clone());
+        meta.credit_count += inserted;
+        meta.updated_at = now_ms;
+        outcome.credited = inserted;
+        outcome.meta = meta.clone();
+        Ok(outcome)
+    }
+
     /// /admin-list rows: every known contributor, newest activity
     /// first, plus its live staged count.
     pub fn admin_list(&self) -> Vec<AdminContributor> {
@@ -1326,6 +1414,69 @@ pub enum RenameError {
     BadName,
     /// No contributor registered under that anon id.
     UnknownAnon,
+}
+
+/// One manually collected replay offered for backfill — the same member
+/// core an upload manifest carries, plus the rule the /check verdict
+/// matched (None = credited outside any rule).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackfillMember {
+    pub sha256: String,
+    pub file_name: String,
+    pub size_bytes: u64,
+    pub rule_id: Option<String>,
+}
+
+/// `Ledger::backfill` failures (the DO maps them 1:1 onto statuses).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BackfillError {
+    /// The name fails `valid_credited_name` (the DO pre-checks too).
+    BadName,
+    /// The realm is not one of the five the game runs.
+    BadRealm,
+    /// A member fails its shape check (payload carries the code).
+    BadMember(&'static str),
+    /// The anon id already exists under a DIFFERENT (realm, name) —
+    /// renaming is the fix, never a silent re-attachment.
+    IdentityConflict,
+}
+
+/// The write-through payload of a backfill.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackfillOutcome {
+    /// (sha, row) pairs for every accepted member — drained status.
+    pub rows: Vec<(String, HashRow)>,
+    /// Hashes skipped because the ledger already knows them.
+    pub duplicates: Vec<String>,
+    pub credited: u64,
+    /// The identity row after the credit (create-or-update — a backfill
+    /// never targets an unknown contributor).
+    pub meta: ContributorMeta,
+}
+/// The pseudo contributor id a backfilled identity rides — derived
+/// deterministically from (realm, name) so repeated backfills of the
+/// same person land on one ledger row without any client-side state.
+/// Case-sensitive on purpose: WG nicknames ARE case-distinct, and the
+/// derived id must be exactly as unique as the identity it encodes
+/// (the identity-conflict check compares case-sensitively too).
+/// UUID-v4 shaped to pass `valid_anon_id`; colliding with a registered
+/// anon id means guessing a 122-bit value.
+pub fn backfill_anon_id(realm: &str, name: &str) -> String {
+    let digest = Sha256::digest(format!("backfill:{realm}:{name}").as_bytes());
+    let mut b = [0u8; 16];
+    b.copy_from_slice(&digest[..16]);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let mut out = String::with_capacity(36);
+    for (i, byte) in b.iter().enumerate() {
+        if matches!(i, 4 | 6 | 8 | 10) {
+            out.push('-');
+        }
+        out.push(char::from_digit(u32::from(*byte >> 4), 16).unwrap_or('0'));
+        out.push(char::from_digit(u32::from(*byte & 0xf), 16).unwrap_or('0'));
+    }
+    out
 }
 
 /// One /credits row: a credited identity's lifetime share count (the
@@ -1887,20 +2038,16 @@ mod tests {
         bad(facts(&"a".repeat(64)), "bad_size", |f| {
             f.size_bytes = 67_108_865
         });
-        assert!(
-            validate_facts(&ReplayFacts {
-                size_bytes: 1024,
-                ..facts(&"a".repeat(64))
-            })
-            .is_ok()
-        );
-        assert!(
-            validate_facts(&ReplayFacts {
-                size_bytes: 67_108_864,
-                ..facts(&"a".repeat(64))
-            })
-            .is_ok()
-        );
+        assert!(validate_facts(&ReplayFacts {
+            size_bytes: 1024,
+            ..facts(&"a".repeat(64))
+        })
+        .is_ok());
+        assert!(validate_facts(&ReplayFacts {
+            size_bytes: 67_108_864,
+            ..facts(&"a".repeat(64))
+        })
+        .is_ok());
         bad(facts(&"a".repeat(64)), "bad_realm", |f| {
             f.realm = "na2".into()
         });
@@ -1909,13 +2056,11 @@ mod tests {
         });
         bad(facts(&"a".repeat(64)), "bad_tier", |f| f.tier = Some(12));
         bad(facts(&"a".repeat(64)), "bad_tier", |f| f.tier = Some(0));
-        assert!(
-            validate_facts(&ReplayFacts {
-                tier: None,
-                ..facts(&"a".repeat(64))
-            })
-            .is_ok()
-        );
+        assert!(validate_facts(&ReplayFacts {
+            tier: None,
+            ..facts(&"a".repeat(64))
+        })
+        .is_ok());
         bad(facts(&"a".repeat(64)), "bad_player_count", |f| {
             f.player_count = 0
         });
@@ -2521,12 +2666,10 @@ mod tests {
         assert_eq!(delta.wm, 0);
         assert_eq!(delta.c_deletes.len(), 2);
         assert_eq!(delta.h_updates.len(), 2);
-        assert!(
-            delta
-                .h_updates
-                .iter()
-                .all(|(_, r)| r.status == RowStatus::Drained)
-        );
+        assert!(delta
+            .h_updates
+            .iter()
+            .all(|(_, r)| r.status == RowStatus::Drained));
         // Rule counters survive (drain never reopens a rule).
         assert_eq!(led.counters().1, vec![("r-all".to_string(), 2)]);
         // /mine shows empty staged, zero blob, kept credit.
@@ -2612,6 +2755,150 @@ mod tests {
         // The failed attempts left the stored name and stamp untouched.
         assert_eq!(led.admin_list()[0].credited_name, "Player");
         assert_eq!(led.admin_list()[0].updated_at, T0);
+    }
+
+    // ── ledger: backfill ──────────────────────────────────────────────
+
+    fn backfill_member(sha: &str, rule: Option<&str>) -> BackfillMember {
+        BackfillMember {
+            sha256: sha.to_string(),
+            file_name: format!("20261018_231227_{}.wowsreplay", sha.get(..4).unwrap_or(sha)),
+            size_bytes: 5_000_000,
+            rule_id: rule.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn backfill_credits_manual_replays_at_drained_status() {
+        let mut led = Ledger::new();
+        let outcome = led
+            .backfill(
+                ANON,
+                "万州烤鱼灬椒盐味丨蓝博",
+                "cn",
+                &[
+                    backfill_member(&"a".repeat(64), Some("r-all")),
+                    backfill_member(&"b".repeat(64), None),
+                ],
+                T0 + 5,
+            )
+            .unwrap();
+        assert_eq!(outcome.credited, 2);
+        assert!(outcome.duplicates.is_empty());
+        assert_eq!(outcome.rows.len(), 2);
+        assert!(outcome
+            .rows
+            .iter()
+            .all(|(_, r)| r.status == RowStatus::Drained));
+        // The meta row: created with credits, zero blob (no R2 shard).
+        assert_eq!(outcome.meta.credit_count, 2);
+        assert_eq!(outcome.meta.archive_bytes, 0);
+        // Credits list shows the identity; the watermark stays shut out
+        // of it and the rule counter is untouched (operator's call).
+        assert_eq!(
+            led.credits(),
+            vec![CreditRow {
+                name: "万州烤鱼灬椒盐味丨蓝博".into(),
+                realm: "cn".into(),
+                count: 2
+            }]
+        );
+        assert_eq!(led.counters(), (0, vec![]));
+        // The drained hash is a duplicate for everyone, forever.
+        let out = led.check(Some(ANON2), &[facts(&"a".repeat(64))], &[rule("r-all")]);
+        assert_eq!(out[0].verdict, Verdict::Duplicate);
+    }
+
+    #[test]
+    fn backfill_repeats_land_on_one_identity_and_skip_known_hashes() {
+        let mut led = Ledger::new();
+        led.backfill(
+            &backfill_anon_id("cn", "玩家一号"),
+            "玩家一号",
+            "cn",
+            &[backfill_member(&"a".repeat(64), None)],
+            T0,
+        )
+        .unwrap();
+        // The derived id is stable, so the second pass rides the same row
+        // and the same file hashes as duplicates.
+        let anon = backfill_anon_id("cn", "玩家一号");
+        assert_eq!(anon, backfill_anon_id("cn", "玩家一号"));
+        assert_ne!(anon, backfill_anon_id("cn", "玩家二号"));
+        let outcome = led
+            .backfill(
+                &anon,
+                "玩家一号",
+                "cn",
+                &[
+                    backfill_member(&"a".repeat(64), None),
+                    backfill_member(&"b".repeat(64), None),
+                ],
+                T0 + 9,
+            )
+            .unwrap();
+        assert_eq!(outcome.credited, 1, "only the new file credits");
+        assert_eq!(outcome.duplicates, vec!["a".repeat(64)]);
+        assert_eq!(
+            led.credits(),
+            vec![CreditRow {
+                name: "玩家一号".into(),
+                realm: "cn".into(),
+                count: 2
+            }]
+        );
+    }
+
+    #[test]
+    fn backfill_rejects_conflicting_identity_and_bad_members() {
+        let mut led = Ledger::new();
+        led.backfill(
+            ANON,
+            "Player",
+            "asia",
+            &[backfill_member(&"a".repeat(64), None)],
+            T0,
+        )
+        .unwrap();
+        // The same anon under a different identity is operator error —
+        // renames fix names, backfills never re-attach silently.
+        assert_eq!(
+            led.backfill(
+                ANON,
+                "SomeoneElse",
+                "asia",
+                &[backfill_member(&"b".repeat(64), None)],
+                T0 + 1
+            ),
+            Err(BackfillError::IdentityConflict)
+        );
+        assert_eq!(
+            led.backfill(ANON, "ab", "asia", &[], T0 + 1),
+            Err(BackfillError::BadName)
+        );
+        assert_eq!(
+            led.backfill(ANON, "Player", "asia", &[], T0 + 1),
+            Err(BackfillError::BadMember("empty_members"))
+        );
+        assert_eq!(
+            led.backfill(ANON, "Player", "mars", &[], T0 + 1),
+            Err(BackfillError::BadRealm)
+        );
+        assert_eq!(
+            led.backfill(
+                ANON,
+                "Player",
+                "asia",
+                &[backfill_member("zz", None)],
+                T0 + 1
+            ),
+            Err(BackfillError::BadMember("bad_sha256"))
+        );
+        // Nothing above mutated the stored meta or added rows.
+        let (_, _, credit) = led.mine(ANON).unwrap();
+        assert_eq!(credit, 1);
+        assert_eq!(led.admin_list()[0].credited_name, "Player");
+        assert_eq!(led.hashes.len(), 1);
     }
 
     // ── admin list + counters + responses ─────────────────────────────
@@ -2702,44 +2989,45 @@ mod tests {
         assert_eq!(ok.updated_at.as_deref(), Some("2023-11-14T22:13:20Z"));
 
         // A malformed rule is an authoring error, not a silent skip.
-        let e = validate_wanted_save(
-            r#"{ "rules": [ { "id": "Bad Id", "maps": [] } ] }"#,
-            0,
-        )
-        .unwrap_err();
+        let e = validate_wanted_save(r#"{ "rules": [ { "id": "Bad Id", "maps": [] } ] }"#, 0)
+            .unwrap_err();
         assert!(e.contains("rules[0]"), "{e}");
         // A malformed whole-doc floor (or per-rule floor) refuses too.
-        assert!(
-            validate_wanted_save(
-                r#"{ "clientVersionMin": "0.6.x", "rules": [ { "id": "r1" } ] }"#,
-                0
-            )
-            .unwrap_err()
-            .contains("clientVersionMin")
-        );
-        assert!(
-            validate_wanted_save(
-                r#"{ "rules": [ { "id": "r1", "clientVersionMin": "junk" } ] }"#,
-                0
-            )
-            .unwrap_err()
-            .contains("rules[0]")
-        );
+        assert!(validate_wanted_save(
+            r#"{ "clientVersionMin": "0.6.x", "rules": [ { "id": "r1" } ] }"#,
+            0
+        )
+        .unwrap_err()
+        .contains("clientVersionMin"));
+        assert!(validate_wanted_save(
+            r#"{ "rules": [ { "id": "r1", "clientVersionMin": "junk" } ] }"#,
+            0
+        )
+        .unwrap_err()
+        .contains("rules[0]"));
         // Missing rules array, non-object, junk JSON, oversize, and the
         // empty-string cop-out all refuse with actionable copy.
         assert!(validate_wanted_save("{}", 0).unwrap_err().contains("rules"));
-        assert!(validate_wanted_save("[1]", 0).unwrap_err().contains("object"));
-        assert!(validate_wanted_save("nope", 0).unwrap_err().contains("JSON"));
-        assert!(validate_wanted_save(&"x".repeat(WANTED_SAVE_MAX_BYTES + 1), 0)
+        assert!(validate_wanted_save("[1]", 0)
             .unwrap_err()
-            .contains("bytes"));
+            .contains("object"));
+        assert!(validate_wanted_save("nope", 0)
+            .unwrap_err()
+            .contains("JSON"));
+        assert!(
+            validate_wanted_save(&"x".repeat(WANTED_SAVE_MAX_BYTES + 1), 0)
+                .unwrap_err()
+                .contains("bytes")
+        );
         assert!(validate_wanted_save("", 0).unwrap_err().contains("close"));
         // Array caps reject instead of trimming.
         let fat = format!(
             r#"{{ "rules": [ {{ "id": "r1", "realms": [{}] }} ] }}"#,
             vec!["\"na\""; 9].join(",")
         );
-        assert!(validate_wanted_save(&fat, 0).unwrap_err().contains("realms"));
+        assert!(validate_wanted_save(&fat, 0)
+            .unwrap_err()
+            .contains("realms"));
         // The canonical round-trip re-parses identically (what GET serves).
         let canon = serde_json::to_string(&ok).unwrap();
         let again = validate_wanted_save(&canon, 1_700_000_000_000).unwrap();
@@ -2768,11 +3056,9 @@ mod tests {
         );
         // A non-string type is an authoring error, not a silent unset.
         let numeric = floorless_canon.replacen("{", "{\"clientVersionMin\": 0.6, ", 1);
-        assert!(
-            validate_wanted_save(&numeric, 0)
-                .unwrap_err()
-                .contains("clientVersionMin must be a dot-numeric string")
-        );
+        assert!(validate_wanted_save(&numeric, 0)
+            .unwrap_err()
+            .contains("clientVersionMin must be a dot-numeric string"));
     }
 
     #[test]
