@@ -1,8 +1,8 @@
-import { computed, defineComponent, ref } from "vue";
+import { computed, defineComponent, ref, watch, watchEffect, type PropType } from "vue";
 import type { DogTag } from "@/api";
 
 import { AssetImage } from "@/components/base/AssetImage";
-import { dogtagAssetUrl, dogtagEntry } from "@/utils/dogtagAssets";
+import { dogtagAssetUrl, dogtagEntry, dogtagUrlChain } from "@/utils/dogtagAssets";
 import "./PlayerBadge.scss";
 
 function hex(hexWithPrefix: string): string {
@@ -16,20 +16,71 @@ const DEFAULT_SYMBOL_ID = 3247393712;
 const DEFAULT_SHAPE_ID = 3247426480;
 
 /**
- * One-shot WebP→PNG fallback for dog-tag part URLs. This build's bundled
- * snapshot ships .webp (the res-WebP wave), but a resource-pack cache
- * downloaded earlier still holds an all-.png dogtags tree — and once
- * initDogtagPack wires, part URLs point into the pack with no embedded
- * fallback. Pack trees are uniform per generation, so the first .webp load
- * error flips EVERY part URL (imgs and CSS masks alike) to .png; the ref
- * makes the flip once-only, so a .png that also fails degrades to
- * AssetImage's fallback glyph instead of error-looping.
+ * Part indexes that failed to load from EVERY candidate URL (see
+ * dogtagUrlChain) — "PCNA037", "PCNA001/PCNT001". Consumers consult this
+ * set to pick a degraded shape (drop the layer, clip the fill to a plain
+ * circle) instead of showing nothing. Replaced wholesale so the ref fires.
  */
-const dogtagPngFallback = ref(false);
+const missingParts = ref(new Set<string>());
 
-function markDogtagError(): void {
-  dogtagPngFallback.value = true;
+function markPartMissing(key: string): void {
+  if (missingParts.value.has(key)) return;
+  const next = new Set(missingParts.value);
+  next.add(key);
+  missingParts.value = next;
 }
+
+/**
+ * Mask part → the chain candidate that actually paints. A CSS mask whose
+ * URL 404s hides the whole clip group with NO error event to react to, and
+ * a legacy all-.png pack cache would 404 every .webp mask for good — so
+ * the probe below resolves each mask's first working candidate and the
+ * clip style follows it.
+ */
+const maskUrls = ref(new Map<string, string>());
+
+function setResolvedMask(key: string, url: string): void {
+  if (maskUrls.value.get(key) === url) return;
+  const next = new Map(maskUrls.value);
+  next.set(key, url);
+  maskUrls.value = next;
+}
+
+/**
+ * One badge part rendered through its URL chain: the first candidate that
+ * paints wins, a fresh load error steps to the next, and an exhausted
+ * chain marks the part missing. (AssetImage only reports loading → error
+ * transitions, so a retried URL never double-fires.)
+ */
+const PartImage = defineComponent({
+  name: "DogtagPartImage",
+  props: {
+    index: { type: String, required: true },
+    partClass: { type: String, required: true },
+    partStyle: { type: Object as PropType<Record<string, string> | undefined>, default: undefined },
+  },
+  setup(props) {
+    const attempt = ref(0);
+    const urls = computed(() => dogtagUrlChain(props.index + ".webp"));
+    // A fresh chain (the pack wiring in, the map overlay resolving a new
+    // index) restarts from its best candidate.
+    watch(urls, () => {
+      attempt.value = 0;
+    });
+    return () => (
+      <AssetImage
+        class={props.partClass}
+        style={props.partStyle}
+        src={urls.value[attempt.value] ?? null}
+        alt=""
+        onError={() => {
+          if (attempt.value < urls.value.length - 1) attempt.value += 1;
+          else markPartMissing(props.index);
+        }}
+      />
+    );
+  },
+});
 
 /**
  * BackgroundShape assets ship in two layouts:
@@ -43,11 +94,6 @@ function markDogtagError(): void {
 function isOutlineShape(index: string): boolean {
   const n = Number(index.slice(4));
   return n >= 1 && n <= 9;
-}
-
-/** Image URL for a dog tag part (symbol/texture), pack-aware. */
-function partUrl(index: string): string {
-  return dogtagAssetUrl(index + (dogtagPngFallback.value ? ".png" : ".webp"));
 }
 
 /** Patch (PCNP) and unique-emblem (PCNU) species ship as complete medals on
@@ -66,30 +112,25 @@ const STANDALONE_SPECIES = new Set(["Patch", "Emblem"]);
  *     outline. The color fill and texture are clipped to the plate shape so
  *     they never spill past its border.
  *
- * Falls back to the service-record tier badge when no dog tag is available.
+ * Parts that cannot load from anywhere drop out individually; a missing
+ * clip mask degrades the fill to a plain circle. Nothing identifying is
+ * composited on top — deliberately no service-record tier number (at badge
+ * sizes it read like a permission rank; see the sidebar footer's
+ * AccountAvatar for the same policy).
  */
 export default defineComponent({
   name: "PlayerBadge",
   props: {
-    tier: { type: Number, default: 0 },
     dogTag: { type: Object as () => DogTag | null, default: null },
     size: { type: Number, default: 48 },
   },
   setup(props) {
-    const tierClass = computed(() => {
-      if (props.tier >= 76) return "badge-diamond";
-      if (props.tier >= 51) return "badge-platinum";
-      if (props.tier >= 26) return "badge-gold";
-      if (props.tier >= 11) return "badge-silver";
-      return "badge-bronze";
-    });
-
     const layers = computed(() => {
       const dt = props.dogTag;
       // When Vortex returns no dog tag (accounts that never customised), fall
       // back to the default symbol + shield so the badge renders a dog tag
-      // instead of the service-record tier. Lookups go through the
-      // pack-overlay store so medals added after this build was cut resolve.
+      // instead of an empty disc. Lookups go through the pack-overlay store
+      // so medals added after this build was cut resolve.
       const bgColor = dogtagEntry(dt?.backgroundColor);
       const borderColor = dogtagEntry(dt?.borderColor);
       const shape = dogtagEntry(dt?.backgroundId) ?? dogtagEntry(DEFAULT_SHAPE_ID);
@@ -99,99 +140,119 @@ export default defineComponent({
       // Standalone medal: one full-bleed image, nothing else stacks.
       if (symbol && STANDALONE_SPECIES.has(symbol[1])) {
         return {
-          standalone: true,
+          standalone: true as const,
           bg: null,
           border: null,
-          plateUrl: null,
-          frameUrl: null,
+          shapeIndex: null,
           maskUrl: null,
-          textureUrl: null,
-          symbolUrl: partUrl(symbol[0]),
+          /** Standalone medals have no clip group — nothing to probe. */
+          maskProbeKey: null as string | null,
+          maskKey: null as string | null,
+          textureIndex: texture ? texture[0] : null,
+          symbolIndex: symbol[0],
         };
       }
 
       const outline = shape ? isOutlineShape(shape[0]) : false;
       const shapeIndex = shape ? shape[0] : "";
-      const ext = dogtagPngFallback.value ? ".png" : ".webp";
+      const maskKey = outline ? shapeIndex + "/PCNT001" : shapeIndex;
       return {
-        standalone: false,
+        standalone: false as const,
+        outline,
         bg: bgColor?.[2] ? hex(bgColor[2]) : null,
         border: borderColor?.[2] ? hex(borderColor[2]) : null,
         // Flat shapes are the plate (bottom layer); directory shapes only
         // contribute a border outline (top layer).
-        plateUrl: shape && !outline ? dogtagAssetUrl(shapeIndex + ext) : null,
-        frameUrl: shape && outline ? dogtagAssetUrl(shapeIndex + "/border" + ext) : null,
+        shapeIndex,
         // Clip mask = the plate filled shape: the flat plate alpha, or the
         // filled shield shipped next to the outline for directory shapes.
-        maskUrl: shape
-          ? outline
-            ? dogtagAssetUrl(shapeIndex + "/PCNT001" + ext)
-            : dogtagAssetUrl(shapeIndex + ext)
-          : null,
-        textureUrl: texture ? partUrl(texture[0]) : null,
-        symbolUrl: symbol ? partUrl(symbol[0]) : null,
+        // Best-candidate URL; the probe below may resolve a later chain
+        // link (a legacy all-.png pack serves PNG masks).
+        maskUrl: shape ? dogtagAssetUrl(maskKey + ".webp") : null,
+        // Every mask is probed — a CSS mask fails silently, so nothing
+        // else would resolve or flag it.
+        maskProbeKey: maskKey,
+        maskKey,
+        textureIndex: texture ? texture[0] : null,
+        symbolIndex: symbol ? symbol[0] : "",
       };
+    });
+
+    // Probe masks (see layers): walk the URL chain with one-shot Image
+    // loads, remember the first candidate that paints, and mark the part
+    // missing only when every candidate fails.
+    watchEffect(() => {
+      const l = layers.value;
+      const key = l?.maskProbeKey;
+      if (l == null || l.standalone || key == null) return;
+      const urls = dogtagUrlChain(key + ".webp");
+      const probe = (i: number): void => {
+        const im = new Image();
+        im.onload = () => setResolvedMask(key, urls[i]);
+        im.onerror = () => {
+          if (i + 1 < urls.length) probe(i + 1);
+          else markPartMissing(key);
+        };
+        im.src = urls[i];
+      };
+      probe(0);
     });
 
     return () => {
       const l = layers.value;
+      const maskMissing = l?.maskKey != null && missingParts.value.has(l.maskKey);
+      const maskSrc =
+        l?.maskKey != null ? maskUrls.value.get(l.maskKey) ?? l.maskUrl : null;
       const clipStyle: Record<string, string> = {
         background: l?.bg ?? "rgba(90, 100, 115, 0.9)",
       };
-      if (l?.maskUrl) {
-        clipStyle.WebkitMaskImage = "url(" + l.maskUrl + ")";
-        clipStyle.maskImage = "url(" + l.maskUrl + ")";
+      if (maskSrc && !maskMissing) {
+        clipStyle.WebkitMaskImage = "url(" + maskSrc + ")";
+        clipStyle.maskImage = "url(" + maskSrc + ")";
         clipStyle.WebkitMaskSize = "100% 100%";
         clipStyle.maskSize = "100% 100%";
         clipStyle.WebkitMaskRepeat = "no-repeat";
         clipStyle.maskRepeat = "no-repeat";
+      } else {
+        // Mask gone (or never resolvable): a failed CSS mask would hide the
+        // fill entirely, so clip to a plain circle instead and drop the
+        // texture that would now paint past the plate shape. The overflow
+        // keeps the square symbol artwork inside the circle.
+        clipStyle.borderRadius = "50%";
+        clipStyle.overflow = "hidden";
       }
 
       return (
         <div
-          class={[
-            "player-badge",
-            l ? "player-badge--dogtag" : tierClass.value,
-            l?.standalone ? "player-badge--medal" : null,
-          ]}
+          class={["player-badge", "player-badge--dogtag", l?.standalone ? "player-badge--medal" : null]}
           style={{ width: props.size + "px", height: props.size + "px" }}
-          data-hint={l ? "Player emblem (Tier " + props.tier + ")" : "Service record tier " + props.tier}
+          data-hint="Player emblem"
         >
-          {l ? (
-            l.standalone ? (
-              <span class="player-badge__dt">
-                <AssetImage
-                  class="player-badge__dt-symbol"
-                  src={l.symbolUrl}
-                  alt=""
-                  onError={markDogtagError}
-                  fallback={<span class="player-badge__tier">{props.tier || "?"}</span>}
-                />
-              </span>
-            ) : (
-              <span class="player-badge__dt">
-                <span class="player-badge__clip" style={clipStyle}>
-                  <AssetImage class="player-badge__dt-plate" src={l.plateUrl} alt="" onError={markDogtagError} />
-                  <AssetImage class="player-badge__dt-texture" src={l.textureUrl} alt="" onError={markDogtagError} />
-                  <AssetImage
-                    class="player-badge__dt-symbol"
-                    src={l.symbolUrl}
-                    alt=""
-                    onError={markDogtagError}
-                    fallback={<span class="player-badge__tier">{props.tier || "?"}</span>}
-                  />
-                </span>
-                <AssetImage
-                  class="player-badge__dt-frame"
-                  src={l.frameUrl}
-                  alt=""
-                  onError={markDogtagError}
-                  style={l.border ? { filter: "drop-shadow(0 0 1px " + l.border + ")" } : undefined}
-                />
-              </span>
-            )
+          {l?.standalone ? (
+            <span class="player-badge__dt">
+              <PartImage index={l.symbolIndex} partClass="player-badge__dt-symbol" />
+            </span>
           ) : (
-            <span class="player-badge__tier">{props.tier || "?"}</span>
+            <span class="player-badge__dt">
+              <span class="player-badge__clip" style={clipStyle}>
+                {/* Flat shapes only: directory shapes have no flat plate
+                    file (their plate is the masked fill + border outline). */}
+                {l?.shapeIndex && !l.outline && !maskMissing ? (
+                  <PartImage index={l.shapeIndex} partClass="player-badge__dt-plate" />
+                ) : null}
+                {l?.textureIndex && !maskMissing ? (
+                  <PartImage index={l.textureIndex} partClass="player-badge__dt-texture" />
+                ) : null}
+                <PartImage index={l?.symbolIndex ?? ""} partClass="player-badge__dt-symbol" />
+              </span>
+              {l?.outline ? (
+                <PartImage
+                  index={l.shapeIndex + "/border"}
+                  partClass="player-badge__dt-frame"
+                  partStyle={l.border ? { filter: "drop-shadow(0 0 1px " + l.border + ")" } : undefined}
+                />
+              ) : null}
+            </span>
           )}
         </div>
       );

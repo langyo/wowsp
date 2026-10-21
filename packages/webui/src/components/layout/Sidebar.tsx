@@ -115,13 +115,13 @@ export default defineComponent({
 
     // The account row's avatar: the real dog-tag emblem when the cached
     // stats carry one, else the neutral AccountAvatar disc. The old
-    // service-record-tier fallback (a numbered ring) is gone — at 22px its
-    // number read like a permission rank, and the 3px metallic ring
-    // shrank the visible disc below the platform badge beside it.
+    // service-record-tier fallback (a numbered ring) is gone — its number
+    // read like a permission rank, and the 3px metallic ring shrank the
+    // visible disc below the platform badge beside it.
     const accountAvatar = computed(() => {
       const s = activeStats.value;
       return s?.dogTag ? (
-        <PlayerBadge dogTag={s.dogTag} tier={s.levelingTier ?? 0} size={22} />
+        <PlayerBadge dogTag={s.dogTag} size={22} />
       ) : (
         <AccountAvatar size={22} />
       );

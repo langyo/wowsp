@@ -5,9 +5,6 @@
     "enrollCopy": "參與錄影共享計畫，協助 WoWSP 收集戰術分析所需的比賽錄影。整個過程匿名進行。",
     "enroll": "參與共享",
     "uploaders": "上傳人",
-    "realm": "伺服器",
-    "name": "遊戲 ID",
-    "namePlaceholder": "用於致謝署名的暱稱（3-24 個字元）",
     "consentRecorded": "已同意條款（v{version}）",
     "consentMissing": "尚未同意共享條款",
     "credits": "已收錄份數",
@@ -22,7 +19,7 @@
     "usedFor": "徵集到的錄影僅用於地圖與點位分析、戰績校準追蹤，以及 AI 輔助研究。",
     "noRedistribution": "原始錄影永遠不會被重新散布；對外發布的只有派生統計（艦艇、隊伍、座標與事件序列），不含任何個人資訊。",
     "contributorList": "每個版本發布時，本頁下方的「參與共享的人員」名單會隨之更新：按伺服器與遊戲 ID 排列，每人標籤右側的數字為其共享份數；點擊任意人員可跳轉水表查詢查看其公開戰績。",
-    "identity": "署名身分為自報的伺服器與遊戲 ID，不綁定任何帳戶，可在上方隨時修改。",
+    "identity": "署名身分為自報的伺服器與遊戲 ID，可在「署名帳戶」中隨時更換。",
     "agree": "我已閱讀並同意以上全部條款"
   },
   "wizard": {
@@ -40,9 +37,9 @@
     "doneLabel": "完成",
     "open": "共享錄影…",
     "identityHint": "署名身分將隨共享包上傳,並出現在參與人員名單中。",
-    "identityMissing": "請先填寫署名身分(伺服器 + 遊戲 ID)",
+    "identityMissing": "請先選擇署名帳戶",
     "identitySource": "署名帳戶",
-    "identityCustom": "手動輸入…"
+    "identityChoose": "選擇署名帳戶…"
   },
   "select": {
     "checkCard": "選擇{name}的錄影",

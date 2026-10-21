@@ -5,9 +5,6 @@
     "enrollCopy": "Join the replay sharing program to help WoWSP collect battle replays for tactical analysis. Contributions are anonymous.",
     "enroll": "Participate",
     "uploaders": "Uploaded as",
-    "realm": "Server",
-    "name": "Game ID",
-    "namePlaceholder": "Nickname credited in the contributor list (3-24 characters)",
     "consentRecorded": "Terms accepted (v{version})",
     "consentMissing": "Sharing terms not yet accepted",
     "credits": "Accepted replays",
@@ -22,7 +19,7 @@
     "usedFor": "Collected replays are used only for map and position analysis, stats calibration tracking, and AI-assisted research.",
     "noRedistribution": "Raw replays are never redistributed; only derived statistics (ships, teams, coordinates and event timelines) are published, with no personal information.",
     "contributorList": "With every release, the “People participating in sharing” list on this page is refreshed: grouped by server and game ID, the number on the right of each chip shows how many replays that person shared; click anyone to open their public stats in the lookup.",
-    "identity": "The credited identity is a self-declared server and game ID — no account binding — and can be changed above at any time.",
+    "identity": "The credited identity is a self-declared server and game ID, and can be changed at any time via the account picker.",
     "agree": "I have read and agree to all of the terms above"
   },
   "wizard": {
@@ -40,9 +37,9 @@
     "doneLabel": "Finish",
     "open": "Share replays…",
     "identityHint": "The credited identity uploads with your package and lands in the contributor list.",
-    "identityMissing": "Set your credited identity (server + game ID) first",
+    "identityMissing": "Choose the credited account first",
     "identitySource": "Credited as",
-    "identityCustom": "Enter manually…"
+    "identityChoose": "Choose an account…"
   },
   "select": {
     "checkCard": "Select the replay of {name}",

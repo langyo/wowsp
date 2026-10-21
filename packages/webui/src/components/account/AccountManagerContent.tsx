@@ -19,9 +19,17 @@ import "./AccountManagerContent.scss";
  * player is previewed → confirm binds and activates it. Selecting a card
  * switches the active account (no separate checkmark button).
  *
- * Rendered inline in the settings modal's 账户 section AND inside the
- * AccountSwitcherModal wrapper (dashboard's bind entry). Hosts that need to
- * react to a bind/switch (close + refresh) pass `onActive`.
+ * In `pickMode` the same cards pick a credited identity instead (the
+ * sharing wizard's account picker window): no reorder handle, preferred
+ * star or remove affordance, the highlight marks `selectedKey` rather than
+ * the active account, a card click reports the account via `onPick`, and a
+ * bind confirmed in the add dialog is picked immediately — without
+ * switching the app's active account.
+ *
+ * Rendered inline in the settings modal's 账户 section, inside the
+ * AccountSwitcherModal wrapper (dashboard's bind entry), and inside the
+ * AccountPickerModal wrapper (pick mode). Hosts that need to react to a
+ * bind/switch (close + refresh) pass `onActive`.
  */
 export default defineComponent({
   name: "AccountManagerContent",
@@ -29,6 +37,14 @@ export default defineComponent({
     /** Called after a successful bind or switch (host decides what to do —
      *  the modal wrapper closes itself, the settings section stays open). */
     onActive: { type: Function as PropType<() => void>, default: undefined },
+    /** Picker mode — cards credit an identity instead of switching. */
+    pickMode: { type: Boolean, default: false },
+    /** The currently picked identity key (`realm:accountId`) in pick mode;
+     *  its card carries the active highlight. */
+    selectedKey: { type: String as PropType<string | null>, default: null },
+    /** Called with the picked account: a card click, or a bind confirmed in
+     *  the add dialog while picking. */
+    onPick: { type: Function as PropType<(a: AccountProfile) => void>, default: undefined },
   },
   setup(props) {
     const accounts = useAccountStore();
@@ -123,21 +139,27 @@ export default defineComponent({
       }
     }
 
-    /** Bind the staged player and make it active; seed the stats cache so
-     *  the new card shows winrate/battles/clan immediately. */
+    /** Bind the staged player; seed the stats cache so the new card shows
+     *  winrate/battles/clan immediately. Manage mode also makes it active
+     *  and reports via `onActive`; pick mode leaves the app's active
+     *  account alone and hands the fresh profile straight to `onPick`. */
     async function confirmAdd() {
       const f = found.value;
       if (!f || binding.value) return;
       binding.value = true;
       try {
         await accounts.addAccount(f.profile);
-        await accounts.setActive(f.profile.realm, f.profile.accountId);
+        if (props.pickMode) {
+          props.onPick?.(f.profile);
+        } else {
+          await accounts.setActive(f.profile.realm, f.profile.accountId);
+          props.onActive?.();
+        }
         // The bind search's lookup already seeded the SHARED stats cache
         // with f.stats — the new card picks it up reactively.
         found.value = null;
         searchName.value = "";
         addOpen.value = false;
-        props.onActive?.();
       } catch (e) {
         searchError.value = (e as Error).message;
       } finally {
@@ -184,16 +206,108 @@ export default defineComponent({
       { immediate: true },
     );
 
+    /** One bound-account card — shared verbatim by the draggable manage
+     *  list and the picker's plain list (pick mode drops the reorder
+     *  handle's wrapper, the preferred star and the remove button). */
+    function renderCard(a: AccountProfile) {
+      const isActive = props.pickMode
+        ? props.selectedKey === `${a.realm}:${a.accountId}`
+        : accounts.activeAccountId === a.accountId && accounts.activeRealm === a.realm;
+      const s = stats.cache.get(`${a.realm}_${a.accountId}`);
+      const preferred = accounts.preferredAccount(a.realm);
+      const isPreferred = preferred?.accountId === a.accountId;
+      const realmHasChoice =
+        accounts.accounts.filter((x) => x.realm === a.realm).length > 1;
+      return (
+        <div
+          class={[
+            "acct-card",
+            isActive ? "acct-card--active" : "",
+          ]}
+          onClick={() => (props.pickMode ? props.onPick?.(a) : void switchTo(a))}
+        >
+          {/* Player service-record badge — the layered in-game emblem.
+              Falls back to the default emblem parts when stats are not yet
+              loaded (never a tier number — see PlayerBadge). */}
+          <PlayerBadge dogTag={s?.dogTag ?? null} size={38} />
+          <div class="acct-card__body">
+            <div class="acct-card__head">
+              {s?.clanTag ? (
+                <span class="acct-card__clan">[{s.clanTag}]</span>
+              ) : null}
+              <span class="acct-card__name">{a.nickname}</span>
+            </div>
+            <div class="acct-card__meta">
+              <HkTag variant="default" size="sm">{a.realm.toUpperCase()}</HkTag>
+              {s ? (
+                [
+                  s.battles != null ? (
+                    <span class="acct-card__stat" data-hint={t("stats.battles")}>
+                      <Swords size={11} /> {s.battles.toLocaleString()}
+                    </span>
+                  ) : null,
+                  s.winrate != null ? (
+                    <span
+                      class="acct-card__stat"
+                      style={{ color: winrateColor(s.winrate) }}
+                      data-hint={t("stats.winrate")}
+                    >
+                      <Trophy size={11} /> {s.winrate.toFixed(1)}%
+                    </span>
+                  ) : null,
+                  s.hidden ? (
+                    <HkTag variant="danger" size="sm">{t("stats.hidden")}</HkTag>
+                  ) : null,
+                ]
+              ) : null}
+            </div>
+          </div>
+          {!props.pickMode && (isPreferred ? (
+            <span
+              class="acct-card__primary"
+              aria-label={t("account.preferredBadge")}
+              data-hint={t("account.preferredBadge")}
+            >
+              <Star size={14} fill="currentColor" />
+            </span>
+          ) : realmHasChoice ? (
+            <button
+              class="acct-card__promote"
+              onClick={(e) => void promote(a, e)}
+              aria-label={t("account.setPreferred")}
+              data-hint={t("account.setPreferred")}
+            >
+              <Star size={14} />
+            </button>
+          ) : null)}
+          {!props.pickMode && (
+            <button
+              class="acct-card__remove"
+              onClick={(e) => void remove(a, e)}
+              aria-label={t("account.remove")}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      );
+    }
+
     return () => (
       <div class="acct-modal">
         {/* bound accounts as cards (drag a card's grip handle to reorder —
             the array order is the persisted card order) + the dashed add row
             closing the list. Hikari's scroll container owns the scrollbar
-            (overlay track); the cards scroll inside its viewport. */}
+            (overlay track); the cards scroll inside its viewport. Pick mode
+            renders the same cards in a plain, non-reorderable list. */}
         <HkScrollContainer class="acct-modal__list">
           <div class="acct-modal__list-inner">
           {accounts.accounts.length === 0 ? (
             <p class="acct-modal__empty">{t("account.noAccounts")}</p>
+          ) : props.pickMode ? (
+            <div class="acct-modal__cards">
+              {accounts.accounts.map((a) => renderCard(a))}
+            </div>
           ) : (
             <HkDraggableList
               class="acct-modal__cards"
@@ -202,88 +316,9 @@ export default defineComponent({
               onReorder={(from: number, to: number) => void accounts.reorderAccounts(from, to)}
             >
               {{
-                item: ({ item }: { item: AccountProfile & { key: string } }) => {
-                const a = item;
-                const isActive =
-                  accounts.activeAccountId === a.accountId &&
-                  accounts.activeRealm === a.realm;
-                const s = stats.cache.get(`${a.realm}_${a.accountId}`);
-                const preferred = accounts.preferredAccount(a.realm);
-                const isPreferred = preferred?.accountId === a.accountId;
-                const realmHasChoice =
-                  accounts.accounts.filter((x) => x.realm === a.realm).length > 1;
-                return (
-                  <div
-                    class={[
-                      "acct-card",
-                      isActive ? "acct-card--active" : "",
-                    ]}
-                    onClick={() => void switchTo(a)}
-                  >
-                    {/* Player service-record badge based on leveling tier.
-                        Falls back to tier 0 (bronze "?") when stats not yet
-                        loaded. Replaces the old pig-logo placeholder. */}
-                    <PlayerBadge tier={s?.levelingTier ?? 0} dogTag={s?.dogTag ?? null} size={38} />
-                    <div class="acct-card__body">
-                      <div class="acct-card__head">
-                        {s?.clanTag ? (
-                          <span class="acct-card__clan">[{s.clanTag}]</span>
-                        ) : null}
-                        <span class="acct-card__name">{a.nickname}</span>
-                      </div>
-                      <div class="acct-card__meta">
-                        <HkTag variant="default" size="sm">{a.realm.toUpperCase()}</HkTag>
-                        {s ? (
-                          [
-                            s.battles != null ? (
-                              <span class="acct-card__stat" data-hint={t("stats.battles")}>
-                                <Swords size={11} /> {s.battles.toLocaleString()}
-                              </span>
-                            ) : null,
-                            s.winrate != null ? (
-                              <span
-                                class="acct-card__stat"
-                                style={{ color: winrateColor(s.winrate) }}
-                                data-hint={t("stats.winrate")}
-                              >
-                                <Trophy size={11} /> {s.winrate.toFixed(1)}%
-                              </span>
-                            ) : null,
-                            s.hidden ? (
-                              <HkTag variant="danger" size="sm">{t("stats.hidden")}</HkTag>
-                            ) : null,
-                          ]
-                        ) : null}
-                      </div>
-                    </div>
-                    {isPreferred ? (
-                      <span
-                        class="acct-card__primary"
-                        aria-label={t("account.preferredBadge")}
-                        data-hint={t("account.preferredBadge")}
-                      >
-                        <Star size={14} fill="currentColor" />
-                      </span>
-                    ) : realmHasChoice ? (
-                      <button
-                        class="acct-card__promote"
-                        onClick={(e) => void promote(a, e)}
-                        aria-label={t("account.setPreferred")}
-                        data-hint={t("account.setPreferred")}
-                      >
-                        <Star size={14} />
-                      </button>
-                    ) : null}
-                    <button
-                      class="acct-card__remove"
-                      onClick={(e) => void remove(a, e)}
-                      aria-label={t("account.remove")}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                );
-              } }}
+                item: ({ item }: { item: AccountProfile & { key: string } }) =>
+                  renderCard(item),
+              }}
             </HkDraggableList>
           )}
           {/* dashed add placeholder — the last row of the list; opens the
@@ -345,7 +380,6 @@ export default defineComponent({
                   promote buttons. */}
               <div class="acct-card acct-card--preview">
                 <PlayerBadge
-                  tier={found.value.stats.levelingTier ?? 0}
                   dogTag={found.value.stats.dogTag ?? null}
                   size={38}
                 />

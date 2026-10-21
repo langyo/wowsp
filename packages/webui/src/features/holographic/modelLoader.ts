@@ -491,8 +491,7 @@ for (const path of _minimapGlobKeys) {
 // into a .png pack 404s every 2D map image (user report 2026-10-19: all
 // map art went blank). One producer run generates the whole subtree, so
 // ONE representative probe per wiring decides the family's extension; a
-// failed <img>/Image load can still flip it later (the dogtagPngFallback
-// idiom in PlayerBadge) as belt-and-braces.
+// failed <img>/Image load can still flip it later as belt-and-braces.
 const minimapPackPng = ref(false);
 
 /** One-way: the pack tree carries .png minimaps (called from a minimap
