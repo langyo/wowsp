@@ -119,6 +119,7 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         Route::ReplaysAdminArchive { anon_id: _ } => replay::handle_admin_archive(req, env).await,
         Route::ReplaysAdminDrain => replay::handle_admin_drain(req, env).await,
         Route::ReplaysAdminRename => replay::handle_admin_rename(req, env).await,
+        Route::ReplaysAdminBackfill => replay::handle_admin_backfill(req, env).await,
 
         // ── erp console auth (see src/erp.rs) ────────────────────────────
         Route::ErpLogin => erp::handle_login(req, env).await,
