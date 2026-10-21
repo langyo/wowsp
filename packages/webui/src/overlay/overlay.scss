@@ -375,9 +375,20 @@ html.overlay-hidden body {
 }
 
 /* The team-average numbers carry the same warm accent the radar range
-   does — they are the glance numbers of the card's third line. */
+   does — they are the glance numbers of the card's averages line. */
 .overlay-intel-line--avg b {
   color: rgb(255 210 122);
+}
+
+/* The comparative tones: the higher side's figure green, the lower red —
+   the same winrate-tier pair the roster numbers grade by. Equal or
+   missing figures keep the warm accent. */
+.overlay-intel-line--avg b.overlay-intel-b--hi {
+  color: rgb(71 227 165);
+}
+
+.overlay-intel-line--avg b.overlay-intel-b--lo {
+  color: rgb(220 80 80);
 }
 
 /* The longest radar range is the load-bearing number of the card — the

@@ -48,9 +48,7 @@ describe("readOverlayDisplayPrefs", () => {
         { scope: "global", metric: "damage" },
       ],
       battleScope: "follow",
-      intel: { radar: true, hydro: true, smoke: true },
-      teamIntel: true,
-      teamAvg: { winrate: false, pr: false, damage: false },
+      teamAvgEnabled: false, // the consumable-intel line has no switch at all
       weightedTeamWr: true,
       sealsOn: true, // PR master + seals both default on now
       sealsDisabled: new Set(),
@@ -68,7 +66,6 @@ describe("readOverlayDisplayPrefs", () => {
         sealsEnabled: true,
         sealDisabled: { rat: true, junk: true },
         weightedTeamWr: false,
-        teamIntelEnabled: false,
         overlayColumns: [
           { scope: "global", metric: "winrate" },
           { scope: "ship", metric: "damage" },
@@ -76,7 +73,8 @@ describe("readOverlayDisplayPrefs", () => {
           "junk",
         ],
         overlayBattleScope: "ranked",
-        overlayIntel: { radar: false },
+        // The retired per-item toggles of a pre-`teamAvgEnabled` blob: any
+        // of them on seeds the single switch on (the store's migration).
         overlayTeamAvg: { winrate: true, pr: true, damage: true },
       }),
     );
@@ -86,13 +84,36 @@ describe("readOverlayDisplayPrefs", () => {
       { scope: "ship", metric: "damage" },
     ]);
     expect(p.battleScope).toBe("ranked");
-    expect(p.intel).toEqual({ radar: false, hydro: true, smoke: true });
-    expect(p.teamIntel).toBe(false);
-    expect(p.teamAvg).toEqual({ winrate: true, pr: true, damage: true });
+    expect(p.teamAvgEnabled).toBe(true);
     expect(p.weightedTeamWr).toBe(false);
     expect(p.sealsOn).toBe(true);
     expect(p.sealsDisabled).toEqual(new Set(["rat"]));
     expect(p.prAlgo).toBe("expected");
+  });
+
+  it("migrates the retired team-average toggles in parity with the store", () => {
+    // Any retired toggle on → the averages line stays on; all-false (or a
+    // junk-only toggles object) stays off; an explicit boolean wins over
+    // the legacy seed — the SAME helper the store's parsePrefs runs.
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({ overlayTeamAvg: { pr: true } }),
+    );
+    expect(readOverlayDisplayPrefs().teamAvgEnabled).toBe(true);
+
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({
+        overlayTeamAvg: { winrate: false, pr: false, damage: false, karma: true },
+      }),
+    );
+    expect(readOverlayDisplayPrefs().teamAvgEnabled).toBe(false);
+
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({ teamAvgEnabled: false, overlayTeamAvg: { pr: true } }),
+    );
+    expect(readOverlayDisplayPrefs().teamAvgEnabled).toBe(false);
   });
 
   it("migrates the retired chips + ship/solo dims into scoped columns", () => {

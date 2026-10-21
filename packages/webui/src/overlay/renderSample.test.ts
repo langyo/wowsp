@@ -72,7 +72,7 @@ beforeAll(async () => {
   localStorage.setItem(
     STATS_PREFS_STORAGE_KEY,
     JSON.stringify({
-      overlayTeamAvg: { winrate: true, pr: true, damage: true },
+      teamAvgEnabled: true,
       sealsEnabled: true,
     }),
   );
@@ -184,6 +184,28 @@ describe("overlay sample frame", () => {
     expect(avgLines).toHaveLength(2);
     for (const line of avgLines) {
       expect(line.querySelector("b")).not.toBeNull();
+    }
+    // The comparative tones: the ally side's settled means beat the enemy
+    // side's on all three metrics (winrate ~51.1 vs ~49.0, PR ~1273 vs
+    // ~1037, damage ~59.2k vs ~57.5k — the hidden profile excluded from
+    // the enemy side), so the ally card's three figures all carry the hi
+    // tone and the enemy card's the lo one.
+    const intelCard = (side: string) =>
+      document.querySelector<HTMLElement>(
+        `.overlay-chip--${side}.overlay-chip--intel`,
+      )!;
+    for (const side of ["ally", "enemy"] as const) {
+      expect(
+        intelCard(side)!.querySelectorAll(".overlay-intel-line--avg b"),
+      ).toHaveLength(3);
+    }
+    for (const b of intelCard("ally")!.querySelectorAll(".overlay-intel-line--avg b")) {
+      expect(b.classList.contains("overlay-intel-b--hi")).toBe(true);
+      expect(b.classList.contains("overlay-intel-b--lo")).toBe(false);
+    }
+    for (const b of intelCard("enemy")!.querySelectorAll(".overlay-intel-line--avg b")) {
+      expect(b.classList.contains("overlay-intel-b--lo")).toBe(true);
+      expect(b.classList.contains("overlay-intel-b--hi")).toBe(false);
     }
 
     // Serialize the live DOM with the page's own stylesheet inlined so the

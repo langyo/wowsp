@@ -93,7 +93,7 @@ beforeAll(async () => {
   // of this contract, so switch it on the way the settings window would.
   localStorage.setItem(
     STATS_PREFS_STORAGE_KEY,
-    JSON.stringify({ overlayTeamAvg: { winrate: true, pr: true, damage: true } }),
+    JSON.stringify({ teamAvgEnabled: true }),
   );
   vi.stubGlobal("__TAURI__", {
     core: {
@@ -179,7 +179,7 @@ describe("overlay page loading faces", () => {
       JSON.stringify({
         prEnabled: true,
         prAlgo: "expected",
-        overlayTeamAvg: { winrate: true, pr: true, damage: true },
+        teamAvgEnabled: true,
       }),
     );
     handlers.get("wowsp://stats-prefs-changed")!({ payload: null });
