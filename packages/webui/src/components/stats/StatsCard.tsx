@@ -177,7 +177,6 @@ export default defineComponent({
           v-slots={{
             avatar: () => (
               <PlayerBadge
-                tier={props.stats.levelingTier ?? 0}
                 dogTag={props.stats.dogTag ?? null}
                 size={36}
               />

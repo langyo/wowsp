@@ -71,6 +71,34 @@ describe("dogtagAssets", () => {
     );
   });
 
+  it("chains pack .webp → pack .png → bundled snapshot when the pack is wired", async () => {
+    const fetchMock = mockFetch(PACK_MAP);
+    vi.stubGlobal("fetch", fetchMock);
+    const mod = await import("./dogtagAssets");
+    await mod.initDogtagPack(() => Promise.resolve("C:/cache"));
+
+    // Best-first: the pack's WebP, the same path as PNG (a legacy all-.png
+    // pack generation), then the bundled same-origin snapshot — so one
+    // missing pack file degrades a single part instead of every badge.
+    expect(mod.dogtagUrlChain("PCNP999.webp")).toEqual([
+      "asset://localhost/C:/cache/dogtags/PCNP999.webp",
+      "asset://localhost/C:/cache/dogtags/PCNP999.png",
+      "/dogtags/PCNP999.webp",
+    ]);
+    // Directory parts chain the same way.
+    expect(mod.dogtagUrlChain("PCNA001/border.webp")).toEqual([
+      "asset://localhost/C:/cache/dogtags/PCNA001/border.webp",
+      "asset://localhost/C:/cache/dogtags/PCNA001/border.png",
+      "/dogtags/PCNA001/border.webp",
+    ]);
+  });
+
+  it("serves only the bundled snapshot in the chain when the pack is absent", async () => {
+    const mod = await import("./dogtagAssets");
+    await mod.initDogtagPack(() => Promise.reject(new Error("offline")));
+    expect(mod.dogtagUrlChain("PCNP053.webp")).toEqual(["/dogtags/PCNP053.webp"]);
+  });
+
   it("falls back to the bundled map when the pack map fetch fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
     const mod = await import("./dogtagAssets");

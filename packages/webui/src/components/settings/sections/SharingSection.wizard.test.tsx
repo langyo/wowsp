@@ -304,4 +304,83 @@ describe("SharingSection wizard", () => {
     expect(errors, `render errors: ${JSON.stringify(errors)}`).toHaveLength(0);
     err.mockRestore();
   });
+
+  it("picks the credited identity from the account picker window", async () => {
+    const errors: unknown[][] = [];
+    const err = vi.spyOn(console, "error").mockImplementation((...a) => {
+      errors.push(a);
+    });
+
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const wrapper = mount(SharingSection, {
+      attachTo: document.body,
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+
+    // Open the wizard (the default mocks bind three accounts) and find its
+    // teleported surface.
+    const btn = wrapper
+      .findAll("button")
+      .find((b) => /enroll|参与共享|Participate/i.test(b.text()));
+    expect(btn, "enroll CTA exists").toBeTruthy();
+    await btn!.trigger("click");
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 50));
+    const wizard = [...document.body.querySelectorAll(".hk-modal-content")].find(
+      (m) => m.querySelector(".sharing-sec__identity"),
+    );
+    expect(wizard, "wizard modal found").toBeTruthy();
+
+    // The intro step's single identity control is the select-chrome
+    // trigger; the old inline realm/name free-form fields are gone (the
+    // only input left is the consent checkbox).
+    const trigger = wizard!.querySelector<HTMLButtonElement>("button.hk-select-trigger");
+    expect(trigger, "identity trigger exists").toBeTruthy();
+    expect(
+      wizard!.querySelectorAll('input:not([type="checkbox"])'),
+      "no free-form identity inputs",
+    ).toHaveLength(0);
+
+    // Clicking it opens the picker window with one card per bound account
+    // — no drag handles, preferred stars or remove buttons there.
+    trigger!.click();
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 50));
+    const cards = document.body.querySelectorAll(".acct-card:not(.acct-card--preview)");
+    expect(cards.length, "one card per bound account").toBe(3);
+    expect(
+      document.body.querySelectorAll(".acct-card__remove, .acct-card__promote, .hk-draggable-list-handle"),
+      "picker cards carry no manage affordances",
+    ).toHaveLength(0);
+
+    // Picking the CN card credits that identity in the wizard's draft.
+    const cnCard = [...cards].find((c) => c.textContent?.includes("神楽坂柚咲"));
+    expect(cnCard, "CN account card exists").toBeTruthy();
+    (cnCard as HTMLElement).click();
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(trigger!.textContent).toContain("神楽坂柚咲");
+    expect(trigger!.textContent).toContain("CN");
+
+    // Consent, then 下一步: the footer persists the picked identity through
+    // the Rust command on leaving the intro step.
+    const checkbox = wizard!.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(checkbox, "consent checkbox exists").toBeTruthy();
+    checkbox!.click();
+    await flushPromises();
+    const next = [...document.body.querySelectorAll("button")].find((b) =>
+      /next|下一步/i.test(b.textContent ?? ""),
+    );
+    expect(next, "wizard next button exists").toBeTruthy();
+    (next as HTMLElement).click();
+    await flushPromises();
+    const setCall = mocks.invoke.mock.calls.find((c) => c[0] === "contribution_set_identity");
+    expect(setCall, "identity persisted on next").toBeTruthy();
+    expect(setCall![1]).toMatchObject({ realm: "cn", name: "神楽坂柚咲" });
+
+    expect(errors, `render errors: ${JSON.stringify(errors)}`).toHaveLength(0);
+    err.mockRestore();
+  });
 });
