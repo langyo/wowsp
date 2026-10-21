@@ -19,6 +19,10 @@ yanked = "warn"
 id = "RUSTSEC-2024-0436"
 reason = "paste is unmaintained but functional; it is a direct dependency of the vendored wows-toolkit sources (packages/tools/game-assets tree). The vendor tree is now WoWSP's own independent fork (2026-10 decision — no upstream sync), so swapping in the drop-in pastey fork is unblocked whenever wanted; not urgent while paste keeps compiling."
 
+[[advisories.ignore]]
+id = "RUSTSEC-2026-0381"
+reason = "webpki-roots 0.26.x is a facade over the 1.0 line (Cargo.lock: webpki-roots 0.26.11 depends on webpki-roots 1.0.10), and 1.0.10 — the release that removes the distrusted emSign ECC Root CA - G3 — is locked, so the certificate data actually shipped is patched. No fixed 0.26.x exists yet (0.26.11 is the newest); drop this ignore when a patched 0.26.x ships and the lock moves to it."
+
 [licenses]
 # Removed keys (vulnerability/notice/unlicensed/copyleft/default) are built
 # in since cargo-deny PR #611: unallowed licenses deny, everything else warns.
