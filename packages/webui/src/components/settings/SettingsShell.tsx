@@ -2,6 +2,8 @@ import { defineComponent, Fragment, nextTick, ref, watch, type PropType } from "
 
 import { HkScrollContainer, type HkSettingsSection } from "@celestia-island/hikari";
 
+import { useSelectionEdgeHint } from "@/composables/useSelectionEdgeHint";
+
 // The rail+pane anatomy and its stylesheet are hikari's settings-window
 // grammar; the grouped rail is a wowsp-local extension (the upstream
 // HkSettingsBody has no group concept yet), so the shipped component
@@ -36,15 +38,26 @@ export interface SettingsRailGroup {
  *
  * Both scrollers are hikari HkScrollContainers (the app-wide overlay
  * scrollbar contract): the hosts keep the shell geometry (rail width,
- * pane flex, the modal host's flush-edge trick), the viewports scroll —
+ * pane flex, the modal host's flush-edge trick), the viewports scroll –
  * native bars hidden, the auto-hiding overlay chrome drawn by the
  * library. The rail+pane BEM classes stay on the hosts so every shell
  * selector (here, the modal's and the page's) keeps working unchanged.
+ *
+ * The rail carries a selection edge hint (useSelectionEdgeHint): with a
+ * long grouped section list, an active section scrolled out of the
+ * rail's band lights a primary-color gradient at the edge it lies
+ * beyond, so "where did the selection go" never hides behind the fold.
  */
 /** Consumed slice of HkScrollContainer's exposed component ref (the ref
  *  yields the exposed handle, not an element — see the pane below). */
 interface PaneScrollHandle {
   scrollTo(top: number, behavior?: ScrollBehavior): void;
+}
+
+/** Same idea for the rail: the selection hint composable senses through
+ *  the exposed scroller element (the container's viewport). */
+interface RailScrollHandle {
+  getScrollElement(): HTMLElement | undefined;
 }
 
 export const SettingsShell = defineComponent({
@@ -89,6 +102,15 @@ export const SettingsShell = defineComponent({
       void nextTick(() => paneRef.value?.scrollTo(0));
     });
 
+    // Selection edge hint on the rail: an active section scrolled out of
+    // the rail's visible band lights a primary gradient at the offending
+    // edge (the state binds onto the container ROOT through fallthrough
+    // attrs — the positioned non-scrolling box the gradient paints on).
+    // App-local twin of hikari's upstream selectionHint prop; retires
+    // when a published hikari ships it (see the composable).
+    const railRef = ref<RailScrollHandle | null>(null);
+    const railBeyond = useSelectionEdgeHint(() => railRef.value?.getScrollElement() ?? null);
+
     function pick(key: string) {
       const entry = entries().find((s) => s.key === key);
       if (!entry || entry.disabled) return;
@@ -98,7 +120,13 @@ export const SettingsShell = defineComponent({
 
     return () => (
       <div class="hk-settings">
-        <HkScrollContainer as="nav" class="hk-settings__rail" aria-label={props.navLabel}>
+        <HkScrollContainer
+          as="nav"
+          class="hk-settings__rail"
+          ref={railRef}
+          data-selection-beyond={railBeyond.value}
+          aria-label={props.navLabel}
+        >
           {props.groups.map((group) => (
             <Fragment key={group.key}>
               <div class="hk-settings__rail-heading">{group.label}</div>

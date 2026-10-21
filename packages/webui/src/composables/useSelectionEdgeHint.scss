@@ -1,0 +1,35 @@
+// useSelectionEdgeHint — the painted half of the selection edge hint
+// (see useSelectionEdgeHint.ts): a primary-color gradient fading to
+// transparent at each edge of the host that the selection lies beyond,
+// driven purely by the data-selection-beyond state the composable's
+// caller binds. "none" matches no painter, so the quiet state costs
+// nothing.
+//
+// The host is a POSITIONED NON-SCROLLING box (for a hikari scroll
+// container, its root — position: relative; overflow: hidden), never the
+// scrolling element itself: pseudos of an overflow: auto box live in
+// scrolled space and would scroll away with the content. The gradients
+// are decorative (pointer-events: none) and cost no layout — an
+// absolutely-positioned pseudo is never a flex item of the host.
+
+[data-selection-beyond="top"]::before,
+[data-selection-beyond="both"]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: var(--selection-hint-size, var(--space-24, 1.5rem));
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgb(var(--color-primary) / 32%), transparent);
+}
+
+[data-selection-beyond="bottom"]::after,
+[data-selection-beyond="both"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: var(--selection-hint-size, var(--space-24, 1.5rem));
+  pointer-events: none;
+  background: linear-gradient(to top, rgb(var(--color-primary) / 32%), transparent);
+}
