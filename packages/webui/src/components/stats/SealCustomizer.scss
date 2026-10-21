@@ -18,6 +18,23 @@
     color: rgb(var(--color-muted));
   }
 
+  /* One seal-tier group (一级章 / 二级章): a small header over its rows —
+     the tier is the FACE split (square stamp picture vs the horizontal
+     StampTag), so the header names where each group shows. */
+  &__tier {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  &__tier-title {
+    margin: 0.25rem 0 0 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-muted));
+  }
+
   &__row {
     display: flex;
     align-items: center;

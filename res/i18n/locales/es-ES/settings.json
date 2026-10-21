@@ -182,7 +182,9 @@
     "prTintToggleDesc": "Tiñe cada fila del roster en directo con el color del nivel de PR del jugador (nivel rojo → rojo, morado → morado); activado por defecto."
   },
   "sealCustomizer": {
-    "desc": "Haz clic en un sello para asignarle una imagen personalizada; un sello ya personalizado vuelve a su aspecto predeterminado con un solo clic (las imágenes se guardan en la carpeta stamps del directorio de datos de la aplicación). El interruptor de la derecha activa o desactiva cada sello; la vista previa se actualiza al instante.",
+    "desc": "Los sellos tienen dos niveles: los sellos de nivel 1 son de un solo carácter (incluido «过街老鼠») y los de nivel 2, de cuatro caracteres (sellos de composición y fusionados). En los paneles de batalla en vivo y posterior, los sellos de nivel 1 se muestran como la imagen cuadrada del sello junto a cada entrada y los de nivel 2 como una pequeña etiqueta horizontal junto a la puntuación. Haz clic en un sello para asignarle una imagen personalizada; un sello ya personalizado vuelve a su aspecto predeterminado con un solo clic (las imágenes se guardan en la carpeta stamps del directorio de datos de la aplicación). El interruptor de la derecha activa o desactiva cada sello; la vista previa se actualiza al instante.",
+    "tier1": "Sellos de nivel 1 (un carácter)",
+    "tier2": "Sellos de nivel 2 (cuatro caracteres)",
     "clickEdit": "Haz clic para asignar una imagen personalizada",
     "clickRemove": "Haz clic para eliminar la imagen personalizada y restaurar la predeterminada",
     "pickFailed": "Error al importar la imagen del sello",

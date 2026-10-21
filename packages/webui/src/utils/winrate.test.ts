@@ -12,6 +12,7 @@ import {
   prTier,
   prTierLabel,
   resolveStamps,
+  stampTier,
 } from "./winrate";
 
 // prTierLabel resolves through vue-i18n; locale messages load lazily now,
@@ -355,6 +356,29 @@ describe("resolveStamps", () => {
       "subVeteran",
     ] as const) {
       expect(isMergedStamp(kind)).toBe(false);
+    }
+  });
+});
+
+describe("stampTier", () => {
+  it("grades the single-character verdicts plus 过街老鼠 as the primary tier", () => {
+    for (const kind of ["miracle", "ape", "maggot", "rat"] as const) {
+      expect(stampTier(kind)).toBe("primary");
+    }
+  });
+
+  it("grades the four-character composition and merged seals as the secondary tier", () => {
+    for (const kind of [
+      "air",
+      "sub",
+      "airVeteran",
+      "subVeteran",
+      "airMiracle",
+      "subMiracle",
+      "airApe",
+      "subApe",
+    ] as const) {
+      expect(stampTier(kind)).toBe("secondary");
     }
   });
 });
