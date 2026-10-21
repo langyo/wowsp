@@ -74,9 +74,17 @@ mirrors). One such bridge update lands them on a client that fetches
   stamps `.res-version.json`, and drops the bootstrap `webview2/`
   subtree.
 - The **updater** (`packages/app/tauri/src/commands/update.rs`) keeps
-  fetching the `-lite` artifact and spawning it silently — and exits
-  itself right after the handoff, so the WebView2 children close with
-  the app and never pin the install directory in the first place.
+  fetching the `-lite` artifact and spawning it silently — with the
+  child's working directory re-homed to the temp dir (an inherited
+  install-dir CWD pins the swap target: Windows refuses to rename a
+  directory any process holds as its CWD, so the installer would fight
+  its own swap through shun's lock-retry window), and with the update
+  sentinel (`wowsp-update-sentinel.exe`, staged beside `wowsp.exe` in
+  both payloads — see `packages/app/update_sentinel`) watching the
+  installer from a topmost window so the automatic install is never a
+  silent black box — and exits itself right after the handoff, so the
+  WebView2 children close with the app and never pin the install
+  directory in the first place.
 
 ## Building
 

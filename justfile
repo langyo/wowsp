@@ -156,19 +156,19 @@ test target='unit' *FLAGS='':
 #   just check          → cargo check (fast compile check)
 
 # Both recipes mirror the CI rust gate (ci.yml "Rustfmt"/"Clippy") exactly:
-# the two app crates get fmt + clippy (--no-deps keeps the vendored
+# the app crates get fmt + clippy (--no-deps keeps the vendored
 # game-assets/game-assets-core upstream lint style out), while repo-wide fmt would
 # fail on the vendored dependency sources.
 _lint-full:
-    cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
-    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+    cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -p wowsp_update_sentinel -- --check
+    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared -p wowsp_update_sentinel --lib --bins --no-deps -- -D warnings
     @python scripts/check_anyhow.py
     {{PM}} -r lint
     @python scripts/check_i18n.py
 
 _lint-rust:
-    cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
-    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+    cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -p wowsp_update_sentinel -- --check
+    cargo clippy -p wowsp_tauri -p wowsp_tauri_shared -p wowsp_update_sentinel --lib --bins --no-deps -- -D warnings
 
 _lint-webui:
     {{PM}} -r lint

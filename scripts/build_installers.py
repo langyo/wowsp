@@ -99,6 +99,9 @@ RES_MANIFEST = "wowsp-res.json"
 # beside wowsp.exe by stage_directml for both installer payloads.
 DIRECTML_DLL = "DirectML.dll"
 DIRECTML_MIN_BYTES = 1_000_000
+# The visible update-handoff watcher (packages/app/update_sentinel); staged
+# beside wowsp.exe for both installer payloads the same way.
+SENTINEL_EXE = "wowsp-update-sentinel.exe"
 # Written by build_app() so --skip-app-build can tell a plain (AI) build
 # from the portable flavor's AI-stripped compile, which overwrites the same
 # target/release/wowsp.exe path.
@@ -398,9 +401,16 @@ def build_app(portable: bool = False) -> Path:
     else:
         print("[app] building wowsp_tauri (release) …")
         run(["cargo", "build", "-p", "wowsp_tauri", "--release"])
+        # The visible update-handoff watcher rides the installer payloads
+        # (the portable build has no updater and skips it).
+        print("[app] building wowsp_update_sentinel (release) …")
+        run(["cargo", "build", "-p", "wowsp_update_sentinel", "--release"])
     exe = TARGET / "wowsp.exe"
     if not exe.is_file():
         sys.exit(f"application binary missing: {exe}")
+    sentinel = TARGET / SENTINEL_EXE
+    if not portable and not sentinel.is_file():
+        sys.exit(f"update sentinel binary missing: {sentinel}")
     BUILD_STAMP.write_text(
         "portable" if portable else "full", encoding="utf-8", newline=""
     )
@@ -480,6 +490,17 @@ def stage_payload(stage: Path, app_exe: Path, variant: str) -> Path:
     # lite artifact, and shun swaps the whole install directory, so a
     # webview2-only copy would vanish on the first update.
     stage_directml(payload)
+    # The visible update-handoff watcher, same both-payloads rule: the
+    # updater stages it beside whatever build is running when the next
+    # update arrives.
+    sentinel = TARGET / SENTINEL_EXE
+    if not sentinel.is_file():
+        sys.exit(
+            f"update sentinel missing: {sentinel}\n"
+            "The plain (AI) app build compiles it; rebuild without "
+            "--skip-app-build (or stage the sentinel first)."
+        )
+    shutil.copy2(sentinel, payload / SENTINEL_EXE)
     # Diagnostic flavor marker beside the app (the updater picks -lite
     # regardless — this is the wizard's identity line + older builds).
     (payload / "wowsp-flavor.txt").write_text(variant, encoding="utf-8", newline="")
