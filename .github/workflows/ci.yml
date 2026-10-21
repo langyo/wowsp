@@ -122,12 +122,12 @@ jobs:
       - name: Rustfmt
         # Only the app crates are in-repo code; game-assets/game-assets-core are
         # vendored wows-toolkit sources that keep upstream formatting.
-        run: cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
+        run: cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -p wowsp_update_sentinel -- --check
       - name: Clippy
-        # Both app crates, lib + bins — vendored game-assets/game-assets-core are
+        # The app crates, lib + bins — vendored game-assets/game-assets-core are
         # dependency-only (--no-deps keeps their upstream lint style out of
         # this gate). Mirrors `just lint rust` / `just lint` exactly.
-        run: cargo clippy -p wowsp_tauri -p wowsp_tauri_shared --lib --bins --no-deps -- -D warnings
+        run: cargo clippy -p wowsp_tauri -p wowsp_tauri_shared -p wowsp_update_sentinel --lib --bins --no-deps -- -D warnings
       - name: Anyhow policy
         # No Result<_, String> error types and anyhow-first imports in the
         # app crates (helpers return anyhow::Result, commands return

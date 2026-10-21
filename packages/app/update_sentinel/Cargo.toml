@@ -1,0 +1,21 @@
+[package]
+name = "wowsp_update_sentinel"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license = "SySL-1.0"
+publish = false  # ships beside wowsp.exe in the installer payloads, never published
+description = "WoWSP — visible watcher window for the auto-update handoff"
+
+[[bin]]
+name = "wowsp-update-sentinel"
+path = "src/main.rs"
+
+[dependencies]
+windows.workspace = true
+
+[build-dependencies]
+# Same resource embedder tauri-build uses for wowsp.exe (icon + the
+# comctl32-v6 / DPI manifest); already in the dependency tree.
+tauri-winres = "0.1"

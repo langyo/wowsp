@@ -263,7 +263,8 @@ Before submitting, the relevant subset of `just lint` (or scoped
 - Rust checks run on Windows (CI's rust job also runs on a Windows runner):
   the pinned `windows-future` crate does not compile on Linux (upstream bug;
   see the ci.yml comment). fmt/clippy target only the app crates
-  (`wowsp_tauri` / `wowsp_tauri_shared`); the `game-assets` /
+  (`wowsp_tauri` / `wowsp_tauri_shared` / `wowsp_update_sentinel`); the
+  `game-assets` /
   `game-assets-core` tool packages are dependency sources and keep their
   historical formatting (in-tree forks of wows-toolkit, flattened under
   `packages/tools/` — no upstream sync; dependency bumps and fixes there
