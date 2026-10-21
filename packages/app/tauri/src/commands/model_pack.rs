@@ -92,7 +92,7 @@ use tar::Archive;
 use tauri::{AppHandle, Emitter};
 use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{
-    CommandResult, DOWNLOAD_PROGRESS_EVENT, DownloadProgress, ResStatus, ResUpdate,
+    CommandResult, DOWNLOAD_PROGRESS_EVENT, DownloadProgress, ResIntegrity, ResStatus, ResUpdate,
 };
 
 use crate::commands::download_hub::{self, DownloadRequest};
@@ -150,6 +150,11 @@ const JOB_ID: &str = "res-pack";
 /// In-flight download bookkeeping (single-flight — there is exactly one
 /// pack now; the whole install pass, transfer + apply, holds it).
 static DOWNLOAD_ACTIVE: Mutex<bool> = Mutex::new(false);
+
+/// In-flight integrity-walk bookkeeping: `res_download` refuses while a
+/// walk runs so a mutating tree can never be hashed into a false "not
+/// intact" verdict (and the walk, in turn, refuses while a pass runs).
+static VERIFY_ACTIVE: Mutex<bool> = Mutex::new(false);
 
 /// Marker `ensure_res_pack` answers with on mobile when the APK bundle (not
 /// a downloaded cache pack) is serving — the webui treats it as "nothing to
@@ -1249,22 +1254,28 @@ async fn delta_install(
 /// `prefer_delta` flag distinguishes the panel path (chain when possible)
 /// from the startup path (full install only — it only runs when the pack
 /// is missing anyway); mobile passes `false` unconditionally (the chain
-/// base may be the read-only bundle — see the module docs).
+/// base may be the read-only bundle — see the module docs). `force`
+/// skips the already-current fast path: the integrity repair downloads
+/// through this body too, and a corrupted tree can carry a perfectly
+/// correct stamp (the exact state the check exists to catch).
 async fn install_latest(
     app: Option<&AppHandle>,
     client: &Client,
     prefer_delta: bool,
+    force: bool,
 ) -> anyhow::Result<()> {
     let cache = cache_root()?;
     let manifest = fetch_manifest(client).await?;
     let local = effective_local_version(&cache);
-    if let Some(hash) = local.tree_sha256.as_deref() {
-        if hash == manifest.tree_sha256 {
-            // Already current — the panel seeds a progress entry before
-            // invoking, so close it out (a silent Ok would strand the UI
-            // on a dead progress bar until restart).
-            emit_progress(app, phase::DONE, 0, 0, 1, 1, None);
-            return Ok(());
+    if !force {
+        if let Some(hash) = local.tree_sha256.as_deref() {
+            if hash == manifest.tree_sha256 {
+                // Already current — the panel seeds a progress entry before
+                // invoking, so close it out (a silent Ok would strand the UI
+                // on a dead progress bar until restart).
+                emit_progress(app, phase::DONE, 0, 0, 1, 1, None);
+                return Ok(());
+            }
         }
     }
     // Chain patches require a known local hash AND a healthy staged tree —
@@ -1272,8 +1283,11 @@ async fn install_latest(
     // would patch a ghost. A failed delta-tag lookup downgrades to the
     // full archive (the verified manifest pins its sha256, so the mirrors
     // can still serve it), and so does a chain whose patched tree fails
-    // the tree-hash check.
-    if prefer_delta && local.tree_sha256.is_some() && dir_populated(&cache.join("models")) {
+    // the tree-hash check. A forced repair skips the chain entirely: the
+    // whole point is replacing possibly-corrupt bytes with the verified
+    // archive, never patching on top of them.
+    if !force && prefer_delta && local.tree_sha256.is_some() && dir_populated(&cache.join("models"))
+    {
         match fetch_delta_edges(client).await {
             Ok(edges) => {
                 let chain = delta_chain(
@@ -1401,7 +1415,7 @@ async fn ensure_pack() -> anyhow::Result<String> {
                 // automatic pass must not inherit a cancel aimed at an
                 // earlier, already-finished pass.
                 download_hub::clear_pending(kind::RES_PACK, JOB_ID);
-                break install_latest(None, &client, false).await;
+                break install_latest(None, &client, false, false).await;
             }
             waited += 1;
             if waited >= WAIT_SLOTS {
@@ -1584,13 +1598,89 @@ pub async fn check_res_update() -> CommandResult<ResUpdate> {
     })
 }
 
-/// Explicit download (initial, migration or update) of the pack, streaming
-/// progress through the unified `wowsp://download-progress` channel. Prefers the chain-patch path
-/// when one exists; falls back to the hash-verified full archive. Mobile
-/// skips the chain entirely (full download only — see module docs).
-/// Single-flight: a second call while a pass is in flight is rejected.
+/// The verify core, split from the command so the fixture tests can drive
+/// it directly (`cache_root` is environment-bound): compare the tree hash
+/// recomputed from disk against the install-time stamp. A failed walk
+/// reports `actual: None` and counts as not intact (the reason is logged).
+fn verify_pack_integrity(cache: &Path) -> anyhow::Result<ResIntegrity> {
+    let expected = read_local_version(cache)
+        .tree_sha256
+        .filter(|h| !h.is_empty())
+        .ok_or_else(|| anyhow!("no hash stamp on disk; the pack cannot be verified"))?;
+    let actual = match tree_sha256(cache) {
+        Ok(h) => Some(h),
+        Err(e) => {
+            tracing::warn!("integrity walk failed: {e}");
+            None
+        },
+    };
+    Ok(ResIntegrity {
+        intact: actual.as_deref() == Some(expected.as_str()),
+        expected,
+        actual,
+    })
+}
+
+/// On-demand integrity check for the pack cache (Settings → resources
+/// panel): recompute the content tree hash from disk and compare it
+/// against the stamp the installer wrote. Read-only and network-free;
+/// the hash walk over the pack runs on the blocking pool so the IPC
+/// thread stays responsive. Refused while a pack pass is in flight (the
+/// panel hides the button then anyway); `res_download` and `clear_res`
+/// refuse in the mirror direction while the walk runs — the flag dance
+/// in this block and theirs is mutually atomic (both lock
+/// DOWNLOAD_ACTIVE first), so no interleave can slip a mutating pass
+/// under a walk. Mobile: only meaningful when the DOWNLOADED cache
+/// serves — the panel hides the button when the APK bundle serves
+/// (`bundled` status), and the shell rejects the unstamped case the
+/// same way it would on a legacy desktop cache.
 #[tauri::command]
-pub async fn res_download(app: AppHandle) -> CommandResult<()> {
+pub async fn res_verify_integrity() -> CommandResult<ResIntegrity> {
+    // Resolved BEFORE the flags move — an early error here must not leak
+    // the verify slot (there is no guard drop on the error path).
+    let cache = cache_root()?;
+    {
+        let dl = DOWNLOAD_ACTIVE
+            .lock()
+            .map_err(|_| anyhow!("lock poisoned"))?;
+        let mut vf = VERIFY_ACTIVE.lock().map_err(|_| anyhow!("lock poisoned"))?;
+        if *dl {
+            return Err(anyhow!("a resource-pack download is already in flight").into());
+        }
+        if *vf {
+            return Err(anyhow!("an integrity check is already in flight").into());
+        }
+        *vf = true;
+    }
+    let report = tokio::task::spawn_blocking(move || {
+        let report = verify_pack_integrity(&cache);
+        if let Ok(mut guard) = VERIFY_ACTIVE.lock() {
+            *guard = false;
+        }
+        report
+    })
+    .await
+    .map_err(|e| anyhow!("integrity task: {e}"))??;
+    if !report.intact {
+        tracing::warn!(
+            expected = %report.expected,
+            actual = ?report.actual,
+            "resource pack integrity check failed; a re-download will repair it"
+        );
+    }
+    Ok(report)
+}
+
+/// Explicit download (initial, migration, update or integrity repair) of
+/// the pack, streaming progress through the unified
+/// `wowsp://download-progress` channel. Prefers the chain-patch path when
+/// one exists; falls back to the hash-verified full archive. Mobile skips
+/// the chain entirely (full download only — see module docs). `force`
+/// (the repair pass) reinstalls even when the stamp already matches the
+/// manifest. Refused while another pass is in flight (single-flight) or
+/// while an integrity walk is running — see `VERIFY_ACTIVE`.
+#[tauri::command]
+pub async fn res_download(app: AppHandle, force: Option<bool>) -> CommandResult<()> {
     // Build the client BEFORE taking the guard — an early error here must
     // not leak the single-flight slot.
     let client = crate::commands::network::build_http_client()?;
@@ -1601,6 +1691,13 @@ pub async fn res_download(app: AppHandle) -> CommandResult<()> {
         if *guard {
             return Err(anyhow!("a resource-pack download is already in flight").into());
         }
+        // A verify walk hashing the tree while the pass mutates it would
+        // only produce a bogus verdict (or a torn read) — refuse instead.
+        // Checked while holding DOWNLOAD_ACTIVE so the check is atomic
+        // against res_verify_integrity's flag block.
+        if *VERIFY_ACTIVE.lock().map_err(|_| anyhow!("lock poisoned"))? {
+            return Err(anyhow!("a resource-pack integrity check is in flight").into());
+        }
         *guard = true;
     }
     // Drop a stale cancel pressed while no pass was registered (e.g.
@@ -1608,7 +1705,7 @@ pub async fn res_download(app: AppHandle) -> CommandResult<()> {
     // user-initiated and must not inherit it.
     download_hub::clear_pending(kind::RES_PACK, JOB_ID);
     // cfg! keeps one code path; the mobile false is folded at compile time.
-    let result = install_latest(Some(&app), &client, !cfg!(mobile)).await;
+    let result = install_latest(Some(&app), &client, !cfg!(mobile), force.unwrap_or(false)).await;
     if let Err(e) = &result {
         emit_progress(Some(&app), phase::ERROR, 0, 0, 0, 0, Some(e.to_string()));
     }
@@ -1630,15 +1727,20 @@ pub fn res_cancel() -> CommandResult<()> {
 }
 
 /// Delete the pack's cache sub-directories + version stamp. Refused while
-/// a pass is in flight. The recursive delete runs on the blocking pool so
-/// a ~1.2 GB tree removal cannot freeze the IPC thread. On mobile this
-/// only ever deletes the DOWNLOADED update copy — the APK bundle takes
-/// over serving immediately afterwards, so clearing can never brick the
-/// app.
+/// a pass is in flight or an integrity walk is running (deleting under a
+/// walk would only force a bogus "not intact" and a repair download that
+/// countermands the deletion). The recursive delete runs on the blocking
+/// pool so a ~1.2 GB tree removal cannot freeze the IPC thread. On mobile
+/// this only ever deletes the DOWNLOADED update copy — the APK bundle
+/// takes over serving immediately afterwards, so clearing can never brick
+/// the app.
 #[tauri::command]
 pub async fn clear_res() -> CommandResult<()> {
     if is_downloading() {
         return Err(anyhow!("resource pack is downloading — cancel it first").into());
+    }
+    if *VERIFY_ACTIVE.lock().map_err(|_| anyhow!("lock poisoned"))? {
+        return Err(anyhow!("a resource-pack integrity check is in flight").into());
     }
     let cache = cache_root()?;
     Ok(tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
@@ -2048,6 +2150,31 @@ mod tests {
         // The root-level version stamp is not pack content.
         assert!(fixture.0.join(VERSION_FILE).is_file());
         assert_eq!(tree_sha256(&fixture.0).unwrap(), FIXTURE_OLD_TREE);
+    }
+
+    #[test]
+    fn integrity_check_accepts_a_stamped_tree_and_flags_drift() {
+        let fixture = PackFixture::new();
+        // Re-stamp with the tree's REAL hash: the installer stamps the
+        // published hash, while the fixture's default marker (hash(1)) is
+        // synthetic and would count as drift on its own.
+        write_local_version(&fixture.0, FIXTURE_OLD_TREE, "old").unwrap();
+        let report = verify_pack_integrity(&fixture.0).unwrap();
+        assert!(report.intact);
+        assert_eq!(report.expected, FIXTURE_OLD_TREE);
+        assert_eq!(report.actual.as_deref(), Some(FIXTURE_OLD_TREE));
+
+        fs::write(fixture.0.join("models/a.glb"), b"corrupted").unwrap();
+        let report = verify_pack_integrity(&fixture.0).unwrap();
+        assert!(!report.intact);
+        assert_eq!(report.expected, FIXTURE_OLD_TREE);
+        assert_ne!(report.actual.as_deref(), Some(FIXTURE_OLD_TREE));
+
+        // An unstamped cache is unverifiable — the panel never offers the
+        // check there (legacy stamp ⇒ updateAvailable), the shell refuses.
+        fs::remove_file(fixture.0.join(VERSION_FILE)).unwrap();
+        let err = verify_pack_integrity(&fixture.0).unwrap_err();
+        assert!(err.to_string().contains("no hash stamp"));
     }
 
     #[test]

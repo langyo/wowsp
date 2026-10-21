@@ -43,6 +43,17 @@ export interface ResUpdate {
   deltaSteps?: ResDeltaStep[] | null;
 }
 
+/** Result of an on-demand integrity check over the installed pack
+ *  (Settings → resources panel). */
+export interface ResIntegrity {
+  /** Whether the recomputed tree hash matches the install-time stamp. */
+  intact: boolean;
+  /** The install-time stamp the check compared against. */
+  expected: string;
+  /** The hash recomputed from disk (null when the walk failed). */
+  actual?: string | null;
+}
+
 /** One tick of the unified resource-download stream
  *  (`wowsp://download-progress`) — every context (app update, resource
  *  pack, data pack, mod-hub packages) rides this one event; see
@@ -124,9 +135,17 @@ export const resPackApi = {
   getResStatus: () => transport.invoke<ResStatus>(RPC.get_res_status),
   /** Remote manifest hash/timestamp + chain-patch path, if any. */
   checkResUpdate: () => transport.invoke<ResUpdate>(RPC.check_res_update),
+  /** On-demand integrity check: recompute the on-disk tree hash and
+   *  compare with the install-time stamp (refused while a pass runs;
+   *  the caller offers a re-download when it reports not intact). */
+  resVerifyIntegrity: () => transport.invoke<ResIntegrity>(RPC.res_verify_integrity),
   /** Explicit (initial/migration/update) pass with progress events;
-   *  prefers chain patches, falls back to the hash-verified full pack. */
-  resDownload: () => transport.invoke<null>(RPC.res_download),
+   *  prefers chain patches, falls back to the hash-verified full pack.
+   *  `force` (the integrity repair) reinstalls even when the stamp
+   *  already matches the manifest — a corrupt tree carries a correct
+   *  stamp, so the fast path must not swallow the repair. */
+  resDownload: (force = false) =>
+    transport.invoke<null>(RPC.res_download, { force }),
   /** Cancel the in-flight resource-pack pass. */
   resCancel: () => transport.invoke<null>(RPC.res_cancel),
   /** Delete the pack's cache sub-directories + version stamp. */

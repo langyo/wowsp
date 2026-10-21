@@ -123,6 +123,7 @@ export const RPC = {
   res_report_bundled: "res_report_bundled",
   get_res_status: "get_res_status",
   check_res_update: "check_res_update",
+  res_verify_integrity: "res_verify_integrity",
   res_download: "res_download",
   res_cancel: "res_cancel",
   clear_res: "clear_res",
