@@ -838,4 +838,32 @@ mod tests {
             "media-src must allow data: URLs (preview audio): {media_src}"
         );
     }
+
+    /// The pack's GLBs are meshopt-compressed, and three.js' MeshoptDecoder
+    /// instantiates its embedded WASM on the main thread — WebView2 gates
+    /// WebAssembly compile on script-src carrying the CSP3 keyword. Like
+    /// the media-src case above, Tauri injects this CSP only in production
+    /// (dev runs without one), so dropping the keyword ships unnoticed
+    /// until every release WebView refuses the instantiate and ALL 3D
+    /// models die (replay terrain, ship hulls, the default fallback hull
+    /// included — user report 2026-10-21). Keep the keyword in place.
+    #[test]
+    fn csp_permits_wasm_unsafe_eval() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = conf["app"]["security"]["csp"]
+            .as_str()
+            .expect("app.security.csp stays a string");
+        let script_src = csp
+            .split(';')
+            .map(str::trim)
+            .find(|d| d.starts_with("script-src "))
+            .unwrap_or_else(|| panic!("csp lost its script-src directive: {csp}"));
+        assert!(
+            script_src
+                .split_whitespace()
+                .any(|t| t == "'wasm-unsafe-eval'"),
+            "script-src must allow WebAssembly (meshopt GLB decoder): {script_src}"
+        );
+    }
 }

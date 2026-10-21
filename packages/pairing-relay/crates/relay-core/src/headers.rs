@@ -47,8 +47,11 @@
 ///   "release info unavailable" notice forever).
 /// - `'unsafe-inline'` (script + style) — the /feedback and /erp pages
 ///   and the shell's fallback loader are inline by design today.
+/// - `'wasm-unsafe-eval'` (script) — the replay3d viewer's meshopt
+///   decoder instantiates embedded WASM on the main thread, which
+///   script-src otherwise refuses (CSP3's WASM-scoped keyword).
 pub const CSP_HTML: &str = "default-src 'self'; \
-script-src 'self' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'; \
+script-src 'self' 'wasm-unsafe-eval' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'; \
 style-src 'self' https://langyo.github.io 'unsafe-inline'; \
 img-src 'self' data: https://langyo.github.io; \
 connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net; \
@@ -152,7 +155,7 @@ mod tests {
             .1;
         for directive in [
             "default-src 'self'",
-            "script-src 'self' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'",
+            "script-src 'self' 'wasm-unsafe-eval' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'",
             "style-src 'self' https://langyo.github.io 'unsafe-inline'",
             "img-src 'self' data: https://langyo.github.io",
             "connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net",
