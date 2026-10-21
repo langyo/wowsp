@@ -400,6 +400,43 @@ fn kind_name(kind: &GameInstallKind) -> &'static str {
     }
 }
 
+/// Parse a client-kind string back into a [`GameInstallKind`] — accepts
+/// [`kind_name`]'s spellings plus the shared DTO's camelCase `cnKongzhong`,
+/// so the webui can forward whichever spelling it holds. `None` on anything
+/// else.
+fn kind_from_name(name: &str) -> Option<GameInstallKind> {
+    match name {
+        "wargaming" => Some(GameInstallKind::Wargaming),
+        "steam" => Some(GameInstallKind::Steam),
+        "lesta" => Some(GameInstallKind::Lesta),
+        "cn360" => Some(GameInstallKind::Cn360),
+        "kongzhong" | "cnKongzhong" => Some(GameInstallKind::CnKongzhong),
+        "manual" => Some(GameInstallKind::Manual),
+        _ => None,
+    }
+}
+
+/// Placeholder team shape for a CREATED entry (pre-edited before any battle
+/// measured one): the classic 12v12 randoms grid for PvP, the 9-row single
+/// team for PvE — the likeliest table the class renders. Only the row
+/// re-spread and the synthetic band consume them before the next real
+/// battle's detection replaces the entry wholesale.
+fn placeholder_team_sizes(class: BattleClass) -> (usize, usize) {
+    match class {
+        BattleClass::Pvp => (12, 12),
+        BattleClass::Pve => (9, 0),
+    }
+}
+
+/// Placeholder column split matching [`placeholder_team_sizes`] — PvE's
+/// single-team layout carries no red half.
+fn placeholder_team_split(class: BattleClass) -> f32 {
+    match class {
+        BattleClass::Pvp => 0.5,
+        BattleClass::Pve => 1.0,
+    }
+}
+
 fn entry_info(class: BattleClass, e: &AnchorEntry) -> wowsp_tauri_shared::CalibrationEntryInfo {
     wowsp_tauri_shared::CalibrationEntryInfo {
         class: match class {
@@ -475,6 +512,18 @@ pub async fn overlay_calibration_list()
 /// KEPT, so editing never depends on the client currently running. The
 /// entry restarts CERTIFIED and flagged `manual`; a still-running watcher
 /// bound to this client reloads the file through the FIFO.
+///
+/// A target with NO stored entry yet (the settings list pre-edit button)
+/// CREATES one here instead of refusing: the reference frame's pixel size
+/// becomes the placeholder window size (identity scale — the box lands
+/// exactly where drawn) with an empty identity elsewhere, and `kind`
+/// (required only in this case — taken from the sibling class's entry when
+/// one exists, else the caller's install-kind string) keys the client
+/// family. That placeholder never certifies a live window (the strict and
+/// geometry matches reject its empty screen/origin), but the remap fallback
+/// — which compares only kind and proportions — adopts the drawing
+/// immediately; the next successful detection replaces the entry wholesale.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn set_calibration_anchor(
     client_key: String,
@@ -484,25 +533,26 @@ pub async fn set_calibration_anchor(
     width: i32,
     height: i32,
     source: Option<wowsp_tauri_shared::ManualLocateSource>,
+    kind: Option<String>,
 ) -> CommandResult<()> {
     let class = if class == "pve" {
         BattleClass::Pve
     } else {
         BattleClass::Pvp
     };
-    // The entry being edited must exist — editing adjusts a measured
-    // identity; creation happens automatically on the client's next
-    // detected battles.
+    // Normalize the install key the way the watcher derives it
+    // (game_detect::install_path_key): the caller passes whichever
+    // spelling it holds — the file's stored key, or the install list's
+    // display path — and a pre-edit CREATE must land on exactly the file
+    // the running watcher binds (the file name hashes the RAW key, so case
+    // drift would fork a second file). Idempotent for already-normalized
+    // keys.
+    let client_key = super::super::game_detect::install_path_key(&client_key);
     let dir = crate::paths::data_dir()?;
     let path = client_file_path(&dir, &client_key);
     let mut cal = load(&path);
-    if cal.entry(class).is_none() {
-        return Err(anyhow!(
-            "no stored calibration for this client yet — play one battle of this class first"
-        )
-        .into());
-    }
-    // Resolve the reference frame the drawing was made against.
+    // Resolve the reference frame the drawing was made against FIRST — a
+    // created entry's placeholder window size comes from its pixels.
     let Some((rgba, fw, fh)) = resolve_reference_frame(&source)? else {
         return Err(anyhow!("reference frame unavailable — pick an image or retry").into());
     };
@@ -520,7 +570,55 @@ pub async fn set_calibration_anchor(
         height,
     };
     super::manual::validate_manual_selection(&sel_frame, &frame_rect)?;
-    let entry = cal.entry(class).expect("checked above").clone();
+    let (entry, created) = match cal.entry(class).cloned() {
+        Some(entry) => (entry, false),
+        None => {
+            // No sibling entry to inherit the client kind from either, so
+            // the caller's kind string is the only source — without it the
+            // entry could never remap (kind is the remap's one identity
+            // check).
+            let kind = cal
+                .entry(match class {
+                    BattleClass::Pvp => BattleClass::Pve,
+                    BattleClass::Pve => BattleClass::Pvp,
+                })
+                .map(|sibling| sibling.kind)
+                .or_else(|| kind.as_deref().and_then(kind_from_name))
+                .ok_or_else(|| {
+                    anyhow!("unknown client kind — register the client before pre-editing its calibration")
+                })?;
+            let placeholder = AnchorEntry {
+                kind,
+                client_key: client_key.clone(),
+                origin: (0, 0),
+                size: (fw as i32, fh as i32),
+                style_bits: 0,
+                screen: String::new(),
+                band: StoredBand {
+                    top: 0,
+                    height: 0,
+                    green: (0, 0),
+                    red: None,
+                },
+                roster: StoredRoster {
+                    rect: Rect {
+                        x: 0,
+                        y: 0,
+                        width: 0,
+                        height: 0,
+                    },
+                    row_centers: Vec::new(),
+                    team_split: placeholder_team_split(class),
+                },
+                team_sizes: placeholder_team_sizes(class),
+                profile: StoredProfile::Kind,
+                stable_presses: 0,
+                suspect: false,
+                manual: false,
+            };
+            (placeholder, true)
+        },
+    };
     let (fx, fy) = (
         entry.size.0 as f32 / fw as f32,
         entry.size.1 as f32 / fh as f32,
@@ -559,7 +657,8 @@ pub async fn set_calibration_anchor(
     *cal.entry_mut(class) = Some(updated);
     save(&path, &cal);
     super::manual::clear_picker_open();
-    tracing::info!(client = %client_key, class = ?class, "calibration anchor hand-edited");
+    tracing::info!(client = %client_key, class = ?class, created,
+        "calibration anchor hand-edited");
     // A running watcher bound to this client reloads through the FIFO; one
     // bound elsewhere (or none) ignores the note.
     super::push_watch_command(super::WatchCommand::CalibrationStoreChanged { client_key });
@@ -1063,6 +1162,38 @@ mod tests {
         assert_eq!(BattleClass::classify(false, Some("pve")), BattleClass::Pve);
         // Operations are PvE even when the match group is missing.
         assert_eq!(BattleClass::classify(true, None), BattleClass::Pve);
+    }
+
+    #[test]
+    fn kind_names_round_trip() {
+        for kind in [
+            GameInstallKind::Wargaming,
+            GameInstallKind::Steam,
+            GameInstallKind::Lesta,
+            GameInstallKind::Cn360,
+            GameInstallKind::CnKongzhong,
+            GameInstallKind::Manual,
+        ] {
+            assert_eq!(kind_from_name(kind_name(&kind)), Some(kind));
+        }
+        // The shared DTO's camelCase spelling parses too (the webui forwards
+        // the install list's kind when pre-editing an empty entry).
+        assert_eq!(
+            kind_from_name("cnKongzhong"),
+            Some(GameInstallKind::CnKongzhong)
+        );
+        assert_eq!(kind_from_name("unknown"), None);
+    }
+
+    #[test]
+    fn placeholder_shapes_match_their_class() {
+        // PvP pre-edits draw a two-team grid; PvE a single-team one — the
+        // synthetic band keys its red half off the split, so the pair must
+        // stay consistent.
+        assert_eq!(placeholder_team_sizes(BattleClass::Pvp), (12, 12));
+        assert_eq!(placeholder_team_split(BattleClass::Pvp), 0.5);
+        assert_eq!(placeholder_team_sizes(BattleClass::Pve), (9, 0));
+        assert!(placeholder_team_split(BattleClass::Pve) >= 0.999);
     }
 
     #[test]

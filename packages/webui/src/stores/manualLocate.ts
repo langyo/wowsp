@@ -17,10 +17,13 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 /** The calibration editor's target: which client install and battle-class
- *  entry a calibration-mode submit writes to (`setCalibrationAnchor`). */
+ *  entry a calibration-mode submit writes to (`setCalibrationAnchor`).
+ *  `kind` is the install's client kind — forwarded so the backend can
+ *  CREATE an entry that nothing measured yet (the pre-edit flow). */
 export interface ManualLocateCalibration {
   clientKey: string;
   class: "pvp" | "pve";
+  kind: string;
 }
 
 export const useManualLocateStore = defineStore("manualLocate", () => {
@@ -31,6 +34,11 @@ export const useManualLocateStore = defineStore("manualLocate", () => {
   const mode = ref<"battle" | "calibration">("battle");
   /** The calibration target; null outside calibration mode. */
   const calibration = ref<ManualLocateCalibration | null>(null);
+  /** Monotonic counter bumped after every SUCCESSFUL calibration submit —
+   *  the settings calibration section watches it to re-read the store list
+   *  without polling (the picker layer and the section are otherwise
+   *  decoupled; the section may not even be mounted, which is fine). */
+  const calibrationVersion = ref(0);
 
   function openPicker(opts?: {
     mode?: "battle" | "calibration";
@@ -46,5 +54,18 @@ export const useManualLocateStore = defineStore("manualLocate", () => {
     open.value = false;
   }
 
-  return { open, mode, calibration, openPicker, closePicker };
+  /** Announce a successful calibration write (see `calibrationVersion`). */
+  function noteCalibrationSaved() {
+    calibrationVersion.value += 1;
+  }
+
+  return {
+    open,
+    mode,
+    calibration,
+    calibrationVersion,
+    openPicker,
+    closePicker,
+    noteCalibrationSaved,
+  };
 });
