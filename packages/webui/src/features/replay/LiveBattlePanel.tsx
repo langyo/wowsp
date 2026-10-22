@@ -10,8 +10,8 @@
  * (red band red, purple band purple; see prTintVars). The full card's stat
  * strip (`LiveStatLine`) spans the whole card bottom so the WR/PR/battles
  * line reads in full instead of ellipsizing inside the name track. The
- * panel's head title is the /live page title (the view itself has
- * no header — it used to duplicate this one).
+ * panel's head carries no title — status pills, tags and actions only
+ * (the /live page title lives in the view's title bar).
  *
  * The head's density toggle compresses the roster to the post-battle
  * matrix's one-line rows (battle icon + the shared WR/PR/battles/
@@ -772,10 +772,10 @@ export default defineComponent({
       }
       /** One row's shot cells: the configured columns of the row's
        *  per-scope views — the exact columns the panel shows, dashes for
-       *  bots / misses / still-loading rows. The enemy column MIRRORS
-       *  the ally one (config order reads left→right on the allies,
-       *  reversed on the enemies), same as the DOM below. */
-      const shotCellsOf = (v: VehicleEntry, enemy: boolean): ShotStat[] => {
+       *  bots / misses / still-loading rows. Both rosters read the
+       *  configured order left→right (the enemy side no longer mirrors,
+       *  same as the DOM below). */
+      const shotCellsOf = (v: VehicleEntry): ShotStat[] => {
         if (isAiName(v.name)) return rosterShotDashes();
         const st = stats.get(v.id);
         if (
@@ -786,16 +786,14 @@ export default defineComponent({
         ) {
           return rosterShotDashes();
         }
-        const cells = rosterShotCells((scope) => colViewOf(scope, st, v.shipId));
-        return enemy ? [...cells].reverse() : cells;
+        return rosterShotCells((scope) => colViewOf(scope, st, v.shipId));
       };
       const mkCol = (entries: TabOrderedVehicle[], enemy: boolean): ShotColumn => {
         // Aggregate values carry their stat-column index so the shot's
         // header numbers right-align onto the cells below them. The
         // aggregate mirrors the panel's column title: one labeled team
         // mean PER CONFIGURED COLUMN (each in its own scope's view), the
-        // mirrored enemy column flipping its origins to the reversed
-        // order.
+        // same index on both rosters (neither side mirrors).
         let agg: ShotColumn["agg"];
         {
           const cols = rosterColumns();
@@ -812,21 +810,21 @@ export default defineComponent({
             );
             if (col.metric === "winrate") {
               parts.push({
-                col: enemy ? cols.length - 1 - idx : idx,
+                col: idx,
                 label: col.scope === "global" ? wrLabel : col.head,
                 value: a.winrate != null ? `${a.winrate.toFixed(1)}%` : "—",
                 valueColor: a.winrate != null ? winrateColor(a.winrate) : undefined,
               });
             } else if (col.metric === "pr") {
               parts.push({
-                col: enemy ? cols.length - 1 - idx : idx,
+                col: idx,
                 label: col.scope === "global" ? t("replay.roster.teamAvgPr") : col.head,
                 value: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
                 valueColor: a.avgPr != null ? prTier(a.avgPr).color : undefined,
               });
             } else if (col.metric === "battles") {
               parts.push({
-                col: enemy ? cols.length - 1 - idx : idx,
+                col: idx,
                 label: col.scope === "global" ? t("replay.roster.battles") : col.head,
                 value: a.avgBattles != null
                   ? Math.round(a.avgBattles).toLocaleString()
@@ -836,7 +834,7 @@ export default defineComponent({
               });
             } else {
               parts.push({
-                col: enemy ? cols.length - 1 - idx : idx,
+                col: idx,
                 label:
                   col.scope === "global"
                     ? t("replay.postbattle.avgDamage")
@@ -873,7 +871,7 @@ export default defineComponent({
                   : v.relation <= 1
                     ? "ally"
                     : "enemy",
-              stats: shotCellsOf(v, enemy),
+              stats: shotCellsOf(v),
             };
           }),
         };
@@ -883,7 +881,7 @@ export default defineComponent({
         mode,
         mapLabel: arena?.mapName ? displayMapName(arena.mapName, dataLanguage.value) : null,
         botLabel: t("replay.bot"),
-        // Mirror the DOM's single-column rule (operations hide the enemy
+        // Match the DOM's single-column rule (operations hide the enemy
         // column, as does any single-sided roster edge).
         columns:
           enemies.value.length === 0
@@ -899,18 +897,16 @@ export default defineComponent({
      *  title becomes the two-line mini table header: a per-column label
      *  over a per-column team mean on a grid mirroring the row's stat
      *  columns (rosterColumns()), every average landing exactly on its
-     *  own column. The ENEMY title mirrors the enemy rows' reversed
-     *  column order, so the two sides' headers face each other like the
-     *  rows do. Values carry their tier colors (winrateColor / prTier /
-     *  battlesColor / damageColor). */
-    const colTitle = (label: string, entries: TabOrderedVehicle[], enemy: boolean) => {
+     *  own column. Both rosters' titles read the configured column order
+     *  left→right (neither side mirrors). Values carry their tier colors
+     *  (winrateColor / prTier / battlesColor / damageColor). */
+    const colTitle = (label: string, entries: TabOrderedVehicle[]) => {
       const title = <span class="live-battle__col-name">{label}</span>;
       const cols = rosterColumns();
       if (compact.value) {
         // The aligned header needs stat columns to sit on — with every
         // column removed the caption falls back to the bare title below.
         if (cols.length > 0) {
-          const ordered = enemy ? [...cols].reverse() : cols;
           const labelOf = (col: RosterColumnSpec): string => {
             if (col.scope !== "global") return col.head;
             if (col.metric === "winrate") {
@@ -992,16 +988,16 @@ export default defineComponent({
                 },
               ]}
               style={{
-                gridTemplateColumns: `minmax(0, 1fr) ${ordered
+                gridTemplateColumns: `minmax(0, 1fr) ${cols
                   .map((c) => c.width)
                   .join(" ")}`,
               }}
             >
               {title}
-              {ordered.map((c) => (
+              {cols.map((c) => (
                 <span class="live-battle__col-hlbl">{labelOf(c)}</span>
               ))}
-              {ordered.map((c) => valueOf(c))}
+              {cols.map((c) => valueOf(c))}
             </div>
           );
         }
@@ -1011,7 +1007,7 @@ export default defineComponent({
       }
       // Full cards: the per-column means inline on the title's right end,
       // in configured order on both sides (the cards themselves are not
-      // column-aligned, so the mirror does not apply here).
+      // column-aligned).
       const inlineParts: VNode[] = [];
       cols.forEach((col, i) => {
         const agg = teamAggFor(col.scope, entries);
@@ -1235,11 +1231,11 @@ export default defineComponent({
       /** One compact row: battle icon, nick/clan + ship stack, the shared
        *  per-scope stat columns and the career seal — one line, no
        *  ship-meta strip. The whole row is the lookup jump (hover and
-       *  clicks cover the seal), sunk rows dim like the full cards. The
-       *  ENEMY roster renders the columns mirrored (right-to-left), so
-       *  the two sides face each other — the issue-1082 water-table
-       *  layout; operations render the allies column only (left side). */
-      const compactCell = (entry: TabOrderedVehicle, enemy: boolean) => {
+       *  clicks cover the seal), sunk rows dim like the full cards. Both
+       *  rosters read the configured columns in the same order (the enemy
+       *  side no longer mirrors — user feedback); operations render the
+       *  allies column only (left side). */
+      const compactCell = (entry: TabOrderedVehicle) => {
         const v = entry.vehicle;
         const ai = isAiName(v.name);
         const st = ai ? null : stats.get(v.id);
@@ -1312,7 +1308,6 @@ export default defineComponent({
                   (shipScopeOn.value && stats.get(v.id)?.shipsLoading),
               ),
               (st, scope) => colViewOf(scope, st, v.shipId),
-              { mirror: enemy },
             )}
             {/* Seal slot reserved whenever seals show at all (PR + settings
                 master) — the matrix's own alignment rule: rows without a
@@ -1349,8 +1344,8 @@ export default defineComponent({
         );
       };
 
-      const cell = (entry: TabOrderedVehicle, enemy: boolean) => {
-        if (compact.value) return compactCell(entry, enemy);
+      const cell = (entry: TabOrderedVehicle) => {
+        if (compact.value) return compactCell(entry);
         const v = entry.vehicle;
         const shipName =
           shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
@@ -1696,13 +1691,13 @@ export default defineComponent({
           >
             <div class="live-battle__matrix__inner">
               <div class="live-battle__col">
-                {colTitle(t("replay.roster.allies"), allies.value, false)}
-                {allies.value.map((e) => cell(e, false))}
+                {colTitle(t("replay.roster.allies"), allies.value)}
+                {allies.value.map((e) => cell(e))}
               </div>
               {enemies.value.length > 0 ? (
                 <div class="live-battle__col">
-                  {colTitle(t("replay.roster.enemies"), enemies.value, true)}
-                  {enemies.value.map((e) => cell(e, true))}
+                  {colTitle(t("replay.roster.enemies"), enemies.value)}
+                  {enemies.value.map((e) => cell(e))}
                 </div>
               ) : null}
             </div>

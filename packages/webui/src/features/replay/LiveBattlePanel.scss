@@ -4,8 +4,8 @@
   gap: 0.75rem;
   height: 100%;
   /* The head row pins and the roster matrix scrolls beneath it (ShipsView's
-     split): a long roster must not scroll the title / mode pills / share
-     actions out of reach. Right/bottom breathing room rides on the head and
+     split): a long roster must not scroll the status pills / share actions
+     out of reach. Right/bottom breathing room rides on the head and
      the matrix instead — the panel itself only pads top + left. */
   overflow: hidden;
   padding: 1rem 0 0 1rem;
@@ -95,16 +95,6 @@
     padding-right: 1.5rem;
   }
 
-  &__title {
-    margin: 0;
-    font-size: var(--text-lg);
-    font-weight: 700;
-    /* CJK breaks between any two glyphs — under flex pressure the four
-       glyphs would wrap inside the h1 and grow the head a second line
-       anyway. The pills and buttons already carry nowrap of their own. */
-    white-space: nowrap;
-  }
-
   &__pill {
     display: inline-flex;
     align-items: center;
@@ -184,7 +174,7 @@
     white-space: nowrap;
   }
 
-  /* The map tag rides with the head's left info group (title, status and
+  /* The map tag rides with the head's info group (status and
      mode pills, clock): no auto margin, it just follows the row gap. Its
      compact pill voice is MapNameTag.scss's own base — no override needed. */
 
@@ -314,7 +304,7 @@
        stat columns + the icon + the seal slot) EXPAND the track past the
        free space. The blown-out columns then overflow the panel's right
        edge — the vertical-only scroller can neither show nor scroll that
-       overflow, so the last mirrored stat cells vanished off-screen. With
+       overflow, so the last stat cells vanished off-screen. With
        min 0 the tracks always split the free space and the rows' name
        track (min-width: 0) absorbs the deficit by ellipsizing instead. */
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -525,7 +515,7 @@
 
   /* Player-entry text runs ONE step up the --text-* scale (xs→sm,
      2xs→xs) so the live roster reads slightly larger than the chrome
-     around it — head title, pills and column titles stay untouched. */
+     around it — head pills and column titles stay untouched. */
   &__player-name {
     display: flex;
     align-items: center;

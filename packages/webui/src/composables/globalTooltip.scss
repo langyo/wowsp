@@ -1,3 +1,14 @@
+/* The shared popup's default cap: hikari's 280px wraps a mid-length CJK
+   hint sentence a few glyphs onto a second line (the live panel's
+   refresh/locate hints, the roster stat tips) where one line reads fine —
+   so the app widens the default. HkTooltip renders its own popups with
+   the same class; where a per-instance inline maxWidth is set (the
+   HkTooltip prop), the inline style still outranks this sheet rule, and
+   the structured card keeps its own tighter cap below. */
+.hk-tooltip-popup {
+  max-width: 440px;
+}
+
 /* Global hint tag chips (see globalTooltip.ts `data-hint-tags`): ribbon-
    style qualifiers rendered under the hint text. Colours follow the
    HkTooltip contract — fixed ink legible on both popup palettes, with a
