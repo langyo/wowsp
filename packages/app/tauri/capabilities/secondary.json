@@ -1,0 +1,12 @@
+{
+  "identifier": "secondary",
+  "description": "The overlay, aim-card and tray-panel webviews: event listening ONLY (audit P0-5 follow-up — they used to share the main window's full core surface). Evidence: overlay/main.ts and aimcard.ts use convertFileSrc (pure JS URL building) plus __TAURI__.event.listen; tray/main.ts touches no Tauri API at all (its action button rides the app-level tray_panel_action command, which the ACL does not govern). Positioning, show/hide and all window mutations for these windows happen on the Rust side, outside the ACL.",
+  "windows": [
+    "overlay",
+    "aim-card",
+    "tray-panel"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
+}
