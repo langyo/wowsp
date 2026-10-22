@@ -79,16 +79,17 @@ describe("overlay stamp refresh", () => {
     expect(document.querySelector("span[data-stamp='rat']")).not.toBeNull();
   });
 
-  it("renders the rat verdict as the badge-only chip hugging the inner edge", () => {
-    // The rat exception (rowFace): the hidden profile's lone 过街老鼠
-    // badge replaces the stat column outright — no cell, no reserved
-    // slot — and on a fallback row the name cell stays outside it, the
-    // badge on the ally block's inner flank.
+  it("renders the rat verdict beside the hidden profile's red dot stat cell", () => {
+    // The 过街老鼠 verdict rides a hidden profile (rowFace): the badge
+    // takes the seals flank while the pinned stat cell keeps the red dot
+    // — on an ally fallback row the badge is the outermost child and the
+    // stat cell the innermost, against the table's edge.
     const ratChip = document.querySelector<HTMLElement>(".overlay-chip--rat");
     expect(ratChip).not.toBeNull();
-    expect(ratChip!.querySelector(".overlay-chip__stat")).toBeNull();
-    expect(ratChip!.querySelector(".overlay-chip__name")).not.toBeNull();
     expect(ratChip!.querySelectorAll(".overlay-stamp")).toHaveLength(1);
-    expect(ratChip!.lastElementChild!.classList.contains("overlay-stamp")).toBe(true);
+    expect(ratChip!.querySelector(".overlay-chip__stat .hidden")).not.toBeNull();
+    expect(ratChip!.querySelector(".overlay-chip__name")).not.toBeNull();
+    expect(ratChip!.firstElementChild!.classList.contains("overlay-stamp")).toBe(true);
+    expect(ratChip!.lastElementChild!.classList.contains("overlay-chip__stat")).toBe(true);
   });
 });
