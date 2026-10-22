@@ -7,6 +7,7 @@ export type {
   SponsorListDoc,
   GameInstall,
   GameInstallKind,
+  GameDisplayMode,
   GameProcessInfo,
   GameProcessReport,
   TelemetryPayload,

@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use wowsp_tauri_shared::{GameInstall, GameInstallKind};
+use wowsp_tauri_shared::{GameDisplayMode, GameInstall, GameInstallKind};
 
 // The process-image test moved into the per-client compat registry
 // (commands/game_client.rs) — keep the plain-name call sites below (and this
@@ -423,6 +423,108 @@ fn parse_last_server_build(content: &str) -> Option<u64> {
 fn pinned_build_dir(dirs: &[(u64, PathBuf)], root: &Path) -> Option<(u64, PathBuf)> {
     let pinned = preferences_active_build(root)?;
     dirs.iter().find(|(build, _)| *build == pinned).cloned()
+}
+
+/// Cached display-mode read — see [`user_preferences_display_mode`].
+static DISPLAY_MODE_CACHE: Mutex<Option<DisplayModeCacheEntry>> = Mutex::new(None);
+
+#[derive(Clone)]
+struct DisplayModeCacheEntry {
+    root_key: String,
+    len: u64,
+    mtime: std::time::SystemTime,
+    mode: Option<GameDisplayMode>,
+}
+
+/// The display mode a client records in its root `user_preferences.xml`
+/// (`<device windowMode="…">`) — where the game stores its 显示模式 /
+/// display-mode setting, unlike `preferences.xml` (UI/script prefs, see
+/// [`preferences_active_build`]). Overlay windows can only draw over the
+/// two windowed flavors, so an `EXCLUSIVE_FULLSCREEN` client is the state
+/// the webui warns about (the hold-Tab overlay stays invisible in that
+/// mode no matter what else is right). Read every time a process report is
+/// built — the 3 s poll included — but re-read from disk only when the
+/// file's stat moves (same contract as [`PIN_CACHE`]): the client rewrites
+/// the file when the player changes the mode in-game, so the warning both
+/// appears on launch and lifts the moment the setting changes. `None` when
+/// the file is missing, unreadable mid-rewrite (never cached — retried on
+/// the next call) or carries no recognized mode.
+pub(crate) fn user_preferences_display_mode(root: &Path) -> Option<GameDisplayMode> {
+    let path = root.join("user_preferences.xml");
+    let meta = std::fs::metadata(&path).ok()?;
+    let mtime = meta.modified().ok()?;
+    let root_key = super::game_detect::install_path_key(&root.to_string_lossy());
+    {
+        let guard = DISPLAY_MODE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = guard.as_ref() {
+            if entry.root_key == root_key && entry.len == meta.len() && entry.mtime == mtime {
+                return entry.mode;
+            }
+        }
+    }
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return None;
+    };
+    let mode = parse_user_preferences_window_mode(&content);
+    let mut guard = DISPLAY_MODE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    *guard = Some(DisplayModeCacheEntry {
+        root_key,
+        len: meta.len(),
+        mtime,
+        mode,
+    });
+    mode
+}
+
+/// The `<device>` tag's `windowMode` value out of `user_preferences.xml`
+/// content, mapped to [`GameDisplayMode`]. The clients write
+/// `EXCLUSIVE_FULLSCREEN` / `BORDERLESS` / `WINDOWED` there; matching is
+/// ASCII-case-insensitive and attribute-order-tolerant (same probe style
+/// as [`parse_last_server_build`]), but ONLY the `<device>` tag's
+/// attribute counts — the nested `<borderless windowMode="…">` element
+/// reuses the attribute name with a different meaning and must never
+/// shadow the device's own. Unknown or missing values answer `None`: no
+/// hint is better than a wrong one.
+fn parse_user_preferences_window_mode(content: &str) -> Option<GameDisplayMode> {
+    // ASCII lowercasing preserves byte offsets, so indices found in the
+    // lowered copy address the original safely.
+    let lower = content.to_ascii_lowercase();
+    let open = lower.find("<device")?;
+    let after_name = open + "<device".len();
+    // `<deviceDescription>`-style longer names are not this tag: the name
+    // must END here (whitespace, `>` or the self-close `/`).
+    match lower[after_name..].chars().next()? {
+        c if c.is_ascii_whitespace() || c == '>' || c == '/' => {},
+        _ => return None,
+    }
+    let tag_end = after_name + lower[after_name..].find('>')?;
+    let tag = &lower[after_name..tag_end];
+    let attr = tag.find("windowmode")?;
+    let name_end = attr + "windowmode".len();
+    let eq = tag[name_end..].find('=')? + name_end;
+    // Name boundaries on both sides, whitespace-only between name and `=`
+    // — `xwindowmode=` inside another attribute must not match.
+    if !tag[name_end..eq].trim().is_empty() {
+        return None;
+    }
+    if attr > 0 && !tag[..attr].ends_with(|c: char| c.is_ascii_whitespace()) {
+        return None;
+    }
+    // `=` then (whitespace, then) the opening double quote; the value runs
+    // to the closing one. The game's own writer always double-quotes.
+    let after_eq = &tag[eq + 1..];
+    let q1 = after_eq.find('"')?;
+    if !after_eq[..q1].trim().is_empty() {
+        return None;
+    }
+    let value_start = eq + 1 + q1 + 1;
+    let q2 = tag[value_start..].find('"')? + value_start;
+    match tag[value_start..q2].trim() {
+        "exclusive_fullscreen" => Some(GameDisplayMode::ExclusiveFullscreen),
+        "borderless" => Some(GameDisplayMode::Borderless),
+        "windowed" => Some(GameDisplayMode::Windowed),
+        _ => None,
+    }
 }
 
 /// The newest `bin/<build>/` that ships an `idx/` directory — the build the
@@ -1029,6 +1131,106 @@ mod tests {
         assert_eq!(parse("<last_server_version/>"), None);
         assert_eq!(parse("<preferences></preferences>"), None);
         assert_eq!(parse(""), None);
+    }
+
+    /// The display-mode parser reads what real clients write (BOM'd,
+    /// CRLF, tab-indented `<device>` nested under `<local><hardware>`)
+    /// with only the three observed windowMode spellings counting, and the
+    /// nested `<borderless windowMode="…">` element that REUSES the
+    /// attribute name never shadows the device's own value — the live
+    /// BORDERLESS installs carry exactly that contradictory pair.
+    #[test]
+    fn user_preferences_window_mode_shapes() {
+        use super::parse_user_preferences_window_mode as parse;
+
+        // The real clients' shape; values verbatim off live installs.
+        let file_of = |mode: &str| {
+            format!(
+                "\u{feff}<user_preferences.xml>\r\n  <local>\r\n    <hardware version=\"3\">\r\n      <CPU score=\"1\"/>\r\n    </hardware>\r\n    <device version=\"2\" windowMode=\"{mode}\" monitorIndex=\"0\" userGamma=\"1.0000\" guid=\"X\">\r\n      <windowed x=\"0\" y=\"0\" width=\"1280\" height=\"720\" isMaximized=\"false\"/>\r\n      <borderless x=\"0\" y=\"0\" width=\"0\" height=\"0\" behaviour=\"FULLSCREEN\" windowMode=\"EXCLUSIVE_FULLSCREEN\"/>\r\n      <fullscreen width=\"3072\" height=\"1920\" aspectRatio=\"1.6000\" waitVSync=\"false\" tripleBuffering=\"false\" refresh=\"165\"/>\r\n    </device>\r\n  </local>\r\n</user_preferences.xml>\r\n"
+            )
+        };
+        assert_eq!(
+            parse(&file_of("EXCLUSIVE_FULLSCREEN")),
+            Some(GameDisplayMode::ExclusiveFullscreen)
+        );
+        // The live borderless install: device BORDERLESS, nested borderless
+        // element EXCLUSIVE_FULLSCREEN — the device attribute wins.
+        assert_eq!(
+            parse(&file_of("BORDERLESS")),
+            Some(GameDisplayMode::Borderless)
+        );
+        assert_eq!(parse(&file_of("WINDOWED")), Some(GameDisplayMode::Windowed));
+
+        // Tolerant variants: lowercase value + attribute order moved.
+        assert_eq!(
+            parse(r#"<device windowMode="borderless" version="2"></device>"#),
+            Some(GameDisplayMode::Borderless)
+        );
+
+        // Misses stay unknown (no hint is better than a wrong one).
+        assert_eq!(parse(&file_of("SOMETHING_NEW")), None);
+        assert_eq!(
+            parse("<device version=\"2\" monitorIndex=\"0\"></device>"),
+            None
+        );
+        // A longer tag name must not match as `<device>`.
+        assert_eq!(
+            parse(r#"<deviceDescription windowMode="BORDERLESS"/>"#),
+            None
+        );
+        // windowMode on some OTHER element only.
+        assert_eq!(
+            parse(r#"<root><graphics windowMode="EXCLUSIVE_FULLSCREEN"/></root>"#),
+            None
+        );
+        assert_eq!(parse("<user_preferences.xml></user_preferences.xml>"), None);
+        assert_eq!(parse(""), None);
+    }
+
+    /// The stat-cached file read: value follows the file across rewrites
+    /// and roots, and a missing file answers None.
+    #[test]
+    fn user_preferences_display_mode_reads_and_rereads() {
+        let tmp = std::env::temp_dir().join(format!(
+            "wowsp-ctx-dm-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        assert!(
+            super::user_preferences_display_mode(&tmp).is_none(),
+            "no file yet"
+        );
+
+        std::fs::write(
+            tmp.join("user_preferences.xml"),
+            r#"<u><device version="2" windowMode="EXCLUSIVE_FULLSCREEN"></device></u>"#,
+        )
+        .unwrap();
+        assert_eq!(
+            super::user_preferences_display_mode(&tmp),
+            Some(GameDisplayMode::ExclusiveFullscreen)
+        );
+
+        // Same stat, cached answer; new stat, new value.
+        std::fs::write(
+            tmp.join("user_preferences.xml"),
+            r#"<u><device version="2" windowMode="BORDERLESS"></device></u>"#,
+        )
+        .unwrap();
+        assert_eq!(
+            super::user_preferences_display_mode(&tmp),
+            Some(GameDisplayMode::Borderless)
+        );
+
+        // A different root with its own file does not inherit the entry.
+        let other = tmp.join("other-root");
+        std::fs::create_dir_all(&other).unwrap();
+        assert!(super::user_preferences_display_mode(&other).is_none());
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     /// res_mods_dir joins onto the selected build dir and reports the root

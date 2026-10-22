@@ -6,6 +6,7 @@ import { HkTag, HkTooltip } from "@celestia-island/hikari";
 
 import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
+import FullscreenModeHint from "@/components/layout/FullscreenModeHint";
 import PluginUpdateHint from "@/components/layout/PluginUpdateHint";
 import PlatformIcon from "@/components/base/PlatformIcon";
 import { useAccountStore } from "@/stores/account";
@@ -256,6 +257,14 @@ export default defineComponent({
               </div>
             </div>
           )}
+
+          {/* exclusive-fullscreen warning — a passive bottom-left card
+              floating ABOVE this status card while the RUNNING client owns
+              the screen (the hold-Tab overlay cannot draw over exclusive
+              fullscreen; the card asks the player to switch the in-game
+              display mode). Only ever active on the desktop app — the
+              process report is offline everywhere else. */}
+          <FullscreenModeHint anchor={statusCardEl} />
 
           {/* game upgrade — the ACTIVE install still holds mods (and
               possibly the in-game probe) stranded in an old bin/. The

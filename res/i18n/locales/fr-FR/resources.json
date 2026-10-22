@@ -103,6 +103,8 @@
   "pluginUpdateDoneClients": "Plugins mis à jour sur {count} client(s).",
   "pluginUpdatePartialClients": "Plugins mis à jour sur {ok} client(s), mais échec de la mise à jour sur {names}.",
   "pluginUpdateAllFailedClients": "Échec de la mise à jour des plugins sur les {count} client(s).",
+  "exclusiveFullscreenTitle": "Plein écran exclusif détecté",
+  "exclusiveFullscreenBody": "Le jeu tourne en plein écran exclusif : la superposition Tab ne peut pas s'afficher. Dans les paramètres du jeu (Graphismes → mode d'affichage), passez en plein écran fenêtré ou fenêtré, puis redémarrez le jeu.",
   "installedBadge": "Installé",
   "installedAt": "Installé {version}",
   "uninstall": "Désinstaller",

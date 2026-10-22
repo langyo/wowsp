@@ -24,6 +24,23 @@ pub enum GameInstallKind {
     Manual,
 }
 
+/// Display mode the running client records in its `user_preferences.xml`
+/// (`<device windowMode="…">`): old-style exclusive fullscreen, borderless
+/// (fullscreen windowed) or plain windowed. Only the two windowed flavors
+/// let WoWSP's overlay windows draw over the game — an exclusive-fullscreen
+/// client owns the whole screen, so the hold-Tab overlay stays invisible
+/// until the player switches modes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GameDisplayMode {
+    /// Exclusive fullscreen (the legacy resolution-owning mode).
+    ExclusiveFullscreen,
+    /// Borderless fullscreen window (fullscreen windowed).
+    Borderless,
+    /// Plain windowed.
+    Windowed,
+}
+
 /// A detected (or manually set) World of Warships install.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,6 +74,12 @@ pub struct GameProcessInfo {
     pub exe_path: Option<String>,
     /// The full install record the process was matched against, when any.
     pub matched_install: Option<GameInstall>,
+    /// Display mode of the running client's install, read from its
+    /// `user_preferences.xml` (`<device windowMode="…">`) — exclusive
+    /// fullscreen is the mode the hold-Tab overlay cannot draw over.
+    /// `None` when not running, or the file/value is missing or
+    /// unrecognized.
+    pub display_mode: Option<GameDisplayMode>,
 }
 
 /// Plural process report for multi-instance machines: EVERY running game

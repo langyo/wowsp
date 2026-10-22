@@ -200,6 +200,7 @@ fn offline_process() -> wowsp_tauri_shared::GameProcessInfo {
         realm: None,
         exe_path: None,
         matched_install: None,
+        display_mode: None,
     }
 }
 
@@ -233,6 +234,23 @@ fn process_info_of(
         },
     };
 
+    // The client's recorded display mode rides the report so the webui can
+    // warn while the game runs exclusive fullscreen (the hold-Tab overlay
+    // cannot draw over that mode). The matched install's root is
+    // authoritative; an unmatched-but-running exe still carries its implied
+    // root. Stat-cached on the Rust side, so the 3 s poll stays cheap.
+    let display_mode = owned_matched
+        .as_ref()
+        .map(|m| PathBuf::from(&m.path))
+        .or_else(|| {
+            exe_path
+                .as_deref()
+                .and_then(super::game_context::exe_game_root)
+                .map(PathBuf::from)
+        })
+        .as_deref()
+        .and_then(super::game_context::user_preferences_display_mode);
+
     GameProcessInfo {
         running: true,
         pid: Some(pid),
@@ -240,6 +258,7 @@ fn process_info_of(
         realm,
         exe_path,
         matched_install: owned_matched,
+        display_mode,
     }
 }
 

@@ -103,6 +103,8 @@
   "pluginUpdateDoneClients": "{count} クライアントのプラグイン更新が完了しました。",
   "pluginUpdatePartialClients": "{ok} クライアントのプラグインは更新できましたが、{names} の更新に失敗しました。",
   "pluginUpdateAllFailedClients": "{count} クライアントのプラグイン更新はすべて失敗しました。",
+  "exclusiveFullscreenTitle": "排他的フルスクリーンを検出しました",
+  "exclusiveFullscreenBody": "ゲームが排他的フルスクリーン（非ウィンドウ全画面）で実行されているため、Tab 押下時のオーバーレイが表示されません。ゲーム内設定の「グラフィック → 表示モード」でフルスクリーンウィンドウまたはウィンドウに変更し、ゲームを再起動してください。",
   "installedBadge": "インストール済み",
   "installedAt": "インストール済み {version}",
   "uninstall": "アンインストール",
