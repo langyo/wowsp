@@ -11,6 +11,7 @@ const OFFLINE: GameProcessInfo = {
   realm: null,
   exePath: null,
   matchedInstall: null,
+  displayMode: null,
 };
 
 /** Polls the game process state every 3 seconds — the PLURAL, multi-instance

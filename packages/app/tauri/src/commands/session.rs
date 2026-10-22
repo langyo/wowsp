@@ -108,6 +108,7 @@ fn offline_process() -> wowsp_tauri_shared::GameProcessInfo {
         realm: None,
         exe_path: None,
         matched_install: None,
+        display_mode: None,
     }
 }
 

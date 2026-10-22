@@ -103,6 +103,8 @@
   "pluginUpdateDoneClients": "{count} 個用戶端插件更新成功。",
   "pluginUpdatePartialClients": "{ok} 個用戶端的插件更新成功，但 {names} 用戶端更新失敗。",
   "pluginUpdateAllFailedClients": "{count} 個用戶端插件更新全部失敗。",
+  "exclusiveFullscreenTitle": "偵測到獨佔全螢幕模式",
+  "exclusiveFullscreenBody": "遊戲正以獨佔全螢幕（非視窗化全螢幕）執行，按 Tab 的戰況懸浮視窗無法顯示。請在遊戲內設定「圖形 → 顯示模式」改為全螢幕視窗或視窗，並重新啟動遊戲。",
   "installedBadge": "已安裝",
   "installedAt": "已安裝 {version}",
   "uninstall": "解除安裝",

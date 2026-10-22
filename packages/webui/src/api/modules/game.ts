@@ -14,6 +14,11 @@ export interface GameInstall {
 /** Installer kind discriminator (see GameInstall). */
 export type GameInstallKind = GameInstall["kind"];
 
+/** Mirrors `wowsp_tauri_shared::GameDisplayMode` — the display mode the
+ *  running client records in its user_preferences.xml. Exclusive fullscreen
+ *  is the mode WoWSP's overlay windows cannot draw over. */
+export type GameDisplayMode = "exclusiveFullscreen" | "borderless" | "windowed";
+
 /** Mirrors `wowsp_tauri_shared::GameProcessInfo`. Richer than the legacy
  *  `is_game_running` boolean — carries the PID and the install (kind/realm)
  *  the running process belongs to, resolved by exe-path prefix match. */
@@ -24,6 +29,9 @@ export interface GameProcessInfo {
   realm?: string | null;
   exePath?: string | null;
   matchedInstall?: GameInstall | null;
+  /** Display mode of the running client's install, when running and the
+   *  game's user_preferences.xml carries a recognized windowMode. */
+  displayMode?: GameDisplayMode | null;
 }
 
 /** Mirrors `wowsp_tauri_shared::GameProcessReport` — the multi-instance

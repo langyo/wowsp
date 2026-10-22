@@ -71,6 +71,7 @@ fn game_process_info_renames_exe_path_and_matched_install() {
         realm: None,
         exe_path: Some(r"C:\Steam\...\WorldOfWarships64.exe".into()),
         matched_install: None,
+        display_mode: Some(GameDisplayMode::ExclusiveFullscreen),
     };
     let v = round_trips(info);
     for key in [
@@ -80,11 +81,25 @@ fn game_process_info_renames_exe_path_and_matched_install() {
         "realm",
         "exePath",
         "matchedInstall",
+        "displayMode",
     ] {
         assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
     }
     assert_eq!(v["pid"], 4242);
     assert_eq!(v["exePath"], r"C:\Steam\...\WorldOfWarships64.exe");
+    assert_eq!(v["displayMode"], "exclusiveFullscreen");
+}
+
+/// Every variant of the display-mode enum, spelled as the TS union members
+/// (game.ts: `GameDisplayMode`) — camelCase, no underscores.
+#[test]
+fn game_display_mode_covers_every_variant() {
+    assert_eq!(
+        round_trips(GameDisplayMode::ExclusiveFullscreen),
+        "exclusiveFullscreen"
+    );
+    assert_eq!(round_trips(GameDisplayMode::Borderless), "borderless");
+    assert_eq!(round_trips(GameDisplayMode::Windowed), "windowed");
 }
 
 /// Every variant of the detection enum, spelled as the TS union members

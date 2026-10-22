@@ -103,6 +103,8 @@
   "pluginUpdateDoneClients": "{count} 个客户端插件更新成功。",
   "pluginUpdatePartialClients": "{ok} 个客户端的插件更新成功，但 {names} 客户端更新失败。",
   "pluginUpdateAllFailedClients": "{count} 个客户端插件更新全部失败。",
+  "exclusiveFullscreenTitle": "检测到独占全屏模式",
+  "exclusiveFullscreenBody": "游戏正以独占全屏（非窗口化全屏）运行，按 Tab 的战况悬浮窗无法显示。请在游戏内设置「图形 → 显示模式」改为全屏窗口或窗口，并重启游戏。",
   "installedBadge": "已安装",
   "installedAt": "已装 {version}",
   "uninstall": "卸载",

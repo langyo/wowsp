@@ -1,0 +1,43 @@
+// FullscreenModeHint — the standing bottom-left warning while the running
+// client is in exclusive fullscreen (the mode the hold-Tab overlay cannot
+// draw over). Fixed, teleported to body, anchored ABOVE the sidebar's
+// game-status card, in hikari's popup z-band with an app-surface look —
+// the same card grammar as PluginUpdateHint's pinned popup. Purely
+// passive: pointer events pass through, there is nothing to click.
+
+.fullscreen-mode-hint {
+  position: fixed;
+  z-index: var(--hk-z-tooltip, 4100);
+  width: 20rem;
+  max-width: calc(100vw - 2rem);
+  padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+  border: 1px solid rgb(var(--color-border) / 25%);
+  border-radius: var(--radius-sm, 6px);
+  background: rgb(var(--color-surface));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hi-space-8, 8px);
+  pointer-events: none;
+
+  &__title {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-xs, 0.75rem);
+    font-weight: 600;
+    color: var(--hi-color-warning, #d29922);
+  }
+
+  &__title-icon {
+    flex: none;
+  }
+
+  &__body {
+    margin: 0;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.45;
+    color: rgb(var(--color-text));
+  }
+}
