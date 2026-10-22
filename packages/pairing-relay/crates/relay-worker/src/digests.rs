@@ -27,11 +27,16 @@ pub async fn handle(req: Request, env: Env, channel: &str, tag: Option<&str>) ->
     if tag.is_some_and(|t| !digests::valid_tag(t)) {
         return Response::error("bad digest tag", 400);
     }
+    // Audit M-10: the updater polls this route — a scripted flood with
+    // random query strings must not drain the KV quota it (and the whole
+    // update channel) rides on.
+    if !crate::replay::spend_public_read(&env, "digests", &crate::feedback::client_ip(&req)).await?
+    {
+        return Response::error("rate limited", 429);
+    }
     let kv = match env.kv(KV) {
         Ok(kv) => kv,
-        Err(_) => {
-            return Response::error("digest store not configured on this gateway", 503)
-        },
+        Err(_) => return Response::error("digest store not configured on this gateway", 503),
     };
     let key = match tag {
         Some(tag) => digests::kv_key(channel, tag),
@@ -49,6 +54,7 @@ pub async fn handle(req: Request, env: Env, channel: &str, tag: Option<&str>) ->
     let mut resp = Response::from_json(&doc)?;
     // Publishes are rare; a five-minute client-side cap keeps the
     // endpoint off the hot path without serving stale-on-refresh.
-    resp.headers_mut().set("cache-control", "public, max-age=300")?;
+    resp.headers_mut()
+        .set("cache-control", "public, max-age=300")?;
     Ok(resp)
 }

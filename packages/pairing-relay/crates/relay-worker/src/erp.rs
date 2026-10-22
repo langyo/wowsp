@@ -178,16 +178,23 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
     if claims.open_id.is_empty() {
         return login_failed(&origin, "profile-shape");
     }
-    let allowlist = allowlist(&env);
+    let allowlist = effective_allowlist(&env);
     if !allowlist.admits(&claims.open_id) {
         // Logged so the owner can read a new maintainer's app-scoped
         // open_id off `wrangler tail` before adding it to the list.
         worker::console_log!("erp: denied open_id {}", claims.open_id);
-        return login_failed(&origin, "denied");
+        let reason = if allowlist.is_open() {
+            "denied"
+        } else {
+            // The fail-closed default (audit M-6): nothing configured and
+            // no ERP_OPEN_ACCESS switch — the console shows what to set.
+            "unconfigured"
+        };
+        return login_failed(&origin, reason);
     }
     if allowlist.is_open() {
         worker::console_warn!(
-            "erp: no ERP_ALLOWED_OPEN_IDS / FEEDBACK_ADMIN_OPEN_ID configured; \
+            "erp: no allowlist configured and ERP_OPEN_ACCESS=1; \
              admitting open_id {} under the legacy any-app-user gate",
             claims.open_id
         );
@@ -314,7 +321,7 @@ fn session_claims(req: &Request, env: &Env) -> Option<relay_core::erp::SessionCl
         &session_key(&app_secret),
         &value,
         now_secs(),
-        &allowlist(env),
+        &effective_allowlist(env),
     )
 }
 
@@ -327,6 +334,29 @@ fn allowlist(env: &Env) -> ConsoleAllowlist {
         get("ERP_ALLOWED_OPEN_IDS").as_deref(),
         get("FEEDBACK_ADMIN_OPEN_ID").as_deref(),
     )
+}
+
+/// The legacy any-app-user gate needs an explicit opt-in once the
+/// allowlist is gone (audit M-6): `ERP_OPEN_ACCESS=1` (or `true`).
+/// Default OFF — an unconfigured deployment is FAIL-CLOSED, because the
+/// console and every `/api/replays/admin/*` route ride this same gate.
+fn open_access_enabled(env: &Env) -> bool {
+    env.var("ERP_OPEN_ACCESS")
+        .map(|v| matches!(v.to_string().as_str(), "1" | "true"))
+        .unwrap_or(false)
+}
+
+/// The allowlist the console actually enforces: the configured one, or —
+/// when nothing is configured and the legacy switch is off — a closed
+/// gate that admits nobody. Every session check (login, whoami, console
+/// APIs, replay admin) funnels through here.
+fn effective_allowlist(env: &Env) -> ConsoleAllowlist {
+    let allowlist = allowlist(env);
+    if allowlist.is_open() && !open_access_enabled(env) {
+        ConsoleAllowlist::closed()
+    } else {
+        allowlist
+    }
 }
 
 /// Re-read the profile from the contact API with the tenant token.

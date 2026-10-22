@@ -133,8 +133,9 @@ async fn wanted_doc(env: &Env) -> Result<Option<WantedDoc>> {
 
 /// Spend one KV rate-limit counter (same best-effort pattern as the
 /// feedback pipeline): read + 1, refuse past the limit, write with a
-/// day TTL otherwise.
-async fn spend(kv: &KvStore, key: &str, limit: u64) -> Result<bool> {
+/// day TTL otherwise. Shared with the other public GET routes (audit
+/// M-10).
+pub(crate) async fn spend(kv: &KvStore, key: &str, limit: u64) -> Result<bool> {
     let count: u64 = kv.get(key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
     if count > limit {
         return Ok(false);
@@ -144,6 +145,21 @@ async fn spend(kv: &KvStore, key: &str, limit: u64) -> Result<bool> {
         .execute()
         .await?;
     Ok(true)
+}
+
+/// The shared public-read budget (audit M-10): one scope/IP/hour counter
+/// in FEEDBACK_KV. Best-effort — a missing KV binding answers allowed
+/// rather than breaking the route.
+pub(crate) async fn spend_public_read(env: &Env, scope: &str, ip: &str) -> Result<bool> {
+    let Ok(kv) = env.kv(KV) else {
+        return Ok(true);
+    };
+    spend(
+        &kv,
+        &replay::public_read_rate_key(scope, ip, now_ms()),
+        replay::RATE_PUBLIC_READ_PER_HOUR,
+    )
+    .await
 }
 
 /// 429/503 with a Retry-After header (the plain `err` helper has no
@@ -198,6 +214,11 @@ pub async fn handle_wanted(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
+    // Audit M-10: every hit costs a KV read + a DO round trip — a scripted
+    // flood with random query strings must not drain the quota.
+    if !spend_public_read(&env, "wanted", &client_ip(&req)).await? {
+        return err_retry(429, "rate_limited", 600);
+    }
     let doc = wanted_doc(&env).await?;
     let mut counters = do_get(&env, "/counters").await?;
     if counters.status_code() != 200 {
@@ -227,14 +248,17 @@ pub async fn handle_check(mut req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Post {
         return err(405, "method_not_allowed");
     }
-    if let Some(len) = req
+    // Audit M-9: the length is REQUIRED — a chunked body would otherwise
+    // be buffered in full by `req.json()` before any cap could refuse it.
+    let Some(len) = req
         .headers()
         .get("Content-Length")?
         .and_then(|v| v.parse::<usize>().ok())
-    {
-        if len > CHECK_BODY_MAX {
-            return err(413, "payload_too_large");
-        }
+    else {
+        return err(411, "length_required");
+    };
+    if len > CHECK_BODY_MAX {
+        return err(413, "payload_too_large");
     }
     let ip = client_ip(&req);
     let day = day_bucket(now_ms());
@@ -278,6 +302,11 @@ pub async fn handle_check(mut req: Request, env: Env) -> Result<Response> {
 pub async fn handle_mine(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
+    }
+    // Audit M-10: the token gates WHO, not HOW OFTEN — budget the DO
+    // round trip per IP like the other public reads.
+    if !spend_public_read(&env, "mine", &client_ip(&req)).await? {
+        return err_retry(429, "rate_limited", 600);
     }
     let Some(auth) = auth_headers(&req) else {
         return err(403, "token");
@@ -476,10 +505,7 @@ fn admin_authed(req: &Request, env: &Env) -> bool {
         return true;
     }
     let provided = req.headers().get("x-admin-key").ok().flatten();
-    let expected = env
-        .secret("REPLAY_ADMIN_KEY")
-        .ok()
-        .map(|s| s.to_string());
+    let expected = env.secret("REPLAY_ADMIN_KEY").ok().map(|s| s.to_string());
     relay_core::replay::admin_key_ok(provided.as_deref(), expected.as_deref())
 }
 
@@ -518,14 +544,17 @@ pub async fn handle_admin_wanted(mut req: Request, env: Env) -> Result<Response>
             ok(v)
         },
         Method::Post => {
-            if let Some(len) = req
+            // Audit M-9: REQUIRED length — the admin editor always sends
+            // one; a chunked body must not buffer unbounded.
+            let Some(len) = req
                 .headers()
                 .get("Content-Length")?
                 .and_then(|v| v.parse::<usize>().ok())
-            {
-                if len > replay::WANTED_SAVE_MAX_BYTES + 1024 {
-                    return err(413, "file_too_large");
-                }
+            else {
+                return err(411, "length_required");
+            };
+            if len > replay::WANTED_SAVE_MAX_BYTES + 1024 {
+                return err(413, "file_too_large");
             }
             let body = req.text().await?;
             let now_ms = Date::now().as_millis();
@@ -533,17 +562,14 @@ pub async fn handle_admin_wanted(mut req: Request, env: Env) -> Result<Response>
                 Ok(doc) => {
                     let canonical = serde_json::to_string(&doc)
                         .map_err(|e| worker::Error::RustError(format!("serialize: {e}")))?;
-                    kv.put(replay::KV_WANTED_KEY, canonical)?
-                        .execute()
-                        .await?;
+                    kv.put(replay::KV_WANTED_KEY, canonical)?.execute().await?;
                     ok(json!({
                         "ok": true,
                         "rulesetVersion": doc.ruleset_version,
                         "rules": doc.rules.len(),
                     }))
                 },
-                Err(e) => ok(json!({ "ok": false, "error": e }))
-                    .map(|r| r.with_status(400)),
+                Err(e) => ok(json!({ "ok": false, "error": e })).map(|r| r.with_status(400)),
             }
         },
         _ => err(405, "method_not_allowed"),

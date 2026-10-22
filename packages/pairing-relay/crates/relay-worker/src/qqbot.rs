@@ -149,7 +149,8 @@ pub async fn handle_callback(mut req: Request, env: &Env) -> Result<Response> {
             None => Response::error("bad request", 400),
         },
         event => {
-            // 事件推送必须验签（Secret 派生公钥）。
+            // 事件推送必须验签（Secret 派生公钥），且签名时间戳必须新鲜
+            // （audit L：泄漏过一次的签名请求体不应能无限重放）。
             // headers().get() -> Result<Option<String>, Error>
             let sig = req
                 .headers()
@@ -163,8 +164,16 @@ pub async fn handle_callback(mut req: Request, env: &Env) -> Result<Response> {
                 .ok()
                 .flatten()
                 .unwrap_or_default();
+            let ts_fresh = ts
+                .parse::<i64>()
+                .map(|t| {
+                    let now = now_ms().div_euclid(1000);
+                    (now - t).abs() <= qqbot::SIGNATURE_TIMESTAMP_TOLERANCE_SECS
+                })
+                .unwrap_or(false);
             if sig.is_empty()
                 || ts.is_empty()
+                || !ts_fresh
                 || !qqbot::verify_event_signature(&c.secret, &ts, body.as_bytes(), &sig)
             {
                 return Response::error("bad signature", 401);

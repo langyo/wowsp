@@ -97,14 +97,19 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     }
     // Cheap pre-reject before buffering the body (largest attachment
     // kind + form slack).
-    if let Some(len) = req
+    // The length is REQUIRED, not just a pre-check (audit M-9): a chunked
+    // request would otherwise be buffered in full before the cap could
+    // refuse it. The buffered-body check below stays as the belt to the
+    // pre-check's suspenders.
+    let Some(len) = req
         .headers()
         .get("Content-Length")?
         .and_then(|v| v.parse::<usize>().ok())
-    {
-        if len > relay_core::feedback::ATTACHMENT_MAX + 64 * 1024 {
-            return err(413, "file_too_large");
-        }
+    else {
+        return err(411, "length_required");
+    };
+    if len > relay_core::feedback::ATTACHMENT_MAX + 64 * 1024 {
+        return err(413, "file_too_large");
     }
 
     let ct = req.headers().get("Content-Type")?.unwrap_or_default();

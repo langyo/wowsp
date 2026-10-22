@@ -167,12 +167,32 @@ pub fn read_session(key: &[u8; 32], value: &str, now_secs: i64) -> Option<Sessio
 /// Who may hold a console session: the open_ids listed in
 /// `ERP_ALLOWED_OPEN_IDS` (comma- or whitespace-separated) plus
 /// `FEEDBACK_ADMIN_OPEN_ID`. Both unset (or blank) leaves the list
-/// empty, which keeps the legacy gate — any user the Feishu app lets
-/// sign in — so an upgrade never locks the owner out; the worker logs a
-/// warning and the console flags it (see [`ConsoleAllowlist::is_open`]).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// empty, which historically kept the legacy gate — any user the Feishu
+/// app lets sign in — so an upgrade never locks the owner out; the
+/// worker logs a warning and the console flags it (see
+/// [`ConsoleAllowlist::is_open`]).
+///
+/// Audit M-6: that legacy gate is fail-OPEN — whoever can complete the
+/// Feishu OAuth owns every console and replay-admin route. The worker
+/// therefore wraps unconfigured deployments in [`ConsoleAllowlist::closed`]
+/// unless the operator explicitly sets `ERP_OPEN_ACCESS=1` to keep the
+/// legacy behavior; a configured allowlist is unaffected.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConsoleAllowlist {
     open_ids: Vec<String>,
+    /// `false` only for the explicit [`ConsoleAllowlist::closed`] gate.
+    /// An empty list built by [`Self::from_config`] still means legacy
+    /// open mode — the closed gate is a separate, deliberate state.
+    open_mode: bool,
+}
+
+/// `Default` preserves the historical shape of an empty list: legacy open
+/// mode (the `#[derive(Default)]` bool would have flipped the semantics to
+/// closed — the closed gate is the EXPLICIT [`Self::closed`] constructor).
+impl Default for ConsoleAllowlist {
+    fn default() -> Self {
+        Self::from_config(None, None)
+    }
 }
 
 impl ConsoleAllowlist {
@@ -187,12 +207,25 @@ impl ConsoleAllowlist {
                 }
             }
         }
-        Self { open_ids }
+        Self {
+            open_ids,
+            open_mode: true,
+        }
+    }
+
+    /// The fail-closed gate: admits nobody, regardless of what (or
+    /// whether) anything is configured.
+    pub fn closed() -> Self {
+        Self {
+            open_ids: Vec::new(),
+            open_mode: false,
+        }
     }
 
     /// No open_id configured — the legacy any-app-user gate is in force.
+    /// The explicit [`Self::closed`] gate is never "open".
     pub fn is_open(&self) -> bool {
-        self.open_ids.is_empty()
+        self.open_mode && self.open_ids.is_empty()
     }
 
     /// Whether `open_id` may log in / keep using a session. An empty
@@ -689,6 +722,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
     replayApp.hidden = true;
     loginView.hidden = false;
     if (reason === "denied") toast("该飞书账号不在后台允许名单内，请联系维护者。", "error");
+    else if (reason === "unconfigured") toast("后台允许名单未配置，控制台已默认关闭。把维护者 open_id 写入 ERP_ALLOWED_OPEN_IDS（或显式设置 ERP_OPEN_ACCESS=1）后重试。", "error");
     else if (reason) toast("登录失败（" + reason + "），请重试。", "error");
     $("who").hidden = true;
     $("logout").hidden = true;
@@ -1172,6 +1206,28 @@ mod tests {
             assert!(list.admits("ou_anyone"));
             assert!(!list.admits(""), "an empty open_id never passes");
         }
+    }
+
+    #[test]
+    fn the_closed_gate_admits_nobody() {
+        // Audit M-6: the worker wraps an unconfigured deployment in this
+        // gate unless ERP_OPEN_ACCESS=1 — it must never let anyone through,
+        // however the cookie was minted.
+        let closed = ConsoleAllowlist::closed();
+        assert!(!closed.is_open());
+        assert!(!closed.admits("ou_anyone"));
+        assert!(!closed.admits("ou_owner"));
+        assert!(!closed.admits(""));
+        // A valid signature does not rescue it either.
+        let key = session_key("app-secret");
+        let claims = SessionClaims {
+            open_id: "ou_owner".into(),
+            name: "伊欧".into(),
+            avatar: "".into(),
+            exp: 1000,
+        };
+        let cookie = mint_session(&key, &claims);
+        assert_eq!(read_console_session(&key, &cookie, 0, &closed), None);
     }
 
     #[test]

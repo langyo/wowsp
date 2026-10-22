@@ -25,7 +25,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 // ── constants: keys, quotas, caps ──────────────────────────────────────
@@ -146,10 +146,13 @@ pub fn valid_upload_token(token: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-/// `creditedName`: 3..=24 chars, no control characters.
+/// `creditedName`: 3..=24 chars, no control characters and none of the
+/// BiDi/format controls that could impersonate another contributor.
 pub fn valid_credited_name(name: &str) -> bool {
     let n = name.chars().count();
-    (CREDIT_NAME_MIN..=CREDIT_NAME_MAX).contains(&n) && !name.chars().any(char::is_control)
+    (CREDIT_NAME_MIN..=CREDIT_NAME_MAX).contains(&n)
+        && !name.chars().any(char::is_control)
+        && !name.chars().any(is_spoofing_format_char)
 }
 
 /// A realm code from the five the game runs.
@@ -527,6 +530,23 @@ impl MemberFacts {
     }
 }
 
+// ── public read rate limits ───────────────────────────────────────────
+
+/// Per-IP hourly budget shared by the unauthenticated GET endpoints
+/// (digests, sponsors, replays/wanted) and the token-authed `/mine` —
+/// the abuse ceiling audit M-10 asks for. Every hit costs a KV read, so
+/// a scripted flood with random query strings would otherwise drain the
+/// free-tier quota the updater and feedback channels live on. 120/hour
+/// is far above any human or app polling cadence and far below quota
+/// drain.
+pub const RATE_PUBLIC_READ_PER_HOUR: u64 = 120;
+
+/// The KV counter key for one scope/IP/hour bucket (`scope` separates
+/// the endpoints so one flooded route never locks the others out).
+pub fn public_read_rate_key(scope: &str, ip: &str, now_ms: i64) -> String {
+    format!("rl:pub:{scope}:{}:{ip}", now_ms.div_euclid(3_600_000))
+}
+
 /// Exactly 64 lowercase hex chars (a facts sha256 or a token hash).
 pub fn valid_hex64(s: &str) -> bool {
     s.len() == 64
@@ -534,9 +554,23 @@ pub fn valid_hex64(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// Path-free display name (no separators, no empty).
+/// Path-free display name (no separators, no empty, and none of the
+/// Unicode format controls that make one contributor's credit read as
+/// another's — audit L: `char::is_control` only covers Cc, not the BiDi
+/// marks (U+202A..202E), directional isolates (U+2066..2069), LRM/RLM
+/// (U+200E/200F) or the BOM (U+FEFF)).
 pub fn valid_file_name(name: &str) -> bool {
-    !name.is_empty() && name.chars().count() <= FILENAME_MAX && !name.contains(['/', '\\'])
+    !name.is_empty()
+        && name.chars().count() <= FILENAME_MAX
+        && !name.contains(['/', '\\'])
+        && !name.chars().any(is_spoofing_format_char)
+}
+
+/// The Unicode Cf characters that flip or isolate display direction —
+/// the classic credited-name spoofing set. Rare legitimate typography
+/// (ZWJ emoji sequences use U+200D, deliberately NOT in this set).
+pub fn is_spoofing_format_char(c: char) -> bool {
+    matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
 }
 
 /// Plausibility per contract §2. `Err` carries a stable code.
@@ -1795,6 +1829,39 @@ mod tests {
         assert!(!valid_credited_name("ab"), "too short");
         assert!(!valid_credited_name(&"x".repeat(25)));
         assert!(!valid_credited_name("bad\u{7}name"));
+        // Audit L: BiDi/format controls can make one contributor's credit
+        // render as another's name — refused like any control character.
+        assert!(!valid_credited_name("nor\u{202E}eирos"));
+        assert!(!valid_credited_name("\u{2066}iso\u{2069}"));
+        // ZWJ emoji typography stays welcome (U+200D is deliberately not
+        // in the spoofing set).
+        assert!(valid_credited_name("play\u{200D}er"));
+        assert!(valid_file_name("20261021-2100-NA_battle.wowsreplay"));
+        assert!(!valid_file_name("bom\u{FEFF}.wowsreplay"));
+    }
+
+    #[test]
+    fn public_read_rate_keys_bucket_by_scope_ip_and_hour() {
+        // An hour-aligned base so the in-hour / next-hour probes are exact.
+        let base = 3_600_000i64 * 488_889;
+        let k = public_read_rate_key("digests", "203.0.113.9", base);
+        assert!(k.starts_with("rl:pub:digests:"), "{k}");
+        assert!(k.ends_with(":203.0.113.9"), "{k}");
+        // One hour is one bucket: two timestamps in the same hour share it,
+        // the next hour moves on.
+        assert_eq!(
+            public_read_rate_key("sponsors", "203.0.113.9", base + 3_599_999),
+            public_read_rate_key("sponsors", "203.0.113.9", base)
+        );
+        assert_ne!(
+            public_read_rate_key("sponsors", "203.0.113.9", base),
+            public_read_rate_key("sponsors", "203.0.113.9", base + 3_600_000)
+        );
+        // Scopes never share a bucket.
+        assert_ne!(
+            public_read_rate_key("sponsors", "203.0.113.9", base),
+            public_read_rate_key("digests", "203.0.113.9", base)
+        );
     }
 
     #[test]
@@ -2038,16 +2105,20 @@ mod tests {
         bad(facts(&"a".repeat(64)), "bad_size", |f| {
             f.size_bytes = 67_108_865
         });
-        assert!(validate_facts(&ReplayFacts {
-            size_bytes: 1024,
-            ..facts(&"a".repeat(64))
-        })
-        .is_ok());
-        assert!(validate_facts(&ReplayFacts {
-            size_bytes: 67_108_864,
-            ..facts(&"a".repeat(64))
-        })
-        .is_ok());
+        assert!(
+            validate_facts(&ReplayFacts {
+                size_bytes: 1024,
+                ..facts(&"a".repeat(64))
+            })
+            .is_ok()
+        );
+        assert!(
+            validate_facts(&ReplayFacts {
+                size_bytes: 67_108_864,
+                ..facts(&"a".repeat(64))
+            })
+            .is_ok()
+        );
         bad(facts(&"a".repeat(64)), "bad_realm", |f| {
             f.realm = "na2".into()
         });
@@ -2056,11 +2127,13 @@ mod tests {
         });
         bad(facts(&"a".repeat(64)), "bad_tier", |f| f.tier = Some(12));
         bad(facts(&"a".repeat(64)), "bad_tier", |f| f.tier = Some(0));
-        assert!(validate_facts(&ReplayFacts {
-            tier: None,
-            ..facts(&"a".repeat(64))
-        })
-        .is_ok());
+        assert!(
+            validate_facts(&ReplayFacts {
+                tier: None,
+                ..facts(&"a".repeat(64))
+            })
+            .is_ok()
+        );
         bad(facts(&"a".repeat(64)), "bad_player_count", |f| {
             f.player_count = 0
         });
@@ -2666,10 +2739,12 @@ mod tests {
         assert_eq!(delta.wm, 0);
         assert_eq!(delta.c_deletes.len(), 2);
         assert_eq!(delta.h_updates.len(), 2);
-        assert!(delta
-            .h_updates
-            .iter()
-            .all(|(_, r)| r.status == RowStatus::Drained));
+        assert!(
+            delta
+                .h_updates
+                .iter()
+                .all(|(_, r)| r.status == RowStatus::Drained)
+        );
         // Rule counters survive (drain never reopens a rule).
         assert_eq!(led.counters().1, vec![("r-all".to_string(), 2)]);
         // /mine shows empty staged, zero blob, kept credit.
@@ -2786,10 +2861,12 @@ mod tests {
         assert_eq!(outcome.credited, 2);
         assert!(outcome.duplicates.is_empty());
         assert_eq!(outcome.rows.len(), 2);
-        assert!(outcome
-            .rows
-            .iter()
-            .all(|(_, r)| r.status == RowStatus::Drained));
+        assert!(
+            outcome
+                .rows
+                .iter()
+                .all(|(_, r)| r.status == RowStatus::Drained)
+        );
         // The meta row: created with credits, zero blob (no R2 shard).
         assert_eq!(outcome.meta.credit_count, 2);
         assert_eq!(outcome.meta.archive_bytes, 0);
@@ -2993,27 +3070,35 @@ mod tests {
             .unwrap_err();
         assert!(e.contains("rules[0]"), "{e}");
         // A malformed whole-doc floor (or per-rule floor) refuses too.
-        assert!(validate_wanted_save(
-            r#"{ "clientVersionMin": "0.6.x", "rules": [ { "id": "r1" } ] }"#,
-            0
-        )
-        .unwrap_err()
-        .contains("clientVersionMin"));
-        assert!(validate_wanted_save(
-            r#"{ "rules": [ { "id": "r1", "clientVersionMin": "junk" } ] }"#,
-            0
-        )
-        .unwrap_err()
-        .contains("rules[0]"));
+        assert!(
+            validate_wanted_save(
+                r#"{ "clientVersionMin": "0.6.x", "rules": [ { "id": "r1" } ] }"#,
+                0
+            )
+            .unwrap_err()
+            .contains("clientVersionMin")
+        );
+        assert!(
+            validate_wanted_save(
+                r#"{ "rules": [ { "id": "r1", "clientVersionMin": "junk" } ] }"#,
+                0
+            )
+            .unwrap_err()
+            .contains("rules[0]")
+        );
         // Missing rules array, non-object, junk JSON, oversize, and the
         // empty-string cop-out all refuse with actionable copy.
         assert!(validate_wanted_save("{}", 0).unwrap_err().contains("rules"));
-        assert!(validate_wanted_save("[1]", 0)
-            .unwrap_err()
-            .contains("object"));
-        assert!(validate_wanted_save("nope", 0)
-            .unwrap_err()
-            .contains("JSON"));
+        assert!(
+            validate_wanted_save("[1]", 0)
+                .unwrap_err()
+                .contains("object")
+        );
+        assert!(
+            validate_wanted_save("nope", 0)
+                .unwrap_err()
+                .contains("JSON")
+        );
         assert!(
             validate_wanted_save(&"x".repeat(WANTED_SAVE_MAX_BYTES + 1), 0)
                 .unwrap_err()
@@ -3025,9 +3110,11 @@ mod tests {
             r#"{{ "rules": [ {{ "id": "r1", "realms": [{}] }} ] }}"#,
             vec!["\"na\""; 9].join(",")
         );
-        assert!(validate_wanted_save(&fat, 0)
-            .unwrap_err()
-            .contains("realms"));
+        assert!(
+            validate_wanted_save(&fat, 0)
+                .unwrap_err()
+                .contains("realms")
+        );
         // The canonical round-trip re-parses identically (what GET serves).
         let canon = serde_json::to_string(&ok).unwrap();
         let again = validate_wanted_save(&canon, 1_700_000_000_000).unwrap();
@@ -3056,9 +3143,11 @@ mod tests {
         );
         // A non-string type is an authoring error, not a silent unset.
         let numeric = floorless_canon.replacen("{", "{\"clientVersionMin\": 0.6, ", 1);
-        assert!(validate_wanted_save(&numeric, 0)
-            .unwrap_err()
-            .contains("clientVersionMin must be a dot-numeric string"));
+        assert!(
+            validate_wanted_save(&numeric, 0)
+                .unwrap_err()
+                .contains("clientVersionMin must be a dot-numeric string")
+        );
     }
 
     #[test]
