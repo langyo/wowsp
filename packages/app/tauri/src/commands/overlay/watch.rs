@@ -695,9 +695,15 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // Tab is held (the table overlay owns the screen then), the picker is
     // open, or the battle is gone. PvE battles keep it down for their WHOLE
     // duration (`arena_info::last_battle_pve`, the anchor calibration's own
-    // class flag): the crosshair can only lock AI ships there — co-op bots
-    // or scripted operation units — so the card would hang a raw bot name
-    // over dash placeholders with nothing real to look up. Placement hangs
+    // class flag), and so does any battle whose ENEMY side reads entirely
+    // AI (`arena_info::last_enemy_all_ai` — asymmetric fills and rooms
+    // deliberately set vs bots ride this one, whatever their matchGroup
+    // string says): the crosshair can only lock AI ships there — co-op
+    // bots or scripted operation units — so the card would hang a raw bot
+    // name over dash placeholders with nothing real to look up. A MIXED
+    // enemy side (event PvEvP: bots AND humans) keeps the window up; the
+    // page-side per-aim gate (telemetry `bots` + the AI-name styles)
+    // filters those AI targets by name. Placement hangs
     // the card below the game
     // window's center (the crosshair) by the configured hang
     // (`aim_card_hang_px`, read above with the switches) and follows every
@@ -709,7 +715,8 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         && aim_card_on
         && !picker_open
         && !tab_down
-        && !super::arena_info::last_battle_pve();
+        && !super::arena_info::last_battle_pve()
+        && !super::arena_info::last_enemy_all_ai();
     if want_aim_card {
         if let Some(g) = game.as_ref() {
             let rect = rect_from_win32(g.rect);

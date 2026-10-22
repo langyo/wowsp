@@ -41,11 +41,16 @@
  * Content visibility is data-driven and deliberately dumb:
  *   - telemetry fresh + aim.name non-empty → the card renders;
  *   - aim empty, stream stale (30 s, the poller's own staleness rule), or
- *     the battle rolled over → the card empties. The native window's
- *     show/hide is the Rust watcher's job (battle on, Tab up; a PvE battle
- *     keeps the window down for its whole duration — every lockable target
- *     there is AI, nothing resolvable to show) — this page
- *     only ever draws content.
+ *     the battle rolled over → the card empties;
+ *   - a target judged AI renders NOTHING — not even a bare-headed name
+ *     (see aimDisplayName: the AI-name styles plus the probe's bridged
+ *     `bots` list, which catches the event PvEvP bots sailing under
+ *     normal nicknames; mixed bot+human enemy teams keep the window up
+ *     and show the humans only).
+ *     The native window's show/hide is the Rust watcher's job (battle
+ *     on, Tab up; a PvE battle or an all-AI enemy side — co-op,
+ *     asymmetric fills, rooms vs bots — keeps the window down for its
+ *     whole duration) — this page only ever draws content.
  *
  * The window itself hangs below the game window's center (the crosshair);
  * placement never crosses into this page.
@@ -59,6 +64,7 @@ import { careerStamp, type CareerStamp, type StampKind } from "@/utils/winrate";
 // algorithm, and the seal kill switches gate the same kinds.
 import { readOverlayDisplayPrefs } from "./overlayPrefs";
 import {
+  aimDisplayName,
   careerLineHtml,
   sealLineHtml,
   shipLineHtml,
@@ -111,6 +117,11 @@ interface TelemetryPayload {
   shipNames?: Record<string, string>;
   self?: { name?: string; realm?: string };
   identity?: Record<string, { account_id?: number; realm?: string }>;
+  /** The game's own AI verdicts this battle (the records' isBot rows +
+   *  scripted-name styles, bridged by the probe). Absent = the probe
+   *  build predates the bridge; the AI-name styles alone carry the
+   *  judgment then. */
+  bots?: string[];
   aim?: { name?: string; flags?: number };
 }
 
@@ -126,6 +137,11 @@ let identityRealms: Record<string, string> = {};
 let identityBattle = "";
 // Roster names worth resolving (bots `:Name:` have no WG account).
 const rosterNames = new Set<string>();
+// Names the game itself flags as AI this battle (the probe's `bots`
+// bridge): event PvEvP bots sail under NORMAL nicknames the roster's
+// AI-name filter cannot catch. Replaced wholesale per frame; reset per
+// battle with the rest of the intake state.
+let botNames = new Set<string>();
 let shipNames: Record<string, string> = {};
 // The latched verdict + the freshness stamp.
 let aimName = "";
@@ -212,6 +228,7 @@ function resetBattleState() {
   pendingClear();
   identityRealms = {};
   rosterNames.clear();
+  botNames = new Set();
   aimName = "";
   aimClanTag = null;
   render();
@@ -508,9 +525,10 @@ function render() {
   }
   // The seal line: the career verdict through the clan gate + the
   // composition tags, the table chips' same merge. A held verdict renders
-  // nothing yet (no flash-then-retract).
+  // nothing yet (no flash-then-retract). No AI guard needed here — the
+  // intake already empties aimName for every judged-AI target.
   let sealLine = "";
-  if (sealsShown() && !AI_NAME.test(aimName)) {
+  if (sealsShown()) {
     const verdict = careerVerdictFor(aimName);
     if (verdict !== "held") {
       const html = sealLineHtml(verdict, compositions.get(aimName) ?? null, {
@@ -588,8 +606,17 @@ async function main() {
         scheduleAimFetch();
       }
     }
-    // The verdict itself.
-    const next = payload.aim?.name ?? "";
+    // The game's own AI verdicts (the records' isBot rows + scripted
+    // name styles), replaced wholesale — the list is re-derived from the
+    // full record set every tick, so a replace is self-healing. Absent
+    // field = no fresh verdict this frame (a probe build predating the
+    // bridge, or the write's fail-safe body): the previous set stands,
+    // and the name-style half of aimDisplayName carries the judgment
+    // alone there.
+    if (payload.bots) botNames = new Set(payload.bots);
+    // The verdict itself, through the bot gate: a judged-AI target
+    // renders nothing at all — not even a bare-headed name.
+    const next = aimDisplayName(payload.aim?.name ?? "", botNames);
     if (next !== aimName) {
       aimName = next;
       aimClanTag = null;

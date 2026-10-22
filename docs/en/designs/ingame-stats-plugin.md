@@ -170,6 +170,29 @@ names covering a whole side, the comparator's inputs are the strings
 the client itself renders and the arrangement grades EXACT (partial
 name coverage keeps the inferred grade).
 
+**AI-verdict bridge (2026-10-22)** — the aim card's bot filtering now
+has the game's own authoritative signal: telemetry gains `bots` (the
+records' `isBot` rows plus the scripted-name styles ':'/'IDS_'/'#',
+cached per battle — a transient empty getPlayersInfo does not blank
+the list; the fail-safe body omits the field, and an absent field means
+"this probe build predates the bridge", never "no bots"). The event
+PvEvP modes field some bots under NORMAL nicknames no name-style rule
+can catch — only the record's own isBot flag judges those. The aim
+card's verdict passes a two-layer gate (`aimDisplayName`: AI-name
+styles + the bots list) and a judged-AI target renders NO card at all,
+bare-headed name included; a mixed enemy team keeps the window up and
+shows the humans only. The whole-battle suppression lives on the Rust
+side under its own flag (`arena_info::last_enemy_all_ai`): an enemy
+side that reads entirely AI (co-op, the asymmetric fills, scripted
+operation waves, an all-bot event side under normal nicknames — caught
+by the WG arena convention that bot rows carry negative ids — or a
+custom room deliberately set vs bots; decided off the roster, not the
+matchGroup string) keeps the card's window down for the battle's whole
+duration. That flag is deliberately SEPARATE
+from `LAST_BATTLE_PVE`: the PvE flag also keys the anchor calibration's
+battle class, and an asymmetric battle fields a two-team Tab table
+whose anchor belongs in the PvP slot.
+
 **Exact-order sources (2026-10-18 static + replay probe).** The TAB order
 is the client's rendered `AvatarSystem` sequence. Decompiled
 `mcb5884c1/m9be68bb6.pyc` (`__createCollections`) builds the dh

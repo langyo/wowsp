@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  aimDisplayName,
   battlesText,
   careerLineHtml,
   sealLineHtml,
@@ -28,6 +29,27 @@ const ok: BatchStat = {
 function cell(html: string, index: number): string {
   return html.split(/(?=<b )/)[index] ?? "";
 }
+
+describe("aimDisplayName", () => {
+  // The probe's bridged bot list: the game's own isBot records — the
+  // event PvEvP bots that sail under NORMAL nicknames.
+  const bots = new Set(["EventBot_with_a_normal_name"]);
+
+  it("keeps a human target and an empty verdict as-is", () => {
+    expect(aimDisplayName("Foe03", bots)).toBe("Foe03");
+    expect(aimDisplayName("", bots)).toBe("");
+  });
+
+  it("suppresses every AI-name style without needing the bridged list", () => {
+    expect(aimDisplayName(":Sturdee:", bots)).toBe("");
+    expect(aimDisplayName("IDS_OP_15_DUMMY_01", new Set())).toBe("");
+    expect(aimDisplayName("#Scenario", new Set())).toBe("");
+  });
+
+  it("suppresses a normal-named target the probe flagged as a bot", () => {
+    expect(aimDisplayName("EventBot_with_a_normal_name", bots)).toBe("");
+  });
+});
 
 describe("careerLineHtml", () => {
   it("renders the four tier-colored figures for a landed row", () => {

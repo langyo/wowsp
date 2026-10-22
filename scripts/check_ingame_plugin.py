@@ -864,6 +864,18 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if tele.get("shipNames") != expected_localized:
             failures.append("[%s] telemetry shipNames mismatch: %r"
                             % (label, tele.get("shipNames")))
+        # The game's own AI verdicts (bots): every `isBot` row plus the
+        # scripted-name styles — the one judgment that catches event
+        # PvEvP bots sailing under NORMAL nicknames, which no name-style
+        # rule can match. The bot record (:TesterBot:, isBot=True) must
+        # bridge on every records-driven pass through BOTH encoders; the
+        # walk-only degraded-empty pass has no records at all, so the
+        # list degrades to EMPTY — present, never absent (an absent field
+        # means "this probe build predates the bridge").
+        expected_bots = [] if degraded == "empty" else [BOT_NAME]
+        if tele.get("bots") != expected_bots:
+            failures.append("[%s] telemetry bots=%r, expected %r"
+                            % (label, tele.get("bots"), expected_bots))
         # The aim verdict (the target-flags walk): Foe03's main-battery bits
         # beat Foe01's earlier-walked non-main lockable bit. The raising-cc
         # (Lesta) passes stand the whole walk down — the field must still
