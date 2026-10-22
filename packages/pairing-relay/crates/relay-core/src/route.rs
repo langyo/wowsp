@@ -70,9 +70,12 @@ pub enum Route<'a> {
     FeedbackSubmit,
     /// GET /api/feedback/list — records JSON for the console / agents.
     FeedbackList,
-    /// GET /api/feedback/history?contact=… — public lookup of one
-    /// contact's own submissions + processing status (rate-limited).
-    FeedbackHistory { contact: Option<&'a str> },
+    /// GET /api/feedback/history?token=… — public lookup of one submitter's
+    /// own submissions + processing status (rate-limited). The key is the
+    /// one-time lookup token issued at submit time (M-7); the legacy
+    /// `?contact=` spelling is retired — the handler answers 400 without
+    /// a well-formed `token`.
+    FeedbackHistory { token: Option<&'a str> },
     /// POST /api/feedback/update — status/PR-link write.
     FeedbackUpdate,
     /// POST /api/qqbot/callback — QQ 开放平台 webhook（URL 校验 + 事件）。
@@ -152,7 +155,7 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         "/api/feedback/list" => return Route::FeedbackList,
         "/api/feedback/history" => {
             return Route::FeedbackHistory {
-                contact: query_get(query, "contact"),
+                token: query_get(query, "token"),
             };
         },
         "/api/feedback/update" => return Route::FeedbackUpdate,
@@ -277,14 +280,19 @@ mod tests {
         assert_eq!(classify("/api/feedback/submit", ""), Route::FeedbackSubmit);
         assert_eq!(classify("/api/feedback/list", ""), Route::FeedbackList);
         assert_eq!(
-            classify("/api/feedback/history", "contact=12345"),
+            classify("/api/feedback/history", "token=0f0f"),
             Route::FeedbackHistory {
-                contact: Some("12345")
+                token: Some("0f0f")
             }
         );
         assert_eq!(
             classify("/api/feedback/history", ""),
-            Route::FeedbackHistory { contact: None }
+            Route::FeedbackHistory { token: None }
+        );
+        // 旧的联系方式的拼法不再是查询键（handler 会直接 400）。
+        assert_eq!(
+            classify("/api/feedback/history", "contact=12345"),
+            Route::FeedbackHistory { token: None }
         );
         assert_eq!(classify("/api/feedback/update", ""), Route::FeedbackUpdate);
         assert_eq!(
@@ -467,7 +475,10 @@ mod tests {
         // The bare endpoint and deeper paths are NotFound.
         assert_eq!(classify("/api/digests", ""), Route::NotFound);
         assert_eq!(classify("/api/digests/", ""), Route::NotFound);
-        assert_eq!(classify("/api/digests/app/v0.6.1/extra", ""), Route::NotFound);
+        assert_eq!(
+            classify("/api/digests/app/v0.6.1/extra", ""),
+            Route::NotFound
+        );
         // trim_path strips every trailing slash, so `app//` is `app`.
         assert_eq!(
             classify("/api/digests/app//", ""),

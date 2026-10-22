@@ -1,5 +1,5 @@
-//! QQ 机器人接入的 worker 壳：webhook 回调（自报绑定 + 进度查询）与
-//! 受理/结果通知。策略与解析都在 relay_core::qqbot；提交反馈不再要求
+//! QQ 机器人接入的 worker 壳：webhook 回调（查询凭证绑定 + 进度查询）
+//! 与受理/结果通知。策略与解析都在 relay_core::qqbot；提交反馈不再要求
 //! 任何验证，绑定只服务于回访通知与查询。
 
 use crate::feedback::{history_records, http_call, json_headers};
@@ -219,8 +219,8 @@ async fn handle_event(env: &Env, c: &Creds, event: CallbackEvent) -> Result<()> 
     }
 }
 
-/// 命令处理：自报绑定（群消息补 member/group openid，私聊补 c2c openid）与进度查询。
-/// 回复一律走被动（带 msg_id），不消耗主动消息配额。
+/// 命令处理：查询凭证绑定（群消息补 member/group openid，私聊补 c2c
+/// openid）与进度查询。回复一律走被动（带 msg_id），不消耗主动消息配额。
 async fn reply_to_command(
     env: &Env,
     c: &Creds,
@@ -259,22 +259,38 @@ async fn reply_to_command(
         }
     };
     match qqbot::parse_command(content) {
-        Command::Bind(contact) => {
-            let merged = kv
-                .get(&qqbot::bind_key(&contact))
-                .json::<Binding>()
+        Command::Bind(token) => {
+            // 绑定即证明（audit M-7）：凭证 → 哈希 → KV 行（fbtok:*，提交
+            // 时落库）→ 常时比对换出该反馈的联系方式，把发送者的 openid
+            // 绑到它名下；形态不符或查不到的凭证一律拒绑。
+            let token = token.trim().to_ascii_lowercase();
+            let hash = relay_core::feedback::lookup_token_hash(&token);
+            let row: Option<Value> = kv
+                .get(&relay_core::feedback::lookup_kv_key(&hash))
+                .json::<Value>()
                 .await
                 .ok()
-                .flatten()
-                .unwrap_or_default()
-                .merge(Binding {
-                    contact: contact.clone(),
-                    ..incoming
-                });
-            kv.put(&qqbot::bind_key(&contact), &merged)?
-                .execute()
-                .await?;
-            reply(qqbot::bind_ok_reply(&contact)).await
+                .flatten();
+            match relay_core::feedback::resolve_lookup_token(row.as_ref(), &token) {
+                Some(contact) => {
+                    let merged = kv
+                        .get(&qqbot::bind_key(&contact))
+                        .json::<Binding>()
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default()
+                        .merge(Binding {
+                            contact: contact.clone(),
+                            ..incoming
+                        });
+                    kv.put(&qqbot::bind_key(&contact), &merged)?
+                        .execute()
+                        .await?;
+                    reply(qqbot::bind_ok_reply(&contact)).await
+                },
+                None => reply(qqbot::bind_unknown_reply().to_string()).await,
+            }
         },
         Command::Status => {
             // 反查 openid → 联系方式，再借反馈管线拉最新记录。
