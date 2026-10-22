@@ -10,7 +10,7 @@
  */
 import type { CapSpec } from "./modes";
 import type { HeatLayerMode } from "./heatLayer";
-import type { Lineup } from "./lineup";
+import { sanitizeEntry, type Lineup } from "./lineup";
 
 export interface TacticalSession {
   /** ModePreset id (modes.ts); null = the map was never set up. */
@@ -56,21 +56,14 @@ function sessionKey(spaceId: string): string {
 }
 
 function sanitizeLineupSide(raw: unknown): Lineup["ally"] {
+  // Delegates to lineup.ts's shared entry sanitizer (keeps the per-hull
+  // build alive across reloads and profile imports — the session blob is
+  // the lineup's LIVE persistence path).
   if (!Array.isArray(raw)) return [];
   const out: Lineup["ally"] = [];
   for (const e of raw) {
-    if (typeof e !== "object" || e == null) continue;
-    const rec = e as Record<string, unknown>;
-    if (typeof rec.shipId !== "number" || !Number.isFinite(rec.shipId)) continue;
-    out.push({
-      id: typeof rec.id === "string" && rec.id ? rec.id : `lu-${out.length}`,
-      shipId: rec.shipId,
-      label: typeof rec.label === "string" ? rec.label : "",
-      torpedo: typeof rec.torpedo === "number" && rec.torpedo >= 0 ? Math.floor(rec.torpedo) : 0,
-      consumables: Array.isArray(rec.consumables)
-        ? rec.consumables.filter((c): c is string => typeof c === "string")
-        : [],
-    });
+    const entry = sanitizeEntry(e);
+    if (entry) out.push(entry);
   }
   return out;
 }

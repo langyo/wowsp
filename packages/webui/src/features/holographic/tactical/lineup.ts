@@ -15,6 +15,7 @@
 import { shipLiveStats } from "@/features/replay/shipLiveStats";
 import kitRaw from "@/data/ship_consumable_kit.json";
 import type { ShipInfo } from "@/api/client";
+import type { PlannerBuild } from "@/components/ships/modifierPipeline";
 import type { Vec2 } from "./types";
 import type { ZoneStatSource } from "./zones";
 import { wrapAngle } from "./kinematics";
@@ -28,7 +29,9 @@ export const TEAM_COLOR: Record<TeamSide, string> = {
   enemy: "#f43f5e",
 };
 
-/** One hull of a lineup. `label` "" = display the ship's localized name. */
+/** One hull of a lineup. `label` "" = display the ship's localized name;
+ *  the editor no longer edits it (rows auto-number 01…12 instead) — the
+ *  field stays for legacy saved lineups whose board markers chain by it. */
 export interface LineupEntry {
   /** Stable local id (element ids reference nothing here; mirror pairing
    *  uses list INDEX, ids just keep Vue keys stable under reordering). */
@@ -41,6 +44,10 @@ export interface LineupEntry {
   torpedo: number;
   /** Chosen consumable families (subset of the hull's mountable set). */
   consumables: string[];
+  /** Per-hull loadout (skills / signals / upgrades / commander). Absent on
+   *  legacy lineups = the recommended default build; stamped explicitly
+   *  when a hull is added or its loadout edited. */
+  build?: PlannerBuild | null;
 }
 
 export interface Lineup {
@@ -59,8 +66,29 @@ export function emptyLineup(): Lineup {
   return { ally: [], enemy: [] };
 }
 
-export function makeEntry(shipId: number, label = ""): LineupEntry {
-  return { id: newEntryId(), shipId, label, torpedo: 0, consumables: [] };
+export function makeEntry(shipId: number, label = "", build: PlannerBuild | null = null): LineupEntry {
+  return { id: newEntryId(), shipId, label, torpedo: 0, consumables: [], build };
+}
+
+/** Structure-independent deep copy of one hull's build (skills dict,
+ *  signals array, upgrades dict — keys back to numbers after JSON trips;
+ *  non-numeric slot keys drop out). */
+export function cloneBuild(build: PlannerBuild | null | undefined): PlannerBuild | null {
+  if (!build) return null;
+  const upgrades: Record<number, string> = {};
+  for (const [slot, name] of Object.entries(build.upgrades ?? {})) {
+    const slotNo = Number(slot);
+    if (typeof name === "string" && Number.isInteger(slotNo) && slotNo >= 0) {
+      upgrades[slotNo] = name;
+    }
+  }
+  return {
+    skills: { ...(build.skills ?? {}) },
+    signals: [...(build.signals ?? [])],
+    upgrades,
+    commander: typeof build.commander === "string" ? build.commander : null,
+    healthPct: typeof build.healthPct === "number" ? build.healthPct : 1,
+  };
 }
 
 // ── Persistence (per map, localStorage) ───────────────────────────────────
@@ -69,7 +97,46 @@ function lineupKey(spaceId: string): string {
   return `wowsp:tactics:lineup:v1:${spaceId}`;
 }
 
-function sanitizeEntry(raw: unknown): LineupEntry | null {
+/** Normalize a persisted build: keep only shape-valid parts (unknown
+ *  skill/signal/mod ids are harmless downstream — the modifier pipeline
+ *  skips what it can't resolve — but slot keys must be numbers and
+ *  healthPct clamps into 0..1). Anything non-object → null. */
+function sanitizeBuild(raw: unknown): PlannerBuild | null {
+  if (typeof raw !== "object" || raw == null) return null;
+  const b = raw as Partial<PlannerBuild> & Record<string, unknown>;
+  const skills: Record<string, 1> = {};
+  if (b.skills && typeof b.skills === "object") {
+    for (const code of Object.keys(b.skills)) {
+      if (typeof code === "string" && code) skills[code] = 1;
+    }
+  }
+  return {
+    skills,
+    signals: Array.isArray(b.signals)
+      ? b.signals.filter((s): s is string => typeof s === "string")
+      : [],
+    upgrades: cloneBuild(b as PlannerBuild)?.upgrades ?? {},
+    commander: typeof b.commander === "string" ? b.commander : null,
+    healthPct:
+      typeof b.healthPct === "number" && Number.isFinite(b.healthPct)
+        ? Math.min(1, Math.max(0, b.healthPct))
+        : 1,
+  };
+}
+
+/** Pre-rework editor chips persisted these short codes for the three
+ *  utility families; the slot/toggle UI speaks GameParams family names —
+ *  normalize once at load so legacy choices keep lighting the right
+ *  chips and zones. */
+const LEGACY_CONSUMABLE_CODES: Record<string, string> = {
+  rls: "RLSSearch",
+  sonar: "SonarSearch",
+  smoke: "SmokeGenerator",
+};
+
+/** Shape-validate one persisted entry (shared by the lineup store AND the
+ *  per-map session blob — the session is the live persistence path). */
+export function sanitizeEntry(raw: unknown): LineupEntry | null {
   if (typeof raw !== "object" || raw == null) return null;
   const e = raw as Partial<LineupEntry> & Record<string, unknown>;
   if (typeof e.shipId !== "number" || !Number.isFinite(e.shipId)) return null;
@@ -79,8 +146,11 @@ function sanitizeEntry(raw: unknown): LineupEntry | null {
     label: typeof e.label === "string" ? e.label : "",
     torpedo: typeof e.torpedo === "number" && e.torpedo >= 0 ? Math.floor(e.torpedo) : 0,
     consumables: Array.isArray(e.consumables)
-      ? e.consumables.filter((c): c is string => typeof c === "string")
+      ? e.consumables
+          .filter((c): c is string => typeof c === "string")
+          .map((c) => LEGACY_CONSUMABLE_CODES[c] ?? c)
       : [],
+    build: sanitizeBuild(e.build),
   };
 }
 
@@ -109,10 +179,11 @@ export function saveLineup(spaceId: string, lineup: Lineup): void {
 }
 
 /** Deep-copy one side over the other (the lineup editor's quick copy).
- *  New ids: the copies are independent hulls, not linked mirrors. */
+ *  New ids AND new builds: the copies are independent hulls, not linked
+ *  mirrors. */
 export function copySide(lineup: Lineup, from: TeamSide, to: TeamSide): Lineup {
   const src = from === "ally" ? lineup.ally : lineup.enemy;
-  const copy = src.map((e) => ({ ...e, id: newEntryId() }));
+  const copy = src.map((e) => ({ ...e, id: newEntryId(), build: cloneBuild(e.build) }));
   return to === "ally" ? { ...lineup, ally: copy } : { ...lineup, enemy: copy };
 }
 

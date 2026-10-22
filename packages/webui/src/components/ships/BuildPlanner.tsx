@@ -26,13 +26,19 @@ import {
   type SkillRequirement,
 } from "./skillTree";
 import { type PlannerBuild } from "./modifierPipeline";
+import {
+  MODERNIZATIONS,
+  SIGNALS,
+  shipUpgradeSlots,
+  upgradeMountable,
+  type ModernizationEntry,
+  type SignalEntry,
+} from "./buildDefaults";
 import { cxpForPoints, priceOf, retrainCredits } from "./costs";
 import { api, type UpgradePrice } from "@/api";
 import { isMobileApp } from "@/utils/platform";
 import { gameNationOf } from "@/utils/nationCodes";
 import DataObserver from "./DataObserver";
-import signalsData from "../../data/signals.json";
-import modernizationsData from "../../data/modernizations.json";
 import commandersData from "../../data/commanders.json";
 import shipConsumablesData from "../../data/ship_consumables.json";
 import "./BuildPlanner.scss";
@@ -89,30 +95,8 @@ function modernizationIconUrl(name: string): string | null {
 }
 
 // ── Data shapes (subsets of the extracted JSONs) ──────────────────────────
-interface SignalEntry {
-  index: string;
-  name: string;
-  names: Record<string, string>;
-  desc: Record<string, string>;
-  sortOrder: number;
-  /** Effect coefficients — scalars or per-class dicts keyed by WG class. */
-  modifiers: Record<string, unknown>;
-}
-interface ModernizationEntry {
-  name: string;
-  names: Record<string, string>;
-  desc: Record<string, string>;
-  slot: number;
-  shiptype: string[];
-  nation: string[];
-  shiplevel: number[];
-  /** Optional ship-gating: full GameParams names ("PJSB018_Yamato_1944");
-   *  a mod is mountable only when one name's leading token (before the
-   *  first "_") matches the ship's tech-tree index. */
-  ships?: string[];
-  /** Optional rarity tags ("unique" = research-bureau gear). */
-  tags?: string[];
-}
+// Signal/modernization shapes + the mountability filters live in
+// ./buildDefaults (the lineup editor counts slots with the same predicate).
 interface CommanderTalent {
   activatorType: string;
   maxTriggerNum: number;
@@ -140,8 +124,6 @@ interface FlagEffect {
   good: boolean;
 }
 
-const SIGNALS = (signalsData as SignalEntry[]).slice().sort((a, b) => a.sortOrder - b.sortOrder);
-const MODERNIZATIONS = modernizationsData as ModernizationEntry[];
 const COMMANDERS = (commandersData as CommanderEntry[])
   .slice()
   .sort((a, b) => (b.talents.length > 0 ? 1 : 0) - (a.talents.length > 0 ? 1 : 0) || a.person.localeCompare(b.person));
@@ -208,12 +190,6 @@ const TALENT_SECOND_KEYS = new Set(["workTime"]);
 /** Additive percentage-point talent keys (0.01 = +1pp). */
 const TALENT_POINTS_KEYS = new Set(["burnChanceBonus"]);
 
-/** Mod families whose GameParams ships-list is a WHITELIST despite carrying
- *  a type restriction like exclusion-listing regulars. GameParams has no
- *  explicit marker — the store semantics are known per family: skip bombers
- *  only exist on the six hybrid-art carriers (PCM081/092_SkipBomber_Mod_I). */
-const SHIPS_WHITELIST_FAMILIES = /_SkipBomber_Mod_/;
-
 /** i18n key exists? (avoids vue-i18n fallback warnings for data-driven keys) */
 function hasMsg(key: string): boolean {
   // te() on the full message schema explodes type instantiation — go loose.
@@ -232,6 +208,10 @@ export default defineComponent({
     /** Raw GameParams entry the modal unpacked — forwarded to DataObserver
      *  for the per-band AA rows (WG's profile carries no usable AA data). */
     gameparams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
+    /** Section the rail opens on — hosts that arrive from a specific
+     *  editor entry point (the lineup's 装备/旗帜/舰长/技能 menu items)
+     *  land on their section instead of always "skills". */
+    initialSection: { type: String as PropType<Section>, default: "skills" },
   },
   emits: {
     "update:build": (_v: PlannerBuild) => true,
@@ -239,7 +219,7 @@ export default defineComponent({
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
     const shipsUi = useShipsUiStore();
-    const section = ref<Section>("skills");
+    const section = ref<Section>(props.initialSection);
 
     const dataLangKey = computed(() => DATA_KEY_BY_LANG[dataLanguage.value] ?? "en");
 
@@ -565,48 +545,17 @@ export default defineComponent({
     // ── Upgrades section ───────────────────────────────────────────────────
     /** Slot indexes unlocked by the ship's tier (WoWS wiki "Ship:Upgrades":
      *  slot 1 @ T1, 2 @ T3, 3 @ T5, 4 @ T6, 5 @ T8, 6 @ T9). */
-    const shipSlots = computed<number[]>(() => {
-      const t = props.ship.tier;
-      const count =
-        1 + (t >= 3 ? 1 : 0) + (t >= 5 ? 1 : 0) + (t >= 6 ? 1 : 0) + (t >= 8 ? 1 : 0) + (t >= 9 ? 1 : 0);
-      return [0, 1, 2, 3, 4, 5].slice(0, count);
-    });
-    /** Ship-gating by GameParams `ships` (full ship names, matched by leading
-     *  tech-tree index token). The semantics flip with the mod class:
-     *  research-bureau unique mods WHITELIST their ships (Yamato's unique
-     *  upgrade lists Yamato), and so does every entry with NO type
-     *  restriction — the low-tier Aiming Systems Mod 0 names exactly the
-     *  three ships that may mount it. Only broadly-typed regular mods carry
-     *  EXCLUSION lists (Main Gun Mod 3 names the submarines it must not be
-     *  mounted on), so reading those as whitelists would gut the tab —
-     *  with one exception: the skip-bomber mods are typed like regular CV
-     *  upgrades but their six-ship list is a whitelist (the game mounts
-     *  them on exactly those hybrid-art carriers). */
-    function shipMatches(m: ModernizationEntry): boolean {
-      if (!m.ships?.length) return true;
-      const index = treeIndexOf(props.ship.shipId);
-      const hit = index != null && m.ships.some((s) => s.split("_")[0] === index);
-      const whitelist =
-        m.tags?.includes("unique") ||
-        m.shiptype.length === 0 ||
-        SHIPS_WHITELIST_FAMILIES.test(m.name);
-      return whitelist ? hit : !hit;
-    }
+    const shipSlots = computed<number[]>(() => shipUpgradeSlots(props.ship.tier));
+
+    /** Mountable modernizations for one slot — buildDefaults' shared
+     *  predicate (type/nation/tier gates + the whitelist-vs-exclusion
+     *  ships-list semantics), so the tab and every off-component count
+     *  (the lineup's default builder) agree by construction. */
     function upgradesForSlot(slot: number): ModernizationEntry[] {
-      return MODERNIZATIONS.filter((m) => {
-        if (m.slot !== slot) return false;
-        // Dead catalog: an entry with no type restriction AND no ship binding
-        // is a legacy upgrade the current game sells nowhere — the unnamed
-        // PCM001_MainGun_Mod_I family plus the named-but-obsolete
-        // 防御型对空火力修改型1 (PCM040) and sub Steering Gear Mod 3 (PCM091).
-        if (m.shiptype.length === 0 && !m.ships?.length) return false;
-        return (
-          (m.shiptype.length === 0 || m.shiptype.includes(props.ship.type)) &&
-          (m.nation.length === 0 || m.nation.includes(gpNation.value)) &&
-          (m.shiplevel.length === 0 || m.shiplevel.includes(props.ship.tier)) &&
-          shipMatches(m)
-        );
-      });
+      const index = treeIndexOf(props.ship.shipId);
+      return MODERNIZATIONS.filter(
+        (m) => m.slot === slot && upgradeMountable(m, props.ship, index),
+      );
     }
     function toggleUpgrade(slot: number, name: string): void {
       const upgrades = { ...props.build.upgrades };

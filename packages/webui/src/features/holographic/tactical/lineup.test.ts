@@ -7,6 +7,7 @@
  */
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  cloneBuild,
   copySide,
   emptyLineup,
   loadLineup,
@@ -17,6 +18,7 @@ import {
   resolveUnit,
   saveLineup,
   spawnPoses,
+  type LineupEntry,
 } from "./lineup";
 
 const BOUNDS = { minX: -700, maxX: 700, minZ: -700, maxZ: 700 };
@@ -46,6 +48,55 @@ describe("persistence", () => {
   it("a missing key yields an empty lineup", () => {
     expect(loadLineup("nowhere")).toEqual(emptyLineup());
   });
+
+  it("round-trips a per-hull build (slots numeric, healthPct clamped)", () => {
+    const build = {
+      skills: { GmShellReload: 1 as const },
+      signals: ["PCEF016"],
+      upgrades: { 2: "PCM027_ConcealmentMeasures_Mod_I" },
+      commander: "PAW102_Halsey",
+      healthPct: 0.5,
+    };
+    const lu = emptyLineup();
+    lu.ally.push(makeEntry(4290883632, "", build));
+    saveLineup("20_NE", lu);
+    const back = loadLineup("20_NE");
+    // JSON turns slot keys into strings; sanitize normalizes them back.
+    expect(back.ally[0].build).toEqual(build);
+  });
+
+  it("a legacy entry without a build loads as build null (implicit default)", () => {
+    window.localStorage.setItem(
+      "wowsp:tactics:lineup:v1:20_NE",
+      JSON.stringify({
+        ally: [{ id: "lu-1", shipId: 1, label: "", torpedo: 0, consumables: [] }],
+        enemy: [],
+      }),
+    );
+    expect(loadLineup("20_NE").ally[0].build).toBeNull();
+  });
+
+  it("a corrupt build degrades to an empty-but-valid one", () => {
+    window.localStorage.setItem(
+      "wowsp:tactics:lineup:v1:20_NE",
+      JSON.stringify({
+        ally: [
+          {
+            id: "lu-1",
+            shipId: 1,
+            consumables: [],
+            build: { signals: ["x", 3], upgrades: { bad: 4 }, healthPct: 9 },
+          },
+        ],
+        enemy: [],
+      }),
+    );
+    const build = loadLineup("20_NE").ally[0].build!;
+    expect(build.signals).toEqual(["x"]);
+    expect(build.upgrades).toEqual({});
+    expect(build.healthPct).toBe(1);
+    expect(build.commander).toBeNull();
+  });
 });
 
 describe("copySide", () => {
@@ -57,6 +108,36 @@ describe("copySide", () => {
     expect(out.enemy[0].shipId).toBe(1);
     expect(out.enemy[0].id).not.toBe(a.id);
     expect(out.ally).toBe(lu.ally); // source untouched
+  });
+
+  it("deep-copies the build (copies never share skill dicts)", () => {
+    const a: LineupEntry = {
+      ...makeEntry(1),
+      build: { skills: { A: 1 }, signals: ["PCEF016"], upgrades: { 0: "X" }, commander: null, healthPct: 1 },
+    };
+    const out = copySide({ ally: [a], enemy: [] }, "ally", "enemy");
+    out.enemy[0].build!.skills.B = 1;
+    out.enemy[0].build!.signals.push("PCEF017");
+    expect(Object.keys(a.build!.skills)).toEqual(["A"]);
+    expect(a.build!.signals).toEqual(["PCEF016"]);
+  });
+});
+
+describe("cloneBuild", () => {
+  it("normalizes string slot keys back to numbers", () => {
+    const out = cloneBuild({
+      skills: { A: 1 },
+      signals: [],
+      upgrades: { "2": "PCM001", 3: "PCM002" } as unknown as Record<number, string>,
+      commander: null,
+      healthPct: 1,
+    });
+    expect(Object.keys(out!.upgrades).map(Number).sort()).toEqual([2, 3]);
+  });
+
+  it("passes null through", () => {
+    expect(cloneBuild(null)).toBeNull();
+    expect(cloneBuild(undefined)).toBeNull();
   });
 });
 
