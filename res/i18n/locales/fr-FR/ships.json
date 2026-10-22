@@ -239,6 +239,11 @@
       "charges": "Charges",
       "workTime": "Durée active",
       "reloadTime": "Temps de rechargement",
+      "range": "Portée d'effet",
+      "rangeShip": "Portée de détection des navires",
+      "rangeTorpedo": "Portée de détection des torpilles",
+      "radius": "Rayon de l'écran de fumée",
+      "patrolRadius": "Rayon de patrouille",
       "slotLabel": "Emplacement {n}",
       "auto": "Déclenchement auto",
       "keysHint": "Les touches suivent les affectations par défaut des consommables du jeu (modifiables en jeu)."

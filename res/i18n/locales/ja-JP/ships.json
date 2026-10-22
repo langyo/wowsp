@@ -239,6 +239,11 @@
       "charges": "使用回数",
       "workTime": "効果時間",
       "reloadTime": "再装填時間",
+      "range": "有効距離",
+      "rangeShip": "艦艇発見距離",
+      "rangeTorpedo": "魚雷発見距離",
+      "radius": "煙幕半径",
+      "patrolRadius": "巡回半径",
       "slotLabel": "スロット{n}",
       "auto": "自動発動",
       "keysHint": "キーはゲームのデフォルトの消耗品キー設定です（ゲーム内で変更可能）。"

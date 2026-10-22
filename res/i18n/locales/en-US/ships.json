@@ -239,6 +239,11 @@
       "charges": "Charges",
       "workTime": "Active Time",
       "reloadTime": "Reload Time",
+      "range": "Range",
+      "rangeShip": "Ship Detection Range",
+      "rangeTorpedo": "Torpedo Detection Range",
+      "radius": "Smoke Screen Radius",
+      "patrolRadius": "Patrol Radius",
       "slotLabel": "Slot {n}",
       "auto": "Auto-triggered",
       "keysHint": "Keys follow the game's default consumable bindings (remappable in-game)."

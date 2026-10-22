@@ -239,6 +239,11 @@
       "charges": "사용 횟수",
       "workTime": "지속 시간",
       "reloadTime": "재장전 시간",
+      "range": "유효 거리",
+      "rangeShip": "함선 발견 거리",
+      "rangeTorpedo": "어뢰 발견 거리",
+      "radius": "연막 반경",
+      "patrolRadius": "순찰 반경",
       "slotLabel": "슬롯 {n}",
       "auto": "자동 발동",
       "keysHint": "표시된 키는 게임 기본 소모품 키 배정이며 게임 내 설정에서 변경할 수 있습니다."
