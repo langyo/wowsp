@@ -75,6 +75,15 @@ for (const rec of Object.values(DETAILS.entities)) {
   if (rec.icon && !FAMILY_ICON.has(rec.family)) FAMILY_ICON.set(rec.family, rec.icon);
 }
 
+/** Icon URL for a consumable FAMILY (no entity/variant context) — the
+ *  first entity of the family that baked one, else null. Surfaces the
+ *  same webp URLs the specs tab's cards use to slot-aware pickers that
+ *  only know the family (the tactics lineup's baked slot rows). */
+export function familyIconUrl(family: string): string | null {
+  const stem = FAMILY_ICON.get(family);
+  return stem ? ICON_URLS[`../../res/images/consumables/${stem}.webp`] ?? null : null;
+}
+
 export type ConsumableTone =
   | "default"
   | "primary"
