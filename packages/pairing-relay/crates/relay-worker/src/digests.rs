@@ -1,19 +1,26 @@
 //! GET /api/digests/<channel>[/<tag>] — the release-digest endpoint
-//! (see relay_core::digests for the policy). The doc is read from the
-//! dedicated `DIGESTS` KV namespace; this handler owns nothing but the
-//! validation → KV read mapping, so every rule stays unit-testable in
-//! relay-core.
+//! (see relay_core::digests for the policy). The docs are STATIC
+//! FILES on the worker's [assets] layer (the tracked
+//! `packages/pairing-relay/digests/<channel>/*.json` tree, copied to
+//! `assets/api/digests/**` by scripts/build_worker_site.py); this
+//! handler owns the validation → edge-cache → asset-fetch mapping, so
+//! every rule stays unit-testable in relay-core.
 //!
-//! Until the namespace is created and the binding uncommented in
-//! wrangler.toml (README ▶ Deploy), the route answers 503 — the app
-//! treats that exactly like any other relay-channel failure and falls
-//! back to api.github.com.
+//! The 2026-10-22 incident retired the KV-backed store: a fleet of app
+//! clients polling never-published channels turned every request into
+//! a guaranteed KV miss and burned the free tier's daily read quota.
+//! Serving now costs, per edge colo and cache TTL: one asset fetch
+//! (free, unmetered) — and identical GETs (any query string) collapse
+//! into the cached response before the read budget is even consulted.
 
 use relay_core::digests::{self, DigestDoc};
 use worker::*;
 
-/// The KV binding this route reads (wrangler.toml `[[kv_namespaces]]`).
-const KV: &str = "DIGESTS";
+/// The [assets] binding (wrangler.toml `binding = "ASSETS"` under
+/// `[assets]`) the docs are fetched through. A fetch on it resolves by
+/// path against the uploaded assets; a miss is a 404 here (the SPA
+/// fallback never applies — and is defensively refused below).
+const ASSETS: &str = "ASSETS";
 
 /// Serve one digest request. `channel`/`tag` are the raw path segments
 /// from the router.
@@ -27,11 +34,22 @@ pub async fn handle(req: Request, env: Env, channel: &str, tag: Option<&str>) ->
     if tag.is_some_and(|t| !digests::valid_tag(t)) {
         return Response::error("bad digest tag", 400);
     }
-    // Only channels with docs actually published to this namespace may
-    // cost a (rate-limited) KV read; every other valid channel answers
-    // 404 from the binary itself — the 2026-10-22 read-quota flood was
-    // the app fleet polling channels that were never published here
-    // (see relay_core::digests::parse_published_channels).
+    let path = match tag {
+        Some(tag) => digests::doc_url(channel, tag),
+        None => digests::latest_url(channel),
+    };
+    // The edge cache key is the clean client path on a synthetic host:
+    // query strings are client noise (the incident's cache-busting
+    // shape), and the key must be stable across colos' spellings.
+    let cache = Cache::default();
+    let cache_key = format!("https://digests.edge{path}");
+    if let Ok(Some(cached)) = cache.get(cache_key.clone(), true).await {
+        return Ok(cached);
+    }
+    // Only channels with docs actually published into the tracked
+    // digests tree may spend the read budget and the asset fetch;
+    // every other valid channel answers 404 from the binary (see
+    // relay_core::digests::parse_published_channels).
     let published = env
         .var("DIGEST_PUBLISHED_CHANNELS")
         .ok()
@@ -40,29 +58,43 @@ pub async fn handle(req: Request, env: Env, channel: &str, tag: Option<&str>) ->
         .iter()
         .any(|c| c == channel)
     {
-        let mut resp = Response::error("no digest published for this channel", 404)?;
-        resp.headers_mut()
-            .set("Cache-Control", "public, max-age=600")?;
-        return Ok(resp);
+        return cached_404(&cache, &cache_key, 600).await;
     }
     // Audit M-10: the updater polls this route — a scripted flood with
-    // random query strings must not drain the KV quota it (and the whole
-    // update channel) rides on.
+    // random query strings must not drain the shared budget (now spent
+    // on cache misses only, which an edge-cached flood never reaches).
     if !crate::replay::spend_public_read(&env, "digests", &crate::feedback::client_ip(&req)).await?
     {
         return crate::replay::err_retry(429, "rate_limited", 600);
     }
-    let kv = match env.kv(KV) {
-        Ok(kv) => kv,
+    let fetcher = match env.assets(ASSETS) {
+        Ok(fetcher) => fetcher,
         Err(_) => return Response::error("digest store not configured on this gateway", 503),
     };
-    let key = match tag {
-        Some(tag) => digests::kv_key(channel, tag),
-        None => digests::kv_latest_key(channel),
+    // The client path is route-only (it IS the channel directory on the
+    // assets layer); the real files carry their `.json` names.
+    let asset_path = match tag {
+        Some(tag) => digests::doc_asset_path(channel, tag),
+        None => digests::latest_asset_path(channel),
     };
-    let doc: Option<DigestDoc> = kv.get(&key).json().await?;
-    let Some(doc) = doc else {
-        return Response::error("no digest published for this channel", 404);
+    let mut asset = fetcher
+        .fetch(format!("https://wowsp.langyo.xyz{asset_path}"), None)
+        .await?;
+    let content_type = asset
+        .headers()
+        .get("content-type")
+        .unwrap_or_default();
+    // A miss answers 404 — and the SPA fallback, should the assets
+    // layer ever apply it to binding fetches, arrives as HTML: refuse
+    // that shape loudly instead of serving a shell to an API client.
+    if asset.status_code() != 200
+        || content_type.as_deref().is_some_and(|v| v.contains("text/html"))
+    {
+        return cached_404(&cache, &cache_key, 600).await;
+    }
+    let doc: DigestDoc = match serde_json::from_slice(&asset.bytes().await?).ok() {
+        Some(doc) => doc,
+        None => return Response::error("stored digest document failed validation", 500),
     };
     if !digests::doc_is_sane(&doc, channel) {
         // Corruption or tampering in the store itself: refuse loudly
@@ -74,5 +106,19 @@ pub async fn handle(req: Request, env: Env, channel: &str, tag: Option<&str>) ->
     // endpoint off the hot path without serving stale-on-refresh.
     resp.headers_mut()
         .set("cache-control", "public, max-age=300")?;
+    // Best-effort edge fill: a failed put only costs the next request
+    // a fresh asset fetch.
+    let _ = cache.put(cache_key, resp.cloned()?).await;
+    Ok(resp)
+}
+
+/// The terminal miss (unknown/unpublished channel or tag): the same
+/// body a missing doc always had, cached at the edge for ten minutes
+/// so a flood of misses costs nothing beyond the request itself.
+async fn cached_404(cache: &Cache, cache_key: &str, max_age: u64) -> Result<Response> {
+    let mut resp = Response::error("no digest published for this channel", 404)?;
+    resp.headers_mut()
+        .set("Cache-Control", &format!("public, max-age={max_age}"))?;
+    let _ = cache.put(cache_key.to_string(), resp.cloned()?).await;
     Ok(resp)
 }

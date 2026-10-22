@@ -1345,8 +1345,8 @@ def index(cache: Path) -> None:
     subprocess.run(["gh", "release", "upload", RELEASE_TAG, "--repo", REPO, "--clobber", str(out)], check=True)
     print(f"mod-index.json ({len(index_json['mods'])} mods, {dropped} unservable packages dropped)"
           f" -> release {RELEASE_TAG}")
-    # Second official channel — the relay worker's digest store; skips
-    # without Cloudflare credentials (scripts/publish_digests.py).
+    # Second official channel — the relay worker's digest store
+    # (scripts/publish_digests.py writes the tracked static tree).
     publish_digests.push_if_configured(
         "mod-hub",
         RELEASE_TAG,

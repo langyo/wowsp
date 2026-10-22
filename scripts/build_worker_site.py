@@ -171,6 +171,21 @@ def main() -> int:
     # carries it into the site dir); the nested wowsp/ copy would ship
     # as a stray static file — drop it.
     (out_dir / "wowsp" / "_headers").unlink(missing_ok=True)
+    # Release-digest docs ride the assets layer: the tracked
+    # packages/pairing-relay/digests/<channel>/*.json tree is copied to
+    # <out>/api/digests/** verbatim. The worker's digest route maps the
+    # extensionless client paths onto these `.json` files through its
+    # ASSETS binding behind an edge cache (see
+    # crates/relay-worker/src/digests.rs).
+    digests_src = Path(__file__).resolve().parents[1] / (
+        "packages/pairing-relay/digests"
+    )
+    digest_files = 0
+    if digests_src.is_dir():
+        shutil.copytree(digests_src, out_dir / "api" / "digests", dirs_exist_ok=True)
+        digest_files = sum(
+            1 for _ in (out_dir / "api" / "digests").rglob("*.json")
+        )
     for rel, shell in shells.items():
         write_page(out_dir / rel, shell)
 
@@ -179,6 +194,7 @@ def main() -> int:
         f"worker site written: {len(shells)} prerendered shell(s) "
         f"({', '.join(p.as_posix() for p in shells)}), {entry_count} entry "
         f"module(s), candidates={candidates} | (origin)"
+        + (f", {digest_files} digest doc(s)" if digest_files else "")
     )
     return 0
 
