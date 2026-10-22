@@ -87,15 +87,14 @@ html.overlay-hidden body {
    alignStatColumns pass (the widest face on that side) so the numbers
    hold a single alignment line, the seals' flank keeps its x, and the
    fallback name column's near edge — its start for enemies, its end for
-   allies — holds a fixed x: enemies read [stats right-aligned][name
-   left-aligned], allies mirror it [name right-aligned][stats
-   left-aligned]. Exact-order rows carry no name cell at all — the game's
+   allies — holds a fixed x: enemies read [stats innermost][name
+   left-aligned], allies mirror it [name right-aligned][stats innermost].
+   Exact-order rows carry no name cell at all — the game's
    own table names the row at the same Y.
-   The rat exception is the one row without a stats cell: the lone
-   过街老鼠 verdict rides a hidden profile, so the badge ALONE hugs the
-   table's edge where the numbers would sit (overlay-chip--rat) instead
-   of reserving the pinned empty slot, and a fallback row keeps its name
-   cell outside the badge.
+   The 过街老鼠 verdict rides a hidden profile, so its row carries the
+   badge in the seals flank beside the pinned stat cell's lone red dot —
+   the dot hugs the table's edge like every settled face (below), and
+   overlay-chip--rat only marks the row for chipFit's trim pass.
    The name cell caps its width and ellipsizes — the game's own table
    truncates long names the same way. */
 .overlay-chip__stat {
@@ -103,12 +102,19 @@ html.overlay-hidden body {
   white-space: nowrap;
 }
 
+/* A stat cell is pinned to its side's widest face, and the number rows
+   fill it exactly (each metric column is pinned too), so this per-side
+   alignment only shows on the PLACEHOLDER faces: the hidden red dot, the
+   whole-cell dash/bot label, the chasing loader. Those hug the TABLE-side
+   edge — where the numbers' last figure sits — instead of floating at the
+   far edge of an otherwise empty pill, which reads as a hole in the
+   column rather than as an answer. */
 .overlay-chip--enemy .overlay-chip__stat {
-  text-align: right;
+  text-align: left;
 }
 
 .overlay-chip--ally .overlay-chip__stat {
-  text-align: left;
+  text-align: right;
 }
 
 .overlay-chip__name {

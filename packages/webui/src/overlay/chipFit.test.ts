@@ -148,10 +148,10 @@ describe("fitChips", () => {
     expect(el.style.right).toBe("0px");
   });
 
-  it("keeps a rat chip's lone badge and clamps instead of emptying the pill", () => {
-    // The rat exception's badge-only chip (rowFace's 过街老鼠 face) has no
-    // stat column behind the seal: trimming it would leave an empty pill
-    // shell, so the verdict stays and the free edge clamps instead.
+  it("keeps a rat chip's lone badge and clamps instead of shedding it", () => {
+    // The rat verdict's row (rowFace's 过街老鼠 row, the overlay-chip--rat
+    // marker): the verdict is that row's whole answer about the player, so
+    // the stamp stays and the free edge clamps instead.
     const el = chip("ally", 80, ["rat"]);
     el.classList.add("overlay-chip--rat");
     fitChips(mounted(el), VIEW_W);

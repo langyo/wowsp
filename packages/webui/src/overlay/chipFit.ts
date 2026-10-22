@@ -16,9 +16,10 @@
  *  numbers cannot fit does the row's free edge clamp to the window edge,
  *  trading a slight reach back over the table's outer column for keeping
  *  the numbers whole (the webview would otherwise clip them away). The one
- *  chip that never sheds its last seal is the rat exception's badge-only
- *  face (rowFace's 过街老鼠 row): with no stat column behind the seal,
- *  trimming it would leave an empty pill shell — the clamp covers it.
+ *  chip that never sheds its last seal is the rat verdict's row (rowFace's
+ *  过街老鼠 row): the verdict is that row's whole answer about the player
+ *  — the red dot beside it only says the numbers are withheld — so the
+ *  clamp covers it instead.
  *
  *  ALIGN THE METRIC COLUMNS (alignMetricColumns): each metric (winrate /
  *  PR / battles / damage) is its own right-aligned cell inside the stat
@@ -28,16 +29,15 @@
  *  side margins are the only separators between them (the old dot
  *  separators are gone).
  *
- *  ALIGN THE STAT COLUMN (alignStatColumns): every row but the rat
- *  exception's badge-only face (below) carries a stat cell
- *  against the table edge — plus a name cell outside it while the row
- *  order is the offline inference (rowFace's fallback face); the cells
- *  must line up across rows so the stat column reads as one table and the
- *  seals' flank holds a fixed x. Row elements are individually anchored,
- *  so the column aligns only when every stat cell shares ONE width —
- *  measured here as the widest face on the side, which on fallback rows
- *  also pins the enemy name column's START and the ally name column's END
- *  to a fixed x. */
+ *  ALIGN THE STAT COLUMN (alignStatColumns): every row carries a stat
+ *  cell against the table edge — plus a name cell outside it while the
+ *  row order is the offline inference (rowFace's fallback face); the
+ *  cells must line up across rows so the stat column reads as one table
+ *  and the seals' flank holds a fixed x. Row elements are individually
+ *  anchored, so the column aligns only when every stat cell shares ONE
+ *  width — measured here as the widest face on the side, which on fallback
+ *  rows also pins the enemy name column's START and the ally name column's
+ *  END to a fixed x. */
 
 /** Sub-pixel overhang tolerance (CSS px): the anchor's physical→CSS
  *  division rounds, and costing a seal over a hairline clip is worse than
@@ -83,11 +83,11 @@ export function fitChips(root: ParentNode, viewportWidth: number): void {
       }
       for (const seal of [...comp, ...career]) {
         if (overflow() <= FIT_TOLERANCE_PX) break;
-        // The rat exception's badge-only chip (rowFace's 过街老鼠 face,
-        // the overlay-chip--rat marker) has no stat column behind its
-        // seal: trimming the LAST stamp would leave an empty pill shell.
-        // Keep the verdict — the clamp below trades a reach over the
-        // table's outer column for keeping the row's only answer visible.
+        // The rat verdict's row (rowFace's 过街老鼠 row, the
+        // overlay-chip--rat marker): the verdict is that row's whole
+        // answer about the player — the red dot beside it only says the
+        // numbers are withheld. Keep the stamp; the clamp below trades a
+        // reach over the table's outer column for keeping it visible.
         if (
           el.classList.contains("overlay-chip--rat") &&
           el.querySelectorAll(".overlay-stamp[data-stamp]").length === 1
@@ -152,10 +152,8 @@ export function alignMetricColumns(root: ParentNode): void {
  *  which measures the pinned widths.
  *  Every cell joins the width even when its own face is empty (a row with
  *  the numbers off must keep the column slot — an exact-order row for the
- *  seals' flank, a fallback row for its name cell). The ONE exception is
- *  the rat row (rowFace's 过街老鼠 face): it carries no stat cell at all,
- *  so it neither reserves the slot nor joins this measure — its badge
- *  hugs the table edge instead. Lays out as zero width
+ *  seals' flank, a fallback row for its name cell; a hidden profile's red
+ *  dot rides the same pinned cell as the numbers). Lays out as zero width
  *  under happy-dom, so a test-environment measure (width 0 everywhere)
  *  skips the pass. */
 export function alignStatColumns(root: ParentNode): void {
