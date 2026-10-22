@@ -14,6 +14,7 @@ import { HkCheckbox, HkDatePicker, HkPopover, HkScrollContainer, HkTabs, useBrea
 import { api, type ExpectedPrEntry, type ShipStatsHistoryPoint } from "@/api";
 import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { isoDayWindowSec } from "@/utils/shipAggregation";
+import { tierLabel } from "@/utils/shipCompare";
 import { useAccountStore } from "@/stores/account";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { statsPrefsState } from "@/stores/statsPrefs";
@@ -611,7 +612,7 @@ export default defineComponent({
                                 onUpdate:modelValue={() => toggleShip(s.shipId)}
                               />
                               <span class="pr-trend-pop__name">
-                                {s.tier != null ? `T${s.tier} · ` : ""}
+                                {s.tier != null ? `${tierLabel(s.tier)} · ` : ""}
                                 {prTrendShipName(s.shipId, uiLocale.value)}
                               </span>
                               <span class="pr-trend-pop__num">{s.battles}</span>
