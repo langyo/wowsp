@@ -442,14 +442,18 @@ pub fn relay_digest_url(channel: &str, tag: Option<&str>) -> String {
     }
 }
 
-/// Fetch and verify the relay doc at `url`. Two short attempts; any
-/// failure is an `Err` the dual-channel lookup turns into "the GitHub
-/// leg decides" (a doc that does not verify never yields content).
+/// Fetch and verify the relay doc at `url`. Two short attempts for
+/// transient trouble; `Ok(None)` is the relay's definitive "no digest
+/// published" (a 404/410 — the endpoint's served-channel gate answers
+/// before any storage, so retrying cannot change the answer) and is
+/// returned without spending the second attempt; any other failure is
+/// an `Err` the dual-channel lookup turns into "the GitHub leg decides"
+/// (a doc that does not verify never yields content).
 async fn fetch_relay_doc_at(
     client: &reqwest::Client,
     url: &str,
     channel: &str,
-) -> Result<RelayDigestDoc> {
+) -> Result<Option<RelayDigestDoc>> {
     debug_assert!(
         valid_channel(channel),
         "the relay digest endpoint serves {DIGEST_CHANNELS:?}, got {channel}"
@@ -463,6 +467,15 @@ async fn fetch_relay_doc_at(
             .send()
             .await;
         let doc: serde_json::Value = match response {
+            // A definitive miss: return it as `None` so the caller can
+            // remember it per channel instead of re-asking every launch
+            // and pack check (the 2026-10-22 relay read flood).
+            Ok(r)
+                if r.status() == reqwest::StatusCode::NOT_FOUND
+                    || r.status() == reqwest::StatusCode::GONE =>
+            {
+                return Ok(None);
+            },
             Ok(r) if r.status().is_success() => match r.json().await {
                 Ok(v) => v,
                 Err(e) => {
@@ -479,21 +492,85 @@ async fn fetch_relay_doc_at(
                 continue;
             },
         };
-        return parse_relay_digest_with(&doc, PINNED_DIGEST_KEYS, channel);
+        return parse_relay_digest_with(&doc, PINNED_DIGEST_KEYS, channel).map(Some);
     }
     bail!("relay digest channel unavailable: {last_err}")
 }
 
-/// The channel's rolling latest-pointer doc. The caller learns the tag
-/// from the doc (the updater's app channel works this way). The
-/// per-tag pinned lookups (the resource pack's `res-delta-*` edges)
-/// go through [`relay_pinned_sha256`] instead, which owns its own
-/// reachability semantics.
+/// The channel's rolling latest-pointer doc, gated by the absent-mark:
+/// a recent 404 suppresses the relay leg entirely (the GitHub leg
+/// decides alone) instead of re-asking on every lookup. The per-tag
+/// pinned lookups (the resource pack's `res-delta-*` edges) go through
+/// [`relay_pinned_sha256`] instead, which owns its own reachability
+/// semantics.
 pub async fn fetch_relay_doc_latest(
     client: &reqwest::Client,
     channel: &str,
-) -> Result<RelayDigestDoc> {
-    fetch_relay_doc_at(client, &relay_digest_url(channel, None), channel).await
+) -> Result<Option<RelayDigestDoc>> {
+    if relay_channel_marked_absent(channel).await {
+        return Ok(None);
+    }
+    let doc = fetch_relay_doc_at(client, &relay_digest_url(channel, None), channel).await?;
+    if doc.is_none() {
+        remember_relay_channel_absent(channel).await;
+    }
+    Ok(doc)
+}
+
+// ── The absent-channel mark (per channel) ──────────────────────────────
+
+/// How long a relay answer of "no digest published for this channel"
+/// keeps suppressing the relay leg. The 2026-10-22 incident: the app
+/// fleet re-asked the never-published mod-hub/res/data channels on
+/// every launch and pack check — a guaranteed miss (twice per lookup
+/// with the retry) fleet-wide, which burned the relay namespace's
+/// daily KV read quota. Thirty minutes bounds staleness after a real
+/// publish (the gate opens) at ~48 lookups/day per client.
+const RELAY_ABSENT_TTL_SECS: u64 = 1800;
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Data-dir file remembering "the relay answered 404 for this channel"
+/// (Unix epoch seconds). Best-effort, same contract as the seq mark: a
+/// failed read or write only costs one extra lookup.
+fn relay_absent_file(channel: &str) -> String {
+    format!(".relay-digest-absent-{channel}")
+}
+
+/// Pure freshness test (tests inject both clocks).
+fn absent_mark_is_fresh(mark: &str, now: u64) -> bool {
+    mark.trim()
+        .parse::<u64>()
+        .is_ok_and(|ts| now.saturating_sub(ts) < RELAY_ABSENT_TTL_SECS)
+}
+
+/// Whether a fresh absent-mark suppresses the relay leg for `channel`.
+async fn relay_channel_marked_absent(channel: &str) -> bool {
+    let Ok(dir) = crate::paths::ensure_data_dir() else {
+        return false;
+    };
+    tokio::fs::read_to_string(dir.join(relay_absent_file(channel)))
+        .await
+        .map(|mark| absent_mark_is_fresh(&mark, now_secs()))
+        .unwrap_or(false)
+}
+
+/// Best-effort, torn-write safe (tmp + rename), mirroring
+/// [`remember_relay_seq`].
+async fn remember_relay_channel_absent(channel: &str) {
+    let Ok(dir) = crate::paths::ensure_data_dir() else {
+        return;
+    };
+    let name = relay_absent_file(channel);
+    let tmp = dir.join(format!("{name}.tmp"));
+    if tokio::fs::write(&tmp, now_secs().to_string()).await.is_ok() {
+        let _ = tokio::fs::rename(&tmp, dir.join(&name)).await;
+    }
 }
 
 // ── The rollback ratchet (per channel) ─────────────────────────────────
@@ -632,22 +709,24 @@ pub async fn lookup_official_sha256(
         fetch_relay_doc_latest(client, channel),
         github_doc_quick(client, &api_url),
     );
-    let relay = relay.and_then(|doc| relay_leg_sha(channel, doc, tag, name));
+    // `Ok(None)` (the relay publishes no digest for this channel — the
+    // absent-mark or a fresh 404) behaves like an unavailable relay
+    // leg: the GitHub leg decides.
+    let relay = relay.and_then(|doc| {
+        doc.map(|d| relay_leg_sha(channel, d, tag, name))
+            .transpose()
+    });
+    let relay_note = match &relay {
+        Ok(Some(_)) => "relay leg ok".to_string(),
+        Ok(None) => "relay publishes no digest for this channel".to_string(),
+        Err(e) => e.to_string(),
+    };
     let github_digest = |release: serde_json::Value| {
         asset_sha256(&release, name)
             .ok_or_else(|| anyhow!("release {tag} publishes no sha256 digest for {name}"))
     };
     match (relay, github_quick) {
-        // Both quick legs unavailable (the common transient shape on CN
-        // networks): spend GitHub's full retry budget before reporting
-        // the digest unavailable.
-        (Err(relay_err), Err(_)) => match lookup_api_json(client, &api_url).await? {
-            ApiLookup::Found(release) => Ok(OfficialDigest::Verified(github_digest(release)?)),
-            ApiLookup::Unavailable(github_err) => Ok(OfficialDigest::Unavailable(format!(
-                "relay: {relay_err}; GitHub: {github_err}"
-            ))),
-        },
-        (Ok((doc, relay_sha)), github_quick) => {
+        (Ok(Some((doc, relay_sha))), github_quick) => {
             let prev = accepted_relay_seq(channel).await;
             let github_side = github_quick.and_then(github_digest);
             // The rollback refusal guards exactly the case where the
@@ -666,7 +745,16 @@ pub async fn lookup_official_sha256(
             }
             Ok(OfficialDigest::Verified(sha))
         },
-        (Err(_), Ok(release)) => Ok(OfficialDigest::Verified(github_digest(release)?)),
+        // No relay verdict (absent channel, or transient relay trouble)
+        // and no quick GitHub answer: spend GitHub's full retry budget
+        // before reporting the digest unavailable.
+        (_, Err(_)) => match lookup_api_json(client, &api_url).await? {
+            ApiLookup::Found(release) => Ok(OfficialDigest::Verified(github_digest(release)?)),
+            ApiLookup::Unavailable(github_err) => Ok(OfficialDigest::Unavailable(format!(
+                "relay: {relay_note}; GitHub: {github_err}"
+            ))),
+        },
+        (_, Ok(release)) => Ok(OfficialDigest::Verified(github_digest(release)?)),
     }
 }
 
@@ -729,6 +817,15 @@ pub async fn relay_pinned_sha256(
             .send()
             .await;
         let doc = match response {
+            // A definitive miss (unpublished channel or unknown tag):
+            // keep the caller's other digest source in charge without
+            // burning the second attempt.
+            Ok(r)
+                if r.status() == reqwest::StatusCode::NOT_FOUND
+                    || r.status() == reqwest::StatusCode::GONE =>
+            {
+                return Ok(None);
+            },
             Ok(r) if r.status().is_success() => match r.json::<serde_json::Value>().await {
                 Ok(v) => v,
                 Err(e) => {
@@ -771,6 +868,35 @@ mod tests {
             let status = StatusCode::from_u16(code).unwrap();
             assert_eq!(status_verdict(status), StatusVerdict::Fatal, "{code}");
         }
+    }
+
+    #[test]
+    fn absent_marks_are_fresh_only_inside_the_ttl() {
+        let now = 1_000_000u64;
+        assert!(absent_mark_is_fresh(&now.to_string(), now), "just written");
+        assert!(
+            absent_mark_is_fresh(&format!("{}", now - RELAY_ABSENT_TTL_SECS + 1), now),
+            "one second inside the window"
+        );
+        assert!(
+            !absent_mark_is_fresh(&format!("{}", now - RELAY_ABSENT_TTL_SECS), now),
+            "the TTL boundary expires"
+        );
+        assert!(
+            absent_mark_is_fresh(&format!("{}", now + 60), now),
+            "a small clock skew forward stays fresh"
+        );
+        assert!(
+            !absent_mark_is_fresh("not-a-number", now),
+            "garbage refuses"
+        );
+        assert!(!absent_mark_is_fresh("", now), "empty refuses");
+        // A wildly-future mark saturates to zero age (fresh) without
+        // panicking — an absurd clock, not an attack surface.
+        assert!(
+            absent_mark_is_fresh(&format!("{}", u64::MAX), now),
+            "saturating subtraction keeps the test total"
+        );
     }
 
     #[test]
