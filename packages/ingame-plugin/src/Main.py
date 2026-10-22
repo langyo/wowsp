@@ -14,9 +14,11 @@ sandbox has no networking, so this probe observes and bridges out:
     (sortKeys), the roster's record sequence (rosterOrder — the tie base
     for equal client keys), the records' localized ship names
     (shipNames — the CN name-order segment verbatim), the crosshair
-    aim verdict ('aim', see entity_walk) and the records' own AI
+    aim verdict ('aim', see entity_walk), the records' own AI
     verdicts ('bots', see bot_names — the aim card suppresses AI
-    targets off it),
+    targets off it) and the walk's side membership ('sides' — the
+    records-dead build class's only team split, the companion's
+    probe-arena synthesizer's frame fallback),
   - the ONE thing still rendered is the capture side channel's barcode
     strips: the unbound view (WoWSPProbe.unbound, installed to
     gui/unbound2/mods/ where the game auto-discovers + mounts battle
@@ -2075,7 +2077,14 @@ class Probe:
         so the aim-card consumer can suppress AI targets the nickname
         styles cannot catch (event PvEvP bots under normal names); the
         fail-safe body omits it — an absent field means "no fresh
-        verdict", never "no bots".
+        verdict", never "no bots". `sides` rides for the same
+        consumers-can-fallback reason: the walk's ally/enemy membership
+        (the strip fold's own lists, bots included), the records-dead
+        build class's only team split — its roster_raw stays empty all
+        battle, so the companion's probe-arena synthesizer seats that
+        battle's rows off these lists when the records projection has
+        nothing; the fail-safe body omits it (no players map there
+        either — an outage frame registers no battle).
         """
         if not self.session:
             return
@@ -2252,6 +2261,18 @@ class Probe:
                                      'rosterOrder': roster_order,
                                      'shipNames': ship_names,
                                      'bots': bots,
+                                     # The walk's side membership (the same
+                                     # fold lists the strips render): the
+                                     # records-dead build class's ONLY team
+                                     # split — its roster_raw stays empty all
+                                     # battle, so the companion's probe-arena
+                                     # synthesizer falls back to these name
+                                     # lists to seat the battle's rows. Bots
+                                     # included (they hold table rows); the
+                                     # self row stays inside 'ally' (the
+                                     # relation walk files SELF under ally).
+                                     'sides': {'ally': self.order.get('ally', []),
+                                               'enemy': self.order.get('enemy', [])},
                                      'self': {'name': self_name, 'realm': self_realm},
                                      'identity': identity,
                                      # The aim verdict every tick (empty name

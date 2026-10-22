@@ -31,7 +31,9 @@ companion app consumes:
     Lesta equal-key tie base) and the records' localized ship names
     (shipNames — the CN name-order segment; EMPTY when the records carry
     no such field), and roster_raw.json mirrors the sequence as `order`
-    for the Rust synthesizer's order preservation,
+    for the Rust synthesizer's order preservation, plus the walk's side
+    membership (sides — the records-dead class's only team split; EMPTY
+    lists when the walk stands down),
   - heartbeat.json written with the roster count,
   - the scheduler survives tick-over-tick (no swallowed exception text).
 
@@ -876,6 +878,36 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if tele.get("bots") != expected_bots:
             failures.append("[%s] telemetry bots=%r, expected %r"
                             % (label, tele.get("bots"), expected_bots))
+        # The walk's side membership (sides): the strip fold's own lists,
+        # bridged verbatim — the records-dead build class's only team
+        # split, and the input the companion's probe-arena synthesizer
+        # falls back to when roster_raw carries no records (its frame
+        # fallback seats the battle's rows off these lists). Same fold the
+        # panel-order block below pins: full key coverage sorts the alive
+        # block by the keys (stable), a gap keeps that side's WALK order;
+        # the raising-cc (Lesta) passes stand the walk down — the field
+        # must still be present with EMPTY lists (absent means "this
+        # probe build predates the bridge", never "no sides").
+        if raising_constants:
+            expected_sides = {"ally": [], "enemy": []}
+        else:
+            if ships == "none":
+                expected_sides = {
+                    "ally": ["langyo"] + ["Ally%02d" % i for i in range(1, 6)],
+                    "enemy": ["Foe%02d" % i for i in range(6)] + [BOT_NAME],
+                }
+            else:
+                expected_sides = {
+                    "ally": (["langyo"] + ["Ally%02d" % i for i in range(1, 6)]
+                             if ships == "partial" else SHIP_KEY_ORDERS["ally"]),
+                    "enemy": SHIP_KEY_ORDERS["enemy"],
+                }
+            if drift_records:
+                expected_sides["ally"] = [n for n in expected_sides["ally"]
+                                          if n != "Ally04"]
+        if tele.get("sides") != expected_sides:
+            failures.append("[%s] telemetry sides=%r, expected %r"
+                            % (label, tele.get("sides"), expected_sides))
         # The aim verdict (the target-flags walk): Foe03's main-battery bits
         # beat Foe01's earlier-walked non-main lockable bit. The raising-cc
         # (Lesta) passes stand the whole walk down — the field must still

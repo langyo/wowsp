@@ -193,6 +193,31 @@ from `LAST_BATTLE_PVE`: the PvE flag also keys the anchor calibration's
 battle class, and an asymmetric battle fields a two-team Tab table
 whose anchor belongs in the PvP slot.
 
+**Side-membership bridge + frame-roster fallback (2026-10-22).** The
+records-dead build class (`getPlayersInfo` empty all battle — the
+2026-10-18/19 field reports; the 2026-10-22 support bundle's WGC
+client, also build 13357625, played four days of battles whose
+telemetry only ever showed the battle-end quit-clear) runs the probe's
+walk-sourced session since the roster-grace fallback, but the companion
+still could not seat its battle: probe_arena's roster synthesis reads
+`roster_raw.json`, which only the records projection writes — on that
+class the file stays empty all battle, so a records-dead AND file-less
+client (that build class never writes `tempArenaInfo.json` either, see
+the 2026-10-20 report) never registered a battle, the Tab watcher's
+`battle_known` stayed false, and the overlay never showed no matter how
+healthily the telemetry streamed. Telemetry henceforth bridges the
+walk's side membership (`sides`: the ally/enemy name lists the strip
+fold renders, bots included; EMPTY lists when the walk stands down, a
+missing field = a probe build predating the bridge), and probe_arena's
+synthesis falls back to the frame's lists when `roster_raw` is
+unusable — rows keyed on names alone (no ids, no ship ids), relation 0
+off the frame's `self.name`. Alongside, the overlay window's realm
+chain gains the bound account's realm as its last link: a walk-sourced
+identity is empty AND an install scan that names no realm (the
+bundle's realm=None WGC shape) used to dead-end the chain at null,
+baking a realm-less URL into the window and disabling every stats
+lookup for the whole session.
+
 **Exact-order sources (2026-10-18 static + replay probe).** The TAB order
 is the client's rendered `AvatarSystem` sequence. Decompiled
 `mcb5884c1/m9be68bb6.pyc` (`__createCollections`) builds the dh

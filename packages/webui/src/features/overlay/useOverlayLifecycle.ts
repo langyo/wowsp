@@ -18,6 +18,7 @@ import { watch } from "vue";
 
 import { api } from "@/api";
 import { i18n } from "@/i18n";
+import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
@@ -28,6 +29,7 @@ export function useOverlayLifecycle() {
   const installs = useConfigStore();
   const overlayCfg = useOverlayConfigStore();
   const plugin = useIngamePluginStore();
+  const account = useAccountStore();
   void overlayCfg.load();
 
   // Mirrors the last state we asked the backend for, so the watcher only
@@ -50,9 +52,20 @@ export function useOverlayLifecycle() {
     const wantOverlay = running && (overlayCfg.table === "detect" || overlayCfg.aimCard);
     // Realm of the running client: the probe's ground truth while its
     // telemetry stream is fresh (the local player's cluster straight off
-    // the game's roster), else the process/install detection.
+    // the game's roster), else the process/install detection, else the
+    // BOUND ACCOUNT's realm — a records-dead client's walk-sourced
+    // telemetry carries no identity at all, and an install whose scan
+    // cannot name a realm (the 2026-10-22 field bundle's WGC shape,
+    // realm=None) dead-ended the chain at null, which bakes a realm-less
+    // URL into the overlay window and disables every stats lookup for the
+    // whole session. The account's realm is the last signal left, and the
+    // same one the /live panel already falls back to.
     const realm =
-      plugin.liveSelfRealm || (game.process.realm ?? installs.activeInstall?.realm ?? null);
+      plugin.liveSelfRealm ||
+      game.process.realm ||
+      installs.activeInstall?.realm ||
+      account.activeRealm ||
+      null;
     // The realm is baked into the overlay window's URL — recreate the window
     // when it changes while active (e.g. a different client started).
     if (active && (!wantOverlay || realm !== createdRealm)) {
@@ -113,6 +126,9 @@ export function useOverlayLifecycle() {
       // URL, and every stats lookup of the session ran against the WRONG
       // cluster — chips stuck on their no-data face all battle).
       () => installs.activeInstall?.realm ?? null,
+      // The bound account's realm is the chain's last link (see sync) —
+      // flipping it re-bakes the window URL the same way.
+      () => account.activeRealm,
       // The probe's ground-truth realm is part of the same decision: it
       // both corrects a wrong detection (the window recreates with the
       // true realm) and lapses back to detection when the identity

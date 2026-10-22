@@ -141,6 +141,65 @@ pub(crate) fn synthesize_from_probe(
     parse_roster_raw(&raw, self_name)
 }
 
+/// Synthesize a battle's `vehicles` straight off ONE telemetry frame —
+/// the caller's fallback when the `roster_raw` file path above is
+/// unusable (see `probe_arena::note_telemetry`). The records-dead build
+/// class (the 2026-10-18/19 field reports: `getPlayersInfo` empty all
+/// battle) runs the probe's walk-sourced session: `telemetry.json` then
+/// streams a populated `players` map while `roster_raw` stays empty, and
+/// the frame's `sides` bridge (the walk's ally/enemy name lists, bots
+/// included — the same fold the barcode strips render) is the only team
+/// split that battle has. `self_name` (the frame's own `self.name`)
+/// marks the relation-0 row; every other ally row reads 1, enemy rows 2.
+/// Ship names lift off `shipNames` when the frame carries one (a
+/// walk-sourced session's map is empty — rows key on names alone).
+///
+/// `None` = the frame predates the `sides` bridge (a probe build older
+/// than the field — mid-battle fail-safe and quit-clear frames omit it
+/// too, but those never reach here with a seatable shape) or carries
+/// fewer than two usable names — the caller keeps its per-frame retry
+/// rather than registering a guess.
+pub(crate) fn parse_frame_roster(
+    frame: &serde_json::Value,
+    self_name: Option<&str>,
+) -> Option<Vec<VehicleEntry>> {
+    let sides = frame.get("sides")?.as_object()?;
+    let ship_names = frame.get("shipNames").and_then(|v| v.as_object());
+    let mut out: Vec<VehicleEntry> = Vec::new();
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for (side, relation) in [("ally", 1i64), ("enemy", 2i64)] {
+        let Some(names) = sides.get(side).and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for name in names {
+            let Some(name) = name.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+                continue;
+            };
+            if !seen.insert(name) || out.len() >= 64 {
+                continue;
+            }
+            out.push(VehicleEntry {
+                // The walk carries no ids: rows key on names downstream,
+                // exactly like the co-op bot placeholders.
+                id: 0,
+                name: name.to_string(),
+                relation: if self_name == Some(name) { 0 } else { relation },
+                ship_id: 0,
+                ship_name: ship_names
+                    .and_then(|m| m.get(name))
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+            });
+        }
+    }
+    if out.len() < 2 {
+        return None;
+    }
+    Some(out)
+}
+
 /// Same-install guard: the arena file's home is the root's `replays/` tree
 /// (the WG-family location, matched by the same path spelling that produced
 /// it) or the game root itself (`tempArenaInfo.json` next to the executable
@@ -665,5 +724,78 @@ mod tests {
             &root.join("foo").join("tempArenaInfo.json"),
             root
         ));
+    }
+
+    /// The frame fallback's happy path: the walk-sourced session's `sides`
+    /// bridge seats both sides' rows (bots included — they hold table
+    /// rows), the self row reads relation 0 off `self_name`, and the
+    /// `shipNames` map lifts onto the rows it names.
+    #[test]
+    fn frame_roster_seats_rows_off_the_sides_bridge() {
+        let frame = serde_json::json!({
+            "t": 1_792_496_000_000i64, "battle": "1792496000000",
+            "players": {"langyo": true, "Foe01": true},
+            "sides": {
+                "ally": ["langyo", "Mate01"],
+                "enemy": ["Foe01", ":Sturdee:"],
+            },
+            "shipNames": {"Foe01": "河内"},
+        });
+        let vehicles =
+            parse_frame_roster(&frame, Some("langyo")).expect("frame roster synthesizes");
+        let by_name = |n: &str| vehicles.iter().find(|v| v.name == n).unwrap();
+        assert_eq!(vehicles.len(), 4, "bots stay — they hold table rows");
+        assert_eq!(by_name("langyo").relation, 0, "the self row reads 0");
+        assert_eq!(by_name("Mate01").relation, 1);
+        assert_eq!(by_name("Foe01").relation, 2);
+        assert_eq!(by_name(":Sturdee:").relation, 2);
+        assert_eq!(by_name("Foe01").ship_name, Some("河内".to_string()));
+        assert_eq!(by_name("langyo").ship_name, None);
+        assert!(vehicles.iter().all(|v| v.id == 0 && v.ship_id == 0));
+        // The ally block keeps its bridge order, then the enemy block.
+        let names: Vec<&str> = vehicles.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(names, ["langyo", "Mate01", "Foe01", ":Sturdee:"]);
+    }
+
+    /// Degradations: a frame without the `sides` bridge (a probe build
+    /// predating it), a sides shape that is not name lists, and a
+    /// lone-name roster all answer None — the caller retries, never
+    /// registers a guess. Blank and duplicate names drop instead of
+    /// failing the roster.
+    #[test]
+    fn frame_roster_refuses_unusable_shapes() {
+        // No `sides` at all.
+        let legacy = serde_json::json!({ "players": {"a": true, "b": true} });
+        assert!(parse_frame_roster(&legacy, None).is_none());
+        // Sides present but not name arrays.
+        let wrong_shape = serde_json::json!({ "sides": {"ally": 3, "enemy": 4} });
+        assert!(parse_frame_roster(&wrong_shape, None).is_none());
+        // One usable name after the blanks drop — below the two-row floor.
+        let thin = serde_json::json!({ "sides": {"ally": ["  ", ""], "enemy": ["Foe"]} });
+        assert!(parse_frame_roster(&thin, None).is_none());
+        // Blanks and a duplicate still let the rest seat.
+        let noisy = serde_json::json!({
+            "sides": {"ally": ["langyo", "langyo", ""], "enemy": ["Foe01"]},
+        });
+        let vehicles = parse_frame_roster(&noisy, Some("langyo")).expect("the clean names seat");
+        assert_eq!(vehicles.len(), 2);
+        assert_eq!(vehicles[0].name, "langyo");
+        assert_eq!(
+            vehicles[0].relation, 0,
+            "the FIRST sighting carries the self mark"
+        );
+    }
+
+    /// An empty self name (the walk latch failed this battle) must not
+    /// seat any relation-0 row — every ally row reads 1 — and the roster
+    /// still synthesizes.
+    #[test]
+    fn frame_roster_without_a_self_seats_allies_as_1() {
+        let frame = serde_json::json!({
+            "sides": {"ally": ["Mate01", "Mate02"], "enemy": ["Foe01"]},
+        });
+        let vehicles = parse_frame_roster(&frame, Some("")).expect("no-self roster synthesizes");
+        assert!(vehicles.iter().all(|v| v.relation == 1 || v.relation == 2));
+        assert!(vehicles.iter().all(|v| v.relation != 0));
     }
 }

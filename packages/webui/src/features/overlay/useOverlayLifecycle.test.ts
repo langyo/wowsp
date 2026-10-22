@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   api: {
     createOverlayWindow: vi.fn(), destroyOverlayWindow: vi.fn(),
   },
-  game: vi.fn(), installs: vi.fn(), config: vi.fn(), plugin: vi.fn(),
+  game: vi.fn(), installs: vi.fn(), config: vi.fn(), plugin: vi.fn(), account: vi.fn(),
 }));
 vi.mock("@/api", () => ({ api: mocks.api }));
 vi.mock("@/i18n", () => ({
@@ -16,6 +16,7 @@ vi.mock("@/stores/gameStatus", () => ({ useGameStatusStore: mocks.game }));
 vi.mock("@/stores/config", () => ({ useConfigStore: mocks.installs }));
 vi.mock("@/stores/overlayConfig", () => ({ useOverlayConfigStore: mocks.config }));
 vi.mock("@/stores/ingamePlugin", () => ({ useIngamePluginStore: mocks.plugin }));
+vi.mock("@/stores/account", () => ({ useAccountStore: mocks.account }));
 import { useOverlayLifecycle } from "./useOverlayLifecycle";
 
 function deferred() {
@@ -28,6 +29,7 @@ let scope = effectScope();
 let game = reactive({ process: { running: true, realm: "asia" as string | null } });
 let config = reactive({ table: "detect", aimCard: true, loaded: true, load: vi.fn(async () => {}) });
 let installs = reactive({ activeInstall: null as { realm: string } | null });
+let account = reactive({ activeRealm: "asia" });
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -35,10 +37,12 @@ beforeEach(() => {
   game = reactive({ process: { running: true, realm: "asia" as string | null } });
   config = reactive({ table: "detect", aimCard: true, loaded: true, load: vi.fn(async () => {}) });
   installs = reactive({ activeInstall: null as { realm: string } | null });
+  account = reactive({ activeRealm: "asia" });
   mocks.game.mockReturnValue(game);
   mocks.config.mockReturnValue(config);
   mocks.installs.mockReturnValue(installs);
   mocks.plugin.mockReturnValue(reactive({ liveSelfRealm: null }));
+  mocks.account.mockReturnValue(account);
   for (const call of Object.values(mocks.api)) call.mockResolvedValue(null);
 });
 
@@ -98,6 +102,29 @@ describe("overlay lifecycle transitions", () => {
     await flushPromises();
     expect(mocks.api.createOverlayWindow).toHaveBeenLastCalledWith("eu", "en-US");
     expect(mocks.api.destroyOverlayWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the bound account's realm when every detection link is silent", async () => {
+    // The records-dead client shape: no probe identity, no process realm,
+    // an install scan that cannot name one — the chain's last link (the
+    // bound account's realm) must still bake a usable realm into the
+    // window URL, or every stats lookup of the session stays disabled.
+    game.process.realm = null;
+    scope.run(useOverlayLifecycle);
+    await flushPromises();
+    expect(mocks.api.createOverlayWindow).toHaveBeenLastCalledWith("asia", "en-US");
+    // The account realm rides the watch list: flipping it re-bakes the URL.
+    account.activeRealm = "eu";
+    await flushPromises();
+    expect(mocks.api.destroyOverlayWindow).toHaveBeenCalledTimes(1);
+    expect(mocks.api.createOverlayWindow).toHaveBeenLastCalledWith("eu", "en-US");
+  });
+
+  it("prefers detection over the account realm when detection answers", async () => {
+    game.process.realm = "na";
+    scope.run(useOverlayLifecycle);
+    await flushPromises();
+    expect(mocks.api.createOverlayWindow).toHaveBeenLastCalledWith("na", "en-US");
   });
 
   it("retries a failed stop on the next transition instead of forgetting the window", async () => {

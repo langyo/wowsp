@@ -137,6 +137,22 @@ arena 文件机器人行负 id 的约定识别——以及故意摆人机的自�
 `LAST_BATTLE_PVE` 刻意分离——后者还键着锚点校准的战斗类，而非对称的 TAB
 表是两队布局、锚点属于 PvP 档。
 
+**编组桥 + 帧名册兜底（2026-10-22）**——记录失效构建类（getPlayersInfo
+整场为空——2026-10-18/19 实测报告；2026-10-22 支持包里的 WGC 客户端同样
+是 13357625 构建，四天的战斗遥测里只出现过战斗结束的清空帧）自 roster
+宽限兜底起已跑 walk 源会话，但同伴侧仍然坐不下这场战斗：probe_arena 的
+名册合成读的是 `roster_raw.json`，而该文件只有记录投影会写——这一构建类
+整场它都是空的，于是"记录失效 + 不落 arena 文件"的客户端（该构建类同样
+不写 `tempArenaInfo.json`，见 2026-10-20 报告）永远注册不了战斗，Tab
+监视器的 `battle_known` 恒为假，遥测流再健康 overlay 也从不出现。遥测自
+此桥出 walk 的编组成员（`sides`：条码条折叠所渲染的盟/敌名单，含机器人；
+walk 收缩时为空列表；缺字段 = 探针版本早于本桥），probe_arena 的合成在
+`roster_raw` 不可用时回退到帧内名单——行只靠名字键合（无账号 id、无船
+id），relation 0 由帧的 `self.name` 圈定。同时 overlay 窗口的 realm 链
+补上最后一环——绑定账号的 realm：walk 源身份为空、安装扫描又叫不出
+realm（支持包里 realm=None 的 WGC 形态）时，链条原先死在 null，窗口
+URL 里烤进空 realm，整场所有战绩查询都被禁用。
+
 **精确顺序来源（2026-10-18 静态 + 回放探针）**——TAB 行序是客户端
 `AvatarSystem` 自己渲染的序列。反编译 `mcb5884c1/m9be68bb6.pyc`
 （`__createCollections`）可见它基于 avatar 集合构建 dh 的拆分/排序集合
