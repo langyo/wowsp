@@ -2921,3 +2921,26 @@ fn scan_pairs_units_with_catalog_identities() {
 
     fs::remove_dir_all(&tmp).ok();
 }
+
+/// Audit H-3: the mutating commands' `game_root` comes from the webview, so
+/// the backend must refuse roots it cannot vouch for. A fresh temp path is
+/// by construction not a detected install, not the persisted active install
+/// (`is_game_dir` filter) and not a running client's folder.
+#[test]
+fn unknown_game_roots_are_refused() {
+    let ghost = std::env::temp_dir().join(format!(
+        "wowsp-not-an-install-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let ghost = ghost.to_string_lossy().into_owned();
+    assert!(
+        ensure_known_game_root(&ghost).is_err(),
+        "a path the backend never saw must be refused"
+    );
+    // Spelling drift of the same ghost must not sneak through either.
+    let sloppy = format!("{ghost}\\");
+    assert!(ensure_known_game_root(&sloppy).is_err());
+}

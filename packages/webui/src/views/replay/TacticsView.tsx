@@ -408,7 +408,16 @@ export default defineComponent({
           { ...payload, meta },
           session.value.profilePath ?? undefined,
         );
-        if (saved) toast.info(t("tactics.profile.saved", { path: saved }));
+        if (saved) {
+          // The backend re-asks through the dialog when the stored target
+          // lost its grant (an app restart) — adopt the re-confirmed path
+          // so the following saves stay silent again.
+          if (saved !== session.value.profilePath) {
+            session.value = { ...session.value, profilePath: saved };
+            persist();
+          }
+          toast.info(t("tactics.profile.saved", { path: saved }));
+        }
       } catch (e) {
         toast.error(String((e as Error)?.message ?? e));
       }

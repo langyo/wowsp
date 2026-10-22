@@ -222,20 +222,29 @@ const PENDING_MARKER: &str = "update-pending.json";
 /// The handoff marker: which version the dying build handed off to the
 /// installer, and the temp installer it spawned — the stranded-recovery
 /// card re-runs that installer as a visible wizard when the update never
-/// landed.
+/// landed. `sha256` is the official digest the download was verified
+/// against: the recovery re-hash re-checks it before spawning, so the
+/// `%TEMP%` artifact cannot be swapped between the verified download and
+/// a much-later wizard relaunch (audit L-4). Optional on read so markers
+/// written by pre-digest builds still parse — their recovery then refuses
+/// instead of trusting an unverified file.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct PendingMarker {
     version: String,
     #[serde(default)]
     installer: Option<String>,
+    #[serde(default)]
+    sha256: Option<String>,
 }
 
 /// The stranded handoff the previous launch left behind, when the
-/// installer never finished: the expected version plus the spawned
-/// installer path (still on disk or not).
+/// installer never finished: the expected version, the spawned installer
+/// path (still on disk or not) and the official digest to re-verify it
+/// against.
 struct StrandedHandoff {
     expected: String,
     installer: Option<std::path::PathBuf>,
+    sha256: Option<String>,
 }
 
 /// Set once by [`reconcile_pending_marker`] at startup and read by the
@@ -255,19 +264,25 @@ pub enum HandoffOutcome {
 
 /// Write the one-shot marker (best-effort; a failure only costs the
 /// next launch's reconciliation line).
-fn write_pending_marker(version: &str, installer: &std::path::Path) {
+fn write_pending_marker(version: &str, installer: &std::path::Path, sha256: &str) {
     let Ok(dir) = crate::paths::data_dir() else {
         tracing::debug!("no writable data dir for the update marker");
         return;
     };
-    write_pending_marker_at(&dir, version, installer);
+    write_pending_marker_at(&dir, version, installer, sha256);
 }
 
-fn write_pending_marker_at(dir: &std::path::Path, version: &str, installer: &std::path::Path) {
+fn write_pending_marker_at(
+    dir: &std::path::Path,
+    version: &str,
+    installer: &std::path::Path,
+    sha256: &str,
+) {
     let path = dir.join(PENDING_MARKER);
     let marker = PendingMarker {
         version: version.to_string(),
         installer: Some(installer.display().to_string()),
+        sha256: Some(sha256.to_string()),
     };
     let write = serde_json::to_vec_pretty(&marker)
         .map_err(|e| anyhow!("serialize update marker: {e}"))
@@ -334,6 +349,7 @@ fn reconcile_pending_marker_at(dir: &std::path::Path, current: &str) -> HandoffO
         HandoffOutcome::Stranded => pending.map(|marker| StrandedHandoff {
             expected: marker.version,
             installer: marker.installer.map(std::path::PathBuf::from),
+            sha256: marker.sha256,
         }),
         HandoffOutcome::Completed => None,
     };
@@ -964,7 +980,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
             // Verified streaming against GitHub's own digest: a mirror
             // serving tampered or truncated bytes fails the check and the
             // hub moves on to the next candidate.
-            expected_sha256: Some(expected_sha256),
+            expected_sha256: Some(expected_sha256.clone()),
             // The transfer stays bounded: an unbounded stream would
             // head-of-line-block every later hub job (pack / mods / data
             // pack) behind a dead connection.
@@ -1035,8 +1051,11 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     // Leave a one-shot marker so the next launch can tell a completed
     // handoff from a stranded one (the support log's answer to "the
     // update did nothing"); best-effort, an unwritable data dir only
-    // costs the reconciliation line.
-    write_pending_marker(&version, &installer_path);
+    // costs the reconciliation line. The official digest rides along so
+    // the stranded-recovery relaunch can re-verify the cached artifact
+    // before spawning it (audit L-4: the %TEMP% name is predictable, and
+    // the verified download happened long before a possible relaunch).
+    write_pending_marker(&version, &installer_path, &expected_sha256);
     // Exit this build on our own terms instead of waiting for the
     // installer's taskkill. A graceful exit closes the WebView2 children
     // with us, so nothing of this process keeps the install directory
@@ -1114,25 +1133,74 @@ pub fn update_reinstall_from_cache() -> CommandResult<()> {
     let Some(installer) = stranded.installer.as_deref() else {
         return Err(anyhow!("the stranded update recorded no installer path").into());
     };
-    if !cached_installer_runnable(installer) {
-        return Err(anyhow!(
-            "the cached installer is gone or truncated: {}",
-            installer.display()
-        )
-        .into());
-    }
+    // Existence + size + official-digest re-verification gate (audit L-4):
+    // the handoff verified the download, but the version-scoped %TEMP% name
+    // is predictable and a wizard relaunch can happen much later.
+    let verified = ensure_stranded_installer_verified(installer, stranded.sha256.as_deref())?;
     // Temp CWD for the same reason the handoff installer gets one: the
     // wizard's install step swaps this very directory, and a wizard
     // parked on it as its working directory would fight its own swap.
-    std::process::Command::new(installer)
+    std::process::Command::new(&verified)
         .current_dir(std::env::temp_dir())
         .spawn()
-        .map_err(|e| anyhow!("spawn installer {}: {e}", installer.display()))?;
+        .map_err(|e| anyhow!("spawn installer {}: {e}", verified.display()))?;
     tracing::info!(
-        installer = %installer.display(),
+        installer = %verified.display(),
         expected = %stranded.expected,
         "stranded-update recovery: installer wizard launched"
     );
+    Ok(())
+}
+
+/// The recovery's trust gate, split from the spawn so tests drive it
+/// directly: the cached artifact must exist, look the right size AND hash
+/// to the marker's official digest. A digest-less marker (pre-stamping
+/// build) refuses — the banner re-offers the download; a mismatch deletes
+/// the swapped file instead of spawning it.
+fn ensure_stranded_installer_verified(
+    installer: &std::path::Path,
+    sha256: Option<&str>,
+) -> Result<std::path::PathBuf> {
+    if !cached_installer_runnable(installer) {
+        bail!(
+            "the cached installer is gone or truncated: {}",
+            installer.display()
+        );
+    }
+    let Some(sha256) = sha256 else {
+        bail!(
+            "the stranded update predates digest stamping — download it again from GitHub Releases"
+        );
+    };
+    verify_cached_installer(installer, sha256)?;
+    Ok(installer.to_path_buf())
+}
+
+/// Stream-hash the cached installer and compare with the marker's digest
+/// (case-insensitive — the digest is stored lowercase but persisted files
+/// get no such guarantee).
+fn verify_cached_installer(installer: &std::path::Path, sha256: &str) -> Result<()> {
+    use sha2::Digest as _;
+    let mut file = std::fs::File::open(installer)
+        .map_err(|e| anyhow!("open cached installer {}: {e}", installer.display()))?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = [0u8; 256 * 1024];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut buf)
+            .map_err(|e| anyhow!("hash cached installer {}: {e}", installer.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let got = hex::encode(hasher.finalize());
+    if !got.eq_ignore_ascii_case(sha256) {
+        let _ = std::fs::remove_file(installer);
+        bail!(
+            "cached installer {} fails its official digest ({got} != {sha256}) — deleted; download it again",
+            installer.display()
+        );
+    }
     Ok(())
 }
 
@@ -1178,6 +1246,7 @@ mod tests {
             &dir,
             "0.6.3",
             std::path::Path::new("C:/tmp/WoWSP-update-0.6.3-1.exe"),
+            "aa11",
         );
         assert_eq!(
             reconcile_pending_marker_at(&dir, "0.6.3"),
@@ -1191,6 +1260,7 @@ mod tests {
             &dir,
             "0.6.4",
             std::path::Path::new("C:/tmp/WoWSP-update-0.6.4-2.exe"),
+            "bb22",
         );
         assert_eq!(
             reconcile_pending_marker_at(&dir, "0.6.3"),
@@ -1209,6 +1279,56 @@ mod tests {
             HandoffOutcome::Completed
         );
         assert!(!dir.join(PENDING_MARKER).exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recovery_verifies_the_cached_installer_against_its_marker_digest() {
+        // The verified download left this artifact; the digest rides the
+        // marker. A matching file passes, a swapped file is refused AND
+        // deleted, and a pre-digest marker refuses without touching the
+        // file. The fixture clears the size gate (MIN_INSTALLER_BYTES) so
+        // every case below is about the digest, not the size.
+        let dir = temp_dir("recovery");
+        let good: Vec<u8> = (0..=u8::MAX).cycle().take(1_000_001).collect();
+        let installer = dir.join("WoWSP-update-9.9.9-1.exe");
+        std::fs::write(&installer, &good).unwrap();
+        let digest = {
+            use sha2::Digest as _;
+            hex::encode(sha2::Sha256::digest(&good))
+        };
+
+        let verified = ensure_stranded_installer_verified(&installer, Some(&digest)).unwrap();
+        assert_eq!(verified, installer);
+
+        // Same length, different bytes — the swap attack.
+        let swapped: Vec<u8> = good.iter().map(|b| b ^ 0xFF).collect();
+        std::fs::write(&installer, &swapped).unwrap();
+        let err = ensure_stranded_installer_verified(&installer, Some(&digest))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("official digest"), "{err}");
+        assert!(
+            !installer.exists(),
+            "a digest mismatch deletes the swapped file instead of spawning it"
+        );
+
+        // Marker without a digest (pre-stamping build): refuse, keep the
+        // file (nothing proves it is bad — the banner re-offers).
+        std::fs::write(&installer, good).unwrap();
+        let err = ensure_stranded_installer_verified(&installer, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("predates digest stamping"), "{err}");
+        assert!(installer.exists());
+
+        // Gone/truncated artifact: the size gate fires before the digest.
+        std::fs::remove_file(&installer).unwrap();
+        let err = ensure_stranded_installer_verified(&installer, Some(&digest))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("gone or truncated"), "{err}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

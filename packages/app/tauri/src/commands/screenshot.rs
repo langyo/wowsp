@@ -18,6 +18,12 @@ use wowsp_tauri_shared::CommandResult;
 
 /// Capture the main window's client area and save as PNG to `<path>` (or a
 /// temp file if `path` is empty). Returns the absolute path of the saved file.
+///
+/// Audit fix (H-2): a non-empty path used to be written verbatim, letting a
+/// compromised webview clobber any user file with PNG bytes. Non-empty paths
+/// are now confined to the app's own data / temp directories (the caller
+/// today passes none; user-facing saves go through the export flow's dialog
+/// grants), and `..` segments are refused outright.
 #[tauri::command]
 pub fn capture_main_window(app: tauri::AppHandle, path: String) -> CommandResult<String> {
     let win = app
@@ -27,11 +33,55 @@ pub fn capture_main_window(app: tauri::AppHandle, path: String) -> CommandResult
     let out_path = if path.is_empty() {
         default_screenshot_path()?
     } else {
-        PathBuf::from(path)
+        let requested = PathBuf::from(&path);
+        ensure_screenshot_path_allowed(&requested)?;
+        requested
     };
 
     capture_window_png(&win, &out_path)?;
     Ok(out_path.to_string_lossy().to_string())
+}
+
+/// Is `path` (given by the webview) allowed as a screenshot destination?
+/// Only the app's data dir and the OS temp dir qualify, matched on
+/// lowercased, separator-normalized component prefixes; `..`/`.` segments
+/// make the path invalid outright (no traversal games).
+fn ensure_screenshot_path_allowed(path: &std::path::Path) -> Result<()> {
+    if path.components().any(|c| {
+        matches!(
+            c,
+            std::path::Component::ParentDir | std::path::Component::CurDir
+        )
+    }) {
+        anyhow::bail!("screenshot path must be absolute without . or .. segments");
+    }
+    if !path.is_absolute() {
+        anyhow::bail!("screenshot path must be absolute");
+    }
+    // Normalized, lowercased, '/'-joined form — enough identity for a
+    // containment check without dragging in a canonicalize round trip (and
+    // its `\\?\` spelling drift on Windows).
+    let norm = |p: &std::path::Path| -> String {
+        p.components()
+            .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    let candidate = norm(path);
+    let mut roots = vec![std::env::temp_dir()];
+    if let Ok(data) = crate::paths::ensure_data_dir() {
+        roots.push(data);
+    }
+    if roots
+        .iter()
+        .any(|root| candidate.starts_with(&format!("{}/", norm(root))))
+    {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "screenshot path must live under the WoWSP data or temp directory: {}",
+        path.display()
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -209,4 +259,36 @@ pub(crate) fn default_screenshot_path() -> Result<PathBuf> {
         .map(|d| d.as_millis())
         .unwrap_or(0);
     Ok(wowsp_dir.join(format!("screenshot-{ts}.png")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temp_paths_are_allowed() {
+        let tmp = std::env::temp_dir().join("wowsp-shot-guard-test.png");
+        ensure_screenshot_path_allowed(&tmp).unwrap();
+    }
+
+    #[test]
+    fn paths_outside_the_roots_are_refused() {
+        // A sibling of the temp dir (e.g. %LOCALAPPDATA% itself) is not
+        // under any allowed root.
+        let outside = std::env::temp_dir()
+            .parent()
+            .map(|p| p.join("wowsp-shot-guard-outside.png"))
+            .expect("temp dir always has a parent");
+        ensure_screenshot_path_allowed(&outside).unwrap_err();
+        ensure_screenshot_path_allowed(std::path::Path::new(
+            "C:/Windows/Temp-wowsp-guard-not-here.png",
+        ))
+        .unwrap_err();
+    }
+
+    #[test]
+    fn traversal_segments_are_refused() {
+        let sneak = std::env::temp_dir().join("..\\wowsp-shot-guard-sneak.png");
+        ensure_screenshot_path_allowed(&sneak).unwrap_err();
+    }
 }

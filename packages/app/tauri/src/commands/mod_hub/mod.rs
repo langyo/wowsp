@@ -100,13 +100,60 @@ pub(crate) fn find_pnf_main(dir: &Path) -> Option<PathBuf> {
 /// multi-install machine does not hold this tree open and must not block
 /// work on it (the unified game context resolves which folder each running
 /// process belongs to).
+///
+/// The root itself must also be one the BACKEND knows (audit H-3): the
+/// webview used to be able to name any `game_root`, making its word the
+/// write boundary for installs, uninstalls and safe-mode renames. The
+/// accepted set mirrors exactly what the webui's own install selector can
+/// show: a detected install (registry / Steam / Lesta / env pin), the
+/// persisted active install, or a running client's folder.
 pub(crate) fn ensure_game_closed(game_root: &str) -> anyhow::Result<()> {
+    ensure_known_game_root(game_root)?;
     if let Some((pid, root)) = super::game_context::running_root_matching(game_root) {
         return Err(anyhow!(
             "World of Warships is running from {root} (pid {pid}) — close that client before installing, uninstalling or toggling mods"
         ));
     }
     Ok(())
+}
+
+/// Is `game_root` an install the backend itself knows about? Delegates the
+/// spelling-insensitive comparison to the game context's shared identity
+/// check.
+fn known_game_root(game_root: &str) -> bool {
+    // 1. Detected installs (env pin, registry, Lesta Game Center, Steam).
+    //    The TTL-cached scan shares the session poller's cache — a mutating
+    //    command must not pay a fresh registry walk.
+    if super::game_context::cached_scan()
+        .iter()
+        .any(|install| super::game_context::same_folder(&install.path, game_root))
+    {
+        return true;
+    }
+    // 2. The persisted active install — the webui's `config.activeInstall`,
+    //    which is where the mod hub's install selector comes from. The
+    //    getter filters on `is_game_dir`, so this slot can only ever name a
+    //    directory that actually looks like an install.
+    if let Some(active) = super::game_context::persisted_active_path() {
+        if super::game_context::same_folder(&active, game_root) {
+            return true;
+        }
+    }
+    // 3. A running client's matched folder (its own guard below rejects it
+    //    for mutation, but the read-side commands only pass the root check).
+    super::game_context::running_root_matching(game_root).is_some()
+}
+
+/// Reject `game_root` values the backend cannot vouch for. Split from
+/// [`ensure_game_closed`] so future read-side callers can take the root
+/// check without the closed check.
+pub(crate) fn ensure_known_game_root(game_root: &str) -> anyhow::Result<()> {
+    if known_game_root(game_root) {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "unknown game install root: {game_root} — pick an install the app detected or set as the active install"
+    ))
 }
 
 /// In-flight copy suffix: a file must never land in the game tree half

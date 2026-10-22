@@ -1138,6 +1138,9 @@ pub fn mod_hub_reveal_path(
 ) -> CommandResult<()> {
     use tauri_plugin_opener::OpenerExt;
 
+    // Audit H-3 (read-side): the resolved directory is handed to the system
+    // file manager — only roots the backend knows may be revealed.
+    mod_hub::ensure_known_game_root(&game_root)?;
     let bin = match bin_version.as_deref().filter(|v| !v.is_empty()) {
         Some(v) => validate_path_segment(v)?.to_string(),
         None => mod_hub::latest_bin_version(&game_root)
@@ -1673,6 +1676,10 @@ const ORPHAN_RESTORE_GRACE: std::time::Duration = std::time::Duration::from_secs
 /// `res_mods.wowsp-disabled` still counts as "the files exist".
 #[tauri::command]
 pub async fn mod_hub_reconcile(game_root: String) -> CommandResult<ReconcileReport> {
+    // Audit H-3: reconcile MUTATES the root's res_mods (heals wowsp.toml,
+    // removes stale loader markers, prunes restore dirs) — the webview's
+    // game_root must name an install the backend knows.
+    mod_hub::ensure_known_game_root(&game_root)?;
     let _gate = mod_hub_gate().await;
     let mut ledger = load_ledger();
     let mut report = reconcile_core(&game_root, &mut ledger.installs);

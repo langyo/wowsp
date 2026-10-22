@@ -216,17 +216,44 @@ pub async fn tactics_profile_save(
         let default_name = default_archive_name(&meta);
         let payload = TacticsProfilePayload { meta, plans };
         // A caller-provided path (the page confirmed the save target when
-        // the map was chosen) skips the dialog and writes straight to it.
+        // the map was chosen, or the archive it just opened) skips the
+        // dialog and writes straight to it — but ONLY while the backend
+        // still holds a live dialog grant for it (audit H-1: the webview
+        // must not be able to name arbitrary write targets). A stale path
+        // restored from localStorage after a restart has no grant anymore;
+        // instead of failing the save, show the dialog pre-seeded with THAT
+        // file's directory and name — one extra click, and re-picking the
+        // same spot keeps the same archive instead of minting a new file.
         let picked = match path {
-            Some(p) => Some(std::path::PathBuf::from(p)),
-            None => {
-                let name = default_name.clone();
+            Some(p) if super::exports::export_path_granted(&p) => Some(std::path::PathBuf::from(p)),
+            other => {
+                if let Some(stale) = other.as_ref() {
+                    tracing::info!(
+                        path = %stale,
+                        "stale tactics save target without a dialog grant — showing the save dialog"
+                    );
+                }
+                let seed = other.map(std::path::PathBuf::from);
+                let fallback_name = default_name.clone();
                 tokio::task::spawn_blocking(move || {
-                    rfd::FileDialog::new()
+                    let mut dlg = rfd::FileDialog::new()
                         .set_title("Save tactics profile")
-                        .set_file_name(&name)
-                        .add_filter("WoWSP tactics profile", &["wowsp-tactics"])
-                        .save_file()
+                        .add_filter("WoWSP tactics profile", &["wowsp-tactics"]);
+                    if let Some(name) = seed
+                        .as_ref()
+                        .and_then(|p| p.file_name())
+                        .map(|n| n.to_string_lossy().into_owned())
+                    {
+                        dlg = dlg.set_file_name(&name);
+                    } else {
+                        dlg = dlg.set_file_name(&fallback_name);
+                    }
+                    if let Some(parent) = seed.as_ref().and_then(|p| p.parent()) {
+                        if parent.is_dir() {
+                            dlg = dlg.set_directory(parent);
+                        }
+                    }
+                    dlg.save_file()
                 })
                 .await
                 .map_err(|e| anyhow!("profile save dialog task failed: {e}"))?
@@ -235,6 +262,10 @@ pub async fn tactics_profile_save(
         let Some(path) = picked else {
             return Ok(None);
         };
+        // A dialog just answered for this target (fresh pick, or the stale
+        // fallback above) — register it so the page's silent re-saves keep
+        // working, exactly like `pick_export_path` grants its own results.
+        super::exports::grant_export_path(&path.to_string_lossy());
         let bytes = pack_profile(&payload)?;
         let out_path = path.clone();
         let written = tokio::task::spawn_blocking(move || {
@@ -288,6 +319,9 @@ pub async fn tactics_profile_open() -> CommandResult<Option<TacticsProfileOpen>>
         .await
         .map_err(|e| anyhow!("profile read task failed: {e}"))??;
         let payload = unpack_profile(&bytes)?;
+        // The opened archive becomes the page's silent save target — grant
+        // it the same way a save-pick would be (audit H-1).
+        super::exports::grant_export_path(&path_str);
         Ok(Some(TacticsProfileOpen {
             payload,
             path: path_str,
