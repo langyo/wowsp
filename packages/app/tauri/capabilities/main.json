@@ -1,11 +1,8 @@
 {
-  "identifier": "default",
-  "description": "Default capabilities for WoWSP windows (main + overlay + aim card + tray panel)",
+  "identifier": "main",
+  "description": "The main window's capability: full core surface (frameless-titlebar window controls, webview-window creation for the overlay/aim-card spawn, app metadata). The state-changing app commands are additionally label-gated to this window (see commands::ensure_main_window_label, audit P0-5).",
   "windows": [
-    "main",
-    "overlay",
-    "aim-card",
-    "tray-panel"
+    "main"
   ],
   "permissions": [
     "core:default",
