@@ -502,7 +502,11 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
   border-radius: var(--radius-sm, 4px);
   font-size: var(--text-base, 0.875rem); line-height: 1.4;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); pointer-events: auto;
-  backdrop-filter: blur(12px); user-select: none; }}
+  backdrop-filter: blur(12px); user-select: none;
+  /* 每条 toast 按自身内容定宽、右对齐——堆叠列宽不再取决于最宽一条，
+     某条离场（转 absolute）时其余 toast 与离场条都不会被列宽变化带着
+     重排（那正是收缩瞬间高度暴涨的来源）。 */
+  align-self: flex-end; width: fit-content; max-width: 100%; }}
 .hk-toast-body {{ flex: 1; min-width: 0; display: flex;
   flex-direction: column; gap: var(--space-4, 4px); }}
 .hk-toast-icon {{ display: flex; align-items: center;
@@ -526,6 +530,21 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
 .hk-toast-close svg {{ width: 18px; height: 18px; }}
 .hk-toast-close:hover {{ opacity: 1; }}
 .hk-toast-close:focus-visible {{ outline: 2px solid rgb(var(--color-primary));
+  outline-offset: 2px; }}
+/* 可复制凭证行（open_access 提示等）：值 chip + 复制按钮。 */
+.hk-toast-copyrow {{ display: flex; align-items: center;
+  gap: var(--space-8, 8px); min-width: 0; width: 100%; }}
+.hk-toast-copyrow code {{ flex: 1; min-width: 0; overflow-wrap: anywhere;
+  user-select: text; cursor: text;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: var(--text-2xs, 0.75rem); opacity: 0.92; }}
+.hk-toast-copy {{ flex-shrink: 0; border: 1px solid rgb(255 255 255 / 40%);
+  background: rgb(255 255 255 / 12%); color: inherit; cursor: pointer;
+  border-radius: var(--radius-sm, 4px); padding: 2px 8px;
+  font-size: var(--text-2xs, 0.75rem); line-height: 1.4;
+  transition: background var(--duration-fast, 0.15s) ease; }}
+.hk-toast-copy:hover {{ background: rgb(255 255 255 / 22%); }}
+.hk-toast-copy:focus-visible {{ outline: 2px solid rgb(var(--color-primary));
   outline-offset: 2px; }}
 .hk-toast-enter-active {{ transition-property: opacity, transform;
   transition-duration: var(--duration-normal, 0.3s);
@@ -677,7 +696,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
     success: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
     info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'
   }};
-  function toast(msg, kind) {{
+  function toast(msg, kind, copy) {{
     kind = kind || "info";
     var stack = $("toasts").firstElementChild;
     var item = document.createElement("div");
@@ -690,6 +709,43 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
       '<div class="hk-toast-body"><span class="hk-toast-message"></span></div>' +
       '<button type="button" class="hk-toast-close" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>';
     item.querySelector(".hk-toast-message").textContent = msg;
+    if (copy) {{
+      // 可复制凭证行（如 open_access 提示里的 open_id）：值只走 textContent，
+      // 复制走 Clipboard API + execCommand 兜底。
+      var row = document.createElement("div");
+      row.className = "hk-toast-copyrow";
+      var code = document.createElement("code");
+      code.textContent = copy;
+      var copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "hk-toast-copy";
+      copyBtn.textContent = "复制";
+      copyBtn.onclick = function () {{
+        var done = function () {{
+          copyBtn.textContent = "已复制";
+          setTimeout(function () {{ copyBtn.textContent = "复制"; }}, 1600);
+        }};
+        var fallback = function () {{
+          var ta = document.createElement("textarea");
+          ta.value = copy;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          try {{ document.execCommand("copy"); }} catch (e) {{}}
+          ta.remove();
+          done();
+        }};
+        if (navigator.clipboard && navigator.clipboard.writeText) {{
+          navigator.clipboard.writeText(copy).then(done, fallback);
+        }} else {{
+          fallback();
+        }}
+      }};
+      row.appendChild(code);
+      row.appendChild(copyBtn);
+      item.querySelector(".hk-toast-body").appendChild(row);
+    }}
     item.querySelector(".hk-toast-close").onclick = function () {{ dismiss(); }};
     function enter() {{
       item.classList.add("hk-toast-enter-active");
@@ -700,13 +756,18 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
     function dismiss() {{
       if (item.dataset.leaving) return;
       item.dataset.leaving = "1";
+      // 离场前冻结实测宽度：leave 把元素转成 absolute，若不冻结，宽度会
+      // 重新按（可能已变窄的）堆叠容器 shrink-to-fit，长文案重排导致高度
+      // 暴涨——修的就是这个。
+      item.style.width = item.getBoundingClientRect().width + "px";
       item.classList.add("hk-toast-leave-active", "hk-toast-leave-to");
       setTimeout(function () {{ item.remove(); }}, 320);
     }}
     item.classList.add("hk-toast-enter-from");
     stack.appendChild(item);
     enter();
-    setTimeout(dismiss, kind === "error" ? 6000 : 3000);
+    // 带复制凭证的 toast 留 20s（要来得及点复制），其余维持原节奏。
+    setTimeout(dismiss, copy ? 20000 : kind === "error" ? 6000 : 3000);
   }}
   function esc(s) {{
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {{
@@ -1069,8 +1130,7 @@ h2.e-title {{ font-size: var(--text-md); font-weight: 600; margin: 0; }}
           toast("通讯录读取: " + j.debug, "error");
         }}
         if (j.open_access) {{
-          toast("未配置后台允许名单：任何能登录该飞书应用的人都能进入。请把你的 open_id（" +
-            j.open_access + "）写入 ERP_ALLOWED_OPEN_IDS。", "error");
+          toast("未配置后台允许名单：当前策略下，能登录该飞书应用的成员都可进入（如需收紧，把 open_id 写入 ERP_ALLOWED_OPEN_IDS）。你的 open_id：", "error", j.open_access);
         }}
       }} else {{
         var params = new URLSearchParams(location.search);
@@ -1374,7 +1434,17 @@ mod tests {
         assert!(page.contains(r#"class="hk-toast-container""#));
         assert!(page.contains("hk-toast-item hk-toast-"));
         assert!(page.contains("hk-toast-enter-from"));
-        assert!(page.contains("function toast(msg, kind)"));
+        assert!(page.contains("function toast(msg, kind, copy)"));
+        // Audit-review UI fixes: the open_access toast carries a copyable
+        // open_id (chip + clipboard button, 20s life), and the leave
+        // animation freezes the measured width before going absolute —
+        // the stack column no longer collapses via width (the height
+        // jump) and each toast is fit-content wide.
+        assert!(page.contains("hk-toast-copyrow"));
+        assert!(page.contains("hk-toast-copy"));
+        assert!(page.contains("width = item.getBoundingClientRect().width"));
+        assert!(page.contains("width: fit-content"));
+        assert!(page.contains(r#""error", j.open_access)"#));
         assert!(page.contains(r#"toast("已保存 ""#));
         assert!(page.contains("登录失败（"));
         // An allowlist refusal reads as such, and open mode is flagged.

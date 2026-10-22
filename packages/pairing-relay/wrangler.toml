@@ -158,7 +158,13 @@ new_sqlite_classes = ["ReplayIndex"]
 #   npx wrangler secret put REPLAY_ADMIN_KEY   (high-entropy random)
 # Unset = the admin routes answer to a logged-in erp session only.
 # Widget "wowsp-feedback" (managed mode, wowsp.langyo.xyz + localhost).
+# ERP_OPEN_ACCESS (audit M-6 switch) — the maintainer's explicit choice for
+# THIS deployment: the Feishu app is org-scoped, so org membership IS the
+# authorization ("能登录飞书组织 = 有权进后台"); the console therefore runs
+# in the legacy any-app-user gate by default. To tighten later, remove this
+# var (the code default is fail-closed) or set ERP_ALLOWED_OPEN_IDS.
 [vars]
+ERP_OPEN_ACCESS = "1"
 TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
 # The latest published release, prefilling the /feedback form's version
 # combobox for browser visitors (desktop links carry their own build).
