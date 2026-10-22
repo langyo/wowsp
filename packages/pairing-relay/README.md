@@ -522,13 +522,16 @@ While the secret is unset the routes answer to the browser flow only.
 
 ## Deploy
 
-**CI is the deploy path** (opt-in): the Deploy Site workflow
+**CI is the deploy path** (live): the Deploy Site workflow
 (`.github/workflows/site.yml`) builds the site artifact (docs +
 website), bundles it into `packages/pairing-relay/assets` via
-`scripts/build_worker_site.py`, and runs `npx wrangler deploy` — the
+`scripts/build_worker_site.py` — digests tree included — and runs
+`npx wrangler deploy` on every master push touching this package. The
 wasm worker and the site assets ship TOGETHER (a worker without a
-current asset bundle would serve a stale site). Its `deploy-worker`
-job stays **skipped** until the repo carries:
+current asset bundle would serve a stale site). The `deploy-worker`
+job ran opt-in-gated until its `CLOUDFLARE_API_TOKEN` secret +
+`DEPLOY_CF_WORKER=true` variable went in (2026-10-12; keep them in
+place — dropping either silently reverts to Pages-only deploys):
 
 ```sh
 gh secret   set CLOUDFLARE_API_TOKEN -b "<token>"
@@ -538,10 +541,10 @@ gh variable set DEPLOY_CF_WORKER --body true
 The token (dashboard ▶ My Profile ▶ API Tokens ▶ Create Token ▶
 "Edit Cloudflare Workers" template, plus Zone ▶ Workers Routes ▶ Edit
 for the `langyo.xyz` zone — the deploy re-asserts the Custom Domain
-binding). Until then the owner's manual step below is the deploy, and
-it must run from a tree whose `packages/pairing-relay/assets` matches
-the live Pages artifact (`just bundle-site` + the docs build — or
-simply wait for CI).
+binding). The manual commands below remain the hotfix path (and the
+only way to deploy UNMERGED code); run them from a tree whose
+`packages/pairing-relay/assets` matches the live Pages artifact
+(`just bundle-site` + the docs build — or simply wait for CI).
 
 Prerequisites: Rust (rustup with the `wasm32-unknown-unknown` target:
 `rustup target add wasm32-unknown-unknown`), the webui deps
