@@ -1,4 +1,11 @@
-import { computed, defineComponent, ref, watch, type PropType } from "vue";
+import {
+  computed,
+  defineComponent,
+  ref,
+  watch,
+  type PropType,
+  type VNode,
+} from "vue";
 
 import type { BreakdownEntry } from "@/components/playtime/battleBreakdown";
 import {
@@ -25,6 +32,10 @@ const LEGEND_ROWS_PER_COLUMN = 5;
  * instead of beside it, and the ring carries no center text — the battles
  * card already counts the total.
  *
+ * A group may swap its rows' text label for a glyph via legendIconOf —
+ * the view renders the stats donuts' nation flags and the supership star
+ * that way (null keeps the text, the dot always stays).
+ *
  * Hints ride the app-wide delegated tooltip (data-hint), never native
  * <title> — the same convention ShipDistCharts' comment documents. Pure
  * props: grouping and palettes live in battleBreakdown / the view; this
@@ -37,6 +48,14 @@ export default defineComponent({
     entries: { type: Array as PropType<BreakdownEntry[]>, required: true },
     labelOf: { type: Function as PropType<(key: string) => string>, required: true },
     colorOf: { type: Function as PropType<(key: string) => string>, required: true },
+    /** Optional per-key legend glyph: a node renders IN PLACE of the row's
+     *  text label (ShipDistCharts' flag rows), null keeps the text; the
+     *  slice-color dot always stays. Label and hint ride along so the glyph
+     *  can carry the row's full hint — NationFlag's contract for flag rows. */
+    legendIconOf: {
+      type: Function as PropType<(key: string, label: string, hint: string) => VNode | null>,
+      required: false,
+    },
     /** The localized unit word in hover hints ("场" — battles). */
     unitLabel: { type: String, required: true },
   },
@@ -102,25 +121,33 @@ export default defineComponent({
         <div class="playtime-pie__legend">
           {chunkLegendItems(slices.value, LEGEND_ROWS_PER_COLUMN).map((column, ci) => (
             <div class="playtime-pie__legend-col" key={ci}>
-              {column.map((s) => (
-                <span
-                  class={{
-                    "playtime-pie__legend-item": true,
-                    ...focusState(hovered.value, s.code),
-                  }}
-                  key={s.code}
-                  data-hint={hintOf(s)}
-                  onMouseenter={() => {
-                    hovered.value = s.code;
-                  }}
-                  onMouseleave={() => {
-                    hovered.value = null;
-                  }}
-                >
-                  <span class="playtime-pie__legend-dot" style={{ background: s.fill }} />
-                  <span class="playtime-pie__legend-text">{s.label}</span>
-                </span>
-              ))}
+              {column.map((s) => {
+                const hint = hintOf(s);
+                const icon = props.legendIconOf?.(s.code, s.label, hint) ?? null;
+                return (
+                  <span
+                    class={{
+                      "playtime-pie__legend-item": true,
+                      ...focusState(hovered.value, s.code),
+                    }}
+                    key={s.code}
+                    data-hint={hint}
+                    onMouseenter={() => {
+                      hovered.value = s.code;
+                    }}
+                    onMouseleave={() => {
+                      hovered.value = null;
+                    }}
+                  >
+                    <span class="playtime-pie__legend-dot" style={{ background: s.fill }} />
+                    {icon ? (
+                      icon
+                    ) : (
+                      <span class="playtime-pie__legend-text">{s.label}</span>
+                    )}
+                  </span>
+                );
+              })}
             </div>
           ))}
         </div>

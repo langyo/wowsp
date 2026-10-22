@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { h, type VNode } from "vue";
+
 import { enableAutoUnmount, mount } from "@vue/test-utils";
 
 import PlaytimeBreakdownPie from "./PlaytimeBreakdownPie";
@@ -12,9 +14,11 @@ import type { BreakdownEntry } from "./battleBreakdown";
  * 5-row columns, every row leading with the slice-color dot, percents
  * ONLY in the hover hint (never row text), and the slice↔legend hover
  * pairing (entering one side lifts the pair, dims the block's siblings).
- * The ring geometry itself is donutGeometry's, already exact-string
- * covered in ShipDistCharts.test.ts — these tests pin what that file
- * cannot see: how the component wires it into DOM.
+ * A row's text label may swap for a legendIconOf glyph (the stats donuts'
+ * flag rows) — the dot and the hint stay either way. The ring geometry
+ * itself is donutGeometry's, already exact-string covered in
+ * ShipDistCharts.test.ts — these tests pin what that file cannot see: how
+ * the component wires it into DOM.
  */
 
 const COLORS: Record<string, string> = {
@@ -27,7 +31,10 @@ const entriesOf = (counts: [string, number][]): BreakdownEntry[] => {
   return counts.map(([key, count]) => ({ key, count, share: count / total }));
 };
 
-function mountPie(entries: BreakdownEntry[]) {
+function mountPie(
+  entries: BreakdownEntry[],
+  legendIconOf?: (key: string, label: string, hint: string) => VNode | null,
+) {
   return mount(PlaytimeBreakdownPie, {
     props: {
       title: "按舰种",
@@ -35,6 +42,7 @@ function mountPie(entries: BreakdownEntry[]) {
       labelOf: (key: string) => `label-${key}`,
       colorOf: (key: string) => COLORS[key] ?? "#C4BDC9",
       unitLabel: "场",
+      legendIconOf,
     },
   });
 }
@@ -69,6 +77,27 @@ describe("PlaytimeBreakdownPie", () => {
     );
     // No native <title> tooltips — the app-wide data-hint convention.
     expect(w.find("title").exists()).toBe(false);
+  });
+
+  it("swaps a legendIconOf glyph for the label, keeping the dot and hint", () => {
+    const w = mountPie(
+      entriesOf([["a", 60], ["b", 40]]),
+      // The nation-flag shape: a node keyed off the slice, carrying the
+      // row's label and full hint (NationFlag's flag-row contract).
+      (key, label, hint) =>
+        key === "b" ? h("span", { class: "glyph", "data-label": label, "data-hint": hint }) : null,
+    );
+    const rows = w.findAll(".playtime-pie__legend-item");
+    // The glyph replaces the text, not the row: dot and row hint stay.
+    expect(rows[1].find(".glyph").exists()).toBe(true);
+    expect(rows[1].find(".playtime-pie__legend-text").exists()).toBe(false);
+    expect(rows[1].find(".playtime-pie__legend-dot").exists()).toBe(true);
+    expect(rows[1].attributes("data-hint")).toBe("label-b · 40 场 · 40%");
+    expect(rows[1].find(".glyph").attributes("data-label")).toBe("label-b");
+    expect(rows[1].find(".glyph").attributes("data-hint")).toBe("label-b · 40 场 · 40%");
+    // A null return keeps the text path untouched.
+    expect(rows[0].find(".playtime-pie__legend-text").text()).toBe("label-a");
+    expect(rows[0].find(".glyph").exists()).toBe(false);
   });
 
   it("chunks legend rows into 5-row columns", () => {
