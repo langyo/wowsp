@@ -2,17 +2,24 @@
 //! second OFFICIAL channel for "which version, and which sha256 does it
 //! install against" (the first being api.github.com).
 //!
-//! The hostname this worker serves is reachable where api.github.com is
-//! not, so the app updater prefers it and cross-checks against GitHub
-//! whenever both answer; a mirror proxying payload bytes can influence
-//! neither channel. Everything the route serves is maintained in a
-//! dedicated KV namespace by `scripts/publish_digests.py`, driven from
-//! the four publish pipelines (release.yml for `v*` app tags,
-//! mod_hub_publish.py for `mod-hub`, release_models.py for `res-*`,
-//! publish_data_pack.py for `data-latest`).
+//! This hostname is reachable where api.github.com is not, so the app
+//! updater prefers it and cross-checks against GitHub whenever both
+//! answer; a mirror proxying payload bytes can influence neither
+//! channel. Everything the route serves is STATIC: the tracked
+//! `packages/pairing-relay/digests/<channel>/*.json` source tree rides
+//! the worker's [assets] layer (`scripts/build_worker_site.py` copies
+//! it under `assets/api/digests/**`), and `scripts/publish_digests.py`
+//! — driven from the four publish pipelines (release.yml for `v*` app
+//! tags, mod_hub_publish.py for `mod-hub`, release_models.py for
+//! `res-*`, publish_data_pack.py for `data-latest`) — is the
+//! maintainer's write path (file writes + deploy; no runtime storage,
+//! no quota). The 2026-10-22 incident retired the KV-backed store: a
+//! fleet of clients polling never-published channels burned the free
+//! tier's daily read quota through guaranteed KV misses.
 //!
-//! This module is pure policy — shapes, validation and key layout. The
-//! worker crate only maps a validated request onto a KV read.
+//! This module is pure policy — shapes, validation and path layout.
+//! The worker crate only maps a validated request onto an asset fetch
+//! behind an edge cache.
 
 use std::collections::BTreeMap;
 
@@ -53,16 +60,35 @@ pub struct DigestDoc {
     pub sig: Option<String>,
 }
 
-/// KV key of the doc pinned to one tag (`digest:<channel>:<tag>`).
-pub fn kv_key(channel: &str, tag: &str) -> String {
-    format!("digest:{channel}:{tag}")
+/// The client URL path of the doc pinned to one tag:
+/// `/api/digests/<channel>/<tag>` — the route and cache-key spelling
+/// (a real file can never sit there: it would collide with the channel
+/// DIRECTORY below, so the worker maps it onto the `.json` asset path).
+pub fn doc_url(channel: &str, tag: &str) -> String {
+    format!("/api/digests/{channel}/{tag}")
 }
 
-/// KV key of the channel's latest pointer (`digest-latest:<channel>` —
-/// a separate prefix so a tag literally named `latest` can never
-/// shadow or be shadowed by the pointer).
-pub fn kv_latest_key(channel: &str) -> String {
-    format!("digest-latest:{channel}")
+/// The client URL path of the channel's rolling latest pointer:
+/// `/api/digests/<channel>` (again route-only — the file lives at
+/// [`latest_asset_path`]). A separate path shape from [`doc_url`] so a
+/// tag literally named `latest` can never shadow or be shadowed by the
+/// pointer; the publisher refuses that tag outright.
+pub fn latest_url(channel: &str) -> String {
+    format!("/api/digests/{channel}")
+}
+
+/// The assets-layer file serving the doc pinned to one tag (the site
+/// build copies the tracked `digests/<channel>/<tag>.json` verbatim —
+/// the `.json` extension also earns a real `application/json`
+/// content-type from the assets layer).
+pub fn doc_asset_path(channel: &str, tag: &str) -> String {
+    format!("/api/digests/{channel}/{tag}.json")
+}
+
+/// The assets-layer file serving the channel's rolling pointer: the
+/// tracked `digests/<channel>/latest.json`.
+pub fn latest_asset_path(channel: &str) -> String {
+    format!("/api/digests/{channel}/latest.json")
 }
 
 /// A channel is one of the fixed names.
@@ -72,12 +98,13 @@ pub fn valid_channel(channel: &str) -> bool {
 
 /// The channels this deployment actually serves docs for (comma
 /// separated in the `DIGEST_PUBLISHED_CHANNELS` var; `app` alone when
-/// unset). A lookup for any other VALID channel is answered 404 without
-/// touching KV: publish pipelines exist for `mod-hub`/`res`/`data`, but
-/// until one has actually written a doc to this namespace every lookup
-/// still costs a KV read — on 2026-10-22 the app fleet polling the
-/// unpublished channels burned the namespace's daily read quota that
-/// way. Extend the var only after running the matching publisher.
+/// unset). A lookup for any other VALID channel is answered 404 before
+/// the read budget and the asset fetch: publish pipelines exist for
+/// `mod-hub`/`res`/`data`, but until one has actually published a doc
+/// into the tracked digests tree, serving those channels is pure noise
+/// — on 2026-10-22 the app fleet polling the unpublished channels
+/// burned the (now retired) KV store's daily read quota that way.
+/// Extend the var only after running the matching publisher.
 ///
 /// Unknown names are dropped, and if nothing valid remains the default
 /// `app` applies — a typo can never silently switch the gate off for
@@ -227,11 +254,20 @@ mod tests {
     }
 
     #[test]
-    fn keys_keep_the_latest_pointer_off_the_tag_namespace() {
-        assert_eq!(kv_key("app", "v0.6.1"), "digest:app:v0.6.1");
-        assert_eq!(kv_latest_key("app"), "digest-latest:app");
-        // The pointer can never be produced by kv_key: different prefix.
-        assert_ne!(kv_key("app", "latest"), kv_latest_key("app"));
+    fn paths_keep_the_latest_pointer_off_the_tag_namespace() {
+        assert_eq!(doc_url("app", "v0.6.1"), "/api/digests/app/v0.6.1");
+        assert_eq!(latest_url("app"), "/api/digests/app");
+        // The pointer can never be produced by doc_url: no tag makes a
+        // channel path out of a tag path.
+        assert_ne!(doc_url("app", "latest"), latest_url("app"));
+        // The assets-layer spellings the worker fetches: extensionless
+        // client routes map onto real `.json` files (the channel path
+        // could never host a file — it IS the channel directory).
+        assert_eq!(doc_asset_path("app", "v0.6.1"), "/api/digests/app/v0.6.1.json");
+        assert_eq!(latest_asset_path("app"), "/api/digests/app/latest.json");
+        // A tag literally named `latest` would land ON the pointer's
+        // own file — the exact collision publish_digests.py refuses.
+        assert_eq!(doc_asset_path("app", "latest"), latest_asset_path("app"));
     }
 
     #[test]

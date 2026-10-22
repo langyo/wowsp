@@ -62,6 +62,12 @@ routes = [
 directory = "./assets"
 not_found_handling = "single-page-application"
 run_worker_first = ["/api*", "/feedback*", "/erp*"]
+# The ASSETS binding lets the worker fetch its own asset files by path
+# (crates/relay-worker/src/digests.rs proxies /api/digests/** through
+# it behind an edge cache — the digest docs are static files under
+# assets/api/digests/, copied from the tracked
+# packages/pairing-relay/digests/ tree by scripts/build_worker_site.py).
+binding = "ASSETS"
 
 [build]
 command = "worker-build --release crates/relay-worker"
@@ -77,12 +83,12 @@ command = "worker-build --release crates/relay-worker"
 binding = "FEEDBACK_KV"
 id = "a523e16e116b4f9fa5878c721c133028"
 
-# Release-digest KV — the /api/digests/<channel> endpoint's store (see
-# crates/relay-core/src/digests.rs and scripts/publish_digests.py).
-# Created 2026-10-14 (`npx wrangler kv namespace create DIGESTS`).
-[[kv_namespaces]]
-binding = "DIGESTS"
-id = "15ffe26d12d44b52a0649c375ae975fb"
+# Release-digest store: RETIRED from KV on 2026-10-22 — the docs ride
+# the [assets] layer now (assets/api/digests/** from the tracked
+# packages/pairing-relay/digests/ tree; see crates/relay-core/src/
+# digests.rs and scripts/publish_digests.py). The retired namespace id
+# was 15ffe26d12d44b52a0649c375ae975fb — safe to delete from the
+# dashboard once the dust settles.
 
 # Replay-share shard storage — one `shards/<anonId>.tar.zstd` blob per
 # contributor (the upload body streams straight in, the archive routes
@@ -161,10 +167,11 @@ TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
 FEEDBACK_LATEST_VERSION = "0.6.4"
 # The digest channels this deployment actually serves (comma separated,
 # subset of app/mod-hub/res/data). Lookups for any other VALID channel
-# answer 404 WITHOUT a KV read — extend only after the matching publish
-# pipeline has written a doc to the DIGESTS namespace (2026-10-22: the
-# app fleet polling never-published channels burned the namespace's
-# daily read quota; see crates/relay-core/src/digests.rs).
+# answer 404 BEFORE the read budget and the asset fetch — extend only
+# after the matching publisher has written a doc into the tracked
+# packages/pairing-relay/digests/ tree (2026-10-22: the app fleet
+# polling never-published channels burned the store's daily read
+# quota; see crates/relay-core/src/digests.rs).
 DIGEST_PUBLISHED_CHANNELS = "app"
 # ── QQ 通知机器人（可选，缺失即整链路静默停用）───────────────────────
 # QQBOT_APPID / QQBOT_SECRET — 开放平台凭证（wrangler secret put）。

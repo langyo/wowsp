@@ -348,43 +348,51 @@ Docs may carry an optional Ed25519 signature layer (`key_id` +
 `sig`, see `scripts/catalog_signing.py` and
 `packages/app/tauri/res/keys/README.md`): this worker only transports
 the fields; the app verifies them against compile-time pinned public
-keys, at which point neither the KV store nor the worker can forge a
+keys, at which point neither the store nor the worker can forge a
 doc (an old signed doc can still be replayed — the `seq` ratchet
 refuses that).
 
-Channels and their publishers: `app` ← release.yml, `mod-hub` ←
-mod_hub_publish.py, `res` ← release_models.py, `data` ←
+Channels and their publishers: `app` ← the maintainer after a release,
+`mod-hub` ← mod_hub_publish.py, `res` ← release_models.py, `data` ←
 publish_data_pack.py — all through `scripts/publish_digests.py`, which
-maintains the KV keys (`digest:<channel>:<tag>` per tag plus the
-`digest-latest:<channel>` pointer) with a per-channel strictly
-increasing `seq`.
+writes the tracked tree `digests/<channel>/<tag>.json` (plus the
+`<channel>/latest.json` pointer) with a per-channel strictly increasing
+`seq`.
 
-**Enabled since 2026-10-14** (namespace `DIGESTS`, id in
-`wrangler.toml`; before that the route answered 503 and the updater
-fell back to api.github.com):
+**Static since 2026-10-22** — the docs ride the worker's [assets] layer
+(`digests/` in this package, copied to `assets/api/digests/**` by
+`scripts/build_worker_site.py`; the worker maps the extensionless
+client paths onto those `.json` files through its `ASSETS` binding
+behind an edge cache). The runtime KV store this section used to
+describe is RETIRED — on 2026-10-22 the installed app fleet polling
+never-published channels turned every request into a guaranteed KV miss
+and burned the free tier's daily read quota; static files cannot miss
+that way, and identical GETs (any query string) collapse into the edge
+cache before the read budget is even consulted. `DIGEST_PUBLISHED_CHANNELS`
+in `wrangler.toml` (default `app`) gates which channels may spend the
+budget and the asset fetch — extend it only after the matching publisher
+has written a first doc.
+
+Publishing is the maintainer's step, no credentials involved:
 
 ```sh
-cd packages/pairing-relay
-npx wrangler kv namespace create DIGESTS   # paste the id into wrangler.toml
-# (uncomment the [[kv_namespaces]] DIGESTS block there, then deploy)
-npx wrangler deploy
+python scripts/publish_digests.py --channel app --tag v0.6.2 \
+    --from-gh-release --latest
+# then either commit the digests/ tree (the Deploy Site workflow ships
+# it), or for an immediate upload:
+cd packages/pairing-relay && npx wrangler deploy
 ```
 
-Publish-side credentials (env, never committed; a token scoped to
-Workers KV Storage ▶ Edit on the one namespace is enough):
-`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` locally, and the same
-two as repo secrets for release.yml's push step (which skips cleanly
-while unset). A doc failing the worker's shape validation answers 500 —
-that is store corruption or tampering, never something to serve.
+A doc failing the worker's shape validation answers 500 — that is
+store corruption or tampering, never something to serve.
 
-**Ops notes**: the channel must keep moving with GitHub — once digests
-are enabled, a release published without its digest push makes the app
-updater refuse (the two official channels disagreeing is fail-closed by
-design, and release.yml fails loudly while the secrets are set). If the
-KV namespace is ever rebuilt from scratch, the per-channel `seq`
-counters restart at 1: harmless (a GitHub-reachable client accepts the
-reset and re-climbs; the rollback refusal only applies when the relay
-doc is the sole decider), but avoid deleting the namespace casually.
+**Ops notes**: the channel must keep moving with GitHub — a release
+published without its digest makes the app updater refuse (the two
+official channels disagreeing is fail-closed by design). Rebuilding the
+digests tree from scratch restarts the per-channel `seq` counters at 1:
+harmless (a GitHub-reachable client accepts the reset and re-climbs;
+the rollback refusal only applies when the relay doc is the sole
+decider), but avoid deleting the tree casually.
 ## Replay share (`/api/replays/*`)
 
 The replay-collection program: players who opt in ship whole-replay
