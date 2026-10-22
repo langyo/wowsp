@@ -12,7 +12,14 @@
  * AXIS (|dot| against the cluster's running mean), each member is aligned to
  * the cluster axis before averaging, and the vertex is split where no cluster
  * within `creaseAngleDeg` admits the face — gradual panel runs shade smoothly
- * while true hard edges (chine, deck-to-side, box corners) stay crisp.
+ * while true hard edges (chine, deck-to-side, box corners) stay crisp. The
+ * finished clusters are then re-examined pairwise and merged transitively
+ * when their mean directions sit within `mergeAngleDeg` of each other,
+ * same hemisphere (looser than the crease):
+ * the decimated pack hulls quantize curved plating into diagonal staircases
+ * that step past the crease while no real edge exists, and the greedy
+ * running-mean admission splits those runs — the merge heals them without
+ * touching true hard edges beyond the merge angle.
  *
  * Returns a NEW indexed geometry (position + normal + index). Any other
  * attribute present on the input (the armour overlay's thickness vertex
@@ -24,6 +31,7 @@ import * as THREE from "three";
 export function computeSmoothNormals(
   geometry: THREE.BufferGeometry,
   creaseAngleDeg = 50,
+  mergeAngleDeg = 85,
 ): THREE.BufferGeometry {
   const posAttr = geometry.attributes.position as THREE.BufferAttribute;
   const carried = Object.keys(geometry.attributes)
@@ -116,6 +124,60 @@ export function computeSmoothNormals(
       counts[matched]++;
       cornerCluster[adjCorner[slot]] = matched;
       cornerSign[adjCorner[slot]] = sign;
+    }
+    // Greedy chains over-restrict: every face is admitted against the
+    // running mean, so a smooth run whose faces step past the crease
+    // midway splits into several clusters even though its extremes belong
+    // to one smooth surface — the decimated pack hulls quantize curved
+    // plating into diagonal staircases whose shared-edge angles climb in
+    // steps well past the crease while no real edge exists, and the split
+    // vertices shade the flank as shattered glass. Re-examine the FINISHED
+    // clusters pairwise by their mean axes and merge what a looser angle
+    // admits, transitively: chained means fuse into one cluster (the
+    // drift that split them mid-run cannot re-appear), while a true hard
+    // edge — ≈90° chines and box corners, means far beyond even the loose
+    // angle — stays split and keeps its crisp shading.
+    if (sums.length > 1) {
+      const cosMerge = Math.cos((mergeAngleDeg * Math.PI) / 180);
+      const clusterParent = sums.map((_, i) => i);
+      const findCluster = (i: number): number => {
+        while (clusterParent[i] !== i) {
+          clusterParent[i] = clusterParent[clusterParent[i]];
+          i = clusterParent[i];
+        }
+        return i;
+      };
+      for (let i = 0; i < sums.length; i++) {
+        for (let j = i + 1; j < sums.length; j++) {
+          const a = sums[i], b = sums[j];
+          const la = Math.hypot(a[0], a[1], a[2]);
+          const lb = Math.hypot(b[0], b[1], b[2]);
+          if (la < 1e-12 || lb < 1e-12) continue;
+          // Same-hemisphere only: unlike the greedy admission (which is
+          // winding-agnostic by |dot|), means that point AWAY from each
+          // other must not fuse — each cluster's corners keep the signs
+          // they were admitted with, so uniting near-antiparallel means
+          // would sum the two sides towards zero and fall out as the
+          // degenerate fallback normal. Winding flips never reach this
+          // test split: the greedy |dot| admission absorbs them into one
+          // cluster with aligned signs.
+          const d = (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / (la * lb);
+          if (d < cosMerge) continue;
+          const ri = findCluster(i), rj = findCluster(j);
+          if (ri !== rj) clusterParent[rj] = ri;
+        }
+      }
+      if (clusterParent.some((p, i) => p !== i)) {
+        const mergedId = new Map<number, number>();
+        for (let cl = 0; cl < sums.length; cl++) {
+          const root = findCluster(cl);
+          if (!mergedId.has(root)) mergedId.set(root, mergedId.size);
+        }
+        for (let slot = start; slot < end; slot++) {
+          const corner = adjCorner[slot];
+          cornerCluster[corner] = mergedId.get(findCluster(cornerCluster[corner]))!;
+        }
+      }
     }
   }
 
