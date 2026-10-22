@@ -1,13 +1,15 @@
 //! Feedback endpoints — the I/O half of the feedback pipeline. Policy
-//! (validation, limits, payloads, page HTML) lives in `relay_core::feedback`;
-//! this module owns request/response plumbing: Turnstile siteverify,
-//! KV (rate limits + token/base caches), and the Feishu OpenAPI calls
-//! (tenant token, Bitable records, drive media upload).
+//! (validation, limits, payloads) lives in `relay_core::feedback`; this
+//! module owns request/response plumbing: Turnstile siteverify, KV (rate
+//! limits + token/base caches), and the Feishu OpenAPI calls (tenant
+//! token, Bitable records, drive media upload). The console PAGES are
+//! the hikari build (packages/console) served by the [assets] layer —
+//! this module serves their JSON APIs only.
 //!
 //! Configuration (see the README deploy section):
 //! - `TURNSTILE_SITEKEY` (var) + `TURNSTILE_SECRET` (secret) — the form's
-//!   human check. Without the sitekey the form renders a maintenance
-//!   notice instead of a submittable widget.
+//!   human check. The sitekey rides GET /api/feedback/config to the
+//!   console; without it the console renders its maintenance notice.
 //! - `FEISHU_APP_ID` (secret) + `FEISHU_APP_SECRET` (secret) — the
 //!   feedback Bitable's tenant token AND the /erp console's Feishu-OAuth
 //!   login (see src/erp.rs; the console APIs gate on the signed session
@@ -55,40 +57,6 @@ struct BitableIds {
     table_id: String,
 }
 
-// ── pages ──────────────────────────────────────────────────────────────
-
-/// GET /feedback — the embedded form (maintenance notice when the
-/// Turnstile sitekey is absent). The current release (wrangler var
-/// FEEDBACK_LATEST_VERSION, kept in sync by scripts/sync_versions.py)
-/// and the request's User-Agent prefill the web form's editable
-/// version/system-info comboboxes.
-pub fn page_feedback(origin: &str, env: &Env, user_agent: Option<&str>) -> Result<Response> {
-    let sitekey = env.var("TURNSTILE_SITEKEY").ok().map(|v| v.to_string());
-    let latest = env
-        .var("FEEDBACK_LATEST_VERSION")
-        .map(|v| v.to_string())
-        .unwrap_or_default();
-    html(relay_core::feedback::feedback_page(
-        sitekey.as_deref(),
-        origin,
-        &latest,
-        user_agent.unwrap_or(""),
-    ))
-}
-
-/// GET /erp — the embedded review console.
-pub fn page_erp(origin: &str) -> Result<Response> {
-    html(relay_core::erp::erp_page(origin))
-}
-
-fn html(body: String) -> Result<Response> {
-    let mut resp = Response::from_bytes(body.into_bytes())?;
-    resp.headers_mut()
-        .set("Content-Type", "text/html; charset=utf-8")?;
-    resp.headers_mut().set("Cache-Control", "no-store")?;
-    Ok(resp)
-}
-
 // ── submit ─────────────────────────────────────────────────────────────
 
 /// GET /api/feedback/config — the public values the worker used to
@@ -100,11 +68,7 @@ pub fn handle_config(req: Request, env: &Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    let var = |name: &str| {
-        env.var(name)
-            .map(|v| v.to_string())
-            .unwrap_or_default()
-    };
+    let var = |name: &str| env.var(name).map(|v| v.to_string()).unwrap_or_default();
     let mut resp = Response::from_json(&json!({
         "sitekey": var("TURNSTILE_SITEKEY"),
         "latestVersion": var("FEEDBACK_LATEST_VERSION"),

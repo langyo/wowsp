@@ -7,7 +7,3 @@ crates/relay-worker/build/
 # tree once shipped a silently-broken hydration build. Same policy as
 # the root workspace's tracked lock.
 /assets/
-
-# Feedback-page hikari token sheet, generated at build time by
-# scripts/export_feedback_theme.py (the source tree tracks no CSS)
-crates/relay-core/.generated/

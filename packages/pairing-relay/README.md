@@ -193,29 +193,23 @@ Ed25519 密钥按官方方案从 `QQBOT_SECRET` 直接派生（Secret 翻倍到
 `QQBOT_SECRET` 两项。
 
 
-The same worker also hosts WoWSP's self-service feedback flow. `/feedback`
-and `/erp` are answered by this worker itself — they sit in
-`run_worker_first` ahead of the static-assets layer, alongside `/api*`:
+The same worker also hosts WoWSP's self-service feedback flow. The
+`/feedback` and `/erp` PAGES are the hikari console (`packages/console`,
+built by the site workflow into `assets/` and served by the worker's
+static-assets layer); the worker itself answers only their JSON APIs:
 
-- **`GET /feedback`** — an embedded, dependency-free form localized in the
-  same eight locales as the app's `res/i18n` files (language selector with
-  `?lang=`/localStorage/browser resolution) and styled with hikari's design
-  tokens: the token sheet under `crates/relay-core/.generated/` is
-  generated from the webui's `@celestia-island/hikari` dependency by
-  `scripts/export_feedback_theme.py` (channels + scale tokens plus the
-  default preset's light/dark palettes) — a gitignored build-time artifact
-  (the source tree tracks no CSS; run the exporter before any relay-core
-  build, `just check-relay` does it for you), embedded at compile time,
-  and flipped between schemes via the same
-  `data-mode` attribute the app's `useTheme` sets. A Cloudflare Turnstile
-  widget guards submissions. The WoWSP desktop app's 设置 ▸ 问题反馈 pane
-  links here with `?version=…&sysinfo=…&channel=desktop&lang=…` prefill
+- **`GET /api/feedback/config`** — the public page config the console
+  fetches at boot: the Turnstile sitekey (public by design) and the
+  version prefill (wrangler var `FEEDBACK_LATEST_VERSION`, kept in sync
+  by scripts/sync_versions.py). A missing var answers empty-string,
+  never an error. The WoWSP desktop app's 设置 ▸ 问题反馈 pane links to
+  the console with `?version=…&sysinfo=…&channel=desktop&lang=…` prefill
   (plus `server`/`game_id` when an account is bound; the history lookup
-  link adds `focus=history`); the form itself mints a localStorage
-  anonymous id and remembers the contact, server and game-ID fields.
+  link adds `focus=history`); the console mints a localStorage anonymous
+  id and remembers the contact, server and game-ID fields.
 - **`POST /api/feedback/submit`** (multipart, multi-file) — normalize →
   Turnstile siteverify (every channel — `channel` is client-supplied, and
-  desktop users submit through this same form in their browser) → KV
+  desktop users submit through this same console page in their browser) → KV
   rate limits (5/h per IP, 10/day per anonymous id, 300/day global) → a
   record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on first
   use; see below) → a one-time lookup token (32 bytes of CSPRNG, shown
@@ -226,7 +220,7 @@ and `/erp` are answered by this worker itself — they sit in
   contact field feeds only the QQ bot's bind/notify routing) → optional
   log-bundle upload via `drive/v1/medias/upload_all` attached to the
   record's 日志包 field.
-- **`GET /erp`** — the maintainer's review console (Feishu-OAuth
+- **`/erp` console APIs** — the maintainer's review surface (Feishu-OAuth
   gated): lists records, flips 处理状态, writes PR links, downloads
   attachments through `/api/feedback/attachment` (302 to a Feishu
   temporary URL). Login is the app's own Feishu OAuth — the callback
@@ -568,8 +562,7 @@ Then:
 
 ```sh
 pnpm install              # once, from the repo root (deps + wrangler)
-just feedback-theme       # relay-core include_str! input (gitignored)
-just bundle-site          # website → packages/pairing-relay/assets
+just bundle-site          # website + console → packages/pairing-relay/assets
 cd packages/pairing-relay
 npx wrangler login        # once
 npx wrangler deploy
@@ -577,7 +570,10 @@ npx wrangler deploy
 
 `just bundle-site` bundles the website ONLY (no docs — fine for a
 quick site-only refresh or `wrangler dev`); the workflow's merged
-docs+website bundle is the full artifact.
+docs+website bundle is the full artifact. It also builds the **hikari
+console** (`packages/console` — the real-hikari `/erp` and `/feedback`
+pages) and merges its `dist/console` into the worker assets, so a
+manual deploy is `just bundle-site && npx wrangler deploy`.
 
 `[build] command = "worker-build --release crates/relay-worker"` in
 `wrangler.toml` compiles the Rust workspace to
