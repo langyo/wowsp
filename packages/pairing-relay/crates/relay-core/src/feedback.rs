@@ -408,33 +408,67 @@ pub fn lookup_kv_key(hash: &str) -> String {
 
 /// The KV row under [`lookup_kv_key`]: the submission's canonical contact
 /// (the exact string the Bitable's 联系方式 field carries) plus the stored
-/// hash. The token itself is never persisted.
+/// hash. The token itself is never persisted. `record_id` scopes the row
+/// to the one Bitable record its token may read on the public history
+/// path (audit M-7 revision); `contact` stays for the QQ bot's 绑定/
+/// 回访通知 flow. Rows minted before the revision carry no `record_id`
+/// (serde default) and resolve to nothing on the public path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LookupRow {
     pub contact: String,
     pub hash: String,
+    #[serde(default)]
+    pub record_id: Option<String>,
 }
 
-/// Resolve a presented lookup token against a fetched `fbtok:*` KV row:
-/// shape-gate the token, hash it, and constant-time compare against the
-/// stored hash (same hygiene rule as the session MAC) before handing out
-/// the row's canonical contact. `None` on any mismatch — unknown tokens,
-/// malformed rows and contact-less submissions all refuse identically
-/// (the public endpoint answers an empty item list either way, so nothing
-/// distinguishes a live token from a dead one). Shared by the history
-/// endpoint and the QQ bot's 绑定 command.
-pub fn resolve_lookup_token(row: Option<&Value>, token: &str) -> Option<String> {
-    let row = row?;
-    let contact = row.get("contact").and_then(Value::as_str)?;
-    let stored = row.get("hash").and_then(Value::as_str)?;
+/// The shared hit test behind both resolvers: shape-gate the presented
+/// token, hash it, and constant-time compare against the row's stored
+/// hash (same hygiene rule as the session MAC). `false` on any mismatch
+/// — unknown tokens and malformed rows refuse identically.
+fn lookup_row_matches(row: Option<&Value>, token: &str) -> bool {
+    let Some(row) = row else {
+        return false;
+    };
+    let Some(stored) = row.get("hash").and_then(Value::as_str) else {
+        return false;
+    };
     if !valid_lookup_token(token) {
-        return None;
+        return false;
     }
     let normalized = token.to_ascii_lowercase();
-    if !ct_eq(&lookup_token_hash(&normalized), stored) {
+    ct_eq(&lookup_token_hash(&normalized), stored)
+}
+
+/// Resolve a presented lookup token against a fetched `fbtok:*` KV row
+/// to the row's canonical contact — the QQ bot's 绑定 command's leg
+/// (bind/回访通知 route by contact). `None` on any mismatch; the
+/// public history endpoint no longer uses this leg (it resolves the
+/// record via [`resolve_lookup_record`] instead — a token must never
+/// hand out a whole contact's history).
+pub fn resolve_lookup_token(row: Option<&Value>, token: &str) -> Option<String> {
+    if !lookup_row_matches(row, token) {
         return None;
     }
-    Some(contact.to_string()).filter(|c| !c.is_empty())
+    row?.get("contact")
+        .and_then(Value::as_str)
+        .filter(|c| !c.is_empty())
+        .map(str::to_string)
+}
+
+/// Resolve a presented lookup token to THE Bitable record it was minted
+/// with (audit M-7 revision): a token proves "I submitted this record",
+/// never "I am this contact" — the public history endpoint answers that
+/// one record's status and nothing else. Legacy rows without a
+/// `record_id` resolve to `None` (the endpoint answers the same empty
+/// list as an unknown token, so nothing distinguishes them).
+pub fn resolve_lookup_record(row: Option<&Value>, token: &str) -> Option<String> {
+    if !lookup_row_matches(row, token) {
+        return None;
+    }
+    row?.get("record_id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Percent-encode a query/component value (RFC 3986 unreserved kept).
@@ -2156,6 +2190,62 @@ mod tests {
             "hash": lookup_token_hash(&token),
         });
         assert_eq!(resolve_lookup_token(Some(&anon_row), &token), None);
+    }
+
+    #[test]
+    fn resolve_lookup_record_scopes_to_the_minting_submission() {
+        // audit M-7 修订：凭证只证明「我提交过这一条」，不证明「我是这个
+        // 联系方式」——公开历史查询按 record_id 解析，contact 永不出行。
+        let token = format!("{}{}", "0e".repeat(31), "cd");
+        let row = json!({
+            "contact": "victim@example.com",
+            "hash": lookup_token_hash(&token),
+            "record_id": "recnW9X1zZ",
+        });
+        assert_eq!(
+            resolve_lookup_record(Some(&row), &token),
+            Some("recnW9X1zZ".into())
+        );
+        // 大小写归一化与 contact 变体同一套命中判定。
+        assert_eq!(
+            resolve_lookup_record(Some(&row), &token.to_ascii_uppercase()),
+            Some("recnW9X1zZ".into())
+        );
+        // 哈希不匹配 / 行缺失 / 畸形行 → 一律 None。
+        let other = format!("{}{}", "bb".repeat(31), "aa");
+        assert_eq!(resolve_lookup_record(Some(&row), &other), None);
+        assert_eq!(resolve_lookup_record(None, &token), None);
+        assert_eq!(resolve_lookup_record(Some(&json!({})), &token), None);
+        // 修订前的旧行（无 record_id）与空 record_id 都解析不到记录。
+        let legacy = json!({
+            "contact": "victim@example.com",
+            "hash": lookup_token_hash(&token),
+        });
+        assert_eq!(resolve_lookup_record(Some(&legacy), &token), None);
+        let empty = json!({
+            "contact": "victim@example.com",
+            "hash": lookup_token_hash(&token),
+            "record_id": "",
+        });
+        assert_eq!(resolve_lookup_record(Some(&empty), &token), None);
+        // 行的 LookupRow 序列化形态带上 record_id（提交侧写入的 JSON 形状）。
+        let built = LookupRow {
+            contact: "victim@example.com".into(),
+            hash: lookup_token_hash(&token),
+            record_id: Some("recnW9X1zZ".into()),
+        };
+        let v: Value = serde_json::to_value(&built).unwrap();
+        assert_eq!(v["record_id"], "recnW9X1zZ");
+        // 旧行 JSON（无 record_id 字段）仍能反序列化——兼容读取。
+        let parsed: LookupRow = serde_json::from_value(legacy).unwrap();
+        assert_eq!(parsed.record_id, None);
+        // 前向兼容（QQ 绑定腿）：部署后 submit 写出的唯一行形状就是
+        // 「contact + record_id」——contact 变体必须在它上面照常命中，
+        // 否则新凭证全部无法绑定且没有任何测试报警。
+        assert_eq!(
+            resolve_lookup_token(Some(&v), &token),
+            Some("victim@example.com".into())
+        );
     }
 
     #[test]

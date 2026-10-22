@@ -5,8 +5,11 @@
 //!   官方互换接口**（unionid 也只是同主体跨应用标识）；
 //! - 普通 QQ 群不向机器人开放成员列表/按号查成员（频道接口需私域权限，
 //!   且返回的仍是平台 ID）。
-//!   因此机器人侧的“绑定”以**查询凭证**证明所有权（audit M-7：凭号码
-//!   自报等于任何人都能绑定任何受害者）：用户在群里 @机器人 或私聊发送
+//!   因此机器人侧的“绑定”以**查询凭证**证明提交（audit M-7 修订：凭
+//!   号码自报等于任何人都能绑定任何受害者，而凭证也只证明「提交过一条
+//!   带此联系方式的反馈」，不证明「拥有该联系方式」——公开历史查询已
+//!   按 record_id 收敛到单条，绑定/回访仍按联系方式路由，残余暴露面记
+//!   录在 worker 侧绑定命令的注释里）：用户在群里 @机器人 或私聊发送
 //!   「绑定 <查询凭证>」（提交成功页一次性下发的 64 位十六进制），回调
 //!   （`GROUP_AT_MESSAGE_CREATE` / `C2C_MESSAGE_CREATE`）给出对应
 //!   openid，worker 侧把凭证哈希后在 KV 行（`fbtok:*`，提交时落库）
@@ -230,6 +233,27 @@ pub fn dup_key(id: &str) -> String {
     format!("qqdup:{id}")
 }
 
+/// 回调体的字节上限（audit M-9 跟进）。回调是全 worker 唯一
+/// 「公开 + 无鉴权 + 验签晚于 body 解析」的组合：QQ 的推送是几 KB 的
+/// JSON 信封，256 KiB 留了两个数量级的余量，同时掐死「让 isolate 缓冲
+/// 任意大 body」这条最廉价的 DoS 放大路径。
+pub const CALLBACK_BODY_MAX: usize = 256 * 1024;
+
+/// 回调 `Content-Length` 的预缓冲闸门：缺失/不可解析 → `Err(411)`
+/// （拒绝 chunked，与 feedback submit 的 M-9 修法同形），超过
+/// [`CALLBACK_BODY_MAX`] → `Err(413)`，否则 `Ok(())`。纯函数放在
+/// core，让无测试的 worker 壳只剩一行接线。
+pub fn callback_length_gate(len_header: Option<&str>) -> Result<(), u16> {
+    let Some(raw) = len_header else {
+        return Err(411);
+    };
+    let len: usize = raw.trim().parse().map_err(|_| 411u16)?;
+    if len > CALLBACK_BODY_MAX {
+        return Err(413);
+    }
+    Ok(())
+}
+
 /// 事件推送验签：`X-Signature-Ed25519`（hex）是对
 /// `timestamp 字节串 + 原始 body` 的 Ed25519 签名，用同一 Secret 派生
 /// 的公钥校验。
@@ -447,6 +471,34 @@ mod tests {
         let seed = hex(&key.to_bytes());
         let pubhex = hex(key.verifying_key().as_bytes());
         (seed, pubhex)
+    }
+
+    #[test]
+    fn callback_length_gate_caps_before_buffering() {
+        // 缺失 / 不可解析 → 411（chunked 不进缓冲）。
+        assert_eq!(callback_length_gate(None), Err(411));
+        assert_eq!(callback_length_gate(Some("")), Err(411));
+        assert_eq!(callback_length_gate(Some("abc")), Err(411));
+        assert_eq!(callback_length_gate(Some("12, 34")), Err(411));
+        // 超过上限 → 413；恰好等于上限仍放行（belt 再复核缓冲后的长度）。
+        assert_eq!(
+            callback_length_gate(Some(&(CALLBACK_BODY_MAX + 1).to_string())),
+            Err(413)
+        );
+        assert_eq!(
+            callback_length_gate(Some(&CALLBACK_BODY_MAX.to_string())),
+            Ok(())
+        );
+        // 正常的小信封放行；容忍首尾空白。
+        assert_eq!(callback_length_gate(Some("2048")), Ok(()));
+        assert_eq!(callback_length_gate(Some(" 2048 ")), Ok(()));
+        // 负数按不可解析处理，绝不放行一个语义不明的长度。
+        assert_eq!(callback_length_gate(Some("-1")), Err(411));
+        assert_eq!(callback_length_gate(Some("18446744073709551616")), Err(411));
+        // 超出 wasm32 usize（u32）的大数（2^33）：宿主 64 位 usize 解析
+        // 成功 → 413；wasm32 线上解析失败 → 411。两种都拒绝，状态码分歧
+        // 无安全影响（测试跑在宿主，断言按 413 锁定）。
+        assert_eq!(callback_length_gate(Some("8589934592")), Err(413));
     }
 
     #[test]

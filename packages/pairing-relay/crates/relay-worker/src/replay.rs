@@ -131,29 +131,34 @@ async fn wanted_doc(env: &Env) -> Result<Option<WantedDoc>> {
     Ok(raw.as_deref().and_then(parse_wanted_doc))
 }
 
-/// Spend one KV rate-limit counter (same best-effort pattern as the
-/// feedback pipeline): read + 1, refuse past the limit, write with a
-/// day TTL otherwise. Shared with the other public GET routes (audit
-/// M-10).
+/// Spend one KV rate-limit counter (same pattern as the feedback
+/// pipeline): read + 1, refuse past the limit, write with a day TTL
+/// otherwise. Shared with the other public GET routes (audit M-10).
 ///
-/// The write is deliberately FAIL-OPEN (audit M-10 review): the limiter
-/// exists to protect quota, so a failing counter write must never 500 a
-/// public GET. Worst case under a write-budget flood the limiter degrades
-/// to a no-op until the counters expire — reads then flow unthrottled,
-/// which is the failure mode we can afford (KV writes are the scarcer
-/// resource; sampling the writes cannot work with a read-modify-write
-/// counter — a skipped write stalls the stored value and either freezes
-/// or double-charges the budget).
+/// The write is FAIL-CLOSED (audit M-10 revision, after the 2026-10-22
+/// quota incident): a flood that exhausts the daily KV write budget
+/// flips a fail-open limiter off at the exact moment it is under attack,
+/// and the then-unthrottled reads burn the read budget too (the
+/// incident's fleet-polling shape). A failing counter write now answers
+/// `false` — the route serves its 429 + Retry-After instead of flowing
+/// unthrottled. Public GETs do lose availability under a KV write
+/// outage; that is the cheaper failure, because edge-cached responses
+/// (digests) keep serving and the polite clients the Retry-After
+/// reaches are exactly the ones worth serving.
 pub(crate) async fn spend(kv: &KvStore, key: &str, limit: u64) -> Result<bool> {
     let count: u64 = kv.get(key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
     if count > limit {
         return Ok(false);
     }
-    let _ = kv
+    if kv
         .put(key, count)?
         .expiration_ttl(TTL_DAY)
         .execute()
-        .await;
+        .await
+        .is_err()
+    {
+        return Ok(false);
+    }
     Ok(true)
 }
 

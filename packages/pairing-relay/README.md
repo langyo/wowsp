@@ -162,17 +162,22 @@ old clients cannot talk to lands).
 提交反馈**不要求任何验证**；机器人只负责回访通知与进度查询。QQ 官方
 机器人平台不给 QQ 号 ↔ openid 的互换接口，普通群也没有成员查询 API，
 自报 QQ 号的旧绑定等于任何人都能绑定任何受害者（audit M-7），所以
-“绑定”改为**查询凭证证明所有权**：
+“绑定”改为**查询凭证证明提交**（凭证只证明「我提交过一条带此联系
+方式的反馈」，不证明「我拥有该联系方式」——公开历史查询已按
+record_id 收敛到凭证对应的那一条）：
 
 1. 提交成功页会下发一个一次性的查询凭证（32 字节 CSPRNG 的 64 位
    十六进制，仅显示一次；KV 只落它的 SHA-256：`fbtok:{hash}` →
-   规范化联系方式）。用户在通知群里 @机器人 或私聊发送
-   「绑定 <查询凭证>」（旧口令「验证」同样接受）。回调
+   规范化联系方式 + 该次提交的 record_id）。用户在通知群里 @机器人
+   或私聊发送「绑定 <查询凭证>」（旧口令「验证」同样接受）。回调
    `POST /api/qqbot/callback`（Ed25519 验签，URL 配置走 op 13/14；
    op 13 只为纯数字 `event_ts` + 英数字 `plain_token` 签名，防止被当成
    事件签名工具）在 KV 行里常时比对出该反馈的联系方式，把发送者的
    member/group openid（群内）或 c2c openid（私聊）合并进绑定记录
-   （KV `qqbind:*`，长期）；凭证形态不对或查不到时拒绑。
+   （KV `qqbind:*`，长期）；凭证形态不对或查不到时拒绑。已知残余
+   （audit M-7 修订记录在案）：绑定后可按该联系方式「查询」，持他人
+   联系方式提交者理论上仍能走这条 QQ 路径——彻底关闭需要联系方式
+   归属验证（邮件/短信回路），属后续工作。
 2. 回访：受理成功 → C2C 私聊（自限额 3 条/人/月，留平台配额余量）；
    `/erp` 状态改到「已开PR」→ 群内 markdown `<@member_openid>` 单独
    @（群主动消息配额珍贵，只留给这个场景）。全部尽力而为，失败静默。
@@ -212,12 +217,15 @@ and `/erp` are answered by this worker itself — they sit in
   Turnstile siteverify (every channel — `channel` is client-supplied, and
   desktop users submit through this same form in their browser) → KV
   rate limits (5/h per IP, 10/day per anonymous id, 300/day global) → a
-  one-time lookup token (32 bytes of CSPRNG, shown once in the response;
-  only its SHA-256 is stored in KV as `fbtok:{hash}` and powers the
-  public history lookup and the QQ bot's bind command) → a record in the
-  飞书多维表「WoWSP 反馈」(created/bootstrapped on first use; see below)
-  → optional log-bundle upload via `drive/v1/medias/upload_all` attached
-  to the record's 日志包 field.
+  record in the 飞书多维表「WoWSP 反馈」(created/bootstrapped on first
+  use; see below) → a one-time lookup token (32 bytes of CSPRNG, shown
+  once in the response; only its SHA-256 is stored in KV as
+  `fbtok:{hash}` together with the minting record id — the public
+  history lookup answers exactly that one record, audit M-7 revision: a
+  token proves "I submitted this", never "I am this contact"; the row's
+  contact field feeds only the QQ bot's bind/notify routing) → optional
+  log-bundle upload via `drive/v1/medias/upload_all` attached to the
+  record's 日志包 field.
 - **`GET /erp`** — the maintainer's review console (Feishu-OAuth
   gated): lists records, flips 处理状态, writes PR links, downloads
   attachments through `/api/feedback/attachment` (302 to a Feishu

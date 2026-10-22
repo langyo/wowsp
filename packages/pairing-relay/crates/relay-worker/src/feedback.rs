@@ -27,7 +27,7 @@
 use relay_core::feedback::{
     self, BASE_NAME, LOOKUP_ROW_TTL_SECS, LookupRow, STATUSES, attachment_update_body,
     lookup_kv_key, lookup_token_hash, normalize, rate_keys, rate_limits, record_fields,
-    resolve_lookup_token, table_schema, turnstile_passed, turnstile_verify_body,
+    resolve_lookup_record, table_schema, turnstile_passed, turnstile_verify_body,
     valid_lookup_token,
 };
 use relay_core::multipart;
@@ -207,28 +207,6 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
         kv.put(key, count)?.expiration_ttl(ttl).execute().await?;
     }
 
-    // 一次性查询凭证（audit M-7）：32 字节 CSPRNG，只在本次响应里下发；
-    // KV 只落 SHA-256（fbtok:{hash} → 规范化联系方式 + 哈希），公开历史
-    // 查询与 QQ 机器人的「绑定」都凭哈希常时比对换取联系方式。行先于
-    // Bitable 记录落库：凭证在而记录未至顶多是「绑定成功但暂无记录」，
-    // 反过来（记录有了、凭证没了）用户却无从查询。没有联系方式的提交
-    // 不签发（audit review：无 contact 的凭证行 resolve 恒拒，只会空置
-    // 一年，响应里也不该展示一个不可用的凭证）。
-    let lookup_token = if sub.contact.is_empty() {
-        None
-    } else {
-        let token = mint_lookup_token()?;
-        let row = LookupRow {
-            contact: relay_core::feedback::normalize_contact(&sub.contact),
-            hash: lookup_token_hash(&token),
-        };
-        kv.put(&lookup_kv_key(&row.hash), serde_json::to_string(&row)?)?
-            .expiration_ttl(LOOKUP_ROW_TTL_SECS)
-            .execute()
-            .await?;
-        Some(token)
-    };
-
     // Feishu: record (+ attachment upload, then attach to the record).
     let token = feishu_token(&env).await.map_err(|e| e.to_string())?;
     let ids = ensure_base(&env, &token).await.map_err(|e| e.to_string())?;
@@ -248,6 +226,31 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
         .and_then(Value::as_str)
         .ok_or("record id missing")?
         .to_string();
+
+    // 一次性查询凭证（audit M-7 修订）：32 字节 CSPRNG，只在本次响应里
+    // 下发；KV 只落 SHA-256（fbtok:{hash} → 联系方式 + record_id + 哈希）。
+    // 凭证收敛到「本次提交的 record_id」——公开历史查询只回这一条记录
+    // 的状态，contact 字段仅保留给 QQ 机器人的绑定/回访通知路由。行只能
+    // 在 record_id 诞生后写入；此时 Feishu 已受理，KV 写失败不再 500 整
+    // 个提交（降级为响应里不带凭证）。没有联系方式的提交不签发（绑定/
+    // 通知都路由不到，旧行为不变）。
+    let lookup_token = match mint_lookup_token() {
+        Ok(token) if !sub.contact.is_empty() => {
+            let row = LookupRow {
+                contact: relay_core::feedback::normalize_contact(&sub.contact),
+                hash: lookup_token_hash(&token),
+                record_id: Some(record_id.clone()),
+            };
+            let stored = kv
+                .put(&lookup_kv_key(&row.hash), serde_json::to_string(&row)?)?
+                .expiration_ttl(LOOKUP_ROW_TTL_SECS)
+                .execute()
+                .await
+                .is_ok();
+            stored.then_some(token)
+        },
+        _ => None,
+    };
 
     // 每个附件上传一次，收齐 file_token 后一次 PUT 挂到记录上（F_LOG
     // 是数组字段，桌面端一次可能带 截图 + 日志包 两件）。
@@ -418,12 +421,14 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
 
 /// GET /api/feedback/history?token=… — PUBLIC lookup (the submitter's
 /// own progress tracker, audit M-7): the one-time lookup token shown at
-/// submit time is the only key. Its SHA-256 resolves to the submission's
-/// canonical contact through a KV row (constant-time compared), and the
-/// item shape (time/status/description-snippet/PR-link) is unchanged. The
-/// legacy `?contact=` spelling is retired — the contact is the
-/// maintainer's business, never a lookup key. Rate-limited per IP; wrong
-/// tokens count against the same bucket.
+/// submit time is the only key. Its SHA-256 resolves through a KV row
+/// (constant-time compared) to THE record the token was minted with —
+/// owning a token proves "I submitted this record", never "I am this
+/// contact" (audit M-7 revision), so the endpoint answers exactly one
+/// item and the item shape (time/status/description-snippet/PR-link) is
+/// unchanged. The legacy `?contact=` spelling is retired — the contact is
+/// the maintainer's business, never a lookup key. Rate-limited per IP;
+/// wrong tokens count against the same bucket.
 pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
@@ -448,7 +453,7 @@ pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
         .execute()
         .await?;
 
-    // 凭证 → 哈希 → KV 行 → 常时比对（同会话 MAC 的卫生规则）→ 联系方式。
+    // 凭证 → 哈希 → KV 行 → 常时比对（同会话 MAC 的卫生规则）→ 本条记录。
     let hash = lookup_token_hash(&token);
     let row: Option<Value> = kv
         .get(&lookup_kv_key(&hash))
@@ -456,19 +461,71 @@ pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
         .await
         .ok()
         .flatten();
-    let Some(contact) = resolve_lookup_token(row.as_ref(), &token) else {
-        // 未知凭证与「尚无记录」同形：一律空列表，不区分存在性。
+    let Some(record_id) = resolve_lookup_record(row.as_ref(), &token) else {
+        // 未知凭证、修订前的旧行与「记录已删」同形：一律空列表，
+        // 不区分存在性（凭证只指向一条记录，见 resolve_lookup_record）。
         return ok(json!({ "ok": true, "items": [] }));
     };
-    let items = history_records(&env, &contact).await?;
+    let items = history_record(&env, &record_id).await?;
 
     ok(json!({ "ok": true, "items": items }))
 }
 
+/// One Bitable record → the public status item shared by the token
+/// history endpoint and the QQ bot's 查询 reply (time/status/
+/// description-snippet/PR-link — never the full text or the contact).
+fn history_item(rec: &Value) -> Value {
+    let f = |name: &str| rec.pointer(&format!("/fields/{name}")).cloned();
+    let desc = text_val(&f(feedback::F_DESC));
+    let snippet: String = desc
+        .chars()
+        .take(relay_core::feedback::HISTORY_SNIPPET)
+        .collect();
+    json!({
+        "time": f(feedback::F_TIME).and_then(|v| v.as_i64()),
+        "status": text_val(&f(feedback::F_STATUS)),
+        "description": snippet,
+        "pr": f(feedback::F_PR).and_then(|v| {
+            v.get("link").and_then(Value::as_str).map(str::to_string)
+        }),
+    })
+}
+
+/// The token-scoped history read (audit M-7 revision): fetch exactly the
+/// one record the lookup token was minted with. A deleted record (or an
+/// upstream read failure) answers an empty list — the endpoint's
+/// contract is best-effort status, and "nothing to show" keeps the
+/// unknown-token and known-token shapes indistinguishable (same swallow
+/// shape as [`record_contact`]).
+async fn history_record(env: &Env, record_id: &str) -> Result<Vec<Value>> {
+    let Ok(token) = feishu_token(env).await else {
+        return Ok(Vec::new());
+    };
+    let Ok(ids) = ensure_base(env, &token).await else {
+        return Ok(Vec::new());
+    };
+    let fetched = feishu_json(
+        Method::Get,
+        &format!(
+            "{FEISHU}/bitable/v1/apps/{}/tables/{}/records/{record_id}",
+            ids.app_token, ids.table_id
+        ),
+        &token,
+        Value::Null,
+    )
+    .await;
+    Ok(fetched
+        .ok()
+        .and_then(|(_, v)| v.pointer("/data/record").map(history_item))
+        .into_iter()
+        .collect())
+}
+
 /// One contact's newest submissions (time/status/description/pr only) —
-/// shared by the public history endpoint (the contact arrives resolved
-/// from the lookup token's KV row, never from the request) and the QQ
-/// bot's 查询 command.
+/// the QQ bot's 查询 command's read (the contact arrives from the bot's
+/// binding store, never from the request). The public history endpoint
+/// no longer reads by contact (audit M-7 revision): it fetches the one
+/// record its lookup token was minted with instead.
 pub async fn history_records(env: &Env, contact: &str) -> Result<Vec<Value>> {
     let token = feishu_token(env).await.map_err(|e| e.to_string())?;
     let ids = ensure_base(env, &token).await.map_err(|e| e.to_string())?;
@@ -498,22 +555,7 @@ pub async fn history_records(env: &Env, contact: &str) -> Result<Vec<Value>> {
         .cloned()
         .unwrap_or_default()
         .iter()
-        .map(|rec| {
-            let f = |name: &str| rec.pointer(&format!("/fields/{name}")).cloned();
-            let desc = text_val(&f(feedback::F_DESC));
-            let snippet: String = desc
-                .chars()
-                .take(relay_core::feedback::HISTORY_SNIPPET)
-                .collect();
-            json!({
-                "time": f(feedback::F_TIME).and_then(|v| v.as_i64()),
-                "status": text_val(&f(feedback::F_STATUS)),
-                "description": snippet,
-                "pr": f(feedback::F_PR).and_then(|v| {
-                    v.get("link").and_then(Value::as_str).map(str::to_string)
-                }),
-            })
-        })
+        .map(history_item)
         .collect::<Vec<_>>())
 }
 
