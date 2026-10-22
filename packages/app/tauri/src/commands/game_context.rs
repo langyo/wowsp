@@ -291,8 +291,10 @@ pub(crate) fn same_folder(a: &str, b: &str) -> bool {
 
 /// The persisted active-install path (`game-config.toml`), sanitized; `None`
 /// when unset or unreadable. Read-only view over the same load the
-/// `get_game_config` command performs.
-fn persisted_active_path() -> Option<String> {
+/// `get_game_config` command performs. `pub(crate)` for the mod hub's
+/// known-root guard (audit H-3) — the filter keeps the slot structural
+/// (`is_game_dir`), so a stale or arbitrary path never counts as known.
+pub(crate) fn persisted_active_path() -> Option<String> {
     let dir = crate::paths::data_dir().ok()?;
     super::game_config::persisted_active_path(&dir)
         .filter(|path| super::game_detect::is_game_dir(path))

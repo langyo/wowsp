@@ -3327,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "model-exporter"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "game-assets",
  "rootcause",
@@ -4460,7 +4460,7 @@ dependencies = [
 
 [[package]]
 name = "replay-corpus"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4472,7 +4472,7 @@ dependencies = [
 
 [[package]]
 name = "replay-drain"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7280,7 +7280,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_replay_core"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "blowfish",
@@ -7293,7 +7293,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_tauri"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "arboard",
@@ -7347,7 +7347,7 @@ dependencies = [
 
 [[package]]
 name = "wowsp_tauri_shared"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "chrono",

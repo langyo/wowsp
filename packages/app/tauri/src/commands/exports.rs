@@ -6,10 +6,76 @@
 //! into an unusably large IPC message. The destination path travels in the
 //! `x-export-path` header, percent-encoded so paths with non-ASCII segments
 //! survive the HTTP header layer.
+//!
+//! Security model (audit H-1): the write side only accepts paths a NATIVE
+//! dialog has actually handed out this session. [`pick_export_path`]
+//! registers every dialog result as a grant and [`write_export_bytes`]
+//! refuses paths without one — a compromised webview can no longer name
+//! arbitrary destinations (Startup-folder payloads, config clobbers). The
+//! tactics profile's dialogless re-save rides the same registry (see
+//! `tactics_profile.rs`).
 
 use anyhow::anyhow;
+use std::collections::HashMap;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use wowsp_tauri_shared::CommandResult;
+
+// ── Save-target grants ────────────────────────────────────────────────────────
+
+/// How long a dialog grant stays usable since its last successful use. The
+/// sliding window keeps the tactics page's all-session dialogless re-save
+/// working while bounding the table's value to recently-consented targets.
+const EXPORT_GRANT_TTL: Duration = Duration::from_secs(6 * 3600);
+
+/// Maximum live grants. A pick happens behind a native dialog, so the table
+/// cannot grow fast — the cap only stops a hostile webview from spinning
+/// `pick_export_path` into an unbounded map (each real grant still needs a
+/// human click).
+const EXPORT_GRANT_CAP: usize = 16;
+
+fn export_grants() -> &'static std::sync::Mutex<HashMap<String, Instant>> {
+    static GRANTS: OnceLock<std::sync::Mutex<HashMap<String, Instant>>> = OnceLock::new();
+    GRANTS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Register `path` — exactly as a native dialog returned it — as a writable
+/// save target for this session.
+pub(crate) fn grant_export_path(path: &str) {
+    let mut grants = export_grants().lock().unwrap_or_else(|p| p.into_inner());
+    // Drop expired entries first, then make room for the new grant by
+    // evicting the oldest survivor. The map is tiny; a linear scan is the
+    // cheap and obvious move.
+    let now = Instant::now();
+    grants.retain(|_, at| now.duration_since(*at) < EXPORT_GRANT_TTL);
+    while grants.len() >= EXPORT_GRANT_CAP {
+        let Some(oldest) = grants
+            .iter()
+            .min_by_key(|(_, at)| **at)
+            .map(|(p, _)| p.clone())
+        else {
+            break;
+        };
+        grants.remove(&oldest);
+    }
+    grants.insert(path.to_string(), Instant::now());
+}
+
+/// Does `path` carry a live grant? Slides the TTL forward on use, so an
+/// actively re-saved target never expires mid-session.
+pub(crate) fn export_path_granted(path: &str) -> bool {
+    let mut grants = export_grants().lock().unwrap_or_else(|p| p.into_inner());
+    let now = Instant::now();
+    grants.retain(|_, at| now.duration_since(*at) < EXPORT_GRANT_TTL);
+    match grants.get_mut(path) {
+        Some(at) => {
+            *at = now;
+            true
+        },
+        None => false,
+    }
+}
 
 /// Open a native save-file dialog pre-seeded with `default_name`. Returns the
 /// picked absolute path, or `None` when the user cancelled. The frontend
@@ -44,15 +110,25 @@ pub async fn pick_export_path(
         })
         .await
         .map_err(|e| anyhow!("export save dialog task failed: {e}"))?;
-        Ok(picked.map(|p| p.to_string_lossy().into_owned()))
+        Ok(picked.map(|p| {
+            let path = p.to_string_lossy().into_owned();
+            grant_export_path(&path);
+            path
+        }))
     }
 }
 
+/// Hard ceiling on one export body. The rendered share shot tops out around
+/// a few MB and a battle recording in the tens — anything near this is a
+/// hostile or runaway webview, not an export.
+const MAX_EXPORT_BYTES: usize = 512 * 1024 * 1024;
+
 /// Write a raw export body (PNG/WebP image bytes or MP4/WebM video bytes) to
-/// the path carried in the `x-export-path` header. The path is expected to
-/// come straight from [`pick_export_path`]; a write to any other path is fine
-/// (it is a user-visible save dialog result, not app data). Async + blocking
-/// pool: a multi-MB video write must never stall the UI thread.
+/// the path carried in the `x-export-path` header. The path must carry a live
+/// grant from [`pick_export_path`] — a native-dialog result — so the webview
+/// can never name a destination no dialog has ever returned (audit H-1).
+/// Async + blocking pool: a multi-MB video write must never stall the UI
+/// thread.
 #[tauri::command]
 pub async fn write_export_bytes(request: tauri::ipc::Request<'_>) -> CommandResult<()> {
     let encoded = request
@@ -61,10 +137,18 @@ pub async fn write_export_bytes(request: tauri::ipc::Request<'_>) -> CommandResu
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| anyhow!("missing x-export-path header"))?;
     let path = percent_decode(encoded)?;
+    if !export_path_granted(&path) {
+        return Err(
+            anyhow!("export target was not picked in a save dialog this session: {path}").into(),
+        );
+    }
     let bytes = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
         _ => return Err(anyhow!("expected raw body (pass a Uint8Array to invokeRaw)").into()),
     };
+    if bytes.len() > MAX_EXPORT_BYTES {
+        return Err(anyhow!("export body too large ({})", bytes.len()).into());
+    }
     Ok(tokio::task::spawn_blocking(move || {
         let path = std::path::Path::new(&path);
         if let Some(parent) = path.parent() {
@@ -180,5 +264,53 @@ mod tests {
     fn rejects_malformed_escapes() {
         assert!(percent_decode("a%2").is_err());
         assert!(percent_decode("a%ZZ").is_err());
+    }
+
+    // The grant table is a process-global; these tests serialize on a mutex
+    // so parallel test threads cannot evict each other's entries.
+    static GRANT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn grant_gates_the_write_side() {
+        let _guard = GRANT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let granted = "C:/tmp/wowsp-grant-test/shot.png";
+        assert!(!export_path_granted(granted), "no grant before any pick");
+        grant_export_path(granted);
+        assert!(export_path_granted(granted));
+        assert!(
+            !export_path_granted("C:/tmp/wowsp-grant-test/other.png"),
+            "a similar but never-picked path stays refused"
+        );
+    }
+
+    #[test]
+    fn expired_grants_stop_applying() {
+        let _guard = GRANT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let path = "C:/tmp/wowsp-grant-test/expired.png";
+        grant_export_path(path);
+        // Age the grant past the TTL by hand — no test waits six hours.
+        export_grants().lock().unwrap().insert(
+            path.to_string(),
+            Instant::now() - EXPORT_GRANT_TTL - Duration::from_secs(1),
+        );
+        assert!(!export_path_granted(path), "expired grants are refused");
+    }
+
+    #[test]
+    fn grant_table_is_capped_and_evicts_the_oldest() {
+        let _guard = GRANT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let first = "C:/tmp/wowsp-grant-test/first.png";
+        grant_export_path(first);
+        for i in 0..EXPORT_GRANT_CAP {
+            grant_export_path(&format!("C:/tmp/wowsp-grant-test/n{i}.png"));
+        }
+        assert!(
+            !export_path_granted(first),
+            "the oldest grant left when the table hit its cap"
+        );
+        assert!(export_path_granted(&format!(
+            "C:/tmp/wowsp-grant-test/n{}.png",
+            EXPORT_GRANT_CAP - 1
+        )));
     }
 }
