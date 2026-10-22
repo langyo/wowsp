@@ -13,8 +13,10 @@ sandbox has no networking, so this probe observes and bridges out:
     static roster order), together with the game's own Tab sort keys
     (sortKeys), the roster's record sequence (rosterOrder — the tie base
     for equal client keys), the records' localized ship names
-    (shipNames — the CN name-order segment verbatim) and the crosshair
-    aim verdict ('aim', see entity_walk),
+    (shipNames — the CN name-order segment verbatim), the crosshair
+    aim verdict ('aim', see entity_walk) and the records' own AI
+    verdicts ('bots', see bot_names — the aim card suppresses AI
+    targets off it),
   - the ONE thing still rendered is the capture side channel's barcode
     strips: the unbound view (WoWSPProbe.unbound, installed to
     gui/unbound2/mods/ where the game auto-discovers + mounts battle
@@ -545,6 +547,9 @@ class Probe:
         self.last_raw = ''
         self.latest_raw = {}
         self.last_order_cache = None
+        # The per-battle bot-name cache (see bot_names): None = nothing
+        # derived yet this battle.
+        self.last_bots_cache = None
         self.raw_isalive_seen = False
         self.discovered = False
         self.journal = []
@@ -1531,7 +1536,8 @@ class Probe:
                                                             'players': {},
                                                             'sortKeys': {},
                                                             'rosterOrder': [],
-                                                            'shipNames': {}}))
+                                                            'shipNames': {},
+                                                            'bots': []}))
         except:
             self.soft('telemetry clear failed=' + _exc_text(120))
         log('battle cleared')
@@ -1555,6 +1561,9 @@ class Probe:
         self.avatar_entity_ids = {}
         self.raw_isalive_seen = False
         self.last_order_cache = None
+        # The bot-name cache is per battle with the rest of the roster
+        # derivations (see bot_names).
+        self.last_bots_cache = None
         # The aim verdict is per-battle too.
         self.aim = None
         # Re-arm the aim log gate: the next battle's first switch must
@@ -1759,6 +1768,56 @@ class Probe:
         except:
             self.soft('roster order failed=' + _exc_text(120))
         return order, ship_names
+
+    def bot_names(self):
+        """This battle's AI names, straight off the game's own roster
+        records: every `isBot` row plus the scripted-name styles the
+        records can carry (':' bots, 'IDS_*' text keys, '#Name' scenario
+        units). Bridged so consumers can suppress AI targets without
+        trusting name style alone — the event PvEvP modes field bots
+        under NORMAL nicknames, and only the record's own flag tells
+        those apart from humans. A missing `isBot` reads as human (the
+        players() contract); a drifted record skips, never the list.
+
+        Cached per battle: a transient empty getPlayersInfo (the local
+        death screen) must not blank the list mid-battle — the
+        rosterOrder story. Degraded builds with no records at all yield
+        [] and the consumer's own name-style rule carries the judgment.
+        """
+        names = []
+        try:
+            for p in self.latest_raw.values():
+                try:
+                    nm = p['name']
+                except:
+                    continue
+                if not nm:
+                    continue
+                flagged = False
+                try:
+                    if p['isBot']:
+                        flagged = True
+                except:
+                    pass
+                if not flagged:
+                    # The name-style half under its own guard: a record
+                    # whose name field holds a non-string skips (the
+                    # per-record drift contract), never the whole list.
+                    try:
+                        if nm.startswith(':') or nm.startswith('IDS_') or nm.startswith('#'):
+                            flagged = True
+                    except:
+                        pass
+                if not flagged:
+                    continue
+                if nm not in names:
+                    names.append(nm)
+        except:
+            self.soft('bot names failed=' + _exc_text(120))
+        if names:
+            self.last_bots_cache = names
+            return names
+        return self.last_bots_cache or []
 
     def observe_raw(self, records):
         """Project roster records plus entity-component state; rewrite
@@ -2011,7 +2070,12 @@ class Probe:
         record's localized ship name when the client's roster data
         carries it — the CN HUD's name-order segment verbatim; see
         roster_order). Both are order-preserving lists/maps that survive
-        either encoder, and both clear on quit.
+        either encoder, and both clear on quit. `bots` (bot_names
+        above) rides with them: the game's own per-record AI verdicts,
+        so the aim-card consumer can suppress AI targets the nickname
+        styles cannot catch (event PvEvP bots under normal names); the
+        fail-safe body omits it — an absent field means "no fresh
+        verdict", never "no bots".
         """
         if not self.session:
             return
@@ -2160,7 +2224,15 @@ class Probe:
                 self.last_order_cache = (roster_order, ship_names)
             elif self.roster and self.last_order_cache is not None:
                 roster_order, ship_names = self.last_order_cache
-            stage = 'self'
+            # This battle's AI names (bot_names above): the aim-card
+            # consumer suppresses AI targets off it — the records' own
+            # isBot flag is the one judgment a nickname style cannot
+            # fake. Same caching story as the order fields.
+            stage = 'bots'
+            bots = self.bot_names()
+            # Distinct from the earlier 'self' stage (the self_name
+            # resolution): a failure here logs the realm scan precisely.
+            stage = 'self-realm'
             self_realm = ''
             try:
                 for p in self.roster:
@@ -2179,6 +2251,7 @@ class Probe:
                                      'sortKeys': sort_keys,
                                      'rosterOrder': roster_order,
                                      'shipNames': ship_names,
+                                     'bots': bots,
                                      'self': {'name': self_name, 'realm': self_realm},
                                      'identity': identity,
                                      # The aim verdict every tick (empty name

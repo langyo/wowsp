@@ -26,6 +26,7 @@ import {
   type CareerStamp,
   type StampKind,
 } from "@/utils/winrate";
+import { AI_NAME } from "@/utils/aiNames";
 
 /** Wire shape of one `lookup_players_stats_batch` row (the fields the card
  *  reads; the rest of the row is ignored here). */
@@ -70,6 +71,18 @@ export interface AimComposition {
 export interface SealLineOptions {
   disabled: ReadonlySet<StampKind>;
   custom: Partial<Record<StampKind, string>>;
+}
+
+/** The aim verdict's display name: the raw name when the target is a
+ *  resolvable player, "" when it is judged AI. Two judgment layers,
+ *  either suffices: the shared AI-name styles (colon-wrapped bots,
+ *  `IDS_*` / `#` scripted units) and the probe's per-battle bot list —
+ *  the game's own `isBot` records, which catch the event PvEvP bots
+ *  that sail under NORMAL nicknames no style can match. A "" verdict
+ *  renders NO card at all: an AI target has nothing worth showing, not
+ *  even a bare-headed name. */
+export function aimDisplayName(raw: string, bots: ReadonlySet<string>): string {
+  return raw && (AI_NAME.test(raw) || bots.has(raw)) ? "" : raw;
 }
 
 /** kind → Chinese label, copied verbatim from the table page's STAMP_TEXT

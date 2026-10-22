@@ -62,6 +62,24 @@ static LAST_ARENA_MTIME: std::sync::atomic::AtomicI64 = std::sync::atomic::Atomi
 /// coordinates (see `commands::overlay::calibration::BattleClass`).
 static LAST_BATTLE_PVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Whether the most recently seen battle's ENEMY side exists and reads
+/// entirely AI (the bot-nickname families [`replay::is_bot_nickname]
+/// matches, plus the WG arena convention that bot rows carry negative
+/// ids): plain co-op, the asymmetric fills (enemy = higher-tier bots),
+/// operations (scripted waves), event modes whose enemy is all bots
+/// under normal nicknames, and custom rooms deliberately set
+/// humans-vs-bots. Read by the overlay watcher to keep the aim card's
+/// window down for the battle's WHOLE duration — every lockable target
+/// there is AI, so the card has nobody resolvable to show. Kept SEPARATE
+/// from [`LAST_BATTLE_PVE`] deliberately: that flag also keys the anchor
+/// calibration's battle class, and an asymmetric battle fields a two-team
+/// Tab table whose anchor belongs in the PvP slot — only the aim card
+/// rides this one. Mode-name-independent on purpose (the roster decides,
+/// not the matchGroup string): the mixed event PvEvP rosters — bots AND
+/// humans on the enemy side — keep the window up, and the page-side
+/// per-aim bot gate (telemetry `bots`) filters their AI targets by name.
+static LAST_ENEMY_ALL_AI: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// mtime (unix secs) of the freshest roster `read_temp_arena_info` ever
 /// SERVED, per replays dir (normalized install-path key) — the read gate's
 /// regression rule. Per-DIR, not the global [`LAST_ARENA_MTIME`]: the /live
@@ -207,6 +225,23 @@ fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime)
         operation || info.match_group.as_deref() == Some("pve"),
         std::sync::atomic::Ordering::Relaxed,
     );
+    // The aim card's whole-battle gate (see LAST_ENEMY_ALL_AI): decided
+    // off the RAW enemy rows, not the operation-folded count above — an
+    // operation's scripted enemy side is all-AI too, and a mixed PvEvP
+    // roster keeps at least one human enemy row. Two bot markers, either
+    // suffices: the nickname styles and the WG arena convention that bot
+    // rows carry NEGATIVE ids (the probe synthesis assigns isBot rows a
+    // negative placeholder off their position, so the same holds on the
+    // file-less path; human accountDBIDs are positive and unknown rows
+    // read 0 — strictly excluded). The id half is what catches an event
+    // mode whose entire enemy side is bots under NORMAL nicknames.
+    let enemy_all_ai = info.vehicles.iter().any(|v| v.relation >= 2)
+        && info
+            .vehicles
+            .iter()
+            .filter(|v| v.relation >= 2)
+            .all(|v| replay::is_bot_nickname(&v.name) || v.id < 0);
+    LAST_ENEMY_ALL_AI.store(enemy_all_ai, std::sync::atomic::Ordering::Relaxed);
     LAST_ARENA_MTIME.store(stamp, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -237,6 +272,13 @@ pub(crate) fn last_arena_stamp() -> i64 {
 /// anchor calibration's battle-class slot.
 pub(crate) fn last_battle_pve() -> bool {
     LAST_BATTLE_PVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether the most recently recorded battle's enemy side reads entirely
+/// AI (see [`LAST_ENEMY_ALL_AI`]). Read by the overlay watcher each tick
+/// to keep the aim card's window down for the battle's whole duration.
+pub(crate) fn last_enemy_all_ai() -> bool {
+    LAST_ENEMY_ALL_AI.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Cheap synchronous re-check of the arena file, used by the overlay Tab
@@ -1071,6 +1113,128 @@ mod tests {
         // after this one).
         LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
         LAST_BATTLE_PVE.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The aim card's whole-battle suppression flag (`LAST_ENEMY_ALL_AI`)
+    /// is decided off the ENEMY ROSTER (nickname styles + the WG negative
+    /// id convention), not the mode name, and stays
+    /// independent of [`LAST_BATTLE_PVE`] (which the anchor calibration
+    /// also keys on): an all-AI enemy side suppresses the card even on a
+    /// pvp-family descriptor (the asymmetric fills and the custom rooms
+    /// vs bots), while a MIXED enemy side (event PvEvP: bots AND humans)
+    /// keeps the window up — the page-side per-aim gate filters those AI
+    /// targets by name instead.
+    #[test]
+    fn enemy_all_ai_flag_follows_the_enemy_roster_not_the_mode_name() {
+        let _globals = GLOBALS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_BATTLE_PVE.store(false, std::sync::atomic::Ordering::Relaxed);
+        LAST_ENEMY_ALL_AI.store(false, std::sync::atomic::Ordering::Relaxed);
+        let vehicle = |id: i64, name: &str, relation: i64| wowsp_tauri_shared::VehicleEntry {
+            id,
+            name: name.to_string(),
+            relation,
+            ship_id: 4_180_000_000 + id.abs(),
+            ship_name: None,
+        };
+        let info_of = |match_group: &str, vehicles: Vec<wowsp_tauri_shared::VehicleEntry>| {
+            wowsp_tauri_shared::ArenaInfo {
+                match_group: Some(match_group.into()),
+                date_time: None,
+                map_name: None,
+                scenario: None,
+                event_type: None,
+                bot_count: vehicles
+                    .iter()
+                    .filter(|v| replay::is_bot_nickname(&v.name))
+                    .count() as u32,
+                scripted_unit_count: 0,
+                vehicles,
+                raw: serde_json::Value::Null,
+            }
+        };
+
+        // The asymmetric/room-vs-bots shape: humans allied, the ENTIRE
+        // enemy side `:Name:` bots — on a pvp-family descriptor, so only
+        // the roster can say "nobody resolvable to show".
+        let mut bots_vs_humans = vec![vehicle(1, "langyo", 0), vehicle(2, "teammate", 1)];
+        for id in 3..=8 {
+            bots_vs_humans.push(vehicle(id, &format!(":Bot{id:02}:"), 2));
+        }
+        note_arena_seen(&info_of("pvp", bots_vs_humans), SystemTime::UNIX_EPOCH);
+        assert!(
+            last_enemy_all_ai(),
+            "an all-AI enemy side must suppress the aim card"
+        );
+        assert!(
+            !last_battle_pve(),
+            "a pvp-family descriptor stays PvP-class for the calibration"
+        );
+
+        // The mixed event PvEvP shape: one human among the enemy bots —
+        // the window stays up and the page-side gate does the filtering.
+        // The bot row rides a NEGATIVE id (the WG arena convention) with
+        // a normal nickname: the id marker alone must not flip the flag
+        // while a human enemy row exists.
+        let mut mixed = vec![vehicle(1, "langyo", 0), vehicle(2, "teammate", 1)];
+        mixed.push(vehicle(-3, "EventBot_normal_name", 2));
+        mixed.push(vehicle(4, "humanFoe", 2));
+        note_arena_seen(&info_of("pve_event", mixed), SystemTime::UNIX_EPOCH);
+        assert!(
+            !last_enemy_all_ai(),
+            "a human enemy keeps the aim card's window up"
+        );
+
+        // The all-bot event shape: the enemy side is bots under NORMAL
+        // nicknames — only their negative ids mark them, and the whole
+        // battle still has nobody resolvable to show.
+        let normal_named_bots = info_of(
+            "pve_event",
+            vec![
+                vehicle(1, "langyo", 0),
+                vehicle(2, "teammate", 1),
+                vehicle(-3, "EventBot_alpha", 2),
+                vehicle(-4, "EventBot_beta", 2),
+            ],
+        );
+        note_arena_seen(&normal_named_bots, SystemTime::UNIX_EPOCH);
+        assert!(
+            last_enemy_all_ai(),
+            "an all-bot enemy side under normal nicknames suppresses via the negative ids"
+        );
+
+        // Plain PvP: nothing to suppress.
+        let pvp = info_of(
+            "pvp",
+            vec![
+                vehicle(1, "langyo", 0),
+                vehicle(2, "teammate", 1),
+                vehicle(3, "foe", 2),
+            ],
+        );
+        note_arena_seen(&pvp, SystemTime::UNIX_EPOCH);
+        assert!(!last_enemy_all_ai(), "random battles field human enemies");
+
+        // An operation's scripted enemy side is all-AI too (the raw
+        // relation rows decide, not the folded enemy COUNT).
+        let op = info_of(
+            "pve",
+            vec![
+                vehicle(1, "langyo", 0),
+                vehicle(-1, "IDS_OP_02_03_AT_ATTAKA_US_A1", 2),
+            ],
+        );
+        note_arena_seen(&op, SystemTime::UNIX_EPOCH);
+        assert!(last_enemy_all_ai(), "scripted operation enemies are all-AI");
+
+        // Restore the process-globals (the sibling tests' convention).
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_BATTLE_PVE.store(false, std::sync::atomic::Ordering::Relaxed);
+        LAST_ENEMY_ALL_AI.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// find_latest_arena_info picks the only tempArenaInfo.json in a dir tree.
