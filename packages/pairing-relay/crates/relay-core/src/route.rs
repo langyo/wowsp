@@ -68,6 +68,10 @@ pub enum Route<'a> {
     ErpLogout,
     /// POST /api/feedback/submit — multipart form target.
     FeedbackSubmit,
+    /// GET /api/feedback/config — the public page config the worker used
+    /// to server-inject into its embedded HTML (Turnstile sitekey, latest
+    /// version prefill). The hikari console page fetches it at boot.
+    FeedbackConfig,
     /// GET /api/feedback/list — records JSON for the console / agents.
     FeedbackList,
     /// GET /api/feedback/history?token=… — public lookup of one submitter's
@@ -152,6 +156,7 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         "/feedback" => return Route::FeedbackPage,
         "/erp" => return Route::ErpPage,
         "/api/feedback/submit" => return Route::FeedbackSubmit,
+        "/api/feedback/config" => return Route::FeedbackConfig,
         "/api/feedback/list" => return Route::FeedbackList,
         "/api/feedback/history" => {
             return Route::FeedbackHistory {
@@ -278,6 +283,7 @@ mod tests {
         // Unknown erp subpaths stay NotFound.
         assert_eq!(classify("/api/erp/other", ""), Route::NotFound);
         assert_eq!(classify("/api/feedback/submit", ""), Route::FeedbackSubmit);
+        assert_eq!(classify("/api/feedback/config", ""), Route::FeedbackConfig);
         assert_eq!(classify("/api/feedback/list", ""), Route::FeedbackList);
         assert_eq!(
             classify("/api/feedback/history", "token=0f0f"),

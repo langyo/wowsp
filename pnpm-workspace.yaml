@@ -3,6 +3,7 @@ packages:
   - 'packages/website'
   - 'packages/holo'
   - 'packages/pairing-relay'
+  - 'packages/console'
 allowBuilds:
   '@parcel/watcher': true
   esbuild: true

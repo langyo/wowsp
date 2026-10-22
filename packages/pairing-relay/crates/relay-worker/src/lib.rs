@@ -98,6 +98,7 @@ async fn route(req: Request, env: Env) -> Result<Response> {
             feedback::page_erp(&origin)
         },
         Route::FeedbackSubmit => feedback::handle_submit(req, env).await,
+        Route::FeedbackConfig => feedback::handle_config(req, &env),
         Route::FeedbackList => feedback::handle_list(req, env).await,
         Route::FeedbackHistory { token: _ } => feedback::handle_history(req, env).await,
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,

@@ -91,6 +91,29 @@ fn html(body: String) -> Result<Response> {
 
 // ── submit ─────────────────────────────────────────────────────────────
 
+/// GET /api/feedback/config — the public values the worker used to
+/// server-inject into its embedded page HTML: the Turnstile sitekey
+/// (public by design) and the version-combobox prefill. The hikari
+/// console page (packages/console, served by the [assets] layer) fetches
+/// this at boot; a missing var answers empty-string, never an error.
+pub fn handle_config(req: Request, env: &Env) -> Result<Response> {
+    if req.method() != Method::Get {
+        return err(405, "method_not_allowed");
+    }
+    let var = |name: &str| {
+        env.var(name)
+            .map(|v| v.to_string())
+            .unwrap_or_default()
+    };
+    let mut resp = Response::from_json(&json!({
+        "sitekey": var("TURNSTILE_SITEKEY"),
+        "latestVersion": var("FEEDBACK_LATEST_VERSION"),
+    }))?;
+    resp.headers_mut()
+        .set("Cache-Control", "public, max-age=300")?;
+    Ok(resp)
+}
+
 /// POST /api/feedback/submit — multipart form target:
 /// normalize → Turnstile → rate limit → Bitable record (+ attachment).
 pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {

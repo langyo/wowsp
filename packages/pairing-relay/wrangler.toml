@@ -54,15 +54,15 @@ routes = [
 #
 # not_found_handling: unknown paths serve the root index.html shell.
 # With compatibility_date ≥ 2025-04-01, browser NAVIGATION requests
-# resolve through the assets layer directly — which is exactly why the
-# dynamic paths MUST sit in run_worker_first: a navigation to /feedback
-# or /erp would otherwise get the SPA shell instead of the worker's
-# page. run_worker_first patterns are the parity of the old zone routes
-# wowsp.langyo.xyz/{api,feedback,erp}*.
+# resolve through the assets layer directly. /feedback and /erp are now
+# REAL hikari console pages (packages/console → dist/console, copied to
+# the assets root by scripts/build_worker_site.py) — they serve from the
+# assets layer like any static file, so only the pairing API stays in
+# front of it.
 [assets]
 directory = "./assets"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api*", "/feedback*", "/erp*"]
+run_worker_first = ["/api*"]
 # The ASSETS binding lets the worker fetch its own asset files by path
 # (crates/relay-worker/src/digests.rs proxies /api/digests/** through
 # it behind an edge cache — the digest docs are static files under

@@ -1,0 +1,8 @@
+// The console's hikari style base — GRANULAR sheets only, per the repo's
+// cross-repo dependency rule (AGENTS §6): the admin surface is exactly
+// what shittim-chest-style consoles ride (channels → scale → scrollbar →
+// admin-tokens; no aggregate `styles` entry, no vendored copies).
+@use "@celestia-island/hikari/styles/theme/channels.scss";
+@use "@celestia-island/hikari/styles/theme/scale.scss";
+@use "@celestia-island/hikari/styles/theme/scrollbar.scss";
+@use "@celestia-island/hikari/styles/admin-tokens.scss";
