@@ -256,10 +256,12 @@ export default defineComponent({
         .map((k) => techTreeCardIcon(k))
         .filter((u): u is string => u !== null)
         .slice(0, 3);
+      const startLabel = labelOf(startNode.shipId);
+      const endLabel = labelOf(endNode.shipId);
       return JSON.stringify({
         title: techTreeFeatureTitle() || branchName,
         badge: tierToRoman(startNode.tier),
-        subtitle: `${labelOf(startNode.shipId)} — ${labelOf(endNode.shipId)}`,
+        subtitle: startLabel === endLabel ? startLabel : `${startLabel} — ${endLabel}`,
         icons,
         rows,
         note: techTreeFeatureNote(),
