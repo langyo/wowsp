@@ -25,8 +25,10 @@
 //!   call is skipped. Delete the secret after smoking.
 
 use relay_core::feedback::{
-    self, BASE_NAME, STATUSES, attachment_update_body, normalize, rate_keys, rate_limits,
-    record_fields, table_schema, turnstile_passed, turnstile_verify_body,
+    self, BASE_NAME, LOOKUP_ROW_TTL_SECS, LookupRow, STATUSES, attachment_update_body,
+    lookup_kv_key, lookup_token_hash, normalize, rate_keys, rate_limits, record_fields,
+    resolve_lookup_token, table_schema, turnstile_passed, turnstile_verify_body,
+    valid_lookup_token,
 };
 use relay_core::multipart;
 use serde::{Deserialize, Serialize};
@@ -205,6 +207,22 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
         kv.put(key, count)?.expiration_ttl(ttl).execute().await?;
     }
 
+    // 一次性查询凭证（audit M-7）：32 字节 CSPRNG，只在本次响应里下发；
+    // KV 只落 SHA-256（fbtok:{hash} → 规范化联系方式 + 哈希），公开历史
+    // 查询与 QQ 机器人的「绑定」都凭哈希常时比对换取联系方式。行先于
+    // Bitable 记录落库：凭证在而记录未至顶多是「绑定成功但暂无记录」，
+    // 反过来（记录有了、凭证没了）用户却无从查询。
+    let lookup_token = mint_lookup_token()?;
+    let lookup_hash = lookup_token_hash(&lookup_token);
+    let row = LookupRow {
+        contact: relay_core::feedback::normalize_contact(&sub.contact),
+        hash: lookup_hash,
+    };
+    kv.put(&lookup_kv_key(&row.hash), serde_json::to_string(&row)?)?
+        .expiration_ttl(LOOKUP_ROW_TTL_SECS)
+        .execute()
+        .await?;
+
     // Feishu: record (+ attachment upload, then attach to the record).
     let token = feishu_token(&env).await.map_err(|e| e.to_string())?;
     let ids = ensure_base(&env, &token).await.map_err(|e| e.to_string())?;
@@ -286,7 +304,21 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     ok(json!({
         "ok": true,
         "record_url": record_url(&ids, &record_id),
+        "lookup_token": lookup_token,
     }))
+}
+
+/// 32 字节 CSPRNG（workerd 的 `crypto.getRandomValues`）→ 64 位小写
+/// 十六进制——查询凭证的线上形态。
+fn mint_lookup_token() -> Result<String> {
+    let mut raw = [0u8; relay_core::feedback::LOOKUP_TOKEN_BYTES];
+    getrandom::fill(&mut raw).map_err(|_| "rng unavailable")?;
+    let mut out = String::with_capacity(raw.len() * 2);
+    for b in raw {
+        out.push(char::from_digit(u32::from(b >> 4), 16).unwrap_or('0'));
+        out.push(char::from_digit(u32::from(b & 0xf), 16).unwrap_or('0'));
+    }
+    Ok(out)
 }
 
 // ── admin surface ──────────────────────────────────────────────────────
@@ -377,22 +409,27 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
     }))
 }
 
-/// GET /api/feedback/history?contact=… — PUBLIC lookup (the submitter's
-/// own progress tracker). Rate-limited per IP; rows carry only
-/// time/status/description-snippet/PR-link — no attachments, no
-/// record urls, snippet-capped descriptions (limits cross-contact
-/// disclosure through enumeration).
+/// GET /api/feedback/history?token=… — PUBLIC lookup (the submitter's
+/// own progress tracker, audit M-7): the one-time lookup token shown at
+/// submit time is the only key. Its SHA-256 resolves to the submission's
+/// canonical contact through a KV row (constant-time compared), and the
+/// item shape (time/status/description-snippet/PR-link) is unchanged. The
+/// legacy `?contact=` spelling is retired — the contact is the
+/// maintainer's business, never a lookup key. Rate-limited per IP; wrong
+/// tokens count against the same bucket.
 pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
     let query = req.url()?.query().unwrap_or("").to_string();
-    let Some(contact) = relay_core::route::query_get(&query, "contact")
-        .map(|c| relay_core::feedback::normalize_contact(c))
-        .filter(|c| !c.is_empty() && c.len() <= relay_core::feedback::CONTACT_MAX)
+    let Some(token) = relay_core::route::query_get(&query, "token")
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .filter(|t| valid_lookup_token(t))
     else {
         return err(400, "bad_request");
     };
+    // 限流在凭证解析之前：错误凭证与命中共用同一个 IP 小时桶。
     let kv = env.kv(KV)?;
     let key = relay_core::feedback::history_rate_key(&client_ip(&req), now_ms());
     let count: u64 = kv.get(&key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
@@ -404,13 +441,27 @@ pub async fn handle_history(req: Request, env: Env) -> Result<Response> {
         .execute()
         .await?;
 
+    // 凭证 → 哈希 → KV 行 → 常时比对（同会话 MAC 的卫生规则）→ 联系方式。
+    let hash = lookup_token_hash(&token);
+    let row: Option<Value> = kv
+        .get(&lookup_kv_key(&hash))
+        .json::<Value>()
+        .await
+        .ok()
+        .flatten();
+    let Some(contact) = resolve_lookup_token(row.as_ref(), &token) else {
+        // 未知凭证与「尚无记录」同形：一律空列表，不区分存在性。
+        return ok(json!({ "ok": true, "items": [] }));
+    };
     let items = history_records(&env, &contact).await?;
 
     ok(json!({ "ok": true, "items": items }))
 }
 
 /// One contact's newest submissions (time/status/description/pr only) —
-/// shared by the public history endpoint and the QQ bot's 查询 command.
+/// shared by the public history endpoint (the contact arrives resolved
+/// from the lookup token's KV row, never from the request) and the QQ
+/// bot's 查询 command.
 pub async fn history_records(env: &Env, contact: &str) -> Result<Vec<Value>> {
     let token = feishu_token(env).await.map_err(|e| e.to_string())?;
     let ids = ensure_base(env, &token).await.map_err(|e| e.to_string())?;

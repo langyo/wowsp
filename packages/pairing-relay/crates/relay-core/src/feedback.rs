@@ -1,11 +1,17 @@
 //! Feedback pipeline policy: validation limits, Bitable field mapping,
-//! Turnstile wire shapes, rate-limit key layout, and the two embedded
-//! pages (`/feedback` form + `/erp` console). Pure and host-testable —
-//! the worker crate supplies fetch/KV/clock I/O only.
+//! Turnstile wire shapes, rate-limit key layout, one-time lookup tokens
+//! (issued at submit, verified by hash — the contact is never a lookup
+//! key), and the two embedded pages (`/feedback` form + `/erp` console).
+//! Pure and host-testable — the worker crate supplies fetch/KV/clock I/O
+//! only.
 
 use std::sync::OnceLock;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
+
+use crate::erp::ct_eq;
 
 // ── Bitable schema (field names as created in the 反馈 table) ──────────
 
@@ -73,8 +79,8 @@ pub const RATE_CONTACT_PER_DAY: u64 = 20;
 pub const RATE_GLOBAL_PER_DAY: u64 = 300;
 /// History lookups per IP per hour (the lookup endpoint is public).
 pub const RATE_HISTORY_PER_HOUR: u64 = 30;
-/// Description snippet length in public history rows (limits cross-contact
-/// information disclosure through the lookup endpoint).
+/// Description snippet length in public history rows (limits what a
+/// leaked lookup token exposes through the lookup endpoint).
 pub const HISTORY_SNIPPET: usize = 120;
 
 /// The kind of an attachment, by extension.
@@ -225,8 +231,9 @@ pub fn record_fields(sub: &Submission, now_ms: i64) -> Map<String, Value> {
     let mut m = Map::new();
     m.insert(F_DESC.into(), json!(sub.description));
     if !sub.contact.is_empty() {
-        // Store the canonical lookup form so handle_history's exact-match
-        // filter on the normalized query finds mixed-case/spacey originals.
+        // Store the canonical form: it is the maintainer's business AND the
+        // exact string the bot's 查询 filter (and the token-resolved
+        // history lookup) matches against.
         m.insert(F_CONTACT.into(), json!(normalize_contact(&sub.contact)));
     }
     if !sub.version.is_empty() {
@@ -358,6 +365,76 @@ pub fn normalize_contact(contact: &str) -> String {
 /// History-lookup rate key (per IP per hour).
 pub fn history_rate_key(ip: &str, now_ms: i64) -> String {
     format!("rl:hist:{ip}:{}", now_ms.div_euclid(3_600_000))
+}
+
+// ── lookup tokens (audit M-7) ──────────────────────────────────────────
+
+/// The submitter's progress-lookup credential: 32 bytes of CSPRNG, hex —
+/// 64 chars. It is shown ONCE on the success page; only its SHA-256 is
+/// ever stored. The contact stays a maintainer-only field (Bitable /
+/// console) and is never a lookup key again.
+pub const LOOKUP_TOKEN_BYTES: usize = 32;
+/// Hex length of a lookup token.
+pub const LOOKUP_TOKEN_LEN: usize = LOOKUP_TOKEN_BYTES * 2;
+/// KV key prefix for the token-hash rows (`fbtok:{hash}`) in FEEDBACK_KV.
+pub const LOOKUP_KV_PREFIX: &str = "fbtok:";
+/// The `fbtok:*` rows outlive the review cycle — one year, Workers KV's
+/// maximum `expiration_ttl` (the token dies with its row).
+pub const LOOKUP_ROW_TTL_SECS: u64 = 31_536_000;
+
+/// Shape gate for a presented lookup token: exactly 64 hex chars (either
+/// case — callers normalize to lowercase before hashing).
+pub fn valid_lookup_token(token: &str) -> bool {
+    token.len() == LOOKUP_TOKEN_LEN && token.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// sha256hex of a lookup token — the only form ever persisted (the token
+/// itself exists in exactly one place: the submit response the submitter
+/// saw). Same digest shape as `replay::token_hash`.
+pub fn lookup_token_hash(token: &str) -> String {
+    let digest = Sha256::digest(token.as_bytes());
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        out.push(char::from_digit(u32::from(b >> 4), 16).unwrap_or('0'));
+        out.push(char::from_digit(u32::from(b & 0xf), 16).unwrap_or('0'));
+    }
+    out
+}
+
+/// KV key for a stored token hash (`fbtok:{hash}`).
+pub fn lookup_kv_key(hash: &str) -> String {
+    format!("{LOOKUP_KV_PREFIX}{hash}")
+}
+
+/// The KV row under [`lookup_kv_key`]: the submission's canonical contact
+/// (the exact string the Bitable's 联系方式 field carries) plus the stored
+/// hash. The token itself is never persisted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LookupRow {
+    pub contact: String,
+    pub hash: String,
+}
+
+/// Resolve a presented lookup token against a fetched `fbtok:*` KV row:
+/// shape-gate the token, hash it, and constant-time compare against the
+/// stored hash (same hygiene rule as the session MAC) before handing out
+/// the row's canonical contact. `None` on any mismatch — unknown tokens,
+/// malformed rows and contact-less submissions all refuse identically
+/// (the public endpoint answers an empty item list either way, so nothing
+/// distinguishes a live token from a dead one). Shared by the history
+/// endpoint and the QQ bot's 绑定 command.
+pub fn resolve_lookup_token(row: Option<&Value>, token: &str) -> Option<String> {
+    let row = row?;
+    let contact = row.get("contact").and_then(Value::as_str)?;
+    let stored = row.get("hash").and_then(Value::as_str)?;
+    if !valid_lookup_token(token) {
+        return None;
+    }
+    let normalized = token.to_ascii_lowercase();
+    if !ct_eq(&lookup_token_hash(&normalized), stored) {
+        return None;
+    }
+    Some(contact.to_string()).filter(|c| !c.is_empty())
 }
 
 /// Percent-encode a query/component value (RFC 3986 unreserved kept).
@@ -891,6 +968,18 @@ textarea::placeholder, input::placeholder {{ color: rgb(var(--color-muted)); opa
   border: 1px solid color-mix(in srgb, rgb(var(--color-warning)) 20%, transparent); }}
 #msg {{ margin-top: var(--space-12); white-space: pre-wrap; font-size: var(--text-sm); }}
 #msg.ok {{ color: rgb(var(--color-success)); }} #msg.err {{ color: rgb(var(--color-error)); }}
+/* ── 查询凭证展示块（提交成功后一次性下发，仅此一次） ────────────────── */
+#tokenReveal {{ margin-top: var(--space-12); padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, rgb(var(--color-success)) 30%, transparent);
+  background: color-mix(in srgb, rgb(var(--color-success)) 8%, transparent); }}
+#tokenReveal[hidden] {{ display: none; }}
+.tk-title {{ margin: 0 0 var(--space-8); font-size: var(--text-sm); font-weight: 600; }}
+.tk-row {{ display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap; }}
+.tk-row code {{ flex: 1; min-width: 0; font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm); word-break: break-all; user-select: all; }}
+.tk-help {{ margin: var(--space-8) 0 0; font-size: var(--text-xs); line-height: 1.6;
+  color: rgb(var(--color-muted)); }}
 a {{ color: rgb(var(--color-primary)); }}
 .media-row {{ display: flex; gap: var(--space-8); margin-top: var(--space-10);
   flex-wrap: wrap; align-items: center; }}
@@ -1090,13 +1179,21 @@ a {{ color: rgb(var(--color-primary)); }}
     {turnstile_widget}
     <button type="submit" class="btn" id="submit"{submit_disabled} data-i18n="submit"></button>
     <p id="msg" role="status"></p>
+    <div id="tokenReveal" hidden>
+      <p class="tk-title" data-i18n="tokenTitle"></p>
+      <div class="tk-row">
+        <code id="tokenValue"></code>
+        <button type="button" class="btn second" id="tokenCopy" data-i18n="tokenCopy"></button>
+      </div>
+      <p class="tk-help" data-i18n="tokenHelp"></p>
+    </div>
   </form>
   <section class="privacy" data-i18n="privacy"></section>
 </section>
 <section class="view" id="viewHistory" hidden>
   <h2 class="view-title" data-i18n="historyTitle"></h2>
   <div class="hist-row">
-    <input type="text" id="histContact" class="field" data-i18n-placeholder="historyContact">
+    <input type="text" id="histToken" class="field" data-i18n-placeholder="historyToken">
     <button type="button" class="btn" id="histGo" data-i18n="historyGo"></button>
   </div>
   <div id="histResult"></div>
@@ -1664,6 +1761,34 @@ a {{ color: rgb(var(--color-primary)); }}
     if (recorder) recorder.stop();
   }};
 
+  // ── 一次性查询凭证展示（提交成功后） ──────────────────────────────────
+  var tokenReveal = document.getElementById("tokenReveal");
+  var tokenValue = document.getElementById("tokenValue");
+  function showToken(tok) {{
+    tokenValue.textContent = tok;
+    tokenReveal.hidden = false;
+  }}
+  document.getElementById("tokenCopy").onclick = function () {{
+    var tok = tokenValue.textContent;
+    if (!tok) return;
+    var btn = document.getElementById("tokenCopy");
+    var done = function () {{
+      btn.textContent = t("tokenCopied");
+      setTimeout(function () {{ btn.textContent = t("tokenCopy"); }}, 1500);
+    }};
+    if (navigator.clipboard && navigator.clipboard.writeText) {{
+      navigator.clipboard.writeText(tok).then(done, function () {{}});
+    }} else {{
+      // 非安全上下文（http 预览等）的兜底：隐藏 textarea + execCommand。
+      var ta = document.createElement("textarea");
+      ta.value = tok;
+      document.body.appendChild(ta);
+      ta.select();
+      try {{ document.execCommand("copy"); done(); }} catch (e) {{ /* 旧上下文 */ }}
+      document.body.removeChild(ta);
+    }}
+  }};
+
   // ── submit ────────────────────────────────────────────────────────────
   var form = document.getElementById("f"), msg = document.getElementById("msg"), btn = document.getElementById("submit");
   form.addEventListener("submit", function (ev) {{
@@ -1675,6 +1800,17 @@ a {{ color: rgb(var(--color-primary)); }}
       .then(function (r) {{ return r.json().then(function (j) {{ return {{ status: r.status, j: j }}; }}); }})
       .then(function (res) {{
         if (res.status >= 200 && res.status < 300 && res.j.ok) {{
+          // 一次性查询凭证：先按本次提交的联系方式存进 localStorage
+          // （历史记录视图自动回填），再在按钮下方醒目展示——仅此一次。
+          var tok = res.j.lookup_token || "";
+          var cval = contact.value.trim();
+          if (tok) {{
+            try {{
+              localStorage.setItem("wowsp_fb_token", tok);
+              if (cval) localStorage.setItem("wowsp_fb_token:" + cval, tok);
+            }} catch (e) {{ /* 隐私模式等存储失败：展示块照常工作 */ }}
+            showToken(tok);
+          }}
           msg.className = "ok"; msg.textContent = t("ok");
           form.reset();
           document.getElementById("version").value = pre.version;
@@ -1703,20 +1839,26 @@ a {{ color: rgb(var(--color-primary)); }}
       .finally(function () {{ btn.disabled = false; }});
   }});
 
-  // ── history lookup ───────────────────────────────────────────────────
-  var histContact = document.getElementById("histContact");
+  // ── history lookup — by one-time lookup token, never by contact ──────
+  var histToken = document.getElementById("histToken");
   var histResult = document.getElementById("histResult");
-  histContact.value = contact.value;
+  // 自动回填：优先取当前联系方式名下保存的凭证，否则取最近一次的。
+  function savedToken() {{
+    var c = (localStorage.getItem("wowsp_fb_contact") || "").trim();
+    var keyed = c ? localStorage.getItem("wowsp_fb_token:" + c) : null;
+    return keyed || localStorage.getItem("wowsp_fb_token") || "";
+  }}
+  histToken.value = q.get("token") || savedToken();
   function esc(s) {{
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {{
       return {{ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }}[c];
     }});
   }}
   function loadHistory() {{
-    var c = histContact.value.trim();
-    if (!c) return;
+    var tok = histToken.value.trim();
+    if (!tok) return;
     histResult.textContent = "...";
-    fetch("{base_url}/api/feedback/history?contact=" + encodeURIComponent(c))
+    fetch("{base_url}/api/feedback/history?token=" + encodeURIComponent(tok))
       .then(function (r) {{ return r.json(); }})
       .then(function (j) {{
         if (!j.ok) {{ histResult.textContent = t("historyFailed"); return; }}
@@ -1742,22 +1884,27 @@ a {{ color: rgb(var(--color-primary)); }}
       .catch(function () {{ histResult.textContent = t("historyFailed"); }});
   }}
   document.getElementById("histGo").onclick = loadHistory;
-  histContact.addEventListener("keydown", function (ev) {{ if (ev.key === "Enter") loadHistory(); }});
+  histToken.addEventListener("keydown", function (ev) {{ if (ev.key === "Enter") loadHistory(); }});
   // ── sidebar views: the two nav entries swap form / history panes ─────
   var navForm = document.getElementById("navForm");
   var navHistory = document.getElementById("navHistory");
   function switchView(v) {{
     document.getElementById("viewForm").hidden = v !== "form";
     document.getElementById("viewHistory").hidden = v !== "history";
-    if (v === "form") {{ navForm.setAttribute("data-active", ""); navHistory.removeAttribute("data-active"); }}
-    else {{ navHistory.setAttribute("data-active", ""); navForm.removeAttribute("data-active"); }}
+    if (v === "form") {{
+      navForm.setAttribute("data-active", ""); navHistory.removeAttribute("data-active");
+    }} else {{
+      navHistory.setAttribute("data-active", ""); navForm.removeAttribute("data-active");
+      // 进历史视图时若输入框还空着，回填保存过的凭证。
+      if (!histToken.value) histToken.value = savedToken();
+    }}
   }}
   navForm.addEventListener("click", function () {{ switchView("form"); }});
   navHistory.addEventListener("click", function () {{ switchView("history"); }});
-  if (q.get("focus") === "history" || q.get("contact")) {{
+  if (q.get("focus") === "history" || q.get("token")) {{
     switchView("history");
-    if (q.get("contact")) histContact.value = q.get("contact");
-    if (histContact.value) loadHistory();
+    if (q.get("token")) histToken.value = q.get("token");
+    if (histToken.value) loadHistory();
   }}
 }})();
 </script>
@@ -1938,6 +2085,109 @@ mod tests {
         let alt = rate_keys("2.2.2.2", "anon2", "qq 123@qq.com", 0);
         assert_eq!(with[2], alt[2]);
         assert_eq!(history_rate_key("1.1.1.1", 0), "rl:hist:1.1.1.1:0");
+    }
+
+    #[test]
+    fn lookup_tokens_shape_hash_and_kv_key() {
+        let tok = "a".repeat(LOOKUP_TOKEN_LEN);
+        assert_eq!(tok.len(), 64);
+        assert!(valid_lookup_token(&tok));
+        // Either hex case passes the shape gate (callers normalize before
+        // hashing); every other shape refuses.
+        assert!(valid_lookup_token(&tok.to_ascii_uppercase()));
+        assert!(!valid_lookup_token(&"a".repeat(63)));
+        assert!(!valid_lookup_token(&"a".repeat(65)));
+        assert!(!valid_lookup_token(&format!("{}g", "a".repeat(63))));
+        assert!(!valid_lookup_token(""));
+
+        // Reference vector: sha256("abc") = ba7816bf… (same digest shape
+        // replay::token_hash mints for upload tokens).
+        assert_eq!(
+            lookup_token_hash("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        // Deterministic, 64 lowercase hex chars, and the KV key wraps it.
+        let h = lookup_token_hash(&tok);
+        assert_eq!(h.len(), 64);
+        assert!(
+            h.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        );
+        assert_eq!(lookup_token_hash(&tok), h);
+        assert_eq!(lookup_kv_key(&h), format!("fbtok:{h}"));
+    }
+
+    #[test]
+    fn resolve_lookup_token_gates_shape_hash_and_contact() {
+        // The QQ bot's 绑定 and the public history lookup share this
+        // resolver: hit requires a well-formed token whose hash equals
+        // the stored one, plus a non-empty contact.
+        let token = format!("{}{}", "0f".repeat(31), "ab");
+        assert!(valid_lookup_token(&token));
+        let row = json!({
+            "contact": "10001",
+            "hash": lookup_token_hash(&token),
+        });
+        assert_eq!(
+            resolve_lookup_token(Some(&row), &token),
+            Some("10001".into())
+        );
+        // Uppercase presentation normalizes to the same hash.
+        assert_eq!(
+            resolve_lookup_token(Some(&row), &token.to_ascii_uppercase()),
+            Some("10001".into())
+        );
+        // Wrong token (well-formed but a different one) → miss.
+        let other = format!("{}{}", "aa".repeat(31), "bb");
+        assert_eq!(resolve_lookup_token(Some(&row), &other), None);
+        // Malformed token → refuse, never panic.
+        assert_eq!(resolve_lookup_token(Some(&row), &token[..63]), None);
+        assert_eq!(resolve_lookup_token(Some(&row), ""), None);
+        // Missing row / malformed row → refuse.
+        assert_eq!(resolve_lookup_token(None, &token), None);
+        assert_eq!(resolve_lookup_token(Some(&json!({})), &token), None);
+        assert_eq!(
+            resolve_lookup_token(Some(&json!({ "contact": "10001" })), &token),
+            None
+        );
+        // A contact-less submission's row binds/looks up nothing.
+        let anon_row = json!({
+            "contact": "",
+            "hash": lookup_token_hash(&token),
+        });
+        assert_eq!(resolve_lookup_token(Some(&anon_row), &token), None);
+    }
+
+    #[test]
+    fn feedback_page_swaps_history_to_token_lookup() {
+        let page = feedback_page(
+            Some("0x4AAAAsitekey"),
+            "https://wowsp.langyo.xyz",
+            TEST_VER,
+            TEST_UA,
+        );
+        // 历史记录视图整体换成凭证查询：输入框 id、占位文案键、请求参数。
+        assert!(
+            page.contains(r#"id="histToken" class="field" data-i18n-placeholder="historyToken""#)
+        );
+        assert!(page.contains("history?token="));
+        assert!(!page.contains("histContact"));
+        assert!(!page.contains("history?contact="));
+        // 旧的联系方式的页面参数（?contact= 自动打开历史）也随之退役。
+        assert!(!page.contains(r#"q.get("contact")"#));
+        // 提交成功后的凭证展示块：一次性下发、可复制、带唯一凭证说明。
+        assert!(page.contains(r#"id="tokenReveal" hidden"#));
+        assert!(page.contains(r#"id="tokenValue""#));
+        assert!(page.contains(r#"id="tokenCopy" data-i18n="tokenCopy""#));
+        assert!(page.contains(r#"data-i18n="tokenHelp""#));
+        assert!(page.contains(r#"data-i18n="tokenTitle""#));
+        // 响应里的凭证先按联系方式入 localStorage（历史视图回填），再展示。
+        assert!(page.contains("res.j.lookup_token"));
+        assert!(page.contains(r#"localStorage.setItem("wowsp_fb_token", tok)"#));
+        assert!(page.contains(r#"localStorage.setItem("wowsp_fb_token:" + cval, tok)"#));
+        assert!(page.contains("function savedToken()"));
+        // 进入历史视图时空输入框自动回填保存过的凭证。
+        assert!(page.contains("if (!histToken.value) histToken.value = savedToken();"));
     }
 
     #[test]

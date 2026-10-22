@@ -80,9 +80,7 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         },
 
         // ── release digests (see src/digests.rs) ────────────────────────
-        Route::Digests { channel, tag } => {
-            digests::handle(req, env, channel, tag).await
-        },
+        Route::Digests { channel, tag } => digests::handle(req, env, channel, tag).await,
 
         // ── feedback pipeline (see src/feedback.rs) ─────────────────────
         Route::FeedbackPage => {
@@ -101,7 +99,7 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         },
         Route::FeedbackSubmit => feedback::handle_submit(req, env).await,
         Route::FeedbackList => feedback::handle_list(req, env).await,
-        Route::FeedbackHistory { contact: _ } => feedback::handle_history(req, env).await,
+        Route::FeedbackHistory { token: _ } => feedback::handle_history(req, env).await,
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,
         Route::QqBotCallback => qqbot::handle_callback(req, &env).await,
         Route::Sponsors => sponsors::handle(req, env).await,

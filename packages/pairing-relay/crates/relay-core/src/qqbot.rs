@@ -5,9 +5,13 @@
 //!   官方互换接口**（unionid 也只是同主体跨应用标识）；
 //! - 普通 QQ 群不向机器人开放成员列表/按号查成员（频道接口需私域权限，
 //!   且返回的仍是平台 ID）。
-//!   因此机器人侧的“绑定”是**自报联系方式**：用户在群里 @机器人 或私聊
-//!   发送「绑定 QQ号」，回调（`GROUP_AT_MESSAGE_CREATE` /
-//!   `C2C_MESSAGE_CREATE`）给出对应 openid，与号码合并进绑定记录。
+//!   因此机器人侧的“绑定”以**查询凭证**证明所有权（audit M-7：凭号码
+//!   自报等于任何人都能绑定任何受害者）：用户在群里 @机器人 或私聊发送
+//!   「绑定 <查询凭证>」（提交成功页一次性下发的 64 位十六进制），回调
+//!   （`GROUP_AT_MESSAGE_CREATE` / `C2C_MESSAGE_CREATE`）给出对应
+//!   openid，worker 侧把凭证哈希后在 KV 行（`fbtok:*`，提交时落库）
+//!   常时比对出该反馈的联系方式，与发送者 openid 合并进绑定记录；凭证
+//!   形态不对或查不到时拒绑。
 //!   提交反馈不要求绑定——绑定只服务于回访通知与进度查询。
 //! - 配额：C2C 主动消息约 4 条/人/月、群主动消息约 4 条/群/月；带
 //!   `msg_id` 的被动回复（群 5 分钟/单聊 60 分钟窗口）不限量。主动
@@ -322,8 +326,9 @@ pub fn parse_callback(body: &Value) -> CallbackEvent {
 /// 群/私聊里用户可用的命令。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
-    /// 验证/绑定/verify/bind + 5–11 位 QQ 号（自报联系方式，用于
-    /// 回访通知与进度查询；提交反馈不要求绑定）。
+    /// 验证/绑定/verify/bind + 查询凭证（提交成功页一次性下发的 64 位
+    /// 十六进制；worker 侧哈希比对 `fbtok:*` KV 行换取该反馈的联系
+    /// 方式后绑定——不再接受自报 QQ 号）。
     Bind(String),
     /// 查询/进度/status：查自己反馈的处理状态（被动回复，不耗配额）。
     Status,
@@ -338,10 +343,15 @@ pub fn parse_command(content: &str) -> Command {
         .iter()
         .any(|w| lower.contains(w));
     if has_word {
-        // 收取消息里的全部数字：恰好是合法 QQ 号（5–11 位）即绑定。
-        let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
-        if contact_is_qq(&digits) {
-            return Command::Bind(digits);
+        // 绑定参数是提交成功页一次性下发的查询凭证（64 位十六进制，
+        // audit M-7）：在整条消息里找第一个形态合法的凭证；旧的自报
+        // QQ 号（5–11 位数字）不再构成绑定，连同其它形态不符一起落回
+        // 帮助文案。
+        if let Some(token) = text
+            .split_whitespace()
+            .find(|w| crate::feedback::valid_lookup_token(w))
+        {
+            return Command::Bind(token.to_string());
         }
     }
     if ["查询", "进度", "状态", "status"]
@@ -384,7 +394,13 @@ pub fn bind_ok_reply(contact: &str) -> String {
 
 /// 机器人被动回复的帮助文案。
 pub fn help_reply() -> &'static str {
-    "用法：发送“绑定 你的QQ号”接收回访通知（进群后 @机器人 发送同样有效）；发送“查询”查看自己的反馈进度。"
+    "用法：提交反馈后，发送“绑定 你的查询凭证”（提交成功页只显示一次）完成绑定，之后可发“查询”看处理进度并接收回访通知。"
+}
+
+/// 机器人被动回复的拒绑文案：消息里有绑定命令但没有能对上反馈的凭证
+/// （形态不对、哈希查不到或对应提交没留联系方式）。
+pub fn bind_unknown_reply() -> &'static str {
+    "未查到该查询凭证对应的反馈：请核对是否完整复制（凭证只在提交成功时显示一次）。"
 }
 
 /// 从绑定表（KV 全量 qqbind:* 值）反查 openid 所属的联系 QQ。
@@ -611,20 +627,68 @@ mod tests {
 
     #[test]
     fn commands() {
-        assert_eq!(parse_command("验证 123456"), Command::Bind("123456".into()));
+        // 绑定参数现在是查询凭证（64 位十六进制，audit M-7）。
+        let token = format!("{}{}", "0f".repeat(31), "ab");
         assert_eq!(
-            parse_command("/verify 654321"),
-            Command::Bind("654321".into())
+            parse_command(&format!("验证 {token}")),
+            Command::Bind(token.clone())
         );
-        assert_eq!(parse_command("绑定 000000"), Command::Bind("000000".into()));
-        assert_eq!(parse_command("/bind 10001"), Command::Bind("10001".into()));
-        // 4 位 / 12 位都不是合法 QQ 号，不触发绑定。
+        assert_eq!(
+            parse_command(&format!("/verify {token}")),
+            Command::Bind(token.clone())
+        );
+        assert_eq!(
+            parse_command(&format!("绑定 {token}")),
+            Command::Bind(token.clone())
+        );
+        assert_eq!(
+            parse_command(&format!("/bind {token}")),
+            Command::Bind(token.clone())
+        );
+        // 大写十六进制同样过形态闸门（worker 侧统一转小写再哈希）。
+        assert_eq!(
+            parse_command(&format!("绑定 {}", token.to_ascii_uppercase())),
+            Command::Bind(token.to_ascii_uppercase())
+        );
+        // 旧的自报 QQ 号（4 位 / 5–11 位 / 12 位数字）都不再触发绑定，
+        // 连同没有凭证的绑定词一起落回帮助文案。
+        assert_eq!(parse_command("绑定 000000"), Command::None);
+        assert_eq!(parse_command("/bind 10001"), Command::None);
         assert_eq!(parse_command("绑定 1234"), Command::None);
         assert_eq!(parse_command("绑定 123456789012"), Command::None);
         assert_eq!(parse_command("查询"), Command::Status);
         assert_eq!(parse_command(" 查询进度 "), Command::Status);
         assert_eq!(parse_command("status"), Command::Status);
         assert_eq!(parse_command("你好"), Command::None);
+    }
+
+    #[test]
+    fn bot_bind_resolves_through_the_feedback_token_row() {
+        // 绑定的完整解析链在 relay_core::feedback::resolve_lookup_token
+        // （凭证 → 哈希 → KV 行 → 常时比对换联系方式）；这里验证机器人
+        // 侧消费该结果的两条路径：绑进 bind_key、未知凭证拒绑。
+        let token = format!("{}{}", "9a".repeat(31), "bc");
+        let row = json!({
+            "contact": "10001",
+            "hash": crate::feedback::lookup_token_hash(&token),
+        });
+        let contact = crate::feedback::resolve_lookup_token(Some(&row), &token);
+        assert_eq!(contact.as_deref(), Some("10001"));
+        let merged = Binding::default().merge(Binding {
+            contact: contact.clone().unwrap_or_default(),
+            c2c_openid: "U1".into(),
+            bound_at: 1,
+            ..Default::default()
+        });
+        assert_eq!(merged.contact, "10001");
+        assert_eq!(bind_key(&merged.contact), "qqbind:10001");
+        // 形态合法但哈希对不上的凭证拒绑。
+        let wrong = format!("{}{}", "88".repeat(31), "ff");
+        assert_eq!(
+            crate::feedback::resolve_lookup_token(Some(&row), &wrong),
+            None
+        );
+        assert_eq!(crate::feedback::resolve_lookup_token(None, &token), None);
     }
 
     #[test]
