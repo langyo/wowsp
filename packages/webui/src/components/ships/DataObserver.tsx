@@ -4,6 +4,7 @@ import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucid
 import { HkIconButtonGroup, HkScrollContainer } from "@celestia-island/hikari";
 import { buildShipSpecs } from "./shipSpecs";
 import { recomputeStats, type ModifiedStats, type PlannerBuild } from "./modifierPipeline";
+import { mainCaliberMm } from "./shipParts";
 import { t } from "@/i18n";
 import type { ShipInfo } from "@/api";
 import "./DataObserver.scss";
@@ -56,7 +57,16 @@ export default defineComponent({
     const profile = computed(() => (props.ship.defaultProfile ?? {}) as Record<string, unknown>);
 
     const stats = computed(() =>
-      recomputeStats(profile.value, props.ship.type, props.ship.tier, props.build, props.build.healthPct),
+      recomputeStats(
+        profile.value,
+        props.ship.type,
+        props.ship.tier,
+        props.build,
+        props.build.healthPct,
+        // WG's default_profile has no caliber field; the GameParams-derived
+        // value un-gates the caliber-conditional fire-chance modifiers.
+        mainCaliberMm(props.gameparams),
+      ),
     );
 
     /**
@@ -224,7 +234,8 @@ function computeDelta(
       if (base.fireChanceOut == null || modified.fireChanceOut == null) return null;
       return fmtDelta(base.fireChanceOut, modified.fireChanceOut, 0, "%");
     }
-    // DPM: recompute from modified reload
+    // DPM: recompute from modified reload (×60 — reload is seconds, DPM is
+    // per-minute; matches buildShipSpecs' heDpm/apDpm rows).
     case "heDpm":
     case "apDpm": {
       const baseReload = base.reload;
@@ -235,10 +246,10 @@ function computeDelta(
       const isHe = key === "heDpm";
       const dmg = num(shells?.[isHe ? "HE" : "AP"]?.damage);
       if (dmg == null) return null;
-      const baseDpm = (dmg * barrels) / baseReload;
+      const baseDpm = (dmg * barrels * 60) / baseReload;
       const modReload = modified.reload ?? baseReload;
       if (modReload === baseReload) return `${Math.round(baseDpm).toLocaleString()}`;
-      const modDpm = (dmg * barrels) / modReload;
+      const modDpm = (dmg * barrels * 60) / modReload;
       return fmtDeltaInt(Math.round(baseDpm), Math.round(modDpm), "");
     }
     default:

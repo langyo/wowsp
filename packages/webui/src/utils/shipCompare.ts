@@ -286,7 +286,7 @@ const ARTILLERY_COLUMNS: CompareColumn[] = [
       if (!he) return null;
       // WG's burn_probability is ALREADY a percentage (NC 406 mm HE = 36.0)
       // — multiplying by 100 would render 3600%.
-      const burn = num(he.burn_chance) ?? num(he.burn_probability);
+      const burn = num(he.burn_probability) ?? num(he.burn_chance);
       return burn != null ? `${Math.round(burn)}%` : null;
     },
   },
@@ -298,7 +298,8 @@ const ARTILLERY_COLUMNS: CompareColumn[] = [
       const barrels = num(p?.hull?.artillery_barrels);
       const reload = num(p?.artillery?.shot_delay);
       if (dmg == null || barrels == null || reload == null || reload <= 0) return null;
-      return fmtNum((dmg * barrels) / reload);
+      // ×60: reload is seconds, DPM is per-minute (matches shipSpecs).
+      return fmtNum((dmg * barrels * 60) / reload);
     },
   },
   {
@@ -318,7 +319,8 @@ const ARTILLERY_COLUMNS: CompareColumn[] = [
       const barrels = num(p?.hull?.artillery_barrels);
       const reload = num(p?.artillery?.shot_delay);
       if (dmg == null || barrels == null || reload == null || reload <= 0) return null;
-      return fmtNum((dmg * barrels) / reload);
+      // ×60: reload is seconds, DPM is per-minute (matches shipSpecs).
+      return fmtNum((dmg * barrels * 60) / reload);
     },
   },
 ];

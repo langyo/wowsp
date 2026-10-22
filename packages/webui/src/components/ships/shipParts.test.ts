@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { resolveShipParts } from "./shipParts";
+import { mainCaliberMm, resolveShipParts } from "./shipParts";
 import { summarizeWeapons } from "./shipWeapons";
 
 /** A gun/torpedo mount HP slot. */
@@ -383,5 +383,33 @@ describe("summarizeWeapons", () => {
     expect(summarizeWeapons(null)).toEqual([]);
     expect(summarizeWeapons(undefined)).toEqual([]);
     expect(summarizeWeapons({})).toEqual([]);
+  });
+});
+
+describe("mainCaliberMm", () => {
+  it("reads the widest stock main-gun caliber in millimetres", () => {
+    // Shimakaze-style: AB_127_50 guns resolve via ShipUpgradeInfo → 127 mm.
+    expect(mainCaliberMm(shimakazeLike())).toBe(127);
+    // Worcester-style: canonical A_Artillery with 152 mm twin mounts.
+    expect(mainCaliberMm(worcesterLike())).toBe(152);
+  });
+
+  it("keeps the widest barrel when mounts differ", () => {
+    // Mixed batteries: one 127 mm twin + one 460 mm triple → 460 mm.
+    const gp = {
+      A_Artillery: {
+        HP_AGM_1: mount(2, 127),
+        HP_AGM_2: mount(3, 460),
+      },
+    };
+    expect(mainCaliberMm(gp)).toBe(460);
+  });
+
+  it("returns null without any calibre-bearing mount", () => {
+    expect(mainCaliberMm(null)).toBeNull();
+    expect(mainCaliberMm(undefined)).toBeNull();
+    expect(mainCaliberMm({})).toBeNull();
+    // Torpedo-only fixture: no barrelDiameter anywhere in the artillery role.
+    expect(mainCaliberMm({ A_Torpedoes: blockWithMounts("JGT", 2, 5) })).toBeNull();
   });
 });

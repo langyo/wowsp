@@ -20,6 +20,7 @@
  * caller has unpacked one.
  */
 import { buildAntiAirRows } from "./antiAir";
+import { mainCaliberMm } from "./shipParts";
 export interface SpecRow {
   /** i18n key under `ships.spec.*`, e.g. "hp" → "ships.spec.hp". */
   key: string;
@@ -226,7 +227,12 @@ export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: u
     artRows.push({ key: "mainGunReload", value: `${reload.toFixed(1)} s`, hint: "mainGunReloadHint" });
   const barrels = num(hull?.artillery_barrels);
   if (barrels != null) artRows.push({ key: "mainGunBarrels", value: String(barrels) });
-  const caliber = mainGunCaliber(art);
+  // WG's default_profile carries NO caliber field at all (verified across the
+  // whole fleet: artillery keys are artillery_id/distance/gun_rate/
+  // max_dispersion/rotation_time/shells/shot_delay/slots) — fall back to the
+  // raw GameParams entry's widest turret barrelDiameter when it is loaded.
+  const caliber =
+    mainGunCaliber(art) ?? mainCaliberMm(gameparams as Record<string, unknown> | null | undefined);
   if (caliber != null)
     artRows.push({ key: "mainGunCaliber", value: `${caliber} mm`, hint: "mainGunCaliberHint" });
   // Sigma: WG puts it at artillery.sigma (top-level of the artillery block).
@@ -247,20 +253,24 @@ export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: u
     : null;
   if (hePen != null)
     artRows.push({ key: "hePenetration", value: `${hePen} mm`, hint: "hePenetrationHint" });
-  // HE fire chance in percent (fraction × 100); the build planner recomputes it.
-  const heBurn = heShell ? num(heShell.burn_chance) ?? num(heShell.burn_probability) : null;
+  // HE fire chance in percent. WG's burn_probability is ALREADY a percentage
+  // (NC 406 mm HE = 36.0) — multiplying by 100 rendered 1000%-style values
+  // across the whole fleet; the build planner recomputes it.
+  const heBurn = heShell ? num(heShell.burn_probability) ?? num(heShell.burn_chance) : null;
   if (heBurn != null)
-    artRows.push({ key: "heFireChance", value: `${Math.round(heBurn * 100)}%` });
+    artRows.push({ key: "heFireChance", value: `${Math.round(heBurn)}%` });
   // Per-shell rows (damage / fire / muzzle velocity for each shell type).
   artRows.push(...shellRows(shells));
-  // DPM (best of HE / AP), computed as perShellDamage × barrels / reload.
+  // DPM (best of HE / AP), computed as perShellDamage × barrels × 60 / reload
+  // — reload is in seconds, so the ×60 converts to per-minute (a plain
+  // damage × barrels / reload silently showed damage per SECOND).
   if (barrels != null && reload != null && reload > 0 && shells) {
     const heDmg = num(shells.HE?.damage) ?? null;
     const apDmg = num(shells.AP?.damage) ?? null;
     if (heDmg != null)
-      artRows.push({ key: "heDpm", value: fmtNum((heDmg * barrels) / reload)! });
+      artRows.push({ key: "heDpm", value: fmtNum((heDmg * barrels * 60) / reload)! });
     if (apDmg != null)
-      artRows.push({ key: "apDpm", value: fmtNum((apDmg * barrels) / reload)! });
+      artRows.push({ key: "apDpm", value: fmtNum((apDmg * barrels * 60) / reload)! });
   }
   if (artRows.length) groups.push({ group: "artillery", icon: "Crosshair", rows: artRows });
 

@@ -59,7 +59,7 @@ export interface ModifiedStats {
   torpedoSpeed: number | null;    // torpedo speed, knots
   torpedoReload: number | null;   // torpedo launcher reload, seconds
   rudderShift: number | null;     // rudder shift, seconds
-  fireChanceOut: number | null;   // HE fire chance, % (base = burn_chance × 100)
+  fireChanceOut: number | null;   // HE fire chance, % — WG's burn_probability is already a percentage
   floodChanceOut: number | null;  // torpedo flood chance coefficient
   fireDurationTaken: number | null;   // fire duration on this ship, s
   floodDurationTaken: number | null;  // flooding duration on this ship, s
@@ -152,7 +152,7 @@ function readBase(profile: Profile): ModifiedStats {
     torpedoSpeed: num(torpedoes?.torpedo_speed),
     torpedoReload: num(torpedoes?.shot_delay) ?? num(torpedoes?.reload_time),
     rudderShift: num(mobility?.rudder_time),
-    fireChanceOut: pct(num(artillery?.shells?.HE?.burn_chance) ?? num(artillery?.shells?.HE?.burn_probability)),
+    fireChanceOut: num(artillery?.shells?.HE?.burn_probability) ?? num(artillery?.shells?.HE?.burn_chance),
     floodChanceOut: null,
     fireDurationTaken: null,
     floodDurationTaken: null,
@@ -163,11 +163,6 @@ function readBase(profile: Profile): ModifiedStats {
 
 function num(v: unknown): number | null {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
-}
-
-/** Fraction → percent (e.g. 0.43 → 43), or null. */
-function pct(v: number | null): number | null {
-  return v == null ? null : v * 100;
 }
 
 /**
@@ -193,6 +188,11 @@ function resolveCoef(value: unknown, shipType: string): number | null {
  * @param shipTier  Ship tier 1..11 — scales the flat `healthPerLevel` bonus.
  * @param build     Selected skills / signals / upgrades (commander ignored).
  * @param healthPct Current HP as a fraction 0..1 (drives trigger skills).
+ * @param caliberMm Main-gun caliber (mm) fallback — WG's default_profile
+ *                  carries NO caliber field, and the Demo-Expert-style
+ *                  burnChanceFactorBig/Small gates are caliber-conditional;
+ *                  pass the GameParams-derived value (mainCaliberMm) when
+ *                  available so those modifiers actually apply.
  */
 export function recomputeStats(
   profile: Profile,
@@ -200,11 +200,14 @@ export function recomputeStats(
   shipTier: number,
   build: BuildConfig,
   healthPct: number,
+  caliberMm?: number | null,
 ): { base: ModifiedStats; modified: ModifiedStats } {
   const base = readBase(profile);
   const modified: ModifiedStats = { ...base };
   const hpFrac = Math.max(0, Math.min(1, healthPct));
-  const caliber = num((profile?.artillery as { max_caliber?: unknown } | null | undefined)?.max_caliber);
+  const caliber =
+    num((profile?.artillery as { max_caliber?: unknown } | null | undefined)?.max_caliber) ??
+    num(caliberMm);
 
   // Per-stat multiplicative accumulators (start at 1.0 = no change).
   const mults: Record<string, number> = {};

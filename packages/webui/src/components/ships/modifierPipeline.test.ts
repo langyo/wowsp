@@ -1,7 +1,12 @@
 /**
  * Tests for the build-modifier pipeline: multiplicative signal flags and the
  * HP-scaled trigger-skill curve (Adrenaline-Rush style), against a minimal
- * fake `default_profile`.
+ * fake `default_profile` shaped like the real WG encyclopedia payload.
+ *
+ * Unit conventions verified against the live fleet data (15.5.0, 1017 ships):
+ *   - `burn_probability` is ALREADY a percentage (NC 406 mm HE = 36.0);
+ *   - the default_profile carries NO caliber field — the caliber-conditional
+ *     fire-chance gates need the GameParams-derived `caliberMm` fallback.
  */
 import { describe, expect, it } from "vitest";
 
@@ -15,13 +20,20 @@ const RAW_PROFILE = {
     distance: 20_000,
     rotation_time: 45,
     max_caliber: 380,
-    shells: { HE: { burn_chance: 0.43 } },
+    shells: { HE: { burn_probability: 43 } },
   },
   mobility: { max_speed: 30, rudder_time: 15 },
   concealment: { detect_distance_by_ship: 12.5 },
   torpedoes: { torpedo_speed: 60, shot_delay: 40 },
 };
 const PROFILE = RAW_PROFILE as unknown as Profile;
+
+/** The real WG shape: identical profile minus the (nonexistent) max_caliber. */
+const NO_CALIBER_PROFILE = (() => {
+  const artillery = { ...RAW_PROFILE.artillery } as Record<string, unknown>;
+  delete artillery.max_caliber;
+  return { ...RAW_PROFILE, artillery } as unknown as Profile;
+})();
 
 describe("recomputeStats", () => {
   it("applies a signal flag's speed coefficient multiplicatively", () => {
@@ -53,6 +65,12 @@ describe("recomputeStats", () => {
     expect(empty.modified.reload).toBeCloseTo(18, 5);
   });
 
+  it("carries the base HE fire chance in percent without re-scaling", () => {
+    // WG's burn_probability is a percentage already: 43 → 43, never 4300.
+    const { base } = recomputeStats(PROFILE, "Cruiser", 8, emptyBuild(), 1);
+    expect(base.fireChanceOut).toBe(43);
+  });
+
   it("adds fire-chance flag percentage points and gates them by caliber", () => {
     // India X-Ray (PCEF018): burnChanceFactorBig +0.01, Small +0.005.
     // 380mm guns use the Big fraction: 43% + 1pp = 44%.
@@ -67,5 +85,21 @@ describe("recomputeStats", () => {
     } as unknown as Profile;
     const small = recomputeStats(gunboatProfile, "Destroyer", 8, build, 1);
     expect(small.modified.fireChanceOut).toBeCloseTo(43.5, 5);
+  });
+
+  it("gates the fire-chance flags by the caliberMm fallback when the profile has no caliber", () => {
+    // India X-Ray (PCEF018) again: without ANY caliber the flag must stay
+    // dormant (the gate cannot guess); the GameParams-derived caliberMm
+    // un-gates it exactly like a profile max_caliber would.
+    const build: PlannerBuild = { ...emptyBuild(), signals: ["PCEF018"] };
+
+    const noCaliber = recomputeStats(NO_CALIBER_PROFILE, "Battleship", 8, build, 1);
+    expect(noCaliber.modified.fireChanceOut).toBeCloseTo(43, 5);
+
+    const viaFallback = recomputeStats(NO_CALIBER_PROFILE, "Battleship", 8, build, 1, 380);
+    expect(viaFallback.modified.fireChanceOut).toBeCloseTo(44, 5);
+
+    const gunboat = recomputeStats(NO_CALIBER_PROFILE, "Destroyer", 8, build, 1, 127);
+    expect(gunboat.modified.fireChanceOut).toBeCloseTo(43.5, 5);
   });
 });
