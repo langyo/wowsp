@@ -40,7 +40,7 @@ pub async fn handle(req: Request, env: Env) -> Result<Response> {
     if !crate::replay::spend_public_read(&env, "sponsors", &crate::feedback::client_ip(&req))
         .await?
     {
-        return Response::error("rate limited", 429);
+        return crate::replay::err_retry(429, "rate_limited", 600);
     }
     let kv = match env.kv(KV) {
         Ok(kv) => kv,

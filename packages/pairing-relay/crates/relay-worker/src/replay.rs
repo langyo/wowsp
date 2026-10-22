@@ -135,15 +135,25 @@ async fn wanted_doc(env: &Env) -> Result<Option<WantedDoc>> {
 /// feedback pipeline): read + 1, refuse past the limit, write with a
 /// day TTL otherwise. Shared with the other public GET routes (audit
 /// M-10).
+///
+/// The write is deliberately FAIL-OPEN (audit M-10 review): the limiter
+/// exists to protect quota, so a failing counter write must never 500 a
+/// public GET. Worst case under a write-budget flood the limiter degrades
+/// to a no-op until the counters expire — reads then flow unthrottled,
+/// which is the failure mode we can afford (KV writes are the scarcer
+/// resource; sampling the writes cannot work with a read-modify-write
+/// counter — a skipped write stalls the stored value and either freezes
+/// or double-charges the budget).
 pub(crate) async fn spend(kv: &KvStore, key: &str, limit: u64) -> Result<bool> {
     let count: u64 = kv.get(key).json::<u64>().await.ok().flatten().unwrap_or(0) + 1;
     if count > limit {
         return Ok(false);
     }
-    kv.put(key, count)?
+    let _ = kv
+        .put(key, count)?
         .expiration_ttl(TTL_DAY)
         .execute()
-        .await?;
+        .await;
     Ok(true)
 }
 
@@ -163,8 +173,9 @@ pub(crate) async fn spend_public_read(env: &Env, scope: &str, ip: &str) -> Resul
 }
 
 /// 429/503 with a Retry-After header (the plain `err` helper has no
-/// header support).
-fn err_retry(status: u16, code: &str, retry_after: u64) -> Result<Response> {
+/// header support). Shared with the other public GET routes (audit
+/// M-10) so every refusal carries the same JSON + Retry-After shape.
+pub(crate) fn err_retry(status: u16, code: &str, retry_after: u64) -> Result<Response> {
     let mut resp = Response::from_json(&json!({ "ok": false, "error": code }))?;
     resp.headers_mut().set("Cache-Control", "no-store")?;
     resp.headers_mut()
