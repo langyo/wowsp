@@ -206,7 +206,6 @@ export function rebuildActors(ctx: MapInternals) {
       ctx.shipEntityIds,
       assignments,
       ctx.props.encyclopedia,
-      ctx.props.operation,
       ctx.arenaIdentities,
     );
     const offline = shipOfflineEntry((entry?.shipId ?? tr.kind?.shipId) ?? undefined);
@@ -353,7 +352,6 @@ export function rebuildActors(ctx: MapInternals) {
       ctx.shipEntityIds,
       assignments,
       ctx.props.encyclopedia,
-      ctx.props.operation,
       ctx.arenaIdentities,
     );
     const color = TEAM_COLOR[role];
@@ -396,7 +394,8 @@ export function rebuildActors(ctx: MapInternals) {
     // sunk ship's last-known position — GREEN for allies, red for
     // enemies (the game's "not spotted" marker; white stays reserved
     // for the recorder's own hull). Enemy ships that were never seen
-    // stay invisible.
+    // stay invisible; in operations (行动) a spotted-then-dark enemy
+    // reuses it at its last-known pose (see markerUpdate's ghost policy).
     {
       const ghostCol = role === "enemy" ? 0xcc3333 : TEAM_COLOR.ally;
       const ghost = makeHullOutline(ghostCol, shipType, 0.85);

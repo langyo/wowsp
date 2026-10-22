@@ -117,9 +117,8 @@ export function buildPlaneCloud(ctx: MapInternals, scene: THREE.Scene) {
       if (ctx.planeCloudSlots.has(planeId)) continue;
       ctx.planeCloudSlots.set(planeId, slot);
       // Team colour (ally green / enemy red) instead of per-type tint —
-      // the HUD paints aircraft by allegiance, not by airframe. The
-      // fallback keeps the operation single-team semantic too.
-      const role = ctx.planeRoleById.get(planeId) ?? (ctx.props.operation ? "ally" : "enemy");
+      // the HUD paints aircraft by allegiance, not by airframe.
+      const role = ctx.planeRoleById.get(planeId) ?? "enemy";
       const c = new THREE.Color(TEAM_COLOR[role as TeamRole] ?? 0x78d2ff);
       colors[slot * 3] = c.r;
       colors[slot * 3 + 1] = c.g;
@@ -312,11 +311,11 @@ export function resolvePlaneCarriers(
     const carrierMarker = carrierId == null
       ? null
       : ctx.shipMarkers.find((m) => m.userData.entityId === carrierId);
-    // Carrier unresolved → enemy red in team modes, ally green in
-    // operations (single-team semantic — see teamColors.roleFromRelation).
+    // Carrier unresolved → enemy red (the air owner defaults hostile —
+    // see teamColors.roleFromRelation for the relation split).
     ctx.planeRoleById.set(
       planeId,
-      carrierMarker?.userData.role ?? (ctx.props.operation ? "ally" : "enemy"),
+      carrierMarker?.userData.role ?? "enemy",
     );
     const planeIdx = PLANE_TYPES[String(createFirst.get(planeId)?.paramsId)]?.index;
     if (planeIdx) ctx.planeIndexById.set(planeId * 16, planeIdx);
