@@ -494,7 +494,8 @@
    blocks share one row, so the legend sits UNDER the ring (the stats page
    has three blocks per row and room to put it beside); the rows
    themselves are the same dot + label shape, with percents only in the
-   hover hint. */
+   hover hint — the nation and tier groups swap the label for a glyph
+   (the water-meter's flag / the supership star) via legendIconOf. */
 .playtime-pie {
   display: flex;
   flex-direction: column;
@@ -562,6 +563,22 @@
     text-overflow: ellipsis;
   }
 
+  /* Flag legend rows — the stats legend's normalization: the sm flag img
+     is 12px tall while the missing-asset letter badge is 16px, so one
+     shared height keeps a mixed column (real flags + the "unknown"
+     bucket's badge) on one row rhythm. */
+  &__legend .nation-flag {
+    height: 16px;
+  }
+
+  /* The supership tier's legend star — the lucide glyph solid-filled like
+     the histogram's tier star, at the text rows' ink. */
+  &__legend-star {
+    flex: none;
+    color: rgb(var(--color-text) / 0.75);
+    fill: currentColor;
+  }
+
   /* --- Hover focus (ShipDistCharts' paint-only contract): a slice and its
      legend row share the block's hover key — hovering either side lifts
      the pair and dims the block's siblings. Geometry never scales. --- */
@@ -585,11 +602,19 @@
     color: rgb(var(--color-text));
   }
 
+  &__legend-item.is-hot .playtime-pie__legend-star {
+    color: rgb(var(--color-text));
+  }
+
   &__legend-item.is-hot .playtime-pie__legend-dot {
     box-shadow: 0 0 0 3px rgb(var(--color-text) / 0.14);
   }
 
   &__legend-text {
+    transition: color 0.16s ease;
+  }
+
+  &__legend-star {
     transition: color 0.16s ease;
   }
 
@@ -602,6 +627,7 @@
   .playtime-pie__slice,
   .playtime-pie__legend-item,
   .playtime-pie__legend-text,
+  .playtime-pie__legend-star,
   .playtime-pie__legend-dot {
     transition: none;
   }

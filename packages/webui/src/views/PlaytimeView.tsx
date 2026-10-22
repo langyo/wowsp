@@ -6,6 +6,7 @@ import {
   onUnmounted,
   ref,
   watch,
+  type VNode,
 } from "vue";
 import {
   HkButton,
@@ -17,8 +18,10 @@ import {
   useBreakpoint,
   useToast,
 } from "@celestia-island/hikari";
-import { Check, ChevronDown, FolderOpen, FolderPlus, RefreshCw, X } from "@lucide/vue";
+import { Check, ChevronDown, FolderOpen, FolderPlus, RefreshCw, Star, X } from "@lucide/vue";
+import { tierToRoman } from "@wowsp/holo";
 
+import NationFlag from "@/components/base/NationFlag";
 import PlaytimeBreakdownPie from "@/components/playtime/PlaytimeBreakdownPie";
 import PlaytimeTrendChart from "@/components/playtime/PlaytimeTrendChart";
 import PlaytimeHeatmap from "@/components/playtime/PlaytimeHeatmap";
@@ -42,6 +45,7 @@ import {
   filterBattlesByScope,
   SCOPE_ALL,
   type BattleScope,
+  type BreakdownEntry,
 } from "@/components/playtime/battleBreakdown";
 import { api, type PlaytimeOverview } from "@/api";
 import { usePlaytimeStore } from "@/stores/playtime";
@@ -53,6 +57,17 @@ import { sameGamePath } from "@/utils/gamePath";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import "./PlaytimeView.scss";
+
+/** One breakdown donut's view-model — the pie component's props plus the
+ *  optional legend glyph renderer (flags for nations, the supership star
+ *  for tiers; the text label when absent). */
+interface BreakdownGroupVm {
+  title: string;
+  entries: BreakdownEntry[];
+  labelOf: (key: string) => string;
+  colorOf: (key: string) => string;
+  legendIconOf?: (key: string, label: string, hint: string) => VNode | null;
+}
 
 /** The cards strip's zero-valued stand-in for a battles-only veteran — a
  *  player whose replays exist but whose ledger overview holds nothing (game
@@ -451,9 +466,12 @@ export default defineComponent({
       return key === "unknown" ? unknownLabel() : i18nOr(`ships.nation.${key}`, key);
     }
 
-    /** Tier — "T1".."T11", locale-agnostic. */
+    /** Tier — the app's standard tier notation: Roman numerals I..X via
+     *  holo's tierToRoman, the ★ glyph for the supership tier 11 (the
+     *  legend row renders that one as the lucide Star icon, see
+     *  tierLegendIcon); "unknown" keeps its localized label. */
     function tierLabel(key: string): string {
-      return key === "unknown" ? unknownLabel() : `T${key}`;
+      return key === "unknown" ? unknownLabel() : tierToRoman(Number(key));
     }
 
     /** Battle mode — the replay list's existing mode labels (generic battle
@@ -464,7 +482,22 @@ export default defineComponent({
         : i18nOr(`replay.mode.${key}`, t("replay.mode._fallback"));
     }
 
-    const breakdownGroups = computed(
+    /** Nation legend glyph — the water-meter legend's sm in-game flag in
+     *  place of the truncation-prone name (ShipDistCharts' flag rows): the
+     *  flag carries the row's full hint so hovering it speaks for the row,
+     *  and NationFlag's letter badge covers the "unknown" bucket. */
+    function nationLegendIcon(key: string, label: string, hint: string) {
+      return <NationFlag nation={key} label={label} hint={hint} variant="flag" size="sm" />;
+    }
+
+    /** Tier legend glyph — the supership slot draws the lucide Star icon
+     *  (the histogram's mark, never a text ★ glyph); I–X stay on the text
+     *  path now that tierLabel returns the Roman numerals. */
+    function tierLegendIcon(key: string) {
+      return key === "11" ? <Star class="playtime-pie__legend-star" size={11} /> : null;
+    }
+
+    const breakdownGroups = computed<BreakdownGroupVm[]>(
       () =>
         scopedBattles.value.length === 0
           ? []
@@ -480,12 +513,14 @@ export default defineComponent({
                 entries: breakdownByNation(scopedBattles.value),
                 labelOf: nationLabel,
                 colorOf: (key: string) => breakdownColor("nation", key),
+                legendIconOf: nationLegendIcon,
               },
               {
                 title: t("playtime.breakdown.byTier"),
                 entries: breakdownByTier(scopedBattles.value),
                 labelOf: tierLabel,
                 colorOf: (key: string) => breakdownColor("tier", key),
+                legendIconOf: tierLegendIcon,
               },
               {
                 title: t("playtime.breakdown.byMode"),
@@ -808,6 +843,7 @@ export default defineComponent({
                             entries={g.entries}
                             labelOf={g.labelOf}
                             colorOf={g.colorOf}
+                            legendIconOf={g.legendIconOf}
                             unitLabel={t("playtime.breakdown.battles")}
                           />
                         ))}
