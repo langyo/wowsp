@@ -8,8 +8,9 @@
 #   cargo install worker-build
 #
 # then `npx wrangler deploy` / `pnpm --filter @wowsp/pairing-relay deploy`
-# (the Deploy Site workflow does exactly this once the owner opts in —
-# see README.md ▶ Deploy; until then it is the owner's manual step).
+# (the Deploy Site workflow does exactly this on every master push
+# touching this package — see README.md ▶ Deploy; the manual command
+# remains the hotfix path for unmerged code).
 # Local dev: `pnpm --filter @wowsp/pairing-relay dev` (= `wrangler dev`,
 # builds the wasm via the [build] command below).
 #
