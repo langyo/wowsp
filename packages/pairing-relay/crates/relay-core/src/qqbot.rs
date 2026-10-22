@@ -27,7 +27,13 @@ use serde_json::{Map, Value, json};
 /// KV 键：机器人 access_token 缓存（FEEDBACK_KV）。
 pub const K_TOKEN: &str = "qq:token";
 /// KV 键前缀：联系方式 → 绑定的 openid 组合（长期）。
-pub const K_BIND: &str = "qqbind:";
+///
+/// Audit M-7 review：v2 起 `绑定` 改凭 lookup token（旧自报 QQ 号的
+/// 绑定正是 M-7 的攻击面），命名空间同步升到 `qqbind2:` —— 修复前
+/// 产生的 `qqbind:*` 行（可能含攻击者绑定的受害者号码）由此整体失联：
+/// 回访通知与 Status 反查都只走新前缀。旧行留在 KV 里直至过期回收，
+/// 不再被任何代码路径读取。
+pub const K_BIND: &str = "qqbind2:";
 /// KV 键前缀：C2C 主动消息的自限额计数（qqdm:{contact}:{yyyymm}）。
 pub const K_DM: &str = "qqdm:";
 
@@ -403,7 +409,7 @@ pub fn bind_unknown_reply() -> &'static str {
     "未查到该查询凭证对应的反馈：请核对是否完整复制（凭证只在提交成功时显示一次）。"
 }
 
-/// 从绑定表（KV 全量 qqbind:* 值）反查 openid 所属的联系 QQ。
+/// 从绑定表（KV 全量 qqbind2:* 值）反查 openid 所属的联系 QQ。
 pub fn contact_of_binding(bindings: &Map<String, Value>, openid: &str) -> Option<String> {
     bindings
         .iter()
@@ -681,7 +687,7 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(merged.contact, "10001");
-        assert_eq!(bind_key(&merged.contact), "qqbind:10001");
+        assert_eq!(bind_key(&merged.contact), "qqbind2:10001");
         // 形态合法但哈希对不上的凭证拒绑。
         let wrong = format!("{}{}", "88".repeat(31), "ff");
         assert_eq!(
@@ -720,7 +726,7 @@ mod tests {
         assert!(merged.group_verified());
         assert_eq!(merged.c2c_openid, "U");
         assert_eq!(merged.bound_at, 99);
-        assert_eq!(bind_key(" 10001 "), "qqbind:10001");
+        assert_eq!(bind_key(" 10001 "), "qqbind2:10001");
         assert_eq!(dm_key("10001", "202610"), "qqdm:10001:202610");
     }
 
@@ -747,13 +753,13 @@ mod tests {
     fn binding_reverse_lookup() {
         let mut m = Map::new();
         m.insert(
-            "qqbind:10001".into(),
+            "qqbind2:10001".into(),
             json!({
                 "contact": "10001", "member_openid": "M1", "group_openid": "G"
             }),
         );
         m.insert(
-            "qqbind:20002".into(),
+            "qqbind2:20002".into(),
             json!({
                 "contact": "20002", "c2c_openid": "U2"
             }),

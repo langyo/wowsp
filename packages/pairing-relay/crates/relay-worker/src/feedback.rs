@@ -211,17 +211,23 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     // KV 只落 SHA-256（fbtok:{hash} → 规范化联系方式 + 哈希），公开历史
     // 查询与 QQ 机器人的「绑定」都凭哈希常时比对换取联系方式。行先于
     // Bitable 记录落库：凭证在而记录未至顶多是「绑定成功但暂无记录」，
-    // 反过来（记录有了、凭证没了）用户却无从查询。
-    let lookup_token = mint_lookup_token()?;
-    let lookup_hash = lookup_token_hash(&lookup_token);
-    let row = LookupRow {
-        contact: relay_core::feedback::normalize_contact(&sub.contact),
-        hash: lookup_hash,
+    // 反过来（记录有了、凭证没了）用户却无从查询。没有联系方式的提交
+    // 不签发（audit review：无 contact 的凭证行 resolve 恒拒，只会空置
+    // 一年，响应里也不该展示一个不可用的凭证）。
+    let lookup_token = if sub.contact.is_empty() {
+        None
+    } else {
+        let token = mint_lookup_token()?;
+        let row = LookupRow {
+            contact: relay_core::feedback::normalize_contact(&sub.contact),
+            hash: lookup_token_hash(&token),
+        };
+        kv.put(&lookup_kv_key(&row.hash), serde_json::to_string(&row)?)?
+            .expiration_ttl(LOOKUP_ROW_TTL_SECS)
+            .execute()
+            .await?;
+        Some(token)
     };
-    kv.put(&lookup_kv_key(&row.hash), serde_json::to_string(&row)?)?
-        .expiration_ttl(LOOKUP_ROW_TTL_SECS)
-        .execute()
-        .await?;
 
     // Feishu: record (+ attachment upload, then attach to the record).
     let token = feishu_token(&env).await.map_err(|e| e.to_string())?;
@@ -304,6 +310,7 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
     ok(json!({
         "ok": true,
         "record_url": record_url(&ids, &record_id),
+        // None（未留联系方式）→ null：页面据此隐藏凭证展示块。
         "lookup_token": lookup_token,
     }))
 }
