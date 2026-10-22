@@ -70,6 +70,35 @@ pub fn valid_channel(channel: &str) -> bool {
     DIGEST_CHANNELS.contains(&channel)
 }
 
+/// The channels this deployment actually serves docs for (comma
+/// separated in the `DIGEST_PUBLISHED_CHANNELS` var; `app` alone when
+/// unset). A lookup for any other VALID channel is answered 404 without
+/// touching KV: publish pipelines exist for `mod-hub`/`res`/`data`, but
+/// until one has actually written a doc to this namespace every lookup
+/// still costs a KV read — on 2026-10-22 the app fleet polling the
+/// unpublished channels burned the namespace's daily read quota that
+/// way. Extend the var only after running the matching publisher.
+///
+/// Unknown names are dropped, and if nothing valid remains the default
+/// `app` applies — a typo can never silently switch the gate off for
+/// every channel.
+pub fn parse_published_channels(raw: Option<&str>) -> Vec<String> {
+    let parsed: Vec<String> = raw
+        .map(|raw| {
+            raw.split(',')
+                .map(str::trim)
+                .filter(|c| valid_channel(c))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if parsed.is_empty() {
+        vec!["app".to_string()]
+    } else {
+        parsed
+    }
+}
+
 /// A tag is 1–160 chars of `[A-Za-z0-9._-]`. Every real scheme fits
 /// (`v0.6.1`, `mod-hub`, `res-latest`, `data-latest`, and the long one:
 /// `res-delta-<64hex>-<64hex>` at 139 chars); anything else (slashes,
@@ -156,6 +185,21 @@ mod tests {
         for bad in ["", "App", "app ", "apps", "mod_hub", "res/", "latest"] {
             assert!(!valid_channel(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn published_channels_gate_defaults_to_app_and_drops_unknowns() {
+        assert_eq!(parse_published_channels(None), vec!["app"]);
+        assert_eq!(parse_published_channels(Some("")), vec!["app"]);
+        assert_eq!(parse_published_channels(Some("bogus, APP")), vec!["app"]);
+        assert_eq!(
+            parse_published_channels(Some(" app , res ")),
+            vec!["app", "res"]
+        );
+        assert_eq!(
+            parse_published_channels(Some("data,mod-hub,res,app")),
+            vec!["data", "mod-hub", "res", "app"]
+        );
     }
 
     #[test]

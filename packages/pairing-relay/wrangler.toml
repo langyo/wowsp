@@ -159,6 +159,13 @@ TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
 # scripts/sync_versions.py --check enforces this stays equal to the other
 # six derived version slots (root package.json is the source of truth).
 FEEDBACK_LATEST_VERSION = "0.6.4"
+# The digest channels this deployment actually serves (comma separated,
+# subset of app/mod-hub/res/data). Lookups for any other VALID channel
+# answer 404 WITHOUT a KV read — extend only after the matching publish
+# pipeline has written a doc to the DIGESTS namespace (2026-10-22: the
+# app fleet polling never-published channels burned the namespace's
+# daily read quota; see crates/relay-core/src/digests.rs).
+DIGEST_PUBLISHED_CHANNELS = "app"
 # ── QQ 通知机器人（可选，缺失即整链路静默停用）───────────────────────
 # QQBOT_APPID / QQBOT_SECRET — 开放平台凭证（wrangler secret put）。
 # 回调验签的 Ed25519 密钥按官方方案直接从 Secret 派生（wiki

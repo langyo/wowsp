@@ -27,6 +27,24 @@ pub async fn handle(req: Request, env: Env, channel: &str, tag: Option<&str>) ->
     if tag.is_some_and(|t| !digests::valid_tag(t)) {
         return Response::error("bad digest tag", 400);
     }
+    // Only channels with docs actually published to this namespace may
+    // cost a (rate-limited) KV read; every other valid channel answers
+    // 404 from the binary itself — the 2026-10-22 read-quota flood was
+    // the app fleet polling channels that were never published here
+    // (see relay_core::digests::parse_published_channels).
+    let published = env
+        .var("DIGEST_PUBLISHED_CHANNELS")
+        .ok()
+        .map(|v| v.to_string());
+    if !digests::parse_published_channels(published.as_deref())
+        .iter()
+        .any(|c| c == channel)
+    {
+        let mut resp = Response::error("no digest published for this channel", 404)?;
+        resp.headers_mut()
+            .set("Cache-Control", "public, max-age=600")?;
+        return Ok(resp);
+    }
     // Audit M-10: the updater polls this route — a scripted flood with
     // random query strings must not drain the KV quota it (and the whole
     // update channel) rides on.
