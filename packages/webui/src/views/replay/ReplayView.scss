@@ -403,14 +403,9 @@
     & > .hk-scroll-container-viewport {
       overscroll-behavior: contain;
     }
-    /* Scroll-pin whitespace contract (hk-scroll-pin-host): the pinned chat
-       timeline bleeds into the CHAT body's gutter, so the pad var must
-       track the padding that body keeps (see __chat-panel; the phone sheet
-       re-declares it at 0.5rem). Custom properties inherit down the DOM,
-       so declaring it here serves the chat body (same class) and merely
-       rides inert into the results container's viewport — nothing pins
-       in there. */
-    --hk-scroll-pad-top: 0.6rem;
+    /* No --hk-scroll-pad-top here: the chat body's timeline pin rides
+       strategy="none" (see ChatLogPanel), so no pin consumes a whitespace
+       contract — the body's own padding IS the gutter above the header. */
   }
 
   &__modal-body__inner {
@@ -434,8 +429,9 @@
        scrolls, so the sticky pin never offsets) and every scroll delta
        moves all rows against the scroller's own crisp top clip. The
        body's padding stays ON the body (the base rule dropped it when
-       the results body became a container): it is the pin gutter the
-       timeline bleeds into. */
+       the results body became a container): it is the empty gutter above
+       the header's box — nothing bleeds into it (see ChatLogPanel's
+       strategy="none"). */
     .replay-view__modal-body {
       display: flex;
       flex-direction: column;
@@ -1033,16 +1029,11 @@
       }
     }
 
-    &__modal-body {
-      /* Tracks the shrunken top gutter the pinned timeline bleeds into. */
-      --hk-scroll-pad-top: 0.5rem;
-    }
-
     /* Sheet gutters live on the inner wrapper now (padding on the root
        would stack with the inner's desktop inset); the chat body restates
        at the same (0,2,0) specificity as its desktop rule to keep its own
-       gutter — and the safe-area term — on the sheet. Both top pads equal
-       the 0.5rem pin var above. */
+       gutter — and the safe-area term — on the sheet. Both top pads stay
+       equal (0.5rem) by convention. */
     &__modal-body__inner {
       padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
     }

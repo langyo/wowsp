@@ -1177,15 +1177,21 @@ const ChatLogPanel = defineComponent({
       return (
         <>
           {/* Above the scroll: the timeline (and its legend) rides an
-              HkScrollPin header. The message list scrolls ITSELF (see
-              __chat-scroll in the SCSS), so the body never scrolls and the
-              sticky pin stays parked in the body's top gutter via the bleed
-              contract — the pin must stay the FIRST element of the body
-              (host class + pad var on __modal-body), and the timeline keeps
-              its gap as padding so the pin's painted box covers it. Rows
-              then clip at the scroller's own crisp top edge, never behind
-              the translucent pin. */}
-          <HkScrollPin side="top">
+              HkScrollPin header, a static first child of the body (the
+              message list scrolls ITSELF — see __chat-scroll in the SCSS —
+              so the body never scrolls and the pin never actually pins).
+              strategy="none", not the default bleed contract: bleed pulls
+              the pin's flow position above the host's content box with a
+              negative margin, and Chromium clamps sticky against that box,
+              shifting the glass panel down by exactly the pad — its painted
+              box then swallowed the first row's top slice (2026-10-22
+              report, measured: pin bottom sat 9.6px into the scroller).
+              With none, the pin's box rests flush on the scroller's top
+              edge in flow: the body's own padding is the gutter above it,
+              the timeline keeps its gap as padding so the glass runs into
+              that edge, and rows clip at the scroller's crisp top edge,
+              never behind the translucent pin. */}
+          <HkScrollPin side="top" strategy="none">
             <ChatTimeline rows={rows.value} duration={props.duration} mapApi={props.mapApi} />
           </HkScrollPin>
           {/* Message-list scroller: the hikari container owns the scrollbar
@@ -2194,8 +2200,8 @@ export default defineComponent({
                         {/* Results-body scroller: the hikari container owns the
                             scrollbar (auto-hiding overlay track); the panel
                             scrolls inside its viewport. Nothing pins in here,
-                            so the pad var the base class carries stays inert
-                            (it only serves the chat body's timeline pin). */}
+                            and no pin anywhere consumes a whitespace contract
+                            (the chat body's timeline pin rides strategy="none"). */}
                         <HkScrollContainer class="replay-view__modal-body">
                           <div class="replay-view__modal-body__inner">
                             {battleResults.value ? (
