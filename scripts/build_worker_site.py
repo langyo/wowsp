@@ -201,10 +201,20 @@ def main() -> int:
     # files). Copied at the ROOT — same-origin APIs, no candidate chain.
     console_files = 0
     if console_dir is not None:
-        if not (console_dir / "erp.html").is_file():
+        for required in ("erp.html", "feedback.html"):
+            if not (console_dir / required).is_file():
+                print(
+                    f"console dist missing {required} in {console_dir} "
+                    "(run: pnpm --filter @wowsp/console build)",
+                    file=sys.stderr,
+                )
+                return 1
+        if (console_dir / "index.html").is_file():
+            # The site shell owns the root index.html (SPA fallback) — a
+            # console index would silently shadow it via the overwrite
+            # copy below (review note).
             print(
-                f"console dist missing erp.html in {console_dir} "
-                "(run: pnpm --filter @wowsp/console build)",
+                f"console dist must not carry an index.html ({console_dir})",
                 file=sys.stderr,
             )
             return 1
