@@ -40,6 +40,12 @@ interface ConsumableVariant {
   w?: number;
   /** Cooldown (s), present when > 0. */
   r?: number;
+  /** logic distShip (m) — hydro/sonar ship & radar detection range. */
+  ds?: number;
+  /** logic distTorpedo (m) — hydro/sonar torpedo detection range. */
+  dt?: number;
+  /** logic radius (m) — smoke-screen cloud or fighter patrol area. */
+  rad?: number;
   /** defaultActivationMode == AUTO (no manual key). */
   a?: number;
 }
@@ -136,6 +142,12 @@ export interface ConsumableEntry {
   work: number | null;
   /** Cooldown (s), null when unknown. */
   reload: number | null;
+  /** Hydro/sonar ship & radar detection range (m), null when N/A. */
+  distShip: number | null;
+  /** Hydro/sonar torpedo detection range (m), null when N/A. */
+  distTorpedo: number | null;
+  /** Smoke-screen cloud or fighter patrol radius (m), null when N/A. */
+  radius: number | null;
   /** Auto-triggered (CV auto damage control / fighters) — no battle key. */
   auto: boolean;
   iconUrl: string | null;
@@ -178,6 +190,9 @@ function resolveEntry(
     charges: spec.c,
     work: spec.w ?? null,
     reload: spec.r ?? null,
+    distShip: spec.ds ?? null,
+    distTorpedo: spec.dt ?? null,
+    radius: spec.rad ?? null,
     auto: spec.a === 1,
     iconUrl: iconStem ? ICON_URLS[`../../res/images/consumables/${iconStem}.webp`] ?? null : null,
   };
@@ -230,6 +245,12 @@ function fmtSecs(v: number): string {
   return `${s} s`;
 }
 
+/** Metres → "5.9 km"; whole kilometres drop the decimals. */
+function fmtKm(v: number): string {
+  const km = v / 1000;
+  return `${Number.isInteger(km) ? km : km.toFixed(1)} km`;
+}
+
 /** Structured hover-card payload for an entry (pre-localized; the global
  *  tooltip renders it via `data-hint-card`). */
 export function consumableHintCard(
@@ -247,6 +268,28 @@ export function consumableHintCard(
   ];
   if (entry.work != null)
     rows.push({ label: t("ships.spec.consumables.workTime"), value: fmtSecs(entry.work) });
+  // Effective ranges: hydro/sonar quote ship and torpedo detection as a
+  // pair, radar-style single distances quote the plain label, smoke quotes
+  // its screen radius — each only when the bake found the field.
+  if (entry.distShip != null && entry.distTorpedo != null) {
+    rows.push({ label: t("ships.spec.consumables.rangeShip"), value: fmtKm(entry.distShip) });
+    rows.push({ label: t("ships.spec.consumables.rangeTorpedo"), value: fmtKm(entry.distTorpedo) });
+  } else if (entry.distShip != null) {
+    rows.push({ label: t("ships.spec.consumables.range"), value: fmtKm(entry.distShip) });
+  }
+  if (entry.radius != null) {
+    // The same logic.radius field means different things per family: smoke
+    // screens quote their cloud's radius, fighter consumables quote the
+    // patrol radius their squadron holds.
+    rows.push({
+      label: t(
+        entry.family.startsWith("Fighter")
+          ? "ships.spec.consumables.patrolRadius"
+          : "ships.spec.consumables.radius",
+      ),
+      value: fmtKm(entry.radius),
+    });
+  }
   if (entry.reload != null)
     rows.push({ label: t("ships.spec.consumables.reloadTime"), value: fmtSecs(entry.reload) });
   // Identity line: slot position, then the auto marker and the family label

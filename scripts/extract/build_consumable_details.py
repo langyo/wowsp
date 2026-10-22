@@ -45,6 +45,8 @@ Output shapes::
                       "d": "<IDS KEY SUFFIX>", # desc key, only when it differs from "t"
                       "c": 4,                  # numConsumables; -1 = unlimited (missing → -1)
                       "w": 10.0, "r": 40.0,    # workTime / reloadTime (s, present when > 0)
+                      "ds": 5880, "dt": 3960,  # logic distShip / distTorpedo (m, when present)
+                      "rad": 450,              # logic radius — smoke cloud / fighter patrol (m)
                       "a": 1,                  # defaultActivationMode == AUTO (no manual key)
                   } } } }
 
@@ -97,6 +99,10 @@ LANG_CODES = ("en", "ja", "zh_sg", "zh_tw")  # wowsinfo lang.json → asset shor
 ASSET_CODE = {"en": "en", "ja": "ja", "zh_sg": "zh", "zh_tw": "tw"}
 TITLE_KEY = "IDS_DOCK_CONSUME_TITLE_{}"
 DESC_KEY = "IDS_DOCK_CONSUME_DESCRIPTION_{}"
+
+# logic-block distances are BigWorld units; ×30 turns them into metres (same
+# conversion extract_ship_consumable_kit.py applies — 1 BW unit = 30 m).
+BW_TO_METERS = 30.0
 
 
 def family_of(entity: str) -> str:
@@ -156,6 +162,17 @@ def variant_record(spec: dict[str, Any], lang: dict) -> dict[str, Any] | None:
     reload = spec.get("reloadTime")
     if isinstance(reload, (int, float)) and not isinstance(reload, bool) and reload > 0:
         entry["r"] = round(float(reload), 2)
+    # Effective ranges out of the variant's logic block (hydro/sonar ship &
+    # torpedo detection, radar distance, smoke-screen radius) — BigWorld
+    # units × 30 = metres, the conversion extract_ship_consumable_kit.py
+    # applies to the same fields (1 BW unit = 30 m). Rounded to 10 m: the
+    # game's own cards never quote finer than that.
+    logic = spec.get("logic")
+    if isinstance(logic, dict):
+        for src, dest in (("distShip", "ds"), ("distTorpedo", "dt"), ("radius", "rad")):
+            v = logic.get(src)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+                entry[dest] = int(round(v * BW_TO_METERS / 10) * 10)
     if spec.get("defaultActivationMode") == "AUTO":
         entry["a"] = 1
     return entry

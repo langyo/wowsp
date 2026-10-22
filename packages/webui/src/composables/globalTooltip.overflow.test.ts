@@ -9,7 +9,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 import { installGlobalTooltip } from "./globalTooltip";
 
-/** The hook installs ONE popup on document.body for the module's life —
+/** The hook installs ONE popup under #hk-overlay-root for the module's life —
  *  test anchors live in a per-test host so the popup itself survives. */
 let host: HTMLElement;
 

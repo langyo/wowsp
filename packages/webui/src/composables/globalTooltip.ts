@@ -35,7 +35,7 @@
  * floats over the window controls — flip, edge clamping and root-zoom
  * (DPI pref) compensation are all upstream behavior this hook inherits.
  */
-import { usePopupManager } from "@celestia-island/hikari";
+import { ensureOverlayRoot, usePopupManager } from "@celestia-island/hikari";
 import {
   applyTooltipPosition,
   type TooltipPlacement,
@@ -380,7 +380,11 @@ export function installGlobalTooltip(): void {
   content.className = "hk-tooltip-content";
   popup.appendChild(content);
   popup.style.display = "none";
-  document.body.appendChild(popup);
+  // INSIDE the overlay root, next to the modals/toasts the ordinal z band
+  // competes with: on <body> the root's document-space z (90000) would bury
+  // the popup's ordinal (300) under every open modal's backdrop, hiding
+  // in-modal hints (the ship-detail consumable cards) behind the dialog.
+  ensureOverlayRoot().appendChild(popup);
 
   // One persistent registration holds the tooltip z band for the app's
   // lifetime — same pattern as the long-lived toast stack; band slots

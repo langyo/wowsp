@@ -48,6 +48,30 @@ const cvAbilities = {
   AbilitySlot0: { abils: [["PCY037_CrashCrewAuto", "CV"]], isSpecial: false, slot: 0 },
 };
 
+// Range-bearing families: hydro quotes ship AND torpedo detection, radar
+// quotes a single distance, smoke quotes its screen radius (bake metres).
+const hydroAbilities = {
+  AbilitySlot1: {
+    abils: [["PCY008_SonarSearch", "Blue_Aster"]],
+    isSpecial: false,
+    slot: 1,
+  },
+};
+const radarAbilities = {
+  AbilitySlot2: {
+    abils: [["PCY019_RLSSearch", "Default"]],
+    isSpecial: false,
+    slot: 2,
+  },
+};
+const smokeAbilities = {
+  AbilitySlot3: {
+    abils: [["PCY006_SmokeGenerator", "Cruiser"]],
+    isSpecial: false,
+    slot: 3,
+  },
+};
+
 describe("dataCodeOf", () => {
   it("maps the 素材翻译 locales onto the baked short codes", () => {
     expect(dataCodeOf("zh-CN")).toBe("zh");
@@ -179,5 +203,51 @@ describe("consumableHintCard", () => {
     const card = consumableHintCard(spotter, slot);
     expect(card.rows![0]).toEqual({ label: "数量", value: "× 4" });
     expect(card.rows!.map((r) => r.label)).toEqual(["数量", "作用时间", "装填时间"]);
+
+    // The same-slot fighter: its logic.radius is the PATROL radius, so the
+    // row carries the fighter label, never the smoke-screen one.
+    const fighterCard = consumableHintCard(slot.entries[1]!, slot);
+    expect(fighterCard.rows).toContainEqual({ label: "巡逻半径", value: "3 km" });
+    expect(fighterCard.rows!.map((r) => r.label)).not.toContain("烟幕半径");
+  });
+
+  it("quotes hydro's ship and torpedo detection as a range pair", () => {
+    const [group] = buildConsumableSlots(
+      { ShipAbilities: hydroAbilities },
+      "zh-CN",
+    )!;
+    const card = consumableHintCard(group!.entries[0]!, group!);
+    // Blue_Aster hydro: 6000 m ship / 4000 m torpedo (BW units × 30 at bake).
+    expect(card.rows).toContainEqual({ label: "对舰生效距离", value: "6 km" });
+    expect(card.rows).toContainEqual({ label: "对鱼雷生效距离", value: "4 km" });
+    expect(card.rows!.map((r) => r.label)).toEqual([
+      "数量",
+      "作用时间",
+      "对舰生效距离",
+      "对鱼雷生效距离",
+      "装填时间",
+    ]);
+  });
+
+  it("quotes radar's single distance and smoke's screen radius", () => {
+    const [radar] = buildConsumableSlots(
+      { ShipAbilities: radarAbilities },
+      "zh-CN",
+    )!;
+    const radarCard = consumableHintCard(radar!.entries[0]!, radar!);
+    expect(radarCard.rows).toContainEqual({ label: "生效距离", value: "8.1 km" });
+
+    const [smoke] = buildConsumableSlots(
+      { ShipAbilities: smokeAbilities },
+      "zh-CN",
+    )!;
+    const smokeCard = consumableHintCard(smoke!.entries[0]!, smoke!);
+    expect(smokeCard.rows).toContainEqual({ label: "烟幕半径", value: "0.5 km" });
+    expect(smokeCard.rows!.map((r) => r.label)).toEqual([
+      "数量",
+      "作用时间",
+      "烟幕半径",
+      "装填时间",
+    ]);
   });
 });

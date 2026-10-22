@@ -239,6 +239,11 @@
       "charges": "數量",
       "workTime": "作用時間",
       "reloadTime": "裝填時間",
+      "range": "生效距離",
+      "rangeShip": "對艦生效距離",
+      "rangeTorpedo": "對魚雷生效距離",
+      "radius": "煙幕半徑",
+      "patrolRadius": "巡邏半徑",
       "slotLabel": "第 {n} 槽",
       "auto": "自動觸發",
       "keysHint": "按鍵為遊戲預設消耗品鍵位，可在遊戲內設定中修改。"
