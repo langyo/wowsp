@@ -298,6 +298,7 @@ impl ServerHandle {
     /// Insert a token with an explicit expiry into the live map — tests
     /// drive time by putting an ALREADY-EXPIRED Instant in directly (a
     /// monotonic clock cannot be rewound).
+    #[cfg(test)]
     pub fn inject_token(&self, token: &str, expires: std::time::Instant) {
         self.shared
             .tokens

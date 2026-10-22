@@ -87,10 +87,19 @@ pub(super) fn clean_host(host: &str) -> String {
 }
 
 /// Map a pairing-server error response onto the clean strings the frontend
-/// toasts (the web mock and the Rust server agree on these).
+/// toasts (the web mock and the Rust server agree on these). `error` is
+/// the response body's `error` field when one was readable — it separates
+/// the host-gate refusal from the PIN failure (both 403).
 pub(crate) fn http_error(status: reqwest::StatusCode) -> String {
+    http_error_body(status, None)
+}
+
+pub(crate) fn http_error_body(status: reqwest::StatusCode, error: Option<&str>) -> String {
     match status.as_u16() {
         401 => "invalid or expired token".to_string(),
+        403 if error == Some("unexpected host") => {
+            "the desktop refused this host name — enter its IP address (shown on the desktop's pairing card)".to_string()
+        },
         403 => "invalid PIN".to_string(),
         404 => "not found on the host".to_string(),
         429 => "too many attempts, wait a moment and retry".to_string(),
@@ -153,7 +162,16 @@ pub async fn pairing_pair(target: PairingTarget, pin: String) -> CommandResult<P
                 .await
                 .map_err(|e| anyhow!("cannot reach {host}:{port} ({e})"))?;
             if !resp.status().is_success() {
-                return Err(anyhow!("{}", http_error(resp.status())).into());
+                // The 403 body separates the host-gate refusal (a manually
+                // typed hostname target — audit M-4c) from the PIN failure,
+                // so the toast points at the actual mistake.
+                let status = resp.status();
+                let error = resp
+                    .json::<serde_json::Value>()
+                    .await
+                    .ok()
+                    .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(String::from));
+                return Err(anyhow!("{}", http_error_body(status, error.as_deref())).into());
             }
             let mut token = resp
                 .json::<PairingToken>()

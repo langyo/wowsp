@@ -76,16 +76,27 @@ fn enforce_https_root(root: &str, raw: &str) -> Result<String> {
 }
 
 /// M-5b: the ws(s) tunnel base is wss-only, except plain ws on an
-/// explicit loopback host.
+/// explicit loopback host. The scheme probe is case-insensitive (a
+/// `WS://` spelling must not slip past the `ws://` strip — audit review)
+/// and the rejected/rebuilt form carries the original casing.
 fn enforce_wss_base(ws_base: &str, raw: &str) -> Result<String> {
-    if let Some(rest) = ws_base.strip_prefix("ws://") {
-        if !is_loopback_host(host_of_url(rest)) {
-            return Err(anyhow!(
-                "relay WebSocket base must be wss:// (plain ws only for loopback dev): {raw}"
-            ));
-        }
+    let Some(rest) = ws_base.strip_prefix("ws://").or_else(|| {
+        ws_base
+            .get(..5)
+            .filter(|head| head.eq_ignore_ascii_case("ws://"))
+            .and_then(|_| ws_base.get(5..))
+    }) else {
+        return Ok(ws_base.to_string());
+    };
+    if !is_loopback_host(host_of_url(rest)) {
+        return Err(anyhow!(
+            "relay WebSocket base must be wss:// (plain ws only for loopback dev): {raw}"
+        ));
     }
-    Ok(ws_base.to_string())
+    let mut out = String::with_capacity(ws_base.len());
+    out.push_str("ws://");
+    out.push_str(rest);
+    Ok(out)
 }
 
 /// Normalize any plausible gateway URL into its http(s) ROOT form (the
@@ -341,6 +352,24 @@ mod tests {
         assert!(!is_loopback_host("localhost.example.org"));
         assert!(!is_loopback_host("203.0.113.7"));
         assert!(!is_loopback_host(""));
+    }
+
+    #[test]
+    fn wss_enforcement_is_scheme_case_insensitive() {
+        // Audit review: a `WS://` spelling must not slip past the plain-ws
+        // gate via the case-sensitive prefix strip.
+        assert!(enforce_wss_base("WS://evil.example:9000", "raw").is_err());
+        assert!(enforce_wss_base("wS://evil.example:9000", "raw").is_err());
+        // Loopback plain ws keeps working (any spelling), rebuilt lowercase.
+        assert_eq!(
+            enforce_wss_base("WS://127.0.0.1:9000", "raw").unwrap(),
+            "ws://127.0.0.1:9000"
+        );
+        // Already-secure forms pass through untouched.
+        assert_eq!(
+            enforce_wss_base("wss://evil.example:9000", "raw").unwrap(),
+            "wss://evil.example:9000"
+        );
     }
 
     #[test]
