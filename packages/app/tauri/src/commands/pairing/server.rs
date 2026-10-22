@@ -5,6 +5,8 @@
 
 use anyhow::{Result, anyhow, bail};
 
+use std::collections::HashMap;
+use std::net::IpAddr;
 use std::net::Ipv4Addr;
 #[cfg(test)]
 use std::net::TcpListener as StdListener;
@@ -37,6 +39,24 @@ const PIN_MAX_FAILURES: u32 = 5;
 /// How long a tripped /pair lockout lasts (anchored at the failure that
 /// tripped it; a correct PIN resets the counter).
 const PIN_BLOCK_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
+/// Distinct peer IPs the /pair throttle tracks before evicting the
+/// quiet/expired entries (M-2: a flood of spoofed sources must not grow
+/// the map without bound).
+const THROTTLE_MAX_IPS: usize = 256;
+/// Bearer-token lifetime (M-1): a paired session slides its expiry
+/// forward on every successful authenticated use; a fresh /pair always
+/// mints a NEW token and revokes the previous one.
+const TOKEN_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+/// Concurrently served connections (M-3): one semaphore permit per
+/// accepted connection, held for its lifetime. Over-cap connections wait
+/// on the semaphore (the kernel backlog holds their sockets) instead of
+/// multiplying runtime tasks and disk scans.
+const MAX_CONNECTIONS: usize = 64;
+/// Per-write stall bound (M-3): any single response write that cannot
+/// complete within this window (a client that stops reading) drops the
+/// connection. The bound is PER WRITE, not per response — a streaming
+/// transfer that keeps progressing is never cut.
+const WRITE_STALL: std::time::Duration = std::time::Duration::from_secs(30);
 /// How long /api/gamedata waits for the background zip build before
 /// answering 503 + Retry-After (a request that lands moments before
 /// completion still gets served instead of bounced).
@@ -128,11 +148,16 @@ pub async fn server_snapshot() -> Option<(u16, String)> {
     st.running.then(|| (st.port, st.room.clone()))
 }
 
-/// Everything the connection handlers need; shared via Arc. The token is
-/// readable from the state snapshot for diagnostics — kept here only.
+/// Everything the connection handlers need; shared via Arc.
 struct Shared {
     pin: String,
-    token: String,
+    /// The LIVE bearer tokens of this server run (M-1): token → expiry.
+    /// A successful `POST /pair` mints a fresh 256-bit token, REVOKES
+    /// every previous one (one active pairing session per server run)
+    /// and stores the new token with its expiry; each authenticated use
+    /// slides the expiry forward. Std mutex: the critical sections are a
+    /// lookup plus one Instant write, never held across an await.
+    tokens: std::sync::Mutex<HashMap<String, std::time::Instant>>,
     /// The run's random room id, echoed in the /pair success body so a
     /// relay phone can address its later tunnels without asking the
     /// gateway again (LAN phones ignore it).
@@ -144,10 +169,13 @@ struct Shared {
     gamedata: watch::Receiver<GamedataState>,
     /// Keep this run's ready snapshot alive until all handlers retire.
     _gamedata_workspace: Option<Arc<super::GamedataWorkspace>>,
-    /// /pair brute-force throttle (see [`PinThrottle`]). Std mutex: the
+    /// /pair brute-force throttle keyed by PEER IP (M-2 — see
+    /// [`PinThrottle`] and the `PairThrottles` map). Std mutex: the
     /// critical sections are two integer writes, never held across an
     /// await. Fresh per server run.
-    pin_throttle: std::sync::Mutex<PinThrottle>,
+    pin_throttle: std::sync::Mutex<PairThrottles>,
+    /// Connection-lifetime permits (M-3): one per served connection.
+    conns: Arc<tokio::sync::Semaphore>,
     shutdown: watch::Receiver<bool>,
 }
 
@@ -162,13 +190,13 @@ enum GamedataState {
     Failed(String),
 }
 
-/// PIN brute-force throttle, dependency-free and pure so the behavior is
-/// unit-testable: after [`PIN_MAX_FAILURES`] consecutive wrong PINs the
-/// exchange rejects EVERY attempt (correct PIN included — the check runs
-/// before the comparison) until a [`PIN_BLOCK_WINDOW`] has passed since
-/// the failure that tripped the limit. A correct PIN resets the counter;
-/// failures keep accumulating across expired windows, so a persistent
-/// guesser settles into one guess per window.
+/// PIN brute-force throttle for ONE peer IP, dependency-free and pure so
+/// the behavior is unit-testable: after [`PIN_MAX_FAILURES`] consecutive
+/// wrong PINs the exchange rejects EVERY attempt (correct PIN included —
+/// the check runs before the comparison) until a [`PIN_BLOCK_WINDOW`] has
+/// passed since the failure that tripped the limit. A correct PIN resets
+/// the counter; failures keep accumulating across expired windows, so a
+/// persistent guesser settles into one guess per window.
 #[derive(Default)]
 struct PinThrottle {
     consecutive_failures: u32,
@@ -195,6 +223,57 @@ impl PinThrottle {
         self.consecutive_failures = 0;
         self.blocked_until = None;
     }
+
+    /// Whether the entry carries no live state and may be evicted from a
+    /// full map (M-2 eviction): nothing blocked, no failures accumulated.
+    fn idle(&self, now: std::time::Instant) -> bool {
+        self.consecutive_failures == 0 && self.blocked_until.is_none_or(|until| now >= until)
+    }
+}
+
+/// The /pair throttle state of every peer IP seen this run (M-2: keyed by
+/// the TcpStream's `peer_addr()` — a LAN peer cannot lock out the gateway
+/// bridge, whose connections all arrive from 127.0.0.1 and get their own
+/// entry by construction). Capped at [`THROTTLE_MAX_IPS`] entries with
+/// idle-entry eviction.
+#[derive(Default)]
+struct PairThrottles {
+    by_ip: HashMap<IpAddr, PinThrottle>,
+}
+
+impl PairThrottles {
+    fn check(&self, peer: IpAddr, now: std::time::Instant) -> Result<(), std::time::Duration> {
+        self.by_ip
+            .get(&peer)
+            .map(|t| t.check(now))
+            .unwrap_or(Ok(()))
+    }
+
+    fn record_failure(&mut self, peer: IpAddr, now: std::time::Instant) {
+        if !self.by_ip.contains_key(&peer) && self.by_ip.len() >= THROTTLE_MAX_IPS {
+            self.by_ip.retain(|_, t| !t.idle(now));
+            // Still full (that many actively-guessing sources) → drop one
+            // arbitrary entry; the bound matters more than the bookkeeping.
+            if self.by_ip.len() >= THROTTLE_MAX_IPS {
+                if let Some(first) = self.by_ip.keys().next().copied() {
+                    self.by_ip.remove(&first);
+                }
+            }
+        }
+        self.by_ip.entry(peer).or_default().record_failure(now);
+    }
+
+    fn record_success(&mut self, peer: IpAddr) {
+        if let Some(t) = self.by_ip.get_mut(&peer) {
+            t.record_success();
+        }
+    }
+
+    /// Total live entries (test surface).
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.by_ip.len()
+    }
 }
 
 /// Handle to a fixture server: the minted token plus its shutdown signal.
@@ -202,6 +281,7 @@ impl PinThrottle {
 pub struct ServerHandle {
     #[allow(dead_code)] // read via Debug/diagnostics in tests
     pub token: String,
+    shared: Arc<Shared>,
     shutdown: watch::Sender<bool>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -213,6 +293,18 @@ impl ServerHandle {
     pub async fn stop(self) {
         let _ = self.shutdown.send(true);
         let _ = self.task.await;
+    }
+
+    /// Insert a token with an explicit expiry into the live map — tests
+    /// drive time by putting an ALREADY-EXPIRED Instant in directly (a
+    /// monotonic clock cannot be rewound).
+    #[cfg(test)]
+    pub fn inject_token(&self, token: &str, expires: std::time::Instant) {
+        self.shared
+            .tokens
+            .lock()
+            .unwrap()
+            .insert(token.to_string(), expires);
     }
 }
 
@@ -226,10 +318,10 @@ async fn prepare_server() -> Result<ServerState> {
         .port();
     let host = lan_ipv4();
     let pin = random_digits(6)?;
-    let token = random_token()?;
     // Relay v2 room identity: a fresh random 64-hex id per run — the
     // gateway binds its allocated pairing code to THIS id; nothing is
-    // ever derived from the pin.
+    // ever derived from the pin. No token exists until a /pair succeeds
+    // (M-1: each pairing mints its own, previous ones are revoked).
     let room = random_token()?;
     let replay_root = replay::resolve_replay_dir(None)?;
     // Game-data zip: rebuilt on every start so the phone never sees a
@@ -264,12 +356,13 @@ async fn prepare_server() -> Result<ServerState> {
     let (tx, rx) = watch::channel(false);
     let shared = Arc::new(Shared {
         pin: pin.clone(),
-        token: token.clone(),
+        tokens: std::sync::Mutex::new(HashMap::new()),
         room: room.clone(),
         replay_root,
         gamedata: gd_rx,
         _gamedata_workspace: Some(workspace),
-        pin_throttle: std::sync::Mutex::new(PinThrottle::default()),
+        pin_throttle: std::sync::Mutex::new(PairThrottles::default()),
+        conns: Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS)),
         shutdown: rx,
     });
     let task = tokio::spawn(serve(listener, shared));
@@ -546,17 +639,25 @@ pub async fn spawn_on(
     let (tx, rx) = watch::channel(false);
     let shared = Arc::new(Shared {
         pin: pin.to_string(),
-        token: token.clone(),
+        // The fixture's minted token starts ACTIVE (tests authenticate
+        // with it directly); production runs start with an empty map —
+        // only a successful /pair mints a token.
+        tokens: std::sync::Mutex::new(HashMap::from([(
+            token.clone(),
+            std::time::Instant::now() + TOKEN_TTL,
+        )])),
         room: room.to_string(),
         replay_root,
         gamedata: gd_rx,
         _gamedata_workspace: None,
-        pin_throttle: std::sync::Mutex::new(PinThrottle::default()),
+        pin_throttle: std::sync::Mutex::new(PairThrottles::default()),
+        conns: Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS)),
         shutdown: rx,
     });
-    let task = tokio::spawn(serve(listener, shared));
+    let task = tokio::spawn(serve(listener, shared.clone()));
     Ok(ServerHandle {
         token,
+        shared,
         shutdown: tx,
         task,
     })
@@ -586,11 +687,20 @@ async fn serve(listener: TcpListener, shared: Arc<Shared>) {
         };
         let shared = shared.clone();
         connections.spawn(async move {
+            // M-3: one permit per SERVED connection, held for its whole
+            // lifetime and released on drop. When all [`MAX_CONNECTIONS`]
+            // are busy, further connections park here (their sockets sit
+            // in the kernel backlog) instead of multiplying runtime
+            // tasks; `connections.shutdown()` on stop aborts the parked
+            // tasks and frees every permit.
+            let permit = shared.conns.clone().acquire_owned().await;
             // NO timeout wrapper: handle_conn bounds only the request
-            // reading internally; the response may stream for minutes.
+            // reading internally, and each response WRITE individually
+            // (see write_stall) — the response may stream for minutes.
             if let Err(e) = handle_conn(stream, &shared).await {
                 tracing::warn!(%peer, error = %e, "pairing connection dropped");
             }
+            drop(permit);
         });
     }
     // Closing the listener alone leaves accepted sockets authorized with
@@ -604,23 +714,15 @@ async fn serve(listener: TcpListener, shared: Arc<Shared>) {
 /// parse unit test (pairing::tests) can assert on them.
 pub(super) struct Request {
     pub(super) method: String,
-    /// Percent-decoded path (no query).
+    /// Percent-decoded path (any `?query` split off and discarded —
+    /// M-1 removed the last query consumer, the `?token=` auth leg).
     pub(super) path: String,
-    /// `?a=b` pairs (percent-decoded).
-    pub(super) query: Vec<(String, String)>,
     /// Lowercased header name → value.
     pub(super) headers: Vec<(String, String)>,
     pub(super) content_length: usize,
 }
 
 impl Request {
-    pub(super) fn query_param(&self, key: &str) -> Option<&str> {
-        self.query
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.as_str())
-    }
-
     fn header(&self, name: &str) -> Option<&str> {
         let lower = name.to_ascii_lowercase();
         self.headers
@@ -715,21 +817,13 @@ pub(super) fn parse_head(head: &[u8]) -> Result<Request> {
     if method.is_empty() || parts.next().is_none() {
         bail!("malformed request line");
     }
-    // Split query off the target, percent-decode the path.
-    let (raw_path, raw_query) = match target.split_once('?') {
+    // Split the query off the target (discarded — nothing consumes a
+    // query string anymore), percent-decode the path.
+    let (raw_path, _raw_query) = match target.split_once('?') {
         Some((p, q)) => (p, Some(q)),
         None => (target, None),
     };
     let path = percent_decode(raw_path)?;
-    let query = raw_query
-        .unwrap_or("")
-        .split('&')
-        .filter(|s| !s.is_empty())
-        .map(|pair| match pair.split_once('=') {
-            Some((k, v)) => Ok((percent_decode(k)?, percent_decode(v)?)),
-            None => Ok((percent_decode(pair)?, String::new())),
-        })
-        .collect::<Result<Vec<_>>>()?;
     let mut headers = Vec::new();
     let mut content_length = 0usize;
     for line in lines {
@@ -749,7 +843,6 @@ pub(super) fn parse_head(head: &[u8]) -> Result<Request> {
     Ok(Request {
         method,
         path,
-        query,
         headers,
         content_length,
     })
@@ -771,24 +864,55 @@ pub(super) fn token_eq(a: &str, b: &str) -> bool {
 
 /// Serve one connection: read, route, respond, close. The REQUEST phase
 /// (head + body) is deadline-bounded inside [`read_request`] —
-/// slowloris protection; the routing/response phase is deliberately
-/// unbounded so multi-hundred-MB streams are never cut mid-transfer.
-/// Routes are resolved BEFORE the auth check so unknown paths 404
-/// regardless of token state (the route set is public knowledge; hiding
-/// it behind a 401 buys nothing on a LAN toy and muddies client error
-/// mapping).
+/// slowloris protection; each response WRITE is stall-bounded (see
+/// [`write_stall`]) while the response as a whole stays unbounded so
+/// multi-hundred-MB streams are never cut mid-transfer. Routes are
+/// resolved BEFORE the auth check so unknown paths 404 regardless of
+/// token state (the route set is public knowledge; hiding it behind a
+/// 401 buys nothing on a LAN toy and muddies client error mapping).
 async fn handle_conn(mut stream: TcpStream, shared: &Shared) -> Result<()> {
     let (req, body) = read_request(&mut stream, REQUEST_TIMEOUT).await?;
+
+    // M-4a: a request carrying `Origin` comes from a browser (the only
+    // clients of this protocol are native — the phone app, the desktop,
+    // the relay bridge — and never send one). Rejecting it up front
+    // blinds DNS-rebinding pages and drive-by POSTs regardless of what
+    // else the request carries.
+    if req.header("origin").is_some() {
+        return respond_json(
+            &mut stream,
+            403,
+            "Forbidden",
+            &serde_json::json!({ "error": "browser clients are not supported" }),
+        )
+        .await
+        .map_err(anyhow::Error::from);
+    }
+    // M-4c: Host hygiene — only this machine may be addressed.
+    if !host_header_allowed(&req) {
+        return respond_json(
+            &mut stream,
+            403,
+            "Forbidden",
+            &serde_json::json!({ "error": "unexpected host" }),
+        )
+        .await
+        .map_err(anyhow::Error::from);
+    }
+
     let authed = req
         .bearer_token()
-        .or_else(|| req.query_param("token"))
-        .is_some_and(|t| token_eq(t, &shared.token));
+        .is_some_and(|t| shared_token_valid(shared, t));
 
     let method = req.method.clone();
     let path = req.path.clone();
 
     if method == "POST" && path == "/pair" {
-        return handle_pair(&mut stream, shared, &req, body).await;
+        let peer = stream
+            .peer_addr()
+            .map(|a| a.ip())
+            .unwrap_or_else(|_| Ipv4Addr::UNSPECIFIED.into());
+        return handle_pair(&mut stream, shared, &req, peer, body).await;
     }
     if method == "GET" && path == "/api/ping" {
         return respond_json(&mut stream, 200, "OK", &serde_json::json!({ "ok": true }))
@@ -837,6 +961,7 @@ async fn handle_pair(
     stream: &mut TcpStream,
     shared: &Shared,
     req: &Request,
+    peer: IpAddr,
     body: Vec<u8>,
 ) -> Result<()> {
     if req.content_length > MAX_BODY {
@@ -849,6 +974,24 @@ async fn handle_pair(
         .await
         .map_err(anyhow::Error::from);
     }
+    // M-4b: the JSON body must declare itself. A cross-site form or
+    // `fetch` POST cannot send `application/json` without a CORS
+    // preflight (already dead — see the Origin rejection), so this is
+    // one more cheap gate a browser cannot pass.
+    let json_body = req
+        .header("content-type")
+        .and_then(|v| v.split(';').next())
+        .is_some_and(|media_type| media_type.trim().eq_ignore_ascii_case("application/json"));
+    if !json_body {
+        return respond_json(
+            stream,
+            415,
+            "Unsupported Media Type",
+            &serde_json::json!({ "error": "pair body must be application/json" }),
+        )
+        .await
+        .map_err(anyhow::Error::from);
+    }
     let pin = serde_json::from_slice::<serde_json::Value>(&body)
         .ok()
         .and_then(|v| v.get("pin").and_then(|p| p.as_str()).map(str::to_string))
@@ -856,9 +999,12 @@ async fn handle_pair(
     // Throttle BEFORE the comparison: within a tripped window even the
     // CORRECT PIN is rejected — otherwise the lockout would leak when
     // the guessing stops. The guard is dropped at the end of this
-    // statement (std mutexes must never ride an await).
+    // statement (std mutexes must never ride an await). Keyed by the
+    // connection's peer IP (M-2): one noisy host cannot lock out the
+    // others, and the gateway tunnel's connections (all from
+    // 127.0.0.1) own their entry.
     let blocked_for = shared_throttle(shared)
-        .check(std::time::Instant::now())
+        .check(peer, std::time::Instant::now())
         .err();
     if let Some(remaining) = blocked_for {
         let retry_after = remaining.as_secs().max(1);
@@ -876,12 +1022,15 @@ async fn handle_pair(
     // Relay v2: the gateway-allocated pairing code is an accepted secret
     // alongside the local PIN — a same-network phone types whatever the
     // desktop displays (the code while the gateway is online), and the
-    // tunnel phone always types the code.
-    let relay_code = crate::commands::pairing_relay::current_relay_code();
-    let pin_ok = token_eq(&pin, &shared.pin)
-        || relay_code.is_some_and(|code| !code.is_empty() && token_eq(&pin, &code));
+    // tunnel phone always types the code. M-5a: only its documented
+    // SHAPE (6 ASCII digits) is a secret — a malformed gateway answer
+    // never becomes a PIN candidate.
+    let relay_code = crate::commands::pairing_relay::current_relay_code()
+        .filter(|code| crate::commands::pairing_relay::valid_pairing_code(code));
+    let pin_ok =
+        token_eq(&pin, &shared.pin) || relay_code.is_some_and(|code| token_eq(&pin, &code));
     if !pin_ok {
-        shared_throttle(shared).record_failure(std::time::Instant::now());
+        shared_throttle(shared).record_failure(peer, std::time::Instant::now());
         tracing::warn!("pairing: rejected PIN attempt");
         return respond_json(
             stream,
@@ -892,27 +1041,112 @@ async fn handle_pair(
         .await
         .map_err(anyhow::Error::from);
     }
-    shared_throttle(shared).record_success();
+    shared_throttle(shared).record_success(peer);
+    // M-1: one active pairing session per server run — mint a NEW
+    // token and revoke every previous one, so a re-pair (or a second
+    // phone) invalidates whatever was handed out before.
+    let token = random_token()?;
+    {
+        let mut tokens = shared_tokens(shared);
+        tokens.clear();
+        tokens.insert(token.clone(), std::time::Instant::now() + TOKEN_TTL);
+    }
     // The room id rides along: relay phones address their later tunnels
     // by it (LAN phones ignore it).
     respond_json(
         stream,
         200,
         "OK",
-        &serde_json::json!({ "token": shared.token, "room": shared.room }),
+        &serde_json::json!({ "token": token, "room": shared.room }),
     )
     .await
     .map_err(anyhow::Error::from)
 }
 
-/// Lock the PIN throttle, treating a poisoned lock as recoverable (the
-/// guarded state is two integers; a panicked writer loses nothing but
-/// the last update).
-fn shared_throttle(shared: &Shared) -> std::sync::MutexGuard<'_, PinThrottle> {
+/// Lock the per-IP PIN throttle, treating a poisoned lock as recoverable
+/// (the guarded state is small integers per IP; a panicked writer loses
+/// nothing but the last update).
+fn shared_throttle(shared: &Shared) -> std::sync::MutexGuard<'_, PairThrottles> {
     shared
         .pin_throttle
         .lock()
         .unwrap_or_else(|p| p.into_inner())
+}
+
+/// Lock the live-token map (poisoning treated like [`shared_throttle`]).
+fn shared_tokens(
+    shared: &Shared,
+) -> std::sync::MutexGuard<'_, HashMap<String, std::time::Instant>> {
+    shared.tokens.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// M-1 auth: the presented bearer must match a LIVE token — an entry
+/// that exists and is not expired; a hit slides its expiry forward
+/// (an active session never expires mid-transfer), a miss is dropped on
+/// sight. The lookup compares every live entry through [`token_eq`], so
+/// the token bytes never leak through an early-exit timing side channel
+/// (the map holds at most a handful of entries — one, after a revoke).
+fn shared_token_valid(shared: &Shared, candidate: &str) -> bool {
+    let now = std::time::Instant::now();
+    let mut tokens = shared_tokens(shared);
+    let hit = tokens.keys().find(|t| token_eq(t, candidate)).cloned();
+    match hit {
+        Some(t) => {
+            let live = tokens.get(&t).is_some_and(|exp| now < *exp);
+            if live {
+                tokens.insert(t, now + TOKEN_TTL);
+            } else {
+                tokens.remove(&t);
+            }
+            live
+        },
+        None => false,
+    }
+}
+
+/// M-4c: the Host header, WHEN a client sends one, must name THIS
+/// machine — an IP literal (v4 or v6, optional :port) or `localhost`.
+/// Any other hostname is DNS-rebinding bait (an attacker domain
+/// resolving 127.0.0.1 and driving a browser at the pairing port).
+/// Absent Host is fine (HTTP/1.0 clients). A DUPLICATED Host header is
+/// rejected too (request-smuggling bait).
+fn host_header_allowed(req: &Request) -> bool {
+    let mut hosts = req.headers.iter().filter(|(k, _)| k == "host");
+    let Some((_, first)) = hosts.next() else {
+        return true;
+    };
+    if hosts.next().is_some() {
+        return false;
+    }
+    host_value_allowed(first)
+}
+
+/// The single-value form of [`host_header_allowed`] (unit-testable).
+fn host_value_allowed(value: &str) -> bool {
+    let h = value.trim();
+    let bare = if let Some(rest) = h.strip_prefix('[') {
+        // Bracketed IPv6: `[::1]` or `[::1]:58041`.
+        match rest.split_once(']') {
+            Some((v6, tail)) if tail.is_empty() || tail.starts_with(':') => v6,
+            _ => return false,
+        }
+    } else {
+        // Host or v4 with an optional :port. Anything with a colon that
+        // is not `host:digits` stays whole and fails the parse below —
+        // unbracketed IPv6 (e.g. `::1`, `::1:8080`) is refused; Host
+        // requires brackets for IPv6 literals.
+        match h.rsplit_once(':') {
+            Some((host, port))
+                if !host.is_empty()
+                    && !port.is_empty()
+                    && port.bytes().all(|b| b.is_ascii_digit()) =>
+            {
+                host
+            },
+            _ => h,
+        }
+    };
+    bare.parse::<std::net::IpAddr>().is_ok() || bare.eq_ignore_ascii_case("localhost")
 }
 
 /// Root-relative remote name (forward slashes) for one enumerated path.
@@ -1073,7 +1307,26 @@ async fn handle_gamedata_with_wait(
     }
 }
 
-/// Stream a file with Content-Length + Connection: close.
+/// One response WRITE, bounded by [`WRITE_STALL`] (M-3): a client that
+/// stops reading for the window gets its connection dropped instead of
+/// pinning the handler forever. The bound is PER WRITE, never per
+/// response — a streaming transfer that keeps progressing is never cut.
+async fn write_stall(
+    fut: impl std::future::Future<Output = std::io::Result<()>>,
+) -> std::io::Result<()> {
+    match tokio::time::timeout(WRITE_STALL, fut).await {
+        Ok(r) => r,
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "response write stalled",
+        )),
+    }
+}
+
+/// Stream a file with Content-Length + Connection: close. Every chunk
+/// write is individually stall-bounded (M-3): a reader that stalls is
+/// dropped at the [`WRITE_STALL`] mark, a progressing one streams for
+/// minutes untouched.
 async fn serve_file(stream: &mut TcpStream, path: &Path, content_type: &str) -> Result<()> {
     let len = std::fs::metadata(path)
         .map_err(|e| anyhow!("stat {}: {e}", path.display()))?
@@ -1081,17 +1334,28 @@ async fn serve_file(stream: &mut TcpStream, path: &Path, content_type: &str) -> 
     let head = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n"
     );
-    stream
-        .write_all(head.as_bytes())
+    write_stall(stream.write_all(head.as_bytes()))
         .await
         .map_err(|e| anyhow!("write head: {e}"))?;
     let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| anyhow!("open {}: {e}", path.display()))?;
-    tokio::io::copy(&mut file, stream)
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .await
+            .map_err(|e| anyhow!("read {}: {e}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        write_stall(stream.write_all(&buf[..n]))
+            .await
+            .map_err(|e| anyhow!("stream {}: {e}", path.display()))?;
+    }
+    write_stall(stream.flush())
         .await
-        .map_err(|e| anyhow!("stream {}: {e}", path.display()))?;
-    stream.flush().await.map_err(|e| anyhow!("flush: {e}"))?;
+        .map_err(|e| anyhow!("flush: {e}"))?;
     let _ = stream.shutdown().await;
     Ok(())
 }
@@ -1123,9 +1387,9 @@ async fn respond_json_extra(
         head.push_str(&format!("{name}: {value}\r\n"));
     }
     head.push_str("Connection: close\r\n\r\n");
-    stream.write_all(head.as_bytes()).await?;
-    stream.write_all(&bytes).await?;
-    stream.flush().await
+    write_stall(stream.write_all(head.as_bytes())).await?;
+    write_stall(stream.write_all(&bytes)).await?;
+    write_stall(stream.flush()).await
 }
 
 // ── server-internal unit tests (visible only in here, where the
@@ -1149,12 +1413,13 @@ mod tests {
         let (_shutdown_tx, shutdown_rx) = watch::channel(false);
         Arc::new(Shared {
             pin: "123456".to_string(),
-            token: "test-token".to_string(),
+            tokens: std::sync::Mutex::new(HashMap::new()),
             room: "a".repeat(64),
             replay_root: std::env::temp_dir(),
             gamedata,
             _gamedata_workspace: None,
-            pin_throttle: std::sync::Mutex::new(PinThrottle::default()),
+            pin_throttle: std::sync::Mutex::new(PairThrottles::default()),
+            conns: Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS)),
             shutdown: shutdown_rx,
         })
     }
@@ -1307,6 +1572,129 @@ mod tests {
         // A correct PIN clears everything.
         throttle.record_success();
         assert!(throttle.check(std::time::Instant::now()).is_ok());
+    }
+
+    /// M-2: the throttle is keyed by peer IP — one IP burning its five
+    /// failures locks ONLY itself; the others (including the loopback
+    /// entry the gateway tunnel owns) stay open.
+    #[test]
+    fn pin_throttles_are_isolated_per_ip() {
+        let mut throttles = PairThrottles::default();
+        let t0 = std::time::Instant::now();
+        let lan = IpAddr::from([192, 0, 2, 10]);
+        let other = IpAddr::from([203, 0, 113, 7]);
+        let tunnel = IpAddr::from([127, 0, 0, 1]);
+        for _ in 0..PIN_MAX_FAILURES {
+            throttles.record_failure(lan, t0);
+        }
+        assert!(throttles.check(lan, t0).is_err(), "the offender is locked");
+        assert!(throttles.check(other, t0).is_ok(), "a second IP stays open");
+        assert!(
+            throttles.check(tunnel, t0).is_ok(),
+            "the tunnel's loopback entry stays open"
+        );
+        // A success from the second IP records on ITS entry only.
+        throttles.record_success(other);
+        assert!(throttles.check(lan, t0).is_err());
+        // The loopback entry can lock on its own without touching the
+        // LAN one.
+        let later = t0 + std::time::Duration::from_secs(11);
+        for _ in 0..PIN_MAX_FAILURES {
+            throttles.record_failure(tunnel, later);
+        }
+        assert!(
+            throttles.check(tunnel, later).is_err(),
+            "the tunnel entry locked independently"
+        );
+        // lan's own 10 s lockout has expired by now, but its accumulated
+        // failures persist — one more re-trips ONLY lan.
+        assert!(throttles.check(lan, later).is_ok());
+        throttles.record_failure(lan, later);
+        assert!(throttles.check(lan, later).is_err());
+        assert!(
+            throttles.check(other, later).is_ok(),
+            "the second IP was never touched"
+        );
+    }
+
+    /// M-2: the per-IP map is capped — quiet/expired entries are evicted
+    /// before a fresh IP is admitted, and even a flood of actively
+    /// guessing sources cannot grow it past the bound.
+    #[test]
+    fn throttle_map_is_capped_and_evicts_idle_entries() {
+        let mut throttles = PairThrottles::default();
+        let t0 = std::time::Instant::now();
+        for i in 0..THROTTLE_MAX_IPS {
+            let ip = IpAddr::from([192, 0, 2, i as u8]);
+            throttles.record_failure(ip, t0); // 1 failure each = not idle
+        }
+        assert_eq!(throttles.len(), THROTTLE_MAX_IPS);
+        // One more failure from a FRESH IP: everything is non-idle, so a
+        // victim is dropped — the map still holds the line.
+        let fresh = IpAddr::from([203, 0, 113, 99]);
+        throttles.record_failure(fresh, t0);
+        assert!(
+            throttles.len() <= THROTTLE_MAX_IPS,
+            "map must stay capped: {}",
+            throttles.len()
+        );
+        assert!(
+            throttles.check(fresh, t0).is_ok(),
+            "the fresh IP was admitted"
+        );
+        // Entries whose failures expired to an unlocked state are idle
+        // again and get evicted first.
+        let mut throttles = PairThrottles::default();
+        for i in 0..THROTTLE_MAX_IPS {
+            let ip = IpAddr::from([192, 0, 2, i as u8]);
+            // One failure then a success → consecutive_failures == 0 → idle.
+            throttles.record_failure(ip, t0);
+            throttles.record_success(ip);
+        }
+        assert_eq!(throttles.len(), THROTTLE_MAX_IPS);
+        throttles.record_failure(IpAddr::from([203, 0, 113, 100]), t0);
+        assert!(
+            throttles.len() <= THROTTLE_MAX_IPS,
+            "idle entries must be reclaimed first"
+        );
+    }
+
+    /// M-4c: Host header shape gate — IP literals (v4/v6, bracketed for
+    /// v6, optional ports), localhost; hostnames and duplicates rejected.
+    /// An unbracketed IPv6 with a trailing group looks like host:port and
+    /// is refused (Host requires brackets for IPv6 per RFC 3986).
+    #[test]
+    fn host_header_gate() {
+        assert!(host_value_allowed("127.0.0.1"));
+        assert!(host_value_allowed("127.0.0.1:58041"));
+        assert!(host_value_allowed("192.168.1.20:58041"));
+        assert!(host_value_allowed("localhost"));
+        assert!(host_value_allowed("LOCALHOST:80"));
+        assert!(host_value_allowed("[::1]"));
+        assert!(host_value_allowed("[::1]:58041"));
+        assert!(!host_value_allowed("::1"), "IPv6 in Host must be bracketed");
+        assert!(!host_value_allowed("evil.example"));
+        assert!(!host_value_allowed("evil.example:80"));
+        assert!(!host_value_allowed("localhost."));
+        assert!(!host_value_allowed("127.0.0.2.evil.example"));
+        assert!(!host_value_allowed("127.0.0.1:"));
+        assert!(!host_value_allowed(""));
+        assert!(!host_value_allowed("[::1]junk"));
+
+        let parse = |head: &str| {
+            host_header_allowed(
+                &parse_head(format!("GET / HTTP/1.1\r\n{head}\r\n\r\n").as_bytes()).unwrap(),
+            )
+        };
+        assert!(parse("Host: 127.0.0.1:58041"));
+        assert!(parse("Host: localhost"));
+        assert!(!parse("Host: rebind.example"));
+        // Absent Host is fine (HTTP/1.0).
+        assert!(host_header_allowed(
+            &parse_head(b"GET / HTTP/1.0\r\n\r\n").unwrap()
+        ));
+        // Two Host headers are smuggling bait — rejected.
+        assert!(!parse("Host: 127.0.0.1\r\nHost: localhost"));
     }
 
     /// CSPRNG SHAPE only (lengths/charset/distribution sanity) — never

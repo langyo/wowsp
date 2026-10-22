@@ -382,7 +382,13 @@ pub fn http_client_builder() -> anyhow::Result<reqwest::ClientBuilder> {
 fn http_builder_for(config: &NetworkConfig) -> anyhow::Result<reqwest::ClientBuilder> {
     let mut builder = reqwest::Client::builder()
         .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
-        .connect_timeout(std::time::Duration::from_secs(15));
+        .connect_timeout(std::time::Duration::from_secs(15))
+        // Audit M-5d: follow redirects with a bounded chain so a
+        // compromised/redirecting origin cannot bounce clients somewhere
+        // unexpected indefinitely (reqwest's default is no redirect
+        // handling — an error — which breaks legitimate mirrors; a
+        // bounded policy keeps them working without unlimited hops).
+        .redirect(reqwest::redirect::Policy::limited(5));
     // Android has no SChannel/native-tls, so reqwest builds on rustls there
     // — and reqwest 0.13's rustls support defaults its verifier to
     // rustls-platform-verifier, whose Android backend is JVM Kotlin glue we

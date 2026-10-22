@@ -12,8 +12,11 @@
 //!   ```text
 //!   POST /pair              {"pin": "123456"}        → 200 {"token": "..."}
 //!                                                      429 while throttled
+//!                                                      (per-IP), 415
+//!                                                      without the JSON
+//!                                                      content type
 //!   GET  /api/ping                                   → 200 {"ok": true}
-//!   GET  /api/replays        (Bearer / ?token=)      → 200 [ReplayMetaLite…]
+//!   GET  /api/replays        (Bearer)                → 200 [ReplayMetaLite…]
 //!   GET  /api/replay/<name>  (auth)                  → 200 replay bytes
 //!   GET  /api/gamedata       (auth)                  → 200 zip of the
 //!                                                      gameparams/encyclopedia
@@ -23,6 +26,10 @@
 //!                                                      still being built
 //!   anything else                                     → 404
 //!   ```
+//!
+//!   Requests carrying an `Origin` header or a foreign `Host` are 403'd
+//!   (browsers and DNS-rebinding pages are not clients of this
+//!   protocol).
 //!
 //!   No framework, no new dependency: requests are tiny JSON or file streams,
 //!   every response is `Connection: close`, and the whole thing must keep
@@ -49,20 +56,34 @@
 //!   same throttling as the resource-pack downloads (~256 KB or ~100 ms,
 //!   whatever comes first).
 //!
-//! Security posture (LAN pairing, v2): the server binds 0.0.0.0 on purpose
+//! Security posture (LAN pairing, v3): the server binds 0.0.0.0 on purpose
 //! — reaching any phone on the LAN is the feature, which by construction
 //! means anyone on that LAN can also connect. In place: the PIN and the
-//! bearer token are drawn from the OS CSPRNG (`getrandom`), the token is a
-//! 256-bit hex compared in constant time, wrong PINs are throttled (5
-//! consecutive failures → 429 for a 10 s window; a correct PIN resets the
-//! counter), request head+body must fully arrive within 60 s (slowloris
-//! bound) while response streaming is deliberately unbounded so large
-//! pulls are never cut mid-stream, and file routes only touch paths the
-//! enumeration itself produced. NOT in place: plain HTTP means the token
-//! and the transferred data are sniffable and replayable by anyone on the
-//! LAN — the throttle slows PIN guessing (10^6 keyspace, a burst of ~5
-//! attempts per 10 s window) but does nothing about a sniffed token.
-//! Never expose this port beyond the trusted LAN.
+//! bearer tokens are drawn from the OS CSPRNG (`getrandom`); a token is a
+//! 256-bit hex value compared in constant time, accepted ONLY as
+//! `Authorization: Bearer` (the old `?token=` query leg is gone), and
+//! minted fresh by EVERY successful `/pair` — the minting REVOKES all
+//! earlier tokens (one active pairing session per server run) and each
+//! token expires 24 h after minting, its lifetime sliding forward while
+//! the session stays active. Wrong PINs are throttled PER PEER IP (5
+//! consecutive failures → 429 for a 10 s window; a correct PIN resets
+//! that IP's counter; the gateway tunnel's connections all arrive from
+//! 127.0.0.1 and own their entry, so a LAN flood cannot lock out a
+//! tunneled phone or vice versa; the per-IP map is capped at 256 entries
+//! with idle eviction). Served connections are capped at 64 concurrent
+//! (semaphore permit per connection) and every response WRITE is
+//! individually stall-bounded at 30 s — a reader that stops reading is
+//! dropped, a progressing transfer is never cut. Requests carrying an
+//! `Origin` header or a foreign `Host` hostname are rejected with 403
+//! (DNS-rebinding bait), `/pair` demands `Content-Type: application/json`
+//! (415), and the gateway-assigned pairing code is a secret only in its
+//! 6-digit shape. File routes only touch paths the enumeration itself
+//! produced. NOT in place: plain HTTP means the token and the transferred
+//! data are sniffable and replayable by anyone on the LAN — the per-IP
+//! throttle slows PIN guessing (10^6 keyspace, ~5 attempts per 10 s
+//! window per source) but does nothing about a sniffed token, and the
+//! 24 h expiry bounds only the window. Never expose this port beyond the
+//! trusted LAN.
 
 // ── module layout ───────────────────────────────────────────────────────────
 // `store`    — the managed replays dir + filename handling + the import command.

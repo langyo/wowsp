@@ -249,6 +249,28 @@ fn pairing_codes_must_be_six_digits() {
     assert!(!valid_code(""));
 }
 
+/// M-5a: the live pairing-code state only ever holds a well-shaped code
+/// — a malformed gateway answer is dropped (never displayed, never a
+/// /pair secret), and None still clears.
+#[tokio::test]
+async fn store_code_rejects_malformed_shapes() {
+    // Serialize against every other test touching the global code watch.
+    let _serial = HOST_SLOT_LOCK.lock().await;
+    store_code(None);
+    assert_eq!(current_relay_code(), None);
+
+    for bad in ["12345", "1234567", "12a456", "", "12345 "] {
+        store_code(Some(bad.to_string()));
+        assert_eq!(current_relay_code(), None, "{bad:?} must not be stored");
+    }
+
+    store_code(Some("654321".to_string()));
+    assert_eq!(current_relay_code().as_deref(), Some("654321"));
+    // Clearing still works, including from a shaped state.
+    store_code(None);
+    assert_eq!(current_relay_code(), None);
+}
+
 #[test]
 fn host_ids_are_32_hex_and_persisted() {
     let tmp = super::super::pairing::tests::tempfile_dir();
@@ -334,14 +356,39 @@ fn tunnel_requests_carry_auth_and_body() {
     let req = tunnel_request("POST", "/pair", None, Some(br#"{"pin":"123456"}"#));
     let text = String::from_utf8(req).unwrap();
     assert!(text.starts_with("POST /pair HTTP/1.1\r\n"));
+    // L/M-4c: the Host names the loopback pairing server (the only host
+    // the server's gate accepts), so tunneled requests pass unchanged.
+    assert!(text.contains("Host: 127.0.0.1\r\n"));
     assert!(text.contains("Content-Type: application/json\r\n"));
     assert!(text.contains("Content-Length: 16\r\n"));
     assert!(text.ends_with("\r\n\r\n{\"pin\":\"123456\"}"));
 
-    let req = tunnel_request("GET", "/api/replays", Some("tok"), None);
+    // A well-shaped token (64 lowercase hex) is spliced verbatim.
+    let token = "a".repeat(64);
+    let req = tunnel_request("GET", "/api/replays", Some(&token), None);
     let text = String::from_utf8(req).unwrap();
-    assert!(text.contains("Authorization: Bearer tok\r\n"));
+    assert!(text.contains(&format!("Authorization: Bearer {token}\r\n")));
     assert!(text.ends_with("Connection: close\r\n\r\n"));
+
+    // L: a token that is not exactly 64 lowercase hex chars never enters
+    // the request head — no header at all (the server 401s), no
+    // injection vector, one warning logged.
+    for bad in [
+        "tok",
+        &"A".repeat(64),           // uppercase hex is not our mint shape
+        &"a".repeat(63),           // short
+        &"a".repeat(65),           // long
+        "deadbeef\r\nEvil: 1\r\n", // header injection
+        "deadbeef deadbeef deadbeef deadbeef deadbeef deadbeef deadbee",
+    ] {
+        let req = tunnel_request("GET", "/api/replays", Some(bad), None);
+        let text = String::from_utf8(req).unwrap();
+        assert!(
+            !text.contains("Authorization:"),
+            "malformed token {bad:?} must be rejected from the head"
+        );
+        assert!(text.contains("Host: 127.0.0.1\r\n"));
+    }
 }
 
 #[test]
@@ -1104,23 +1151,6 @@ async fn allocate_resolve_pair_and_pull_over_the_tunnel() {
         "the resolved room rides back"
     );
 
-    // The 6-digit code is also an accepted /pair secret on the REAL
-    // server over PLAIN LAN HTTP (what a same-network phone types).
-    let lan = reqwest::Client::builder().no_proxy().build().unwrap();
-    let r = lan
-        .post(format!("http://127.0.0.1:{server_port}/pair"))
-        .json(&serde_json::json!({ "pin": code }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 200, "the relay code pairs over the LAN too");
-    let body: serde_json::Value = r.json().await.unwrap();
-    assert_eq!(
-        body["room"],
-        serde_json::json!(room),
-        "/pair echoes the room key"
-    );
-
     // An unknown-but-well-formed code resolves to the gateway-unreachable
     // marker (the phone's friendly error state), not a raw crash.
     let err = relay_pair(&gateway.root, "000000")
@@ -1164,6 +1194,35 @@ async fn allocate_resolve_pair_and_pull_over_the_tunnel() {
     .unwrap_or_else(|e| panic!("relay pull failed: {e}"));
     assert_eq!(n, bytes.len() as u64);
     assert_eq!(std::fs::read(&dest).unwrap(), bytes);
+
+    // 6b. The 6-digit code is also an accepted /pair secret on the REAL
+    //     server over PLAIN LAN HTTP (what a same-network phone types).
+    //     AFTER the tunnel steps deliberately: M-1 makes every /pair
+    //     revoke all earlier tokens, so this mint retires the tunnel
+    //     phone's token — one active pairing session per server run.
+    let lan = reqwest::Client::builder().no_proxy().build().unwrap();
+    let r = lan
+        .post(format!("http://127.0.0.1:{server_port}/pair"))
+        .json(&serde_json::json!({ "pin": code }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "the relay code pairs over the LAN too");
+    let body: serde_json::Value = r.json().await.unwrap();
+    assert_eq!(
+        body["room"],
+        serde_json::json!(room),
+        "/pair echoes the room key"
+    );
+    // The tunnel token minted before this LAN pairing is now revoked…
+    let err = relay_list_remote(&gateway.root, &room, &paired.token)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        err, "invalid or expired token",
+        "M-1: the LAN re-pair revoked the tunnel session"
+    );
 
     // 7. Regenerate: a fresh code replaces the old one (single active
     //    code per host), and the OLD code stops resolving.

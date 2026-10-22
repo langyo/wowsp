@@ -27,10 +27,18 @@ pub fn relay_online() -> bool {
     current_relay_code().is_some()
 }
 
+/// Publish a gateway-allocated pairing code. M-5a: the code is a live
+/// /pair secret ONLY in its documented shape — exactly 6 ASCII digits.
+/// A malformed answer (compromised or buggy gateway) is dropped with a
+/// warning instead of becoming a PIN candidate; `None` always clears.
 pub(super) fn store_code(code: Option<String>) {
+    let shaped = code.as_ref().filter(|c| valid_code(c)).cloned();
+    if shaped.is_none() && code.is_some() {
+        tracing::warn!("relay gateway sent a malformed pairing code — ignoring it");
+    }
     code_watch().send_if_modified(|current| {
-        if *current != code {
-            *current = code;
+        if *current != shaped {
+            *current = shaped;
             true
         } else {
             false

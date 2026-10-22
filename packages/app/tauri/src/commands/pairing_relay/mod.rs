@@ -83,7 +83,17 @@
 //! join a room as a fake host and MITM the /pair exchange — which is why the
 //! endpoint is first-party (wowsp.langyo.xyz; a resolved `upstream`
 //! inherits that trust by construction, it is reached only through the
-//! pinned root's own manifest). Payloads are plain HTTP inside the tunnel,
+//! pinned root's own manifest). Every gateway URL — the built-in
+//! constant, the debug-only `WOWSP_RELAY_URL` override, a manifest
+//! `upstream`, and `endpoints.relay` — is enforced onto https/wss at
+//! parse AND at defaulting time; plain http/ws is accepted only on
+//! explicit loopback hosts (127.0.0.1 / localhost / ::1, any port) for
+//! development against `wrangler dev`. The gateway-allocated pairing
+//! code is a /pair secret only in its documented shape (6 ASCII digits;
+//! a malformed answer is dropped, not compared). Tunnel requests name
+//! `Host: 127.0.0.1` (the pairing server's Host gate) and refuse to
+//! splice a bearer token that is not exactly 64 lowercase hex chars
+//! into the head. Payloads are plain HTTP inside the tunnel,
 //! same as the LAN; the token/data sniffing caveat of the LAN server applies
 //! verbatim.
 
@@ -116,7 +126,9 @@ use super::pairing::{self, GAMEDATA_SENTINEL, emit_progress, http_error};
 /// PAIRING_GATEWAY_WS) — both normalize to this root.
 pub const BUILTIN_RELAY_ROOT_URL: &str = "https://wowsp.langyo.xyz";
 /// Undocumented DEVELOPMENT override for the built-in gateway root
-/// (never surfaced in any UI; see the worker package README).
+/// (never surfaced in any UI; see the worker package README). M-5c:
+/// consulted in DEBUG builds only — a release build always pairs through
+/// the built-in root, whatever the environment says.
 pub const RELAY_URL_ENV: &str = "WOWSP_RELAY_URL";
 
 /// Stable error marker the frontend maps to a friendly "gateway
@@ -229,6 +241,10 @@ use tunnel::parse_response_head;
 use tunnel::{open_tunnel, tunnel_request, tunnel_round_trip};
 #[cfg(test)]
 use urls::builtin_relay_root_from;
+/// The 6-ASCII-digit pairing-code shape gate, reachable from the pairing
+/// server (M-5a: the gateway-assigned code is a secret only in its
+/// documented shape — the server re-checks before comparing).
+pub(crate) use urls::valid_code as valid_pairing_code;
 pub use urls::{builtin_relay_root, normalize_relay_root, normalize_relay_ws_url};
 use urls::{
     conn_id, control_url, data_url, resolve_relay_endpoint, valid_code, valid_room, ws_base_of_root,
