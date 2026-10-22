@@ -24,6 +24,7 @@ import { ArrowLeftRight, AudioLines, CloudFog, Radar, Ship, Trash2, X } from "@l
 import { t as i18nT } from "@/i18n";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import type { ShipInfo } from "@/api/client";
+import { tierLabel } from "@/utils/shipCompare";
 import ShipPickerModal from "@/components/ships/ShipPickerModal";
 import {
   copySide,
@@ -185,7 +186,7 @@ export default defineComponent({
                     />
                     {unit.ship ? (
                       <HkTag size="sm">
-                        {`T${unit.ship.tier} · ${i18nT(`ships.type.${unit.ship.type}`)}`}
+                        {`${tierLabel(unit.ship.tier)} · ${i18nT(`ships.type.${unit.ship.type}`)}`}
                       </HkTag>
                     ) : null}
                     <HkTooltip text={i18nT("tactics.lineup.remove")}>

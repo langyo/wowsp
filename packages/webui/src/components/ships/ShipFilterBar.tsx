@@ -66,6 +66,7 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { shipOfflineEntry, nationNameFromDb } from "@/features/holographic/modelLoader";
 import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { canonicalNation } from "@/utils/nationFlags";
+import { tierLabel } from "@/utils/shipCompare";
 import NationFlag from "@/components/base/NationFlag";
 import { useLanguage } from "@/i18n/useLanguage";
 import { matchShipNames } from "@/features/search/pinyinSearch";
@@ -661,7 +662,7 @@ export default defineComponent({
     const searchCandidates = computed(() =>
       [...hitNames.value.entries()].map(([shipId, name]) => {
         const info = infoOf(shipId);
-        return { value: name, label: name, sub: info?.tier ? `T${info.tier}` : "" };
+        return { value: name, label: name, sub: info?.tier ? tierLabel(info.tier) : "" };
       }),
     );
 

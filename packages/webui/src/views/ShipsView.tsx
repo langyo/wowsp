@@ -29,6 +29,7 @@ import { shipRarity, RARITY_VARIANT, RARITY_CARD_MOD, RARITY_ORDER, type Rarity 
 import { authoritativeEvent } from "@/utils/shipEventData";
 import { eventLabel, eventTooltip } from "@/utils/shipEvents";
 import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
+import { tierLabel } from "@/utils/shipCompare";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import TierRangeSelect, {
   TIER_MAX,
@@ -570,7 +571,7 @@ export default defineComponent({
                       );
                     })()}
                     <div class="ship-card__head">
-                      <span class="ship-card__tier">T{ship.tier}</span>
+                      <span class="ship-card__tier">{tierLabel(ship.tier)}</span>
                       <span class="ship-card__name">{encyclopedia.shipDisplayName(ship)}</span>
                     </div>
                   <div class="ship-card__tags">
