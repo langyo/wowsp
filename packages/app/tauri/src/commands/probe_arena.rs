@@ -20,12 +20,15 @@
 //! ([`note_telemetry`]); a frame with a non-empty `players` map under a
 //! NEW `battle` session id marks a battle, the roster is synthesized from
 //! the probe's own `roster_raw.json` (the same projection the Lesta
-//! vehicle-less arena shape already consumes — see `probe_roster`) and
-//! the battle is recorded in the registry with a ONE-SHOT ownership
-//! verdict: the FILE pipeline owns the battle when the dir's freshest
-//! arena file postdates the battle's start window (a client that writes
-//! the file wrote THIS battle's at load, minutes of skew from the
-//! probe's stabilization stamp — see
+//! vehicle-less arena shape already consumes — see `probe_roster`) — or,
+//! when that file carries no usable records (the records-dead build
+//! class: `getPlayersInfo` empty all battle, its walk-sourced session
+//! streaming `players` while `roster_raw` stays empty), off the frame's
+//! own `sides` bridge — and the battle is recorded in the registry with
+//! a ONE-SHOT ownership verdict: the FILE pipeline owns the battle when
+//! the dir's freshest arena file postdates the battle's start window (a
+//! client that writes the file wrote THIS battle's at load, minutes of
+//! skew from the probe's stabilization stamp — see
 //! [`arena_info::arena_file_owns_battle`]); only a file-less battle is
 //! handed back for serving (`arena_info::serve_probe_battle` records it
 //! through the file path's own bookkeeping and emits the same
@@ -190,23 +193,39 @@ pub(crate) fn note_telemetry(
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    let Some(vehicles) =
-        super::probe_roster::synthesize_from_probe(root, self_name.as_deref(), stamp_unix)
-    else {
-        // No usable roster behind this battle YET (probe not installed, or
-        // a records-dead build class whose roster_raw never refreshed —
-        // the freshness gate in synthesize_from_probe refuses a previous
-        // battle's file). Nothing is recorded, so every later frame of the
-        // same battle retries — a roster arriving late still synthesizes.
-        // Debug level for that same reason (one line per 1–2 s frame, not
-        // a WARN per battle: the probe-health layer's BattleWithout-
-        // Telemetry / RosterFallback lines are the battle-level verdicts).
-        tracing::debug!(
-            root = %root.display(),
-            battle_id,
-            "probe battle without a usable roster_raw — probe-arena synthesis skipped"
-        );
-        return None;
+    // Roster sources, best first: the records projection (`roster_raw`,
+    // ids + teams intact), then the frame's own `sides` bridge — the
+    // records-dead build class's walk-sourced session streams a populated
+    // `players` map while its roster_raw stays empty ALL battle, so the
+    // frame is the only roster that class will ever produce (its rows key
+    // on names; identity/ship ids stay empty downstream, the consumers'
+    // established fallbacks).
+    let vehicles = match super::probe_roster::synthesize_from_probe(
+        root,
+        self_name.as_deref(),
+        stamp_unix,
+    ) {
+        Some(v) => v,
+        None => match super::probe_roster::parse_frame_roster(frame, self_name.as_deref()) {
+            Some(v) => v,
+            None => {
+                // No usable roster behind this battle YET (probe not
+                // installed, a pre-`sides` probe build, or the walk stood
+                // down — nothing the frame can seat either). Nothing is
+                // recorded, so every later frame of the same battle
+                // retries — a roster arriving late still synthesizes.
+                // Debug level for that same reason (one line per 1–2 s
+                // frame, not a WARN per battle: the probe-health layer's
+                // BattleWithoutTelemetry / RosterFallback lines are the
+                // battle-level verdicts).
+                tracing::debug!(
+                    root = %root.display(),
+                    battle_id,
+                    "probe battle without a usable roster_raw or frame sides — probe-arena synthesis skipped"
+                );
+                return None;
+            },
+        },
     };
     let info = synthesize_arena_info(vehicles, self_name.as_deref(), stamp_unix, battle_id);
     // The one-shot ownership verdict. The probe's stamp lands at roster
@@ -648,6 +667,92 @@ mod tests {
             "a roster from a previous battle is refused"
         );
         assert!(live_battle_for_dir(&root.join("replays"), 1792496000000).is_none());
+        std::fs::remove_dir_all(root.parent().unwrap()).ok();
+    }
+
+    /// The records-dead + file-less intersection (the 2026-10-22 field
+    /// bundle's class: build 13357625 never writes tempArenaInfo.json AND
+    /// its `getPlayersInfo` never populates — no roster_raw rows all
+    /// battle). The frame's `sides` bridge is the only roster: the battle
+    /// must register and serve off it, the self row reading relation 0
+    /// off the frame's own `self.name`.
+    #[test]
+    fn frame_sides_seat_a_records_dead_battle() {
+        let root = fixture_root("framesides");
+        // No roster_raw anywhere — the records projection never ran.
+        let sides_frame = serde_json::json!({
+            "t": 1_792_496_000_000i64, "battle": "1792496000000",
+            "players": {"langyo": true, "Mate01": true, "Foe01": true},
+            "sides": {"ally": ["langyo", "Mate01"], "enemy": ["Foe01", ":Sturdee:"]},
+            "self": {"name": "langyo", "realm": ""},
+        });
+        let served = note_telemetry(&root, &sides_frame, 1_792_496_000_000);
+        assert!(
+            matches!(served, Some(NewProbeBattle::Serve)),
+            "no roster_raw and no arena file — the frame seats the battle"
+        );
+        let live = live_battle_for_dir(&root.join("replays"), 1_792_496_000_000)
+            .expect("the frame-seated battle is live");
+        let by_name = |n: &str| live.info.vehicles.iter().find(|v| v.name == n).unwrap();
+        assert_eq!(by_name("langyo").relation, 0, "the self row reads 0");
+        assert_eq!(by_name("Mate01").relation, 1);
+        assert_eq!(by_name("Foe01").relation, 2);
+        assert_eq!(
+            live.info.match_group.as_deref(),
+            None,
+            "a human enemy keeps the match group unbridged"
+        );
+        // Same-battle frames refresh; the quit-clear ends it as usual.
+        assert!(note_telemetry(&root, &sides_frame, 1_792_496_010_000).is_none());
+        let quit = serde_json::json!({
+            "t": 1_792_496_900_000i64, "battle": "",
+            "players": {}, "sides": {"ally": [], "enemy": []},
+        });
+        assert!(note_telemetry(&root, &quit, 1_792_496_900_000).is_none());
+        assert!(
+            live_battle_for_dir(&root.join("replays"), 1_792_496_900_000).is_none(),
+            "the quit-clear ends a frame-seated battle too"
+        );
+        std::fs::remove_dir_all(root.parent().unwrap()).ok();
+    }
+
+    /// The same intersection in the co-op shape: the enemy side is all
+    /// scripted bots, so the synthesized match group reads pve — the PVE
+    /// surfaces (aim-card suppression, co-op buckets) stay reachable on
+    /// the frame-seated path.
+    #[test]
+    fn frame_sides_derive_the_coop_match_group() {
+        let root = fixture_root("framecoop");
+        let coop = serde_json::json!({
+            "t": 1_792_496_000_000i64, "battle": "1792496000000",
+            "players": {"langyo": true, "Mate01": true},
+            "sides": {"ally": ["langyo", "Mate01"],
+                      "enemy": [":Sturdee:", ":Barham:"]},
+            "self": {"name": "langyo", "realm": ""},
+        });
+        assert!(matches!(
+            note_telemetry(&root, &coop, 1_792_496_000_000),
+            Some(NewProbeBattle::Serve)
+        ));
+        let live =
+            live_battle_for_dir(&root.join("replays"), 1_792_496_000_000).expect("co-op serves");
+        assert_eq!(live.info.match_group.as_deref(), Some("pve"));
+        std::fs::remove_dir_all(root.parent().unwrap()).ok();
+    }
+
+    /// A pre-`sides` probe build (0.6.2–0.6.4) on a records-dead client:
+    /// the frame carries players but no bridge, and no roster_raw exists —
+    /// nothing seats, nothing registers (the historical behavior).
+    #[test]
+    fn frame_without_sides_does_not_register() {
+        let root = fixture_root("nosides");
+        let legacy = serde_json::json!({
+            "t": 1_792_496_000_000i64, "battle": "1792496000000",
+            "players": {"langyo": true, "Foe01": true},
+            "self": {"name": "langyo", "realm": ""},
+        });
+        assert!(note_telemetry(&root, &legacy, 1_792_496_000_000).is_none());
+        assert!(live_battle_for_dir(&root.join("replays"), 1_792_496_000_000).is_none());
         std::fs::remove_dir_all(root.parent().unwrap()).ok();
     }
 
