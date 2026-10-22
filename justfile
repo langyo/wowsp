@@ -176,16 +176,6 @@ _lint-webui:
 _lint-i18n *FLAGS='':
     @python scripts/check_i18n.py {{FLAGS}}
 
-# Generate the /feedback page's hikari token sheet (channels + scale
-# tokens + the default preset's light/dark palettes) from the installed
-# hikari package, into the gitignored
-# packages/pairing-relay/crates/relay-core/.generated/ — relay-core embeds
-# it via include_str!, and the source tree tracks no CSS. Prerequisite of
-# every relay-core build (`just check-relay` runs it for you); needs
-# `pnpm install` for the webui's hikari + sass.
-feedback-theme:
-    @python scripts/export_feedback_theme.py
-
 lint target='full' *FLAGS='':
     @just _lint-{{target}} {{FLAGS}}
 
@@ -217,10 +207,9 @@ check-ingame-plugin:
 # workspace compiled to wasm32 for Cloudflare Workers (excluded from the
 # root workspace — own gitignored Cargo.lock). One recipe covers both
 # halves of its verification; wasm32 check is quick and holds no shared
-# target-dir lock (the package has its own target/). feedback-theme runs
-# first: relay-core's include_str! of the token sheet fails without the
-# generated artifact.
-check-relay: feedback-theme
+# target-dir lock (the package has its own target/). Pure cargo — no
+# frontend deps needed (the console pages live in packages/console).
+check-relay:
     cd packages/pairing-relay && cargo test -p relay-core
     cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
 
@@ -250,7 +239,8 @@ bundle-site:
     # otherwise rewrite the /wowsp/ env value into a Windows path on
     # its way to node.
     MSYS2_ENV_CONV_EXCL="WOWSP_SITE_BASE" WOWSP_SITE_BASE=/wowsp/ pnpm --filter @wowsp/website build
-    python scripts/build_worker_site.py dist/website packages/pairing-relay/assets
+    pnpm --filter @wowsp/console build
+    python scripts/build_worker_site.py dist/website packages/pairing-relay/assets --console dist/console
 # ── android ───────────────────────────────────────────────────────────
 # Android cross-support (Tauri 2 mobile). The NDK toolchain provides the
 # clang wrappers cargo's CC/AR env (and later the target linker) point at;

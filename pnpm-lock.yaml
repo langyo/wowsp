@@ -39,6 +39,40 @@ importers:
         specifier: ^66.8.1
         version: 66.8.1(vite@8.3.4(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.103.1))
 
+  packages/console:
+    dependencies:
+      '@celestia-island/hikari':
+        specifier: 0.55.128
+        version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+      '@lucide/vue':
+        specifier: ^1.46.0
+        version: 1.57.0(vue@3.5.43(typescript@7.0.2))
+      vue:
+        specifier: ^3.5.42
+        version: 3.5.43(typescript@7.0.2)
+      vue-i18n:
+        specifier: ^11.4.10
+        version: 11.4.14(vue@3.5.43(typescript@7.0.2))
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^*
+        version: 6.0.8(vite@8.3.4(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.105.1))(vue@3.5.43(typescript@7.0.2))
+      '@vitejs/plugin-vue-jsx':
+        specifier: ^*
+        version: 5.1.6(supports-color@10.2.2)(vite@8.3.4(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.105.1))(vue@3.5.43(typescript@7.0.2))
+      oxlint:
+        specifier: ^1.80.0
+        version: 1.80.0
+      sass:
+        specifier: ^1.103.1
+        version: 1.105.1
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ^8.3.4
+        version: 8.3.4(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(sass@1.105.1)
+
   packages/holo:
     dependencies:
       three:
@@ -3346,6 +3380,20 @@ snapshots:
       three: 0.185.1
       vue: 3.5.42(typescript@7.0.2)
 
+  '@celestia-island/hikari@0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
+    dependencies:
+      '@types/three': 0.185.4
+      '@xterm/addon-fit': 0.11.0
+      '@xterm/addon-image': 0.10.0-beta.310(@xterm/xterm@6.1.0-beta.315)
+      '@xterm/xterm': 6.1.0-beta.315
+      dompurify: 3.4.17
+      echarts: 6.1.0
+      highlight.js: 11.12.0
+      lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
+      marked: 18.1.1
+      three: 0.185.1
+      vue: 3.5.43(typescript@7.0.2)
+
   '@celestia-island/hikari@0.55.193(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
@@ -4336,7 +4384,7 @@ snapshots:
   '@unocss/rule-utils@66.8.1':
     dependencies:
       '@unocss/core': 66.8.1
-      magic-string: 1.2.3
+      magic-string: 1.4.3
 
   '@unocss/transformer-attributify-jsx@66.8.1':
     dependencies:
@@ -4420,7 +4468,7 @@ snapshots:
 
   '@vue-macros/common@3.1.4(vue@3.5.42(typescript@7.0.2))':
     dependencies:
-      '@vue/compiler-sfc': 3.5.42
+      '@vue/compiler-sfc': 3.5.43
       ast-kit: 2.2.0
       local-pkg: 1.2.1
       magic-string-ast: 1.0.3
@@ -4430,7 +4478,7 @@ snapshots:
 
   '@vue-macros/common@3.1.4(vue@3.5.43(typescript@7.0.2))':
     dependencies:
-      '@vue/compiler-sfc': 3.5.42
+      '@vue/compiler-sfc': 3.5.43
       ast-kit: 2.2.0
       local-pkg: 1.2.1
       magic-string-ast: 1.0.3
@@ -4450,7 +4498,7 @@ snapshots:
       '@babel/types': 7.29.8
       '@vue/babel-helper-vue-transform-on': 2.0.1
       '@vue/babel-plugin-resolve-type': 2.0.1(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2)
-      '@vue/shared': 3.5.42
+      '@vue/shared': 3.5.43
     optionalDependencies:
       '@babel/core': 7.29.7(supports-color@10.2.2)
     transitivePeerDependencies:
@@ -4463,7 +4511,7 @@ snapshots:
       '@babel/helper-module-imports': 7.29.7(supports-color@10.2.2)
       '@babel/helper-plugin-utils': 7.29.7
       '@babel/parser': 7.29.8
-      '@vue/compiler-sfc': 3.5.42
+      '@vue/compiler-sfc': 3.5.43
     transitivePeerDependencies:
       - supports-color
 

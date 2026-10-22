@@ -133,10 +133,16 @@ def make_shell(src_dir: Path, rel: Path) -> tuple[str, list[str]]:
 def main() -> int:
     args = sys.argv[1:]
     if len(args) < 2:
-        print("usage: build_worker_site.py <distDir> <outDir>", file=sys.stderr)
+        print(
+            "usage: build_worker_site.py <distDir> <outDir> [--console <consoleDistDir>]",
+            file=sys.stderr,
+        )
         return 1
     src_dir = Path(args[0])
     out_dir = Path(args[1]).resolve()
+    console_dir: Path | None = None
+    if "--console" in args:
+        console_dir = Path(args[args.index("--console") + 1])
 
     pages = shell_pages(src_dir)
     if not pages:
@@ -189,12 +195,39 @@ def main() -> int:
     for rel, shell in shells.items():
         write_page(out_dir / rel, shell)
 
+    # The hikari console (packages/console → its dist): /erp and
+    # /feedback are real static entries served by the assets layer
+    # (Workers assets resolve the extensionless paths onto the .html
+    # files). Copied at the ROOT — same-origin APIs, no candidate chain.
+    console_files = 0
+    if console_dir is not None:
+        for required in ("erp.html", "feedback.html"):
+            if not (console_dir / required).is_file():
+                print(
+                    f"console dist missing {required} in {console_dir} "
+                    "(run: pnpm --filter @wowsp/console build)",
+                    file=sys.stderr,
+                )
+                return 1
+        if (console_dir / "index.html").is_file():
+            # The site shell owns the root index.html (SPA fallback) — a
+            # console index would silently shadow it via the overwrite
+            # copy below (review note).
+            print(
+                f"console dist must not carry an index.html ({console_dir})",
+                file=sys.stderr,
+            )
+            return 1
+        shutil.copytree(console_dir, out_dir, dirs_exist_ok=True)
+        console_files = sum(1 for _ in console_dir.rglob("*") if _.is_file())
+
     candidates = " | ".join(c for c in CANDIDATES if c)
     print(
         f"worker site written: {len(shells)} prerendered shell(s) "
         f"({', '.join(p.as_posix() for p in shells)}), {entry_count} entry "
         f"module(s), candidates={candidates} | (origin)"
         + (f", {digest_files} digest doc(s)" if digest_files else "")
+        + (f", {console_files} console file(s)" if console_files else "")
     )
     return 0
 

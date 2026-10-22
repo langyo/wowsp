@@ -23,8 +23,9 @@
 # are served FIRST: a request that matches a file — or the SPA fallback
 # for unknown browser navigations — never invokes worker code. The
 # dynamic paths are pulled back in front via `run_worker_first`: the
-# pairing API (/api*) plus the two server-rendered pages (/feedback,
-# /erp). The assets shell's loader pulls the heavy entry JS/CSS from the
+# pairing API (/api*). The hikari console pages /feedback and /erp
+# (packages/console build) serve from the assets layer like any static
+# file. The assets shell's loader pulls the heavy entry JS/CSS from the
 # GitHub Pages mirror (langyo.github.io/wowsp) first and falls back to
 # the worker's own /wowsp/** copy (same build, same hashes — the Deploy
 # Site workflow publishes both artifacts from one run), so the heavy app
@@ -54,15 +55,15 @@ routes = [
 #
 # not_found_handling: unknown paths serve the root index.html shell.
 # With compatibility_date ≥ 2025-04-01, browser NAVIGATION requests
-# resolve through the assets layer directly — which is exactly why the
-# dynamic paths MUST sit in run_worker_first: a navigation to /feedback
-# or /erp would otherwise get the SPA shell instead of the worker's
-# page. run_worker_first patterns are the parity of the old zone routes
-# wowsp.langyo.xyz/{api,feedback,erp}*.
+# resolve through the assets layer directly. /feedback and /erp are now
+# REAL hikari console pages (packages/console → dist/console, copied to
+# the assets root by scripts/build_worker_site.py) — they serve from the
+# assets layer like any static file, so only the pairing API stays in
+# front of it.
 [assets]
 directory = "./assets"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api*", "/feedback*", "/erp*"]
+run_worker_first = ["/api*"]
 # The ASSETS binding lets the worker fetch its own asset files by path
 # (crates/relay-worker/src/digests.rs proxies /api/digests/** through
 # it behind an edge cache — the digest docs are static files under
@@ -152,8 +153,9 @@ new_sqlite_classes = ["ReplayIndex"]
 #       set, /api/health reports it as "upstream" and clients follow it
 #       (forwarding-station hand-off — no app redeploy needed).
 #   GATEWAY_NOTICE   — free-form operator message surfaced by /api/health.
-# TURNSTILE_SITEKEY is PUBLIC by design (it rides the /feedback HTML) —
-# the matching secret key lives in the worker secrets (TURNSTILE_SECRET).
+# TURNSTILE_SITEKEY is PUBLIC by design (it rides GET /api/feedback/config
+# to the console) — the matching secret key lives in the worker secrets
+# (TURNSTILE_SECRET).
 # REPLAY_ADMIN_KEY (secret, optional) — the machine gate on
 # /api/replays/admin/*: the replay-drain CLI sends it as x-admin-key.
 #   npx wrangler secret put REPLAY_ADMIN_KEY   (high-entropy random)
@@ -167,10 +169,11 @@ new_sqlite_classes = ["ReplayIndex"]
 [vars]
 ERP_OPEN_ACCESS = "1"
 TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
-# The latest published release, prefilling the /feedback form's version
-# combobox for browser visitors (desktop links carry their own build).
-# scripts/sync_versions.py --check enforces this stays equal to the other
-# six derived version slots (root package.json is the source of truth).
+# The latest published release, prefilling the console feedback form's
+# version dropdown for browser visitors (desktop links carry their own
+# build). scripts/sync_versions.py --check enforces this stays equal to
+# the other six derived version slots (root package.json is the source of
+# truth).
 FEEDBACK_LATEST_VERSION = "0.6.5"
 # The digest channels this deployment actually serves (comma separated,
 # subset of app/mod-hub/res/data). Lookups for any other VALID channel

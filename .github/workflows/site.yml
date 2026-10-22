@@ -35,6 +35,9 @@ on:
       # The website consumes @wowsp/holo — a holo-only change must
       # redeploy the site.
       - 'packages/holo/**'
+      # The hikari console (/erp, /feedback) rides the worker's assets —
+      # a console-only change must redeploy them too.
+      - 'packages/console/**'
       # The worker hosts the site now — worker-side changes (routes,
       # assets config, relay code) redeploy it too.
       - 'packages/pairing-relay/**'
@@ -110,6 +113,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm --filter @wowsp/website build
+          pnpm --filter @wowsp/console build
           cp -r dist/website/. _site/
 
       - name: Bake release snapshot
@@ -145,8 +149,9 @@ jobs:
         # packages/pairing-relay/assets — the worker's [assets] layer:
         # the full build nested at /wowsp/** (the loader's fallback
         # origin), the public files + the loader-injected shell at the
-        # root. See the script's docstring.
-        run: python scripts/build_worker_site.py _site packages/pairing-relay/assets
+        # root, plus the hikari console's erp/feedback entries (see the
+        # script's --console flag). See the script's docstring.
+        run: python scripts/build_worker_site.py _site packages/pairing-relay/assets --console dist/console
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
@@ -211,14 +216,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - name: Install deps
-        # wrangler for the deploy + the webui's sass for the feedback
-        # theme exporter below.
+        # wrangler for the deploy (the wasm build itself is pure cargo —
+        # the retired feedback-theme exporter took its node/sass need with
+        # it).
         run: pnpm install --frozen-lockfile
-
-      - name: Export feedback theme
-        # relay-core embeds the /feedback token sheet via include_str! —
-        # a gitignored artifact the wasm build needs on disk first.
-        run: python scripts/export_feedback_theme.py
 
       - name: Fetch the site bundle
         uses: actions/download-artifact@v8

@@ -60,6 +60,10 @@ jobs:
         run: pnpm -r lint
       - name: Website build
         run: pnpm --filter @wowsp/website build
+      - name: Console build
+        # The hikari /erp + /feedback console (served by the worker's
+        # [assets] layer) — PRs must catch a broken console build.
+        run: pnpm --filter @wowsp/console build
       - name: Web UI build
         # The Vite build needs no game assets: publicDir copies whatever
         # exists under src/res, and the shader/icon generation steps above
@@ -199,10 +203,12 @@ jobs:
   relay:
     name: Relay (ubuntu)
     # The pairing gateway is a STANDALONE wasm workspace (excluded from the
-    # root workspace) — its 33 relay-core tests and the wasm32 check are the
+    # root workspace) — its relay-core tests and the wasm32 check are the
     # two halves of `just check-relay`. Own target dir inside
     # packages/pairing-relay, so no cargo cache step here (mirrors the deny
-    # job) and no target-dir lock contention with anything else.
+    # job) and no target-dir lock contention with anything else. Pure
+    # cargo: the console pages live in packages/console (web job), so no
+    # frontend deps are needed here.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -212,20 +218,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Add wasm target
         run: rustup target add wasm32-unknown-unknown
-      # relay-core embeds the /feedback token sheet via include_str! — a
-      # gitignored artifact generated from the webui's hikari + sass (the
-      # source tree tracks no CSS), so this job needs the frontend deps
-      # after all (mirrors `just check-relay`, which runs the exporter
-      # first).
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-      - name: Install frontend deps
-        run: pnpm install --frozen-lockfile
-      - name: Generate feedback theme tokens
-        run: python scripts/export_feedback_theme.py
       - name: Relay core tests
         run: cargo test --manifest-path packages/pairing-relay/Cargo.toml -p relay-core
       - name: Relay worker wasm check

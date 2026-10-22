@@ -64,7 +64,6 @@ async fn route(req: Request, env: Env) -> Result<Response> {
     let url = req.url()?;
     let path = url.path().to_string();
     let query = url.query().unwrap_or("").to_string();
-    let origin = url.origin().ascii_serialization();
 
     match classify(&path, &query) {
         Route::Health => {
@@ -83,21 +82,8 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         Route::Digests { channel, tag } => digests::handle(req, env, channel, tag).await,
 
         // ── feedback pipeline (see src/feedback.rs) ─────────────────────
-        Route::FeedbackPage => {
-            if req.method() != Method::Get {
-                return Response::error("method not allowed", 405);
-            }
-            // headers().get() -> Result<Option<String>, Error>
-            let ua = req.headers().get("User-Agent").ok().flatten();
-            feedback::page_feedback(&origin, &env, ua.as_deref())
-        },
-        Route::ErpPage => {
-            if req.method() != Method::Get {
-                return Response::error("method not allowed", 405);
-            }
-            feedback::page_erp(&origin)
-        },
         Route::FeedbackSubmit => feedback::handle_submit(req, env).await,
+        Route::FeedbackConfig => feedback::handle_config(req, &env),
         Route::FeedbackList => feedback::handle_list(req, env).await,
         Route::FeedbackHistory { token: _ } => feedback::handle_history(req, env).await,
         Route::FeedbackUpdate => feedback::handle_update(req, env).await,

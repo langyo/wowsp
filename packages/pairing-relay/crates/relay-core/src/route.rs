@@ -1,18 +1,16 @@
 //! URL classification for the gateway's HTTP + WebSocket routes. The
 //! worker answers a fixed list of paths and nothing else: the API under
 //! `/api` (no version segment — the health document carries the version
-//! instead) plus the two server-rendered pages `/feedback` and `/erp`.
-//! The `run_worker_first` list in `wrangler.toml` sends exactly these
-//! paths here; the rest of the hostname is served by the worker's
-//! static-assets layer.
+//! instead). The `run_worker_first` list in `wrangler.toml` sends exactly
+//! these paths here; the rest of the hostname — including the hikari
+//! console pages `/feedback` and `/erp` (packages/console build) — is
+//! served by the worker's static-assets layer.
 //!
 //!   GET  /api/health                     — merged health + discovery doc
 //!   GET  /api/digests/<channel>[/tag]    — release digests (updater trust)
 //!   WS   /api/relay/control?room=<64hex>&role=host|client
 //!   WS   /api/relay/resolve?code=NNNNNN
 //!   WS   /api/relay/data/<room>/<connId>[?role=host|client]
-//!   GET  /feedback                       — feedback form page (Turnstile)
-//!   GET  /erp                            — review console page (Feishu login)
 //!   POST /api/feedback/submit            — form target (multipart)
 //!   GET  /api/feedback/list              — records JSON (erp session)
 //!   POST /api/feedback/update            — status/PR-link write (erp session)
@@ -53,10 +51,6 @@ pub enum Route<'a> {
         conn_id: &'a str,
         side: Side,
     },
-    /// GET /feedback — the embedded feedback form page.
-    FeedbackPage,
-    /// GET /erp — the embedded review console page.
-    ErpPage,
     /// GET /api/erp/login — 302 into the Feishu OAuth authorize page.
     ErpLogin,
     /// GET /api/erp/callback?code=…&state=… — OAuth return (the handler
@@ -68,6 +62,10 @@ pub enum Route<'a> {
     ErpLogout,
     /// POST /api/feedback/submit — multipart form target.
     FeedbackSubmit,
+    /// GET /api/feedback/config — the public page config the worker used
+    /// to server-inject into its embedded HTML (Turnstile sitekey, latest
+    /// version prefill). The hikari console page fetches it at boot.
+    FeedbackConfig,
     /// GET /api/feedback/list — records JSON for the console / agents.
     FeedbackList,
     /// GET /api/feedback/history?token=… — public lookup of one submitter's
@@ -130,7 +128,8 @@ pub enum Route<'a> {
     /// Nothing we serve — every path outside `run_worker_first` is
     /// answered by the static-assets layer (any miss gets the SPA
     /// shell, navigation or not), so in production this only happens
-    /// on unknown shapes under `/api*`, `/feedback*` and `/erp*`.
+    /// on unknown shapes under `/api*` (plus `/feedback` and `/erp`
+    /// themselves, which are assets-layer pages now).
     NotFound,
 }
 
@@ -149,9 +148,8 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
     let path = trim_path(path);
     match path {
         "/api/health" => return Route::Health,
-        "/feedback" => return Route::FeedbackPage,
-        "/erp" => return Route::ErpPage,
         "/api/feedback/submit" => return Route::FeedbackSubmit,
+        "/api/feedback/config" => return Route::FeedbackConfig,
         "/api/feedback/list" => return Route::FeedbackList,
         "/api/feedback/history" => {
             return Route::FeedbackHistory {
@@ -264,9 +262,11 @@ mod tests {
 
     #[test]
     fn feedback_routes_classify() {
-        assert_eq!(classify("/feedback", ""), Route::FeedbackPage);
-        assert_eq!(classify("/erp", ""), Route::ErpPage);
-        assert_eq!(classify("/erp/", ""), Route::ErpPage);
+        // /feedback and /erp themselves are NOT worker routes anymore —
+        // the hikari console pages are served by the assets layer.
+        assert_eq!(classify("/feedback", ""), Route::NotFound);
+        assert_eq!(classify("/erp", ""), Route::NotFound);
+        assert_eq!(classify("/erp/", ""), Route::NotFound);
         assert_eq!(classify("/api/erp/login", ""), Route::ErpLogin);
         assert_eq!(
             classify("/api/erp/callback", "code=c1&state=s1"),
@@ -278,6 +278,7 @@ mod tests {
         // Unknown erp subpaths stay NotFound.
         assert_eq!(classify("/api/erp/other", ""), Route::NotFound);
         assert_eq!(classify("/api/feedback/submit", ""), Route::FeedbackSubmit);
+        assert_eq!(classify("/api/feedback/config", ""), Route::FeedbackConfig);
         assert_eq!(classify("/api/feedback/list", ""), Route::FeedbackList);
         assert_eq!(
             classify("/api/feedback/history", "token=0f0f"),
