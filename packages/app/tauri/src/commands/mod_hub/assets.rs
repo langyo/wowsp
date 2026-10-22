@@ -190,6 +190,21 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> CommandResult<
         // will serve from here.
         return Err(anyhow!("{rel_path}: .geometry previews use mod_hub_read_model").into());
     }
+    // Audit M-11: check the size BEFORE the read — a multi-GB file renamed
+    // to .png must not be slurped whole into memory (fs::read has no cap
+    // of its own; the abort on failure to allocate is not catchable).
+    const PREVIEW_MAX_BYTES: u64 = 64 * 1024 * 1024;
+    let len = fs::metadata(&path)
+        .map(|m| m.len())
+        .map_err(|e| anyhow!("stat {rel_path}: {e}"))?;
+    if len > PREVIEW_MAX_BYTES {
+        return Err(anyhow!(
+            "{rel_path}: {} bytes exceeds the {} MB preview cap",
+            len,
+            PREVIEW_MAX_BYTES / (1024 * 1024)
+        )
+        .into());
+    }
     let bytes = fs::read(&path).map_err(|e| anyhow!("read {rel_path}: {e}"))?;
 
     if ext == AUDIO_WEM {

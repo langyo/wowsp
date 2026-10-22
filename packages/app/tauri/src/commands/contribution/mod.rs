@@ -1377,8 +1377,22 @@ async fn download_archive(
         .map_err(|e| anyhow!("create {}: {e}", dest.display()))?;
     let mut stream = resp.bytes_stream();
     let mut since_emit = 0u64;
+    let mut total = 0u64;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| anyhow!("fetch share archive: {e}"))?;
+        // Audit M-11: the archive the RELAY would send is bounded by its
+        // own 256 MiB upload cap — a hostile or broken relay must not be
+        // able to stream unbounded bytes onto this disk. Abort AND delete
+        // the partial file past the same cap.
+        total += chunk.len() as u64;
+        if total > MAX_ARCHIVE_BYTES {
+            drop(file);
+            let _ = std::fs::remove_file(dest);
+            bail!(
+                "share archive exceeds {} bytes — refusing to store it",
+                MAX_ARCHIVE_BYTES
+            );
+        }
         file.write_all(&chunk)
             .await
             .map_err(|e| anyhow!("write share archive: {e}"))?;

@@ -143,6 +143,15 @@ fn export_part(res_mods: &Path, rel: &str, cache_dir: &Path) -> anyhow::Result<(
     if let Ok(existing) = fs::metadata(&out) {
         return Ok((out.to_string_lossy().into_owned(), existing.len()));
     }
+    // Audit M-11: same pre-read size gate as mod_hub_read_asset — a
+    // multi-GB file wearing a .geometry name must not be slurped whole.
+    const GEOMETRY_MAX_BYTES: u64 = 512 * 1024 * 1024;
+    let len = fs::metadata(&path)
+        .map_err(|e| anyhow!("stat {rel}: {e}"))?
+        .len();
+    if len > GEOMETRY_MAX_BYTES {
+        return Err(anyhow!("{rel}: {len} bytes exceeds the geometry cap"));
+    }
     let bytes = fs::read(&path).map_err(|e| anyhow!("read {rel}: {e}"))?;
     let geometry =
         game_assets::models::geometry::parse_geometry(&bytes).map_err(|e| anyhow!("{rel}: {e}"))?;
