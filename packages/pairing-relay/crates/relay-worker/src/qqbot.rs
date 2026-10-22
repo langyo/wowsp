@@ -132,7 +132,26 @@ pub async fn handle_callback(mut req: Request, env: &Env) -> Result<Response> {
     let Some(c) = creds(&env) else {
         return Response::error("qq bot not configured", 503);
     };
+    // 公开且无鉴权，而验签发生在 body 解析之后：先过 Content-Length
+    // 闸门再缓冲（audit M-9 跟进，与 feedback submit 同形）。
+    if let Err(status) =
+        qqbot::callback_length_gate(req.headers().get("Content-Length")?.as_deref())
+    {
+        return Response::error(
+            if status == 411 {
+                "length required"
+            } else {
+                "body too large"
+            },
+            status,
+        );
+    }
     let body = req.text().await?;
+    // Belt：谎报的 Content-Length 已被缓冲，这里挡的是让超限体进入
+    // 后续的 JSON 解析与验签（预检闸 + 缓冲后复核，双层同 feedback）。
+    if body.len() > qqbot::CALLBACK_BODY_MAX {
+        return Response::error("body too large", 413);
+    }
     let v: Value = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(_) => return Response::error("bad json", 400),
@@ -280,9 +299,15 @@ async fn reply_to_command(
     };
     match qqbot::parse_command(content) {
         Command::Bind(token) => {
-            // 绑定即证明（audit M-7）：凭证 → 哈希 → KV 行（fbtok:*，提交
-            // 时落库）→ 常时比对换出该反馈的联系方式，把发送者的 openid
-            // 绑到它名下；形态不符或查不到的凭证一律拒绑。
+            // 绑定即提交证明（audit M-7 修订）：凭证 → 哈希 → KV 行
+            // （fbtok:*，提交时落库）→ 常时比对换出该反馈的联系方式，
+            // 把发送者的 openid 绑到它名下；形态不符或查不到的凭证一律
+            // 拒绑。凭证只证明「提交过」，不证明「拥有该联系方式」——
+            // 公开历史查询已按 record_id 收敛到单条（见
+            // resolve_lookup_record）；本绑定路径仍按联系方式路由（回访
+            // 通知与「查询」都依赖它），残余暴露面 = 持他人联系方式提交
+            // 者可绑定并查询该联系方式的记录摘要，关闭它需要联系方式
+            // 归属验证回路，属记录在案的后续工作。
             let token = token.trim().to_ascii_lowercase();
             let hash = relay_core::feedback::lookup_token_hash(&token);
             let row: Option<Value> = kv
