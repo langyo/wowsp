@@ -5,101 +5,23 @@
   gap: 0.6rem;
   text-align: center;
   padding: 0.5rem 0;
-  /* Positioning context for the vanish easter egg's dashed-piggy overlay
-     (its absolutely-positioned sibling of the body wrapper below). */
-  position: relative;
 
-  /* Every visible About row sits in this body wrapper so the vanish
-     easter egg can shrink/fade them as one unit; the root's flex column
-     is mirrored here (full width, so the width:100% rows — notice,
-     footer — behave exactly as they did as direct root children). */
+  /* Every visible About row sits in this body wrapper; the root's flex
+     column is mirrored here (full width, so the width:100% rows —
+     notice, footer — behave exactly as they did as direct root
+     children). The vanish easter egg never touches this wrapper — it
+     swaps only the logo face inside it. */
   &__body {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.6rem;
     width: 100%;
-    transform-origin: center;
-    transition:
-      opacity var(--duration-slow) ease,
-      transform var(--duration-slow) ease,
-      visibility 0s linear 0s;
-  }
-
-  /* Rapid-click vanish: the whole About body shrinks toward its centre
-     and fades while the dashed-piggy overlay fades in. The layout box is
-     kept (a transform never affects layout), so the modal keeps its
-     height and never scroll-jumps mid-trick. visibility rides along with
-     a delay equal to the fade so the body only leaves the accessibility
-     tree / tab order once it is fully gone, and flips back instantly on
-     restore. The --duration-* tokens are zeroed under
-     prefers-reduced-motion (theme.scss), collapsing the shrink to an
-     instant content swap there. */
-  &--vanished &__body {
-    opacity: 0;
-    transform: scale(0.72);
-    pointer-events: none;
-    visibility: hidden;
-    transition:
-      opacity var(--duration-slow) ease,
-      transform var(--duration-slow) ease,
-      visibility 0s linear var(--duration-slow);
-  }
-
-  /* Dashed-piggy stand-in covering the whole About block; it is itself
-     the restore click target — the entire area answers the click, not
-     just the image. Purely decorative (empty alt); the overlay is also
-     keyboard-focusable (a held-Enter auto-repeat on the logo can trip
-     the vanish), so it carries a focus ring. */
-  &__vanish {
-    position: absolute;
-    inset: 0;
-    z-index: 20;
-    display: flex;
-    /* The pig stands on the floor instead of floating at the block's
-       mid-height: the About block keeps its full layout box while
-       vanished and is usually taller than the host pane (settings
-       section), so a centered pig lands on an arbitrary spot that can
-       sit far above the fold or drift as the pane scrolls. */
-    align-items: flex-end;
-    justify-content: center;
-    padding-bottom: var(--space-16);
-    cursor: pointer;
-    user-select: none;
-    opacity: 0;
-    transform: scale(1.06);
-    outline: none;
-
-    &:focus-visible {
-      outline: 2px solid rgb(var(--color-primary) / 60%);
-      outline-offset: -6px;
-    }
-    pointer-events: none;
-    transition:
-      opacity var(--duration-slow) ease,
-      transform var(--duration-slow) ease;
-
-    img {
-      width: 120px;
-      height: 120px;
-      /* Keep the standing height stable while the host pane scrolls:
-         the pig sticks one floor-gap above the scroller's visible bottom
-         (bounded by this overlay, so it never leaves the About block)
-         and only settles onto the block's own bottom edge once that edge
-         actually scrolls into view. */
-      position: sticky;
-      bottom: var(--space-16);
-    }
-  }
-
-  &--vanished &__vanish {
-    opacity: 1;
-    transform: scale(1);
-    pointer-events: auto;
   }
 
   &__logo {
     position: relative;
+    display: grid;
     border: none;
     background: none;
     padding: 0;
@@ -112,6 +34,10 @@
       width: 64px;
       height: 64px;
       border-radius: var(--radius-md);
+      /* Both faces share the button's one grid cell, so the vanished
+         stand-in lands on the exact same 64px slot as the normal logo. */
+      grid-area: 1 / 1;
+      transition: opacity var(--duration-short) ease;
     }
 
     /* Skin-tone glow halo behind the pig — fades in only while the
@@ -141,6 +67,24 @@
   &--piggy &__logo::before {
     opacity: 1;
     animation: about-piggy-glow 2.4s ease-in-out infinite;
+  }
+
+  /* Rapid-click vanish: ONLY the logo face swaps — the normal logo
+     crossfades out while the dashed vanished-piggy stand-in fades in on
+     the very same 64px slot; every other About row keeps its place,
+     layout and interactivity. The --duration-* tokens are zeroed under
+     prefers-reduced-motion (theme.scss), collapsing the crossfade to an
+     instant swap there. */
+  .about-modal__logo-face--vanish {
+    opacity: 0;
+  }
+
+  &--vanished &__logo-face {
+    opacity: 0;
+
+    &--vanish {
+      opacity: 1;
+    }
   }
 
   &__name {
@@ -176,6 +120,28 @@
     opacity: 0;
 
     &--pig {
+      opacity: 1;
+    }
+  }
+
+  /* The vanish quip face; while vanished it wins over BOTH the plain
+     label and the hover pig face (this block sits after the &--piggy
+     rules, so equal specificities resolve by source order) — the
+     subtitle reads the quip no matter where the pointer rests. */
+  &__subtitle-face--vanish {
+    opacity: 0;
+    color: rgb(var(--color-primary));
+    font-weight: 600;
+  }
+
+  &--vanished &__subtitle-face {
+    opacity: 0;
+
+    &--pig {
+      opacity: 0;
+    }
+
+    &--vanish {
       opacity: 1;
     }
   }
@@ -481,9 +447,9 @@
 
 /* Reduced motion: the crossfades are plain opacity and stay, but the
    continuous glow flow is dropped and the bubble pop is shortened —
-   matching the toasts' convention. The vanish swap needs no rule here:
-   its scale/fade rides the --duration-* tokens, which theme.scss zeroes
-   under reduced motion, so the content just swaps instantly. */
+   matching the toasts' convention. The vanish crossfade needs no rule
+   here: it rides the --duration-* tokens, which theme.scss zeroes under
+   reduced motion, so the faces just swap instantly. */
 @media (prefers-reduced-motion: reduce) {
   .about-modal--piggy .about-modal__logo::before {
     animation: none;
