@@ -348,3 +348,22 @@ export function roleHpSlots(blocks: Gp[]): [string, Record<string, unknown>][] {
   }
   return out;
 }
+
+/**
+ * Widest main-gun caliber (mm) of the stock artillery mounts. GameParams
+ * carries `barrelDiameter` in METRES on the HP_* turret slots (0.457 =
+ * 457 mm), and WG's encyclopedia default_profile has no caliber field at
+ * all — spec rows and the fire-chance caliber gate fall back to this when
+ * the raw GameParams entry is loaded. Stock configuration, the same depth
+ * the AA spec rows read (matching WG's default_profile numbers).
+ */
+export function mainCaliberMm(gp: Gp): number | null {
+  let widest: number | null = null;
+  for (const [, slot] of roleHpSlots(resolveShipParts(gp, "stock").artillery)) {
+    const m = slot.barrelDiameter;
+    if (typeof m !== "number" || !Number.isFinite(m) || m <= 0) continue;
+    const mm = m * 1000;
+    if (widest == null || mm > widest) widest = mm;
+  }
+  return widest;
+}
