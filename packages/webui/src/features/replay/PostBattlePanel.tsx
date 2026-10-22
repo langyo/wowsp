@@ -816,14 +816,18 @@ export default defineComponent({
         ) : null;
       };
       /** The row's secondary seals (成分章) — 空中小人 / 水下小人 (with the
-       *  >50% 奶龙 / 奶蛙 veteran tier) as horizontal StampTag faces riding
-       *  BESIDE the row's XP score (the rows are far too short for a square
-       *  2x2 face). No merge exists on the rosters: a 神了 / 猴 verdict
-       *  keeps its own primary RatingStamp in the row-end slot while the
-       *  comp tags press beside the XP (the merged 空中神人-family faces
-       *  belong to the water meter alone, as before); the 蛆 / 过街老鼠
-       *  floors suppress the composition entirely. A verdict still in
-       *  flight (or failed / hidden → null) renders nothing. */
+       *  >50% 奶龙 / 奶蛙 veteran tier) as horizontal StampTag faces pressed
+       *  BESIDE the row's nickname (the rows are far too short for a square
+       *  2x2 face, and the four-char wording reads as part of the identity
+       *  line — user feedback). No merge exists on the rosters: a 神了 / 猴
+       *  verdict keeps its own primary RatingStamp in the row-end slot while
+       *  the comp tags press beside the nick (the merged 空中神人-family
+       *  faces belong to the water meter alone, as before); the 蛆 / 过街老鼠
+       *  floors suppress the composition entirely. A career verdict still
+       *  in flight (or failed / hidden → null) leaves the row-end stamp
+       *  empty but does not hold the tags — only the composition lookup
+       *  gates them (hidden profiles have no composition on file, so their
+       *  rows render neither face). */
       const stampTagNodes = (
         p: (typeof rows.value)[number],
         career: CareerStamp | null,
@@ -844,10 +848,12 @@ export default defineComponent({
         }
         return nodes;
       };
-      /** The COMPACT row's single secondary seal — the highest tier the
-       *  player carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor
-       *  one, and air wins a same-tier tie (resolveStamps' canonical
-       *  order). Null when nothing qualifies or a verdict stamp applies. */
+      /** The COMPACT row's secondary seal — the highest tier the player
+       *  carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor one, and air
+       *  wins a same-tier tie (resolveStamps' canonical order). Pressed
+       *  beside the nickname, so it no longer competes with the row-end
+       *  verdict slot: a 神了 / 猴 row carries BOTH faces now (the tag here,
+       *  the stamp at the row end). Null when nothing qualifies. */
       const highestStampTag = (
         p: (typeof rows.value)[number],
         career: CareerStamp | null,
@@ -865,15 +871,9 @@ export default defineComponent({
         if (comp.sub) return <StampTag kind={comp.subVeteran ? "subVeteran" : "sub"} />;
         return null;
       };
-      /** The compact row's ONE seal — the cluster's highest face: the
-       *  career verdict first (the primary square stamp), the secondary
-       *  composition tag only when no verdict stamp applies (the live
-       *  panel's compact rule, verbatim). */
-      const sealSlotOf = (p: (typeof rows.value)[number]) =>
-        sealOf(p) ?? highestStampTag(p, stampOf(p));
       /** The full card's seal column — ONLY the primary seal (一级章, the
        *  single-character verdict picture). The secondary tier (成分章)
-       *  rides beside the XP score instead: the card's right edge is too
+       *  presses beside the nickname instead: the card's right edge is too
        *  short for a stack of square faces. Null when the row carries
        *  none. */
       const sealStackOf = (p: (typeof rows.value)[number]) => {
@@ -882,7 +882,7 @@ export default defineComponent({
           <span class="replay-view__postbattle-cell-stampstack">{seal}</span>
         ) : null;
       };
-      /** The full card's secondary seals (成分章) beside the XP score — the
+      /** The full card's secondary seals (成分章) beside the nickname — the
        *  horizontal StampTag faces (stampTagNodes, the merge rule
        *  included). */
       const fcellStampTagsOf = (p: (typeof rows.value)[number]): VNode[] =>
@@ -957,6 +957,11 @@ export default defineComponent({
                     <span class="replay-view__postbattle-cell-clan">[{stat.clanTag}]</span>
                   ) : null}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
+                  {/* The secondary seal (成分章) presses BESIDE the nickname —
+                      the four-char wording reads as part of the identity
+                      line, not as a score-column ornament (user feedback);
+                      the nick ellipsizes first when the line runs out. */}
+                  {highestStampTag(p, stampOf(p))}
                 </span>
                 <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
               </span>
@@ -980,14 +985,13 @@ export default defineComponent({
                   whether or not a given player earned a stamp. Living
                   INSIDE the button keeps the hover highlight and the click
                   target on the row's full width — the seal is part of the
-                  row, not an ornament bolted past its hit area. The
-                  compact row's ONE seal is the cluster's highest face: the
-                  primary square stamp, else the secondary horizontal
-                  StampTag (one face per row — the full cards carry the
-                  whole split instead). */}
+                  row, not an ornament bolted past its hit area. The slot
+                  carries ONLY the primary square stamp now — the secondary
+                  StampTag presses beside the nickname instead, so a row
+                  can carry both faces at once. */}
               {sealsShown.value ? (
                 <span class="replay-view__postbattle-cell-stampslot">
-                  {sealSlotOf(p)}
+                  {sealOf(p)}
                 </span>
               ) : null}
             </button>
@@ -1053,6 +1057,11 @@ export default defineComponent({
                     <span class="replay-view__postbattle-fcell-clan">[{stat.clanTag}]</span>
                   ) : null}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
+                  {/* The secondary seals (成分章) press BESIDE the nickname —
+                      the four-char wording reads as part of the identity
+                      line (user feedback); the nick ellipsizes first when
+                      the line runs out. */}
+                  {stampTags.length > 0 ? stampTags : null}
                 </span>
                 <span class="replay-view__postbattle-fcell-ship">{p.shipName}</span>
                 <span class="replay-view__postbattle-fcell-stat">{statLine()}</span>
@@ -1066,11 +1075,9 @@ export default defineComponent({
                   <LiveShipMeta shipId={p.shipId} ally={!enemy} />
                 ) : null}
               </span>
-              {/* XP + the secondary seals (成分章) share the score track —
-                  one grid item, so the horizontal StampTag faces ride beside
-                  the XP WITHOUT spilling into the seal track (auto-placement
-                  would steal the 2.5rem slot and shove the primary stamp
-                  onto an implicit second row). */}
+              {/* The score track carries the XP cell alone now — the
+                  secondary seals (成分章) press beside the nickname in the
+                  main track (see the name line above). */}
               <span class="replay-view__postbattle-fcell-score">
                 <span
                   class="replay-view__postbattle-fcell-xp"
@@ -1078,11 +1085,6 @@ export default defineComponent({
                 >
                   {p.xp.toLocaleString()}
                 </span>
-                {sealsShown.value && stampTags.length > 0 ? (
-                  <span class="replay-view__postbattle-fcell-stamptags">
-                    {stampTags}
-                  </span>
-                ) : null}
               </span>
               {sealsShown.value ? (
                 <span class="replay-view__postbattle-cell-stampslot">

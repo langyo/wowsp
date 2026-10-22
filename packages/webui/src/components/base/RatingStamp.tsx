@@ -60,8 +60,8 @@ let stampSeq = 0;
  *  utils/winrate stampTier: this square face IS the PRIMARY tier — the
  *  single-character verdicts plus 过街老鼠. The secondary tier — the
  *  four-char composition tags and the merged 空中神人 family — presses as
- *  the horizontal StampTag beside the score line on the live / post-battle
- *  rosters; the water-table surfaces render both tiers.)
+ *  the horizontal StampTag beside the roster nicknames on the live /
+ *  post-battle rosters; the water-table surfaces render both tiers.)
  *
  * The seals are a Chinese-community artifact — they render nothing under any
  * other UI language, and a seal switched off individually (statsPrefs
