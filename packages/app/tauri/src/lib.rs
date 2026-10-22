@@ -472,10 +472,14 @@ pub fn run() {
 
             // Debug-only e2e helper: bring the pairing server up at launch so
             // an emulator/device test can pair without driving the desktop UI
-            // (the PIN is printed to the tracing log by the server).
+            // (the PIN is printed to the tracing log by the server). Calls the
+            // server core directly — the command's main-window gate is a
+            // webview-caller check and the app itself is trusted.
             #[cfg(all(debug_assertions, desktop))]
             if std::env::var("WOWSP_AUTOSTART_PAIRING").is_ok() {
-                match tauri::async_runtime::block_on(commands::pairing::pairing_start()) {
+                match tauri::async_runtime::block_on(
+                    commands::pairing::server::pairing_start(),
+                ) {
                     Ok(status) => {
                         tracing::info!(?status, "pairing server autostarted via WOWSP_AUTOSTART_PAIRING");
                     }

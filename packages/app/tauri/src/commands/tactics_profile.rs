@@ -202,10 +202,12 @@ fn read_member<R: Read + Seek>(zip: &mut ZipArchive<R>, name: &str) -> anyhow::R
 /// saved file says what it is before it is ever opened.
 #[tauri::command]
 pub async fn tactics_profile_save(
+    window: tauri::Window,
     meta: Value,
     plans: Vec<TacticsProfilePlan>,
     path: Option<String>,
 ) -> CommandResult<Option<String>> {
+    crate::commands::ensure_main_window_label(window.label())?;
     #[cfg(mobile)]
     {
         let _ = (meta, plans, path);
@@ -293,7 +295,10 @@ pub struct TacticsProfileOpen {
 }
 
 #[tauri::command]
-pub async fn tactics_profile_open() -> CommandResult<Option<TacticsProfileOpen>> {
+pub async fn tactics_profile_open(
+    window: tauri::Window,
+) -> CommandResult<Option<TacticsProfileOpen>> {
+    crate::commands::ensure_main_window_label(window.label())?;
     #[cfg(mobile)]
     {
         return Err(anyhow!(crate::mobile_unsupported::PICKER).into());

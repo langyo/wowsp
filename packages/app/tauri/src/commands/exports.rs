@@ -83,10 +83,12 @@ pub(crate) fn export_path_granted(path: &str) -> bool {
 /// render, so the dialog never offers a mismatched extension.
 #[tauri::command]
 pub async fn pick_export_path(
+    window: tauri::Window,
     default_name: String,
     filter_name: String,
     filter_exts: Vec<String>,
 ) -> CommandResult<Option<String>> {
+    crate::commands::ensure_main_window_label(window.label())?;
     // Mobile: no native save dialog — the export flow writes into app
     // storage / the media store instead (later mobile phase).
     #[cfg(mobile)]
@@ -130,7 +132,11 @@ const MAX_EXPORT_BYTES: usize = 512 * 1024 * 1024;
 /// Async + blocking pool: a multi-MB video write must never stall the UI
 /// thread.
 #[tauri::command]
-pub async fn write_export_bytes(request: tauri::ipc::Request<'_>) -> CommandResult<()> {
+pub async fn write_export_bytes(
+    window: tauri::Window,
+    request: tauri::ipc::Request<'_>,
+) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
     let encoded = request
         .headers()
         .get("x-export-path")

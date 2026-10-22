@@ -908,7 +908,8 @@ fn download_sources(version: &str, candidates: &[SourceCandidate]) -> Vec<String
 /// and the webui treats the unresolved promise / process exit as success
 /// by design.
 #[tauri::command]
-pub async fn update_download(app: AppHandle) -> CommandResult<()> {
+pub async fn update_download(window: tauri::Window, app: AppHandle) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
     // Collapse double triggers (banner + About button) into one pass.
     let Some(guard) = UpdateGuard::begin(&UPDATE_PASS) else {
         return Ok(());
@@ -1126,7 +1127,8 @@ pub fn update_stranded_info() -> CommandResult<Option<UpdateStrandedInfo>> {
 /// full wizard opens on its own window, the user clicks through it, and
 /// the wizard's own flow stops this app at the install step.
 #[tauri::command]
-pub fn update_reinstall_from_cache() -> CommandResult<()> {
+pub fn update_reinstall_from_cache(window: tauri::Window) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
     let Some(stranded) = STRANDED.get().and_then(|stranded| stranded.as_ref()) else {
         return Err(anyhow!("no stranded update to recover").into());
     };

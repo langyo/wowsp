@@ -4,6 +4,22 @@
 //! signatures thin and DTOs in `wowsp_tauri_shared` so the frontend can mirror
 //! them via `@wowsp/shared_ui`.
 
+/// Audit P0-5: the state-changing commands (export writes, installs,
+/// pairing server, appdata writes) are callable from the MAIN webview
+/// only. The other windows — `overlay`, `aim-card`, `tray-panel` — load
+/// trimmed entry pages that never invoke them (the overlay is driven by
+/// Rust-emitted events; the tray panel calls exactly one action command),
+/// and a compromised overlay webview must not inherit the main window's
+/// authority. Commands opt in by taking `window: tauri::Window` and
+/// calling this with `window.label()`.
+pub(crate) fn ensure_main_window_label(label: &str) -> CommandResult<()> {
+    if label == "main" {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("command only available in the main window").into())
+    }
+}
+
 pub mod app_migrations;
 pub mod appdata;
 pub mod arena_info;
@@ -200,6 +216,7 @@ pub mod wg_composition;
 pub mod wg_realm;
 
 use crate::os_prefs::OsPreferences;
+use wowsp_tauri_shared::CommandResult;
 use wowsp_tauri_shared::RuntimeCapabilities;
 
 /// Sync convenience: hand the cached OS prefs (detected at startup) to the
@@ -348,4 +365,20 @@ pub(crate) fn graceful_exit(app: &tauri::AppHandle) {
         d.begin_drain(malkuth::ShutdownKind::Graceful);
     }
     app.exit(0);
+}
+
+#[cfg(test)]
+mod window_gate_tests {
+    use super::ensure_main_window_label;
+
+    #[test]
+    fn mutating_commands_are_main_window_only() {
+        assert!(ensure_main_window_label("main").is_ok());
+        for label in ["overlay", "aim-card", "tray-panel", "", "main-evil"] {
+            assert!(
+                ensure_main_window_label(label).is_err(),
+                "label {label:?} must not pass the main-window gate"
+            );
+        }
+    }
 }

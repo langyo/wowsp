@@ -9,10 +9,12 @@ use super::*;
 
 #[tauri::command]
 pub async fn mod_hub_install(
+    window: tauri::Window,
     source_root: String,
     game_root: String,
     plan: PackagePlan,
 ) -> CommandResult<InstallReport> {
+    crate::commands::ensure_main_window_label(window.label())?;
     // Same gate as the catalog install: the plan's copy must not interleave
     // with another install's res_mods writes or a `.bak` rename sweep.
     let _gate = super::mod_catalog::mod_hub_gate().await;

@@ -145,8 +145,10 @@ pub(super) fn store_replay_bytes(dir: &Path, raw_name: &str, bytes: &[u8]) -> Re
 /// import too, mobile into `<app_data>/replays`.
 #[tauri::command]
 pub async fn import_replay_file(
+    window: tauri::Window,
     request: tauri::ipc::Request<'_>,
 ) -> CommandResult<PairingPathResult> {
+    crate::commands::ensure_main_window_label(window.label())?;
     let encoded = request
         .headers()
         .get("x-replay-name")
