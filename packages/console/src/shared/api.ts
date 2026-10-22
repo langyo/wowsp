@@ -120,10 +120,18 @@ export function erpLogin(): void {
 
 // ── erp review console ─────────────────────────────────────────────────────
 
-/** GET /api/feedback/list — session-gated; row shape evolves with the
- *  Bitable schema (the page documents the fields it reads). */
-export async function getFeedbackList(page: number, pageSize = 50): Promise<unknown> {
-  return json(fetch(`api/feedback/list?page=${page}&page_size=${pageSize}`));
+/** GET /api/feedback/list — session-gated; the Bitable cursor protocol:
+ *  pass the previous page's `next_page_token` (omit for the first page);
+ *  the response carries `next_page_token` while more rows remain. Row
+ *  shape evolves with the Bitable schema (the page documents the fields
+ *  it reads). */
+export async function getFeedbackList(
+  pageToken?: string,
+  pageSize = 50,
+): Promise<unknown> {
+  const qs = new URLSearchParams({ page_size: String(pageSize) });
+  if (pageToken) qs.set("page_token", pageToken);
+  return json(fetch(`api/feedback/list?${qs.toString()}`));
 }
 
 /** POST /api/feedback/update — status transition + PR link. */
