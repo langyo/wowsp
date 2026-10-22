@@ -529,11 +529,14 @@ fn app_relay_digest(parsed: super::release_digest::RelayDigestDoc) -> Result<Rel
 }
 
 /// Fetch the relay's app-channel digest doc. Any failure is an `Err`
-/// that the channel combiner turns into "fall back to GitHub".
-async fn fetch_relay_digest(client: &reqwest::Client) -> Result<RelayDigest> {
+/// that the channel combiner turns into "fall back to GitHub";
+/// `Ok(None)` is the relay definitively publishing no app-channel
+/// digest (a fresh 404 or its remembered absent-mark), which likewise
+/// leaves the deciding to GitHub.
+async fn fetch_relay_digest(client: &reqwest::Client) -> Result<Option<RelayDigest>> {
     super::release_digest::fetch_relay_doc_latest(client, "app")
         .await
-        .and_then(app_relay_digest)
+        .and_then(|doc| doc.map(app_relay_digest).transpose())
 }
 
 /// The official version + digest over both channels. The two legs run
@@ -560,7 +563,16 @@ async fn official_release(client: &reqwest::Client) -> Result<OfficialRelease> {
                 anyhow!("cannot verify the update (relay: {relay_err}; GitHub: {github_err}); download it manually from GitHub Releases")
             })
         },
-        (Ok(relay_doc), github_quick) => {
+        // The relay publishes no app-channel digest (an ops gap, not a
+        // transient): GitHub alone decides, still with the full retry
+        // budget when the quick leg already failed.
+        (Ok(None), Ok(g)) => Ok(g),
+        (Ok(None), Err(github_quick_err)) => {
+            fetch_official_release(client).await.map_err(|github_err| {
+                anyhow!("cannot verify the update (relay: no digest published; GitHub: {github_quick_err} / {github_err}); download it manually from GitHub Releases")
+            })
+        },
+        (Ok(Some(relay_doc)), github_quick) => {
             let prev = super::release_digest::accepted_relay_seq("app").await;
             // The rollback refusal guards exactly the case where the
             // relay doc DECIDES the update — GitHub silent, or GitHub
