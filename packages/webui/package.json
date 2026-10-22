@@ -16,7 +16,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@celestia-island/hikari": "^0.55.191",
+    "@celestia-island/hikari": "^0.55.193",
     "@lucide/vue": "^1.55.0",
     "@tauri-apps/api": "^2.11.1",
     "@vue/devtools-api": "^8.2.1",
