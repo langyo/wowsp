@@ -13,6 +13,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
 import { pruneModelDebris } from "@/features/holographic/debrisPrune";
+import { deinterleaveGeometry } from "@/features/holographic/deinterleave";
 import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
 import { HkScrollContainer, HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
@@ -1157,6 +1158,16 @@ export default defineComponent({
           // except the armour thickness vertex colours, which must survive
           // for the armor overlay.
           const welded = mesh.geometry.clone();
+          // Meshopt-compressed pack GLBs load as INTERLEAVED attributes, and
+          // mergeVertices' scratch copy misconstructs those (its
+          // `new attr.constructor(array, itemSize, normalized)` is not the
+          // InterleavedBufferAttribute signature) — the first write throws
+          // and the whole model dies as "3D model failed: Cannot set
+          // properties of undefined (setting 'NaN')". Flatten first; plain
+          // float geometries pass through untouched. getComponent inside
+          // also decodes the pack's normalized-integer attributes, so the
+          // weld tolerance and the prune ratios see the model's own units.
+          deinterleaveGeometry(welded);
           for (const attr of Object.keys(welded.attributes)) {
             if (attr !== "position" && attr !== "color") welded.deleteAttribute(attr);
           }
