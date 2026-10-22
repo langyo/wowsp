@@ -121,6 +121,17 @@ pub(crate) fn ensure_game_closed(game_root: &str) -> anyhow::Result<()> {
 /// spelling-insensitive comparison to the game context's shared identity
 /// check.
 fn known_game_root(game_root: &str) -> bool {
+    // Test seam first: command-level tests drive real temp roots the
+    // scanner can never see (the same pattern as `TEST_RESTORE_ROOT`).
+    #[cfg(test)]
+    if test_known_roots()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .any(|known| super::game_context::same_folder(known, game_root))
+    {
+        return true;
+    }
     // 1. Detected installs (env pin, registry, Lesta Game Center, Steam).
     //    The TTL-cached scan shares the session poller's cache — a mutating
     //    command must not pay a fresh registry walk.
@@ -142,6 +153,23 @@ fn known_game_root(game_root: &str) -> bool {
     // 3. A running client's matched folder (its own guard below rejects it
     //    for mutation, but the read-side commands only pass the root check).
     super::game_context::running_root_matching(game_root).is_some()
+}
+
+/// Command-level tests register their synthetic roots here so the known
+/// root guard accepts them deterministically — never dependent on the
+/// 5-second scan cache's timing.
+#[cfg(test)]
+pub(crate) fn test_allow_game_root(root: &str) {
+    test_known_roots()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .push(root.to_string());
+}
+
+#[cfg(test)]
+fn test_known_roots() -> &'static std::sync::Mutex<Vec<String>> {
+    static ROOTS: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> = std::sync::OnceLock::new();
+    ROOTS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
 }
 
 /// Reject `game_root` values the backend cannot vouch for. Split from

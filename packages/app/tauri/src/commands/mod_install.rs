@@ -136,6 +136,10 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(tmp.join("bin/12668706")).unwrap();
         let root = tmp.to_str().unwrap().to_string();
+        // The known-root guard (audit H-3) rejects roots the backend never
+        // saw — register this synthetic install deterministically instead
+        // of racing the 5-second scan cache.
+        crate::commands::mod_hub::test_allow_game_root(&root);
 
         assert!(!is_overlay_mod_installed(root.clone()).unwrap());
         let dir = tauri::async_runtime::block_on(install_overlay_mod(root.clone())).unwrap();
