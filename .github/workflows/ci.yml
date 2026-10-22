@@ -84,9 +84,14 @@ jobs:
         # full battle; fails on any NameError degradation.
         run: python scripts/check_ingame_plugin.py
       - name: npm audit
-        # Dev-toolchain advisories (e.g. brace-expansion chains) have
-        # tripped `high` before; production deps stay gated at `critical`.
-        run: pnpm audit --audit-level=critical
+        # Audit L-1: PRODUCTION dependencies gate at `high` (what a shipped
+        # app actually exposes); dev-toolchain advisories (vite/esbuild
+        # chains trip `high` on every bump wave) keep the whole-tree gate
+        # at `critical`. The prod-dep highs ride pinned overrides in
+        # pnpm-workspace.yaml.
+        run: |
+          pnpm audit --prod --audit-level=high
+          pnpm audit --audit-level=critical
 
   rust:
     name: Rust (windows)
