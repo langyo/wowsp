@@ -35,6 +35,13 @@ pub async fn handle(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return Response::error("method not allowed", 405);
     }
+    // Audit M-10: same public-read budget as the other unauthenticated
+    // GETs — the page polls this sparingly; floods pay 429 instead of KV.
+    if !crate::replay::spend_public_read(&env, "sponsors", &crate::feedback::client_ip(&req))
+        .await?
+    {
+        return crate::replay::err_retry(429, "rate_limited", 600);
+    }
     let kv = match env.kv(KV) {
         Ok(kv) => kv,
         Err(_) => return Response::error("sponsor store not configured on this gateway", 503),
@@ -48,7 +55,8 @@ pub async fn handle(req: Request, env: Env) -> Result<Response> {
         return Response::error("stored sponsor document failed validation", 500);
     }
     let mut resp = Response::from_json(&doc)?;
-    resp.headers_mut().set("cache-control", "public, max-age=1800")?;
+    resp.headers_mut()
+        .set("cache-control", "public, max-age=1800")?;
     Ok(resp)
 }
 
@@ -121,7 +129,9 @@ async fn paged<T: DeserializeOwned>(c: &Creds, endpoint: &str, cap: u32) -> Resu
 /// failing cron run is noise, not an incident.
 pub async fn poll(env: &Env) {
     let Some(c) = creds(env) else {
-        worker::console_warn!("afdian sponsors: AFDIAN_API_TOKEN / AFDIAN_USER_ID unset — poll skipped");
+        worker::console_warn!(
+            "afdian sponsors: AFDIAN_API_TOKEN / AFDIAN_USER_ID unset — poll skipped"
+        );
         return;
     };
     let run = async {
@@ -133,20 +143,18 @@ pub async fn poll(env: &Env) {
         let kv = env.kv(KV).map_err(|e| format!("kv bind: {e}"))?;
         // Change detection ignores updatedAt (it moves every run) —
         // only the content array gates the write.
-        let content = serde_json::to_string(&doc.sponsors)
-            .map_err(|e| format!("serialize sponsors: {e}"))?;
+        let content =
+            serde_json::to_string(&doc.sponsors).map_err(|e| format!("serialize sponsors: {e}"))?;
         let existing = kv.get(sponsors::KV_KEY).text().await?;
         let changed = existing
             .as_deref()
             .and_then(|prev| serde_json::from_str::<SponsorsDoc>(prev).ok())
             .map(|prev| {
-                serde_json::to_string(&prev.sponsors).ok().as_deref()
-                    != Some(content.as_str())
+                serde_json::to_string(&prev.sponsors).ok().as_deref() != Some(content.as_str())
             })
             .unwrap_or(true);
         if changed {
-            let body = serde_json::to_string(&doc)
-                .map_err(|e| format!("serialize doc: {e}"))?;
+            let body = serde_json::to_string(&doc).map_err(|e| format!("serialize doc: {e}"))?;
             kv.put(sponsors::KV_KEY, body)?.execute().await?;
             worker::console_log!(
                 "afdian sponsors: refreshed ({} rows, {page_stats} pages)",

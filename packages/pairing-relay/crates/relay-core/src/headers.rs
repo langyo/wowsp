@@ -75,6 +75,11 @@ pub const REFERRER_POLICY: &str = "strict-origin-when-cross-origin";
 /// No page this gateway serves needs powerful platform features.
 pub const PERMISSIONS_POLICY: &str = "camera=(), microphone=(), geolocation=()";
 
+/// Audit L: every response is HTTPS-only (the custom domain terminates at
+/// Cloudflare), so HSTS closes the first-visit SSL-strip window. Kept in
+/// sync with packages/website/src/res/_headers for the static shell.
+pub const STRICT_TRANSPORT_SECURITY: &str = "max-age=31536000; includeSubDomains";
+
 /// Which of the two header rows applies. `WebsocketUpgrade` responses
 /// pass through untouched — the `101` handshake must stay byte-identical.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +96,7 @@ pub enum ResponseKind {
 /// Empty for WebSocket upgrades.
 pub fn security_headers(kind: ResponseKind) -> &'static [(&'static str, &'static str)] {
     const COMMON: &[(&str, &str)] = &[
+        ("Strict-Transport-Security", STRICT_TRANSPORT_SECURITY),
         ("X-Content-Type-Options", X_CONTENT_TYPE_OPTIONS),
         ("Referrer-Policy", REFERRER_POLICY),
         ("Permissions-Policy", PERMISSIONS_POLICY),
@@ -180,7 +186,7 @@ mod tests {
         );
     }
 
-    /// /api JSON (health, feedback pipeline, errors) carries the three
+    /// /api JSON (health, feedback pipeline, errors) carries the four
     /// universal headers and NO CSP / X-Frame-Options.
     #[test]
     fn api_json_carries_the_universal_headers_only() {
@@ -189,6 +195,7 @@ mod tests {
         assert_eq!(
             names,
             [
+                "Strict-Transport-Security",
                 "X-Content-Type-Options",
                 "Referrer-Policy",
                 "Permissions-Policy",
@@ -199,14 +206,14 @@ mod tests {
         // The JSON error rows (4xx/5xx) decorate the same way.
         assert_eq!(
             security_headers(response_kind(404, Some("application/json"))).len(),
-            3
+            4
         );
     }
 
     /// Redirects (302 /docs, attachment hand-off) decorate like /api.
     #[test]
     fn redirects_carry_the_universal_headers() {
-        assert_eq!(security_headers(response_kind(302, None)).len(), 3);
+        assert_eq!(security_headers(response_kind(302, None)).len(), 4);
     }
 
     /// The WebSocket upgrade (the resolve + control + data handshakes,
@@ -264,6 +271,7 @@ mod tests {
         );
         // The universal trio rides the same splat row.
         for header in [
+            "Strict-Transport-Security: max-age=31536000; includeSubDomains",
             "X-Frame-Options: DENY",
             "X-Content-Type-Options: nosniff",
             "Referrer-Policy: strict-origin-when-cross-origin",

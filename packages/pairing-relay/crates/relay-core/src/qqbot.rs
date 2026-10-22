@@ -117,20 +117,26 @@ impl Binding {
 // ── Webhook：URL 校验（op 13/14）与事件验签 ────────────────────────────
 
 /// hex 解码（大小写容忍；容忍控制台拷贝常见的空白与 0x 前缀）。
+/// 按字节而非按 `str` 下标切片——header 值若混入非 ASCII 字符，字节
+/// 下标可能落在字符边界之外并直接 panic（audit L）；非 ASCII 字节不是
+/// 合法 hex 数字，走统一的 `None` 路径。
 fn unhex(raw: &str) -> Option<Vec<u8>> {
-    let s: String = raw
+    let cleaned: &[u8] = &raw
         .trim()
         .trim_start_matches("0x")
         .trim_start_matches("0X")
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
-    if s.is_empty() || s.len() % 2 != 0 {
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace())
+        .collect::<Vec<u8>>();
+    if cleaned.is_empty() || cleaned.len() % 2 != 0 {
         return None;
     }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+    cleaned
+        .chunks_exact(2)
+        .map(|pair| {
+            let text = std::str::from_utf8(pair).ok()?;
+            u8::from_str_radix(text, 16).ok()
+        })
         .collect()
 }
 
@@ -191,6 +197,11 @@ pub fn validation_response(secret: &str, plain_token: &str, event_ts: &str) -> O
         "signature": hex(&sig.to_bytes()),
     }))
 }
+
+/// 事件推送的时间戳新鲜度窗口（audit L）：`X-Signature-Timestamp` 参与
+/// 签名，但只验签不比新旧的话，一条泄漏过的签名请求体能无限重放。5 分
+/// 钟覆盖平台侧的正常推送延迟与时钟漂移。
+pub const SIGNATURE_TIMESTAMP_TOLERANCE_SECS: i64 = 300;
 
 /// 事件推送验签：`X-Signature-Ed25519`（hex）是对
 /// `timestamp 字节串 + 原始 body` 的 Ed25519 签名，用同一 Secret 派生
@@ -524,6 +535,36 @@ mod tests {
         assert!(!verify_event_signature(secret, ts, b"tampered", &sig));
         assert!(!verify_event_signature("wrong-secret", ts, body, &sig));
         assert!(!verify_event_signature(secret, ts, body, "deadbeef"));
+    }
+
+    #[test]
+    fn signature_headers_with_multibyte_garbage_refuse_without_panicking() {
+        // Audit L: `unhex` used to slice the header string by BYTE indices;
+        // a non-ASCII header value could split a UTF-8 sequence mid-character
+        // and panic the whole request. Non-ASCII bytes are simply not hex —
+        // refuse, never crash.
+        let secret = "mptx-test-secret-0123456789";
+        let body = br#"{"op":0}"#;
+        let multibyte = "日日日日日日日日";
+        assert!(!verify_event_signature(
+            secret,
+            "1690000123",
+            body,
+            multibyte
+        ));
+        // Mixed ASCII + multibyte, odd/even lengths, BOM prefix.
+        assert!(!verify_event_signature(
+            secret,
+            "1690000123",
+            body,
+            "deadbeef日"
+        ));
+        assert!(!verify_event_signature(
+            secret,
+            "1690000123",
+            body,
+            "\u{FEFF}deadbeef"
+        ));
     }
 
     #[test]

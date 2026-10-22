@@ -22,6 +22,7 @@
 # the desktop app) — without them every lookup fails on this host.
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'; style-src 'self' https://langyo.github.io 'unsafe-inline'; img-src 'self' data: https://langyo.github.io; connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
