@@ -213,6 +213,23 @@ pub fn validation_response(secret: &str, plain_token: &str, event_ts: &str) -> O
 /// 钟覆盖平台侧的正常推送延迟与时钟漂移。
 pub const SIGNATURE_TIMESTAMP_TOLERANCE_SECS: i64 = 300;
 
+/// 事件去重标记的存活时长（audit L 跟进）：覆盖平台的重推窗口，同一
+/// 事件 `id` 只处理一次；过期后键自动回收，不占 KV 写预算之外的存储。
+pub const DUP_TTL_SECS: u64 = 600;
+
+/// 事件信封的唯一 id（QQ 推送顶层 `id` 字段）——去重 nonce。缺失（旧
+/// 格式推送或 op13 URL 校验）返回 `None`，调用方自然跳过去重。
+pub fn event_id(body: &Value) -> Option<&str> {
+    body.get("id")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+}
+
+/// 事件去重标记的 KV 键。
+pub fn dup_key(id: &str) -> String {
+    format!("qqdup:{id}")
+}
+
 /// 事件推送验签：`X-Signature-Ed25519`（hex）是对
 /// `timestamp 字节串 + 原始 body` 的 Ed25519 签名，用同一 Secret 派生
 /// 的公钥校验。
@@ -537,6 +554,21 @@ mod tests {
         assert_eq!(&expand_seed("0123456789abcdef")[..], &want[..]);
         let s32 = "0123456789abcdef0123456789abcdef";
         assert_eq!(&expand_seed(s32)[..], s32.as_bytes());
+    }
+
+    #[test]
+    fn event_id_extraction_and_dup_key() {
+        // The envelope's top-level id is the dedup nonce (audit L follow-up).
+        let v: Value = serde_json::from_str(r#"{"op":0,"id":"evt-123","d":{}}"#).unwrap();
+        assert_eq!(event_id(&v), Some("evt-123"));
+        assert_eq!(dup_key("evt-123"), "qqdup:evt-123");
+        // Absent, empty or non-string ids → None (op13 validation, old shapes).
+        let none: Value = serde_json::from_str(r#"{"op":13,"d":{"plain_token":"pt"}}"#).unwrap();
+        assert_eq!(event_id(&none), None);
+        let empty: Value = serde_json::from_str(r#"{"op":0,"id":"","d":{}}"#).unwrap();
+        assert_eq!(event_id(&empty), None);
+        let numeric: Value = serde_json::from_str(r#"{"op":0,"id":7,"d":{}}"#).unwrap();
+        assert_eq!(event_id(&numeric), None);
     }
 
     #[test]

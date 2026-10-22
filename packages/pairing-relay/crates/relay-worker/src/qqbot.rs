@@ -178,6 +178,26 @@ pub async fn handle_callback(mut req: Request, env: &Env) -> Result<Response> {
             {
                 return Response::error("bad signature", 401);
             }
+            // Audit L follow-up: the timestamp window bounds HOW LONG a
+            // leaked signed body replays; the event-id marker bounds HOW
+            // OFTEN — the platform's own retries and a replayer both carry
+            // the same envelope `id`, so each push is processed exactly
+            // once. Best-effort: a KV failure fails open (the signature
+            // window still applies), and op13 validation carries no id and
+            // is naturally exempt.
+            if let Some(id) = qqbot::event_id(&v) {
+                let kv = env.kv("FEEDBACK_KV")?;
+                let key = qqbot::dup_key(id);
+                if kv.get(&key).text().await.ok().flatten().is_some() {
+                    worker::console_log!("qqbot: duplicate event {id} skipped");
+                    return Response::from_json(&json!({ "ok": true }));
+                }
+                let _ = kv
+                    .put(&key, true)?
+                    .expiration_ttl(qqbot::DUP_TTL_SECS)
+                    .execute()
+                    .await;
+            }
             handle_event(env, &c, event).await?;
             Response::from_json(&json!({ "ok": true }))
         },
