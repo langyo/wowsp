@@ -83,6 +83,7 @@ use std::fs;
 use std::fs::File;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -894,9 +895,26 @@ const TAR_MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 fn unpack_tar_gz(archive: &Path, dest: &Path) -> anyhow::Result<()> {
     let file = File::open(archive).map_err(|e| anyhow!("open archive: {e}"))?;
     // The Take caps the DECODED stream: an archive inflating past the
-    // budget errors out mid-read instead of filling the disk.
+    // budget errors out mid-read instead of filling the disk…
     let decoder = GzDecoder::new(file).take(TAR_MAX_TOTAL_BYTES);
-    let mut tar = Archive::new(decoder);
+    unpack_tar_stream(decoder, dest, TAR_MAX_TOTAL_BYTES)
+}
+
+/// …but ONLY mid-read: at a header boundary `io::Take` signals exhaustion
+/// with `Ok(0)`, which tar-rs accepts as a CLEAN end of archive (audit
+/// M-11 review) — an exactly-at-cap stream would otherwise unpack half a
+/// pack and get stamped as a successful install. A shared consumed-bytes
+/// counter therefore reports exhaustion explicitly after the entry walk.
+fn unpack_tar_stream<R: std::io::Read>(
+    reader: R,
+    dest: &Path,
+    decoded_budget: u64,
+) -> anyhow::Result<()> {
+    let counter = ReadCounter::default();
+    let mut tar = Archive::new(CountingReader {
+        inner: reader,
+        read: counter.clone(),
+    });
     tar.set_preserve_permissions(true);
     fs::create_dir_all(dest).map_err(|e| anyhow!("create {}: {e}", dest.display()))?;
     let dest = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
@@ -923,12 +941,45 @@ fn unpack_tar_gz(archive: &Path, dest: &Path) -> anyhow::Result<()> {
             .unpack_in(&dest)
             .map_err(|e| anyhow!("{}: {e}", entry.path_bytes().escape_ascii()))?;
     }
+    if counter.get() >= decoded_budget {
+        return Err(anyhow!(
+            "archive inflates to the {} GB decoded-size budget — refusing to install a truncated pack",
+            decoded_budget / (1024 * 1024 * 1024)
+        ));
+    }
     directories.sort_by(|a, b| b.path_bytes().cmp(&a.path_bytes()));
     for mut dir in directories {
         dir.unpack_in(&dest)
             .map_err(|e| anyhow!("{}: {e}", dir.path_bytes().escape_ascii()))?;
     }
     Ok(())
+}
+
+/// Bytes consumed from a capped stream, shared between the reader and the
+/// unpack driver (the entries iterator borrows the Archive, so the Take
+/// itself is unreachable after the walk).
+#[derive(Clone, Default)]
+struct ReadCounter(Arc<std::sync::atomic::AtomicU64>);
+
+impl ReadCounter {
+    fn get(&self) -> u64 {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+struct CountingReader<R> {
+    inner: R,
+    read: ReadCounter,
+}
+
+impl<R: std::io::Read> std::io::Read for CountingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.read
+            .0
+            .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+        Ok(n)
+    }
 }
 
 /// Unpack the full-pack tar.gz into `staging` (top-level `models/` +
@@ -2281,6 +2332,52 @@ mod tests {
             );
             let _ = fs::remove_dir_all(&dest);
         }
+    }
+
+    #[test]
+    fn tar_take_exhaustion_is_an_error_not_a_truncated_pack() {
+        // Audit M-11 review: `io::Take` signals exhaustion with Ok(0), and
+        // tar-rs accepts a 0-byte read at a header boundary as a CLEAN end
+        // of archive. Cut the decoded budget exactly one 512-byte block
+        // short of the archive end — the naive implementation unpacked the
+        // truncated pack and reported SUCCESS here.
+        let mut builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_mode(0o644);
+        header.set_size(4);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "models/a.glb", &b"new-a"[..])
+            .unwrap();
+        let tar_bytes = builder.into_inner().unwrap();
+        assert!(tar_bytes.len() > 512, "fixture must span a block boundary");
+
+        let gz = {
+            let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            std::io::Write::write_all(&mut enc, &tar_bytes).unwrap();
+            enc.finish().unwrap()
+        };
+        let nonce = {
+            let mut n = [0u8; 8];
+            getrandom::fill(&mut n).unwrap();
+            hex::encode(n)
+        };
+        let dest = std::env::temp_dir().join(format!("wowsp-tar-take-{nonce}"));
+        let _ = fs::remove_dir_all(&dest);
+        let decoder = GzDecoder::new(gz.as_slice()).take((tar_bytes.len() - 512) as u64);
+        let err = unpack_tar_stream(decoder, &dest, (tar_bytes.len() - 512) as u64).unwrap_err();
+        assert!(
+            err.to_string().contains("decoded-size budget"),
+            "a Take-exhausted archive must be refused: {err}"
+        );
+
+        // The uncapped stream of the SAME archive still unpacks cleanly —
+        // the check trips only on real exhaustion.
+        let decoder = GzDecoder::new(gz.as_slice()).take(TAR_MAX_TOTAL_BYTES);
+        unpack_tar_stream(decoder, &dest, TAR_MAX_TOTAL_BYTES).unwrap();
+        assert!(dest.join("models/a.glb").is_file());
+        let _ = fs::remove_dir_all(&dest);
     }
 
     #[test]

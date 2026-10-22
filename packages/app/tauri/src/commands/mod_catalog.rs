@@ -1325,12 +1325,35 @@ const EXTRACT_MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 /// Cap for ONE extracted file (no legit mod file approaches this).
 const EXTRACT_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
+/// Test seam: tiny budgets so the cap paths are reachable without
+/// multi-GB fixtures (the `TEST_RESTORE_ROOT` pattern).
+#[cfg(test)]
+static TEST_EXTRACT_CAPS: std::sync::Mutex<Option<(usize, u64, u64)>> = std::sync::Mutex::new(None);
+
+/// The active extraction budgets (entries, per-file bytes, total bytes).
+fn extract_caps() -> (usize, u64, u64) {
+    #[cfg(test)]
+    if let Some(caps) = TEST_EXTRACT_CAPS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+    {
+        return caps;
+    }
+    (
+        EXTRACT_MAX_ENTRIES,
+        EXTRACT_MAX_FILE_BYTES,
+        EXTRACT_MAX_TOTAL_BYTES,
+    )
+}
+
 /// Zip-slip-safe extraction; visited paths are collected for diagnostics.
 fn extract_zip(archive: &Path, dest: &Path, visited: &mut Vec<String>) -> anyhow::Result<()> {
     let file = fs::File::open(archive).map_err(|e| anyhow!("open {}: {e}", archive.display()))?;
     let mut zip =
         zip::ZipArchive::new(file).map_err(|e| anyhow!("read {}: {e}", archive.display()))?;
-    if zip.len() > EXTRACT_MAX_ENTRIES {
+    let (max_entries, max_file, max_total) = extract_caps();
+    if zip.len() > max_entries {
         bail!("archive carries too many entries ({})", zip.len());
     }
     let mut total = 0u64;
@@ -1365,14 +1388,14 @@ fn extract_zip(archive: &Path, dest: &Path, visited: &mut Vec<String>) -> anyhow
                 break;
             }
             written += n as u64;
-            if written > EXTRACT_MAX_FILE_BYTES {
+            if written > max_file {
                 bail!("{} exceeds the per-file extraction cap", out.display());
             }
             fout.write_all(&buf[..n])
                 .map_err(|e| anyhow!("extract {}: {e}", out.display()))?;
         }
         total += written;
-        if total > EXTRACT_MAX_TOTAL_BYTES {
+        if total > max_total {
             bail!("archive exceeds the total extraction cap");
         }
         if let Ok(rel) = out.strip_prefix(dest) {
@@ -1980,6 +2003,50 @@ mod tests {
         extract_zip(&tmp.join("evil.zip"), &tmp.join("out2"), &mut visited2).unwrap();
         assert!(!tmp.join("evil.txt").exists());
         assert_eq!(visited2, vec!["ok.txt"]);
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Audit M-11: the extraction budgets abort hostile archives. Tiny
+    /// seam caps stand in for multi-GB fixtures; each sub-case breaches a
+    /// different cap (entries / per-file / total). The seam lock must be
+    /// RELEASED around every `extract_zip` call — it is the SAME mutex the
+    /// production path takes (a held guard would self-deadlock).
+    #[test]
+    fn extraction_caps_abort_hostile_archives() {
+        let tmp = std::env::temp_dir().join("wowsp_zipx_caps_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        let dest = tmp.join("out");
+
+        // Entries: a third entry trips the 2-entry cap.
+        *TEST_EXTRACT_CAPS.lock().unwrap() = Some((2, 1024, 1024));
+        zip_fixture(
+            &tmp.join("many.zip"),
+            &[("a.txt", b"1"), ("b.txt", b"2"), ("c.txt", b"3")],
+        );
+        let err = extract_zip(&tmp.join("many.zip"), &dest, &mut Vec::new()).unwrap_err();
+        assert!(err.to_string().contains("too many entries"), "{err}");
+
+        // Per-file: one 2 KB file against a 1 KB cap.
+        *TEST_EXTRACT_CAPS.lock().unwrap() = Some((100, 1024, 1024));
+        zip_fixture(&tmp.join("big.zip"), &[("big.bin", &[0u8; 2048])]);
+        let err = extract_zip(&tmp.join("big.zip"), &dest, &mut Vec::new()).unwrap_err();
+        assert!(err.to_string().contains("per-file extraction cap"), "{err}");
+
+        // Total: two files that are each fine but sum past the cap.
+        *TEST_EXTRACT_CAPS.lock().unwrap() = Some((100, 1024, 1536));
+        zip_fixture(
+            &tmp.join("sum.zip"),
+            &[("a.bin", &[0u8; 1024]), ("b.bin", &[0u8; 1024])],
+        );
+        let err = extract_zip(&tmp.join("sum.zip"), &dest, &mut Vec::new()).unwrap_err();
+        assert!(err.to_string().contains("total extraction cap"), "{err}");
+
+        // Seam cleared: the same archives extract without the caps.
+        *TEST_EXTRACT_CAPS.lock().unwrap() = None;
+        for archive in ["many.zip", "big.zip", "sum.zip"] {
+            extract_zip(&tmp.join(archive), &dest, &mut Vec::new()).unwrap();
+        }
         fs::remove_dir_all(&tmp).ok();
     }
 

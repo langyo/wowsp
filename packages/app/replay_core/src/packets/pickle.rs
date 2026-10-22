@@ -33,14 +33,19 @@ const MAX_MEMO_ENTRIES: usize = 64 * 1024;
 /// replay pickles clone a few hundred KB at most.
 const MAX_CLONED_BYTES: usize = 64 * 1024 * 1024;
 /// `deep_size` recursion guard. Values are built by this very parser, so
-/// anything past this depth is hostile by construction; it counts as the
-/// whole budget and trips it.
+/// anything at or past this depth is hostile by construction; it counts as
+/// the whole budget and trips it.
 const DEEP_SIZE_MAX_DEPTH: usize = 64;
+/// Audit M-8 review: MARK nesting builds nested `PyVal`s whose RECURSIVE
+/// DROP overflows the stack on hostile input (~300 KB of MARK+LIST pairs
+/// reaches ~100k levels — the allocation succeeds, the cleanup aborts).
+/// Legitimate replay pickles nest a handful of levels.
+const MAX_META_DEPTH: usize = 256;
 
 /// Approximate retained size of a parsed value (bytes, conservative).
 fn deep_size(v: &PyVal) -> usize {
     fn rec(v: &PyVal, depth: usize) -> usize {
-        if depth > DEEP_SIZE_MAX_DEPTH {
+        if depth >= DEEP_SIZE_MAX_DEPTH {
             // Hostile nesting: pessimistically charge the entire budget so
             // the caller aborts instead of recursing further.
             return MAX_CLONED_BYTES;
@@ -75,7 +80,15 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
         i += 1;
         match op {
             0x80 => i += 1,                                     // PROTO (version byte)
-            0x28 => metastack.push(std::mem::take(&mut stack)), // MARK '('
+            0x28 => {
+                // MARK '(' — depth-capped: hostile nesting would otherwise
+                // build PyVal trees whose recursive Drop overflows the
+                // stack long before any byte budget notices (audit M-8).
+                if metastack.len() >= MAX_META_DEPTH {
+                    return None;
+                }
+                metastack.push(std::mem::take(&mut stack));
+            },
             0x4e => stack.push(PyVal::None),                    // NONE 'N'
             0x4b => {
                 // BININT1 'K' — u8
@@ -429,5 +442,33 @@ mod tests {
         bytes.push(0x2e);
         let parsed = parse_pickle(&bytes);
         assert!(matches!(parsed, Some(PyVal::Str(_))), "{parsed:?}");
+    }
+
+    /// Audit M-8 review: hostile MARK nesting builds PyVal trees whose
+    /// recursive DROP overflows the stack — the allocations succeed, the
+    /// cleanup aborts. The metastack depth cap must refuse the parse
+    /// cheaply, well before the values exist.
+    #[test]
+    fn hostile_mark_nesting_is_depth_capped() {
+        let mut bytes = vec![0x80, 0x04];
+        for _ in 0..100_000 {
+            // MARK + EMPTY_LIST — ~3 bytes per nesting level.
+            bytes.extend_from_slice(&[0x28, 0x5d]);
+        }
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), None);
+    }
+
+    /// Legitimate nesting sits far under the cap: a 64-deep nested list
+    /// (deeper than any real damage-stat payload) still parses.
+    #[test]
+    fn legitimate_nesting_still_parses() {
+        let mut bytes = vec![0x80, 0x04, 0x5d]; // EMPTY_LIST (outermost)
+        for _ in 0..64 {
+            // EMPTY_LIST (inner) + APPEND — nests the inner into the outer.
+            bytes.extend_from_slice(&[0x5d, 0x61]);
+        }
+        bytes.push(0x2e);
+        assert!(matches!(parse_pickle(&bytes), Some(PyVal::List(_))));
     }
 }
