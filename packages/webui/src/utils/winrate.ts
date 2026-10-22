@@ -113,7 +113,8 @@ export type StampKind = CareerStamp | CompositionStamp | MergedStamp | VeteranSt
  *  - "secondary" (二级章): the four-character composition tags (空中小人 /
  *    水下小人 / 空中奶龙 / 水下奶蛙) and the merged seals (空中神人 family) —
  *    a horizontal cinnabar-bordered transparent tag (印章样式的小标签)
- *    riding BESIDE the row's score line on the live / post-battle rosters.
+ *    pressing BESIDE the roster nicknames on the live / post-battle
+ *    rosters.
  *  The water-table surfaces (我的水表 / 水表查询) render BOTH tiers. */
 export type StampTier = "primary" | "secondary";
 

@@ -471,7 +471,8 @@
      the account card's stamp. Its grid track stays reserved even for cards
      without a seal (hidden stats, prefs off), so both rosters keep
      identical column geometry. The secondary tier (成分章, StampTag) does
-     NOT live here — it rides beside the bottom score strip instead. */
+     NOT live here — it presses beside the nickname in the name track
+     instead. */
   &__player-stampstack {
     grid-column: 3;
     justify-self: center;
@@ -479,18 +480,6 @@
     flex-direction: column;
     align-items: center;
     gap: 4px;
-  }
-
-  /* The secondary seals (成分章, StampTag) riding the bottom stat strip's
-     right end — beside the WR/PR/battles score line (the strip spans all
-     three tracks, so there is room here that the name track never has).
-     The strip's statline stays ellipsized; the tags flex none at its end. */
-  &__player-stat-tags {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: 8px;
   }
 
   /* Human players: the whole card jumps to the lookup view. */
@@ -553,6 +542,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* The secondary tags (成分章, StampTag) press BESIDE THE NICKNAME — the
+     four-char wording reads as part of the identity line, not as a
+     score-column ornament (user feedback). A step smaller so the tag
+     sings in the clan tag's register instead of shouting over the nick. */
+  &__player-name .stamp-tag {
+    font-size: 0.78em;
   }
 
   &__player-bot {
@@ -761,13 +758,10 @@
     flex: 0 0 auto;
   }
 
-  /* The compact row's secondary tag presses a STEP smaller: the four-char
-     wording at the row's own size would overhang the fixed 44px slot into
-     the stat columns — the tier's small-tag face shrinks to fit the slot
-     (the full cards' stat strip has room for the full-size face). */
-  &__crow-stampslot .stamp-tag {
-    font-size: 0.7em;
-    padding: 0.04em 0.3em;
+  /* The compact row's secondary tag presses BESIDE THE NICKNAME too (the
+     full card's rule above), at the same clan-tag register. */
+  &__crow-name .stamp-tag {
+    font-size: 0.78em;
   }
 
   &__crow--link {

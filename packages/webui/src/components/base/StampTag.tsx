@@ -47,9 +47,10 @@ const TAG_DESC_KEYS: Record<StampKind, string> = {
  * transparent tag with cinnabar ink and a rounded cinnabar border — like a
  * rubber-stamp impression, but in the small tag mode. The four-character
  * composition tags (空中小人 / 水下小人 / 空中奶龙 / 水下奶蛙) and the merged
- * 空中神人-family seals render through this face beside the score line on
- * the live and post-battle rosters (their rows are far too short for a
- * square 2x2 face); the single-character verdicts keep the square
+ * 空中神人-family seals render through this face beside the roster
+ * nicknames on the live and post-battle rosters (their rows are far too
+ * short for a square 2x2 face, and the four-char wording reads as part of
+ * the identity line); the single-character verdicts keep the square
  * RatingStamp picture (一级章). The wording/desc maps stay total over
  * StampKind so any kind passed by a future caller renders labelled —
  * callers route primary kinds to RatingStamp (utils/winrate stampTier).

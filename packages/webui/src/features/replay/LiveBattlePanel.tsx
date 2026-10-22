@@ -1165,14 +1165,18 @@ export default defineComponent({
       };
 
       /** The row's secondary seals (成分章) — 空中小人 / 水下小人 (with the
-       *  >50% 奶龙 / 奶蛙 veteran tier) as horizontal StampTag faces riding
-       *  BESIDE the card's bottom score strip (the rows are too short for a
-       *  square 2x2 face). No merge exists on the rosters: a 神了 / 猴
+       *  >50% 奶龙 / 奶蛙 veteran tier) as horizontal StampTag faces pressed
+       *  BESIDE the card's nickname (the rows are too short for a square 2x2
+       *  face, and the four-char wording reads as part of the identity line
+       *  — user feedback). No merge exists on the rosters: a 神了 / 猴
        *  verdict keeps its own primary RatingStamp on the card's right edge
-       *  while the comp tags press here (the merged 空中神人-family faces
-       *  belong to the water meter alone, as before); the 蛆 / 过街老鼠
-       *  floors suppress the composition entirely. A verdict still in
-       *  flight (or failed / hidden → null) renders nothing. */
+       *  while the comp tags press beside the nick (the merged 空中神人-family
+       *  faces belong to the water meter alone, as before); the 蛆 / 过街老鼠
+       *  floors suppress the composition entirely. A career verdict still
+       *  in flight (or failed / hidden → null) leaves the row-end stamp
+       *  empty but does not hold the tags — only the composition lookup
+       *  gates them (hidden profiles have no composition on file, so their
+       *  rows render neither face). */
       const stampTagNodes = (name: string, career: CareerStamp | null): VNode[] => {
         if (!sealsShown.value || career === "maggot" || career === "rat") return [];
         const comp = compositions.value.get(name);
@@ -1191,14 +1195,13 @@ export default defineComponent({
         return nodes;
       };
 
-      /** The COMPACT row's single secondary seal — the highest tier the
-       *  player carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor one,
-       *  and air wins a same-tier tie (resolveStamps' canonical order).
-       *  The compact row shows exactly ONE seal in total — the career
-       *  verdict first (careerStamp's four verdicts are mutually
-       *  exclusive, and its 蛆 / 老鼠 floors suppress the tags outright),
-       *  this tag only when no verdict stamp applies. Null when nothing
-       *  qualifies. The full cards keep the whole stack (stampTagNodes). */
+      /** The COMPACT row's secondary seal — the highest tier the player
+       *  carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor one, and air
+       *  wins a same-tier tie (resolveStamps' canonical order). Pressed
+       *  beside the nickname, so it no longer competes with the row-end
+       *  verdict slot: a 神了 / 猴 row carries BOTH faces now (the tag here,
+       *  the stamp at the row end). Null when nothing qualifies. The full
+       *  cards keep the whole stack (stampTagNodes). */
       const highestStampTag = (
         name: string,
         career: CareerStamp | null,
@@ -1261,10 +1264,9 @@ export default defineComponent({
               class="live-battle__crow-stamp"
             />
           ) : null;
-        // The compact row carries exactly ONE seal — the cluster's highest
-        // face (the full card keeps the whole stack). The secondary tier
-        // presses as the horizontal StampTag beside the stat columns.
-        const sealSlot = seal ?? highestStampTag(v.name, stamp);
+        // The row-end slot carries ONLY the primary square stamp now — the
+        // secondary tier presses beside the nickname instead (see the name
+        // line below), so a row can carry both faces at once.
         const content = (
           <>
             <span class="live-battle__crow-ico">
@@ -1294,6 +1296,11 @@ export default defineComponent({
                   <span class="live-battle__crow-clan">[{st.clanTag}]</span>
                 ) : null}
                 {ai ? <em class="live-battle__crow-bot">{t("replay.bot")}</em> : null}
+                {/* The secondary seal (成分章) presses BESIDE the nickname —
+                    the four-char wording reads as part of the identity line,
+                    not as a score-column ornament (user feedback); the nick
+                    ellipsizes first when the line runs out. */}
+                {highestStampTag(v.name, stamp)}
               </span>
               <span class="live-battle__crow-ship">{shipName}</span>
             </span>
@@ -1310,10 +1317,11 @@ export default defineComponent({
             {/* Seal slot reserved whenever seals show at all (PR + settings
                 master) — the matrix's own alignment rule: rows without a
                 seal (bots, misses, verdict holds) keep the stat columns
-                at the same x as sealed rows instead of zigzagging. The
-                compact row's one seal is the cluster's HIGHEST face. */}
+                at the same x as sealed rows instead of zigzagging. The slot
+                carries ONLY the primary square stamp now — the secondary
+                StampTag presses beside the nickname instead. */}
             {prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
-              <span class="live-battle__crow-stampslot">{sealSlot}</span>
+              <span class="live-battle__crow-stampslot">{seal}</span>
             ) : null}
           </>
         );
@@ -1379,8 +1387,8 @@ export default defineComponent({
         ];
         // The card's right edge keeps ONLY the primary seal — the
         // single-character verdict picture (一级章). The secondary tier
-        // (成分章) moved beside the bottom score strip: the cards are far
-        // too short for a stack of square faces there.
+        // (成分章) presses beside the nickname (see the name line below):
+        // the cards are far too short for a stack of square faces there.
         const seal = stamp && prefs.prefs.prEnabled && prefs.prefs.sealsEnabled ? (
           <RatingStamp kind={stamp} size={34} variant="mini" />
         ) : null;
@@ -1413,6 +1421,13 @@ export default defineComponent({
               {isAiName(v.name) ? (
                 <em class="live-battle__player-bot">{t("replay.bot")}</em>
               ) : null}
+              {/* The secondary seals (成分章) press BESIDE the nickname —
+                  the four-char wording reads as part of the identity line
+                  (user feedback). Gated on the stat strip's resolved state
+                  (the face below), the same rows that showed the tags when
+                  they rode the strip's right end: AI / loading / hidden
+                  rows never show tags. */}
+              {statViews && sealTags.length > 0 ? sealTags : null}
             </span>
             <span class="live-battle__player-ship">
               {/* Ship-type marker riding the ship name — the compact rows'
@@ -1450,15 +1465,13 @@ export default defineComponent({
             {/* The primary seal's host: the stampstack span PINS grid track
                 3 (auto-placement would slide the seal into the elastic
                 middle track whenever the meta strip renders nothing). The
-                secondary seals (成分章) do NOT live here — they ride beside
-                the bottom score strip instead. */}
+                secondary seals (成分章) do NOT live here — they press beside
+                the nickname in the name track instead. */}
             <span class="live-battle__player-stampstack">{seal}</span>
             {/* The stat strip is the card's SECOND row, spanning all three
                 tracks (see LiveStatLine): the one line long enough to matter
                 at full width, it borrows the middle ground's and the seal's
-                air instead of ellipsizing inside the fixed name track. The
-                secondary seals (成分章) ride at its right end — beside the
-                score line, the horizontal StampTag face. */}
+                air instead of ellipsizing inside the fixed name track. */}
             <LiveStatLine
               ai={!clickable}
               loading={Boolean(
@@ -1466,11 +1479,7 @@ export default defineComponent({
               )}
               hidden={Boolean(st?.hidden)}
               views={statViews}
-            >
-              {sealTags.length > 0 ? (
-                <span class="live-battle__player-stat-tags">{sealTags}</span>
-              ) : null}
-            </LiveStatLine>
+            />
           </>
         );
         const tint = prTintVars(st, v.shipId);

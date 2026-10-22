@@ -9,11 +9,8 @@
  * The panel hands over the row's resolved states (bot / loading / hidden /
  * numbers); the faces live here — spinner while the batch runs, the red
  * hidden-profile notice (never a fake "—"), the shared text line, a muted
- * dash when nothing applies. Optional slot children (the secondary seals —
- * the horizontal StampTag faces) ride at the strip's right end, BESIDE the
- * score line: the strip spans the whole card bottom, so there is room for
- * the tags here that the name track never has. AI / loading / hidden rows
- * never show tags.
+ * dash when nothing applies. (The secondary seals rode this strip's right
+ * end once; they press beside the roster nicknames now — see the panel.)
  */
 import { defineComponent, type PropType } from "vue";
 import { HkSpinner } from "@celestia-island/hikari";
@@ -43,7 +40,7 @@ export default defineComponent({
       default: undefined,
     },
   },
-  setup(props, { slots }) {
+  setup(props) {
     return () => {
       if (props.ai) {
         return <span class="live-battle__player-stat">—</span>;
@@ -70,7 +67,6 @@ export default defineComponent({
           ) : (
             "—"
           )}
-          {slots.default?.()}
         </span>
       );
     };

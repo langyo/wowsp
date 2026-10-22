@@ -374,29 +374,19 @@
 .replay-view__postbattle-cell-stamp {
   flex: 0 0 auto;
 }
-/* The compact row's secondary tag presses a STEP smaller: the four-char
-   wording at the row's own size would overhang the fixed 44px slot into
-   the XP digits — the tier's small-tag face shrinks to fit the slot (the
-   full cards' score track has room for the full-size face). */
-.replay-view__postbattle-cell-stampslot .stamp-tag {
-  font-size: 0.7em;
-  padding: 0.04em 0.3em;
-}
-/* The secondary seals (成分章, StampTag) riding beside the XP score — the
-   horizontal transparent tag face, NOT a square face: the row is far too
-   short for one. Flex none at the XP cell's end so the score never wraps
-   around them; the reserved stampslot follows. */
-.replay-view__postbattle-fcell-stamptags {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 4px;
+/* The secondary tags (成分章, StampTag) press BESIDE THE NICKNAME — the
+   four-char wording reads as part of the identity line, not as a
+   score-column ornament (user feedback). A step smaller so the tag sings
+   in the clan tag's register instead of shouting over the nick; the name
+   line's own flex gap separates it from the clan tag. */
+.replay-view__postbattle-cell-name .stamp-tag,
+.replay-view__postbattle-fcell-name .stamp-tag {
+  font-size: 0.78em;
 }
 /* The full card's seal column — ONLY the primary seal (一级章, the
    single-character verdict picture) in the live card's right-edge slot.
-   The secondary tier (成分章) rides beside the XP score instead (see the
-   stamptags rule above). */
+   The secondary tier (成分章) presses beside the nickname instead (see the
+   name-line tag rule above). */
 .replay-view__postbattle-cell-stampstack {
   display: flex;
   flex-direction: column;
@@ -556,12 +546,11 @@
   display: block;
   min-width: 0;
 }
-/* This panel's score track: the XP cell + the secondary seals (成分章,
-   StampTag) wrapped into ONE grid item pinned onto track 3 — the tags ride
-   beside the XP without spilling into the seal track (auto-placement would
-   steal the 2.5rem slot and shove the primary stamp onto an implicit
-   second row). The configured stat columns ride the stat text strip inside
-   the main track now — damage included, so no dedicated dmg track remains. */
+/* This panel's score track: the XP cell alone, pinned onto track 3 — the
+   secondary seals (成分章, StampTag) press beside the nickname in the main
+   track now (see the name-line tag rule above). The configured stat
+   columns ride the stat text strip inside the main track — damage
+   included, so no dedicated dmg track remains. */
 .replay-view__postbattle-fcell-score {
   grid-column: 3;
   justify-self: end;
@@ -824,10 +813,9 @@
   }
   .replay-view__postbattle-fcell-btn {
     /* FOUR tracks on phones (the desktop template's shape, narrower name
-       + meta): the score track (XP + the secondary tags) must stay
-       ELASTIC — pinning it to a fixed 7.5ch would overflow the XP+tag
-       pair into the seal track. main → 1, meta → 2, score → 3, seal → 4,
-       same pins as desktop. */
+       + meta): the score track stays ELASTIC so the widest XP count the
+       columns resolve never pins short. main → 1, meta → 2, score → 3,
+       seal → 4, same pins as desktop. */
     grid-template-columns:
       minmax(0, 42%) minmax(0, 1fr) minmax(6ch, max-content) 2.5rem;
     padding: 0.4rem 0.5rem;
