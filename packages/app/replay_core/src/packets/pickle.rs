@@ -25,11 +25,50 @@ pub(super) enum PyVal {
 /// bytecode must not drive unbounded allocation (a 6-byte sequence
 /// with LONG_BINPUT u32::MAX tried to resize to ~240GB).
 const MAX_MEMO_ENTRIES: usize = 64 * 1024;
+/// Audit M-8: the memo table and its BINGET echoes DEEP-COPY values, so
+/// the entry count alone does not bound memory — a hostile stream can
+/// multiply one large string across every memo slot and echo it onto the
+/// stack thousands of times (O(blob²) in input size). Every clone is
+/// charged to this byte budget; exceeding it aborts the parse. Legitimate
+/// replay pickles clone a few hundred KB at most.
+const MAX_CLONED_BYTES: usize = 64 * 1024 * 1024;
+/// `deep_size` recursion guard. Values are built by this very parser, so
+/// anything past this depth is hostile by construction; it counts as the
+/// whole budget and trips it.
+const DEEP_SIZE_MAX_DEPTH: usize = 64;
+
+/// Approximate retained size of a parsed value (bytes, conservative).
+fn deep_size(v: &PyVal) -> usize {
+    fn rec(v: &PyVal, depth: usize) -> usize {
+        if depth > DEEP_SIZE_MAX_DEPTH {
+            // Hostile nesting: pessimistically charge the entire budget so
+            // the caller aborts instead of recursing further.
+            return MAX_CLONED_BYTES;
+        }
+        match v {
+            PyVal::None | PyVal::Int(_) | PyVal::Float(_) => 16,
+            PyVal::Str(s) => s.len() + 24,
+            PyVal::Tuple(t) | PyVal::List(t) => {
+                16 + t.iter().map(|x| rec(x, depth + 1)).sum::<usize>()
+            },
+            PyVal::Dict(d) => 16
+                + d.iter()
+                    .map(|(k, x)| {
+                        rec(k, depth + 1).saturating_add(rec(x, depth + 1))
+                    })
+                    .sum::<usize>(),
+        }
+    }
+    rec(v, 0)
+}
 
 pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
     let mut stack: Vec<PyVal> = Vec::new();
     let mut metastack: Vec<Vec<PyVal>> = Vec::new();
-    let mut memo: Vec<PyVal> = Vec::new();
+    // Memo entries carry their deep size so BINGET echoes charge the clone
+    // budget without re-walking the value.
+    let mut memo: Vec<Option<(PyVal, usize)>> = Vec::new();
+    let mut cloned_bytes = 0usize;
     let mut i = 0usize;
     while i < bytes.len() {
         let op = bytes[i];
@@ -206,15 +245,19 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 }
             },
             0x75 => {
-                // SETITEMS 'u' — pairs back to the mark, into the dict below them
+                // SETITEMS 'u' — pairs back to the mark, into the dict below
+                // them. Moves (never clones) the popped items — audit M-8:
+                // this opcode used to deep-copy every pair on top of the
+                // copy the mark-pop already made.
                 let items = pop_mark(&mut stack, &mut metastack)?;
                 if items.len() % 2 != 0 {
                     return None;
                 }
                 match stack.last_mut()? {
                     PyVal::Dict(d) => {
-                        for pair in items.chunks_exact(2) {
-                            d.push((pair[0].clone(), pair[1].clone()));
+                        let mut pairs = items.into_iter();
+                        while let (Some(key), Some(value)) = (pairs.next(), pairs.next()) {
+                            d.push((key, value));
                         }
                     },
                     _ => return None,
@@ -228,10 +271,15 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                     return None;
                 }
                 if let Some(v) = stack.last() {
-                    if memo.len() <= idx {
-                        memo.resize(idx + 1, PyVal::None);
+                    let size = deep_size(v);
+                    cloned_bytes = cloned_bytes.saturating_add(size);
+                    if cloned_bytes > MAX_CLONED_BYTES {
+                        return None;
                     }
-                    memo[idx] = v.clone();
+                    if memo.len() <= idx {
+                        memo.resize(idx + 1, None);
+                    }
+                    memo[idx] = Some((v.clone(), size));
                 }
             },
             0x72 => {
@@ -242,23 +290,39 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                     return None;
                 }
                 if let Some(v) = stack.last() {
-                    if memo.len() <= idx {
-                        memo.resize(idx + 1, PyVal::None);
+                    let size = deep_size(v);
+                    cloned_bytes = cloned_bytes.saturating_add(size);
+                    if cloned_bytes > MAX_CLONED_BYTES {
+                        return None;
                     }
-                    memo[idx] = v.clone();
+                    if memo.len() <= idx {
+                        memo.resize(idx + 1, None);
+                    }
+                    memo[idx] = Some((v.clone(), size));
                 }
             },
             0x68 => {
-                // BINGET 'h' — push a memoized value back
+                // BINGET 'h' — push a memoized value back. The push is a
+                // DEEP copy (audit M-8): charge it to the clone budget.
                 let idx = *bytes.get(i)? as usize;
                 i += 1;
-                stack.push(memo.get(idx)?.clone());
+                let (v, size) = memo.get(idx)?.as_ref()?;
+                cloned_bytes = cloned_bytes.saturating_add(*size);
+                if cloned_bytes > MAX_CLONED_BYTES {
+                    return None;
+                }
+                stack.push(v.clone());
             },
             0x6a => {
                 // LONG_BINGET 'j'
                 let idx = u32::from_le_bytes(read_bytes(bytes, i)?) as usize;
                 i += 4;
-                stack.push(memo.get(idx)?.clone());
+                let (v, size) = memo.get(idx)?.as_ref()?;
+                cloned_bytes = cloned_bytes.saturating_add(*size);
+                if cloned_bytes > MAX_CLONED_BYTES {
+                    return None;
+                }
+                stack.push(v.clone());
             },
             0x2e => break, // STOP '.'
             _ => return None,
@@ -311,5 +375,59 @@ mod tests {
     fn binput_binget_roundtrip() {
         let bytes = [0x80, 0x04, 0x4b, 0x05, 0x71, 0x00, 0x68, 0x00, 0x2e];
         assert_eq!(parse_pickle(&bytes), Some(PyVal::Int(5)));
+    }
+
+    /// Build `proto + BINUNICODE(blob) + LONG_BINPUT idx`.
+    fn memoize(blob: &[u8], idx: u32) -> Vec<u8> {
+        let mut bytes = vec![0x80, 0x04, 0x58];
+        bytes.extend_from_slice(&(blob.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(blob);
+        bytes.push(0x72);
+        bytes.extend_from_slice(&idx.to_le_bytes());
+        bytes
+    }
+
+    /// Audit M-8: re-memoizing one large string across the budget forces a
+    /// deep clone per opcode — the parse must abort on the byte budget
+    /// (bounded work) instead of multiplying the blob into OOM.
+    #[test]
+    fn memo_reflood_aborts_on_the_clone_budget() {
+        let blob = vec![b'A'; 1_000_000];
+        let mut bytes = memoize(&blob, 7);
+        for _ in 0..200 {
+            bytes.push(0x72);
+            bytes.extend_from_slice(&7u32.to_le_bytes());
+        }
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), None);
+    }
+
+    /// The BINGET echo of the same attack: one memoized megabyte echoed
+    /// onto the stack thousands of times hits the same budget.
+    #[test]
+    fn binget_echo_flood_aborts_on_the_clone_budget() {
+        let blob = vec![b'A'; 1_000_000];
+        let mut bytes = memoize(&blob, 7);
+        for _ in 0..200 {
+            bytes.push(0x6a);
+            bytes.extend_from_slice(&7u32.to_le_bytes());
+        }
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), None);
+    }
+
+    /// Legitimate traffic is orders of magnitude under the budget: a small
+    /// string memoized and echoed a hundred times still parses.
+    #[test]
+    fn small_memo_traffic_still_parses_under_the_budget() {
+        let blob = vec![b'B'; 1_000];
+        let mut bytes = memoize(&blob, 3);
+        for _ in 0..100 {
+            bytes.push(0x6a);
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+        }
+        bytes.push(0x2e);
+        let parsed = parse_pickle(&bytes);
+        assert!(matches!(parsed, Some(PyVal::Str(_))), "{parsed:?}");
     }
 }

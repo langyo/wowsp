@@ -81,6 +81,7 @@
 use anyhow::anyhow;
 use std::fs;
 use std::fs::File;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -875,6 +876,13 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Audit M-11 budgets for the pack tar.gz: the compressed download is
+/// hash-verified before this runs, but a hostile or corrupt stream can
+/// still expand absurdly — cap entry count and total unpacked bytes
+/// (the real pack is ~1.2 GB across a few thousand files).
+const TAR_MAX_ENTRIES: usize = 50_000;
+const TAR_MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
 /// Unpack a pack tar.gz into `dest`, accepting only regular files and
 /// directories. tar-rs keeps every write inside `dest`, but a symlink
 /// entry would still land as a link pointing anywhere (and a hard link
@@ -885,13 +893,21 @@ fn swap_staging_in(cache: &Path, staging: &Path) -> anyhow::Result<()> {
 /// deepest first.
 fn unpack_tar_gz(archive: &Path, dest: &Path) -> anyhow::Result<()> {
     let file = File::open(archive).map_err(|e| anyhow!("open archive: {e}"))?;
-    let mut tar = Archive::new(GzDecoder::new(file));
+    // The Take caps the DECODED stream: an archive inflating past the
+    // budget errors out mid-read instead of filling the disk.
+    let decoder = GzDecoder::new(file).take(TAR_MAX_TOTAL_BYTES);
+    let mut tar = Archive::new(decoder);
     tar.set_preserve_permissions(true);
     fs::create_dir_all(dest).map_err(|e| anyhow!("create {}: {e}", dest.display()))?;
     let dest = dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf());
     let mut directories = Vec::new();
+    let mut entries = 0usize;
     for entry in tar.entries().map_err(|e| anyhow!("read archive: {e}"))? {
         let mut entry = entry.map_err(|e| anyhow!("read archive entry: {e}"))?;
+        entries += 1;
+        if entries > TAR_MAX_ENTRIES {
+            return Err(anyhow!("archive carries too many entries"));
+        }
         let entry_type = entry.header().entry_type();
         if entry_type.is_dir() {
             directories.push(entry);

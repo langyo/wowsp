@@ -23,6 +23,7 @@
 
 use anyhow::{anyhow, bail};
 use std::fs;
+use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -1314,11 +1315,25 @@ fn loose_root_files(extract_root: &Path) -> anyhow::Result<Vec<String>> {
     Ok(loose)
 }
 
+/// Audit M-11 budgets for one catalog-package extraction: hostile or
+/// corrupt archives may declare tiny compressed sizes and inflate to
+/// gigabytes (compression bombs) or carry absurd entry counts. Both caps
+/// are generous against real mod packages (largest shipped pack ≈ 1.2 GB
+/// across a few thousand files).
+const EXTRACT_MAX_ENTRIES: usize = 20_000;
+const EXTRACT_MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+/// Cap for ONE extracted file (no legit mod file approaches this).
+const EXTRACT_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 /// Zip-slip-safe extraction; visited paths are collected for diagnostics.
 fn extract_zip(archive: &Path, dest: &Path, visited: &mut Vec<String>) -> anyhow::Result<()> {
     let file = fs::File::open(archive).map_err(|e| anyhow!("open {}: {e}", archive.display()))?;
     let mut zip =
         zip::ZipArchive::new(file).map_err(|e| anyhow!("read {}: {e}", archive.display()))?;
+    if zip.len() > EXTRACT_MAX_ENTRIES {
+        bail!("archive carries too many entries ({})", zip.len());
+    }
+    let mut total = 0u64;
     for i in 0..zip.len() {
         let mut entry = zip
             .by_index(i)
@@ -1337,8 +1352,29 @@ fn extract_zip(archive: &Path, dest: &Path, visited: &mut Vec<String>) -> anyhow
         }
         let mut fout =
             fs::File::create(&out).map_err(|e| anyhow!("create {}: {e}", out.display()))?;
-        std::io::copy(&mut entry, &mut fout)
-            .map_err(|e| anyhow!("extract {}: {e}", out.display()))?;
+        // Counted copy: the declared entry size is untrusted, so the cap
+        // rides the ACTUAL bytes leaving the decoder. A breach aborts (and
+        // the failed install's rollback cleans the partial tree).
+        let mut written = 0u64;
+        let mut buf = [0u8; 256 * 1024];
+        loop {
+            let n = entry
+                .read(&mut buf)
+                .map_err(|e| anyhow!("extract {}: {e}", out.display()))?;
+            if n == 0 {
+                break;
+            }
+            written += n as u64;
+            if written > EXTRACT_MAX_FILE_BYTES {
+                bail!("{} exceeds the per-file extraction cap", out.display());
+            }
+            fout.write_all(&buf[..n])
+                .map_err(|e| anyhow!("extract {}: {e}", out.display()))?;
+        }
+        total += written;
+        if total > EXTRACT_MAX_TOTAL_BYTES {
+            bail!("archive exceeds the total extraction cap");
+        }
         if let Ok(rel) = out.strip_prefix(dest) {
             visited.push(rel.to_string_lossy().replace('\\', "/"));
         }
