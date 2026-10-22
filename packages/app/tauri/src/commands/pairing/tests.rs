@@ -496,8 +496,9 @@ fn parses_request_heads() {
         )
         .unwrap();
     assert_eq!(req.method, "GET");
+    // M-1: the query is split off the path and discarded — the path the
+    // router sees never carries it.
     assert_eq!(req.path, "/api/replays");
-    assert_eq!(req.query_param("token"), Some("abc d"));
     assert_eq!(req.bearer_token(), Some("tok123"));
     assert_eq!(req.content_length, 5);
 
@@ -615,13 +616,15 @@ async fn pairing_server_end_to_end() {
     assert!(!token.is_empty());
     assert_eq!(paired.room.as_deref(), Some(room.as_str()));
 
-    // Token also works via ?token=.
+    // M-1: the ?token= query leg is GONE — a token in the URL is simply
+    // not authentication anymore, the route 401s like any other
+    // unauthenticated request.
     let r = client
         .get(format!("{base}/api/replays?token={token}"))
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 200);
+    assert_eq!(r.status(), 401);
 
     // List: same DTO as list_replays_meta, path projected to the name.
     let list: Vec<serde_json::Value> = client
@@ -743,5 +746,316 @@ async fn pairing_server_end_to_end() {
 
     handle2.stop().await;
 
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+// ── M-1 / M-4 server hardening: token lifecycle + request hygiene ────
+
+/// Fixture server on an ephemeral loopback port with the given PIN.
+/// Returns `(port, handle, client, base, temp dir to remove at the end)`.
+#[cfg(desktop)]
+async fn fixture_server(
+    pin: &str,
+) -> (
+    u16,
+    server::ServerHandle,
+    reqwest::Client,
+    String,
+    std::path::PathBuf,
+) {
+    let tmp = tempfile_dir();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let room = server::random_token().unwrap();
+    let handle = server::spawn_on(listener, tmp.clone(), None, pin, &room)
+        .await
+        .unwrap();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    (
+        port,
+        handle,
+        client,
+        format!("http://127.0.0.1:{port}"),
+        tmp,
+    )
+}
+
+/// Pair and return the minted token (asserting the exchange succeeded).
+#[cfg(desktop)]
+async fn pair_ok(client: &reqwest::Client, base: &str, pin: &str) -> String {
+    let r = client
+        .post(format!("{base}/pair"))
+        .json(&serde_json::json!({ "pin": pin }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "pair with the right PIN must succeed");
+    let paired: PairingToken = r.json().await.unwrap();
+    assert_eq!(paired.token.len(), 64, "a fresh 256-bit hex token");
+    paired.token
+}
+
+/// M-1: every successful /pair mints a NEW token and REVOKES all
+/// previous ones — one active pairing session per server run.
+#[cfg(desktop)]
+#[tokio::test]
+async fn second_pair_invalidates_the_first_token() {
+    let (_port, handle, client, base, tmp) = fixture_server("123456").await;
+    let first = pair_ok(&client, &base, "123456").await;
+    let r = client
+        .get(format!("{base}/api/replays"))
+        .bearer_auth(&first)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "the minted token authenticates");
+
+    // A second pairing (a re-pair, or a second phone) must kill the
+    // first token and hand out a different one.
+    let second = pair_ok(&client, &base, "123456").await;
+    assert_ne!(first, second, "each pairing mints a fresh token");
+    let r = client
+        .get(format!("{base}/api/replays"))
+        .bearer_auth(&first)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401, "the revoked token must stop working");
+    let r = client
+        .get(format!("{base}/api/replays"))
+        .bearer_auth(&second)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "the new token is the live one");
+
+    handle.stop().await;
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// M-1: an expired token is rejected even though it is still in the
+/// map, and the rejection actively drops the dead entry. Time is driven
+/// by inserting an ALREADY-EXPIRED Instant directly (a monotonic clock
+/// cannot be rewound).
+#[cfg(desktop)]
+#[tokio::test]
+async fn expired_token_is_rejected_while_a_live_one_still_works() {
+    let (_port, handle, client, base, tmp) = fixture_server("123456").await;
+    // An already-expired token: 24h back, or "now" when the monotonic
+    // base does not reach that far — either way not `now < expiry`.
+    let expired_token = "b".repeat(64);
+    let past = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_secs(24 * 3600))
+        .unwrap_or_else(std::time::Instant::now);
+    handle.inject_token(&expired_token, past);
+
+    let r = client
+        .get(format!("{base}/api/replays"))
+        .bearer_auth(&expired_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401, "an expired token must not authenticate");
+
+    // The fixture's own (live) token keeps working — the 401 above was
+    // expiry, not absence.
+    let r = client
+        .get(format!("{base}/api/replays"))
+        .bearer_auth(&handle.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+
+    handle.stop().await;
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// M-1: `?token=` answers 401 on data routes / 404 on unknown ones —
+/// the query string is dead as an authentication channel.
+#[cfg(desktop)]
+#[tokio::test]
+async fn token_query_param_is_dead() {
+    let (_port, handle, client, base, tmp) = fixture_server("123456").await;
+    let token = pair_ok(&client, &base, "123456").await;
+
+    // Known route + valid token in the query → still unauthenticated.
+    let r = client
+        .get(format!("{base}/api/replays?token={token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+    // Unknown route + query → 404 (route resolution precedes auth).
+    let r = client
+        .get(format!("{base}/nope?token={token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404);
+    // The same token over the header authenticates.
+    let r = client
+        .get(format!("{base}/api/replays"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+
+    handle.stop().await;
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// One raw HTTP exchange against the fixture server; returns the full
+/// response (the protocol is Connection: close, so EOF ends it).
+#[cfg(desktop)]
+async fn raw_exchange(port: u16, raw: &str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    s.write_all(raw.as_bytes()).await.unwrap();
+    let mut out = Vec::new();
+    tokio::time::timeout(std::time::Duration::from_secs(5), s.read_to_end(&mut out))
+        .await
+        .unwrap()
+        .unwrap();
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[cfg(desktop)]
+fn status_line_of(response: &str) -> String {
+    response.lines().next().unwrap_or_default().to_string()
+}
+
+/// M-4: browser-shaped and rebinding-shaped requests are refused before
+/// any route logic: Origin → 403, foreign/duplicated Host → 403, /pair
+/// without a JSON content type → 415; native-shaped requests (IP-literal
+/// or localhost Host, bracketed IPv6, no Host at all) pass.
+#[cfg(desktop)]
+#[tokio::test]
+async fn request_hygiene_rejects_browsers_and_rebinding() {
+    let (port, handle, _client, base, tmp) = fixture_server("123456").await;
+    let token = {
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        pair_ok(&client, &base, "123456").await
+    };
+
+    // M-4a: Origin marks a browser — rejected on every route.
+    let resp = raw_exchange(
+        port,
+        "GET /api/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: null\r\n\r\n",
+    )
+    .await;
+    assert!(status_line_of(&resp).starts_with("HTTP/1.1 403"), "{resp}");
+    let resp = raw_exchange(
+        port,
+        &format!("GET /api/replays HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: http://evil.example\r\nAuthorization: Bearer {token}\r\n\r\n"),
+    )
+    .await;
+    assert!(status_line_of(&resp).starts_with("HTTP/1.1 403"), "{resp}");
+
+    // M-4c: Host gate — DNS-rebinding bait rejected, our shapes pass.
+    for host in [
+        "rebind.example",
+        "rebind.example:58041",
+        "127.0.0.1.evil.example",
+        "localhost.example.org",
+    ] {
+        let resp = raw_exchange(
+            port,
+            &format!("GET /api/ping HTTP/1.1\r\nHost: {host}\r\n\r\n"),
+        )
+        .await;
+        let line = status_line_of(&resp);
+        assert!(
+            line.starts_with("HTTP/1.1 403"),
+            "foreign Host {host} must be refused, got {line}"
+        );
+    }
+    for host in ["127.0.0.1", "127.0.0.1:58041", "localhost", "[::1]"] {
+        let resp = raw_exchange(
+            port,
+            &format!("GET /api/ping HTTP/1.1\r\nHost: {host}\r\n\r\n"),
+        )
+        .await;
+        assert!(
+            status_line_of(&resp).starts_with("HTTP/1.1 200"),
+            "Host {host} must pass: {}",
+            status_line_of(&resp)
+        );
+    }
+    // Duplicated Host = smuggling bait → 403; absent Host (HTTP/1.0) → fine.
+    let resp = raw_exchange(
+        port,
+        "GET /api/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nHost: localhost\r\n\r\n",
+    )
+    .await;
+    assert!(status_line_of(&resp).starts_with("HTTP/1.1 403"), "{resp}");
+    let resp = raw_exchange(port, "GET /api/ping HTTP/1.0\r\n\r\n").await;
+    assert!(status_line_of(&resp).starts_with("HTTP/1.1 200"), "{resp}");
+
+    // M-4b: POST /pair must declare its JSON body.
+    let body = r#"{"pin":"123456"}"#;
+    for (ct, expected) in [
+        (None, "HTTP/1.1 415"),
+        (Some("text/plain"), "HTTP/1.1 415"),
+        (Some("application/json"), "HTTP/1.1 200"),
+        // Media-type parameters are tolerable (browsers send charset).
+        (Some("application/json; charset=utf-8"), "HTTP/1.1 200"),
+    ] {
+        let ct_line = ct
+            .map(|v| format!("Content-Type: {v}\r\n"))
+            .unwrap_or_default();
+        let resp = raw_exchange(
+            port,
+            &format!(
+                "POST /pair HTTP/1.1\r\nHost: 127.0.0.1\r\n{ct_line}Content-Length: {}\r\n\r\n{body}",
+                body.len()
+            ),
+        )
+        .await;
+        let line = status_line_of(&resp);
+        assert!(line.starts_with(expected), "CT {ct:?} → {line}");
+    }
+
+    handle.stop().await;
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// M-2 end-to-end: the per-IP throttle map is what handle_pair actually
+/// consults — five wrong PINs from 127.0.0.1 lock that entry (429 even
+/// for the correct PIN, with Retry-After). Cross-IP isolation itself is
+/// proven at the unit level in server.rs's nested tests (only one real
+/// source IP is available to a loopback test).
+#[cfg(desktop)]
+#[tokio::test]
+async fn pair_lockout_trips_and_carries_retry_after() {
+    let (_port, handle, client, base, tmp) = fixture_server("123456").await;
+    for _ in 0..5 {
+        let r = client
+            .post(format!("{base}/pair"))
+            .json(&serde_json::json!({ "pin": "000000" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 403);
+    }
+    // Sixth attempt — even with the correct PIN — is locked out.
+    let r = client
+        .post(format!("{base}/pair"))
+        .json(&serde_json::json!({ "pin": "123456" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 429);
+    let retry_after = r
+        .headers()
+        .get("retry-after")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+    assert!(retry_after.is_some_and(|s| (1..=10).contains(&s)));
+
+    handle.stop().await;
     let _ = std::fs::remove_dir_all(&tmp);
 }

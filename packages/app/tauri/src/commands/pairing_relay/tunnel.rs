@@ -243,16 +243,37 @@ pub(super) async fn open_tunnel(ws_base: &str, room: &str) -> Result<Tunnel> {
     })
 }
 
-/// Build one tunnel request (Connection: close — the LAN protocol's shape).
+/// The bearer-token shape (L): exactly 64 lowercase hex chars — the only
+/// thing the pairing server ever mints. Anything else must never be
+/// spliced into a request head (header-injection bait), and can never
+/// authenticate anyway.
+fn is_bearer_token(token: &str) -> bool {
+    super::valid_room(token)
+}
+
+/// Build one tunnel request (Connection: close — the LAN protocol's
+/// shape). The Host header names the loopback pairing server the host
+/// bridge forwards to — the server's M-4c gate accepts only IP literals
+/// and localhost. A bearer token that is not exactly 64 lowercase hex
+/// chars is REJECTED from the head (omitted, logged once per
+/// occurrence): unvalidated bytes never enter the request line/headers,
+/// and a shape-invalid token could not authenticate anyway — the server
+/// answers 401 either way.
 pub(super) fn tunnel_request(
     method: &str,
     path: &str,
     token: Option<&str>,
     body: Option<&[u8]>,
 ) -> Vec<u8> {
-    let mut req = format!("{method} {path} HTTP/1.1\r\nHost: relay\r\n");
+    let mut req = format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n");
     if let Some(t) = token {
-        req.push_str(&format!("Authorization: Bearer {t}\r\n"));
+        if is_bearer_token(t) {
+            req.push_str(&format!("Authorization: Bearer {t}\r\n"));
+        } else {
+            tracing::warn!(
+                "relay tunnel: refusing to send a malformed bearer token (must be 64 hex chars)"
+            );
+        }
     }
     if let Some(b) = body {
         req.push_str("Content-Type: application/json\r\n");
