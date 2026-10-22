@@ -21,7 +21,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@vue/devtools-api": "^8.2.1",
     "@wowsp/holo": "workspace:*",
-    "mediabunny": "^1.61.3",
+    "mediabunny": "^1.61.6",
     "pinia": "^4.0.3",
     "three": "^0.186.1",
     "vue": "^3.5.43",
