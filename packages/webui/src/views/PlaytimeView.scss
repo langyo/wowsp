@@ -337,9 +337,16 @@
   }
 
   /* The all-clients sentinel row — an aggregate, not a client like the
-     rows under it — wears italics. */
+     rows under it — wears italics. Italic final strokes lean past the
+     last glyph's advance, and the ellipsis pair above clips at the
+     padding edge — the trailing 端 lost its right edge in the field.
+     The inline-end cushion is clipping room INSIDE the padding box (the
+     fix hikari shipped for its own truncation boxes): fitting text
+     never gains an ellipsis, and the sentinels' labels stay far short
+     of the row edge anyway. */
   &[data-all] &-label {
     font-style: italic;
+    padding-inline-end: 0.2em;
   }
 
   &-check {
