@@ -208,7 +208,9 @@ export default defineComponent({
       return (
         <div class="live-battle live-self" ref={root}>
           <div class="live-battle__head live-battle__head--status">
-            <h1 class="live-battle__title">{t("replay.live.selfTitle")}</h1>
+            {/* No heading — same head as the roster panel's: all status
+                pills, tags and actions (the "我的战绩" name still rides the
+                copy-shot watermark's title). */}
             {props.ended ? (
               <span class="live-battle__pill live-battle__pill--ended">
                 {t("replay.live.ended")}
