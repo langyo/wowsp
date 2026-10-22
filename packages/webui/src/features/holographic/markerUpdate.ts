@@ -12,7 +12,7 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t as i18nT } from "@/i18n";
 import achievementNamesRaw from "@/data/achievement_names.json";
-import { sampleAt, hpAtTime } from "./trajectoryMath";
+import { sampleAt, hpAtTime, UNSEEN_GAP_S } from "./trajectoryMath";
 import { clampXZ } from "./sceneUtils";
 import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
 import type { TeamRole } from "./teamColors";
@@ -78,10 +78,8 @@ function pushFeed(ctx: MapInternals, entry: FeedEntry) {
 }
 /** Fire chat + achievement ctx.feed entries crossed by playhead `t`. */
 function advanceEventFeed(ctx: MapInternals, t: number) {
-  // Operation scenarios (行动): relation values follow scenario team slots,
-  // so the enemy tint must not key on them — everyone reads as ally.
   const enemyOf = (roster: VehicleEntry | undefined) =>
-    !ctx.props.operation && (roster?.relation ?? 0) >= 2;
+    (roster?.relation ?? 0) >= 2;
   const chats = ctx.props.chatMessages;
   while (ctx.chatPtr < chats.length && chats[ctx.chatPtr].time <= t) {
     const c = chats[ctx.chatPtr++];
@@ -154,7 +152,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     // Ghost policy: an unobserved enemy (never seen once) is NOT rendered
     // at all; an unobserved ally shows a hollow WHITE box at its spawn.
     // Sunk ships (observed before dying) keep a hollow box at their last
-    // position — white for allies, red for enemies.
+    // position — white for allies, red for enemies. Operation scenarios
+    // (行动) add a fourth rule: a spotted-then-dark enemy swaps its live
+    // marker for the red ghost at the last-known pose (see below).
     const role = marker.userData.role as TeamRole;
     const ghostBox = marker.userData.ghost as THREE.LineLoop | undefined;
     const firstT = marker.userData.firstT as number;
@@ -325,6 +325,40 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
             }, FEED_TTL_MS);
           }
         }
+      }
+      continue;
+    }
+    // Operation fog-of-war (行动): a spotted-then-dark enemy (sample gap
+    // past UNSEEN_GAP_S — the same freeze sampleAt holds) hides its live
+    // marker and shows the red ghost silhouette at the LAST-KNOWN pose,
+    // with a "gone Ns" tag counting from the last sighting. Never-spotted
+    // enemies never reach here (hidden by the firstT rule above); PvP and
+    // co-op keep the plain freeze (a held live marker, like the in-game
+    // minimap). `s.time` is the freeze anchor exactly when the stream is
+    // in a gap, so the subtraction IS the dark test.
+    if (
+      ctx.props.operation &&
+      role === "enemy" &&
+      tEff - s.time > UNSEEN_GAP_S
+    ) {
+      if (ghostBox) {
+        ghostBox.visible = true;
+        ghostBox.position.set(s.x, 0, -s.z);
+        ghostBox.rotation.y = Math.PI - s.yaw;
+      }
+      marker.visible = false;
+      // Marker transform stays in sync — it anchors the floating label's
+      // projection to the last-known coordinates.
+      marker.position.set(s.x, 0, -s.z);
+      marker.rotation.y = Math.PI - s.yaw;
+      if (label) {
+        label.visible = true;
+        label.ghostText = i18nT("replay.legend.gone", {
+          n: (tEff - s.time).toFixed(0),
+        });
+        label.status = null;
+        const darkHp = hpAtTime(traj.hpSamples, s.time);
+        if (darkHp != null) label.hp = darkHp;
       }
       continue;
     }

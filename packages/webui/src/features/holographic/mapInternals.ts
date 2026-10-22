@@ -653,23 +653,19 @@ export function clearActors(ctx: MapInternals) {
  *  (computed in rebuildActors), so trails and markers can never disagree.
  *  Ships without an assignment (older replays, decode gaps) fall back to
  *  the entity-id spawn-order heuristic: the client spawns team A first.
- *  Operation scenarios (行动) read every entry as ally — the deliberate
- *  one-fleet map visual (the roster relations still carry side semantics
- *  for the LIST surfaces). */
+ *  Operation scenarios (行动) follow the same relation split — their
+ *  rosters carry real side semantics, so hostile warships tint red there
+ *  like anywhere else; only the LIST surfaces collapse to one team. */
 export function resolveRoleQuick(ctx: MapInternals, tr: EntityTrajectory): TeamRole {
   const entry = ctx.rosterAssignments.get(tr.entityId);
-  if (entry) return roleFromRelation(entry.relation, ctx.props.operation);
+  if (entry) return roleFromRelation(entry.relation);
   const identity = ctx.arenaIdentities?.get(tr.entityId);
   if (identity) {
     if (identity.isSelf) return "self";
-    return ctx.props.operation || identity.team === ctx.arenaSelfTeam
-      ? "ally"
-      : "enemy";
+    return identity.team === ctx.arenaSelfTeam ? "ally" : "enemy";
   }
   const idx = ctx.shipEntityIds.indexOf(tr.entityId);
-  return idx >= 0 && (ctx.props.operation || idx < ctx.shipEntityIds.length / 2)
-    ? "ally"
-    : "enemy";
+  return idx >= 0 && idx < ctx.shipEntityIds.length / 2 ? "ally" : "enemy";
 }
 
 // ── Minimap base art + shared world-rect helpers ──────────────────────

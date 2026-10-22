@@ -119,7 +119,6 @@ export default defineComponent({
     stats: { type: Object as PropType<Map<string, RosterStat>>, required: true },
     statsLoading: { type: Boolean, default: false },
     statsMode: { type: String as () => ResolvedStatsMode, default: "random" },
-    operation: { type: Boolean, default: false },
     encyclopedia: { type: Object as PropType<Map<number, ShipInfo>>, required: true },
     /** Pointer entered / left the card itself (the hover bridge). */
     onCardHover: { type: Function as PropType<(inside: boolean) => void>, required: true },
@@ -128,9 +127,7 @@ export default defineComponent({
     const { dataLanguage } = useLanguage();
     const encStore = useEncyclopediaStore();
 
-    const enemy = computed(
-      () => !props.operation && props.vehicle.relation >= 2,
-    );
+    const enemy = computed(() => props.vehicle.relation >= 2);
     const self = computed(() => props.vehicle.relation === 0);
     const ai = computed(() => isAiName(props.vehicle.name));
 

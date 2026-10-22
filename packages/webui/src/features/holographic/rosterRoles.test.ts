@@ -1,7 +1,9 @@
-/** Tests for the roster → trajectory role resolution: the marker join's
- *  operation-scenario (行动) one-pool semantic (every marker reads as an
- *  ally there, so the side split stands down for MAP roles), and the
- *  arena-state player-id join that makes mirror picks unambiguous. */
+/** Tests for the roster → trajectory role resolution: the relation split
+ *  every battle family maps onto (operation scenarios 行动 included —
+ *  their rosters carry real side semantics), the marker join's
+ *  operation-scenario one-pool JOIN semantic (colors read the relation
+ *  afterwards), and the arena-state player-id join that makes mirror
+ *  picks unambiguous. */
 import { describe, expect, it } from "vitest";
 
 import type { ArenaPlayer, EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
@@ -41,11 +43,10 @@ describe("roleFromRelation", () => {
     expect(roleFromRelation(2)).toBe("enemy");
   });
 
-  it("reads every scenario slot as ally in operations", () => {
-    expect(roleFromRelation(0, true)).toBe("self");
-    expect(roleFromRelation(1, true)).toBe("ally");
-    expect(roleFromRelation(2, true)).toBe("ally");
-    expect(roleFromRelation(3, true)).toBe("ally");
+  it("keys hostile scenario slots on enemy — operations carry real sides", () => {
+    // Operation rosters (行动) mark their allied escort waves ≤ 1 and the
+    // hostile warships > 1, so the map tint follows the same split there.
+    expect(roleFromRelation(3)).toBe("enemy");
   });
 });
 
@@ -134,21 +135,20 @@ describe("resolveMarkerContext", () => {
       .toBe("enemy");
   });
 
-  it("reads scenario-slot entries as ally in operations", () => {
+  it("keys scenario-slot entries on their real side (operations included)", () => {
+    // A hostile-slot scripted entry tints red even in an operation — the
+    // one-fleet look is a LIST rule, never a color rule.
     const assignments = new Map([[10, veh(1, "IDS_OP_15_ALLY_DD_01", 2, 300)]]);
     expect(
-      resolveMarkerContext(traj(10, 300, 0, 0), shipEntityIds, assignments, encyclopedia, true).role,
-    ).toBe("ally");
+      resolveMarkerContext(traj(10, 300, 0, 0), shipEntityIds, assignments, encyclopedia).role,
+    ).toBe("enemy");
   });
 
-  it("forces the spawn-order fallback to ally in operations", () => {
+  it("runs the spawn-order fallback without any operation override", () => {
     const assignments = new Map<number, VehicleEntry | null>([[11, null]]);
-    // Entity 11 sits past the spawn-order half → "enemy" without the flag.
+    // Entity 11 sits past the spawn-order half → "enemy", full stop.
     expect(resolveMarkerContext(traj(11, 999, 0, 0), shipEntityIds, assignments, encyclopedia).role)
       .toBe("enemy");
-    expect(
-      resolveMarkerContext(traj(11, 999, 0, 0), shipEntityIds, assignments, encyclopedia, true).role,
-    ).toBe("ally");
   });
 });
 
@@ -217,12 +217,12 @@ describe("arena identities", () => {
     const assignments = new Map<number, VehicleEntry | null>([[11, null], [12, null]]);
     // Entity 11 = the recorder → self; entity 12 = the other team → enemy.
     const self = resolveMarkerContext(
-      traj(11, 300, 0, 0), [11, 12], assignments, encyclopedia, false, identities,
+      traj(11, 300, 0, 0), [11, 12], assignments, encyclopedia, identities,
     );
     expect(self.role).toBe("self");
     expect(self.shipInfo?.type).toBe("Submarine");
     const foe = resolveMarkerContext(
-      traj(12, 300, 100, 100), [11, 12], assignments, encyclopedia, false, identities,
+      traj(12, 300, 100, 100), [11, 12], assignments, encyclopedia, identities,
     );
     expect(foe.role).toBe("enemy");
   });

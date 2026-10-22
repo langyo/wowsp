@@ -224,10 +224,11 @@ export default defineComponent({
     /** Roster from the replay header — used to map trajectories to teams and
      *  resolve each ship's model. */
     vehicles: { type: Array as () => VehicleEntry[], default: () => [] },
-    /** Operation scenario (行动): the roster's relation values follow
-     *  scenario team slots, so every ship renders on the ally tint and the
-     *  scorebar/roster show a single team — same semantic as the replay
-     *  views (see utils/modeColors' isOperationBattle). */
+    /** Operation scenario (行动): LIST surfaces only — the scorebar icon
+     *  strip and the Tab roster render a single (allies) team and the
+     *  player count stays raw. Map colors ignore it: the roster's relation
+     *  values carry real side semantics, so hostile warships tint red like
+     *  anywhere else (see utils/modeColors' isOperationBattle). */
     operation: { type: Boolean, default: false },
     /** Ship encyclopedia (shipId → ShipInfo). Used to resolve tier/nation/type
      *  for per-ship model loading + tier-based fallback when a model is missing. */
@@ -2060,7 +2061,6 @@ export default defineComponent({
             stats={nameStats.value}
             statsLoading={nameStatsLoading.value}
             statsMode={props.statsMode}
-            operation={props.operation}
             encyclopedia={props.encyclopedia}
             onCardHover={(b: boolean) => {
               tipCardHover.value = b;

@@ -221,7 +221,10 @@ export default defineComponent({
               {allies.map((sh, i) => (
                 <ShipIcon key={sh.key ?? `a${i}`} ship={sh} onEnter={enter} onLeave={leave} />
               ))}
-              <span class="holo-scorebar__ships-sep" />
+              {/* The divider only reads as one when BOTH sides field icons —
+                  single-sided battles (PvE operations) would strand it as a
+                  stray tick after the last ally icon. */}
+              {allies.length && enemies.length ? <span class="holo-scorebar__ships-sep" /> : null}
               {enemies.map((sh, i) => (
                 <ShipIcon key={sh.key ?? `e${i}`} ship={sh} onEnter={enter} onLeave={leave} />
               ))}

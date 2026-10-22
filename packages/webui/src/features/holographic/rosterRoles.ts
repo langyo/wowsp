@@ -56,11 +56,11 @@ export function arenaIdentities(
  * `null` and fall back to the spawn-order team heuristic in
  * `resolveMarkerContext`.
  *
- * Operation scenarios (`operation`, 行动) still join as one pool — every
- * marker reads as an ally there (the map colors ops as one fleet), so a
- * side split would only starve the pool; the roster relations themselves
- * do carry enemy semantics, but that matters to the LIST surfaces, not
- * this marker join. */
+ * Operation scenarios (`operation`, 行动) still join as one pool — the
+ * mirror-pick side split stands down there (their scripted spawns share
+ * shipIds heavily, so a proximity split would only shuffle guesses); the
+ * roster relation each entity lands on still carries the real side the
+ * map color reads afterwards. */
 export function resolveRosterAssignments(
   shipTrajs: EntityTrajectory[],
   vehicles: VehicleEntry[],
@@ -155,16 +155,15 @@ export function resolveRosterAssignments(
  *  GameParams ship id. Only when even the arena state is missing does the
  *  role fall back to the entity-id spawn-order heuristic: the client
  *  spawns team A before team B, so the first half of ships (by entity id)
- *  are treated as allies. Operation scenarios (`operation`) read every
- *  entry as ally — a deliberate map-visual choice (ops render as one
- *  fleet); the roster relations themselves still carry side semantics
- *  for the LIST surfaces. */
+ *  are treated as allies. The split holds in operation scenarios (行动)
+ *  too — their roster relations carry real side semantics (escort waves
+ *  ≤ 1, hostile warships > 1), so map colors follow the same rule as the
+ *  other battle families; only the LIST surfaces collapse to one team. */
 export function resolveMarkerContext(
   traj: EntityTrajectory,
   shipEntityIds: number[],
   assignments: Map<number, VehicleEntry | null>,
   encyclopedia: Map<number, ShipInfo>,
-  operation = false,
   identities?: Map<number, ArenaIdentity> | null,
 ): { role: TeamRole; shipInfo: ShipInfo | null; entry: VehicleEntry | null } {
   const entry = assignments.get(traj.entityId) ?? null;
@@ -172,12 +171,12 @@ export function resolveMarkerContext(
   let role: TeamRole;
   let shipInfo: ShipInfo | null;
   if (entry) {
-    role = roleFromRelation(entry.relation, operation);
+    role = roleFromRelation(entry.relation);
     shipInfo = encyclopedia.get(entry.shipId) ?? null;
   } else if (identity) {
     role = identity.isSelf
       ? "self"
-      : !operation && identity.team !== selfTeamOf(identities)
+      : identity.team !== selfTeamOf(identities)
         ? "enemy"
         : "ally";
     shipInfo =
@@ -189,7 +188,7 @@ export function resolveMarkerContext(
     // Never "self" — only the exact match earns the recorder tint.
     const idx = shipEntityIds.indexOf(traj.entityId);
     const isAlly = idx >= 0 && idx < shipEntityIds.length / 2;
-    role = isAlly || operation ? "ally" : "enemy";
+    role = isAlly ? "ally" : "enemy";
     shipInfo = null;
   }
   return { role, shipInfo, entry };

@@ -43,13 +43,14 @@ export function holoColorsFor(role: TeamRole): HoloColorPair {
 }
 
 /** Classify a roster `relation` value into a team role.
- *  relation 0 = self (the recorder), 1 = ally, 2+ = enemy. Operation
- *  scenarios (行动) are the exception: their relation values follow
- *  scenario team slots (escort waves, target ships) instead of enemy
- *  semantics — with `operation` set everything except the recorder reads
- *  as ally, mirroring the single-team treatment everywhere else. */
-export function roleFromRelation(relation: number, operation = false): TeamRole {
+ *  relation 0 = self (the recorder), 1 = ally, 2+ = enemy. The values carry
+ *  real side semantics in EVERY battle family — operation scenarios (行动)
+ *  included: their allied escort waves sit at ≤ 1, the hostile warships at
+ *  > 1, so the map tints by the same split everywhere. The one-fleet look
+ *  stays a LIST-surface rule (Tab roster, scorebar strip, player count),
+ *  never a color rule. */
+export function roleFromRelation(relation: number): TeamRole {
   if (relation <= 0) return "self";
-  if (operation || relation === 1) return "ally";
+  if (relation === 1) return "ally";
   return "enemy";
 }
