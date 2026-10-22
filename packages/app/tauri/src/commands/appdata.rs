@@ -111,8 +111,11 @@ pub fn appdata_read(file: String) -> CommandResult<Option<String>> {
 
 /// Write a JSON file to AppData (atomic: write to .tmp then rename).
 /// Creates intermediate subdirectories (e.g. `stats-cache/x.json`) as needed.
+/// Audit P0-5: the appdata write primitive is main-window only — the
+/// overlay/aim-card/tray webviews never persist preferences through it.
 #[tauri::command]
-pub fn appdata_write(file: String, content: String) -> CommandResult<()> {
+pub fn appdata_write(window: tauri::Window, file: String, content: String) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
     Ok(write_appdata_json(&file, &content)?)
 }
 
@@ -755,8 +758,9 @@ mod tests {
         );
         let payload = r#"{"round":"trip","n":[1,2,3]}"#;
 
-        // write
-        appdata_write(file.clone(), payload.to_string()).expect("write should succeed");
+        // write — the CORE, not the command: the command now carries the
+        // main-window gate (audit P0-5) and tests cannot construct a Window.
+        write_appdata_json(&file, payload).expect("write should succeed");
 
         // read back
         let read = appdata_read(file.clone()).expect("read should not error");

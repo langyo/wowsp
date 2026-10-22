@@ -158,7 +158,8 @@ use crate::mobile_unsupported::PAIRING as PAIRING_SERVER_UNSUPPORTED;
 /// Start the desktop pairing server. Mobile answers with the unsupported
 /// marker (the settings section that calls this is desktop-only anyway).
 #[tauri::command]
-pub async fn pairing_start() -> CommandResult<PairingStatus> {
+pub async fn pairing_start(window: tauri::Window) -> CommandResult<PairingStatus> {
+    crate::commands::ensure_main_window_label(window.label())?;
     #[cfg(mobile)]
     {
         return Err(anyhow!(PAIRING_SERVER_UNSUPPORTED).into());
@@ -171,7 +172,8 @@ pub async fn pairing_start() -> CommandResult<PairingStatus> {
 
 /// Stop the desktop pairing server.
 #[tauri::command]
-pub async fn pairing_stop() -> CommandResult<()> {
+pub async fn pairing_stop(window: tauri::Window) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
     #[cfg(mobile)]
     {
         return Err(anyhow!(PAIRING_SERVER_UNSUPPORTED).into());

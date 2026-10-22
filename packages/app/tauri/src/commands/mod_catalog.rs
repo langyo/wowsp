@@ -674,6 +674,7 @@ fn resolve_entry_packages(
 
 #[tauri::command]
 pub async fn mod_catalog_install(
+    window: tauri::Window,
     mod_id: String,
     game_root: String,
     app: AppHandle,
@@ -681,6 +682,7 @@ pub async fn mod_catalog_install(
     // the entry's default package list (which mirrors the first preset).
     preset: Option<String>,
 ) -> CommandResult<InstallReport> {
+    crate::commands::ensure_main_window_label(window.label())?;
     // Every failure of this command is otherwise log-invisible (its early
     // guards return before any download or install line) — the entry line
     // keeps "the user pressed install" distinguishable from "the UI never
@@ -1500,9 +1502,11 @@ pub(crate) fn validate_file_removal_order(
 
 #[tauri::command]
 pub async fn mod_catalog_uninstall(
+    window: tauri::Window,
     mod_id: String,
     game_root: String,
 ) -> CommandResult<UninstallReport> {
+    crate::commands::ensure_main_window_label(window.label())?;
     let _gate = mod_hub_gate().await;
     mod_hub::ensure_game_closed(&game_root)?;
     mod_hub::ensure_res_mods_active(&game_root)?;
@@ -1734,7 +1738,11 @@ const ORPHAN_RESTORE_GRACE: std::time::Duration = std::time::Duration::from_secs
 /// collect restore dirs nothing references. Safe-mode aware: a quarantined
 /// `res_mods.wowsp-disabled` still counts as "the files exist".
 #[tauri::command]
-pub async fn mod_hub_reconcile(game_root: String) -> CommandResult<ReconcileReport> {
+pub async fn mod_hub_reconcile(
+    window: tauri::Window,
+    game_root: String,
+) -> CommandResult<ReconcileReport> {
+    crate::commands::ensure_main_window_label(window.label())?;
     // Audit H-3: reconcile MUTATES the root's res_mods (heals wowsp.toml,
     // removes stale loader markers, prunes restore dirs) — the webview's
     // game_root must name an install the backend knows.

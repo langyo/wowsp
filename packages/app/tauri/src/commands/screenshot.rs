@@ -25,7 +25,12 @@ use wowsp_tauri_shared::CommandResult;
 /// today passes none; user-facing saves go through the export flow's dialog
 /// grants), and `..` segments are refused outright.
 #[tauri::command]
-pub fn capture_main_window(app: tauri::AppHandle, path: String) -> CommandResult<String> {
+pub fn capture_main_window(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    path: String,
+) -> CommandResult<String> {
+    crate::commands::ensure_main_window_label(window.label())?;
     let win = app
         .get_webview_window("main")
         .ok_or_else(|| anyhow!("main window not found"))?;
