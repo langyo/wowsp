@@ -113,7 +113,7 @@ pub use wowsp_replay_core::meta::meta_from_raw as meta_from_raw_pub;
 
 // pub(crate) surface consumed through direct `replay::...` paths by sibling
 // command modules (arena_info / playtime / pairing; call sites unchanged).
-pub(crate) use listing::{resolve_replay_dir, scan_replays_meta, walk_replays};
+pub(crate) use listing::{resolve_replay_dir, scan_replays_meta_cached, walk_replays};
 pub(crate) use streams::{decode_replay_stream_sync, read_smoke_screens_sync};
 pub(crate) use wowsp_replay_core::meta::{
     is_bot_nickname, is_operation_battle, is_scripted_unit_nickname, lite_and_client_version,
