@@ -73,7 +73,9 @@ const anchor = {
 
 const rowChips = (): HTMLElement[] =>
   [...document.querySelectorAll<HTMLElement>(".overlay-chip")].filter(
-    (el) => !el.classList.contains("overlay-chip--intel"),
+    (el) =>
+      !el.classList.contains("overlay-chip--intel") &&
+      !el.classList.contains("overlay-chip--head"),
   );
 
 beforeAll(async () => {
@@ -177,9 +179,10 @@ describe("overlay sample frame", () => {
     // The markup contract the picture depends on: five numbered rows carry
     // the five mono figures (winrate / PR / solo winrate / battles /
     // damage — the solo cell included on the dash rows), every battles
-    // count carries the split unit word, every solo cell carries the 单人
-    // scope tag, the hidden profile row is the rat verdict badge + the red
-    // dot stat face, and both average lines settled into numbers.
+    // count carries the split unit word, no cell carries a scope tag (the
+    // head row below says which column is which), the hidden profile row
+    // is the rat verdict badge + the red dot stat face, and both average
+    // lines settled into numbers.
     const numbered = rowChips().filter((c) => c.querySelector(".overlay-chip__stat b"));
     expect(numbered).toHaveLength(5);
     for (const chip of numbered) {
@@ -194,8 +197,31 @@ describe("overlay sample frame", () => {
       ] as const) {
         expect(chip.querySelectorAll(`.overlay-num.${cls}`)).toHaveLength(n);
       }
-      expect(chip.querySelectorAll(".overlay-scope")).toHaveLength(1);
     }
+    expect(document.querySelectorAll(".overlay-scope")).toHaveLength(0);
+    // The per-side COLUMN HEAD rows: one per side, each a muted word per
+    // column riding the same data-col cells as the figures — 胜率 / PR /
+    // 单人胜率 / 场次 / 场均 (zh join is empty), the ENEMY head mirroring
+    // the column order like the rows do.
+    const heads = [
+      ...document.querySelectorAll<HTMLElement>(".overlay-chip--head"),
+    ];
+    expect(heads).toHaveLength(2);
+    const headLabels = (side: string) =>
+      [
+        ...document.querySelectorAll<HTMLSpanElement>(
+          `.overlay-chip--head.overlay-chip--${side} .overlay-chip__stat b`,
+        ),
+      ].map((b) => ({ col: b.dataset.col, text: b.textContent }));
+    expect(headLabels("ally")).toEqual([
+      { col: "0", text: "胜率" },
+      { col: "1", text: "PR" },
+      { col: "2", text: "单人胜率" },
+      { col: "3", text: "场次" },
+      { col: "4", text: "场均" },
+    ]);
+    expect(headLabels("enemy").map((c) => c.col)).toEqual(["4", "3", "2", "1", "0"]);
+    expect(headLabels("enemy")[2]).toEqual({ col: "2", text: "单人胜率" });
     expect(document.querySelectorAll(".overlay-chip__stat .overlay-unit")).toHaveLength(5);
     // The drawn dashes: langyo's mirrored solo split (rejected by
     // soloSplitReliable — never rendered as a figure), korea4950's absent
@@ -207,12 +233,15 @@ describe("overlay sample frame", () => {
     for (const cell of document.querySelectorAll(".overlay-chip__stat")) {
       expect(cell.textContent).not.toContain("—");
     }
-    // The solo cells split three figures (wersskysks / mkwp22 / ByakuyaWN —
-    // the honest splits) against two dashes (the mirrored and the absent
-    // ones): the tag rides every solo cell either way.
+    // The solo cells (data-col 2) split three figures (wersskysks /
+    // mkwp22 / ByakuyaWN — the honest splits) against two dashes (the
+    // mirrored and the absent ones); the heads' own data-col-2 cell is
+    // excluded — it names the column, it is not one of its faces.
     const soloCellText = [
-      ...document.querySelectorAll(".overlay-chip__stat .overlay-scope"),
-    ].map((tag) => tag.parentElement!.textContent ?? "");
+      ...document.querySelectorAll<HTMLSpanElement>(
+        ".overlay-chip:not(.overlay-chip--head) .overlay-chip__stat b[data-col='2']",
+      ),
+    ].map((cell) => cell.textContent ?? "");
     expect(soloCellText).toHaveLength(5);
     expect(soloCellText.filter((t) => t.includes("%"))).toHaveLength(3);
     expect(soloCellText.filter((t) => !t.includes("%"))).toHaveLength(2);

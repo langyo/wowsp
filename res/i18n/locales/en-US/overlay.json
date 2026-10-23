@@ -17,5 +17,10 @@
   "avgDmg": "Avg dmg",
   "colScopeSolo": "Solo",
   "colScopeShip": "Ship",
-  "colScopeClass": "Class"
+  "colScopeClass": "Class",
+  "colHeadWinrate": "WR",
+  "colHeadPr": "PR",
+  "colHeadBattles": "Battles",
+  "colHeadDmg": "Avg dmg",
+  "colHeaderJoin": " "
 }

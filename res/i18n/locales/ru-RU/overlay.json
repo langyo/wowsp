@@ -17,5 +17,10 @@
   "avgDmg": "Ср. урон",
   "colScopeSolo": "соло",
   "colScopeShip": "корабль",
-  "colScopeClass": "класс"
+  "colScopeClass": "класс",
+  "colHeadWinrate": "Побед",
+  "colHeadPr": "PR",
+  "colHeadBattles": "Бои",
+  "colHeadDmg": "Урон",
+  "colHeaderJoin": " "
 }

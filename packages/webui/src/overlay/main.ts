@@ -81,6 +81,7 @@ import {
   rosterStatView,
   scopedRosterView,
   soloSplitReliable,
+  type OverlayColumnMetric,
   type OverlayColumnScope,
   type PrAlgo,
   type RawStat,
@@ -148,11 +149,21 @@ interface OverlayMessages {
   avgWinrate: string;
   avgPr: string;
   avgDmg: string;
-  /** Scope tags a non-global chip column carries before its figure
-   *  (scopeTagHtml — the muted "单人/单船/舰种" prefixes). */
+  /** Column-scope words the per-side COLUMN HEAD row prefixes onto a
+   *  non-global column's metric word (headRow — the muted 单人/单船/舰种
+   *  prefixes; global columns carry their metric word unprefixed). */
   colScopeSolo: string;
   colScopeShip: string;
   colScopeClass: string;
+  /** The head row's metric words (colHeadWinrate → 胜率 / WR …). */
+  colHeadWinrate: string;
+  colHeadPr: string;
+  colHeadBattles: string;
+  colHeadDmg: string;
+  /** How a scope prefix joins its metric word in the head row — empty for
+   *  the CJK locales (单人勝率 concatenates), one space for the spaced
+   *  scripts ("Solo WR"). */
+  colHeaderJoin: string;
 }
 const MESSAGES = import.meta.glob<OverlayMessages>(
   "../../../../res/i18n/locales/*/overlay.json",
@@ -165,11 +176,15 @@ for (const [path, mod] of Object.entries(MESSAGES)) {
 }
 
 function localized(key: keyof OverlayMessages): string {
+  // Empty string is a legitimate VALUE (colHeaderJoin is "" across the CJK
+  // locales), so presence is judged against undefined, not truthiness —
+  // a truthiness gate would silently borrow another locale's joiner.
   const exact = hintMessages.get(locale)?.[key];
-  if (exact) return exact;
+  if (exact != null) return exact;
   const lang = locale.split("-")[0];
   const byLang = [...hintMessages.entries()].find(([k]) => k.split("-")[0] === lang);
-  if (byLang) return byLang[1][key];
+  const byLangValue = byLang ? byLang[1][key] : undefined;
+  if (byLangValue != null) return byLangValue;
   return hintMessages.get("en-US")?.[key] ?? [...hintMessages.values()][0]?.[key] ?? "";
 }
 
@@ -659,13 +674,47 @@ function stampNode(kind: StampKind): string {
   return `<span class="overlay-stamp" data-stamp="${kind}" title="${label}">${label}</span>`;
 }
 
-/** Scope → the muted tag a non-global column carries before its figure
- *  (overlay.json carries the wording per locale). */
-function scopeTagHtml(scope: OverlayColumnScope): string {
-  if (scope === "solo") return `<span class="overlay-scope">${localized("colScopeSolo")}</span>`;
-  if (scope === "ship") return `<span class="overlay-scope">${localized("colScopeShip")}</span>`;
-  if (scope === "class") return `<span class="overlay-scope">${localized("colScopeClass")}</span>`;
+/** Scope → the muted word the COLUMN HEAD row prefixes onto a non-global
+ *  column's metric word (overlay.json carries the wording per locale; the
+ *  global scope answers "" — the unprefixed metric word IS the account
+ *  career). */
+function scopeWord(scope: OverlayColumnScope): string {
+  if (scope === "solo") return localized("colScopeSolo");
+  if (scope === "ship") return localized("colScopeShip");
+  if (scope === "class") return localized("colScopeClass");
   return "";
+}
+
+/** Metric → the head row's word (colHeadWinrate → 胜率 / WR …). */
+function headWord(metric: OverlayColumnMetric): string {
+  if (metric === "winrate") return localized("colHeadWinrate");
+  if (metric === "pr") return localized("colHeadPr");
+  if (metric === "battles") return localized("colHeadBattles");
+  return localized("colHeadDmg");
+}
+
+/** The per-side COLUMN HEAD row: one muted word per configured column,
+ *  prefixed with its scope when the column is not the global career
+ *  (单人胜率 / Solo WR), riding the SAME data-col cells the figures do so
+ *  chipFit's alignMetricColumns pins header and figures to one width per
+ *  column — the head line then reads as the top of the very table the
+ *  rows form, and the ENEMY side mirrors the column order exactly like
+ *  the rows (the reversal happens here too). The scope tags used to ride
+ *  inside every figure cell; one head word per column says it once,
+ *  cleaner, and stays legible even when the column's figures are all
+ *  dashes. */
+function headRow(side: "ally" | "enemy"): string {
+  const cols = effectiveOverlayColumns(PREFS.columns, PREFS.prOn);
+  const ordered = side === "enemy" ? [...cols].reverse() : cols;
+  const colIndex = new Map(cols.map((c, i) => [c, i] as const));
+  const join = localized("colHeaderJoin");
+  return ordered
+    .map((col) => {
+      const scope = scopeWord(col.scope);
+      const label = scope === "" ? headWord(col.metric) : scope + join + headWord(col.metric);
+      return `<b data-col="${colIndex.get(col) ?? 0}">${label}</b>`;
+    })
+    .join("");
 }
 
 /** The per-row number block, one COLUMN per configured scope × metric
@@ -678,13 +727,13 @@ function scopeTagHtml(scope: OverlayColumnScope): string {
  *  which keeps the chasing dots in its own cell instead: the parts of the
  *  row that already hold numbers (the career columns — global/solo — land
  *  with the stats batch) render immediately, so a slow per-ship transport
- *  holds back only its own columns, never the whole row. Scoped
- *  (non-global) columns carry their small muted scope tag inside the bold
- *  value, ahead of the figure. The ENEMY side renders the columns
- *  REVERSED so the two sides mirror each other around the game's table
- *  (config order reads left→right on the ally block); the data-col key
- *  stays the config column, so the shared measured widths keep the
- *  mirrored halves symmetric. */
+ *  holds back only its own columns, never the whole row. Which column is
+ *  which scope is the head row's job (headRow above), never a per-cell
+ *  tag. The ENEMY side renders the columns REVERSED so the two sides
+ *  mirror each other around the game's table (config order reads
+ *  left→right on the ally block); the data-col key stays the config
+ *  column, so the shared measured widths keep the mirrored halves
+ *  symmetric. */
 function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string {
   const cols = effectiveOverlayColumns(PREFS.columns, PREFS.prOn);
   const ordered = side === "enemy" ? [...cols].reverse() : cols;
@@ -695,7 +744,6 @@ function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string 
   for (const col of ordered) {
     const slot = `data-col="${colIndex.get(col) ?? 0}"`;
     const v = columnStatView(name, col.scope);
-    const tag = scopeTagHtml(col.scope);
     // A ship/class column whose per-ship list is still owed keeps the
     // dots; everything else settles to the drawn dash (see statFace for
     // the whole-row states — the batch itself still owed, or spent). The
@@ -712,14 +760,14 @@ function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string 
     if (col.metric === "winrate") {
       parts.push(
         v.winrate != null
-          ? `<b ${slot} style="color:${winrateColor(v.winrate)}">${tag}${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
-          : `<b ${slot} class="${absentCls}">${tag}${fig("n-wr", absent)}</b>`,
+          ? `<b ${slot} style="color:${winrateColor(v.winrate)}">${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
+          : `<b ${slot} class="${absentCls}">${fig("n-wr", absent)}</b>`,
       );
     } else if (col.metric === "pr") {
       parts.push(
         v.pr != null
-          ? `<b ${slot} style="color:${prTier(v.pr).color}">${tag}${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
-          : `<b ${slot} class="${absentCls}">${tag}${fig("n-pr", absent)}</b>`,
+          ? `<b ${slot} style="color:${prTier(v.pr).color}">${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
+          : `<b ${slot} class="${absentCls}">${fig("n-pr", absent)}</b>`,
       );
     } else if (col.metric === "battles") {
       // Red under 200 battles (thin-sample warning), plain above — same rule
@@ -729,14 +777,14 @@ function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string 
       const color = battlesColor(v.battles);
       parts.push(
         v.battles != null
-          ? `<b ${slot}${color ? ` style="color:${color}"` : ""}>${tag}${battlesText(v.battles)}</b>`
-          : `<b ${slot} class="${absentCls}">${tag}${fig("n-battles", absent)}</b>`,
+          ? `<b ${slot}${color ? ` style="color:${color}"` : ""}>${battlesText(v.battles)}</b>`
+          : `<b ${slot} class="${absentCls}">${fig("n-battles", absent)}</b>`,
       );
     } else {
       parts.push(
         v.avgDamage != null
-          ? `<b ${slot} style="color:${damageColor(v.avgDamage)}">${tag}${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
-          : `<b ${slot} class="${absentCls}">${tag}${fig("n-dmg", absent)}</b>`,
+          ? `<b ${slot} style="color:${damageColor(v.avgDamage)}">${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
+          : `<b ${slot} class="${absentCls}">${fig("n-dmg", absent)}</b>`,
       );
     }
   }
@@ -1425,6 +1473,9 @@ function render() {
   // is about. Tracked while the rows are built so it cannot drift from
   // what is actually on screen.
   let chipsMissingStats = false;
+  // The sides that painted at least one row — only those get the column
+  // head row (a floating header over an empty block would be noise).
+  const paintedSides = new Set<"ally" | "enemy">();
   for (const [side, block, blockOffset] of sides) {
     // The exact-order verdict is per side (key coverage is judged over the
     // side's roster): game-true rows drop the name column, fallback rows
@@ -1454,6 +1505,7 @@ function render() {
       // Nothing visible this row (exact mode: numbers off, no seals yet) —
       // skip it rather than paint an empty chip pill.
       if (!face) return;
+      paintedSides.add(side);
       const el = document.createElement("div");
       el.innerHTML = face;
       // The rat verdict's marker (the lone 过街老鼠 stamp on a hidden
@@ -1482,6 +1534,30 @@ function render() {
       }
       root.appendChild(el);
     });
+  }
+  // The per-side COLUMN HEAD row — one muted word per configured column
+  // (headRow), centered one full row pitch ABOVE the side's first row:
+  // the block then reads as a table with its header, while the band it
+  // occupies is the empty side space beside the game table's own top
+  // frame. Clamped so a table that starts at the very window top cannot
+  // push the header off-screen (the header then hugs the top edge).
+  if (ANY_CHIP_ON) {
+    for (const [side, block] of sides) {
+      if (!paintedSides.has(side)) continue;
+      const first = block[0];
+      if (first == null) continue;
+      const el = document.createElement("div");
+      el.className = `overlay-chip overlay-chip--${side} overlay-chip--head`;
+      el.innerHTML = `<span class="overlay-chip__stat">${headRow(side)}</span>`;
+      el.style.top = `${Math.max(fontSize * 0.75, first / dpr - pitch)}px`;
+      el.style.fontSize = `${fontSize.toFixed(1)}px`;
+      if (side === "ally") {
+        el.style.right = `${Math.max(0, overlayW - tableLeft + gap)}px`;
+      } else {
+        el.style.left = `${tableRight + gap}px`;
+      }
+      root.appendChild(el);
+    }
   }
   // One width per METRIC column first (the widest face across the roster —
   // chipFit.ts), then one stat column width per side around those cells:
@@ -1602,7 +1678,11 @@ function render() {
   }
   reportPaint(
     "chips",
-    root.querySelectorAll(".overlay-chip:not(.overlay-chip--intel)").length || null,
+    // Player rows only — the head and summary cards are furniture, not
+    // rows (the count is the paint report's roster signal).
+    root.querySelectorAll(
+      ".overlay-chip:not(.overlay-chip--intel):not(.overlay-chip--head)",
+    ).length || null,
   );
 }
 

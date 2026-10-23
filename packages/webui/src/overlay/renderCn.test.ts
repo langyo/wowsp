@@ -45,7 +45,9 @@ const anchor = {
 
 const rowChips = (): HTMLElement[] =>
   [...document.querySelectorAll<HTMLElement>(".overlay-chip")].filter(
-    (el) => !el.classList.contains("overlay-chip--intel"),
+    (el) =>
+      !el.classList.contains("overlay-chip--intel") &&
+      !el.classList.contains("overlay-chip--head"),
   );
 
 beforeAll(async () => {

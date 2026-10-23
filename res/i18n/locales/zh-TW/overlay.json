@@ -17,5 +17,10 @@
   "avgDmg": "場均",
   "colScopeSolo": "單人",
   "colScopeShip": "單船",
-  "colScopeClass": "艦種"
+  "colScopeClass": "艦種",
+  "colHeadWinrate": "勝率",
+  "colHeadPr": "PR",
+  "colHeadBattles": "場次",
+  "colHeadDmg": "場均",
+  "colHeaderJoin": ""
 }

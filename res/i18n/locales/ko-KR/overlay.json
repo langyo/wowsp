@@ -17,5 +17,10 @@
   "avgDmg": "평균 딜",
   "colScopeSolo": "솔로",
   "colScopeShip": "함선",
-  "colScopeClass": "함종"
+  "colScopeClass": "함종",
+  "colHeadWinrate": "승률",
+  "colHeadPr": "PR",
+  "colHeadBattles": "전투",
+  "colHeadDmg": "평딜",
+  "colHeaderJoin": " "
 }
