@@ -12,7 +12,7 @@
  * note. Every mutation confirms through HkConfirmDialog; errors toast.
  */
 
-import { computed, defineComponent, onMounted, ref } from "vue";
+import { computed, defineComponent, onMounted, ref, watch, type PropType } from "vue";
 import {
   HkAdminHeader,
   HkAdminShell,
@@ -81,6 +81,38 @@ const ERP_STYLES = `
 .erp-who span { font-size: var(--text-sm, 0.8125rem); font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `;
 
+/**
+ * HkAvatar renders <img> for any non-empty src with no error fallback
+ * (HkAdminHeader rolls its own onError letter fallback) — a dead profile
+ * URL (the anonymized session's placeholder avatar) then shows a
+ * broken-image glyph in the sidebar. Probe each URL once with an Image
+ * and drop dead ones back to the initials view.
+ */
+const SafeAvatar = defineComponent({
+  name: "SafeAvatar",
+  props: {
+    src: { type: String, default: "" },
+    name: { type: String, default: "" },
+    size: { type: String as PropType<"sm" | "md" | "lg">, default: "md" },
+  },
+  setup(props) {
+    const ok = ref(true);
+    watch(
+      () => props.src,
+      (src) => {
+        ok.value = true;
+        if (src) {
+          const probe = new Image();
+          probe.onerror = () => (ok.value = false);
+          probe.src = src;
+        }
+      },
+      { immediate: true },
+    );
+    return () => <HAvatar name={props.name} src={ok.value ? props.src : ""} size={props.size} />;
+  },
+});
+
 export default defineComponent({
   name: "ErpApp",
   setup() {
@@ -103,11 +135,28 @@ export default defineComponent({
         if (s.ok) {
           session.value = s;
           phase.value = "ready";
-          // A contact re-read that ended in anything but "refreshed" is
-          // the worker telling us the profile is degraded — surface it
-          // once, like the retired page did.
-          if (s.debug && s.debug !== "refreshed") {
-            toast.error(`通讯录读取：${s.debug}`);
+          // A contact re-read that ended in anything but a success state
+          // ("refreshed" = profile healed; "unchanged" = read fine, nothing
+          // new) means the app's contact scope is still missing and the
+          // session keeps the anonymized placeholder. Surface it as a
+          // warning ONCE per tab session — not a full error toast with the
+          // raw worker code on every page load; the code stays in the copy
+          // so a stuck 权限 grant still self-identifies.
+          if (s.debug && s.debug !== "refreshed" && s.debug !== "unchanged") {
+            const FLAG = "wowsp-erp-contact-degraded";
+            let first = true;
+            try {
+              first = !sessionStorage.getItem(FLAG);
+              if (first) sessionStorage.setItem(FLAG, "1");
+            } catch {
+              /* storage unavailable — warn without the repeat guard */
+            }
+            if (first) {
+              toast.warning(
+                `通讯录权限未生效，昵称/头像暂为占位信息（${s.debug}）。` +
+                  "在飞书开放平台为应用授予通讯录读取权限后，刷新即自动恢复。",
+              );
+            }
           }
           return;
         }
@@ -193,7 +242,7 @@ export default defineComponent({
                 {{
                   default: () => (
                     <div class="erp-form-col">
-                      <HAvatar name={session.value?.name || "飞书用户"} src={session.value?.avatar || ""} />
+                      <SafeAvatar name={session.value?.name || "飞书用户"} src={session.value?.avatar || ""} />
                       <span>{session.value?.name || "飞书用户"}</span>
                       <span class="erp-muted">通过飞书 OAuth 登录的允许名单成员。</span>
                     </div>
@@ -229,7 +278,7 @@ export default defineComponent({
           </nav>
           <div class="erp-side-foot">
             <div class="erp-who">
-              <HAvatar name={session.value?.name || "飞书用户"} src={session.value?.avatar || ""} size="sm" />
+              <SafeAvatar name={session.value?.name || "飞书用户"} src={session.value?.avatar || ""} size="sm" />
               <span>{session.value?.name || "飞书用户"}</span>
             </div>
           </div>
