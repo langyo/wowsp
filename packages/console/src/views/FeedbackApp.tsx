@@ -40,6 +40,7 @@ import {
   HkSpinner,
   HkTextarea,
   HkToast,
+  useBreakpoint,
   useToast,
 } from "@celestia-island/hikari";
 import { ExternalLink, History, MessageSquareText, Paperclip, X } from "@lucide/vue";
@@ -137,6 +138,11 @@ export default defineComponent({
   setup() {
     const { t, te, locale } = useI18n();
     const toast = useToast();
+    // The stacking threshold (md = 768px) — same boundary the layout
+    // sheet's media query keys on; the sidebar's WIDTH must follow it
+    // through the prop (inline style), not a class rule.
+    const { isBelow } = useBreakpoint();
+    const stacked = isBelow("md");
 
     // ── config + query prefill ─────────────────────────────────────────
     const cfg = ref<FeedbackConfig | null>(null);
@@ -519,23 +525,30 @@ export default defineComponent({
       // The original two-pane shell, rebuilt on hikari components: one
       // glass card centered on the page, HSidebar (brand / view nav /
       // language) docked left, the active view scrolling on the right
-      // (HkScrollContainer). Below 48rem the panes stack — the sidebar
-      // bands collapse to a single row nav (see FB layout sheet).
+      // (HkScrollContainer). Below the md breakpoint the panes stack —
+      // the sidebar stretches to full width via its WIDTH PROP (the
+      // component writes it as an inline style, which no class rule can
+      // override), driven by hikari's own useBreakpoint.
       <main class="fb-page">
         <HkToast />
         <HkCard class="fb-card" padded={false}>
-          <HSidebar class="fb-side" width="13rem">
+          <HSidebar class="fb-side" width={stacked.value ? "100%" : "13rem"}>
             {{
-              header: () => <h1 class="fb-brand">WoWSP 反馈台</h1>,
+              // Brand rides the body slot like the retired page (its
+              // header band's min-height + divider read as an app
+              // toolbar, not a form sidebar).
               default: () => (
-                <nav class="fb-side-nav">
-                  <HkNavItem active={view.value === "form"} onClick={() => (view.value = "form")}>
-                    {navFormSlots}
-                  </HkNavItem>
-                  <HkNavItem active={view.value === "history"} onClick={() => (view.value = "history")}>
-                    {navHistorySlots}
-                  </HkNavItem>
-                </nav>
+                <div class="fb-side-flow">
+                  <h1 class="fb-brand">WoWSP 反馈台</h1>
+                  <nav class="fb-side-nav">
+                    <HkNavItem active={view.value === "form"} onClick={() => (view.value = "form")}>
+                      {navFormSlots}
+                    </HkNavItem>
+                    <HkNavItem active={view.value === "history"} onClick={() => (view.value = "history")}>
+                      {navHistorySlots}
+                    </HkNavItem>
+                  </nav>
+                </div>
               ),
               footer: () => (
                 <HkSelect

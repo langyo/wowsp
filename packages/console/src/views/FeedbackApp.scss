@@ -25,11 +25,25 @@
   height: 100%;
 }
 
-// The sidebar docks at the retired page's 13rem; its bands (header /
-// body / footer) carry their own padding and the content-side border,
-// so no extra chrome is added here.
+// The sidebar docks at the retired page's 13rem. Band overrides are
+// plain descendant selectors — this is a global (non-SFC-scoped) sheet,
+// so hikari's classes are reachable directly (a :deep block here
+// compiles into an unknown pseudo-class the browser drops whole).
+// The retired page's side had no band dividers — the language footer's
+// top border goes, and the brand rides the body flow.
 .fb-side {
   flex: none;
+
+  .hk-sidebar-footer {
+    border-top: none;
+    padding-block: var(--space-8) var(--space-12);
+  }
+}
+
+.fb-side-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
 }
 
 .fb-brand {
@@ -50,13 +64,17 @@
   min-width: 0;
 }
 
+// The retired content pane's rhythm: generous block padding, a little
+// more air on the right edge, slightly less against the sidebar — and
+// the form spans the pane at full width (the retired page had no
+// column cap).
 .fb-content-pad {
-  padding: var(--space-24) var(--space-24);
-  max-width: 34rem;
+  padding: var(--space-24) var(--space-28) var(--space-24) var(--space-20);
 }
 
-// Panes stack on phones: the sidebar bands collapse to a slim stack —
-// brand row, a single-row nav — and the content scrolls below (the
+// Panes stack on phones: the sidebar stretches full width through its
+// width PROP (useBreakpoint-driven; the inline style beats any class
+// rule), the nav collapses to one row, the content scrolls below (the
 // retired page's 767px breakpoint grammar, on hikari components).
 @media (max-width: 47.99rem) {
   .fb-page {
@@ -71,25 +89,12 @@
     height: auto;
   }
 
-  .fb-side {
-    width: 100%;
+  .fb-side .hk-sidebar-body {
+    padding-block: var(--space-8) var(--space-4);
+  }
 
-    // Plain descendant selectors — this is a global (non-SFC-scoped)
-    // sheet, so hikari's classes are reachable directly; a :deep block
-    // here compiles into an unknown pseudo-class the browser drops
-    // whole (measured in the shipped CSS).
-    .hk-sidebar-header {
-      display: none;
-    }
-
-    .hk-sidebar-body {
-      padding-block: var(--space-8);
-    }
-
-    // The stacked bands read as one pane — no inner dividers.
-    .hk-sidebar-footer {
-      border-top: none;
-    }
+  .fb-side-flow {
+    gap: var(--space-8);
   }
 
   .fb-side-nav {
