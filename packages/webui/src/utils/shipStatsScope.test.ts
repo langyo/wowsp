@@ -296,6 +296,20 @@ describe("scopedRosterView", () => {
     expect(scopedRosterView(withoutSolo, 1, dims, "random", "winrate")).toEqual(EMPTY_ROSTER_VIEW);
   });
 
+  it("a ship scope combined with the solo filter aggregates the per-ship solo split", () => {
+    const dims: RosterStatsDims = { ship: "ship", battle: "random", solo: "solo" };
+    const view = scopedRosterView({ ...CAREER, ships: SHIPS }, 1, dims, "random", "winrate");
+    // Ship 1's own solo split: 60 battles at 50% — a "this ship's solo
+    // career" question the account career (8000 battles) cannot answer.
+    expect(view.battles).toBe(60);
+    expect(view.winrate).toBeCloseTo(50, 6);
+    expect(view.avgDamage).toBeCloseTo(54_000 / 60, 6);
+    // Ranked has no solo split on any ship scope either.
+    expect(
+      scopedRosterView({ ...CAREER, ships: SHIPS }, 1, dims, "ranked", "winrate"),
+    ).toEqual(EMPTY_ROSTER_VIEW);
+  });
+
   it("loading or unavailable per-ship data answers the dash face", () => {
     const dims: RosterStatsDims = { ship: "ship", battle: "random", solo: "all" };
     expect(

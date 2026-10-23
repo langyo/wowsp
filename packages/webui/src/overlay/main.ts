@@ -328,10 +328,11 @@ let ANY_CHIP_ON = effectiveOverlayColumns(PREFS.columns, PREFS.prOn).length > 0;
 // the fixed scopes and the global merge pin it).
 let statsMode: ResolvedStatsMode = "random";
 // Any configured column resolves past the account careers (a ship/class
-// column, or the solo split): every landed human stat then also carries
-// the player's full per-ship list, and the column views aggregate it
-// through the SAME utils/shipStatsScope the main-window panels use.
-// Re-derived on every prefs refresh (refreshPrefs below).
+// column — the solo scope reads the career solo split): every landed
+// human stat then also carries the player's full per-ship list, and the
+// column views aggregate it through the SAME utils/shipStatsScope the
+// main-window panels use. Re-derived on every prefs refresh (refreshPrefs
+// below).
 let SHIP_SCOPE_ON = columnsNeedShipStats(PREFS.columns, PREFS.prOn);
 // Bumped whenever the stats cache is invalidated wholesale (a PR-algo
 // param flip): in-flight batches snapshot it and discard answers computed
@@ -537,9 +538,9 @@ function shipIdOfName(name: string): number | null {
 }
 
 /** One player's display numbers for ONE column scope: the account
- *  careers for "global" (and the solo sweep's whole-list aggregate), the
- *  per-ship aggregate otherwise — the same utils/shipStatsScope module
- *  the main-window panels resolve through. */
+ *  careers for "global" and "solo" (the career carries the solo split),
+ *  the per-ship aggregate otherwise — the same utils/shipStatsScope
+ *  module the main-window panels resolve through. */
 function columnStatView(name: string, scope: OverlayColumnScope): RosterModeNumbers {
   const st = stats.get(cacheKey(name));
   return scopedRosterView(

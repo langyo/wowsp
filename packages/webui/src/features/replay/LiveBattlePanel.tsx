@@ -719,7 +719,9 @@ export default defineComponent({
           if (
             !st ||
             st.loading ||
-            (scope !== "global" && st.shipsLoading) ||
+            // Only the ship/class scopes wait on the per-ship lists — the
+            // solo scope reads the career split (utils/shipStatsScope).
+            (scope !== "global" && scope !== "solo" && st.shipsLoading) ||
             st.hidden ||
             isAiName(v.name)
           ) {

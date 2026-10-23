@@ -415,7 +415,13 @@ export default defineComponent({
       aggregateTeamStats(
         list.map((p) => {
           const st = !isAiName(p.name) ? nameStats.value.get(p.name) : undefined;
-          if (!st || st.hidden || (scope !== "global" && st.shipsLoading)) {
+          if (
+            !st ||
+            st.hidden ||
+            // Only the ship/class scopes wait on the per-ship lists — the
+            // solo scope reads the career split (utils/shipStatsScope).
+            (scope !== "global" && scope !== "solo" && st.shipsLoading)
+          ) {
             return {
               winrate: null,
               pr: null,

@@ -148,8 +148,9 @@ function countersOf(
  *  numbers. Null = the scope itself is unresolvable (the row's ship is
  *  unknown, so "same class/tier" has nothing to match on); an all-null
  *  view = resolved but zero battles (the row then shows the same "—" face
- *  as a career the player never played). Scope "all" (the solo-only
- *  configuration) sweeps the whole list and needs no target ship. */
+ *  as a career the player never played). Scope "all" sweeps the whole
+ *  list and needs no target ship (the production solo-only views read the
+ *  career instead — see scopedRosterView). */
 export function aggregateShipScopeStats(
   ships: readonly PlayerShipStats[],
   targetShipId: number | null,
@@ -244,11 +245,13 @@ function careerSoloView(
 
 /** One row's display numbers under the FULL three-dimension model: the
  *  account-career path while the dims allow it, the aggregated per-ship
- *  view otherwise. The solo dimension is a career path everywhere — the
- *  batch answer carries the solo split first-class, so solo-only columns
- *  neither wait on nor degrade with the per-ship transport. Loading /
- *  unavailable per-ship data answers the all-null view (callers own the
- *  spinner face). */
+ *  view otherwise. Solo-only views (ship scope "all") are a career path —
+ *  the batch answer carries the solo split first-class, so those columns
+ *  neither wait on nor degrade with the per-ship transport. A ship/class
+ *  scope COMBINED with the solo filter still aggregates the per-ship solo
+ *  splits (a "this ship's solo career" question the account career cannot
+ *  answer). Loading / unavailable per-ship data answers the all-null view
+ *  (callers own the spinner face). */
 export function scopedRosterView(
   st: (RosterStatViewSource & ShipScopedStat) | null | undefined,
   targetShipId: number | null,
@@ -260,7 +263,7 @@ export function scopedRosterView(
     // No solo split of ranked exists on any transport — the dash face is
     // the honest answer, not the unsplit ranked career.
     if (battle === "ranked") return EMPTY_ROSTER_VIEW;
-    return careerSoloView(st, prAlgo);
+    if (dims.ship === "all") return careerSoloView(st, prAlgo);
   }
   if (!dimsNeedShipStats(dims)) return rosterStatView(st, battle);
   if (!st || st.shipsLoading || st.ships == null) return EMPTY_ROSTER_VIEW;
@@ -268,9 +271,7 @@ export function scopedRosterView(
     aggregateShipScopeStats(st.ships, targetShipId, {
       scope: dims.ship,
       battle,
-      // Solo dims never reach this branch — both their paths above are
-      // career paths.
-      solo: false,
+      solo: dims.solo === "solo",
       prAlgo,
     }) ?? EMPTY_ROSTER_VIEW
   );
