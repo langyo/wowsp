@@ -225,6 +225,14 @@ describe("overlay sample frame", () => {
     expect(ratChips[0]!.querySelector('.overlay-stamp[data-stamp="rat"]')).not.toBeNull();
     expect(ratChips[0]!.querySelectorAll(".overlay-stamp")).toHaveLength(1);
     expect(ratChips[0]!.querySelector(".overlay-chip__stat .hidden")).not.toBeNull();
+    // The lone red dot rides a SPARSE stat cell — compact, exempt from the
+    // side's pinned figure width, so the row clusters [dot][name][badge]
+    // instead of showing a hole where the figures would sit.
+    expect(
+      ratChips[0]!.querySelector(".overlay-chip__stat")!.classList.contains(
+        "overlay-chip__stat--sparse",
+      ),
+    ).toBe(true);
     expect(ratChips[0]!.querySelector(".overlay-chip__name")).not.toBeNull();
     expect(ratChips[0]!.lastElementChild!.classList.contains("overlay-stamp")).toBe(true);
     const avgLines = [
@@ -274,15 +282,16 @@ describe("overlay sample frame", () => {
       // need a real browser measure); mirror chipFit's two column pins
       // here, in production call order — each data-col metric column to
       // its widest face across both sides, then each side's stat cell
-      // around those sums — so the sample shows the production column
-      // contract: evenly separated metric columns on one alignment line,
-      // nickname on the shared edge. The rat row's red-dot stat cell joins
-      // the pin like every other.
+      // around those sums (the sparse placeholder cells exempt, exactly
+      // like alignStatColumns) — so the sample shows the production
+      // column contract: evenly separated metric columns on one
+      // alignment line, nickname on the shared edge, the rat row's red
+      // dot staying compact instead of stretched to the figures' width.
       `<script>\n// Mirror of overlay/chipFit.ts alignMetricColumns + alignStatColumns:\n` +
       `// pin each data-col metric column to its widest laid-out face across\n` +
-      `// both sides, then pin each side's stat cells around those sums — the\n` +
-      `// static sample then shows the production column contract (every\n` +
-      `// stat cell joins the pin, the rat row's red dot included).\n` +
+      `// both sides, then pin each side's stat cells around those sums,\n` +
+      `// SKIPPING the sparse placeholder cells (the rat row's red dot stays\n` +
+      `// compact — the production exemption).\n` +
       `const groups = new Map();\n` +
       `for (const b of document.querySelectorAll(".overlay-chip__stat b[data-col]")) {\n` +
       `  const k = b.dataset.col || "";\n` +
@@ -294,7 +303,8 @@ describe("overlay sample frame", () => {
       `  if (w > 0) for (const c of cells) c.style.width = Math.ceil(w) + "px";\n` +
       `}\n` +
       `for (const side of ["ally", "enemy"]) {\n` +
-      `  const cells = [...document.querySelectorAll(\`.overlay-chip--\${side} .overlay-chip__stat\`)];\n` +
+      `  const cells = [...document.querySelectorAll(\`.overlay-chip--\${side} .overlay-chip__stat\`)]\n` +
+      `    .filter((c) => !c.classList.contains("overlay-chip__stat--sparse"));\n` +
       `  const w = Math.max(0, ...cells.map((c) => c.getBoundingClientRect().width));\n` +
       `  for (const c of cells) c.style.width = Math.ceil(w) + "px";\n` +
       `}\n</script>\n</body>\n</html>\n`;

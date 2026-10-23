@@ -693,23 +693,28 @@ function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string 
     const tag = scopeTagHtml(col.scope);
     // A ship/class column whose per-ship list is still owed keeps the
     // dots; everything else settles to the drawn dash (see statFace for
-    // the whole-row states — the batch itself still owed, or spent).
+    // the whole-row states — the batch itself still owed, or spent). The
+    // waiting face rides a col-waiting cell (CENTERED, bright) instead of
+    // the muted right-aligned dash face: beads pressed to the column's
+    // right edge with a hole to their left read as a gap in the row, not
+    // as "this column is coming".
     const shipsOwed =
       (col.scope === "ship" || col.scope === "class") &&
       st.accountId != null &&
       st.ships === undefined;
     const absent = shipsOwed ? loadingDots() : DASH_HTML;
+    const absentCls = shipsOwed ? "col-waiting" : "muted";
     if (col.metric === "winrate") {
       parts.push(
         v.winrate != null
           ? `<b ${slot} style="color:${winrateColor(v.winrate)}">${tag}${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
-          : `<b ${slot} class="muted">${tag}${fig("n-wr", absent)}</b>`,
+          : `<b ${slot} class="${absentCls}">${tag}${fig("n-wr", absent)}</b>`,
       );
     } else if (col.metric === "pr") {
       parts.push(
         v.pr != null
           ? `<b ${slot} style="color:${prTier(v.pr).color}">${tag}${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
-          : `<b ${slot} class="muted">${tag}${fig("n-pr", absent)}</b>`,
+          : `<b ${slot} class="${absentCls}">${tag}${fig("n-pr", absent)}</b>`,
       );
     } else if (col.metric === "battles") {
       // Red under 200 battles (thin-sample warning), plain above — same rule
@@ -720,13 +725,13 @@ function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string 
       parts.push(
         v.battles != null
           ? `<b ${slot}${color ? ` style="color:${color}"` : ""}>${tag}${battlesText(v.battles)}</b>`
-          : `<b ${slot} class="muted">${tag}${fig("n-battles", absent)}</b>`,
+          : `<b ${slot} class="${absentCls}">${tag}${fig("n-battles", absent)}</b>`,
       );
     } else {
       parts.push(
         v.avgDamage != null
           ? `<b ${slot} style="color:${damageColor(v.avgDamage)}">${tag}${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
-          : `<b ${slot} class="muted">${tag}${fig("n-dmg", absent)}</b>`,
+          : `<b ${slot} class="${absentCls}">${tag}${fig("n-dmg", absent)}</b>`,
       );
     }
   }
@@ -819,6 +824,22 @@ function sealNodes(name: string): string {
   return resolveStamps(career, comp).map(stampNode).join("");
 }
 
+/** Whether this row's stat face is a PLACEHOLDER carrying no figures at
+ *  all: the bot label, the hidden profile's red dot, the whole-row loader
+ *  (batch still owed) or the settled dash (lookups spent). Placeholder
+ *  rows mark their stat cell sparse (overlay-chip__stat--sparse) so
+ *  chipFit's alignStatColumns leaves the cell at its own compact width
+ *  instead of stretching it to the side's pinned figure width — a lone
+ *  dot floating in a figures-wide cell reads as a hole in the middle of
+ *  the row, while the compact [dot][name][seal] cluster reads as that
+ *  row's whole answer. The row rejoins the pin the moment figures land. */
+function statFaceSparse(name: string): boolean {
+  if (!ANY_CHIP_ON) return false;
+  if (AI_NAME.test(name)) return true;
+  const st = stats.get(cacheKey(name));
+  return st == null || st.hidden;
+}
+
 /** One player's line face: the stat column, the seals, and — only while
  *  the row order is NOT game-confirmed (`exactOrder` false, sideOrderExact)
  *  — the name column, arranged so the STATS column sits against the table's
@@ -833,25 +854,26 @@ function sealNodes(name: string): string {
  *
  *  The 过街老鼠 verdict only lands on a hidden profile, whose stat face is
  *  the lone red dot — the row carries BOTH: the badge in the seals flank
- *  and the dot riding the pinned stat cell, hugging the table's edge like
- *  every settled face (the render loop marks the chip overlay-chip--rat so
- *  chipFit's trim pass keeps the verdict). An exact row with nothing
+ *  and the dot riding a COMPACT (sparse) stat cell that hugs the table's
+ *  edge (the render loop marks the chip overlay-chip--rat so chipFit's
+ *  trim pass keeps the verdict). An exact row with nothing
  *  visible at all (every number toggle off, no seals landed yet) still
  *  returns the EMPTY STRING — the render loop skips the row instead of
  *  painting an empty chip pill. */
 function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): string {
   const stat = statFace(name, side);
   const seals = sealNodes(name);
+  const cell = `<span class="overlay-chip__stat${
+    statFaceSparse(name) ? " overlay-chip__stat--sparse" : ""
+  }">${stat}</span>`;
   if (exactOrder) {
     // Nothing visible at all (every number toggle off, no seals landed yet,
     // no name cell on a game-true row): an empty string — the render loop
     // skips the row instead of painting an empty chip pill.
     if (!stat && !seals) return "";
-    const cell = `<span class="overlay-chip__stat">${stat}</span>`;
     return side === "ally" ? seals + cell : cell + seals;
   }
   const label = `<span class="overlay-chip__name">${displayNameOf(name)}</span>`;
-  const cell = `<span class="overlay-chip__stat">${stat}</span>`;
   return side === "ally" ? seals + label + cell : cell + label + seals;
 }
 
@@ -1397,7 +1419,9 @@ function render() {
   // chipFit.ts), then one stat column width per side around those cells:
   // the numbers sit in evenly separated columns on ONE alignment line, the
   // seals' flank holds a fixed x, and the fallback rows' name column starts
-  // at a fixed x — the column contract of the row layout.
+  // at a fixed x — the column contract of the row layout, among the FIGURE
+  // rows; sparse placeholder rows (rowFace's marker) keep a compact stat
+  // cell and cluster against the table's edge instead.
   alignMetricColumns(root);
   alignStatColumns(root);
 

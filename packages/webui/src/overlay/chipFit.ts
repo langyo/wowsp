@@ -34,10 +34,12 @@
  *  row order is the offline inference (rowFace's fallback face); the
  *  cells must line up across rows so the stat column reads as one table
  *  and the seals' flank holds a fixed x. Row elements are individually
- *  anchored, so the column aligns only when every stat cell shares ONE
+ *  anchored, so the column aligns only when every FIGURE cell shares ONE
  *  width — measured here as the widest face on the side, which on fallback
  *  rows also pins the enemy name column's START and the ally name column's
- *  END to a fixed x. */
+ *  END to a fixed x. Placeholder cells (rowFace's sparse marker) are
+ *  exempt: they keep their own compact width and cluster against the
+ *  table's edge (see alignStatColumns below). */
 
 /** Sub-pixel overhang tolerance (CSS px): the anchor's physical→CSS
  *  division rounds, and costing a seal over a hairline clip is worse than
@@ -150,17 +152,20 @@ export function alignMetricColumns(root: ParentNode): void {
  *  {@link alignMetricColumns} has pinned the inner metric cells (this pass
  *  then measures the cells around their sum), and before {@link fitChips},
  *  which measures the pinned widths.
- *  Every cell joins the width even when its own face is empty (a row with
- *  the numbers off must keep the column slot — an exact-order row for the
- *  seals' flank, a fallback row for its name cell; a hidden profile's red
- *  dot rides the same pinned cell as the numbers). Lays out as zero width
- *  under happy-dom, so a test-environment measure (width 0 everywhere)
- *  skips the pass. */
+ *  Every FIGURE cell joins the width even when its own face is empty (a
+ *  row with the numbers off must keep the column slot — an exact-order row
+ *  for the seals' flank, a fallback row for its name cell). PLACEHOLDER
+ *  cells (overlay-chip__stat--sparse — rowFace's bot label / hidden red
+ *  dot / whole-row loader or dash) are deliberately exempt: stretched to
+ *  the figures' width they read as a hole in the middle of the row, so
+ *  they keep their own compact width and the row clusters tightly against
+ *  the table's edge instead. Lays out as zero width under happy-dom, so a
+ *  test-environment measure (width 0 everywhere) skips the pass. */
 export function alignStatColumns(root: ParentNode): void {
   for (const side of ["ally", "enemy"] as const) {
-    const cells = root.querySelectorAll<HTMLElement>(
-      `.overlay-chip--${side} .overlay-chip__stat`,
-    );
+    const cells = [
+      ...root.querySelectorAll<HTMLElement>(`.overlay-chip--${side} .overlay-chip__stat`),
+    ].filter((cell) => !cell.classList.contains("overlay-chip__stat--sparse"));
     let widest = 0;
     for (const cell of cells) widest = Math.max(widest, cell.getBoundingClientRect().width);
     if (widest <= 0) continue;

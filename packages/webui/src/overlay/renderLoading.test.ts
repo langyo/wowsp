@@ -289,10 +289,18 @@ describe("overlay page loading faces", () => {
       const stat = chip.querySelector(".overlay-chip__stat")!;
       expect(stat.textContent).toContain("48.5%");
       expect(stat.querySelectorAll("b")).toHaveLength(3);
-      // The ship cell (config column 2) is the one still owed.
-      expect(chip.querySelector('b[data-col="2"]')!.querySelectorAll(".overlay-dots")).toHaveLength(1);
+      // The ship cell (config column 2) is the one still owed: a centered
+      // col-waiting cell (not the muted right-aligned dash face) whose
+      // beads read as "this column is coming".
+      const shipCell = chip.querySelector('b[data-col="2"]')!;
+      expect(shipCell.classList.contains("col-waiting")).toBe(true);
+      expect(shipCell.classList.contains("muted")).toBe(false);
+      expect(shipCell.querySelectorAll(".overlay-dots")).toHaveLength(1);
       // Both scoped columns carry their tag (单人 / 单船).
       expect(stat.querySelectorAll(".overlay-scope")).toHaveLength(2);
+      // The row itself carries figures, so it is NOT sparse — the stat cell
+      // still joins the side's pinned width.
+      expect(stat.classList.contains("overlay-chip__stat--sparse")).toBe(false);
     }
     // The mirrored split: langyo's solo cell is the drawn dash, never the
     // career winrate wearing the 单人 tag; the honest splits show 51.0%.
