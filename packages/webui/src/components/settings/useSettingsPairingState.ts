@@ -43,6 +43,21 @@ export function useSettingsPairingState() {
   function openPairingWizard() {
     void router.push({ path: "/replay", query: { pairing: "1" } });
   }
+  /** Audit M-1 residual: drop every live bearer token (paired phones
+   *  must re-pair) without stopping the server. */
+  const forgetBusy = ref(false);
+  async function forgetDevices() {
+    if (forgetBusy.value) return;
+    forgetBusy.value = true;
+    try {
+      await pairingStore.forgetDevices();
+      toast.success(t("settings.pairingDevicesForgotten"));
+    } catch {
+      // surfaced via store.serverError
+    } finally {
+      forgetBusy.value = false;
+    }
+  }
   /** Desktop only: while the pairing section is visible and the server
    *  runs, poll the status so a gateway that comes up (or drops) flips
    *  the displayed code / mode hint without user action. */
@@ -67,6 +82,8 @@ export function useSettingsPairingState() {
     copyPin,
     reallocBusy,
     regenerateCode,
+    forgetBusy,
+    forgetDevices,
     openPairingWizard,
     startPairingPoll,
     stopPairingPoll,

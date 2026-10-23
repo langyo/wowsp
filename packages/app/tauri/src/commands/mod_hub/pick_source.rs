@@ -56,6 +56,25 @@ fn grant_is_live(grant: &SourceGrant, now: Instant) -> bool {
         && now.duration_since(grant.created) < SOURCE_GRANT_ABSOLUTE_TTL
 }
 
+/// The data-root refusal as a pure predicate (audit H-3 residual), so
+/// the canonicalize/boundary logic is unit-testable without a real data
+/// dir. Both sides canonicalize (resolves symlinks / 8.3 short names /
+/// relative segments); the separator boundary uses
+/// [`std::path::MAIN_SEPARATOR`], so the same logic holds on a
+/// hypothetical POSIX desktop build. Unresolvable picks fail closed.
+fn is_under_data_root(path: &str, data: &std::path::Path) -> bool {
+    let (Ok(picked), Ok(root)) = (
+        std::path::Path::new(path).canonicalize(),
+        data.canonicalize(),
+    ) else {
+        return true;
+    };
+    let sep = std::path::MAIN_SEPARATOR;
+    let picked_s = picked.to_string_lossy().to_ascii_lowercase();
+    let root_s = format!("{}{sep}", root.to_string_lossy().to_ascii_lowercase());
+    picked_s == root_s.trim_end_matches(sep) || picked_s.starts_with(&root_s)
+}
+
 fn source_grants() -> &'static std::sync::Mutex<HashMap<String, SourceGrant>> {
     static GRANTS: OnceLock<std::sync::Mutex<HashMap<String, SourceGrant>>> = OnceLock::new();
     GRANTS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
@@ -79,25 +98,10 @@ pub(crate) fn grant_source_path(path: &str) -> anyhow::Result<()> {
             std::path::PathBuf::new()
         },
     };
-    if !data.as_os_str().is_empty() {
-        // Both sides canonicalized (resolves symlinks / 8.3 short names /
-        // relative segments) so the prefix comparison cannot be aliased
-        // around; an unresolvable pick fails closed.
-        let (Ok(picked), Ok(root)) = (
-            std::path::Path::new(path).canonicalize(),
-            data.canonicalize(),
-        ) else {
-            return Err(anyhow!(
-                "the picked package source could not be resolved ({path})"
-            ));
-        };
-        let picked_s = picked.to_string_lossy().to_ascii_lowercase();
-        let root_s = format!("{}\\", root.to_string_lossy().to_ascii_lowercase());
-        if picked_s == root_s.trim_end_matches('\\') || picked_s.starts_with(&root_s) {
-            return Err(anyhow!(
-                "the app data folder is not a valid mod package source ({path})"
-            ));
-        }
+    if !data.as_os_str().is_empty() && is_under_data_root(path, &data) {
+        return Err(anyhow!(
+            "the app data folder is not a valid mod package source ({path})"
+        ));
     }
     let mut grants = source_grants().lock().unwrap_or_else(|p| p.into_inner());
     // Drop expired entries first, then make room for the new grant by
@@ -276,5 +280,36 @@ mod tests {
         let _guard = grant_test_lock();
         let err = ensure_source_granted("C:/not/picked/this/session").unwrap_err();
         assert!(err.to_string().contains("folder picker"));
+    }
+
+    /// The data-root refusal predicate (audit H-3 residual): the data
+    /// tree itself AND anything under it are refused; a same-prefix
+    /// sibling directory is NOT (the separator boundary does its job);
+    /// an unresolvable path fails closed.
+    #[test]
+    fn data_root_predicate_refuses_the_app_tree_only() {
+        let base = std::env::temp_dir().join("wowsp_data_root_predicate_test");
+        let data = base.join("data");
+        std::fs::create_dir_all(data.join("mods")).unwrap();
+        let sibling = base.join("datarooms");
+        std::fs::create_dir_all(&sibling).unwrap();
+
+        assert!(
+            is_under_data_root(&data.to_string_lossy(), &data),
+            "the data root itself is inside the data tree"
+        );
+        assert!(
+            is_under_data_root(&data.join("mods").to_string_lossy(), &data),
+            "a child of the data tree is inside it"
+        );
+        assert!(
+            !is_under_data_root(&sibling.to_string_lossy(), &data),
+            "a same-prefix sibling directory must not be mistaken for the data tree"
+        );
+        assert!(
+            is_under_data_root("C:/definitely/not/created/anywhere", &data),
+            "an unresolvable pick fails closed"
+        );
+        std::fs::remove_dir_all(&base).ok();
     }
 }

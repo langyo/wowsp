@@ -460,6 +460,20 @@ export const usePairingStore = defineStore("pairing", () => {
     }
   }
 
+  /// Audit M-1 residual: drop every live bearer token (paired phones
+  /// must re-pair) without stopping the server.
+  async function forgetDevices() {
+    serverBusy.value = true;
+    serverError.value = null;
+    try {
+      await api.pairingForgetDevices();
+    } catch (e) {
+      serverError.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      serverBusy.value = false;
+    }
+  }
+
   // ── gateway config (desktop side, hidden toggle) + code regeneration ──
   const relayConfig = ref<RelayConfig>({ enabled: true });
   const relayBusy = ref(false);
@@ -530,6 +544,7 @@ export const usePairingStore = defineStore("pairing", () => {
     refreshServerStatus,
     startServer,
     stopServer,
+    forgetDevices,
     reallocateCode,
     // gateway config (desktop, hidden)
     relayConfig,

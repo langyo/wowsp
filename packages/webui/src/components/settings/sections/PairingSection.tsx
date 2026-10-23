@@ -153,6 +153,20 @@ export default defineComponent({
                     ? t("settings.pairingPhoneHintInternet")
                     : t("settings.pairingPhoneHint")}
                 </HkSettingsHint>
+                {/* Audit M-1 residual: drop every live bearer token — a
+                    phone that paired earlier must re-pair, while the
+                    server (and discovery) keep running. */}
+                <div class="settings-modal__pairing-row">
+                  <HkButton
+                    size="sm"
+                    variant="secondary"
+                    loading={pairing.forgetBusy.value}
+                    ariaLabel={t("settings.pairingForgetDevices")}
+                    onClick={() => void pairing.forgetDevices()}
+                  >
+                    {t("settings.pairingForgetDevices")}
+                  </HkButton>
+                </div>
                 {/* Gateway status: relay mode vs the LAN-only fallback. */}
                 {pairingStore.server.relayOnline ? (
                   <p class="settings-modal__pairing-mode">

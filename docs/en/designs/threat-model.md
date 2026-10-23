@@ -45,7 +45,7 @@
   16-entry cap; grants under the app's own data tree are refused — that
   tree is webview-writable); the install plan is **derived server-side**
   by the same classifier the preview uses (the webview's plan copy is
-  display-only); symlink/reparse entries abort the copy; zip extraction
+  display-only); link-shaped reparse entries abort the copy (cloud-placeholder tags are spared and hydrated on demand, per the mod-hub tag policy); zip extraction
   rides actual bytes with entry/per-file/total budgets plus a
   declared-size early abort; installs are journaled (temp+rename,
   mandatory pre-overwrite snapshots, full rollback).

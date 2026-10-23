@@ -92,6 +92,8 @@
   "pairingNeverSynced": "동기화된 적 없음",
   "pairingForget": "페어링 해제",
   "pairingRegenerate": "새 코드",
+"pairingForgetDevices": "페어링된 기기 해제",
+"pairingDevicesForgotten": "페어링된 기기가 해제되었습니다. 휴대폰에서 다시 페어링하세요",
   "pairingModeRelay": "인터넷 페어링 사용 가능",
   "pairingLanOnly": "인터넷 페어링 서비스에 연결할 수 없습니다 — 현재는 로컬 네트워크에서만 페어링할 수 있습니다.",
   "pairingPhoneHintInternet": "휴대폰에서 리플레이 → PC에서 가져오기를 열고 인터넷으로 전환한 뒤 위 코드를 입력하세요 — 어느 네트워크에서든 작동합니다.",

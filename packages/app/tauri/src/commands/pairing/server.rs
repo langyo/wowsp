@@ -90,6 +90,9 @@ struct ServerState {
     /// shared with the gateway bridge and echoed in /pair responses —
     /// never derived from the pin).
     room: String,
+    /// The live session's shared state — the settings' forget-devices
+    /// entry clears the token map through it without stopping the server.
+    shared: Option<std::sync::Arc<Shared>>,
     shutdown: Option<watch::Sender<bool>>,
     task: Option<tokio::task::JoinHandle<()>>,
 }
@@ -401,13 +404,17 @@ async fn prepare_server() -> Result<ServerState> {
         conns: Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS)),
         shutdown: rx,
     });
-    let task = tokio::spawn(serve(listener, shared));
+    let task = tokio::spawn(serve(listener, shared.clone()));
     Ok(ServerState {
         running: true,
         host,
         port,
         pin,
         room,
+        // Audit M-1 residual: the settings' forget-devices entry clears
+        // the live token map through this handle without stopping the
+        // server (a stop would also kill discovery and any relay bridge).
+        shared: Some(shared),
         shutdown: Some(tx),
         task: Some(task),
     })
@@ -518,6 +525,25 @@ pub async fn pairing_stop() -> Result<()> {
     })
     .await;
     tracing::info!("pairing server stopped");
+    Ok(())
+}
+
+/// Settings entry (audit M-1 residual): drop every live bearer token —
+/// paired phones must re-pair — WITHOUT stopping the server (a stop would
+/// also kill discovery and any relay bridge). No-op when the server is
+/// not running (the token map dies with the run anyway).
+pub async fn pairing_forget_devices() -> Result<()> {
+    let shared = state().lock().await.shared.clone();
+    let Some(shared) = shared else {
+        return Ok(());
+    };
+    let dropped = {
+        let mut tokens = shared_tokens(&shared);
+        let n = tokens.len();
+        tokens.clear();
+        n
+    };
+    tracing::info!(dropped, "pairing tokens cleared from the settings entry");
     Ok(())
 }
 
@@ -1410,10 +1436,16 @@ async fn serve_file(stream: &mut TcpStream, path: &Path, content_type: &str) -> 
         linked || meta.file_attributes() & 0x400 != 0
     };
     if linked {
-        return Err(anyhow!(
-            "refusing to serve a linked path: {}",
-            path.display()
-        ));
+        // Answer 403 instead of dropping the connection: the phone's UI
+        // can show a refusal it understands (review nit, 2026-10-23).
+        respond_json(
+            stream,
+            403,
+            "Forbidden",
+            &serde_json::json!({ "error": "linked path refused" }),
+        )
+        .await?;
+        return Ok(());
     }
     let len = meta.len();
     let head = format!(

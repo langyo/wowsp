@@ -92,6 +92,8 @@
   "pairingNeverSynced": "尚未同步",
   "pairingForget": "取消配對",
   "pairingRegenerate": "重新產生配對碼",
+"pairingForgetDevices": "斷開已配對裝置",
+"pairingDevicesForgotten": "已斷開所有配對裝置，手機需重新配對",
   "pairingModeRelay": "網際網路配對已就緒",
   "pairingLanOnly": "網際網路配對服務暫時無法使用，目前僅限區域網路配對。",
   "pairingPhoneHintInternet": "在手機上開啟「戰鬥錄影 → 從電腦取得」，切換至「網際網路」並輸入上方的配對碼——任何網路皆可使用。",

@@ -620,6 +620,7 @@ pub fn run() {
             commands::pairing::import_replay_file,
             commands::pairing::pairing_start,
             commands::pairing::pairing_stop,
+            commands::pairing::pairing_forget_devices,
             commands::pairing::pairing_get_status,
             commands::pairing::pairing_pair,
             commands::pairing::pairing_list_remote,

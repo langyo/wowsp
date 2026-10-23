@@ -92,6 +92,8 @@
   "pairingNeverSynced": "Nunca sincronizado",
   "pairingForget": "Olvidar",
   "pairingRegenerate": "Nuevo código",
+"pairingForgetDevices": "Olvidar dispositivos emparejados",
+"pairingDevicesForgotten": "Dispositivos emparejados olvidados: los teléfonos deben volver a emparejarse",
   "pairingModeRelay": "Emparejamiento por Internet activo",
   "pairingLanOnly": "El servicio de emparejamiento por Internet no está disponible — el emparejamiento queda limitado a la red local por ahora.",
   "pairingPhoneHintInternet": "En el teléfono, abre Repeticiones → Obtener del PC, cambia a Internet e introduce el código de arriba — funciona desde cualquier red.",
