@@ -179,10 +179,12 @@ def main() -> int:
     (out_dir / "wowsp" / "_headers").unlink(missing_ok=True)
     # Release-digest docs ride the assets layer: the tracked
     # packages/pairing-relay/digests/<channel>/*.json tree is copied to
-    # <out>/api/digests/** verbatim. The worker's digest route maps the
-    # extensionless client paths onto these `.json` files through its
-    # ASSETS binding behind an edge cache (see
-    # crates/relay-worker/src/digests.rs).
+    # <out>/api/digests/** verbatim. The extensionless client paths map
+    # onto these `.json` files STATICALLY — the tracked
+    # packages/pairing-relay/_redirects file (copied to the assets root
+    # below) redirects them, so a served channel's lookups never invoke
+    # the worker (crates/relay-worker/src/digests.rs stays as the miss
+    # fallback for the gated 404).
     digests_src = Path(__file__).resolve().parents[1] / (
         "packages/pairing-relay/digests"
     )
@@ -192,6 +194,14 @@ def main() -> int:
         digest_files = sum(
             1 for _ in (out_dir / "api" / "digests").rglob("*.json")
         )
+    # _redirects rides the assets root exactly like _headers (Workers
+    # assets honor it ONLY there — the digest pointers' static routing,
+    # see the file's own comment).
+    redirects_src = Path(__file__).resolve().parents[1] / (
+        "packages/pairing-relay/_redirects"
+    )
+    if redirects_src.is_file():
+        shutil.copyfile(redirects_src, out_dir / "_redirects")
     for rel, shell in shells.items():
         write_page(out_dir / rel, shell)
 

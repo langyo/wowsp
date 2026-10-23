@@ -23,9 +23,11 @@
 # are served FIRST: a request that matches a file — or the SPA fallback
 # for unknown browser navigations — never invokes worker code. The
 # dynamic paths are pulled back in front via `run_worker_first`: the
-# pairing API (/api*). The hikari console pages /feedback and /erp
-# (packages/console build) serve from the assets layer like any static
-# file. The assets shell's loader pulls the heavy entry JS/CSS from the
+# pairing API (/api*) minus the digest lookups (the `!/api/digests*`
+# negation keeps those on the assets layer — see the [assets] section
+# and the tracked _redirects file). The hikari console pages /feedback
+# and /erp (packages/console build) serve from the assets layer like any
+# static file. The assets shell's loader pulls the heavy entry JS/CSS from the
 # GitHub Pages mirror (langyo.github.io/wowsp) first and falls back to
 # the worker's own /wowsp/** copy (same build, same hashes — the Deploy
 # Site workflow publishes both artifacts from one run), so the heavy app
@@ -63,12 +65,19 @@ routes = [
 [assets]
 directory = "./assets"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api*"]
+# /api/digests* is NEGATED back to the assets layer (negative patterns
+# take precedence): a served channel's digest lookups are pure static
+# traffic — the tracked _redirects file (packages/pairing-relay/
+# _redirects, copied to the assets root by scripts/build_worker_site.py)
+# maps the extensionless client paths onto the .json docs, so the worker
+# is never invoked and no budget, rate limiter or KV quota sits on the
+# path. A miss (unpublished channel, unknown tag) still falls through to
+# the worker's digests handler for the gated 404.
+run_worker_first = ["/api*", "!/api/digests*"]
 # The ASSETS binding lets the worker fetch its own asset files by path
-# (crates/relay-worker/src/digests.rs proxies /api/digests/** through
-# it behind an edge cache — the digest docs are static files under
-# assets/api/digests/, copied from the tracked
-# packages/pairing-relay/digests/ tree by scripts/build_worker_site.py).
+# (crates/relay-worker/src/digests.rs — now the MISS FALLBACK for
+# /api/digests/** since the _redirects file serves the hits statically;
+# it still validates and gates what it serves).
 binding = "ASSETS"
 
 [build]
