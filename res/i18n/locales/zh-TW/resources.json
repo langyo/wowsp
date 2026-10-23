@@ -9,7 +9,7 @@
   "installSection": "從資料夾安裝",
   "installHint": "指向解壓後的模組資料夾（語音包 / PnF 塗裝 / 勳帶圖示 / ime_config 補丁）。.zip/.7z 目前需先手動解壓。",
   "pathPlaceholder": "D:\\…\\語音包名",
-  "browse": "解析",
+  "pickFolder": "選擇資料夾…",
   "analyzing": "解析中…",
   "confirmInstall": "安裝",
   "installing": "安裝中…",

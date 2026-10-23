@@ -9,7 +9,7 @@
   "installSection": "Установка из папки",
   "installHint": "Укажите распакованную папку мода (озвучка, камуфляж PnF, иконки вымпелов, патч ime_config). .zip/.7z пока нужно распаковывать вручную.",
   "pathPlaceholder": "D:\\…\\MyVoicePack",
-  "browse": "Анализ",
+  "pickFolder": "Выбрать папку…",
   "analyzing": "Анализ…",
   "confirmInstall": "Установить",
   "installing": "Установка…",

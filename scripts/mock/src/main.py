@@ -396,14 +396,24 @@ async def cmd_mod_hub_classify_path(request: Request) -> dict:
     }
 
 
+@app.post("/api/mod_hub_pick_source")
+async def cmd_mod_hub_pick_source() -> str:
+    # The native folder dialog is a desktop-shell concept; the mock echoes
+    # a canned picked folder so the browser flow can complete end to end.
+    return "C:/WoWSP-mock/mods/mock-pack"
+
+
 @app.post("/api/mod_hub_install")
 async def cmd_mod_hub_install(request: Request) -> dict:
+    # The plan is derived server-side now (audit H-3) — the mock mirrors
+    # the real shell by naming the install after the source folder.
     body = await request.json()
-    plan = body.get("plan", {})
+    src = body.get("sourceRoot", "")
+    name = src.rstrip("/\\").rsplit("/", 1)[-1] or "mock-local"
     return {
-        "name": plan.get("name", "?"), "binVersion": "12668706",
-        "wroteFiles": sum(len(e.get("fromRel", "")) for e in plan.get("entries", [])) or 3,
-        "warnings": plan.get("warnings", []),
+        "name": name, "binVersion": "12668706",
+        "wroteFiles": 3,
+        "warnings": ["mock install — real copy runs in the desktop shell"],
     }
 
 

@@ -9,7 +9,7 @@
   "installSection": "Install from folder",
   "installHint": "Point at an unpacked mod folder (voice pack, PnF skin, ribbon icons, ime_config patch). .zip/.7z need extracting for now.",
   "pathPlaceholder": "D:\\…\\MyVoicePack",
-  "browse": "Analyze",
+  "pickFolder": "Choose folder…",
   "analyzing": "Analyzing…",
   "confirmInstall": "Install",
   "installing": "Installing…",

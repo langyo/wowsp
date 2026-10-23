@@ -11,6 +11,11 @@ pub(crate) const UNSUPPORTED_ARCHIVE: &str =
 
 #[tauri::command]
 pub fn mod_hub_classify_path(source_path: String) -> CommandResult<PackagePlan> {
+    // Audit H-3 closure: classify walks and parses an arbitrary
+    // directory it is handed — without the picker grant it doubles as a
+    // structure-enumeration oracle for a compromised webview. The webui
+    // only ever classifies paths the picker just returned.
+    super::pick_source::ensure_source_granted(&source_path)?;
     let src = Path::new(&source_path);
     // Archives are rejected up front with the unpack hint, whether or not the
     // file exists yet — the caller may be probing a path from a picker.

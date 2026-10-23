@@ -9,7 +9,7 @@
   "installSection": "フォルダからインストール",
   "installHint": "解凍済みの Mod フォルダを指定してください（音声パック / PnF スキン / リボンアイコン / ime_config パッチ）。.zip/.7z は現状、手動での解凍が必要です。",
   "pathPlaceholder": "D:\\…\\MyVoicePack",
-  "browse": "解析",
+  "pickFolder": "フォルダーを選択…",
   "analyzing": "解析中…",
   "confirmInstall": "インストール",
   "installing": "インストール中…",

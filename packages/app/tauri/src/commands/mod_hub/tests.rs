@@ -601,8 +601,20 @@ fn install_copies_tree_and_creates_missing_loader() {
 
 #[test]
 fn zip_files_get_structured_error() {
+    // The archive probe sits behind the picker grant (audit H-3) — grant
+    // the probed path the way the native pick would, then expect the
+    // structured archive error rather than the grant refusal. The grant
+    // table is shared with pick_source's own tests, so take their lock.
+    let _guard = super::pick_source::grant_test_lock();
+    super::pick_source::grant_source_path("Z:/not/here/pack.zip");
     let err = mod_hub_classify_path("Z:/not/here/pack.zip".into()).unwrap_err();
     assert_eq!(err.to_string(), UNSUPPORTED_ARCHIVE);
+}
+
+#[test]
+fn classify_refuses_paths_the_session_never_picked() {
+    let err = mod_hub_classify_path("C:/not/picked/this/session".into()).unwrap_err();
+    assert!(err.to_string().contains("folder picker"));
 }
 
 #[test]
