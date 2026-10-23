@@ -13,7 +13,7 @@ driven from the rendered manifest:
     logo.webp              ← product logo for the shell chrome
     licenses/              ← copyright notices + SySL agreements (10 locales)
     telemetry/             ← per-locale telemetry notices (from docs/)
-    payload-lite/          ← wowsp.exe + wowsp-flavor.txt
+    payload-lite/          ← wowsp.exe + wowsp-flavor.txt + installer/check-dir.dk
     payload-webview2/      ← + models/ dogtags/ res stamp + webview2 runtime
 
 Flavor split (the three build flavors, four published artifacts):
@@ -480,6 +480,16 @@ def stage_payload(stage: Path, app_exe: Path, variant: str) -> Path:
     # lite artifact, and shun swaps the whole install directory, so a
     # webview2-only copy would vanish on the first update.
     stage_directml(payload)
+    # The check-dir install-location guard the manifest's [script] hook
+    # runs (shun >= 0.6.30): fresh installs into the game folder are
+    # vetoed before anything is written. Rides BOTH payloads for the
+    # same reason as DirectML — every artifact must enforce it.
+    guard_src = INSTALLER / "check-dir.dk"
+    if not guard_src.is_file():
+        sys.exit(f"install-location guard script missing: {guard_src}")
+    guard_dst = payload / "installer" / "check-dir.dk"
+    guard_dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(guard_src, guard_dst)
     # Diagnostic flavor marker beside the app (the updater picks -lite
     # regardless — this is the wizard's identity line + older builds).
     (payload / "wowsp-flavor.txt").write_text(variant, encoding="utf-8", newline="")
