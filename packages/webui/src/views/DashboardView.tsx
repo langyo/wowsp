@@ -12,7 +12,7 @@ import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import SScrollTop from "@/components/base/SScrollTop";
 import ErrorCard from "@/components/base/ErrorCard";
-import { AssetImage } from "@/components/base/AssetImage";
+import BattleIcon from "@/components/base/BattleIcon";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
@@ -29,9 +29,8 @@ import ShareShotButton from "@/features/share/ShareShotButton";
 import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot";
 import { useShareImage } from "@/features/share/useShareImage";
 import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
-import { resolveShipImage } from "@/utils/shipImages";
-import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
+import { tierToRoman } from "@wowsp/holo";
 import {
   computeRecentDelta,
   dateRangeCutoff,
@@ -40,7 +39,7 @@ import {
   SHIP_TYPE_SHORT,
   type DateRange,
 } from "@/utils/shipAggregation";
-import { shipNameFromModelDb, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
+import { shipNameFromModelDb, shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import "./DashboardView.scss";
 
@@ -212,16 +211,6 @@ export default defineComponent({
       if (acc) void refresh();
     }, { immediate: true });
 
-    function shipTypeShort(shipId: number): string {
-      const info = encyclopedia.byId.get(shipId);
-      return shipTypeBadgeShort(info?.type, shipId);
-    }
-    /** Per-ship portrait (baked pack first, WG CDN otherwise) for the row
-     *  icon; null when the encyclopedia has no image for the ship — the
-     *  class silhouette takes the slot instead. */
-    function shipImage(shipId: number): string | null {
-      return resolveShipImage(shipId, encyclopedia.byId.get(shipId)?.images?.small);
-    }
     function shipName(shipId: number, fallbackName: string): string {
       return (
         encyclopedia.byId.get(shipId)?.name ??
@@ -494,7 +483,11 @@ export default defineComponent({
                   <div class="dash-ship-table">
                     {filteredShips.value.map((s) => {
                       const info = encyclopedia.byId.get(s.shipId);
-                      const silhouette = shipIconUrl(info?.type, "plain");
+                      const off = shipOfflineEntry(s.shipId);
+                      // Encyclopedia type first (the offline DB misses
+                      // post-bake ships), the offline entry backfills —
+                      // the same order the lookup list resolves.
+                      const type = info?.type || off?.type || "";
                       return (
                         <div
                           class="dash-ship-table__row dash-ship-table__row--link"
@@ -516,18 +509,14 @@ export default defineComponent({
                         >
                           <span class="dash-ship-table__col-name">
                             <span class="dash-ship-table__ship-ico">
-                              <AssetImage
-                                src={shipImage(s.shipId)}
-                                alt=""
-                                loading="lazy"
-                                width={22}
-                                height={22}
-                                fallback={
-                                  silhouette ? <img src={silhouette} width={22} height={22} alt="" /> : null
-                                }
-                              />
+                              <BattleIcon type={type} variant="white" size={18} />
                             </span>
-                            <HkTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HkTag>
+                            <HkTag variant="primary" size="sm" class="dash-ship-table__type-tag">
+                              {shipTypeBadgeShort(type, s.shipId)}
+                            </HkTag>
+                            <em class="dash-ship-table__ship-tier">
+                              {off?.tier != null ? tierToRoman(off.tier) : ""}
+                            </em>
                             <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
                           </span>
                           <span class="dash-ship-table__col-num">{s.battles.toLocaleString()}</span>

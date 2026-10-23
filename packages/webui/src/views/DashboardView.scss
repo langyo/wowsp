@@ -208,8 +208,8 @@
     min-width: 0;
   }
 
-  /* Per-ship portrait (or the class silhouette fallback) leading the row —
-     the same 22px slot the lookup list's row icon uses. */
+  /* The game's white minimap marker leads the row — the same 22px slot
+     the lookup list's row icon uses; the marker art centers inside it. */
   &__ship-ico {
     flex: 0 0 22px;
     display: inline-flex;
@@ -220,6 +220,24 @@
       display: block;
       object-fit: contain;
     }
+  }
+
+  /* Uniform chip width so every row's name starts on the same line —
+     the widest code (CA/CL) sets the floor, shorter codes center. */
+  &__type-tag {
+    min-width: 46px;
+    justify-content: center;
+  }
+
+  /* Roman tier between the tag and the name — the same column the
+     lookup list renders, mono and centered. */
+  &__ship-tier {
+    flex: 0 0 32px;
+    text-align: center;
+    font-style: normal;
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: rgb(var(--color-text) / 70%);
   }
 
   &__ship-name {

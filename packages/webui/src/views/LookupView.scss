@@ -408,7 +408,9 @@
 }
 
 .lookup-view__ship-tier {
-  flex: 0 0 32px;
+  /* 28px still clears the widest roman numeral (VIII) in the mono face;
+     the tight box keeps the tier from drifting right of the type code. */
+  flex: 0 0 28px;
   text-align: center;
   font-style: normal;
   color: rgb(var(--color-text));
@@ -417,8 +419,10 @@
 
 .lookup-view__ship-type {
   /* 28px keeps the combined CA/CL fallback legible; a resolved CA/CL badge
-     sits well inside it. */
+     sits well inside it. Centered so the shorter codes don't strand a
+     blank band ahead of the tier column. */
   flex: 0 0 28px;
+  text-align: center;
   color: rgb(var(--color-muted));
   font-size: 0.625rem;
   font-weight: 600;

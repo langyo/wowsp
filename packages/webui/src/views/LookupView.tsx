@@ -14,7 +14,7 @@ import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import { AssetImage } from "@/components/base/AssetImage";
+import BattleIcon from "@/components/base/BattleIcon";
 import { useStatsStore } from "@/stores/stats";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useClanStatsStore, clanCacheKey } from "@/stores/clanStats";
@@ -29,9 +29,7 @@ import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot
 import { renderClanShot, type ClanShotModel } from "@/features/share/clanShot";
 import { useShareImage } from "@/features/share/useShareImage";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
-import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
-import { resolveShipImage } from "@/utils/shipImages";
 import { tierToRoman } from "@wowsp/holo";
 import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import {
@@ -1035,7 +1033,6 @@ export default defineComponent({
                         // Encyclopedia type first (the offline DB misses
                         // post-bake ships), the offline entry backfills.
                         const type = infoOf(s.shipId)?.type || off?.type || "";
-                        const silhouette = shipIconUrl(type, "plain");
                         return (
                           <div
                             class="lookup-view__ship lookup-view__ship--link"
@@ -1051,18 +1048,7 @@ export default defineComponent({
                             }}
                           >
                             <span class="lookup-view__ship-ico">
-                              <AssetImage
-                                src={resolveShipImage(s.shipId, encyclopedia.byId.get(s.shipId)?.images?.small)}
-                                alt=""
-                                loading="lazy"
-                                width={22}
-                                height={22}
-                                fallback={
-                                  silhouette ? (
-                                    <img src={silhouette} width={22} height={22} alt="" />
-                                  ) : null
-                                }
-                              />
+                              <BattleIcon type={type} variant="white" size={18} />
                             </span>
                             <span class="lookup-view__ship-type">
                               {shipTypeBadgeShort(type || undefined, s.shipId)}
