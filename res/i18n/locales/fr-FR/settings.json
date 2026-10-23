@@ -92,6 +92,8 @@
   "pairingNeverSynced": "Jamais synchronisé",
   "pairingForget": "Oublier",
   "pairingRegenerate": "Nouveau code",
+"pairingForgetDevices": "Oublier les appareils appairés",
+"pairingDevicesForgotten": "Appareils appairés oubliés — les téléphones doivent se re-appairer",
   "pairingModeRelay": "Appairage Internet en ligne",
   "pairingLanOnly": "Le service d'appairage Internet est injoignable — l'appairage est limité au réseau local pour le moment.",
   "pairingPhoneHintInternet": "Sur le téléphone, ouvrez Replays → Obtenir du PC, passez en Internet et saisissez le code ci-dessus — cela fonctionne de n'importe où.",

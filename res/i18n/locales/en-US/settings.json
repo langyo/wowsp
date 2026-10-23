@@ -92,6 +92,8 @@
   "pairingNeverSynced": "Never synced",
   "pairingForget": "Forget",
   "pairingRegenerate": "New code",
+"pairingForgetDevices": "Forget paired devices",
+"pairingDevicesForgotten": "Paired devices forgotten — phones must re-pair",
   "pairingModeRelay": "Internet pairing online",
   "pairingLanOnly": "The internet pairing service is unreachable — pairing is limited to the local network for now.",
   "pairingPhoneHintInternet": "On the phone, open Replays → Get from PC, switch to Internet and enter the code above — it works from anywhere.",

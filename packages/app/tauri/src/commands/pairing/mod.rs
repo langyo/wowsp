@@ -184,6 +184,21 @@ pub async fn pairing_stop(window: tauri::Window) -> CommandResult<()> {
     }
 }
 
+/// Settings entry (audit M-1 residual): drop every live bearer token —
+/// paired phones must re-pair — WITHOUT stopping the server.
+#[tauri::command]
+pub async fn pairing_forget_devices(window: tauri::Window) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
+    #[cfg(mobile)]
+    {
+        return Err(anyhow!(PAIRING_SERVER_UNSUPPORTED).into());
+    }
+    #[cfg(desktop)]
+    {
+        Ok(server::pairing_forget_devices().await?)
+    }
+}
+
 /// Current server state. Always `{ running: false }` on mobile.
 #[tauri::command]
 pub fn pairing_get_status() -> PairingStatus {

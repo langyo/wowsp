@@ -132,6 +132,9 @@ export const pairingApi = {
    *  (LAN host:port + the 6-digit PIN to show). Desktop-only feature. */
   pairingStart: () => transport.invoke<PairingStatus>(RPC.pairing_start),
   pairingStop: () => transport.invoke<null>(RPC.pairing_stop),
+  /** Drop every live bearer token (audit M-1 residual): paired phones
+   *  must re-pair; the server keeps running. */
+  pairingForgetDevices: () => transport.invoke<null>(RPC.pairing_forget_devices),
   pairingGetStatus: () => transport.invoke<PairingStatus>(RPC.pairing_get_status),
   /** PIN exchange: prove to the desktop host that a human read its screen,
    *  obtain the bearer token for the remote calls. Over the relay the

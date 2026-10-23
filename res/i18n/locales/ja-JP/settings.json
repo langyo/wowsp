@@ -92,6 +92,8 @@
   "pairingNeverSynced": "未同期",
   "pairingForget": "解除",
   "pairingRegenerate": "コードを再生成",
+"pairingForgetDevices": "ペアリング済みデバイスを解除",
+"pairingDevicesForgotten": "ペアリング済みデバイスを解除しました。スマホは再ペアリングしてください",
   "pairingModeRelay": "インターネット ペアリング利用可能",
   "pairingLanOnly": "インターネット ペアリングサービスに接続できません。現在はローカルネットワーク内のみでペアリングできます。",
   "pairingPhoneHintInternet": "スマホで「リプレイ → PC から取得」を開き、「インターネット」に切り替えて上記のコードを入力してください。どのネットワークからでも利用できます。",

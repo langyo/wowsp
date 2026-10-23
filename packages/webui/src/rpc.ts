@@ -195,6 +195,7 @@ export const RPC = {
   import_replay_file: "import_replay_file",
   pairing_start: "pairing_start",
   pairing_stop: "pairing_stop",
+  pairing_forget_devices: "pairing_forget_devices",
   pairing_get_status: "pairing_get_status",
   pairing_pair: "pairing_pair",
   pairing_list_remote: "pairing_list_remote",

@@ -92,6 +92,8 @@
   "pairingNeverSynced": "尚未同步",
   "pairingForget": "取消配对",
   "pairingRegenerate": "换一个码",
+"pairingForgetDevices": "断开已配对设备",
+"pairingDevicesForgotten": "已断开所有配对设备，手机需重新配对",
   "pairingModeRelay": "互联网配对已就绪",
   "pairingLanOnly": "互联网配对服务暂不可用，仅限局域网。",
   "pairingPhoneHintInternet": "在手机上打开「录像 → 从电脑获取」，切换到「互联网」并输入上方的配对码——任何网络下都可用。",
