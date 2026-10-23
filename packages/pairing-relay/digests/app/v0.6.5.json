@@ -7,9 +7,9 @@
     "latest": "b0e9dad898b99c10ad2965748463c096b10e514cba38e72374078e2202b3b36a"
   },
   "channel": "app",
-  "generated_at": "2026-10-23T01:31:03Z",
+  "generated_at": "2026-10-23T04:19:00Z",
   "key_id": "main",
-  "seq": 2,
-  "sig": "sXJZtDMy2y++6EHtfS20Ao4jkZ4raloo9cnfsoDN8+pTuqTrWWiuClM9gbLWZHvU5JEzIgt67BsHpHQuwUWQDQ==",
+  "seq": 100,
+  "sig": "m9/vEKWYvbAGOyno7bivi5Jbry5yQWxrKvny8t2NJVwgxp7Uu/NmttCcPt2EKnDoVqELQWIh5zpMmbGNc1zHDQ==",
   "tag": "v0.6.5"
 }
