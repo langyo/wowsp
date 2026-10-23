@@ -228,8 +228,10 @@ mod tests {
     #[test]
     fn absolute_lifetime_caps_a_constantly_used_grant() {
         let _guard = grant_test_lock();
+        // The grant canonicalizes both sides — the picked path must exist.
         let path = "C:/tmp/wowsp-source-grant-test/absolute";
-        grant_source_path(path);
+        std::fs::create_dir_all(path).unwrap();
+        grant_source_path(path).unwrap();
         assert!(source_path_granted(path));
         source_grants().lock().unwrap().insert(
             path.to_string(),
