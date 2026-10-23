@@ -173,6 +173,7 @@ def publish(
     latest: bool,
     tree: Path = DIGESTS_TREE,
     live: Path | None = LIVE_ASSETS,
+    seq: int | None = None,
 ) -> dict:
     """Write the tag doc (and the latest pointer); returns the doc."""
     if channel not in CHANNELS:
@@ -187,7 +188,22 @@ def publish(
         live = None
 
     current = read_latest(channel, tree)
-    doc = build_doc(channel, tag, assets, next_seq(current))
+    doc_seq = next_seq(current)
+    if seq is not None:
+        # Repair override (the 2026-10-23 seq reset): the number only
+        # has to clear every seq a deployed client may have accepted —
+        # strictly increasing, no continuity requirement — but it must
+        # never go at/below the tree's own latest (that would replay
+        # the refusal this flag exists to fix).
+        if seq <= 0:
+            raise _die("--seq must be a positive publish counter")
+        if current is not None and seq <= current.get("seq", 0):
+            raise _die(
+                f"--seq {seq} is at/below the tree's latest "
+                f"({current.get('seq')}) — refusing"
+            )
+        doc_seq = seq
+    doc = build_doc(channel, tag, assets, doc_seq)
     # Sign when key material is exported (WOWSP_DIGEST_SIGNING_KEY);
     # unsigned docs remain servable while the app has no pinned key.
     doc = catalog_signing.sign_doc_from_env(doc)
@@ -331,6 +347,17 @@ def main(argv: list[str]) -> None:
         action="store_true",
         help="also move the channel's latest pointer",
     )
+    parser.add_argument(
+        "--seq",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "repair override: publish with this seq instead of latest+1 "
+            "(must clear every seq deployed clients may have accepted — "
+            "see the 2026-10-23 KV-to-static seq reset)"
+        ),
+    )
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv)
 
@@ -350,7 +377,7 @@ def main(argv: list[str]) -> None:
             name, _, sha = pair.partition("=")
             assets[name] = sha
 
-    doc = publish(args.channel, args.tag, assets, args.latest)
+    doc = publish(args.channel, args.tag, assets, args.latest, seq=args.seq)
     print(
         f"published {doc['channel']}:{doc['tag']} seq={doc['seq']} "
         f"({len(assets)} assets{' +latest' if args.latest else ''})"
