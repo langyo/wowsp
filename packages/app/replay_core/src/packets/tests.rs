@@ -1,3 +1,18 @@
+// ── corpus gating ───────────────────────────────────────────────────────────
+//
+// Integration tests that need a real `.wowsreplay` read `WOWSP_TEST_REPLAY`.
+// The remaining corpus-bound tests are diagnostics over a live capture (frame
+// dumps, per-capture method-table coverage, vision/consumable/engine-stream
+// checks): with the variable unset they print
+// `skipped: set WOWSP_TEST_REPLAY ...` and return — never silently. Set
+// `WOWSP_TEST_REQUIRE_CORPUS=1` to turn every skip into a failure (use it in
+// the corpus/nightly job so a missing fixture is loud instead of green).
+//
+// The behavioural end-to-end test (`decodes_real_replay_positions_and_entities`)
+// no longer needs a corpus: it decodes the synthetic container built further
+// down and asserts its KNOWN content, switching to the real file only when the
+// variable is set.
+
 use super::*;
 
 /// Decode a hex string into bytes — sample payloads below are pasted
@@ -67,6 +82,287 @@ fn profile_for(lesta: bool) -> LayoutProfile {
         e11: None,
         lesta,
     }
+}
+
+/// Report a corpus-gated test as skipped (or fail when the corpus is required).
+fn corpus_skip(test_name: &str) {
+    eprintln!("skipped: set WOWSP_TEST_REPLAY (corpus-bound test: {test_name})");
+    if std::env::var_os("WOWSP_TEST_REQUIRE_CORPUS").is_some() {
+        panic!(
+            "WOWSP_TEST_REQUIRE_CORPUS is set but WOWSP_TEST_REPLAY is unset: \
+             cannot run corpus-bound test {test_name}"
+        );
+    }
+}
+
+// ── synthetic replay fixture (corpus-free end-to-end coverage) ─────────────
+//
+// A complete container: the real framing (magic + block count + descriptor
+// JSON block + encrypted packet stream) around a frame stream the decoder's
+// wire path reads byte-for-byte. Content is deliberately tiny and KNOWN so
+// every assertion below is against a value this file chose, not against a
+// capture whose shape can drift.
+
+/// 15.8.0 is the version the shipped method/CreateState pins target, so the
+/// decode path resolves every version gate exactly as it does for the
+/// reference capture.
+const SYNTH_CLIENT_VERSION: &str = "15,8,0,13187581";
+const SYNTH_SHIP_A: i32 = 1001;
+const SYNTH_SHIP_B: i32 = 1002;
+const SYNTH_AVATAR: i32 = 900;
+const SYNTH_SHIP_ID_A: u32 = 3_542_005_040;
+const SYNTH_SHIP_ID_B: u32 = 3_542_005_041;
+const SYNTH_MAX_HP_A: f32 = 74_200.0;
+const SYNTH_MAX_HP_B: f32 = 55_000.0;
+/// Property index carrying the int HP series in the fixture (the decoder
+/// detects the index from the series, it is not hardcoded there).
+const SYNTH_HP_PROPERTY: u32 = 20;
+
+/// Two teams plus the same-config mirror pair (A and an enemy share
+/// `SYNTH_SHIP_ID_A`) — the live shape that used to break the shipId join.
+fn synthetic_descriptor() -> serde_json::Value {
+    serde_json::json!({
+        "clientVersionFromExe": SYNTH_CLIENT_VERSION,
+        "matchGroup": "synthetic",
+        "mapDisplayName": "Synthetic Basin",
+        "vehicles": [
+            {"id": 1, "shipId": SYNTH_SHIP_ID_A, "relation": 0, "name": "synthetic_self"},
+            {"id": 2, "shipId": SYNTH_SHIP_ID_B, "relation": 1, "name": "synthetic_ally"},
+            {"id": 3, "shipId": SYNTH_SHIP_ID_A, "relation": 2, "name": "synthetic_mirror"},
+        ],
+    })
+}
+
+/// One EntityCreate state stream: `u32 length` + the BigWorld property blob.
+/// `scan_state_for_ship_id` finds the roster shipId at offset 40, and
+/// `scan_state_for_max_health` finds the duplicated full-HP pair (current ==
+/// max at spawn) at the WG-shaped offsets 73/88.
+fn synthetic_create_state(ship_id: u32, max_hp: f32) -> Vec<u8> {
+    let mut state = vec![0u8; 200];
+    state[40..44].copy_from_slice(&ship_id.to_le_bytes());
+    state[73..77].copy_from_slice(&max_hp.to_le_bytes());
+    state[88..92].copy_from_slice(&max_hp.to_le_bytes());
+    let mut out = Vec::with_capacity(4 + state.len());
+    out.extend_from_slice(&(state.len() as u32).to_le_bytes());
+    out.extend_from_slice(&state);
+    out
+}
+
+/// EntityCreate (0x05) for a type-2 ship: the 38-byte fixed header the
+/// parser reads (eid, type, header vehicleId, spaceId, x/y/z, direction)
+/// followed by the create state.
+fn synthetic_ship_create(
+    entity_id: i32,
+    x: f32,
+    z: f32,
+    ship_id: u32,
+    max_hp: f32,
+    yaw: f32,
+) -> Vec<u8> {
+    let mut p = Vec::with_capacity(38 + 204);
+    p.extend_from_slice(&entity_id.to_le_bytes());
+    p.extend_from_slice(&ENTITY_TYPE_VEHICLE.to_le_bytes());
+    p.extend_from_slice(&0i32.to_le_bytes()); // header vehicleId (per-version constant)
+    p.extend_from_slice(&0i32.to_le_bytes()); // spaceId
+    p.extend_from_slice(&x.to_le_bytes());
+    p.extend_from_slice(&0f32.to_le_bytes());
+    p.extend_from_slice(&z.to_le_bytes());
+    p.extend_from_slice(&yaw.to_le_bytes());
+    p.extend_from_slice(&[0u8; 8]); // pitch + roll
+    p.extend_from_slice(&synthetic_create_state(ship_id, max_hp));
+    p
+}
+
+/// CellPlayerCreate (0x01) for the recorder's avatar: same 38-byte header,
+/// with the occupied vehicle in the vehicleId slot.
+fn synthetic_avatar_create() -> Vec<u8> {
+    let mut p = vec![0u8; 38];
+    p[0..4].copy_from_slice(&SYNTH_AVATAR.to_le_bytes());
+    p[8..12].copy_from_slice(&SYNTH_SHIP_A.to_le_bytes());
+    p[12..16].copy_from_slice(&(-100.0f32).to_le_bytes());
+    p[20..24].copy_from_slice(&250.0f32.to_le_bytes());
+    p
+}
+
+/// Position (0x0a) payload: 36-byte fixed layout; only eid/x/z/yaw carry
+/// meaning for this fixture.
+fn synthetic_position_payload(entity_id: i32, x: f32, z: f32, yaw: f32) -> Vec<u8> {
+    let mut p = vec![0u8; 36];
+    p[0..4].copy_from_slice(&entity_id.to_le_bytes());
+    p[8..12].copy_from_slice(&x.to_le_bytes());
+    p[16..20].copy_from_slice(&z.to_le_bytes());
+    p[32..36].copy_from_slice(&yaw.to_le_bytes());
+    p
+}
+
+/// PlayerPosition (0x2c) payload: the 32-byte self-stream layout.
+fn synthetic_self_position_payload(
+    entity_id: i32,
+    linked_vehicle: i32,
+    x: f32,
+    z: f32,
+    yaw: f32,
+) -> Vec<u8> {
+    let mut p = vec![0u8; 32];
+    p[0..4].copy_from_slice(&entity_id.to_le_bytes());
+    p[4..8].copy_from_slice(&linked_vehicle.to_le_bytes());
+    p[8..12].copy_from_slice(&x.to_le_bytes());
+    p[16..20].copy_from_slice(&z.to_le_bytes());
+    p[20..24].copy_from_slice(&yaw.to_le_bytes());
+    p
+}
+
+/// EntityProperty (0x07) payload: one size-4 int change for `entity_id`.
+fn synthetic_property_payload(entity_id: i32, index: u32, value: u32) -> Vec<u8> {
+    let mut p = Vec::new();
+    p.extend_from_slice(&entity_id.to_le_bytes());
+    p.extend_from_slice(&index.to_le_bytes());
+    p.extend_from_slice(&4u32.to_le_bytes());
+    p.extend_from_slice(&value.to_le_bytes());
+    p
+}
+
+/// The frame stream: two ships (create + 3 positions each), the avatar with
+/// its self-stream link, HP changes for both ships (B ends on an explicit
+/// EntityDestroy instead of an HP-0 inference), and the Version packet.
+fn synthetic_frames() -> Vec<u8> {
+    let mut frames = Vec::new();
+    frames.extend(wire_frame(
+        PACKET_ENTITY_CREATE,
+        0.5,
+        &synthetic_ship_create(
+            SYNTH_SHIP_A,
+            -100.0,
+            250.0,
+            SYNTH_SHIP_ID_A,
+            SYNTH_MAX_HP_A,
+            1.25,
+        ),
+    ));
+    frames.extend(wire_frame(
+        PACKET_ENTITY_CREATE,
+        0.5,
+        &synthetic_ship_create(
+            SYNTH_SHIP_B,
+            -50.0,
+            250.0,
+            SYNTH_SHIP_ID_B,
+            SYNTH_MAX_HP_B,
+            0.0,
+        ),
+    ));
+    frames.extend(wire_frame(
+        PACKET_CELL_PLAYER_CREATE,
+        0.6,
+        &synthetic_avatar_create(),
+    ));
+    frames.extend(wire_frame(
+        PACKET_PLAYER_POSITION,
+        1.0,
+        &synthetic_self_position_payload(SYNTH_AVATAR, SYNTH_SHIP_A, -100.0, 250.0, 1.25),
+    ));
+    for (time, x) in [(1.0f32, -100.0f32), (2.0, -95.0), (3.0, -90.0)] {
+        frames.extend(wire_frame(
+            PACKET_POSITION,
+            time,
+            &synthetic_position_payload(SYNTH_SHIP_A, x, 250.0, 1.25),
+        ));
+        frames.extend(wire_frame(
+            PACKET_POSITION,
+            time,
+            &synthetic_position_payload(SYNTH_SHIP_B, x + 50.0, 250.0, 0.0),
+        ));
+    }
+    // A's HP falls to exactly 0 at 40 s (the sink-inference path); B keeps a
+    // positive series and is destroyed explicitly at 60 s.
+    for (time, hp) in [
+        (10.0f32, 74_200u32),
+        (20.0, 50_000),
+        (30.0, 20_000),
+        (40.0, 0),
+    ] {
+        frames.extend(wire_frame(
+            PACKET_ENTITY_PROPERTY,
+            time,
+            &synthetic_property_payload(SYNTH_SHIP_A, SYNTH_HP_PROPERTY, hp),
+        ));
+    }
+    for (time, hp) in [(10.0f32, 55_000u32), (20.0, 40_000), (30.0, 25_000)] {
+        frames.extend(wire_frame(
+            PACKET_ENTITY_PROPERTY,
+            time,
+            &synthetic_property_payload(SYNTH_SHIP_B, SYNTH_HP_PROPERTY, hp),
+        ));
+    }
+    frames.extend(wire_frame(
+        PACKET_ENTITY_DESTROY,
+        60.0,
+        &SYNTH_SHIP_B.to_le_bytes(),
+    ));
+    let mut version = (SYNTH_CLIENT_VERSION.len() as u32).to_le_bytes().to_vec();
+    version.extend_from_slice(SYNTH_CLIENT_VERSION.as_bytes());
+    frames.extend(wire_frame(PACKET_VERSION, 0.0, &version));
+    frames
+}
+
+/// Encrypt+compress the frame stream exactly like the game writes it:
+/// zlib-deflate, then the inverse Blowfish/XOR chain with the 8-byte marker
+/// prefix (see `encrypt_stream_for_test`).
+fn synthetic_packet_stream() -> Vec<u8> {
+    use std::io::Write as _;
+    let mut plain = Vec::new();
+    let mut encoder = flate2::write::ZlibEncoder::new(&mut plain, flate2::Compression::default());
+    encoder
+        .write_all(&synthetic_frames())
+        .expect("deflate synthetic frames");
+    // finish() writes the zlib trailer; dropping the encoder alone would
+    // leave a truncated stream the strict inflater rejects.
+    encoder.finish().expect("finish synthetic zlib stream");
+    encrypt_stream_for_test(&plain)
+}
+
+/// The complete container the app reads: magic + block count (1) + descriptor
+/// JSON block + encrypted packet stream.
+fn synthetic_container() -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&crate::meta::REPLAY_MAGIC);
+    out.extend_from_slice(&1u32.to_le_bytes());
+    let descriptor = synthetic_descriptor().to_string().into_bytes();
+    out.extend_from_slice(&(descriptor.len() as u32).to_le_bytes());
+    out.extend_from_slice(&descriptor);
+    out.extend_from_slice(&synthetic_packet_stream());
+    out
+}
+
+fn synthetic_ship_id_candidates() -> std::collections::HashSet<u32> {
+    [SYNTH_SHIP_ID_A, SYNTH_SHIP_ID_B].into_iter().collect()
+}
+
+/// Decode the synthetic container through the SAME two entry points the app
+/// uses: the container header path (`meta`) then the packet decoder.
+fn decode_synthetic_replay() -> DecodedReplay {
+    let bytes = synthetic_container();
+    let descriptor = crate::meta::extract_descriptor_json(&bytes).expect("descriptor block");
+    let raw: serde_json::Value =
+        serde_json::from_str(&descriptor).expect("descriptor block must be JSON");
+    assert_eq!(
+        raw,
+        synthetic_descriptor(),
+        "header path must return the descriptor verbatim"
+    );
+    let version = raw
+        .get("clientVersionFromExe")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let stream =
+        crate::meta::packet_stream_after_blocks(&bytes).expect("packet stream after blocks");
+    decode_replay(
+        stream,
+        &synthetic_ship_id_candidates(),
+        version.as_deref(),
+        false,
+    )
+    .expect("synthetic replay must decode")
 }
 
 /// Lesta 26.10's 0x2e self-position stream decodes into position samples
@@ -245,33 +541,90 @@ fn scans_state_for_max_health_by_duplicated_value() {
     assert_eq!(scan_state_for_max_health(&[0u8; 3]), None);
 }
 
-/// End-to-end against a real replay when `WOWSP_TEST_REPLAY` is set. Asserts
-/// positions AND EntityCreate kinds are extracted and look sane, and that
-/// the version-selected method table yields battle-effect events.
+/// End-to-end coverage of the container → packet → assembly path.
+///
+/// Default (no corpus): decode the synthetic container and assert its KNOWN
+/// content exactly — position timelines, EntityCreate metadata (entity type /
+/// roster shipId / create-state max health), the avatar's self-stream
+/// recorder-vehicle join, EntityDestroy, and the HP-detect → sink-inference →
+/// trajectory-grouping pipeline.
+///
+/// With `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`: run the historical
+/// real-capture assertions instead (sane positions, version-selected method
+/// table yielding battle effects, plausible wards/shells).
 #[test]
 fn decodes_real_replay_positions_and_entities() {
-    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+    let Ok(path) = std::env::var("WOWSP_TEST_REPLAY") else {
+        let decoded = decode_synthetic_replay();
+        // ── position timelines ─────────────────────────────────────────────
+        let total_samples: usize = decoded.positions.values().map(|v| v.len()).sum();
+        assert_eq!(
+            total_samples, 7,
+            "3 + 3 ship samples + 1 self-stream sample"
+        );
+        assert_eq!(decoded.positions.len(), 3, "two ships + the avatar");
+        assert_eq!(decoded.positions[&SYNTH_SHIP_A].len(), 3);
+        assert_eq!(decoded.positions[&SYNTH_SHIP_B].len(), 3);
+        assert_eq!(decoded.positions[&SYNTH_SHIP_A][2].x, -90.0);
+        assert_eq!(decoded.positions[&SYNTH_SHIP_B][2].x, -40.0);
+        let self_track = &decoded.positions[&SYNTH_AVATAR];
+        assert_eq!(self_track.len(), 1);
+        assert_eq!(
+            self_track[0].vehicle_id, SYNTH_SHIP_A,
+            "self stream links the recorder's vehicle"
+        );
+        assert_eq!(decoded.recorder_vehicle, Some(SYNTH_SHIP_A));
+        assert_eq!(decoded.recorder_ship, None, "both ships stream 0x0a");
+        // ── EntityCreate metadata: kind, roster join, create-state max HP ──
+        let ship_a = decoded.kinds.get(&SYNTH_SHIP_A).expect("ship A created");
+        assert_eq!(ship_a.entity_type, ENTITY_TYPE_VEHICLE);
+        assert_eq!((ship_a.initial_x, ship_a.initial_z), (-100.0, 250.0));
+        assert_eq!(ship_a.ship_id, Some(i64::from(SYNTH_SHIP_ID_A)));
+        assert_eq!(ship_a.max_health, Some(SYNTH_MAX_HP_A as u32));
+        let ship_b = decoded.kinds.get(&SYNTH_SHIP_B).expect("ship B created");
+        assert_eq!(ship_b.ship_id, Some(i64::from(SYNTH_SHIP_ID_B)));
+        assert_eq!(ship_b.max_health, Some(SYNTH_MAX_HP_B as u32));
+        assert_eq!(
+            decoded.kinds.get(&SYNTH_AVATAR).map(|k| k.entity_type),
+            Some(ENTITY_TYPE_AVATAR)
+        );
+        // ── destroy + property streams ─────────────────────────────────────
+        assert_eq!(decoded.destroys.get(&SYNTH_SHIP_B).copied(), Some(60.0));
+        assert!(!decoded.destroys.contains_key(&SYNTH_SHIP_A));
+        assert_eq!(decoded.properties.get(&SYNTH_SHIP_A).map(Vec::len), Some(4));
+        assert_eq!(decoded.version.as_deref(), Some(SYNTH_CLIENT_VERSION));
+        // ── assembly: HP detection, sink inference, grouping ───────────────
+        let stream = crate::assemble::group_by_entity(decoded);
+        assert_eq!(stream.recorder_vehicle_id, Some(SYNTH_SHIP_A));
+        let trajectory = |eid: i32| {
+            stream
+                .trajectories
+                .iter()
+                .find(|t| t.entity_id == eid)
+                .unwrap_or_else(|| panic!("trajectory {eid}"))
+        };
+        let a = trajectory(SYNTH_SHIP_A);
+        assert_eq!(a.samples.len(), 3);
+        assert_eq!(a.hp_samples.len(), 4);
+        assert_eq!(a.hp_samples.last().map(|s| s.value), Some(0));
+        assert_eq!(a.death_time, Some(40.0), "HP 0 at 40 s infers the sink");
+        let b = trajectory(SYNTH_SHIP_B);
+        assert_eq!(b.hp_samples.len(), 3);
+        assert_eq!(b.death_time, Some(60.0), "explicit EntityDestroy wins");
         return;
     };
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
-    let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
-    let mut cur = 8;
-    let mut client_version: Option<String> = None;
-    for i in 0..block_count {
-        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
-        cur += 4;
-        if i == 0 {
-            if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes[cur..cur + bl]) {
-                client_version = json
-                    .get("clientVersionFromExe")
-                    .and_then(|x| x.as_str())
-                    .map(str::to_string);
-            }
-        }
-        cur += bl;
-    }
+    let descriptor = crate::meta::extract_descriptor_json(&bytes).expect("descriptor block");
+    let client_version = serde_json::from_str::<serde_json::Value>(&descriptor)
+        .ok()
+        .and_then(|raw| {
+            raw.get("clientVersionFromExe")
+                .and_then(|x| x.as_str())
+                .map(str::to_string)
+        });
+    let packet_stream = crate::meta::packet_stream_after_blocks(&bytes).expect("packet stream");
     let decoded = decode_replay(
-        &bytes[cur..],
+        packet_stream,
         &std::collections::HashSet::new(),
         client_version.as_deref(),
         false,
@@ -368,6 +721,7 @@ fn decodes_real_replay_positions_and_entities() {
 #[test]
 fn dump_packet_stats() {
     let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("dump_packet_stats");
         return;
     };
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
@@ -412,6 +766,7 @@ fn dump_packet_stats() {
 #[test]
 fn dump_state_ship_ids() {
     let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("dump_state_ship_ids");
         return;
     };
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
@@ -476,6 +831,7 @@ fn dump_state_ship_ids() {
 #[test]
 fn dump_position_packet_sizes() {
     let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("dump_position_packet_sizes");
         return;
     };
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
@@ -1365,6 +1721,7 @@ fn rounds_fractional_arena_max_health() {
 #[test]
 fn dump_arena_state() {
     let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("dump_arena_state");
         return;
     };
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
@@ -1446,6 +1803,7 @@ fn hex(data: &[u8]) -> String {
 #[test]
 fn dump_weather_signals() {
     let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("dump_weather_signals");
         return;
     };
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
@@ -1990,6 +2348,7 @@ fn decodes_cruise_state_payload() {
 #[test]
 fn cruise_state_consistent_with_speed_on_real_replay() {
     let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("cruise_state_consistent_with_speed_on_real_replay");
         return;
     };
     let bytes = std::fs::read(&path).expect("read real replay");
@@ -2286,6 +2645,7 @@ fn walk_frames_collects_smoke_lifecycle() {
 #[test]
 fn smoke_screens_on_real_replay() {
     let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("smoke_screens_on_real_replay");
         return;
     };
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
@@ -2648,6 +3008,7 @@ fn decoded_real_replay() -> Option<DecodedReplay> {
 #[test]
 fn e11_vision_events_on_real_replay() {
     let Some(decoded) = decoded_real_replay() else {
+        corpus_skip("e11_vision_events_on_real_replay");
         return;
     };
     if decoded.vision_events.is_empty() {
@@ -2760,6 +3121,7 @@ fn e11_vision_events_on_real_replay() {
 #[test]
 fn e11_consumables_on_real_replay() {
     let Some(decoded) = decoded_real_replay() else {
+        corpus_skip("e11_consumables_on_real_replay");
         return;
     };
     if decoded.consumable_uses.is_empty() {
@@ -2816,6 +3178,7 @@ fn e11_consumables_on_real_replay() {
 #[test]
 fn e11_engine_states_on_real_replay() {
     let Some(decoded) = decoded_real_replay() else {
+        corpus_skip("e11_engine_states_on_real_replay");
         return;
     };
     if decoded.engine_states.is_empty() {

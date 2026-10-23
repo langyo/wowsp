@@ -58,7 +58,7 @@ visible only while `Tab` is held.
 - [x] three.js holographic-map skeleton + `useThreeScene` rAF composable
 - [x] Python model-conversion scripts (`scripts/model_convert/`) with README
 - [x] FastAPI mock backend (`scripts/mock/`) so the frontend can develop without the game
-- [x] Playwright e2e harness, lagrange docs (en + zhs), GitHub CI + community files
+- [x] Playwright e2e harness *scaffolding only* (pytest fixtures + page objects; **0 test cases**, not run in CI — see `scripts/e2e/README.md`), lagrange docs (en + zhs), GitHub CI + community files
 - [x] Pure SySL-1.0 license (Synthetic Source License, no BSL/change-date), signed langyo
 
 ## Feature milestones
