@@ -19,6 +19,17 @@
 //! coexisting with an installed one is a legitimate setup (the whole
 //! lane is skipped in portable mode — as it is in debug builds, whose
 //! exe lives in `target/`, never beside a real install).
+//!
+//! A registered location at a bare drive root, anywhere inside the game
+//! tree, or with a game folder among its DIRECT children (a WoWSP parked
+//! in a shared games root the game later installed into) is never
+//! offered for removal either: the leftover's own `uninstall.exe` sweeps
+//! the directory it sits in (the shun builds shipped before 0.6.30
+//! swept it wholesale), so "cleaning up" such an install deletes the
+//! game with it — exactly what hit players who once installed WoWSP
+//! into the game folder and later installed elsewhere while the ARP
+//! entry kept naming the game folder. The refusal lives in detection
+//! AND is re-checked in the uninstall command itself.
 
 use anyhow::{Result, anyhow, bail};
 use std::path::{Path, PathBuf};
@@ -225,6 +236,43 @@ fn path_key(path: &str) -> String {
     trimmed.to_ascii_lowercase()
 }
 
+/// The game root at or above `dir` (`dir` itself when it IS one) — the
+/// same stub-exe identification the scanner validates real installs with
+/// ([`super::game_detect::is_game_dir`]). An uninstaller spawned in any
+/// folder inside the game tree sweeps game files on its way out, so such
+/// a location can never be a removable leftover.
+fn game_root_at_or_above(dir: &Path) -> Option<PathBuf> {
+    let mut cursor = Some(dir);
+    while let Some(current) = cursor {
+        if super::game_detect::is_game_dir(&current.to_string_lossy()) {
+            return Some(current.to_path_buf());
+        }
+        cursor = current.parent();
+    }
+    None
+}
+
+/// A direct child of `dir` that is a game root — a WoWSP install parked
+/// in a shared games root the game (WGC defaults to its own subfolder)
+/// later landed in. Sweeping the parent takes the game with it, so this
+/// shape refuses removal too. A false refusal costs a cleanup prompt;
+/// a missed one costs the game.
+fn game_root_child(dir: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| path.is_dir() && super::game_detect::is_game_dir(&path.to_string_lossy()))
+}
+
+/// Whether an uninstaller sweeping `dir` could reach game files or a
+/// whole drive: `dir` is a bare drive root, sits at/inside a game root,
+/// or carries a game root among its direct children.
+fn sweep_reaches_beyond_wowsp(dir: &Path) -> bool {
+    dir.parent().is_none() || game_root_at_or_above(dir).is_some() || game_root_child(dir).is_some()
+}
+
 /// The pure core of the check: the registered install is a leftover worth
 /// offering for removal when it is NOT where the running exe lives, the
 /// directory still exists, and it actually contains the app (a deleted
@@ -243,6 +291,18 @@ fn detect_duplicate(
     // the process CWD — which for a GUI launch is the exe's own folder,
     // i.e. exactly the install that must never be offered for removal.
     if !dir.is_absolute() || !dir.is_dir() || !dir.join(MAIN_EXE).is_file() {
+        return None;
+    }
+    // A drive-root, in-game-tree, or game-hosting folder is never a
+    // removable leftover: the leftover's own uninstaller sweeps the
+    // directory it sits in (pre-0.6.30 shun swept it wholesale), so
+    // removing an install registered there would delete the game (or
+    // the drive's contents) with it.
+    if sweep_reaches_beyond_wowsp(dir) {
+        tracing::warn!(
+            location = %registered.location,
+            "registered install sits at a drive root or inside/beside a game folder — removal refused"
+        );
         return None;
     }
     Some(DuplicateInstall {
@@ -312,6 +372,18 @@ async fn duplicate_install_uninstall_inner() -> Result<()> {
     if !uninstaller.is_file() {
         bail!(
             "the leftover install at {} carries no uninstaller",
+            duplicate.path
+        );
+    }
+    // Defense in depth: whatever detection concluded, never hand an
+    // uninstaller its own directory to sweep when that directory could
+    // reach beyond WoWSP — a drive root, a folder inside the game tree,
+    // or one hosting a game root among its children (the uninstaller
+    // deletes the directory it sits in, pre-0.6.30 shun builds
+    // wholesale).
+    if sweep_reaches_beyond_wowsp(Path::new(&duplicate.path)) {
+        bail!(
+            "the leftover install at {} sits at a drive root or inside/beside a game folder — refusing to run its uninstaller; nothing was removed",
             duplicate.path
         );
     }
@@ -536,6 +608,81 @@ mod tests {
         )
         .unwrap();
         assert!(!found.has_uninstaller);
+    }
+
+    #[test]
+    fn a_game_folder_registration_is_never_a_duplicate() {
+        let root = scratch("game-folder-registration");
+        let current = fake_install(&root.0, "current");
+        // The pre-guard install shape that deleted players' game folders:
+        // WoWSP (exe + uninstaller) sitting IN the game folder, with the
+        // ARP entry still naming it after the player reinstalled elsewhere.
+        let game = fake_install(&root.0, "game");
+        std::fs::write(game.join("WorldOfWarships.exe"), b"MZ").unwrap();
+        assert_eq!(
+            detect_duplicate(
+                Some(&current),
+                Some(&registered_at(game.to_string_lossy().as_ref()))
+            ),
+            None
+        );
+        // One level deeper (an install parked inside bin\ or any game
+        // subfolder) is refused the same way — its uninstaller would sweep
+        // a chunk of the game.
+        let nested = game.join("bin").join("WoWSP");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join(MAIN_EXE), b"MZ").unwrap();
+        std::fs::write(nested.join(UNINSTALLER), b"MZ").unwrap();
+        assert_eq!(
+            detect_duplicate(
+                Some(&current),
+                Some(&registered_at(nested.to_string_lossy().as_ref()))
+            ),
+            None
+        );
+        // The Lesta stub spelling refuses too.
+        let lesta = fake_install(&root.0, "lesta-game");
+        std::fs::write(lesta.join("Korabli.exe"), b"MZ").unwrap();
+        assert_eq!(
+            detect_duplicate(
+                Some(&current),
+                Some(&registered_at(lesta.to_string_lossy().as_ref()))
+            ),
+            None
+        );
+        // The shared-games-root shape: WoWSP parked where the game later
+        // installed itself one level down — sweeping the parent (what the
+        // leftover's own uninstaller does) would take the game with it.
+        let host = fake_install(&root.0, "host");
+        let game = host.join("World of Warships");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("WorldOfWarships.exe"), b"MZ").unwrap();
+        assert_eq!(
+            detect_duplicate(
+                Some(&current),
+                Some(&registered_at(host.to_string_lossy().as_ref()))
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn an_install_beside_the_game_tree_stays_a_duplicate() {
+        // A folder NEXT TO the game root is not inside the game tree — the
+        // refusal must not swallow legitimate leftovers.
+        let root = scratch("beside-game-tree");
+        let current = fake_install(&root.0, "current");
+        let game = root.0.join("World of Warships");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("WorldOfWarships.exe"), b"MZ").unwrap();
+        let leftover = fake_install(&root.0, "leftover");
+        assert!(
+            detect_duplicate(
+                Some(&current),
+                Some(&registered_at(leftover.to_string_lossy().as_ref()))
+            )
+            .is_some()
+        );
     }
 
     #[test]
