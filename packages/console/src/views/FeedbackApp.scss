@@ -46,6 +46,23 @@
   gap: var(--space-12);
 }
 
+// Brand row aligned with the nav items below: their content column
+// starts one item-padding past the sidebar body's own padding, so the
+// logo cell parks there and the title lands on the labels' rhythm.
+.fb-brand-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding-inline-start: var(--hk-menu-item-pad-x, 12px);
+}
+
+.fb-logo {
+  flex: none;
+  width: var(--space-24);
+  height: var(--space-24);
+  border-radius: var(--radius-sm);
+}
+
 .fb-brand {
   margin: 0;
   font-size: var(--text-lg);

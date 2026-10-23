@@ -536,10 +536,22 @@ export default defineComponent({
             {{
               // Brand rides the body slot like the retired page (its
               // header band's min-height + divider read as an app
-              // toolbar, not a form sidebar).
+              // toolbar, not a form sidebar). The logo rides beside the
+              // title at the nav items' icon rhythm; a failed load
+              // (offline dev) just drops the glyph.
               default: () => (
                 <div class="fb-side-flow">
-                  <h1 class="fb-brand">WoWSP 反馈台</h1>
+                  <div class="fb-brand-row">
+                    <img
+                      class="fb-logo"
+                      src="/logo.webp"
+                      alt=""
+                      onError={(e: Event) => {
+                        (e.target as HTMLElement).style.display = "none";
+                      }}
+                    />
+                    <h1 class="fb-brand">WoWSP 反馈台</h1>
+                  </div>
                   <nav class="fb-side-nav">
                     <HkNavItem active={view.value === "form"} onClick={() => (view.value = "form")}>
                       {navFormSlots}

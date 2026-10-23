@@ -35,3 +35,22 @@
 # endpoint becoming a hot-path poller.
 /api/digests/*
   Cache-Control: public, max-age=300
+
+# Documents always revalidate. The console pages and the site shell
+# mount a JS app into an empty #app and reference their bundles BY
+# HASH — an HTML response a browser keeps without revalidation (the
+# heuristic freshness a response with no Cache-Control earns) pins the
+# OLD hashes after a deploy, the new bundles 404, and the page renders
+# as a permanently blank shell until the entry is force-refreshed.
+# no-cache keeps every navigation revalidating (etag makes it a cheap
+# 304) while the hashed bundles below cache immutable.
+/
+  Cache-Control: no-cache
+/feedback
+  Cache-Control: no-cache
+/erp
+  Cache-Control: no-cache
+
+# Hashed console bundles (content-addressed filenames) — safe to pin.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
