@@ -108,8 +108,9 @@ html.overlay-hidden body {
    Exact-order rows carry no name cell at all — the game's
    own table names the row at the same Y.
    The 过街老鼠 verdict rides a hidden profile, so its row carries the
-   badge in the seals flank beside the pinned stat cell's lone red dot —
-   the dot hugs the table's edge like every settled face (below), and
+   badge in the seals flank beside the COMPACT (sparse) stat cell's lone
+   red dot — the dot hugs the table's edge and the row clusters tightly
+   instead of stretching to the figures' width, and
    overlay-chip--rat only marks the row for chipFit's trim pass.
    The name cell caps its width and ellipsizes — the game's own table
    truncates long names the same way. */
@@ -118,13 +119,22 @@ html.overlay-hidden body {
   white-space: nowrap;
 }
 
+/* A PLACEHOLDER stat cell (rowFace's sparse marker): the hidden red dot,
+   the whole-row dash / bot label, the chasing loader while the batch is
+   owed. These stay at their own compact width — chipFit's
+   alignStatColumns exempts them from the side's pinned figure width,
+   because a lone dot stretched across a figures-wide cell reads as a
+   hole in the middle of the row; the placeholder and everything behind
+   it (name, seals) cluster tightly against the table's edge instead.
+   No rule of its own: compactness IS the exemption (the side rules
+   below then have nothing to align inside it). */
+
 /* A stat cell is pinned to its side's widest face, and the number rows
    fill it exactly (each metric column is pinned too), so this per-side
-   alignment only shows on the PLACEHOLDER faces: the hidden red dot, the
-   whole-cell dash/bot label, the chasing loader. Those hug the TABLE-side
-   edge — where the numbers' last figure sits — instead of floating at the
-   far edge of an otherwise empty pill, which reads as a hole in the
-   column rather than as an answer. */
+   alignment only matters on cells whose content is narrower than the
+   pin — a figure row with a missing trailing column: the remaining
+   faces hug the TABLE-side edge, where the numbers' last figure sits,
+   instead of floating at the far edge of an otherwise emptier pill. */
 .overlay-chip--enemy .overlay-chip__stat {
   text-align: left;
 }
@@ -182,6 +192,17 @@ html.overlay-hidden body {
   margin: 0 4px;
 }
 
+/* A column cell whose per-ship list is still owed (chipColumns'
+   col-waiting): the loader beads CENTER inside the measured column cell
+   instead of hugging its right edge like a figure — beads pressed to the
+   edge with a hole to their left read as a gap in the row, while a
+   centered pending face reads as "this column is coming". Bright, not
+   muted: the beads are an active signal (the same face the whole-row
+   loader wears), unlike the settled dash beside them. */
+.overlay-chip__stat b.col-waiting {
+  text-align: center;
+}
+
 /* A battles-count unit word (场/場/battles/회 …) split out of its mono
    value: it keeps the TEXT face and steps down a size, so the smaller
    counter glyph beside the figures reads as a deliberate unit — the one
@@ -197,15 +218,20 @@ html.overlay-hidden body {
    inside the cell its figure is measured in. Global columns carry no
    tag: the unmarked figure IS the account career. The tag centers
    vertically against the mono figures (an inline-block on the shared
-   baseline reads as hanging LOW beside them) and keeps a deliberate
-   margin to the figure on its right — a CJK tag pressed flat against
-   the digits reads as one garbled figure, not a prefix. */
+   baseline reads as hanging LOW beside them, and plain
+   vertical-align: middle still parks a CJK glyph box below the digits'
+   optical midline — the same relative lift the loader beads, dash and
+   separator share) and keeps a deliberate margin to the figure on its
+   right — a CJK tag pressed flat against the digits reads as one
+   garbled figure, not a prefix. */
 .overlay-chip .overlay-scope {
   font-family: var(--overlay-text-font);
   font-size: 0.8em;
   opacity: 0.72;
   display: inline-block;
   vertical-align: middle;
+  position: relative;
+  top: -0.07em;
   margin-right: 0.25em;
 }
 

@@ -115,12 +115,19 @@ describe("overlay page render", () => {
     expect(text).toContain("Vitia_Minsk");
     expect(text).not.toContain("…");
     // Every row carries the two columns: a stat cell (a muted DRAWN dash
-    // with no stats landed) and a name cell beside it.
+    // with no stats landed) and a name cell beside it. The placeholder
+    // face rides a SPARSE cell — compact, exempt from the side's pinned
+    // figure width (see chipFit's alignStatColumns).
     for (const chip of chips) {
       expect(chip.querySelectorAll(".overlay-chip__stat")).toHaveLength(1);
       expect(chip.querySelectorAll(".overlay-chip__name")).toHaveLength(1);
       expect(chip.querySelector(".overlay-chip__stat .muted .overlay-dash")).not.toBeNull();
       expect(chip.querySelector(".overlay-chip__stat")!.textContent).toBe("");
+      expect(
+        chip.querySelector(".overlay-chip__stat")!.classList.contains(
+          "overlay-chip__stat--sparse",
+        ),
+      ).toBe(true);
     }
   });
 

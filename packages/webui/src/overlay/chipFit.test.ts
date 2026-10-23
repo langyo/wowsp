@@ -221,6 +221,22 @@ describe("alignStatColumns", () => {
     expect(widthOf(c)).toBe("132px");
   });
 
+  it("leaves placeholder (sparse) cells compact instead of stretching them", () => {
+    // A hidden profile's lone red dot: its cell is marked sparse by rowFace
+    // — stretching it to the figures' width would read as a hole in the
+    // middle of the row, so it neither joins the measure nor gets pinned.
+    const a = row("enemy", 132, "44.5% · 1234 · 12.3k");
+    const b = row("enemy", 14, "●");
+    (b.querySelector(".overlay-chip__stat") as HTMLElement).classList.add(
+      "overlay-chip__stat--sparse",
+    );
+    alignStatColumns(mounted(a, b));
+    const widthOf = (el: HTMLDivElement) =>
+      (el.querySelector(".overlay-chip__stat") as HTMLElement).style.width;
+    expect(widthOf(a)).toBe("132px");
+    expect(widthOf(b)).toBe("");
+  });
+
   it("rounds the shared width up to whole pixels", () => {
     const a = row("ally", 60.4);
     const b = row("ally", 60.1);
