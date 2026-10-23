@@ -12,6 +12,74 @@ use wowsp_tauri_shared::{CommandResult, VehicleEntry};
 
 use super::meta::{extract_descriptor_json, roster_from_raw};
 
+/// Shared decode prologue (review M-3): file bytes → packet stream →
+/// container family → descriptor (client version + roster shipId
+/// candidates) → core decode → Lesta arena synthesis. The grouped
+/// wrappers ([`read_replay_positions`] / [`decode_replay_stream_sync`])
+/// and the cap-layout lifter (`cap_layouts::caps_of_replay`) all ride
+/// this — the cap lifter's former hand-rolled copy passed no version and
+/// no roster candidates, so the version-gated layouts (the arena join
+/// included) never fired there.
+pub(crate) fn decode_replay_file_decoded(
+    path: &std::path::Path,
+) -> anyhow::Result<wowsp_replay_core::DecodedReplay> {
+    let bytes = fs::read(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
+    let stream = packet_stream_after_blocks(&bytes).ok_or_else(|| {
+        anyhow!(
+            "{}: not a valid wowsreplay (no packet stream)",
+            path.display()
+        )
+    })?;
+    // The container's family picks the entity-method id table (Lesta's
+    // version keys sit above every WG table — version-keyed lookup would
+    // cross-wire the method-gated streams; see method_tables_lesta).
+    let lesta = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(super::game_client::is_lesta_replay_extension);
+    // Roster shipIds — the candidate set used to recover each entity's
+    // shipId from its EntityCreate state stream (the only reliable
+    // entity → player join key). Goes through the shared roster source
+    // so a Lesta container (whose descriptor carries no vehicles array)
+    // contributes its synthesized roster just the same; the roster itself
+    // is kept for the Lesta arena synthesis below.
+    let mut candidates = std::collections::HashSet::new();
+    let mut client_version: Option<String> = None;
+    let mut roster: Vec<VehicleEntry> = Vec::new();
+    if let Some(json) = extract_descriptor_json(&bytes) {
+        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
+            client_version = raw
+                .get("clientVersionFromExe")
+                .and_then(|x| x.as_str())
+                .map(str::to_string);
+            roster = roster_from_raw(path, &raw);
+            for v in &roster {
+                // 0 is the degenerate "no shipId in the entry" default —
+                // offering it would let a 4-zero-byte window in any
+                // EntityCreate state label an entity with a bogus id.
+                if v.ship_id > 0 {
+                    candidates.insert(v.ship_id as u32);
+                }
+            }
+        }
+    }
+    let mut decoded =
+        super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)?;
+    if lesta {
+        // BEFORE grouping: the synthesis fills `arena_players` with the
+        // state-recovered starting health, so the HP anchoring and the
+        // recorder-team slot inside `group_by_entity` treat it exactly
+        // like a decoded WG arena state.
+        synthesize_lesta_arena_players(
+            &mut decoded.arena_players,
+            &decoded.kinds,
+            &roster,
+            decoded.recorder_ship,
+        );
+    }
+    Ok(decoded)
+}
+
 /// Decode the packet stream of one `.wowsreplay` and return per-entity
 /// position trajectories (milestone M3) annotated with each entity's creation
 /// metadata (entity-create: type / vehicleId / initial position) so the
@@ -26,56 +94,7 @@ pub async fn read_replay_positions(
     path: String,
 ) -> CommandResult<wowsp_tauri_shared::ReplayStream> {
     Ok(tokio::task::spawn_blocking(move || {
-        let bytes = fs::read(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
-        let stream = packet_stream_after_blocks(&bytes)
-            .ok_or_else(|| anyhow!("{path}: not a valid wowsreplay (no packet stream)"))?;
-        // The container's family picks the entity-method id table (Lesta's
-        // version keys sit above every WG table — version-keyed lookup would
-        // cross-wire the method-gated streams; see method_tables_lesta).
-        let lesta = std::path::Path::new(&path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(super::game_client::is_lesta_replay_extension);
-        // Roster shipIds — the candidate set used to recover each entity's
-        // shipId from its EntityCreate state stream (the only reliable
-        // entity -> player join key). Goes through the shared roster source
-        // so a Lesta container (whose descriptor carries no vehicles array)
-        // contributes its synthesized roster just the same; the roster itself
-        // is kept for the Lesta arena synthesis below.
-        let mut candidates = std::collections::HashSet::new();
-        let mut client_version: Option<String> = None;
-        let mut roster: Vec<VehicleEntry> = Vec::new();
-        if let Some(json) = extract_descriptor_json(&bytes) {
-            if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
-                client_version = raw
-                    .get("clientVersionFromExe")
-                    .and_then(|x| x.as_str())
-                    .map(str::to_string);
-                roster = roster_from_raw(std::path::Path::new(&path), &raw);
-                for v in &roster {
-                    // 0 is the degenerate "no shipId in the entry" default —
-                    // offering it would let a 4-zero-byte window in any
-                    // EntityCreate state label an entity with a bogus id.
-                    if v.ship_id > 0 {
-                        candidates.insert(v.ship_id as u32);
-                    }
-                }
-            }
-        }
-        let mut decoded =
-            super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)?;
-        if lesta {
-            // BEFORE grouping: the synthesis fills `arena_players` with the
-            // state-recovered starting health, so the HP anchoring and the
-            // recorder-team slot inside `group_by_entity` treat it exactly
-            // like a decoded WG arena state.
-            synthesize_lesta_arena_players(
-                &mut decoded.arena_players,
-                &decoded.kinds,
-                &roster,
-                decoded.recorder_ship,
-            );
-        }
+        let decoded = decode_replay_file_decoded(std::path::Path::new(&path))?;
         Ok::<_, anyhow::Error>(group_by_entity(decoded))
     })
     .await
@@ -94,40 +113,7 @@ pub async fn read_replay_positions(
 pub(crate) fn decode_replay_stream_sync(
     path: &str,
 ) -> anyhow::Result<wowsp_tauri_shared::ReplayStream> {
-    let bytes = fs::read(path).map_err(|e| anyhow!("read {path}: {e}"))?;
-    let stream = packet_stream_after_blocks(&bytes)
-        .ok_or_else(|| anyhow!("{path}: not a valid wowsreplay (no packet stream)"))?;
-    let lesta = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(super::game_client::is_lesta_replay_extension);
-    let mut candidates = std::collections::HashSet::new();
-    let mut client_version: Option<String> = None;
-    let mut roster: Vec<VehicleEntry> = Vec::new();
-    if let Some(json) = extract_descriptor_json(&bytes) {
-        if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&json) {
-            client_version = raw
-                .get("clientVersionFromExe")
-                .and_then(|x| x.as_str())
-                .map(str::to_string);
-            roster = roster_from_raw(std::path::Path::new(path), &raw);
-            for v in &roster {
-                if v.ship_id > 0 {
-                    candidates.insert(v.ship_id as u32);
-                }
-            }
-        }
-    }
-    let mut decoded =
-        super::packets::decode_replay(stream, &candidates, client_version.as_deref(), lesta)?;
-    if lesta {
-        synthesize_lesta_arena_players(
-            &mut decoded.arena_players,
-            &decoded.kinds,
-            &roster,
-            decoded.recorder_ship,
-        );
-    }
+    let decoded = decode_replay_file_decoded(std::path::Path::new(path))?;
     Ok(group_by_entity(decoded))
 }
 

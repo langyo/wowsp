@@ -19,7 +19,6 @@
 //!     hand-made templates; a map never played here simply has none.
 
 use anyhow::anyhow;
-use std::collections::HashSet;
 
 use serde::Serialize;
 
@@ -277,18 +276,13 @@ fn learn_cap_layouts(space_id: &str, dir: Option<String>) -> anyhow::Result<Vec<
 /// skips the group rather than failing the whole scan. The geometry lift
 /// itself lives in the decoding core (`wowsp_replay_core::caps::
 /// cap_points_of`), shared with the replay-corpus aggregator (wave 4a).
+/// The decode rides the shared file prologue (`streams::
+/// decode_replay_file_decoded`): the former hand-rolled copy passed no
+/// client version and no roster candidates, so version-gated layouts
+/// never fired and the recorder-team join below could not succeed.
 #[cfg(desktop)]
 fn caps_of_replay(path: &std::path::Path) -> Option<(Vec<LearnedCapPoint>, Option<i8>)> {
-    use super::streams::packet_stream_after_blocks;
-
-    let bytes = std::fs::read(path).ok()?;
-    let stream = packet_stream_after_blocks(&bytes)?;
-    let lesta = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(super::super::game_client::is_lesta_replay_extension);
-    let decoded =
-        super::super::packets::decode_replay(stream, &HashSet::new(), None, lesta).ok()?;
+    let decoded = super::streams::decode_replay_file_decoded(path).ok()?;
     let caps = wowsp_replay_core::caps::cap_points_of(&decoded)
         .into_iter()
         .map(|c| LearnedCapPoint {

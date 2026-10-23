@@ -473,6 +473,24 @@ fn decode_replay_with(
         Some(k) => k < (12, 6, 0),
         None => false,
     };
+    let profile = build_layout_profile(version_key, lesta, client_version);
+    Ok(walk_frames(
+        &inflated,
+        ship_id_candidates,
+        legacy,
+        &profile,
+        version_key,
+    ))
+}
+
+/// The per-replay [`LayoutProfile`] resolved from the parsed version —
+/// extracted from [`decode_replay_with`] so the version gates are
+/// unit-testable without a full container.
+fn build_layout_profile(
+    version_key: Option<(u32, u32, u32)>,
+    lesta: bool,
+    client_version: Option<&str>,
+) -> LayoutProfile {
     // Battle-effect method decoding requires a table that actually covers the
     // replay's version: below the oldest shipped table (0.11.6) the exposed
     // indices predate anything we know, so events stay empty.
@@ -483,7 +501,7 @@ fn decode_replay_with(
     } else {
         in_table_range.then(|| method_ids_for_version(client_version))
     };
-    let profile = LayoutProfile {
+    LayoutProfile {
         methods,
         // VehicleAppearance joins entities.xml in 14.5.0, pushing
         // InteractiveZone from 13 to 14.
@@ -497,19 +515,14 @@ fn decode_replay_with(
         // The arena-state FixedDict layout is version-gated; without a
         // parsed version the method id would come from the newest table
         // while the field indices default to the oldest layout — skip the
-        // decode entirely (consumers fall back to the shipId join).
+        // decode entirely (consumers fall back to the shipId join). The
+        // gate applies to BOTH families: `ArenaFields::for_version` keys
+        // off the same version and has no family-specific default.
         arena_state_method: methods
             .map(|m| m.avatar_on_arena_state_received)
-            .filter(|id| *id > 0),
+            .filter(|id| *id > 0 && version_key.is_some()),
         lesta,
-    };
-    Ok(walk_frames(
-        &inflated,
-        ship_id_candidates,
-        legacy,
-        &profile,
-        version_key,
-    ))
+    }
 }
 
 /// `\"15,0,0,11791718\"` → `(15, 0, 0)`; malformed input yields `None`.

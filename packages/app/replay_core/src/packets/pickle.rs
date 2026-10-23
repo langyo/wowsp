@@ -59,12 +59,12 @@ fn deep_size(v: &PyVal) -> usize {
             PyVal::Tuple(t) | PyVal::List(t) => {
                 16 + t.iter().map(|x| rec(x, depth + 1)).sum::<usize>()
             },
-            PyVal::Dict(d) => 16
-                + d.iter()
-                    .map(|(k, x)| {
-                        rec(k, depth + 1).saturating_add(rec(x, depth + 1))
-                    })
-                    .sum::<usize>(),
+            PyVal::Dict(d) => {
+                16 + d
+                    .iter()
+                    .map(|(k, x)| rec(k, depth + 1).saturating_add(rec(x, depth + 1)))
+                    .sum::<usize>()
+            },
         }
     }
     rec(v, 0)
