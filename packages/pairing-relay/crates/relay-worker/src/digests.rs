@@ -1,17 +1,23 @@
 //! GET /api/digests/<channel>[/<tag>] — the release-digest endpoint
-//! (see relay_core::digests for the policy). The docs are STATIC
-//! FILES on the worker's [assets] layer (the tracked
-//! `packages/pairing-relay/digests/<channel>/*.json` tree, copied to
-//! `assets/api/digests/**` by scripts/build_worker_site.py); this
-//! handler owns the validation → edge-cache → asset-fetch mapping, so
-//! every rule stays unit-testable in relay-core.
+//! (see relay_core::digests for the policy). SERVED lookups never reach
+//! this handler anymore: /api/digests* is negated out of
+//! run_worker_first (wrangler.toml), and the build-generated
+//! `_redirects` (exact-path rules from the tracked digests tree, see
+//! scripts/build_worker_site.py) maps the extensionless client paths
+//! onto the .json docs — pure static asset traffic, zero worker
+//! invocations. This handler is the MISS FALLBACK: an unpublished
+//! channel or unknown tag carries no redirect rule, the assets layer
+//! misses, and the request falls through to the worker, whose
+//! published-channel gate answers the same 404 the direct route always
+//! did — so every rule stays unit-testable in relay-core.
 //!
 //! The 2026-10-22 incident retired the KV-backed store: a fleet of app
 //! clients polling never-published channels turned every request into
 //! a guaranteed KV miss and burned the free tier's daily read quota.
-//! Serving now costs, per edge colo and cache TTL: one asset fetch
-//! (free, unmetered) — and identical GETs (any query string) collapse
-//! into the cached response before the read budget is even consulted.
+//! The static path spends nothing at all; this fallback costs, per edge
+//! colo and cache TTL, one asset fetch (free, unmetered) — and
+//! identical GETs (any query string) collapse into the cached response
+//! before the read budget is even consulted.
 
 use relay_core::digests::{self, DigestDoc};
 use worker::*;

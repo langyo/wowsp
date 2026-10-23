@@ -6,7 +6,9 @@
 //!   testable — `cargo test -p relay-core`).
 //! - this crate is routing + WebSocket glue only. The static site rides
 //!   the worker's `[assets]` layer; `run_worker_first` in
-//!   `wrangler.toml` sends only the paths listed below into this code:
+//!   `wrangler.toml` sends only the paths listed below into this code
+//!   (`/api/digests*` is NEGATED back to the assets layer — served
+//!   lookups never arrive here, only their misses; see src/digests.rs):
 //!   - `GET /api/health` — the merged liveness + discovery document
 //!     (server version + minimum client version + relay endpoints;
 //!     forwarding-station switch via the `GATEWAY_UPSTREAM` var,

@@ -363,17 +363,20 @@ writes the tracked tree `digests/<channel>/<tag>.json` (plus the
 
 **Static since 2026-10-22** — the docs ride the worker's [assets] layer
 (`digests/` in this package, copied to `assets/api/digests/**` by
-`scripts/build_worker_site.py`; the worker maps the extensionless
-client paths onto those `.json` files through its `ASSETS` binding
-behind an edge cache). The runtime KV store this section used to
-describe is RETIRED — on 2026-10-22 the installed app fleet polling
-never-published channels turned every request into a guaranteed KV miss
-and burned the free tier's daily read quota; static files cannot miss
-that way, and identical GETs (any query string) collapse into the edge
-cache before the read budget is even consulted. `DIGEST_PUBLISHED_CHANNELS`
-in `wrangler.toml` (default `app`) gates which channels may spend the
-budget and the asset fetch — extend it only after the matching publisher
-has written a first doc.
+`scripts/build_worker_site.py`, which also generates an `_redirects` of
+EXACT-path rules mapping the extensionless client paths onto those
+`.json` files). `/api/digests*` is negated out of `run_worker_first`,
+so a served channel's lookup is pure static asset traffic — no worker
+invocation, no read budget, nothing to rate-limit. The runtime KV store
+this section used to describe is RETIRED — on 2026-10-22 the installed
+app fleet polling never-published channels turned every request into a
+guaranteed KV miss and burned the free tier's daily read quota; static
+files cannot miss that way. `DIGEST_PUBLISHED_CHANNELS` in
+`wrangler.toml` (default `app`) gates the miss fallback — a path with
+no doc and no redirect rule falls through to the worker, which answers
+the gated, edge-cached 404 (the app then remembers the absent channel
+for 30 min) — extend it only after the matching publisher has written
+a first doc.
 
 Publishing is the maintainer's step, no credentials involved:
 
@@ -603,8 +606,9 @@ Site hosting model: `wowsp.langyo.xyz` is bound to this worker as a
 (website + docs) rides the worker's **static assets** (`[assets]` in
 `wrangler.toml`, served before any worker code), with
 `not_found_handling = "single-page-application"` so unknown paths serve
-the SPA shell; the dynamic paths (`/api*`, `/feedback`, `/erp`) are
-pulled in front of the assets via `run_worker_first` (they MUST be:
+the SPA shell; the dynamic paths (`/api*`, minus the digest lookups —
+see the negated `!/api/digests*`) are pulled in front of the assets via
+`run_worker_first` (they MUST be:
 with `compatibility_date ≥ 2025-04-01` a browser navigation that
 matches no asset serves the SPA shell directly and never reaches worker
 code). The assets are laid out by `scripts/build_worker_site.py`:
