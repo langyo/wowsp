@@ -1,15 +1,21 @@
 //! GET /api/digests/<channel>[/<tag>] — the release-digest endpoint
 //! (see relay_core::digests for the policy). SERVED lookups never reach
-//! this handler anymore: /api/digests* is negated out of
-//! run_worker_first (wrangler.toml), and the build-generated
-//! `_redirects` (exact-path rules from the tracked digests tree, see
-//! scripts/build_worker_site.py) maps the extensionless client paths
-//! onto the .json docs — pure static asset traffic, zero worker
-//! invocations. This handler is the MISS FALLBACK: an unpublished
-//! channel or unknown tag carries no redirect rule, the assets layer
-//! misses, and the request falls through to the worker, whose
-//! published-channel gate answers the same 404 the direct route always
-//! did — so every rule stays unit-testable in relay-core.
+//! this handler anymore: every doc-carrying channel is negated out of
+//! run_worker_first (wrangler.toml — per channel, never a blanket
+//! negation), and the build-generated `_redirects` (exact-path rules
+//! from the tracked digests tree, see scripts/build_worker_site.py)
+//! maps the extensionless client paths onto the .json docs — pure
+//! static asset traffic, zero worker invocations.
+//!
+//! This handler serves the channels WITHOUT docs, which stay
+//! worker-first: the published-channel gate answers the gated,
+//! edge-cached 404 — the app's absent-channel signal. That is also why
+//! the negation must stay scoped: with the SPA not_found_handling an
+//! UNNEGATED asset miss serves the shell HTML (200 text/html) and
+//! never reaches this code, so a blanket !/api/digests* would replace
+//! the 404 with a 229KB HTML 200 (the 2026-10-23 follow-up fix);
+//! scripts/build_worker_site.py fails the build when a channel has
+//! docs but no negation entries.
 //!
 //! The 2026-10-22 incident retired the KV-backed store: a fleet of app
 //! clients polling never-published channels turned every request into

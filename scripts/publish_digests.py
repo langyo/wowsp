@@ -28,8 +28,9 @@ they go live with the next deploy — commit + push (the Deploy Site
 workflow carries them) or, for an immediate manual upload, run
 `npx wrangler deploy` in packages/pairing-relay (the script also mirrors
 into that checkout's live `assets/` tree when it exists). After adding a
-channel's FIRST doc, extend `DIGEST_PUBLISHED_CHANNELS` in
-packages/pairing-relay/wrangler.toml so the gate serves it.
+channel's FIRST doc, add its two `!` negation entries to
+run_worker_first in packages/pairing-relay/wrangler.toml (the site
+build fails without them) and extend `DIGEST_PUBLISHED_CHANNELS`.
 
 Requires `gh` when using `--from-gh-release`. Usage:
 

@@ -1,10 +1,11 @@
 //! URL classification for the gateway's HTTP + WebSocket routes. The
 //! worker answers a fixed list of paths and nothing else: the API under
 //! `/api` (no version segment — the health document carries the version
-//! instead). The `run_worker_first` list in `wrangler.toml` (with
-//! `/api/digests*` NEGATED back to the assets layer) sends these paths
-//! here — a served digest lookup never arrives (the generated
-//! `_redirects` answers it statically); only its misses fall through;
+//! instead). The `run_worker_first` list in `wrangler.toml` (with the
+//! doc-carrying digest channels NEGATED back to the assets layer, per
+//! channel) sends these paths here — a served digest lookup never
+//! arrives (the generated `_redirects` answers it statically); the
+//! doc-less channels still do, for the gated 404;
 //! the rest of the hostname — including the hikari console pages
 //! `/feedback` and `/erp` (packages/console build) — is served by the
 //! worker's static-assets layer.

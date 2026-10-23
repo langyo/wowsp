@@ -365,18 +365,22 @@ writes the tracked tree `digests/<channel>/<tag>.json` (plus the
 (`digests/` in this package, copied to `assets/api/digests/**` by
 `scripts/build_worker_site.py`, which also generates an `_redirects` of
 EXACT-path rules mapping the extensionless client paths onto those
-`.json` files). `/api/digests*` is negated out of `run_worker_first`,
-so a served channel's lookup is pure static asset traffic — no worker
-invocation, no read budget, nothing to rate-limit. The runtime KV store
-this section used to describe is RETIRED — on 2026-10-22 the installed
-app fleet polling never-published channels turned every request into a
-guaranteed KV miss and burned the free tier's daily read quota; static
-files cannot miss that way. `DIGEST_PUBLISHED_CHANNELS` in
-`wrangler.toml` (default `app`) gates the miss fallback — a path with
-no doc and no redirect rule falls through to the worker, which answers
-the gated, edge-cached 404 (the app then remembers the absent channel
-for 30 min) — extend it only after the matching publisher has written
-a first doc.
+`.json` files). Each doc-carrying channel is negated out of
+`run_worker_first` PER CHANNEL (never a blanket `!/api/digests*`: with
+the SPA `not_found_handling` an asset miss serves the shell HTML
+instead of reaching the worker), so a served lookup is pure static
+asset traffic — no worker invocation, no read budget, nothing to
+rate-limit. The runtime KV store this section used to describe is
+RETIRED — on 2026-10-22 the installed app fleet polling
+never-published channels turned every request into a guaranteed KV
+miss and burned the free tier's daily read quota; static files cannot
+miss that way. Channels WITHOUT docs stay worker-first:
+`DIGEST_PUBLISHED_CHANNELS` in `wrangler.toml` (default `app`) gates
+them to the edge-cached 404 — the app's absent-channel signal (it then
+remembers the absent channel for 30 min). A channel's FIRST publish
+must BOTH add its two `!` negation entries to `run_worker_first`
+(`scripts/build_worker_site.py` fails the build otherwise) AND extend
+`DIGEST_PUBLISHED_CHANNELS`.
 
 Publishing is the maintainer's step, no credentials involved:
 
