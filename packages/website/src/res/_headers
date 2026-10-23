@@ -29,9 +29,9 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
 
 # The release-digest docs (api/digests/**) — static asset traffic since
-# the /api/digests* run_worker_first negation (see
-# packages/pairing-relay/_redirects): the same five-minute client cap
-# the worker handler set, so a publish surfaces within max-age without
-# the endpoint becoming a hot-path poller.
+# the /api/digests* run_worker_first negation (served by the
+# build-generated _redirects): the same five-minute client cap the
+# worker handler set, so a publish surfaces within max-age without the
+# endpoint becoming a hot-path poller.
 /api/digests/*
   Cache-Control: public, max-age=300

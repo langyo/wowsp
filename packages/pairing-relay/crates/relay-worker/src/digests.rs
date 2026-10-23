@@ -1,13 +1,13 @@
 //! GET /api/digests/<channel>[/<tag>] — the release-digest endpoint
 //! (see relay_core::digests for the policy). SERVED lookups never reach
 //! this handler anymore: /api/digests* is negated out of
-//! run_worker_first (wrangler.toml), and the tracked _redirects file
-//! (packages/pairing-relay/_redirects, copied to the assets root by
+//! run_worker_first (wrangler.toml), and the build-generated
+//! `_redirects` (exact-path rules from the tracked digests tree, see
 //! scripts/build_worker_site.py) maps the extensionless client paths
 //! onto the .json docs — pure static asset traffic, zero worker
 //! invocations. This handler is the MISS FALLBACK: an unpublished
-//! channel or unknown tag redirects onto a missing .json, the assets
-//! layer misses, and the request falls through to the worker, whose
+//! channel or unknown tag carries no redirect rule, the assets layer
+//! misses, and the request falls through to the worker, whose
 //! published-channel gate answers the same 404 the direct route always
 //! did — so every rule stays unit-testable in relay-core.
 //!

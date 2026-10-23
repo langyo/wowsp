@@ -18,11 +18,11 @@
 //! tier's daily read quota through guaranteed KV misses.
 //!
 //! This module is pure policy — shapes, validation and path layout.
-//! The assets layer serves the docs statically: the tracked
+//! The assets layer serves the docs statically: a build-generated
 //! `_redirects` file maps the extensionless client paths onto the
-//! `.json` files (no worker invocation at all), and the worker crate's
-//! digests handler is only the miss fallback — unpublished channels
-//! answer the gated 404 from the binary.
+//! `.json` files (exact-path rules, no worker invocation at all), and
+//! the worker crate's digests handler is only the miss fallback —
+//! unpublished channels answer the gated 404 from the binary.
 
 use std::collections::BTreeMap;
 

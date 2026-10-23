@@ -4,10 +4,9 @@
 The app updater's SECOND official channel: `wowsp.langyo.xyz` is
 reachable where `api.github.com` is not, so every publish pipeline also
 writes `{asset -> sha256}` docs into the tracked tree
-`packages/pairing-relay/digests/<channel>/*.json` (the worker serves
-them at `GET /api/digests/<channel>[/<tag>]` from its [assets] layer
-behind an edge cache — see
-`packages/pairing-relay/crates/relay-core/src/digests.rs`).
+`packages/pairing-relay/digests/<channel>/*.json` (served statically at
+`GET /api/digests/<channel>[/<tag>]` from the worker's [assets] layer —
+see `packages/pairing-relay/crates/relay-core/src/digests.rs`).
 
 Channels and their publishers:
 
@@ -19,8 +18,8 @@ Channels and their publishers:
 File layout (see relay-core): `<channel>/<tag>.json` holds the pinned
 doc, `<channel>/latest.json` the channel's rolling pointer; the site
 build (scripts/build_worker_site.py) copies the tree verbatim to
-`assets/api/digests/**`, and the worker maps the extensionless client
-paths onto these `.json` files through its ASSETS binding. `seq` is
+`assets/api/digests/**` and generates the `_redirects` rules that map
+the extensionless client paths onto these `.json` files. `seq` is
 per-channel and strictly increasing — the app refuses regressions.
 
 No credentials, no runtime storage (the 2026-10-22 KV read-quota
