@@ -20,13 +20,27 @@ pub(crate) const UNSUPPORTED_ARCHIVE: &str =
     "archive payloads need M10.2 unpack support — extract it to a folder first";
 
 #[tauri::command]
-pub fn mod_hub_classify_path(source_path: String) -> CommandResult<PackagePlan> {
+pub fn mod_hub_classify_path(
+    window: tauri::Window,
+    source_path: String,
+) -> CommandResult<PackagePlan> {
+    // Audit P0-5: classifying is a structure-revealing walk (layout,
+    // embedded ship ids), so it stays on the main webview like the other
+    // audit-P0-5 commands; the picker grant alone does not say WHO asks.
+    crate::commands::ensure_main_window_label(window.label())?;
+    classify_path(&source_path)
+}
+
+/// The command body, split out so the grant/archive tests drive it without a
+/// Tauri `Window` (the window gate is the one-line prelude above and is
+/// pinned by `scripts/check_rpc_parity.py`).
+pub(crate) fn classify_path(source_path: &str) -> CommandResult<PackagePlan> {
     // Audit H-3 closure: classify walks and parses an arbitrary
     // directory it is handed — without the picker grant it doubles as a
     // structure-enumeration oracle for a compromised webview. The webui
     // only ever classifies paths the picker just returned.
-    super::pick_source::ensure_source_granted(&source_path)?;
-    let src = Path::new(&source_path);
+    super::pick_source::ensure_source_granted(source_path)?;
+    let src = Path::new(source_path);
     // Archives are rejected up front with the unpack hint, whether or not the
     // file exists yet — the caller may be probing a path from a picker.
     let ext = src

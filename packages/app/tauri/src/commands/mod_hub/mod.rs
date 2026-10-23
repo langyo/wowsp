@@ -805,7 +805,7 @@ pub(crate) use unit_ops::remove_manifest_entries_for_entry;
 // Helpers used only by this module's own test suite (so they stay invisible to
 // the non-test build, keeping `cargo clippy --lib -D warnings` quiet).
 #[cfg(test)]
-pub(crate) use classify::UNSUPPORTED_ARCHIVE;
+pub(crate) use classify::{UNSUPPORTED_ARCHIVE, classify_path};
 #[cfg(test)]
 pub(crate) use install::{check_plan_rel, install_plan, local_record, test_restore_root_in};
 #[cfg(test)]

@@ -140,6 +140,7 @@ GATED_COMMANDS: list[str] = [
     "import_replay_file",
     "mod_catalog_install",
     "mod_catalog_uninstall",
+    "mod_hub_classify_path",
     "mod_hub_install",
     "mod_hub_pick_source",
     "mod_hub_reconcile",

@@ -613,14 +613,14 @@ fn zip_files_get_structured_error() {
     let probe_str = probe.to_str().unwrap().to_string();
     let _guard = super::pick_source::grant_test_lock();
     super::pick_source::grant_source_path(&probe_str).unwrap();
-    let err = mod_hub_classify_path(probe_str).unwrap_err();
+    let err = classify_path(&probe_str).unwrap_err();
     assert_eq!(err.to_string(), UNSUPPORTED_ARCHIVE);
     std::fs::remove_dir_all(probe.parent().unwrap()).ok();
 }
 
 #[test]
 fn classify_refuses_paths_the_session_never_picked() {
-    let err = mod_hub_classify_path("C:/not/picked/this/session".into()).unwrap_err();
+    let err = classify_path("C:/not/picked/this/session").unwrap_err();
     assert!(err.to_string().contains("folder picker"));
 }
 
@@ -1988,6 +1988,9 @@ fn mod_hub_real_game_scan() {
 #[ignore]
 fn mod_hub_real_samples_classify() {
     let dir = std::env::var("WOWSP_SAMPLES_DIR").expect("set WOWSP_SAMPLES_DIR");
+    // The picker grant is the command contract; the samples harness grants
+    // each path it probes the way the native dialog would.
+    let _grant_guard = super::pick_source::grant_test_lock();
     let mut seen = 0;
     for ent in fs::read_dir(&dir).unwrap().flatten() {
         let path = ent.path();
@@ -2002,7 +2005,9 @@ fn mod_hub_real_samples_classify() {
             println!("{name}: SKIP (not a package)");
             continue;
         }
-        match mod_hub_classify_path(path.to_string_lossy().into_owned()) {
+        let path_string = path.to_string_lossy().into_owned();
+        super::pick_source::grant_source_path(&path_string);
+        match classify_path(&path_string) {
             Ok(plan) => {
                 println!(
                     "{name}: {:?} \"{}\" detail={:?} entries={} warnings={:?}",
