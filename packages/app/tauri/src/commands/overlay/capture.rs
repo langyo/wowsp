@@ -51,6 +51,10 @@ pub(super) fn compute_anchor(
     let cal_key = super::watch::live_calibration_key(fsm, game);
     let mut verify_missed = false;
     let mut band_verified = false;
+    // Set when this frame has ALREADY been proven table-bearing by a full
+    // header scan (the early cache retire below) — the scene gate reuses it
+    // instead of scanning the same frame twice.
+    let mut frame_carries_table = false;
     // The strip-layout profile IN EFFECT for this frame: the client-kind
     // base until a detection (or the cache it filled) resolves the WG
     // classic-vs-rework layout — the strip readers below and every later
@@ -119,20 +123,44 @@ pub(super) fn compute_anchor(
             // tick re-detects, instead of leaving misplaced chips until
             // the regular 5 s cadence comes around.
             fsm.last_revalidate = None;
+        } else if overlay_detect::header_bars_present(&rgba, w, h) {
+            // The cached spot is wrong, but the frame CARRIES a Tab table
+            // somewhere — the cache itself is what is wrong for this
+            // client, not the scene. Seen live on a Lesta build (feedback
+            // 2026-10-23): the full detector kept re-succeeding at the
+            // same geometry while EVERY cached-band verify failed. The miss
+            // counter survives across Tab presses, so every press after the
+            // first paid one-to-two dead rate-limit windows (a glance
+            // shorter than that saw nothing at all) before the third miss
+            // finally allowed a scan. Retire the cache on the evidence of
+            // this one frame and detect now. (No `last_revalidate = None`
+            // here, unlike the max-fails branch above: detection runs on
+            // THIS frame below, and nulling the stamp would re-arm the
+            // forced revalidation on every tick — a capture+detect hot loop
+            // on exactly this always-fail client.)
+            tracing::info!(
+                "header band verify missed but a table is on frame — roster geometry cache retired early"
+            );
+            fsm.geometry_cache = None;
+            fsm.geometry_verify_fails = 0;
+            if let Some(k) = cal_key.as_ref() {
+                fsm.calibration.note_unstable(k);
+            }
+            frame_carries_table = true;
         } else {
             verify_missed = true;
         }
         break 'cache None;
     };
     if verify_missed {
-        // Band verify missed but the cache is not (yet) declared dead: skip
+        // Band verify missed AND the frame carries no table anywhere: skip
         // BOTH the gate's full scans and the detection for THIS frame — the
         // next capture (sink probe 500 ms / revalidate 5 s / acquisition
         // 1.5 s, or 400 ms while the hold is young — see
-        // `CAPTURE_YOUNG_RETRY_INTERVAL`) re-judges cheaply. A full-frame
-        // band search here would find the MOVED table, but rescanning every
-        // frame is exactly the cost this cache exists to avoid; the strike
-        // counter is the last-resort re-arm.
+        // `CAPTURE_YOUNG_RETRY_INTERVAL`) re-judges cheaply. (A frame that
+        // DOES carry a table never gets here — the cache was retired early
+        // above, exactly so a wrong-for-this-client cache cannot park the
+        // overlay for the whole miss budget.)
         return None;
     }
     // A frame that verified the cached band is a STABLE press for the
@@ -156,7 +184,9 @@ pub(super) fn compute_anchor(
     // is skipped — the band verify already proved it.
     if !band_verified {
         let probe = overlay_detect::probe_battle_scene(&rgba, w, h);
-        let header_found = overlay_detect::header_bars_present(&rgba, w, h);
+        // `frame_carries_table` short-circuits the second full header scan
+        // on a frame the early cache retire already proved table-bearing.
+        let header_found = frame_carries_table || overlay_detect::header_bars_present(&rgba, w, h);
         if !probe.detected() && !header_found {
             tracing::info!(
                 hp_bar = probe.hp_bar,

@@ -325,8 +325,17 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
         let tick = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             watch_tab_tick(&app, &mut fsm);
         }));
-        if tick.is_err() {
-            tracing::warn!("tab watcher tick panicked — continuing on the next tick");
+        if let Err(payload) = tick {
+            // The panic hook already logged the message + location as an
+            // ERROR; mirror the payload here too so this watcher-specific
+            // marker line is self-sufficient in a feedback log (the 2026-10
+            // bundle's storms carried no payload and were undiagnosable).
+            let panic = payload
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "non-string panic payload".to_string());
+            tracing::warn!(%panic, "tab watcher tick panicked — continuing on the next tick");
         }
         std::thread::sleep(POLL_INTERVAL);
     }
@@ -683,9 +692,25 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // stored-anchor path stands down for the tick (the user is re-picking
     // the box), and when the game window disappears underneath the layer it
     // is force-closed (open flag + close event to the main window).
-    let picker_open = manual_locate_open();
+    let mut picker_open = manual_locate_open();
     if picker_open && game.is_none() {
         force_close_manual_locate(app);
+        picker_open = false;
+    } else if picker_open && focused_on_game && tab_down {
+        // The user is holding Tab IN the game — asking for the table — while
+        // the picker flag still stands. The layer lives in the main window
+        // and cannot be interacted with while the game is foreground, so
+        // the flag here is a STALE one (a fire-and-forget `cancelManualLocate`
+        // IPC that never landed, a webview reload mid-pick, a settings modal
+        // closed around the layer): `want_visible` gates on `!picker_open`,
+        // so a stale flag reads as "Tab does nothing" for the rest of the
+        // session — the game stays up, the game-gone force-close never
+        // fires. Close the layer and let this hold through. (A half-drawn
+        // box from an Alt-Tab mid-pick is lost with it — accepted: under a
+        // standing flag this same hold showed nothing at all.)
+        tracing::info!("stale manual-locate picker flag force-closed on a Tab hold in game");
+        force_close_manual_locate(app);
+        picker_open = false;
     }
 
     // AIM-CARD pass — the second transparent window serving the one overlay
