@@ -250,27 +250,32 @@ export default defineComponent({
 
     return () => (
       <div class="erp-view">
-        <HkAdminTablePage
-          dense
-          loading={loading.value}
-          error={error.value ?? undefined}
-          rows={filtered.value as unknown as Record<string, unknown>[]}
-          rowKey="record_id"
-          emptyTitle="暂无反馈记录"
-          emptyDescription={filter.value ? "当前筛选下没有记录——切换到「全部」看看。" : undefined}
-          columns={[
-            { key: "time", title: "提交时间", width: "150px" },
-            { key: "description", title: "描述" },
-            { key: "contact", title: "联系", width: "120px" },
-            { key: "version", title: "版本", width: "90px" },
-            { key: "channel", title: "渠道", width: "80px" },
-            { key: "status", title: "状态", width: "150px" },
-            { key: "pr", title: "PR", width: "210px" },
-            { key: "attachments", title: "附件", width: "130px" },
-          ]}
-        >
-          {tableSlots}
-        </HkAdminTablePage>
+        {/* The stretch wrapper: consumes the leftover viewport height so
+            the table card / empty state fills short pages (see the
+            .erp-table rules in ErpApp's page styles). */}
+        <div class="erp-table">
+          <HkAdminTablePage
+            dense
+            loading={loading.value}
+            error={error.value ?? undefined}
+            rows={filtered.value as unknown as Record<string, unknown>[]}
+            rowKey="record_id"
+            emptyTitle="暂无反馈记录"
+            emptyDescription={filter.value ? "当前筛选下没有记录——切换到「全部」看看。" : undefined}
+            columns={[
+              { key: "time", title: "提交时间", width: "150px" },
+              { key: "description", title: "描述" },
+              { key: "contact", title: "联系", width: "120px" },
+              { key: "version", title: "版本", width: "90px" },
+              { key: "channel", title: "渠道", width: "80px" },
+              { key: "status", title: "状态", width: "150px" },
+              { key: "pr", title: "PR", width: "210px" },
+              { key: "attachments", title: "附件", width: "130px" },
+            ]}
+          >
+            {tableSlots}
+          </HkAdminTablePage>
+        </div>
         <div class="erp-pager">
           <HButton size="sm" variant="secondary" disabled={!prevStack.value.length} onClick={goPrev}>
             上一页
