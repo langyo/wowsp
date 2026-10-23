@@ -390,7 +390,7 @@ jobs:
     needs: publish
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: write
       pull-requests: write
@@ -494,8 +494,11 @@ jobs:
           gh pr checks "$pr" || true
           exit 1
 
+      # Unconditional: a crash between the merge and this step (or a
+      # re-run after a completed publish, which skips the doc path)
+      # must still ship and re-verify — dispatching site.yml is
+      # idempotent (its concurrency group serializes runs).
       - name: Ship it (the bot merge push fires no site.yml trigger)
-        if: steps.doc.outputs.skip != 'true'
         run: gh workflow run site.yml --ref master
 
       - name: Verify the live endpoint
@@ -504,15 +507,16 @@ jobs:
           ref="${{ github.ref_name }}"
           # Deploy Site takes 6-15 min; the edge caches the old doc at
           # most 5 min past the deploy (max-age=300). -L follows the
-          # static-routing 302.
-          for attempt in $(seq 1 25); do
+          # static-routing 302. Budget: 20 x ~80s stays inside the
+          # 60-min job cap alongside the wait loop.
+          for attempt in $(seq 1 20); do
             tag="$(curl -fsSL --max-time 20 "https://wowsp.langyo.xyz/api/digests/app" \
               | python -c 'import json,sys; print(json.load(sys.stdin)["tag"])' 2>/dev/null || true)"
             if [ "$tag" = "$ref" ]; then
               echo "note: live /api/digests/app serves $ref"
               exit 0
             fi
-            echo "note: live tag is '${tag:-unreachable}' (attempt $attempt/25)"
+            echo "note: live tag is '${tag:-unreachable}' (attempt $attempt/20)"
             sleep 60
           done
           echo "::error::live /api/digests/app never reached $ref"

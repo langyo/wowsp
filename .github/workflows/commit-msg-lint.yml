@@ -28,6 +28,10 @@ concurrency:
 
 permissions:
   contents: read
+  # The dispatch path reads the PR title + commit subjects through the
+  # Pull Request REST API (bot PRs fire no pull_request event that
+  # would carry them) — that needs pull-requests: read.
+  pull-requests: read
 
 jobs:
   lint-commits:
