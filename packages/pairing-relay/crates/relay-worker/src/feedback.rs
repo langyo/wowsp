@@ -41,7 +41,7 @@ use worker::{
 };
 
 /// KV binding name (wrangler.toml `kv_namespaces`).
-const KV: &str = "FEEDBACK_KV";
+pub(crate) const KV: &str = "FEEDBACK_KV";
 pub(crate) const FEISHU: &str = "https://open.feishu.cn/open-apis";
 
 /// KV keys: tenant-token cache + bootstrap base ids.
@@ -326,7 +326,7 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !crate::erp::session_ok(&req, &env) {
+    if !crate::erp::session_ok(&req, &env).await {
         return err(401, "unauthorized");
     }
     let query = req.url()?.query().unwrap_or("").to_string();
@@ -590,7 +590,7 @@ pub async fn handle_update(mut req: Request, env: Env) -> Result<Response> {
     ) {
         return err(403, "cross_origin");
     }
-    if !crate::erp::session_ok(&req, &env) {
+    if !crate::erp::session_ok(&req, &env).await {
         return err(401, "unauthorized");
     }
     let body: Value = req.json().await.unwrap_or(Value::Null);
@@ -671,7 +671,7 @@ pub async fn handle_attachment(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !crate::erp::session_ok(&req, &env) {
+    if !crate::erp::session_ok(&req, &env).await {
         return err(401, "unauthorized");
     }
     let query = req.url()?.query().unwrap_or("").to_string();

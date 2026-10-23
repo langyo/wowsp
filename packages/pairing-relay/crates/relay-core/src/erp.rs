@@ -143,6 +143,13 @@ pub struct SessionClaims {
     pub avatar: String,
     /// Unix expiry (seconds).
     pub exp: i64,
+    /// Whether the holder is an ADMIN (the env-configured allowlist).
+    /// Advisory in the cookie — every admin-gated handler recomputes it
+    /// against the live allowlist — but carried so the console's whoami
+    /// knows without a second lookup. `#[serde(default)]` keeps cookies
+    /// minted before the field existed parseable.
+    #[serde(default)]
+    pub admin: bool,
 }
 
 /// `<b64url(claims)>.<hex hmac>` — the Set-Cookie value.
@@ -165,74 +172,78 @@ pub fn read_session(key: &[u8; 32], value: &str, now_secs: i64) -> Option<Sessio
 
 // ── console allowlist ─────────────────────────────────────────────────
 
-/// Who may hold a console session: the open_ids listed in
-/// `ERP_ALLOWED_OPEN_IDS` (comma- or whitespace-separated) plus
-/// `FEEDBACK_ADMIN_OPEN_ID`. Both unset (or blank) leaves the list
-/// empty, which historically kept the legacy gate — any user the Feishu
-/// app lets sign in — so an upgrade never locks the owner out; the
-/// worker logs a warning and the console flags it (see
-/// [`ConsoleAllowlist::is_open`]).
+/// Who may hold a console session — two tiers, no legacy open mode:
 ///
-/// Audit M-6: that legacy gate is fail-OPEN — whoever can complete the
-/// Feishu OAuth owns every console and replay-admin route. The worker
-/// therefore wraps unconfigured deployments in [`ConsoleAllowlist::closed`]
-/// unless the operator explicitly sets `ERP_OPEN_ACCESS=1` to keep the
-/// legacy behavior; a configured allowlist is unaffected.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// - **Admins** — the open_ids in `ERP_ALLOWED_OPEN_IDS` (comma- or
+///   whitespace-separated) plus `FEEDBACK_ADMIN_OPEN_ID`. Full control:
+///   every console surface, replay admin, and the people-management
+///   endpoints that edit the member tier.
+/// - **Members** — open_ids granted from the console's 人员管理 page,
+///   stored by the worker in KV (`erp:members`). View access to the
+///   console (feedback review, replay collection) and nothing else.
+///
+/// The union gates login/session; the admin tier alone gates the
+/// management routes. Unconfigured (both tiers empty) admits NOBODY —
+/// the historical fail-open "any app user" gate (audit M-6) is gone;
+/// the maintainer bootstraps by setting `ERP_ALLOWED_OPEN_IDS` to their
+/// own open_id.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConsoleAllowlist {
-    open_ids: Vec<String>,
-    /// `false` only for the explicit [`ConsoleAllowlist::closed`] gate.
-    /// An empty list built by [`Self::from_config`] still means legacy
-    /// open mode — the closed gate is a separate, deliberate state.
-    open_mode: bool,
-}
-
-/// `Default` preserves the historical shape of an empty list: legacy open
-/// mode (the `#[derive(Default)]` bool would have flipped the semantics to
-/// closed — the closed gate is the EXPLICIT [`Self::closed`] constructor).
-impl Default for ConsoleAllowlist {
-    fn default() -> Self {
-        Self::from_config(None, None)
-    }
+    admin_ids: Vec<String>,
+    member_ids: Vec<String>,
 }
 
 impl ConsoleAllowlist {
-    /// Union of the two config values; blanks and stray separators are
-    /// ignored (open_ids never contain commas or whitespace).
+    /// The admin tier from the env config values; blanks and stray
+    /// separators are ignored (open_ids never contain commas/whitespace).
     pub fn from_config(allowed: Option<&str>, admin: Option<&str>) -> Self {
-        let mut open_ids: Vec<String> = Vec::new();
+        let mut admin_ids: Vec<String> = Vec::new();
         for raw in [allowed, admin].into_iter().flatten() {
             for id in raw.split(|c: char| c == ',' || c.is_whitespace()) {
-                if !id.is_empty() && !open_ids.iter().any(|known| known == id) {
-                    open_ids.push(id.to_string());
+                if !id.is_empty() && !admin_ids.iter().any(|known| known == id) {
+                    admin_ids.push(id.to_string());
                 }
             }
         }
         Self {
-            open_ids,
-            open_mode: true,
+            admin_ids,
+            member_ids: Vec::new(),
         }
     }
 
-    /// The fail-closed gate: admits nobody, regardless of what (or
-    /// whether) anything is configured.
-    pub fn closed() -> Self {
-        Self {
-            open_ids: Vec::new(),
-            open_mode: false,
-        }
+    /// Attach the KV-managed member tier (the console-granted view
+    /// access). Deduplicated against itself; admin membership wins if
+    /// an id appears in both tiers.
+    pub fn with_members(mut self, members: Vec<String>) -> Self {
+        self.member_ids = members
+            .into_iter()
+            .filter(|id| !id.is_empty())
+            .filter(|id| !self.admin_ids.iter().any(|known| known == id))
+            .collect();
+        self
     }
 
-    /// No open_id configured — the legacy any-app-user gate is in force.
-    /// The explicit [`Self::closed`] gate is never "open".
-    pub fn is_open(&self) -> bool {
-        self.open_mode && self.open_ids.is_empty()
-    }
-
-    /// Whether `open_id` may log in / keep using a session. An empty
-    /// open_id is never admitted, open mode or not.
+    /// Whether `open_id` may log in / keep using a session (either
+    /// tier). An empty open_id is never admitted.
     pub fn admits(&self, open_id: &str) -> bool {
-        !open_id.is_empty() && (self.is_open() || self.open_ids.iter().any(|id| id == open_id))
+        !open_id.is_empty() && (self.is_admin(open_id) || self.member_ids.iter().any(|id| id == open_id))
+    }
+
+    /// Whether `open_id` holds the ADMIN tier (management routes).
+    pub fn is_admin(&self, open_id: &str) -> bool {
+        !open_id.is_empty() && self.admin_ids.iter().any(|id| id == open_id)
+    }
+
+    /// The env-configured admin ids (for the people view's labels).
+    pub fn admin_ids(&self) -> &[String] {
+        &self.admin_ids
+    }
+
+    /// Nobody configured at all — the worker logs this loudly (the
+    /// maintainer must bootstrap `ERP_ALLOWED_OPEN_IDS` or nobody can
+    /// log in).
+    pub fn is_empty(&self) -> bool {
+        self.admin_ids.is_empty() && self.member_ids.is_empty()
     }
 }
 
@@ -371,6 +382,7 @@ mod tests {
             name: "伊欧".into(),
             avatar: "https://example.test/a.png".into(),
             exp: 1000,
+            admin: true,
         };
         let cookie = mint_session(&key, &claims);
         assert_eq!(read_session(&key, &cookie, 999), Some(claims));
@@ -394,15 +406,17 @@ mod tests {
         let list = ConsoleAllowlist::from_config(Some(" ou_a, ou_b ,,\nou_c "), Some("ou_admin"));
         for id in ["ou_a", "ou_b", "ou_c", "ou_admin"] {
             assert!(list.admits(id), "{id}");
+            // Everything the env names is the ADMIN tier.
+            assert!(list.is_admin(id), "{id}");
         }
-        assert!(!list.is_open());
         assert!(!list.admits("ou_other"));
+        assert!(!list.is_admin("ou_other"));
         // Exact match only — no prefix, case or substring slack.
         assert!(!list.admits("ou_"));
         assert!(!list.admits("OU_A"));
         assert!(!list.admits("ou_ab"));
         assert!(!list.admits(""));
-        // Either setting alone is enough to close the gate.
+        // Either setting alone is enough to populate the admin tier.
         let only_admin = ConsoleAllowlist::from_config(None, Some("ou_admin"));
         assert!(only_admin.admits("ou_admin") && !only_admin.admits("ou_a"));
         let only_list = ConsoleAllowlist::from_config(Some("ou_a"), None);
@@ -415,27 +429,38 @@ mod tests {
     }
 
     #[test]
-    fn unset_allowlist_keeps_the_legacy_open_gate() {
-        // Both unset, or set to nothing but separators, is open mode:
-        // any non-empty open_id the Feishu app admits gets in.
+    fn unset_allowlist_admits_nobody() {
+        // No legacy open mode: both unset (or separator-only) means the
+        // gate is empty — nobody logs in until the maintainer sets
+        // ERP_ALLOWED_OPEN_IDS.
         for (allowed, admin) in [(None, None), (Some(""), Some("  ")), (Some(" , ,"), None)] {
             let list = ConsoleAllowlist::from_config(allowed, admin);
-            assert!(list.is_open(), "{allowed:?} {admin:?}");
-            assert!(list.admits("ou_anyone"));
+            assert!(list.is_empty(), "{allowed:?} {admin:?}");
+            assert!(!list.admits("ou_anyone"));
             assert!(!list.admits(""), "an empty open_id never passes");
         }
     }
 
     #[test]
-    fn the_closed_gate_admits_nobody() {
-        // Audit M-6: the worker wraps an unconfigured deployment in this
-        // gate unless ERP_OPEN_ACCESS=1 — it must never let anyone through,
-        // however the cookie was minted.
-        let closed = ConsoleAllowlist::closed();
-        assert!(!closed.is_open());
-        assert!(!closed.admits("ou_anyone"));
-        assert!(!closed.admits("ou_owner"));
-        assert!(!closed.admits(""));
+    fn the_member_tier_grants_view_but_not_admin() {
+        let list = ConsoleAllowlist::from_config(Some("ou_owner"), None)
+            .with_members(vec!["ou_friend".into(), "ou_owner".into(), String::new()]);
+        // Members pass the session gate…
+        assert!(list.admits("ou_friend"));
+        // …but do not hold the admin tier.
+        assert!(!list.is_admin("ou_friend"));
+        assert!(list.is_admin("ou_owner"));
+        // An id in both tiers stays admin-only (dedup against admins).
+        assert!(list.admits("ou_owner") && list.is_admin("ou_owner"));
+        assert!(!list.admits("ou_stranger"));
+        assert!(!list.is_empty());
+    }
+
+    #[test]
+    fn unconfigured_gate_admits_nobody_even_with_a_valid_cookie() {
+        let empty = ConsoleAllowlist::default();
+        assert!(empty.is_empty());
+        assert!(!empty.admits("ou_owner"));
         // A valid signature does not rescue it either.
         let key = session_key("app-secret");
         let claims = SessionClaims {
@@ -443,9 +468,10 @@ mod tests {
             name: "伊欧".into(),
             avatar: "".into(),
             exp: 1000,
+            admin: true,
         };
         let cookie = mint_session(&key, &claims);
-        assert_eq!(read_console_session(&key, &cookie, 0, &closed), None);
+        assert_eq!(read_console_session(&key, &cookie, 0, &empty), None);
     }
 
     #[test]
@@ -456,6 +482,7 @@ mod tests {
             name: "伊欧".into(),
             avatar: "https://example.test/a.png".into(),
             exp: 1000,
+            admin: false,
         };
         let owner = mint_session(&key, &claims("ou_owner"));
         let ex = mint_session(&key, &claims("ou_ex"));
@@ -474,12 +501,27 @@ mod tests {
             read_console_session(&session_key("other"), &owner, 0, &list),
             None
         );
-        // Open mode admits any signed session with an open_id, but not a
-        // signed one that somehow carries none.
-        let open = ConsoleAllowlist::default();
-        assert!(read_console_session(&key, &ex, 0, &open).is_some());
+        // A member-tier session passes the gate but is not admin.
+        let members = ConsoleAllowlist::from_config(Some("ou_owner"), None)
+            .with_members(vec!["ou_ex".into()]);
+        assert!(read_console_session(&key, &ex, 0, &members).is_some());
+        assert!(!members.is_admin("ou_ex"));
+        // A signed session with a blank open_id never passes.
         let blank = mint_session(&key, &claims(""));
-        assert_eq!(read_console_session(&key, &blank, 0, &open), None);
+        assert_eq!(read_console_session(&key, &blank, 0, &members), None);
+    }
+
+    #[test]
+    fn pre_admin_flag_cookies_still_parse() {
+        // Cookies minted before the `admin` field existed must keep
+        // working (serde default) — the gate recomputes adminity live.
+        let key = session_key("app-secret");
+        let legacy = "{\"open_id\":\"ou_owner\",\"name\":\"伊欧\",\"avatar\":\"\",\"exp\":1000}";
+        let payload = b64url_encode(legacy.as_bytes());
+        let cookie = format!("{payload}.{}", hex(&hmac_sha256(&key, payload.as_bytes())));
+        let claims = read_session(&key, &cookie, 0).expect("legacy cookie parses");
+        assert_eq!(claims.open_id, "ou_owner");
+        assert!(!claims.admin);
     }
 
     #[test]

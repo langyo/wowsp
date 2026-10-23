@@ -100,9 +100,9 @@ export interface ErpSession {
   name?: string;
   avatar?: string;
   debug?: string;
-  /** Present (the caller's open_id) while the console runs under the
-   *  ERP_OPEN_ACCESS legacy gate — surface the copy-to-allowlist hint. */
-  open_access?: string;
+  /** The holder sits in the ADMIN tier (env allowlist): full control,
+   *  including the people-management surface. Members see false. */
+  admin?: boolean;
 }
 
 export async function getErpSession(): Promise<ErpSession> {
@@ -116,6 +116,55 @@ export async function erpLogout(): Promise<void> {
 /** The login hand-off is a full redirect (Feishu OAuth), not an XHR. */
 export function erpLogin(): void {
   window.location.href = "api/erp/login";
+}
+
+// ── erp people management (admin tier) ─────────────────────────────────────
+
+/** One Feishu org user row (GET /api/erp/users). */
+export interface ErpOrgUser {
+  open_id: string;
+  name: string;
+  avatar: string;
+}
+
+export interface ErpUsersPage {
+  ok: boolean;
+  users: ErpOrgUser[];
+  next_page_token: string | null;
+}
+
+/** GET /api/erp/users — one page of org users under a department
+ *  (department_id defaults to the root on the worker side). */
+export async function getErpUsers(pageToken?: string): Promise<ErpUsersPage> {
+  const qs = new URLSearchParams();
+  if (pageToken) qs.set("page_token", pageToken);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return json(fetch(`api/erp/users${suffix}`));
+}
+
+export interface ErpMembers {
+  ok: boolean;
+  /** KV-managed view-access tier. */
+  members: string[];
+  /** Env-configured admin tier (un-revocable from the console). */
+  admins: string[];
+}
+
+export async function getErpMembers(): Promise<ErpMembers> {
+  return json(fetch("api/erp/members"));
+}
+
+export async function setErpMember(
+  openId: string,
+  action: "add" | "remove",
+): Promise<ErpMembers> {
+  return json(
+    fetch("api/erp/members", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ open_id: openId, action }),
+    }),
+  );
 }
 
 // ── erp review console ─────────────────────────────────────────────────────

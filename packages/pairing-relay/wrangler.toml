@@ -181,13 +181,20 @@ new_sqlite_classes = ["ReplayIndex"]
 #   npx wrangler secret put REPLAY_ADMIN_KEY   (high-entropy random)
 # Unset = the admin routes answer to a logged-in erp session only.
 # Widget "wowsp-feedback" (managed mode, wowsp.langyo.xyz + localhost).
-# ERP_OPEN_ACCESS (audit M-6 switch) — the maintainer's explicit choice for
-# THIS deployment: the Feishu app is org-scoped, so org membership IS the
-# authorization ("能登录飞书组织 = 有权进后台"); the console therefore runs
-# in the legacy any-app-user gate by default. To tighten later, remove this
-# var (the code default is fail-closed) or set ERP_ALLOWED_OPEN_IDS.
+# Console access gate (two tiers, no open mode):
+#   ADMINS  — ERP_ALLOWED_OPEN_IDS (comma-separated, secret or var;
+#            `wrangler secret put` recommended) ∪ FEEDBACK_ADMIN_OPEN_ID.
+#            Full control incl. the 人员管理 surface. SET THIS to the
+#            maintainer's own open_id BEFORE deploying — an empty gate
+#            admits nobody (find your open_id via `wrangler tail` on a
+#            denied login attempt, or the Feishu admin console).
+#   MEMBERS — granted from the console's 人员管理 page, stored in the
+#            FEEDBACK_KV row `erp:members`; view access only.
+# The people page's Feishu user listing additionally needs the app to
+# hold the contact scopes (contact:user.base:readonly +
+# contact:department.base:readonly) and 通讯录数据权限 set to 全部成员
+# in the Feishu developer console — grant them there when first using it.
 [vars]
-ERP_OPEN_ACCESS = "1"
 TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
 # The latest published release, prefilling the console feedback form's
 # version dropdown for browser visitors (desktop links carry their own

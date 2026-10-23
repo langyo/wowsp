@@ -21,7 +21,6 @@ import {
   HAvatar,
   HButton,
   HkConfirmDialog,
-  HkCopyBadge,
   HNavItem,
   HkLoadingVeil,
   HModal,
@@ -29,19 +28,23 @@ import {
   HTabs,
   setLocale,
 } from "@celestia-island/hikari";
-import { MessageSquareText, Package } from "@lucide/vue";
+import { MessageSquareText, Package, Users } from "@lucide/vue";
 
 import { erpLogin, erpLogout, getErpSession, type ErpSession } from "@/shared/api";
 
 import FeedbackView from "./erp/FeedbackView";
 import ReplayAdminView from "./erp/ReplayAdminView";
+import PeopleView from "./erp/PeopleView";
 import { useConfirm } from "./erp/confirm";
 
-type ViewKey = "feedback" | "replays";
+type ViewKey = "feedback" | "replays" | "people";
 
-const VIEWS: { key: ViewKey; label: string }[] = [
+const VIEWS: { key: ViewKey; label: string; adminOnly?: boolean }[] = [
   { key: "feedback", label: "反馈记录" },
   { key: "replays", label: "录像征集" },
+  // The people-management surface rides the ADMIN tier only — the nav
+  // row and the header switcher both hide it from members.
+  { key: "people", label: "人员管理", adminOnly: true },
 ];
 
 /** The ?login=failed&reason=… copy — same strings the retired page
@@ -89,6 +92,10 @@ const ERP_STYLES = `
 .erp-side-foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-8, 8px); min-width: 0; }
 .erp-who { display: flex; align-items: center; gap: var(--space-8, 8px); padding: var(--space-6, 6px) var(--space-8, 8px); border-radius: var(--radius-md, 8px); background: color-mix(in srgb, rgb(var(--color-primary)) 8%, transparent); min-width: 0; }
 .erp-who span { font-size: var(--text-sm, 0.8125rem); font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.erp-people-name { display: flex; align-items: center; gap: var(--space-8, 8px); min-width: 0; }
+.erp-people-mono { font-family: var(--font-mono, monospace); font-size: var(--text-xs, 0.75rem); color: rgb(var(--color-muted)); word-break: break-all; }
+.erp-people-admin { color: rgb(var(--color-primary)); font-weight: 600; font-size: var(--text-sm, 0.8125rem); }
+.erp-people-member { color: rgb(var(--color-success)); font-weight: 600; font-size: var(--text-sm, 0.8125rem); }
 `;
 
 /**
@@ -179,10 +186,20 @@ export default defineComponent({
       );
     }
 
+    // A stale admin cookie (env list changed since mint) must not keep
+    // a demoted holder on an admin-only view.
+    watch(
+      () => session.value?.admin,
+      (admin) => {
+        if (!admin && view.value === "people") view.value = "feedback";
+      },
+    );
+
     // Bound slot objects — an inline literal is not normalized to slots
     // (the same gotcha HkAdminTablePage documents).
     const feedbackSlots = { onSessionLost: loseSession };
     const replaysSlots = { onSessionLost: loseSession };
+    const peopleSlots = { onSessionLost: loseSession };
 
     const navFeedbackSlots = {
       icon: () => <MessageSquareText size={16} />,
@@ -191,6 +208,10 @@ export default defineComponent({
     const navReplaysSlots = {
       icon: () => <Package size={16} />,
       default: () => "录像征集",
+    };
+    const navPeopleSlots = {
+      icon: () => <Users size={16} />,
+      default: () => "人员管理",
     };
 
     const shellSlots = {
@@ -221,7 +242,10 @@ export default defineComponent({
               <HTabs
                 modelValue={view.value}
                 onUpdate:modelValue={(v: string) => (view.value = v as ViewKey)}
-                tabs={VIEWS.map((v) => ({ key: v.key, label: v.label }))}
+                tabs={VIEWS.filter((v) => !v.adminOnly || session.value?.admin).map((v) => ({
+                  key: v.key,
+                  label: v.label,
+                }))}
               />
             ),
             "avatar-modal": (modal: { open: boolean; onUpdateOpen: (v: boolean) => void }) => (
@@ -267,6 +291,17 @@ export default defineComponent({
             >
               {navReplaysSlots}
             </HNavItem>
+            {session.value?.admin ? (
+              <HNavItem
+                active={view.value === "people"}
+                onClick={() => {
+                  view.value = "people";
+                  p.onNavigate();
+                }}
+              >
+                {navPeopleSlots}
+              </HNavItem>
+            ) : null}
           </nav>
           <div class="erp-side-foot">
             <div class="erp-who">
@@ -292,22 +327,13 @@ export default defineComponent({
       ),
       content: () => (
         <div class="erp-view">
-          {session.value?.open_access ? (
-            <div class="erp-notice">
-              <HAlert
-                variant="info"
-                banner
-                message="当前按组织授权开放（ERP_OPEN_ACCESS=1）：能登录该飞书应用的成员都可以进入后台。如需收紧为个人名单，请设置 ERP_ALLOWED_OPEN_IDS 并移除 ERP_OPEN_ACCESS。"
-              />
-              <div class="erp-notice-copy">
-                <span class="erp-muted">你的 open_id（收紧名单时点按复制）：</span>
-                <HkCopyBadge mono size="sm" variant="info">
-                  {session.value?.open_access}
-                </HkCopyBadge>
-              </div>
-            </div>
+          {view.value === "feedback" ? (
+            <FeedbackView {...feedbackSlots} />
+          ) : view.value === "replays" ? (
+            <ReplayAdminView {...replaysSlots} />
+          ) : session.value?.admin ? (
+            <PeopleView {...peopleSlots} />
           ) : null}
-          {view.value === "feedback" ? <FeedbackView {...feedbackSlots} /> : <ReplayAdminView {...replaysSlots} />}
         </div>
       ),
       overlays: () => (
