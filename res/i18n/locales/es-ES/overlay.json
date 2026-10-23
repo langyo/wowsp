@@ -17,5 +17,10 @@
   "avgDmg": "Daño medio",
   "colScopeSolo": "solo",
   "colScopeShip": "barco",
-  "colScopeClass": "clase"
+  "colScopeClass": "clase",
+  "colHeadWinrate": "WR",
+  "colHeadPr": "PR",
+  "colHeadBattles": "Batallas",
+  "colHeadDmg": "Daño",
+  "colHeaderJoin": " "
 }

@@ -183,9 +183,9 @@ html.overlay-hidden body {
    has for that metric — not a worst-case ch guess — and separated from
    its neighbors by the cell's own 4px side margins; no dot separators
    between the columns. A missing value renders its dash in the same
-   cell, keeping the column. The battles unit and the scope tag ride
-   inside their cell (battlesText / scopeTagHtml), so the measured
-   column covers the whole face. */
+   cell, keeping the column. The battles unit rides inside its cell
+   (battlesText), so the measured column covers the whole face; which
+   column is which scope is the head row's job (overlay-chip--head). */
 .overlay-chip__stat b {
   display: inline-block;
   text-align: right;
@@ -213,26 +213,21 @@ html.overlay-hidden body {
   font-size: 0.85em;
 }
 
-/* A scoped column's tag (单人/单船/舰种 …) ahead of its figure: same
-   treatment as the battles unit — the text face, one size down, riding
-   inside the cell its figure is measured in. Global columns carry no
-   tag: the unmarked figure IS the account career. The tag centers
-   vertically against the mono figures (an inline-block on the shared
-   baseline reads as hanging LOW beside them, and plain
-   vertical-align: middle still parks a CJK glyph box below the digits'
-   optical midline — the same relative lift the loader beads, dash and
-   separator share) and keeps a deliberate margin to the figure on its
-   right — a CJK tag pressed flat against the digits reads as one
-   garbled figure, not a prefix. */
-.overlay-chip .overlay-scope {
+/* The per-side COLUMN HEAD row (.overlay-chip--head, one per side above
+   the block's first row): one muted word per configured column — the
+   metric word (胜率/PR/场次/场均), prefixed with the scope when the
+   column is not the global career (单人胜率 / Solo WR). The words ride
+   the same data-col cells the figures do, so chipFit's column pins hold
+   header and figures to one width per column: the head reads as the top
+   of the table the rows form. Quieter than a row: the text face (the
+   words are words, not figures), one size down, muted — a caption, not a
+   headline. Keeps the base chip skin + anchoring so fitChips treats it
+   like any row of its side (nothing to trim inside, only the clamp). */
+.overlay-chip--head .overlay-chip__stat b {
   font-family: var(--overlay-text-font);
-  font-size: 0.8em;
-  opacity: 0.72;
-  display: inline-block;
-  vertical-align: middle;
-  position: relative;
-  top: -0.07em;
-  margin-right: 0.25em;
+  font-weight: 400;
+  font-size: 0.85em;
+  color: rgb(165 175 185);
 }
 
 /* The ONE transient-status card — spinner + copy, centered over the table

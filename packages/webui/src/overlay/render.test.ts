@@ -62,7 +62,9 @@ const rowChips = (): HTMLElement[] =>
   // The intel summary cards share the overlay-chip base class; the row
   // chips are the ones carrying a side modifier only.
   [...document.querySelectorAll<HTMLElement>(".overlay-chip")].filter(
-    (el) => !el.classList.contains("overlay-chip--intel"),
+    (el) =>
+      !el.classList.contains("overlay-chip--intel") &&
+      !el.classList.contains("overlay-chip--head"),
   );
 
 const nameOf = (chip: HTMLElement): string =>

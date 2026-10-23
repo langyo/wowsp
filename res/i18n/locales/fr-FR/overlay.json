@@ -17,5 +17,10 @@
   "avgDmg": "Dégâts moy.",
   "colScopeSolo": "solo",
   "colScopeShip": "navire",
-  "colScopeClass": "classe"
+  "colScopeClass": "classe",
+  "colHeadWinrate": "WR",
+  "colHeadPr": "PR",
+  "colHeadBattles": "Batailles",
+  "colHeadDmg": "Dégâts",
+  "colHeaderJoin": " "
 }

@@ -62,7 +62,9 @@ const anchor = {
 
 const rowChips = (): HTMLElement[] =>
   [...document.querySelectorAll<HTMLElement>(".overlay-chip")].filter(
-    (el) => !el.classList.contains("overlay-chip--intel"),
+    (el) =>
+      !el.classList.contains("overlay-chip--intel") &&
+      !el.classList.contains("overlay-chip--head"),
   );
 
 const avgLines = (): HTMLElement[] => [
@@ -296,14 +298,26 @@ describe("overlay page loading faces", () => {
       expect(shipCell.classList.contains("col-waiting")).toBe(true);
       expect(shipCell.classList.contains("muted")).toBe(false);
       expect(shipCell.querySelectorAll(".overlay-dots")).toHaveLength(1);
-      // Both scoped columns carry their tag (单人 / 单船).
-      expect(stat.querySelectorAll(".overlay-scope")).toHaveLength(2);
+      // No per-cell scope tags — the head row owns the naming.
+      expect(chip.querySelectorAll(".overlay-scope")).toHaveLength(0);
       // The row itself carries figures, so it is NOT sparse — the stat cell
       // still joins the side's pinned width.
       expect(stat.classList.contains("overlay-chip__stat--sparse")).toBe(false);
     }
+    // The per-side COLUMN HEAD rows name the three configured columns —
+    // 胜率 / 单人胜率 / 单船场次 (zh join empty) — riding the same data-col
+    // cells as the figures, the enemy head mirroring the column order.
+    const headOf = (side: string) =>
+      [
+        ...document.querySelectorAll<HTMLSpanElement>(
+          `.overlay-chip--head.overlay-chip--${side} .overlay-chip__stat b`,
+        ),
+      ].map((b) => `${b.dataset.col}:${b.textContent}`);
+    expect(document.querySelectorAll(".overlay-chip--head")).toHaveLength(2);
+    expect(headOf("ally")).toEqual(["0:胜率", "1:单人胜率", "2:单船场次"]);
+    expect(headOf("enemy")).toEqual(["2:单船场次", "1:单人胜率", "0:胜率"]);
     // The mirrored split: langyo's solo cell is the drawn dash, never the
-    // career winrate wearing the 单人 tag; the honest splits show 51.0%.
+    // career winrate; the honest splits show 51.0%.
     const langyoChip = chips.find((c) => c.textContent?.includes("langyo"))!;
     const langyoSolo = langyoChip.querySelector('b[data-col="1"]')!;
     expect(langyoSolo.querySelector(".overlay-dash")).not.toBeNull();
