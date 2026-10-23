@@ -5,8 +5,9 @@
 //! of the machine the incident happened on — CPU / board / BIOS / RAM
 //! modules / GPUs with driver versions / physical disks with serial numbers
 //! / every NIC's MAC address / OS build / VC++ runtimes / DirectX /
-//! antivirus products, plus (when the user grants UAC) Secure Boot and TPM
-//! state.
+//! antivirus products (Windows Security Center registration merged with a
+//! process/service signature sweep, so unregistered suites surface too),
+//! plus (when the user grants UAC) Secure Boot and TPM state.
 //!
 //! Privacy flow — this data identifies a machine, so the order is fixed:
 //!
@@ -453,14 +454,464 @@ fn av_state_label(state: u32) -> &'static str {
     }
 }
 
+// ── antivirus signature table (pure; shared by the WMI sweep, the
+//    registry fallback and the tests) ────────────────────────────────────
+
+/// One known security product: how each detection source spells it. All
+/// comparisons are case-insensitive; a product is reported once with every
+/// source that saw it (see [`AvFindings`]).
+struct AvSignature {
+    /// Canonical bilingual label used in the report.
+    product: &'static str,
+    /// Windows Security Center `displayName` keywords (substring).
+    display: &'static [&'static str],
+    /// Process image names (`hipsdaemon.exe`), exact match.
+    processes: &'static [&'static str],
+    /// Service short names (`windefend`), exact match.
+    services: &'static [&'static str],
+    /// Service display-name / install-path keywords (substring).
+    paths: &'static [&'static str],
+}
+
+/// The products the antivirus sweep recognizes. Order = report order:
+/// Defender, the Chinese suites (the 360 consumer lines stay distinct from
+/// the QiAnXin enterprise spin-off), then the international ones. A
+/// Security Center product missing from this table still ships verbatim —
+/// only the canonical label is lost.
+///
+/// Keywords must stay distinctive: bare `360` would light up on the CN game
+/// launcher (`360游戏大厅`) and download dirs, and Avira's legacy `AntiVir`
+/// spelling is a substring of every `Antivirus` install path, so neither is
+/// used as a keyword.
+#[rustfmt::skip]
+const AV_SIGNATURES: &[AvSignature] = &[
+    AvSignature {
+        product: "Windows Defender 微软 Defender",
+        display: &["windows defender", "microsoft defender"],
+        processes: &["msmpeng.exe", "nissrv.exe", "mssense.exe"],
+        services: &["windefend", "wdnissvc"],
+        // No path keywords: "Windows Defender Firewall" (mpssvc) is the
+        // OS firewall, not the AV engine — the exact service names above
+        // are the truthful evidence.
+        paths: &[],
+    },
+    AvSignature {
+        product: "360 安全卫士 360 Total Security",
+        display: &["360 total security", "360安全卫士"],
+        processes: &["360tray.exe", "zhudongfangyu.exe", "360safe.exe",
+                     "qhactivedefense.exe", "liveupdate360.exe"],
+        services: &[],
+        paths: &["360safe", "360安全卫士"],
+    },
+    AvSignature {
+        product: "360 杀毒 360 Internet Security",
+        display: &["360 internet security", "360杀毒"],
+        processes: &["360sd.exe", "360rp.exe", "360rps.exe"],
+        services: &[],
+        paths: &["360sd", "360杀毒"],
+    },
+    AvSignature {
+        product: "奇安信天擎 QiAnXin TianQing",
+        display: &["奇安信", "天擎", "qianxin"],
+        processes: &["tqclient.exe", "tqtray.exe", "qaxengmanager.exe",
+                     "tqdefender.exe"],
+        services: &[],
+        paths: &["qax", "奇安信", "天擎", "qianxin"],
+    },
+    AvSignature {
+        product: "火绒安全软件 Huorong Internet Security",
+        display: &["火绒", "huorong"],
+        processes: &["hipstray.exe", "hipsdaemon.exe", "hipsmain.exe",
+                     "hipslog.exe", "wsctrl.exe", "wsctrlsvc.exe", "usysdiag.exe"],
+        services: &["hipsdaemon", "sysdiag"],
+        paths: &["huorong", "火绒", "sysdiag"],
+    },
+    AvSignature {
+        product: "腾讯电脑管家 Tencent PC Manager",
+        display: &["腾讯电脑管家", "tencent pc manager"],
+        processes: &["qqpctray.exe", "qqpcrtp.exe", "qqpcmgr.exe", "qqpcnetflow.exe"],
+        services: &["qpcore", "qpcoreservice"],
+        paths: &["qqpcmgr", "腾讯电脑管家"],
+    },
+    AvSignature {
+        product: "金山毒霸 Kingsoft Antivirus",
+        // `kingsoft` alone also covers WPS Office's install dirs (same
+        // vendor, different product) — require the AV spelling.
+        display: &["kingsoft antivirus", "金山毒霸"],
+        processes: &["kxetray.exe", "kxescore.exe", "kxecenter.exe", "kxemain.exe",
+                     "kismain.exe", "kislive.exe", "kscan.exe", "kwsprotect64.exe"],
+        services: &[],
+        paths: &["kingsoft antivirus", "kingsoft\\kis", "毒霸"],
+    },
+    AvSignature {
+        product: "百度杀毒/百度卫士 Baidu Antivirus",
+        display: &["百度杀毒", "百度卫士", "baidu antivirus"],
+        processes: &["baidusd.exe", "baidusdsvc.exe", "baidusdtray.exe", "baiduansvx.exe"],
+        services: &[],
+        paths: &["百度杀毒", "百度卫士", "baidusd"],
+    },
+    AvSignature {
+        product: "2345 安全卫士 2345 Safe Guard",
+        display: &["2345安全卫士"],
+        processes: &["2345safe.exe"],
+        services: &[],
+        paths: &["2345safe", "2345安全卫士"],
+    },
+    AvSignature {
+        product: "联想电脑管家/联想安全卫士 Lenovo PC Manager",
+        display: &["联想电脑管家", "联想安全卫士"],
+        processes: &["lenovopcmanager.exe"],
+        services: &[],
+        paths: &["联想电脑管家", "联想安全卫士", "lenovo\\pcmanager"],
+    },
+    AvSignature {
+        product: "华为电脑管家 Huawei PC Manager",
+        display: &["华为电脑管家"],
+        processes: &[],
+        services: &[],
+        paths: &["华为电脑管家", "huawei\\pcmanager"],
+    },
+    AvSignature {
+        product: "瑞星 Rising",
+        display: &["瑞星", "rising"],
+        processes: &["ravmond.exe", "ravmon.exe", "rfwmain.exe", "rsmgrsvc.exe"],
+        services: &[],
+        paths: &["\\rising\\", "瑞星"],
+    },
+    AvSignature {
+        product: "微点主动防御 Micropoint",
+        display: &["微点"],
+        processes: &["mpmon.exe"],
+        services: &[],
+        paths: &["micropoint", "微点"],
+    },
+    AvSignature {
+        product: "江民杀毒 Jiangmin",
+        display: &["江民"],
+        processes: &["kvfw.exe", "kvsrvxp.exe", "kvmonxp.exe", "kvwsc.exe"],
+        services: &[],
+        paths: &["jiangmin", "江民"],
+    },
+    AvSignature {
+        product: "卡巴斯基 Kaspersky",
+        display: &["kaspersky"],
+        processes: &["avp.exe", "avpui.exe", "kavtray.exe", "kavfs.exe"],
+        services: &["klnagent", "kavfsservice"],
+        paths: &["kaspersky"],
+    },
+    AvSignature {
+        product: "ESET",
+        display: &["eset"],
+        processes: &["ekrn.exe", "egui.exe"],
+        services: &["ekrn"],
+        // `eset` alone substring-matches `ReSetup`/`FactoryReset` paths.
+        paths: &["\\eset\\"],
+    },
+    AvSignature {
+        product: "Norton/Symantec 诺顿",
+        display: &["norton", "symantec"],
+        processes: &["ccsvchst.exe", "nortonsvc.exe", "smc.exe", "n360.exe"],
+        services: &["nortonsvc"],
+        paths: &["norton", "symantec"],
+    },
+    AvSignature {
+        product: "McAfee",
+        display: &["mcafee", "trellix"],
+        processes: &["mcapexe.exe", "mcagent.exe", "mcshield.exe", "masvc.exe"],
+        services: &["masvc", "mcshield"],
+        paths: &["mcafee", "trellix"],
+    },
+    AvSignature {
+        product: "Bitdefender",
+        display: &["bitdefender"],
+        processes: &["bdagent.exe", "vsserv.exe", "bdservicehost.exe"],
+        services: &["vsserv"],
+        paths: &["bitdefender"],
+    },
+    AvSignature {
+        product: "Avast",
+        display: &["avast"],
+        processes: &["avastsvc.exe", "avastui.exe", "aswidsagent.exe"],
+        services: &["avastsvc"],
+        paths: &["avast"],
+    },
+    AvSignature {
+        product: "AVG",
+        display: &["avg"],
+        processes: &["avgsvc.exe", "avgui.exe", "avgwdsvc.exe", "avgidsagent.exe"],
+        services: &["avgsvc", "avgwdsvc"],
+        paths: &["avg antivirus", "avg technologies", "avg\\antivirus"],
+    },
+    AvSignature {
+        product: "Avira 小红伞",
+        display: &["avira"],
+        processes: &["avgnt.exe", "avshadow.exe", "avcenter.exe", "avguard.exe"],
+        services: &[],
+        paths: &["avira"],
+    },
+    AvSignature {
+        product: "F-Secure",
+        display: &["f-secure"],
+        processes: &[],
+        services: &[],
+        paths: &["f-secure"],
+    },
+    AvSignature {
+        product: "Trend Micro 趋势科技",
+        display: &["trend micro", "趋势科技"],
+        processes: &["pccntmon.exe", "ntrtscan.exe", "tmlisten.exe", "tmbmsrv.exe"],
+        services: &["ntrtscan", "tmlisten"],
+        paths: &["trend micro", "趋势科技"],
+    },
+    AvSignature {
+        product: "Malwarebytes",
+        display: &["malwarebytes"],
+        processes: &["mbamservice.exe", "mbam.exe"],
+        services: &["mbamservice"],
+        paths: &["malwarebytes"],
+    },
+    AvSignature {
+        product: "Comodo",
+        display: &["comodo"],
+        processes: &["cis.exe", "cmdagent.exe"],
+        services: &[],
+        paths: &["comodo"],
+    },
+    AvSignature {
+        product: "Emsisoft",
+        display: &["emsisoft"],
+        processes: &["a2service.exe"],
+        services: &[],
+        paths: &["emsisoft"],
+    },
+    AvSignature {
+        product: "G Data",
+        // `g data` alone would substring-match "Big Data …" service names.
+        display: &["g data antivirus", "g data internet", "g data total"],
+        processes: &[],
+        services: &[],
+        paths: &["\\g data\\"],
+    },
+    AvSignature {
+        product: "Quick Heal",
+        display: &["quick heal"],
+        processes: &[],
+        services: &[],
+        paths: &["quick heal"],
+    },
+    AvSignature {
+        product: "AhnLab V3",
+        display: &["ahnlab"],
+        processes: &[],
+        services: &[],
+        paths: &["ahnlab"],
+    },
+];
+
+/// Security Center display name → canonical product label.
+fn av_product_for_display(display: &str) -> Option<&'static str> {
+    let hay = display.to_lowercase();
+    AV_SIGNATURES
+        .iter()
+        .find(|sig| sig.display.iter().any(|k| hay.contains(k)))
+        .map(|s| s.product)
+}
+
+/// Process image name (exact) or executable path (keyword) → canonical
+/// product label.
+fn av_product_for_process(image: &str, path: &str) -> Option<&'static str> {
+    let name = image.to_lowercase();
+    let path = path.to_lowercase();
+    AV_SIGNATURES
+        .iter()
+        .find(|sig| {
+            sig.processes.iter().any(|p| *p == name) || sig.paths.iter().any(|k| path.contains(k))
+        })
+        .map(|s| s.product)
+}
+
+/// Service short name (exact), display name or image path (keyword) →
+/// canonical product label.
+fn av_product_for_service(name: &str, display: &str, path: &str) -> Option<&'static str> {
+    let name = name.to_lowercase();
+    let display = display.to_lowercase();
+    let path = path.to_lowercase();
+    // The display-keyword list is deliberately NOT matched here: it exists
+    // to canonicalize Security Center names, and as service-display-name
+    // substrings words like `eset` (`reset`) or `windows defender`
+    // ("Windows Defender Firewall", mpssvc) would light up wrong evidence.
+    AV_SIGNATURES
+        .iter()
+        .find(|sig| {
+            sig.services.iter().any(|s| *s == name)
+                || sig
+                    .paths
+                    .iter()
+                    .any(|k| path.contains(k) || display.contains(k))
+        })
+        .map(|s| s.product)
+}
+
+/// Table order for report rows; unrecognized Security Center names sort
+/// last (alphabetically within their group).
+fn av_signature_rank(product: &str) -> usize {
+    AV_SIGNATURES
+        .iter()
+        .position(|s| s.product == product)
+        .unwrap_or(usize::MAX)
+}
+
+/// One merged antivirus row under construction.
+#[derive(Default)]
+struct AvEntry {
+    product: String,
+    rank: usize,
+    /// Security Center registration: raw `displayName` + `productState`
+    /// (None when WSC listed the product without a parseable state).
+    wsc: Option<(String, Option<u32>)>,
+    /// Distinct process image names (lowercased).
+    processes: Vec<String>,
+    /// Distinct services as `(short name, state)`; empty state when the
+    /// source (registry fallback) cannot tell.
+    services: Vec<(String, String)>,
+}
+
+/// Per-product evidence merged across every detection source; renders one
+/// report row per product no matter how many sources saw it.
+#[derive(Default)]
+struct AvFindings {
+    entries: Vec<AvEntry>,
+}
+
+impl AvFindings {
+    fn entry_for(&mut self, product: &str, rank: usize) -> &mut AvEntry {
+        if let Some(idx) = self.entries.iter().position(|e| e.product == product) {
+            return &mut self.entries[idx];
+        }
+        self.entries.push(AvEntry {
+            product: product.to_string(),
+            rank,
+            ..AvEntry::default()
+        });
+        self.entries.last_mut().expect("just pushed")
+    }
+
+    /// A `root\SecurityCenter2` row: canonical label when the display name
+    /// matches the table, the raw name otherwise.
+    fn add_wsc(&mut self, raw_display: &str, state: Option<u32>) {
+        let product = av_product_for_display(raw_display).unwrap_or(raw_display);
+        let rank = av_signature_rank(product);
+        let entry = self.entry_for(product, rank);
+        if entry.wsc.is_none() {
+            entry.wsc = Some((raw_display.to_string(), state));
+        }
+    }
+
+    fn add_process(&mut self, image: &str, path: &str) {
+        if let Some(product) = av_product_for_process(image, path) {
+            let rank = av_signature_rank(product);
+            let entry = self.entry_for(product, rank);
+            let name = image.to_lowercase();
+            if !entry.processes.contains(&name) {
+                entry.processes.push(name);
+            }
+        }
+    }
+
+    fn add_service(&mut self, name: &str, display: &str, state: &str, path: &str) {
+        if let Some(product) = av_product_for_service(name, display, path) {
+            let rank = av_signature_rank(product);
+            let entry = self.entry_for(product, rank);
+            let key = name.to_lowercase();
+            if !entry.services.iter().any(|(n, _)| *n == key) {
+                entry.services.push((key, state.to_string()));
+            }
+        }
+    }
+
+    /// Merged rows: `{canonical} — {headline}; {evidence sources}`. The
+    /// canonical part (before the em dash) is what the bundle manifest's
+    /// `hw-antivirus:` line reuses.
+    fn render(mut self) -> Vec<(String, String)> {
+        self.entries
+            .sort_by(|a, b| (a.rank, &a.product).cmp(&(b.rank, &b.product)));
+        let mut rows = Vec::new();
+        for entry in self.entries {
+            let headline = match &entry.wsc {
+                Some((_, Some(state))) => {
+                    format!("{}, productState 0x{state:06X}", av_state_label(*state))
+                },
+                Some((_, None)) => "registered".into(),
+                None if !entry.processes.is_empty()
+                    || entry
+                        .services
+                        .iter()
+                        .any(|(_, st)| st.eq_ignore_ascii_case("running")) =>
+                {
+                    "running".into()
+                },
+                None => "installed".into(),
+            };
+            let mut sources = Vec::new();
+            if let Some((raw, _)) = &entry.wsc {
+                sources.push(format!("security center \"{raw}\""));
+            }
+            if !entry.processes.is_empty() {
+                let mut s = format!(
+                    "process {}",
+                    entry
+                        .processes
+                        .iter()
+                        .take(2)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                if entry.processes.len() > 2 {
+                    s.push_str(&format!(" (+{} more)", entry.processes.len() - 2));
+                }
+                sources.push(s);
+            }
+            if !entry.services.is_empty() {
+                let shown: Vec<String> = entry
+                    .services
+                    .iter()
+                    .take(2)
+                    .map(|(n, st)| {
+                        if st.is_empty() {
+                            n.clone()
+                        } else {
+                            format!("{n} [{st}]")
+                        }
+                    })
+                    .collect();
+                let mut s = format!("service {}", shown.join(", "));
+                if entry.services.len() > 2 {
+                    s.push_str(&format!(" (+{} more)", entry.services.len() - 2));
+                }
+                sources.push(s);
+            }
+            if sources.is_empty() {
+                // Unreachable: an entry only exists once a source added it.
+                continue;
+            }
+            rows.push((
+                "product".into(),
+                format!("{} — {}; {}", entry.product, headline, sources.join("; ")),
+            ));
+        }
+        rows
+    }
+}
+
 // ── Windows collectors ─────────────────────────────────────────────────
 
 #[cfg(windows)]
 mod win {
     use super::anyhow;
     use super::{
-        ELEVATED_FLAG, ElevationStatus, HardwareReport, HardwareSection, av_state_label,
-        dmtf_display, drive_type_name, fmt_bps, fmt_gib, memory_type_name, uptime_since,
+        AvFindings, ELEVATED_FLAG, ElevationStatus, HardwareReport, HardwareSection, dmtf_display,
+        drive_type_name, fmt_bps, fmt_gib, memory_type_name, uptime_since,
     };
     use std::collections::HashMap;
     use std::path::Path;
@@ -916,6 +1367,29 @@ mod win {
             }
             report.push_lines("motherboard", section_title("motherboard"), rows);
         }
+        // Antivirus from the service registry when the WMI sweep never
+        // produced the section (wedged WMI service): every AV installs
+        // services, and their names / display names / image paths carry the
+        // product, so the signature table still fires without WMI.
+        if report.section("antivirus").is_none() {
+            let mut av = AvFindings::default();
+            if let Ok(services) = hklm.open_subkey_with_flags(
+                r"SYSTEM\CurrentControlSet\Services",
+                KEY_READ | KEY_WOW64_64KEY,
+            ) {
+                for key in services.enum_keys().flatten() {
+                    let Ok(sub) = services.open_subkey_with_flags(&key, KEY_READ) else {
+                        continue;
+                    };
+                    let display = sub
+                        .get_value::<String, _>("DisplayName")
+                        .unwrap_or_default();
+                    let image = sub.get_value::<String, _>("ImagePath").unwrap_or_default();
+                    av.add_service(&key, &display, "", &image);
+                }
+            }
+            report.push_lines("antivirus", section_title("antivirus"), av.render());
+        }
     }
 
     // ── WMI sweep ──────────────────────────────────────────────────────
@@ -1342,28 +1816,28 @@ mod win {
             Err(e) => sweep.err(format!("connect root\\wmi: {e}")),
         }
 
-        // Antivirus products from the Security Center (workstation SKUs;
-        // server SKUs have no SecurityCenter2 namespace — recorded, not an
-        // error worth failing the sweep over).
+        // Antivirus: Windows Security Center registration merged with a
+        // known-product sweep over processes and services. WSC only lists
+        // what registered with it (the namespace itself is absent on server
+        // SKUs and when WSC is off), so unregistered or portable installs —
+        // common with Chinese suites like Huorong and QiAnXin TianQing —
+        // surface via their images and services instead. Every source
+        // merges into one row per product.
+        let mut av = AvFindings::default();
         match WMIConnection::with_namespace_path("ROOT\\SecurityCenter2") {
             Ok(con) => match rows(
                 &con,
                 "SELECT displayName, productState FROM AntiVirusProduct",
             ) {
                 Ok(list) => {
-                    let mut lines = Vec::new();
                     for row in &list {
-                        let name = v_str(row, "displayName").unwrap_or_else(|| "unknown".into());
-                        let value = match v_u64(row, "productState") {
-                            Some(state) => format!(
-                                "{name} — {} (productState 0x{state:06X})",
-                                av_state_label(state as u32)
-                            ),
-                            None => name,
-                        };
-                        lines.push(("product".into(), value));
+                        if let Some(name) = v_str(row, "displayName") {
+                            av.add_wsc(
+                                &name,
+                                v_u64(row, "productState").and_then(|s| u32::try_from(s).ok()),
+                            );
+                        }
                     }
-                    sweep.push("antivirus", lines);
                 },
                 Err(e) => sweep.err(e.to_string()),
             },
@@ -1371,6 +1845,40 @@ mod win {
                 "connect root\\SecurityCenter2 (server SKU or WSC off): {e}"
             )),
         }
+        if let Some(con) = &cimv2 {
+            match rows(con, "SELECT Name, ExecutablePath FROM Win32_Process") {
+                Ok(list) => {
+                    for row in &list {
+                        if let Some(image) = v_str(row, "Name") {
+                            av.add_process(
+                                &image,
+                                v_str(row, "ExecutablePath").as_deref().unwrap_or(""),
+                            );
+                        }
+                    }
+                },
+                Err(e) => sweep.err(e.to_string()),
+            }
+            match rows(
+                con,
+                "SELECT Name, DisplayName, State, PathName FROM Win32_Service",
+            ) {
+                Ok(list) => {
+                    for row in &list {
+                        if let Some(name) = v_str(row, "Name") {
+                            av.add_service(
+                                &name,
+                                v_str(row, "DisplayName").as_deref().unwrap_or(""),
+                                v_str(row, "State").as_deref().unwrap_or(""),
+                                v_str(row, "PathName").as_deref().unwrap_or(""),
+                            );
+                        }
+                    }
+                },
+                Err(e) => sweep.err(e.to_string()),
+            }
+        }
+        sweep.push("antivirus", av.render());
 
         // Admin-only rows — the reason the elevated helper exists.
         if elevated {
@@ -1712,6 +2220,195 @@ mod tests {
         // Disabled shape keeps a readable verdict; the raw hex ships in
         // the report line so a misread stays diagnosable.
         assert_eq!(av_state_label(0x061200), "disabled/snoozed");
+    }
+
+    #[test]
+    fn av_signatures_cover_the_named_products() {
+        // Process images — the load-bearing source for suites that never
+        // registered with the Security Center.
+        let process_cases = [
+            ("MsMpEng.exe", "Windows Defender 微软 Defender"),
+            ("360Tray.exe", "360 安全卫士 360 Total Security"),
+            ("ZhuDongFangYu.exe", "360 安全卫士 360 Total Security"),
+            ("360sd.exe", "360 杀毒 360 Internet Security"),
+            ("TQClient.exe", "奇安信天擎 QiAnXin TianQing"),
+            ("HipsDaemon.exe", "火绒安全软件 Huorong Internet Security"),
+            ("wsctrl.exe", "火绒安全软件 Huorong Internet Security"),
+            ("QQPCTray.exe", "腾讯电脑管家 Tencent PC Manager"),
+            ("kxetray.exe", "金山毒霸 Kingsoft Antivirus"),
+            ("BaiduSd.exe", "百度杀毒/百度卫士 Baidu Antivirus"),
+            ("2345Safe.exe", "2345 安全卫士 2345 Safe Guard"),
+            ("RavMonD.exe", "瑞星 Rising"),
+            ("MPMon.exe", "微点主动防御 Micropoint"),
+            ("KVSrvXP.exe", "江民杀毒 Jiangmin"),
+            ("avp.exe", "卡巴斯基 Kaspersky"),
+            ("ekrn.exe", "ESET"),
+            ("ccSvcHst.exe", "Norton/Symantec 诺顿"),
+            ("mcshield.exe", "McAfee"),
+            ("bdagent.exe", "Bitdefender"),
+            ("avastsvc.exe", "Avast"),
+            ("avgsvc.exe", "AVG"),
+            ("avgnt.exe", "Avira 小红伞"),
+            ("PccNTMon.exe", "Trend Micro 趋势科技"),
+            ("MBAMService.exe", "Malwarebytes"),
+        ];
+        for (image, product) in process_cases {
+            assert_eq!(av_product_for_process(image, ""), Some(product), "{image}");
+        }
+        // Service short names and install paths.
+        assert_eq!(
+            av_product_for_service("WinDefend", "", ""),
+            Some("Windows Defender 微软 Defender")
+        );
+        assert_eq!(
+            av_product_for_service("klnagent", "", r"D:\Kaspersky Lab\klnagent.exe"),
+            Some("卡巴斯基 Kaspersky")
+        );
+        assert_eq!(
+            av_product_for_service(
+                "RandomSvc",
+                "Huorong 服务",
+                r"C:\Program Files\Huorong\Sysdiag\bin\HipsDaemon.exe"
+            ),
+            Some("火绒安全软件 Huorong Internet Security")
+        );
+        // Security Center display names, including the Chinese spellings
+        // and the 360 branch split.
+        let display_cases = [
+            ("Windows Defender", "Windows Defender 微软 Defender"),
+            ("360 Total Security", "360 安全卫士 360 Total Security"),
+            ("360杀毒", "360 杀毒 360 Internet Security"),
+            ("奇安信天擎", "奇安信天擎 QiAnXin TianQing"),
+            ("火绒安全软件", "火绒安全软件 Huorong Internet Security"),
+            ("腾讯电脑管家", "腾讯电脑管家 Tencent PC Manager"),
+            ("金山毒霸", "金山毒霸 Kingsoft Antivirus"),
+            (
+                "联想电脑管家",
+                "联想电脑管家/联想安全卫士 Lenovo PC Manager",
+            ),
+            ("Kaspersky Standard", "卡巴斯基 Kaspersky"),
+            ("ESET Internet Security", "ESET"),
+        ];
+        for (display, product) in display_cases {
+            assert_eq!(av_product_for_display(display), Some(product), "{display}");
+        }
+        // Unknown Security Center names pass through unmatched.
+        assert_eq!(av_product_for_display("Webroot SecureAnywhere"), None);
+    }
+
+    #[test]
+    fn av_signatures_reject_unrelated_software() {
+        for image in [
+            "svchost.exe",
+            "chrome.exe",
+            "explorer.exe",
+            "gameclient.exe",
+        ] {
+            assert_eq!(av_product_for_process(image, ""), None, "{image}");
+        }
+        // The CN game launcher lives under 360游戏大厅 — a bare "360"
+        // keyword would misreport the game directory as an antivirus.
+        assert_eq!(
+            av_product_for_process(
+                "GameClient.exe",
+                r"D:\360游戏大厅\WorldOfWarships\GameClient.exe"
+            ),
+            None
+        );
+        // "AntiVir" (legacy Avira spelling) is a substring of every
+        // "Antivirus" path — AVG's folder must stay AVG's.
+        assert_eq!(
+            av_product_for_service(
+                "RandomSvc",
+                "",
+                r"C:\Program Files\AVG\Antivirus\avgsvc.exe"
+            ),
+            Some("AVG")
+        );
+        assert_eq!(
+            av_product_for_service("Themes", "Themes", r"C:\Windows\System32\themes.dll"),
+            None
+        );
+        // WPS Office ships from Kingsoft too — its install dir must not
+        // light up the 金山毒霸 row (seen on a real machine).
+        assert_eq!(
+            av_product_for_process(
+                "wps.exe",
+                r"C:\Users\a\AppData\Local\Kingsoft\WPS Office\12.1\office6\wps.exe"
+            ),
+            None
+        );
+        assert_eq!(
+            av_product_for_process("avgnt.exe", r"C:\AVG\avgnt.exe"),
+            Some("Avira 小红伞")
+        );
+    }
+
+    #[test]
+    fn av_findings_merge_sources_into_one_row_per_product() {
+        let mut av = AvFindings::default();
+        // Huorong: seen by every source at once.
+        av.add_wsc("火绒安全软件", Some(0x061100));
+        av.add_process(
+            "HipsDaemon.exe",
+            r"C:\Program Files\Huorong\Sysdiag\bin\HipsDaemon.exe",
+        );
+        av.add_process("HipsTray.exe", "");
+        av.add_process("wsctrl.exe", "");
+        av.add_service("sysdiag", "Sysdiag Service", "Running", "");
+        // Kaspersky: process evidence only, no Security Center row.
+        av.add_process("avp.exe", "");
+        // An unrecognized WSC product passes through verbatim.
+        av.add_wsc("Webroot SecureAnywhere", None);
+
+        let rows = av.render();
+        assert_eq!(rows.len(), 3, "one row per product");
+        assert!(rows.iter().all(|(label, _)| label == "product"));
+
+        let (_, huorong) = &rows[0];
+        assert!(huorong.starts_with("火绒安全软件 Huorong Internet Security — "));
+        assert!(huorong.contains("enabled, definitions up to date"));
+        assert!(huorong.contains(r#"security center "火绒安全软件""#));
+        assert!(huorong.contains("process hipsdaemon.exe, hipstray.exe"));
+        assert!(huorong.contains("(+1 more)"), "3 processes capped at 2");
+        assert!(huorong.contains("service sysdiag [Running]"));
+
+        let (_, kaspersky) = &rows[1];
+        assert!(kaspersky.contains("卡巴斯基 Kaspersky — running"));
+        assert!(kaspersky.contains("process avp.exe"));
+        assert!(!kaspersky.contains("productState"));
+
+        let (_, webroot) = &rows[2];
+        assert!(webroot.contains("Webroot SecureAnywhere — registered"));
+        // Unrecognized products sort after every table entry.
+        assert!(webroot.contains(r#"security center "Webroot SecureAnywhere""#));
+    }
+
+    #[test]
+    fn av_findings_report_installed_from_services_alone() {
+        let mut av = AvFindings::default();
+        av.add_service("MBAMService", "Malwarebytes Service", "Stopped", "");
+        let rows = av.render();
+        assert_eq!(rows.len(), 1);
+        let (_, value) = &rows[0];
+        assert!(value.contains("Malwarebytes — installed"));
+        assert!(value.contains("service mbamservice [Stopped]"));
+        // A running service is just as "running" as a seen process.
+        let mut av = AvFindings::default();
+        av.add_service("MBAMService", "Malwarebytes Service", "Running", "");
+        assert!(av.render()[0].1.contains("Malwarebytes — running"));
+        // The registry fallback knows no state — the row must not grow
+        // empty brackets.
+        let mut av = AvFindings::default();
+        av.add_service(
+            "sysdiag",
+            "",
+            "",
+            r"C:\Program Files\Huorong\Sysdiag\bin\x.sys",
+        );
+        let (_, value) = &av.render()[0];
+        assert!(value.contains("service sysdiag"));
+        assert!(!value.contains("[]"));
     }
 
     #[test]

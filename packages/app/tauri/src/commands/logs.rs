@@ -351,6 +351,20 @@ fn feedback_info(
             if let Some(v) = summary("gpu", "adapter") {
                 manifest.push_str(&format!("hw-gpu: {v}\n"));
             }
+            // Antivirus products, canonical names only — the per-source
+            // evidence (productState, processes, services) stays in
+            // hardware-info.txt. Rows read `{canonical} — {details}`, so
+            // the em dash cuts the summary free of the detail tail.
+            if let Some(section) = report.section("antivirus") {
+                let products: Vec<&str> = section
+                    .lines
+                    .iter()
+                    .map(|(_, v)| v.split(" — ").next().unwrap_or(v).trim())
+                    .collect();
+                if !products.is_empty() {
+                    manifest.push_str(&format!("hw-antivirus: {}\n", products.join("; ")));
+                }
+            }
         },
         None => manifest.push_str("hardware-info: skipped (logs-only export)\n"),
     }
@@ -492,6 +506,27 @@ mod tests {
             "t",
             vec![("adapter".into(), "RTX 4070 — driver 32.0.15.6094".into())],
         );
+        // Antivirus rows carry the evidence tail after an em dash; the
+        // manifest summary must cut at it (the separator is a string
+        // contract with hardware_info's AvFindings renderer).
+        report.push_lines(
+            "antivirus",
+            "t",
+            vec![
+                (
+                    "product".into(),
+                    "火绒安全软件 Huorong Internet Security — running; process \
+                     hipsdaemon.exe"
+                        .into(),
+                ),
+                (
+                    "product".into(),
+                    "360 安全卫士 360 Total Security — enabled, definitions up to \
+                     date; security center \"360 Total Security\""
+                        .into(),
+                ),
+            ],
+        );
         let bytes = feedback_info(&dir, &sources, Some(&report), &Redactor::default());
         let text = String::from_utf8(bytes).expect("manifest is UTF-8");
         assert!(text.contains("hardware-info: hardware-info.txt (elevation: elevated"));
@@ -499,6 +534,14 @@ mod tests {
         assert!(text.contains("hw-os-build: 26100.1742"));
         assert!(text.contains("hw-cpu: i7-12700K"));
         assert!(text.contains("hw-gpu: RTX 4070"));
+        assert!(text.contains(
+            "hw-antivirus: 火绒安全软件 Huorong Internet Security; 360 安全卫士 360 Total \
+             Security\n"
+        ));
+        assert!(
+            !text.contains("hipsdaemon"),
+            "evidence tail cut at the em dash"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
