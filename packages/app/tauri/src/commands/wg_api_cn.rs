@@ -948,7 +948,15 @@ pub(crate) async fn ranked_stats(
             .cloned()
             .unwrap_or(serde_json::Value::Null),
     });
-    Ok(super::ranked::flatten_ranked_seasons(&player, &season_ids))
+    // Best-effort metadata from the international seasons/info arm (see
+    // `cn_season_metas`) — an empty map just costs the date labels and the
+    // league tier filter, never the stats themselves.
+    let metas = super::ranked::cn_season_metas().await;
+    Ok(super::ranked::flatten_ranked_seasons(
+        &player,
+        &season_ids,
+        &metas,
+    ))
 }
 
 /// Assemble a `ClanInfo` from the CN claninfo + members responses. Pure —
@@ -1276,7 +1284,11 @@ mod tests {
             "seasons": st.get("seasons").cloned().unwrap(),
             "rank_info": st.get("rank_info").cloned().unwrap(),
         });
-        let out = super::super::ranked::flatten_ranked_seasons(&player, &[1024, 1002]);
+        let out = super::super::ranked::flatten_ranked_seasons(
+            &player,
+            &[1024, 1002],
+            &std::collections::HashMap::new(),
+        );
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].season_name, "Season 24");
         assert_eq!((out[0].battles, out[0].wins), (6, 6));

@@ -57,5 +57,16 @@
   "noRankedSeasons": "랭크 전투 기록이 없습니다",
   "bestRank": "최고 등급",
   "avgFrags": "평균 격침",
-  "maxDamage": "최대 피해량"
+  "maxDamage": "최대 피해량",
+  "league": {
+    "gold": "골드",
+    "silver": "실버",
+    "bronze": "브론즈"
+  },
+  "bracketAll": "전체 리그",
+  "rankedShipsTitle": "시즌 함선",
+  "rankedShipsCareerNote": "CN 클러스터는 시즌별 함선 데이터를 제공하지 않으므로, 아래는 랭크 전적의 전체 합계입니다.",
+  "rankedShipsEmpty": "이 시즌에 출전한 함선 기록이 없습니다.",
+  "rankedShipsError": "함선 데이터를 불러오지 못했습니다.",
+  "rankedBracketLabel": "리그 필터"
 }

@@ -57,5 +57,16 @@
   "noRankedSeasons": "Ранговых боёв нет",
   "bestRank": "Лучший ранг",
   "avgFrags": "Ср. фрагов",
-  "maxDamage": "Макс. урон"
+  "maxDamage": "Макс. урон",
+  "league": {
+    "gold": "Золото",
+    "silver": "Серебро",
+    "bronze": "Бронза"
+  },
+  "bracketAll": "Все лиги",
+  "rankedShipsTitle": "Корабли сезона",
+  "rankedShipsCareerNote": "В CN-кластере нет данных по кораблям за сезон — ниже сводка за всю ранговую карьеру.",
+  "rankedShipsEmpty": "В этом сезоне корабли не использовались.",
+  "rankedShipsError": "Не удалось загрузить данные о кораблях.",
+  "rankedBracketLabel": "Фильтр лиг"
 }

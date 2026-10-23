@@ -57,5 +57,16 @@
   "noRankedSeasons": "No ranked battles on record",
   "bestRank": "Best rank",
   "avgFrags": "Avg frags",
-  "maxDamage": "Max damage"
+  "maxDamage": "Max damage",
+  "league": {
+    "gold": "Gold",
+    "silver": "Silver",
+    "bronze": "Bronze"
+  },
+  "bracketAll": "All leagues",
+  "rankedShipsTitle": "Season ships",
+  "rankedShipsCareerNote": "The CN cluster serves no per-season ship data — the list below covers the whole ranked career.",
+  "rankedShipsEmpty": "No ships played in this season.",
+  "rankedShipsError": "Failed to load the ship breakdown.",
+  "rankedBracketLabel": "League filter"
 }

@@ -1,10 +1,32 @@
 /** Ranked-battle aggregation helpers shared by the stats card and the
  *  season-timeline modal. */
-import type { RankedSeasonStats } from "@/api";
+import type { RankedLeagueTiers, RankedSeasonStats } from "@/api";
 
 /** Best-rank league metals, in HoK-timeline spirit: each timeline node is
  *  tinted with the metal its season's best rank reached. */
 export type RankedLeague = "gold" | "silver" | "bronze";
+
+/** League of the backend's numeric league number (1 = Gold, 2 = Silver,
+ *  3 = Bronze); null for anything else. */
+export function leagueFromNumber(
+  league: number | null | undefined,
+): RankedLeague | null {
+  if (league === 1) return "gold";
+  if (league === 2) return "silver";
+  if (league === 3) return "bronze";
+  return null;
+}
+
+/** Tier window [lo, hi] one league designates within a season's league
+ *  metadata; null when the season carries no window for it (the metadata
+ *  is missing or the league never existed that season). */
+export function leagueTierWindow(
+  leagues: RankedLeagueTiers[] | null | undefined,
+  league: number,
+): [number, number] | null {
+  const hit = leagues?.find((l) => l.league === league);
+  return hit ? [hit.minTier, hit.maxTier] : null;
+}
 
 /** Combined ranked winrate (%) over all seasons; null when no battles. */
 export function aggregateRankedWinrate(seasons: RankedSeasonStats[]): number | null {

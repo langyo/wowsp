@@ -1,16 +1,21 @@
-/** Ranked store: the `ttlMs` revisit guard — the single slot may only be
- *  served back for the SAME player and season window within the TTL (the
- *  dashboard's network-free revisits); other players, other windows, a
- *  reset or a lapsed window still re-query. */
+/** Ranked store: the `ttlMs` revisit guards — each slot (seasons, and the
+ *  lazy per-ship rows) may only be served back for the SAME player and
+ *  window within the TTL (the dashboard's network-free revisits); other
+ *  players, other windows, a reset or a lapsed window still re-query. */
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, type RankedSeasonStats } from "@/api";
+import {
+  api,
+  type RankedSeasonStats,
+  type RankedShipSeasonStats,
+} from "@/api";
 import { useRankedStore } from "./ranked";
 
 vi.mock("@/api", () => ({
   api: {
     getRankedStats: vi.fn(),
+    getRankedShipStats: vi.fn(),
   },
 }));
 
@@ -127,5 +132,62 @@ describe("ranked store ttl guard", () => {
     await store.load(101, "asia");
 
     expect(api.getRankedStats).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("ranked store ship-slot ttl guard", () => {
+  function shipRow(shipId: number, seasonId = 1030): RankedShipSeasonStats {
+    return {
+      shipId,
+      seasonId,
+      battles: 10,
+      wins: 5,
+      losses: 5,
+      damageDealt: 100_000,
+      frags: 9,
+      survivedBattles: 4,
+      planesKilled: 1,
+      xp: 15_000,
+      maxDamage: 30_000,
+      maxXp: 2_500,
+      solo: { battles: 10, wins: 5 },
+      div2: null,
+      div3: null,
+    };
+  }
+
+  it("serves the ship slot within the ttl and re-queries for another player", async () => {
+    const store = useRankedStore();
+    vi.mocked(api.getRankedShipStats).mockResolvedValue([shipRow(1)]);
+
+    await store.loadShips(101, "asia", { ttlMs: 60_000 });
+    await store.loadShips(101, "asia", { ttlMs: 60_000 });
+    expect(api.getRankedShipStats).toHaveBeenCalledTimes(1);
+    expect(store.shipSeasons).toEqual([shipRow(1)]);
+    expect(store.shipsError).toBeNull();
+
+    await store.loadShips(202, "asia", { ttlMs: 60_000 });
+    expect(api.getRankedShipStats).toHaveBeenCalledTimes(2);
+  });
+
+  it("records the fetch failure and clears the slot", async () => {
+    const store = useRankedStore();
+    vi.mocked(api.getRankedShipStats).mockRejectedValueOnce(new Error("down"));
+
+    await store.loadShips(101, "asia");
+    expect(store.shipSeasons).toEqual([]);
+    expect(store.shipsError).toBe("down");
+  });
+
+  it("reset drops the ship slot too", async () => {
+    const store = useRankedStore();
+    vi.mocked(api.getRankedShipStats).mockResolvedValue([shipRow(1)]);
+
+    await store.loadShips(101, "asia", { ttlMs: 60_000 });
+    store.reset();
+    await store.loadShips(101, "asia", { ttlMs: 60_000 });
+
+    expect(api.getRankedShipStats).toHaveBeenCalledTimes(2);
+    expect(store.shipsError).toBeNull();
   });
 });

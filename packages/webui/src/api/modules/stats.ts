@@ -357,8 +357,21 @@ export interface CommunityTrend {
   buckets: TrendBucket[];
 }
 
-/** Mirrors `wowsp_tauri_shared::RankedSeasonStats` — a player's ranked stats
- *  for a single season. */
+/** Mirrors `commands::ranked::RankedLeagueTiers` — one league's ship-tier
+ *  window inside a season (Gold X+, Silver VIII–IX, Bronze VI–VII …). The
+ *  season modal's league filter maps a pick onto this range. */
+export interface RankedLeagueTiers {
+  /** 1 = Gold, 2 = Silver, 3 = Bronze. */
+  league: number;
+  minTier: number;
+  maxTier: number;
+}
+
+/** Mirrors `commands::ranked::RankedSeasonStats` (packages/app/tauri/src/
+ *  commands/ranked.rs) — a player's ranked stats for a single season. The
+ *  metadata fields (dates, league windows) are absent on responses served
+ *  before they existed and stay null/empty when the upstream metadata was
+ *  unavailable (the CN arm's best-effort fetch). */
 export interface RankedSeasonStats {
   seasonId: number;
   seasonName: string;
@@ -373,7 +386,45 @@ export interface RankedSeasonStats {
   planesKilled: number;
   currentRank: number | null;
   bestRank: number | null;
+  /** League number of the best rank (1 = Gold, 2 = Silver, 3 = Bronze) —
+   *  the localization key the rank display renders from. */
+  bestLeague?: number | null;
   bestRankDisplay: string | null;
+  /** Season run window (unix seconds) from the seasons/info metadata. */
+  startAt?: number | null;
+  finishAt?: number | null;
+  /** League→tier windows of this season (empty when metadata is missing). */
+  leagues?: RankedLeagueTiers[];
+}
+
+/** One battle-mode slice of a ship's season (mirrors
+ *  `commands::ranked::RankedShipModeSplit`). */
+export interface RankedShipModeSplit {
+  battles: number;
+  wins: number;
+}
+
+/** Mirrors `commands::ranked::RankedShipSeasonStats` — one ship's ranked
+ *  stats in one season (the season modal's ship-table row). The
+ *  rank_solo/div2/div3 mode nodes arrive merged into the totals, with the
+ *  per-mode splits alongside (`div2`/`div3` are null unless actually
+ *  played). */
+export interface RankedShipSeasonStats {
+  shipId: number;
+  seasonId: number;
+  battles: number;
+  wins: number;
+  losses: number;
+  damageDealt: number;
+  frags: number;
+  survivedBattles: number;
+  planesKilled: number;
+  xp: number;
+  maxDamage: number;
+  maxXp: number;
+  solo: RankedShipModeSplit;
+  div2: RankedShipModeSplit | null;
+  div3: RankedShipModeSplit | null;
 }
 
 export const statsApi = {
@@ -505,6 +556,11 @@ export const statsApi = {
   getExpectedPrTable: () => transport.invoke<ExpectedPrEntry[]>(RPC.get_expected_pr_table),
   getRankedStats: (accountId: number, realm: string, seasonCount?: number) =>
     transport.invoke<RankedSeasonStats[]>(RPC.get_ranked_stats, { accountId, realm, seasonCount }),
+  /** Per-ship per-season ranked stats (the season modal's ship table).
+   *  Empty on CN — that realm has no per-season ship source, the modal
+   *  falls back to the career ranked split for it. */
+  getRankedShipStats: (accountId: number, realm: string) =>
+    transport.invoke<RankedShipSeasonStats[]>(RPC.get_ranked_ship_stats, { accountId, realm }),
   /** The data pack's installed version (Settings → resources data
    *  sources row), or null while only the bundled asset serves. */
   dataPackInfo: () => transport.invoke<string | null>(RPC.data_pack_info),

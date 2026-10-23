@@ -72,6 +72,8 @@ export type {
   DiscoverySnapshot,
   RelayConfig,
   RankedSeasonStats,
+  RankedLeagueTiers,
+  RankedShipSeasonStats,
   VehicleEntry,
   ReplayMeta,
   ReplayMetaLite,

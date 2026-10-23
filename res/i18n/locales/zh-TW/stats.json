@@ -57,5 +57,16 @@
   "noRankedSeasons": "暫無排位戰記錄",
   "bestRank": "最高段位",
   "avgFrags": "場均擊殺",
-  "maxDamage": "最高傷害"
+  "maxDamage": "最高傷害",
+  "league": {
+    "gold": "黃金",
+    "silver": "白銀",
+    "bronze": "青銅"
+  },
+  "bracketAll": "全部段位",
+  "rankedShipsTitle": "賽季艦船",
+  "rankedShipsCareerNote": "CN 叢集暫無按賽季的艦船資料，以下為排位生涯彙總。",
+  "rankedShipsEmpty": "該賽季沒有艦船出戰記錄。",
+  "rankedShipsError": "艦船資料載入失敗。",
+  "rankedBracketLabel": "段位篩選"
 }
