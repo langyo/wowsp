@@ -24,6 +24,34 @@
     margin-left: auto;
   }
 
+  // The presentation-diagnostics risk list (rendered only on a failed
+  // self-verify verdict): compact warning lines — danger-toned icons on
+  // the flagged risks, a plain muted line for the informational WebView2
+  // runtime readout that always renders last.
+  &__diag {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hi-space-4, 4px);
+
+    li {
+      display: flex;
+      align-items: baseline;
+      gap: var(--hi-space-8, 8px);
+      color: rgb(var(--color-text, 235 240 246) / 78%);
+      font-size: 0.85rem;
+      line-height: 1.45;
+
+      > svg {
+        flex: none;
+        align-self: center;
+        color: rgb(var(--color-danger, 248 113 113) / 90%);
+      }
+    }
+  }
+
   // The aim-card hang row's control pair: slider + free-form px box. The
   // row is the shared stats-prefs__row (label left, controls right, and
   // its own ≤767px wrap already covers narrow panes); this block only

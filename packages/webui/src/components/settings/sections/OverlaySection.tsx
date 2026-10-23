@@ -2,8 +2,15 @@
  *  attribution and the display-content controls. Rendered as the leading
  *  card of the calibration section's page (the anchor calibrations follow
  *  below). */
-import { defineComponent, ref, watch, type PropType } from "vue";
-import { ExternalLink } from "@lucide/vue";
+import {
+  defineComponent,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  type PropType,
+} from "vue";
+import { ExternalLink, TriangleAlert } from "@lucide/vue";
 import {
   HkButton,
   HkInput,
@@ -17,6 +24,8 @@ import {
 import { useRouter } from "vue-router";
 
 import { t } from "@/i18n";
+import { api } from "@/api";
+import type { OverlayDiag } from "@/api";
 import {
   AIM_CARD_HANG_SLIDER_MAX,
   AIM_CARD_HANG_SLIDER_MIN,
@@ -43,6 +52,41 @@ export default defineComponent({
     const ui = useSettingsUiStore();
     const router = useRouter();
     const { gamePaths } = props.ctx;
+
+    // ── presentation diagnostics (the watcher's self-verify verdict) ────
+    // The Tab overlay window is shown + marker-verified end-to-end by the
+    // watcher; a FAILED verdict (window shown, content repeatedly absent
+    // from a layered-inclusive screen capture) renders the red card below
+    // with the risk flags read at verdict time. The events are
+    // transition-only and this section usually mounts AFTER the verdict
+    // (straight from the red pill's deep link), so mount subscribes FIRST
+    // and then catch-up PULLS the standing state — the pull is skipped
+    // when a push already landed, so it can never clobber a fresher event.
+    const overlayDiag = ref<OverlayDiag | null>(null);
+    let unlistenDiag: (() => void) | null = null;
+    let diagDisposed = false;
+    let diagPushed = false;
+    onMounted(async () => {
+      const unlisten = (await api.listenOverlayDiag((d) => {
+        diagPushed = true;
+        overlayDiag.value = d;
+      })) as (() => void) | null;
+      // Unmount raced the await: dispose immediately instead of leaking.
+      if (diagDisposed) {
+        unlisten?.();
+      } else {
+        unlistenDiag = unlisten;
+      }
+      const pulled = await api.getOverlayDiag().catch(() => null);
+      if (!diagPushed) {
+        overlayDiag.value = pulled ?? null;
+      }
+    });
+    onBeforeUnmount(() => {
+      diagDisposed = true;
+      unlistenDiag?.();
+      unlistenDiag = null;
+    });
 
     // ── aim-card hang (logical px below the crosshair) ───────────────────
     // The slider commits live on every notch — the watcher re-reads the
@@ -160,6 +204,48 @@ export default defineComponent({
                 <HkSettingsHint>{t("settings.overlayFullscreenNote")}</HkSettingsHint>
               ) : null}
             </HkSettingsSub>
+            {/* Presentation diagnostics — rendered ONLY on a failed
+                self-verify verdict; the lines list the risk flags the
+                backend probed at verdict time (advisory context, not
+                verdicts of their own). */}
+            {overlayDiag.value?.presentation === "failed" ? (
+              <HkSettingsSub title={t("settings.overlayDiagTitle")}>
+                <HkSettingsHint>{t("settings.overlayDiagBody")}</HkSettingsHint>
+                <ul class="overlay-sec__diag">
+                  {overlayDiag.value.mpoDisabled ? (
+                    <li>
+                      <TriangleAlert size={13} />
+                      {t("settings.overlayDiagMpo")}
+                    </li>
+                  ) : null}
+                  {overlayDiag.value.transparencyEffectsOff ? (
+                    <li>
+                      <TriangleAlert size={13} />
+                      {t("settings.overlayDiagTransparency")}
+                    </li>
+                  ) : null}
+                  {overlayDiag.value.hagsOff ? (
+                    <li>
+                      <TriangleAlert size={13} />
+                      {t("settings.overlayDiagHags")}
+                    </li>
+                  ) : null}
+                  {overlayDiag.value.cloaked ? (
+                    <li>
+                      <TriangleAlert size={13} />
+                      {t("settings.overlayDiagCloaked")}
+                    </li>
+                  ) : null}
+                  <li>
+                    {overlayDiag.value.webview2Version
+                      ? t("settings.overlayDiagWebview2", {
+                          v: overlayDiag.value.webview2Version,
+                        })
+                      : t("settings.overlayDiagWebview2Missing")}
+                  </li>
+                </ul>
+              </HkSettingsSub>
+            ) : null}
             <HkSettingsSub title={t("settings.overlayRoster")}>
               {/* No "off" here BY DESIGN: the table switch above owns the
                   table window's off state, and with it on, one of the two

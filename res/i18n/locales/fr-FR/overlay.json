@@ -2,6 +2,7 @@
   "hint": "Maintenez Tab en bataille pour afficher les statistiques.",
   "locateHint": "La détection est active, mais la liste des équipes n'a pas encore été localisée — entrez en bataille et réessayez.",
   "locatingHint": "Maintenez Tab — recherche de la liste des joueurs",
+  "rosterHint": "Tableau localisé — attente des données de la liste",
   "queryingBadge": "Récupération des stats",
   "botLabel": "bot",
   "battlesCount": "{n} batailles",

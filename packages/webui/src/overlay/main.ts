@@ -115,6 +115,11 @@ interface OverlayMessages {
   locateHint: string;
   /** Locating copy: detection is on, the table just isn't pinned yet. */
   locatingHint: string;
+  /** Table located but the roster data has not landed (no arena event and
+   *  no readable tempArenaInfo): the honest waiting card that replaced the
+   *  old EMPTY body — an empty body read on screen as "the window is just
+   *  transparent" (feedback 2026-10-23). */
+  rosterHint: string;
   /** Badge while the batched stats lookup is still working and at least
    *  one rendered row has no numbers yet. */
   queryingBadge: string;
@@ -1214,6 +1219,55 @@ function sideAliveOrder(side: SunkSide): string[] {
   return sunkSet ? full.filter((n) => !sunkSet.has(n)) : full;
 }
 
+// ── Presentation self-diagnostics (the Rust watcher's `diag.rs`) ────────
+// The page reports what it painted (reportPaint below) and paints a solid
+// corner marker on `wowsp://overlay-verify` for the watcher's
+// layered-inclusive screen capture to find — together they close the loop
+// "the page painted / the pixels really reached the screen" that a broken
+// transparent-window composition path (modded systems disabling MPO or
+// transparency effects and the like) silently severs.
+
+/** Report the last VISIBLE paint to the Rust diagnostics mailbox
+ * (`report_overlay_paint`): fire-and-forget, skipped while the page is
+ * hidden (nothing is on screen to verify) or outside the Tauri shell. */
+function reportPaint(
+  kind: "hint" | "waitingRoster" | "chips",
+  rows: number | null,
+): void {
+  if (!tauri || document.documentElement.classList.contains("overlay-hidden")) return;
+  void tauri.core.invoke("report_overlay_paint", { kind, rows }).catch(() => undefined);
+}
+
+/** The verify marker node — attached to documentElement, NOT body:
+ * render() wipes body on every event and the marker must survive the
+ * verify window intact. */
+let verifyMarker: HTMLDivElement | null = null;
+/** The marker's self-remove timer (the marker never lingers on screen). */
+let verifyMarkerTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Paint (or re-arm) the solid corner marker: the watcher photographs the
+ * window's corner box looking for exactly this color (diag.rs's
+ * MARKER_RGB — keep the two in lockstep). */
+function armVerifyMarker(): void {
+  if (!verifyMarker) {
+    verifyMarker = document.createElement("div");
+    verifyMarker.className = "overlay-verify-marker";
+    document.documentElement.appendChild(verifyMarker);
+  }
+  if (verifyMarkerTimer) clearTimeout(verifyMarkerTimer);
+  verifyMarkerTimer = setTimeout(removeVerifyMarker, 1500);
+}
+
+/** Drop the marker — its lifetime ran out, or the window went hidden. */
+function removeVerifyMarker(): void {
+  if (verifyMarkerTimer) {
+    clearTimeout(verifyMarkerTimer);
+    verifyMarkerTimer = null;
+  }
+  verifyMarker?.remove();
+  verifyMarker = null;
+}
+
 /** Rebuild every chip from the current roster + anchor. */
 function render() {
   const root = document.body;
@@ -1228,16 +1282,30 @@ function render() {
     root.appendChild(
       statusCard(localized(statusState === "fallback" ? "locateHint" : "locatingHint")),
     );
+    reportPaint("hint", null);
     return;
   }
-  if (!arena) return;
+  // Table located but the roster itself has not landed (no arena event and
+  // no readable tempArenaInfo — mid-battle app start, a ghost-gated file):
+  // the honest waiting card, never the old EMPTY body — an empty body on a
+  // transparent window read on screen as "nothing happened at all"
+  // (feedback 2026-10-23).
+  if (!arena) {
+    root.appendChild(statusCard(localized("rosterHint")));
+    reportPaint("waitingRoster", null);
+    return;
+  }
   // Which battle-mode stats this battle renders ("follow" resolves per
   // battle — ranked battles show the ranked career, everything else the
   // randoms career; the fixed scopes pin it).
   statsMode = resolveRosterBattleScope(PREFS.battleScope, arena);
   const dpr = window.devicePixelRatio || 1;
   const rows = anchor.rowCenters;
-  if (rows.length === 0) return;
+  if (rows.length === 0) {
+    root.appendChild(statusCard(localized("rosterHint")));
+    reportPaint("waitingRoster", null);
+    return;
+  }
 
   // The anchor carries TWO grid blocks concatenated: allies first, then
   // enemies (asymmetrical battles 12v6 render sub-tables of different
@@ -1532,6 +1600,10 @@ function render() {
   if (statusText != null) {
     root.appendChild(statusCard(statusText));
   }
+  reportPaint(
+    "chips",
+    root.querySelectorAll(".overlay-chip:not(.overlay-chip--intel)").length || null,
+  );
 }
 
 /** Backoff state for a FAILED batch. The backend fails the WHOLE batch on
@@ -2036,6 +2108,14 @@ async function start() {
     // The load-bearing hide: the Rust watcher flips the page itself, so
     // content vanishes even when the native window hide is delayed.
     document.documentElement.classList.toggle("overlay-hidden", e.payload !== true);
+    // Going hidden voids any armed presentation verify — its marker must
+    // never linger on a window the watcher just hid.
+    if (e.payload !== true) removeVerifyMarker();
+  });
+  await listen("wowsp://overlay-verify", () => {
+    // The watcher's presentation-verify arm: paint the corner marker for
+    // the layered-inclusive capture (see reportPaint's block comment).
+    armVerifyMarker();
   });
   await listen("wowsp://arena-info", (e: { payload: unknown }) => {
     const next = e.payload as ArenaInfo;

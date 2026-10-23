@@ -70,6 +70,18 @@
 //!   victim's binarized strip reappears dimmed in the sunk block — and the
 //!   consumers (overlay page + live panel) keep their layouts exact
 //!   instead of falling back to an un-flagged full order.
+//! - PRESENTATION VERIFY (`diag.rs`): a transparent layered window whose
+//!   content never reaches the screen is indistinguishable from "nothing
+//!   happened" for the player while every app-side signal stays green
+//!   (feedback 2026-10-23, Optimum11). On a cadenced subset of shows the
+//!   watcher asks the page to paint a solid corner marker
+//!   ([`OVERLAY_VERIFY_EVENT`]) and photographs the overlay rect's corner
+//!   with a LAYERED-INCLUSIVE capture (`CAPTUREBLT`): marker found = the
+//!   window's pixels really reach the screen; repeated misses broadcast a
+//!   Failed verdict through [`OVERLAY_DIAG_EVENT`], carrying the page's own
+//!   paint report plus the registry/DWM risk flags (MPO disabled,
+//!   transparency effects off, HAGS off, DWM-cloaked, WebView2 runtime
+//!   version) as advisory context for the fix checklist.
 //!
 //! Every STATE CHANGE of this machine — idle (overlay hidden) ↔
 //! searching/fallback (acquiring without a confirmed pin, the fallback
@@ -136,8 +148,8 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use wowsp_tauri_shared::{
-    CaptureResult, ManualLocateContext, ManualLocateGuides, OverlayAnchor, OverlayState,
-    OverlayStatus, Rect,
+    CaptureResult, ManualLocateContext, ManualLocateGuides, OverlayAnchor, OverlayDiag,
+    OverlayPaintKind, OverlayPresentation, OverlayState, OverlayStatus, Rect,
 };
 
 use super::{appdata, arena_info, overlay_config, overlay_detect, overlay_manual, tab_dump};
@@ -194,6 +206,20 @@ pub const MANUAL_LOCATE_CLOSE_EVENT: &str = "wowsp://manual-locate-close";
 /// consumer degrades that side (keeps its full order un-flagged) instead
 /// of guessing.
 pub const SINK_ATTRIB_EVENT: &str = "wowsp://sink-attrib";
+
+/// Tauri event asking the overlay page to paint the one-shot PRESENTATION
+/// VERIFY marker (see `diag.rs`): a solid magenta square pinned to the
+/// window's corner, kept on screen briefly while the watcher photographs
+/// the corner with a layered-inclusive capture. Payload is `true`; the
+/// page removes the marker on its own timer and on any visibility drop.
+pub const OVERLAY_VERIFY_EVENT: &str = "wowsp://overlay-verify";
+
+/// Tauri event broadcasting the presentation-verify VERDICT (payload
+/// [`OverlayDiag`]) to all windows — transition-only (the watcher mirrors
+/// the last broadcast verdict). The main window's live-battle panel and
+/// the overlay settings section badge the failed verdict and its risk
+/// flags from it.
+pub const OVERLAY_DIAG_EVENT: &str = "wowsp://overlay-diag";
 
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is
 /// imperceptible, slow enough that two cheap Win32 calls are noise.
@@ -288,9 +314,15 @@ const SINK_CANDIDATE_TTL: Duration = Duration::from_millis(1500);
 /// dock/undock/rescale retires every anchor-calibration entry within this
 /// window.
 const SCREEN_FINGERPRINT_REFRESH: Duration = Duration::from_secs(2);
+/// How long after an armed show the presentation-verify capture waits (see
+/// `diag.rs`): the page paints the corner marker synchronously in its event
+/// loop, so the slack only needs to cover event delivery plus one present —
+/// a half second also survives a first-press-racing-page-load.
+const VERIFY_SETTLE: Duration = Duration::from_millis(500);
 
 mod calibration;
 mod capture;
+mod diag;
 mod game_window;
 mod manual;
 mod placement;
@@ -316,9 +348,14 @@ pub use capture::{
     __cmd__capture_game_window, __tauri_command_name_capture_game_window, capture_game_window,
 };
 use capture::{compute_anchor, encode_png};
+pub use diag::{
+    __cmd__get_overlay_diag, __cmd__report_overlay_paint, __tauri_command_name_get_overlay_diag,
+    __tauri_command_name_report_overlay_paint, get_overlay_diag, report_overlay_paint,
+};
+use diag::{VerifyMachine, apply_verify_verdict, maybe_arm_verify, verify_marker_on_screen};
 use game_window::{
-    GameWindow, capture_game_rgba, capture_game_rgba_cached, find_game_window, rect_from_win32,
-    screen_fingerprint, window_dpi_scale,
+    GameWindow, capture_game_rgba, capture_game_rgba_cached, capture_screen_rect, find_game_window,
+    rect_from_win32, screen_fingerprint, window_dpi_scale,
 };
 pub use manual::{
     __cmd__cancel_manual_locate, __cmd__clear_manual_roster_rect, __cmd__manual_locate_context,
