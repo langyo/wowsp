@@ -286,13 +286,17 @@ pub async fn start_calibration_locate() -> CommandResult<()> {
     Ok(())
 }
 
-/// The picker's image selector row: every still-fresh cached capture as a
-/// small thumbnail, newest first (see `overlay_manual::gallery_entries`).
+/// The picker's image selector row: the last ten cached captures — the
+/// memory ring merged with the disk archive, so the row survives app
+/// restarts and game exits — newest first, no freshness gate (see
+/// `overlay_manual::gallery_entries`). Also fires the archive's count/age
+/// prune, so a gallery nobody stores into still rolls.
 #[tauri::command]
 pub async fn manual_locate_gallery()
 -> CommandResult<Vec<wowsp_tauri_shared::ManualLocateGalleryFrame>> {
     #[cfg(target_os = "windows")]
     {
+        super::overlay_manual::prune_disk_async();
         let entries = super::overlay_manual::gallery_entries();
         let mut out = Vec::with_capacity(entries.len());
         for e in entries {
@@ -327,19 +331,42 @@ pub async fn manual_locate_gallery()
 /// hot path never pays for the picker. No usable frame → all-None fields
 /// and the layer shows its "no frame" state (retry / close). Desktop only
 /// (the picker layer never exists on mobile).
+///
+/// `team_sizes` is the CALLER'S per-team roster hint (the calibration
+/// editor sends its target entry's stored shape so the guides fit the
+/// battle class it edits); `None` falls back to the live arena read — the
+/// battle flow's own behavior. With the game window gone the context still
+/// builds on the newest ARCHIVED capture: the editor opens on the last
+/// battles' frames, which is the whole point of the disk cache.
 #[tauri::command]
-pub async fn manual_locate_context() -> CommandResult<ManualLocateContext> {
+pub async fn manual_locate_context(
+    team_sizes: Option<(u32, u32)>,
+) -> CommandResult<ManualLocateContext> {
     #[cfg(target_os = "windows")]
     {
+        let hint = team_sizes.map(|(a, e)| (a as usize, e as usize));
         let Some(game) = find_game_window() else {
-            return Ok(ManualLocateContext::default());
+            // Game closed: the newest archived frame is the best available
+            // reference (the calibration editor's boot path).
+            return Ok(match super::overlay_manual::newest_frame_any_age() {
+                Some((rgba, w, h, at_ms, captured_rect)) => build_picker_context(
+                    &rgba,
+                    w,
+                    h,
+                    Some(at_ms),
+                    Some(captured_rect),
+                    hint.unwrap_or((0, 0)),
+                    overlay_detect::DetectProfile::WG,
+                ),
+                None => ManualLocateContext::default(),
+            });
         };
         // Same resolver the open gate ran (cache first, fresh-with-table-
         // header fallback) — see `usable_picker_frame`.
         let Some((rgba, w, h, at_ms, captured_rect)) = usable_picker_frame(&game) else {
             return Ok(ManualLocateContext::default());
         };
-        let team_sizes = super::arena_info::last_known_team_sizes();
+        let team_sizes = hint.unwrap_or_else(super::arena_info::last_known_team_sizes);
         let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
         Ok(build_picker_context(
             &rgba,
@@ -353,23 +380,30 @@ pub async fn manual_locate_context() -> CommandResult<ManualLocateContext> {
     }
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = team_sizes;
         Ok(ManualLocateContext::default())
     }
 }
 
 /// The picker context for a CHOSEN source: one of the gallery's cached
-/// captures (by stamp), or a user-supplied PNG (pasted / picked from a
-/// file, base64). Switching the selector re-runs the whole context build —
-/// including the guide detection — against the new image. A frame stamp
-/// that no longer resolves falls back to the newest capture; a custom
-/// image that fails to decode returns the empty (no-frame) context.
+/// captures (by stamp — memory ring OR disk archive), or a user-supplied
+/// PNG (pasted / picked from a file, base64). Switching the selector
+/// re-runs the whole context build — including the guide detection —
+/// against the new image. An archived stamp resolves WITHOUT a running
+/// game (the frame carries its own captured rect; the calibration editor
+/// edits against it long after the battle); a stamp that no longer exists
+/// falls back to the newest capture. `team_sizes` is the caller's roster
+/// hint (see `manual_locate_context`); a custom image that fails to decode
+/// returns the empty (no-frame) context.
 #[tauri::command]
 pub async fn manual_locate_context_for(
     source: Option<wowsp_tauri_shared::ManualLocateSource>,
+    team_sizes: Option<(u32, u32)>,
 ) -> CommandResult<ManualLocateContext> {
     let Some(source) = source else {
-        return manual_locate_context().await;
+        return manual_locate_context(team_sizes).await;
     };
+    let hint = team_sizes.map(|(a, e)| (a as usize, e as usize));
     match source.kind.as_str() {
         "image" => {
             let Some(b64) = source.image_base64 else {
@@ -379,8 +413,10 @@ pub async fn manual_locate_context_for(
                 tracing::warn!("picker source image failed to decode");
                 return Ok(ManualLocateContext::default());
             };
-            // Custom screenshots carry no battle context: detect without a
-            // roster hint (no row extension) and no capture stamp/rect.
+            // Custom screenshots carry no capture stamp/rect; the caller's
+            // roster hint (the editor's target shape) stands in for the
+            // missing arena read — (0, 0) when nobody hinted (no row
+            // extension, the historical behavior).
             #[cfg(target_os = "windows")]
             let profile = find_game_window()
                 .map(|g| overlay_detect::DetectProfile::for_kind(&g.kind))
@@ -393,29 +429,42 @@ pub async fn manual_locate_context_for(
                 h,
                 None,
                 None,
-                (0, 0),
+                hint.unwrap_or((0, 0)),
                 profile,
             ))
         },
         _ => {
-            // "frame" (or anything else): a gallery capture by stamp, else
-            // the newest.
+            // "frame" (or anything else): a gallery capture by stamp —
+            // memory ring or disk archive, no live window needed — else the
+            // newest capture via the battle resolver.
             #[cfg(target_os = "windows")]
             {
+                let frame = match source.at_ms {
+                    Some(at) => super::overlay_manual::frame_by_stamp(at),
+                    None => None,
+                };
+                if let Some((rgba, w, h, at_ms, captured_rect)) = frame {
+                    let team_sizes = hint.unwrap_or_else(super::arena_info::last_known_team_sizes);
+                    let profile = find_game_window()
+                        .map(|g| overlay_detect::DetectProfile::for_kind(&g.kind))
+                        .unwrap_or(overlay_detect::DetectProfile::WG);
+                    return Ok(build_picker_context(
+                        &rgba,
+                        w,
+                        h,
+                        Some(at_ms),
+                        Some(captured_rect),
+                        team_sizes,
+                        profile,
+                    ));
+                }
                 let Some(game) = find_game_window() else {
                     return Ok(ManualLocateContext::default());
                 };
-                let game_rect = rect_from_win32(game.rect);
-                let frame = match source.at_ms {
-                    Some(at) => super::overlay_manual::frame_by_stamp(at, &game_rect),
-                    None => None,
-                };
-                let Some((rgba, w, h, at_ms, captured_rect)) =
-                    frame.or_else(|| usable_picker_frame(&game))
-                else {
+                let Some((rgba, w, h, at_ms, captured_rect)) = usable_picker_frame(&game) else {
                     return Ok(ManualLocateContext::default());
                 };
-                let team_sizes = super::arena_info::last_known_team_sizes();
+                let team_sizes = hint.unwrap_or_else(super::arena_info::last_known_team_sizes);
                 let profile = overlay_detect::DetectProfile::for_kind(&game.kind);
                 Ok(build_picker_context(
                     &rgba,
@@ -429,6 +478,7 @@ pub async fn manual_locate_context_for(
             }
             #[cfg(not(target_os = "windows"))]
             {
+                let _ = hint;
                 Ok(ManualLocateContext::default())
             }
         },

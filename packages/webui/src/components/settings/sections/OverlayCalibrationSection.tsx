@@ -4,9 +4,10 @@
  *  Tab-anchor calibrations the overlay detector stores. One card per
  *  REGISTERED client — the client selector's own anatomy (platform badge,
  *  localized name, realm tag, twin-disambiguating path tail) plus a
- *  last-updated stamp — with its independent PvP / PvE entries as labeled
- *  readouts (table rect, rows, teams, window identity) behind state badges
- *  and a right-aligned icon-only edit button. Calibration files whose
+ *  last-updated stamp — with its independent PvP / PvE entries expressed
+ *  ENTIRELY as HkTag chips (the battle class, the state badges, and the
+ *  table-rect / rows / teams / window readouts — label + mono value inside
+ *  each chip) plus a right-aligned icon-only edit button. Calibration files whose
  *  install left the registry keep trailing cards so existing data stays
  *  visible and editable. An entry nobody measured yet is STILL editable
  *  (提前编辑): the submit creates it from the drawing (see
@@ -187,41 +188,56 @@ export default defineComponent({
         toast.error(`${t("settings.overlayCalibration")}: ${(err as Error).message || err}`);
         return;
       }
+      const e = cls === "pvp" ? (c.cal?.pvp ?? null) : (c.cal?.pve ?? null);
       manualLocate.openPicker({
         mode: "calibration",
         calibration: {
           clientKey: c.cal?.clientKey ?? c.path,
           class: cls,
           kind: c.kind,
+          // The entry's stored per-team shape seeds the editor's count
+          // control (rosters differ between battles — the stored one may be
+          // stale); a not-yet-recorded entry starts from the class's classic
+          // placeholder, mirroring the backend's own defaults.
+          teamSizes: e
+            ? [e.teamSizes[0], e.teamSizes[1]]
+            : cls === "pve"
+              ? [9, 0]
+              : [12, 12],
         },
       });
     }
 
-    /** One labeled readout of an entry row (value in mono/tabular; the
-     *  optional tooltip carries the screen fingerprint etc.). */
-    function field(label: string, value: string, title?: string) {
+    /** One entry readout as a TAG — label (muted) + value (mono/tabular)
+     *  inside one HkTag chip; the optional tooltip carries the screen
+     *  fingerprint etc. */
+    function fieldTag(label: string, value: string, title?: string) {
       return (
         <span class="calib-sec__field" title={title}>
-          <span class="calib-sec__field-label">{label}</span>
-          <span class="calib-sec__field-value">{value}</span>
+          <HkTag size="sm">
+            <span class="calib-sec__tag-label">{label}</span>
+            <span class="calib-sec__tag-value">{value}</span>
+          </HkTag>
         </span>
       );
     }
 
-    /** One battle-class row of a client card. */
+    /** One battle-class row of a client card — everything chip-shaped: the
+     *  battle class, the state badges, and every stored readout (table
+     *  rect / rows / teams / window) ride HkTag chips. */
     function classRow(c: CalibCard, cls: "pvp" | "pve") {
       const e: CalibrationEntryInfo | null =
         cls === "pvp" ? (c.cal?.pvp ?? null) : (c.cal?.pve ?? null);
       const edit = t("settings.overlayCalibrationEdit");
       return (
         <div class="calib-sec__class" key={cls}>
-          <span class="calib-sec__class-label">
+          <HkTag variant={cls === "pvp" ? "primary" : "info"} size="sm">
             {t(
               cls === "pvp"
                 ? "settings.overlayCalibrationClassPvp"
                 : "settings.overlayCalibrationClassPve",
             )}
-          </span>
+          </HkTag>
           {e ? (
             <>
               <span class="calib-sec__badges">
@@ -244,22 +260,22 @@ export default defineComponent({
               {/* The stored table rectangle, game-window relative
                   (physical px) — the "key feature points" the detector
                   anchored. */}
-              {field(
+              {fieldTag(
                 t("settings.overlayCalibrationFieldRect"),
                 `${e.rosterRect.x},${e.rosterRect.y} · ${e.rosterRect.width}×${e.rosterRect.height}`,
               )}
-              {field(
+              {fieldTag(
                 t("settings.overlayCalibrationFieldRows"),
                 String(e.rowCenters.length),
               )}
-              {field(
+              {fieldTag(
                 t("settings.overlayCalibrationFieldTeams"),
                 `${e.teamSizes[0]}v${e.teamSizes[1]}`,
               )}
               {/* Window identity the entry was measured at — editing keeps
                   it, so mismatches here explain a remap rather than block
                   one. The monitor fingerprint rides the tooltip. */}
-              {field(
+              {fieldTag(
                 t("settings.overlayCalibrationFieldWindow"),
                 `@${e.gameOrigin[0]},${e.gameOrigin[1]} · ${e.gameSize[0]}×${e.gameSize[1]}`,
                 e.screen,
@@ -268,7 +284,9 @@ export default defineComponent({
           ) : (
             // Never calibrated (or this class never ran): the edit button
             // still creates the entry from a drawing (提前编辑).
-            <span class="calib-sec__missing">{t("settings.overlayCalibrationNone")}</span>
+            <HkTag variant="warning" size="sm">
+              {t("settings.overlayCalibrationNone")}
+            </HkTag>
           )}
           {/* Icon-only control — the wrapping span carries the hover
               tooltip (HkButton takes ariaLabel, not title) and pins the

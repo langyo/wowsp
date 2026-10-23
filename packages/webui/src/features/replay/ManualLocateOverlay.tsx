@@ -8,16 +8,25 @@
  * store so a mid-pick roster update cannot unmount the picker out from
  * under the user.
  *
- * The background is a REFERENCE IMAGE — by default the last frame captured
- * while the player held Tab (the roster moment they actually saw; the Rust
- * cache only stores Tab-held captures), downscaled for transport. The
- * footer-adjacent selector row swaps it: one entry per gallery capture
- * (thumbnail + age), the newest frame, a pasted clipboard image, or a
- * picked file. The detector's knowledge of the displayed image is overlaid
- * as GUIDES — the table rectangle, one horizontal line per row, the team
- * seam — and the drag box's edges snap to them (toggleable; hiding the
- * guides disables the snapping). A suggested box (the detected table) is
- * pre-drawn so a good detection is one Enter away.
+ * The background is a REFERENCE IMAGE — by default the newest capture of
+ * the automatic in-game archive (frames the Rust watcher stored while the
+ * player held Tab over the roster, persisted to the system temp dir, so the
+ * last ten survive game exits and app restarts), downscaled for transport.
+ * The footer-adjacent selector row swaps it: one entry per archived capture
+ * (thumbnail + age), a pasted clipboard image, or a picked file. The
+ * detector's knowledge of the displayed image is overlaid as GUIDES — the
+ * table rectangle, one horizontal line per row, the team seam — and the
+ * drag box's edges snap to them (toggleable; hiding the guides disables
+ * the snapping). A suggested box (the detected table) is pre-drawn so a
+ * good detection is one Enter away.
+ *
+ * CALIBRATION MODE adds a team-count control (bottom-right, once a box is
+ * drawn): rosters differ between battles (12v12 one match, 10v10 the next)
+ * and the stored entry's shape can be stale, so the per-team player counts
+ * are editable right there — the row grid preview inside the selection
+ * re-spreads live, and the counts ride the submit (`setCalibrationAnchor`)
+ * so the saved anchor is derived from the roster the drawing was aligned
+ * against.
  *
  * Submit routing keys off the store's mode: battle submits go to
  * `setManualRosterRect` (anchored against the capture's game rect);
@@ -60,8 +69,15 @@ import {
   watch,
 } from "vue";
 import { Teleport } from "vue";
-import { HkModal, HkSpinner, useToast } from "@celestia-island/hikari";
-import { Copy, FileImage, ImageIcon } from "@lucide/vue";
+import {
+  HkButton,
+  HkModal,
+  HkNumberInput,
+  HkSpinner,
+  HkTag,
+  useToast,
+} from "@celestia-island/hikari";
+import { Copy, FileImage } from "@lucide/vue";
 
 import {
   api,
@@ -225,6 +241,29 @@ export default defineComponent({
 
     // ── selection state (PHYSICAL px; conversions at the pointer edge) ──
     const box = ref<Box | null>(null);
+
+    // ── calibration team counts (the shape the saved grid is derived from) ──
+    // Rosters differ between battles (12v12 one match, 10v10 the next) and
+    // the stored entry's shape may be stale — the editor exposes them as a
+    // bottom-right control (calibration mode, once a box is drawn) and the
+    // submit rides them into `setCalibrationAnchor`. Seeded from the target
+    // entry's stored shape, or the class's classic placeholder default.
+    const teamAllies = ref(12);
+    const teamEnemies = ref(12);
+    function seedTeamCounts() {
+      const cal = manual.calibration;
+      const sizes = cal?.teamSizes ?? (cal?.class === "pve" ? ([9, 0] as const) : ([12, 12] as const));
+      teamAllies.value = Math.min(12, Math.max(1, Math.round(sizes[0] || 12)));
+      teamEnemies.value = cal?.class === "pve" ? 0 : Math.min(12, Math.max(1, Math.round(sizes[1] || 12)));
+    }
+    /** The roster hint the context loads (and the calibration submit)
+     *  carry: only the calibration editor knows a target shape; the battle
+     *  flow leaves the backend's live arena read in charge. */
+    const teamSizesHint = computed<[number, number] | undefined>(() =>
+      manual.mode === "calibration" && manual.calibration
+        ? [teamAllies.value, teamEnemies.value]
+        : undefined,
+    );
     /** Drag origin in canvas CSS px, null while no drag is in progress. */
     let dragStart: { x: number; y: number } | null = null;
     /** CSS px per physical px — derived from the canvas's actual box (the
@@ -266,6 +305,30 @@ export default defineComponent({
       }
       if (ctx.value?.guides?.seamX != null) s.add(ctx.value.guides.seamX);
       return s;
+    });
+
+    // ── the team-count control's live row grid (calibration mode, box
+    //    drawn) — the SAME math the backend's `manual_row_centers` applies:
+    //    the taller side fills the box at pitch = height / max(allies,
+    //    enemies), each row center half a pitch in; PvP draws the mid seam,
+    //    PvE is one full-width team. Drawn in a distinct tint over the
+    //    detector's guides so the box can be aligned against the counts the
+    //    submit will actually save. ──
+    const countGrid = computed<{ lines: number[]; seam: number | null } | null>(() => {
+      if (manual.mode !== "calibration" || !box.value) return null;
+      const b = box.value;
+      const allies = Math.max(1, teamAllies.value);
+      const enemies = Math.max(0, teamEnemies.value);
+      const tallest = Math.max(allies, enemies);
+      const pitch = b.h / tallest;
+      const lines: number[] = [];
+      for (let i = 0; i < tallest; i++) lines.push(b.y + pitch * (i + 0.5));
+      return { lines, seam: enemies === 0 ? null : b.x + b.w * 0.5 };
+    });
+    const gridLineStyle = (y: number) => ({ top: `${y * cssPerPhys.value}px` });
+    const gridSeamStyle = computed(() => {
+      const g = countGrid.value;
+      return g && g.seam != null ? { left: `${g.seam * cssPerPhys.value}px` } : {};
     });
 
     /** Snap a physical-px box's edges onto the nearest guide lines. */
@@ -409,7 +472,7 @@ export default defineComponent({
       note.value = null;
       let next: ManualLocateContext | null = null;
       try {
-        next = await api.fetchManualLocateContextFor(source ?? undefined);
+        next = await api.fetchManualLocateContextFor(source ?? undefined, teamSizesHint.value);
       } catch (err) {
         console.warn("[manual-locate] context unavailable:", err);
       }
@@ -485,6 +548,7 @@ export default defineComponent({
             Math.round(b.h),
             submitSource(),
             manual.calibration.kind,
+            teamSizesHint.value,
           );
           calibrationSubmit = true;
         } else {
@@ -615,6 +679,7 @@ export default defineComponent({
           (document.activeElement as HTMLElement | null)?.blur?.();
           now.value = Date.now();
           ageTimer = setInterval(() => (now.value = Date.now()), 30000);
+          seedTeamCounts();
           void load();
           void loadGallery();
         } else {
@@ -692,14 +757,14 @@ export default defineComponent({
           ) : hasImage.value ? (
             <div class="manual-locate" ref={rootEl} style={{ zoom: zoomFix.value }}>
               <div class="ml-metaline">
-                <button
-                  type="button"
-                  class="ml-guide-toggle"
+                <HkButton
+                  size="sm"
+                  variant={guidesOn.value ? "secondary" : "ghost"}
                   aria-pressed={guidesOn.value}
                   onClick={() => (guidesOn.value = !guidesOn.value)}
                 >
                   {t("replay.live.manualGuides")}
-                </button>
+                </HkButton>
                 {ageText.value ? <span class="ml-age">{ageText.value}</span> : null}
                 <span class="ml-hint">{note.value ?? t("replay.live.manualShotHint")}</span>
               </div>
@@ -743,35 +808,87 @@ export default defineComponent({
                       {sizeText.value}
                     </div>
                   ) : null}
+                  {/* The team-count control's live row grid — the shape the
+                      calibration submit will save, re-spread over the drawn
+                      box as the counts change (independent of the guides
+                      toggle: this is the user's own alignment tool). */}
+                  {countGrid.value?.lines.map((y, i) => (
+                    <div
+                      key={`grid-${i}`}
+                      class="ml-countgrid-line"
+                      style={gridLineStyle(y)}
+                    />
+                  ))}
+                  {countGrid.value?.seam != null ? (
+                    <div
+                      class="ml-countgrid-line ml-countgrid-line--seam"
+                      style={gridSeamStyle.value}
+                    />
+                  ) : null}
                 </div>
+                {/* Team-count control (calibration editor, bottom-right):
+                    rosters differ between battles and the stored shape may
+                    be stale — adjust both sides here and the grid preview +
+                    the saved anchor follow. Sits OVER the stage; pointer
+                    events never reach the drag surface underneath. */}
+                {manual.mode === "calibration" && manual.calibration ? (
+                  <div class="ml-count">
+                    <span class="ml-count__hint">{t("replay.live.manualTeamHint")}</span>
+                    <div class="ml-count__row">
+                      <span class="ml-count__team">
+                        {t("replay.live.manualTeamAllies")}
+                      </span>
+                      <HkNumberInput
+                        size="sm"
+                        min={1}
+                        max={12}
+                        modelValue={teamAllies.value}
+                        onUpdate:modelValue={(v: number) => (teamAllies.value = v)}
+                      />
+                      {manual.calibration.class === "pve" ? (
+                        <HkTag size="sm">PvE</HkTag>
+                      ) : (
+                        <>
+                          <span class="ml-count__team">
+                            {t("replay.live.manualTeamEnemies")}
+                          </span>
+                          <HkNumberInput
+                            size="sm"
+                            min={1}
+                            max={12}
+                            modelValue={teamEnemies.value}
+                            onUpdate:modelValue={(v: number) => (teamEnemies.value = v)}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : (
             <div class="manual-locate ml-state">
               <p class="ml-state__msg">{t("replay.live.manualNoFrame")}</p>
               <div class="ml-state__actions">
-                <button
-                  type="button"
-                  class="ml-btn"
+                <HkButton
+                  size="sm"
+                  variant="secondary"
                   onClick={() => void load(activeSource.value)}
                 >
                   {t("common.retry")}
-                </button>
-                <button
-                  type="button"
-                  class="ml-btn ml-btn--primary"
-                  onClick={cancelPick}
-                >
+                </HkButton>
+                <HkButton size="sm" variant="primary" onClick={cancelPick}>
                   {t("replay.live.manualCancel")}
-                </button>
+                </HkButton>
               </div>
             </div>
           )}
           {/* Reference-image selector — the bottom strip above the footer
-              buttons. The first entry is the newest capture (the default),
-              then one thumbnail per still-fresh cached capture (hover = its
-              age), then the clipboard / file entries for a user-supplied
-              picture; a loaded custom image shows as a highlighted thumb.
+              buttons. One thumbnail per archived capture (the newest ten,
+              disk-backed so they survive restarts and game exits; hover =
+              its age; the default load shows the newest without a button of
+              its own), the clipboard / file entries for a user-supplied
+              picture, and a loaded custom image as a highlighted thumb.
               Every entry reloads the whole context — guides included — via
               `manual_locate_context_for`. Visible in BOTH modes: the
               calibration editor wants it, and the battle picker benefits
@@ -782,14 +899,6 @@ export default defineComponent({
             <div class="ml-shots">
               <span class="ml-shots__label">{t("replay.live.manualShotPick")}</span>
               <div class="ml-shots__row">
-                <button
-                  type="button"
-                  class={["ml-shot", { "ml-shot--on": !activeSource.value }]}
-                  onClick={() => void load()}
-                >
-                  <ImageIcon size={14} />
-                  {t("replay.live.manualShotLive")}
-                </button>
                 {gallery.value.map((f) => (
                   <button
                     key={f.atMs}
@@ -817,18 +926,18 @@ export default defineComponent({
                     <img src={customThumbSrc.value} alt="" draggable={false} />
                   </span>
                 ) : null}
-                <button type="button" class="ml-shot" onClick={() => void pasteImage()}>
-                  <Copy size={14} />
+                <HkButton size="sm" variant="secondary" onClick={() => void pasteImage()}>
+                  <Copy size={13} />
                   {t("replay.live.manualShotPaste")}
-                </button>
-                <button
-                  type="button"
-                  class="ml-shot"
+                </HkButton>
+                <HkButton
+                  size="sm"
+                  variant="secondary"
                   onClick={() => fileInput.value?.click()}
                 >
-                  <FileImage size={14} />
+                  <FileImage size={13} />
                   {t("replay.live.manualShotFile")}
-                </button>
+                </HkButton>
               </div>
               <input
                 ref={fileInput}

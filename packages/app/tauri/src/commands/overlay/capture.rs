@@ -97,6 +97,13 @@ pub(super) fn compute_anchor(
             );
             cache.roster = det.clone();
             cache.team_sizes = team_sizes;
+            // The stored calibration entry keeps describing the OLD battle
+            // shape — re-shape it to the live roster counts, so the settings
+            // list's rows/teams readout and the remap fallback's shape
+            // comparison follow the battles actually played.
+            if let Some(k) = cal_key.as_ref() {
+                fsm.calibration.note_shape(k, team_sizes, &det);
+            }
             break 'cache Some(det);
         }
         // The band is NOT at the cached spot on this frame — a HUD-phase
