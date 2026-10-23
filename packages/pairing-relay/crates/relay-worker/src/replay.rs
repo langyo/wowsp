@@ -525,6 +525,22 @@ fn admin_authed(req: &Request, env: &Env) -> bool {
     relay_core::replay::admin_key_ok(provided.as_deref(), expected.as_deref())
 }
 
+/// The admin WRITE leg's same-origin gate — the check the feedback
+/// console's write endpoints already carry (`relay_core::erp::
+/// same_origin_write`, review follow-up to the relay report's L-3): a
+/// browser POST must come from this site. The session cookie is
+/// SameSite=Lax so classic CSRF is already blunted; this is depth, and
+/// the drain CLI's machine leg (no Origin, no Sec-Fetch-Site header)
+/// passes by the same rules the erp tests pin.
+fn admin_write_ok(req: &Request) -> bool {
+    let Ok(own) = req.url().map(|u| u.origin().ascii_serialization()) else {
+        return false;
+    };
+    let fetch_origin = req.headers().get("Origin").ok().flatten();
+    let fetch_site = req.headers().get("Sec-Fetch-Site").ok().flatten();
+    relay_core::erp::same_origin_write(fetch_origin.as_deref(), fetch_site.as_deref(), &own)
+}
+
 /// GET /api/replays/admin/list — every contributor + the watermark.
 pub async fn handle_admin_list(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
@@ -560,6 +576,11 @@ pub async fn handle_admin_wanted(mut req: Request, env: Env) -> Result<Response>
             ok(v)
         },
         Method::Post => {
+            // The write leg: same-origin first (the GET editor round-trip
+            // above stays readable cross-free).
+            if !admin_write_ok(&req) {
+                return err(403, "cross_origin");
+            }
             // Audit M-9: REQUIRED length — the admin editor always sends
             // one; a chunked body must not buffer unbounded.
             let Some(len) = req
@@ -636,6 +657,9 @@ pub async fn handle_admin_drain(mut req: Request, env: Env) -> Result<Response> 
     if req.method() != Method::Post {
         return err(405, "method_not_allowed");
     }
+    if !admin_write_ok(&req) {
+        return err(403, "cross_origin");
+    }
     if !admin_authed(&req, &env) {
         return err(401, "unauthorized");
     }
@@ -689,6 +713,9 @@ pub async fn handle_admin_drain(mut req: Request, env: Env) -> Result<Response> 
 pub async fn handle_admin_rename(mut req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Post {
         return err(405, "method_not_allowed");
+    }
+    if !admin_write_ok(&req) {
+        return err(403, "cross_origin");
     }
     if !admin_authed(&req, &env) {
         return err(401, "unauthorized");
@@ -744,6 +771,9 @@ pub async fn handle_admin_rename(mut req: Request, env: Env) -> Result<Response>
 pub async fn handle_admin_backfill(mut req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Post {
         return err(405, "method_not_allowed");
+    }
+    if !admin_write_ok(&req) {
+        return err(403, "cross_origin");
     }
     if !admin_authed(&req, &env) {
         return err(401, "unauthorized");
