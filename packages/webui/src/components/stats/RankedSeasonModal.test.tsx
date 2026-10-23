@@ -11,21 +11,37 @@
  *    flow opens the modal while the host's load is still in flight, and
  *    the selection must adopt the seasons once they land;
  *  - clicking a node re-targets the detail card;
+ *  - the rank labels render localized ("stats.league.<metal> <rank>" —
+ *    i18n messages are not loaded in tests, keys render as their paths);
+ *  - the selected season's date range renders at the head's right end
+ *    when the metadata arrived, and stays absent when it didn't;
+ *  - opening triggers the lazy per-ship fetch exactly once per identity;
  *  - loading / empty states.
  *
- * The store is seeded directly rather than through a transport mock: the
- * modal never loads, its host view does. i18n messages are not loaded in
- * tests (keys render as their paths), so assertions ride on fixture-driven
- * text (season names, rank displays) and classes.
+ * The store is seeded directly rather than through a season-transport
+ * mock: the modal never loads SEASONS, its host view does. The per-ship
+ * fetch IS the modal's own (lazy on open), so the api module is mocked
+ * for it, and the ship-table component is stubbed — it has dedicated
+ * tests of its own. The en-US baseline i18n messages are loaded by the
+ * i18n module import (async, settled by flushPromises), so localized
+ * labels assert against the English strings.
  */
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
+import { api } from "@/api";
 import { useRankedStore } from "@/stores/ranked";
 import type { RankedSeasonStats } from "@/api";
 
 import RankedSeasonModal from "./RankedSeasonModal";
+
+vi.mock("@/api", () => ({
+  api: {
+    getRankedStats: vi.fn(),
+    getRankedShipStats: vi.fn(async () => []),
+  },
+}));
 
 enableAutoUnmount(afterEach);
 
@@ -46,6 +62,7 @@ function season(id: number, over: Partial<RankedSeasonStats> = {}): RankedSeason
     planesKilled: 6,
     currentRank: 5,
     bestRank: 3,
+    bestLeague: 2,
     bestRankDisplay: "Silver 3",
     ...over,
   } as RankedSeasonStats;
@@ -53,9 +70,9 @@ function season(id: number, over: Partial<RankedSeasonStats> = {}): RankedSeason
 
 /** The store serves newest-first (the backend's order). */
 const SEASONS = [
-  season(1030, { bestRankDisplay: "Gold 1", battles: 53, wins: 33 }),
-  season(1029, { bestRankDisplay: "Bronze 6", battles: 26, wins: 12 }),
-  season(1009, { bestRankDisplay: "Silver 7", battles: 7, wins: 3 }),
+  season(1030, { bestLeague: 1, bestRank: 1, bestRankDisplay: "Gold 1", battles: 53, wins: 33 }),
+  season(1029, { bestLeague: 3, bestRank: 6, bestRankDisplay: "Bronze 6", battles: 26, wins: 12 }),
+  season(1009, { battles: 7, wins: 3 }),
 ];
 
 function seedStore(over: { seasons?: RankedSeasonStats[]; loading?: boolean } = {}) {
@@ -64,6 +81,7 @@ function seedStore(over: { seasons?: RankedSeasonStats[]; loading?: boolean } = 
   const ranked = useRankedStore();
   ranked.seasons = over.seasons ?? SEASONS;
   ranked.accountId = 42;
+  ranked.realm = "asia";
   if (over.loading) ranked.loading = true;
   return { pinia, ranked };
 }
@@ -80,7 +98,7 @@ async function mountModal(
   const { pinia } = seedStore(seed);
   const wrapper = mount(RankedSeasonModal, {
     props: { modelValue: true, playerName: "Tester", ...props },
-    global: { plugins: [pinia] },
+    global: { plugins: [pinia], stubs: { RankedShipTable: true } },
   });
   await flushPromises();
   return wrapper;
@@ -115,16 +133,75 @@ describe("RankedSeasonModal", () => {
     expect(bodyDetail()?.querySelector(".ranked-modal__detail-name")?.textContent).toBe(
       "Season 29",
     );
+    // Rank labels localize through the league key (the en-US baseline
+    // messages are loaded by the test setup).
     expect(bodyDetail()?.querySelector(".ranked-modal__detail-rank")?.textContent).toContain(
       "Bronze 6",
     );
+  });
+
+  it("falls back to the raw rank display when the numeric league is missing", async () => {
+    // bestLeague cleared: the label renders the backend's display as-is.
+    await mountModal({
+      seasons: [season(1009, { bestLeague: null, bestRank: 7, bestRankDisplay: "Silver 7" })],
+    });
+    expect(bodyNodes()[0].querySelector(".ranked-modal__node-rank")?.textContent).toBe(
+      "Silver 7",
+    );
+  });
+
+  it("renders the season's date range at the detail head's right end", async () => {
+    const dated = [
+      season(1030, {
+        bestLeague: 1,
+        bestRank: 1,
+        bestRankDisplay: "Gold 1",
+        startAt: 1_752_624_000,
+        finishAt: 1_757_404_800,
+      }),
+    ];
+    await mountModal({ seasons: dated });
+    const dates = bodyDetail()?.querySelector(".ranked-modal__detail-dates")?.textContent;
+    expect(dates).toBeTruthy();
+    expect(dates).toContain("–");
+  });
+
+  it("omits the date range when the season metadata never arrived", async () => {
+    await mountModal();
+    expect(bodyDetail()?.querySelector(".ranked-modal__detail-dates")).toBeNull();
+  });
+
+  it("fetches the per-ship rows lazily on open, once per player identity", async () => {
+    const { pinia, ranked } = seedStore();
+    vi.mocked(api.getRankedShipStats).mockResolvedValue([]);
+    const wrapper = mount(RankedSeasonModal, {
+      props: { modelValue: true, playerName: "Tester" },
+      global: { plugins: [pinia], stubs: { RankedShipTable: true } },
+    });
+    await flushPromises();
+    expect(api.getRankedShipStats).toHaveBeenCalledTimes(1);
+    expect(api.getRankedShipStats).toHaveBeenCalledWith(42, "asia");
+
+    // Reopening inside the window hits the TTL fast path — no re-query.
+    await wrapper.setProps({ modelValue: false });
+    await flushPromises();
+    await wrapper.setProps({ modelValue: true });
+    await flushPromises();
+    expect(api.getRankedShipStats).toHaveBeenCalledTimes(1);
+
+    // A player swap while open re-targets the ship slot.
+    ranked.accountId = 7;
+    ranked.realm = "eu";
+    await flushPromises();
+    expect(api.getRankedShipStats).toHaveBeenCalledTimes(2);
+    expect(api.getRankedShipStats).toHaveBeenLastCalledWith(7, "eu");
   });
 
   it("adopts seasons that land after the modal opened (host load still in flight)", async () => {
     const { pinia, ranked } = seedStore({ seasons: [], loading: true });
     const wrapper = mount(RankedSeasonModal, {
       props: { modelValue: true, playerName: "Tester" },
-      global: { plugins: [pinia] },
+      global: { plugins: [pinia], stubs: { RankedShipTable: true } },
     });
     await flushPromises();
     // The load in flight: the spinner state, no nodes yet.

@@ -718,6 +718,7 @@ pub fn run() {
             commands::ingame_plugin::ingame_plugin_install,
             commands::ingame_plugin::ingame_plugin_uninstall,
             commands::ranked::get_ranked_stats,
+            commands::ranked::get_ranked_ship_stats,
             // Changelog feed for the settings' 更新日志 section — GitHub
             // Releases via the mirror ladder; platform-neutral (the phone
             // app serves the same feed).

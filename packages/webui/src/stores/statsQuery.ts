@@ -24,6 +24,7 @@ export type StatsQueryMessage =
       seasonCount?: number;
       ttlMs: number;
     }
+  | { kind: "ranked-ship-stats"; accountId: number; realm: string; ttlMs: number }
   | {
       kind: "roster-batch";
       names: string[];

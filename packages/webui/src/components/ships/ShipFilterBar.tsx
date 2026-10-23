@@ -326,24 +326,26 @@ function isValidValue(key: OptCatKey, v: string): boolean {
   }
 }
 
-function loadPersisted(): Persisted | null {
+function loadPersisted(key: string, legacyEligible: boolean): Persisted | null {
   try {
-    const raw = localStorage.getItem(PERSIST_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) {
       // No structural validation beyond JSON.parse: `sel` entries are
       // validated per-key by the caller, everything else is ignored.
       return { sel: (JSON.parse(raw) as Partial<Persisted>).sel ?? {} };
     }
-    // Legacy migration: only the selections carry forward. The v6 blob is
+    // Legacy migration (the DEFAULT key only — a custom-key host starts
+    // fresh): only the selections carry forward. The v6 blob is
     // written back IMMEDIATELY and the legacy key swept — the migrated
     // state must survive a session with no further interaction, not
     // re-migrate from defaults on the next boot.
+    if (!legacyEligible) return null;
     for (const legacy of LEGACY_PERSIST_KEYS) {
       const rawLegacy = localStorage.getItem(legacy);
       if (!rawLegacy) continue;
       const migrated: Persisted = { sel: (JSON.parse(rawLegacy) as Partial<Persisted>).sel ?? {} };
       try {
-        localStorage.setItem(PERSIST_KEY, JSON.stringify(migrated));
+        localStorage.setItem(key, JSON.stringify(migrated));
       } catch {
         /* storage full — the migrated state still holds for the session */
       }
@@ -352,8 +354,10 @@ function loadPersisted(): Persisted | null {
     }
     return null;
   } catch {
-    localStorage.removeItem(PERSIST_KEY);
-    for (const legacy of LEGACY_PERSIST_KEYS) localStorage.removeItem(legacy);
+    localStorage.removeItem(key);
+    if (legacyEligible) {
+      for (const legacy of LEGACY_PERSIST_KEYS) localStorage.removeItem(legacy);
+    }
     return null;
   }
 }
@@ -368,11 +372,24 @@ export default defineComponent({
   props: {
     ships: { type: Array as () => PlayerShipStats[], required: true },
     realm: { type: String, default: "" },
+    /** Categories to drop entirely — no chip, no filter, no sort key, no
+     *  persistence. Hosts that replace a category's control with their own
+     *  (the ranked-season modal swaps the tier slider for league bracket
+     *  buttons) exclude it here; the bracket filter then pre-filters the
+     *  `ships` prop before the bar sees them. */
+    exclude: { type: Array as () => CatKey[], default: () => [] },
+    /** localStorage key for the selections. Hosts whose category set
+     *  differs (a non-empty `exclude` changes the blob's shape) must use
+     *  their own key so the two never overwrite each other's state. */
+    persistKey: { type: String, default: PERSIST_KEY },
   },
   emits: {
     change: (_state: FilterState) => true,
   },
   setup(props, { emit }) {
+    /** The chip/filter/sort category order with this host's exclusions
+     *  applied (static per instance — `exclude` never changes at runtime). */
+    const order: CatKey[] = DEFAULT_ORDER.filter((k) => !props.exclude.includes(k));
     const encyclopedia = useEncyclopediaStore();
     const { dataLanguage } = useLanguage();
     // Phone widths (the same <768px cut hikari's sheets use) dock every
@@ -383,7 +400,7 @@ export default defineComponent({
     //    canonical BB→CV→CA→DD→SS reading order), everything else descending
     //    (high tier / good winrate / most battles first) so the first
     //    engagement lands on the useful direction. ──
-    const stored = loadPersisted();
+    const stored = loadPersisted(props.persistKey, props.persistKey === PERSIST_KEY);
     const sel = ref<SelMap>({
       type: { values: [], dir: "asc", allSort: false },
       nation: { values: [], dir: "asc", allSort: false },
@@ -393,7 +410,7 @@ export default defineComponent({
       mode: { values: [], dir: "desc", allSort: false },
     });
     if (stored?.sel) {
-      for (const k of CAT_KEYS) {
+      for (const k of order) {
         if (k === "tier") {
           const s = stored.sel.tier;
           if (!s || typeof s !== "object") continue;
@@ -466,7 +483,10 @@ export default defineComponent({
       // form at once so the v6 blob never carries a legacy tier entry into
       // the next boot.
       try {
-        localStorage.setItem(PERSIST_KEY, JSON.stringify({ sel: sel.value } satisfies Persisted));
+        localStorage.setItem(
+          props.persistKey,
+          JSON.stringify({ sel: sel.value } satisfies Persisted),
+        );
       } catch {
         /* storage full / unavailable — the in-memory state still holds */
       }
@@ -475,7 +495,10 @@ export default defineComponent({
       sel,
       () => {
         try {
-          localStorage.setItem(PERSIST_KEY, JSON.stringify({ sel: sel.value } satisfies Persisted));
+          localStorage.setItem(
+            props.persistKey,
+            JSON.stringify({ sel: sel.value } satisfies Persisted),
+          );
         } catch {
           /* storage full / unavailable — ignore */
         }
@@ -690,7 +713,7 @@ export default defineComponent({
       } else {
         // Within a category the picked options OR together; categories AND.
         // The tier corridor replaces the tier option set.
-        for (const key of DEFAULT_ORDER) {
+        for (const key of order) {
           if (key === "tier") {
             const tr = sel.value.tier;
             if (tierRangeNarrowed([tr.lo, tr.hi])) {
@@ -713,7 +736,7 @@ export default defineComponent({
       // Multi-key sort: sorting categories earlier in the canonical chip
       // order win; the final battles-desc tiebreak keeps the untouched view
       // stable.
-      const sortCats = DEFAULT_ORDER.filter(isSortCat);
+      const sortCats = order.filter(isSortCat);
       return [...rows].sort((a, b) => {
         for (const key of sortCats) {
           const def = key === "tier" ? TIER_DEF : CAT_DEFS[key];
@@ -858,7 +881,7 @@ export default defineComponent({
             stay first in the DOM so tab order is unchanged — the visual
             order is flex `order`'s job, not the markup's. */}
         <div class="ship-filter-bar__chips">
-          {DEFAULT_ORDER.map((key) => {
+          {order.map((key) => {
             const def = key === "tier" ? TIER_DEF : CAT_DEFS[key];
             const optCur: CatSel | null = key === "tier" ? null : sel.value[key];
             const tierCur: TierSel | null = key === "tier" ? sel.value.tier : null;
@@ -934,7 +957,7 @@ export default defineComponent({
                   // The right-most chip's popup opens leftwards so it never
                   // leaves the strip (the old data-edge CSS hook).
                   placement={
-                    key === DEFAULT_ORDER[DEFAULT_ORDER.length - 1] ? "bottom-end" : "bottom-start"
+                    key === order[order.length - 1] ? "bottom-end" : "bottom-start"
                   }
                   closeOnBackdrop={isMobile.value}
                   sheetOnMobile

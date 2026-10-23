@@ -4,7 +4,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { RankedSeasonStats } from "@/api";
-import { aggregateRankedWinrate, rankLeague, seasonNumber } from "./ranked";
+import {
+  aggregateRankedWinrate,
+  leagueFromNumber,
+  leagueTierWindow,
+  rankLeague,
+  seasonNumber,
+} from "./ranked";
 
 /** Partial season: only the fields the util reads plus just enough identity
  *  to stay readable — the cast mirrors the backend's full shape. */
@@ -48,6 +54,40 @@ describe("rankLeague", () => {
     expect(rankLeague(undefined)).toBeNull();
     expect(rankLeague("")).toBeNull();
     expect(rankLeague("Unknown 5")).toBeNull();
+  });
+});
+
+describe("leagueFromNumber", () => {
+  it("maps the backend league numbers onto the metals", () => {
+    expect(leagueFromNumber(1)).toBe("gold");
+    expect(leagueFromNumber(2)).toBe("silver");
+    expect(leagueFromNumber(3)).toBe("bronze");
+  });
+
+  it("returns null for anything else (absent, unknown)", () => {
+    expect(leagueFromNumber(null)).toBeNull();
+    expect(leagueFromNumber(undefined)).toBeNull();
+    expect(leagueFromNumber(0)).toBeNull();
+    expect(leagueFromNumber(4)).toBeNull();
+  });
+});
+
+describe("leagueTierWindow", () => {
+  const leagues = [
+    { league: 1, minTier: 9, maxTier: 10 },
+    { league: 2, minTier: 7, maxTier: 8 },
+    { league: 3, minTier: 6, maxTier: 6 },
+  ];
+
+  it("returns the picked league's tier window", () => {
+    expect(leagueTierWindow(leagues, 1)).toEqual([9, 10]);
+    expect(leagueTierWindow(leagues, 3)).toEqual([6, 6]);
+  });
+
+  it("returns null without metadata or for an unknown league", () => {
+    expect(leagueTierWindow(undefined, 1)).toBeNull();
+    expect(leagueTierWindow([], 1)).toBeNull();
+    expect(leagueTierWindow(leagues, 9)).toBeNull();
   });
 });
 

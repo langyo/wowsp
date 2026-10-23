@@ -57,5 +57,16 @@
   "noRankedSeasons": "Aucune bataille classée enregistrée",
   "bestRank": "Meilleur rang",
   "avgFrags": "Frag moy.",
-  "maxDamage": "Dégâts max"
+  "maxDamage": "Dégâts max",
+  "league": {
+    "gold": "Or",
+    "silver": "Argent",
+    "bronze": "Bronze"
+  },
+  "bracketAll": "Toutes les ligues",
+  "rankedShipsTitle": "Navires de la saison",
+  "rankedShipsCareerNote": "Le cluster CN ne fournit pas de données par saison — la liste ci-dessous couvre toute la carrière classée.",
+  "rankedShipsEmpty": "Aucun navire joué cette saison.",
+  "rankedShipsError": "Échec du chargement des navires.",
+  "rankedBracketLabel": "Filtre des ligues"
 }

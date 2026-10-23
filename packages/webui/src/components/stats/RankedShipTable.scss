@@ -1,0 +1,185 @@
+/** The season modal's ship breakdown — bracket buttons + the water-table
+ *  row look (icon / type / tier / name / battles / WR / avg damage / K-D),
+ *  scoped to this component. */
+.ranked-ships {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  &__title {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* League bracket buttons — the tier filter's stand-in. The active one
+     tints with its league's metal (the modal's --metal-* vars cascade). */
+  &__brackets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  &__bracket {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid rgb(var(--color-border));
+    border-radius: 999px;
+    background: none;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color var(--duration-short), border-color var(--duration-short),
+      background var(--duration-short);
+
+    em {
+      font-style: normal;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      color: rgb(var(--color-muted) / 70%);
+    }
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+
+    &--on {
+      background: rgb(var(--color-primary) / 10%);
+      border-color: rgb(var(--color-primary) / 45%);
+      color: rgb(var(--color-text));
+
+      &.ranked-ships__bracket--gold {
+        border-color: var(--metal-gold);
+        background: color-mix(in srgb, var(--metal-gold) 12%, transparent);
+      }
+
+      &.ranked-ships__bracket--silver {
+        border-color: var(--metal-silver);
+        background: color-mix(in srgb, var(--metal-silver) 12%, transparent);
+      }
+
+      &.ranked-ships__bracket--bronze {
+        border-color: var(--metal-bronze);
+        background: color-mix(in srgb, var(--metal-bronze) 12%, transparent);
+      }
+    }
+  }
+
+  &__note {
+    margin: 0;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__state {
+    margin: 0;
+    padding: 1.25rem 1rem;
+    display: flex;
+    justify-content: center;
+    text-align: center;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+
+    &--error {
+      color: rgb(var(--color-error));
+    }
+  }
+
+  /* The water-table row look, verbatim proportions. */
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__ship {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 5px;
+    font-size: var(--text-2xs);
+
+    &:hover {
+      background: rgb(var(--color-text) / 5%);
+    }
+  }
+
+  &__ship-ico {
+    flex: 0 0 22px;
+    display: inline-flex;
+  }
+
+  &__ship-type {
+    flex: 0 0 30px;
+    color: rgb(var(--color-muted));
+    font-size: 0.625rem;
+    font-weight: 600;
+  }
+
+  &__ship-tier {
+    flex: 0 0 30px;
+    text-align: center;
+    font-style: normal;
+    color: rgb(var(--color-text));
+    font-family: var(--font-mono);
+  }
+
+  &__ship-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__ship-battles {
+    flex: 0 0 52px;
+    text-align: right;
+    color: rgb(var(--color-text) / 70%);
+    font-family: var(--font-mono);
+  }
+
+  &__ship-wr {
+    flex: 0 0 52px;
+    text-align: right;
+    font-family: var(--font-mono);
+  }
+
+  &__ship-dmg {
+    flex: 0 0 68px;
+    text-align: right;
+    color: rgb(var(--color-text) / 70%);
+    font-family: var(--font-mono);
+  }
+
+  &__ship-kd {
+    flex: 0 0 40px;
+    text-align: right;
+    color: rgb(var(--color-text) / 60%);
+    font-family: var(--font-mono);
+  }
+
+  @media (max-width: 767px) {
+    /* Phones: let the row scroll horizontally instead of crushing the
+       name column to nothing. */
+    &__list {
+      overflow-x: auto;
+    }
+
+    &__ship {
+      min-width: 22rem;
+    }
+  }
+}
