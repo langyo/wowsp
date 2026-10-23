@@ -547,6 +547,12 @@ pub async fn history_records(env: &Env, contact: &str) -> Result<Vec<Value>> {
 }
 
 /// 回读一条记录的联系方式（通知路由用）；读不到返回 None（跳过通知）。
+///
+/// 单记录 GET 的信封与建记录响应同形——联系方式住在
+/// `/data/record/fields/{}`（submit 解析 `/data/record/record_id`、
+/// 公开历史读 `/data/record` 都是同一形状的证人）。旧代码从顶层
+/// `/fields/` 取，恒 None：`notify_status` 从未真正路由过任何回访
+/// 通知（评审 2026-10-23 发现）。
 async fn record_contact(token: &str, ids: &BitableIds, record_id: &str) -> Option<String> {
     let (_, v) = feishu_json(
         Method::Get,
@@ -560,7 +566,7 @@ async fn record_contact(token: &str, ids: &BitableIds, record_id: &str) -> Optio
     .await
     .ok()?;
     let c = v
-        .pointer(&format!("/fields/{}", feedback::F_CONTACT))
+        .pointer(&format!("/data/record/fields/{}", feedback::F_CONTACT))
         .cloned();
     Some(text_val(&c)).filter(|c| !c.is_empty())
 }
