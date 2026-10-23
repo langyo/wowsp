@@ -41,7 +41,13 @@ if (!g.document) {
       clientHeight: 900,
       style: { setProperty() {} },
     },
-    body: {},
+    body: {
+      // hikari's overlayRoot module appends its overlay container to
+      // document.body at import time (module side effect, 0.55.19x) —
+      // no-op it here; the real root only needs to exist in the browser.
+      appendChild() {},
+      removeChild() {},
+    },
     createElement: () => ({
       style: {},
       setAttribute() {},

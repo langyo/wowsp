@@ -26,12 +26,17 @@ minimumReleaseAgeExclude:
   - brace-expansion@5.0.12
 overrides:
   postcss: ^8.5.18
-  "brace-expansion@<1.1.18": 1.1.18
-  "brace-expansion@>=2.0.0 <2.1.7": 2.1.7
-  "brace-expansion@>=4.0.0 <5.0.12": 5.0.12
+  # Override values stay in caret form (repo policy: dependency specs are
+  # ^-ranges so resolution tracks the newest release). A selector + caret
+  # value acts as a floor — specs below the patched line are lifted to
+  # >=patched, newer in-line releases keep flowing in.
+  "brace-expansion@<1.1.18": ^1.1.18
+  "brace-expansion@>=2.0.0 <2.1.7": ^2.1.7
+  "brace-expansion@>=4.0.0 <5.0.12": ^5.0.12
   # Dev-toolchain audit wave 2026-10 (all devDependencies: wrangler/miniflare
   # undici chain, gltf-transform CLI sharp, minimatch brace-expansion chain) —
-  # pinned so future installs can't drift back onto the advisories.
+  # floored at the patched versions so installs can't drift back onto the
+  # advisories while still tracking in-line releases.
   undici: ^7.29.1
   sharp: ^0.35.5
   js-yaml: ^4.3.1
