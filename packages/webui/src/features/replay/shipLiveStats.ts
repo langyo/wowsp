@@ -19,6 +19,7 @@
 import liveStatsRaw from "@/data/ship_live_stats.json";
 import { t } from "@/i18n";
 import { i18n } from "@/i18n";
+import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
 import type { AaBands, ShipLiveStats } from "./shipLiveStatsTypes";
 import { tierToRoman } from "@wowsp/holo";
 
@@ -80,6 +81,25 @@ export function shipTypeShort(
   if (!type) return null;
   if (type === "Cruiser" && mainCaliber != null && mainCaliber > 0) {
     return mainCaliber >= CA_CALIBER_MM ? "CA" : "CL";
+  }
+  return TYPE_SHORT[type] ?? "?";
+}
+
+/** Badge code for the stats lists' per-ship rows (水表 ship tables, the ship
+ *  detail modal, 舰艇查询 tags): cruisers split CA vs CL off the baked
+ *  main-gun caliber — the same ≥155mm rule the battle HUD reads — while
+ *  cruisers the bake has no caliber for (GameParams slices the pack never
+ *  carried) keep the combined CA/CL code: guessing would misbadge more
+ *  often than the combined code helps. Everything else is the static map. */
+export function shipTypeBadgeShort(
+  type: string | null | undefined,
+  shipId: number | null | undefined,
+): string {
+  if (!type) return "?";
+  if (type === "Cruiser" && shipId != null) {
+    const cal = shipLiveStats(shipId)?.cal;
+    if (cal != null && cal > 0) return cal >= CA_CALIBER_MM ? "CA" : "CL";
+    return SHIP_TYPE_SHORT.Cruiser;
   }
   return TYPE_SHORT[type] ?? "?";
 }
