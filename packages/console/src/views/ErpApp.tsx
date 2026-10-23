@@ -254,13 +254,13 @@ export default defineComponent({
           {session.value?.open_access ? (
             <div class="erp-notice">
               <HAlert
-                variant="warning"
+                variant="info"
                 banner
-                message="未配置后台允许名单：当前策略下，能登录该飞书应用的成员都可进入（如需收紧，把维护者 open_id 写入 ERP_ALLOWED_OPEN_IDS，或关闭 ERP_OPEN_ACCESS）。"
+                message="当前按组织授权开放（ERP_OPEN_ACCESS=1）：能登录该飞书应用的成员都可以进入后台。如需收紧为个人名单，请设置 ERP_ALLOWED_OPEN_IDS 并移除 ERP_OPEN_ACCESS。"
               />
               <div class="erp-notice-copy">
-                <span class="erp-muted">你的 open_id（点按复制）：</span>
-                <HkCopyBadge mono size="sm" variant="warning">
+                <span class="erp-muted">你的 open_id（收紧名单时点按复制）：</span>
+                <HkCopyBadge mono size="sm" variant="info">
                   {session.value?.open_access}
                 </HkCopyBadge>
               </div>
