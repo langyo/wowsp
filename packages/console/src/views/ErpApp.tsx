@@ -12,7 +12,7 @@
  * note. Every mutation confirms through HkConfirmDialog; errors toast.
  */
 
-import { computed, defineComponent, onMounted, ref, watch, type PropType } from "vue";
+import { defineComponent, onMounted, ref, watch, type PropType } from "vue";
 import {
   HkAdminHeader,
   HkAdminShell,
@@ -28,7 +28,6 @@ import {
   HToast,
   HTabs,
   setLocale,
-  useToast,
 } from "@celestia-island/hikari";
 import { MessageSquareText, Package } from "@lucide/vue";
 
@@ -58,9 +57,20 @@ function loginFailureText(reason: string): string {
   return `登录失败（${reason}），请重试。`;
 }
 
-/** Page-level layout styles only (component chrome is hikari's). */
+/** Page-level layout styles only (component chrome is hikari's). The
+ *  fill chain hands the shell's definite viewport height down to the
+ *  view: the shell's padded scroll child stretches (min-height:100%),
+ *  `.erp-view` grows with it, and the active table region (`.erp-table`)
+ *  consumes the remainder so the HkAdminTablePage card / empty state
+ *  fills the space short content leaves over instead of baring canvas. */
 const ERP_STYLES = `
-.erp-view { display: flex; flex-direction: column; gap: var(--space-16, 1rem); }
+.erp-root { height: 100%; }
+.erp-root .s-admin-shell-scroll > .hk-scroll-container-viewport > div { min-height: 100%; display: flex; flex-direction: column; }
+.erp-view { flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--space-16, 1rem); min-height: 0; }
+.erp-table { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.erp-table > div { flex: 1 1 auto; display: flex; flex-direction: column; }
+.erp-table > div > .hk-empty-state { flex: 1 1 auto; max-width: none; }
+.erp-table > div > .hk-card { flex: 1 1 auto; }
 .erp-muted { color: rgb(var(--color-muted)); font-size: var(--text-sm, 0.8125rem); }
 .erp-row-actions { display: flex; gap: var(--space-6, 6px); flex-wrap: wrap; margin-top: var(--space-6, 6px); align-items: center; }
 .erp-pager { display: flex; gap: var(--space-8, 8px); align-items: center; flex-wrap: wrap; }
@@ -116,8 +126,6 @@ const SafeAvatar = defineComponent({
 export default defineComponent({
   name: "ErpApp",
   setup() {
-    const toast = useToast();
-
     const phase = ref<"loading" | "login" | "ready">("loading");
     const session = ref<ErpSession | null>(null);
     const loginError = ref("");
@@ -135,29 +143,6 @@ export default defineComponent({
         if (s.ok) {
           session.value = s;
           phase.value = "ready";
-          // A contact re-read that ended in anything but a success state
-          // ("refreshed" = profile healed; "unchanged" = read fine, nothing
-          // new) means the app's contact scope is still missing and the
-          // session keeps the anonymized placeholder. Surface it as a
-          // warning ONCE per tab session — not a full error toast with the
-          // raw worker code on every page load; the code stays in the copy
-          // so a stuck 权限 grant still self-identifies.
-          if (s.debug && s.debug !== "refreshed" && s.debug !== "unchanged") {
-            const FLAG = "wowsp-erp-contact-degraded";
-            let first = true;
-            try {
-              first = !sessionStorage.getItem(FLAG);
-              if (first) sessionStorage.setItem(FLAG, "1");
-            } catch {
-              /* storage unavailable — warn without the repeat guard */
-            }
-            if (first) {
-              toast.warning(
-                `通讯录权限未生效，昵称/头像暂为占位信息（${s.debug}）。` +
-                  "在飞书开放平台为应用授予通讯录读取权限后，刷新即自动恢复。",
-              );
-            }
-          }
           return;
         }
       } catch {
@@ -194,10 +179,6 @@ export default defineComponent({
       );
     }
 
-    const viewTitle = computed(
-      () => VIEWS.find((v) => v.key === view.value)?.label ?? "",
-    );
-
     // Bound slot objects — an inline literal is not normalized to slots
     // (the same gotcha HkAdminTablePage documents).
     const feedbackSlots = { onSessionLost: loseSession };
@@ -220,7 +201,6 @@ export default defineComponent({
         onOpenDrawer: () => void;
       }) => (
         <HkAdminHeader
-          title={viewTitle.value}
           username={session.value?.name || "飞书用户"}
           avatarUrl={session.value?.avatar || ""}
           showHamburger={p.showHamburger}
@@ -232,6 +212,18 @@ export default defineComponent({
           onLogout={askLogout}
         >
           {{
+            // The view switcher rides the header's page-owned centre
+            // group — the balanced three-zone grid pins it to the true
+            // viewport middle, the shittim-chest console grammar (the
+            // in-content tab row it replaces floated mid-page instead
+            // and duplicated the sidebar nav).
+            center: () => (
+              <HTabs
+                modelValue={view.value}
+                onUpdate:modelValue={(v: string) => (view.value = v as ViewKey)}
+                tabs={VIEWS.map((v) => ({ key: v.key, label: v.label }))}
+              />
+            ),
             "avatar-modal": (modal: { open: boolean; onUpdateOpen: (v: boolean) => void }) => (
               <HModal
                 modelValue={modal.open}
@@ -315,11 +307,6 @@ export default defineComponent({
               </div>
             </div>
           ) : null}
-          <HTabs
-            modelValue={view.value}
-            onUpdate:modelValue={(v: string) => (view.value = v as ViewKey)}
-            tabs={VIEWS.map((v) => ({ key: v.key, label: v.label }))}
-          />
           {view.value === "feedback" ? <FeedbackView {...feedbackSlots} /> : <ReplayAdminView {...replaysSlots} />}
         </div>
       ),
@@ -350,7 +337,7 @@ export default defineComponent({
     };
 
     return () => (
-      <div>
+      <div class="erp-root">
         <style>{ERP_STYLES}</style>
         <HkLoadingVeil active={phase.value === "loading"} label="正在检查登录状态…" />
         {phase.value === "login" ? (

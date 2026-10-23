@@ -27,8 +27,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-// Both entries mount at #app; stretch it so the painted canvas covers
-// full-height layouts (the erp login centering) at any content size.
+// Definite-height chain: HkAdminShell sizes itself with `height: 100%`
+// so the sidebar and the content region span the viewport and scroll
+// INTERNALLY (`s-admin-shell-body`/`-main`/`-scroll` are all flex:1 +
+// min-height:0). Percentage heights resolve against auto-height
+// ancestors as auto — without this chain the shell collapsed to its
+// content's height and short pages left the lower viewport as bare
+// canvas. The feedback page keeps document-flow scrolling (body stays
+// overflow-visible), so the fixed height costs it nothing.
+html,
+body,
 #app {
-  min-height: 100dvh;
+  height: 100%;
 }
