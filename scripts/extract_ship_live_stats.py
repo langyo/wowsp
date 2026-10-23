@@ -86,6 +86,34 @@ AA_BANDS = ("near", "medium", "far")
 # Main-battery fallback blocks (only used for ships the encyclopedia misses).
 ARTILLERY_BLOCK_RE = re.compile(r"^(?:A|B|C|AB|A1|A2|B1|AB1|AB2)_Artillery$")
 
+
+def artillery_blocks(gp: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every main-battery block of a ship, widest-fit reading.
+
+    The *_Artillery hull keys alone under-cover: ships whose artillery
+    modules carry gun-model names (`AB1_152_47`, `ArtilleryDefault`) match
+    nothing, and those blocks are exactly where their barrelDiameter lives
+    (the whole US cruiser line bakes no cal without them). ShipUpgradeInfo's
+    own _Artillery upgrades name those blocks in `components.artillery`, so
+    the ship's module graph is the authoritative second source; the hull-key
+    pattern stays in the union for ships whose upgrade table is missing."""
+    names = {
+        k for k, v in gp.items() if ARTILLERY_BLOCK_RE.match(k) and isinstance(v, dict)
+    }
+    sui = gp.get("ShipUpgradeInfo")
+    if isinstance(sui, dict):
+        for upg in sui.values():
+            if not isinstance(upg, dict) or upg.get("ucType") != "_Artillery":
+                continue
+            comps = upg.get("components")
+            refs = comps.get("artillery") if isinstance(comps, dict) else None
+            if not isinstance(refs, list):
+                continue
+            for name in refs:
+                if isinstance(name, str) and isinstance(gp.get(name), dict):
+                    names.add(name)
+    return [gp[n] for n in sorted(names)]
+
 # `ShipUpgradeInfo.ucType` → the short code baked into the asset. Anything not
 # listed is dropped (a kind the frontend has no label for).
 UPGRADE_KINDS = {
@@ -313,9 +341,7 @@ def collect_gameparams_fallback(
     out: dict[str, Any] = {}
     main = 0.0
     caliber = 0.0
-    for key, block in gp.items():
-        if not ARTILLERY_BLOCK_RE.match(key) or not isinstance(block, dict):
-            continue
+    for block in artillery_blocks(gp):
         dist = num(block.get("maxDist"))
         if dist is not None and dist > main:
             main = dist

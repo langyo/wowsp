@@ -28,7 +28,7 @@ import { winrateColor } from "@/utils/winrate";
 import { shipRarity, RARITY_VARIANT, RARITY_CARD_MOD, RARITY_ORDER, type Rarity } from "@/utils/shipRarity";
 import { authoritativeEvent } from "@/utils/shipEventData";
 import { eventLabel, eventTooltip } from "@/utils/shipEvents";
-import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
+import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
 import { tierLabel } from "@/utils/shipCompare";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import TierRangeSelect, {
@@ -575,7 +575,7 @@ export default defineComponent({
                       <span class="ship-card__name">{encyclopedia.shipDisplayName(ship)}</span>
                     </div>
                   <div class="ship-card__tags">
-                    <HkTag variant="default" size="sm">{typeLabel(ship.type)} ({SHIP_TYPE_SHORT[ship.type] ?? "?"})</HkTag>
+                    <HkTag variant="default" size="sm">{typeLabel(ship.type)} ({shipTypeBadgeShort(ship.type, ship.shipId)})</HkTag>
                     <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} variant="flag" size="sm" />
                     {eventId ? (
                       <span class="ship-card__event-tag" title={eventTooltip(eventId)}>

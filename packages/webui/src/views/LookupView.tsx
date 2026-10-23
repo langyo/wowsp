@@ -14,6 +14,7 @@ import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { AssetImage } from "@/components/base/AssetImage";
 import { useStatsStore } from "@/stores/stats";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useClanStatsStore, clanCacheKey } from "@/stores/clanStats";
@@ -28,7 +29,9 @@ import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot
 import { renderClanShot, type ClanShotModel } from "@/features/share/clanShot";
 import { useShareImage } from "@/features/share/useShareImage";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
-import { shipIcon } from "@/features/holographic/shipIcons";
+import { shipIconUrl } from "@/features/holographic/shipIcons";
+import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
+import { resolveShipImage } from "@/utils/shipImages";
 import { tierToRoman } from "@wowsp/holo";
 import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import {
@@ -1029,8 +1032,10 @@ export default defineComponent({
                     <div class="lookup-view__shiplist">
                       {filteredShips.value.map((s) => {
                         const off = shipOfflineEntry(s.shipId);
-                        const icon = shipIcon(off?.type ?? "", "plain");
-                        const typeKey = TYPE_ORDER.find((k) => k && (off?.type ?? "").startsWith(k)) ?? "";
+                        // Encyclopedia type first (the offline DB misses
+                        // post-bake ships), the offline entry backfills.
+                        const type = infoOf(s.shipId)?.type || off?.type || "";
+                        const silhouette = shipIconUrl(type, "plain");
                         return (
                           <div
                             class="lookup-view__ship lookup-view__ship--link"
@@ -1046,11 +1051,22 @@ export default defineComponent({
                             }}
                           >
                             <span class="lookup-view__ship-ico">
-                              {icon && icon.complete && icon.naturalWidth > 0 ? (
-                                <img src={icon.src} width={22} height={22} alt="" />
-                              ) : null}
+                              <AssetImage
+                                src={resolveShipImage(s.shipId, encyclopedia.byId.get(s.shipId)?.images?.small)}
+                                alt=""
+                                loading="lazy"
+                                width={22}
+                                height={22}
+                                fallback={
+                                  silhouette ? (
+                                    <img src={silhouette} width={22} height={22} alt="" />
+                                  ) : null
+                                }
+                              />
                             </span>
-                            <span class="lookup-view__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
+                            <span class="lookup-view__ship-type">
+                              {shipTypeBadgeShort(type || undefined, s.shipId)}
+                            </span>
                             <em class="lookup-view__ship-tier">
                               {off?.tier != null ? tierToRoman(off.tier) : ""}
                             </em>

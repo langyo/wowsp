@@ -11,6 +11,7 @@ import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import SScrollTop from "@/components/base/SScrollTop";
+import { AssetImage } from "@/components/base/AssetImage";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
@@ -26,6 +27,9 @@ import { useCompositionStamps } from "@/composables/useCompositionStamps";
 import ShareShotButton from "@/features/share/ShareShotButton";
 import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot";
 import { useShareImage } from "@/features/share/useShareImage";
+import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
+import { resolveShipImage } from "@/utils/shipImages";
+import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import {
   computeRecentDelta,
@@ -209,7 +213,13 @@ export default defineComponent({
 
     function shipTypeShort(shipId: number): string {
       const info = encyclopedia.byId.get(shipId);
-      return SHIP_TYPE_SHORT[info?.type ?? "Unknown"] ?? "?";
+      return shipTypeBadgeShort(info?.type, shipId);
+    }
+    /** Per-ship portrait (baked pack first, WG CDN otherwise) for the row
+     *  icon; null when the encyclopedia has no image for the ship — the
+     *  class silhouette takes the slot instead. */
+    function shipImage(shipId: number): string | null {
+      return resolveShipImage(shipId, encyclopedia.byId.get(shipId)?.images?.small);
     }
     function shipName(shipId: number, fallbackName: string): string {
       return (
@@ -481,49 +491,65 @@ export default defineComponent({
                   </p>
                 ) : (
                   <div class="dash-ship-table">
-                    {filteredShips.value.map((s) => (
-                      <div
-                        class="dash-ship-table__row dash-ship-table__row--link"
-                        key={s.shipId}
-                        role="button"
-                        tabindex={0}
-                        data-hint={t("ships.detail.openHint")}
-                        onClick={() =>
-                          activeAccount.value &&
-                          shipDetail.openShip(s.shipId, displayShipName(s), activeAccount.value.realm)
-                        }
-                        onKeydown={(e: KeyboardEvent) => {
-                          if (e.key !== "Enter" && e.key !== " ") return;
-                          e.preventDefault();
-                          if (activeAccount.value) {
-                            shipDetail.openShip(s.shipId, displayShipName(s), activeAccount.value.realm);
+                    {filteredShips.value.map((s) => {
+                      const info = encyclopedia.byId.get(s.shipId);
+                      const silhouette = shipIconUrl(info?.type, "plain");
+                      return (
+                        <div
+                          class="dash-ship-table__row dash-ship-table__row--link"
+                          key={s.shipId}
+                          role="button"
+                          tabindex={0}
+                          data-hint={t("ships.detail.openHint")}
+                          onClick={() =>
+                            activeAccount.value &&
+                            shipDetail.openShip(s.shipId, displayShipName(s), activeAccount.value.realm)
                           }
-                        }}
-                      >
-                        <span class="dash-ship-table__col-name">
-                          <HkTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HkTag>
-                          <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
-                        </span>
-                        <span class="dash-ship-table__col-num">{s.battles.toLocaleString()}</span>
-                        <span
-                          class="dash-ship-table__col-num"
-                          style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
+                          onKeydown={(e: KeyboardEvent) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            if (activeAccount.value) {
+                              shipDetail.openShip(s.shipId, displayShipName(s), activeAccount.value.realm);
+                            }
+                          }}
                         >
-                          {s.winrate.toFixed(1)}%
-                        </span>
-                        <span class="dash-ship-table__col-num">
-                          {/* Battles with zero damage are broken snapshot
-                              data — same anomaly flag as the ship modal. */}
-                          {s.battles > 0 && s.avgDamage <= 0
-                            ? t("stats.dataAnomaly")
-                            : s.avgDamage.toFixed(0)}
-                        </span>
-                        <span class="dash-ship-table__col-num">
-                          {(s.frags / Math.max(1, s.battles)).toFixed(2)}
-                        </span>
-                        <span class="dash-ship-table__col-date">{formatDate(s.lastBattleTime)}</span>
-                      </div>
-                    ))}
+                          <span class="dash-ship-table__col-name">
+                            <span class="dash-ship-table__ship-ico">
+                              <AssetImage
+                                src={shipImage(s.shipId)}
+                                alt=""
+                                loading="lazy"
+                                width={22}
+                                height={22}
+                                fallback={
+                                  silhouette ? <img src={silhouette} width={22} height={22} alt="" /> : null
+                                }
+                              />
+                            </span>
+                            <HkTag variant="primary" size="sm">{shipTypeShort(s.shipId)}</HkTag>
+                            <span class="dash-ship-table__ship-name">{displayShipName(s)}</span>
+                          </span>
+                          <span class="dash-ship-table__col-num">{s.battles.toLocaleString()}</span>
+                          <span
+                            class="dash-ship-table__col-num"
+                            style={{ color: winrateColor(s.winrate), fontWeight: 600 }}
+                          >
+                            {s.winrate.toFixed(1)}%
+                          </span>
+                          <span class="dash-ship-table__col-num">
+                            {/* Battles with zero damage are broken snapshot
+                                data — same anomaly flag as the ship modal. */}
+                            {s.battles > 0 && s.avgDamage <= 0
+                              ? t("stats.dataAnomaly")
+                              : s.avgDamage.toFixed(0)}
+                          </span>
+                          <span class="dash-ship-table__col-num">
+                            {(s.frags / Math.max(1, s.battles)).toFixed(2)}
+                          </span>
+                          <span class="dash-ship-table__col-date">{formatDate(s.lastBattleTime)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </section>

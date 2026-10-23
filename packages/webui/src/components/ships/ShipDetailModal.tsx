@@ -30,7 +30,7 @@ import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
 import { authoritativeEvent } from "@/utils/shipEventData";
 import { eventLabel, eventTooltip } from "@/utils/shipEvents";
-import { SHIP_TYPE_SHORT } from "@/utils/shipAggregation";
+import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
 import { tierToRoman } from "@wowsp/holo";
 import planeTypesDb from "@/data/plane_types.json";
 import "./ShipDetailModal.scss";
@@ -465,7 +465,7 @@ export default defineComponent({
     });
     const typeShort = computed(() => {
       const ship = viewShip.value;
-      return ship ? SHIP_TYPE_SHORT[ship.type] ?? "?" : "?";
+      return ship ? shipTypeBadgeShort(ship.type, ship.shipId) : "?";
     });
 
     return () => (

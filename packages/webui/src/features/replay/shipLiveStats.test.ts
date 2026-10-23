@@ -13,6 +13,7 @@ import {
   isKnownConsumable,
   shipConsumableLabel,
   shipLiveStats,
+  shipTypeBadgeShort,
   shipTypeShort,
   shipUpgradeLabel,
   tierRoman,
@@ -148,5 +149,20 @@ describe("shipLiveStats", () => {
     expect(shipTypeShort("Cruiser", 0)).toBe("CA");
     expect(shipTypeShort("Cruiser", undefined)).toBe("CA");
     expect(shipTypeShort("Battleship", 127)).toBe("BB");
+  });
+
+  it("badges the stats lists CA/CL per shipId", () => {
+    // Real bake entries: Charles Martel (203mm) reads CA, Cleveland (152mm —
+    // a gun-named artillery block the old hull-key pattern never matched)
+    // reads CL.
+    expect(shipTypeBadgeShort("Cruiser", 4181636944)).toBe("CA");
+    expect(shipTypeBadgeShort("Cruiser", 4287543280)).toBe("CL");
+    // A cruiser the bake has no entry for (Worcester's GameParams slice is
+    // outside the pack) keeps the combined code — no guessing.
+    expect(shipTypeBadgeShort("Cruiser", 4278106096)).toBe("CA/CL");
+    // Non-cruisers and unknown types never touch the caliber.
+    expect(shipTypeBadgeShort("Battleship", 4277090288)).toBe("BB");
+    expect(shipTypeBadgeShort("Destroyer", null)).toBe("DD");
+    expect(shipTypeBadgeShort(null, 4277090288)).toBe("?");
   });
 });
