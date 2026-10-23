@@ -130,6 +130,32 @@ export const EMPTY_ROSTER_VIEW: RosterModeNumbers = {
   avgDamage: null,
 };
 
+/** Careers at or below this many randoms battles trust an (near-)all-solo
+ *  split: a fresh account genuinely can have played every battle alone. */
+const SOLO_SPLIT_TRUST_BATTLES = 50;
+
+/** How close the solo share must come to the whole randoms career before
+ *  the split reads as a transport mirror (solo ≡ pvp) rather than a real
+ *  division split — within 1% (an exact match included). */
+const SOLO_SPLIT_FAKE_RATIO = 0.99;
+
+/** Whether a career solo split is trustworthy as a REAL division split.
+ *  Some transports mirror the unsplit pvp node into `pvp_solo`, so a
+ *  "solo" share that equals (or all but equals) the whole randoms career
+ *  is the mirror artifact, not a measurement — presenting it as 单人 numbers
+ *  would be fake data. Guard: an exact/near match on a career beyond
+ *  SOLO_SPLIT_TRUST_BATTLES battles is unreliable; a short career may
+ *  honestly be all solo, and a missing comparator (either count null)
+ *  stays trusted so the plain absence faces keep their meaning. */
+export function soloSplitReliable(
+  soloBattles: number | null | undefined,
+  totalBattles: number | null | undefined,
+): boolean {
+  if (soloBattles == null || totalBattles == null) return true;
+  if (totalBattles <= SOLO_SPLIT_TRUST_BATTLES) return true;
+  return soloBattles < totalBattles * SOLO_SPLIT_FAKE_RATIO;
+}
+
 /** Which battle-type stats one battle renders: "follow" follows the battle
  *  (ranked → the ranked career, everything else randoms); the fixed scopes
  *  speak for themselves ("all" = randoms + ranked merged). */

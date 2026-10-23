@@ -5,9 +5,10 @@
  * self-contained HTML file — `dist/overlay-sample.html` (gitignored), the
  * page's own overlay.scss inlined — so the chip typography can be SCREENSHOT
  * and reviewed (the mono number faces, the split battles-count unit, the
- * two-column lean). The assertions pin the markup contract the picture
- * depends on; the picture itself is the deliverable (open the file, or
- * photograph it in a browser).
+ * scope-tagged solo column, the drawn absence dashes, the two-column lean).
+ * The assertions pin the markup contract the picture depends on; the
+ * picture itself is the deliverable (open the file, or photograph it in a
+ * browser).
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -23,13 +24,21 @@ let batchNames: string[] = [];
 let batchCalls = 0;
 
 // Varied digit counts on purpose — the sample must show how the mono
-// figures align across rows of different magnitudes.
+// figures align across rows of different magnitudes. `solo` is the career
+// solo split: langyo's EQUALS his battles count (the mirrored-split shape
+// soloSplitReliable rejects — his solo cell must show the drawn dash, not
+// the career winrate wearing a 单人 tag) and korea4950 carries none (the
+// plain absence dash), the other three carry real minority splits.
 const ROSTER = [
-  { name: "[HERO]wersskysks", relation: 1, winrate: 54.3, pr: 1604, battles: 2391, dmg: 56000 },
-  { name: "langyo", relation: 0, winrate: 56.8, pr: 1715, battles: 14800, dmg: 91000 },
-  { name: "[GHOST]mkwp22", relation: 1, winrate: 42.2, pr: 499, battles: 595, dmg: 30500 },
+  { name: "[HERO]wersskysks", relation: 1, winrate: 54.3, pr: 1604, battles: 2391, dmg: 56000, soloWr: 51.2, soloBattles: 1502 },
+  { name: "langyo", relation: 0, winrate: 56.8, pr: 1715, battles: 14800, dmg: 91000, soloWr: 55.9, soloBattles: 14800 },
+  // mkwp22 also misses the damage figure (the plain per-cell absence dash
+  // beside his numbers).
+  { name: "[GHOST]mkwp22", relation: 1, winrate: 42.2, pr: 499, battles: 595, dmg: null, soloWr: 40.1, soloBattles: 380 },
+  // korea4950 carries no solo split at all (the absence dash in the solo
+  // cell).
   { name: "korea4950", relation: 2, winrate: 45.4, pr: 649, battles: 2895, dmg: 40300 },
-  { name: "ByakuyaWN", relation: 2, winrate: 52.5, pr: 1424, battles: 10200, dmg: 74600 },
+  { name: "ByakuyaWN", relation: 2, winrate: 52.5, pr: 1424, battles: 10200, dmg: 74600, soloWr: 53.3, soloBattles: 6110 },
   // A hidden profile: the rat verdict badge + the red dot stat face, no numbers.
   { name: "CT_RSE", relation: 2, winrate: null, pr: null, battles: null, dmg: null, hidden: true },
 ];
@@ -72,6 +81,17 @@ beforeAll(async () => {
   localStorage.setItem(
     STATS_PREFS_STORAGE_KEY,
     JSON.stringify({
+      // Five columns including a scope-tagged SOLO winrate — the sample
+      // then shows the 单人 tag's vertical centering and its gap to the
+      // figure, plus the dash faces a rejected (mirrored) split and a
+      // missing figure render in their cells.
+      overlayColumns: [
+        { scope: "global", metric: "winrate" },
+        { scope: "global", metric: "pr" },
+        { scope: "solo", metric: "winrate" },
+        { scope: "global", metric: "battles" },
+        { scope: "global", metric: "damage" },
+      ],
       teamAvgEnabled: true,
       sealsEnabled: true,
     }),
@@ -126,6 +146,8 @@ describe("overlay sample frame", () => {
           avgDamage: p.dmg,
           pr: p.pr,
           battles: p.battles,
+          soloWr: p.soloWr ?? null,
+          soloBattles: p.soloBattles ?? null,
           rankedWinrate: null,
           rankedPr: null,
           rankedBattles: null,
@@ -153,20 +175,47 @@ describe("overlay sample frame", () => {
     );
 
     // The markup contract the picture depends on: five numbered rows carry
-    // the four mono figures (winrate / PR / battles / damage), every
-    // battles count carries the split unit word, the hidden profile row is
-    // the rat verdict badge + the red dot stat face, and both average
-    // lines settled into numbers.
+    // the five mono figures (winrate / PR / solo winrate / battles /
+    // damage — the solo cell included on the dash rows), every battles
+    // count carries the split unit word, every solo cell carries the 单人
+    // scope tag, the hidden profile row is the rat verdict badge + the red
+    // dot stat face, and both average lines settled into numbers.
     const numbered = rowChips().filter((c) => c.querySelector(".overlay-chip__stat b"));
     expect(numbered).toHaveLength(5);
     for (const chip of numbered) {
-      // Four figures, each in its own fixed-width column cell.
-      expect(chip.querySelectorAll(".overlay-chip__stat b")).toHaveLength(4);
-      for (const cls of ["n-wr", "n-pr", "n-battles", "n-dmg"]) {
-        expect(chip.querySelectorAll(`.overlay-num.${cls}`)).toHaveLength(1);
+      // Five figures, each in its own fixed-width column cell (the solo
+      // winrate reuses the n-wr face inside its own data-col cell).
+      expect(chip.querySelectorAll(".overlay-chip__stat b")).toHaveLength(5);
+      for (const [cls, n] of [
+        ["n-wr", 2],
+        ["n-pr", 1],
+        ["n-battles", 1],
+        ["n-dmg", 1],
+      ] as const) {
+        expect(chip.querySelectorAll(`.overlay-num.${cls}`)).toHaveLength(n);
       }
+      expect(chip.querySelectorAll(".overlay-scope")).toHaveLength(1);
     }
     expect(document.querySelectorAll(".overlay-chip__stat .overlay-unit")).toHaveLength(5);
+    // The drawn dashes: langyo's mirrored solo split (rejected by
+    // soloSplitReliable — never rendered as a figure), korea4950's absent
+    // solo split, and his missing damage figure. Three dashes, each a
+    // painted .overlay-dash inside its measured column cell — the stat
+    // cells carry no "—" glyph anywhere.
+    const dashes = document.querySelectorAll(".overlay-chip__stat .overlay-dash");
+    expect(dashes).toHaveLength(3);
+    for (const cell of document.querySelectorAll(".overlay-chip__stat")) {
+      expect(cell.textContent).not.toContain("—");
+    }
+    // The solo cells split three figures (wersskysks / mkwp22 / ByakuyaWN —
+    // the honest splits) against two dashes (the mirrored and the absent
+    // ones): the tag rides every solo cell either way.
+    const soloCellText = [
+      ...document.querySelectorAll(".overlay-chip__stat .overlay-scope"),
+    ].map((tag) => tag.parentElement!.textContent ?? "");
+    expect(soloCellText).toHaveLength(5);
+    expect(soloCellText.filter((t) => t.includes("%"))).toHaveLength(3);
+    expect(soloCellText.filter((t) => !t.includes("%"))).toHaveLength(2);
     // The rat verdict: the hidden profile renders the 过街老鼠 badge in
     // the seals flank beside the pinned stat cell's red dot, the fallback
     // name cell outside the stat cell, and on the enemy block the badge
@@ -187,9 +236,9 @@ describe("overlay sample frame", () => {
     }
     // The comparative tones: the ally side's settled means beat the enemy
     // side's on all three metrics (winrate ~51.1 vs ~49.0, PR ~1273 vs
-    // ~1037, damage ~59.2k vs ~57.5k — the hidden profile excluded from
-    // the enemy side), so the ally card's three figures all carry the hi
-    // tone and the enemy card's the lo one.
+    // ~1037, damage ~73.5k vs ~57.5k — mkwp22's missing damage and the
+    // hidden profile excluded from their sides' means), so the ally card's
+    // three figures all carry the hi tone and the enemy card's the lo one.
     const intelCard = (side: string) =>
       document.querySelector<HTMLElement>(
         `.overlay-chip--${side}.overlay-chip--intel`,

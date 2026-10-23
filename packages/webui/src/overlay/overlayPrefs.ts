@@ -34,6 +34,7 @@ import {
   overlayColumnDims,
   resolveRosterBattleScope,
   rosterStatView,
+  soloSplitReliable,
   type ResolvedStatsMode,
   type RosterModeNumbers,
   type RosterStatViewSource,
@@ -53,6 +54,7 @@ export {
   resolveRosterBattleScope,
   rosterStatView,
   scopedRosterView,
+  soloSplitReliable,
 };
 export type {
   OverlayColumn,

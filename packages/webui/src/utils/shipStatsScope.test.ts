@@ -296,6 +296,28 @@ describe("scopedRosterView", () => {
     expect(scopedRosterView(withoutSolo, 1, dims, "random", "winrate")).toEqual(EMPTY_ROSTER_VIEW);
   });
 
+  it("a MIRRORED solo split (equal to the career) dashes the solo-only view", () => {
+    const dims: RosterStatsDims = { ship: "all", battle: "random", solo: "solo" };
+    // The transport-mirror shape: pvp_solo just echoes pvp. However real
+    // the winrate looks, the split is not a measurement.
+    const mirrored = { ...CAREER, solo: { winrate: 52.5, pr: null, battles: 12_000, avgDamage: null } };
+    expect(scopedRosterView(mirrored, 1, dims, "random", "winrate")).toEqual(EMPTY_ROSTER_VIEW);
+    // A near-mirror (within the 1% line) dashes too.
+    const nearMirror = { ...CAREER, solo: { winrate: 52.4, pr: null, battles: 11_950, avgDamage: null } };
+    expect(scopedRosterView(nearMirror, 1, dims, "random", "winrate")).toEqual(EMPTY_ROSTER_VIEW);
+    // A genuinely dominant — but clearly split — solo share stays a figure.
+    const dominant = { ...CAREER, solo: { winrate: 51.9, pr: null, battles: 11_700, avgDamage: null } };
+    const view = scopedRosterView(dominant, 1, dims, "random", "winrate");
+    expect(view.battles).toBe(11_700);
+    // The short-career exception: ≤50 battles may honestly be all solo.
+    const fresh = {
+      ...CAREER,
+      battles: 50,
+      solo: { winrate: 51, pr: null, battles: 50, avgDamage: null },
+    };
+    expect(scopedRosterView(fresh, 1, dims, "random", "winrate").battles).toBe(50);
+  });
+
   it("a ship scope combined with the solo filter aggregates the per-ship solo split", () => {
     const dims: RosterStatsDims = { ship: "ship", battle: "random", solo: "solo" };
     const view = scopedRosterView({ ...CAREER, ships: SHIPS }, 1, dims, "random", "winrate");

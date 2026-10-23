@@ -114,12 +114,13 @@ describe("overlay page render", () => {
     // "…" waiting face.
     expect(text).toContain("Vitia_Minsk");
     expect(text).not.toContain("…");
-    // Every row carries the two columns: a stat cell (a muted dash with no
-    // stats landed) and a name cell beside it.
+    // Every row carries the two columns: a stat cell (a muted DRAWN dash
+    // with no stats landed) and a name cell beside it.
     for (const chip of chips) {
       expect(chip.querySelectorAll(".overlay-chip__stat")).toHaveLength(1);
       expect(chip.querySelectorAll(".overlay-chip__name")).toHaveLength(1);
-      expect(chip.querySelector(".overlay-chip__stat")!.textContent).toBe("—");
+      expect(chip.querySelector(".overlay-chip__stat .muted .overlay-dash")).not.toBeNull();
+      expect(chip.querySelector(".overlay-chip__stat")!.textContent).toBe("");
     }
   });
 
@@ -214,7 +215,7 @@ describe("overlay page render", () => {
     expect(chips).toHaveLength(10);
     for (const chip of chips) {
       expect(chip.querySelectorAll(".overlay-chip__stat")).toHaveLength(1);
-      expect(chip.querySelector(".overlay-chip__stat")!.textContent).toBe("—");
+      expect(chip.querySelector(".overlay-chip__stat .muted .overlay-dash")).not.toBeNull();
     }
 
     // One unkeyed name = partial coverage on the ALLY side only: the side
