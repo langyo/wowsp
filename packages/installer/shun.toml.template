@@ -1,7 +1,8 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.30 (the install-directory guards: the default
-# drive-root refusal and the `check-dir` script hook below — fresh
-# installs only; v0.6.29 minimum for the `[shell] silent-progress`
+# Requires shun >= 0.6.30 (the install-location rule system: the default
+# drive-root and non-empty refusals, the declarative `dir-rules` table
+# below, and the relocation lane it triggers — fresh installs only for
+# the refusals; v0.6.29 minimum for the `[shell] silent-progress`
 # passive window — the visible auto-update — and the shell parking its
 # CWD off the install target; v0.6.28 minimum for the silent upgrade
 # to retry its directory swap over a lock survivor and degrade to an
@@ -80,25 +81,41 @@ launch-after-install = "always"
 # uninstall, so the per-user install lives one Programs level deeper.
 default-dir = '%LOCALAPPDATA%\Programs\WoWSP'
 
-# ── Install-location guard (shun >= 0.6.30 check-dir hook) ────────────────
-# A fresh install into the game folder would co-locate WoWSP with the
-# game client, and shun's uninstall sweep would then delete the game
-# itself — two players have done exactly this. The staged
-# installer/check-dir.dk script (same identification set as the app's
-# game_client.rs root stubs: WorldOfWarships.exe / Korabli.exe) vetoes
-# such a directory before anything is written; the drive-root refusal
-# itself is shun's built-in default guard and needs no entry here.
-# The hook rides BOTH payloads (stage_payload stages it for every
-# variant) and runs pre-extraction from the embedded payload. Existing
-# installs skip the check (an upgrade never re-vetoes its location), so
-# auto-updates — including any made before this guard existed — are
-# never stranded by it.
-[script]
-runner = "duckscript"
+# ── Install-location rules (shun >= 0.6.30 built-ins + dir-rules) ──────────
+# shun 0.6.30 guards the install location three ways. Two are built-in
+# defaults with no entry here: a bare drive-root target is refused
+# outright (`forbid-drive-root`), and a FRESH install refuses a
+# non-empty directory (`forbid-non-empty`, the OS junk list exempt) —
+# delivering beside foreign files is exactly how an install ends up
+# co-located with something its update swap / uninstall sweep would
+# take away. Upgrades never re-answer their location (the never-strand
+# rule), except through the rule below.
+# The declarative rule IS the game-folder guard — the same
+# identification set as the app's game_client.rs root stubs
+# (WorldOfWarships.exe / Korabli.exe), replacing the check-dir.dk
+# duckscript this manifest used to stage (its ten-locale branching now
+# lives here as message-locales). action = "relocate": a fresh pick of
+# such a folder is vetoed with the message below, and an install that
+# already lives in one is RELOCATED instead of updated in place — the
+# silent updater hands over to the wizard (`--relocate-from`), which
+# opens on the location step, installs into a fresh folder, and then
+# sweeps ONLY WoWSP's manifest-listed files out of the old one; the
+# game folder and everything else in it survives untouched.
+[[install.dir-rules]]
+files = ["WorldOfWarships.exe", "Korabli.exe"]
+action = "relocate"
+message = "This looks like the World of Warships game folder — WoWSP must not install here: uninstalling WoWSP would delete the game itself. Pick a separate folder (for example D:/Programs/WoWSP)."
 
-[[script.hooks]]
-phase = "check-dir"
-script = "installer/check-dir.dk"
+[install.dir-rules.message-locales]
+zh-Hans = "检测到这是《战舰世界》游戏目录——WoWSP 不能安装在这里：卸载 WoWSP 时会把游戏本体一并删除。请选择一个单独的文件夹（例如 D:/Programs/WoWSP）。"
+zh-Hant = "偵測到這是《戰艦世界》遊戲目錄——WoWSP 不能安裝在這裡：解除安裝 WoWSP 時會把遊戲本體一併刪除。請選擇一個單獨的資料夾（例如 D:/Programs/WoWSP）。"
+ru = "Похоже, это папка игры «Мир кораблей» — устанавливать WoWSP сюда нельзя: удаление WoWSP удалит и саму игру. Выберите отдельную папку (например, D:/Programs/WoWSP)."
+ja = "これは World of Warships のゲームフォルダのようです——ここに WoWSP をインストールしてはいけません。WoWSP をアンインストールするとゲーム本体も削除されてしまいます。別のフォルダーを選んでください（例: D:/Programs/WoWSP）。"
+ko = "이 폴더는 World of Warships 게임 폴더로 보입니다——여기에 WoWSP를 설치하면 안 됩니다. WoWSP를 제거할 때 게임 본체까지 함께 삭제됩니다. 별도의 폴더를 선택해 주세요 (예: D:/Programs/WoWSP)."
+fr = "Ce dossier semble être celui du jeu World of Warships — WoWSP ne doit pas s'y installer : le désinstaller supprimerait le jeu lui-même. Choisissez un dossier distinct (par exemple D:/Programs/WoWSP)."
+es = "Esta carpeta parece ser la del juego World of Warships — WoWSP no debe instalarse aquí: al desinstalar WoWSP se borraría el propio juego. Elige una carpeta aparte (por ejemplo D:/Programs/WoWSP)."
+de = "Dies scheint der Spielordner von World of Warships zu sein — WoWSP darf hier nicht installiert werden: Beim Deinstallieren von WoWSP würde das Spiel selbst mitgelöscht. Wähle einen eigenen Ordner (z. B. D:/Programs/WoWSP)."
+pt = "Esta pasta parece ser a do jogo World of Warships — o WoWSP não deve instalar-se aqui: desinstalar o WoWSP apagaria o próprio jogo. Escolha uma pasta separada (por exemplo D:/Programs/WoWSP)."
 
 # ── Wizard license documents (four docs, ten locales) ─────────────────────
 # The agreement bodies are the vendored SySL translations (staged as

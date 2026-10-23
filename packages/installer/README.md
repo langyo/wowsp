@@ -9,12 +9,9 @@ rendering shun's own shell — hikari webview wizard, egui degrade face,
 TUI, headless lane, ten-locale license flow — against the WoWSP payload.
 
 ```
-shun.toml.template   ← the manifest (product, install, webview2, script, licenses, variants)
+shun.toml.template   ← the manifest (product, install, dir-rules, webview2, licenses, variants)
 licenses/            ← copyright notices, vendored SySL agreements (per locale)
                        and the Microsoft DirectML notice
-check-dir.dk         ← the install-location guard script (the manifest's
-                       `check-dir` hook — staged into every payload at
-                       installer/check-dir.dk; shun >= 0.6.30)
 logo.webp            ← caption-bar logo source
 ```
 
@@ -37,17 +34,23 @@ CPU; the DLL is a load-time import, so a machine without it (Win10 before
 must ride **both** payloads because auto-updates always install the lite
 artifact and shun swaps the whole install directory.
 
-Both payloads also carry `installer/check-dir.dk`, the manifest's
-`check-dir` hook (shun >= 0.6.30): a **fresh** install whose target
-directory holds a game-client root stub (`WorldOfWarships.exe` /
-`Korabli.exe` — the same identification set as the app's
-`game_client.rs`) is refused before anything is written, with a
-localized reason. Installing beside the game would make WoWSP's
-uninstall sweep delete the game itself — two players hit exactly that.
-The check never fires on upgrades (a directory already holding a WoWSP
-install is an upgrade, whatever its location), so auto-updates are
-never stranded. The drive-root refusal needs no manifest entry — it is
-shun's built-in default guard since 0.6.30.
+The install location is guarded by shun 0.6.30's rule system, no
+payload script involved: two built-in defaults (a bare drive root is
+refused outright — `forbid-drive-root`; a **fresh** install refuses a
+non-empty directory — `forbid-non-empty`, with the OS junk list
+`desktop.ini`/`Thumbs.db`/`.DS_Store` exempt) plus the manifest's
+declarative `[[install.dir-rules]]` entry — the game-folder rule, with
+the same identification set as the app's `game_client.rs`
+(`WorldOfWarships.exe` / `Korabli.exe`) and a ten-locale reason that
+replaced the old `check-dir.dk` duckscript. Its `action = "relocate"`
+means a fresh pick of such a folder is vetoed, and an install that
+ALREADY lives in one (the pre-guard mistake two players made) is
+relocated instead of silently updated: the updater's installer hands
+over to the interactive wizard (`--relocate-from`), which opens on
+the location step, installs into a fresh folder, and then sweeps ONLY
+WoWSP's own manifest-listed files out of the old one — the game
+folder itself survives untouched. Upgrades everywhere else never
+re-answer their location, so auto-updates are never stranded.
 
 The build script also publishes `WoWSP_<version>_x64-portable.exe`: the
 single-exe 便捷版 — a dedicated `--no-default-features --features portable`
@@ -70,10 +73,11 @@ mirrors). One such bridge update lands them on a client that fetches
 ## Who does what
 
 - The **installer** (shun) delivers files, guards the install location
-  (shun >= 0.6.30: a bare drive root is refused outright — the default
-  `forbid-drive-root` guard — and the manifest's `check-dir` hook
-  vetoes a fresh install into the game folder; upgrades never
-  re-veto their location), registers ARP/uninstall,
+  (shun >= 0.6.30: a bare drive root and a fresh non-empty directory
+  are refused outright — the default guards — and the manifest's
+  `dir-rules` entry vetoes the game folder for fresh picks while
+  relocating installs that already live in one; upgrades elsewhere
+  never re-veto their location), registers ARP/uninstall,
   refreshes existing shortcuts by presence (a kept launcher is updated
   in place, a deleted one is never re-created — silent updates must not
   spray `.lnk` files), honors the updater's `--silent --dir

@@ -25,10 +25,12 @@ env:
   # the 0.6.1 → 0.6.2 stranding. v0.6.29 is the minimum for the
   # manifest's `silent-progress` passive window (the visible auto-
   # update) and the shell parking its own CWD off the install target.
-  # v0.6.30 is the minimum for the install-directory guards: the
-  # default drive-root refusal and the manifest's `check-dir` hook
-  # (fresh installs refuse the game folder — see
-  # packages/installer/check-dir.dk).
+  # v0.6.30 is the minimum for the install-location rule system: the
+  # default drive-root and non-empty refusals, the manifest's
+  # declarative `dir-rules` table (see packages/installer/
+  # shun.toml.template), and the relocation lane a `relocate` rule
+  # triggers — legacy game-folder installs move through the wizard
+  # instead of swapping the game directory aside.
   SHUN_TAG: v0.6.30
 
 # One release flow per ref, never cancelled mid-flight: a cancelled run can
