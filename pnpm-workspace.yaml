@@ -15,11 +15,25 @@ minimumReleaseAgeExclude:
   - '@lucide/vue@1.38.0'
   - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74 || 0.55.75 || 0.55.128 || 0.55.131 || 0.55.133 || 0.55.176 || 0.55.177 || 0.55.182 || 0.55.191 || 0.55.193'
   - '@celestia-island/tairitsu-transport@0.1.0'
+  # Patched versions of the 2026-10 dev-toolchain advisories (undici/sharp/
+  # brace-expansion) are younger than the minimum-release-age window.
+  # NOT listed: braces@3.0.4 — the advisory's patched version is unpublished
+  # upstream (registry latest is 3.0.3), so GHSA-vfj7-8cjw-p6xm stays open
+  # until the braces maintainer ships a release; no override is possible.
+  - undici@7.29.1
+  - sharp@0.35.5
+  - brace-expansion@2.1.7
+  - brace-expansion@5.0.12
 overrides:
   postcss: ^8.5.18
   "brace-expansion@<1.1.18": 1.1.18
-  "brace-expansion@>=2.0.0 <2.1.4": 2.1.4
-  "brace-expansion@>=4.0.0 <5.0.9": 5.0.9
+  "brace-expansion@>=2.0.0 <2.1.7": 2.1.7
+  "brace-expansion@>=4.0.0 <5.0.12": 5.0.12
+  # Dev-toolchain audit wave 2026-10 (all devDependencies: wrangler/miniflare
+  # undici chain, gltf-transform CLI sharp, minimatch brace-expansion chain) —
+  # pinned so future installs can't drift back onto the advisories.
+  undici: ^7.29.1
+  sharp: ^0.35.5
   js-yaml: ^4.3.1
   nanoid: ^3.3.18
   # Audit L-1: prod-dep advisories above `high` fail CI — these two chains
