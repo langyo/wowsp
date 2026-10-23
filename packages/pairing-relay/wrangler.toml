@@ -23,9 +23,9 @@
 # are served FIRST: a request that matches a file — or the SPA fallback
 # for unknown browser navigations — never invokes worker code. The
 # dynamic paths are pulled back in front via `run_worker_first`: the
-# pairing API (/api*) minus the digest lookups (the `!/api/digests*`
-# negation keeps those on the assets layer — see the [assets] section
-# and the build-generated _redirects file). The hikari console pages /feedback
+# pairing API (/api*), minus the doc-carrying digest channels (the
+# per-channel `!` negations — see the [assets] section and the
+# build-generated _redirects). The hikari console pages /feedback
 # and /erp (packages/console build) serve from the assets layer like any
 # static file. The assets shell's loader pulls the heavy entry JS/CSS from the
 # GitHub Pages mirror (langyo.github.io/wowsp) first and falls back to
@@ -65,20 +65,30 @@ routes = [
 [assets]
 directory = "./assets"
 not_found_handling = "single-page-application"
-# /api/digests* is NEGATED back to the assets layer (negative patterns
-# take precedence): a served channel's digest lookups are pure static
-# traffic — the BUILD-GENERATED _redirects file (exact-path rules from
-# the tracked digests/ tree, written to the assets root by
-# scripts/build_worker_site.py) maps the extensionless client paths
-# onto the .json docs, so the worker is never invoked and no budget,
-# rate limiter or KV quota sits on the path. A miss (unpublished
-# channel, unknown tag) carries no rule, never redirects, and falls
-# through to the worker's digests handler for the gated 404.
-run_worker_first = ["/api*", "!/api/digests*"]
+# Digest lookups are NEGATED back to the assets layer PER CHANNEL —
+# only the channels that actually carry docs (negative patterns take
+# precedence over the /api* catch-all): a served lookup is pure static
+# traffic, answered by the BUILD-GENERATED _redirects (exact-path rules
+# from the tracked digests/ tree, written to the assets root by
+# scripts/build_worker_site.py, which FAILS the build when a channel
+# has docs but no negation here) — no worker invocation, no budget,
+# rate limiter or KV quota on the path.
+#
+# The negation must stay SCOPED, never a blanket !/api/digests*: with
+# not_found_handling = "single-page-application" an asset miss serves
+# the SPA shell (200 text/html) and NEVER reaches the worker — a
+# blanket negation turned every unpublished-channel lookup into a
+# 229KB HTML 200 instead of the worker's gated 404, which is the app's
+# absent-channel signal (30-min suppression). Channels WITHOUT docs
+# keep worker-first and answer the gated 404 through the digests
+# handler. A channel's FIRST publish must add its two negation entries
+# here (the build guard enforces it) and extend
+# DIGEST_PUBLISHED_CHANNELS for its own miss fallback.
+run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*"]
 # The ASSETS binding lets the worker fetch its own asset files by path
-# (crates/relay-worker/src/digests.rs — now the MISS FALLBACK for
-# /api/digests/** since the generated _redirects serve the hits
-# statically; it still validates and gates what it serves).
+# (crates/relay-worker/src/digests.rs — serves the doc-less channels'
+# gated 404; the doc-carrying channels' hits are answered statically
+# by the generated _redirects).
 binding = "ASSETS"
 
 [build]

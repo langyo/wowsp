@@ -21,8 +21,8 @@
 //! The assets layer serves the docs statically: a build-generated
 //! `_redirects` file maps the extensionless client paths onto the
 //! `.json` files (exact-path rules, no worker invocation at all), and
-//! the worker crate's digests handler is only the miss fallback —
-//! unpublished channels answer the gated 404 from the binary.
+//! the worker crate's digests handler serves the doc-less channels —
+//! they stay worker-first and answer the gated 404 from the binary.
 
 use std::collections::BTreeMap;
 
