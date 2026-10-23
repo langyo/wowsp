@@ -48,6 +48,7 @@ import {
   EMPTY_ROSTER_VIEW,
   dimsNeedShipStats,
   rosterStatView,
+  soloSplitReliable,
   type ResolvedStatsMode,
   type RosterModeNumbers,
   type RosterStatViewSource,
@@ -228,13 +229,18 @@ export interface ShipScopedStat {
 /** The account career's solo split as display numbers: PR derives from the
  *  split's own winrate under the winrate algorithm (the same anchors every
  *  career PR uses); under the expected algorithm — and for a split the
- *  career never carried — the honest faces are the dash ones. */
+ *  career never carried — the honest faces are the dash ones. A split the
+ *  reliability guard rejects (soloSplitReliable — a transport-mirrored
+ *  split that just equals the career) answers the same dash faces: the
+ *  mapping layers already drop those, and this choke point keeps every
+ *  scopedRosterView consumer honest even against an unguarded cache. */
 function careerSoloView(
   st: RosterStatViewSource | null | undefined,
   prAlgo: PrAlgo,
 ): RosterModeNumbers {
   const solo = st?.solo;
   if (!solo || solo.battles == null) return EMPTY_ROSTER_VIEW;
+  if (!soloSplitReliable(solo.battles, st?.battles ?? null)) return EMPTY_ROSTER_VIEW;
   return {
     winrate: solo.winrate,
     pr: prAlgo === "winrate" && solo.winrate != null ? prProxyFromWinrate(solo.winrate) : null,

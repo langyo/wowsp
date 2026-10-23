@@ -80,6 +80,7 @@ import {
   resolveRosterBattleScope,
   rosterStatView,
   scopedRosterView,
+  soloSplitReliable,
   type OverlayColumnScope,
   type PrAlgo,
   type RawStat,
@@ -610,6 +611,15 @@ function loadingDots(): string {
   return `<span class="overlay-dots">${beads}</span>`;
 }
 
+/** The ABSENCE face for a figure cell (and the whole-cell one in statFace):
+ *  a short rule PAINTED as a box (.overlay-dash), not the "—" glyph. The
+ *  em-dash's ink rides high and off-center inside its advance width, so a
+ *  column of absent cells read as dashes floating toward one edge of their
+ *  measured cells; the drawn rule is an inline block that centers against
+ *  the figure line itself (overlay.scss), and it takes the cell's muted
+ *  color through currentColor like any figure would. */
+const DASH_HTML = `<i class="overlay-dash" aria-hidden="true"></i>`;
+
 /** Whether this roster name's stat answer is still OWED by the query
  *  pipeline — queued, in flight, or under a live backoff / not-found
  *  re-queue — the state the chasing dots render. A name outside these
@@ -658,14 +668,19 @@ function scopeTagHtml(scope: OverlayColumnScope): string {
  *  data-col hook lets alignMetricColumns pin every row's cell to the
  *  column's widest face across the roster), and the cells keep only
  *  their own 4px side margins between them — no dot separators. A metric
- *  with no value renders its dash in the same cell, keeping the column.
- *  Scoped (non-global) columns carry their small muted scope tag inside
- *  the bold value, ahead of the figure. The ENEMY side renders the
- *  columns REVERSED so the two sides mirror each other around the game's
- *  table (config order reads left→right on the ally block); the data-col
- *  key stays the config column, so the shared measured widths keep the
+ *  with no value renders its drawn dash in the same cell, keeping the
+ *  column — EXCEPT a ship/class cell whose per-ship list is still owed,
+ *  which keeps the chasing dots in its own cell instead: the parts of the
+ *  row that already hold numbers (the career columns — global/solo — land
+ *  with the stats batch) render immediately, so a slow per-ship transport
+ *  holds back only its own columns, never the whole row. Scoped
+ *  (non-global) columns carry their small muted scope tag inside the bold
+ *  value, ahead of the figure. The ENEMY side renders the columns
+ *  REVERSED so the two sides mirror each other around the game's table
+ *  (config order reads left→right on the ally block); the data-col key
+ *  stays the config column, so the shared measured widths keep the
  *  mirrored halves symmetric. */
-function chipColumns(name: string, side: "ally" | "enemy"): string {
+function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string {
   const cols = effectiveOverlayColumns(PREFS.columns, PREFS.prOn);
   const ordered = side === "enemy" ? [...cols].reverse() : cols;
   const colIndex = new Map(cols.map((c, i) => [c, i] as const));
@@ -676,17 +691,25 @@ function chipColumns(name: string, side: "ally" | "enemy"): string {
     const slot = `data-col="${colIndex.get(col) ?? 0}"`;
     const v = columnStatView(name, col.scope);
     const tag = scopeTagHtml(col.scope);
+    // A ship/class column whose per-ship list is still owed keeps the
+    // dots; everything else settles to the drawn dash (see statFace for
+    // the whole-row states — the batch itself still owed, or spent).
+    const shipsOwed =
+      (col.scope === "ship" || col.scope === "class") &&
+      st.accountId != null &&
+      st.ships === undefined;
+    const absent = shipsOwed ? loadingDots() : DASH_HTML;
     if (col.metric === "winrate") {
       parts.push(
         v.winrate != null
           ? `<b ${slot} style="color:${winrateColor(v.winrate)}">${tag}${fig("n-wr", `${v.winrate.toFixed(1)}%`)}</b>`
-          : `<b ${slot} class="muted">${tag}${fig("n-wr", "—")}</b>`,
+          : `<b ${slot} class="muted">${tag}${fig("n-wr", absent)}</b>`,
       );
     } else if (col.metric === "pr") {
       parts.push(
         v.pr != null
           ? `<b ${slot} style="color:${prTier(v.pr).color}">${tag}${fig("n-pr", `${Math.round(v.pr)}`)}</b>`
-          : `<b ${slot} class="muted">${tag}${fig("n-pr", "—")}</b>`,
+          : `<b ${slot} class="muted">${tag}${fig("n-pr", absent)}</b>`,
       );
     } else if (col.metric === "battles") {
       // Red under 200 battles (thin-sample warning), plain above — same rule
@@ -697,13 +720,13 @@ function chipColumns(name: string, side: "ally" | "enemy"): string {
       parts.push(
         v.battles != null
           ? `<b ${slot}${color ? ` style="color:${color}"` : ""}>${tag}${battlesText(v.battles)}</b>`
-          : `<b ${slot} class="muted">${tag}${fig("n-battles", "—")}</b>`,
+          : `<b ${slot} class="muted">${tag}${fig("n-battles", absent)}</b>`,
       );
     } else {
       parts.push(
         v.avgDamage != null
           ? `<b ${slot} style="color:${damageColor(v.avgDamage)}">${tag}${fig("n-dmg", fmtDamage(v.avgDamage))}</b>`
-          : `<b ${slot} class="muted">${tag}${fig("n-dmg", "—")}</b>`,
+          : `<b ${slot} class="muted">${tag}${fig("n-dmg", absent)}</b>`,
       );
     }
   }
@@ -738,26 +761,23 @@ function displayNameOf(name: string): string {
 
 /** The stat column's face for one player: the configured number block, or
  *  the loading/absence placeholders — the chasing three-dot marquee while
- *  the batch (or, ship-scoped, the per-ship list) is still owed, a muted
- *  dash for a landed-but-empty lookup, the red dot for a hidden profile,
- *  the muted bot label for AI rows (they carry no lookup). Nothing at all
- *  with every number toggle off (the row then carries seals/name only). A
- *  story-layout bot row never reaches here — the render loop drops it. */
+ *  the batch is still owed, the drawn dash for a settled row whose lookups
+ *  are disabled or budget-spent, the red dot for a hidden profile, the
+ *  muted bot label for AI rows (they carry no lookup). Once the batch has
+ *  landed, the number block renders PER COLUMN: a ship/class cell whose
+ *  per-ship list is still owed keeps the dots inside its own cell while
+ *  the career columns (global/solo) already show their numbers — the row
+ *  displays every part it has instead of waiting on the slowest dimension
+ *  (see chipColumns). Nothing at all with every number toggle off (the row
+ *  then carries seals/name only). A story-layout bot row never reaches
+ *  here — the render loop drops it. */
 function statFace(name: string, side: "ally" | "enemy"): string {
   if (!ANY_CHIP_ON) return "";
   if (AI_NAME.test(name)) return `<span class="muted">${localized("botLabel")}</span>`;
   const st = stats.get(cacheKey(name));
-  if (!st) return statPending(name) ? loadingDots() : `<span class="muted">—</span>`;
+  if (!st) return statPending(name) ? loadingDots() : `<span class="muted">${DASH_HTML}</span>`;
   if (st.hidden) return `<span class="hidden">●</span>`;
-  // Ship-scoped source with the per-ship list still on its way: keep the
-  // loading face instead of dashes — dashes read as "never played in this
-  // scope", which the landed numbers would contradict a beat later. The
-  // ship pipeline owes every undefined list an answer (a list or a null
-  // verdict), so undefined here is always the transient loading state.
-  if (SHIP_SCOPE_ON && st.ships === undefined && st.accountId != null) {
-    return loadingDots();
-  }
-  return chipColumns(name, side);
+  return chipColumns(name, side, st);
 }
 
 /** The row's seal cluster (career verdict + composition tags through the
@@ -941,7 +961,7 @@ function teamSummaryCard(
       ...(range === "" ? [] : [range]),
     ];
     lines.push(
-      `<span class="overlay-intel-line">${items.join(`<span class="sep">·</span>`)}</span>`,
+      `<span class="overlay-intel-line">${items.join(`<span class="sep" aria-hidden="true"></span>`)}</span>`,
     );
   }
   if (PREFS.teamAvgEnabled) {
@@ -961,19 +981,19 @@ function teamSummaryCard(
     const items = [
       avgItem(
         localized("avgWinrate"),
-        value(own.agg.winrate != null ? `${own.agg.winrate.toFixed(1)}%` : "—"),
+        value(own.agg.winrate != null ? `${own.agg.winrate.toFixed(1)}%` : DASH_HTML),
         tone(own.agg.winrate, other?.agg.winrate ?? null),
       ),
       PREFS.prOn
         ? avgItem(
             localized("avgPr"),
-            value(own.agg.avgPr != null ? `${Math.round(own.agg.avgPr)}` : "—"),
+            value(own.agg.avgPr != null ? `${Math.round(own.agg.avgPr)}` : DASH_HTML),
             tone(own.agg.avgPr, other?.agg.avgPr ?? null),
           )
         : "",
       avgItem(
         localized("avgDmg"),
-        value(own.agg.avgDamage != null ? fmtDamage(own.agg.avgDamage) : "—"),
+        value(own.agg.avgDamage != null ? fmtDamage(own.agg.avgDamage) : DASH_HTML),
         tone(own.agg.avgDamage, other?.agg.avgDamage ?? null),
       ),
     ].filter(Boolean);
@@ -981,7 +1001,7 @@ function teamSummaryCard(
       const label = lines.length === 0 ? sideLabel : "";
       lines.push(
         `<span class="overlay-intel-line overlay-intel-line--avg">${label}${items.join(
-          `<span class="sep">·</span>`,
+          `<span class="sep" aria-hidden="true"></span>`,
         )}</span>`,
       );
     }
@@ -1824,9 +1844,15 @@ async function runBatch() {
                     }
                   : null,
               // The career solo split, data-only (PR derives per algorithm
-              // in the view — utils/shipStatsScope).
+              // in the view — utils/shipStatsScope). A split the
+              // reliability guard rejects (soloSplitReliable — a transport
+              // that mirrors the unsplit pvp node into pvp_solo answers a
+              // "solo" share equal to the whole career) caches as null:
+              // the solo column shows the honest dash instead of the
+              // career numbers wearing a 单人 tag.
               solo:
-                r.soloBattles != null || r.soloWr != null
+                soloSplitReliable(r.soloBattles, r.battles) &&
+                (r.soloBattles != null || r.soloWr != null)
                   ? {
                       winrate: r.soloWr ?? null,
                       pr: null,

@@ -23,7 +23,7 @@ import { api, type ArenaInfo, type PlayerShipStats, type PlayerStats, type Vehic
 import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
 import { useStatsQueryStore } from "@/stores/statsQuery";
-import { columnsNeedShipStats, type RosterModeNumbers } from "@/utils/statView";
+import { columnsNeedShipStats, soloSplitReliable, type RosterModeNumbers } from "@/utils/statView";
 import { AI_NAME, isAiName } from "@/utils/aiNames";
 
 // Re-exports keep the historical import paths (`AI_NAME` was defined here
@@ -191,16 +191,22 @@ function rosterStatOf(r: {
       }),
     ),
     // The career solo split, mapped data-only (PR/avgDamage stay null —
-    // the view derives the PR per algorithm; see utils/shipStatsScope).
-    solo: modeStatsOf(
-      r.soloBattles != null || r.soloWr != null,
-      () => ({
-        winrate: r.soloWr ?? null,
-        pr: null,
-        battles: r.soloBattles ?? null,
-        avgDamage: null,
-      }),
-    ),
+    // the view derives the PR per algorithm; see utils/shipStatsScope). A
+    // split the reliability guard rejects (soloSplitReliable — transports
+    // that mirror the unsplit pvp node into pvp_solo) never enters the
+    // cache at all: the solo columns then show the honest dash face
+    // instead of the career numbers wearing a 单人 tag.
+    solo: soloSplitReliable(r.soloBattles, r.battles)
+      ? modeStatsOf(
+          r.soloBattles != null || r.soloWr != null,
+          () => ({
+            winrate: r.soloWr ?? null,
+            pr: null,
+            battles: r.soloBattles ?? null,
+            avgDamage: null,
+          }),
+        )
+      : null,
     accountId: r.accountId ?? null,
     clanId: r.clanId ?? null,
     clanTag: r.clanTag ?? null,

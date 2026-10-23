@@ -3,13 +3,18 @@
  * batch is still owed, every waiting number renders the chasing three-dot
  * marquee (overlay-dots) — each row chip's stat cell AND every value of
  * the team summary cards' averages line (one all-or-nothing switch). The
- * settled faces follow
- * the answer: real rows swap the dots for numbers, a not-found answer
- * swaps them for the honest muted dashes, and a PR-algo flip (which clears
- * the cache wholesale) lights the dots back up for the re-query. Also pins
- * the phase-locked markup: every bead carries an inline animation-delay
- * off the shared clock, the trick that keeps render()'s full-DOM rebuilds
- * from restarting the chase.
+ * settled faces follow the answer: real rows swap the dots for numbers, a
+ * not-found answer swaps them for the honest DRAWN dashes (overlay-dash),
+ * and a PR-algo flip (which clears the cache wholesale) lights the dots
+ * back up for the re-query. Also pins the phase-locked markup: every bead
+ * carries an inline animation-delay off the shared clock, the trick that
+ * keeps render()'s full-DOM rebuilds from restarting the chase. The last
+ * case pins the PER-COLUMN faces a ship-scoped column set produces: the
+ * career columns (global/solo) render their figures the moment the batch
+ * lands while the ship cell keeps the dots until its per-ship list
+ * arrives, and a MIRRORED solo split (solo battles == career battles,
+ * rejected by soloSplitReliable) renders the drawn dash instead of the
+ * career numbers wearing a 单人 tag.
  *
  * Driven the way production drives it: the real main.ts bootstrap against
  * a mocked `window.__TAURI__` whose stats batch hangs until a test
@@ -85,7 +90,6 @@ const statRows = (hidden = false) =>
     hidden,
     name,
   }));
-
 beforeAll(async () => {
   // The realm unlocks the lookups (render.test.ts runs realm-less and pins
   // the dash); zh-CN turns the seals on like the user's own settings.
@@ -106,6 +110,10 @@ beforeAll(async () => {
             resolveBatch = resolve as (rows: unknown[]) => void;
           });
         }
+        // The per-ship pipeline hangs by default: the last case pins the
+        // ship-scoped column's OWN loading face, which needs the list to
+        // stay owed (an empty answer would settle it into dashes).
+        if (cmd === "lookup_player_ship_stats") return new Promise(() => {});
         if (cmd === "read_temp_arena_info") return null;
         if (cmd.startsWith("lookup_")) return [];
         return null;
@@ -158,20 +166,20 @@ describe("overlay page loading faces", () => {
     await vi.waitFor(() => expect(batchCalls).toBe(1));
     resolveBatch!(batchNames.map(() => null));
 
-    // No marquee anywhere — and the per-part dashes of a settled,
-    // not-found player instead of numbers.
+    // No marquee anywhere — and the per-part DRAWN dashes of a settled,
+    // not-found player instead of numbers (one per configured column,
+    // each a painted rule, never the "—" glyph).
     await vi.waitFor(() =>
       expect(document.querySelectorAll(".overlay-dots").length).toBe(0),
     );
     for (const chip of rowChips()) {
-      const text = chip.querySelector(".overlay-chip__stat")!.textContent ?? "";
-      expect(text).toContain("—");
-      expect(text).not.toContain("%");
+      const stat = chip.querySelector(".overlay-chip__stat")!;
+      expect(stat.querySelectorAll(".overlay-dash")).toHaveLength(4);
+      expect(stat.textContent).not.toContain("%");
     }
     for (const line of avgLines()) {
-      const text = line.textContent ?? "";
-      expect(text).toContain("—");
-      expect(text).not.toContain("48.5%");
+      expect(line.querySelectorAll(".overlay-dash")).toHaveLength(3);
+      expect(line.textContent).not.toContain("48.5%");
     }
   });
 
@@ -228,6 +236,72 @@ describe("overlay page loading faces", () => {
     for (const b of intelCard("enemy")!.querySelectorAll(".overlay-intel-line--avg b")) {
       expect(b.classList.contains("overlay-intel-b--lo")).toBe(true);
       expect(b.classList.contains("overlay-intel-b--hi")).toBe(false);
+    }
+  });
+
+  it("renders per-column faces: career figures land with the batch, ship cells keep their dots, mirrored solo splits dash", async () => {
+    // A new battle under a column set mixing scopes — global winrate,
+    // solo winrate, ship battles. The prefs rewrite also flips the PR
+    // algorithm back to winrate, which clears the stats cache wholesale:
+    // every name re-queues (batchCalls 3) under the fresh columns.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        prEnabled: true,
+        teamAvgEnabled: true,
+        overlayColumns: [
+          { scope: "global", metric: "winrate" },
+          { scope: "solo", metric: "winrate" },
+          { scope: "ship", metric: "battles" },
+        ],
+      }),
+    );
+    handlers.get("wowsp://stats-prefs-changed")!({ payload: null });
+    handlers.get("wowsp://arena-info")!({
+      payload: { ...arena, dateTime: "20261023_partial_columns" },
+    });
+    handlers.get("wowsp://overlay-anchor")!({ payload: anchor });
+    await vi.waitFor(() => expect(batchCalls).toBe(3));
+    // langyo's solo split MIRRORS his career (8600 == 8600 — the shape
+    // soloSplitReliable rejects); everyone else carries an honest split.
+    resolveBatch!(
+      batchNames.map((name) => ({
+        ...statRows()[0]!,
+        soloWr: 51.0,
+        soloBattles: name === "langyo" ? 8600 : 5400,
+        name,
+      })),
+    );
+
+    // The batch landed the careers, but every per-ship list is still owed
+    // (the hanging mock above): each row renders its global and solo
+    // FIGURES while the ship column's own cell keeps the chasing dots —
+    // the row no longer waits on its slowest column. (data-col keys stay
+    // the CONFIG column on both sides: 0 global, 1 solo, 2 ship.)
+    await vi.waitFor(() =>
+      expect(rowChips()[0]!.querySelector(".overlay-chip__stat")!.textContent).toContain(
+        "48.5%",
+      ),
+    );
+    const chips = rowChips();
+    expect(chips).toHaveLength(6);
+    for (const chip of chips) {
+      const stat = chip.querySelector(".overlay-chip__stat")!;
+      expect(stat.textContent).toContain("48.5%");
+      expect(stat.querySelectorAll("b")).toHaveLength(3);
+      // The ship cell (config column 2) is the one still owed.
+      expect(chip.querySelector('b[data-col="2"]')!.querySelectorAll(".overlay-dots")).toHaveLength(1);
+      // Both scoped columns carry their tag (单人 / 单船).
+      expect(stat.querySelectorAll(".overlay-scope")).toHaveLength(2);
+    }
+    // The mirrored split: langyo's solo cell is the drawn dash, never the
+    // career winrate wearing the 单人 tag; the honest splits show 51.0%.
+    const langyoChip = chips.find((c) => c.textContent?.includes("langyo"))!;
+    const langyoSolo = langyoChip.querySelector('b[data-col="1"]')!;
+    expect(langyoSolo.querySelector(".overlay-dash")).not.toBeNull();
+    expect(langyoSolo.textContent).not.toContain("%");
+    for (const chip of chips.filter((c) => c !== langyoChip)) {
+      expect(chip.querySelector('b[data-col="1"]')!.textContent).toContain("51.0%");
     }
   });
 });

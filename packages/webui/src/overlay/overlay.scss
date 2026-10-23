@@ -68,8 +68,24 @@ html.overlay-hidden body {
   opacity: 0.9;
 }
 
+/* The mid-dot separator between a summary card's items (the consumables
+   line and the averages line): a PAINTED bead, not the "·" glyph — the
+   character rides the baseline, sized by the font and kerned flush
+   against its neighbors. The drawn dot centers on the line (the same
+   middle + relative lift the loader beads and the dash use) and keeps a
+   deliberate margin on both sides; opacity steps it back behind the
+   figures it separates. */
 .overlay-chip .sep {
+  display: inline-block;
+  width: 0.18em;
+  height: 0.18em;
+  border-radius: 50%;
+  background: currentColor;
   opacity: 0.45;
+  vertical-align: middle;
+  position: relative;
+  top: -0.07em;
+  margin: 0 0.32em;
 }
 
 /* Sunk mid-battle (the row's name strip read dim gray): fade the chip the
@@ -179,11 +195,18 @@ html.overlay-hidden body {
 /* A scoped column's tag (单人/单船/舰种 …) ahead of its figure: same
    treatment as the battles unit — the text face, one size down, riding
    inside the cell its figure is measured in. Global columns carry no
-   tag: the unmarked figure IS the account career. */
+   tag: the unmarked figure IS the account career. The tag centers
+   vertically against the mono figures (an inline-block on the shared
+   baseline reads as hanging LOW beside them) and keeps a deliberate
+   margin to the figure on its right — a CJK tag pressed flat against
+   the digits reads as one garbled figure, not a prefix. */
 .overlay-chip .overlay-scope {
   font-family: var(--overlay-text-font);
   font-size: 0.8em;
   opacity: 0.72;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.25em;
 }
 
 /* The ONE transient-status card — spinner + copy, centered over the table
@@ -248,22 +271,27 @@ html.overlay-hidden body {
 
 /* The chasing three-dot loading face (loadingDots in overlay/main.ts):
    three beads whose brightness runs one after the other in an unbroken
-   loop while a stat lookup is still owed — a row's number block, or one
-   average value in the team summary card, renders this instead of a
-   settled dash. Beads take the surrounding text color (currentColor), so
-   the dots read as "these exact numbers are coming", and size in em like
-   everything else that scales with the row pitch. animation-delay arrives
-   INLINE per bead (phase-locked to the shared clock so render() rebuilds
-   never restart the chase — see loadingDots); this block only names the
-   animation. vertical-align: middle rides the text's visual center so the
-   beads sit centered against their neighbors instead of hanging on the
-   synthesized baseline. */
+   loop while a stat lookup is still owed — a row's number block, one
+   column cell whose per-ship list lags (chipColumns), or one average
+   value in the team summary card renders this instead of a settled dash.
+   Beads take the surrounding text color (currentColor), so the dots read
+   as "these exact numbers are coming", and size in em like everything
+   else that scales with the row pitch. animation-delay arrives INLINE
+   per bead (phase-locked to the shared clock so render() rebuilds never
+   restart the chase — see loadingDots); this block only names the
+   animation. Centering: vertical-align: middle parks the box's middle on
+   the parent's HALF X-HEIGHT, which sits visibly BELOW the mono figures'
+   optical midline — the small relative lift (shared with .overlay-dash
+   below) re-centers the beads against the digits; the screenshots in
+   dist/overlay-sample.html calibrate the number. */
 .overlay-dots {
   display: inline-flex;
   align-items: center;
   gap: 0.24em;
   height: 0.9em;
   vertical-align: middle;
+  position: relative;
+  top: -0.07em;
 }
 
 .overlay-dots i {
@@ -293,6 +321,25 @@ html.overlay-hidden body {
     animation: none;
     opacity: 0.55;
   }
+}
+
+/* The drawn absence rule (DASH_HTML in overlay/main.ts): the face a
+   missing figure renders in its measured column cell. Painted as a box
+   because the "—" glyph rides high and off-center inside its advance, so
+   a column of absent cells read as dashes drifting toward the cell's
+   edge; the rule is an inline block that centers against the figure line
+   (the same middle + relative lift the loader beads use), and
+   currentColor takes the cell's muted tone. Sized in em so it scales
+   with the row pitch like every other face. */
+.overlay-dash {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.12em;
+  border-radius: 0.06em;
+  background: currentColor;
+  vertical-align: middle;
+  position: relative;
+  top: -0.07em;
 }
 
 /* Seals flanking a chip's numbers (career verdict left, composition tags
