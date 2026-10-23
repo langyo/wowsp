@@ -1,11 +1,13 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.29 (the `[shell] silent-progress` passive window
-# — the visible auto-update — and the shell parking its CWD off the
-# install target; v0.6.28 minimum for the silent upgrade to retry its
-# directory swap over a lock survivor and degrade to an in-place merge —
-# the 0.6.1 → 0.6.2 stranding; v0.6.26 minimum for dir-less silent runs
-# to upgrade the registered install in place; v0.6.25 minimum for the
-# headless shortcut presence refresh).
+# Requires shun >= 0.6.30 (the install-directory guards: the default
+# drive-root refusal and the `check-dir` script hook below — fresh
+# installs only; v0.6.29 minimum for the `[shell] silent-progress`
+# passive window — the visible auto-update — and the shell parking its
+# CWD off the install target; v0.6.28 minimum for the silent upgrade
+# to retry its directory swap over a lock survivor and degrade to an
+# in-place merge — the 0.6.1 → 0.6.2 stranding; v0.6.26 minimum for
+# dir-less silent runs to upgrade the registered install in place;
+# v0.6.25 minimum for the headless shortcut presence refresh).
 #
 # This file is a TEMPLATE: scripts/build_installers.py renders it into the
 # staging tree (substituting __WOWSP_VERSION__ with the workspace version)
@@ -77,6 +79,26 @@ launch-after-install = "always"
 # there would churn the cache on every reinstall and endanger it on
 # uninstall, so the per-user install lives one Programs level deeper.
 default-dir = '%LOCALAPPDATA%\Programs\WoWSP'
+
+# ── Install-location guard (shun >= 0.6.30 check-dir hook) ────────────────
+# A fresh install into the game folder would co-locate WoWSP with the
+# game client, and shun's uninstall sweep would then delete the game
+# itself — two players have done exactly this. The staged
+# installer/check-dir.dk script (same identification set as the app's
+# game_client.rs root stubs: WorldOfWarships.exe / Korabli.exe) vetoes
+# such a directory before anything is written; the drive-root refusal
+# itself is shun's built-in default guard and needs no entry here.
+# The hook rides BOTH payloads (stage_payload stages it for every
+# variant) and runs pre-extraction from the embedded payload. Existing
+# installs skip the check (an upgrade never re-vetoes its location), so
+# auto-updates — including any made before this guard existed — are
+# never stranded by it.
+[script]
+runner = "duckscript"
+
+[[script.hooks]]
+phase = "check-dir"
+script = "installer/check-dir.dk"
 
 # ── Wizard license documents (four docs, ten locales) ─────────────────────
 # The agreement bodies are the vendored SySL translations (staged as

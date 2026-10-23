@@ -9,9 +9,12 @@ rendering shun's own shell — hikari webview wizard, egui degrade face,
 TUI, headless lane, ten-locale license flow — against the WoWSP payload.
 
 ```
-shun.toml.template   ← the manifest (product, install, webview2, licenses, variants)
+shun.toml.template   ← the manifest (product, install, webview2, script, licenses, variants)
 licenses/            ← copyright notices, vendored SySL agreements (per locale)
                        and the Microsoft DirectML notice
+check-dir.dk         ← the install-location guard script (the manifest's
+                       `check-dir` hook — staged into every payload at
+                       installer/check-dir.dk; shun >= 0.6.30)
 logo.webp            ← caption-bar logo source
 ```
 
@@ -34,6 +37,18 @@ CPU; the DLL is a load-time import, so a machine without it (Win10 before
 must ride **both** payloads because auto-updates always install the lite
 artifact and shun swaps the whole install directory.
 
+Both payloads also carry `installer/check-dir.dk`, the manifest's
+`check-dir` hook (shun >= 0.6.30): a **fresh** install whose target
+directory holds a game-client root stub (`WorldOfWarships.exe` /
+`Korabli.exe` — the same identification set as the app's
+`game_client.rs`) is refused before anything is written, with a
+localized reason. Installing beside the game would make WoWSP's
+uninstall sweep delete the game itself — two players hit exactly that.
+The check never fires on upgrades (a directory already holding a WoWSP
+install is an upgrade, whatever its location), so auto-updates are
+never stranded. The drive-root refusal needs no manifest entry — it is
+shun's built-in default guard since 0.6.30.
+
 The build script also publishes `WoWSP_<version>_x64-portable.exe`: the
 single-exe 便捷版 — a dedicated `--no-default-features --features portable`
 compile of the app (no install step, no marker or file-name probing):
@@ -54,7 +69,11 @@ mirrors). One such bridge update lands them on a client that fetches
 
 ## Who does what
 
-- The **installer** (shun) delivers files, registers ARP/uninstall,
+- The **installer** (shun) delivers files, guards the install location
+  (shun >= 0.6.30: a bare drive root is refused outright — the default
+  `forbid-drive-root` guard — and the manifest's `check-dir` hook
+  vetoes a fresh install into the game folder; upgrades never
+  re-veto their location), registers ARP/uninstall,
   refreshes existing shortcuts by presence (a kept launcher is updated
   in place, a deleted one is never re-created — silent updates must not
   spray `.lnk` files), honors the updater's `--silent --dir

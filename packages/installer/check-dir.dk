@@ -1,0 +1,75 @@
+# WoWSP install-location guard — the shun `check-dir` hook.
+#
+# Runs inside shun's install-directory guards (shun >= 0.6.30), on the
+# embedded duckscript interpreter, before anything is written and only
+# for FRESH installs — a directory that already holds a WoWSP install
+# (the on-disk shun manifest or wowsp.exe) is an upgrade and skips this
+# check entirely, so existing installs keep auto-updating.
+#
+# Contract (shun docs/en/design/scripting.md): veto the location by
+# setting SHUN_DIR_BLOCKED to a human-readable reason — the wizard shows
+# the value verbatim, so the message is localized per SHUN_LANGUAGE
+# (default English). SHUN_INSTALL_DIR arrives in forward-slash form;
+# `${…}` interpolates duckscript VARIABLES, not the environment, hence
+# the get_env reads. Multi-word values need double quotes.
+#
+# WHAT this blocks: a directory that carries a game-client root stub
+# (the same identification set as the app's game_client.rs
+# game_root_stubs — the WG WorldOfWarships.exe and the Lesta
+# Korabli.exe). Installing WoWSP into the game folder co-locates the
+# two, and shun's uninstall sweep would delete the game itself — two
+# players have done exactly this. Blocking it here is the fix.
+
+dir = get_env SHUN_INSTALL_DIR
+wows = is_file ${dir}/WorldOfWarships.exe
+korabli = is_file ${dir}/Korabli.exe
+blocked = set false
+if ${wows}
+  blocked = set true
+else
+  if ${korabli}
+    blocked = set true
+  end
+end
+
+if ${blocked}
+  lang = get_env SHUN_LANGUAGE
+  msg = set "This looks like the World of Warships game folder — WoWSP must not install here: uninstalling WoWSP would delete the game itself. Pick a separate folder (for example D:/Programs/WoWSP)."
+  hit = eq ${lang} zh-Hans
+  if ${hit}
+    msg = set "检测到这是《战舰世界》游戏目录——WoWSP 不能安装在这里：卸载 WoWSP 时会把游戏本体一并删除。请选择一个单独的文件夹（例如 D:/Programs/WoWSP）。"
+  end
+  hit = eq ${lang} zh-Hant
+  if ${hit}
+    msg = set "偵測到這是《戰艦世界》遊戲目錄——WoWSP 不能安裝在這裡：解除安裝 WoWSP 時會把遊戲本體一併刪除。請選擇一個單獨的資料夾（例如 D:/Programs/WoWSP）。"
+  end
+  hit = eq ${lang} ru
+  if ${hit}
+    msg = set "Похоже, это папка игры «Мир кораблей» — устанавливать WoWSP сюда нельзя: удаление WoWSP удалит и саму игру. Выберите отдельную папку (например, D:/Programs/WoWSP)."
+  end
+  hit = eq ${lang} ja
+  if ${hit}
+    msg = set "これは World of Warships のゲームフォルダのようです——ここに WoWSP をインストールしてはいけません。WoWSP をアンインストールするとゲーム本体も削除されてしまいます。別のフォルダーを選んでください（例: D:/Programs/WoWSP）。"
+  end
+  hit = eq ${lang} ko
+  if ${hit}
+    msg = set "이 폴더는 World of Warships 게임 폴더로 보입니다——여기에 WoWSP를 설치하면 안 됩니다. WoWSP를 제거할 때 게임 본체까지 함께 삭제됩니다. 별도의 폴더를 선택해 주세요 (예: D:/Programs/WoWSP)."
+  end
+  hit = eq ${lang} fr
+  if ${hit}
+    msg = set "Ce dossier semble être celui du jeu World of Warships — WoWSP ne doit pas s'y installer : le désinstaller supprimerait le jeu lui-même. Choisissez un dossier distinct (par exemple D:/Programs/WoWSP)."
+  end
+  hit = eq ${lang} es
+  if ${hit}
+    msg = set "Esta carpeta parece ser la del juego World of Warships — WoWSP no debe instalarse aquí: al desinstalar WoWSP se borraría el propio juego. Elige una carpeta aparte (por ejemplo, D:/Programs/WoWSP)."
+  end
+  hit = eq ${lang} de
+  if ${hit}
+    msg = set "Dies scheint der Spielordner von World of Warships zu sein — WoWSP darf hier nicht installiert werden: Beim Deinstallieren von WoWSP würde das Spiel selbst mitgelöscht. Wähle einen eigenen Ordner (z. B. D:/Programs/WoWSP)."
+  end
+  hit = eq ${lang} pt
+  if ${hit}
+    msg = set "Esta pasta parece ser a do jogo World of Warships — o WoWSP não deve instalar-se aqui: desinstalar o WoWSP apagaria o próprio jogo. Escolha uma pasta separada (por exemplo, D:/Programs/WoWSP)."
+  end
+  set_env SHUN_DIR_BLOCKED ${msg}
+end
