@@ -65,6 +65,26 @@ def valid_key_id(key_id: str) -> bool:
     return 1 <= len(key_id) <= 16 and set(key_id) <= KEY_ID_CHARS
 
 
+def is_signed(doc: dict) -> bool:
+    """True when `doc` carries a well-formed signature layer.
+
+    `sign_doc` always emits a valid `key_id` plus a standard-base64 64-byte
+    `sig`; anything else counts as unsigned. Fail-closed publishers
+    (`publish_digests.py --require-signed`) gate on this shape, then the
+    Ed25519 math is checked by `verify_doc` (or, in CI, by openssl).
+    """
+    key_id = doc.get("key_id")
+    sig_b64 = doc.get("sig")
+    if not isinstance(key_id, str) or not valid_key_id(key_id):
+        return False
+    if not isinstance(sig_b64, str) or len(sig_b64) != SIG_B64_LEN:
+        return False
+    try:
+        return len(base64.b64decode(sig_b64, validate=True)) == 64
+    except Exception:  # noqa: BLE001 - malformed base64 is just "no"
+        return False
+
+
 # ── canonical form ─────────────────────────────────────────────────────
 
 
@@ -146,10 +166,10 @@ def sign_doc(doc: dict, seed: bytes, key_id: str) -> dict:
 
 
 def verify_doc(doc: dict, pubkeys_b64: dict[str, str]) -> bool:
-    key_id = doc.get("key_id")
-    sig_b64 = doc.get("sig")
-    if not isinstance(key_id, str) or not isinstance(sig_b64, str):
+    if not is_signed(doc):
         return False
+    key_id = doc["key_id"]
+    sig_b64 = doc["sig"]
     pub_b64 = pubkeys_b64.get(key_id)
     if pub_b64 is None:
         return False
@@ -169,8 +189,12 @@ def verify_doc(doc: dict, pubkeys_b64: dict[str, str]) -> bool:
 
 def sign_doc_from_env(doc: dict) -> dict | None:
     """Sign `doc` when WOWSP_DIGEST_SIGNING_KEY is exported, else return
-    it unchanged (the app accepts unsigned docs while no key is pinned;
-    once one is, publishes MUST sign)."""
+    it unchanged.
+
+    The shipped app pins signing keys and now REJECTS unsigned docs, so
+    pipelines that publish the app channel must pass
+    `publish_digests.py --require-signed` (missing key material then aborts
+    the publish instead of shipping a doc no client will accept)."""
     seed_b64 = os.environ.get("WOWSP_DIGEST_SIGNING_KEY", "").strip()
     if not seed_b64:
         return doc
@@ -232,6 +256,18 @@ def _selftest() -> None:
     assert not verify_doc(signed, {"other": pub_b64})
     assert not verify_doc({"key_id": "main"}, {"main": pub_b64})
     assert not verify_doc(doc, {"main": pub_b64})
+
+    # The signature-layer shape helper (what --require-signed gates on).
+    assert is_signed(signed)
+    for not_signed in (
+        doc,
+        {"key_id": "main"},
+        {"sig": signed["sig"]},
+        {**signed, "sig": "not base64"},
+        {**signed, "sig": signed["sig"][:-2]},
+        {**signed, "key_id": "Main"},
+    ):
+        assert not is_signed(not_signed), not_signed
 
     # Re-signing over an existing signature replaces it cleanly.
     resigned = sign_doc(signed, seed, "main")

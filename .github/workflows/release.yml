@@ -35,21 +35,95 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Release preflight (green CI on the tagged commit)
+    # A tag can be pushed at any commit, so the build must not trust that
+    # the commit was merged green: require the commit's ci.yml run to have
+    # concluded success (a pending run is waited for; a completed failure
+    # is final). Only ci.yml is consulted — this workflow's own check runs
+    # (this job in progress, the build jobs queued behind it) would keep an
+    # 'all check runs green' query pending on the same commit until the
+    # deadline. Escape hatch for an emergency hotfix that cannot
+    # materialize a green run: set repository variable
+    # RELEASE_SKIP_PREFLIGHT=true — the waiver is recorded in the job
+    # summary instead of passing silently.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Require a green ci.yml run for ${{ github.sha }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          SKIP: ${{ vars.RELEASE_SKIP_PREFLIGHT }}
+        run: |
+          set -euo pipefail
+          if [ "${SKIP:-}" = "true" ]; then
+            echo "::warning::RELEASE_SKIP_PREFLIGHT=true — release preflight waived"
+            {
+              echo "## Release preflight waived"
+              echo ""
+              echo "- commit: ${SHA}"
+              echo "- repository variable RELEASE_SKIP_PREFLIGHT is true: the"
+              echo "  tagged commit's CI gate was skipped by explicit"
+              echo "  maintainer action (emergency hotfix path)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          deadline=$((SECONDS + 900))
+          # The push-triggered ci.yml run may not be registered yet.
+          sleep 15
+          while :; do
+            set +e
+            state="$(gh run list --commit "$SHA" --workflow ci.yml --limit 1 \
+              --json status,conclusion \
+              --jq '.[0] | if . == null then "none" else (.status + "/" + (.conclusion // "-")) end' 2>/dev/null)"
+            rc=$?
+            set -e
+            if [ "$rc" -ne 0 ] || [ -z "$state" ]; then
+              echo "note: ci.yml run query failed (rc=$rc) — retrying"
+            else
+              echo "note: ci.yml on $SHA — $state ($((deadline - SECONDS))s left)"
+              case "$state" in
+                completed/success)
+                  echo "ci.yml on $SHA concluded success"
+                  exit 0
+                  ;;
+                completed/*)
+                  echo "::error::ci.yml on $SHA concluded '$state' — refusing to release"
+                  exit 1
+                  ;;
+              esac
+              # queued / in_progress / none — keep waiting.
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::no green ci.yml run for $SHA within 15 minutes — refusing to release"
+              exit 1
+            fi
+            sleep 20
+          done
+
   release:
     name: Build & publish Windows release
+    # Every other job is downstream of this one, so needs: preflight gates
+    # the whole release flow on the tagged commit's green CI.
+    needs: preflight
     runs-on: windows-latest
     timeout-minutes: 60
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Check out the shun tag
         # The installers build from shun's own checkout (the pinned
         # tag) via the shun CLI — packages/installer carries the
         # manifest only, no installer code lives in this repo. SHUN_REPO
         # is what build_installers.py resolves.
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           repository: celestia-island/shun
           # env context expansion — a bare $SHUN_TAG does NOT expand
@@ -57,18 +131,18 @@ jobs:
           ref: ${{ env.SHUN_TAG }}
           path: shun
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable (pinned)
         with:
           components: rustfmt, clippy
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86  # v6
         # Version comes from the "packageManager" field in package.json.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
         with:
           node-version: 22
           cache: pnpm
 
       - name: Cache cargo
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
         with:
           path: |
             ~/.cargo/registry
@@ -218,7 +292,7 @@ jobs:
     # runs with `contents: write` inside our release flow, so a pushed
     # change to the devtools repo must not execute unreviewed here.
     # (dependabot's github-actions ecosystem offers the bump PRs.)
-    needs: release
+    needs: [preflight, release]
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
@@ -243,7 +317,7 @@ jobs:
     # It also removes the manual `gh release edit` step, where publishing
     # a dangling draft would mint a literal `untagged-…` git tag and
     # orphan the real one.
-    needs: release-notes
+    needs: [preflight, release-notes]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -387,7 +461,7 @@ jobs:
   # already names the tag).
   digest:
     name: Publish the app digest doc
-    needs: publish
+    needs: [preflight, publish]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -424,7 +498,7 @@ jobs:
             exit 0
           fi
 
-          python scripts/publish_digests.py --channel app --tag "$ref" --from-gh-release --latest
+          python scripts/publish_digests.py --channel app --tag "$ref" --from-gh-release --latest --require-signed
           git checkout -q -b "$branch"
           git add packages/pairing-relay/digests
           subject="📦 Publish the ${ref} app digest doc."
@@ -454,6 +528,78 @@ jobs:
           echo "pr=$pr_num" >> "$GITHUB_OUTPUT"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the published digest signature
+        # Pre-merge: the doc about to land on master must verify against the
+        # SAME Ed25519 keys the shipped app pins. Canonicalization is imported
+        # from scripts/catalog_signing.py — the exact function the publisher
+        # signed with — while the signature math is re-done by openssl, an
+        # independent Ed25519 implementation: a bug that makes python sign and
+        # python verify agree cannot self-confirm here. Public keys only; the
+        # seeds never enter CI (AGENTS.md §7).
+        shell: bash
+        env:
+          # Pinned Ed25519 public keys, copied verbatim from
+          # packages/app/tauri/src/commands/release_digest.rs:294-297
+          # (PINNED_DIGEST_KEYS) — the constants the shipped app trusts.
+          DIGEST_PUBKEY_MAIN: W4sWHa0wBXLOqPxqmufWSbK4Fz4M/7jNQl/Ty0Nq0xk=
+          DIGEST_PUBKEY_BACKUP: CQlPqptq/kr7Kpisse0u6Xh13rHM41dzNxTE2IWwsMI=
+        run: |
+          set -euo pipefail
+          cd repo
+          REF="${{ github.ref_name }}" python - <<'PY'
+          import base64, json, os, pathlib, subprocess, sys, tempfile
+
+          sys.path.insert(0, "scripts")
+          import catalog_signing  # signed-bytes authority, shared with publish
+
+          SPKI_PREFIX = bytes.fromhex("302a300506032b6570032100")  # DER Ed25519 SPKI
+          ref = os.environ["REF"]
+          keys = {
+              "main": os.environ["DIGEST_PUBKEY_MAIN"].strip(),
+              "backup": os.environ["DIGEST_PUBKEY_BACKUP"].strip(),
+          }
+          tree = pathlib.Path("packages/pairing-relay/digests/app")
+          for name in (f"{ref}.json", "latest.json"):
+              doc = json.loads((tree / name).read_text(encoding="utf-8"))
+              assert doc.get("channel") == "app", f"{name}: not the app channel"
+              assert doc.get("tag") == ref, f"{name}: tag {doc.get('tag')!r} != {ref!r}"
+              key_id = doc.get("key_id")
+              sig_b64 = doc.get("sig")
+              assert key_id in keys, f"{name}: key_id {key_id!r} is not pinned"
+              assert isinstance(sig_b64, str), f"{name}: unsigned (no sig member)"
+              msg = catalog_signing.canonical_bytes(doc)
+              sig = base64.b64decode(sig_b64, validate=True)
+              assert len(sig) == 64, f"{name}: signature is not 64 bytes"
+              with tempfile.TemporaryDirectory() as tmpdir:
+                  tmp = pathlib.Path(tmpdir)
+                  der = SPKI_PREFIX + base64.b64decode(keys[key_id], validate=True)
+                  body = base64.b64encode(der).decode("ascii")
+                  pem = ("-----BEGIN PUBLIC KEY-----\n"
+                         + "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+                         + "\n-----END PUBLIC KEY-----\n")
+                  (tmp / "key.pem").write_text(pem, encoding="ascii")
+                  (tmp / "msg.bin").write_bytes(msg)
+                  (tmp / "sig.bin").write_bytes(sig)
+
+                  def verify(payload: bytes) -> int:
+                      (tmp / "in.bin").write_bytes(payload)
+                      return subprocess.run(
+                          ["openssl", "pkeyutl", "-verify", "-pubin",
+                           "-inkey", str(tmp / "key.pem"), "-rawin",
+                           "-in", str(tmp / "in.bin"), "-sigfile", str(tmp / "sig.bin")],
+                          capture_output=True, text=True,
+                      ).returncode
+
+                  assert verify(msg) == 0, f"{name}: openssl rejected the signature"
+                  # Tamper check: the same key must reject one flipped byte —
+                  # otherwise the assertion above would also pass on a no-op.
+                  assert verify(msg[:-1] + bytes([msg[-1] ^ 1])) != 0, \
+                      f"{name}: a tampered payload verified (openssl is not checking)"
+              print(f"verified {name}: tag={doc['tag']} seq={doc['seq']} "
+                    f"assets={len(doc['assets'])} key={key_id}")
+          print("digest signature ok: openssl Ed25519 against the app-pinned keys")
+          PY
 
       - name: Materialize the required checks (bot PRs fire no events)
         if: steps.doc.outputs.skip != 'true'
