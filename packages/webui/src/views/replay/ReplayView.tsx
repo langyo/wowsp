@@ -200,9 +200,10 @@ const PostBattleFallbackPanel = defineComponent({
     // the fallback matrix leaks nicknames just the same).
     const masking = useNickMasking();
     const shot = useShareShot(buildShotModel, () => root.value);
-    /** One row's numbers for ONE column scope — the account career for
-     *  "global", the aggregated per-ship view otherwise, against the
-     *  replay's already-resolved battle scope. */
+    /** One row's numbers for ONE column scope — the account careers for
+     *  "global" and "solo" (the career carries the solo split), the
+     *  aggregated per-ship view otherwise, against the replay's
+     *  already-resolved battle scope. */
     const colViewOf = (
       scope: OverlayColumnScope,
       st: RosterStat,

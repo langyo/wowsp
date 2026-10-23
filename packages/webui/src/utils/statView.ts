@@ -45,15 +45,19 @@ export interface RosterStatsDims {
 
 /** True when these dims cannot be served by the account careers the
  *  roster batch already carries — the row views then need the player's
- *  full per-ship list (the pipeline in composables/useRosterStats). */
+ *  full per-ship list (the pipeline in composables/useRosterStats). The
+ *  solo filter is served by the career solo split the same batch carries
+ *  (see RosterStatViewSource.solo), so only a ship-scope beyond "all"
+ *  forces the per-ship fetch; solo over ranked has no split anywhere and
+ *  answers the dash face without one. */
 export function dimsNeedShipStats(dims: RosterStatsDims): boolean {
-  return dims.ship !== "all" || dims.solo === "solo";
+  return dims.ship !== "all";
 }
 
 /** One column scope → the ship/solo dims pair its views resolve through.
- *  "global" reads the account careers the roster batch already carries;
- *  every other scope needs the player's per-ship list (see
- *  dimsNeedShipStats). */
+ *  "global" and "solo" read the account careers the roster batch already
+ *  carries (the solo split included); only the ship/class scopes need the
+ *  player's per-ship list (see dimsNeedShipStats). */
 export function overlayColumnDims(
   scope: OverlayColumnScope,
   battle: RosterBattleScope,
@@ -84,12 +88,16 @@ export function effectiveOverlayColumns(
  *  roster batch already carries — the rows then need the players' full
  *  per-ship lists (the pipeline in composables/useRosterStats). PR columns
  *  the rating master hides do not count: invisible columns must not drive
- *  fetches or spinners. */
+ *  fetches or spinners. Only the ship/class scopes go past the careers —
+ *  the solo scope reads the career solo split (RosterStatViewSource.solo),
+ *  so a global+solo column set costs no per-ship fetches at all. */
 export function columnsNeedShipStats(
   columns: readonly OverlayColumn[],
   prOn: boolean,
 ): boolean {
-  return effectiveOverlayColumns(columns, prOn).some((c) => c.scope !== "global");
+  return effectiveOverlayColumns(columns, prOn).some(
+    (c) => c.scope === "ship" || c.scope === "class",
+  );
 }
 
 /** One mode's display numbers (all null = never played that mode / miss). */
@@ -107,6 +115,12 @@ export interface RosterStatViewSource extends RosterModeNumbers {
   ranked?: RosterModeNumbers | null;
   /** Global (randoms + ranked merged); null = no stats at all. */
   global?: RosterModeNumbers | null;
+  /** Solo (单排) split of the randoms career — the batch's `pvp_solo`
+   *  node, mapped data-only (PR/avgDamage stay null; the view derives the
+   *  PR per algorithm). null = the career carried no solo split (never
+   *  played solo / hidden profile / older shell). There is no solo split
+   *  of ranked anywhere, so this bucket is randoms-only by definition. */
+  solo?: RosterModeNumbers | null;
 }
 
 export const EMPTY_ROSTER_VIEW: RosterModeNumbers = {

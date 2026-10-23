@@ -680,15 +680,16 @@ export default defineComponent({
     const battleScope = computed<ResolvedStatsMode>(() =>
       resolveRosterBattleScope(prefs.prefs.overlayBattleScope, props.arena ?? {}),
     );
-    /** Any configured column resolves past the account careers: rows then
-     *  read the per-ship lists (attached by the roster pipeline) and
+    /** Any configured column resolves past the account careers (a
+     *  ship/class scope — the solo scope reads the career split): rows
+     *  then read the per-ship lists (attached by the roster pipeline) and
      *  their spinners additionally ride `shipsLoading`. */
     const shipScopeOn = computed(() =>
       columnsNeedShipStats(prefs.prefs.overlayColumns, prefs.prefs.prEnabled),
     );
     /** One row's display numbers for ONE column scope — the account-career
-     *  path for "global" (and the solo sweep), the aggregated per-ship
-     *  view otherwise (see utils/shipStatsScope). */
+     *  path for "global" and "solo", the aggregated per-ship view
+     *  otherwise (see utils/shipStatsScope). */
     const colViewOf = (
       scope: OverlayColumnScope,
       st: RosterStat | null | undefined,
@@ -719,7 +720,9 @@ export default defineComponent({
           if (
             !st ||
             st.loading ||
-            (scope !== "global" && st.shipsLoading) ||
+            // Only the ship/class scopes wait on the per-ship lists — the
+            // solo scope reads the career split (utils/shipStatsScope).
+            (scope !== "global" && scope !== "solo" && st.shipsLoading) ||
             st.hidden ||
             isAiName(v.name)
           ) {

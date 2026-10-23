@@ -42,6 +42,11 @@ export interface RosterStat {
   /** Global career (randoms + ranked merged server-side); null = the
    *  payload carried no stats at all (older shell). */
   global: RosterModeNumbers | null;
+  /** Solo (单排) split of the randoms career off the same batch answer
+   *  (`pvp_solo`); null = the career carried no split (never played solo /
+   *  hidden / older shell). Data-only — the solo-scope columns derive its
+   *  PR per algorithm (utils/shipStatsScope). */
+  solo: RosterModeNumbers | null;
   /** WG account id off the same batch answer — the key the ship-scoped
    *  pipeline fetches the player's per-ship list with. */
   accountId: number | null;
@@ -118,6 +123,7 @@ const emptyStat = (loading: boolean): RosterStat => ({
   battles: null,
   ranked: null,
   global: null,
+  solo: null,
   accountId: null,
   ships: undefined,
   shipsLoading: false,
@@ -153,6 +159,8 @@ function rosterStatOf(r: {
   globalPr?: number | null;
   globalAvgDamage?: number | null;
   globalBattles?: number | null;
+  soloWr?: number | null;
+  soloBattles?: number | null;
   accountId?: number | null;
   clanId?: number | null;
   clanTag?: string | null;
@@ -180,6 +188,17 @@ function rosterStatOf(r: {
         pr: r.globalPr ?? null,
         battles: r.globalBattles ?? null,
         avgDamage: r.globalAvgDamage ?? null,
+      }),
+    ),
+    // The career solo split, mapped data-only (PR/avgDamage stay null —
+    // the view derives the PR per algorithm; see utils/shipStatsScope).
+    solo: modeStatsOf(
+      r.soloBattles != null || r.soloWr != null,
+      () => ({
+        winrate: r.soloWr ?? null,
+        pr: null,
+        battles: r.soloBattles ?? null,
+        avgDamage: null,
       }),
     ),
     accountId: r.accountId ?? null,
@@ -231,9 +250,9 @@ export interface UseRosterStatsOptions {
 }
 
 // ── Ship-scoped pipeline (per-player full ship lists) ─────────────────
-// While any non-default stats-source dimension is active (a ship scope
-// beyond the account careers, or the solo filter), each roster player
-// additionally needs their FULL per-ship list — one
+// While any configured column goes past the account careers (a ship/class
+// scope — the solo scope reads the career solo split and needs no lists),
+// each roster player additionally needs their FULL per-ship list — one
 // `lookup_player_ship_stats` RPC per account, session-cached here and
 // shared by the live pipeline and the post-battle one-shot. The backend
 // re-fetches on demand and keeps its own disk cache, so this module cache
@@ -422,8 +441,9 @@ export function useRosterStats(options: UseRosterStatsOptions) {
   }
 
   // ── Ship-scoped attachment (the live pipeline's share) ────────────────
-  // While any configured column needs per-ship data (a ship/class/solo
-  // scope), every loaded human slot carries that player's full ship list:
+  // While any configured column needs per-ship data (a ship/class scope —
+  // the solo scope reads the career solo split instead), every loaded
+  // human slot carries that player's full ship list:
   // session-cache hits land synchronously, misses queue one debounced
   // bounded batch. Editing the columns re-runs this — the already-attached
   // lists are scope-independent, so only the misses move.

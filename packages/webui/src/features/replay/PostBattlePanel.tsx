@@ -369,8 +369,8 @@ export default defineComponent({
      *  (each configured column carries its own scope) — resolved against
      *  the replayed battle's identity ("follow": ranked → ranked
      *  careers). Rows read each column through `colViewOf`, which
-     *  aggregates the per-ship lists the one-shot pipeline attaches
-     *  while any non-global column is configured. */
+     *  resolves the account careers for the global/solo scopes and the
+     *  attached per-ship lists for the ship/class ones. */
     const battleScope = computed<ResolvedStatsMode>(() =>
       resolveRosterBattleScope(prefs.value.overlayBattleScope, props.head ?? {}),
     );
@@ -415,7 +415,13 @@ export default defineComponent({
       aggregateTeamStats(
         list.map((p) => {
           const st = !isAiName(p.name) ? nameStats.value.get(p.name) : undefined;
-          if (!st || st.hidden || (scope !== "global" && st.shipsLoading)) {
+          if (
+            !st ||
+            st.hidden ||
+            // Only the ship/class scopes wait on the per-ship lists — the
+            // solo scope reads the career split (utils/shipStatsScope).
+            (scope !== "global" && scope !== "solo" && st.shipsLoading)
+          ) {
             return {
               winrate: null,
               pr: null,
