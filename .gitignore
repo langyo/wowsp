@@ -38,6 +38,13 @@ Thumbs.db
 # tauri-build schema/acl dumps (regenerated on every cargo build) stay
 # ignored; the gen/android project sources ARE tracked (standard Tauri v2
 # practice — its own gen/android/.gitignore excludes build outputs).
+
+# Local working documents, deliberately untracked: the 2026-10-22 static
+# evaluation reports and the security-audit working copy. They drove the
+# audit-fix commits but stay out of the public tree (they describe attack
+# surfaces in detail); the fixes themselves are the durable record.
+/eval-report/
+/security-audit-*.md
 packages/app/tauri/gen/schemas/
 packages/installer-shell/gen/
 .cache/
