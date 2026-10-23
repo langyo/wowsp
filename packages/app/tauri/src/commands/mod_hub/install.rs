@@ -33,7 +33,10 @@ pub async fn mod_hub_install(
     // display-only echo — trusting it let a compromised webview install
     // files the user never previewed. The classifier is the same one the
     // preview and the catalog pipeline run, so what the user saw is what
-    // this walk finds.
+    // this walk finds. The copy below re-checks every entry without
+    // following links (`ensure_plain_source_entry`): a symlink or junction
+    // anywhere in the picked tree aborts the install instead of pulling in
+    // files from outside it.
     let plan = classify_package(&src)?;
     // Validate BEFORE any rewind happens: an invalid plan must not uninstall
     // the previous version only to fail afterwards.
@@ -166,7 +169,9 @@ pub(crate) fn local_record(
 /// relative) and snapshotting overwritten originals for later restore. Every
 /// write goes through the journal — temp+rename into place, mandatory
 /// pre-overwrite snapshots, full rollback on any failure — so a broken
-/// install never leaves a half-copied mod in the game tree.
+/// install never leaves a half-copied mod in the game tree. Source entries
+/// are inspected without following links (`ensure_plain_source_entry`), so a
+/// symlink/reparse point in the package aborts instead of being copied.
 pub(crate) fn install_plan(
     src: &Path,
     game_root: &str,
@@ -253,6 +258,7 @@ fn install_plan_inner(
                 let name = path
                     .file_name()
                     .ok_or_else(|| anyhow!("{} has no file name", path.display()))?;
+                ensure_plain_source_entry(path)?;
                 journal.place(path, &Path::new(game_root).join(name), Place::GameRoot)?;
                 wrote += 1;
             }

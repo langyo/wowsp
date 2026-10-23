@@ -113,6 +113,13 @@ pub(crate) fn analyze_override_tree(
         };
         for ent in entries.flatten() {
             let path = ent.path();
+            // Best-effort analysis walks under the same trust boundary as
+            // the install copy: never descend through a symlink/junction
+            // that points out of the package tree (`ensure_plain_source_entry`
+            // names the rule; here a refused entry is simply not analysed).
+            if super::ensure_plain_source_entry(&path).is_err() {
+                continue;
+            }
             if path.is_dir() {
                 stack.push((path, depth + 1));
                 continue;

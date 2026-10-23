@@ -2956,3 +2956,124 @@ fn unknown_game_roots_are_refused() {
     let sloppy = format!("{ghost}\\");
     assert!(ensure_known_game_root(&sloppy).is_err());
 }
+
+// ── Audit H-3 follow-up: reparse points inside the picked package tree ─────
+//
+// The picker grant anchors WHICH folder a local install may read (see
+// pick_source); these cover the WHAT: a symlink/junction inside that folder
+// must abort classify/install instead of letting the copy read a target the
+// user never picked (or loop through a junction cycle).
+
+/// Create a symlink for the reparse-point tests. Returns false and states the
+/// reason when the host refuses — Windows needs Developer Mode or an elevated
+/// process for symlink_*, and a skipped test is honest evidence, not a pass.
+fn try_symlink(target: &Path, link: &Path, is_dir: bool) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs as winfs;
+        let created = if is_dir {
+            winfs::symlink_dir(target, link)
+        } else {
+            winfs::symlink_file(target, link)
+        };
+        match created {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("skipping reparse-point test: this host cannot create a symlink ({e})");
+                false
+            },
+        }
+    }
+    #[cfg(unix)]
+    {
+        let _ = is_dir;
+        match std::os::unix::fs::symlink(target, link) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("skipping reparse-point test: this host cannot create a symlink ({e})");
+                false
+            },
+        }
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = (target, link, is_dir);
+        eprintln!("skipping reparse-point test: unsupported host");
+        false
+    }
+}
+
+#[test]
+fn plain_source_entries_pass_the_reparse_guard() {
+    let root = std::env::temp_dir().join("wowsp_plain_source_guard");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("gui")).unwrap();
+    fs::write(root.join("gui/x.xml"), "<x/>").unwrap();
+    for path in [root.clone(), root.join("gui"), root.join("gui/x.xml")] {
+        assert!(
+            super::ensure_plain_source_entry(&path).is_ok(),
+            "a plain entry must pass: {}",
+            path.display()
+        );
+    }
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn classify_refuses_a_symlinked_source_entry() {
+    let pkg = std::env::temp_dir().join("wowsp_reparse_classify");
+    let outside = std::env::temp_dir().join("wowsp_reparse_classify_outside");
+    let _ = fs::remove_dir_all(&pkg);
+    let _ = fs::remove_dir_all(&outside);
+    fs::create_dir_all(pkg.join("gui")).unwrap();
+    fs::write(pkg.join("gui/x.xml"), "<x/>").unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("secret.xml"), "<secret/>").unwrap();
+    if !try_symlink(&outside.join("secret.xml"), &pkg.join("linked.xml"), false) {
+        let _ = fs::remove_dir_all(&pkg);
+        let _ = fs::remove_dir_all(&outside);
+        return;
+    }
+    let err = classify_package(&pkg).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("reparse point"), "policy named: {msg}");
+    assert!(msg.contains("linked.xml"), "entry named: {msg}");
+    let _ = fs::remove_dir_all(&pkg);
+    let _ = fs::remove_dir_all(&outside);
+}
+
+#[test]
+fn install_refuses_a_symlinked_directory_inside_the_source_tree() {
+    let pkg = std::env::temp_dir().join("wowsp_reparse_install");
+    let game = std::env::temp_dir().join("wowsp_reparse_install_game");
+    let outside = std::env::temp_dir().join("wowsp_reparse_install_outside");
+    let _ = fs::remove_dir_all(&pkg);
+    let _ = fs::remove_dir_all(&game);
+    let _ = fs::remove_dir_all(&outside);
+    fs::create_dir_all(pkg.join("gui")).unwrap();
+    fs::write(pkg.join("gui/x.xml"), "<x/>").unwrap();
+    fs::create_dir_all(outside.join("payload")).unwrap();
+    fs::write(outside.join("payload/payload.xml"), "<payload/>").unwrap();
+    if !try_symlink(&outside, &pkg.join("gui/linked"), true) {
+        let _ = fs::remove_dir_all(&pkg);
+        let _ = fs::remove_dir_all(&outside);
+        return;
+    }
+    fs::create_dir_all(game.join("bin/12668706")).unwrap();
+    let _rr = test_restore_root_in(&game.join("rr"));
+    // Top-level layout classification does not descend into gui/, so the
+    // plan is fresh; the copy walk is where the link must be refused.
+    let plan = classify_package(&pkg).expect("plain top-level layout classifies");
+    let err = install_plan(&pkg, game.to_str().unwrap(), &plan).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("reparse point"), "policy named: {msg}");
+    assert!(msg.contains("linked"), "entry named: {msg}");
+    let rm = game.join("bin/12668706/res_mods");
+    assert!(
+        !rm.join("gui/x.xml").exists(),
+        "the install must roll back every file copied before the refusal"
+    );
+    let _ = fs::remove_dir_all(&pkg);
+    let _ = fs::remove_dir_all(&game);
+    let _ = fs::remove_dir_all(&outside);
+}

@@ -21,6 +21,16 @@
 //!
 //! Archives (.zip/.7z) land with M10.2's unpack step — this round accepts
 //! already-unpacked directories and returns a structured error for files.
+//!
+//! Trust boundary (audit H-3): a local install's source is anchored to the
+//! native folder picker ([`pick_source`]) — classify and install only accept
+//! paths a dialog handed out this session — and the picked tree is copied
+//! through [`copy_tree`], which refuses every symlink/junction (reparse
+//! point) entry via [`ensure_plain_source_entry`]. The grant decides WHICH
+//! folder may be read; the no-follow walk decides WHAT inside it may be
+//! read, so a package cannot use a link to pull files from outside the
+//! previewed tree into `res_mods` (nor loop the copy through a junction
+//! cycle).
 
 use anyhow::anyhow;
 use std::collections::BTreeSet;
@@ -479,11 +489,48 @@ pub(crate) fn sibling_with_suffix(path: &Path, suffix: &str) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// Copy a subtree (or a single mapped file) through the journal.
+/// `FILE_ATTRIBUTE_REPARSE_POINT` — symlinks, directory junctions, mount
+/// points and the other reparse points share this bit on Windows.
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+/// Trust boundary for every source-tree walk (classify and install): inspect
+/// `path` WITHOUT following links and refuse anything that is a symlink or
+/// another reparse point. A package folder is untrusted input — a junction in
+/// it would otherwise let the copy read a directory or file the user never
+/// picked, and a junction cycle would make the walk non-terminating.
+///
+/// Check-then-copy is not atomic: this guards hostile package CONTENT, not a
+/// local process racing the install (which already holds the same-user write
+/// access the install itself has).
+pub(crate) fn ensure_plain_source_entry(path: &Path) -> anyhow::Result<()> {
+    let meta = fs::symlink_metadata(path)
+        .map_err(|e| anyhow!("inspect source entry {}: {e}", path.display()))?;
+    #[cfg(windows)]
+    let reparse_point = {
+        use std::os::windows::fs::MetadataExt as _;
+        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    };
+    #[cfg(not(windows))]
+    let reparse_point = false;
+    if reparse_point || meta.file_type().is_symlink() {
+        return Err(anyhow!(
+            "refusing source entry {}: symlinks and reparse points are never installed",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+/// Copy a subtree (or a single mapped file) through the journal. Every source
+/// entry is inspected without following links ([`ensure_plain_source_entry`]):
+/// a symlink or reparse point anywhere under the picked folder aborts the
+/// copy with the entry named, before its target bytes can be read.
 fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> anyhow::Result<usize> {
     if !from.exists() {
         return Err(anyhow!("{} does not exist", from.display()));
     }
+    ensure_plain_source_entry(from)?;
     if from.is_file() {
         fs::create_dir_all(to.parent().unwrap_or(to))
             .map_err(|e| anyhow!("create {}: {e}", to.display()))?;
@@ -499,6 +546,7 @@ fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> anyhow::Re
             .flatten()
         {
             let s = ent.path();
+            ensure_plain_source_entry(&s)?;
             let d = dst.join(ent.file_name());
             if s.is_dir() {
                 fs::create_dir_all(&d).map_err(|e| anyhow!("create {}: {e}", d.display()))?;

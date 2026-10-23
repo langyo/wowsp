@@ -1,3 +1,13 @@
+//! Local package classification (audit H-3 closure).
+//!
+//! Every source-directory enumeration here is a trust boundary. The picker
+//! grant (`pick_source`) anchors WHICH folder may be read; the entries below
+//! that folder are inspected WITHOUT following links, so a symlink, junction
+//! or other reparse point cannot impersonate a layout signature the user
+//! never previewed. The install copy enforces the same rule again while
+//! walking nested trees — see `ensure_plain_source_entry` in the parent
+//! module.
+
 use anyhow::anyhow;
 use wowsp_tauri_shared::CommandResult;
 
@@ -57,7 +67,7 @@ pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
     // them, re-derive the plan one layer down and shift `fromRel` inward —
     // installs then read payloads relative to the wrapper.
     if plan.entries.is_empty() {
-        if let Some(wrapper) = single_wrapper_dir(src) {
+        if let Some(wrapper) = single_wrapper_dir(src)? {
             let inner = src.join(&wrapper);
             let candidate = classify_package_layout(&inner)?;
             for entry in candidate.entries {
@@ -84,29 +94,50 @@ pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
     Ok(plan)
 }
 
+/// Read one package directory, refusing symlink/reparse-point entries before
+/// they can be treated as layout signatures. The picked folder is untrusted
+/// input: a link entry must abort classification instead of redirecting the
+/// preview (and later the copy) outside the tree the user chose.
+fn read_plain_entries(dir: &Path) -> anyhow::Result<Vec<fs::DirEntry>> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(dir)
+        .map_err(|e| anyhow!("read {}: {e}", dir.display()))?
+        .flatten()
+    {
+        super::ensure_plain_source_entry(&entry.path())?;
+        entries.push(entry);
+    }
+    Ok(entries)
+}
+
 /// The only content of `src` is one subdirectory (ignoring explorer noise) —
-/// its name is a candidate wrapper layer.
-fn single_wrapper_dir(src: &Path) -> Option<String> {
+/// its name is a candidate wrapper layer. Link-checked first: the wrapper is
+/// followed by the install copy, so a reparse point must not be allowed to
+/// impersonate a plain wrapper folder.
+fn single_wrapper_dir(src: &Path) -> anyhow::Result<Option<String>> {
     let mut dirs = Vec::new();
-    for e in fs::read_dir(src).ok()?.flatten() {
+    for e in fs::read_dir(src)
+        .map_err(|e| anyhow!("read {}: {e}", src.display()))?
+        .flatten()
+    {
+        super::ensure_plain_source_entry(&e.path())?;
         let name = e.file_name().to_string_lossy().into_owned();
         let lower = name.to_ascii_lowercase();
         if lower == "desktop.ini" || lower == "thumbs.db" || lower.ends_with(".txt") {
             continue;
         }
         if !e.path().is_dir() {
-            return None;
+            return Ok(None);
         }
         dirs.push(name);
     }
-    if dirs.len() == 1 { dirs.pop() } else { None }
+    Ok(if dirs.len() == 1 { dirs.pop() } else { None })
 }
 
 /// Signature-level classification of one directory layout (no wrapper peel).
 fn classify_package_layout(src: &Path) -> anyhow::Result<PackagePlan> {
-    let entries_raw: Vec<String> = fs::read_dir(src)
-        .map_err(|e| anyhow!("read {}: {e}", src.display()))?
-        .flatten()
+    let entries_raw: Vec<String> = read_plain_entries(src)?
+        .into_iter()
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
 
@@ -184,7 +215,11 @@ fn classify_package_layout(src: &Path) -> anyhow::Result<PackagePlan> {
         if let Ok(skins) = fs::read_dir(&pnf) {
             let mut details: Vec<String> = Vec::new();
             for skin in skins.flatten() {
+                super::ensure_plain_source_entry(&skin.path())?;
                 if let Some(main_py) = find_pnf_main(&skin.path()) {
+                    // The entry script is read for its ship id — never via
+                    // a link that points outside the picked package.
+                    super::ensure_plain_source_entry(&main_py)?;
                     if let Ok(body) = fs::read(&main_py) {
                         if let Some(id) = registered_ship_id_bytes(&body) {
                             details.push(id);
