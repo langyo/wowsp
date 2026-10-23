@@ -41,6 +41,13 @@ not found"), so this script diffs all the name sets:
   - Installer surface: the same defined-vs-registered bidirectional check
     against its own `generate_handler!` list, plus literal invokes in its
     web UI as a subset of its Rust command set.
+  - Window-gating ratchet: a command that takes `window: tauri::Window`
+    must actually call `ensure_main_window_label(window.label())` (the
+    audit P0-5 gate is opt-in, so a refactor could keep the parameter and
+    silently drop the call), and the frozen `GATED_COMMANDS` roster must
+    never lose its `window` parameter. Graduating a command onto the
+    gate = add the parameter, make the gate call, append the name to
+    `GATED_COMMANDS` in the same PR.
 
 Exit codes: 0 = parity, 1 = drift.
 
@@ -105,6 +112,47 @@ INVOKE_LITERAL_RE = re.compile(
 # (doc comments / other attributes may sit in between).
 FN_SEARCH_WINDOW = 10
 
+# ── Window-gating ratchet ──────────────────────────────────────────────────
+# The main-window gate (`commands/mod.rs`'s `ensure_main_window_label`) is
+# opt-in per command: the parameter alone does nothing, and nothing in the
+# type system stops a refactor from dropping either half. The ratchet pins
+# both halves:
+#
+#   1. every command whose definition takes `window: tauri::Window` must
+#      call `ensure_main_window_label(` inside its own body;
+#   2. every name in `GATED_COMMANDS` must keep taking the `window`
+#      parameter.
+#
+# `GATED_COMMANDS` was seeded 2026-10-23 (post-#1349) with the 16 commands
+# that then carried the gate — 16/208 parsed. It is a floor, not a ceiling:
+# when a command gains the gate, append its name here in the same PR (the
+# systematic-gating wave is expected to grow this list substantially);
+# removing a name is only legitimate when the command itself is gone.
+# Same-name cfg twins compare by their FIRST definition, matching
+# `collect_rust_commands` (so the mobile stand-ins without the parameter
+# keep passing).
+WINDOW_PARAM_RE = re.compile(r"window\s*:\s*(?:&\s*)?(?:tauri::)?Window\b")
+ENSURE_GATE_CALL_RE = re.compile(r"ensure_main_window_label\s*\(")
+
+GATED_COMMANDS: list[str] = [
+    "appdata_write",
+    "capture_main_window",
+    "import_replay_file",
+    "mod_catalog_install",
+    "mod_catalog_uninstall",
+    "mod_hub_install",
+    "mod_hub_pick_source",
+    "mod_hub_reconcile",
+    "pairing_start",
+    "pairing_stop",
+    "pick_export_path",
+    "tactics_profile_open",
+    "tactics_profile_save",
+    "update_download",
+    "update_reinstall_from_cache",
+    "write_export_bytes",
+]
+
 
 def collect_rust_commands(src_dir: Path) -> dict[str, str]:
     """Map command name -> `file:line` of its `#[tauri::command]` attribute."""
@@ -139,6 +187,77 @@ def collect_rust_commands(src_dir: Path) -> dict[str, str]:
             f"{src_dir.relative_to(REPO_ROOT).as_posix()} — parser broken?"
         )
     return commands
+
+
+def _fn_body_slice(lines: list[str], fn_idx: int, stop_idx: int) -> str:
+    """The `fn` signature-plus-body text, ending at its closing brace.
+
+    Brace-counting over comment-stripped, string-literal-masked lines so a
+    `{{ }}` in a doc comment or a `"{"` in a format string cannot end the
+    slice early. Falls back to the next `#[tauri::command]` attribute (or
+    EOF) when no balanced block is found — the parity collector upstream
+    already hard-fails on unparseable shapes, so this side stays lenient.
+    """
+    depth = 0
+    seen_open = False
+    for k in range(fn_idx, stop_idx):
+        line = re.sub(r"//.*$", "", lines[k])
+        line = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)
+        depth += line.count("{") - line.count("}")
+        if "{" in line:
+            seen_open = True
+        if seen_open and depth <= 0:
+            return "\n".join(lines[fn_idx : k + 1])
+    return "\n".join(lines[fn_idx:stop_idx])
+
+
+def collect_rust_command_gating(src_dir: Path) -> dict[str, dict[str, object]]:
+    """Map command name -> window-gating facts of its first definition.
+
+    For every `#[tauri::command]` fn, record:
+
+      - `where`: `file:line` of the attribute (same shape as
+        `collect_rust_commands`),
+      - `takes_window`: the fn carries a `window: tauri::Window` parameter,
+      - `calls_gate`: the fn body calls `ensure_main_window_label(`.
+
+    Both facts are scanned within the fn's own brace block only — tests and
+    helper fns sitting between two commands must not vouch for the command
+    above them. Same-name cfg twins keep the first definition, matching
+    `collect_rust_commands` exactly so the frozen roster refers to the same
+    definition the parity checks see.
+    """
+    gating: dict[str, dict[str, object]] = {}
+    for path in sorted(src_dir.rglob("*.rs")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        attr_lines = [i for i, ln in enumerate(lines) if COMMAND_ATTR_RE.match(ln)]
+        for idx, start in enumerate(attr_lines):
+            stop = attr_lines[idx + 1] if idx + 1 < len(attr_lines) else len(lines)
+            fn_idx = None
+            fn_name = None
+            for k in range(start + 1, min(start + 1 + FN_SEARCH_WINDOW, len(lines))):
+                fn = PUB_FN_RE.match(lines[k])
+                if fn:
+                    fn_idx = k
+                    fn_name = fn.group(1)
+                    break
+                if not SKIP_RE.match(lines[k]):
+                    break
+            if fn_idx is None or fn_name is None:
+                # collect_rust_commands hard-fails on this shape already;
+                # stay quiet here so the ratchet never masks that error.
+                continue
+            body = _fn_body_slice(lines, fn_idx, stop)
+            where = f"{path.relative_to(REPO_ROOT).as_posix()}:{start + 1}"
+            gating.setdefault(
+                fn_name,
+                {
+                    "where": where,
+                    "takes_window": WINDOW_PARAM_RE.search(body) is not None,
+                    "calls_gate": ENSURE_GATE_CALL_RE.search(body) is not None,
+                },
+            )
+    return gating
 
 
 def collect_registered_commands(rs_path: Path) -> dict[str, str]:
@@ -277,6 +396,7 @@ def main() -> int:
 
     rust = collect_rust_commands(RUST_SRC_DIR)
     registered = collect_registered_commands(APP_LIB_RS)
+    gating = collect_rust_command_gating(RUST_SRC_DIR)
     ts, ts_key_drift = collect_rpc_ts()
     webui_invokes = collect_invoke_literals(WEBUI_SRC_DIR)
     mock = collect_mock_routes()
@@ -307,6 +427,30 @@ def main() -> int:
             f"-{name}  ({mock[name]})" for name in stale_mock
         ]
 
+    ungated_calls = sorted(
+        name for name, facts in gating.items()
+        if facts["takes_window"] and not facts["calls_gate"]
+    )
+    if ungated_calls:
+        problems[
+            "window gating: command takes `window` but never calls "
+            "ensure_main_window_label"
+        ] = [f"~{name}  ({gating[name]['where']})" for name in ungated_calls]
+    unknown_gated = sorted(set(GATED_COMMANDS) - set(gating))
+    if unknown_gated:
+        problems["window gating: GATED_COMMANDS entry names no command"] = [
+            f"-{name}" for name in unknown_gated
+        ]
+    lost_param = sorted(
+        name
+        for name in GATED_COMMANDS
+        if name in gating and not gating[name]["takes_window"]
+    )
+    if lost_param:
+        problems["window gating: gated command lost its `window` param"] = [
+            f"~{name}  ({gating[name]['where']})" for name in lost_param
+        ]
+
     invoke_site_count = sum(len(s) for s in webui_invokes.values())
 
     if args.json:
@@ -319,6 +463,10 @@ def main() -> int:
                     "raw_invoke_literals": len(webui_invokes),
                     "raw_invoke_sites": invoke_site_count,
                     "mock_routes": len(mock),
+                    "window_gated_commands": sum(
+                        1 for facts in gating.values() if facts["takes_window"]
+                    ),
+                    "gated_roster": len(GATED_COMMANDS),
                     "parity": not problems,
                     "problems": problems,
                 },
@@ -336,7 +484,9 @@ def main() -> int:
             f"RPC parity OK: {len(rust)} Rust commands == {len(ts)} rpc.ts entries; "
             f"{len(registered)} registered; "
             f"{len(webui_invokes)} raw invoke names ({invoke_site_count} sites) all resolve; "
-            f"{len(mock)} mock routes all resolve"
+            f"{len(mock)} mock routes all resolve; "
+            f"window gate on {sum(1 for facts in gating.values() if facts['takes_window'])}/{len(gating)} "
+            f"commands, {len(GATED_COMMANDS)} frozen"
         )
 
     return 1 if problems else 0
