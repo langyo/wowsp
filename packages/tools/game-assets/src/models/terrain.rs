@@ -3,7 +3,7 @@
 //! Format: 16-byte header (magic `trb\0`, width, height, tile info) followed
 //! by an RLE-compressed stream of `f32` height values. The RLE encoding uses a
 //! double-write escape: when a value repeats, it is stored as `[val, val, count]`
-//! where `count` is a `u32 < 0x100000` giving the total number of occurrences.
+//! where `count` is a `u32 < 0x40000000` giving the total number of occurrences.
 //!
 //! After decoding, the stream contains a preamble of min/max height pairs
 //! (one per tile row or LOD region) followed by a flat row-major `width × height`
@@ -20,7 +20,17 @@ use crate::data::parser_utils::WResult;
 /// Magic bytes: `trb\0` = 0x00627274 little-endian.
 pub const TERRAIN_MAGIC: u32 = 0x00627274;
 /// RLE marker threshold: any u32 value below this after a double-write is a repeat count.
-const RLE_THRESHOLD: u32 = 0x100000;
+///
+/// The ceiling must stay OUTSIDE the range of plausible f32 height bit
+/// patterns: `[0x100000, 0x40000000)` decodes as denormals up to ~1.5e-6
+/// (a micrometre-scale "height" no space carries), and negative heights sit
+/// at bit patterns ≥ 0x80000000. Port spaces (`Dock_Fjords`, `Dock_Kure`)
+/// legitimately emit multi-million-long runs of their default 0.0 height —
+/// counts of 3,779,610 observed — which the historical 0x100000 cap
+/// silently mis-read as literals, leaving the stream millions of values
+/// short (`SizeMismatch`). 0x40000000 admits every real count while no
+/// real height can fall inside.
+const RLE_THRESHOLD: u32 = 0x40000000;
 
 #[derive(Debug, Error)]
 pub enum TerrainError {
