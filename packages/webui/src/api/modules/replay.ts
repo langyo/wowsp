@@ -888,11 +888,16 @@ export const replayApi = {
    *  path) — clears the backend's open flag. */
   cancelManualLocate: () => transport.invoke<null>(RPC.cancel_manual_locate),
   /** Fetch the picker's cached frame + guides (ManualLocateOverlay's boot
-   *  payload; the layer re-invokes it on retry). */
-  fetchManualLocateContext: () =>
-    transport.invoke<ManualLocateContext>(RPC.manual_locate_context),
-  /** The picker's image-selector row: every still-fresh cached capture as
-   *  a small thumbnail, newest first. */
+   *  payload; the layer re-invokes it on retry). `teamSizes` is the
+   *  calibration editor's per-team roster hint — the guides then fit the
+   *  battle class it edits; omitted = the live arena read (battle flow). */
+  fetchManualLocateContext: (teamSizes?: [number, number] | null) =>
+    transport.invoke<ManualLocateContext>(RPC.manual_locate_context, {
+      teamSizes: teamSizes ?? null,
+    }),
+  /** The picker's image-selector row: the last ten cached captures, memory
+   *  ring merged with the disk archive (survives restarts and game exits),
+   *  newest first. */
   fetchManualLocateGallery: () =>
     transport.invoke<ManualLocateGalleryFrame[]>(RPC.manual_locate_gallery),
   /** The picker context for a CHOSEN source: one of the gallery's cached
@@ -900,9 +905,10 @@ export const replayApi = {
    *  the selector re-runs the whole context build — guides included —
    *  against the new image. `source` omitted/undefined = the newest
    *  capture (plain `manual_locate_context`). */
-  fetchManualLocateContextFor: (source?: ManualLocateSource) =>
+  fetchManualLocateContextFor: (source?: ManualLocateSource, teamSizes?: [number, number] | null) =>
     transport.invoke<ManualLocateContext>(RPC.manual_locate_context_for, {
       source: source ?? null,
+      teamSizes: teamSizes ?? null,
     }),
   /** Submit the picker's drag-box selection (PHYSICAL px relative to the
    *  game window origin). Validates + freezes the manual roster anchor;
@@ -930,7 +936,10 @@ export const replayApi = {
    *  the drawing (placeholder identity, remap-usable immediately) — `kind`
    *  (the install's client kind) is required only for that case. `source`
    *  describes the reference image the drawing was made against (omitted =
-   *  the newest capture). Refusals reject with the backend's message. */
+   *  the newest capture). `teamSizes` is the editor's per-team count
+   *  override (the bottom-right control): rosters differ between battles,
+   *  so the saved grid follows the shape the drawing was aligned to.
+   *  Refusals reject with the backend's message. */
   setCalibrationAnchor: (
     clientKey: string,
     cls: "pvp" | "pve",
@@ -940,6 +949,7 @@ export const replayApi = {
     height: number,
     source?: ManualLocateSource,
     kind?: string,
+    teamSizes?: [number, number] | null,
   ) =>
     transport.invoke<null>(RPC.set_calibration_anchor, {
       clientKey,
@@ -950,6 +960,7 @@ export const replayApi = {
       height,
       source: source ?? null,
       kind: kind ?? null,
+      teamSizes: teamSizes ?? null,
     }),
   /** Backend force-close push for the picker layer: the game window vanished
    *  underneath it (or overlay mode ended) — unmount the layer. */

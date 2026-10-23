@@ -19,11 +19,16 @@ import { ref } from "vue";
 /** The calibration editor's target: which client install and battle-class
  *  entry a calibration-mode submit writes to (`setCalibrationAnchor`).
  *  `kind` is the install's client kind — forwarded so the backend can
- *  CREATE an entry that nothing measured yet (the pre-edit flow). */
+ *  CREATE an entry that nothing measured yet (the pre-edit flow).
+ *  `teamSizes` is the target entry's stored per-team shape ([allies,
+ *  enemies], the class's classic default when nothing is stored yet) — the
+ *  editor's count control and the context hints seed from it, since
+ *  rosters differ between battles and the stored shape may be stale. */
 export interface ManualLocateCalibration {
   clientKey: string;
   class: "pvp" | "pve";
   kind: string;
+  teamSizes?: [number, number];
 }
 
 export const useManualLocateStore = defineStore("manualLocate", () => {

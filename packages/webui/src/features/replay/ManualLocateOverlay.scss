@@ -52,32 +52,10 @@
   background: rgb(10 14 20 / 85%);
 }
 
-/* Guides toggle + frame age speak the app's compact pill voice (the live
-   head's action pills: --text-2xs / 600 / 1.5 / 0.1rem 0.55rem / full
-   radius) so the strip reads like every other panel head; only the
-   colors stay literal dark. */
-.ml-guide-toggle {
-  flex: 0 0 auto;
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid rgb(255 255 255 / 22%);
-  background: transparent;
-  color: rgb(236 241 246);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  line-height: 1.5;
-  cursor: pointer;
-}
-
-.ml-guide-toggle[aria-pressed="true"] {
-  border-color: rgb(96 214 164 / 65%);
-  color: rgb(126 231 183);
-}
-
-.ml-guide-toggle:hover {
-  filter: brightness(1.15);
-}
-
+/* The guides toggle is a standard HkButton now (variant flips with the
+   pressed state); the frame age keeps the app's compact pill voice, only
+   in literal dark — it sits on the THEMED modal surface but belongs to the
+   screenshot viewer's chrome. */
 .ml-age {
   flex: 0 0 auto;
   padding: 0.1rem 0.55rem;
@@ -190,27 +168,73 @@
   pointer-events: none;
 }
 
-// ── fallback buttons (no-frame state) ──────────────────────────────────────
+// The team-count control's live row grid — the shape the calibration
+// submit saves, re-spread over the drawn box as the counts change. A
+// distinct soft-white (the detector's guides stay cyan) so the two layers
+// read apart; the seam is dashed to echo the selection border.
+.ml-countgrid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgb(255 255 255 / 38%);
+  pointer-events: none;
+}
 
-.ml-btn {
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid rgb(255 255 255 / 25%);
-  background: rgb(10 14 20 / 85%);
-  color: rgb(236 241 246);
+.ml-countgrid-line--seam {
+  top: 0;
+  bottom: 0;
+  right: auto;
+  width: 0;
+  border-left: 1px dashed rgb(255 255 255 / 45%);
+  background: none;
+  height: auto;
+}
+
+// ── team-count control (calibration editor, bottom-right over the stage) ──
+// A literal-dark card like the metaline, anchored inside .ml-stage; the
+// number fields are standard HkNumberInputs (sm).
+.ml-count {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: calc(100% - 20px);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgb(10 14 20 / 88%);
+  border: 1px solid rgb(255 255 255 / 14%);
+}
+
+.ml-count__hint {
+  color: rgb(255 255 255 / 55%);
   font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1.5;
-  cursor: pointer;
 }
 
-.ml-btn--primary {
-  background: rgb(45 160 110 / 92%);
-  border-color: transparent;
+.ml-count__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.ml-btn:hover {
-  filter: brightness(1.15);
+.ml-count__team {
+  flex: 0 0 auto;
+  color: rgb(236 241 246);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+// The standard number field, sized for the compact card; its colors stay
+// the hikari theme's own (no hand-rolled skin).
+.ml-count .hk-number-input {
+  flex: 0 1 96px;
+  min-width: 72px;
 }
 
 // ── reference-image selector row (bottom strip, above the footer) ─────────
@@ -241,20 +265,18 @@
   padding-bottom: 2px;
 }
 
+/* Gallery tiles — the only custom controls left in the strip (paste/file
+   are standard HkButtons now): a fixed 3:1.7 tile, the capture letterboxed
+   inside. */
 .ml-shot {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
+  padding: 0;
+  border-radius: 6px;
   border: 1px solid rgb(255 255 255 / 22%);
   background: rgb(10 14 20 / 85%);
-  color: rgb(236 241 246);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  line-height: 1.5;
-  white-space: nowrap;
+  overflow: hidden;
   cursor: pointer;
 }
 
@@ -265,15 +287,11 @@
 /* The displayed source: the same pressed green the guides toggle carries. */
 .ml-shot--on {
   border-color: rgb(96 214 164 / 65%);
-  color: rgb(126 231 183);
 }
 
-/* Gallery thumbnails: a fixed 3:1.7 tile, the capture letterboxed inside. */
 .ml-shot--thumb {
   width: 57px;
   height: 34px;
-  padding: 0;
-  overflow: hidden;
 }
 
 .ml-shot--thumb img {

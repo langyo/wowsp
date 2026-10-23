@@ -428,6 +428,32 @@ fn placeholder_team_sizes(class: BattleClass) -> (usize, usize) {
     }
 }
 
+/// Validate the calibration editor's per-team count override (the
+/// bottom-right control): allies 1..=12; enemies 1..=12 on the two-team
+/// PvP table, exactly 0 on the single-team PvE layout. `None` = no
+/// override — the entry's stored shape stands. Rosters actually fielded
+/// between battles differ (12v12 one match, 10v10 the next), so the editor
+/// must be able to re-shape the grid the drawing is aligned to.
+fn editor_team_sizes(
+    class: BattleClass,
+    sizes: Option<(u32, u32)>,
+) -> anyhow::Result<Option<(usize, usize)>> {
+    let Some((allies, enemies)) = sizes else {
+        return Ok(None);
+    };
+    let ok = (1..=12).contains(&allies)
+        && match class {
+            BattleClass::Pvp => (1..=12).contains(&enemies),
+            BattleClass::Pve => enemies == 0,
+        };
+    if !ok {
+        return Err(anyhow!(
+            "team sizes ({allies},{enemies}) out of range — allies 1..=12, enemies 1..=12 (PvE: 0)"
+        ));
+    }
+    Ok(Some((allies as usize, enemies as usize)))
+}
+
 /// Placeholder column split matching [`placeholder_team_sizes`] — PvE's
 /// single-team layout carries no red half.
 fn placeholder_team_split(class: BattleClass) -> f32 {
@@ -523,6 +549,13 @@ pub async fn overlay_calibration_list()
 /// geometry matches reject its empty screen/origin), but the remap fallback
 /// — which compares only kind and proportions — adopts the drawing
 /// immediately; the next successful detection replaces the entry wholesale.
+///
+/// `team_sizes` is the editor's per-team count override (the bottom-right
+/// control): rosters differ between battles (12v12 one match, 10v10 the
+/// next) and the stored shape can be stale, so the user re-shapes the grid
+/// to the roster the drawing was aligned against. The override drives BOTH
+/// the row re-spread AND the band detection's `rows_wanted`, and a zeroed
+/// enemy half (PvE) pins the single-team split.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn set_calibration_anchor(
@@ -534,6 +567,7 @@ pub async fn set_calibration_anchor(
     height: i32,
     source: Option<wowsp_tauri_shared::ManualLocateSource>,
     kind: Option<String>,
+    team_sizes: Option<(u32, u32)>,
 ) -> CommandResult<()> {
     let class = if class == "pve" {
         BattleClass::Pve
@@ -629,8 +663,15 @@ pub async fn set_calibration_anchor(
         width: ((width as f32 * fx).round() as i32).max(1),
         height: ((height as f32 * fy).round() as i32).max(1),
     };
-    let team_sizes = entry.team_sizes;
-    let split = entry.roster.team_split;
+    let team_sizes = match editor_team_sizes(class, team_sizes)? {
+        Some(sizes) => sizes,
+        None => entry.team_sizes,
+    };
+    let split = if team_sizes.1 == 0 {
+        1.0
+    } else {
+        entry.roster.team_split
+    };
     let rows = super::manual::manual_row_centers(&sel, team_sizes);
     // Band: prefer the REAL header bars detected on the reference frame,
     // scaled through the frame's working-px scale into the entry's; fall
@@ -666,10 +707,15 @@ pub async fn set_calibration_anchor(
 }
 
 /// Resolve the editor's reference image into raw RGBA: a gallery capture
-/// (by stamp — a stamp that aged out is an ERROR, not a silent re-target:
-/// the drawn box belongs to the pixels of the image it was drawn on) or
-/// the custom base64 image. `Ok(None)` when nothing is available at all
-/// (no game window → no captures, or a missing/undecodable image).
+/// (by stamp — a stamp that no longer exists is an ERROR, not a silent
+/// re-target: the drawn box belongs to the pixels of the image it was
+/// drawn on) or the custom base64 image. A chosen stamp resolves from the
+/// memory ring OR the disk archive with no live game window — the frame
+/// carries its own rect, and editing against the archive long after the
+/// game closed is the whole point of the disk cache. With no chosen frame:
+/// the freshest capture while the game is up, else the newest archived
+/// one. `Ok(None)` when nothing is available at all (or a missing /
+/// undecodable image).
 #[cfg(target_os = "windows")]
 fn resolve_reference_frame(
     source: &Option<wowsp_tauri_shared::ManualLocateSource>,
@@ -677,20 +723,21 @@ fn resolve_reference_frame(
     match source {
         Some(s) if s.kind == "image" => Ok(s.image_base64.as_deref().and_then(decode_image)),
         _ => {
-            let Some(game) = super::game_window::find_game_window() else {
-                return Ok(None);
-            };
-            let rect = rect_from_win32(game.rect);
-            match source.as_ref().and_then(|s| s.at_ms) {
-                Some(at) => match super::overlay_manual::frame_by_stamp(at, &rect) {
+            if let Some(at) = source.as_ref().and_then(|s| s.at_ms) {
+                return match super::overlay_manual::frame_by_stamp(at) {
                     Some((rgba, w, h, _, _)) => Ok(Some((rgba, w, h))),
                     None => Err(anyhow!(
                         "the chosen capture is no longer available — pick an image again"
                     )),
-                },
-                None => Ok(super::overlay_manual::fresh_frame_for(&rect)
-                    .map(|(rgba, w, h, _, _)| (rgba, w, h))),
+                };
             }
+            let fresh = match super::game_window::find_game_window() {
+                Some(game) => super::overlay_manual::fresh_frame_for(&rect_from_win32(game.rect)),
+                None => None,
+            };
+            Ok(fresh
+                .or_else(super::overlay_manual::newest_frame_any_age)
+                .map(|(rgba, w, h, _, _)| (rgba, w, h)))
         },
     }
 }
@@ -1012,6 +1059,53 @@ impl CalibrationCtx {
         }
     }
 
+    /// Re-shape the stored entry after the geometry cache rebuilt its grid
+    /// for a battle whose roster size differs from the stored one (10v10
+    /// after a calibrated 12v12 — the arena hint the rebuild used is the
+    /// live truth). Band, proportions and split stay; team sizes and the
+    /// row grid take the rebuilt shape, so the remap fallback's shape
+    /// comparison and the settings list keep describing the battles
+    /// actually played instead of the ones long gone. No-op on any identity
+    /// mismatch, a suspect entry, or an unchanged shape.
+    pub(super) fn note_shape(
+        &mut self,
+        key: &LiveKey,
+        team_sizes: (usize, usize),
+        roster: &DetectedRoster,
+    ) {
+        if self.path.is_none() {
+            return;
+        }
+        self.sync_with_disk();
+        let class = key.class;
+        let changed = {
+            let Some(entry) = self.store.entry_mut(class) else {
+                return;
+            };
+            if entry.suspect
+                || !entry_matches_geometry(entry, key)
+                || entry.team_sizes == team_sizes
+            {
+                return;
+            }
+            // Same window geometry is the match contract above, so the
+            // rebuilt roster lives in the entry's own coordinate space.
+            entry.team_sizes = team_sizes;
+            entry.roster.rect = roster.rect;
+            entry.roster.row_centers = roster.row_centers.clone();
+            true
+        };
+        if changed {
+            self.persist();
+            tracing::info!(
+                class = ?class,
+                allies = team_sizes.0,
+                enemies = team_sizes.1,
+                "anchor calibration: entry re-shaped to the current battle's roster size"
+            );
+        }
+    }
+
     /// Proportional remap of the class's stored geometry onto the CURRENT
     /// window — the persistent-failure fallback (detection keeps failing,
     /// or its result was vetoed): the stored band/roster proportions scale
@@ -1194,6 +1288,74 @@ mod tests {
         assert_eq!(placeholder_team_split(BattleClass::Pvp), 0.5);
         assert_eq!(placeholder_team_sizes(BattleClass::Pve), (9, 0));
         assert!(placeholder_team_split(BattleClass::Pve) >= 0.999);
+    }
+
+    #[test]
+    fn editor_team_sizes_validate_per_class() {
+        // No override passes through as None.
+        assert_eq!(editor_team_sizes(BattleClass::Pvp, None).unwrap(), None);
+        // The 12v12-after-a-10v10 reshaping the control exists for…
+        assert_eq!(
+            editor_team_sizes(BattleClass::Pvp, Some((12, 12))).unwrap(),
+            Some((12, 12))
+        );
+        assert_eq!(
+            editor_team_sizes(BattleClass::Pvp, Some((10, 10))).unwrap(),
+            Some((10, 10))
+        );
+        // Asymmetric rosters are legal on the two-team table…
+        assert_eq!(
+            editor_team_sizes(BattleClass::Pvp, Some((12, 6))).unwrap(),
+            Some((12, 6))
+        );
+        // …but a zeroed enemy half is PvE-only, and both halves have the
+        // same 1..=12 span.
+        assert!(editor_team_sizes(BattleClass::Pvp, Some((10, 0))).is_err());
+        assert!(editor_team_sizes(BattleClass::Pvp, Some((0, 10))).is_err());
+        assert!(editor_team_sizes(BattleClass::Pvp, Some((13, 12))).is_err());
+        assert!(editor_team_sizes(BattleClass::Pvp, Some((12, 13))).is_err());
+        // PvE carries the ally count only; any enemy is refused.
+        assert_eq!(
+            editor_team_sizes(BattleClass::Pve, Some((9, 0))).unwrap(),
+            Some((9, 0))
+        );
+        assert!(editor_team_sizes(BattleClass::Pve, Some((9, 9))).is_err());
+    }
+
+    #[test]
+    fn note_shape_reshapes_a_matching_entry() {
+        let k = key(BattleClass::Pvp);
+        let mut ctx = ctx_with_entry(&k, STABLE_PRESSES_TO_CERTIFY);
+        // A 10v10 battle after the stored 7v7: the rebuilt roster replaces
+        // the shape and the grid, the streak and suspect flag stay.
+        let rebuilt = DetectedRoster {
+            rect: wowsp_tauri_shared::Rect {
+                x: 300,
+                y: 40,
+                width: 400,
+                height: 500,
+            },
+            row_centers: vec![90, 140, 190, 240],
+            team_split: 0.5,
+        };
+        ctx.note_shape(&k, (10, 10), &rebuilt);
+        let e = ctx.store.entry(BattleClass::Pvp).unwrap();
+        assert_eq!(e.team_sizes, (10, 10));
+        assert_eq!(e.roster.row_centers, rebuilt.row_centers);
+        assert_eq!(e.roster.rect, rebuilt.rect);
+        assert_eq!(e.stable_presses, STABLE_PRESSES_TO_CERTIFY);
+        assert!(!e.suspect);
+        // An unchanged shape is a no-op (no rewrite)…
+        ctx.note_shape(&k, (10, 10), &rebuilt);
+        // …and so is a different client geometry: another window size never
+        // reshapes this entry.
+        let mut resized = k.clone();
+        resized.size = (1920, 1080);
+        ctx.note_shape(&resized, (8, 8), &rebuilt);
+        assert_eq!(
+            ctx.store.entry(BattleClass::Pvp).unwrap().team_sizes,
+            (10, 10)
+        );
     }
 
     #[test]

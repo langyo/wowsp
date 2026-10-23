@@ -64,13 +64,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
-  }
-
-  &__class-label {
-    flex: 0 0 auto;
-    font-size: var(--hi-text-sm, 0.8125rem);
-    font-weight: 600;
+    gap: var(--hi-space-8, 8px) var(--hi-space-8, 8px);
   }
 
   &__badges {
@@ -78,27 +72,28 @@
     gap: 4px;
   }
 
-  // Labeled readouts (table rect / rows / teams / window identity): a
-  // muted label before each mono, tabular value so a column of cards reads
-  // scanable; the window identity's tooltip carries the screen fingerprint.
+  // Readout TAGS (table rect / rows / teams / window identity): each is a
+  // HkTag chip carrying a muted label before a mono, tabular value; the
+  // window identity's tooltip carries the screen fingerprint. The wrapping
+  // span exists for the tooltip only (HkTag takes no title prop).
   &__field {
     display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
     min-width: 0;
   }
 
-  &__field-label {
+  &__tag-label {
     flex: 0 0 auto;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
     white-space: nowrap;
+
+    &::after {
+      content: " ";
+    }
   }
 
-  &__field-value {
+  &__tag-value {
     flex: 0 0 auto;
     font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: var(--hi-text-xs, 0.75rem);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -111,10 +106,5 @@
     display: inline-flex;
     flex: 0 0 auto;
     margin-left: auto;
-  }
-
-  &__missing {
-    color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
   }
 }
