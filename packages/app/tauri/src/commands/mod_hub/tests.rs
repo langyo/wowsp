@@ -3064,7 +3064,11 @@ fn install_refuses_a_symlinked_directory_inside_the_source_tree() {
     // Top-level layout classification does not descend into gui/, so the
     // plan is fresh; the copy walk is where the link must be refused.
     let plan = classify_package(&pkg).expect("plain top-level layout classifies");
-    let err = install_plan(&pkg, game.to_str().unwrap(), &plan).unwrap_err();
+    // `.err().expect(...)`, not `.unwrap_err()`: PlanApply deliberately
+    // carries no `Debug` impl, and the refusal path needs no one.
+    let err = install_plan(&pkg, game.to_str().unwrap(), &plan)
+        .err()
+        .expect("install must refuse a reparse-point source entry");
     let msg = err.to_string();
     assert!(msg.contains("reparse point"), "policy named: {msg}");
     assert!(msg.contains("linked"), "entry named: {msg}");
