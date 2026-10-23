@@ -1,11 +1,12 @@
 import { computed, defineComponent, onUnmounted, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { AlertTriangle, ArrowLeftRight, GitBranch, List, RotateCcw, Ship } from "@lucide/vue";
+import { ArrowLeftRight, GitBranch, List, RotateCcw, Ship } from "@lucide/vue";
 
 import { HkAlert, HkButton, HkInput, HkScrollContainer, HkSpinner, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
+import ErrorCard from "@/components/base/ErrorCard";
 import TechTreeView from "@/components/ships/TechTreeView";
 import { useTechTreePan } from "@/components/ships/techTreePan";
 import ShipCompareView from "@/components/ships/ShipCompareView";
@@ -349,11 +350,11 @@ export default defineComponent({
         {/* ── error banner (shown above content when data already exists) ── */}
         {encyclopedia.error && encyclopedia.ships.length > 0 ? (
           <div class="ships-view__error-banner">
-            <AlertTriangle size={16} />
-            <span>{encyclopedia.error}</span>
-            <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
-              <RotateCcw size={12} /> {t("ships.retry")}
-            </HkButton>
+            <ErrorCard
+              error={encyclopedia.error}
+              retry={() => void loadEncyclopedia(true)}
+              retryLabel={t("ships.retry")}
+            />
           </div>
         ) : null}
 
@@ -481,12 +482,12 @@ export default defineComponent({
         {/* ── view body: tree, grid or compare ── */}
         <Transition name="s-fade-slide" mode="out-in">
           {encyclopedia.error && encyclopedia.ships.length === 0 ? (
-            <div class="ships-view__status ships-view__status--error" key="error">
-              <AlertTriangle size={24} />
-              <p>{encyclopedia.error}</p>
-              <HkButton variant="secondary" size="sm" onClick={() => void loadEncyclopedia(true)}>
-                <RotateCcw size={12} /> {t("ships.reload")}
-              </HkButton>
+            <div class="ships-view__status" key="error">
+              <ErrorCard
+                error={encyclopedia.error}
+                retry={() => void loadEncyclopedia(true)}
+                retryLabel={t("ships.reload")}
+              />
             </div>
           ) : shipsUi.viewMode === "tree" ? (
             /* The single both-axis scroller: hikari's overlay bars paint

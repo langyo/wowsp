@@ -1,27 +1,27 @@
 import { computed, defineComponent, type PropType } from "vue";
 
-import { HkAlert, HkScrollContainer } from "@celestia-island/hikari";
-
+import ErrorCard from "@/components/base/ErrorCard";
 import type { LookupErrorPayload } from "@/transport/types";
 import { t } from "@/i18n";
-import "./LookupErrorNotice.scss";
 
 /** The official API's rate-limit marker — when it shows up in the raw
- *  message/detail, the notice appends its own "wait and retry" hint
- *  instead of leaving the user with a bare generic failure. */
+ *  message/detail, the api-error card appends its own "wait and retry"
+ *  hint instead of leaving the user with a bare generic failure. */
 const RATE_LIMIT_RE = /REQUEST_LIMIT_EXCEEDED/i;
 
 /**
- * Friendly rendering of a failed stats lookup, replacing the raw red
- * backend string:
- *   - "not found" (warning variant): localized title + explanation +
- *     likely causes (typo / deleted account / wrong realm), a highlighted
- *     line when this exact player was looked up successfully before (a now
- *     missing account was most likely deleted), and the raw English
- *     backend message collapsed for power users;
- *   - API failure (error variant): generic "could not complete" copy with
- *     a rate-limit hint when the official API says so, plus the raw error
- *     expandable. Without a structured payload the raw string IS the body.
+ * Friendly rendering of a failed stats lookup on the standard error card
+ * (the raw backend string lives in the card's JSON pane, never as a bare
+ * red sentence):
+ *   - "not found" (warning tone): localized title + explanation + likely
+ *     causes (typo / deleted account / wrong realm) folded into the
+ *     description, plus a closing line when this exact player was looked
+ *     up successfully before (a now missing account was most likely
+ *     deleted); the structured payload feeds the raw JSON pane;
+ *   - API failure (error tone): generic "could not complete" copy with a
+ *     rate-limit hint when the official API says so. Without a structured
+ *     payload the raw string IS the description (tError passes plain
+ *     sentences through untouched).
  */
 export default defineComponent({
   name: "LookupErrorNotice",
@@ -49,73 +49,63 @@ export default defineComponent({
       const p = props.payload;
       if (notFound.value && p) {
         const isPlayer = p.kind === "account_not_found";
-        const desc = isPlayer
-          ? t("lookup.error.playerNotFoundDesc", { name: p.query, realm: realmUpper.value })
-          : t("lookup.error.clanNotFoundDesc", { query: p.query, realm: realmUpper.value });
+        // The card description stacks the canned explanation, the likely
+        // causes (bulleted so they read as one compact block inside the
+        // newline-rendering description), and — the strongest signal when
+        // present — the "seen before but gone now" deletion verdict.
+        const blocks = [
+          isPlayer
+            ? t("lookup.error.playerNotFoundDesc", { name: p.query, realm: realmUpper.value })
+            : t("lookup.error.clanNotFoundDesc", { query: p.query, realm: realmUpper.value }),
+        ];
+        if (isPlayer) {
+          blocks.push(
+            [
+              t("lookup.error.causeTypo"),
+              t("lookup.error.causeDeleted"),
+              t("lookup.error.causeRealm", { realm: realmUpper.value }),
+            ]
+              .map((line) => `· ${line}`)
+              .join("\n"),
+          );
+        } else {
+          blocks.push(`· ${t("lookup.error.clanNotFoundCause")}`);
+        }
+        if (props.seenBefore) blocks.push(t("lookup.error.seenBefore"));
         return (
-          <div class="lookup-error-notice">
-            <HkAlert variant="warning" title={isPlayer ? t("lookup.error.playerNotFoundTitle") : t("lookup.error.clanNotFoundTitle")} message={desc}>
-              <div class="lookup-error-notice__body">
-                <p class="lookup-error-notice__desc">{desc}</p>
-                {isPlayer ? (
-                  <>
-                    <div class="lookup-error-notice__causes-title">
-                      {t("lookup.error.causesTitle")}
-                    </div>
-                    <ul class="lookup-error-notice__causes">
-                      <li>{t("lookup.error.causeTypo")}</li>
-                      <li>{t("lookup.error.causeDeleted")}</li>
-                      <li>{t("lookup.error.causeRealm", { realm: realmUpper.value })}</li>
-                    </ul>
-                  </>
-                ) : (
-                  <p class="lookup-error-notice__cause">{t("lookup.error.clanNotFoundCause")}</p>
-                )}
-                {props.seenBefore ? (
-                  <p class="lookup-error-notice__seen">{t("lookup.error.seenBefore")}</p>
-                ) : null}
-                {/* The historical English backend string — collapse for
-                    power users filing an issue, don't lead with it. The
-                    capped box is a hikari scroll container (overlay bar). */}
-                <details class="lookup-error-notice__raw">
-                  <summary>{t("lookup.error.rawDetail")}</summary>
-                  <HkScrollContainer class="lookup-error-notice__raw-detail">
-                    <code>{p.message}</code>
-                  </HkScrollContainer>
-                </details>
-              </div>
-            </HkAlert>
-          </div>
+          <ErrorCard
+            tone="warning"
+            title={isPlayer ? t("lookup.error.playerNotFoundTitle") : t("lookup.error.clanNotFoundTitle")}
+            description={blocks.join("\n\n")}
+            detail={p}
+            code={p.kind}
+          />
         );
       }
 
       // API failure — structured or raw-only. No structured payload and no
       // raw text means nothing to say (defensive; LookupView only mounts
-      // this component when an error exists).
-      if (!p && props.raw == null) return null;
-      const rawOnly = p == null;
-      const desc = rawOnly ? props.raw! : t("lookup.error.apiErrorDesc");
+      // this component when an error exists). Falsy check, not == null: an
+      // empty-string raw would otherwise mount the card with an empty
+      // details pane.
+      if (!p && !props.raw) return null;
+      if (!p) {
+        return <ErrorCard title={t("lookup.error.apiErrorTitle")} error={props.raw} />;
+      }
       return (
-        <div class="lookup-error-notice">
-          <HkAlert variant="error" title={t("lookup.error.apiErrorTitle")} message={desc}>
-            <div class="lookup-error-notice__body">
-              <p class="lookup-error-notice__desc">{desc}</p>
-              {rateLimited.value ? (
-                <p class="lookup-error-notice__rate">{t("lookup.error.rateLimitHint")}</p>
-              ) : null}
-              {!rawOnly ? (
-                <details class="lookup-error-notice__raw">
-                  <summary>{t("lookup.error.rawDetail")}</summary>
-                  {/* `message` already embeds the official detail verbatim
-                      ("account/list: <detail>") — don't append it twice. */}
-                  <HkScrollContainer class="lookup-error-notice__raw-detail">
-                    <code>{p!.message}</code>
-                  </HkScrollContainer>
-                </details>
-              ) : null}
-            </div>
-          </HkAlert>
-        </div>
+        <ErrorCard
+          title={t("lookup.error.apiErrorTitle")}
+          // `message` already embeds the official detail verbatim
+          // ("account/list: <detail>") — the canned description must not
+          // duplicate it; the raw pair stays visible in the JSON pane.
+          description={
+            rateLimited.value
+              ? `${t("lookup.error.apiErrorDesc")}\n\n${t("lookup.error.rateLimitHint")}`
+              : t("lookup.error.apiErrorDesc")
+          }
+          detail={p}
+          code={p.kind}
+        />
       );
     };
   },

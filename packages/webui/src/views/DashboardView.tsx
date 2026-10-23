@@ -11,6 +11,7 @@ import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import SScrollTop from "@/components/base/SScrollTop";
+import ErrorCard from "@/components/base/ErrorCard";
 import { AssetImage } from "@/components/base/AssetImage";
 import { useShipDetail } from "@/composables/useShipDetail";
 import { useAccountStore } from "@/stores/account";
@@ -555,7 +556,7 @@ export default defineComponent({
               </section>
             </div>
           ) : stats.error ? (
-            <div class="dashboard-view__error" key="error">{stats.error}</div>
+            <ErrorCard error={stats.error} key="error" />
           ) : null}
             </Transition>
           </div>

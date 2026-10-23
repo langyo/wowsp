@@ -19,6 +19,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import ErrorCard from "@/components/base/ErrorCard";
 import {
   buildPathTree,
   splitGameRootFiles,
@@ -206,7 +207,7 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
         <HkScrollContainer class="file-window__main">
           <div class="file-window__main-inner">
           {files.error.value && (
-            <div class="resources-banner resources-banner--error">{files.error.value}</div>
+            <ErrorCard error={files.error.value} />
           )}
           {files.loading.value && target.entry ? (
             renderProgress(ctx, `preview:${target.entry.id}`)

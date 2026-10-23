@@ -20,6 +20,7 @@ import { computed, defineComponent, ref } from "vue";
 
 import { HkSpinner } from "@celestia-island/hikari";
 
+import ErrorCard from "@/components/base/ErrorCard";
 import ShipFilterBar, { type FilterState } from "@/components/ships/ShipFilterBar";
 import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -212,9 +213,9 @@ export default defineComponent({
             <HkSpinner size="sm" />
           </div>
         ) : ranked.shipsError ? (
-          <p class="ranked-ships__state ranked-ships__state--error">
-            {t("stats.rankedShipsError")}
-          </p>
+          /* Load failure — the standard error card: the localized sentence
+             leads, the raw backend failure rides structured in the pane. */
+          <ErrorCard error={ranked.shipsError} description={t("stats.rankedShipsError")} />
         ) : baseRows.value.length === 0 ? (
           <p class="ranked-ships__state">{t("stats.rankedShipsEmpty")}</p>
         ) : (

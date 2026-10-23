@@ -13,6 +13,7 @@ import {
 } from "@celestia-island/hikari";
 
 import type { PlanFile } from "@/api";
+import ErrorCard from "@/components/base/ErrorCard";
 import {
   keptPending,
   masterChecked,
@@ -159,16 +160,8 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
         },
       ];
     }
-    if (step === "plan" && ctx.migError.value) {
-      return [
-        cancel,
-        {
-          label: t("common.retry"),
-          variant: "primary" as const,
-          onClick: () => void ctx.loadMigPlan(),
-        },
-      ];
-    }
+    // A failed analysis (step "plan") seats its retry on the error card
+    // itself — the footer keeps only the cancel affordance.
     return [cancel];
   })();
 
@@ -214,7 +207,9 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
         )}
         {step === "plan" &&
           (ctx.migError.value ? (
-            <div class="resources-banner resources-banner--error">{ctx.migError.value}</div>
+            // The analysis failed — the card's retry replaces the modal
+            // footer's error-only retry action (single obvious way back).
+            <ErrorCard error={ctx.migError.value} retry={() => void ctx.loadMigPlan()} />
           ) : (
             <p class="mig-wizard__status">
               <HkSpinner size="sm" tone="current" />
@@ -238,7 +233,7 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
               />
             )}
             {ctx.migError.value && (
-              <div class="resources-banner resources-banner--error">{ctx.migError.value}</div>
+              <ErrorCard error={ctx.migError.value} />
             )}
             {plan.duplicate.length +
               plan.superseded.length +

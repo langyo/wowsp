@@ -25,12 +25,6 @@
     }
   }
 
-  &__error {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-error));
-  }
-
   /* The account list's capped window: hikari's scroll container owns
      the scrollbar (auto-hiding overlay track); the cards scroll inside
      its viewport. */

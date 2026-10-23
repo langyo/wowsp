@@ -106,23 +106,4 @@
     font-size: var(--text-lg);
     font-weight: 700;
   }
-
-  &__error {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background: rgb(var(--color-danger, 240 80 80) / 10%);
-    border: 1px solid rgb(var(--color-danger, 240 80 80) / 30%);
-    border-radius: var(--radius-md);
-  }
-
-  &__error-msg {
-    flex: 1;
-    min-width: 0;
-    font-size: var(--text-xs);
-    line-height: 1.5;
-    color: rgb(var(--color-text));
-    word-break: break-all;
-  }
 }

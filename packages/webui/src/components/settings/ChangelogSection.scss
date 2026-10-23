@@ -17,12 +17,6 @@
     font-size: var(--hi-text-sm, 0.8125rem);
   }
 
-  &__error {
-    margin: 0;
-    color: var(--hi-color-danger);
-    font-size: var(--hi-text-sm, 0.8125rem);
-  }
-
   &__empty {
     margin: 0;
     color: var(--hi-color-text-secondary);

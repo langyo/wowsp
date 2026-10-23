@@ -1,7 +1,8 @@
 import { computed, defineComponent, watch } from "vue";
 
-import { HkButton, HkSpinner } from "@celestia-island/hikari";
+import { HkSpinner } from "@celestia-island/hikari";
 
+import ErrorCard from "@/components/base/ErrorCard";
 import { useTrendsStore } from "@/stores/trends";
 import { t } from "@/i18n";
 import { damageColor, winrateColor } from "@/utils/winrate";
@@ -86,14 +87,14 @@ export default defineComponent({
             <HkSpinner center size="md" />
           </div>
         ) : trends.serverError ? (
-          <div class="server-trend__error">
-            <span class="server-trend__error-msg">
-              {t("ships.detail.server.failed", { error: trends.serverError })}
-            </span>
-            <HkButton size="sm" variant="secondary" onClick={() => void trends.loadServerStats(props.shipId)}>
-              {t("common.retry")}
-            </HkButton>
-          </div>
+          /* The localized failure sentence (raw error interpolated) stays
+             the visible description; the raw message itself is structured
+             in the card's JSON pane, and retry re-runs the fetch. */
+          <ErrorCard
+            error={trends.serverError}
+            description={t("ships.detail.server.failed", { error: trends.serverError })}
+            retry={() => void trends.loadServerStats(props.shipId)}
+          />
         ) : trends.serverStats ? (
           <>
             {/* Averages report cards */}

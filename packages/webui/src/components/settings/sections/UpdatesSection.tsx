@@ -6,6 +6,7 @@ import { defineComponent, type PropType } from "vue";
 import { HkButton, HkInput, HkSettingsGroup, HkSettingsHint } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import ErrorCard from "@/components/base/ErrorCard";
 import { isMobileApp } from "@/utils/platform";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
 
@@ -54,9 +55,7 @@ export default defineComponent({
                 {updater.running ? (
                   <span class="settings-modal__pack-update">{updater.statusText}</span>
                 ) : null}
-                {updater.error ? (
-                  <span class="settings-modal__pack-error">{updater.error}</span>
-                ) : null}
+                {updater.error ? <ErrorCard error={updater.error} /> : null}
               </div>
               <div class="settings-modal__pack-actions">
                 {updater.portable ? (

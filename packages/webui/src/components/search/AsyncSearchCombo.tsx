@@ -31,6 +31,7 @@ import {
 import { Search } from "@lucide/vue";
 
 import { t } from "@/i18n";
+import ErrorCard from "@/components/base/ErrorCard";
 
 import "./AsyncSearchCombo.scss";
 
@@ -228,8 +229,12 @@ export default defineComponent({
                 debounce={props.debounceMs}
               />
               {error.value ? (
-                <div class="async-search-combo__hint async-search-combo__hint--error">
-                  {error.value}
+                /* Failed query — the standard inline error card. The panel
+                   is HkPopover's max-content box, so it widens to seat the
+                   card (up to its 440px cap) instead of crushing it; the
+                   wrapper only restores the hint row's top spacing. */
+                <div class="async-search-combo__error">
+                  <ErrorCard error={error.value} />
                 </div>
               ) : loading.value ? (
                 <div class="async-search-combo__hint">{props.searchingText}</div>

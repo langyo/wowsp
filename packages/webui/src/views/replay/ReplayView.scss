@@ -659,6 +659,9 @@
     display: flex;
   }
 
+  /* Fills a state area and centers whatever sits in it — plain muted text
+     for the empty states, the standard ErrorCard for failures (the card
+     brings its own error styling). */
   &__placeholder {
     flex: 1;
     display: flex;
@@ -666,16 +669,12 @@
     justify-content: center;
     color: rgb(var(--color-muted));
     font-size: var(--text-md);
-
-    &--error {
-      color: rgb(var(--color-error));
-    }
   }
 
   /* Keep the column's right gutter on the non-scrolling top-level states.
      Scoped to the scroll wrapper's direct children (the placeholders the
-     view renders top-level): error placeholders nested inside __content
-     must not stack the gutter twice. */
+     view renders top-level): placeholders nested inside __content must not
+     stack the gutter twice. */
   &__main-inner > &__placeholder {
     padding-right: 1.5rem;
   }

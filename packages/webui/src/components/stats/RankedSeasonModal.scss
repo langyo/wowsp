@@ -36,7 +36,8 @@ $dot-y: calc(#{$node-pad-t} + 1.25rem + 0.3rem + #{$dot * 0.5});
     color: rgb(var(--color-muted));
   }
 
-  /* Loading / empty / error states share one centered block. */
+  /* Loading / empty states share one centered block (failures render
+     through the standard ErrorCard instead). */
   &__state {
     margin: 0;
     padding: 2.5rem 1rem;
@@ -46,10 +47,6 @@ $dot-y: calc(#{$node-pad-t} + 1.25rem + 0.3rem + #{$dot * 0.5});
     gap: 0.6rem;
     text-align: center;
     color: rgb(var(--color-muted));
-
-    &--error {
-      color: rgb(var(--color-error));
-    }
   }
 
   /* ── Horizontal timeline strip: hikari's HkScrollContainer owns the

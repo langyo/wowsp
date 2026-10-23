@@ -6,6 +6,7 @@ import { HkButton, HkSettingsGroup, HkSettingsHint, HkSpinner } from "@celestia-
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useChangelogStore } from "@/stores/changelog";
+import ErrorCard from "@/components/base/ErrorCard";
 import ReleaseMarkdown from "./ReleaseMarkdown";
 import "./ChangelogSection.scss";
 
@@ -66,12 +67,13 @@ export default defineComponent({
         </div>
         <HkSettingsHint>{t("settings.changelogHint")}</HkSettingsHint>
         {changelog.error && !changelog.releases.length ? (
-          <div class="changelog__state">
-            <p class="changelog__error">{t("settings.changelogFailed")}</p>
-            <HkButton size="sm" onClick={() => void changelog.refresh()}>
-              {t("common.retry")}
-            </HkButton>
-          </div>
+          /* Feed-fetch failure — the standard error card: the localized
+             sentence leads, the raw failure rides structured in the pane. */
+          <ErrorCard
+            error={changelog.error}
+            description={t("settings.changelogFailed")}
+            retry={() => void changelog.refresh()}
+          />
         ) : changelog.loading && !changelog.releases.length ? (
           <div class="changelog__state">
             <HkSpinner size="sm" />
@@ -82,9 +84,10 @@ export default defineComponent({
         ) : (
           <div class="changelog__list">
             {/* A failed refresh keeps the stale feed on screen — the
-                error line rides above it instead of blanking the pane. */}
+                error card rides above it instead of blanking the pane;
+                the header's refresh button is the retry. */}
             {changelog.error ? (
-              <p class="changelog__error">{t("settings.changelogFailed")}</p>
+              <ErrorCard error={changelog.error} description={t("settings.changelogFailed")} />
             ) : null}
             {changelog.releases.map((release) => (
               <article key={release.version} class="changelog__release">

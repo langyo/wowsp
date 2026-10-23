@@ -66,6 +66,7 @@ const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, stri
 import { HkButton, HkIconButton, HkScrollContainer, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
+import ErrorCard from "@/components/base/ErrorCard";
 import {
   nationNameFromDb,
   shipNameFromOfflineDb,
@@ -2110,9 +2111,7 @@ export default defineComponent({
               {parser.current.value ? (
                 <div class="replay-view__content">
                   {parser.error.value ? (
-                    <div class="replay-view__placeholder replay-view__placeholder--error">
-                      {parser.error.value}
-                    </div>
+                    <ErrorCard error={parser.error.value} />
                   ) : null}
                   <header class="replay-view__meta">
                     {/* The map as a jump tag (shared with the live head): hover
@@ -2294,8 +2293,12 @@ export default defineComponent({
                   <div class="replay-view__detail">
                     <div class="replay-view__map-wrap">
                       {trajectoryError.value ? (
-                        <div class="replay-view__placeholder replay-view__placeholder--error">
-                          trajectory decode failed: {trajectoryError.value}
+                        // Hardcoded English on purpose — the trajectory
+                        // decoder is a power-user diagnostic path without a
+                        // translation budget (kept verbatim from the old
+                        // placeholder).
+                        <div class="replay-view__placeholder">
+                          <ErrorCard title="Trajectory decode failed" error={trajectoryError.value} />
                         </div>
                       ) : updater.portable ? (
                         // The portable edition ships no 3D — the
@@ -2349,8 +2352,8 @@ export default defineComponent({
                   </div>
                 </div>
               ) : parser.error.value ? (
-                <div class="replay-view__placeholder replay-view__placeholder--error">
-                  {parser.error.value}
+                <div class="replay-view__placeholder">
+                  <ErrorCard error={parser.error.value} />
                 </div>
               ) : (
                 <div class="replay-view__placeholder">{t("replay.select")}</div>

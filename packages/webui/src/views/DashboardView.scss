@@ -70,18 +70,6 @@
     }
   }
 
-  &__loading,
-  &__error {
-    padding: 2rem;
-    text-align: center;
-    color: rgb(var(--color-muted));
-    font-size: var(--text-sm);
-  }
-
-  &__error {
-    color: rgb(var(--color-error));
-  }
-
   /* Centered content column with a comfortable max-width for readability. */
   &__content {
     display: flex;

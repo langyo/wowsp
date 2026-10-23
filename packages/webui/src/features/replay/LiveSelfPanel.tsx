@@ -32,6 +32,7 @@ import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 import type { ArenaInfo } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import ErrorCard from "@/components/base/ErrorCard";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shareFooterStrings } from "@/features/share/shotKit";
 import { useShareImage } from "@/features/share/useShareImage";
@@ -284,7 +285,7 @@ export default defineComponent({
                   <WaitingRadarArt class="live-self__pending-art" />
                   <p class="live-self__pending-title">{t("replay.live.selfSyncing")}</p>
                   <p class="live-self__pending-hint">{t("replay.live.selfSyncingHint")}</p>
-                  {live.error ? <p class="live-self__pending-err">{live.error}</p> : null}
+                  {live.error ? <ErrorCard class="live-self__pending-err" error={live.error} /> : null}
                 </div>
               ) : (
                 <SelfReportBody model={m} maskOf={masking.maskOf} />

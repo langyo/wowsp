@@ -399,26 +399,13 @@
   }
 }
 
-/* ── Armor-data failure banner ─────────────────────────────────────────────
-   Shows the backend GameParams error inline (the toast is transient) with
-   retry + game-path-setup recovery actions. */
-.ship-detail__gp-error {
+/* ── Armor-data failure recovery row ────────────────────────────────────────
+   The error itself renders through the standard ErrorCard; this row carries
+   the card's SECOND recovery action (game-path setup / PC-pairing sync),
+   which the card's single retry slot cannot seat. */
+.ship-detail__gp-recovery {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background: rgb(var(--color-danger, 240 80 80) / 10%);
-  border: 1px solid rgb(var(--color-danger, 240 80 80) / 30%);
-  border-radius: var(--radius-md);
-}
-
-.ship-detail__gp-error-msg {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  color: rgb(var(--color-text));
-  word-break: break-all;
+  justify-content: flex-end;
 }
 
 /* Event ships: the rarity slot shows the violet 活动·<event name> tag

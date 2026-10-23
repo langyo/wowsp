@@ -48,6 +48,7 @@ import { HkIconButton, HkScrollContainer, HkSpinner } from "@celestia-island/hik
 import { type PlayerStats, type VehicleEntry } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import ErrorCard from "@/components/base/ErrorCard";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import RatingStamp from "@/components/base/RatingStamp";
@@ -674,7 +675,10 @@ export default defineComponent({
 
     return () => {
       const pb = parsed.value;
-      if (!pb) return <pre>{props.raw}</pre>;
+      // Parse-failure fallback: the standard error card — props.raw is the
+      // whole BattleResults payload, which is JSON in practice, so the
+      // card's tree pane structures the exact bytes that refused to parse.
+      if (!pb) return <ErrorCard error={props.raw} />;
       const st = selfTeam.value;
       const isEnemy = (p: (typeof rows.value)[number]) =>
         p.team !== null && (st != null ? p.team !== st : p.team === 1);
