@@ -437,11 +437,19 @@ export default defineComponent({
               </div>
             ) : null}
           </div>
-          <HkCaptchaWidget
-            siteKey={cfg.value?.sitekey ?? ""}
-            attempt={capAttempt.value}
-            onVerify={(token: string) => (captchaToken.value = token)}
-          />
+          {/* Mount only once the config is in: HkCaptchaWidget renders
+              its challenge ONCE at mount, and the sitekey arrives from
+              the async getFeedbackConfig — a widget mounted against the
+              empty default stays a 0-height host forever (the challenge
+              never appeared until this guard). An empty configured
+              sitekey still mounts, into the widget's placeholder mode. */}
+          {cfg.value ? (
+            <HkCaptchaWidget
+              siteKey={cfg.value.sitekey}
+              attempt={capAttempt.value}
+              onVerify={(token: string) => (captchaToken.value = token)}
+            />
+          ) : null}
           <HkButton
             block
             loading={submitting.value}
