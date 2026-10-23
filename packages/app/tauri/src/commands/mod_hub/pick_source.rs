@@ -8,6 +8,12 @@
 //! this session. Same grant-registry shape as the export save grants
 //! (`commands::exports`): sliding TTL so a retry after a failed install
 //! still works, capped because every grant needs a human pick.
+//!
+//! Two clocks bound every grant: the sliding window since its last
+//! successful use, and an ABSOLUTE 24 h cap since its pick. A sliding-only
+//! TTL lets a webview that keeps touching the grant extend it forever —
+//! permanent authorization, the audit M-1 failure shape; the loss radius of
+//! a stolen plaintext-channel session would then be unbounded in time.
 
 use anyhow::anyhow;
 use std::collections::HashMap;
@@ -22,13 +28,36 @@ use wowsp_tauri_shared::CommandResult;
 /// bounding the table to recently-consented folders.
 const SOURCE_GRANT_TTL: Duration = Duration::from_secs(3600);
 
+/// Absolute lifetime of one grant, measured from the pick. `last_used`
+/// alone would let an actively-touched grant live forever (= permanent
+/// authorization, audit M-1): the plaintext pairing channel makes an
+/// unbounded-time loss radius the wrong risk shape, so every grant ages out
+/// 24 h after the human actually picked the folder.
+const SOURCE_GRANT_ABSOLUTE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
 /// Maximum live grants. Every grant needs a real folder pick in the
 /// native dialog — a webview cannot mint grants on its own — so the cap
 /// is table hygiene, not a security boundary.
 const SOURCE_GRANT_CAP: usize = 16;
 
-fn source_grants() -> &'static std::sync::Mutex<HashMap<String, Instant>> {
-    static GRANTS: OnceLock<std::sync::Mutex<HashMap<String, Instant>>> = OnceLock::new();
+/// One live grant: when the folder was picked (absolute-lifetime anchor)
+/// and when it was last used (sliding retry window). Both clocks matter —
+/// see the module docs.
+#[derive(Clone, Copy)]
+struct SourceGrant {
+    created: Instant,
+    last_used: Instant,
+}
+
+/// A grant is live while BOTH clocks hold: inside the sliding window since
+/// its last use and inside the absolute lifetime since its pick.
+fn grant_is_live(grant: &SourceGrant, now: Instant) -> bool {
+    now.duration_since(grant.last_used) < SOURCE_GRANT_TTL
+        && now.duration_since(grant.created) < SOURCE_GRANT_ABSOLUTE_TTL
+}
+
+fn source_grants() -> &'static std::sync::Mutex<HashMap<String, SourceGrant>> {
+    static GRANTS: OnceLock<std::sync::Mutex<HashMap<String, SourceGrant>>> = OnceLock::new();
     GRANTS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
@@ -75,18 +104,24 @@ pub(crate) fn grant_source_path(path: &str) -> anyhow::Result<()> {
     // evicting the oldest survivor. The map is tiny; a linear scan is the
     // cheap and obvious move.
     let now = Instant::now();
-    grants.retain(|_, at| now.duration_since(*at) < SOURCE_GRANT_TTL);
+    grants.retain(|_, grant| grant_is_live(grant, now));
     while grants.len() >= SOURCE_GRANT_CAP {
         let Some(oldest) = grants
             .iter()
-            .min_by_key(|(_, at)| **at)
+            .min_by_key(|(_, grant)| grant.last_used)
             .map(|(p, _)| p.clone())
         else {
             break;
         };
         grants.remove(&oldest);
     }
-    grants.insert(path.to_string(), Instant::now());
+    grants.insert(
+        path.to_string(),
+        SourceGrant {
+            created: Instant::now(),
+            last_used: Instant::now(),
+        },
+    );
     Ok(())
 }
 
@@ -95,10 +130,11 @@ pub(crate) fn grant_source_path(path: &str) -> anyhow::Result<()> {
 pub(crate) fn source_path_granted(path: &str) -> bool {
     let mut grants = source_grants().lock().unwrap_or_else(|p| p.into_inner());
     let now = Instant::now();
-    grants.retain(|_, at| now.duration_since(*at) < SOURCE_GRANT_TTL);
+    grants.retain(|_, grant| grant_is_live(grant, now));
     match grants.get_mut(path) {
-        Some(at) => {
-            *at = now;
+        Some(grant) => {
+            // Only the sliding clock advances; the absolute cap never does.
+            grant.last_used = now;
             true
         },
         None => false,
@@ -178,9 +214,36 @@ mod tests {
         assert!(source_path_granted(path));
         source_grants().lock().unwrap().insert(
             path.to_string(),
-            Instant::now() - SOURCE_GRANT_TTL - Duration::from_secs(1),
+            SourceGrant {
+                created: Instant::now(),
+                last_used: Instant::now() - SOURCE_GRANT_TTL - Duration::from_secs(1),
+            },
         );
         assert!(!source_path_granted(path), "expired grants are refused");
+    }
+
+    /// Sliding use never outlives the absolute cap: a grant that is touched
+    /// constantly still dies 24 h after the pick (permanent authorization is
+    /// the audit M-1 failure shape this closes), and the dead row is pruned.
+    #[test]
+    fn absolute_lifetime_caps_a_constantly_used_grant() {
+        let _guard = grant_test_lock();
+        let path = "C:/tmp/wowsp-source-grant-test/absolute";
+        grant_source_path(path);
+        assert!(source_path_granted(path));
+        source_grants().lock().unwrap().insert(
+            path.to_string(),
+            SourceGrant {
+                created: Instant::now() - SOURCE_GRANT_ABSOLUTE_TTL - Duration::from_secs(1),
+                last_used: Instant::now(),
+            },
+        );
+        let err = ensure_source_granted(path).unwrap_err();
+        assert!(err.to_string().contains("folder picker"), "refused: {err}");
+        assert!(
+            !source_grants().lock().unwrap().contains_key(path),
+            "the absolute-expired row is pruned from the table"
+        );
     }
 
     /// The table is capped and evicts the oldest survivor.
