@@ -1,8 +1,34 @@
 // The console's hikari style base — GRANULAR sheets only, per the repo's
 // cross-repo dependency rule (AGENTS §6): the admin surface is exactly
-// what shittim-chest-style consoles ride (channels → scale → scrollbar →
-// admin-tokens; no aggregate `styles` entry, no vendored copies).
+// what shittim-chest-style consoles ride (reset → channels → scale →
+// scrollbar → admin-tokens; no aggregate `styles` entry, no vendored
+// copies). reset.scss is the canonical composition's FIRST member —
+// skipping it left native controls on UA defaults (UA font inflation,
+// per-control margins/colors) under the hikari components.
+@use "@celestia-island/hikari/styles/reset.scss";
 @use "@celestia-island/hikari/styles/theme/channels.scss";
 @use "@celestia-island/hikari/styles/theme/scale.scss";
 @use "@celestia-island/hikari/styles/theme/scrollbar.scss";
 @use "@celestia-island/hikari/styles/admin-tokens.scss";
+
+// Host canvas — hikari seeds and runtime-flips the --color-* token set
+// (initTheme(): day/night) but never paints the document; the host owns
+// the canvas (the same body rule the website's theme.scss carries).
+// Token-driven so the dark/light flip re-skins both entries coherently:
+// without it the pages rendered light-text tokens over the UA's white
+// body — invisible labels with dark surfaces floating on white.
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: rgb(var(--color-background));
+  color: rgb(var(--color-text));
+  font-family: var(--font-sans);
+  font-size: var(--text-base, 0.9375rem);
+  -webkit-font-smoothing: antialiased;
+}
+
+// Both entries mount at #app; stretch it so the painted canvas covers
+// full-height layouts (the erp login centering) at any content size.
+#app {
+  min-height: 100dvh;
+}
