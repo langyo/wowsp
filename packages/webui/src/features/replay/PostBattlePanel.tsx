@@ -369,8 +369,8 @@ export default defineComponent({
      *  (each configured column carries its own scope) — resolved against
      *  the replayed battle's identity ("follow": ranked → ranked
      *  careers). Rows read each column through `colViewOf`, which
-     *  aggregates the per-ship lists the one-shot pipeline attaches
-     *  while any non-global column is configured. */
+     *  resolves the account careers for the global/solo scopes and the
+     *  attached per-ship lists for the ship/class ones. */
     const battleScope = computed<ResolvedStatsMode>(() =>
       resolveRosterBattleScope(prefs.value.overlayBattleScope, props.head ?? {}),
     );
