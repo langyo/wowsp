@@ -34,7 +34,10 @@ const MAX_MEMO_ENTRIES: usize = 64 * 1024;
 const MAX_CLONED_BYTES: usize = 64 * 1024 * 1024;
 /// `deep_size` recursion guard. Values are built by this very parser, so
 /// anything at or past this depth is hostile by construction; it counts as
-/// the whole budget and trips it.
+/// the whole budget and trips it. Deliberately BELOW [`MAX_VALUE_DEPTH`]
+/// (128): a legal 65..128-deep value is not refused, but memoizing it
+/// charges the full clone budget here, so echoing such a value dies on
+/// the budget instead of the depth — refuse-late either way.
 const DEEP_SIZE_MAX_DEPTH: usize = 64;
 /// Audit M-8 review: MARK nesting builds nested `PyVal`s whose RECURSIVE
 /// DROP overflows the stack on hostile input (~300 KB of MARK+LIST pairs
@@ -67,19 +70,53 @@ fn deep_size(v: &PyVal) -> usize {
     rec(v, 0)
 }
 
+/// The maximum tree height (nesting depth) a parsed value may reach —
+/// the recursive Drop's frame count when the value is discarded. Real
+/// payloads nest 3–5 deep; 128 keeps headroom while refusing a hostile
+/// 2-bytes-per-level `]`+`a` chain (~32k deep inside the 64 KiB arena
+/// blob) long before the drop glue can overflow the stack (audit M-8
+/// follow-up: MARK capping alone left this path unguarded).
+const MAX_VALUE_DEPTH: usize = 128;
+
+/// A parse-stack entry: the value plus its tree height. Heights compose
+/// at every container-building opcode and every composition is checked
+/// against [`MAX_VALUE_DEPTH`] — via the in-place guards on the
+/// mutation opcodes (APPEND/APPENDS/SETITEM/SETITEMS) and via
+/// [`push_checked`] on the composition arms (TUPLE*/LIST) — so no value
+/// the parser hands out, or drops mid-parse (REDUCE/BUILD operands),
+/// ever recurses deeper than that on Drop.
+type Stacked = (PyVal, usize);
+
+/// Push a composed container, refusing trees past [`MAX_VALUE_DEPTH`]
+/// before they enter the stack.
+fn push_checked(stack: &mut Vec<Stacked>, entry: Stacked) -> Option<()> {
+    if entry.1 > MAX_VALUE_DEPTH {
+        return None;
+    }
+    stack.push(entry);
+    Some(())
+}
+
+/// Split a mark-pop's entries into values plus the composed container's
+/// height (one above the deepest child).
+fn unzip_stack(entries: Vec<Stacked>) -> (Vec<PyVal>, usize) {
+    let h = entries.iter().map(|(_, h)| *h).max().unwrap_or(0) + 1;
+    (entries.into_iter().map(|(v, _)| v).collect(), h)
+}
+
 pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
-    let mut stack: Vec<PyVal> = Vec::new();
-    let mut metastack: Vec<Vec<PyVal>> = Vec::new();
-    // Memo entries carry their deep size so BINGET echoes charge the clone
-    // budget without re-walking the value.
-    let mut memo: Vec<Option<(PyVal, usize)>> = Vec::new();
+    let mut stack: Vec<Stacked> = Vec::new();
+    let mut metastack: Vec<Vec<Stacked>> = Vec::new();
+    // Memo entries carry their deep size (the clone budget) and height
+    // (BINGET re-pushes both) so echoes charge without re-walking.
+    let mut memo: Vec<Option<(PyVal, usize, usize)>> = Vec::new();
     let mut cloned_bytes = 0usize;
     let mut i = 0usize;
     while i < bytes.len() {
         let op = bytes[i];
         i += 1;
         match op {
-            0x80 => i += 1,                                     // PROTO (version byte)
+            0x80 => i += 1, // PROTO (version byte)
             0x28 => {
                 // MARK '(' — depth-capped: hostile nesting would otherwise
                 // build PyVal trees whose recursive Drop overflows the
@@ -89,20 +126,26 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 }
                 metastack.push(std::mem::take(&mut stack));
             },
-            0x4e => stack.push(PyVal::None),                    // NONE 'N'
+            0x4e => stack.push((PyVal::None, 0)), // NONE 'N'
             0x4b => {
                 // BININT1 'K' — u8
-                stack.push(PyVal::Int(*bytes.get(i)? as i64));
+                stack.push((PyVal::Int(*bytes.get(i)? as i64), 0));
                 i += 1;
             },
             0x4d => {
                 // BININT2 'M' — u16 LE
-                stack.push(PyVal::Int(u16::from_le_bytes(read_bytes(bytes, i)?) as i64));
+                stack.push((
+                    PyVal::Int(u16::from_le_bytes(read_bytes(bytes, i)?) as i64),
+                    0,
+                ));
                 i += 2;
             },
             0x4a => {
                 // BININT 'J' — i32 LE
-                stack.push(PyVal::Int(i32::from_le_bytes(read_bytes(bytes, i)?) as i64));
+                stack.push((
+                    PyVal::Int(i32::from_le_bytes(read_bytes(bytes, i)?) as i64),
+                    0,
+                ));
                 i += 4;
             },
             0x8a => {
@@ -124,11 +167,11 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                     let shift = 64 - 8 * n;
                     v = (v << shift) >> shift;
                 }
-                stack.push(PyVal::Int(v));
+                stack.push((PyVal::Int(v), 0));
             },
             0x47 => {
                 // BINFLOAT 'G' — f64 BIG-endian (the pickle spec's one big-endian field)
-                stack.push(PyVal::Float(f64::from_be_bytes(read_bytes(bytes, i)?)));
+                stack.push((PyVal::Float(f64::from_be_bytes(read_bytes(bytes, i)?)), 0));
                 i += 8;
             },
             0x49 => {
@@ -136,14 +179,17 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 let end = bytes[i..].iter().position(|&b| b == b'\n')? + i;
                 let text = std::str::from_utf8(&bytes[i..end]).ok()?;
                 i = end + 1;
-                stack.push(PyVal::Int(text.trim().parse().ok()?));
+                stack.push((PyVal::Int(text.trim().parse().ok()?), 0));
             },
             0x4c => {
                 // LONG 'L' — decimal text + optional 'L' suffix + newline.
                 let end = bytes[i..].iter().position(|&b| b == b'\n')? + i;
                 let text = std::str::from_utf8(&bytes[i..end]).ok()?;
                 i = end + 1;
-                stack.push(PyVal::Int(text.trim().trim_end_matches('L').parse().ok()?));
+                stack.push((
+                    PyVal::Int(text.trim().trim_end_matches('L').parse().ok()?),
+                    0,
+                ));
             },
             0x63 => {
                 // GLOBAL 'c' — "module\nname\n" (a class constructor). Pushed
@@ -155,19 +201,19 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 let module = std::str::from_utf8(&bytes[i..m_end]).ok()?;
                 let name = std::str::from_utf8(&bytes[m_end + 1..n_end]).ok()?;
                 i = n_end + 1;
-                stack.push(PyVal::Str(format!("{module}.{name}")));
+                stack.push((PyVal::Str(format!("{module}.{name}")), 0));
             },
             0x52 => {
                 // REDUCE 'R' — pop args + callable, push an opaque result.
                 let _args = stack.pop()?;
                 let _callable = stack.pop()?;
-                stack.push(PyVal::Str("<reduced>".into()));
+                stack.push((PyVal::Str("<reduced>".into()), 0));
             },
             0x81 => {
                 // NEWOBJ — pop args + class, push an opaque object.
                 let _args = stack.pop()?;
                 let _cls = stack.pop()?;
-                stack.push(PyVal::Str("<obj>".into()));
+                stack.push((PyVal::Str("<obj>".into()), 0));
             },
             0x62 => {
                 // BUILD 'b' — pop state + object, keep the object.
@@ -175,14 +221,14 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 let obj = stack.pop()?;
                 stack.push(obj);
             },
-            0x29 => stack.push(PyVal::Tuple(Vec::new())), // EMPTY_TUPLE ')'
+            0x29 => stack.push((PyVal::Tuple(Vec::new()), 1)), // EMPTY_TUPLE ')'
             0x55 => {
                 // SHORT_BINSTRING 'U' — u8 length + raw UTF-8 bytes (proto ≤2 str).
                 let n = *bytes.get(i)? as usize;
                 i += 1;
                 let raw = bytes.get(i..i + n)?;
                 i += n;
-                stack.push(PyVal::Str(String::from_utf8_lossy(raw).into_owned()));
+                stack.push((PyVal::Str(String::from_utf8_lossy(raw).into_owned()), 0));
             },
             0x58 => {
                 // BINUNICODE 'X' — u32 length + UTF-8 bytes.
@@ -190,7 +236,7 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 i += 4;
                 let raw = bytes.get(i..i + n)?;
                 i += n;
-                stack.push(PyVal::Str(String::from_utf8_lossy(raw).into_owned()));
+                stack.push((PyVal::Str(String::from_utf8_lossy(raw).into_owned()), 0));
             },
             0x8c => {
                 // SHORT_BINUNICODE (proto 4) — u8 length + UTF-8 bytes.
@@ -198,63 +244,87 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 i += 1;
                 let raw = bytes.get(i..i + n)?;
                 i += n;
-                stack.push(PyVal::Str(String::from_utf8_lossy(raw).into_owned()));
+                stack.push((PyVal::Str(String::from_utf8_lossy(raw).into_owned()), 0));
             },
-            0x88 => stack.push(PyVal::Int(1)), // NEWTRUE
-            0x89 => stack.push(PyVal::Int(0)), // NEWFALSE
+            0x88 => stack.push((PyVal::Int(1), 0)), // NEWTRUE
+            0x89 => stack.push((PyVal::Int(0), 0)), // NEWFALSE
             0x85 => {
-                // TUPLE1
-                let a = stack.pop()?;
-                stack.push(PyVal::Tuple(vec![a]));
+                // TUPLE1 — one byte per nesting level over a scalar seed:
+                // the composition arms are checked exactly like the
+                // mutation arms (audit M-8 follow-up; the first fix
+                // missed this family and a seeded `85`×N chain bypassed
+                // the cap byte-for-byte).
+                let (a, ha) = stack.pop()?;
+                push_checked(&mut stack, (PyVal::Tuple(vec![a]), ha + 1))?;
             },
             0x87 => {
                 // TUPLE3
-                let c = stack.pop()?;
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(PyVal::Tuple(vec![a, b, c]));
+                let (c, hc) = stack.pop()?;
+                let (b, hb) = stack.pop()?;
+                let (a, ha) = stack.pop()?;
+                push_checked(
+                    &mut stack,
+                    (PyVal::Tuple(vec![a, b, c]), ha.max(hb).max(hc) + 1),
+                )?;
             },
             0x86 => {
                 // TUPLE2
-                let b = stack.pop()?;
-                let a = stack.pop()?;
-                stack.push(PyVal::Tuple(vec![a, b]));
+                let (b, hb) = stack.pop()?;
+                let (a, ha) = stack.pop()?;
+                push_checked(&mut stack, (PyVal::Tuple(vec![a, b]), ha.max(hb) + 1))?;
             },
             0x74 => {
                 // TUPLE 't' — everything back to the mark
-                let items = pop_mark(&mut stack, &mut metastack)?;
-                stack.push(PyVal::Tuple(items));
+                let (items, h) = unzip_stack(pop_mark(&mut stack, &mut metastack)?);
+                push_checked(&mut stack, (PyVal::Tuple(items), h))?;
             },
-            0x5d => stack.push(PyVal::List(Vec::new())), // EMPTY_LIST ']'
-            0x7d => stack.push(PyVal::Dict(Vec::new())), // EMPTY_DICT '}'
+            0x5d => stack.push((PyVal::List(Vec::new()), 1)), // EMPTY_LIST ']'
+            0x7d => stack.push((PyVal::Dict(Vec::new()), 1)), // EMPTY_DICT '}'
             0x6c => {
                 // LIST 'l' — everything back to the mark
-                let items = pop_mark(&mut stack, &mut metastack)?;
-                stack.push(PyVal::List(items));
+                let (items, h) = unzip_stack(pop_mark(&mut stack, &mut metastack)?);
+                push_checked(&mut stack, (PyVal::List(items), h))?;
             },
             0x61 => {
-                // APPEND 'a'
-                let v = stack.pop()?;
-                match stack.last_mut()? {
+                // APPEND 'a' — the composed list's height is one above the
+                // appended child's; refuse past MAX_VALUE_DEPTH before the
+                // tree that would recurse-drop can exist (audit M-8).
+                let (v, vh) = stack.pop()?;
+                let (l, h) = stack.last_mut()?;
+                match l {
                     PyVal::List(l) => l.push(v),
                     _ => return None,
+                }
+                *h = (*h).max(vh + 1);
+                if *h > MAX_VALUE_DEPTH {
+                    return None;
                 }
             },
             0x65 => {
                 // APPENDS 'e' — items back to the mark, into the list below them
-                let items = pop_mark(&mut stack, &mut metastack)?;
-                match stack.last_mut()? {
+                let (items, ih) = unzip_stack(pop_mark(&mut stack, &mut metastack)?);
+                let (l, h) = stack.last_mut()?;
+                match l {
                     PyVal::List(l) => l.extend(items),
                     _ => return None,
+                }
+                *h = (*h).max(ih);
+                if *h > MAX_VALUE_DEPTH {
+                    return None;
                 }
             },
             0x73 => {
                 // SETITEM 's' — value + key into the dict below them
-                let value = stack.pop()?;
-                let key = stack.pop()?;
-                match stack.last_mut()? {
+                let (value, vh) = stack.pop()?;
+                let (key, kh) = stack.pop()?;
+                let (d, h) = stack.last_mut()?;
+                match d {
                     PyVal::Dict(d) => d.push((key, value)),
                     _ => return None,
+                }
+                *h = (*h).max(vh + 1).max(kh + 1);
+                if *h > MAX_VALUE_DEPTH {
+                    return None;
                 }
             },
             0x75 => {
@@ -262,11 +332,12 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 // them. Moves (never clones) the popped items — audit M-8:
                 // this opcode used to deep-copy every pair on top of the
                 // copy the mark-pop already made.
-                let items = pop_mark(&mut stack, &mut metastack)?;
+                let (items, ih) = unzip_stack(pop_mark(&mut stack, &mut metastack)?);
                 if items.len() % 2 != 0 {
                     return None;
                 }
-                match stack.last_mut()? {
+                let (d, h) = stack.last_mut()?;
+                match d {
                     PyVal::Dict(d) => {
                         let mut pairs = items.into_iter();
                         while let (Some(key), Some(value)) = (pairs.next(), pairs.next()) {
@@ -274,6 +345,10 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                         }
                     },
                     _ => return None,
+                }
+                *h = (*h).max(ih);
+                if *h > MAX_VALUE_DEPTH {
+                    return None;
                 }
             },
             0x71 => {
@@ -283,7 +358,7 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 if idx >= MAX_MEMO_ENTRIES {
                     return None;
                 }
-                if let Some(v) = stack.last() {
+                if let Some((v, h)) = stack.last() {
                     let size = deep_size(v);
                     cloned_bytes = cloned_bytes.saturating_add(size);
                     if cloned_bytes > MAX_CLONED_BYTES {
@@ -292,7 +367,7 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                     if memo.len() <= idx {
                         memo.resize(idx + 1, None);
                     }
-                    memo[idx] = Some((v.clone(), size));
+                    memo[idx] = Some((v.clone(), size, *h));
                 }
             },
             0x72 => {
@@ -302,7 +377,7 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 if idx >= MAX_MEMO_ENTRIES {
                     return None;
                 }
-                if let Some(v) = stack.last() {
+                if let Some((v, h)) = stack.last() {
                     let size = deep_size(v);
                     cloned_bytes = cloned_bytes.saturating_add(size);
                     if cloned_bytes > MAX_CLONED_BYTES {
@@ -311,7 +386,7 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                     if memo.len() <= idx {
                         memo.resize(idx + 1, None);
                     }
-                    memo[idx] = Some((v.clone(), size));
+                    memo[idx] = Some((v.clone(), size, *h));
                 }
             },
             0x68 => {
@@ -319,33 +394,33 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 // DEEP copy (audit M-8): charge it to the clone budget.
                 let idx = *bytes.get(i)? as usize;
                 i += 1;
-                let (v, size) = memo.get(idx)?.as_ref()?;
+                let (v, size, h) = memo.get(idx)?.as_ref()?;
                 cloned_bytes = cloned_bytes.saturating_add(*size);
                 if cloned_bytes > MAX_CLONED_BYTES {
                     return None;
                 }
-                stack.push(v.clone());
+                stack.push((v.clone(), *h));
             },
             0x6a => {
                 // LONG_BINGET 'j'
                 let idx = u32::from_le_bytes(read_bytes(bytes, i)?) as usize;
                 i += 4;
-                let (v, size) = memo.get(idx)?.as_ref()?;
+                let (v, size, h) = memo.get(idx)?.as_ref()?;
                 cloned_bytes = cloned_bytes.saturating_add(*size);
                 if cloned_bytes > MAX_CLONED_BYTES {
                     return None;
                 }
-                stack.push(v.clone());
+                stack.push((v.clone(), *h));
             },
             0x2e => break, // STOP '.'
             _ => return None,
         }
     }
-    stack.pop()
+    stack.pop().map(|(v, _)| v)
 }
 
 /// Pop the current stack back to the last MARK (CPython `pop_mark`).
-fn pop_mark(stack: &mut Vec<PyVal>, metastack: &mut Vec<Vec<PyVal>>) -> Option<Vec<PyVal>> {
+fn pop_mark(stack: &mut Vec<Stacked>, metastack: &mut Vec<Vec<Stacked>>) -> Option<Vec<Stacked>> {
     let items = std::mem::take(stack);
     *stack = metastack.pop()?;
     Some(items)
@@ -459,8 +534,9 @@ mod tests {
         assert_eq!(parse_pickle(&bytes), None);
     }
 
-    /// Legitimate nesting sits far under the cap: a 64-deep nested list
-    /// (deeper than any real damage-stat payload) still parses.
+    /// The historical "legitimate nesting" shape — a 64-element list of
+    /// empty lists (flat, height 2; the old comment overstated it as
+    /// 64-deep nesting) — still parses under the height cap.
     #[test]
     fn legitimate_nesting_still_parses() {
         let mut bytes = vec![0x80, 0x04, 0x5d]; // EMPTY_LIST (outermost)
@@ -470,5 +546,69 @@ mod tests {
         }
         bytes.push(0x2e);
         assert!(matches!(parse_pickle(&bytes), Some(PyVal::List(_))));
+    }
+
+    /// Audit M-8 follow-up regression: a `]`×n + `a`×(n-1) chain nests one
+    /// list per two bytes WITHOUT ever touching MARK — the metastack cap
+    /// never sees it, and the value's recursive Drop overflows the stack
+    /// at ~32k levels inside the 64 KiB arena blob. The value-height
+    /// tracking must refuse the chain; the deep tree must never exist.
+    #[test]
+    fn hostile_list_append_chain_is_height_capped() {
+        let mut bytes = vec![0x80, 0x04];
+        bytes.extend(std::iter::repeat(0x5d).take(100_000)); // EMPTY_LIST ×n
+        bytes.extend(std::iter::repeat(0x61).take(99_999)); // APPEND ×(n-1)
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), None);
+    }
+
+    /// Audit M-8 follow-up regression (the bypass the first fix missed):
+    /// a seeded TUPLE1 chain nests one level PER BYTE — no MARK, no
+    /// APPEND — so the composition arms must be checked exactly like the
+    /// mutation arms. Before the check these arms composed the height but
+    /// pushed unconditionally, and the returned tree's recursive Drop
+    /// aborted the process.
+    #[test]
+    fn hostile_tuple1_chain_is_height_capped() {
+        // Scalar seed + 200 TUPLE1s: each wraps the previous, height 200.
+        let mut bytes = vec![0x80, 0x04, 0x4b, 0x01];
+        bytes.extend(std::iter::repeat(0x85).take(200));
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), None);
+    }
+
+    /// The accept side of both composition families at the exact cap:
+    /// 128 TUPLE1s over a scalar compose height 128 (the maximum), and a
+    /// 128-deep APPEND chain still parses.
+    #[test]
+    fn tuple_and_append_chains_at_the_cap_still_parse() {
+        let mut bytes = vec![0x80, 0x04, 0x4b, 0x01];
+        bytes.extend(std::iter::repeat(0x85).take(128));
+        bytes.push(0x2e);
+        assert!(matches!(parse_pickle(&bytes), Some(PyVal::Tuple(_))));
+
+        let mut bytes = vec![0x80, 0x04];
+        bytes.extend(std::iter::repeat(0x5d).take(128));
+        bytes.extend(std::iter::repeat(0x61).take(127));
+        bytes.push(0x2e);
+        assert!(matches!(parse_pickle(&bytes), Some(PyVal::List(_))));
+    }
+
+    /// The cap is a hard limit, not a fuzz boundary: one level past it
+    /// refuses on the APPEND family too.
+    #[test]
+    fn list_chain_respects_the_exact_height_boundary() {
+        // 130 empty lists + 129 appends would nest 130 deep — one past
+        // MAX_VALUE_DEPTH (the 128th append composes height 129).
+        let mut bytes = vec![0x80, 0x04];
+        bytes.extend(std::iter::repeat(0x5d).take(130));
+        bytes.extend(std::iter::repeat(0x61).take(129));
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), None);
+        // One past on the TUPLE family: 129 TUPLE1s compose height 129.
+        let mut bytes = vec![0x80, 0x04, 0x4b, 0x01];
+        bytes.extend(std::iter::repeat(0x85).take(129));
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), None);
     }
 }

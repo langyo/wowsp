@@ -574,6 +574,12 @@ pub(super) fn decode_damage_stat(
 /// MessagePack the shape uses is read (fixint / fixed collections / the
 /// 1-8 byte numeric primitives); anything else yields an empty vec.
 fn parse_damage_stat_msgpack(bytes: &[u8]) -> Vec<(i64, i64, i64, f64)> {
+    /// MessagePack recursion guard (audit M-8-class input hardening):
+    /// `read` descends one frame per byte on nested fixarray/fixmap
+    /// markers, so a hostile blob could reach ~250k frames of recursion
+    /// and abort the process on stack overflow (uncatchable). Real
+    /// damage-stat payloads nest 3–4 deep; 64 leaves 16x headroom.
+    const MSGPACK_MAX_DEPTH: usize = 64;
     #[derive(Clone)]
     enum Val {
         Int(i64),
@@ -581,7 +587,10 @@ fn parse_damage_stat_msgpack(bytes: &[u8]) -> Vec<(i64, i64, i64, f64)> {
         Array(Vec<Val>),
         Map(Vec<(Val, Val)>),
     }
-    fn read(bytes: &[u8], pos: &mut usize) -> Option<Val> {
+    fn read(bytes: &[u8], pos: &mut usize, depth: usize) -> Option<Val> {
+        if depth > MSGPACK_MAX_DEPTH {
+            return None;
+        }
         let &first = bytes.get(*pos)?;
         *pos += 1;
         match first {
@@ -590,8 +599,8 @@ fn parse_damage_stat_msgpack(bytes: &[u8]) -> Vec<(i64, i64, i64, f64)> {
             0x80..=0x8f => {
                 let mut entries = Vec::with_capacity((first & 0x0f) as usize);
                 for _ in 0..(first & 0x0f) {
-                    let k = read(bytes, pos)?;
-                    let v = read(bytes, pos)?;
+                    let k = read(bytes, pos, depth + 1)?;
+                    let v = read(bytes, pos, depth + 1)?;
                     entries.push((k, v));
                 }
                 Some(Val::Map(entries))
@@ -599,7 +608,7 @@ fn parse_damage_stat_msgpack(bytes: &[u8]) -> Vec<(i64, i64, i64, f64)> {
             0x90..=0x9f => {
                 let mut items = Vec::with_capacity((first & 0x0f) as usize);
                 for _ in 0..(first & 0x0f) {
-                    items.push(read(bytes, pos)?);
+                    items.push(read(bytes, pos, depth + 1)?);
                 }
                 Some(Val::Array(items))
             },
@@ -642,7 +651,7 @@ fn parse_damage_stat_msgpack(bytes: &[u8]) -> Vec<(i64, i64, i64, f64)> {
     }
     let mut pos = 0usize;
     // The whole payload must be one map.
-    let Some(Val::Map(entries)) = read(bytes, &mut pos) else {
+    let Some(Val::Map(entries)) = read(bytes, &mut pos, 0) else {
         return Vec::new();
     };
     let as_int = |v: Option<&Val>| match v {
@@ -1118,6 +1127,22 @@ pub(super) fn decode_explosions(time: f32, args: &[u8]) -> Vec<wowsp_tauri_share
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Audit M-8-class regression: a hostile blob of nested fixarray-1
+    /// markers — one recursion frame per byte once inflated (deflate's
+    /// ratio bounds the inflation at ~264 KB, well under the 1 MiB zlib
+    /// cap, and still ~10× more frames than the stack holds) — used to
+    /// drive `read` into a ~250k-frame recursion, an uncatchable
+    /// stack-overflow abort. The depth cap must degrade to the empty-vec
+    /// contract instead.
+    #[test]
+    fn hostile_msgpack_nesting_is_depth_capped() {
+        let hostile = vec![0x91u8; 100_000];
+        assert!(parse_damage_stat_msgpack(&hostile).is_empty());
+        // Just past the cap also refuses: a 65-level fixarray-1 chain.
+        let deep = vec![0x91u8; 65];
+        assert!(parse_damage_stat_msgpack(&deep).is_empty());
+    }
 
     /// Emit one `(int key, int|str value)` pair as pickle: INT text form for
     /// both integers (handles the u32-range params ids BININT cannot carry),

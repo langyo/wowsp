@@ -2479,6 +2479,51 @@ fn decodes_consumable_used_variants() {
     assert!(decode_consumable_used(0.0, 1, &nan).is_none());
 }
 
+/// Hostile EntityCreate floods are capped at MAX_TRACKED_ENTITIES: the
+/// walk keeps tracking existing entities and drops NEW ones instead of
+/// growing kinds (and, downstream, the merge's trajectories) without
+/// bound. 100_001 distinct creations must leave exactly the cap in
+/// place.
+#[test]
+fn entity_create_flood_is_capped_at_the_tracking_budget() {
+    fn frame(ptype: u32, payload: &[u8]) -> Vec<u8> {
+        let mut f = Vec::with_capacity(12 + payload.len());
+        f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        f.extend_from_slice(&ptype.to_le_bytes());
+        f.extend_from_slice(&0f32.to_le_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+    fn entity_create(eid: i32, etype: i16) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&etype.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&[0u8; 24]);
+        p
+    }
+    let mut stream = Vec::new();
+    for eid in 0..=super::frames::MAX_TRACKED_ENTITIES as i32 {
+        stream.extend(frame(
+            PACKET_ENTITY_CREATE,
+            &entity_create(eid, ENTITY_TYPE_VEHICLE),
+        ));
+    }
+    let decoded = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile_for(false),
+        None,
+    );
+    assert_eq!(
+        decoded.kinds.len(),
+        super::frames::MAX_TRACKED_ENTITIES,
+        "the flood must stop at the cap, one entity short of the input"
+    );
+}
+
 /// The engine-state projection: type-2 entities' idx 9/10 property changes
 /// become samples; other entities and other indices stay out; a version
 /// without the E11 pin projects nothing.

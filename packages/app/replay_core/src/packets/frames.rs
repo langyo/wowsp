@@ -1,4 +1,12 @@
 use super::*;
+/// Hostile-stream budget: how many distinct entities the frame walk may
+/// track. Real battles carry O(10²) entities; a synthetic EntityCreate
+/// flood inside the 256 MiB decompress budget used to drive both the
+/// group-by merge's O(n²) scan and GB-scale empty-trajectory memory. The
+/// cap leaves three orders of magnitude of headroom; once hit, further
+/// NEW entities are skipped (existing ones keep decoding) — audit
+/// M-8-class input hardening.
+pub(super) const MAX_TRACKED_ENTITIES: usize = 100_000;
 /// Walk `[u32 size][u32 type][f32 time][payload]` frames, collecting Position
 /// samples (grouped by entity id) and EntityCreate metadata. Stops cleanly if a
 /// frame header is truncated or declares an absurd size (trailing padding).
@@ -149,7 +157,9 @@ pub(super) fn walk_frames(
                     // Entities destroyed and re-created mid-match (leaving and
                     // re-entering the observed area) keep their FIRST creation
                     // time so the frontend doesn't hide them until re-creation.
-                    kinds.entry(eid).or_insert(kind);
+                    if kinds.contains_key(&eid) || kinds.len() < MAX_TRACKED_ENTITIES {
+                        kinds.entry(eid).or_insert(kind);
+                    }
                 }
             },
             PACKET_CELL_PLAYER_CREATE => {
@@ -157,7 +167,9 @@ pub(super) fn walk_frames(
                     let eid = created.entity_id;
                     let mut kind = created.clone_into_kind();
                     kind.entity_type = ENTITY_TYPE_AVATAR;
-                    kinds.entry(eid).or_insert(kind);
+                    if kinds.contains_key(&eid) || kinds.len() < MAX_TRACKED_ENTITIES {
+                        kinds.entry(eid).or_insert(kind);
+                    }
                     // The recorder's own avatar — the arena state's
                     // `avatarId` back-reference keys the is_self marking.
                     recorder_avatar = Some(eid);
