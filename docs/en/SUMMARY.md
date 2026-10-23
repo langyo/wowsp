@@ -17,6 +17,7 @@
 - [Architecture](./designs/architecture.md)
 - [Mod Hub](./designs/mod-hub.md)
 - [In-Game Stats Plugin](./designs/ingame-stats-plugin.md)
+- [Threat Model](./designs/threat-model.md)
 
 # License
 

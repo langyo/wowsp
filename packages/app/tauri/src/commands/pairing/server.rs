@@ -1225,19 +1225,24 @@ fn remote_name(root: &Path, path: &str) -> String {
         })
 }
 
-/// `scan_replays_meta` on the blocking pool — even with `lite_from_path`
-/// reading only the bounded first block, an unbounded full-tree listing
-/// (every archived version subfolder included) is real disk work that
-/// must never stall async runtime workers (the async
+/// `scan_replays_meta` (through the pairing cache — audit L-11: a
+/// token-holding client can poll the listing arbitrarily often, so
+/// repeated calls answer from the short-TTL in-memory copy instead of
+/// re-walking the whole tree) on the blocking pool — even with
+/// `lite_from_path` reading only the bounded first block, an unbounded
+/// full-tree listing (every archived version subfolder included) is real
+/// disk work that must never stall async runtime workers (the async
 /// `list_replays_meta` command wraps the same scan in its own
 /// `spawn_blocking`; the hand-rolled server has to do it itself).
 async fn scan_remote(
     replay_root: PathBuf,
 ) -> Result<(PathBuf, Vec<wowsp_tauri_shared::ReplayMetaLite>)> {
     let dir = replay_root.to_string_lossy().into_owned();
-    tokio::task::spawn_blocking(move || replay::scan_replays_meta(Some(dir), None))
-        .await
-        .map_err(|e| anyhow!("replay scan task failed: {e}"))?
+    let entries =
+        tokio::task::spawn_blocking(move || replay::scan_replays_meta_cached(Some(dir), None))
+            .await
+            .map_err(|e| anyhow!("replay scan task failed: {e}"))??;
+    Ok((replay_root, entries))
 }
 
 async fn handle_replays(stream: &mut TcpStream, shared: &Shared) -> Result<()> {
@@ -1391,9 +1396,26 @@ async fn write_stall(
 /// dropped at the [`WRITE_STALL`] mark, a progressing one streams for
 /// minutes untouched.
 async fn serve_file(stream: &mut TcpStream, path: &Path, content_type: &str) -> Result<()> {
-    let len = std::fs::metadata(path)
-        .map_err(|e| anyhow!("stat {}: {e}", path.display()))?
-        .len();
+    // Audit L-11: File::open (and the length stat beside it) follow
+    // symlinks and reparse points — a planted link inside the replay tree
+    // would redirect a served file outside it. symlink_metadata reads the
+    // link itself; on Windows the reparse attribute additionally catches
+    // junctions and mount points that do not report as symlinks.
+    let meta =
+        std::fs::symlink_metadata(path).map_err(|e| anyhow!("stat {}: {e}", path.display()))?;
+    let linked = meta.file_type().is_symlink();
+    #[cfg(windows)]
+    let linked = {
+        use std::os::windows::fs::MetadataExt;
+        linked || meta.file_attributes() & 0x400 != 0
+    };
+    if linked {
+        return Err(anyhow!(
+            "refusing to serve a linked path: {}",
+            path.display()
+        ));
+    }
+    let len = meta.len();
     let head = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n"
     );
