@@ -9,7 +9,7 @@
   "installSection": "从文件夹安装",
   "installHint": "指向解压后的模组文件夹（语音包 / PnF 涂装 / 勋带图标 / ime_config 补丁）。.zip/.7z 目前需先手动解压。",
   "pathPlaceholder": "D:\\…\\语音包名",
-  "browse": "解析",
+  "pickFolder": "选择文件夹…",
   "analyzing": "解析中…",
   "confirmInstall": "安装",
   "installing": "安装中…",

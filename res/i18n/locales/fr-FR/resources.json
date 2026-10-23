@@ -9,7 +9,7 @@
   "installSection": "Installer depuis un dossier",
   "installHint": "Pointez vers un dossier de mod décompressé (pack vocal, skin PnF, icônes de rubans, correctif ime_config). Les .zip/.7z doivent être extraits manuellement pour l'instant.",
   "pathPlaceholder": "D:\\…\\MonPackVocal",
-  "browse": "Analyser",
+  "pickFolder": "Choisir un dossier…",
   "analyzing": "Analyse…",
   "confirmInstall": "Installer",
   "installing": "Installation…",

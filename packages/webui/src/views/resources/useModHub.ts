@@ -583,6 +583,22 @@ export function useModHub() {
     }
   }
 
+  // Native folder picker (audit H-3): the picked path is the only
+  // install source the backend accepts — a typed path never carries a
+  // grant. Pick → fill the display field → run the same analyze flow.
+  async function pickAndAnalyze() {
+    if (analyzing.value) return;
+    try {
+      const picked = await api.modHubPickSource();
+      if (!picked) return;
+      sourcePath.value = picked;
+    } catch (e) {
+      planError.value = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    await analyze();
+  }
+
   async function analyze() {
     if (!sourcePath.value.trim() || analyzing.value) return;
     analyzing.value = true;
@@ -618,7 +634,7 @@ export function useModHub() {
     if (!(await requestModOpDisclaimer())) return;
     installing.value = true;
     try {
-      const r = await api.modHubInstall(sourcePath.value.trim(), gameRoot.value, plan.value);
+      const r = await api.modHubInstall(sourcePath.value.trim(), gameRoot.value);
       report.value = {
         name: r.name,
         count: r.wroteFiles,
@@ -1057,6 +1073,7 @@ export function useModHub() {
     safeModeBlocked,
     doSafeMode,
     analyze,
+    pickAndAnalyze,
     restoreLoaderMarker,
     confirmInstall,
     foreignCopyOf,

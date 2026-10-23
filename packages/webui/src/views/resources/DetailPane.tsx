@@ -714,17 +714,21 @@ function renderLocalDetail(ctx: ResourcesCtx) {
       <HkScrollContainer class="mod-detail__scroll">
         <div class="mod-detail__inner">
         <div class="resources-installrow">
+          {/* Readonly display of the picker's choice (audit H-3): installs
+              only accept paths a native folder dialog handed out, so there
+              is no free-typed path anymore. */}
           <input
             type="text"
-            v-model={ctx.sourcePath.value}
+            value={ctx.sourcePath.value}
+            readonly
             placeholder={t("resources.pathPlaceholder")}
             spellcheck={false}
           />
           <button
-            disabled={!ctx.sourcePath.value.trim() || ctx.analyzing.value || !ctx.gameRoot.value}
-            onClick={ctx.analyze}
+            disabled={ctx.analyzing.value || !ctx.gameRoot.value}
+            onClick={ctx.pickAndAnalyze}
           >
-            {ctx.analyzing.value ? t("resources.analyzing") : t("resources.browse")}
+            {ctx.analyzing.value ? t("resources.analyzing") : t("resources.pickFolder")}
           </button>
         </div>
         {ctx.planError.value && (

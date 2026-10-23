@@ -159,6 +159,7 @@ export const RPC = {
   mod_hub_read_asset: "mod_hub_read_asset",
   mod_hub_read_model: "mod_hub_read_model",
   mod_hub_classify_path: "mod_hub_classify_path",
+  mod_hub_pick_source: "mod_hub_pick_source",
   mod_hub_install: "mod_hub_install",
   mod_hub_set_unit_enabled: "mod_hub_set_unit_enabled",
   mod_hub_uninstall_unit: "mod_hub_uninstall_unit",

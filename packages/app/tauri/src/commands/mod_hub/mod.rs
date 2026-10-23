@@ -519,6 +519,7 @@ mod install;
 mod installed_units;
 pub(crate) mod manifest;
 mod model_preview;
+pub(crate) mod pick_source;
 pub(crate) mod preload_mirror;
 mod safe_mode;
 mod scan_installed;
@@ -554,6 +555,9 @@ pub use classify::{
 pub use install::{__cmd__mod_hub_install, __tauri_command_name_mod_hub_install, mod_hub_install};
 pub use model_preview::{
     __cmd__mod_hub_read_model, __tauri_command_name_mod_hub_read_model, mod_hub_read_model,
+};
+pub use pick_source::{
+    __cmd__mod_hub_pick_source, __tauri_command_name_mod_hub_pick_source, mod_hub_pick_source,
 };
 pub use safe_mode::{
     __cmd__mod_hub_safe_mode, __tauri_command_name_mod_hub_safe_mode, mod_hub_safe_mode,

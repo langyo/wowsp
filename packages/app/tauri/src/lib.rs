@@ -692,6 +692,7 @@ pub fn run() {
             commands::mod_hub::mod_hub_read_model,
             commands::mod_hub::mod_hub_scan_installed,
             commands::mod_hub::mod_hub_classify_path,
+            commands::mod_hub::mod_hub_pick_source,
             commands::mod_hub::mod_hub_install,
             commands::mod_hub::mod_hub_set_unit_enabled,
             commands::mod_hub::mod_hub_uninstall_unit,

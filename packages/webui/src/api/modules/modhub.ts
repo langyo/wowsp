@@ -393,8 +393,11 @@ export const modHubApi = {
     transport.invoke<ModelPreviewPart[]>(RPC.mod_hub_read_model, { gameRoot, relPath }),
   modHubClassifyPath: (sourcePath: string) =>
     transport.invoke<PackagePlan>(RPC.mod_hub_classify_path, { sourcePath }),
-  modHubInstall: (sourceRoot: string, gameRoot: string, plan: PackagePlan) =>
-    transport.invoke<InstallReport>(RPC.mod_hub_install, { sourceRoot, gameRoot, plan }),
+  /** Native folder picker for the local-package source (audit H-3): the
+   *  picked path is the only install source the backend accepts. */
+  modHubPickSource: () => transport.invoke<string | null>(RPC.mod_hub_pick_source),
+  modHubInstall: (sourceRoot: string, gameRoot: string) =>
+    transport.invoke<InstallReport>(RPC.mod_hub_install, { sourceRoot, gameRoot }),
   /** Toggle one installed plugin's temporary disable state: disabling
    *  renames every file with a `.bak` suffix, enabling strips it again. */
   modHubSetUnitEnabled: (relPath: string, gameRoot: string, enabled: boolean) =>

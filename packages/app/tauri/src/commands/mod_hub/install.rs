@@ -12,21 +12,32 @@ pub async fn mod_hub_install(
     window: tauri::Window,
     source_root: String,
     game_root: String,
-    plan: PackagePlan,
 ) -> CommandResult<InstallReport> {
     crate::commands::ensure_main_window_label(window.label())?;
-    // Same gate as the catalog install: the plan's copy must not interleave
-    // with another install's res_mods writes or a `.bak` rename sweep.
+    // Same gate as the catalog install: the plan's file copies must not
+    // interleave with another install's res_mods writes or a `.bak`
+    // rename sweep.
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
-    // Validate BEFORE any rewind happens: an invalid plan must not uninstall
-    // the previous version only to fail afterwards.
-    validate_plan(&plan)?;
+    // Audit H-3 closure: the source must be a folder the native picker
+    // handed out this session — a webview-named path (its own appdata
+    // stash, a temp dir it wrote via appdata_write) used to be enough to
+    // plant files into res_mods.
+    super::pick_source::ensure_source_granted(&source_root)?;
     let src = PathBuf::from(&source_root);
     if !src.is_dir() {
         return Err(anyhow!("package not found: {}", src.display()).into());
     }
+    // Audit H-3 closure: derive the plan HERE. The webview's copy was
+    // display-only echo — trusting it let a compromised webview install
+    // files the user never previewed. The classifier is the same one the
+    // preview and the catalog pipeline run, so what the user saw is what
+    // this walk finds.
+    let plan = classify_package(&src)?;
+    // Validate BEFORE any rewind happens: an invalid plan must not uninstall
+    // the previous version only to fail afterwards.
+    validate_plan(&plan)?;
     let mut ledger = super::mod_catalog::load_ledger();
     let (outcome, ledger) = tauri::async_runtime::spawn_blocking(move || {
         // Reinstalling a same-named mod must first rewind its previous

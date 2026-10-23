@@ -9,7 +9,7 @@
   "installSection": "폴더에서 설치",
   "installHint": "압축을 푼 모드 폴더(음성 팩, PnF 스킨, 리본 아이콘, ime_config 패치)를 지정하세요. .zip/.7z는 현재 직접 압축을 풀어야 합니다.",
   "pathPlaceholder": "D:\\…\\MyVoicePack",
-  "browse": "분석",
+  "pickFolder": "폴더 선택…",
   "analyzing": "분석 중…",
   "confirmInstall": "설치",
   "installing": "설치 중…",
