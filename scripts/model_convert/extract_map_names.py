@@ -28,7 +28,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from _common import find_game_path  # noqa: E402
+from _common import find_game_assets, find_game_path  # noqa: E402
 from extract_ship_names import LANG_DIRS, latest_bin_dir, load_mo  # noqa: E402
 
 DEFAULT_OUT = REPO_ROOT / "packages" / "webui" / "src" / "data" / "map_names.json"
@@ -55,15 +55,22 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--game-dir", default=None)
+    ap.add_argument("--merge", action="store_true",
+                    help="keep existing entries in --out untouched and only "
+                         "add ids the current install carries that are "
+                         "missing — the Lesta follow-up pass (shared ids "
+                         "keep their WG translations; without the flag the "
+                         "file is regenerated from this install alone)")
     args = ap.parse_args()
 
     game = args.game_dir or find_game_path()
     if not game:
         print("error: game install not found", file=sys.stderr)
         return 1
-    game_assets = REPO_ROOT / "target" / "release" / "game-assets.exe"
-    if not game-assets.exists():
-        print(f"error: {game-assets} missing — build the patched game-assets", file=sys.stderr)
+    game_assets = Path(find_game_assets() or "")
+    if not game_assets.is_file():
+        print("error: game-assets not found — build it (just build game-assets) "
+              "or set WOWSP_GAME_ASSETS", file=sys.stderr)
         return 1
 
     spaces = list_spaces(game, game_assets)
@@ -95,6 +102,17 @@ def main() -> int:
             # Keep the prettified id so the frontend never shows a raw slug.
             names["en"] = sid.replace("_", " ").title()
         db[sid] = names
+
+    if args.merge and args.out.exists():
+        # --merge: existing entries are authoritative (the WG pass wrote
+        # them); this run only fills ids the file does not know yet.
+        existing = json.loads(args.out.read_text(encoding="utf-8"))
+        added = [sid for sid in db if sid not in existing]
+        db = {**db, **existing}
+        print(f"[map-names] merge: kept {len(existing)} existing, "
+              f"added {len(added)} new"
+              + (f" ({', '.join(added[:8])}{'…' if len(added) > 8 else ''})"
+                 if added else ""))
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(

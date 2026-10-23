@@ -92,7 +92,7 @@ def ensure_metadata(game: Path, game_assets: str) -> Path:
     META_JSON.parent.mkdir(parents=True, exist_ok=True)
     print(f"[lesta-extract] generating {META_JSON} via game-assets metadata ...")
     rc = subprocess.call(
-        [game-assets, "--game-dir", str(game), "metadata", str(META_JSON), "--format", "json"]
+        [game_assets, "--game-dir", str(game), "metadata", str(META_JSON), "--format", "json"]
     )
     if rc != 0 or not META_JSON.is_file():
         raise SystemExit("game-assets metadata failed for the Lesta install")
@@ -247,8 +247,8 @@ def main() -> int:
     decoder = OozDecoder(cand_bin, mode)
     print(f"[lesta-extract] oodle backend: {mode} ({cand_bin})")
 
-    game_assets = args.game-assets
-    if not game-assets:
+    game_assets = args.game_assets
+    if not game_assets:
         for cand in (
             ROOT / "target/release/game-assets.exe",
             ROOT / "target/release/game-assets",
@@ -256,7 +256,7 @@ def main() -> int:
             if cand.is_file():
                 game_assets = str(cand)
                 break
-    if not game-assets:
+    if not game_assets:
         raise SystemExit("game-assets not found (build: just build game-assets)")
 
     idx_dir = latest_idx_dir(game)

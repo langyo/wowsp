@@ -117,7 +117,7 @@ def main() -> int:
         gp_path = Path(args.gameparams_json)
     else:
         game_assets = find_game_assets()
-        if not game-assets:
+        if not game_assets:
             print("error: game-assets not found.", file=sys.stderr)
             return 1
         tmp = tempfile.mkdtemp(prefix="wowsp_gp_")

@@ -39,6 +39,22 @@ pub struct MergedGeometry<'a> {
     pub armor_models: Vec<ArmorModel>,
 }
 
+impl MergedGeometry<'_> {
+    /// An empty geometry (no buffers, no mappings) — the `export-map
+    /// --no-models` path used for terrain-only exports of spaces whose
+    /// models.bin the parser cannot read yet (Lesta 26.x).
+    pub fn empty() -> Self {
+        Self {
+            vertices_mapping: Vec::new(),
+            indices_mapping: Vec::new(),
+            merged_vertices: Vec::new(),
+            merged_indices: Vec::new(),
+            collision_models: Vec::new(),
+            armor_models: Vec::new(),
+        }
+    }
+}
+
 /// A single triangle in an armor model.
 #[derive(Debug, Clone, Copy)]
 pub struct ArmorTriangle {

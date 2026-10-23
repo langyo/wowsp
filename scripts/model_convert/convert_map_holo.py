@@ -75,7 +75,7 @@ def main() -> int:
         return 1
 
     game_assets = find_game_assets()
-    if not game-assets:
+    if not game_assets:
         print("error: game-assets not found. Install it (cargo install game-assets) "
               "or set WOWSP_GAME_ASSETS.", file=sys.stderr)
         return 1
@@ -97,7 +97,7 @@ def main() -> int:
         print(f"[convert_map_holo] exporting spaces/{space_id} via game-assets export-map "
               f"(keep_submerged={keep_submerged}) ...")
         export_cmd = [
-            game-assets, "--game-dir", game, "export-map", f"spaces/{space_id}",
+            game_assets, "--game-dir", game, "export-map", f"spaces/{space_id}",
             "-o", str(raw_glb),
             "--terrain-step", str(args.terrain_step),
             "--no-water", "--no-vegetation", "--no-textures",

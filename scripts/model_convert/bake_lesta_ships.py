@@ -197,7 +197,7 @@ def load_node_blocks(stage: Path, game_dir: str, ooz: str | None,
     if not assets.is_file():
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
-             "--game-dir", game_dir, "--out", str(stage), "--game-assets", game-assets]
+             "--game-dir", game_dir, "--out", str(stage), "--game-assets", game_assets]
             + (["--ooz", ooz] if ooz else []) + ["content/assets.bin"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
@@ -445,7 +445,7 @@ def wg_reference_mounts(hull_dir: str, hp_ents: dict[str, dict],
         if not wg_dir:
             return {}
         r = subprocess.run(
-            [game-assets, "-g", wg_game, "export-ship", wg_dir,
+            [game_assets, "-g", wg_game, "export-ship", wg_dir,
              "--no-textures", "-o", str(ref_glb)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
@@ -996,8 +996,8 @@ def main() -> int:
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
-    game_assets = find_game_assets(args.game-assets)
-    if not game-assets:
+    game_assets = find_game_assets(args.game_assets)
+    if not game_assets:
         print("error: game-assets not found (build it: just build game-assets).", file=sys.stderr)
         return 1
     if not LESTA_META.is_file():
@@ -1101,7 +1101,7 @@ def main() -> int:
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
              "--game-dir", args.game_dir, "--out", str(args.stage),
-             "--game-assets", game-assets]
+             "--game-assets", game_assets]
             + (["--ooz", args.ooz] if args.ooz else [])
             + [p.lstrip("/") for p in splash_paths.values()],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -1235,7 +1235,7 @@ def main() -> int:
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
              "--game-dir", args.game_dir, "--out", str(args.stage),
-             "--game-assets", game-assets]
+             "--game-assets", game_assets]
             + (["--ooz", args.ooz] if args.ooz else []) + keep + extra,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
@@ -1254,7 +1254,7 @@ def main() -> int:
             out = raw_dir / f"{idx}__{stem}.glb"
             if not out.is_file() or args.force:
                 r = subprocess.run(
-                    [game-assets, "export-model", str(p), "--no-vfs", "-o", str(out)],
+                    [game_assets, "export-model", str(p), "--no-vfs", "-o", str(out)],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                 )
                 if r.returncode != 0 or not out.is_file():
@@ -1280,7 +1280,7 @@ def main() -> int:
                 if not src.is_file():
                     return None
                 r = subprocess.run(
-                    [game-assets, "export-model", str(src), "--no-vfs", "-o", str(raw)],
+                    [game_assets, "export-model", str(src), "--no-vfs", "-o", str(raw)],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
                 )
                 if r.returncode != 0 or not raw.is_file():
@@ -1409,7 +1409,7 @@ def main() -> int:
                 if src is None:
                     if not raw.is_file() or args.force:
                         r = subprocess.run(
-                            [game-assets, "export-model", str(gun_src), "--no-vfs", "-o", str(raw)],
+                            [game_assets, "export-model", str(gun_src), "--no-vfs", "-o", str(raw)],
                             capture_output=True, text=True, encoding="utf-8", errors="replace",
                         )
                         if r.returncode != 0 or not raw.is_file():

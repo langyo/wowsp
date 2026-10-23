@@ -190,7 +190,7 @@ def main() -> int:
         return 1
 
     game_assets = find_game_assets()
-    if not game-assets:
+    if not game_assets:
         print(
             "error: game-assets not found.",
             file=sys.stderr,

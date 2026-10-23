@@ -55,7 +55,7 @@ def main() -> int:
         return 1
 
     game_assets = find_tool("game-assets", "WOWSP_GAME_ASSETS")
-    if not game-assets:
+    if not game_assets:
         print("error: game-assets not found. Download from "
               "https://github.com/landaire/game-assets/releases and set WOWSP_GAME_ASSETS.",
               file=sys.stderr)
@@ -79,7 +79,7 @@ def main() -> int:
         extract_dir = Path(tmpdir)
         print(f"[convert_map] extracting spaces/{space_id}/models.geometry ...")
         rc = subprocess.call([
-            game-assets, "--game-dir", game, "extract",
+            game_assets, "--game-dir", game, "extract",
             f"spaces/{space_id}/models.geometry",
             "-o", str(extract_dir), "--strip-prefix",
         ])
