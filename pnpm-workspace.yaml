@@ -25,26 +25,27 @@ minimumReleaseAgeExclude:
   - brace-expansion@2.1.7
   - brace-expansion@5.0.12
 overrides:
-  postcss: ^8.5.18
-  # Override values stay in caret form (repo policy: dependency specs are
-  # ^-ranges so resolution tracks the newest release). A selector + caret
-  # value acts as a floor — specs below the patched line are lifted to
-  # >=patched, newer in-line releases keep flowing in.
-  "brace-expansion@<1.1.18": ^1.1.18
-  "brace-expansion@>=2.0.0 <2.1.7": ^2.1.7
-  "brace-expansion@>=4.0.0 <5.0.12": ^5.0.12
+  # All override values are coarse carets (repo policy: ^MAJOR, or ^0.MINOR
+  # on 0.x lines) so resolution always tracks the newest release. The
+  # SELECTORS below the patched lines keep the audit history readable; the
+  # >=4.0.0 → ^5 force stays load-bearing because the 4.x line has no
+  # patched release (5.0.12 is the fix). Resolutions can't fall back below
+  # the patched versions: they are age-mature, so even minimumReleaseAge
+  # filtering still exposes them as the newest eligible.
+  postcss: ^8
+  "brace-expansion@<1.1.18": ^1
+  "brace-expansion@>=2.0.0 <2.1.7": ^2
+  "brace-expansion@>=4.0.0 <5.0.12": ^5
   # Dev-toolchain audit wave 2026-10 (all devDependencies: wrangler/miniflare
-  # undici chain, gltf-transform CLI sharp, minimatch brace-expansion chain) —
-  # floored at the patched versions so installs can't drift back onto the
-  # advisories while still tracking in-line releases.
-  undici: ^7.29.1
-  sharp: ^0.35.5
-  js-yaml: ^4.3.1
-  nanoid: ^3.3.18
+  # undici chain, gltf-transform CLI sharp, minimatch brace-expansion chain).
+  undici: ^7
+  sharp: ^0.35
+  js-yaml: ^4
+  nanoid: ^3
   # Audit L-1: prod-dep advisories above `high` fail CI — these two chains
   # (vue-router→vite 8.3.0, vue→source-map-js) were the offenders.
-  vite: ^8.3.4
-  source-map-js: ^1.2.2
+  vite: ^8
+  source-map-js: ^1
   # One vite-plugin resolution across the workspace.
   "@vitejs/plugin-vue": ^*
   "@vitejs/plugin-vue-jsx": ^*
