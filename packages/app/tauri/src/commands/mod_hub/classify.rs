@@ -2,11 +2,11 @@
 //!
 //! Every source-directory enumeration here is a trust boundary. The picker
 //! grant (`pick_source`) anchors WHICH folder may be read; the entries below
-//! that folder are inspected WITHOUT following links, so a symlink, junction
-//! or other reparse point cannot impersonate a layout signature the user
-//! never previewed. The install copy enforces the same rule again while
-//! walking nested trees — see `ensure_plain_source_entry` in the parent
-//! module.
+//! that folder are inspected WITHOUT following links, so a link-shaped
+//! reparse point (symlink/junction) cannot impersonate a layout signature the
+//! user never previewed — cloud placeholders pass, since their bytes hydrate
+//! on read. The install copy enforces the same tag rule again while walking
+//! nested trees — see `ensure_plain_source_entry` in the parent module.
 
 use anyhow::anyhow;
 use wowsp_tauri_shared::CommandResult;
@@ -20,13 +20,27 @@ pub(crate) const UNSUPPORTED_ARCHIVE: &str =
     "archive payloads need M10.2 unpack support — extract it to a folder first";
 
 #[tauri::command]
-pub fn mod_hub_classify_path(source_path: String) -> CommandResult<PackagePlan> {
+pub fn mod_hub_classify_path(
+    window: tauri::Window,
+    source_path: String,
+) -> CommandResult<PackagePlan> {
+    // Audit P0-5: classifying is a structure-revealing walk (layout,
+    // embedded ship ids), so it stays on the main webview like the other
+    // audit-P0-5 commands; the picker grant alone does not say WHO asks.
+    crate::commands::ensure_main_window_label(window.label())?;
+    classify_path(&source_path)
+}
+
+/// The command body, split out so the grant/archive tests drive it without a
+/// Tauri `Window` (the window gate is the one-line prelude above and is
+/// pinned by `scripts/check_rpc_parity.py`).
+pub(crate) fn classify_path(source_path: &str) -> CommandResult<PackagePlan> {
     // Audit H-3 closure: classify walks and parses an arbitrary
     // directory it is handed — without the picker grant it doubles as a
     // structure-enumeration oracle for a compromised webview. The webui
     // only ever classifies paths the picker just returned.
-    super::pick_source::ensure_source_granted(&source_path)?;
-    let src = Path::new(&source_path);
+    super::pick_source::ensure_source_granted(source_path)?;
+    let src = Path::new(source_path);
     // Archives are rejected up front with the unpack hint, whether or not the
     // file exists yet — the caller may be probing a path from a picker.
     let ext = src
@@ -59,6 +73,11 @@ pub fn mod_hub_classify_path(source_path: String) -> CommandResult<PackagePlan> 
 
 /// Classify the contents of an unpacked package directory.
 pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
+    // The picked root itself can be a link: a junction root would redirect
+    // every walk below it before any entry guard runs, so it is refused here.
+    // A cloud-tagged synced root (or a plain NTFS folder) passes; entry-level
+    // guards take over from here down.
+    super::ensure_plain_source_entry(src)?;
     let mut plan = classify_package_layout(src)?;
 
     // Real-world packs often ship behind a single naming-wrapper folder
@@ -94,10 +113,10 @@ pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
     Ok(plan)
 }
 
-/// Read one package directory, refusing symlink/reparse-point entries before
-/// they can be treated as layout signatures. The picked folder is untrusted
-/// input: a link entry must abort classification instead of redirecting the
-/// preview (and later the copy) outside the tree the user chose.
+/// Read one package directory, refusing link-shaped reparse entries before they
+/// can be treated as layout signatures. The picked folder is untrusted input: a
+/// link entry must abort classification instead of redirecting the preview (and
+/// later the copy) outside the tree the user chose; cloud placeholders pass
 fn read_plain_entries(dir: &Path) -> anyhow::Result<Vec<fs::DirEntry>> {
     let mut entries = Vec::new();
     for entry in fs::read_dir(dir)
@@ -298,7 +317,12 @@ fn is_override_top(to_rel: &str) -> bool {
 /// window renders these — plan entries are install TARGETS (folders), so
 /// enumerating them directly would show a single directory name instead of
 /// the payload underneath.
-pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> Vec<String> {
+///
+/// Entries pass the same no-follow guard the install copy applies
+/// ([`super::ensure_plain_source_entry`]): a link-shaped reparse point aborts
+/// the preview with the offending entry named instead of listing a target
+/// outside the picked tree; cloud placeholders still pass and hydrate.
+pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> anyhow::Result<Vec<String>> {
     let mut files = Vec::new();
     for entry in &plan.entries {
         let base = if entry.from_rel == "." {
@@ -313,6 +337,7 @@ pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> Vec<String> 
             };
             for e in read.flatten() {
                 let path = e.path();
+                super::ensure_plain_source_entry(&path)?;
                 if path.is_dir() {
                     stack.push(path);
                 } else {
@@ -328,7 +353,7 @@ pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> Vec<String> 
     }
     files.sort();
     files.dedup();
-    files
+    Ok(files)
 }
 
 /// Filesystem-safe folder slug for auto-wrapped bank names.

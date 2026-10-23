@@ -124,7 +124,8 @@ FN_SEARCH_WINDOW = 10
 #      parameter.
 #
 # `GATED_COMMANDS` was seeded 2026-10-23 (post-#1349) with the 16 commands
-# that then carried the gate — 16/208 parsed. It is a floor, not a ceiling:
+# that then carried the gate; mod_hub_classify_path joined afterwards. It is
+# a floor, not a ceiling:
 # when a command gains the gate, append its name here in the same PR (the
 # systematic-gating wave is expected to grow this list substantially);
 # removing a name is only legitimate when the command itself is gone.
@@ -140,6 +141,7 @@ GATED_COMMANDS: list[str] = [
     "import_replay_file",
     "mod_catalog_install",
     "mod_catalog_uninstall",
+    "mod_hub_classify_path",
     "mod_hub_install",
     "mod_hub_pick_source",
     "mod_hub_reconcile",

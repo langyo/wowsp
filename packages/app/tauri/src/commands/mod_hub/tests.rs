@@ -500,7 +500,7 @@ fn preview_files_enumerate_real_payloads() {
     assert_eq!(plan.entries.len(), 1);
     assert_eq!(plan.entries[0].to_rel, "gui");
 
-    let files = collect_plan_files(&pkg_root, &plan);
+    let files = collect_plan_files(&pkg_root, &plan).unwrap();
     assert_eq!(
         files,
         vec![
@@ -613,14 +613,14 @@ fn zip_files_get_structured_error() {
     let probe_str = probe.to_str().unwrap().to_string();
     let _guard = super::pick_source::grant_test_lock();
     super::pick_source::grant_source_path(&probe_str).unwrap();
-    let err = mod_hub_classify_path(probe_str).unwrap_err();
+    let err = classify_path(&probe_str).unwrap_err();
     assert_eq!(err.to_string(), UNSUPPORTED_ARCHIVE);
     std::fs::remove_dir_all(probe.parent().unwrap()).ok();
 }
 
 #[test]
 fn classify_refuses_paths_the_session_never_picked() {
-    let err = mod_hub_classify_path("C:/not/picked/this/session".into()).unwrap_err();
+    let err = classify_path("C:/not/picked/this/session").unwrap_err();
     assert!(err.to_string().contains("folder picker"));
 }
 
@@ -1988,6 +1988,9 @@ fn mod_hub_real_game_scan() {
 #[ignore]
 fn mod_hub_real_samples_classify() {
     let dir = std::env::var("WOWSP_SAMPLES_DIR").expect("set WOWSP_SAMPLES_DIR");
+    // The picker grant is the command contract; the samples harness grants
+    // each path it probes the way the native dialog would.
+    let _grant_guard = super::pick_source::grant_test_lock();
     let mut seen = 0;
     for ent in fs::read_dir(&dir).unwrap().flatten() {
         let path = ent.path();
@@ -2002,7 +2005,9 @@ fn mod_hub_real_samples_classify() {
             println!("{name}: SKIP (not a package)");
             continue;
         }
-        match mod_hub_classify_path(path.to_string_lossy().into_owned()) {
+        let path_string = path.to_string_lossy().into_owned();
+        super::pick_source::grant_source_path(&path_string);
+        match classify_path(&path_string) {
             Ok(plan) => {
                 println!(
                     "{name}: {:?} \"{}\" detail={:?} entries={} warnings={:?}",
@@ -3086,5 +3091,117 @@ fn install_refuses_a_symlinked_directory_inside_the_source_tree() {
     );
     let _ = fs::remove_dir_all(&pkg);
     let _ = fs::remove_dir_all(&game);
+    let _ = fs::remove_dir_all(&outside);
+}
+
+// ── Reparse tags: links refuse, cloud placeholders pass ─────────────────────
+
+/// The classifier is the security decision, and it is pure: link tags block,
+/// cloud placeholders (OneDrive et al, the 0x9000_xxxx family) pass.
+#[test]
+fn reparse_tag_classifier_blocks_links_only() {
+    for tag in [
+        super::IO_REPARSE_TAG_SYMLINK,
+        super::IO_REPARSE_TAG_MOUNT_POINT,
+        // Name-surrogate variants beyond the two named constants (DASL, LX
+        // conjoint, …) block by bit, not by enumeration.
+        0xA000_001Du32,
+    ] {
+        assert!(
+            super::reparse_tag_blocks_copy(tag),
+            "{tag:#010X} must block"
+        );
+    }
+    for tag in [0x9000_0001u32, 0x9000_0006, 0x9000_001A, 0x9000_0100] {
+        assert!(
+            !super::reparse_tag_blocks_copy(tag),
+            "{tag:#010X} must pass"
+        );
+    }
+    // Dedup entries are metadata, not links: copying the file is fine.
+    assert!(!super::reparse_tag_blocks_copy(0x8000_0013));
+}
+
+/// The Windows query must answer "plain" for ordinary entries (the attribute
+/// bit can age away or be read from a stale find record).
+#[cfg(windows)]
+#[test]
+fn reparse_query_reports_plain_for_ordinary_entries() {
+    let file = std::env::temp_dir().join("wowsp_reparse_plain_query");
+    let _ = fs::remove_file(&file);
+    fs::write(&file, b"x").unwrap();
+    assert_eq!(
+        super::reparse_points_at_copy(&file).unwrap(),
+        super::ReparseVerdict::Plain
+    );
+    let _ = fs::remove_file(&file);
+}
+
+/// The tag query really reads an OS tag: a symlink reports SYMLINK. This
+/// exercises the CreateFileW + DeviceIoControl path itself, not just the pure
+/// classifier; symlink creation needs the usual privilege (skip otherwise).
+#[cfg(windows)]
+#[test]
+fn reparse_query_reads_a_symlink_tag() {
+    let root = std::env::temp_dir().join("wowsp_reparse_tag_query");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("target.txt"), b"x").unwrap();
+    if !try_symlink(&root.join("target.txt"), &root.join("link.txt"), false) {
+        let _ = fs::remove_dir_all(&root);
+        return;
+    }
+    assert_eq!(
+        super::reparse_points_at_copy(&root.join("link.txt")).unwrap(),
+        super::ReparseVerdict::Tag(super::IO_REPARSE_TAG_SYMLINK)
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+/// A junction is refused like any other link. std has no stable junction
+/// constructor yet (`junction_point` is unstable), and `mklink /J` needs no
+/// privilege — unlike symlinks — so the test builds the real reparse point and
+/// skips with a stated reason if the linker is unavailable.
+#[cfg(windows)]
+fn try_junction(target: &Path, link: &Path) -> bool {
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .status();
+    match status {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            eprintln!("skipping junction test: mklink /J failed ({status})");
+            false
+        },
+        Err(e) => {
+            eprintln!("skipping junction test: cannot run mklink ({e})");
+            false
+        },
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn classify_refuses_a_junction_source_entry() {
+    let pkg = std::env::temp_dir().join("wowsp_reparse_junction");
+    let outside = std::env::temp_dir().join("wowsp_reparse_junction_outside");
+    let _ = fs::remove_dir_all(&pkg);
+    let _ = fs::remove_dir_all(&outside);
+    fs::create_dir_all(pkg.join("gui")).unwrap();
+    fs::write(pkg.join("gui/x.xml"), "<x/>").unwrap();
+    fs::create_dir_all(outside.join("payload")).unwrap();
+    fs::write(outside.join("payload/payload.xml"), "<payload/>").unwrap();
+    if !try_junction(&outside, &pkg.join("linked")) {
+        let _ = fs::remove_dir_all(&pkg);
+        let _ = fs::remove_dir_all(&outside);
+        return;
+    }
+    let err = classify_package(&pkg).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("reparse point"), "policy named: {msg}");
+    assert!(msg.contains("linked"), "entry named: {msg}");
+    let _ = fs::remove_dir_all(&pkg);
     let _ = fs::remove_dir_all(&outside);
 }

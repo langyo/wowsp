@@ -1061,7 +1061,7 @@ pub async fn mod_catalog_preview_files(
                     let (plan_root, loose_names) = package_install_layout(&root)?;
                     let plan = mod_hub::classify_package(&plan_root)
                         .map_err(|e| anyhow!("classify failed: {e}"))?;
-                    let mut files = mod_hub::collect_plan_files(&plan_root, &plan);
+                    let mut files = mod_hub::collect_plan_files(&plan_root, &plan)?;
                     for name in loose_names {
                         files.push(format!("@game/{name}"));
                     }
