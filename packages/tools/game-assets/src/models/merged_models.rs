@@ -46,7 +46,7 @@ pub enum MergedModelsError {
 }
 
 /// Parsed `models.bin` file.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MergedModels {
     pub models: Vec<MergedModelRecord>,
     pub skeletons: Vec<SkeletonProto>,

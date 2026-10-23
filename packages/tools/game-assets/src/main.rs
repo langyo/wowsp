@@ -308,6 +308,13 @@ enum Commands {
         #[arg(long)]
         no_terrain: bool,
 
+        /// Skip model prototypes and instances entirely (models.geometry,
+        /// models.bin, space.bin) — terrain/water-only export. Spaces whose
+        /// models.bin the parser cannot read yet (Lesta 26.x) still export
+        /// their terrain this way.
+        #[arg(long)]
+        no_models: bool,
+
         /// Skip water plane generation
         #[arg(long)]
         no_water: bool,
@@ -1145,6 +1152,7 @@ fn run() -> Result<(), Report> {
             no_vfs,
             terrain_step,
             no_terrain,
+            no_models,
             no_water,
             no_vegetation,
             vegetation_density,
@@ -1160,6 +1168,7 @@ fn run() -> Result<(), Report> {
             vfs.as_ref(),
             terrain_step,
             no_terrain,
+            no_models,
             no_water,
             no_vegetation,
             vegetation_density,
@@ -1746,6 +1755,7 @@ fn run_export_map(
     vfs: Option<&VfsPath>,
     terrain_step: u32,
     no_terrain: bool,
+    no_models: bool,
     no_water: bool,
     no_vegetation: bool,
     vegetation_density: f32,
@@ -1753,14 +1763,14 @@ fn run_export_map(
     max_texture_size: Option<u32>,
     keep_submerged: bool,
 ) -> Result<(), Report> {
-    use game_assets::export::gltf_export;
-    use game_assets::export::texture;
     use game_assets::models::assets_bin;
     use game_assets::models::forest;
     use game_assets::models::geometry;
     use game_assets::models::merged_models;
     use game_assets::models::speedtree;
     use game_assets::models::terrain;
+    use game_assets::export::gltf_export;
+    use game_assets::export::texture;
 
     /// Join a directory path with a filename, handling both VFS and disk paths.
     fn space_file(dir: &Path, name: &str, no_vfs: bool) -> PathBuf {
@@ -1775,45 +1785,56 @@ fn run_export_map(
     let dir_str = space_dir.to_string_lossy();
     println!("Space: {dir_str}");
 
-    // 1. Load models.geometry.
-    let geom_path = space_file(space_dir, "models.geometry", no_vfs);
-    let geom_data = read_file_data(&geom_path, no_vfs, vfs).context("Failed to load models.geometry")?;
-    let geom = geometry::parse_geometry(&geom_data).context("Failed to parse geometry")?;
+    // 1-3. Model side: geometry + merged prototypes + instance placements.
+    // --no-models replaces all three with empties (terrain-only export).
+    // `geom_data` outlives the branch: MergedGeometry borrows it.
+    let geom_data: Vec<u8>;
+    let (geom, merged, space) = if no_models {
+        println!("  models skipped (--no-models)");
+        (geometry::MergedGeometry::empty(), merged_models::MergedModels::default(), None)
+    } else {
+        // 1. Load models.geometry.
+        let geom_path = space_file(space_dir, "models.geometry", no_vfs);
+        geom_data = read_file_data(&geom_path, no_vfs, vfs).context("Failed to load models.geometry")?;
+        let geom = geometry::parse_geometry(&geom_data).context("Failed to parse geometry")?;
 
-    println!(
-        "  {} vertex buffers, {} index buffers, {} vertices mappings, {} indices mappings",
-        geom.merged_vertices.len(),
-        geom.merged_indices.len(),
-        geom.vertices_mapping.len(),
-        geom.indices_mapping.len(),
-    );
+        println!(
+            "  {} vertex buffers, {} index buffers, {} vertices mappings, {} indices mappings",
+            geom.merged_vertices.len(),
+            geom.merged_indices.len(),
+            geom.vertices_mapping.len(),
+            geom.indices_mapping.len(),
+        );
 
-    // 2. Load models.bin.
-    let models_bin_path = space_file(space_dir, "models.bin", no_vfs);
-    let models_bin_data = read_file_data(&models_bin_path, no_vfs, vfs).context("Failed to load models.bin")?;
+        // 2. Load models.bin.
+        let models_bin_path = space_file(space_dir, "models.bin", no_vfs);
+        let models_bin_data = read_file_data(&models_bin_path, no_vfs, vfs).context("Failed to load models.bin")?;
 
-    let merged = merged_models::parse_merged_models(&models_bin_data).context("Failed to parse models.bin")?;
+        let merged = merged_models::parse_merged_models(&models_bin_data).context("Failed to parse models.bin")?;
 
-    println!("  {} model prototypes, {} skeletons", merged.models.len(), merged.skeletons.len());
+        println!("  {} model prototypes, {} skeletons", merged.models.len(), merged.skeletons.len());
 
-    // 3. Load space.bin for instance transforms.
-    let space_bin_path = space_file(space_dir, "space.bin", no_vfs);
+        // 3. Load space.bin for instance transforms.
+        let space_bin_path = space_file(space_dir, "space.bin", no_vfs);
 
-    let space = match read_file_data(&space_bin_path, no_vfs, vfs) {
-        Ok(data) => match merged_models::parse_space_instances(&data) {
-            Ok(s) => {
-                println!("  {} instances", s.instances.len());
-                Some(s)
-            }
-            Err(e) => {
-                eprintln!("Warning: could not parse space.bin: {e}");
+        let space = match read_file_data(&space_bin_path, no_vfs, vfs) {
+            Ok(data) => match merged_models::parse_space_instances(&data) {
+                Ok(s) => {
+                    println!("  {} instances", s.instances.len());
+                    Some(s)
+                }
+                Err(e) => {
+                    eprintln!("Warning: could not parse space.bin: {e}");
+                    None
+                }
+            },
+            Err(_) => {
+                eprintln!("Warning: space.bin not found; models will be placed at origin.");
                 None
             }
-        },
-        Err(_) => {
-            eprintln!("Warning: space.bin not found; models will be placed at origin.");
-            None
-        }
+        };
+
+        (geom, merged, space)
     };
 
     // 4. Optionally load assets.bin for string resolution (VFS only).

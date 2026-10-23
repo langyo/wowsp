@@ -64,8 +64,8 @@ def main() -> int:
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
-    game_assets = find_game_assets(args.game-assets)
-    if not game-assets:
+    game_assets = find_game_assets(args.game_assets)
+    if not game_assets:
         print("error: game-assets not found (build it: just build game-assets).", file=sys.stderr)
         return 1
 
@@ -100,7 +100,7 @@ def main() -> int:
         rc = subprocess.run(
             [sys.executable, str(REPO_ROOT / "scripts/extract/lesta_extract.py"),
              "--game-dir", args.game_dir, "--out", args.stage,
-             "--game-assets", game-assets]
+             "--game-assets", game_assets]
             + (["--ooz", args.ooz] if args.ooz else []) + [rel],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
@@ -112,7 +112,7 @@ def main() -> int:
             continue
         raw = raw_dir / f"{index}__{name}.glb"
         r = subprocess.run(
-            [game-assets, "export-model", str(staged), "--no-vfs", "-o", str(raw)],
+            [game_assets, "export-model", str(staged), "--no-vfs", "-o", str(raw)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         if r.returncode != 0 or not raw.is_file():

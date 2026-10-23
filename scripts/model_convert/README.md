@@ -239,6 +239,45 @@ The frontend renders the contour terrain via `holoContourShader.ts` — land is
 banded by elevation, shallow sea teal, and deep trenches deep-blue with the
 densest contour lines.
 
+### Batch bake + minimap art + names (the full map refresh)
+
+```bash
+# Bake every space the install carries (resume-safe; new/changed maps only):
+just bake-maps                                # or batch_bake_maps.py --terrain-step 2
+
+# Minimap art (minimaps/<id>.webp) + world bounds (minimaps.json) for the
+# spaces that got a GLB:
+python scripts/model_convert/extract_minimaps.py
+
+# Localized map names (map_names.json) from the gettext catalogs:
+python scripts/model_convert/extract_map_names.py                 # WG install
+python scripts/model_convert/extract_map_names.py \
+  --game-dir "D:/WoWS_Korabli" --merge   # Lesta: fill ids WG lacks, keep WG names
+```
+
+### Lesta-only maps
+
+The Lesta (Мир кораблей) client's pkgs are Oodle-compressed, so the WG VFS
+route cannot read its spaces. `bake_lesta_maps.py` stages each Lesta-only
+space via `scripts/extract/lesta_extract.py`, exports terrain-only
+(`export-map --no-models` — the holo pack keeps just the `Terrain` mesh, and
+Lesta 26.x `models.bin` is beyond the vendored parser for now), and writes
+the same GLB + minimap art + bounds artifacts as the WG route. Spaces whose
+GLB already exists are skipped — shared ids keep the WG bake (dedupe), so a
+run only ever adds Lesta-exclusives (event maps like `e17_2026_Lukomorye`,
+new numbered maps like `56_Kamchatka`, ports):
+
+```bash
+python scripts/model_convert/bake_lesta_maps.py \
+  --game-dir "D:/WoWS_Korabli" --stage "C:/lesta-work/mapstage"
+```
+
+When no Oodle decoder is present one (unoodle) is built automatically
+(`scripts/extract/fetch_oodle.py`). If a stale `unoodle` from cargo's bin
+sits first on the probe path (it exits 0 without writing output), point
+`--ooz` at the freshly built one under
+`%LOCALAPPDATA%/WoWSP-extract/oozextract/target/release/unoodle.exe`.
+
 ## Status
 
 Working orchestrators. The actual format decoding is `game-assets`'s job; these

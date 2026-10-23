@@ -108,7 +108,7 @@ def main() -> int:
         print("error: World of Warships install not found. Set WOWSP_GAME_PATH.", file=sys.stderr)
         return 1
     game_assets = find_game_assets()
-    if not game-assets:
+    if not game_assets:
         print("error: game-assets not found. Set WOWSP_GAME_ASSETS.", file=sys.stderr)
         return 1
 
