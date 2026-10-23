@@ -108,7 +108,7 @@ describe("ChangelogSection", () => {
     void changelog.refresh();
     await flushPromises();
 
-    expect(document.body.querySelector(".changelog__error")).not.toBeNull();
+    expect(document.body.querySelector(".hk-error-landing")).not.toBeNull();
     expect(document.body.querySelector(".changelog__release")).toBeNull();
     expect(changelog.error).toContain("no mirror");
 
@@ -121,12 +121,12 @@ describe("ChangelogSection", () => {
     expect(document.body.querySelector(".changelog__release")).not.toBeNull();
 
     // A refresh that then fails keeps the stale feed on screen — the
-    // error rides above the list instead of blanking the pane.
+    // error card rides above the list instead of blanking the pane.
     mocks.invoke.mockRejectedValue("proxy dropped");
     void changelog.refresh();
     await flushPromises();
     expect(document.body.querySelector(".changelog__release")).not.toBeNull();
-    expect(document.body.querySelector(".changelog__error")).not.toBeNull();
+    expect(document.body.querySelector(".hk-error-landing")).not.toBeNull();
   });
 
   it("renders the empty state for an empty feed", async () => {

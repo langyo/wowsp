@@ -17,6 +17,7 @@ import { useAccountStore } from "@/stores/account";
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useClipboard } from "@/composables/useClipboard";
+import ErrorCard from "@/components/base/ErrorCard";
 import { openExternal } from "@/utils/openExternal";
 import "./FeedbackSection.scss";
 
@@ -211,18 +212,22 @@ export default defineComponent({
             <span class="feedback__state-text">{t("settings.feedbackLoading")}</span>
           </div>
         ) : !overview.value ? (
-          <div class="feedback__state">
-            <p class="feedback__error">{t("settings.feedbackFailed")}</p>
-            <HkButton size="sm" onClick={() => void refresh()}>{t("common.retry")}</HkButton>
-          </div>
+          /* Logs-overview fetch failure — the standard error card: the
+             localized sentence leads, the raw failure rides in the pane. */
+          <ErrorCard
+            error={error.value}
+            description={t("settings.feedbackFailed")}
+            retry={() => void refresh()}
+          />
         ) : !latest.value ? (
           <p class="feedback__empty">{t("settings.feedbackNoLogs")}</p>
         ) : (
           <>
           {/* A failed refresh keeps the stale card on screen — the error
-              line rides above it instead of blanking the pane. */}
+              card rides above it instead of blanking the pane; the
+              header's refresh button is the retry. */}
           {error.value ? (
-            <p class="feedback__error">{t("settings.feedbackFailed")}</p>
+            <ErrorCard error={error.value} description={t("settings.feedbackFailed")} />
           ) : null}
           <div class="feedback__card">
             <div class="feedback__row">

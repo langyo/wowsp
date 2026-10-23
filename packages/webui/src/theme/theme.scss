@@ -222,14 +222,9 @@ select,
 .feedback__dir,
 /* Pairing address + PIN get copied by hand into the phone. */
 .settings-modal__pairing-value,
-.acct-modal__error,
-.settings-modal__pack-error,
 .changelog__release-version,
-.changelog__error,
 .release-md,
 .announce-content__body,
-/* Raw English backend message behind the collapsed summary. */
-.lookup-error-notice__raw code,
 .about-modal__version,
 .about-modal__subtitle,
 .about-modal__desc,
@@ -238,7 +233,6 @@ select,
 /* The QQ number itself is a bare <button> — whitelist it directly rather
    than leaning on the UA's appearance-dependent button behavior. */
 .about-modal__qq-number,
-.replay-view__placeholder--error,
 .replay-card__ship,
 .replay-card__val,
 .replay-card__players,

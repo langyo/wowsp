@@ -61,11 +61,9 @@
     line-height: 1.6;
   }
 
+  /* Sync-failure note — the standard ErrorCard; the class is a spacing
+     hook only (the card brings its own width cap, colors and type). */
   &__pending-err {
-    margin: 0.4rem 0 0;
-    max-width: 46ch;
-    color: rgb(var(--color-error) / 85%);
-    font-size: var(--text-2xs);
-    word-break: break-all;
+    margin-top: 0.4rem;
   }
 }

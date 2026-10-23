@@ -74,10 +74,18 @@
   margin-top: 8px;
   color: rgb(var(--color-muted));
   font-size: var(--text-sm);
+}
 
-  &--error {
-    color: #ff6b6b;
-    word-break: break-all;
+/* Failed-query seat for the standard error card. The card's own
+   width:100% must not feed back into HkPopover's max-content panel
+   sizing (its stylesheet warns percentage-width children can ratchet
+   the panel wider) — pin the landing to a fixed narrow width instead;
+   the mobile-oriented card design is built to read fine at this size. */
+.async-search-combo__error {
+  margin-top: 8px;
+
+  .hk-error-landing {
+    width: 21rem;
   }
 }
 

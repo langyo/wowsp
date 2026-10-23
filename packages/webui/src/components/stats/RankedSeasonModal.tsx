@@ -3,6 +3,7 @@ import { computed, defineComponent, nextTick, ref, watch } from "vue";
 import { HkModal, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import { useRankedStore } from "@/stores/ranked";
+import ErrorCard from "@/components/base/ErrorCard";
 import { t } from "@/i18n";
 import { winrateColor } from "@/utils/winrate";
 import { leagueFromNumber, rankLeague, seasonNumber } from "@/utils/ranked";
@@ -158,7 +159,9 @@ export default defineComponent({
               <HkSpinner size="sm" />
             </div>
           ) : ranked.error ? (
-            <p class="ranked-modal__state ranked-modal__state--error">{ranked.error}</p>
+            /* Store load failure — the standard inline error card (the
+               loading/empty states below keep the compact centered block). */
+            <ErrorCard error={ranked.error} />
           ) : seasons.value.length === 0 ? (
             <p class="ranked-modal__state">{t("stats.noRankedSeasons")}</p>
           ) : (

@@ -59,25 +59,11 @@
   }
 
   // ── error banner (above content when data still visible) ───────────
+  // Only seats the standard ErrorCard in the page flow — every error
+  // chrome lives on the card itself.
   &__error-banner {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
     margin: 0 1.5rem 0.5rem;
-    background: rgb(220 80 80 / 10%);
-    border: 1px solid rgb(220 80 80 / 25%);
-    border-radius: var(--radius-sm);
-    font-size: var(--text-xs);
-    color: rgb(240 120 120);
     flex-shrink: 0;
-
-    span {
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
   }
 
   // ── image banner (HAlert; above content when portraits fail en masse) ─
@@ -302,10 +288,6 @@
     padding: 2rem;
     color: rgb(var(--color-muted));
     font-size: var(--text-sm);
-
-    &--error {
-      color: rgb(220 80 80);
-    }
   }
 
   // ── tech-tree view layout ──

@@ -582,11 +582,6 @@
     font-weight: 600;
   }
 
-  &__pack-error {
-    font-size: var(--text-2xs);
-    color: rgb(var(--color-error));
-  }
-
   /* ── phone pairing (desktop server side) ── */
   &__pairing-busy {
     display: flex;

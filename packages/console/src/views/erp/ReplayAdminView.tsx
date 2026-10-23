@@ -12,12 +12,13 @@
 
 import { computed, defineComponent, onMounted, ref } from "vue";
 import {
-  HAlert,
   HButton,
   HCard,
   HkConfirmDialog,
   HkCopyBadge,
+  HkErrorLanding,
   HInput,
+  HkJsonTree,
   HkSelect,
   HModal,
   HSkeletonList,
@@ -374,7 +375,13 @@ export default defineComponent({
             <HSkeletonList count={5} itemHeight="44px" />
           </HCard>
         ) : error.value ? (
-          <HAlert variant="error" message={`加载失败：${error.value}`} banner />
+          // App-wide error card standard (2026-10 direction): the raw
+          // failure lives structured in the JSON pane, not a banner line.
+          <HkErrorLanding variant="inline" title="加载失败" copyText={error.value}>
+            {{
+              default: () => <HkJsonTree value={{ message: error.value }} ariaLabel="raw error details" />,
+            }}
+          </HkErrorLanding>
         ) : (
           <>
             <div class="erp-head-row">

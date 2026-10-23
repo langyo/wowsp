@@ -839,10 +839,19 @@
   font-size: var(--text-xs);
   color: rgb(var(--color-muted));
   pointer-events: none;
+}
 
-  &--err {
-    color: rgb(var(--color-danger, 240 80 80));
-  }
+// GLB load failure: the standard error card floating over the stage, the
+// same top-centered seat as the note pills but sized to the card itself
+// (and never wider than the stage), so orbit controls stay grabbable
+// beside it.
+.model-stage__error {
+  position: absolute;
+  inset-inline: 0;
+  top: 0.75rem;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: calc(100% - 1.5rem);
 }
 
 .model-stage__hint {
@@ -932,13 +941,6 @@
     color: rgba(202, 138, 4, 1);
     background: rgba(234, 179, 8, 0.12);
     border: 1px solid rgba(234, 179, 8, 0.35);
-  }
-
-  &--error {
-    color: rgba(220, 38, 38, 1);
-    background: rgba(220, 38, 38, 0.10);
-    border: 1px solid rgba(220, 38, 38, 0.30);
-    word-break: break-all;
   }
 
   &--ok {

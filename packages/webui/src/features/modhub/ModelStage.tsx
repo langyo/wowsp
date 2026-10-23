@@ -17,6 +17,7 @@ import { t } from "@/i18n";
 import { useTheme } from "@/theme";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import type { ModelPreviewPart } from "@/api";
+import ErrorCard from "@/components/base/ErrorCard";
 import { isTauri } from "@/utils/platform";
 import { makeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { loadGlbModel } from "@/features/holographic/modelLoader";
@@ -245,7 +246,9 @@ export default defineComponent({
         {busy.value ? (
           <div class="model-stage__note">{t("resources.loadingAssets")}</div>
         ) : failed.value ? (
-          <div class="model-stage__note model-stage__note--err">{failed.value}</div>
+          <div class="model-stage__error">
+            <ErrorCard error={failed.value} />
+          </div>
         ) : null}
         {!isTauri() && (
           <div class="model-stage__note">{t("resources.modelShellOnly")}</div>

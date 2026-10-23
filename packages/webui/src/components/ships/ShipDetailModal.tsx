@@ -5,6 +5,7 @@ import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpC
 import { HkButton, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
+import ErrorCard from "@/components/base/ErrorCard";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -526,39 +527,38 @@ export default defineComponent({
               <p class="ship-detail__desc">{viewShip.value.description}</p>
             ) : null}
 
-            {/* Armor-data failure banner: shows the backend error plus the
-                two recovery paths — re-run the load (retry after a sync or
-                game update), then either the game-path setup modal (desktop
-                app: pick a local install) or, on the phone app where no
-                local install exists, the replay view's PC-pairing wizard
-                that syncs the gamedata cache to the phone. */}
+            {/* Armor-data failure: the standard inline error card (retry
+                re-runs the load) plus the SECOND recovery path the card
+                cannot seat — the game-path setup modal (desktop app: pick a
+                local install) or, on the phone app where no local install
+                exists, the replay view's PC-pairing wizard that syncs the
+                gamedata cache to the phone. */}
             {gpError.value ? (
-              <div class="ship-detail__gp-error">
-                <span class="ship-detail__gp-error-msg">{gpError.value}</span>
-                <HkButton size="sm" variant="secondary" onClick={() => retryGameparams()}>
-                  {t("common.retry")}
-                </HkButton>
-                {mobileApp ? (
-                  <HkButton
-                    size="sm"
-                    onClick={() => {
-                      emit("close");
-                      // The modal's hikari back guard rewinds its pushed
-                      // history entry on close (a deferred macrotask); a
-                      // same-tick router.push races that rewind and the
-                      // popstate strands the user on /ships. Let the close
-                      // settle (0.3s leave animation) before navigating.
-                      setTimeout(() => void router.push("/replay"), 350);
-                    }}
-                  >
-                    {t("ships.detail.gameparamsSyncAction")}
-                  </HkButton>
-                ) : (
-                  <HkButton size="sm" onClick={() => (showPathSetup.value = true)}>
-                    {t("common.gamePath.setAction")}
-                  </HkButton>
-                )}
-              </div>
+              <>
+                <ErrorCard error={gpError.value} retry={retryGameparams} />
+                <div class="ship-detail__gp-recovery">
+                  {mobileApp ? (
+                    <HkButton
+                      size="sm"
+                      onClick={() => {
+                        emit("close");
+                        // The modal's hikari back guard rewinds its pushed
+                        // history entry on close (a deferred macrotask); a
+                        // same-tick router.push races that rewind and the
+                        // popstate strands the user on /ships. Let the close
+                        // settle (0.3s leave animation) before navigating.
+                        setTimeout(() => void router.push("/replay"), 350);
+                      }}
+                    >
+                      {t("ships.detail.gameparamsSyncAction")}
+                    </HkButton>
+                  ) : (
+                    <HkButton size="sm" onClick={() => (showPathSetup.value = true)}>
+                      {t("common.gamePath.setAction")}
+                    </HkButton>
+                  )}
+                </div>
+              </>
             ) : null}
 
             {/* tab bar — hikari pill tab strip */}

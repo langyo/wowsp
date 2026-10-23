@@ -21,6 +21,7 @@ import {
 } from "@celestia-island/hikari";
 
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
+import ErrorCard from "@/components/base/ErrorCard";
 import type { CatalogEntry, InstalledMod } from "@/api";
 import {
   CATALOG_CATS,
@@ -377,9 +378,10 @@ export default defineComponent({
               </div>
 
               {hub.source.value === "online" && hub.catalogError.value && (
-                <div class="resources-banner resources-banner--error">
-                  {t("resources.catalogError", { error: hub.catalogError.value })}
-                </div>
+                <ErrorCard
+                  error={hub.catalogError.value}
+                  description={t("resources.catalogError", { error: hub.catalogError.value })}
+                />
               )}
 
               {/* Sub-division chips, scoped to the active big category.

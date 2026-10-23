@@ -42,6 +42,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import ErrorCard from "@/components/base/ErrorCard";
 import {
   gatewayTarget,
   parseHostInput,
@@ -503,9 +504,7 @@ export default defineComponent({
                       </HkButton>
                     </div>
                   ) : null}
-                  {addError.value ? (
-                    <p class="pairing-wizard__error">{addError.value}</p>
-                  ) : null}
+                  {addError.value ? <ErrorCard error={addError.value} /> : null}
                 </>
               ) : (
                 <>
@@ -623,7 +622,7 @@ export default defineComponent({
                   <HkSpinner size="md" tone="current" />
                 </div>
               ) : listError.value ? (
-                <p class="pairing-wizard__error">{listError.value}</p>
+                <ErrorCard error={listError.value} retry={() => void loadRemote()} />
               ) : remoteList.value.length === 0 ? (
                 <p class="pairing-wizard__empty">{t("replay.pairing.remoteEmpty")}</p>
               ) : (

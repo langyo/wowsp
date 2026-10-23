@@ -11,6 +11,7 @@ import { defineComponent, type PropType } from "vue";
 import { HkButton, HkSettingsGroup, HkSettingsHint } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import ErrorCard from "@/components/base/ErrorCard";
 import { formatEta, formatLocalStamp, formatSpeed } from "@/utils/format";
 import { isMobileApp } from "@/utils/platform";
 import { SETTINGS_ANCHOR_BAKED_MODELS } from "@/stores/settingsUi";
@@ -222,9 +223,12 @@ export default defineComponent({
                   </>
                 ) : null}
                 {prog?.phase === "error" && prog.error ? (
-                  <span class="settings-modal__pack-error">
-                    {t("settings.cacheDownloadFailed")}: {prog.error}
-                  </span>
+                  /* Download failure — the localized sentence as the card's
+                     description, the raw backend message structured below. */
+                  <ErrorCard
+                    error={prog.error}
+                    description={t("settings.cacheDownloadFailed")}
+                  />
                 ) : null}
                 {st?.bundled && !downloading ? (
                   <span class="settings-modal__pack-desc">

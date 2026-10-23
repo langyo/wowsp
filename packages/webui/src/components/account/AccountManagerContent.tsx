@@ -3,6 +3,7 @@ import { X, Trophy, Swords, Star, Plus } from "@lucide/vue";
 
 import { HkButton, HkDraggableList, HkInput, HkModal, HkScrollContainer, HkSelect, HkTag } from "@celestia-island/hikari";
 
+import ErrorCard from "@/components/base/ErrorCard";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
@@ -371,7 +372,11 @@ export default defineComponent({
             </HkButton>
           </div>
           {searchError.value ? (
-            <p class="acct-modal__error">{searchError.value}</p>
+            /* WG lookup / bind failure — the standard inline error card (the
+               raw backend sentence is an anyhow Display string, so the card's
+               tError passthrough shows it verbatim in the description and
+               structured in the JSON pane). */
+            <ErrorCard error={searchError.value} />
           ) : null}
           {found.value ? (
             <>

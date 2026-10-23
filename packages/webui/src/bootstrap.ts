@@ -29,11 +29,18 @@ import { initUiOpacityPreference } from "./theme/uiOpacityPreference";
 import { initWallpaperBlurPreferences } from "./theme/wallpaperBlur";
 import { i18n } from "./i18n";
 
-/** Canonical wowsp locale → hikari i18n dir. Hikari ships simplified-
- *  Chinese and English component copy only; every other UI locale falls
- *  back to English for those shared components. */
+/** Canonical wowsp locale → hikari i18n dir. Hikari ships its component
+ *  copy (error-landing labels, …) for zh-Hans/zh-Hant/en plus ja/ko/ru/
+ *  fr/es; the remaining wowsp UI locales fall back to English. (The old
+ *  two-way zh/en map predates hikari growing the extra locales — the
+ *  error-card rollout made the stale mapping user-visible.) */
 function hikariLocaleOf(locale: string): string {
-  return locale.startsWith("zh") ? "zh-Hans" : "en";
+  const t = locale.toLowerCase();
+  if (t.startsWith("zh")) {
+    return /(^|[-_])(tw|hk|mo|hant)\b/.test(t) ? "zh-Hant" : "zh-Hans";
+  }
+  const primary = t.split(/[-_]/)[0];
+  return ["ja", "ko", "ru", "fr", "es"].includes(primary) ? primary : "en";
 }
 
 /** Which surface [`bootstrap`] is initializing. The tray panel — a small

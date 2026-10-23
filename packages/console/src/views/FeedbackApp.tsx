@@ -29,7 +29,9 @@ import {
   HkCard,
   HkCaptchaWidget,
   HkCopyBadge,
+  HkErrorLanding,
   HkImagePreview,
+  HkJsonTree,
   HkInput,
   HkNavItem,
   HkScrollContainer,
@@ -547,9 +549,14 @@ export default defineComponent({
           <HkScrollContainer axis="vertical" class="fb-content">
             <div class="fb-content-pad">
               {cfgError.value ? (
-                <p class="fb-notice">
-                  {t("maintenance")} <span>({cfgError.value})</span>
-                </p>
+                // Config-fetch failure — the app-wide error card standard
+                // (2026-10 direction): raw failure text lives structured in
+                // the JSON pane, never as a bare banner sentence.
+                <HkErrorLanding variant="inline" tone="warning" title={t("maintenance")} copyText={cfgError.value}>
+                  {{
+                    default: () => <HkJsonTree value={{ message: cfgError.value }} ariaLabel="raw error details" />,
+                  }}
+                </HkErrorLanding>
               ) : null}
               {!cfg.value && !cfgError.value ? <HkSpinner size="md" /> : null}
               {view.value === "form" ? renderForm() : renderHistory()}

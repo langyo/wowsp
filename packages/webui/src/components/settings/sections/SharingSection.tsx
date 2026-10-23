@@ -40,6 +40,7 @@ import {
 
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import ErrorCard from "@/components/base/ErrorCard";
 import { api, type ContributionState, type PlanCandidate, type PlanItem, type QueueSnapshot } from "@/api";
 import { useReplayStore } from "@/stores/replay";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
@@ -1195,7 +1196,7 @@ export default defineComponent({
                         }}
                       />
                       {planError.value ? (
-                        <HkAlert variant="error" size="sm" message={planError.value} />
+                        <ErrorCard error={planError.value} />
                       ) : null}
                     </div>
                   ) : (
@@ -1246,7 +1247,7 @@ export default defineComponent({
                     </p>
                   ) : null}
                   {planError.value ? (
-                    <HkAlert variant="error" size="sm" message={planError.value} />
+                    <ErrorCard error={planError.value} />
                   ) : null}
                   {matchedItems.value.length === 0 ? (
                     <HkEmptyState
@@ -1306,11 +1307,11 @@ export default defineComponent({
                       })}
                     </div>
                     {q?.stage === "error" ? (
-                      <HkAlert
-                        variant="error"
-                        size="sm"
-                        message={q.message ?? t("sharing.upload.failed")}
-                      />
+                      /* Stage-level pipeline failure (the per-file outcomes
+                         below stay tag-shaped) — the standard inline error
+                         card; the generic localized sentence rides along as
+                         the error text when the queue carries no message. */
+                      <ErrorCard error={q.message ?? t("sharing.upload.failed")} />
                     ) : null}
                     {q && q.totalBytes > 0 ? (
                       <div class="sharing-sec__progress">

@@ -22,6 +22,7 @@ import { isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCa
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
+import ErrorCard from "@/components/base/ErrorCard";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useUpdaterStore } from "@/stores/updater";
 import { isMobileApp } from "@/utils/platform";
@@ -2018,7 +2019,9 @@ export default defineComponent({
                 </div>
               ) : null}
               {errorMsg.value ? (
-                <div class="ship-stage__overlay ship-stage__overlay--error">{errorMsg.value}</div>
+                <div class="ship-stage__overlay ship-stage__overlay--error">
+                  <ErrorCard error={errorMsg.value} />
+                </div>
               ) : null}
               {viewMode.value === "3d" && showArmor.value && armorReady.value ? (
                 <>

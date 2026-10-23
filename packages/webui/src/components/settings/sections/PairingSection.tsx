@@ -15,6 +15,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import ErrorCard from "@/components/base/ErrorCard";
 import { entryKey } from "@/stores/pairing";
 import { isMobileApp } from "@/utils/platform";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
@@ -108,7 +109,7 @@ export default defineComponent({
               </p>
             ) : null}
             {pairingStore.serverError ? (
-              <p class="settings-modal__pack-error">{pairingStore.serverError}</p>
+              <ErrorCard error={pairingStore.serverError} />
             ) : null}
             {pairingStore.server?.running ? (
               <div class="settings-modal__pairing-live">

@@ -28,6 +28,7 @@ import {
 } from "@celestia-island/hikari";
 
 import type { CatalogEntry, InstalledMod, ForeignModUnit, ModInstallRecord, TextureAnalysis } from "@/api";
+import ErrorCard from "@/components/base/ErrorCard";
 import { KIND_META, catIcon, isCatalogCat } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
 import AssetPreview from "@/features/modhub/AssetPreview";
@@ -732,7 +733,7 @@ function renderLocalDetail(ctx: ResourcesCtx) {
           </button>
         </div>
         {ctx.planError.value && (
-          <div class="resources-banner resources-banner--error">{ctx.planError.value}</div>
+          <ErrorCard error={ctx.planError.value} />
         )}
         {ctx.report.value && (
           <div class="resources-banner resources-banner--ok">

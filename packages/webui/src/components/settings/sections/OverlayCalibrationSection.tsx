@@ -38,6 +38,7 @@ import { useConfigStore } from "@/stores/config";
 import { useManualLocateStore } from "@/stores/manualLocate";
 import { SETTINGS_ANCHOR_CALIBRATION_LIST } from "@/stores/settingsUi";
 import PlatformIcon from "@/components/base/PlatformIcon";
+import ErrorCard from "@/components/base/ErrorCard";
 import OverlaySection from "@/components/settings/sections/OverlaySection";
 import { clientMenuOptions } from "@/utils/installLabel";
 import { normalizeGamePath, sameGamePath } from "@/utils/gamePath";
@@ -340,8 +341,10 @@ export default defineComponent({
               </div>
             ) : loadError.value != null ? (
               // Never fetched successfully: show the failure instead of
-              // cards (see loadError) — the refresh button retries.
-              <HkSettingsHint>{`${t("settings.overlayCalibration")}: ${loadError.value}`}</HkSettingsHint>
+              // cards (see loadError) — the toolbar's refresh button above
+              // is the retry. The section title rides along as the card's
+              // headline (it prefixed the old raw hint line).
+              <ErrorCard error={loadError.value} title={t("settings.overlayCalibration")} />
             ) : cards.value.length === 0 ? (
               <HkSettingsHint>{t("settings.overlayCalibrationEmpty")}</HkSettingsHint>
             ) : (
