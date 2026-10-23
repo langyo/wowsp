@@ -2,7 +2,8 @@
  *  ship / solo dimensions: scope filtering (ship / class / tier / all),
  *  battle-bucket selection off the per-ship payloads, the WR→PR anchor
  *  port (pinned to the backend's own test values), and the account-career
- *  fallback while no ship-scoped dimension is on. */
+ *  paths — the global fallback while no ship-scoped dimension is on, and
+ *  the career solo split behind every solo-only view. */
 import { describe, expect, it } from "vitest";
 
 import type { PlayerShipStats } from "@/api";
@@ -12,7 +13,12 @@ import {
   prProxyFromWinrate,
   scopedRosterView,
 } from "@/utils/shipStatsScope";
-import { EMPTY_ROSTER_VIEW, type RosterStatsDims } from "@/utils/statView";
+import {
+  EMPTY_ROSTER_VIEW,
+  columnsNeedShipStats,
+  type RosterStatsDims,
+  type OverlayColumn,
+} from "@/utils/statView";
 
 /** 418430930 = destroyer "Yamagiri" stand-in; ids only need to be stable
  *  for the injected resolver below (tests never touch the offline DB). */
@@ -154,6 +160,20 @@ describe("aggregateShipScopeStats", () => {
     expect(view!.avgDamage).toBeCloseTo(54_000 / 60, 5);
   });
 
+  it("the solo filter over ranked answers the dash face (no split exists)", () => {
+    expect(aggregateShipScopeStats(SHIPS, 1, q({ solo: true, battle: "ranked" }), resolver)).toEqual(
+      EMPTY_ROSTER_VIEW,
+    );
+  });
+
+  it("the solo filter over the merged bucket keeps only the solo randoms", () => {
+    // Ship 1: 60 solo randoms — the 20 unsplit ranked battles must not
+    // masquerade as solo numbers.
+    const view = aggregateShipScopeStats(SHIPS, 1, q({ solo: true, battle: "all" }), resolver);
+    expect(view!.battles).toBe(60);
+    expect(view!.winrate).toBeCloseTo(50, 5);
+  });
+
   it("the ranked bucket reads the per-ship ranked split", () => {
     const view = aggregateShipScopeStats(SHIPS, 1, q({ battle: "ranked" }), resolver);
     expect(view!.battles).toBe(20);
@@ -199,6 +219,9 @@ describe("scopedRosterView", () => {
     avgDamage: 85_000,
     ranked: { winrate: 48, pr: 1100, battles: 300, avgDamage: 60_000 },
     global: null,
+    // The career solo split, mapped data-only (PR/avgDamage null — the
+    // view derives the PR per algorithm).
+    solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null },
   };
 
   it("the default dims keep reading the account careers", () => {
@@ -226,17 +249,51 @@ describe("scopedRosterView", () => {
     expect(view.pr).toBe(prProxyFromWinrate(55));
   });
 
-  it("solo-only with the all-ship scope sweeps the whole list", () => {
+  it("solo-only dims read the career solo split — no per-ship list needed", () => {
     const dims: RosterStatsDims = { ship: "all", battle: "random", solo: "solo" };
+    // Note ships stays undefined: the career carries the split, so the
+    // per-ship transport (the one bulk fetch that can fail or lag behind
+    // the career) is never on the solo columns' critical path.
+    const view = scopedRosterView(CAREER, 1, dims, "random", "winrate");
+    expect(view.battles).toBe(8000);
+    expect(view.winrate).toBeCloseTo(51, 6);
+    expect(view.pr).toBe(prProxyFromWinrate(51));
+    expect(view.avgDamage).toBeNull();
+  });
+
+  it("solo-only dims over the merged battle scope stay randoms-solo", () => {
+    const dims: RosterStatsDims = { ship: "all", battle: "all", solo: "solo" };
     const view = scopedRosterView(
       { ...CAREER, ships: SHIPS },
       1,
       dims,
-      "random",
+      "all",
       "winrate",
     );
-    // Solo splits: ship 1's 60 + ship 3's 200.
-    expect(view.battles).toBe(260);
+    // The career solo split IS the randoms-solo career — the ranked side
+    // (no solo split anywhere) contributes nothing.
+    expect(view.battles).toBe(8000);
+  });
+
+  it("solo-only dims over ranked answer the dash face — with ships or without", () => {
+    const dims: RosterStatsDims = { ship: "all", battle: "ranked", solo: "solo" };
+    expect(scopedRosterView({ ...CAREER, ships: SHIPS }, 1, dims, "ranked", "winrate")).toEqual(
+      EMPTY_ROSTER_VIEW,
+    );
+    expect(scopedRosterView(CAREER, 1, dims, "ranked", "winrate")).toEqual(EMPTY_ROSTER_VIEW);
+  });
+
+  it("solo-only PR stays dashed under the expected algorithm", () => {
+    const dims: RosterStatsDims = { ship: "all", battle: "random", solo: "solo" };
+    const view = scopedRosterView(CAREER, 1, dims, "random", "expected");
+    expect(view.battles).toBe(8000);
+    expect(view.pr).toBeNull();
+  });
+
+  it("a career without the solo split dashes the solo-only view", () => {
+    const dims: RosterStatsDims = { ship: "all", battle: "random", solo: "solo" };
+    const { solo: _solo, ...withoutSolo } = CAREER;
+    expect(scopedRosterView(withoutSolo, 1, dims, "random", "winrate")).toEqual(EMPTY_ROSTER_VIEW);
   });
 
   it("loading or unavailable per-ship data answers the dash face", () => {
@@ -247,5 +304,27 @@ describe("scopedRosterView", () => {
     expect(
       scopedRosterView({ ...CAREER, ships: null }, 1, dims, "random", "winrate"),
     ).toEqual(EMPTY_ROSTER_VIEW);
+  });
+});
+
+describe("columnsNeedShipStats", () => {
+  const col = (scope: OverlayColumn["scope"], metric: OverlayColumn["metric"] = "winrate") => ({
+    scope,
+    metric,
+  });
+
+  it("global and solo columns ride the account careers alone", () => {
+    expect(
+      columnsNeedShipStats([col("global"), col("global", "battles"), col("solo")], true),
+    ).toBe(false);
+    // PR columns the rating master hides do not count either.
+    expect(
+      columnsNeedShipStats([col("global"), col("global", "pr")], false),
+    ).toBe(false);
+  });
+
+  it("a ship or class scope still forces the per-ship lists", () => {
+    expect(columnsNeedShipStats([col("global"), col("ship")], true)).toBe(true);
+    expect(columnsNeedShipStats([col("global"), col("class", "battles")], true)).toBe(true);
   });
 });

@@ -231,6 +231,10 @@ interface BatchStat {
   globalPr?: number | null;
   globalBattles?: number | null;
   globalAvgDamage?: number | null;
+  /** The career solo split (randoms-solo) — the solo-scope columns read
+   *  this instead of summing per-ship split documents. */
+  soloWr?: number | null;
+  soloBattles?: number | null;
   /** Clan id from the batch answer (null = clanless / not found) — joins
    *  the hidden-profile 过街老鼠 clan gate below. */
   clanId?: number | null;
@@ -1818,6 +1822,17 @@ async function runBatch() {
                       avgDamage: r.globalAvgDamage ?? null,
                     }
                   : null,
+              // The career solo split, data-only (PR derives per algorithm
+              // in the view — utils/shipStatsScope).
+              solo:
+                r.soloBattles != null || r.soloWr != null
+                  ? {
+                      winrate: r.soloWr ?? null,
+                      pr: null,
+                      battles: r.soloBattles ?? null,
+                      avgDamage: null,
+                    }
+                  : null,
               clanId: r.clanId ?? null,
               clanTag: r.clanTag ?? null,
               // The cluster the answer resolved on — the window realm for
@@ -1836,6 +1851,7 @@ async function runBatch() {
               battles: null,
               ranked: null,
               global: null,
+              solo: null,
               clanId: null,
               clanTag: null,
               hidden: false,

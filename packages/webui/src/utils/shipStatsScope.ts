@@ -14,10 +14,21 @@
  *   battle — randoms (the per-ship pvp career, or its solo split when the
  *            solo filter is on) / ranked (the per-ship ranked bucket) /
  *            both merged;
- *   solo   — restricts the randoms side to the solo-queue split. The WG
- *            per-ship payload exposes no solo split for ranked, so the
- *            ranked bucket passes through unsplit (documented in the
- *            settings copy).
+ *   solo   — restricts the randoms side to the solo-queue split. No solo
+ *            split of ranked exists on any transport, so a solo view over
+ *            the ranked bucket answers the dash face instead of the
+ *            unsplit ranked career, and the randoms+ranked merge under the
+ *            solo filter keeps only the solo randoms side.
+ *
+ * The solo-ONLY views (ship scope "all") never touch this aggregation:
+ * the account career the roster batch carries has the solo split
+ * first-class (`pvp_solo` → RosterStatViewSource.solo), so those views
+ * read it directly — same source, same fetch, same vintage as the global
+ * columns, and no per-ship list needed. (The per-ship split document is
+ * the one bulk transport that can fail or lag behind the career; its sum
+ * used to drift from the career the moment it did.) Only a ship/class
+ * scope COMBINED with the solo filter — no shipped column configuration
+ * produces that today — still aggregates per-ship.
  *
  * PR: under the default winrate algorithm the aggregate PR is the same
  * anchor mapping the backend applies to careers (`rating_from_winrate`,
@@ -108,8 +119,10 @@ function mergeCounters(a: Counters | null, b: Counters | null): Counters | null 
 
 /** One ship row's counters for the requested battle scope. Randoms = the
  *  row's own top-level fields (they ARE the pvp career); the solo split
- *  lives in the mode breakdown; ranked has no solo split (see the module
- *  doc). */
+ *  lives in the mode breakdown. Ranked has no solo split (see the module
+ *  doc): under the solo filter the ranked bucket answers null and the
+ *  randoms+ranked merge keeps only the solo randoms side — the unsplit
+ *  ranked career must never masquerade as solo numbers. */
 function countersOf(
   row: PlayerShipStats,
   battle: ResolvedStatsMode,
@@ -125,9 +138,9 @@ function countersOf(
     case "random":
       return randoms();
     case "ranked":
-      return modeCounters(row.modes?.ranked);
+      return solo ? null : modeCounters(row.modes?.ranked);
     default:
-      return mergeCounters(randoms(), modeCounters(row.modes?.ranked));
+      return mergeCounters(randoms(), solo ? null : modeCounters(row.modes?.ranked));
   }
 }
 
@@ -211,10 +224,31 @@ export interface ShipScopedStat {
   shipsLoading?: boolean;
 }
 
+/** The account career's solo split as display numbers: PR derives from the
+ *  split's own winrate under the winrate algorithm (the same anchors every
+ *  career PR uses); under the expected algorithm — and for a split the
+ *  career never carried — the honest faces are the dash ones. */
+function careerSoloView(
+  st: RosterStatViewSource | null | undefined,
+  prAlgo: PrAlgo,
+): RosterModeNumbers {
+  const solo = st?.solo;
+  if (!solo || solo.battles == null) return EMPTY_ROSTER_VIEW;
+  return {
+    winrate: solo.winrate,
+    pr: prAlgo === "winrate" && solo.winrate != null ? prProxyFromWinrate(solo.winrate) : null,
+    battles: solo.battles,
+    avgDamage: null,
+  };
+}
+
 /** One row's display numbers under the FULL three-dimension model: the
  *  account-career path while the dims allow it, the aggregated per-ship
- *  view otherwise. Loading / unavailable per-ship data answers the
- *  all-null view (callers own the spinner face). */
+ *  view otherwise. The solo dimension is a career path everywhere — the
+ *  batch answer carries the solo split first-class, so solo-only columns
+ *  neither wait on nor degrade with the per-ship transport. Loading /
+ *  unavailable per-ship data answers the all-null view (callers own the
+ *  spinner face). */
 export function scopedRosterView(
   st: (RosterStatViewSource & ShipScopedStat) | null | undefined,
   targetShipId: number | null,
@@ -222,13 +256,21 @@ export function scopedRosterView(
   battle: ResolvedStatsMode,
   prAlgo: PrAlgo,
 ): RosterModeNumbers {
+  if (dims.solo === "solo") {
+    // No solo split of ranked exists on any transport — the dash face is
+    // the honest answer, not the unsplit ranked career.
+    if (battle === "ranked") return EMPTY_ROSTER_VIEW;
+    return careerSoloView(st, prAlgo);
+  }
   if (!dimsNeedShipStats(dims)) return rosterStatView(st, battle);
   if (!st || st.shipsLoading || st.ships == null) return EMPTY_ROSTER_VIEW;
   return (
     aggregateShipScopeStats(st.ships, targetShipId, {
       scope: dims.ship,
       battle,
-      solo: dims.solo === "solo",
+      // Solo dims never reach this branch — both their paths above are
+      // career paths.
+      solo: false,
       prAlgo,
     }) ?? EMPTY_ROSTER_VIEW
   );

@@ -65,10 +65,11 @@ export type {
 };
 
 /** The raw per-player stats the overlay caches: the randoms career plus
- *  the ranked / global per-mode payloads nested the way `rosterStatView`
- *  reads them (the wire fields map in main.ts's batch handler), and the
- *  per-ship list the ship-scoped columns attach (shared backend
- *  facility — see utils/shipStatsScope and main.ts's ship pipeline). */
+ *  the ranked / global / solo per-mode payloads nested the way
+ *  `rosterStatView` reads them (the wire fields map in main.ts's batch
+ *  handler), and the per-ship list the ship-scoped columns attach (shared
+ *  backend facility — see utils/shipStatsScope and main.ts's ship
+ *  pipeline). */
 export interface RawStat extends RosterStatViewSource {
   clanId: number | null;
   clanTag: string | null;
