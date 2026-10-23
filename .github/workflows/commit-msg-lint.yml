@@ -6,6 +6,21 @@ on:
   # No merge_group trigger: this repo squash-merges PRs and runs no merge
   # queue — a merge_group event would execute a job whose every step is
   # gated on event_name == 'pull_request', i.e. a vacuous success.
+  #
+  # A PR opened by the default GITHUB_TOKEN (the Release workflow's
+  # digest job) fires NO pull_request events — GitHub suppresses runs
+  # triggered by that token — so this workflow also accepts a dispatch
+  # carrying the PR number: the digest job dispatches it on the PR
+  # branch to materialize the required lint-commits check on the head
+  # SHA (branch protection matches check runs by name there, whatever
+  # event created them). The dispatch path runs the REAL lint (title +
+  # subjects via the API), not a vacuous success — the digest PR's
+  # machine-generated subject is written to comply by construction.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number whose title + commit subjects to lint
+        required: true
 
 concurrency:
   group: commit-msg-lint-${{ github.event.pull_request.number || github.ref }}
@@ -13,6 +28,10 @@ concurrency:
 
 permissions:
   contents: read
+  # The dispatch path reads the PR title + commit subjects through the
+  # Pull Request REST API (bot PRs fire no pull_request event that
+  # would carry them) — that needs pull-requests: read.
+  pull-requests: read
 
 jobs:
   lint-commits:
@@ -46,4 +65,28 @@ jobs:
           # from the gitmoji rules; filter by committer author name.
           git log --no-merges --format='%s%x09%an' "$base..HEAD" \
             | awk -F'\t' '$2 !~ /\[bot\]$/ { print $1 }' \
+            | python scripts/commit_msg_lint.py check --stdin-subjects
+
+      # The dispatch twin of the two steps above (see the trigger
+      # comment): fetches the PR title and commit subjects through the
+      # API — no pull_request event ever carries them for a bot PR.
+      - name: Lint PR title (dispatch — bot PRs fire no pull_request event)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUM: ${{ github.event.inputs.pr }}
+        run: |
+          set -euo pipefail
+          title="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUM}" --jq .title)"
+          python scripts/commit_msg_lint.py check --subject "$title"
+
+      - name: Lint commit subjects in the PR (dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUM: ${{ github.event.inputs.pr }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUM}/commits" --paginate \
+            --jq '.[].commit.message | split("\n")[0]' \
             | python scripts/commit_msg_lint.py check --stdin-subjects
