@@ -6,9 +6,9 @@ settings:
 
 overrides:
   postcss: ^8.5.18
-  brace-expansion@<1.1.18: 1.1.18
-  brace-expansion@>=2.0.0 <2.1.7: 2.1.7
-  brace-expansion@>=4.0.0 <5.0.12: 5.0.12
+  brace-expansion@<1.1.18: ^1.1.18
+  brace-expansion@>=2.0.0 <2.1.7: ^2.1.7
+  brace-expansion@>=4.0.0 <5.0.12: ^5.0.12
   undici: ^7.29.1
   sharp: ^0.35.5
   js-yaml: ^4.3.1
@@ -44,8 +44,8 @@ importers:
   packages/console:
     dependencies:
       '@celestia-island/hikari':
-        specifier: 0.55.128
-        version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.128
+        version: 0.55.193(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.46.0
         version: 1.57.0(vue@3.5.43(typescript@7.0.2))
@@ -93,8 +93,8 @@ importers:
   packages/website:
     dependencies:
       '@celestia-island/hikari':
-        specifier: 0.55.128
-        version: 0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))
+        specifier: ^0.55.128
+        version: 0.55.193(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1.46.0
         version: 1.47.0(vue@3.5.42(typescript@7.0.2))
@@ -332,13 +332,6 @@ packages:
   '@babel/types@8.0.6':
     resolution: {integrity: sha512-c+xgSWboV2pdwXP67BUWDVRHi2BO5Q3KwxyFVs7taVTY+fsK47/L51ZXQoV9rozHJDNHvJ4v4WEsI/IlxV2l2A==}
     engines: {node: ^22.18.0 || >=24.11.0}
-
-  '@celestia-island/hikari@0.55.128':
-    resolution: {integrity: sha512-cu2Upr83coo/rSQvkNyrga3NPdE2mSUWkASBcHyBYHlGvjcdmSkLZCBIlXcuPMLAQrgx+iXt73O4djiqYIjHGg==}
-    peerDependencies:
-      '@types/three': ^*
-      three: ^0.185
-      vue: ^*
 
   '@celestia-island/hikari@0.55.193':
     resolution: {integrity: sha512-AHGo6tfiJ8RLqfjKf+XEHXJtPZvTyN5DTxcYk6VLs+rYcZNmao9ZkL5Nm9PYnsVwWgjVTnrzLt73WEk3BPoIlA==}
@@ -3453,8 +3446,9 @@ snapshots:
       '@babel/helper-string-parser': 8.0.6
       '@babel/helper-validator-identifier': 8.0.6
 
-  '@celestia-island/hikari@0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.193(@types/three@0.185.4)(three@0.185.1)(vue@3.5.42(typescript@7.0.2))':
     dependencies:
+      '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.185.4
       '@xterm/addon-fit': 0.11.0
       '@xterm/addon-image': 0.10.0-beta.310(@xterm/xterm@6.1.0-beta.315)
@@ -3467,8 +3461,9 @@ snapshots:
       three: 0.185.1
       vue: 3.5.42(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.128(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.193(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
+      '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.185.4
       '@xterm/addon-fit': 0.11.0
       '@xterm/addon-image': 0.10.0-beta.310(@xterm/xterm@6.1.0-beta.315)
