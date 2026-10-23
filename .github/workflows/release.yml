@@ -38,21 +38,21 @@ jobs:
   preflight:
     name: Release preflight (green CI on the tagged commit)
     # A tag can be pushed at any commit, so the build must not trust that
-    # the commit was merged green: require every check run on it to have
-    # concluded successfully (pending ones are waited for; a completed
-    # failure is final). Escape hatch for an emergency hotfix that cannot
-    # materialize the required set: set repository variable
+    # the commit was merged green: require the commit's ci.yml run to have
+    # concluded success (a pending run is waited for; a completed failure
+    # is final). Only ci.yml is consulted — this workflow's own check runs
+    # (this job in progress, the build jobs queued behind it) would keep an
+    # 'all check runs green' query pending on the same commit until the
+    # deadline. Escape hatch for an emergency hotfix that cannot
+    # materialize a green run: set repository variable
     # RELEASE_SKIP_PREFLIGHT=true — the waiver is recorded in the job
     # summary instead of passing silently.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
-      # List the commit's check runs (read-only; every other scope stays
-      # at none).
-      checks: read
     steps:
-      - name: Require green check runs for ${{ github.sha }}
+      - name: Require a green ci.yml run for ${{ github.sha }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -68,7 +68,7 @@ jobs:
               echo ""
               echo "- commit: ${SHA}"
               echo "- repository variable RELEASE_SKIP_PREFLIGHT is true: the"
-              echo "  tagged commit's check-run gate was skipped by explicit"
+              echo "  tagged commit's CI gate was skipped by explicit"
               echo "  maintainer action (emergency hotfix path)."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -78,31 +78,29 @@ jobs:
           sleep 15
           while :; do
             set +e
-            report="$(gh api --paginate --slurp \
-              "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" \
-              --jq '[.[].check_runs[]]
-                    | "\(length) \(map(select(.status != "completed")) | length) \(map(select(.status == "completed" and (.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped"))) | length)"' 2>/dev/null)"
+            state="$(gh run list --commit "$SHA" --workflow ci.yml --limit 1 \
+              --json status,conclusion \
+              --jq '.[0] | if . == null then "none" else (.status + "/" + (.conclusion // "-")) end' 2>/dev/null)"
             rc=$?
             set -e
-            if [ "$rc" -ne 0 ] || [ -z "$report" ]; then
-              echo "note: check-runs query failed (rc=$rc) — retrying"
+            if [ "$rc" -ne 0 ] || [ -z "$state" ]; then
+              echo "note: ci.yml run query failed (rc=$rc) — retrying"
             else
-              total="${report%% *}"
-              rest="${report#* }"
-              pending="${rest%% *}"
-              bad="${rest##* }"
-              echo "note: $SHA — $total check runs, $pending pending, $bad not-success ($((deadline - SECONDS))s left)"
-              if [ "$bad" -gt 0 ]; then
-                echo "::error::$bad check run(s) on $SHA did not conclude success — refusing to release"
-                exit 1
-              fi
-              if [ "$total" -gt 0 ] && [ "$pending" -eq 0 ]; then
-                echo "all $total check runs on $SHA concluded successfully"
-                exit 0
-              fi
+              echo "note: ci.yml on $SHA — $state ($((deadline - SECONDS))s left)"
+              case "$state" in
+                completed/success)
+                  echo "ci.yml on $SHA concluded success"
+                  exit 0
+                  ;;
+                completed/*)
+                  echo "::error::ci.yml on $SHA concluded '$state' — refusing to release"
+                  exit 1
+                  ;;
+              esac
+              # queued / in_progress / none — keep waiting.
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::no fully-green check-run set for $SHA within 15 minutes — refusing to release"
+              echo "::error::no green ci.yml run for $SHA within 15 minutes — refusing to release"
               exit 1
             fi
             sleep 20

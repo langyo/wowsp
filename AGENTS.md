@@ -343,7 +343,7 @@ Before submitting, the relevant subset of `just lint` (or scoped
    - `commit-msg-lint.yml` — PR title + every commit subject in the PR
      (via `scripts/commit_msg_lint.py`, bot authors exempt).
    - `release.yml` — tag-driven build & release. Its `preflight` job first
-     requires the tagged commit's check runs to be green (repository
+     requires the tagged commit's `ci.yml` run to be green (repository
      variable `RELEASE_SKIP_PREFLIGHT=true` waives it for an emergency
      hotfix and records the waiver in the job summary); then build /
      installers → notes → publish → the signed app digest.
