@@ -25,6 +25,20 @@
   height: 100%;
 }
 
+// HkCard renders the default slot RAW into .hk-card-body (no wrapper
+// in the non-scrollable branch) — the panes' parent IS the body, a
+// plain block by default. A display:flex on .fb-card (the root) flexes
+// nothing the panes care about: their parent stayed a block column,
+// the content pane flowed BELOW the sidebar and off-viewport, and the
+// card's own surface showed where the form should be (the "empty
+// right pane" report). The body itself becomes the pane row.
+.fb-card > .hk-card-body {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 // The sidebar docks at the retired page's 13rem. Band overrides are
 // plain descendant selectors — this is a global (non-SFC-scoped) sheet,
 // so hikari's classes are reachable directly (a :deep block here
@@ -104,6 +118,12 @@
   .fb-card {
     flex-direction: column;
     height: auto;
+  }
+
+  // The panes' row (see the .fb-card > .hk-card-body chain above)
+  // stacks; heights go auto so the document carries the scroll.
+  .fb-card > .hk-card-body {
+    flex-direction: column;
   }
 
   .fb-side .hk-sidebar-body {
