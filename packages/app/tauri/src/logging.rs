@@ -93,6 +93,38 @@ fn is_rolling_log_name(name: &str) -> bool {
         .is_some_and(|date| chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok())
 }
 
+/// Install the global panic hook: every panic is MIRRORED into the tracing
+/// pipeline (so it lands in the feedback log file with its message and
+/// source location) before chaining to the previous hook (the default
+/// stderr printer — a no-op on the release GUI build, where stderr has no
+/// console). Without this, a panic on a worker thread leaves NOTHING in
+/// the log: the `tab watcher tick panicked` storms in the 2026-10 feedback
+/// bundle carried no payload, and the actual panic site stayed
+/// undiagnosable from the shipped logs alone.
+fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-string panic payload".to_string());
+        let at = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let thread = std::thread::current();
+        tracing::error!(
+            thread = thread.name().unwrap_or("<unnamed>"),
+            panic = %payload,
+            at = %at,
+            "panic captured"
+        );
+        prev(info);
+    }));
+}
+
 /// Install the global subscriber: stdout layer (same format as always) +
 /// file layer when the data root resolves without the app handle.
 /// Called once at the top of `run`, before anything logs.
@@ -134,6 +166,9 @@ pub fn init() {
             tracing_subscriber::registry().with(stdout).try_init().ok();
         },
     }
+    // After the subscriber (the hook logs through it), before any other
+    // subsystem can panic.
+    install_panic_hook();
 
     // First content line of the fresh file (the roller creates today's
     // empty file at build time) — carries the build identity every

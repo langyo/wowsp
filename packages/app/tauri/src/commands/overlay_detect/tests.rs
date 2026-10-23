@@ -2574,3 +2574,187 @@ fn plausible_roster_accepts_full_12_row_grid() {
     let rows: Vec<i32> = (0..12).map(|i| 260 + i * 52).collect();
     assert!(roster_plausible(&rect, &rows, 0.5, 1920, 1080));
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Adversarial replay of the sink fast-path (regression fuzz)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Replay the pure core of the call chains `overlay::reconcile::
+/// sink_check_pass` and `compute_anchor` run (detect → verify → strip
+/// crops → thumbs → alive diff → sink solver, plus the rebuild / refine /
+/// move-test revalidation chains) across adversarial geometry and
+/// team-shape combinations — including the documented race window where
+/// `ally_rows` (a live atomic read) disagrees with the pinned grid's
+/// shape. (The Win32 capture and the plausibility veto stay outside —
+/// this is the pixel-math core.) NO input combination may panic: the
+/// watcher's `catch_unwind` keeps the thread alive, but every panicked
+/// tick skips the overlay work — the "holding Tab shows nothing" live bug
+/// (feedback bundle 2026-10-23: `tab watcher tick panicked` storms at the
+/// sink probe's 500 ms cadence on the Lesta client).
+#[test]
+fn sink_pipeline_replay_never_panics() {
+    let sizes = [(800u32, 500u32), (1600u32, 900u32), (2560u32, 1440u32)];
+    let shapes = [
+        (0usize, 0usize),
+        (1, 1),
+        (3, 3),
+        (12, 12),
+        (12, 6),
+        (24, 0),
+        (5, 0),
+    ];
+    let mut detected_shapes = 0usize;
+    for &(w, h) in &sizes {
+        for &(allies, enemies) in &shapes {
+            let rows = allies.max(enemies).clamp(1, 12);
+            let (img, _table, _truth) = synth_table(w, h, rows, 0, 0.92);
+            for profile in [
+                DetectProfile::WG,
+                DetectProfile::WG_NEXT,
+                DetectProfile::LESTA,
+            ] {
+                // The ally-block split the sink pass reads LIVE (the accepted
+                // race window: it can be any roster read, from 0 to absurd).
+                for ally_override in [allies, 0, 99] {
+                    let case = format!(
+                        "{w}x{h} shape=({allies},{enemies}) rows={rows} profile={profile:?} ally={ally_override}"
+                    );
+                    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        replay_sink_chain(&img, w, h, (allies, enemies), &profile, ally_override);
+                    }));
+                    assert!(r.is_ok(), "pipeline panicked: {case}");
+                }
+            }
+            if detect_roster_with_band(&img, w, h, (allies, enemies), &DetectProfile::WG).is_some()
+            {
+                detected_shapes += 1;
+            }
+        }
+    }
+    // The synthetic frames must actually carry detectable tables, or the
+    // replay exercised nothing beyond the early `None` paths.
+    assert!(
+        detected_shapes >= shapes.len() / 2,
+        "synthetic tables not detected"
+    );
+}
+
+/// One full replay: the compute_anchor detection chain, then the sink
+/// pass's coordinate shift + strip reads + adversarial alive/baseline
+/// diffs, then the revalidation chain.
+fn replay_sink_chain(
+    img: &[u8],
+    w: u32,
+    h: u32,
+    team: (usize, usize),
+    profile: &DetectProfile,
+    ally_rows: usize,
+) {
+    // ── compute_anchor's chain ────────────────────────────────────────────
+    let _ = probe_battle_scene(img, w, h);
+    let _ = header_bars_present(img, w, h);
+    let Some((band, det)) = detect_roster_with_band(img, w, h, team, profile) else {
+        let (r, rows) = fallback_roster(w as i32, h as i32, team.0.max(team.1));
+        let _ = build_anchor(
+            &Rect {
+                x: 0,
+                y: 0,
+                width: w as i32,
+                height: h as i32,
+            },
+            &r,
+            rows,
+            0.5,
+            false,
+            1.5,
+        );
+        return;
+    };
+    let profile_eff = resolve_wg_strip_profile(img, w, h, band, &det, profile);
+    assert!(verify_header_band(img, w, h, &band));
+    let (overlay, anchor) = build_anchor(
+        &Rect {
+            x: 0,
+            y: 0,
+            width: w as i32,
+            height: h as i32,
+        },
+        &det.rect,
+        det.row_centers.clone(),
+        det.team_split,
+        true,
+        1.5,
+    );
+    assert_eq!(overlay.width, anchor.overlay_rect.width);
+
+    // ── sink_check_pass's coordinate shift (pin → capture space) ──────────
+    // The pin's game rect here is the capture at the origin, so the shift is
+    // just the overlay origin — the same arithmetic the pass performs.
+    let dy = anchor.overlay_rect.y;
+    let mut roster = anchor.roster_rect;
+    roster.x += anchor.overlay_rect.x;
+    roster.y += dy;
+    let rows: Vec<i32> = anchor.row_centers.iter().map(|c| c + dy).collect();
+    let n = rows.len();
+    let table = StripTable {
+        roster: &roster,
+        row_centers: &rows,
+        team_split: anchor.team_split,
+        ally_rows,
+    };
+    let strips = crop_row_name_strips(img, w, h, table, &profile_eff);
+    assert_eq!(strips.len(), n);
+    let fresh: Vec<bool> = strips
+        .iter()
+        .map(|s| match s {
+            Some((buf, _, _)) => row_strip_alive(strip_max_luma(buf)),
+            None => true,
+        })
+        .collect();
+    let new_thumbs: Vec<Option<StripThumb>> = strips
+        .iter()
+        .map(|s| match s {
+            Some((buf, cw, ch)) => strip_thumb(buf, *cw, *ch),
+            None => None,
+        })
+        .collect();
+
+    // ── adversarial pinned-alive / baseline diffs + the side solver ───────
+    let ally_n = ally_rows.min(n);
+    for seed in [1u32, 42, 0xdead_beef] {
+        let mut noise = Noise(seed);
+        let pinned: Vec<bool> = (0..n).map(|_| noise.next_f32(0.0, 1.0) > 0.4).collect();
+        for (lo, hi) in [(0, ally_n), (ally_n, n)] {
+            let old_side: Vec<Option<StripThumb>> =
+                (lo..hi).map(|i| new_thumbs[i].clone()).collect();
+            let new_side: Vec<Option<StripThumb>> =
+                (lo..hi).map(|i| new_thumbs[(i + 1) % n].clone()).collect();
+            let was = pinned[lo..hi].iter().filter(|&&a| a).count();
+            let now = fresh[lo..hi].iter().filter(|&&a| a).count();
+            let _ = sink_victims(&old_side, &new_side, was, now);
+            let _ = sink_victims(&new_side, &old_side, now, was);
+        }
+    }
+
+    // ── the revalidation chain (rebuild + native refinement + move test) ──
+    let measured = measured_pitch_from_centers(&det.row_centers, team.0);
+    let rebuilt = rebuild_roster_from_band(&band, w, h, team, Some(measured), profile);
+    let scale = w.div_ceil(MAX_WORK_WIDTH).max(1);
+    let prior = ((band.top + band.height) as f32 * scale as f32).round() as i32;
+    let _ = refine_roster_native(img, w, h, &rebuilt, prior);
+    let _ = anchor_meaningfully_moved(&anchor, &anchor);
+    let (_, fresh_anchor) = build_anchor(
+        &Rect {
+            x: 0,
+            y: 0,
+            width: w as i32,
+            height: h as i32,
+        },
+        &rebuilt.rect,
+        rebuilt.row_centers,
+        rebuilt.team_split,
+        true,
+        1.5,
+    );
+    let _ = anchor_meaningfully_moved(&anchor, &fresh_anchor);
+}
