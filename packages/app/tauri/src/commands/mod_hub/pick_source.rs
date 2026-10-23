@@ -34,7 +34,42 @@ fn source_grants() -> &'static std::sync::Mutex<HashMap<String, Instant>> {
 
 /// Register `path` — exactly as the native folder dialog returned it — as
 /// an installable source for this session.
-pub(crate) fn grant_source_path(path: &str) {
+///
+/// Audit H-3 residual hardening: the app's own data tree is writable by a
+/// compromised webview (`appdata_write`), so a source picked under it
+/// would enable a preview-clean/install-hostile TOCTOU inside the grant
+/// TTL. The grant is refused at pick time with a visible error instead.
+pub(crate) fn grant_source_path(path: &str) -> anyhow::Result<()> {
+    let data = match crate::paths::ensure_data_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "data dir unavailable — the source-grant data-root check is skipped"
+            );
+            std::path::PathBuf::new()
+        },
+    };
+    if !data.as_os_str().is_empty() {
+        // Both sides canonicalized (resolves symlinks / 8.3 short names /
+        // relative segments) so the prefix comparison cannot be aliased
+        // around; an unresolvable pick fails closed.
+        let (Ok(picked), Ok(root)) = (
+            std::path::Path::new(path).canonicalize(),
+            data.canonicalize(),
+        ) else {
+            return Err(anyhow!(
+                "the picked package source could not be resolved ({path})"
+            ));
+        };
+        let picked_s = picked.to_string_lossy().to_ascii_lowercase();
+        let root_s = format!("{}\\", root.to_string_lossy().to_ascii_lowercase());
+        if picked_s == root_s.trim_end_matches('\\') || picked_s.starts_with(&root_s) {
+            return Err(anyhow!(
+                "the app data folder is not a valid mod package source ({path})"
+            ));
+        }
+    }
     let mut grants = source_grants().lock().unwrap_or_else(|p| p.into_inner());
     // Drop expired entries first, then make room for the new grant by
     // evicting the oldest survivor. The map is tiny; a linear scan is the
@@ -52,6 +87,7 @@ pub(crate) fn grant_source_path(path: &str) {
         grants.remove(&oldest);
     }
     grants.insert(path.to_string(), Instant::now());
+    Ok(())
 }
 
 /// Does `path` carry a live grant? Slides the TTL forward on use, so an
@@ -104,11 +140,13 @@ pub async fn mod_hub_pick_source(window: tauri::Window) -> CommandResult<Option<
         })
         .await
         .map_err(|e| anyhow!("mod source dialog task failed: {e}"))?;
-        Ok(picked.map(|p| {
-            let path = p.to_string_lossy().into_owned();
-            grant_source_path(&path);
-            path
-        }))
+        match picked.map(|p| p.to_string_lossy().into_owned()) {
+            Some(path) => {
+                grant_source_path(&path)?;
+                Ok(Some(path))
+            },
+            None => Ok(None),
+        }
     }
 }
 
@@ -133,8 +171,10 @@ mod tests {
     #[test]
     fn expired_source_grants_are_refused() {
         let _guard = grant_test_lock();
+        // The grant canonicalizes both sides — the picked path must exist.
         let path = "C:/tmp/wowsp-source-grant-test/pack";
-        grant_source_path(path);
+        std::fs::create_dir_all(path).unwrap();
+        grant_source_path(path).unwrap();
         assert!(source_path_granted(path));
         source_grants().lock().unwrap().insert(
             path.to_string(),
@@ -148,9 +188,12 @@ mod tests {
     fn source_grant_table_is_capped_and_evicts_the_oldest() {
         let _guard = grant_test_lock();
         let first = "C:/tmp/wowsp-source-grant-test/first";
-        grant_source_path(first);
+        std::fs::create_dir_all(first).unwrap();
+        grant_source_path(first).unwrap();
         for i in 0..SOURCE_GRANT_CAP {
-            grant_source_path(&format!("C:/tmp/wowsp-source-grant-test/n{i}"));
+            let p = format!("C:/tmp/wowsp-source-grant-test/n{i}");
+            std::fs::create_dir_all(&p).unwrap();
+            grant_source_path(&p).unwrap();
         }
         assert!(
             !source_path_granted(first),

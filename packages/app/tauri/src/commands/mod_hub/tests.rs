@@ -604,11 +604,18 @@ fn zip_files_get_structured_error() {
     // The archive probe sits behind the picker grant (audit H-3) — grant
     // the probed path the way the native pick would, then expect the
     // structured archive error rather than the grant refusal. The grant
-    // table is shared with pick_source's own tests, so take their lock.
+    // canonicalizes the path — it must exist on disk.
+    let probe = std::env::temp_dir()
+        .join("wowsp_zip_probe_test")
+        .join("pack.zip");
+    std::fs::create_dir_all(probe.parent().unwrap()).unwrap();
+    std::fs::write(&probe, b"PK").unwrap();
+    let probe_str = probe.to_str().unwrap().to_string();
     let _guard = super::pick_source::grant_test_lock();
-    super::pick_source::grant_source_path("Z:/not/here/pack.zip");
-    let err = mod_hub_classify_path("Z:/not/here/pack.zip".into()).unwrap_err();
+    super::pick_source::grant_source_path(&probe_str).unwrap();
+    let err = mod_hub_classify_path(probe_str).unwrap_err();
     assert_eq!(err.to_string(), UNSUPPORTED_ARCHIVE);
+    std::fs::remove_dir_all(probe.parent().unwrap()).ok();
 }
 
 #[test]

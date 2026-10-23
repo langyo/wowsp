@@ -1367,6 +1367,19 @@ fn extract_zip(archive: &Path, dest: &Path, visited: &mut Vec<String>) -> anyhow
         let Some(rel) = entry.enclosed_name() else {
             continue;
         };
+        // Early abort on an entry that DECLARES more than the per-file
+        // budget (audit M-11 residual): honest headers save the per-file
+        // write before it starts. A lying header is fine — the binding
+        // boundary is the counted copy below, which rides ACTUAL bytes
+        // (a declared compression ratio is not the gate: highly
+        // compressible legit content ratios 1000:1 and must stay allowed).
+        if entry.size() > max_file {
+            bail!(
+                "catalog entry {} declares {} bytes over the per-file extraction cap",
+                rel.display(),
+                entry.size()
+            );
+        }
         let out = dest.join(rel);
         if entry.is_dir() {
             fs::create_dir_all(&out).map_err(|e| anyhow!("mkdir {}: {e}", out.display()))?;
