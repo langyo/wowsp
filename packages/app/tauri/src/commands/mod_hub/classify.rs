@@ -2,11 +2,11 @@
 //!
 //! Every source-directory enumeration here is a trust boundary. The picker
 //! grant (`pick_source`) anchors WHICH folder may be read; the entries below
-//! that folder are inspected WITHOUT following links, so a symlink, junction
-//! or other reparse point cannot impersonate a layout signature the user
-//! never previewed. The install copy enforces the same rule again while
-//! walking nested trees — see `ensure_plain_source_entry` in the parent
-//! module.
+//! that folder are inspected WITHOUT following links, so a link-shaped
+//! reparse point (symlink/junction) cannot impersonate a layout signature the
+//! user never previewed — cloud placeholders pass, since their bytes hydrate
+//! on read. The install copy enforces the same tag rule again while walking
+//! nested trees — see `ensure_plain_source_entry` in the parent module.
 
 use anyhow::anyhow;
 use wowsp_tauri_shared::CommandResult;
@@ -94,10 +94,10 @@ pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
     Ok(plan)
 }
 
-/// Read one package directory, refusing symlink/reparse-point entries before
-/// they can be treated as layout signatures. The picked folder is untrusted
-/// input: a link entry must abort classification instead of redirecting the
-/// preview (and later the copy) outside the tree the user chose.
+/// Read one package directory, refusing link-shaped reparse entries before they
+/// can be treated as layout signatures. The picked folder is untrusted input: a
+/// link entry must abort classification instead of redirecting the preview (and
+/// later the copy) outside the tree the user chose; cloud placeholders pass
 fn read_plain_entries(dir: &Path) -> anyhow::Result<Vec<fs::DirEntry>> {
     let mut entries = Vec::new();
     for entry in fs::read_dir(dir)
@@ -298,7 +298,12 @@ fn is_override_top(to_rel: &str) -> bool {
 /// window renders these — plan entries are install TARGETS (folders), so
 /// enumerating them directly would show a single directory name instead of
 /// the payload underneath.
-pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> Vec<String> {
+///
+/// Entries pass the same no-follow guard the install copy applies
+/// ([`super::ensure_plain_source_entry`]): a link-shaped reparse point aborts
+/// the preview with the offending entry named instead of listing a target
+/// outside the picked tree; cloud placeholders still pass and hydrate.
+pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> anyhow::Result<Vec<String>> {
     let mut files = Vec::new();
     for entry in &plan.entries {
         let base = if entry.from_rel == "." {
@@ -313,6 +318,7 @@ pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> Vec<String> 
             };
             for e in read.flatten() {
                 let path = e.path();
+                super::ensure_plain_source_entry(&path)?;
                 if path.is_dir() {
                     stack.push(path);
                 } else {
@@ -328,7 +334,7 @@ pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> Vec<String> 
     }
     files.sort();
     files.dedup();
-    files
+    Ok(files)
 }
 
 /// Filesystem-safe folder slug for auto-wrapped bank names.

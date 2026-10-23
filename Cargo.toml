@@ -166,6 +166,15 @@ windows = { version = "^0.61", features = [
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Registry",
     "Win32_System_Threading",
+    # Reparse-tag query for the mod hub source guard (mod_hub/mod.rs):
+    # CreateFileW/DeviceIoControl read the tag of a reparse-point entry
+    # without following it, so symlinks/junctions are refused while OneDrive
+    # cloud placeholders (which hydrate on read) pass. FileSystem supplies
+    # CreateFileW, System_IO the IOCTL, and Security because the metadata
+    # groups CreateFileW behind its SECURITY_ATTRIBUTES parameter.
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
     "Win32_Storage_Xps",
 ] }
 

@@ -25,12 +25,14 @@
 //! Trust boundary (audit H-3): a local install's source is anchored to the
 //! native folder picker ([`pick_source`]) — classify and install only accept
 //! paths a dialog handed out this session — and the picked tree is copied
-//! through [`copy_tree`], which refuses every symlink/junction (reparse
-//! point) entry via [`ensure_plain_source_entry`]. The grant decides WHICH
-//! folder may be read; the no-follow walk decides WHAT inside it may be
-//! read, so a package cannot use a link to pull files from outside the
-//! previewed tree into `res_mods` (nor loop the copy through a junction
-//! cycle).
+//! through [`copy_tree`], which refuses link-shaped reparse points via
+//! [`ensure_plain_source_entry`]: symlinks and directory junctions (the
+//! name-surrogate tags) are rejected, while cloud placeholders (OneDrive &
+//! co, the `0x9000_xxxx` tag family) pass and hydrate normally on read. The
+//! grant decides WHICH folder may be read; the no-follow walk decides WHAT
+//! inside it may be read, so a package cannot use a link to pull files from
+//! outside the previewed tree into `res_mods` (nor loop the copy through a
+//! junction cycle).
 
 use anyhow::anyhow;
 use std::collections::BTreeSet;
@@ -489,16 +491,139 @@ pub(crate) fn sibling_with_suffix(path: &Path, suffix: &str) -> PathBuf {
     path.with_file_name(name)
 }
 
-/// `FILE_ATTRIBUTE_REPARSE_POINT` — symlinks, directory junctions, mount
-/// points and the other reparse points share this bit on Windows.
+/// `FILE_ATTRIBUTE_REPARSE_POINT` — set on every entry whose metadata carries
+/// a reparse tag (symlinks, junctions, cloud placeholders, …).
 #[cfg(windows)]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
+/// `IO_REPARSE_TAG_SYMLINK` — the tag behind file and directory symlinks.
+#[cfg_attr(not(windows), allow(dead_code))] // production caller is Windows-only
+pub(crate) const IO_REPARSE_TAG_SYMLINK: u32 = 0xA000_000C;
+
+/// `IO_REPARSE_TAG_MOUNT_POINT` — directory junctions and volume mount points.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const IO_REPARSE_TAG_MOUNT_POINT: u32 = 0xA000_0003;
+
+/// Does a reparse tag block the source-tree copy?
+///
+/// Only LINK-shaped tags redirect the walk to a target the user never picked:
+/// [`IO_REPARSE_TAG_SYMLINK`] and [`IO_REPARSE_TAG_MOUNT_POINT`] (junctions and
+/// volume mount points). Every other tag is data the OS resolves in place on
+/// read — most importantly the OneDrive/cloud-placeholder family
+/// (`0x9000_xxxx`): a package folder that lives in a synced tree is ordinary
+/// files to the user, and the copy hydrates them on demand. Refusing the whole
+/// reparse bit instead (the previous rule) made legitimate cloud-backed mod
+/// folders uninstallable.
+///
+/// A pure tag classifier on purpose: the Windows query below supplies the tag,
+/// and the decision itself is unit-tested without a filesystem.
+#[cfg_attr(not(windows), allow(dead_code))] // production caller is Windows-only
+pub(crate) fn reparse_tag_blocks_copy(tag: u32) -> bool {
+    matches!(tag, IO_REPARSE_TAG_SYMLINK | IO_REPARSE_TAG_MOUNT_POINT)
+}
+
+#[cfg(windows)]
+/// `FSCTL_GET_REPARSE_POINT` — `CTL_CODE(FILE_DEVICE_FILE_SYSTEM, 42,
+/// METHOD_BUFFERED, FILE_ANY_ACCESS)`. Spelled out here because the binding
+/// lives behind the `Win32_System_Ioctl` metadata feature while this walk needs
+/// exactly one IOCTL; the value is the one the Windows SDK defines.
+const FSCTL_GET_REPARSE_POINT: u32 = 0x0009_00A8;
+
+#[cfg(windows)]
+/// `HRESULT_FROM_WIN32(ERROR_NOT_A_REPARSE_POINT)` (error 4390 = 0x1126).
+const HRESULT_NOT_A_REPARSE_POINT: u32 = 0x8007_1126;
+
+#[cfg(windows)]
+/// What the no-follow reparse query found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReparseVerdict {
+    /// Not a reparse point (the attribute bit raced or aged away).
+    Plain,
+    /// The entry reparse tag.
+    Tag(u32),
+}
+
+#[cfg(windows)]
+/// Query one entry reparse tag WITHOUT following it: open a metadata handle
+/// with `FILE_FLAG_OPEN_REPARSE_POINT` (plus `FILE_FLAG_BACKUP_SEMANTICS` so
+/// directories open too) and ask `FSCTL_GET_REPARSE_POINT`; the returned
+/// `REPARSE_DATA_BUFFER` starts with the tag as a little-endian u32.
+///
+/// Failure policy: `ERROR_NOT_A_REPARSE_POINT` means the entry stopped being a
+/// reparse point between the attribute read and this query — a plain entry, not
+/// an error. Any other failure leaves the entry link shape unknown, so the
+/// caller must refuse it (fail closed) and the error says why.
+fn reparse_points_at_copy(path: &Path) -> anyhow::Result<ReparseVerdict> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+    use windows::Win32::System::IO::DeviceIoControl;
+    use windows::core::HSTRING;
+
+    let wide = HSTRING::from(path.as_os_str());
+    // FILE_READ_ATTRIBUTES is the documented minimum for a reparse query and
+    // does not hydrate a cloud file; no write access is ever requested.
+    let handle: HANDLE = unsafe {
+        CreateFileW(
+            &wide,
+            FILE_READ_ATTRIBUTES.0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS,
+            None,
+        )
+    }
+    .map_err(|e| {
+        anyhow!(
+            "open source entry {} for a reparse query: {e}",
+            path.display()
+        )
+    })?;
+    // MAXIMUM_REPARSE_DATA_BUFFER_SIZE: a symlink/junction payload always fits,
+    // so a successful IOCTL leaves the tag in the first four bytes.
+    let mut buffer = vec![0u8; 16 * 1024];
+    let mut returned = 0u32;
+    let outcome = unsafe {
+        DeviceIoControl(
+            handle,
+            FSCTL_GET_REPARSE_POINT,
+            None,
+            0,
+            Some(buffer.as_mut_ptr().cast()),
+            buffer.len() as u32,
+            Some(&mut returned),
+            None,
+        )
+    };
+    let _ = unsafe { CloseHandle(handle) };
+    match outcome {
+        Ok(()) if returned >= 4 => Ok(ReparseVerdict::Tag(u32::from_le_bytes([
+            buffer[0], buffer[1], buffer[2], buffer[3],
+        ]))),
+        Ok(()) => Err(anyhow!(
+            "reparse query on {} returned {returned} bytes (need the 4-byte tag)",
+            path.display()
+        )),
+        Err(e) if e.code().0 as u32 == HRESULT_NOT_A_REPARSE_POINT => Ok(ReparseVerdict::Plain),
+        Err(e) => Err(anyhow!(
+            "query reparse tag of {}: {e} (refusing an entry whose link shape is unknown)",
+            path.display()
+        )),
+    }
+}
+
 /// Trust boundary for every source-tree walk (classify and install): inspect
-/// `path` WITHOUT following links and refuse anything that is a symlink or
-/// another reparse point. A package folder is untrusted input — a junction in
-/// it would otherwise let the copy read a directory or file the user never
-/// picked, and a junction cycle would make the walk non-terminating.
+/// `path` WITHOUT following links and refuse entries that could redirect the
+/// walk. Cross-platform that means a symlink; on Windows it means any
+/// name-surrogate reparse point (symlink, directory junction, mount point) plus
+/// anything whose reparse tag cannot be resolved (fail closed).
+///
+/// Cloud placeholders (OneDrive and friends, the `0x9000_xxxx` tag family) are
+/// NOT links: the file contents hydrate from the cloud on read, which is
+/// exactly what copying a picked package expects. They pass.
 ///
 /// Check-then-copy is not atomic: this guards hostile package CONTENT, not a
 /// local process racing the install (which already holds the same-user write
@@ -506,26 +631,39 @@ const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 pub(crate) fn ensure_plain_source_entry(path: &Path) -> anyhow::Result<()> {
     let meta = fs::symlink_metadata(path)
         .map_err(|e| anyhow!("inspect source entry {}: {e}", path.display()))?;
-    #[cfg(windows)]
-    let reparse_point = {
-        use std::os::windows::fs::MetadataExt as _;
-        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-    };
-    #[cfg(not(windows))]
-    let reparse_point = false;
-    if reparse_point || meta.file_type().is_symlink() {
+    // `is_symlink` on Windows is the name-surrogate test (symlink AND
+    // junction), so links are refused before any tag query is needed.
+    if meta.file_type().is_symlink() {
         return Err(anyhow!(
-            "refusing source entry {}: symlinks and reparse points are never installed",
+            "refusing source entry {}: it is a link (symlink/junction) — link-shaped reparse points are never installed",
             path.display()
         ));
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt as _;
+        if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            match reparse_points_at_copy(path)? {
+                ReparseVerdict::Plain => {},
+                ReparseVerdict::Tag(tag) if reparse_tag_blocks_copy(tag) => {
+                    return Err(anyhow!(
+                        "refusing source entry {}: link reparse tag {tag:#010X} is never installed",
+                        path.display()
+                    ));
+                },
+                // Cloud placeholder and co: ordinary data, hydrated on read.
+                ReparseVerdict::Tag(_) => {},
+            }
+        }
     }
     Ok(())
 }
 
 /// Copy a subtree (or a single mapped file) through the journal. Every source
 /// entry is inspected without following links ([`ensure_plain_source_entry`]):
-/// a symlink or reparse point anywhere under the picked folder aborts the
-/// copy with the entry named, before its target bytes can be read.
+/// a link-shaped reparse point (symlink/junction) anywhere under the picked
+/// folder aborts the copy with the entry named, before its target bytes can be
+/// read; cloud placeholders pass and hydrate while they are copied.
 fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> anyhow::Result<usize> {
     if !from.exists() {
         return Err(anyhow!("{} does not exist", from.display()));
