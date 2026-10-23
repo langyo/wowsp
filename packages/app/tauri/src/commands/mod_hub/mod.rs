@@ -497,29 +497,38 @@ pub(crate) fn sibling_with_suffix(path: &Path, suffix: &str) -> PathBuf {
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
 /// `IO_REPARSE_TAG_SYMLINK` — the tag behind file and directory symlinks.
-#[cfg_attr(not(windows), allow(dead_code))] // production caller is Windows-only
+/// Named for the docs and the classifier test; the surrogate bit below drives
+/// the production decision, so the constants carry an unconditional allow.
+#[allow(dead_code)]
 pub(crate) const IO_REPARSE_TAG_SYMLINK: u32 = 0xA000_000C;
 
 /// `IO_REPARSE_TAG_MOUNT_POINT` — directory junctions and volume mount points.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[allow(dead_code)]
 pub(crate) const IO_REPARSE_TAG_MOUNT_POINT: u32 = 0xA000_0003;
+
+/// `IO_REPARSE_TAG_NAME_SURROGATE` — the tag bit every namespace-redirecting
+/// reparse point carries (symlink `0xA000_000C`, junction/mount-point
+/// `0xA000_0003`, the DASL/LX variants, …).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const IO_REPARSE_TAG_NAME_SURROGATE: u32 = 0x2000_0000;
 
 /// Does a reparse tag block the source-tree copy?
 ///
-/// Only LINK-shaped tags redirect the walk to a target the user never picked:
-/// [`IO_REPARSE_TAG_SYMLINK`] and [`IO_REPARSE_TAG_MOUNT_POINT`] (junctions and
-/// volume mount points). Every other tag is data the OS resolves in place on
-/// read — most importantly the OneDrive/cloud-placeholder family
-/// (`0x9000_xxxx`): a package folder that lives in a synced tree is ordinary
-/// files to the user, and the copy hydrates them on demand. Refusing the whole
-/// reparse bit instead (the previous rule) made legitimate cloud-backed mod
-/// folders uninstallable.
+/// Every tag that redirects the walk to a target the user never picked
+/// carries the name-surrogate bit ([`IO_REPARSE_TAG_NAME_SURROGATE`]; the two
+/// constants above name the common cases), so the bit is the rule and the
+/// enumeration cannot fall behind a new link tag. Everything else is data the
+/// OS resolves in place on read — most importantly the OneDrive/
+/// cloud-placeholder family (`0x9000_xxxx`, no surrogate bit): a package
+/// folder that lives in a synced tree is ordinary files to the user, and the
+/// copy hydrates them on demand. Refusing the whole reparse bit instead (the
+/// first rule) made legitimate cloud-backed mod folders uninstallable.
 ///
 /// A pure tag classifier on purpose: the Windows query below supplies the tag,
 /// and the decision itself is unit-tested without a filesystem.
 #[cfg_attr(not(windows), allow(dead_code))] // production caller is Windows-only
 pub(crate) fn reparse_tag_blocks_copy(tag: u32) -> bool {
-    matches!(tag, IO_REPARSE_TAG_SYMLINK | IO_REPARSE_TAG_MOUNT_POINT)
+    tag & IO_REPARSE_TAG_NAME_SURROGATE != 0
 }
 
 #[cfg(windows)]

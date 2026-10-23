@@ -3103,6 +3103,9 @@ fn reparse_tag_classifier_blocks_links_only() {
     for tag in [
         super::IO_REPARSE_TAG_SYMLINK,
         super::IO_REPARSE_TAG_MOUNT_POINT,
+        // Name-surrogate variants beyond the two named constants (DASL, LX
+        // conjoint, …) block by bit, not by enumeration.
+        0xA000_001Du32,
     ] {
         assert!(
             super::reparse_tag_blocks_copy(tag),

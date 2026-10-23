@@ -73,6 +73,11 @@ pub(crate) fn classify_path(source_path: &str) -> CommandResult<PackagePlan> {
 
 /// Classify the contents of an unpacked package directory.
 pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
+    // The picked root itself can be a link: a junction root would redirect
+    // every walk below it before any entry guard runs, so it is refused here.
+    // A cloud-tagged synced root (or a plain NTFS folder) passes; entry-level
+    // guards take over from here down.
+    super::ensure_plain_source_entry(src)?;
     let mut plan = classify_package_layout(src)?;
 
     // Real-world packs often ship behind a single naming-wrapper folder
