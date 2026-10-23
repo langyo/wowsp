@@ -609,8 +609,14 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         .collect();
     // Include entities that have creation metadata but no position samples
     // (e.g. static capture zones, entityType 14, which never emit Position packets).
+    // The per-kind `out.iter().any()` scan this replaces was O(kinds × out):
+    // a synthetic EntityCreate flood inside the decompress budget reached
+    // ~10¹³ comparisons (a pinned decode thread). A set of the ids already
+    // in `out` makes the merge O(n), and the frame walk's kinds cap bounds
+    // `out` itself (audit M-8-class input hardening).
+    let out_ids: std::collections::HashSet<i32> = out.iter().map(|t| t.entity_id).collect();
     for (eid, kind) in &kinds {
-        if !out.iter().any(|t| t.entity_id == *eid) {
+        if !out_ids.contains(eid) {
             out.push(wowsp_tauri_shared::EntityTrajectory {
                 entity_id: *eid,
                 kind: Some(kind.clone()),
