@@ -1675,6 +1675,34 @@ fn decodes_arena_state_players() {
     assert!(decode_arena_state(&[], Some((15, 8, 0))).is_none());
 }
 
+/// Review M-1 regression: the arena-state method id must be gated on a
+/// PARSED version. Without one, the id would come from the newest table
+/// while `ArenaFields::for_version(None, _)` decodes with the OLDEST
+/// field layout — a plausible-looking but wrong arena roster. The gate
+/// holds for both container families (the field layout has no
+/// family-specific default).
+#[test]
+fn arena_state_method_requires_a_parsed_version() {
+    // WG, modern pinned version → the table's id rides through.
+    let p = build_layout_profile(Some((15, 8, 0)), false, Some("15,8,0,11791718"));
+    assert!(p.arena_state_method.is_some_and(|id| id > 0));
+    // WG, NO parsed version → the arena decode is skipped entirely.
+    let p = build_layout_profile(None, false, None);
+    assert!(
+        p.arena_state_method.is_none(),
+        "no version → newest method id + oldest fields must not mix"
+    );
+    // The same gate holds for the Lesta family.
+    let p = build_layout_profile(None, true, None);
+    assert!(p.arena_state_method.is_none());
+    let p = build_layout_profile(Some((0, 12, 0)), true, Some("0,12,0,1"));
+    assert!(p.arena_state_method.is_some());
+    // Pre-table versions keep the whole events surface disabled.
+    let p = build_layout_profile(Some((0, 11, 5)), false, Some("0,11,5,1"));
+    assert!(p.methods.is_none());
+    assert!(p.arena_state_method.is_none());
+}
+
 /// Event/asymmetric modes pickle maxHealth as a scaled FLOAT — it must
 /// round to the whole number the ship actually sails with (a plain
 /// float→int cast truncates and reads 1 HP short of the true total).
