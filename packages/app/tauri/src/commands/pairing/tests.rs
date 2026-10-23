@@ -871,6 +871,59 @@ async fn expired_token_is_rejected_while_a_live_one_still_works() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+/// M-1 residual (audit follow-up): the sliding TTL must not keep a
+/// stolen token alive forever. A token minted "8 days ago" (the check
+/// runs at a synthetic clock 8 days ahead) with a fresh expiry dies at
+/// mint + 7 days even though the thief keeps using it — without the cap
+/// this test returns true, which is precisely the stolen-token scenario.
+#[tokio::test]
+async fn token_absolute_life_refuses_an_actively_used_stale_token() {
+    let (_port, handle, _client, _base, tmp) = fixture_server("123456").await;
+    let stolen = "c".repeat(64);
+    let minted = std::time::Instant::now();
+    let fresh_slide = std::time::Instant::now() + std::time::Duration::from_secs(24 * 3600);
+    handle.inject_token_minted(&stolen, fresh_slide, minted);
+
+    // Eight days later: the slide would have kept it alive; the absolute
+    // cap (mint + 7d < now) kills it.
+    let eight_days_later = minted + std::time::Duration::from_secs(8 * 24 * 3600);
+    assert!(
+        !handle.valid_at(&stolen, eight_days_later),
+        "a token past its absolute lifetime must not authenticate even with a fresh slide"
+    );
+
+    handle.stop().await;
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// The accept side of the same cap: regular use keeps the token alive
+/// through day 6 (each auth slides 24h, held at mint + 7 days) — the
+/// guard refuses only the genuinely aged, not the merely old. Walks the
+/// same sequence as the refusal test up to the boundary.
+#[tokio::test]
+async fn token_within_absolute_life_still_authenticates() {
+    let (_port, handle, _client, _base, tmp) = fixture_server("123456").await;
+    let aging = "d".repeat(64);
+    let minted = std::time::Instant::now();
+    handle.inject_token_minted(
+        &aging,
+        minted + std::time::Duration::from_secs(24 * 3600),
+        minted,
+    );
+    let at = |days: f64| minted + std::time::Duration::from_secs((days * 24.0 * 3600.0) as u64);
+
+    assert!(handle.valid_at(&aging, at(0.5)));
+    assert!(handle.valid_at(&aging, at(1.4)));
+    assert!(handle.valid_at(&aging, at(2.3)));
+    assert!(handle.valid_at(&aging, at(3.2)));
+    assert!(handle.valid_at(&aging, at(4.1)));
+    assert!(handle.valid_at(&aging, at(5.0)));
+    assert!(handle.valid_at(&aging, at(5.9)));
+
+    handle.stop().await;
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 /// M-1: `?token=` answers 401 on data routes / 404 on unknown ones —
 /// the query string is dead as an authentication channel.
 #[cfg(desktop)]

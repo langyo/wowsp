@@ -47,6 +47,20 @@ const THROTTLE_MAX_IPS: usize = 256;
 /// forward on every successful authenticated use; a fresh /pair always
 /// mints a NEW token and revokes the previous one.
 const TOKEN_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+/// M-1 residual (audit follow-up): the ABSOLUTE lifetime of a paired
+/// token. The sliding TTL above keeps an active session alive, but a
+/// refresh can never push a token's death past mint + TOKEN_MAX_LIFE —
+/// a token stolen from the plaintext LAN dies within a week no matter
+/// how diligently the thief keeps using it. Re-pairing mints a fresh one.
+const TOKEN_MAX_LIFE: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 60 * 60);
+
+/// One live bearer token: when it expires (sliding 24h, capped at
+/// mint + [`TOKEN_MAX_LIFE`]) and when it was minted.
+#[derive(Clone, Copy)]
+struct LiveToken {
+    expiry: std::time::Instant,
+    minted: std::time::Instant,
+}
 /// Concurrently served connections (M-3): one semaphore permit per
 /// accepted connection, held for its lifetime. Over-cap connections wait
 /// on the semaphore (the kernel backlog holds their sockets) instead of
@@ -151,13 +165,14 @@ pub async fn server_snapshot() -> Option<(u16, String)> {
 /// Everything the connection handlers need; shared via Arc.
 struct Shared {
     pin: String,
-    /// The LIVE bearer tokens of this server run (M-1): token → expiry.
+    /// The LIVE bearer tokens of this server run (M-1): token → record.
     /// A successful `POST /pair` mints a fresh 256-bit token, REVOKES
     /// every previous one (one active pairing session per server run)
-    /// and stores the new token with its expiry; each authenticated use
-    /// slides the expiry forward. Std mutex: the critical sections are a
+    /// and stores the new token with its expiry and mint time; each
+    /// authenticated use slides the expiry forward, never past the
+    /// token's absolute lifetime. Std mutex: the critical sections are a
     /// lookup plus one Instant write, never held across an await.
-    tokens: std::sync::Mutex<HashMap<String, std::time::Instant>>,
+    tokens: std::sync::Mutex<HashMap<String, LiveToken>>,
     /// The run's random room id, echoed in the /pair success body so a
     /// relay phone can address its later tunnels without asking the
     /// gateway again (LAN phones ignore it).
@@ -300,11 +315,32 @@ impl ServerHandle {
     /// monotonic clock cannot be rewound).
     #[cfg(test)]
     pub fn inject_token(&self, token: &str, expires: std::time::Instant) {
-        self.shared
-            .tokens
-            .lock()
-            .unwrap()
-            .insert(token.to_string(), expires);
+        self.inject_token_minted(token, expires, std::time::Instant::now());
+    }
+
+    /// [`inject_token`] plus an explicit MINT time — the absolute-lifetime
+    /// cap drives its refusal off this, so tests backdate it directly.
+    #[cfg(test)]
+    pub fn inject_token_minted(
+        &self,
+        token: &str,
+        expires: std::time::Instant,
+        minted: std::time::Instant,
+    ) {
+        self.shared.tokens.lock().unwrap().insert(
+            token.to_string(),
+            LiveToken {
+                expiry: expires,
+                minted,
+            },
+        );
+    }
+
+    /// Run the bearer check at a synthetic clock reading — tests travel
+    /// FORWARD (Instant + duration is always representable).
+    #[cfg(test)]
+    pub fn valid_at(&self, token: &str, now: std::time::Instant) -> bool {
+        shared_token_valid_at(&self.shared, token, now)
     }
 }
 
@@ -644,7 +680,10 @@ pub async fn spawn_on(
         // only a successful /pair mints a token.
         tokens: std::sync::Mutex::new(HashMap::from([(
             token.clone(),
-            std::time::Instant::now() + TOKEN_TTL,
+            LiveToken {
+                expiry: std::time::Instant::now() + TOKEN_TTL,
+                minted: std::time::Instant::now(),
+            },
         )])),
         room: room.to_string(),
         replay_root,
@@ -1049,7 +1088,14 @@ async fn handle_pair(
     {
         let mut tokens = shared_tokens(shared);
         tokens.clear();
-        tokens.insert(token.clone(), std::time::Instant::now() + TOKEN_TTL);
+        let now = std::time::Instant::now();
+        tokens.insert(
+            token.clone(),
+            LiveToken {
+                expiry: now + TOKEN_TTL,
+                minted: now,
+            },
+        );
     }
     // The room id rides along: relay phones address their later tunnels
     // by it (LAN phones ignore it).
@@ -1074,27 +1120,44 @@ fn shared_throttle(shared: &Shared) -> std::sync::MutexGuard<'_, PairThrottles> 
 }
 
 /// Lock the live-token map (poisoning treated like [`shared_throttle`]).
-fn shared_tokens(
-    shared: &Shared,
-) -> std::sync::MutexGuard<'_, HashMap<String, std::time::Instant>> {
+fn shared_tokens(shared: &Shared) -> std::sync::MutexGuard<'_, HashMap<String, LiveToken>> {
     shared.tokens.lock().unwrap_or_else(|p| p.into_inner())
 }
 
 /// M-1 auth: the presented bearer must match a LIVE token — an entry
 /// that exists and is not expired; a hit slides its expiry forward
-/// (an active session never expires mid-transfer), a miss is dropped on
-/// sight. The lookup compares every live entry through [`token_eq`], so
-/// the token bytes never leak through an early-exit timing side channel
-/// (the map holds at most a handful of entries — one, after a revoke).
+/// (an active session never expires mid-transfer) but never past the
+/// token's absolute lifetime (mint + [`TOKEN_MAX_LIFE`]) — an actively
+/// used stolen token still dies within the week. A miss or an
+/// absolute-expired entry is dropped on sight. The lookup compares every
+/// live entry through [`token_eq`], so the token bytes never leak through
+/// an early-exit timing side channel (the map holds at most a handful of
+/// entries — one, after a revoke).
 fn shared_token_valid(shared: &Shared, candidate: &str) -> bool {
-    let now = std::time::Instant::now();
+    shared_token_valid_at(shared, candidate, std::time::Instant::now())
+}
+
+/// [`shared_token_valid`] with the clock injected — tests travel
+/// FORWARD (a monotonic Instant plus a duration is always representable,
+/// unlike backdating).
+fn shared_token_valid_at(shared: &Shared, candidate: &str, now: std::time::Instant) -> bool {
     let mut tokens = shared_tokens(shared);
     let hit = tokens.keys().find(|t| token_eq(t, candidate)).cloned();
     match hit {
         Some(t) => {
-            let live = tokens.get(&t).is_some_and(|exp| now < *exp);
+            let live = tokens.get(&t).is_some_and(|tok| now < tok.expiry);
             if live {
-                tokens.insert(t, now + TOKEN_TTL);
+                // Slide, capped: once mint + MAX_LIFE passes, the capped
+                // expiry stops moving forward and the existing check
+                // refuses — no separate absolute-life branch needed.
+                let minted = tokens.get(&t).expect("hit checked above").minted;
+                tokens.insert(
+                    t,
+                    LiveToken {
+                        expiry: (now + TOKEN_TTL).min(minted + TOKEN_MAX_LIFE),
+                        minted,
+                    },
+                );
             } else {
                 tokens.remove(&t);
             }

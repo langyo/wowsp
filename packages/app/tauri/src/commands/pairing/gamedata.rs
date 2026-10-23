@@ -258,6 +258,7 @@ fn gamedata_parent(root: &Path, rel: &Path) -> Result<PathBuf> {
 /// writable through this protocol. Each file is verified by the ZIP reader
 /// before replacing its old cache entry, preserving it on CRC/read failure.
 pub(crate) fn extract_gamedata_zip(archive: &Path, dest: &Path) -> Result<usize> {
+    use std::io::{Read as _, Write as _};
     let file =
         std::fs::File::open(archive).map_err(|e| anyhow!("open {}: {e}", archive.display()))?;
     let mut zip =
@@ -266,7 +267,18 @@ pub(crate) fn extract_gamedata_zip(archive: &Path, dest: &Path) -> Result<usize>
     let root = dest
         .canonicalize()
         .map_err(|e| anyhow!("resolve {}: {e}", dest.display()))?;
+    // Audit M-11-class budgets (this archive crosses the pairing trust
+    // boundary — the paired peer is LAN-trusted, not trusted): generous
+    // against real gamedata (gameparams + encyclopedia JSON, a few
+    // hundred MB uncompressed), fatal to a zip bomb.
+    const EXTRACT_MAX_ENTRIES: usize = 20_000;
+    const EXTRACT_MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
+    const EXTRACT_MAX_TOTAL_BYTES: u64 = 2 * 1024 * 1024 * 1024;
     let mut extracted = 0usize;
+    let mut total = 0u64;
+    if zip.len() > EXTRACT_MAX_ENTRIES {
+        bail!("gamedata zip carries too many entries ({})", zip.len());
+    }
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| anyhow!("zip entry {i}: {e}"))?;
         // zip 9 makes entry-name decoding fallible (a malformed archive can
@@ -280,6 +292,16 @@ pub(crate) fn extract_gamedata_zip(archive: &Path, dest: &Path) -> Result<usize>
             tracing::warn!(entry = %entry_name, "gamedata zip: skipping unsafe entry");
             continue;
         };
+        // Early abort on an entry that DECLARES more than the per-file
+        // budget (audit M-11-class): honest headers save the write before
+        // it starts; a lying header is caught by the counted copy below,
+        // which rides ACTUAL bytes — the binding boundary.
+        if entry.size() > EXTRACT_MAX_FILE_BYTES {
+            bail!(
+                "gamedata entry {entry_name} declares {} bytes over the per-file cap",
+                entry.size()
+            );
+        }
         if entry
             .unix_mode()
             .is_some_and(|mode| mode & 0o170000 == 0o120000)
@@ -311,9 +333,30 @@ pub(crate) fn extract_gamedata_zip(archive: &Path, dest: &Path) -> Result<usize>
             .create_new(true)
             .open(&temp)
             .map_err(|e| anyhow!("create {}: {e}", temp.display()))?;
+        // Counted copy: the declared entry size is untrusted, so the
+        // per-file and total budgets ride the ACTUAL bytes leaving the
+        // decoder. A breach aborts the whole merge.
         let result = (|| -> Result<()> {
-            std::io::copy(&mut entry, &mut fout)
-                .map_err(|e| anyhow!("extract {}: {e}", out.display()))?;
+            let mut written = 0u64;
+            let mut buf = [0u8; 256 * 1024];
+            loop {
+                let n = entry
+                    .read(&mut buf)
+                    .map_err(|e| anyhow!("extract {}: {e}", out.display()))?;
+                if n == 0 {
+                    break;
+                }
+                written += n as u64;
+                total += n as u64;
+                if written > EXTRACT_MAX_FILE_BYTES {
+                    bail!("{} exceeds the per-file extraction cap", out.display());
+                }
+                if total > EXTRACT_MAX_TOTAL_BYTES {
+                    bail!("gamedata zip exceeds the total extraction cap");
+                }
+                fout.write_all(&buf[..n])
+                    .map_err(|e| anyhow!("extract {}: {e}", out.display()))?;
+            }
             drop(fout);
             std::fs::rename(&temp, &out).map_err(|e| anyhow!("replace {}: {e}", out.display()))
         })();
