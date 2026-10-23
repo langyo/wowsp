@@ -27,6 +27,12 @@
     color: rgb(var(--color-text) / 0.35);
   }
   b { font-weight: 600; }
+  /* The batch-lookup spinner that stands in for the number: HkSpinner's
+     wrapper is a block-level flex box, so the cell's text-align cannot
+     move it and the circle used to hug the LEFT edge while the settled
+     values (and the header labels above them) right-align. Park it on the
+     same right edge its number will land on. */
+  .hk-spinner-wrapper { justify-content: flex-end; }
   &--wr { min-width: 6.5ch; }
   &--pr { min-width: 5ch; }
   &--battles { min-width: 7ch; }
