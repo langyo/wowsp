@@ -35,16 +35,22 @@ build fails without them) and extend `DIGEST_PUBLISHED_CHANNELS`.
 Requires `gh` when using `--from-gh-release`. Usage:
 
     python scripts/publish_digests.py --channel app --tag v0.6.2 \\
-        --from-gh-release --latest
+        --from-gh-release --latest --require-signed
     python scripts/publish_digests.py --channel mod-hub --tag mod-hub \\
         --assets mod-index.json=<sha256> --latest
     python scripts/publish_digests.py --selftest
+
+`--require-signed` makes a publish fail-closed: without key material (or
+if the built doc did not end up signed) the publish aborts instead of
+writing an unsigned doc. The release workflow passes it, because the
+shipped app pins Ed25519 keys and rejects unsigned digests.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -174,8 +180,14 @@ def publish(
     tree: Path = DIGESTS_TREE,
     live: Path | None = LIVE_ASSETS,
     seq: int | None = None,
+    require_signed: bool = False,
 ) -> dict:
-    """Write the tag doc (and the latest pointer); returns the doc."""
+    """Write the tag doc (and the latest pointer); returns the doc.
+
+    `require_signed` is the fail-closed lane: without key material the
+    signing layer leaves the doc untouched, so this refuses the publish
+    instead of handing a client-rejected doc to the site build.
+    """
     if channel not in CHANNELS:
         raise _die(f"unknown channel {channel!r} (one of {', '.join(CHANNELS)})")
     if not TAG_RE.fullmatch(tag) or tag == "latest":
@@ -204,9 +216,14 @@ def publish(
             )
         doc_seq = seq
     doc = build_doc(channel, tag, assets, doc_seq)
-    # Sign when key material is exported (WOWSP_DIGEST_SIGNING_KEY);
-    # unsigned docs remain servable while the app has no pinned key.
+    # Sign when key material is exported (WOWSP_DIGEST_SIGNING_KEY).
     doc = catalog_signing.sign_doc_from_env(doc)
+    if require_signed and not catalog_signing.is_signed(doc):
+        raise _die(
+            "the digest doc is unsigned but --require-signed was given: "
+            "WOWSP_DIGEST_SIGNING_KEY is unset (or the signing layer "
+            "failed) — refusing to publish a doc the shipped app rejects"
+        )
     write_doc(channel, tag, doc, tree, live)
     if latest:
         write_doc(channel, "latest", doc, tree, live)
@@ -323,6 +340,26 @@ def _selftest() -> None:
         else:
             raise AssertionError("the reserved `latest` tag must be refused")
 
+    # --require-signed is fail-closed: with no key material the publish is
+    # refused before anything is written (the shipped app pins keys).
+    with tempfile.TemporaryDirectory() as tmp:
+        tree = Path(tmp) / "tree"
+        saved_key = os.environ.pop("WOWSP_DIGEST_SIGNING_KEY", None)
+        saved_id = os.environ.pop("WOWSP_DIGEST_SIGNING_KEY_ID", None)
+        try:
+            try:
+                publish("app", "v0.6.2", good, False, tree, None, require_signed=True)
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError("require_signed accepted an unsigned doc")
+            assert not (tree / "app" / "v0.6.2.json").exists()
+        finally:
+            if saved_key is not None:
+                os.environ["WOWSP_DIGEST_SIGNING_KEY"] = saved_key
+            if saved_id is not None:
+                os.environ["WOWSP_DIGEST_SIGNING_KEY_ID"] = saved_id
+
     print("selftest ok")
 
 
@@ -358,6 +395,14 @@ def main(argv: list[str]) -> None:
             "see the 2026-10-23 KV-to-static seq reset)"
         ),
     )
+    parser.add_argument(
+        "--require-signed",
+        action="store_true",
+        help=(
+            "fail-closed: abort unless the doc ends up signed (release "
+            "workflow lane — shipped clients pin signing keys)"
+        ),
+    )
     parser.add_argument("--selftest", action="store_true")
     args = parser.parse_args(argv)
 
@@ -377,7 +422,14 @@ def main(argv: list[str]) -> None:
             name, _, sha = pair.partition("=")
             assets[name] = sha
 
-    doc = publish(args.channel, args.tag, assets, args.latest, seq=args.seq)
+    doc = publish(
+        args.channel,
+        args.tag,
+        assets,
+        args.latest,
+        seq=args.seq,
+        require_signed=args.require_signed,
+    )
     print(
         f"published {doc['channel']}:{doc['tag']} seq={doc['seq']} "
         f"({len(assets)} assets{' +latest' if args.latest else ''})"

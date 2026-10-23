@@ -332,14 +332,22 @@ Before submitting, the relevant subset of `just lint` (or scoped
    repo on hosted runners, so PRs keep full triggering with concurrency
    dedup).
 4. CI structure (`.github/workflows/`):
-   - `ci.yml` — web (ubuntu: typecheck / lint / website build / i18n /
-     pnpm audit), rust (windows: fmt / clippy / check / test), deny
-     (cargo-deny native binary: advisories / licenses / sources), versions
-     (seven-version consistency via `scripts/sync_versions.py --check`).
+   - `ci.yml` — web (ubuntu: typecheck / unit tests / lint / website,
+     console and webui builds / rpc parity / i18n / docs check / in-game
+     probe / npm audit), rust (windows: fmt / clippy / anyhow policy /
+     check / portable check / workspace tests), deny (cargo-deny native
+     binary: advisories / licenses / sources), relay (wasm32 check +
+     relay-core tests), versions (seven-version consistency via
+     `scripts/sync_versions.py --check`). Every action is pinned to a full
+     commit SHA.
    - `commit-msg-lint.yml` — PR title + every commit subject in the PR
      (via `scripts/commit_msg_lint.py`, bot authors exempt).
-   - `release.yml` / `site.yml` — tag-driven build & release / site
-     deployment.
+   - `release.yml` — tag-driven build & release. Its `preflight` job first
+     requires the tagged commit's check runs to be green (repository
+     variable `RELEASE_SKIP_PREFLIGHT=true` waives it for an emergency
+     hotfix and records the waiver in the job summary); then build /
+     installers → notes → publish → the signed app digest.
+   - `site.yml` — docs / website / worker deployment.
 
 ## 9. Large Download Discipline (mandatory)
 

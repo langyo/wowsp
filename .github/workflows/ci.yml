@@ -3,9 +3,9 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [dev, master]
+    branches: [master]
   pull_request:
-    branches: [dev, master]
+    branches: [master]
 
 # Full per-push triggering is kept deliberately (public repo, hosted runners);
 # concurrency + cancel-in-progress drops superseded runs for the same PR/ref
@@ -25,11 +25,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86  # v6
         # Version comes from the "packageManager" field in package.json
         # (pnpm 11 — workspace-level overrides live in pnpm-workspace.yaml).
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
         with:
           node-version: 22
           cache: pnpm
@@ -104,12 +104,12 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable (pinned)
         with:
           components: rustfmt, clippy
       - name: Cache cargo
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
         with:
           path: |
             ~/.cargo/registry
@@ -183,14 +183,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable (pinned)
       # Native cargo-deny binary instead of the dockerized action: the
       # container trips over rust-toolchain.toml (stable-musl fetch) and
       # rejects deny.toml values (see the former "Known CI gaps" note in
       # PLAN.md). cargo-deny only reads cargo metadata, so the windows-only
       # deps resolve fine on Linux.
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177  # v2
         with:
           tool: cargo-deny@0.20.2  # pinned to the version deny.toml is validated against
       - name: cargo-deny (advisories)
@@ -214,8 +214,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable (pinned)
       - name: Add wasm target
         run: rustup target add wasm32-unknown-unknown
       - name: Relay core tests
@@ -230,7 +230,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - name: Check version fields
         # The root package.json is the single source of truth; every
         # derived manifest (Cargo workspace, tauri.conf.json, the three
