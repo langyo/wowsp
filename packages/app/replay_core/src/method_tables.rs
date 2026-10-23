@@ -1266,6 +1266,20 @@ fn parse_version_key(v: &str) -> Option<(u16, u16, u16)> {
 mod tests {
     use super::*;
 
+    /// Report a corpus-gated test as skipped (or fail when the corpus is
+    /// required). Mirrors `packets::tests::corpus_skip`: the 15.8.0 coverage
+    /// test below needs a real capture, so without `WOWSP_TEST_REPLAY` it must
+    /// SAY it skipped instead of passing silently.
+    fn corpus_skip(test_name: &str) {
+        eprintln!("skipped: set WOWSP_TEST_REPLAY (corpus-bound test: {test_name})");
+        if std::env::var_os("WOWSP_TEST_REQUIRE_CORPUS").is_some() {
+            panic!(
+                "WOWSP_TEST_REQUIRE_CORPUS is set but WOWSP_TEST_REPLAY is unset: \
+                 cannot run corpus-bound test {test_name}"
+            );
+        }
+    }
+
     /// Version selection: exact, older-than-all, newer-than-all, malformed.
     #[test]
     fn selects_table_by_version() {
@@ -1702,6 +1716,7 @@ mod tests {
     #[test]
     fn exposed_tables_cover_real_replay() {
         let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+            corpus_skip("exposed_tables_cover_real_replay");
             return;
         };
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));

@@ -335,5 +335,10 @@ export default defineConfig({
     environment: 'happy-dom',
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     globals: true,
+    // The theme tests use `vi.resetModules()` + dynamic import; on a 183-file
+    // parallel run the 5 s default times out while cold module graphs resolve.
+    // 20 s is a ceiling for the slow case, not a budget any test should spend.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
   },
 });
