@@ -3,10 +3,13 @@
  * server-rendered embedded page (spec: the HTML/JS in
  * packages/pairing-relay/crates/relay-core/src/feedback.rs).
  *
- * Every control is a real hikari component; this file owns only wiring:
+ * Layout: the ORIGINAL two-pane shell on hikari components — one glass
+ * card (HkCard) centered on the page, HSidebar docked left (brand /
+ * view nav / language picker in its header/body/footer slots), the
+ * active view scrolling right (HkScrollContainer). Panes stack below
+ * 48rem. The rest is wiring only:
  * - form: description / contact (QQ|email) / version (config prefill) /
- *   sysinfo+channel+server+game_id query prefill / attachment preview /
- *   language switcher;
+ *   sysinfo+channel+server+game_id query prefill / attachment preview;
  * - HkCaptchaWidget (Turnstile sitekey from getFeedbackConfig); a failed
  *   submit bumps `attempt` so the widget mints a fresh token;
  * - submit success reveals the ONE-TIME lookup_token (audit M-7) via
@@ -23,17 +26,21 @@ import { computed, defineComponent, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   HkButton,
+  HkCard,
   HkCaptchaWidget,
   HkCopyBadge,
   HkImagePreview,
   HkInput,
+  HkNavItem,
+  HkScrollContainer,
   HkSelect,
+  HSidebar,
   HkSpinner,
   HkTextarea,
   HkToast,
   useToast,
 } from "@celestia-island/hikari";
-import { ExternalLink, History, Paperclip, X } from "@lucide/vue";
+import { ExternalLink, History, MessageSquareText, Paperclip, X } from "@lucide/vue";
 
 import {
   getFeedbackConfig,
@@ -304,6 +311,18 @@ export default defineComponent({
       if (v === "history" && !histToken.value.trim()) histToken.value = savedToken();
     });
 
+    // Bound slot objects — HkNavItem normalizes bound identifiers into
+    // slots (an inline literal stringifies; the same gotcha the admin
+    // table page documents).
+    const navFormSlots = {
+      icon: () => <MessageSquareText size={16} />,
+      default: () => t("navFeedback"),
+    };
+    const navHistorySlots = {
+      icon: () => <History size={16} />,
+      default: () => t("navHistory"),
+    };
+
     onMounted(async () => {
       try {
         const conf = await getFeedbackConfig();
@@ -449,6 +468,7 @@ export default defineComponent({
     function renderHistory() {
       return (
         <div class="fb-form">
+          <h2 class="fb-view-title">{t("historyTitle")}</h2>
           <div class="fb-hist-row">
             <HkInput
               v-model={histToken.value}
@@ -494,40 +514,48 @@ export default defineComponent({
     }
 
     return () => (
+      // The original two-pane shell, rebuilt on hikari components: one
+      // glass card centered on the page, HSidebar (brand / view nav /
+      // language) docked left, the active view scrolling on the right
+      // (HkScrollContainer). Below 48rem the panes stack — the sidebar
+      // bands collapse to a single row nav (see FB layout sheet).
       <main class="fb-page">
         <HkToast />
-        <div class="fb-head">
-          <h1>WoWSP 反馈台</h1>
-          <HkSelect
-            class="fb-lang"
-            v-model={currentLocale.value}
-            label={t("langLabel")}
-            options={localeOptions()}
-          />
-        </div>
-        <div class="fb-tabs">
-          <HkButton
-            size="sm"
-            variant={view.value === "form" ? "primary" : "ghost"}
-            onClick={() => (view.value = "form")}
-          >
-            {t("navFeedback")}
-          </HkButton>
-          <HkButton
-            size="sm"
-            variant={view.value === "history" ? "primary" : "ghost"}
-            onClick={() => (view.value = "history")}
-          >
-            {t("navHistory")}
-          </HkButton>
-        </div>
-        {cfgError.value ? (
-          <p class="fb-notice">
-            {t("maintenance")} <span>({cfgError.value})</span>
-          </p>
-        ) : null}
-        {!cfg.value && !cfgError.value ? <HkSpinner size="md" /> : null}
-        {view.value === "form" ? renderForm() : renderHistory()}
+        <HkCard class="fb-card" padded={false}>
+          <HSidebar class="fb-side" width="13rem">
+            {{
+              header: () => <h1 class="fb-brand">WoWSP 反馈台</h1>,
+              default: () => (
+                <nav class="fb-side-nav">
+                  <HkNavItem active={view.value === "form"} onClick={() => (view.value = "form")}>
+                    {navFormSlots}
+                  </HkNavItem>
+                  <HkNavItem active={view.value === "history"} onClick={() => (view.value = "history")}>
+                    {navHistorySlots}
+                  </HkNavItem>
+                </nav>
+              ),
+              footer: () => (
+                <HkSelect
+                  v-model={currentLocale.value}
+                  label={t("langLabel")}
+                  options={localeOptions()}
+                />
+              ),
+            }}
+          </HSidebar>
+          <HkScrollContainer axis="vertical" class="fb-content">
+            <div class="fb-content-pad">
+              {cfgError.value ? (
+                <p class="fb-notice">
+                  {t("maintenance")} <span>({cfgError.value})</span>
+                </p>
+              ) : null}
+              {!cfg.value && !cfgError.value ? <HkSpinner size="md" /> : null}
+              {view.value === "form" ? renderForm() : renderHistory()}
+            </div>
+          </HkScrollContainer>
+        </HkCard>
       </main>
     );
   },

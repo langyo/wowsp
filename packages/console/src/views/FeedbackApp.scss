@@ -1,37 +1,108 @@
 // FeedbackApp — PAGE-LAYOUT sheet only: every control is a real hikari
-// component (HkInput/HkTextarea/HkSelect/HkButton/HkCaptchaWidget/
-// HkCopyBadge/HkImagePreview/HkToast); this file only arranges them into
-// the form column, the token-reveal panel and the history rows, using
-// hikari's own scale/color tokens (no palette of our own).
+// component (HkCard/HkSidebar/HkNavItem/HkScrollContainer carry the
+// shell; HkInput/HkTextarea/HkSelect/HkButton/HkCaptchaWidget/HkCopyBadge/
+// HkImagePreview/HkToast the controls); this file only arranges the
+// panes and the form column, using hikari's own scale/color tokens (no
+// palette of our own).
+//
+// The two-pane shell mirrors the retired embedded page's geometry: the
+// card centers at 56rem, the sidebar is fixed 13rem, the content pane
+// scrolls internally over the full card height.
+
 .fb-page {
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: var(--space-24) var(--space-16) 4rem;
+  height: 100dvh;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
+  justify-content: center;
+  padding: var(--space-16) var(--space-16);
+  box-sizing: border-box;
 }
 
-.fb-head {
+.fb-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-12);
-  flex-wrap: wrap;
+  align-items: stretch;
+  width: 100%;
+  max-width: 56rem;
+  height: 100%;
 }
 
-.fb-head h1 {
+// The sidebar docks at the retired page's 13rem; its bands (header /
+// body / footer) carry their own padding and the content-side border,
+// so no extra chrome is added here.
+.fb-side {
+  flex: none;
+}
+
+.fb-brand {
   margin: 0;
   font-size: var(--text-lg);
+  font-weight: 700;
+  white-space: nowrap;
 }
 
-.fb-lang {
-  width: 9.5rem;
-}
-
-.fb-tabs {
+.fb-side-nav {
   display: flex;
-  gap: var(--space-8);
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.fb-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.fb-content-pad {
+  padding: var(--space-24) var(--space-24);
+  max-width: 34rem;
+}
+
+// Panes stack on phones: the sidebar bands collapse to a slim stack —
+// brand row, a single-row nav — and the content scrolls below (the
+// retired page's 767px breakpoint grammar, on hikari components).
+@media (max-width: 47.99rem) {
+  .fb-page {
+    height: auto;
+    min-height: 100dvh;
+    padding: var(--space-12);
+    align-items: flex-start;
+  }
+
+  .fb-card {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .fb-side {
+    width: 100%;
+
+    // Plain descendant selectors — this is a global (non-SFC-scoped)
+    // sheet, so hikari's classes are reachable directly; a :deep block
+    // here compiles into an unknown pseudo-class the browser drops
+    // whole (measured in the shipped CSS).
+    .hk-sidebar-header {
+      display: none;
+    }
+
+    .hk-sidebar-body {
+      padding-block: var(--space-8);
+    }
+
+    // The stacked bands read as one pane — no inner dividers.
+    .hk-sidebar-footer {
+      border-top: none;
+    }
+  }
+
+  .fb-side-nav {
+    flex-direction: row;
+  }
+
+  .fb-side-nav .hk-nav-item {
+    flex: 1;
+  }
+
+  .fb-content-pad {
+    padding: var(--space-16) var(--space-16) var(--space-24);
+  }
 }
 
 .fb-form {
@@ -52,6 +123,12 @@
   margin: 0;
   color: rgb(var(--color-muted));
   font-size: var(--text-sm);
+}
+
+.fb-view-title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-lg);
+  font-weight: 600;
 }
 
 .fb-privacy {
