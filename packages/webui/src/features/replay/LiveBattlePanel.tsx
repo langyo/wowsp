@@ -63,11 +63,12 @@ import {
   Rows2,
   Rows3,
   ScanEye,
+  TriangleAlert,
   Unplug,
 } from "@lucide/vue";
 import { HkScrollContainer } from "@celestia-island/hikari";
 
-import type { ArenaInfo, OverlayStatus, VehicleEntry } from "@/api";
+import type { ArenaInfo, OverlayDiag, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import BattleIcon from "@/components/base/BattleIcon";
 import { useAccountStore } from "@/stores/account";
@@ -294,8 +295,15 @@ export default defineComponent({
     // subdued idle voice (it is permanent — idle stretches between
     // battles must not look broken).
     const overlayStatus = ref<OverlayStatus | null>(null);
+    // Presentation-verdict push from the watcher's self-diagnostics — the
+    // failed voice renders the red pill below (null before any verdict).
+    const overlayDiag = ref<OverlayDiag | null>(null);
     const settingsUi = useSettingsUiStore();
     let unlistenStatus: (() => void) | null = null;
+    let unlistenDiag: (() => void) | null = null;
+    // Set by the first push — guards the catch-up pull below from
+    // clobbering a fresher event that landed mid-round-trip.
+    let diagPushed = false;
     // Per-battle trusted sunk sets (sink-attrib events name WHO sank by
     // strip-fingerprint matching) — feed the predicted order below so the
     // columns mirror the game's [alive] ++ [sunk] layout live.
@@ -466,6 +474,19 @@ export default defineComponent({
       unlistenStatus = (await api.listenOverlayStatus((s) => {
         overlayStatus.value = s;
       })) as (() => void) | null;
+      unlistenDiag = (await api.listenOverlayDiag((d) => {
+        diagPushed = true;
+        overlayDiag.value = d;
+      })) as (() => void) | null;
+      // Catch-up: the diag events are transition-only — a panel mounting
+      // after a standing Failed verdict pulls it instead of waiting for a
+      // transition that may never re-fire. A push landing inside the
+      // pull's round trip is FRESHER — keep it (a stale pull would
+      // otherwise stick: stable states never re-emit).
+      const pulled = await api.getOverlayDiag().catch(() => null);
+      if (!diagPushed) {
+        overlayDiag.value = pulled ?? null;
+      }
       unlistenSinkAttrib = (await api.listenSinkAttribution((a) => {
         if (telemetryAuthoritative) return;
         sunk.applyAttribution(
@@ -559,6 +580,8 @@ export default defineComponent({
     onBeforeUnmount(() => {
       unlistenStatus?.();
       unlistenStatus = null;
+      unlistenDiag?.();
+      unlistenDiag = null;
       unlistenSinkAttrib?.();
       unlistenSinkAttrib = null;
       unlistenTelemetry?.();
@@ -1679,6 +1702,25 @@ export default defineComponent({
               )}
               {locateState.value.text}
             </button>
+            {/* Presentation alarm — rendered ONLY on a failed verify
+                verdict (the watcher showed the overlay window, asked the
+                page to paint a corner marker, and repeatedly photographed
+                nothing on screen): the transparent-window composition path
+                is broken on this machine. Deep-links into the same
+                calibration surface whose diagnostics card lists the risk
+                flags (MPO / transparency / WebView2 runtime). Hidden while
+                unverified/certified — no alarm without a verdict. */}
+            {overlayDiag.value?.presentation === "failed" && (
+              <button
+                type="button"
+                class="live-battle__locate-pill live-battle__locate-pill--failed"
+                data-hint={t("replay.live.presentFailedHint")}
+                onClick={openLocateSettings}
+              >
+                <TriangleAlert size={13} />
+                {t("replay.live.presentFailed")}
+              </button>
+            )}
           </div>
           {/* Operations (行动) have no enemy list — the enemy side is all
               scripted spawns — so the roster renders as one centered

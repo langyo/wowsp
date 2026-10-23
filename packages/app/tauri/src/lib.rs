@@ -588,6 +588,8 @@ pub fn run() {
             commands::overlay::create_overlay_window,
             commands::overlay::destroy_overlay_window,
             commands::overlay::set_overlay_visible,
+            commands::overlay::report_overlay_paint,
+            commands::overlay::get_overlay_diag,
             commands::overlay::start_overlay_tab_watch,
             commands::overlay::stop_overlay_tab_watch,
             commands::overlay::start_manual_locate,

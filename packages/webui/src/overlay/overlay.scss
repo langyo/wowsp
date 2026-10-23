@@ -403,3 +403,20 @@ html.overlay-hidden body {
 .overlay-intel-range {
   color: rgb(255 210 122);
 }
+
+/* The presentation-verify marker (main.ts's armVerifyMarker): a solid
+   opaque magenta square pinned to the window's very corner for the second
+   or so the Rust watcher's layered-inclusive capture needs to confirm the
+   transparent window's pixels reach the screen (diag.rs's MARKER_RGB —
+   keep the two in lockstep). Lives on <html>, so it neither participates
+   in body layout nor falls to render()'s body wipes. Never interactive. */
+.overlay-verify-marker {
+  position: fixed;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  background: #ff00ff;
+  z-index: 2147483647;
+  pointer-events: none;
+}

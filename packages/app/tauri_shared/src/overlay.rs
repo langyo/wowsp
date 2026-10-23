@@ -285,6 +285,75 @@ pub struct OverlayStatus {
     pub manual: bool,
 }
 
+/// What the overlay page last reported it painted — the page's own ground
+/// truth, sent to the backend through the `report_overlay_paint` command
+/// after every VISIBLE render and carried ADVISORILY on every diag
+/// broadcast (the presentation verdict itself comes from the marker
+/// channel alone; this report tells the human reading the diagnostics
+/// what the page BELIEVED was on screen — feedback 2026-10-23,
+/// Optimum11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OverlayPaintKind {
+    /// The centered "locating / not located" hint card.
+    Hint,
+    /// Table detected but the roster data has not landed yet — the honest
+    /// waiting card that replaced the old empty-body branch.
+    WaitingRoster,
+    /// Per-player stat chips (the payload's row count is the rendered chip
+    /// count; `None` when the render produced no row chips at all).
+    Chips,
+}
+
+/// Verdict of the overlay window's presentation verify pass (see the
+/// watcher's `diag` module): whether the transparent layered window's
+/// content actually reaches the screen.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OverlayPresentation {
+    /// No verify completed yet (fresh session, or the screen configuration
+    /// changed and re-armed it).
+    #[default]
+    Unverified,
+    /// The verify marker was found in a layered-inclusive screen capture —
+    /// the composition path works.
+    Certified,
+    /// Repeated verifies found nothing on screen — the composition path is
+    /// broken on this system; the diag payload's risk flags carry the
+    /// likely suspects.
+    Failed,
+}
+
+/// Payload of the `wowsp://overlay-diag` event, pushed when the
+/// presentation verdict TRANSITIONS (never per tick). The risk flags are
+/// advisory context read at emit time — they attach to a CONFIRMED
+/// verdict and are never standalone alarms (a disabled MPO alone does not
+/// mean anything is broken on a given machine).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayDiag {
+    pub presentation: OverlayPresentation,
+    /// The page's last reported paint (`None` before any report landed).
+    pub paint: Option<OverlayPaintKind>,
+    /// The row count that paint report carried (the rendered chip count
+    /// while `paint` is chips; `None` otherwise / before any report).
+    pub paint_rows: Option<u32>,
+    /// Evergreen WebView2 runtime version (registry `pv`), `None` when no
+    /// runtime is findable — the app ships none of its own
+    /// (`webviewInstallMode: skip`), so a stripped OS image is a real
+    /// risk exactly for the transparent-window mode.
+    pub webview2_version: Option<String>,
+    /// Multi-Plane Overlay disabled (`OverlayTestMode = 5`) — a common
+    /// gaming tweak that reroutes DWM composition.
+    pub mpo_disabled: bool,
+    /// System "transparency effects" switched off.
+    pub transparency_effects_off: bool,
+    /// Hardware-accelerated GPU scheduling disabled (`HwSchMode = 1`).
+    pub hags_off: bool,
+    /// The overlay window reports as DWM-cloaked.
+    pub cloaked: bool,
+}
+
 /// Payload of the `wowsp://sink-attrib` event: for ONE confirmed sink
 /// transition, the rows whose players just left the alive block — solved by
 /// fingerprint-matching the Tab table's name strips across the sink (the

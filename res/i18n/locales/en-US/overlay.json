@@ -2,6 +2,7 @@
   "hint": "Hold Tab in battle to show team stats.",
   "locateHint": "Detection is active, but the team list hasn't been located yet — enter a battle and try again.",
   "locatingHint": "Hold Tab — locating the roster",
+  "rosterHint": "Table located — waiting for the roster data",
   "queryingBadge": "Fetching stats",
   "botLabel": "bot",
   "battlesCount": "{n} battles",

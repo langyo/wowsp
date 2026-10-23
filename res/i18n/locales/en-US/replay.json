@@ -232,6 +232,8 @@
     "viewProfile": "View this player's stats",
     "detectedRows": "Located · {n} rows",
     "searching": "Locating",
+    "presentFailed": "Overlay not rendering",
+    "presentFailedHint": "The overlay window is shown but its content never reached the screen. Transparent-window composition may be broken by system tweaks — see the diagnostics card in Settings → In-game overlay calibration.",
     "refreshStats": "Refresh stats",
     "battleRealmHint": "The server this battle was played on: the roster's stats stay pinned to it, whatever the bottom-left client/account switchers say",
     "refreshStatsHint": "Clears the cache and re-requests every roster stat from scratch; loaded data stays on screen until the request succeeds",

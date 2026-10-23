@@ -236,6 +236,17 @@ pub(super) struct WatchFsm {
     /// setting has changed (a settings flip re-places the card even on an
     /// unmoved game window). `None` forces the next show to place first.
     pub(super) aim_card_placed: Option<(Rect, i32)>,
+    /// Presentation-verify state machine (see `diag.rs`): which shows owe a
+    /// marker check and the current broadcast verdict. Reset to default
+    /// (Unverified) when the screen configuration changes.
+    pub(super) verify: VerifyMachine,
+    /// When the armed verify capture is due (armed at a show by
+    /// `maybe_arm_verify`, consumed by the tick's verify pass; cleared on
+    /// hide so a released Tab never lands a verdict). `None` = idle.
+    pub(super) verify_due: Option<Instant>,
+    /// Mirror of the last broadcast presentation verdict (the
+    /// `overlay-diag` emit dedup, same stance as `last_status`).
+    pub(super) last_diag: Option<OverlayPresentation>,
 }
 
 /// Push a detection-status report to ALL windows — but only when it differs
@@ -610,6 +621,13 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                     "screen configuration changed — anchor calibration re-armed"
                 );
                 fsm.calibration.screen = fingerprint;
+                // A changed monitor layout can also change the composition
+                // path — the presentation verdict is stale until
+                // re-verified. Clearing the dedup mirror too means the
+                // re-walk's Failed transition (should the fault persist)
+                // broadcasts again instead of being swallowed.
+                fsm.verify = VerifyMachine::default();
+                fsm.last_diag = None;
             }
         }
     }
@@ -621,6 +639,25 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // `CalibrationCtx::note_stable`).
     if !tab_down {
         fsm.calibration.hold_counted = false;
+    }
+
+    // PRESENTATION VERIFY pass (see `diag.rs`): the capture for a show that
+    // armed it. Runs before the show/hide branches AND gates on Tab still
+    // being down — a quick release races the page's marker teardown, and
+    // that must drop the armed check (rescheduled at the next show), never
+    // score a miss against a window nobody can see. A failed capture is
+    // likewise inconclusive: nothing is scored, the next show re-arms.
+    if let Some(due) = fsm.verify_due
+        && Instant::now() >= due
+    {
+        fsm.verify_due = None;
+        if tab_down
+            && fsm.overlay_shown
+            && let Some(marker_found) = verify_marker_on_screen(app)
+        {
+            tracing::debug!(marker_found, "overlay presentation verify capture");
+            apply_verify_verdict(app, fsm, marker_found);
+        }
     }
 
     // Overlay switches (`overlay-config.toml`, written by the settings
@@ -817,6 +854,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             let dpi_scale = game.map_or(1.0, |g| window_dpi_scale(g.hwnd));
             let anchor = build_manual_anchor(&m, manual_game, dpi_scale);
             place_and_show(app, &anchor);
+            maybe_arm_verify(app, fsm);
             report_status(
                 app,
                 fsm,
@@ -866,6 +904,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 // Re-show this battle's pin verbatim — no capture, no
                 // Searching detour, the chips are where they were.
                 place_and_show(app, &anchor);
+                maybe_arm_verify(app, fsm);
                 fsm.overlay_shown = true;
                 fsm.last_hide = None;
                 // The anchor on screen is fresh as of NOW: start the
@@ -952,6 +991,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
                 // window would only churn the event pipe.
                 if !fsm.overlay_shown || anchor.table_detected {
                     place_and_show(app, &anchor);
+                    maybe_arm_verify(app, fsm);
                 }
                 // Status: what is on screen NOW. A confirmed anchor pins
                 // the chips (detected + row count); a fallback anchor is
@@ -988,6 +1028,9 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         // once the window reports itself actually hidden.
         if fsm.last_hide.is_none_or(|t| t.elapsed() >= HIDE_RETRY) {
             hide_overlay(app);
+            // The window is going down — any armed presentation verify is
+            // void (its capture would race the marker teardown).
+            fsm.verify_due = None;
             // Overlay going down — drop the panel badge to idle. The
             // mirror dedup keeps the hide-retry re-sends from emitting
             // this more than once.

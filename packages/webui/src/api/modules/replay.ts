@@ -211,6 +211,29 @@ export interface OverlayStatus {
   manual: boolean;
 }
 
+/** What the overlay page last reported it painted (mirrors
+ *  `wowsp_tauri_shared::OverlayPaintKind`, serde-camelCase on the wire). */
+export type OverlayPaintKind = "hint" | "waitingRoster" | "chips";
+
+/** Verdict of the overlay window's presentation verify (mirrors
+ *  `wowsp_tauri_shared::OverlayPresentation`). */
+export type OverlayPresentation = "unverified" | "certified" | "failed";
+
+/** Payload of the `wowsp://overlay-diag` event (mirrors
+ *  `wowsp_tauri_shared::OverlayDiag`), pushed when the presentation
+ *  verdict TRANSITIONS. The risk flags are advisory context for a
+ *  confirmed `failed` verdict — never standalone alarms. */
+export interface OverlayDiag {
+  presentation: OverlayPresentation;
+  paint?: OverlayPaintKind | null;
+  paintRows?: number | null;
+  webview2Version?: string | null;
+  mpoDisabled: boolean;
+  transparencyEffectsOff: boolean;
+  hagsOff: boolean;
+  cloaked: boolean;
+}
+
 /** Payload of the `wowsp://sink-attrib` event (mirrors
  *  `wowsp_tauri_shared::SinkAttribution`): for one confirmed sink
  *  transition, the rows whose players just left the alive block — indices
@@ -972,6 +995,15 @@ export const replayApi = {
   /** Detection-state push from the Tab watcher (transition-only). */
   listenOverlayStatus: (handler: (status: OverlayStatus) => void) =>
     transport.listen?.<OverlayStatus>("wowsp://overlay-status", handler),
+  /** Presentation-verdict push from the Tab watcher's self-diagnostics
+   *  (transition-only): whether the transparent overlay window's content
+   *  actually reaches the screen, plus the advisory risk flags. */
+  listenOverlayDiag: (handler: (diag: OverlayDiag) => void) =>
+    transport.listen?.<OverlayDiag>("wowsp://overlay-diag", handler),
+  /** Catch-up pull for the same stream: the last broadcast diag payload
+   *  (null before any verdict) — the events are transition-only, so a
+   *  surface mounting after a standing Failed verdict reads it here. */
+  getOverlayDiag: () => transport.invoke<OverlayDiag | null>(RPC.get_overlay_diag),
   /** Sink-attribution push from the Tab watcher: for one confirmed sink
    *  transition, the pre-sink alive-row indices whose players just sank
    *  (solved by strip-fingerprint matching). Consumers resolve the rows

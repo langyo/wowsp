@@ -232,6 +232,8 @@
     "viewProfile": "Voir les statistiques de ce joueur",
     "detectedRows": "Localisé · {n} lignes",
     "searching": "Localisation",
+    "presentFailed": "Overlay non affiché",
+    "presentFailedHint": "La fenêtre d'overlay est affichée mais son contenu n'atteint pas l'écran. La composition de fenêtre transparente peut être cassée par des optimisations système (désactivation du MPO, des effets de transparence…) — voir la carte de diagnostic dans les réglages de calibrage de l'overlay.",
     "refreshStats": "Actualiser les stats",
     "battleRealmHint": "Serveur sur lequel cette bataille a été jouée : les stats de la liste restent épinglées à ce serveur, quel que soit le client/compte choisi en bas à gauche",
     "refreshStatsHint": "Vide le cache et redemande toutes les statistiques ; les données chargées restent affichées jusqu'au succès",

@@ -289,6 +289,20 @@
     }
   }
 
+  /* A FAILED presentation verify — the overlay window was shown but its
+     content never reached the screen. The danger red, reserved for exactly
+     this verdict; rendered only while the watcher reports failed. */
+  &__locate-pill--failed {
+    border-color: rgb(var(--color-danger, 248 113 113) / 55%);
+    background: rgb(var(--color-danger, 248 113 113) / 16%);
+    color: rgb(var(--color-danger, 248 113 113));
+
+    &:hover {
+      border-color: rgb(var(--color-danger, 248 113 113) / 80%);
+      background: rgb(var(--color-danger, 248 113 113) / 24%);
+    }
+  }
+
   /* Roster scroller — the hikari container owns the scrollbar (auto-hiding
      overlay track over the panel's right edge); the two-column grid and
      its clearance moved to the inner wrapper so they scroll with the

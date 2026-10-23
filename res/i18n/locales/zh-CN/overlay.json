@@ -2,6 +2,7 @@
   "hint": "对局中按住 Tab 键显示双方水表数据。",
   "locateHint": "当前检测已开启，但暂未定位到表格，请进入游戏后再试",
   "locatingHint": "请按住 Tab，正在定位名单",
+  "rosterHint": "已定位到表格，正在等待队伍名单数据",
   "queryingBadge": "战绩查询中",
   "botLabel": "机器人",
   "battlesCount": "{n} 场",

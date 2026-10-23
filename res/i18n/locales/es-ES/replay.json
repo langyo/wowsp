@@ -232,6 +232,8 @@
     "viewProfile": "Ver las estadísticas de este jugador",
     "detectedRows": "Ubicado · {n} filas",
     "searching": "Localizando",
+    "presentFailed": "Overlay sin renderizar",
+    "presentFailedHint": "La ventana del overlay se muestra pero su contenido nunca llega a la pantalla. La composición de ventana transparente puede estar rota por ajustes del sistema (MPO o efectos de transparencia desactivados); consulta la tarjeta de diagnóstico en los ajustes de calibración del overlay.",
     "refreshStats": "Actualizar estadísticas",
     "battleRealmHint": "Servidor donde se jugó esta batalla: las estadísticas de la lista quedan fijas en él, sin importar el cliente/cuenta elegido abajo a la izquierda",
     "refreshStatsHint": "Borra la caché y vuelve a pedir todas las estadísticas; los datos cargados se mantienen hasta que la petición tenga éxito",

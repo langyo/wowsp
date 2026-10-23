@@ -319,6 +319,19 @@ pub(super) fn capture_game_rgba_cached(
 pub(super) fn capture_game_rgba(
     rect: &windows::Win32::Foundation::RECT,
 ) -> Option<(Vec<u8>, u32, u32)> {
+    capture_screen_rect(rect, false)
+}
+
+/// The shared GDI capture body. `layered` adds `CAPTUREBLT`, pulling
+/// LAYERED windows into the frame — the presentation verify pass
+/// (`diag.rs`) photographs the overlay window's own corner marker with
+/// this; every detector path keeps plain `SRCCOPY` (see the comment at the
+/// BitBlt call for why the detector must NOT see the overlay).
+#[cfg(target_os = "windows")]
+pub(super) fn capture_screen_rect(
+    rect: &windows::Win32::Foundation::RECT,
+    layered: bool,
+) -> Option<(Vec<u8>, u32, u32)> {
     use windows::Win32::Graphics::Gdi::*;
 
     let width = (rect.right - rect.left).max(1);
@@ -347,7 +360,14 @@ pub(super) fn capture_game_rgba(
         // layered: the second Tab press within the capture rate-limit window
         // then photographs our own (still fading-out) window over the table
         // and the detector anchors on our own hint box. Without CAPTUREBLT
-        // layered windows are simply absent from the BitBlt result.
+        // layered windows are simply absent from the BitBlt result. (The
+        // verify pass opts INTO CAPTUREBLT through `layered` — it exists to
+        // see exactly what the detector must not.)
+        let rop = if layered {
+            SRCCOPY | CAPTUREBLT
+        } else {
+            SRCCOPY
+        };
         let ok = BitBlt(
             hdc_mem,
             0,
@@ -357,7 +377,7 @@ pub(super) fn capture_game_rgba(
             Some(hdc_screen),
             rect.left,
             rect.top,
-            SRCCOPY,
+            rop,
         )
         .is_ok();
 

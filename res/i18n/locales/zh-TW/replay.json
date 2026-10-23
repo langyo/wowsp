@@ -232,6 +232,8 @@
     "viewProfile": "查看該玩家的水表",
     "detectedRows": "已定位 · {n} 行",
     "searching": "定位中",
+    "presentFailed": "覆蓋層未上螢幕",
+    "presentFailedHint": "覆蓋層視窗已顯示，但內容未到達螢幕。透明視窗合成可能被系統最佳化設定破壞（如停用 MPO/透明效果），詳見「設定 → 遊戲內顯示校準」中的診斷卡片。",
     "refreshStats": "重新整理戰績",
     "battleRealmHint": "本局對局所在的伺服器：名單戰績查詢鎖定該伺服器，不受左下角用戶端版本/帳戶切換影響",
     "refreshStatsHint": "清空快取並從頭重新請求全部名單戰績；已載入的資料在請求成功前保持顯示",
