@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake the ship-detail panel's aircraft performance specs (plane_specs.json).
+r"""Bake the ship-detail panel's aircraft performance specs (plane_specs.json).
 
 When the 3D stage's model dropdown switches from the hull to a carrier
 aircraft, ShipDetailModal's Specifications tab must show that airframe's

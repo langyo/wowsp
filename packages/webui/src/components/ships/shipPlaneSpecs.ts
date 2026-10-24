@@ -125,6 +125,22 @@ export function planeSpecEntry(index: string): PlaneSpecEntry | null {
 }
 
 /**
+ * i18n key for the aircraft hint's guidance line — which control actually
+ * switches the staged model, given how the stage is currently presented.
+ * The model picker only renders on an EXPANDED 3D stage (ShipStage guards it
+ * with `!hidden && viewMode === "3d"`; the portable build can never enable
+ * 3D, and the caller hides the hint entirely there), so:
+ *  - collapsed stage  → ask the user to expand the preview;
+ *  - 2D portrait mode → ask the user to switch back to 3D;
+ *  - expanded 3D      → the literal dropdown at the top of the 3D panel.
+ */
+export function aircraftNoticeSwitchKey(stageHidden: boolean, viewMode: "2d" | "3d"): string {
+  if (stageHidden) return "ships.detail.aircraftNotice.switchExpand";
+  if (viewMode === "2d") return "ships.detail.aircraftNotice.switchBack3d";
+  return "ships.detail.aircraftNotice.switch3d";
+}
+
+/**
  * Build the player-friendly spec tree for one airframe index.
  * Returns groups in display order; groups without rows are omitted, so a
  * scout simply has no "Aircraft Armament" / "Attack" cards rather than

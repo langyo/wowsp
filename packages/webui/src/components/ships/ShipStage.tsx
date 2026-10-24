@@ -331,6 +331,10 @@ export default defineComponent({
      *  surfaces here — picker clicks, the ship-switch reset and the
      *  scene-dispose reset — so the parent's spec cards can follow. */
     "update:modelSelection": (_v: string) => true,
+    /** The stage's current view mode. Emitted immediately on mount (so the
+     *  parent starts in sync with the portable-forced "2d" default) and on
+     *  every 2D/3D toggle. */
+    "update:viewMode": (_v: "2d" | "3d") => true,
   },
   // `focusZone` is stashed on the instance from inside setup() and surfaced
   // here via `exposed` so parents can call stageRef.value?.focusZone(...).
@@ -404,8 +408,16 @@ export default defineComponent({
     // Mirror every selection change (picker click, ship-switch reset,
     // scene-dispose reset) to the parent — it swaps the ship detail's spec
     // cards between the hull and the staged airframe off this event. The ref
-    // stays the source of truth; the parent only observes.
-    watch(modelSelection, (v) => emit("update:modelSelection", v));
+    // stays the source of truth; the parent only observes. Immediate so a
+    // fresh mount (always the hull, empty planeCache) resyncs the parent:
+    // a stage torn down by unmount — e.g. the Skill-tab round trip — drops
+    // its disposeScene reset emit with the component scope, leaving the
+    // parent on a stale airframe.
+    watch(modelSelection, (v) => emit("update:modelSelection", v), { immediate: true });
+    // Surface the stage's view mode to the parent (immediate: the portable
+    // build's forced "2d" default must reach it before the first paint) so
+    // the aircraft hint can point at a control that is actually rendered.
+    watch(viewMode, (v) => emit("update:viewMode", v), { immediate: true });
     const modelPickOpen = ref(false);
     const modelPickRef = ref<HTMLElement | null>(null);
     /** Loaded airframes, kept mounted (visible=false) so toggling back is

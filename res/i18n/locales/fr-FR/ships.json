@@ -114,8 +114,11 @@
     "noBallistics": "Aucune donnée de blindage / balistique n'a pu être extraite de GameParams pour ce navire.",
     "aircraftNotice": {
       "title": "Vue appareil",
-      "hull": "Affichage : coque — l'onglet Caractéristiques présente les paramètres du navire. Utilisez le menu déroulant en haut du panneau 3D pour afficher un avion.",
-      "plane": "Affichage : {name} — l'onglet Caractéristiques présente les paramètres de cet avion. Utilisez le menu déroulant en haut du panneau 3D pour revenir à la coque."
+      "hull": "Affichage : coque — l'onglet Caractéristiques présente les paramètres du navire.",
+      "plane": "Affichage : {name} — l'onglet Caractéristiques présente les paramètres de cet avion.",
+      "switch3d": "Basculez via le menu déroulant en haut du panneau 3D.",
+      "switchExpand": "Dépliez l'aperçu 3D pour basculer via le menu déroulant en haut du panneau.",
+      "switchBack3d": "Repassez en aperçu 3D pour basculer via le menu déroulant en haut du panneau."
     },
     "stage": {
       "hint3d": "Glisser pour tourner · molette pour zoomer · clic droit glisser pour déplacer",
