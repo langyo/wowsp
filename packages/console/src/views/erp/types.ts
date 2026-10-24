@@ -6,18 +6,8 @@
  */
 
 // ── session (relay-worker/src/erp.rs — /api/erp/session) ─────────────────
-
-export interface ErpSessionOk {
-  ok: true;
-  /** Feishu display name (may be blank for anonymized profiles). */
-  name?: string;
-  avatar?: string;
-  /** Contact re-read outcome; anything but "refreshed" is a warning. */
-  debug?: string;
-  /** Set under the ERP_OPEN_ACCESS legacy gate — the caller's open_id
-   *  for the allowlist hint. */
-  open_access?: string;
-}
+// The session shape lives in @/shared/api (ErpSession) — the views'
+// single import point for it.
 
 // ── feedback review (relay-worker/src/feedback.rs) ────────────────────────
 

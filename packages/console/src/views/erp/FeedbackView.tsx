@@ -1,10 +1,12 @@
 /**
  * The review tab: the feedback records table (GET /api/feedback/list,
  * worker `handle_list` shape) with per-row status transition + PR-link
- * editing (POST /api/feedback/update, `handle_update` shape), the status
- * filter chips (STATUSES = relay-core feedback::STATUSES), and the
- * page_token pager. Every write is confirmed through HkConfirmDialog;
- * failures ride the toast; 401/403 hands the surface back to login.
+ * editing (POST /api/feedback/update, `handle_update` shape) and the
+ * page_token pager. The STATUS FILTER lives in the shell header (ErpApp
+ * owns its state and binds the segmented group there; this view only
+ * reads it through props). Every write is confirmed through
+ * HkConfirmDialog; failures ride the toast; 401/403 hands the surface
+ * back to login.
  */
 
 import { computed, defineComponent, onMounted, reactive, ref } from "vue";
@@ -14,7 +16,6 @@ import {
   HkConfirmDialog,
   HInput,
   HkSelect,
-  HTabs,
   useToast,
 } from "@celestia-island/hikari";
 
@@ -33,6 +34,12 @@ const STATUSES = ["待审查", "已确认", "已开PR", "无需修复", "需补�
 
 const STATUS_OPTIONS = STATUSES.map((s) => ({ value: s, label: s }));
 
+/** The header's segmented filter group — "" means unfiltered. */
+export const FEEDBACK_STATUS_TABS = [
+  { key: "", label: "全部" },
+  ...STATUSES.map((s) => ({ key: s, label: s })),
+];
+
 /** Per-row edit drafts (the select + input the row's 保存 posts). */
 interface RowDraft {
   status: string;
@@ -45,6 +52,10 @@ export default defineComponent({
     /** Called when a list/write fails with a dead session — ErpApp flips
      *  back to the login card. */
     onSessionLost: { type: Function, required: true },
+    /** The status filter's value — owned by ErpApp (the segmented group
+     *  rides the shell header); "" means unfiltered. Read-only here:
+     *  the header writes the ref directly. */
+    filter: { type: String, default: "" },
   },
   setup(props) {
     const toast = useToast();
@@ -52,7 +63,6 @@ export default defineComponent({
     const items = ref<FeedbackItem[]>([]);
     const loading = ref(true);
     const error = ref<string | null>(null);
-    const filter = ref<string>("");
 
     // page_token pagination (NOT page numbers — see listFeedbackPage).
     const pageToken = ref<string | null>(null);
@@ -95,13 +105,8 @@ export default defineComponent({
     });
 
     const filtered = computed(() =>
-      filter.value ? items.value.filter((it) => it.status === filter.value) : items.value,
+      props.filter ? items.value.filter((it) => it.status === props.filter) : items.value,
     );
-
-    const filterTabs = computed(() => [
-      { key: "", label: "全部" },
-      ...STATUSES.map((s) => ({ key: s, label: s })),
-    ]);
 
     // Rows may carry a status the current STATUSES list no longer names
     // (renamed server-side) — keep it selectable so the row stays honest.
@@ -238,14 +243,6 @@ export default defineComponent({
           )}
         </div>
       ),
-      filter: () => (
-        <HTabs
-          variant="segmented"
-          modelValue={filter.value}
-          onUpdate:modelValue={(v: string) => (filter.value = v)}
-          tabs={filterTabs.value}
-        />
-      ),
     };
 
     return () => (
@@ -261,7 +258,7 @@ export default defineComponent({
             rows={filtered.value as unknown as Record<string, unknown>[]}
             rowKey="record_id"
             emptyTitle="暂无反馈记录"
-            emptyDescription={filter.value ? "当前筛选下没有记录——切换到「全部」看看。" : undefined}
+            emptyDescription={props.filter ? "当前筛选下没有记录——切换到「全部」看看。" : undefined}
             columns={[
               { key: "time", title: "提交时间", width: "150px" },
               { key: "description", title: "描述" },

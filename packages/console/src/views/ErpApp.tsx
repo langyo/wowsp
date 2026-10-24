@@ -5,11 +5,11 @@
  * Flow: getErpSession() gates everything — ok:false lands on the login
  * card (Feishu OAuth redirect, with the ?login=failed&reason=… copy the
  * old page showed); ok:true opens the HkAdminShell with the whoami
- * identity (header dropdown / mobile drawer) and two tabs: the feedback
- * review table and the replay-collection admin. Under the
- * ERP_OPEN_ACCESS legacy gate a persistent banner carries the caller's
- * open_id (HkCopyBadge) next to the ERP_ALLOWED_OPEN_IDS / ERP_OPEN_ACCESS
- * note. Every mutation confirms through HkConfirmDialog; errors toast.
+ * identity in the header, the sidebar as the sole navigator (the header
+ * tab row was removed — it only duplicated the sidebar), and the
+ * feedback status filter riding the header's centre group while the
+ * feedback view is active. Every mutation confirms through
+ * HkConfirmDialog; errors toast.
  */
 
 import { defineComponent, onMounted, ref, watch, type PropType } from "vue";
@@ -32,20 +32,12 @@ import { MessageSquareText, Package, Users } from "@lucide/vue";
 
 import { erpLogin, erpLogout, getErpSession, type ErpSession } from "@/shared/api";
 
-import FeedbackView from "./erp/FeedbackView";
+import FeedbackView, { FEEDBACK_STATUS_TABS } from "./erp/FeedbackView";
 import ReplayAdminView from "./erp/ReplayAdminView";
 import PeopleView from "./erp/PeopleView";
 import { useConfirm } from "./erp/confirm";
 
 type ViewKey = "feedback" | "replays" | "people";
-
-const VIEWS: { key: ViewKey; label: string; adminOnly?: boolean }[] = [
-  { key: "feedback", label: "反馈记录" },
-  { key: "replays", label: "录像征集" },
-  // The people-management surface rides the ADMIN tier only — the nav
-  // row and the header switcher both hide it from members.
-  { key: "people", label: "人员管理", adminOnly: true },
-];
 
 /** The ?login=failed&reason=… copy — same strings the retired page
  *  toasts (relay-core/src/erp.rs showLogin). */
@@ -54,7 +46,7 @@ function loginFailureText(reason: string): string {
   if (reason === "unconfigured") {
     return (
       "后台允许名单未配置，控制台已默认关闭。" +
-      "把维护者 open_id 写入 ERP_ALLOWED_OPEN_IDS（或显式设置 ERP_OPEN_ACCESS=1）后重试。"
+      "把维护者 open_id 写入 ERP_ALLOWED_OPEN_IDS 后重试。"
     );
   }
   return `登录失败（${reason}），请重试。`;
@@ -82,8 +74,6 @@ const ERP_STYLES = `
 .erp-section-title { font-size: var(--text-md, 0.9375rem); font-weight: 600; margin: 0 0 var(--space-8, 8px); }
 .erp-modal-actions { display: flex; justify-content: flex-end; gap: var(--space-8, 8px); }
 .erp-form-col { display: flex; flex-direction: column; gap: var(--space-12, 12px); }
-.erp-notice { display: flex; flex-direction: column; gap: var(--space-4, 4px); }
-.erp-notice-copy { display: flex; align-items: center; gap: var(--space-8, 8px); flex-wrap: wrap; font-size: var(--text-sm, 0.8125rem); }
 .erp-login-wrap { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: var(--space-20, 20px); }
 .erp-login-col { width: min(92vw, 26rem); display: flex; flex-direction: column; gap: var(--space-12, 12px); }
 .erp-side { display: flex; flex-direction: column; height: 100%; padding: var(--space-16, 16px) var(--space-12, 12px); gap: var(--space-12, 12px); }
@@ -138,6 +128,10 @@ export default defineComponent({
     const loginError = ref("");
     const view = ref<ViewKey>("feedback");
     const loggingOut = ref(false);
+
+    // The feedback status filter rides the header's centre group, so its
+    // state must live HERE (the header and the table both bind it).
+    const statusFilter = ref("");
 
     const { state: confirmState, confirm, onConfirm, onCancel } = useConfirm();
 
@@ -196,8 +190,8 @@ export default defineComponent({
     );
 
     // Bound slot objects — an inline literal is not normalized to slots
-    // (the same gotcha HkAdminTablePage documents).
-    const feedbackSlots = { onSessionLost: loseSession };
+    // (the same gotcha HkAdminTablePage documents). Reactive props
+    // (the status filter) ride inline instead so they re-bind on render.
     const replaysSlots = { onSessionLost: loseSession };
     const peopleSlots = { onSessionLost: loseSession };
 
@@ -233,21 +227,21 @@ export default defineComponent({
           onLogout={askLogout}
         >
           {{
-            // The view switcher rides the header's page-owned centre
-            // group — the balanced three-zone grid pins it to the true
-            // viewport middle, the shittim-chest console grammar (the
-            // in-content tab row it replaces floated mid-page instead
-            // and duplicated the sidebar nav).
-            center: () => (
-              <HTabs
-                modelValue={view.value}
-                onUpdate:modelValue={(v: string) => (view.value = v as ViewKey)}
-                tabs={VIEWS.filter((v) => !v.adminOnly || session.value?.admin).map((v) => ({
-                  key: v.key,
-                  label: v.label,
-                }))}
-              />
-            ),
+            // The header's centre group carries the FEEDBACK STATUS
+            // FILTER while that view is active — the balanced three-zone
+            // grid pins it to the true viewport middle (the shittim-chest
+            // console grammar). The former view-switcher tab row is gone:
+            // it only duplicated the sidebar nav. Other views leave the
+            // centre empty.
+            center: () =>
+              view.value === "feedback" ? (
+                <HTabs
+                  variant="segmented"
+                  modelValue={statusFilter.value}
+                  onUpdate:modelValue={(v: string) => (statusFilter.value = v)}
+                  tabs={FEEDBACK_STATUS_TABS}
+                />
+              ) : null,
             "avatar-modal": (modal: { open: boolean; onUpdateOpen: (v: boolean) => void }) => (
               <HModal
                 modelValue={modal.open}
@@ -325,17 +319,14 @@ export default defineComponent({
           </HButton>
         </div>
       ),
-      content: () => (
-        <div class="erp-view">
-          {view.value === "feedback" ? (
-            <FeedbackView {...feedbackSlots} />
-          ) : view.value === "replays" ? (
-            <ReplayAdminView {...replaysSlots} />
-          ) : session.value?.admin ? (
-            <PeopleView {...peopleSlots} />
-          ) : null}
-        </div>
-      ),
+      content: () =>
+        view.value === "feedback" ? (
+          <FeedbackView onSessionLost={loseSession} filter={statusFilter.value} />
+        ) : view.value === "replays" ? (
+          <ReplayAdminView {...replaysSlots} />
+        ) : session.value?.admin ? (
+          <PeopleView {...peopleSlots} />
+        ) : null,
       overlays: () => (
         <>
           <HToast />
@@ -379,7 +370,13 @@ export default defineComponent({
             </div>
           </div>
         ) : phase.value === "ready" ? (
-          <HkAdminShell navTitle="导航">{shellSlots}</HkAdminShell>
+          // footerHeight=0: the default reserves the shittim-chest
+          // status-bar band (3rem) for pages that render one — this
+          // console doesn't, so the reservation read as a dead blank
+          // strip under the content.
+          <HkAdminShell navTitle="导航" footerHeight="0px">
+            {shellSlots}
+          </HkAdminShell>
         ) : null}
       </div>
     );
