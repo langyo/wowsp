@@ -1,4 +1,4 @@
-use super::band::{HeaderBand, find_header_band, refine_roster_native};
+use super::band::{HeaderBand, find_header_band_detect, refine_roster_native};
 use super::pixel::{downscale_rgba, is_text_white};
 use super::profile::DetectProfile;
 use super::*;
@@ -56,6 +56,10 @@ pub(crate) fn detect_roster_with_band(
     let scale = width.div_ceil(MAX_WORK_WIDTH).max(1);
     let (px, w, h) = downscale_rgba(rgba, width, height, scale);
     if w < 64 || h < 64 {
+        super::record_detect_failure(super::DetectFailure::FrameTooSmall {
+            w: w as u32,
+            h: h as u32,
+        });
         return None;
     }
     let rgb = |x: usize, y: usize| -> (i16, i16, i16) {
@@ -67,7 +71,7 @@ pub(crate) fn detect_roster_with_band(
     //    green bar plus either the adjacent red one or nothing at all (see
     //    `find_header_band`; the band's bar height — the row pitch's
     //    source — is measured inside it too) ────────────────────────────────
-    let band = find_header_band(&px, w, h)?;
+    let band = find_header_band_detect(&px, w, h)?;
     let (prof_top, pitch, first) = grid_origin(band, h, profile);
     let gx0 = band.green.0;
     let gx1 = band.green.1;
@@ -142,6 +146,9 @@ pub(crate) fn detect_roster_with_band(
     //    3072-px capture that alone is a ±4-px grid) ────────────────────────
     let det = finish_roster(band, h, scale, centers, pitch_l.max(pitch_r));
     let header_bottom_prior = ((band.top + band.height) as f32 * scale as f32).round() as i32;
+    // Success clears the diagnostics slot (H-2): a stale refusal reason
+    // must not outlive the detection that overcame it.
+    super::clear_detect_failure();
     Some((
         band,
         refine_roster_native(rgba, width, height, &det, header_bottom_prior),

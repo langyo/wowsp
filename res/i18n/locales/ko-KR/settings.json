@@ -148,6 +148,7 @@
   "overlayDiagWebview2": "Evergreen WebView2 런타임: {v}",
   "overlayDiagWebview2Missing": "등록된 Evergreen WebView2 런타임이 없습니다. 앱은 런타임을 포함하지 않으므로 복구하세요.",
   "overlayDiagCloaked": "오버레이 창이 DWM 클로크 상태입니다(컴포지터가 표시하지 않음).",
+"overlayDiagDetectFailure": "최근 로스터 감지 실패: {reason}({age}초 전) — 지속되면 표가 중앙 배치 기하구조로 대체됩니다.",
   "overlayCalibration": "게임 내 오버레이 캘리브레이션",
   "overlayCalibrationDesc": "탭 전적표 오버레이 배치에 사용되는 앵커 기록을 확인하고 조정합니다. 등록된 클라이언트별로 카드가 하나씩 표시되며 PvP / PvE 각각 표 위치·행 배치·창 정보를 저장합니다. 아직 기록되지 않은 항목도 임의의 참조 스크린샷에서 미리 영역을 지정할 수 있습니다.",
   "overlayCalibrationEmpty": "아직 캘리브레이션 데이터가 없습니다. 게임 경로에서 클라이언트를 추가하거나 탭 오버레이를 켜고 전투를 한 번 완료하면 자동으로 기록됩니다.",

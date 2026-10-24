@@ -352,6 +352,13 @@ pub struct OverlayDiag {
     pub hags_off: bool,
     /// The overlay window reports as DWM-cloaked.
     pub cloaked: bool,
+    /// The last roster-detection refusal's machine-readable reason
+    /// (overlay review H-2): `None` while every detection succeeds. The
+    /// label is stable (`"no_header_bars"` &c.) — the diagnostics page
+    /// renders it verbatim alongside its age.
+    pub detect_failure: Option<String>,
+    /// Seconds since that refusal was recorded (`None` with the reason).
+    pub detect_failure_age_sec: Option<u64>,
 }
 
 /// Payload of the `wowsp://sink-attrib` event: for ONE confirmed sink

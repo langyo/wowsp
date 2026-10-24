@@ -148,6 +148,7 @@
   "overlayDiagWebview2": "Runtime WebView2 Evergreen : {v}",
   "overlayDiagWebview2Missing": "Aucun runtime WebView2 Evergreen enregistré — l'application n'en embarque pas ; réparez le runtime système.",
   "overlayDiagCloaked": "La fenêtre d'overlay est masquée par DWM (cloaked — le compositeur ne l'affiche pas).",
+"overlayDiagDetectFailure": "Dernier échec de détection de la composition : {reason} (il y a {age} s) — tant que cela persiste, la table retombe sur la géométrie centrée.",
   "overlayCalibration": "Calibrage de l'overlay en jeu",
   "overlayCalibrationDesc": "Consultez et calibrez les ancres mémorisées de la table Tab dont l'overlay se sert pour placer ses pastilles : une carte par client enregistré, chacune conservant des entrées PvP / PvE indépendantes (rectangle de la table, disposition des lignes, paramètres de la fenêtre) ; les entrées pas encore enregistrées peuvent être tracées à l'avance sur n'importe quelle capture de référence.",
   "overlayCalibrationEmpty": "Aucune donnée de calibrage pour l'instant — ajoutez un client dans Chemin du jeu, ou jouez une bataille avec l'overlay Tab activé et l'enregistrement se fera tout seul.",

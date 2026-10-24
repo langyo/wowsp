@@ -148,6 +148,7 @@
   "overlayDiagWebview2": "Evergreen WebView2 runtime: {v}",
   "overlayDiagWebview2Missing": "No Evergreen WebView2 runtime registered — the app ships none of its own; repair the system runtime.",
   "overlayDiagCloaked": "The overlay window reports as DWM-cloaked (the compositor is not displaying it).",
+"overlayDiagDetectFailure": "Last roster-detection refusal: {reason} ({age}s ago) — the table falls back to centered geometry while this persists.",
   "overlayCalibration": "In-game overlay calibration",
   "overlayCalibrationDesc": "Inspect and calibrate the stored Tab-table anchors the overlay places its stat chips by: one card per registered client, each keeping independent PvP / PvE entries (table rectangle, row layout, window parameters); entries not recorded yet can still be pre-drawn on any reference screenshot.",
   "overlayCalibrationEmpty": "No calibration data yet — add a client under Game path, or play a battle with the Tab overlay on and it records itself.",

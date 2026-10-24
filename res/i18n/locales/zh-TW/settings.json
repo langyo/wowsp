@@ -148,6 +148,7 @@
   "overlayDiagWebview2": "Evergreen WebView2 執行階段版本：{v}",
   "overlayDiagWebview2Missing": "找不到已註冊的 Evergreen WebView2 執行階段——應用程式本身不含執行階段，請修復系統執行階段。",
   "overlayDiagCloaked": "覆蓋層視窗被 DWM 標記為 cloaked（合成器未顯示該視窗）。",
+"overlayDiagDetectFailure": "最近一次陣容識別失敗：{reason}（{age} 秒前）——持續存在時表格回退為置中幾何。",
   "overlayCalibration": "遊戲內顯示校準",
   "overlayCalibrationDesc": "檢視並校準懸浮窗 Tab 戰績表定位所用的錨點記錄：按已註冊用戶端逐一列出，每個用戶端按對戰類別（PvP / PvE）獨立保存表格位置、行分布與視窗參數；尚未記錄的條目也可在任意參照截圖上提前框選。",
   "overlayCalibrationEmpty": "尚無校準資料：先在「遊戲路徑」加入用戶端，或開啟 Tab 懸浮窗完成一場戰鬥後自動記錄。",

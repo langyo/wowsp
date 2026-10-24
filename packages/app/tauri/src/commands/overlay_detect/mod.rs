@@ -149,6 +149,9 @@ pub(crate) use band::{
     HeaderBand, header_bars_present, measured_pitch_from_centers, rebuild_roster_from_band,
     verify_header_band,
 };
+// Detect-path band finder (`band::find_header_band_detect`) records
+// refusals into the diagnostics slot below; the quiet probe form stays
+// the re-exported one.
 pub(crate) use profile::DetectProfile;
 pub(crate) use roster::{
     DetectedRoster, detect_roster, detect_roster_with_band, resolve_wg_strip_profile,
@@ -159,6 +162,80 @@ pub(crate) use strip::{
     StripTable, StripThumb, crop_row_name_strips, read_row_alive, row_strip_alive, sink_victims,
     strip_max_luma, strip_thumb,
 };
+
+// ─────────────────────────────────────────────────────────────────────────
+// Detection failure diagnostics (overlay review H-2)
+// ─────────────────────────────────────────────────────────────────────────
+// The detect gates used to collapse every failure into a silent `None` —
+// the caller logged "team list not detected" with no WHY, and nothing fed
+// the self-diagnostics surface. Each gate in the DETECT path (never the
+// probe paths) now records a fine-grained reason here; a successful detect
+// clears it. The slot feeds `OverlayDiag` and a deduped debug log.
+
+/// Why the last full roster detection refused a frame.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum DetectFailure {
+    /// The frame is smaller than the working floor (64×64 working px).
+    FrameTooSmall { w: u32, h: u32 },
+    /// No scan row in the header window carried a qualifying bar.
+    NoHeaderBars { row_hits: usize },
+    /// Qualifying rows existed but never formed a run of `HEADER_MIN_ROWS`.
+    RunBelowMinRows { longest: usize, need: usize },
+    /// A green-only (single-team) candidate failed its width/center/row-text
+    /// gates — the false-positive horizons/panels this variant invites.
+    GreenOnlyGateFailed,
+}
+
+impl DetectFailure {
+    /// Stable, human-readable label (serialized into `OverlayDiag`; the
+    /// webui's diagnostics page shows it verbatim).
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            DetectFailure::FrameTooSmall { .. } => "frame_too_small",
+            DetectFailure::NoHeaderBars { .. } => "no_header_bars",
+            DetectFailure::RunBelowMinRows { .. } => "run_below_min_rows",
+            DetectFailure::GreenOnlyGateFailed => "green_only_gate_failed",
+        }
+    }
+}
+
+static LAST_DETECT_FAILURE: std::sync::OnceLock<
+    std::sync::Mutex<Option<(DetectFailure, std::time::Instant)>>,
+> = std::sync::OnceLock::new();
+
+/// Record a detection failure. Logs at DEBUG only when the REASON changes —
+/// the acquire loop retries several times a second and must not spam.
+pub(crate) fn record_detect_failure(f: DetectFailure) {
+    let mut slot = LAST_DETECT_FAILURE
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if slot.as_ref().is_some_and(|(prev, _)| *prev == f) {
+        return;
+    }
+    tracing::debug!(reason = ?f, "roster detection refused the frame");
+    *slot = Some((f, std::time::Instant::now()));
+}
+
+/// A detection SUCCEEDED — the stale reason must not outlive it.
+pub(crate) fn clear_detect_failure() {
+    let mut slot = LAST_DETECT_FAILURE
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    *slot = None;
+}
+
+/// `(label, age_seconds)` of the last recorded failure — read by the
+/// overlay diagnostics collector (`OverlayDiag::detect_failure`).
+pub(crate) fn detect_failure_snapshot() -> Option<(String, u64)> {
+    let slot = LAST_DETECT_FAILURE
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    slot.as_ref()
+        .map(|(f, at)| (f.label().to_string(), at.elapsed().as_secs()))
+}
 
 // Items used only by this module's own test suite (invisible to the non-test
 // build, keeping `cargo clippy --lib -D warnings` quiet).
