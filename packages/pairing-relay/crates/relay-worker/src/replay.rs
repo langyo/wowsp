@@ -516,8 +516,8 @@ pub async fn handle_upload(mut req: Request, env: Env) -> Result<Response> {
 /// allowlist) OR an `x-admin-key` header matching the operator's
 /// REPLAY_ADMIN_KEY secret — the drain CLI's machine leg. Neither set
 /// means the browser flow only; both set means either works.
-fn admin_authed(req: &Request, env: &Env) -> bool {
-    if crate::erp::session_ok(req, env) {
+async fn admin_authed(req: &Request, env: &Env) -> bool {
+    if crate::erp::session_ok(req, env).await {
         return true;
     }
     let provided = req.headers().get("x-admin-key").ok().flatten();
@@ -546,7 +546,7 @@ pub async fn handle_admin_list(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !admin_authed(&req, &env) {
+    if !admin_authed(&req, &env).await {
         return err(401, "unauthorized");
     }
     let mut resp = do_get(&env, "/admin-list").await?;
@@ -562,7 +562,7 @@ pub async fn handle_admin_list(req: Request, env: Env) -> Result<Response> {
 /// POST validates strictly (relay-core) and stores the canonical form,
 /// stamping updatedAt server-side.
 pub async fn handle_admin_wanted(mut req: Request, env: Env) -> Result<Response> {
-    if !admin_authed(&req, &env) {
+    if !admin_authed(&req, &env).await {
         return err(401, "unauthorized");
     }
     let kv = env.kv(KV)?;
@@ -619,7 +619,7 @@ pub async fn handle_admin_credits(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !admin_authed(&req, &env) {
+    if !admin_authed(&req, &env).await {
         return err(401, "unauthorized");
     }
     let mut resp = do_get(&env, "/credits").await?;
@@ -635,7 +635,7 @@ pub async fn handle_admin_archive(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    if !admin_authed(&req, &env) {
+    if !admin_authed(&req, &env).await {
         return err(401, "unauthorized");
     }
     let query = req.url()?.query().unwrap_or("").to_string();
@@ -660,7 +660,7 @@ pub async fn handle_admin_drain(mut req: Request, env: Env) -> Result<Response> 
     if !admin_write_ok(&req) {
         return err(403, "cross_origin");
     }
-    if !admin_authed(&req, &env) {
+    if !admin_authed(&req, &env).await {
         return err(401, "unauthorized");
     }
     let body: Value = req.json().await.unwrap_or(Value::Null);
@@ -717,7 +717,7 @@ pub async fn handle_admin_rename(mut req: Request, env: Env) -> Result<Response>
     if !admin_write_ok(&req) {
         return err(403, "cross_origin");
     }
-    if !admin_authed(&req, &env) {
+    if !admin_authed(&req, &env).await {
         return err(401, "unauthorized");
     }
     let body: Value = req.json().await.unwrap_or(Value::Null);
@@ -775,7 +775,7 @@ pub async fn handle_admin_backfill(mut req: Request, env: Env) -> Result<Respons
     if !admin_write_ok(&req) {
         return err(403, "cross_origin");
     }
-    if !admin_authed(&req, &env) {
+    if !admin_authed(&req, &env).await {
         return err(401, "unauthorized");
     }
     let body: Value = req.json().await.unwrap_or(Value::Null);

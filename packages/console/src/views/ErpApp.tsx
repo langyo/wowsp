@@ -5,11 +5,11 @@
  * Flow: getErpSession() gates everything — ok:false lands on the login
  * card (Feishu OAuth redirect, with the ?login=failed&reason=… copy the
  * old page showed); ok:true opens the HkAdminShell with the whoami
- * identity (header dropdown / mobile drawer) and two tabs: the feedback
- * review table and the replay-collection admin. Under the
- * ERP_OPEN_ACCESS legacy gate a persistent banner carries the caller's
- * open_id (HkCopyBadge) next to the ERP_ALLOWED_OPEN_IDS / ERP_OPEN_ACCESS
- * note. Every mutation confirms through HkConfirmDialog; errors toast.
+ * identity in the header, the sidebar as the sole navigator (the header
+ * tab row was removed — it only duplicated the sidebar), and the
+ * feedback status filter riding the header's centre group while the
+ * feedback view is active. Every mutation confirms through
+ * HkConfirmDialog; errors toast.
  */
 
 import { defineComponent, onMounted, ref, watch, type PropType } from "vue";
@@ -21,7 +21,6 @@ import {
   HAvatar,
   HButton,
   HkConfirmDialog,
-  HkCopyBadge,
   HNavItem,
   HkLoadingVeil,
   HModal,
@@ -29,20 +28,16 @@ import {
   HTabs,
   setLocale,
 } from "@celestia-island/hikari";
-import { MessageSquareText, Package } from "@lucide/vue";
+import { MessageSquareText, Package, Users } from "@lucide/vue";
 
 import { erpLogin, erpLogout, getErpSession, type ErpSession } from "@/shared/api";
 
-import FeedbackView from "./erp/FeedbackView";
+import FeedbackView, { FEEDBACK_STATUS_TABS } from "./erp/FeedbackView";
 import ReplayAdminView from "./erp/ReplayAdminView";
+import PeopleView from "./erp/PeopleView";
 import { useConfirm } from "./erp/confirm";
 
-type ViewKey = "feedback" | "replays";
-
-const VIEWS: { key: ViewKey; label: string }[] = [
-  { key: "feedback", label: "反馈记录" },
-  { key: "replays", label: "录像征集" },
-];
+type ViewKey = "feedback" | "replays" | "people";
 
 /** The ?login=failed&reason=… copy — same strings the retired page
  *  toasts (relay-core/src/erp.rs showLogin). */
@@ -51,7 +46,7 @@ function loginFailureText(reason: string): string {
   if (reason === "unconfigured") {
     return (
       "后台允许名单未配置，控制台已默认关闭。" +
-      "把维护者 open_id 写入 ERP_ALLOWED_OPEN_IDS（或显式设置 ERP_OPEN_ACCESS=1）后重试。"
+      "把维护者 open_id 写入 ERP_ALLOWED_OPEN_IDS 后重试。"
     );
   }
   return `登录失败（${reason}），请重试。`;
@@ -79,8 +74,6 @@ const ERP_STYLES = `
 .erp-section-title { font-size: var(--text-md, 0.9375rem); font-weight: 600; margin: 0 0 var(--space-8, 8px); }
 .erp-modal-actions { display: flex; justify-content: flex-end; gap: var(--space-8, 8px); }
 .erp-form-col { display: flex; flex-direction: column; gap: var(--space-12, 12px); }
-.erp-notice { display: flex; flex-direction: column; gap: var(--space-4, 4px); }
-.erp-notice-copy { display: flex; align-items: center; gap: var(--space-8, 8px); flex-wrap: wrap; font-size: var(--text-sm, 0.8125rem); }
 .erp-login-wrap { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: var(--space-20, 20px); }
 .erp-login-col { width: min(92vw, 26rem); display: flex; flex-direction: column; gap: var(--space-12, 12px); }
 .erp-side { display: flex; flex-direction: column; height: 100%; padding: var(--space-16, 16px) var(--space-12, 12px); gap: var(--space-12, 12px); }
@@ -89,6 +82,10 @@ const ERP_STYLES = `
 .erp-side-foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--space-8, 8px); min-width: 0; }
 .erp-who { display: flex; align-items: center; gap: var(--space-8, 8px); padding: var(--space-6, 6px) var(--space-8, 8px); border-radius: var(--radius-md, 8px); background: color-mix(in srgb, rgb(var(--color-primary)) 8%, transparent); min-width: 0; }
 .erp-who span { font-size: var(--text-sm, 0.8125rem); font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.erp-people-name { display: flex; align-items: center; gap: var(--space-8, 8px); min-width: 0; }
+.erp-people-mono { font-family: var(--font-mono, monospace); font-size: var(--text-xs, 0.75rem); color: rgb(var(--color-muted)); word-break: break-all; }
+.erp-people-admin { color: rgb(var(--color-primary)); font-weight: 600; font-size: var(--text-sm, 0.8125rem); }
+.erp-people-member { color: rgb(var(--color-success)); font-weight: 600; font-size: var(--text-sm, 0.8125rem); }
 `;
 
 /**
@@ -131,6 +128,10 @@ export default defineComponent({
     const loginError = ref("");
     const view = ref<ViewKey>("feedback");
     const loggingOut = ref(false);
+
+    // The feedback status filter rides the header's centre group, so its
+    // state must live HERE (the header and the table both bind it).
+    const statusFilter = ref("");
 
     const { state: confirmState, confirm, onConfirm, onCancel } = useConfirm();
 
@@ -179,10 +180,20 @@ export default defineComponent({
       );
     }
 
+    // A stale admin cookie (env list changed since mint) must not keep
+    // a demoted holder on an admin-only view.
+    watch(
+      () => session.value?.admin,
+      (admin) => {
+        if (!admin && view.value === "people") view.value = "feedback";
+      },
+    );
+
     // Bound slot objects — an inline literal is not normalized to slots
-    // (the same gotcha HkAdminTablePage documents).
-    const feedbackSlots = { onSessionLost: loseSession };
+    // (the same gotcha HkAdminTablePage documents). Reactive props
+    // (the status filter) ride inline instead so they re-bind on render.
     const replaysSlots = { onSessionLost: loseSession };
+    const peopleSlots = { onSessionLost: loseSession };
 
     const navFeedbackSlots = {
       icon: () => <MessageSquareText size={16} />,
@@ -191,6 +202,10 @@ export default defineComponent({
     const navReplaysSlots = {
       icon: () => <Package size={16} />,
       default: () => "录像征集",
+    };
+    const navPeopleSlots = {
+      icon: () => <Users size={16} />,
+      default: () => "人员管理",
     };
 
     const shellSlots = {
@@ -212,18 +227,21 @@ export default defineComponent({
           onLogout={askLogout}
         >
           {{
-            // The view switcher rides the header's page-owned centre
-            // group — the balanced three-zone grid pins it to the true
-            // viewport middle, the shittim-chest console grammar (the
-            // in-content tab row it replaces floated mid-page instead
-            // and duplicated the sidebar nav).
-            center: () => (
-              <HTabs
-                modelValue={view.value}
-                onUpdate:modelValue={(v: string) => (view.value = v as ViewKey)}
-                tabs={VIEWS.map((v) => ({ key: v.key, label: v.label }))}
-              />
-            ),
+            // The header's centre group carries the FEEDBACK STATUS
+            // FILTER while that view is active — the balanced three-zone
+            // grid pins it to the true viewport middle (the shittim-chest
+            // console grammar). The former view-switcher tab row is gone:
+            // it only duplicated the sidebar nav. Other views leave the
+            // centre empty.
+            center: () =>
+              view.value === "feedback" ? (
+                <HTabs
+                  variant="segmented"
+                  modelValue={statusFilter.value}
+                  onUpdate:modelValue={(v: string) => (statusFilter.value = v)}
+                  tabs={FEEDBACK_STATUS_TABS}
+                />
+              ) : null,
             "avatar-modal": (modal: { open: boolean; onUpdateOpen: (v: boolean) => void }) => (
               <HModal
                 modelValue={modal.open}
@@ -267,6 +285,17 @@ export default defineComponent({
             >
               {navReplaysSlots}
             </HNavItem>
+            {session.value?.admin ? (
+              <HNavItem
+                active={view.value === "people"}
+                onClick={() => {
+                  view.value = "people";
+                  p.onNavigate();
+                }}
+              >
+                {navPeopleSlots}
+              </HNavItem>
+            ) : null}
           </nav>
           <div class="erp-side-foot">
             <div class="erp-who">
@@ -290,26 +319,14 @@ export default defineComponent({
           </HButton>
         </div>
       ),
-      content: () => (
-        <div class="erp-view">
-          {session.value?.open_access ? (
-            <div class="erp-notice">
-              <HAlert
-                variant="info"
-                banner
-                message="当前按组织授权开放（ERP_OPEN_ACCESS=1）：能登录该飞书应用的成员都可以进入后台。如需收紧为个人名单，请设置 ERP_ALLOWED_OPEN_IDS 并移除 ERP_OPEN_ACCESS。"
-              />
-              <div class="erp-notice-copy">
-                <span class="erp-muted">你的 open_id（收紧名单时点按复制）：</span>
-                <HkCopyBadge mono size="sm" variant="info">
-                  {session.value?.open_access}
-                </HkCopyBadge>
-              </div>
-            </div>
-          ) : null}
-          {view.value === "feedback" ? <FeedbackView {...feedbackSlots} /> : <ReplayAdminView {...replaysSlots} />}
-        </div>
-      ),
+      content: () =>
+        view.value === "feedback" ? (
+          <FeedbackView onSessionLost={loseSession} filter={statusFilter.value} />
+        ) : view.value === "replays" ? (
+          <ReplayAdminView {...replaysSlots} />
+        ) : session.value?.admin ? (
+          <PeopleView {...peopleSlots} />
+        ) : null,
       overlays: () => (
         <>
           <HToast />
@@ -353,7 +370,13 @@ export default defineComponent({
             </div>
           </div>
         ) : phase.value === "ready" ? (
-          <HkAdminShell navTitle="导航">{shellSlots}</HkAdminShell>
+          // footerHeight=0: the default reserves the shittim-chest
+          // status-bar band (3rem) for pages that render one — this
+          // console doesn't, so the reservation read as a dead blank
+          // strip under the content.
+          <HkAdminShell navTitle="导航" footerHeight="0px">
+            {shellSlots}
+          </HkAdminShell>
         ) : null}
       </div>
     );

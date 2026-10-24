@@ -64,6 +64,13 @@ pub enum Route<'a> {
     ErpSession,
     /// POST /api/erp/logout — clear the session cookie.
     ErpLogout,
+    /// GET /api/erp/users — one page of the Feishu org's users for the
+    /// console's people-management view (admin tier).
+    ErpUsers,
+    /// /api/erp/members — GET lists the console-managed member tier,
+    /// POST grants/revokes console view access (admin tier; the handler
+    /// branches on the method).
+    ErpMembers,
     /// POST /api/feedback/submit — multipart form target.
     FeedbackSubmit,
     /// GET /api/feedback/config — the public page config the worker used
@@ -167,6 +174,8 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         "/api/erp/callback" => return Route::ErpCallback,
         "/api/erp/session" => return Route::ErpSession,
         "/api/erp/logout" => return Route::ErpLogout,
+        "/api/erp/users" => return Route::ErpUsers,
+        "/api/erp/members" => return Route::ErpMembers,
         "/api/feedback/attachment" => {
             return Route::FeedbackAttachment {
                 file_token: query_get(query, "file_token"),

@@ -113,6 +113,8 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         Route::ErpCallback => erp::handle_callback(req, env).await,
         Route::ErpSession => erp::handle_session(req, env).await,
         Route::ErpLogout => erp::handle_logout(req, env).await,
+        Route::ErpUsers => erp::handle_users(req, env).await,
+        Route::ErpMembers => erp::handle_members(req, env).await,
 
         Route::Control { room, role } => {
             let Some(room) = room.filter(|r| valid_room(r)) else {

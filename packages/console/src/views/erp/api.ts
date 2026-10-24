@@ -32,7 +32,6 @@ export type {
   BackfillOk,
   CreditsResponse,
   DrainResult,
-  ErpSessionOk,
   FeedbackItem,
   FeedbackListPage,
   ReplayAdminList,

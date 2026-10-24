@@ -12,12 +12,14 @@
 //! - `GET /api/erp/session` — the console shell's whoami probe.
 //! - `POST /api/erp/logout` — clears the session cookie.
 //!
-//! Access is limited to an open_id allowlist — `ERP_ALLOWED_OPEN_IDS`
-//! (comma-separated) ∪ `FEEDBACK_ADMIN_OPEN_ID`, checked at the callback
-//! AND on every session use, so removing an open_id revokes its live
-//! cookies. With neither set the legacy gate stays (any user the Feishu
-//! app admits) so an upgrade never locks the owner out; each such login
-//! logs a warning and the session probe flags it to the console.
+//! Access is a two-tier allowlist — ADMINS from `ERP_ALLOWED_OPEN_IDS`
+//! (comma-separated) ∪ `FEEDBACK_ADMIN_OPEN_ID` (full control, the
+//! people-management surface), MEMBERS granted from the console and
+//! stored in KV `erp:members` (view access) — checked at the callback
+//! AND on every session use, so a revoked id loses its live cookies
+//! immediately. Nothing configured admits nobody (no legacy open mode):
+//! bootstrap by setting ERP_ALLOWED_OPEN_IDS to the maintainer's
+//! open_id BEFORE deploying this gate.
 //! Session signing derives from `FEISHU_APP_SECRET` (domain-separated),
 //! so no extra secret is needed.
 
@@ -157,7 +159,8 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         .or_else(|| data.get("user"))
         .cloned()
         .unwrap_or(data);
-    let claims = SessionClaims {
+    let allowlist = effective_allowlist(&env).await;
+    let mut claims = SessionClaims {
         open_id: user
             .get("open_id")
             .and_then(Value::as_str)
@@ -174,31 +177,26 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
             .unwrap_or_default()
             .to_string(),
         exp: now_secs() + SESSION_TTL_SECS,
+        admin: false,
     };
     if claims.open_id.is_empty() {
         return login_failed(&origin, "profile-shape");
     }
-    let allowlist = effective_allowlist(&env);
+    if allowlist.is_empty() {
+        // Fail-closed with nothing configured — the maintainer must
+        // bootstrap ERP_ALLOWED_OPEN_IDS with their own open_id.
+        worker::console_error!(
+            "erp: allowlist empty (set ERP_ALLOWED_OPEN_IDS to your open_id)"
+        );
+        return login_failed(&origin, "unconfigured");
+    }
     if !allowlist.admits(&claims.open_id) {
         // Logged so the owner can read a new maintainer's app-scoped
         // open_id off `wrangler tail` before adding it to the list.
         worker::console_log!("erp: denied open_id {}", claims.open_id);
-        let reason = if allowlist.is_open() {
-            "denied"
-        } else {
-            // The fail-closed default (audit M-6): nothing configured and
-            // no ERP_OPEN_ACCESS switch — the console shows what to set.
-            "unconfigured"
-        };
-        return login_failed(&origin, reason);
+        return login_failed(&origin, "denied");
     }
-    if allowlist.is_open() {
-        worker::console_warn!(
-            "erp: no allowlist configured and ERP_OPEN_ACCESS=1; \
-             admitting open_id {} under the legacy any-app-user gate",
-            claims.open_id
-        );
-    }
+    claims.admin = allowlist.is_admin(&claims.open_id);
 
     // Best-effort enrichment: user_info anonymizes the profile to
     // 用户＋digits when the app lacks contact visibility, which reads as
@@ -242,16 +240,16 @@ pub async fn handle_session(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
         return err(405, "method_not_allowed");
     }
-    let Some(c) = session_claims(&req, &env) else {
+    let Some(c) = session_claims(&req, &env).await else {
         return ok(json!({ "ok": false }));
     };
-    // Open mode (no allowlist configured) is surfaced to the session
-    // holder together with their own open_id — exactly the value the
-    // owner needs to close the gate.
-    let open_access = allowlist(&env).is_open().then(|| c.open_id.clone());
+    // Adminity is recomputed live (the cookie's flag can go stale when
+    // the env allowlist changes) — the console hides its admin surfaces
+    // from members.
+    let admin = effective_allowlist(&env).await.is_admin(&c.open_id);
     if !relay_core::erp::profile_needs_refresh(&c.name, &c.avatar) {
         return ok(json!({
-            "ok": true, "name": c.name, "avatar": c.avatar, "open_access": open_access
+            "ok": true, "name": c.name, "avatar": c.avatar, "admin": admin
         }));
     }
     // The profile read is attempted live on every probe while the stored
@@ -261,7 +259,7 @@ pub async fn handle_session(req: Request, env: Env) -> Result<Response> {
         Ok(Some(fresh)) => {
             let mut resp = ok(json!({
                 "ok": true, "name": fresh.name, "avatar": fresh.avatar, "debug": "refreshed",
-                "open_access": open_access
+                "admin": admin
             }))?;
             if let Some(app_secret) = env.secret("FEISHU_APP_SECRET").ok().map(|s| s.to_string()) {
                 let value = mint_session(&session_key(&app_secret), &fresh);
@@ -278,11 +276,11 @@ pub async fn handle_session(req: Request, env: Env) -> Result<Response> {
         // stored claims and report WHY to the session holder.
         Ok(None) => ok(json!({
             "ok": true, "name": c.name, "avatar": c.avatar, "debug": "unchanged",
-            "open_access": open_access
+            "admin": admin
         })),
         Err(d) => ok(json!({
             "ok": true, "name": c.name, "avatar": c.avatar, "debug": d,
-            "open_access": open_access
+            "admin": admin
         })),
     }
 }
@@ -294,7 +292,7 @@ pub async fn handle_logout(req: Request, env: Env) -> Result<Response> {
     }
     // Verify when possible so the endpoint isn't a gratuitous oracle;
     // clearing anyway is harmless either way.
-    let _ = session_claims(&req, &env);
+    let _ = session_claims(&req, &env).await;
     let mut resp = ok(json!({ "ok": true }))?;
     resp.headers_mut().set(
         "Set-Cookie",
@@ -304,13 +302,23 @@ pub async fn handle_logout(req: Request, env: Env) -> Result<Response> {
 }
 
 /// The console APIs' gate: a valid, unexpired `erp_session` cookie whose
-/// open_id is still allowlisted. Replaces the retired `X-Admin-Key`
-/// header check.
-pub fn session_ok(req: &Request, env: &Env) -> bool {
-    session_claims(req, env).is_some()
+/// open_id is still allowlisted (admin or member tier). Replaces the
+/// retired `X-Admin-Key` header check.
+pub async fn session_ok(req: &Request, env: &Env) -> bool {
+    session_claims(req, env).await.is_some()
 }
 
-fn session_claims(req: &Request, env: &Env) -> Option<relay_core::erp::SessionClaims> {
+/// The ADMIN tier's gate: a live console session whose open_id sits in
+/// the env-configured admin list (people management, member grants).
+pub async fn admin_session(req: &Request, env: &Env) -> Option<relay_core::erp::SessionClaims> {
+    let c = session_claims(req, env).await?;
+    effective_allowlist(env)
+        .await
+        .is_admin(&c.open_id)
+        .then_some(c)
+}
+
+async fn session_claims(req: &Request, env: &Env) -> Option<relay_core::erp::SessionClaims> {
     let app_secret = env
         .secret("FEISHU_APP_SECRET")
         .ok()
@@ -321,42 +329,41 @@ fn session_claims(req: &Request, env: &Env) -> Option<relay_core::erp::SessionCl
         &session_key(&app_secret),
         &value,
         now_secs(),
-        &effective_allowlist(env),
+        &effective_allowlist(env).await,
     )
 }
 
-/// `ERP_ALLOWED_OPEN_IDS` ∪ `FEEDBACK_ADMIN_OPEN_ID`. `env.var` reads a
+/// The KV row the console-managed member tier lives in (JSON array of
+/// open_ids). One key, read on every gate check, written by the people
+/// management endpoints.
+const KV_MEMBERS: &str = "erp:members";
+
+/// The gate the console actually enforces: the env-configured ADMIN tier
+/// (`ERP_ALLOWED_OPEN_IDS` ∪ `FEEDBACK_ADMIN_OPEN_ID` — `env.var` reads a
 /// plaintext var or a `wrangler secret` alike; secrets are the
-/// recommended home since `wrangler deploy` drops dashboard-set vars.
-fn allowlist(env: &Env) -> ConsoleAllowlist {
+/// recommended home since `wrangler deploy` drops dashboard-set vars)
+/// plus the KV-managed MEMBER tier. No legacy open mode: empty admits
+/// nobody. Every session check (login, whoami, console APIs, replay
+/// admin) funnels through here.
+async fn effective_allowlist(env: &Env) -> ConsoleAllowlist {
     let get = |name: &str| env.var(name).ok().map(|v| v.to_string());
-    ConsoleAllowlist::from_config(
+    let configured = ConsoleAllowlist::from_config(
         get("ERP_ALLOWED_OPEN_IDS").as_deref(),
         get("FEEDBACK_ADMIN_OPEN_ID").as_deref(),
-    )
-}
-
-/// The legacy any-app-user gate needs an explicit opt-in once the
-/// allowlist is gone (audit M-6): `ERP_OPEN_ACCESS=1` (or `true`).
-/// Default OFF — an unconfigured deployment is FAIL-CLOSED, because the
-/// console and every `/api/replays/admin/*` route ride this same gate.
-fn open_access_enabled(env: &Env) -> bool {
-    env.var("ERP_OPEN_ACCESS")
-        .map(|v| matches!(v.to_string().as_str(), "1" | "true"))
-        .unwrap_or(false)
-}
-
-/// The allowlist the console actually enforces: the configured one, or —
-/// when nothing is configured and the legacy switch is off — a closed
-/// gate that admits nobody. Every session check (login, whoami, console
-/// APIs, replay admin) funnels through here.
-fn effective_allowlist(env: &Env) -> ConsoleAllowlist {
-    let allowlist = allowlist(env);
-    if allowlist.is_open() && !open_access_enabled(env) {
-        ConsoleAllowlist::closed()
-    } else {
-        allowlist
-    }
+    );
+    // Best-effort member read: a KV hiccup degrades to the admin tier
+    // alone (never fails a request on the gate path).
+    let members: Vec<String> = match env.kv(crate::feedback::KV) {
+        Ok(kv) => kv
+            .get(KV_MEMBERS)
+            .json::<Vec<String>>()
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    configured.with_members(members)
 }
 
 /// Re-read the profile from the contact API with the tenant token.
@@ -419,6 +426,161 @@ fn login_failed(origin: &str, reason: &str) -> Result<Response> {
     Ok(Response::from_body(ResponseBody::Empty)?
         .with_status(302)
         .with_headers(headers))
+}
+
+// ── people management (admin tier) ─────────────────────────────────────
+//
+// GET  /api/erp/users?department_id=&page_token= — one page of the
+//   Feishu org's users under a department (BFS from the root is the
+//   console's job; department_id=0 is the root), for the 人员管理 view.
+// GET  /api/erp/members  — the console-managed member tier.
+// POST /api/erp/members {open_id, action: "add"|"remove"} — grant or
+//   revoke console view access. Admin-gated throughout.
+
+/// Departments/users fetched per /api/erp/users call — the Workers
+/// free-tier subrequest ceiling is 50; the caps leave headroom for the
+/// token call and stay well inside a worker invocation's budget.
+const USERS_PAGE_SIZE: usize = 50;
+const USERS_HARD_CAP: usize = 500;
+
+/// `GET /api/erp/users` — one page of org users for the people view.
+pub async fn handle_users(req: Request, env: Env) -> Result<Response> {
+    if req.method() != Method::Get {
+        return err(405, "method_not_allowed");
+    }
+    if admin_session(&req, &env).await.is_none() {
+        return err(403, "forbidden");
+    }
+    let query = req.url()?.query().unwrap_or("").to_string();
+    let department = relay_core::route::query_get(&query, "department_id")
+        .filter(|d| !d.is_empty() && d.len() <= 64)
+        .unwrap_or("0");
+    let page_token = relay_core::route::query_get(&query, "page_token")
+        .filter(|t| !t.is_empty() && t.len() <= 128);
+
+    let token = match feishu_token(&env).await {
+        Ok(t) => t,
+        Err(_) => return err(503, "feishu-unconfigured"),
+    };
+    // find_by_department answers items has_more page_token; the failure
+    // code distinguishes a missing 通讯录 scope (the console surfaces
+    // the grant guidance) from transport trouble.
+    let mut url = format!(
+        "{FEISHU}/contact/v3/users/find_by_department?department_id={}&page_size={}&user_id_type=open_id",
+        urlencode(&department),
+        USERS_PAGE_SIZE,
+    );
+    if let Some(t) = page_token.as_deref() {
+        url.push_str(&format!("&page_token={}", urlencode(t)));
+    }
+    let (_, page) = match feishu_json(Method::Get, &url, &token, Value::Null).await {
+        Ok(p) => p,
+        Err(e) => return err(400, &format!("contact:{e}")),
+    };
+    let users: Vec<Value> = page
+        .pointer("/data/items")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .take(USERS_HARD_CAP)
+                .map(|u| {
+                    json!({
+                        "open_id": u.get("open_id").and_then(Value::as_str).unwrap_or_default(),
+                        "name": u.get("name").and_then(Value::as_str).unwrap_or_default(),
+                        "avatar": u
+                            .pointer("/avatar/avatar_240")
+                            .or_else(|| u.pointer("/avatar/avatar_640"))
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    })
+                })
+                .filter(|u| !u["open_id"].as_str().unwrap_or("").is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    ok(json!({
+        "ok": true,
+        "users": users,
+        "next_page_token": page
+            .pointer("/data/page_token")
+            .and_then(Value::as_str)
+            .filter(|t| !t.is_empty()),
+    }))
+}
+
+/// `/api/erp/members` — GET lists the console-managed member tier
+/// (admins ride along so the view labels them un-revocable); POST
+/// `{open_id, action: "add"|"remove"}` grants/revokes console view
+/// access. The admin tier (env) is never writable here.
+pub async fn handle_members(mut req: Request, env: Env) -> Result<Response> {
+    if req.method() == Method::Get {
+        if admin_session(&req, &env).await.is_none() {
+            return err(403, "forbidden");
+        }
+        let allowlist = effective_allowlist(&env).await;
+        return ok(json!({
+            "ok": true,
+            "members": member_ids(&env).await,
+            "admins": allowlist.admin_ids(),
+        }));
+    }
+    if req.method() != Method::Post {
+        return err(405, "method_not_allowed");
+    }
+    if admin_session(&req, &env).await.is_none() {
+        return err(403, "forbidden");
+    }
+    let origin = req.url()?.origin().ascii_serialization();
+    if !relay_core::erp::same_origin_write(
+        req.headers().get("Origin").ok().flatten().as_deref(),
+        req.headers().get("Sec-Fetch-Site").ok().flatten().as_deref(),
+        &origin,
+    ) {
+        return err(403, "forbidden");
+    }
+    let body: Value = req.json().await.unwrap_or(Value::Null);
+    let Some(open_id) = body
+        .get("open_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty() && id.len() <= 64)
+        .map(str::to_string)
+    else {
+        return err(400, "bad_request");
+    };
+    let action = body.get("action").and_then(Value::as_str).unwrap_or("");
+    let allowlist = effective_allowlist(&env).await;
+    if allowlist.is_admin(&open_id) {
+        return err(400, "admin-immutable");
+    }
+    let mut members = member_ids(&env).await;
+    match action {
+        "add" => {
+            if !members.iter().any(|m| m == &open_id) && members.len() < 200 {
+                members.push(open_id.clone());
+            }
+        },
+        "remove" => members.retain(|m| m != &open_id),
+        _ => return err(400, "bad_action"),
+    }
+    let kv = env.kv(crate::feedback::KV)?;
+    kv.put(KV_MEMBERS, serde_json::to_string(&members).unwrap_or_default())?
+        .execute()
+        .await?;
+    ok(json!({ "ok": true, "members": members }))
+}
+
+/// The raw KV member row (empty on any read trouble).
+async fn member_ids(env: &Env) -> Vec<String> {
+    match env.kv(crate::feedback::KV) {
+        Ok(kv) => kv
+            .get(KV_MEMBERS)
+            .json::<Vec<String>>()
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
 }
 
 fn now_secs() -> i64 {
