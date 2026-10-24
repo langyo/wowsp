@@ -237,6 +237,13 @@ export default defineComponent({
     );
 
     onMounted(async () => {
+      // Portable-mode probe runs on EVERY surface — desktop (normal and
+      // portable), the phone build and browser dev: the ship-detail aircraft
+      // hint and the titlebar both read the flag, and the phone / browser
+      // boots never reach init() below (mobile early-return, DEV / isTauri
+      // gates). The updater PASSES themselves stay desktop-only as documented
+      // in UpdateToast.tsx; this probe merely resolves the build flavor.
+      void updater.probePortable();
       // Production builds feel like a desktop app: no WebView2 context menu
       // on right-click. Editable elements keep the native menu (paste etc.),
       // and dev mode keeps everything for debugging.

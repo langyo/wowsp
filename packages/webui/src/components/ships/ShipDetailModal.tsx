@@ -465,6 +465,23 @@ export default defineComponent({
       () => planeModels.value.find((p) => p.index === selectedModel.value) ?? null,
     );
 
+    /** Base-sentence i18n keys for the aircraft hint, chosen by tab. Only the
+     *  Specifications tab shows the spec cards the long sentence names; My
+     *  Stats / Community keep the 3D stage mounted but render stats panels,
+     *  so they use the short "now viewing" copy. The guidance line below is
+     *  tab-independent. */
+    const aircraftNoticeBaseKeys = computed(() =>
+      tab.value === "specs"
+        ? {
+            hull: "ships.detail.aircraftNotice.hull",
+            plane: "ships.detail.aircraftNotice.plane",
+          }
+        : {
+            hull: "ships.detail.aircraftNotice.hullShort",
+            plane: "ships.detail.aircraftNotice.planeShort",
+          },
+    );
+
     function nationLabel(code: string): string {
       // Follows the 素材翻译 setting (国服 → X-系 names), UI i18n fallback.
       return (
@@ -555,17 +572,22 @@ export default defineComponent({
             {/* Aircraft-view hint (standard hikari alert): every carrier /
                 hybrid says which model the spec cards below describe, plus a
                 guidance line naming the control that actually switches it.
-                The airframe dropdown only exists on an EXPANDED 3D stage, so
-                a collapsed stage / 2D portrait gets expand / switch-back
-                wording instead. Portable builds ship no 3D — there is no
-                aircraft view at all, hence no hint. The Skill tab unmounts
-                the stage entirely (no aircraft view, no dropdown), so the
-                hint is gated off there too; the specs/mystats/community tabs
-                keep the stage mounted and keep the hint. Ships without
-                embarked squadrons keep the old layout. HAlert requires
-                `message`, but the two-line body below uses the default slot
-                (which HAlert renders over the prop), so it stays empty. */}
-            {planeModels.value.length > 0 && !updater.portable && tab.value !== "skill" ? (
+                The base sentence is per-tab: only the Specifications tab
+                shows the spec cards the long sentence names — My Stats /
+                Community render stats panels (the stage stays mounted) and
+                use the short "now viewing" copy. The airframe dropdown only
+                exists on an EXPANDED 3D stage, so a collapsed stage / 2D
+                portrait gets expand / switch-back wording instead. Portable
+                builds ship no 3D — there is no aircraft view at all, hence no
+                hint; the condition also waits for init()'s is_portable probe
+                (portableResolved) so the hint cannot flash before we know
+                whether a 3D stage can exist. The Skill tab unmounts the stage
+                entirely (no aircraft view, no dropdown), so the hint is gated
+                off there too. Ships without embarked squadrons keep the old
+                layout. HAlert requires `message`, but the two-line body below
+                uses the default slot (which HAlert renders over the prop), so
+                it stays empty. */}
+            {planeModels.value.length > 0 && updater.portableResolved && !updater.portable && tab.value !== "skill" ? (
               <div class="ship-detail__aircraft-notice">
                 <HAlert
                   variant="info"
@@ -575,8 +597,8 @@ export default defineComponent({
                 >
                   <span>
                     {selectedPlane.value
-                      ? t("ships.detail.aircraftNotice.plane", { name: selectedPlane.value.label })
-                      : t("ships.detail.aircraftNotice.hull")}
+                      ? t(aircraftNoticeBaseKeys.value.plane, { name: selectedPlane.value.label })
+                      : t(aircraftNoticeBaseKeys.value.hull)}
                   </span>
                   <span class="ship-detail__aircraft-notice-switch">
                     {t(aircraftNoticeSwitchKey(stageHidden.value, stageViewMode.value))}

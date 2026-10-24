@@ -118,7 +118,9 @@
       "plane": "Vista actual: {name} — la pestaña Especificaciones muestra los parámetros de esta aeronave.",
       "switch3d": "Cambia con el desplegable de la parte superior del panel 3D.",
       "switchExpand": "Despliega la vista previa 3D para cambiar con el desplegable de su parte superior.",
-      "switchBack3d": "Vuelve a la vista previa 3D para cambiar con el desplegable de su parte superior."
+      "switchBack3d": "Vuelve a la vista previa 3D para cambiar con el desplegable de su parte superior.",
+      "hullShort": "Vista actual: casco.",
+      "planeShort": "Vista actual: {name}."
     },
     "stage": {
       "hint3d": "Arrastra para rotar · rueda para hacer zoom · arrastra con botón derecho para desplazar",
