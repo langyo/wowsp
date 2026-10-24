@@ -156,19 +156,13 @@ const PACKET_GUN_MARKER: u32 = 0x18;
 /// [`method_ids_for_version`], never hardcoded.
 const PACKET_ENTITY_METHOD: u32 = 0x08;
 
-/// Experiment E11 method ids (see [`E11MethodIds`]): resolved per version.
+/// Experiment E11 method ids (see [`E11MethodIds`]): resolved per version
+/// through the layout table's exact-minor pin (`layout_tables::e11_for`).
 fn e11_method_ids(version_key: Option<(u32, u32, u32)>) -> Option<E11MethodIds> {
-    match version_key {
-        // Pinned against the 15.8.0 exposed tables (E10: def build 13187581,
-        // wire-validated on the reference capture). Promoting these into the
-        // generated `method_tables` (and its generator) is a follow-up that
-        // touches frozen files; until then other versions decode nothing.
-        Some((15, 8, _)) => Some(E11MethodIds {
-            avatar_update_minimap_vision_info: 155,
-            vehicle_on_consumable_used: 72,
-        }),
-        _ => None,
-    }
+    crate::layout_tables::e11_for(version_key).map(|ids| E11MethodIds {
+        avatar_update_minimap_vision_info: ids.avatar_update_minimap_vision_info,
+        vehicle_on_consumable_used: ids.vehicle_on_consumable_used,
+    })
 }
 
 /// Experiment E11 method ids for the G1 candidate events that are not yet in
@@ -476,7 +470,7 @@ fn decode_replay_with(
         );
     }
     let legacy = match version_key {
-        Some(k) => k < (12, 6, 0),
+        Some(k) => k < crate::layout_tables::LEGACY_STREAM_FLOOR,
         None => false,
     };
     let profile = build_layout_profile(version_key, lesta, client_version);
@@ -497,26 +491,25 @@ fn build_layout_profile(
     lesta: bool,
     client_version: Option<&str>,
 ) -> LayoutProfile {
-    // Battle-effect method decoding requires a table that actually covers the
-    // replay's version: below the oldest shipped table (0.11.6) the exposed
+    use crate::layout_tables as lt;
+    // Battle-effect method decoding requires a table that actually covers
+    // the replay's version: below the oldest shipped table the exposed
     // indices predate anything we know, so events stay empty.
-    // Oldest shipped table is 0.11.6 (u32 tuple to match `version_key`).
-    let in_table_range = version_key.map(|k| k >= (0, 11, 6)).unwrap_or(true);
+    let in_table_range = version_key
+        .map(|k| k >= lt::METHODS_TABLE_FLOOR)
+        .unwrap_or(true);
     let methods: Option<&'static MethodIds> = if lesta {
         Some(&crate::method_tables_lesta::LESTA_METHOD_IDS)
     } else {
         in_table_range.then(|| method_ids_for_version(client_version))
     };
+    // Every wire-shape gate below is a layout-table row (review M-5):
+    // pinning a new era appends a row there, never decode-logic surgery.
     LayoutProfile {
         methods,
-        // VehicleAppearance joins entities.xml in 14.5.0, pushing
-        // InteractiveZone from 13 to 14.
-        zone_entity_type: match version_key {
-            Some(k) if k < (14, 5, 0) => 13,
-            _ => 14,
-        },
-        ward_has_type: version_key.map(|k| k >= (13, 2, 0)).unwrap_or(true),
-        shotkill_has_ballistics: version_key.map(|k| k >= (12, 7, 0)).unwrap_or(true),
+        zone_entity_type: lt::row_newest(&lt::ZONE_ENTITY_TYPE, version_key),
+        ward_has_type: lt::row_newest(&lt::WARD_HAS_TYPE, version_key),
+        shotkill_has_ballistics: lt::row_newest(&lt::SHOTKILL_HAS_BALLISTICS, version_key),
         e11: e11_method_ids(version_key),
         // The arena-state FixedDict layout is version-gated; without a
         // parsed version the method id would come from the newest table

@@ -198,105 +198,23 @@ fn read_wire_string(args: &[u8], off: usize) -> Option<(String, usize)> {
 /// pickled as `(index, value)` pairs whose keys are the player fields'
 /// alphabetical sort positions — the field set grows over game versions, so
 /// every index drifts when a new alphabetically-earlier field is inserted
-/// (mirrors the vendored analyzer's key maps).
-struct ArenaFields {
-    avatar_id: i64,
-    /// The roster player id (joins the descriptor `vehicles[].id`).
-    player_id: i64,
-    max_health: i64,
-    name: i64,
-    /// The player's SHIP VEHICLE entity id — confusingly named `shipId` in
-    /// the FixedDict; NOT the GameParams id (`ship_params_id`). Head of a
-    /// rigid tail trio: `ship_params_id` = entity + 1 and `team_id` =
-    /// entity + 3 in EVERY layout ever pinned (0.10.7 → 15.9.0, the bot
-    /// layout included), so the drift probe below moves the trio as one
-    /// block instead of testing 3 free indices.
-    ship_entity_id: i64,
-    ship_params_id: i64,
-    team_id: i64,
-}
+/// (mirrors the vendored analyzer's key maps). The per-era indices live in
+/// the [`crate::layout_tables`] data table (review M-5); this alias is the
+/// decode side's name for one `ArenaFieldRow`.
+use crate::layout_tables::ArenaFieldRow as ArenaFields;
 
 impl ArenaFields {
-    /// 15.9.0 inserted one field between `name` (25) and the tail trio,
-    /// pushing the trio up by one (verified on a real 15.9.0 capture; the
-    /// dict now spans indices 0..38). 0.11.11+ ships the 38-field layout
-    /// this replaced (verified upstream across 0.11.11–0.12.8); earlier
-    /// layouts shift the alphabetical tail fields further. Bots dropped 10
-    /// human-only fields in 0.12.8, moving their tail indices down — no
-    /// 15.9.0 bot capture has been pinned yet, so the bot row keeps the
-    /// 0.12.8 indices and the drift probe absorbs the same insertion.
+    /// The per-version rows resolve through the layout tables: bots key
+    /// onto the bot table only from `ARENA_BOT_FLOOR` on, humans walk the
+    /// pinned player eras, and a `None` version keeps the historical
+    /// oldest-row default (the decode is disabled without a version —
+    /// `build_layout_profile` gates the method id first).
     fn for_version(version: Option<(u32, u32, u32)>, is_bot: bool) -> Self {
-        let bot_layout = is_bot && version.is_some_and(|k| k >= (0, 12, 8));
-        match (version, bot_layout) {
-            _ if bot_layout => Self {
-                avatar_id: -1,
-                player_id: 10,
-                max_health: 18,
-                name: 19,
-                ship_entity_id: 23,
-                ship_params_id: 24,
-                team_id: 26,
-            },
-            (Some(k), _) if k >= (15, 9, 0) => Self {
-                avatar_id: 2,
-                player_id: 11,
-                max_health: 24,
-                name: 25,
-                ship_entity_id: 34,
-                ship_params_id: 35,
-                team_id: 37,
-            },
-            (Some(k), _) if k >= (0, 11, 11) => Self {
-                avatar_id: 2,
-                player_id: 11,
-                max_health: 24,
-                name: 25,
-                ship_entity_id: 33,
-                ship_params_id: 34,
-                team_id: 36,
-            },
-            (Some(k), _) if k >= (0, 10, 9) => Self {
-                avatar_id: 2,
-                player_id: 11,
-                max_health: 23,
-                name: 24,
-                ship_entity_id: 32,
-                ship_params_id: 33,
-                team_id: 35,
-            },
-            (Some(k), _) if k >= (0, 10, 7) => Self {
-                avatar_id: 1,
-                player_id: 10,
-                max_health: 22,
-                name: 23,
-                ship_entity_id: 30,
-                ship_params_id: 31,
-                team_id: 33,
-            },
-            // Pre-0.10.7 (34 fields, recovered upstream from a 0.9.10 replay).
-            _ => Self {
-                avatar_id: 1,
-                player_id: 10,
-                max_health: 21,
-                name: 22,
-                ship_entity_id: 29,
-                ship_params_id: 30,
-                team_id: 32,
-            },
+        use crate::layout_tables as lt;
+        if is_bot && version.is_some_and(|k| k >= lt::ARENA_BOT_FLOOR) {
+            return lt::row_oldest(&lt::ARENA_BOT_FIELDS, version);
         }
-    }
-
-    /// The trio shifted as one block (`by` slots up/down the index axis).
-    fn shifted(&self, by: i64) -> Self {
-        Self {
-            avatar_id: self.avatar_id,
-            player_id: self.player_id,
-            max_health: self.max_health,
-            name: self.name,
-            ship_entity_id: self.ship_entity_id + by,
-            ship_params_id: self.ship_params_id + by,
-            team_id: self.team_id + by,
-        }
+        lt::row_oldest(&lt::ARENA_PLAYER_FIELDS, version)
     }
 }
 

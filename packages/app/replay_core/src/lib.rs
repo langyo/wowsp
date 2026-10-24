@@ -15,7 +15,9 @@
 //!   [`live_self_stream_from_settled`] entry (the corpus bench's source).
 //! - [`method_tables`] / [`method_tables_lesta`] — the per-version (WG) and
 //!   per-family (Lesta) Avatar client-method id tables the decoder gates
-//!   EntityMethod streams on.
+//!   EntityMethod streams on; [`layout_tables`] carries the same data form
+//!   for every NON-method version gate (zone index, wire-shape bytes,
+//!   arena FixedDict rows, E11 ids).
 //! - [`caps`]            — capture-zone geometry lifted off a decoded
 //!   replay ([`caps::cap_points_of`]).
 //!
@@ -25,6 +27,7 @@
 
 pub mod assemble;
 pub mod caps;
+pub(crate) mod layout_tables;
 pub mod meta;
 pub mod method_tables;
 pub mod method_tables_lesta;
