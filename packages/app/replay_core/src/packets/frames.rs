@@ -616,6 +616,10 @@ pub(super) fn walk_frames(
     DecodedReplay {
         recorder_ship,
         positions,
+        // The version-resolved InteractiveZone index rides with the decode
+        // (review M-4) — consumers filter zones through it, never through
+        // a re-hardcoded constant.
+        zone_entity_type: profile.zone_entity_type,
         kinds,
         destroys,
         properties,

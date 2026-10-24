@@ -4,9 +4,8 @@
 //! former home (`commands/replay/meta.rs`) moved with the lib.
 
 use anyhow::anyhow;
-use std::fs;
 
-use wowsp_replay_core::meta::{extract_descriptor_json, meta_from_raw};
+use wowsp_replay_core::meta::{extract_descriptor_json, meta_from_raw, read_block};
 use wowsp_tauri_shared::{CommandResult, ReplayMeta};
 
 /// Read + parse the header of one `.wowsreplay` file into a [`ReplayMeta`].
@@ -22,7 +21,12 @@ use wowsp_tauri_shared::{CommandResult, ReplayMeta};
 #[tauri::command]
 pub async fn read_replay_header(path: String) -> CommandResult<ReplayMeta> {
     tokio::task::spawn_blocking(move || {
-        let bytes = fs::read(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
+        // Review M-6: the header only needs block 0 — the bounded
+        // seek-past read never buffers the multi-MB packet stream the
+        // old whole-file `fs::read` paid for (a pairing-pulled replay
+        // can be arbitrarily large).
+        let p = std::path::Path::new(&path);
+        let bytes = read_block(p, 0).map_err(|e| anyhow!("read {path}: {e}"))?;
         let json = extract_descriptor_json(&bytes).ok_or_else(|| {
             anyhow!("{path}: not a valid wowsreplay (magic mismatch or truncated)")
         })?;
