@@ -109,6 +109,12 @@ pub struct DiscoveryTable {
     dirty: bool,
 }
 
+/// Review L-1: the table's memory ceiling. UDP broadcast sources can be
+/// spoofed, so a hostile LAN peer could mint unbounded (IP, port) pairs;
+/// past the cap the OLDEST-seen entry yields (a real desktop's list is a
+/// handful of rows — 64 is two orders of headroom).
+const MAX_TABLE_ENTRIES: usize = 64;
+
 #[derive(Debug, Clone, PartialEq)]
 struct TableEntry {
     host: String,
@@ -134,6 +140,21 @@ impl DiscoveryTable {
             e.relay = payload.relay.clone();
             e.last_seen = now;
         } else {
+            // Review L-1: cap the table — a spoofed-source flood must not
+            // grow the phone-side list (and its memory) without bound;
+            // the oldest-seen row yields first, so a live desktop list
+            // keeps its active members.
+            if self.entries.len() >= MAX_TABLE_ENTRIES {
+                if let Some(oldest) = self
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, e)| e.last_seen)
+                    .map(|(i, _)| i)
+                {
+                    self.entries.remove(oldest);
+                }
+            }
             self.entries.push(TableEntry {
                 host,
                 port: payload.port,
@@ -427,6 +448,39 @@ mod tests {
 
     fn peer() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 10)), 53511)
+    }
+
+    /// Review L-1: a spoofed-source flood must not grow the table
+    /// without bound — the cap holds and the OLDEST-seen row yields, so
+    /// later (live) members stay listed.
+    #[test]
+    fn table_is_capped_and_evicts_the_oldest_seen_row() {
+        let mut t = DiscoveryTable::default();
+        let payload = parse_broadcast(&payload_json("PC", 58041)).unwrap();
+        let peer_at = |last: u8| SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 0, 3, last)), 53511);
+        // 62 unrefreshed filler rows…
+        // 63 unrefreshed filler rows (63 + 2 live = 65 > the 64 cap, so
+        // exactly one filler must yield).
+        for last in 1u8..=63 {
+            t.observe(peer_at(last), &payload);
+        }
+        // …then the two live rows join last.
+        t.observe(peer_at(200), &payload);
+        t.observe(peer_at(201), &payload);
+        assert_eq!(t.entries.len(), MAX_TABLE_ENTRIES);
+        let hosts: Vec<&str> = t.entries.iter().map(|e| e.host.as_str()).collect();
+        assert!(
+            hosts.contains(&"192.0.3.200"),
+            "the newest rows survive the cap"
+        );
+        assert!(
+            hosts.contains(&"192.0.3.201"),
+            "the newest rows survive the cap"
+        );
+        assert!(
+            !hosts.contains(&"192.0.3.1"),
+            "the oldest filler yielded its slot"
+        );
     }
 
     #[test]

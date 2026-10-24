@@ -365,6 +365,25 @@ fn wininet_proxy() -> Option<String> {
     None
 }
 
+/// Review M-5, pure core of the redirect policy above: a hop is allowed
+/// when its TARGET scheme is https (or anything non-plain), and plain
+/// http only toward a loopback host (dev mirrors). The scheme history is
+/// deliberately ignored — an http→http chain is the caller's original
+/// choice; the gate exists to stop an https session being bounced onto
+/// cleartext.
+fn redirect_hop_allowed(url: &reqwest::Url) -> Result<(), &'static str> {
+    if url.scheme() != "http" {
+        return Ok(());
+    }
+    let host = url.host_str().unwrap_or("");
+    let loopback = host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]";
+    if loopback {
+        Ok(())
+    } else {
+        Err("redirect refused: plain-http hop off loopback")
+    }
+}
+
 /// Build a reqwest client builder honoring the persisted network config.
 /// All outbound HTTP in the app goes through here so the Settings -> Network
 /// choice is truly global. Callers that need a client-level timeout (small
@@ -383,12 +402,23 @@ fn http_builder_for(config: &NetworkConfig) -> anyhow::Result<reqwest::ClientBui
     let mut builder = reqwest::Client::builder()
         .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
         .connect_timeout(std::time::Duration::from_secs(15))
-        // Audit M-5d: follow redirects with a bounded chain so a
-        // compromised/redirecting origin cannot bounce clients somewhere
-        // unexpected indefinitely (reqwest's default is no redirect
-        // handling — an error — which breaks legitimate mirrors; a
-        // bounded policy keeps them working without unlimited hops).
-        .redirect(reqwest::redirect::Policy::limited(5));
+        // Audit M-5d + review M-5: follow redirects with a bounded chain
+        // (reqwest's default is no redirect handling — an error — which
+        // breaks legitimate mirrors), and REFUSE a scheme downgrade: an
+        // https origin 302-ing to http strips TLS exactly when the
+        // client believed it had it. Plain-http hops stay legal only
+        // toward a loopback target (dev mirrors); everything else must
+        // stay https (or start plain and stay plain — the policy gates
+        // the hop's TARGET scheme, not the chain's history).
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error("redirect chain too long");
+            }
+            match redirect_hop_allowed(attempt.url()) {
+                Ok(()) => attempt.follow(),
+                Err(reason) => attempt.error(reason),
+            }
+        }));
     // Android has no SChannel/native-tls, so reqwest builds on rustls there
     // — and reqwest 0.13's rustls support defaults its verifier to
     // rustls-platform-verifier, whose Android backend is JVM Kotlin glue we
@@ -547,6 +577,21 @@ mod tests {
         };
         let pair = HttpPair::build_with(&manual, |b| b).expect("manual pair");
         assert!(pair.has_proxy());
+    }
+
+    /// Review M-5: the redirect gate refuses a plain-http hop off
+    /// loopback (the https→http downgrade) and keeps loopback + https
+    /// hops legal.
+    #[test]
+    fn redirect_gate_refuses_plain_http_off_loopback() {
+        let https = reqwest::Url::parse("https://mirror.example.org/x").unwrap();
+        assert!(redirect_hop_allowed(&https).is_ok());
+        let http_loopback = reqwest::Url::parse("http://127.0.0.1:8787/x").unwrap();
+        assert!(redirect_hop_allowed(&http_loopback).is_ok());
+        let http_localhost = reqwest::Url::parse("http://localhost:8787/x").unwrap();
+        assert!(redirect_hop_allowed(&http_localhost).is_ok());
+        let downgrade = reqwest::Url::parse("http://evil.example.org/x").unwrap();
+        assert!(redirect_hop_allowed(&downgrade).is_err());
     }
 
     /// A legacy JSON config migrates to canonical TOML on load, and the

@@ -38,8 +38,17 @@ fn strip_scheme_ci<'a>(url: &'a str, scheme: &str) -> Option<&'a str> {
 
 /// Host of an already-normalized `<scheme>host[:port][/path][?query]`
 /// URL, port and path stripped (bracket-aware for IPv6 literals).
+///
+/// Review M-4: an authority carrying USERINFO (`host:port@evil`) is
+/// rejected outright (empty host — never loopback, so every https-only
+/// gate refuses it) instead of being sliced at the colon: reqwest would
+/// resolve the post-`@` host, so `http://127.0.0.1:80@evil` used to
+/// pass the loopback plain-text exception while dialing `evil`.
 fn host_of_url(url: &str) -> &str {
     let authority = url.split(['/', '?']).next().unwrap_or("");
+    if authority.contains('@') {
+        return "";
+    }
     match authority.rfind(':') {
         // A colon outside the brackets is the port separator.
         Some(pos) if !authority.starts_with('[') || authority[..pos].contains(']') => {
@@ -225,6 +234,17 @@ pub(super) fn conn_id() -> Result<String> {
     Ok(hex::encode(buf))
 }
 
+/// A conn id this protocol mints: exactly 16 lowercase hex chars (see
+/// [`conn_id`]). The host bridge's spawn gate shape-checks gateway
+/// signals against this, so unvalidated bytes never name a data-socket
+/// path.
+pub(super) fn valid_conn_id(id: &str) -> bool {
+    id.len() == 16
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
 /// A pairing code the phone enters must be exactly 6 digits.
 /// `pub(crate)` so the pairing server can shape-gate the
 /// gateway-assigned code too (M-5a, re-exported as
@@ -379,6 +399,39 @@ mod tests {
         assert_eq!(host_of_url("127.0.0.1:8787"), "127.0.0.1");
         assert_eq!(host_of_url("[::1]:8787"), "[::1]");
         assert_eq!(host_of_url("[::1]"), "[::1]");
+    }
+
+    /// Review M-4: userinfo in the authority (`host:port@evil`) must not
+    /// slice into a loopback-looking host — reqwest dials the post-`@`
+    /// host, so `127.0.0.1:80@evil` used to pass the plain-text loopback
+    /// exception while dialing `evil`. The empty host never matches
+    /// loopback: every https-only gate refuses the URL.
+    #[test]
+    fn host_of_url_rejects_userinfo_authorities() {
+        assert_eq!(host_of_url("127.0.0.1:80@evil.example"), "");
+        assert_eq!(host_of_url("user@gw.example.org"), "");
+        assert_eq!(host_of_url("user:pass@gw.example.org:8787/x"), "");
+        // …and the refusal propagates into the https-only gate.
+        assert!(enforce_https_root("http://127.0.0.1:80@evil.example", "raw").is_err());
+    }
+
+    /// Review M-3's shape leg: the spawn gate accepts exactly the ids
+    /// this protocol mints (16 lowercase hex) and refuses everything
+    /// else — including the 64-hex room shape (a gateway conflating the
+    /// two key spaces is misbehaving).
+    #[test]
+    fn conn_id_shape_gate() {
+        let minted = conn_id().unwrap();
+        assert!(valid_conn_id(&minted), "a fresh mint is always valid");
+        assert!(valid_conn_id("0123456789abcdef"));
+        assert!(
+            !valid_conn_id(&"a".repeat(64)),
+            "room-shaped ids are not conns"
+        );
+        assert!(!valid_conn_id("abc123")); // too short
+        assert!(!valid_conn_id("ABCDEF0123456789")); // uppercase
+        assert!(!valid_conn_id("0123456789abcdeg")); // non-hex
+        assert!(!valid_conn_id(""));
     }
 
     // ── M-5a: the code shape gate shared with the server ─────────────

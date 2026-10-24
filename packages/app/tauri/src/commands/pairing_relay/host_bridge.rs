@@ -161,12 +161,7 @@ async fn host_bridge_loop(
                             tracing::info!("pairing code allocated by the relay gateway");
                         },
                         ControlMsg::Conn { id } => {
-                            bridges.spawn(bridge_one(
-                                ws_base.clone(),
-                                room.clone(),
-                                id,
-                                local_port,
-                            ));
+                            spawn_bridge(&mut bridges, &ws_base, &room, id, local_port);
                         },
                         _ => {},
                     }
@@ -183,7 +178,14 @@ async fn host_bridge_loop(
                 continue;
             },
             Err(_) => {
+                // Same backoff as a failed connect (review L-5): a bare
+                // retry here re-dials the gateway every loop iteration.
                 tracing::debug!("relay host connect timed out; retrying");
+                tokio::select! {
+                    _ = shutdown.changed() => break,
+                    _ = tokio::time::sleep(backoff) => {},
+                }
+                backoff = (backoff * 2).min(Duration::from_secs(30));
                 continue;
             },
         };
@@ -239,9 +241,7 @@ async fn host_bridge_loop(
                             break;
                         },
                         Ok(ControlMsg::Conn { id }) => {
-                            bridges.spawn(bridge_one(
-                                ws_base.clone(), room.clone(), id, local_port,
-                            ));
+                            spawn_bridge(&mut bridges, &ws_base, &room, id, local_port);
                         },
                         Ok(_) => {},
                         Err(e) => {
@@ -265,6 +265,48 @@ async fn host_bridge_loop(
 
 /// Bridge one signaled connection: loopback TCP to the local pairing server
 /// + a data WebSocket; bytes pipe verbatim until either side closes.
+///
+/// The spawn gate (review M-3): the worker caps a room's DATA sockets at
+/// 4 (relay-core room.rs), but a compromised/misbehaving gateway can
+/// signal conns without bound — every spawn here costs a loopback TCP +
+/// a data WebSocket on the desktop. The local budget is defense for the
+/// DESKTOP, not a duplicate of the worker's: shape-invalid ids (header
+/// splicing / confusion bait) drop with a warn, and past the cap the
+/// excess conn drops with a warn. The phone leg redials on the next
+/// attempt either way.
+#[cfg(desktop)]
+const MAX_BRIDGES: usize = 8;
+
+#[cfg(desktop)]
+fn spawn_bridge(
+    bridges: &mut tokio::task::JoinSet<()>,
+    ws_base: &str,
+    room: &str,
+    id: String,
+    local_port: u16,
+) {
+    if !super::urls::valid_conn_id(&id) {
+        tracing::warn!(
+            len = id.len(),
+            "relay gateway signaled a malformed conn id; dropped"
+        );
+        return;
+    }
+    if bridges.len() >= MAX_BRIDGES {
+        tracing::warn!(
+            live = bridges.len(),
+            "relay bridge budget reached; excess conn dropped"
+        );
+        return;
+    }
+    bridges.spawn(bridge_one(
+        ws_base.to_string(),
+        room.to_string(),
+        id,
+        local_port,
+    ));
+}
+
 #[cfg(desktop)]
 async fn bridge_one(ws_base: String, room: String, conn: String, local_port: u16) {
     let tcp = match tokio::time::timeout(
