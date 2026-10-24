@@ -327,6 +327,10 @@ export default defineComponent({
     // Underscore param keeps the payload type in Vue's TSX inference while
     // satisfying the unused-param lint.
     "update:hidden": (_v: boolean) => true,
+    /** The staged model changed ("hull" or an airframe stem). Every change
+     *  surfaces here — picker clicks, the ship-switch reset and the
+     *  scene-dispose reset — so the parent's spec cards can follow. */
+    "update:modelSelection": (_v: string) => true,
   },
   // `focusZone` is stashed on the instance from inside setup() and surfaced
   // here via `exposed` so parents can call stageRef.value?.focusZone(...).
@@ -397,6 +401,11 @@ export default defineComponent({
      *  Resets to the hull whenever the scene rebuilds (2D↔3D, hide, ship
      *  switch) — same per-session semantics as showArmor. */
     const modelSelection = ref<string>("hull");
+    // Mirror every selection change (picker click, ship-switch reset,
+    // scene-dispose reset) to the parent — it swaps the ship detail's spec
+    // cards between the hull and the staged airframe off this event. The ref
+    // stays the source of truth; the parent only observes.
+    watch(modelSelection, (v) => emit("update:modelSelection", v));
     const modelPickOpen = ref(false);
     const modelPickRef = ref<HTMLElement | null>(null);
     /** Loaded airframes, kept mounted (visible=false) so toggling back is

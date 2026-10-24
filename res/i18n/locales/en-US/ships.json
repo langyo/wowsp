@@ -106,11 +106,17 @@
     "gameparamsSyncAction": "Sync game data from PC",
     "gameparamsHint": "Tip: place the unpacked GameParams.json at the game root (next to bin/). See https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "No specifications available for this ship.",
+    "noPlaneSpecs": "No specifications available for this aircraft.",
     "noImage": "No image available.",
     "noModel": "No 3D model baked for this ship yet. Run `just convert-ship --name <model>` + `just bake-model` to generate one.",
     "noMyStats": "Bind an account and you have no battles in this ship yet.",
     "ballisticsApprox": "Penetration curves are an estimate derived from shell mass / airDrag / krupp — not the exact in-game model.",
     "noBallistics": "No armor / ballistics data could be extracted from GameParams for this ship.",
+    "aircraftNotice": {
+      "title": "Aircraft View",
+      "hull": "Now viewing the hull — the Specifications tab shows this ship's parameters. Use the dropdown at the top of the 3D panel to view a carrier aircraft.",
+      "plane": "Now viewing: {name} — the Specifications tab shows this aircraft's parameters. Use the dropdown at the top of the 3D panel to switch back to the hull."
+    },
     "stage": {
       "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan",
       "hint3dTouch": "Drag to rotate · pinch to zoom",
@@ -232,7 +238,9 @@
       "antiAir": "Anti-Aircraft",
       "mobility": "Mobility",
       "concealment": "Concealment",
-      "consumables": "Consumables"
+      "consumables": "Consumables",
+      "aircraftWeapon": "Aircraft Armament",
+      "aircraftAttack": "Attack"
     },
     "consumables": {
       "unlimited": "Unlimited",
@@ -324,7 +332,22 @@
     "secondaryRange": "Secondary Range",
     "aswRange": "Airstrike Range",
     "aswCharges": "Airstrike Charges",
-    "aswReload": "Airstrike Reload"
+    "aswReload": "Airstrike Reload",
+    "aircraftHp": "Aircraft Hit Points",
+    "aircraftSquadron": "Squadron Size",
+    "aircraftOnDeck": "Aircraft on Deck",
+    "aircraftRegen": "Plane Restoration",
+    "aircraftCruiseSpeed": "Cruise Speed",
+    "aircraftDetect": "Detectability",
+    "aircraftPayload": "Payload per Aircraft",
+    "aircraftDamage": "Damage",
+    "aircraftPenetration": "Armor Penetration",
+    "aircraftFireChance": "Fire Chance",
+    "aircraftFloodChance": "Flood Chance",
+    "aircraftFlightSize": "Attacking Flight",
+    "aircraftPrepTime": "Preparation Time",
+    "aircraftCooldown": "Attack Cooldown",
+    "ammoType": "Ammo Type"
   },
   "skills": {
     "title": "Captain Skill Builder",

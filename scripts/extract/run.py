@@ -10,6 +10,7 @@ Modules:
   rarity    ship_id → rarity map (GameParams RarityCategory, via wowsinfo bridge)
   techtree  tech-tree topology (nextShips) + archetype
   models    shipId → base model name map (skin→base dedup for the 3D viewer)
+            + aircraft performance rows (plane_specs.json)
   dogtags   dog-tag id→index/species map + 80x80 part PNGs (player avatars)
   images    ship portrait PNGs from WG CDN (slow; skip with --module to avoid)
 
@@ -27,9 +28,10 @@ OpenKorabli/lgc-download + `game-assets game-params`); without either the
 Lesta tree is skipped rather than faked from the WG client's dump. The same
 Lesta client snapshot feeds the app-carried ship data: the armor/ballistics
 slices bundled into the Rust tree (build_lesta_shipdata.py — read by
-commands/gameparams.rs so Lesta-only ids never touch an install) and the
-Lesta airplanes merged into the plane tables (model_convert's
-extract_lesta_planes.py; their GLBs bake via bake_lesta_planes.py).
+commands/gameparams.rs so Lesta-only ids never touch an install), the
+Lesta airplanes merged into the plane tables and their performance rows
+baked into plane_specs.json (model_convert's extract_lesta_planes.py +
+extract_plane_specs.py; their GLBs bake via bake_lesta_planes.py).
 """
 from __future__ import annotations
 
@@ -141,6 +143,7 @@ def main() -> None:
         _run_techtree()
         _run_techtree_lesta(args.lesta_path, args.lesta_gameparams, args.refresh)
     if "models" in modules:
+        _run_plane_specs()
         _run_shipmodels()
     if "dogtags" in modules:
         _run_dogtags(game)
@@ -323,8 +326,11 @@ def _run_lesta_shipdata(gameparams: Path, version_stamp: str | None) -> None:
     slices out of the dump into the Rust tree (include_str!'d by
     commands/gameparams.rs), so those ids resolve without any game install;
     `extract_lesta_planes.py` merges the carriers' airframes into
-    plane_types.json / plane_models.json (labels, roles, geometry paths).
-    Both are cut from the same client snapshot as the tree and the overlay.
+    plane_types.json / plane_models.json (labels, roles, geometry paths) and
+    `extract_plane_specs.py` bakes their performance rows into
+    plane_specs.json (the WG-authored rows there are left as the WG dump
+    produced them).
+    All three are cut from the same client snapshot as the tree and the overlay.
     The carriers' plane GLBs are baked separately (bake_lesta_planes.py —
     needs the Oodle decoder)."""
     cmd = ["build_lesta_shipdata.py", "--gameparams", str(gameparams)]
@@ -332,6 +338,10 @@ def _run_lesta_shipdata(gameparams: Path, version_stamp: str | None) -> None:
         cmd += ["--version", version_stamp]
     _py(*cmd)
     _py_model_convert("extract_lesta_planes.py", "--input", str(gameparams))
+    # Performance rows for the airframes the merge above just added — the
+    # dump's own realm, so the WG-owned rows stay untouched.
+    _py_model_convert("extract_plane_specs.py", "--input", str(gameparams),
+                      "--source", "lesta")
 
 
 def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> str | None:
@@ -409,6 +419,18 @@ def _lesta_tree_cmd(gameparams: Path) -> list[str]:
     if GAMEPARAMS_JSON.exists():
         cmd[1:1] = ["--archetypes", str(GAMEPARAMS_JSON)]
     return cmd
+
+
+def _run_plane_specs() -> None:
+    """Aircraft performance rows (plane_specs.json) from the WG GameParams.
+
+    Feeds the ship-detail Specifications tab when the 3D stage's model
+    dropdown is switched to a carrier aircraft. Only the WG-authored rows are
+    refreshed here; the Lesta-only airframes are owned by the Lesta dump and
+    updated inside _run_lesta_shipdata (the merge in the script preserves the
+    other realm's rows — see model_convert/extract_plane_specs.py for why the
+    two dumps must not overwrite each other)."""
+    _py_model_convert("extract_plane_specs.py", "--input", str(GAMEPARAMS_JSON))
 
 
 def _run_shipmodels() -> None:

@@ -106,11 +106,17 @@
     "gameparamsSyncAction": "从电脑同步游戏数据",
     "gameparamsHint": "提示：将解包后的 GameParams.json 放在游戏根目录（与 bin/ 同级）。见 https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "此舰艇暂无规格数据。",
+    "noPlaneSpecs": "暂无该舰载机的性能参数。",
     "noImage": "无图片。",
     "noModel": "此舰艇尚未烘焙 3D 模型。运行 `just convert-ship --name <模型名>` + `just bake-model` 生成。",
     "noMyStats": "绑定账号后且你尚未在此舰上有对局。",
     "ballisticsApprox": "穿深曲线为基于弹重 / 空气阻力 / krupp 的估算值，非游戏精确公式。",
     "noBallistics": "无法从 GameParams 提取此舰艇的装甲 / 弹道数据。",
+    "aircraftNotice": {
+      "title": "舰载机视图",
+      "hull": "当前查看：本体 —— 规格参数显示舰船性能。可从 3D 面板顶部的下拉框切换到舰载机。",
+      "plane": "当前查看：{name} —— 规格参数显示舰载机性能。可从 3D 面板顶部的下拉框切回本体。"
+    },
     "stage": {
       "hint3d": "拖动旋转 · 滚轮缩放 · 右键拖动平移",
       "hint3dTouch": "拖动旋转 · 双指缩放",
@@ -232,7 +238,9 @@
       "antiAir": "防空",
       "mobility": "机动性",
       "concealment": "隐蔽",
-      "consumables": "消耗品"
+      "consumables": "消耗品",
+      "aircraftWeapon": "舰载机武器",
+      "aircraftAttack": "攻击"
     },
     "consumables": {
       "unlimited": "不限量",
@@ -324,7 +332,22 @@
     "secondaryRange": "副炮射程",
     "aswRange": "空袭距离",
     "aswCharges": "空袭次数",
-    "aswReload": "空袭装填"
+    "aswReload": "空袭装填",
+    "aircraftHp": "单机血量",
+    "aircraftSquadron": "编队规模",
+    "aircraftOnDeck": "甲板载机量",
+    "aircraftRegen": "整备时间",
+    "aircraftCruiseSpeed": "巡航航速",
+    "aircraftDetect": "被发现距离",
+    "aircraftPayload": "单机载弹量",
+    "aircraftDamage": "单发伤害",
+    "aircraftPenetration": "穿甲深度",
+    "aircraftFireChance": "点火率",
+    "aircraftFloodChance": "进水率",
+    "aircraftFlightSize": "每轮攻击架数",
+    "aircraftPrepTime": "准备时间",
+    "aircraftCooldown": "攻击冷却",
+    "ammoType": "弹种"
   },
   "skills": {
     "title": "舰长加点模拟",
