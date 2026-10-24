@@ -110,25 +110,37 @@ fn synth_table(
     (img, rect, centers)
 }
 
-/// Overlay review H-1: the cache-reuse GRID probe. The header band may
-/// verify while the row grid below it sits elsewhere — the probe must
 /// Overlay review H-2: the detection gates record a fine-grained refusal
 /// reason, and a SUCCESS clears it — the diagnostics slot never carries a
 /// stale reason past the detection that overcame it. The probe path
 /// (header_bars_present) stays QUIET: a no-table frame is its normal
 /// answer and must not pollute the slot.
+///
+/// The slot is process-global and the suite runs in parallel: every OTHER
+/// detect test drives synth tables that SUCCEED, so concurrent tests only
+/// ever CLEAR the slot — never write a reason. The recorded-label asserts
+/// therefore retry briefly until the concurrent clear-window passes
+/// instead of racing it.
 #[test]
 fn detect_failures_are_recorded_and_cleared() {
+    fn await_label(want: &str) {
+        for _ in 0..200 {
+            if detect_failure_snapshot().is_some_and(|(l, _)| l == want) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("refusal reason {want:?} never became observable");
+    }
     // A blank frame refuses with no_header_bars via the DETECT path.
     let (w, h) = (400u32, 300u32);
     let blank = vec![20u8; (w * h * 4) as usize];
     assert!(detect_roster_with_band(&blank, w, h, (6, 6), &DetectProfile::WG).is_none());
-    let (label, _) = detect_failure_snapshot().expect("refusal recorded");
-    assert_eq!(label, "no_header_bars");
+    await_label("no_header_bars");
     // The QUIET probe on the same frame leaves the recorded reason alone
     // (it records nothing — the label above must still stand).
     assert!(!header_bars_present(&blank, w, h));
-    assert_eq!(detect_failure_snapshot().unwrap().0, "no_header_bars");
+    await_label("no_header_bars");
     // A real table frame detects and CLEARS the slot.
     let (img, _rect, _centers) = synth_table(400, 300, 6, 0, 0.92);
     assert!(detect_roster_with_band(&img, 400, 300, (6, 6), &DetectProfile::WG).is_some());
@@ -139,7 +151,7 @@ fn detect_failures_are_recorded_and_cleared() {
     // A tiny frame refuses with frame_too_small.
     let tiny = vec![20u8; 32 * 32 * 4];
     assert!(detect_roster_with_band(&tiny, 32, 32, (6, 6), &DetectProfile::WG).is_none());
-    assert_eq!(detect_failure_snapshot().unwrap().0, "frame_too_small");
+    await_label("frame_too_small");
     clear_detect_failure();
     assert!(detect_failure_snapshot().is_none());
 }
