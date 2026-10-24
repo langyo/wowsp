@@ -256,6 +256,18 @@ pub(crate) fn migrate_stale_bin_core(
     let mut moved = 0usize;
     let mut moved_rels: Vec<String> = Vec::new();
     migrate_tree(&src, &dst, "", &mut moved, &mut skipped, &mut moved_rels)?;
+    // Ledger repoint FIRST after the move (modhub review follow-up): it
+    // used to run at the tail, past the loader markers and the preload
+    // mirror — a failure there left every file in the NEW bin while the
+    // ledger still pointed at the old one, and a rerun could not heal it
+    // (the stale res_mods was already gone, so the pair validation
+    // refuses). Repointed here, a tail failure strands nothing: the
+    // files, the ledger and any rerun all agree on the new bin, and the
+    // remaining steps (markers, mirror, manifest fold) are idempotent.
+    let mut ledger = super::mod_catalog::load_ledger();
+    if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
+        super::mod_catalog::save_ledger(&ledger)?;
+    }
     // A fully migrated res_mods disappears entirely (empty-only remove, so
     // leftovers survive when files were kept).
     let _ = fs::remove_dir(&src);
@@ -266,11 +278,6 @@ pub(crate) fn migrate_stale_bin_core(
     }
     super::preload_mirror::ensure_loader_markers(game_root);
 
-    // Stranded ledger records now describe files in the current bin.
-    let mut ledger = super::mod_catalog::load_ledger();
-    if repoint_records(&mut ledger.installs, from_version, &latest, game_root) {
-        super::mod_catalog::save_ledger(&ledger)?;
-    }
     // Fold the stale manifest into the current bin: toggle states carry
     // over, fields refresh from the re-pointed ledger, tool configs union.
     super::manifest::hub_apply(super::manifest::ManifestOp::MergeAfterMigration {
