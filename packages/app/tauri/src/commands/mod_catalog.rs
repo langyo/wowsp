@@ -184,7 +184,9 @@ pub(crate) use install::{
 };
 #[cfg(test)]
 pub(crate) use install::{loose_root_files, package_install_layout};
-pub(crate) use ledger::{Ledger, load_ledger, save_ledger};
+#[cfg(test)]
+pub(crate) use ledger::Ledger;
+pub(crate) use ledger::{load_ledger, save_ledger};
 #[cfg(test)]
 pub(crate) use reconcile::heal_record_names;
 #[cfg(test)]
