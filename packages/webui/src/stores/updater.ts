@@ -84,6 +84,12 @@ export const useUpdaterStore = defineStore("updater", () => {
   const checked = ref(false);
   const error = ref<string | null>(null);
   const portable = ref(false);
+  /** False until the is_portable probe has landed (true either way).
+   *  Consumers that must not flash portable-specific UI while the probe is
+   *  in flight (the ship-detail aircraft hint) gate on this; AppShell boot
+   *  calls `probePortable()` directly on EVERY surface (init() is desktop
+   *  only), so the wait is one tick. */
+  const portableResolved = ref(false);
   // True once the user pressed 稍后 — the prompt hides for the session
   // (AboutModal keeps offering the update). Never reset: a fresh launch
   // starts a fresh store.
@@ -149,12 +155,27 @@ export const useUpdaterStore = defineStore("updater", () => {
     }
   }
 
-  async function init() {
+  /** Probe the portable (便捷版) build flag — the single is_portable read
+   *  shared by every surface. AppShell's boot calls this directly on ALL
+   *  surfaces (phone build / browser dev included, where init() never runs),
+   *  and init() starts with it for the desktop path. Portable-specific UI
+   *  gates on `portableResolved` so it cannot resolve before the probe
+   *  lands; a missing command (browser dev / older shell) resolves to false,
+   *  i.e. normal-build behavior. Never throws. */
+  async function probePortable(): Promise<void> {
     try {
       portable.value = await invoke<boolean>("is_portable");
     } catch {
       portable.value = false;
     }
+    // The probe has landed either way — portable-specific UI may resolve now.
+    portableResolved.value = true;
+  }
+
+  async function init() {
+    // The desktop init path needs the portable flag before its delayed
+    // passes read it; every surface's boot also probes directly (AppShell).
+    await probePortable();
     // Bind the unified download-progress bus lazily; absent in browser
     // dev mode. The memoized promise makes concurrent init() calls
     // register exactly one handler.
@@ -327,11 +348,13 @@ export const useUpdaterStore = defineStore("updater", () => {
     checked,
     error,
     portable,
+    portableResolved,
     dismissed,
     running,
     statusText,
     stranded,
     recovering,
+    probePortable,
     init,
     reinstallFromCache,
     openDownloadPage,
