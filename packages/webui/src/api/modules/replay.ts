@@ -232,6 +232,10 @@ export interface OverlayDiag {
   transparencyEffectsOff: boolean;
   hagsOff: boolean;
   cloaked: boolean;
+  /** Machine-readable reason of the last roster-detection refusal
+   * (overlay review H-2); null while every detection succeeds. */
+  detectFailure?: string | null;
+  detectFailureAgeSec?: number | null;
 }
 
 /** Payload of the `wowsp://sink-attrib` event (mirrors

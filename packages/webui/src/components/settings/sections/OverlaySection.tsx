@@ -243,6 +243,19 @@ export default defineComponent({
                         })
                       : t("settings.overlayDiagWebview2Missing")}
                   </li>
+                  {/* Detection-layer reason (overlay review H-2): the
+                      machine-readable label of the last roster-detection
+                      refusal with its age — shown only while a refusal is
+                      on record (a null means every detection succeeds). */}
+                  {overlayDiag.value.detectFailure ? (
+                    <li>
+                      <TriangleAlert size={13} />
+                      {t("settings.overlayDiagDetectFailure", {
+                        reason: overlayDiag.value.detectFailure,
+                        age: overlayDiag.value.detectFailureAgeSec ?? 0,
+                      })}
+                    </li>
+                  ) : null}
                 </ul>
               </HkSettingsSub>
             ) : null}

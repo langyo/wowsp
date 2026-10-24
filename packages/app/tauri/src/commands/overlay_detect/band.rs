@@ -61,6 +61,19 @@ pub(crate) struct HeaderBand {
 /// never degrade into a green-only hit. Returns [`HeaderBand`] (band top +
 /// bar height + spans; `red: None` marks the single-team variant).
 pub(crate) fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBand> {
+    find_header_band_measured(px, w, h, false)
+}
+
+/// The DETECT-path variant of [`find_header_band`] (overlay review H-2):
+/// identical result, but a refusal records a fine-grained
+/// [`super::DetectFailure`] for the diagnostics surface. The probe paths
+/// (`header_bars_present`, the scene gate) keep the QUIET form — a frame
+/// without a table is their normal answer, not a failure worth recording.
+pub(crate) fn find_header_band_detect(px: &[u8], w: usize, h: usize) -> Option<HeaderBand> {
+    find_header_band_measured(px, w, h, true)
+}
+
+fn find_header_band_measured(px: &[u8], w: usize, h: usize, record: bool) -> Option<HeaderBand> {
     let y_lo = (h as f32 * HEADER_SCAN_TOP_FRAC) as usize;
     let y_hi = ((h as f32 * HEADER_SCAN_BOTTOM_FRAC) as usize).min(h);
     let min_run = ((w as f32 * HEADER_MIN_RUN_FRAC) as usize).max(HEADER_MIN_RUN_PX);
@@ -90,7 +103,10 @@ pub(crate) fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBa
     // would fight the `run.clear()` reset below). Slot 0 = green-only,
     // slot 1 = two-bar; the bool-as-index keeps the flush shared.
     let mut best: [(Option<Vec<HeaderHit>>, usize); 2] = std::array::from_fn(|_| (None, 0));
-    let flush = |run: &mut Vec<HeaderHit>, best: &mut [(Option<Vec<HeaderHit>>, usize); 2]| {
+    let flush = |run: &mut Vec<HeaderHit>,
+                 best: &mut [(Option<Vec<HeaderHit>>, usize); 2],
+                 longest: &mut usize| {
+        *longest = (*longest).max(run.len());
         if run.len() >= HEADER_MIN_ROWS {
             let slot = run[0].2.is_some() as usize;
             let area: usize = run
@@ -104,9 +120,15 @@ pub(crate) fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBa
         }
         run.clear();
     };
+    // Diagnostics bookkeeping (H-2): how many rows qualified at all, and
+    // the longest run they ever formed — the two numbers that separate
+    // "no bars on frame" from "bars, but never a thick enough band".
+    let mut row_hits = 0usize;
+    let mut longest = 0usize;
     for y in y_lo..y_hi {
         match row_hit(y) {
             Some(hit) => {
+                row_hits += 1;
                 // A run must stay single-KIND: mixing two-bar and green-only
                 // rows would blur which gates the band deserves, so a kind
                 // change flushes the run and starts a new one.
@@ -114,18 +136,19 @@ pub(crate) fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBa
                     .last()
                     .is_some_and(|prev| prev.2.is_some() != hit.2.is_some())
                 {
-                    flush(&mut run, &mut best);
+                    flush(&mut run, &mut best, &mut longest);
                 }
                 run.push(hit);
             },
-            None => flush(&mut run, &mut best),
+            None => flush(&mut run, &mut best, &mut longest),
         }
     }
-    flush(&mut run, &mut best);
+    flush(&mut run, &mut best, &mut longest);
     // Two-bar always wins if present; the green-only run is the gated
     // fallback (both gates computed on the union green span across the
     // band's rows).
     let mut chosen = best[1].0.take();
+    let mut green_only_rejected = false;
     if chosen.is_none()
         && let Some(rows) = best[0].0.take()
     {
@@ -141,9 +164,28 @@ pub(crate) fn find_header_band(px: &[u8], w: usize, h: usize) -> Option<HeaderBa
             && green_only_has_row_text(px, w, h, rows[0].0, (gx0, gx1))
         {
             chosen = Some(rows);
+        } else {
+            green_only_rejected = true;
         }
     }
-    let band_rows = chosen?;
+    let band_rows = match chosen {
+        Some(rows) => rows,
+        None => {
+            if record {
+                super::record_detect_failure(if green_only_rejected {
+                    super::DetectFailure::GreenOnlyGateFailed
+                } else if row_hits == 0 {
+                    super::DetectFailure::NoHeaderBars { row_hits }
+                } else {
+                    super::DetectFailure::RunBelowMinRows {
+                        longest,
+                        need: HEADER_MIN_ROWS,
+                    }
+                });
+            }
+            return None;
+        },
+    };
     // Anchor row = the band's first row; spans = widest green/red extents
     // across the band (caption text punches holes into individual rows).
     let top = band_rows[0].0;

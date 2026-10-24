@@ -148,6 +148,7 @@
   "overlayDiagWebview2": "Runtime WebView2 Evergreen: {v}",
   "overlayDiagWebview2Missing": "No hay ningún runtime WebView2 Evergreen registrado; la aplicación no incluye uno, repara el runtime del sistema.",
   "overlayDiagCloaked": "La ventana del overlay está marcada como cloaked por DWM (el compositor no la muestra).",
+"overlayDiagDetectFailure": "Último fallo de detección de alineación: {reason} (hace {age} s) — mientras persista, la tabla usa la geometría centrada de reserva.",
   "overlayCalibration": "Calibración del overlay en juego",
   "overlayCalibrationDesc": "Consulta y calibra los anclajes guardados de la tabla Tab que el overlay usa para colocar sus fichas: una tarjeta por cada cliente registrado, cada una con entradas PvP / PvE independientes (rectángulo de la tabla, disposición de filas, parámetros de la ventana); las entradas aún sin registrar se pueden marcar por adelantado sobre cualquier captura de referencia.",
   "overlayCalibrationEmpty": "Aún no hay datos de calibración: añade un cliente en Ruta del juego o juega una batalla con el overlay de Tab activado y se registrará solo.",

@@ -308,6 +308,11 @@ fn collect_diag(app: &AppHandle, presentation: OverlayPresentation) -> OverlayDi
     let (mpo, transparency, hags) = risk_probe_values();
     let (mpo_disabled, transparency_effects_off, hags_off) = risk_flags(mpo, transparency, hags);
     let (paint, paint_rows) = last_paint().map_or((None, None), |(k, r)| (Some(k), r));
+    // Detection-layer reason (overlay review H-2): the last refusal the
+    // detect gates recorded, `None` while detection keeps succeeding.
+    let (detect_failure, detect_failure_age_sec) =
+        crate::commands::overlay_detect::detect_failure_snapshot()
+            .map_or((None, None), |(label, age)| (Some(label), Some(age)));
     OverlayDiag {
         presentation,
         paint,
@@ -317,6 +322,8 @@ fn collect_diag(app: &AppHandle, presentation: OverlayPresentation) -> OverlayDi
         transparency_effects_off,
         hags_off,
         cloaked: overlay_cloaked(app),
+        detect_failure,
+        detect_failure_age_sec,
     }
 }
 

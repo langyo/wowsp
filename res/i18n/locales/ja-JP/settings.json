@@ -148,6 +148,7 @@
   "overlayDiagWebview2": "Evergreen WebView2 ランタイム: {v}",
   "overlayDiagWebview2Missing": "Evergreen WebView2 ランタイムが登録されていません。アプリはランタイムを同梱しないため、修復してください。",
   "overlayDiagCloaked": "オーバーレイ ウィンドウが DWM クローク状態です（コンポジターが表示していません）。",
+"overlayDiagDetectFailure": "直近のロスター検出失敗：{reason}（{age} 秒前）— 継続中はテーブルが中央配置ジオメトリにフォールバックします。",
   "overlayCalibration": "ゲーム内オーバーレイの調整",
   "overlayCalibrationDesc": "Tab 戦績表のオーバーレイ配置に使うアンカー記録を確認・調整します。登録済みクライアントごとに 1 枚のカードで、PvP / PvE 別に表の位置・行割り・ウィンドウ情報を保存します。まだ記録のないエントリも任意の参照スクリーンショット上で事前に範囲指定できます。",
   "overlayCalibrationEmpty": "調整データはまだありません。ゲームパスでクライアントを追加するか、Tab オーバーレイを有効にして一度戦闘を行うと自動記録されます。",

@@ -254,9 +254,16 @@ pub(super) fn compute_anchor(
                 (det.rect, det.row_centers, det.team_split, true)
             },
             None => {
+                // Overlay review H-2: carry the recorded WHY into the
+                // fallback log — the gate-level reason is already in the
+                // diagnostics slot, this line makes the log self-sufficient.
+                let reason = overlay_detect::detect_failure_snapshot()
+                    .map(|(label, _)| label)
+                    .unwrap_or_else(|| "unknown".into());
                 tracing::info!(
                     allies = team_sizes.0,
                     enemies = team_sizes.1,
+                    reason = %reason,
                     "team list not detected — using fallback table"
                 );
                 fallback_geometry(fsm, game, w as i32, h as i32, team_sizes)

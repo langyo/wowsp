@@ -148,6 +148,7 @@
   "overlayDiagWebview2": "Evergreen WebView2 运行时版本：{v}",
   "overlayDiagWebview2Missing": "未找到已注册的 Evergreen WebView2 运行时——应用自身不带运行时，请修复系统运行时。",
   "overlayDiagCloaked": "覆盖层窗口被 DWM 标记为 cloaked（合成器未显示该窗口）。",
+"overlayDiagDetectFailure": "最近一次阵容识别失败：{reason}（{age} 秒前）——持续存在时表格回退为居中几何。",
   "overlayCalibration": "游戏内显示校准",
   "overlayCalibrationDesc": "查看并校准悬浮窗 Tab 战绩表定位所用的锚点记录：按已注册客户端逐个列出，每个客户端按对战类别（PvP / PvE）独立保存表格位置、行分布与窗口参数；尚未记录的条目也可在任意参照截图上提前框选。",
   "overlayCalibrationEmpty": "暂无校准数据：先在“游戏路径”中添加客户端，或开启 Tab 悬浮窗完成一场战斗后自动记录。",
