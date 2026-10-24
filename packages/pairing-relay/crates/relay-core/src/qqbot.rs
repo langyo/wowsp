@@ -43,6 +43,14 @@ pub const K_DM: &str = "qqdm:";
 /// C2C 主动消息每月自限额（平台 4 条/人/月，自家计数留 1 条余量）。
 pub const DM_MONTHLY_CAP: u64 = 3;
 
+/// The worker-side master gate var (maintainer decision, 2026-10-24):
+/// the whole QQ bot surface — outbound reminders AND the inbound
+/// callback — is FROZEN while this var is ABSENT (the default). Reason:
+/// official-channel reachability for group reminders is unreliable and
+/// the account risk is high. Setting the var (plus the QQBOT_* secrets)
+/// revives the pre-freeze behavior; nothing was deleted.
+pub const NOTIFY_ENABLED_VAR: &str = "QQBOT_NOTIFY";
+
 /// 表单联系方式的 QQ 判定：5–11 位纯数字。
 pub fn contact_is_qq(contact: &str) -> bool {
     let n = contact.trim();
