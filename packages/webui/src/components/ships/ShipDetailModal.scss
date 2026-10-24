@@ -17,6 +17,13 @@
     line-height: 1.5;
   }
 
+  /* Aircraft-view hint (hikari HAlert) between the description and the tab
+     bar. Only this wrapper's spacing is set here — the alert keeps its own
+     hikari look and the card grid below it stays unchanged. */
+  &__aircraft-notice {
+    margin: 0.1rem 0;
+  }
+
   &__tabs {
     display: flex;
     gap: 0.25rem;

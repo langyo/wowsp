@@ -106,11 +106,17 @@
     "gameparamsSyncAction": "從電腦同步遊戲資料",
     "gameparamsHint": "提示：將解包後的 GameParams.json 放在遊戲根目錄（與 bin/ 同層）。參見 https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "此艦艇暫無規格資料。",
+    "noPlaneSpecs": "暫無該艦載機的效能參數。",
     "noImage": "無圖片。",
     "noModel": "此艦艇尚未烘焙 3D 模型。執行 `just convert-ship --name <模型名>` + `just bake-model` 產生。",
     "noMyStats": "綁定帳號後，你在此艦上尚無對局。",
     "ballisticsApprox": "穿深曲線為基於彈重 / 空氣阻力 / krupp 的估算值，非遊戲精確公式。",
     "noBallistics": "無法從 GameParams 擷取此艦艇的裝甲 / 彈道資料。",
+    "aircraftNotice": {
+      "title": "艦載機視圖",
+      "hull": "目前檢視：本體 —— 規格參數顯示艦船效能。可從 3D 面板頂端的下拉選單切換到艦載機。",
+      "plane": "目前檢視：{name} —— 規格參數顯示艦載機效能。可從 3D 面板頂端的下拉選單切回本體。"
+    },
     "stage": {
       "hint3d": "拖曳旋轉 · 滾輪縮放 · 右鍵拖曳平移",
       "hint3dTouch": "拖曳旋轉 · 雙指縮放",
@@ -232,7 +238,9 @@
       "antiAir": "防空",
       "mobility": "機動性",
       "concealment": "隱蔽",
-      "consumables": "消耗品"
+      "consumables": "消耗品",
+      "aircraftWeapon": "艦載機武器",
+      "aircraftAttack": "攻擊"
     },
     "consumables": {
       "unlimited": "不限量",
@@ -324,7 +332,22 @@
     "secondaryRange": "副砲射程",
     "aswRange": "空襲距離",
     "aswCharges": "空襲次數",
-    "aswReload": "空襲裝填"
+    "aswReload": "空襲裝填",
+    "aircraftHp": "單機血量",
+    "aircraftSquadron": "編隊規模",
+    "aircraftOnDeck": "甲板載機量",
+    "aircraftRegen": "整備時間",
+    "aircraftCruiseSpeed": "巡航航速",
+    "aircraftDetect": "被發現距離",
+    "aircraftPayload": "單機載彈量",
+    "aircraftDamage": "單發傷害",
+    "aircraftPenetration": "穿甲深度",
+    "aircraftFireChance": "點火率",
+    "aircraftFloodChance": "進水率",
+    "aircraftFlightSize": "每輪攻擊架數",
+    "aircraftPrepTime": "準備時間",
+    "aircraftCooldown": "攻擊冷卻",
+    "ammoType": "彈種"
   },
   "skills": {
     "title": "艦長技能模擬",

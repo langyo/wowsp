@@ -106,11 +106,17 @@
     "gameparamsSyncAction": "PCからゲームデータを同期",
     "gameparamsHint": "ヒント：解凍した GameParams.json をゲームのルート（bin/ と同じ階層）に置いてください。詳細は https://github.com/wowsinfo/wowsunpack を参照。",
     "noSpecs": "この艦艇の諸元データはありません。",
+    "noPlaneSpecs": "この艦載機の性能データはありません。",
     "noImage": "画像はありません。",
     "noModel": "この艦艇の 3D モデルはまだベイクされていません。`just convert-ship --name <モデル名>` + `just bake-model` を実行して生成してください。",
     "noMyStats": "アカウントは連携済みですが、この艦での対戦はまだありません。",
     "ballisticsApprox": "貫通力の曲線は弾重 / 空気抵抗 / krupp から算出した推定値であり、ゲーム内の正確なモデルではありません。",
     "noBallistics": "この艦艇の装甲 / 弾道データを GameParams から抽出できませんでした。",
+    "aircraftNotice": {
+      "title": "艦載機ビュー",
+      "hull": "現在の表示：船体 —— 仕様タブには艦の性能が表示されます。3D パネル上部のドロップダウンで艦載機に切り替えられます。",
+      "plane": "現在の表示：{name} —— 仕様タブには艦載機の性能が表示されます。3D パネル上部のドロップダウンで船体に戻せます。"
+    },
     "stage": {
       "hint3d": "ドラッグで回転 · ホイールでズーム · 右ドラッグで移動",
       "hint3dTouch": "ドラッグで回転 · ピンチでズーム",
@@ -232,7 +238,9 @@
       "antiAir": "対空",
       "mobility": "機動性",
       "concealment": "隠蔽",
-      "consumables": "消耗品"
+      "consumables": "消耗品",
+      "aircraftWeapon": "艦載機兵装",
+      "aircraftAttack": "攻撃"
     },
     "consumables": {
       "unlimited": "無制限",
@@ -324,7 +332,22 @@
     "secondaryRange": "副砲射程",
     "aswRange": "空襲距離",
     "aswCharges": "空襲回数",
-    "aswReload": "空襲装填"
+    "aswReload": "空襲装填",
+    "aircraftHp": "航空機HP",
+    "aircraftSquadron": "編隊規模",
+    "aircraftOnDeck": "甲板搭載数",
+    "aircraftRegen": "補充時間",
+    "aircraftCruiseSpeed": "巡航速度",
+    "aircraftDetect": "被発見距離",
+    "aircraftPayload": "1機あたり搭載量",
+    "aircraftDamage": "威力",
+    "aircraftPenetration": "装甲貫通",
+    "aircraftFireChance": "火災発生率",
+    "aircraftFloodChance": "浸水率",
+    "aircraftFlightSize": "攻撃編隊数",
+    "aircraftPrepTime": "準備時間",
+    "aircraftCooldown": "攻撃クールダウン",
+    "ammoType": "弾種"
   },
   "skills": {
     "title": "艦長スキルビルダー",

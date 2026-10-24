@@ -2,7 +2,7 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpCircle } from "@lucide/vue";
 
-import { HkButton, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
+import { HAlert, HkButton, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -20,6 +20,7 @@ import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
+import { buildPlaneSpecs } from "./shipPlaneSpecs";
 import { buildConsumableSlots, consumableHintCard, type ConsumableSlotGroup } from "./consumables";
 import BuildPlanner from "./BuildPlanner";
 import ShipMyStatsPanel from "./ShipMyStatsPanel";
@@ -130,6 +131,11 @@ export default defineComponent({
       stageRef.value?.focusZone?.(zone, count ?? 1);
     }
 
+    /** Airframe the 3D stage currently shows ("hull" or a baked plane index).
+     *  Mirrors the stage's internal selection through `update:modelSelection`;
+     *  drives the aircraft-view hint and the spec cards below it. */
+    const selectedModel = ref<string>("hull");
+
     // ── Armor tab: lazy GameParams ─────────────────────────────────────────
     const gameparams = ref<unknown>(null);
     const gpLoading = ref(false);
@@ -226,6 +232,9 @@ export default defineComponent({
         gpError.value = null;
         myStatsLoaded.value = false;
         build.value = emptyBuild();
+        // The stage resets to the hull on a ship switch; mirror it here so
+        // the spec cards never linger on the previous ship's airframe.
+        selectedModel.value = "hull";
         void loadGameparams();
         void trends.loadCommunity(s.shipId);
         if (water) void loadMyStats();
@@ -442,6 +451,11 @@ export default defineComponent({
       }
     });
 
+    /** The staged airframe, or null while the hull is shown. */
+    const selectedPlane = computed<PlaneModelOption | null>(
+      () => planeModels.value.find((p) => p.index === selectedModel.value) ?? null,
+    );
+
     function nationLabel(code: string): string {
       // Follows the 素材翻译 setting (国服 → X-系 names), UI i18n fallback.
       return (
@@ -492,6 +506,7 @@ export default defineComponent({
                   planeModels={planeModels.value}
                   hidden={stageHidden.value}
                   onUpdate:hidden={(v: boolean) => (stageHidden.value = v)}
+                  onUpdate:modelSelection={(v: string) => (selectedModel.value = v)}
                 />
                 {!stageHidden.value ? (
                   <WeaponBar gameparams={gameparams.value as Record<string, unknown> | null} onFocus={onWeaponFocus} />
@@ -525,6 +540,26 @@ export default defineComponent({
 
             {viewShip.value.description ? (
               <p class="ship-detail__desc">{viewShip.value.description}</p>
+            ) : null}
+
+            {/* Aircraft-view hint (standard hikari alert): every carrier /
+                hybrid says up front whether the spec cards below show the
+                hull or the airframe currently staged, and where to switch.
+                The stage's aircraft dropdown sits in its top-right control
+                row; ships without embarked squadrons keep the old layout. */}
+            {planeModels.value.length > 0 ? (
+              <div class="ship-detail__aircraft-notice">
+                <HAlert
+                  variant="info"
+                  size="sm"
+                  title={t("ships.detail.aircraftNotice.title")}
+                  message={
+                    selectedPlane.value
+                      ? t("ships.detail.aircraftNotice.plane", { name: selectedPlane.value.label })
+                      : t("ships.detail.aircraftNotice.hull")
+                  }
+                />
+              </div>
             ) : null}
 
             {/* Armor-data failure: the standard inline error card (retry
@@ -576,7 +611,7 @@ export default defineComponent({
             <div class="ship-detail__body">
               <Transition name="s-fade-slide" mode="out-in">
                 {tab.value === "specs" ? (
-                  <div key="specs"><SpecsPanel profile={dp.value} nation={viewShip.value.nation} gameparams={gameparams.value as Record<string, unknown> | null} /></div>
+                  <div key="specs"><SpecsPanel profile={dp.value} nation={viewShip.value.nation} gameparams={gameparams.value as Record<string, unknown> | null} plane={selectedPlane.value} /></div>
                 ) : tab.value === "mystats" ? (
                 <div class="ship-detail__mystats" key="mystats">
                   <ShipMyStatsPanel
@@ -648,15 +683,25 @@ const SpecsPanel = defineComponent({
     /** Raw GameParams entry (lazy-fetched by the modal) — feeds the
      *  per-band AA rows the WG profile cannot provide. */
     gameparams: { type: Object as () => Record<string, unknown> | null, default: null },
+    /** Airframe currently staged on the 3D panel (null = the ship hull).
+     *  Swaps the spec tree to that airframe's params; the hull view keeps the
+     *  ship profile/GameParams path untouched. */
+    plane: { type: Object as () => PlaneModelOption | null, default: null },
   },
   setup(props) {
     const toast = useToast();
-    const groups = computed(() => buildShipSpecs(props.profile, props.nation, props.gameparams));
+    const groups = computed(() =>
+      props.plane
+        ? buildPlaneSpecs(props.plane.index)
+        : buildShipSpecs(props.profile, props.nation, props.gameparams),
+    );
     // Consumable slot groups join the unpacked GameParams (slot layout) with
     // the baked entity dictionary; names follow the 素材翻译 data language.
+    // Battle consumables are the hull's slots, not aircraft data — an
+    // airframe view hides the card entirely.
     const dataLanguage = useLanguage().dataLanguage;
     const consumables = computed(() =>
-      buildConsumableSlots(props.gameparams, dataLanguage.value),
+      props.plane ? [] : buildConsumableSlots(props.gameparams, dataLanguage.value),
     );
     const iconFor = (name: string) => {
       switch (name) {
@@ -674,7 +719,13 @@ const SpecsPanel = defineComponent({
     }
     return () => {
       if (groups.value.length === 0 && consumables.value.length === 0) {
-        return <p class="ship-detail__empty">{t("ships.detail.noSpecs")}</p>;
+        // No baked spec data for this airframe — say so instead of showing
+        // the hull's "no ship specs" wording.
+        return (
+          <p class="ship-detail__empty">
+            {t(props.plane ? "ships.detail.noPlaneSpecs" : "ships.detail.noSpecs")}
+          </p>
+        );
       }
       return (
         <div class="specs-panel">

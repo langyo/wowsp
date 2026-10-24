@@ -42,6 +42,7 @@ The game install is auto-detected the same way WoWSP's desktop shell does it
 | `convert_map.py` | `export-map` | `GLB` under `packages/webui/src/res/models/maps/` |
 | `bake_planes.py` | `export-model` | `GLB` under `packages/webui/src/res/models/planes/` + `props/` |
 | `extract_lesta_planes.py` | — (GameParams → tables) | rows in `src/data/plane_types.json` + `plane_models.json` |
+| `extract_plane_specs.py` | — (GameParams → tables) | rows in `src/data/plane_specs.json` (aircraft performance specs) |
 | `bake_lesta_planes.py` | `export-model` (staged Lesta) | `GLB` under `packages/webui/src/res/models/planes/` (Lesta airframes) |
 | `bake_missing_ships.py` | (model-exporter) | backfills specific ship GLBs under `ships/` |
 
@@ -114,6 +115,60 @@ same snapshot — `scripts/extract/build_lesta_shipdata.py` bundles them into
 the Rust tree (`packages/app/tauri/data/lesta_ship_gameparams.json.gz`,
 embedded via `include_bytes!` and inflated once per process — see
 `commands/gameparams.rs`), so those ids never depend on a game install.
+
+### Aircraft performance specs (ship-detail panel)
+
+`packages/webui/src/data/plane_specs.json` feeds the ship-detail
+Specifications tab when the 3D stage's model dropdown is switched from the
+hull to a carrier aircraft (`shipPlaneSpecs.ts` → `buildPlaneSpecs`). The
+script documents the exact field mapping and damage formulas; every number
+comes from the full GameParams dumps — the aircraft entity itself plus the
+projectile its carried-ammunition reference resolves to.
+
+The table mirrors every committed `plane_types.json` row, including legacy,
+event and internal `Aircraft` entities that no playable ship currently
+references; a handful of those legacy airframes carry placeholder GameParams
+stats (very low HP, 0.1 s restoration) that are faithful to the dump but read
+oddly — the 3D picker only lists airframes a ship's own GameParams references,
+and every such airframe currently resolves to a spec row (verified against the
+mobile offline pack and the bundled Lesta slices). Keep the raw values rather
+than filtering: they are the data the client itself carries.
+
+**Refresh both realms, in this order** (WG first; each run owns its own rows):
+
+```bash
+python scripts/model_convert/extract_plane_specs.py \
+    --input "%LOCALAPPDATA%/WoWSP-extract/GameParams.json"
+python scripts/model_convert/extract_plane_specs.py \
+    --input "%LOCALAPPDATA%/WoWSP-extract/GameParams_lesta.json"
+```
+
+`--check` (write-nothing, non-zero exit on drift) takes the same two
+invocations:
+
+```bash
+python scripts/model_convert/extract_plane_specs.py --check \
+    --input "%LOCALAPPDATA%/WoWSP-extract/GameParams.json"
+python scripts/model_convert/extract_plane_specs.py --check \
+    --input "%LOCALAPPDATA%/WoWSP-extract/GameParams_lesta.json"
+```
+
+The two dumps are **not interchangeable**, which is why the script partitions
+the table by realm instead of letting a later run overwrite earlier rows: the
+Lesta client's numbers diverge from the WG client's on 339 of the 528 airframes
+both still carry (restoration time alone differs on 193, damage on 152; 118 of
+them dropped their carried-ammunition reference entirely — e.g. Midway's stock
+fighter `PAAF110` has `timeToRestore` 68.0 s on WG vs 74.0 s on Lesta). The
+committed values — and the contract anchors in `shipPlaneSpecs.test.ts` — are
+the WG ones the wargaming wiki documents. Each airframe is therefore taken
+from the client that authored it: rows without `"lesta": true` from the WG
+dump, the marked Lesta-only airframes (added by `extract_lesta_planes.py`)
+from the Lesta dump. The source is auto-detected from the standard cache file
+name; pass `--source wg` / `--source lesta` explicitly for renamed dumps.
+
+`just extract models` refreshes the WG slice; `just extract techtree`
+refreshes the Lesta slice (after `extract_lesta_planes.py` merges the
+Lesta-only carriers' airframes).
 
 ## Usage
 

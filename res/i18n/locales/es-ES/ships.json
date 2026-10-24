@@ -106,11 +106,17 @@
     "gameparamsSyncAction": "Sincronizar datos del juego desde el PC",
     "gameparamsHint": "Sugerencia: coloca el GameParams.json desempaquetado en la raíz del juego (junto a bin/). Ver https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "No hay especificaciones disponibles para este buque.",
+    "noPlaneSpecs": "No hay especificaciones disponibles para esta aeronave.",
     "noImage": "No hay imagen disponible.",
     "noModel": "Este buque aún no tiene modelo 3D horneado. Ejecuta `just convert-ship --name <model>` + `just bake-model` para generar uno.",
     "noMyStats": "Vincula una cuenta: aún no tienes batallas en este buque.",
     "ballisticsApprox": "Las curvas de penetración son una estimación derivada de la masa del proyectil / airDrag / krupp — no el modelo exacto del juego.",
     "noBallistics": "No se pudo extraer datos de blindaje / balística de GameParams para este buque.",
+    "aircraftNotice": {
+      "title": "Vista de aeronaves",
+      "hull": "Vista actual: casco — la pestaña Especificaciones muestra los parámetros del buque. Usa el desplegable de la parte superior del panel 3D para ver una aeronave.",
+      "plane": "Vista actual: {name} — la pestaña Especificaciones muestra los parámetros de esta aeronave. Usa el desplegable de la parte superior del panel 3D para volver al casco."
+    },
     "stage": {
       "hint3d": "Arrastra para rotar · rueda para hacer zoom · arrastra con botón derecho para desplazar",
       "hint3dTouch": "Arrastra para rotar · pellizca para hacer zoom",
@@ -232,7 +238,9 @@
       "antiAir": "Antiaérea",
       "mobility": "Movilidad",
       "concealment": "Detección",
-      "consumables": "Consumibles"
+      "consumables": "Consumibles",
+      "aircraftWeapon": "Armamento de la aeronave",
+      "aircraftAttack": "Ataque"
     },
     "consumables": {
       "unlimited": "Ilimitado",
@@ -324,7 +332,22 @@
     "secondaryRange": "Alcance de la artillería secundaria",
     "aswRange": "Alcance del ataque aéreo",
     "aswCharges": "Cargas de ataque aéreo",
-    "aswReload": "Recarga del ataque aéreo"
+    "aswReload": "Recarga del ataque aéreo",
+    "aircraftHp": "Resistencia de la aeronave",
+    "aircraftSquadron": "Tamaño del escuadrón",
+    "aircraftOnDeck": "Aviones en cubierta",
+    "aircraftRegen": "Reabastecimiento",
+    "aircraftCruiseSpeed": "Velocidad de crucero",
+    "aircraftDetect": "Detectabilidad",
+    "aircraftPayload": "Carga por avión",
+    "aircraftDamage": "Daño",
+    "aircraftPenetration": "Perforación",
+    "aircraftFireChance": "Probabilidad de incendio",
+    "aircraftFloodChance": "Probabilidad de inundación",
+    "aircraftFlightSize": "Aviones por ataque",
+    "aircraftPrepTime": "Tiempo de preparación",
+    "aircraftCooldown": "Recarga de ataque",
+    "ammoType": "Tipo de munición"
   },
   "skills": {
     "title": "Editor de habilidades del capitán",

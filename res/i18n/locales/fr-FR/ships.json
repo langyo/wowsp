@@ -106,11 +106,17 @@
     "gameparamsSyncAction": "Synchroniser les données du jeu depuis le PC",
     "gameparamsHint": "Astuce : placez le GameParams.json décompressé à la racine du jeu (à côté de bin/). Voir https://github.com/wowsinfo/wowsunpack",
     "noSpecs": "Aucune caractéristique disponible pour ce navire.",
+    "noPlaneSpecs": "Aucune caractéristique disponible pour cet avion.",
     "noImage": "Aucune image disponible.",
     "noModel": "Aucun modèle 3D généré pour ce navire pour l'instant. Exécutez `just convert-ship --name <model>` + `just bake-model` pour en générer un.",
     "noMyStats": "Liez un compte ; vous n'avez pas encore de batailles sur ce navire.",
     "ballisticsApprox": "Les courbes de pénétration sont une estimation dérivée de la masse des obus / airDrag / krupp — pas le modèle exact du jeu.",
     "noBallistics": "Aucune donnée de blindage / balistique n'a pu être extraite de GameParams pour ce navire.",
+    "aircraftNotice": {
+      "title": "Vue appareil",
+      "hull": "Affichage : coque — l'onglet Caractéristiques présente les paramètres du navire. Utilisez le menu déroulant en haut du panneau 3D pour afficher un avion.",
+      "plane": "Affichage : {name} — l'onglet Caractéristiques présente les paramètres de cet avion. Utilisez le menu déroulant en haut du panneau 3D pour revenir à la coque."
+    },
     "stage": {
       "hint3d": "Glisser pour tourner · molette pour zoomer · clic droit glisser pour déplacer",
       "hint3dTouch": "Glisser pour tourner · pincer pour zoomer",
@@ -232,7 +238,9 @@
       "antiAir": "Anti-aérien",
       "mobility": "Mobilité",
       "concealment": "Furtivité",
-      "consumables": "Consommables"
+      "consumables": "Consommables",
+      "aircraftWeapon": "Armement de l'appareil",
+      "aircraftAttack": "Attaque"
     },
     "consumables": {
       "unlimited": "Illimité",
@@ -324,7 +332,22 @@
     "secondaryRange": "Portée de l'artillerie secondaire",
     "aswRange": "Portée de la frappe aérienne",
     "aswCharges": "Charges de frappe aérienne",
-    "aswReload": "Rechargement de la frappe aérienne"
+    "aswReload": "Rechargement de la frappe aérienne",
+    "aircraftHp": "Points de vie de l'appareil",
+    "aircraftSquadron": "Taille de l'escadrille",
+    "aircraftOnDeck": "Appareils sur le pont",
+    "aircraftRegen": "Réapprovisionnement",
+    "aircraftCruiseSpeed": "Vitesse de croisière",
+    "aircraftDetect": "Détectabilité",
+    "aircraftPayload": "Charge par appareil",
+    "aircraftDamage": "Dégâts",
+    "aircraftPenetration": "Pénétration",
+    "aircraftFireChance": "Risque d'incendie",
+    "aircraftFloodChance": "Risque d'inondation",
+    "aircraftFlightSize": "Appareils par attaque",
+    "aircraftPrepTime": "Temps de préparation",
+    "aircraftCooldown": "Recharge de l'attaque",
+    "ammoType": "Type de munition"
   },
   "skills": {
     "title": "Planificateur de compétences de commandant",

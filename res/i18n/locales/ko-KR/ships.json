@@ -106,11 +106,17 @@
     "gameparamsSyncAction": "PC에서 게임 데이터 동기화",
     "gameparamsHint": "팁: 언팩한 GameParams.json을 게임 루트(bin/ 옆)에 두세요. https://github.com/wowsinfo/wowsunpack 참고",
     "noSpecs": "이 함선에는 제원 데이터가 없습니다.",
+    "noPlaneSpecs": "이 함재기의 제원 정보가 없습니다.",
     "noImage": "이미지가 없습니다.",
     "noModel": "이 함선은 아직 3D 모델이 베이크되지 않았습니다. `just convert-ship --name <model>` + `just bake-model`을 실행하여 생성하세요.",
     "noMyStats": "계정을 연동했지만 이 함선의 전투 기록이 아직 없습니다.",
     "ballisticsApprox": "관통 곡선은 포탄 무게 / 공기 저항 / krupp를 기반으로 한 추정값이며, 게임 내 정확한 모델이 아닙니다.",
     "noBallistics": "GameParams에서 이 함선의 장갑 / 탄도 데이터를 추출할 수 없습니다.",
+    "aircraftNotice": {
+      "title": "함재기 보기",
+      "hull": "현재 보기: 선체 — 제원 탭에 함선 성능이 표시됩니다. 3D 패널 상단의 드롭다운에서 함재기로 전환할 수 있습니다.",
+      "plane": "현재 보기: {name} — 제원 탭에 함재기 성능이 표시됩니다. 3D 패널 상단의 드롭다운에서 선체로 돌아갈 수 있습니다."
+    },
     "stage": {
       "hint3d": "드래그하여 회전 · 스크롤로 확대/축소 · 우클릭 드래그로 이동",
       "hint3dTouch": "드래그하여 회전 · 핀치로 확대/축소",
@@ -232,7 +238,9 @@
       "antiAir": "대공",
       "mobility": "기동성",
       "concealment": "은폐",
-      "consumables": "소모품"
+      "consumables": "소모품",
+      "aircraftWeapon": "함재기 무장",
+      "aircraftAttack": "공격"
     },
     "consumables": {
       "unlimited": "무제한",
@@ -324,7 +332,22 @@
     "secondaryRange": "부포 사거리",
     "aswRange": "공습 사거리",
     "aswCharges": "공습 횟수",
-    "aswReload": "공습 재장전"
+    "aswReload": "공습 재장전",
+    "aircraftHp": "기체 내구도",
+    "aircraftSquadron": "편대 규모",
+    "aircraftOnDeck": "갑판 탑재 수",
+    "aircraftRegen": "재보급 시간",
+    "aircraftCruiseSpeed": "순항 속도",
+    "aircraftDetect": "피탐지 거리",
+    "aircraftPayload": "기체당 탑재량",
+    "aircraftDamage": "피해량",
+    "aircraftPenetration": "관통력",
+    "aircraftFireChance": "화재 확률",
+    "aircraftFloodChance": "침수 확률",
+    "aircraftFlightSize": "공격 편대 규모",
+    "aircraftPrepTime": "준비 시간",
+    "aircraftCooldown": "공격 재사용 대기시간",
+    "ammoType": "탄종"
   },
   "skills": {
     "title": "함장 스킬 시뮬레이터",
