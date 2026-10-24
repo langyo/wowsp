@@ -236,3 +236,41 @@ jobs:
         # derived manifest (Cargo workspace, tauri.conf.json, the three
         # package.jsons, the relay worker) must agree (AGENTS.md §5).
         run: python scripts/sync_versions.py --check
+
+  e2e:
+    name: E2E browser (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86  # v6
+        # Version comes from the "packageManager" field in package.json
+        # (pnpm 11 — workspace-level overrides live in pnpm-workspace.yaml).
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+      - name: Generate shader bundle and icons
+        # The dev server serves src/res as-is; the two generation scripts
+        # fill the artifacts a cold checkout lacks (same steps the web job
+        # runs before its builds).
+        run: |
+          python scripts/glsl_bundle.py --verbose
+          python scripts/ensure_tauri_icons.py
+      - name: Install python test deps
+        # The suite is self-contained (the conftest boots the FastAPI mock
+        # AND the vite dev server); it needs the mock's requirements plus
+        # the pinned playwright driver. The browser download stays
+        # uncached on purpose — ~40 MB against the cache-key churn of
+        # every pip bump.
+        run: |
+          python -m pip install --quiet -r scripts/mock/requirements.txt
+          python -m pip install --quiet pytest playwright==1.58.0
+      - name: Install chromium
+        run: python -m playwright install chromium --with-deps
+      - name: Run the browser smoke suite
+        run: python -m pytest scripts/e2e -c scripts/pyproject.toml -m ui
