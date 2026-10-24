@@ -16,6 +16,30 @@ html.s-theme-transitioning *::after {
     opacity var(--duration-normal) ease;
 }
 
+/* hikari's HkInput pins the native field's ink to an infinite step-end
+   transition as its autofill-flash guard (`transition: color
+   calc(infinity * 1s) step-end`, HkInput.scss). An infinite duration never
+   reaches its step boundary, so every theme/mode apply AFTER a field has
+   mounted froze that field at the PREVIOUS scheme's ink — the encyclopedia
+   search box (and any other HkInput) kept the light scheme's near-black
+   text on the dark field surface, reading as "the input ignores the theme".
+   Re-arm a normal finite transition for hikari's .s-theme-transitioning
+   window (the class applyTheme() sets on <html> around every palette
+   switch; it is removed 300ms later, while --duration-normal is 240ms —
+   0s under reduced motion — so the retint always completes inside the
+   window). The html type prefix lifts the specificity to (0,2,2), enough
+   to outrank the component sheet whichever order the lazy route CSS lands
+   in, and the scope keeps the upstream autofill guard untouched outside a
+   switch. (hikari's :hover/:focus autofill variants and the auth-card
+   fields pin higher-specificity shorthands; those surfaces are unused here
+   and keep their guard.) */
+html.s-theme-transitioning .hk-input-box input,
+html.s-theme-transitioning .hk-input-box textarea {
+  transition:
+    color var(--duration-normal) var(--ease-standard),
+    background-color var(--duration-normal) var(--ease-standard);
+}
+
 /* === Tokens === */
 :root {
   /* Radius scale — softened for the Abyssal Glass language */

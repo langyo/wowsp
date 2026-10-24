@@ -281,6 +281,12 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 0.75rem;
+    /* The results must not sit flush against the sticky filter bar above:
+       the filter panel's border and the first card's rounded corner read as
+       one joined block otherwise. This margin rides the grid (the scrolling
+       content) rather than the sticky panel, so the clearance stays with the
+       cards while they scroll under the pinned bar. */
+    margin-top: 0.75rem;
   }
 
   &__status {
