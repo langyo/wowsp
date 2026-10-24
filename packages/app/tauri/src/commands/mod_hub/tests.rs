@@ -2156,6 +2156,41 @@ fn find_dir_within(root: &Path, marker: &str) -> Option<PathBuf> {
 /// fragment. Recognition must see EVERY row (foreign section), pair the
 /// rows the catalog knows (identity), and the installed-list classification
 /// must anchor on the manifest rows (their names, not raw directory names).
+/// Modhub review L-4: the ModStation SERVICE directories (its ADS
+/// telemetry component and the station's own folder) live in the same
+/// `bin/<ver>/mods` tree as real mods — they are not mod units, must
+/// never classify, and a stale ledger key recorded by a pre-denylist
+/// scan must never resolve them for takeover/uninstall.
+#[test]
+fn modstation_service_dirs_are_not_foreign_units() {
+    let tmp = std::env::temp_dir().join("wowsp_modstation_service_dirs");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let res_mods = tmp.join("bin/1/res_mods");
+    let station_mods = tmp.join("bin/1/mods");
+    std::fs::create_dir_all(&res_mods).unwrap();
+    for dir in ["ADS", "ModStation", "SomeStationMod"] {
+        std::fs::create_dir_all(station_mods.join(dir)).unwrap();
+    }
+    let foreign = super::foreign::scan_foreign(&res_mods, &station_mods, None);
+    let station = &foreign["modstation"];
+    assert_eq!(
+        station.len(),
+        1,
+        "only the real mod classifies: {station:?}"
+    );
+    assert!(
+        station.contains_key("somestationmod"),
+        "the real mod's slug keys the unit: {station:?}"
+    );
+    assert!(
+        super::foreign::modstation_dir_for_key(&station_mods, "ads").is_none(),
+        "a stale ledger key must never resolve the station's service dir"
+    );
+    assert!(super::foreign::modstation_dir_for_key(&station_mods, "modstation").is_none());
+    assert!(super::foreign::modstation_dir_for_key(&station_mods, "somestationmod").is_some());
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 #[test]
 fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
     use wowsp_tauri_shared::{CatalogEntry, CatalogIndex, CatalogPackage};

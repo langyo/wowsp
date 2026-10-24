@@ -67,13 +67,21 @@ pub(crate) fn scan_foreign(
     // sorted and duplicate slugs keep the FIRST directory, so the scan,
     // `modstation_dir_for_key` and the register-takeover all resolve a
     // colliding slug to the same tree no matter what read_dir yields.
+    // The KNOWN SERVICE directories are not mods (modhub review L-4):
+    // the station's own components (ADS telemetry & friends) live in the
+    // same tree and used to be classified as a foreign mod unit —
+    // offering "register & reinstall" over the station's guts.
+    const MODSTATION_SERVICE_DIRS: [&str; 2] = ["ads", "modstation"];
     let mut mod_dirs: Vec<(String, PathBuf)> = fs::read_dir(mods_dir)
         .into_iter()
         .flatten()
         .flatten()
         .filter(|ent| ent.path().is_dir())
         .map(|ent| (ent.file_name().to_string_lossy().into_owned(), ent.path()))
-        .filter(|(name, _)| !name.starts_with('.'))
+        .filter(|(name, _)| {
+            !name.starts_with('.')
+                && !MODSTATION_SERVICE_DIRS.contains(&name.to_ascii_lowercase().as_str())
+        })
         .collect();
     mod_dirs.sort_by(|a, b| a.0.cmp(&b.0));
     for (name, _) in mod_dirs {
@@ -118,12 +126,19 @@ fn slug_key(name: &str) -> String {
 /// exact rule the scan applies, so both resolve a colliding slug to the
 /// same tree regardless of read_dir order.
 pub(crate) fn modstation_dir_for_key(mods_dir: &Path, key: &str) -> Option<PathBuf> {
+    // Same service-dir exclusion as the scan above: a stale ledger key
+    // recorded by a pre-denylist scan must never resolve a takeover or
+    // uninstall at the station's own components.
+    const MODSTATION_SERVICE_DIRS: [&str; 2] = ["ads", "modstation"];
     let mut names: Vec<(String, PathBuf)> = fs::read_dir(mods_dir)
         .ok()?
         .flatten()
         .filter(|ent| ent.path().is_dir())
         .map(|ent| (ent.file_name().to_string_lossy().into_owned(), ent.path()))
-        .filter(|(name, _)| !name.starts_with('.'))
+        .filter(|(name, _)| {
+            !name.starts_with('.')
+                && !MODSTATION_SERVICE_DIRS.contains(&name.to_ascii_lowercase().as_str())
+        })
         .collect();
     names.sort_by(|a, b| a.0.cmp(&b.0));
     names
