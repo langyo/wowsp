@@ -857,7 +857,9 @@ export default defineComponent({
                   ? Math.round(a.avgBattles).toLocaleString()
                   : "—",
                 valueColor:
-                  a.avgBattles != null ? battlesColor(a.avgBattles) : undefined,
+                  col.scope === "global" && a.avgBattles != null
+                    ? battlesColor(a.avgBattles)
+                    : undefined,
               });
             } else {
               parts.push({
@@ -926,7 +928,9 @@ export default defineComponent({
      *  columns (rosterColumns()), every average landing exactly on its
      *  own column. Both rosters' titles read the configured column order
      *  left→right (neither side mirrors). Values carry their tier colors
-     *  (winrateColor / prTier / battlesColor / damageColor). */
+     *  (winrateColor / prTier / damageColor; battlesColor's thin-sample
+     *  red rides the ACCOUNT column only — a scoped count under 200 is
+     *  the norm, not a warning). */
     const colTitle = (label: string, entries: TabOrderedVehicle[]) => {
       const title = <span class="live-battle__col-name">{label}</span>;
       const cols = rosterColumns();
@@ -976,7 +980,7 @@ export default defineComponent({
                 <b
                   class="live-battle__col-hval"
                   style={
-                    agg.avgBattles != null
+                    col.scope === "global" && agg.avgBattles != null
                       ? { color: battlesColor(agg.avgBattles) }
                       : undefined
                   }
@@ -1077,7 +1081,7 @@ export default defineComponent({
           value = (
             <b
               style={
-                agg.avgBattles != null
+                col.scope === "global" && agg.avgBattles != null
                   ? { color: battlesColor(agg.avgBattles) }
                   : undefined
               }

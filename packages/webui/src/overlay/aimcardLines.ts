@@ -213,9 +213,9 @@ export function shipLineHtml(
       fig(wr != null ? `${wr.toFixed(1)}%` : "—", wr != null ? winrateColor(wr) : undefined) +
       `</span>`,
     fig(pr != null ? `${Math.round(pr)}` : "—", pr != null ? prBand.color : undefined),
-    battles != null
-      ? battlesText(battles, battlesPattern, battlesColor(battles))
-      : fig("—"),
+    // The battle ship's own count carries no thin-sample warning — under
+    // 200 battles on one ship is the norm (the career line keeps its red).
+    battles != null ? battlesText(battles, battlesPattern) : fig("—"),
     fig(dmg != null ? fmtDamage(dmg) : "—", dmg != null ? damageColor(dmg) : undefined),
   ].join("");
 }

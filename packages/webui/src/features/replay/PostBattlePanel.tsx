@@ -735,7 +735,11 @@ export default defineComponent({
             return (
               <b
                 class={cls}
-                style={agg.avgBattles != null ? { color: battlesColor(agg.avgBattles) } : undefined}
+                style={
+                  col.scope === "global" && agg.avgBattles != null
+                    ? { color: battlesColor(agg.avgBattles) }
+                    : undefined
+                }
               >
                 {agg.avgBattles != null ? Math.round(agg.avgBattles).toLocaleString() : "—"}
               </b>

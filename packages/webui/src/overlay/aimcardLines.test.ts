@@ -83,6 +83,13 @@ describe("careerLineHtml", () => {
     expect(html).toContain(">1929</b>");
     expect(html).not.toContain("aim-unit");
   });
+
+  it("keeps the thin-sample warning on the account career count", () => {
+    // 100 CAREER battles is a thin sample — the account line keeps the red
+    // the per-ship line below drops (a scoped count under 200 is the norm).
+    const html = careerLineHtml({ ...ok, battles: 100 }, PATTERN);
+    expect(cell(html, 2)).toContain('style="color:');
+  });
 });
 
 describe("battlesText", () => {
@@ -143,6 +150,19 @@ describe("shipLineHtml", () => {
     expect(html).toContain(">52.1%</b>");
     // Cells: [0] label [1] winrate [2] PR [3] battles [4] damage.
     expect(cell(html, 2)).toContain("aim-none");
+  });
+
+  it("keeps the battle ship's thin battle count uncolored (no warning)", () => {
+    // Under 200 battles on ONE ship is the norm — the per-ship line never
+    // wears the account line's thin-sample red.
+    const html = shipLineHtml(
+      [{ ...row, battles: 42 }],
+      row.shipId,
+      "瓦尔帕莱索",
+      PATTERN,
+    );
+    expect(html).toContain('>42<span class="aim-unit"> 场</span></b>');
+    expect(cell(html, 3)).not.toContain("style=");
   });
 });
 

@@ -177,17 +177,21 @@ export function rosterColumns(): RosterColumnSpec[] {
     });
 }
 
-/** One column's number formatting/coloring (battles: red under 200 battles,
- *  plain above — a count carries no tier color). `empty` marks a null
- *  value so the caller can retip the cell for hidden profiles. */
+/** One column's number formatting/coloring. Battles carries the red
+ *  thin-sample warning (under 200) on ACCOUNT columns only — `warn` is the
+ *  caller's `col.scope === "global"`; a scoped count under 200 is the norm
+ *  (most ships never see 200 battles), so red there would flag half the
+ *  roster. `empty` marks a null value so the caller can retip the cell for
+ *  hidden profiles. */
 function rosterColumnCell(
   metric: OverlayColumnMetric,
   view: RosterModeNumbers,
+  warn = false,
 ): { body: VNode; empty: boolean } {
   const v = metric === "damage" ? view.avgDamage : view[metric];
   if (v == null) return { body: <em>—</em>, empty: true };
   if (metric === "battles") {
-    const color = battlesColor(v);
+    const color = warn ? battlesColor(v) : undefined;
     return {
       body: (
         <b style={color ? { color } : undefined}>{Math.round(v).toLocaleString()}</b>
@@ -240,7 +244,11 @@ export function rosterStatCols(
         } else if (!stat || loading) {
           body = <HkSpinner size="xs" tone="current" />;
         } else {
-          const cell = rosterColumnCell(col.metric, viewOf(stat, col.scope));
+          const cell = rosterColumnCell(
+            col.metric,
+            viewOf(stat, col.scope),
+            col.scope === "global",
+          );
           body = cell.body;
           if (cell.empty && stat.hidden) tip = t("replay.live.hiddenProfile");
         }
@@ -311,7 +319,9 @@ export function rosterStatLine(viewOf: (scope: OverlayColumnScope) => RosterMode
         </>,
       );
     } else if (col.metric === "battles") {
-      const color = battlesColor(view.battles);
+      // Thin-sample red on the account column only — a scoped count under
+      // 200 is the norm, not a warning.
+      const color = col.scope === "global" ? battlesColor(view.battles) : undefined;
       parts.push(
         <>
           {tag}
@@ -352,8 +362,9 @@ export function rosterShotDashes(): ShotStat[] {
 
 /** The configured columns' cells, each resolved through its own scope, in
  *  rosterColumns() order — the share-shot rows render the EXACT columns
- *  the panels show, battles red-under-200 warning included, so the copied
- *  image never contradicts the roster on screen beside the copy button. */
+ *  the panels show, the account columns' red-under-200 battles warning
+ *  included, so the copied image never contradicts the roster on screen
+ *  beside the copy button. */
 export function rosterShotCells(
   viewOf: (scope: OverlayColumnScope) => RosterModeNumbers,
 ): ShotStat[] {
@@ -362,7 +373,7 @@ export function rosterShotCells(
     const v = col.metric === "damage" ? view.avgDamage : view[col.metric];
     if (v == null) return { text: "—" };
     if (col.metric === "battles") {
-      const color = battlesColor(v);
+      const color = col.scope === "global" ? battlesColor(v) : undefined;
       return { text: Math.round(v).toLocaleString(), ...(color ? { color } : {}) };
     }
     if (col.metric === "winrate") {

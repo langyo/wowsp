@@ -773,11 +773,13 @@ function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string 
           : `<b ${slot} class="${absentCls}">${fig("n-pr", absent)}</b>`,
       );
     } else if (col.metric === "battles") {
-      // Red under 200 battles (thin-sample warning), plain above — same rule
-      // as the roster panels' battles column (utils/winrate battlesColor).
-      // The count lands with its localized unit (battlesText), inside the
-      // same measured cell.
-      const color = battlesColor(v.battles);
+      // Red under 200 battles (thin-sample warning), plain above — on the
+      // ACCOUNT column only: a scoped count under 200 is the norm (most
+      // ships never see 200 battles), the same rule the roster panels'
+      // battles cells keep (utils/winrate battlesColor). The count lands
+      // with its localized unit (battlesText), inside the same measured
+      // cell.
+      const color = col.scope === "global" ? battlesColor(v.battles) : undefined;
       parts.push(
         v.battles != null
           ? `<b ${slot}${color ? ` style="color:${color}"` : ""}>${battlesText(v.battles)}</b>`
