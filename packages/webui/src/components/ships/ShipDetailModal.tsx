@@ -13,6 +13,7 @@ import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useRankedStore } from "@/stores/ranked";
 import { useTrendsStore } from "@/stores/trends";
+import { useUpdaterStore } from "@/stores/updater";
 import { api, type ShipInfo } from "@/api";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
@@ -20,7 +21,7 @@ import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs } from "./shipSpecs";
-import { buildPlaneSpecs } from "./shipPlaneSpecs";
+import { aircraftNoticeSwitchKey, buildPlaneSpecs } from "./shipPlaneSpecs";
 import { buildConsumableSlots, consumableHintCard, type ConsumableSlotGroup } from "./consumables";
 import BuildPlanner from "./BuildPlanner";
 import ShipMyStatsPanel from "./ShipMyStatsPanel";
@@ -105,6 +106,9 @@ export default defineComponent({
     const ranked = useRankedStore();
     const trends = useTrendsStore();
     const loadingTasks = useLoadingTasksStore();
+    // Portable (便捷版) builds ship no 3D: the stage can never show the
+    // airframe picker, so the aircraft hint is suppressed there.
+    const updater = useUpdaterStore();
     const toast = useToast();
     const router = useRouter();
     // Phone app build: there is no local game install to point the armor
@@ -135,6 +139,11 @@ export default defineComponent({
      *  Mirrors the stage's internal selection through `update:modelSelection`;
      *  drives the aircraft-view hint and the spec cards below it. */
     const selectedModel = ref<string>("hull");
+
+    /** View mode the stage is currently in (2D portrait vs 3D hologram).
+     *  Mirrors `update:viewMode`; the hint's guidance line depends on it
+     *  because the airframe dropdown only renders on the 3D stage. */
+    const stageViewMode = ref<"2d" | "3d">("3d");
 
     // ── Armor tab: lazy GameParams ─────────────────────────────────────────
     const gameparams = ref<unknown>(null);
@@ -507,6 +516,7 @@ export default defineComponent({
                   hidden={stageHidden.value}
                   onUpdate:hidden={(v: boolean) => (stageHidden.value = v)}
                   onUpdate:modelSelection={(v: string) => (selectedModel.value = v)}
+                  onUpdate:viewMode={(v: "2d" | "3d") => (stageViewMode.value = v)}
                 />
                 {!stageHidden.value ? (
                   <WeaponBar gameparams={gameparams.value as Record<string, unknown> | null} onFocus={onWeaponFocus} />
@@ -543,22 +553,35 @@ export default defineComponent({
             ) : null}
 
             {/* Aircraft-view hint (standard hikari alert): every carrier /
-                hybrid says up front whether the spec cards below show the
-                hull or the airframe currently staged, and where to switch.
-                The stage's aircraft dropdown sits in its top-right control
-                row; ships without embarked squadrons keep the old layout. */}
-            {planeModels.value.length > 0 ? (
+                hybrid says which model the spec cards below describe, plus a
+                guidance line naming the control that actually switches it.
+                The airframe dropdown only exists on an EXPANDED 3D stage, so
+                a collapsed stage / 2D portrait gets expand / switch-back
+                wording instead. Portable builds ship no 3D — there is no
+                aircraft view at all, hence no hint. The Skill tab unmounts
+                the stage entirely (no aircraft view, no dropdown), so the
+                hint is gated off there too; the specs/mystats/community tabs
+                keep the stage mounted and keep the hint. Ships without
+                embarked squadrons keep the old layout. HAlert requires
+                `message`, but the two-line body below uses the default slot
+                (which HAlert renders over the prop), so it stays empty. */}
+            {planeModels.value.length > 0 && !updater.portable && tab.value !== "skill" ? (
               <div class="ship-detail__aircraft-notice">
                 <HAlert
                   variant="info"
                   size="sm"
                   title={t("ships.detail.aircraftNotice.title")}
-                  message={
-                    selectedPlane.value
+                  message=""
+                >
+                  <span>
+                    {selectedPlane.value
                       ? t("ships.detail.aircraftNotice.plane", { name: selectedPlane.value.label })
-                      : t("ships.detail.aircraftNotice.hull")
-                  }
-                />
+                      : t("ships.detail.aircraftNotice.hull")}
+                  </span>
+                  <span class="ship-detail__aircraft-notice-switch">
+                    {t(aircraftNoticeSwitchKey(stageHidden.value, stageViewMode.value))}
+                  </span>
+                </HAlert>
               </div>
             ) : null}
 

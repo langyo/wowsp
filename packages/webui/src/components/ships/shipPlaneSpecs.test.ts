@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 import planeSpecsDb from "@/data/plane_specs.json";
-import { buildPlaneSpecs, planeSpecEntry } from "./shipPlaneSpecs";
+import { aircraftNoticeSwitchKey, buildPlaneSpecs, planeSpecEntry } from "./shipPlaneSpecs";
 import type { SpecGroup } from "./shipSpecs";
 
 /** Display order the contract fixes for aircraft spec groups. */
@@ -198,5 +198,21 @@ describe("contract anchor airframes (WG data)", () => {
     expect(value("PGAB918", "aircraftWeapon", "torpRange")).toBe("3.0 km");
     expect(value("PGAB918", "aircraftWeapon", "torpDetect")).toBe("1.4 km");
     expect(value("PGAB918", "aircraftWeapon", "ammoType")).toBeUndefined();
+  });
+});
+
+describe("aircraftNoticeSwitchKey", () => {
+  it("points at the 3D panel dropdown on an expanded 3D stage", () => {
+    expect(aircraftNoticeSwitchKey(false, "3d")).toBe("ships.detail.aircraftNotice.switch3d");
+  });
+
+  it("asks the user to expand the preview when the stage is collapsed", () => {
+    expect(aircraftNoticeSwitchKey(true, "3d")).toBe("ships.detail.aircraftNotice.switchExpand");
+    // Collapsed wins even when the remembered view mode is the 2D portrait.
+    expect(aircraftNoticeSwitchKey(true, "2d")).toBe("ships.detail.aircraftNotice.switchExpand");
+  });
+
+  it("asks the user to switch back to 3D from the 2D portrait", () => {
+    expect(aircraftNoticeSwitchKey(false, "2d")).toBe("ships.detail.aircraftNotice.switchBack3d");
   });
 });

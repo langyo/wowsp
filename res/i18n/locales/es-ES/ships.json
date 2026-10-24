@@ -114,8 +114,11 @@
     "noBallistics": "No se pudo extraer datos de blindaje / balística de GameParams para este buque.",
     "aircraftNotice": {
       "title": "Vista de aeronaves",
-      "hull": "Vista actual: casco — la pestaña Especificaciones muestra los parámetros del buque. Usa el desplegable de la parte superior del panel 3D para ver una aeronave.",
-      "plane": "Vista actual: {name} — la pestaña Especificaciones muestra los parámetros de esta aeronave. Usa el desplegable de la parte superior del panel 3D para volver al casco."
+      "hull": "Vista actual: casco — la pestaña Especificaciones muestra los parámetros del buque.",
+      "plane": "Vista actual: {name} — la pestaña Especificaciones muestra los parámetros de esta aeronave.",
+      "switch3d": "Cambia con el desplegable de la parte superior del panel 3D.",
+      "switchExpand": "Despliega la vista previa 3D para cambiar con el desplegable de su parte superior.",
+      "switchBack3d": "Vuelve a la vista previa 3D para cambiar con el desplegable de su parte superior."
     },
     "stage": {
       "hint3d": "Arrastra para rotar · rueda para hacer zoom · arrastra con botón derecho para desplazar",

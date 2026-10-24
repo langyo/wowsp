@@ -114,8 +114,11 @@
     "noBallistics": "No armor / ballistics data could be extracted from GameParams for this ship.",
     "aircraftNotice": {
       "title": "Aircraft View",
-      "hull": "Now viewing the hull — the Specifications tab shows this ship's parameters. Use the dropdown at the top of the 3D panel to view a carrier aircraft.",
-      "plane": "Now viewing: {name} — the Specifications tab shows this aircraft's parameters. Use the dropdown at the top of the 3D panel to switch back to the hull."
+      "hull": "Now viewing the hull — the Specifications tab shows this ship's parameters.",
+      "plane": "Now viewing: {name} — the Specifications tab shows this aircraft's parameters.",
+      "switch3d": "Switch with the dropdown at the top of the 3D panel.",
+      "switchExpand": "Expand the 3D preview to switch with the dropdown at its top.",
+      "switchBack3d": "Switch back to the 3D preview to use the dropdown at its top."
     },
     "stage": {
       "hint3d": "Drag to rotate · scroll to zoom · right-drag to pan",
