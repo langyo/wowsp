@@ -350,6 +350,7 @@
     "colScopeGlobal": "グローバル",
     "colScopeSolo": "ソロのみ",
     "colScopeShip": "その艦のみ",
+    "colScopeShipSolo": "その艦のソロのみ",
     "colScopeClass": "現在の艦種のみ",
     "colMetricWinrate": "勝率",
     "colMetricPr": "PR",

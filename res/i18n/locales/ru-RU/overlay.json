@@ -17,6 +17,7 @@
   "avgDmg": "Ср. урон",
   "colScopeSolo": "соло",
   "colScopeShip": "корабль",
+  "colScopeShipSolo": "корабль соло",
   "colScopeClass": "класс",
   "colHeadWinrate": "Побед",
   "colHeadPr": "PR",

@@ -4,7 +4,7 @@
  * they fit, wrapped once they don't),
  * plus the add-connector — a plus icon button on the cluster header's
  * right end opening a tooltip-style popover with two segmented button
- * groups (数据范围: 全局/仅单人/仅单船/仅当前舰种; 指标: 场均/PR/胜率/
+ * groups (数据范围: 全局/仅单排/仅单船/仅单船单排/仅当前舰种; 指标: 场均/PR/胜率/
  * 场次) and a confirm-add button at the bottom right.
  *
  * Mounted TWICE on the store's own columns: the settings page's 显示内容
@@ -78,6 +78,7 @@ const SCOPE_KEY: Record<OverlayColumnScope, string> = {
   global: "settings.overlayContent.colScopeGlobal",
   solo: "settings.overlayContent.colScopeSolo",
   ship: "settings.overlayContent.colScopeShip",
+  shipSolo: "settings.overlayContent.colScopeShipSolo",
   class: "settings.overlayContent.colScopeClass",
 };
 

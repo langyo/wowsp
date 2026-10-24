@@ -14,7 +14,7 @@
  * lands while the ship cell keeps the dots until its per-ship list
  * arrives, and a MIRRORED solo split (solo battles == career battles,
  * rejected by soloSplitReliable) renders the drawn dash instead of the
- * career numbers wearing a 单人 tag.
+ * career numbers wearing a 单排 tag.
  *
  * Driven the way production drives it: the real main.ts bootstrap against
  * a mocked `window.__TAURI__` whose stats batch hangs until a test
@@ -243,9 +243,10 @@ describe("overlay page loading faces", () => {
 
   it("renders per-column faces: career figures land with the batch, ship cells keep their dots, mirrored solo splits dash", async () => {
     // A new battle under a column set mixing scopes — global winrate,
-    // solo winrate, ship battles. The prefs rewrite also flips the PR
-    // algorithm back to winrate, which clears the stats cache wholesale:
-    // every name re-queues (batchCalls 3) under the fresh columns.
+    // solo winrate, ship battles, ship-solo battles. The prefs rewrite
+    // also flips the PR algorithm back to winrate, which clears the stats
+    // cache wholesale: every name re-queues (batchCalls 3) under the fresh
+    // columns.
     localStorage.setItem(
       STATS_PREFS_STORAGE_KEY,
       JSON.stringify({
@@ -255,6 +256,7 @@ describe("overlay page loading faces", () => {
           { scope: "global", metric: "winrate" },
           { scope: "solo", metric: "winrate" },
           { scope: "ship", metric: "battles" },
+          { scope: "shipSolo", metric: "battles" },
         ],
       }),
     );
@@ -277,9 +279,10 @@ describe("overlay page loading faces", () => {
 
     // The batch landed the careers, but every per-ship list is still owed
     // (the hanging mock above): each row renders its global and solo
-    // FIGURES while the ship column's own cell keeps the chasing dots —
-    // the row no longer waits on its slowest column. (data-col keys stay
-    // the CONFIG column on both sides: 0 global, 1 solo, 2 ship.)
+    // FIGURES while the ship and ship-solo columns' own cells keep the
+    // chasing dots — the row no longer waits on its slowest column.
+    // (data-col keys stay the CONFIG column on both sides: 0 global,
+    // 1 solo, 2 ship, 3 ship-solo.)
     await vi.waitFor(() =>
       expect(rowChips()[0]!.querySelector(".overlay-chip__stat")!.textContent).toContain(
         "48.5%",
@@ -290,23 +293,26 @@ describe("overlay page loading faces", () => {
     for (const chip of chips) {
       const stat = chip.querySelector(".overlay-chip__stat")!;
       expect(stat.textContent).toContain("48.5%");
-      expect(stat.querySelectorAll("b")).toHaveLength(3);
-      // The ship cell (config column 2) is the one still owed: a centered
-      // col-waiting cell (not the muted right-aligned dash face) whose
-      // beads read as "this column is coming".
-      const shipCell = chip.querySelector('b[data-col="2"]')!;
-      expect(shipCell.classList.contains("col-waiting")).toBe(true);
-      expect(shipCell.classList.contains("muted")).toBe(false);
-      expect(shipCell.querySelectorAll(".overlay-dots")).toHaveLength(1);
+      expect(stat.querySelectorAll("b")).toHaveLength(4);
+      // The ship and ship-solo cells (config columns 2 and 3) are the ones
+      // still owed: centered col-waiting cells (not the muted right-aligned
+      // dash face) whose beads read as "this column is coming".
+      for (const owed of ['b[data-col="2"]', 'b[data-col="3"]']) {
+        const owedCell = chip.querySelector(owed)!;
+        expect(owedCell.classList.contains("col-waiting")).toBe(true);
+        expect(owedCell.classList.contains("muted")).toBe(false);
+        expect(owedCell.querySelectorAll(".overlay-dots")).toHaveLength(1);
+      }
       // No per-cell scope tags — the head row owns the naming.
       expect(chip.querySelectorAll(".overlay-scope")).toHaveLength(0);
       // The row itself carries figures, so it is NOT sparse — the stat cell
       // still joins the side's pinned width.
       expect(stat.classList.contains("overlay-chip__stat--sparse")).toBe(false);
     }
-    // The per-side COLUMN HEAD rows name the three configured columns —
-    // 胜率 / 单人胜率 / 单船场次 (zh join empty) — riding the same data-col
-    // cells as the figures, the enemy head mirroring the column order.
+    // The per-side COLUMN HEAD rows name the four configured columns —
+    // 胜率 / 单排胜率 / 单船场次 / 单船单排场次 (zh join empty) — riding the
+    // same data-col cells as the figures, the enemy head mirroring the
+    // column order.
     const headOf = (side: string) =>
       [
         ...document.querySelectorAll<HTMLSpanElement>(
@@ -314,8 +320,18 @@ describe("overlay page loading faces", () => {
         ),
       ].map((b) => `${b.dataset.col}:${b.textContent}`);
     expect(document.querySelectorAll(".overlay-chip--head")).toHaveLength(2);
-    expect(headOf("ally")).toEqual(["0:胜率", "1:单人胜率", "2:单船场次"]);
-    expect(headOf("enemy")).toEqual(["2:单船场次", "1:单人胜率", "0:胜率"]);
+    expect(headOf("ally")).toEqual([
+      "0:胜率",
+      "1:单排胜率",
+      "2:单船场次",
+      "3:单船单排场次",
+    ]);
+    expect(headOf("enemy")).toEqual([
+      "3:单船单排场次",
+      "2:单船场次",
+      "1:单排胜率",
+      "0:胜率",
+    ]);
     // The mirrored split: langyo's solo cell is the drawn dash, never the
     // career winrate; the honest splits show 51.0%.
     const langyoChip = chips.find((c) => c.textContent?.includes("langyo"))!;

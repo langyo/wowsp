@@ -18,11 +18,14 @@ export type SealDisableMap = Partial<Record<StampKind, boolean>>;
 /** Which SHIPS a roster column's numbers cover — the per-column half of
  *  the retired three-dimension stats source (the battle dimension stays
  *  panel-wide, see `RosterBattleScope`): the whole account career
- *  ("global"), the solo-queue split ("solo"), exactly the row's current
- *  ship ("ship" — each row reads the player's stats on the ship they are
- *  sailing in this battle), or every ship of that ship's type ("class" —
- *  仅当前舰种). */
-export type OverlayColumnScope = "global" | "solo" | "ship" | "class";
+ *  ("global"), the account's solo-queue split ("solo"), exactly the row's
+ *  current ship ("ship" — each row reads the player's stats on the ship
+ *  they are sailing in this battle), that ship's own solo split
+ *  ("shipSolo" — the ship × solo combination the single scopes cannot
+ *  express, and the figure an account-solo column sitting next to a ship
+ *  row is most easily misread as), or every ship of that ship's type
+ *  ("class" — 仅当前舰种). */
+export type OverlayColumnScope = "global" | "solo" | "ship" | "shipSolo" | "class";
 
 /** Which number a roster column shows. */
 export type OverlayColumnMetric = "winrate" | "pr" | "battles" | "damage";
@@ -188,7 +191,13 @@ function isRosterBattleScope(v: unknown): v is RosterBattleScope {
 }
 
 function isOverlayColumnScope(v: unknown): v is OverlayColumnScope {
-  return v === "global" || v === "solo" || v === "ship" || v === "class";
+  return (
+    v === "global" ||
+    v === "solo" ||
+    v === "ship" ||
+    v === "shipSolo" ||
+    v === "class"
+  );
 }
 
 function isOverlayColumnMetric(v: unknown): v is OverlayColumnMetric {

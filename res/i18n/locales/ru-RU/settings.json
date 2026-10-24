@@ -350,6 +350,7 @@
     "colScopeGlobal": "Общая карьера",
     "colScopeSolo": "Только соло",
     "colScopeShip": "Только этот корабль",
+    "colScopeShipSolo": "Только этот корабль, соло",
     "colScopeClass": "Только класс корабля",
     "colMetricWinrate": "Винрейт",
     "colMetricPr": "PR",

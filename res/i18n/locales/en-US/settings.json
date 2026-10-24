@@ -350,6 +350,7 @@
     "colScopeGlobal": "Global",
     "colScopeSolo": "Solo only",
     "colScopeShip": "This ship only",
+    "colScopeShipSolo": "This ship, solo only",
     "colScopeClass": "Ship class only",
     "colMetricWinrate": "Win rate",
     "colMetricPr": "PR",

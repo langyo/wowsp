@@ -350,6 +350,7 @@
     "colScopeGlobal": "Global",
     "colScopeSolo": "Solo únicamente",
     "colScopeShip": "Solo este barco",
+    "colScopeShipSolo": "Solo este barco, en solitario",
     "colScopeClass": "Solo la clase actual",
     "colMetricWinrate": "Tasa de victoria",
     "colMetricPr": "PR",

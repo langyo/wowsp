@@ -195,7 +195,7 @@ function rosterStatOf(r: {
     // split the reliability guard rejects (soloSplitReliable — transports
     // that mirror the unsplit pvp node into pvp_solo) never enters the
     // cache at all: the solo columns then show the honest dash face
-    // instead of the career numbers wearing a 单人 tag.
+    // instead of the career numbers wearing a 单排 tag.
     solo: soloSplitReliable(r.soloBattles, r.battles)
       ? modeStatsOf(
           r.soloBattles != null || r.soloWr != null,
@@ -447,9 +447,9 @@ export function useRosterStats(options: UseRosterStatsOptions) {
   }
 
   // ── Ship-scoped attachment (the live pipeline's share) ────────────────
-  // While any configured column needs per-ship data (a ship/class scope —
-  // the solo scope reads the career solo split instead), every loaded
-  // human slot carries that player's full ship list:
+  // While any configured column needs per-ship data (a ship / ship-solo /
+  // class scope — the plain solo scope reads the career solo split
+  // instead), every loaded human slot carries that player's full ship list:
   // session-cache hits land synchronously, misses queue one debounced
   // bounded batch. Editing the columns re-runs this — the already-attached
   // lists are scope-independent, so only the misses move.

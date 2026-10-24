@@ -26,9 +26,10 @@
  * read it directly — same source, same fetch, same vintage as the global
  * columns, and no per-ship list needed. (The per-ship split document is
  * the one bulk transport that can fail or lag behind the career; its sum
- * used to drift from the career the moment it did.) Only a ship/class
- * scope COMBINED with the solo filter — no shipped column configuration
- * produces that today — still aggregates per-ship.
+ * used to drift from the career the moment it did.) A ship/class scope
+ * COMBINED with the solo filter still aggregates per-ship — the shipped
+ * "shipSolo" column scope is exactly that combination (the row ship's own
+ * solo split).
  *
  * PR: under the default winrate algorithm the aggregate PR is the same
  * anchor mapping the backend applies to careers (`rating_from_winrate`,
