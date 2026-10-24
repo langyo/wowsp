@@ -185,13 +185,19 @@ body {
 #app {
   width: 100%;
   height: 100%;
-  /* Above the wallpaper scrim (html[data-wallpaper-art] body::before,
-     z-index 0 — below): the dim applies to the wallpaper layer (z -1) only,
-     so chrome and content sample the scrim-adjusted image instead of
-     sitting under the tint themselves. Harmless in the overlay and
-     manual-locate windows, which render no wallpaper layer. */
+  /* Deliberately z-index-free: any z here would turn #app into a
+     stacking context and TRAP the hikari title bar (its --hk-z-titlebar
+     100001 competes globally only from the root context) at this
+     element's own elevation — every floating layer (modal veil at
+     --hk-z-overlay-root 90000) then paints over the caption bar and
+     eats its clicks (the 2026-10-24 "title bar unclickable behind a
+     modal" defect). The wallpaper stack keeps #app above it without a
+     stacking context by living entirely in the NEGATIVE band: wallpaper
+     img (-3) < scrim (-2) < blur band (-1) < #app (auto, paints later).
+     position: relative stays — absolute descendants anchor here.
+     Harmless in the overlay and manual-locate windows, which render no
+     wallpaper layer. */
   position: relative;
-  z-index: 1;
 }
 body {
   font-family: var(--font-sans);
@@ -278,7 +284,10 @@ select,
 .wallpaper-layer {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  /* Bottom of the negative band (see #app above): img (-3) < scrim (-2)
+     < blur band (-1) < #app (auto). The band exists so #app can stay
+     stacking-context-free while still painting above the wallpaper. */
+  z-index: -3;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -288,7 +297,7 @@ select,
   -webkit-user-drag: none;
 }
 /* Readability scrim over image wallpapers — sits ABOVE the wallpaper layer
-   (z -1) and BELOW #app (z 1, above), so the dim only ever applies to
+   (z -3) and BELOW #app (auto, paints later), so the dim only ever applies to
    the wallpaper while translucent chrome (sidebar, cards, modals) samples
    the scrim-adjusted image. Gated by the renderer: solid backgrounds never
    draw one. Strength is the user's overlay preference
@@ -299,7 +308,7 @@ html[data-wallpaper-art="true"] body::before {
   content: "";
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: -2;
   background: rgb(var(--color-background));
   opacity: var(--wallpaper-overlay-opacity, 0.8);
   pointer-events: none;
@@ -315,7 +324,7 @@ html[data-wallpaper-art="true"] body::before {
    title-bar insets the moment the dial left zero. As a sibling pseudo
    it blurs the same backdrop the translucent wash above it samples,
    with zero containing-block fallout. Sits above the scrim (::before,
-   same z-level, later in paint order) and below #app (z 1), so it
+   one z step up in the negative band) and below #app (auto), so it
    blurs wallpaper + dim exactly as the user sees the background.
    Geometry mirrors the main column's box: below the title bar, right
    of the nav rail, to the bottom-right corners — full-width on phones
@@ -330,7 +339,7 @@ html[data-wallpaper-art="true"] body::after {
   bottom: 0;
   left: var(--app-sidebar-w, 240px);
   right: 0;
-  z-index: 0;
+  z-index: -1;
   backdrop-filter: var(--wallpaper-blur-main, none);
   -webkit-backdrop-filter: var(--wallpaper-blur-main, none);
   pointer-events: none;
