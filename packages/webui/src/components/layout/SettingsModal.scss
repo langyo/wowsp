@@ -13,6 +13,15 @@
 // HkSettingsDialog.scss under `.hk-settings-host`; on the page the app
 // shell scrolls and SettingsView.scss neutralizes the host assumptions.
 
+/* Fixed first track of every staged slider row (the __dpi-row grid below
+   and the feedback card's key-value rows): one shared label-column width
+   keeps the settings' control columns in the same place at the same width,
+   whatever their label's text length. Lives on :root because the BEM
+   namespace classes compile flat — no .settings-modal element exists. */
+:root {
+  --settings-row-label-w: 7.5rem;
+}
+
 .settings-modal {
   /* Shell framing (flex row, rail width, pane scroll, stable frame) is
      hikari's .hk-settings* now; this block remains as the BEM namespace
@@ -429,25 +438,31 @@
     color: rgb(var(--color-muted));
   }
 
-  /* ── interface scale (DPI) ─────────────────────────────────────────────
-     Staged slider + value readout in one row; the Auto/Apply buttons live
-     in their own row underneath (the reference window's footer grammar,
-     rendered inline). The risk warning tints with the danger color so an
-     overshooting notch is caught before Apply. */
+  /* ── staged slider rows (overlay strength, blurs, UI opacity, DPI) ────
+     One row grammar for EVERY settings slider: a three-track grid — fixed
+     label column, fluid slider, right-aligned value — so all sliders in a
+     section share ONE column at ONE width instead of tracking their
+     label's text length (the old flex rows wandered). Label-less rows
+     (UI opacity / DPI scale) leave the first track empty and land their
+     sliders in the same column. The risk warning tints with the danger
+     color so an overshooting notch is caught before Apply. */
 
   &__dpi-row {
-    display: flex;
+    display: grid;
+    grid-template-columns:
+      var(--settings-row-label-w, 7.5rem) minmax(0, 1fr) minmax(3.5rem, auto);
+    grid-template-areas: "label slider value";
     align-items: center;
     gap: 0.75rem;
   }
 
   &__dpi-slider {
-    flex: 1;
+    grid-area: slider;
     min-width: 0;
   }
 
   &__dpi-value {
-    flex: none;
+    grid-area: value;
     min-width: 3.5rem;
     text-align: right;
     font-size: var(--text-sm);
@@ -456,11 +471,11 @@
     color: rgb(var(--color-text));
   }
 
-  /* Overlay-strength slider row (wallpaper transparency): the same slider
-     grammar as the DPI row, with a leading label instead of a trailing
-     Auto action. */
+  /* Leading label of a slider row (overlay strength / blur dials): pinned
+     to the fixed first track so the slider column stays put across rows.
+     Longer translations wrap inside the track instead of shifting it. */
   &__overlay-label {
-    flex: none;
+    grid-area: label;
     font-size: var(--text-sm);
     color: rgb(var(--color-text));
   }
@@ -476,6 +491,8 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    /* Auto/Apply ride in the slider's column, not under the label track. */
+    margin-left: calc(var(--settings-row-label-w, 7.5rem) + 0.75rem);
   }
 
   /* ── solar status (appearance card footer) ────────────────────────────── */

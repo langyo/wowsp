@@ -46,14 +46,20 @@ export default defineComponent({
               </HkButton>
             </div>
             {/* Resource CDN — an independent setting, not gated on the proxy
-                mode; commits via 保存 / Enter like the proxy URL. */}
-            <div class="settings-modal__netinput">
-              <HkInput
-                modelValue={network.netCfg.value.resourceCdn ?? ""}
-                onUpdate:modelValue={(v: string) => (network.netCfg.value.resourceCdn = v)}
-                placeholder={t("settings.resourceCdnPlaceholder")}
-                submitOnEnter={() => void network.saveNet()}
-              />
+                mode; the same input+Save row grammar as the proxy URL keeps
+                both URL fields at one width with a visible commit button. */}
+            <div class="settings-modal__netmanual">
+              <div class="settings-modal__netinput">
+                <HkInput
+                  modelValue={network.netCfg.value.resourceCdn ?? ""}
+                  onUpdate:modelValue={(v: string) => (network.netCfg.value.resourceCdn = v)}
+                  placeholder={t("settings.resourceCdnPlaceholder")}
+                  submitOnEnter={() => void network.saveNet()}
+                />
+              </div>
+              <HkButton size="sm" disabled={!network.netDirty.value} onClick={() => void network.saveNet()}>
+                {network.netSavedFlash.value ? t("settings.networkSaved") : t("settings.networkSave")}
+              </HkButton>
             </div>
             <HkSettingsHint>{t("settings.resourceCdnHint")}</HkSettingsHint>
           </HkSettingsGroup>
