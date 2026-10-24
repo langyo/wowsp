@@ -30,6 +30,7 @@ import { renderClanShot, type ClanShotModel } from "@/features/share/clanShot";
 import { useShareImage } from "@/features/share/useShareImage";
 import { shipNameFromModelDb, shipOfflineEntry, shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
+import { shipTypeHintCard } from "@/components/stats/shipTypeHint";
 import { tierToRoman } from "@wowsp/holo";
 import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import {
@@ -1007,7 +1008,11 @@ export default defineComponent({
                 {typeSummary.value.length > 0 ? (
                   <div class="lookup-view__typegrid">
                     {typeSummary.value.map((ts) => (
-                      <div class="lookup-view__typecard" key={ts.type}>
+                      <div
+                        class="lookup-view__typecard"
+                        key={ts.type}
+                        data-hint-card={shipTypeHintCard(ts.code)}
+                      >
                         <span class="lookup-view__typecard-code">{ts.code}</span>
                         <span class="lookup-view__typecard-battles">{ts.battles.toLocaleString()}</span>
                         <span style={{ color: winrateColor(ts.winrate) }}>{ts.winrate.toFixed(1)}%</span>
@@ -1033,6 +1038,7 @@ export default defineComponent({
                         // Encyclopedia type first (the offline DB misses
                         // post-bake ships), the offline entry backfills.
                         const type = infoOf(s.shipId)?.type || off?.type || "";
+                        const badge = shipTypeBadgeShort(type || undefined, s.shipId);
                         return (
                           <div
                             class="lookup-view__ship lookup-view__ship--link"
@@ -1050,8 +1056,11 @@ export default defineComponent({
                             <span class="lookup-view__ship-ico">
                               <BattleIcon type={type} variant="white" size={18} />
                             </span>
-                            <span class="lookup-view__ship-type">
-                              {shipTypeBadgeShort(type || undefined, s.shipId)}
+                            <span
+                              class="lookup-view__ship-type"
+                              data-hint-card={shipTypeHintCard(badge)}
+                            >
+                              {badge}
                             </span>
                             <em class="lookup-view__ship-tier">
                               {off?.tier != null ? tierToRoman(off.tier) : ""}

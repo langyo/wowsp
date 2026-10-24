@@ -28,6 +28,36 @@
     "Auxiliary": "Auxiliaire",
     "Mixed": "Mixte"
   },
+  "typeInfo": {
+    "bb": {
+      "title": "Cuirassé",
+      "body": "La plateforme blindée par excellence : les plus gros canons et les salves les plus lourdes, payées par des rechargements interminables et une manœuvre poussive. Présentez la ceinture en biais pour faire ricocher les obus AP adverses et visez la citadelle au milieu de la coque ennemie pour infliger les dégâts pleins ; le HE allume des incendies et ronge les cibles inclinées. La plupart des cuirassés n'ont ni torpilles ni fumigènes : une fois repéré et focus, il souffre, et les torpilles de destroyers lui sont fatales."
+    },
+    "cv": {
+      "title": "Porte-avions",
+      "body": "Un porte-avions ne combat que par ses aéronefs : les touches 1/2/3 choisissent les avions d'attaque, les torpilleurs ou les bombardiers, et un double appui les lance ; le clic gauche ouvre la passe d'attaque, un second clic largue, W donne un boost (le moteur surchauffe) et F rappelle l'escadrille. Les groupes aériens sont limités : une DCA qui abat une escadrille emporte avec elle tous vos dégâts — frappez, puis dégagez. La coque n'a presque pas d'artillerie propre : elle survit par la distance et le couvert, et sa vraie valeur tient à la détection et à la pression sur toute la carte."
+    },
+    "ca": {
+      "title": "Croiseur lourd",
+      "body": "Un grand croiseur bâti autour de canons de 203 mm : grosse alpha et obus AP qui percent le blindage de la plupart des croiseurs, souvent avec radar ou hydroacoustique pour gagner la guerre de l'information. Plus solide qu'un croiseur léger, mais toujours vulnérable à la citadelle de près : il kite à distance et échange dans les intervalles entre les salves ennemies."
+    },
+    "cl": {
+      "title": "Croiseur léger",
+      "body": "Un canonnier rapide de 152 mm : gros DPM grâce au volume de feu et au HE, avec fumigènes, hydroacoustique et une bonne furtivité comme outils. Blindage mince et citadelle peu profonde le rendent facile à supprimer en duel rapproché : il combat depuis le couvert et les fumigènes ; face à des cibles lourdes, il mise sur les incendies et les torpilles."
+    },
+    "cruiser": {
+      "title": "Croiseur",
+      "body": "Le poids moyen : les croiseurs lourds (CA) échangent la cadence contre le poids de l'obus, les croiseurs légers (CL) la puissance contre le volume. La plupart embarquent radar ou hydroacoustique, ce qui en fait les éclaireurs de l'équipe, les chasseurs de destroyers et l'escorte antiaérienne ; faiblesse commune, un blindage mince — une salve de cuirassé peut les achever."
+    },
+    "dd": {
+      "title": "Destroyer",
+      "body": "Le couteau furtif : une silhouette minuscule, une furtivité de 5–7 km, des torpilles pour les grosses unités et des fumigènes pour décrocher. Les destroyers sont les yeux de l'équipe — ils détectent, capturent et contestent — et la classe la plus punie quand ils s'exposent : blindage en papier, aucune endurance, et le radar déchire la furtivité sur laquelle repose tout leur jeu."
+    },
+    "ss": {
+      "title": "Sous-marin",
+      "body": "L'assassin des profondeurs : les tubes avant et arrière sont son arme principale, la plupart acoustiques à tête chercheuse — faites d'abord un ping au sonar sur une cible et les torpilles se dirigent dessus (un second ping resserre l'accrochage et tient plus longtemps ; G efface la marque). C plonge et F fait surface, entre profondeur périscopique et profondeur maximale : en surface et au périscope, le canon de pont et les torpilles non guidées fonctionnent encore, tandis qu'à profondeur maximale il ne reste que les torpilles à tête chercheuse et que votre vision disparaît presque — vous combattez alors sur la détection de vos alliés. La plongée vide la batterie (elle se recharge en surface), et tout coup reçu sous l'eau endommage le circuit de carburant : refaites surface ou utilisez l'équipe de contrôle des dégâts dans les cinq secondes, sinon la fuite trahit votre position jusqu'à ce que vous remontiez."
+    }
+  },
   "filterNation": "Nation",
   "filterType": "Type",
   "tier": "Palier",

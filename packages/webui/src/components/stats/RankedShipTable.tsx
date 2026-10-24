@@ -26,6 +26,7 @@ import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { t } from "@/i18n";
+import { shipTypeHintCard } from "./shipTypeHint";
 import { useLanguage } from "@/i18n/useLanguage";
 import { leagueFromNumber, leagueTierWindow } from "@/utils/ranked";
 import { winrateColor } from "@/utils/winrate";
@@ -236,6 +237,9 @@ export default defineComponent({
                   const icon = shipIcon(meta?.type ?? "", "plain");
                   const typeKey =
                     Object.keys(TYPE_SHORT).find((k) => (meta?.type ?? "").startsWith(k)) ?? "";
+                  // Same badge vocabulary as the row text, so the hover card
+                  // explains exactly the code the pointer is over.
+                  const code = TYPE_SHORT[typeKey] ?? "?";
                   return (
                     <div class="ranked-ships__ship" key={s.shipId}>
                       <span class="ranked-ships__ship-ico">
@@ -243,7 +247,12 @@ export default defineComponent({
                           <img src={icon.src} width={22} height={22} alt="" />
                         ) : null}
                       </span>
-                      <span class="ranked-ships__ship-type">{TYPE_SHORT[typeKey] ?? "?"}</span>
+                      <span
+                        class="ranked-ships__ship-type"
+                        data-hint-card={shipTypeHintCard(code)}
+                      >
+                        {code}
+                      </span>
                       <em class="ranked-ships__ship-tier">
                         {meta?.tier ? tierToRoman(meta.tier) : ""}
                       </em>

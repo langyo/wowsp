@@ -29,6 +29,7 @@ import ShareShotButton from "@/features/share/ShareShotButton";
 import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot";
 import { useShareImage } from "@/features/share/useShareImage";
 import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
+import { shipTypeHintCard } from "@/components/stats/shipTypeHint";
 import { damageColor, prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import { tierToRoman } from "@wowsp/holo";
 import {
@@ -459,13 +460,22 @@ export default defineComponent({
                 {/* Group summary cards (compact) */}
                 {typeSummary.value.length > 0 ? (
                   <div class="dash-type-grid">
-                    {typeSummary.value.map((ts) => (
-                      <div class="dash-type-card" key={ts.type}>
-                        <span class="dash-type-card__code">{SHIP_TYPE_SHORT[ts.type] ?? "?"}</span>
-                        <span class="dash-type-card__battles">{ts.battles.toLocaleString()}</span>
-                        <span style={{ color: winrateColor(ts.winrate) }}>{ts.winrate.toFixed(1)}%</span>
-                      </div>
-                    ))}
+                    {typeSummary.value.map((ts) => {
+                      // The card carries the class briefing on the badge code
+                      // itself (see components/stats/shipTypeHint.ts).
+                      const code = SHIP_TYPE_SHORT[ts.type] ?? "?";
+                      return (
+                        <div
+                          class="dash-type-card"
+                          key={ts.type}
+                          data-hint-card={shipTypeHintCard(code)}
+                        >
+                          <span class="dash-type-card__code">{code}</span>
+                          <span class="dash-type-card__battles">{ts.battles.toLocaleString()}</span>
+                          <span style={{ color: winrateColor(ts.winrate) }}>{ts.winrate.toFixed(1)}%</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : null}
 
@@ -488,6 +498,7 @@ export default defineComponent({
                       // post-bake ships), the offline entry backfills —
                       // the same order the lookup list resolves.
                       const type = info?.type || off?.type || "";
+                      const badge = shipTypeBadgeShort(type, s.shipId);
                       return (
                         <div
                           class="dash-ship-table__row dash-ship-table__row--link"
@@ -511,8 +522,13 @@ export default defineComponent({
                             <span class="dash-ship-table__ship-ico">
                               <BattleIcon type={type} variant="white" size={18} />
                             </span>
-                            <HkTag variant="primary" size="sm" class="dash-ship-table__type-tag">
-                              {shipTypeBadgeShort(type, s.shipId)}
+                            <HkTag
+                              variant="primary"
+                              size="sm"
+                              class="dash-ship-table__type-tag"
+                              data-hint-card={shipTypeHintCard(badge)}
+                            >
+                              {badge}
                             </HkTag>
                             <em class="dash-ship-table__ship-tier">
                               {off?.tier != null ? tierToRoman(off.tier) : ""}
