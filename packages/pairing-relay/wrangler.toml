@@ -210,7 +210,12 @@ FEEDBACK_LATEST_VERSION = "0.6.6"
 # polling never-published channels burned the store's daily read
 # quota; see crates/relay-core/src/digests.rs).
 DIGEST_PUBLISHED_CHANNELS = "app"
-# ── QQ 通知机器人（可选，缺失即整链路静默停用）───────────────────────
+# ── QQ 通知机器人（FROZEN 2026-10-24，维护者决定）────────────────────
+# 官方通道对群提醒的可达性不可靠、账号风险高——整条链路（出站通知 +
+# 入站回调）由 QQBOT_NOTIFY 变量总闸控制，**本文件不设该变量 = 冻结**：
+# notify_accepted/notify_status 静默跳过，回调端点答 404（平台会自动
+# 退役 webhook）。代码与配额策略原样保留，未删除任何东西。
+# 复活：[vars] 加 QQBOT_NOTIFY = "1"，并补齐下面的凭证。
 # QQBOT_APPID / QQBOT_SECRET — 开放平台凭证（wrangler secret put）。
 # 回调验签的 Ed25519 密钥按官方方案直接从 Secret 派生（wiki
 # event-emit.html / sign.html：Secret 翻倍到 32 字节作种子），无需任何

@@ -1,6 +1,12 @@
 //! QQ 机器人接入的 worker 壳：webhook 回调（查询凭证绑定 + 进度查询）
 //! 与受理/结果通知。策略与解析都在 relay_core::qqbot；提交反馈不再要求
 //! 任何验证，绑定只服务于回访通知与查询。
+//!
+//! **FROZEN（维护者决定 2026-10-24）**：整条 QQ 机器人链路——出站通知
+//! 与入站回调——由 `QQBOT_NOTIFY` 变量总闸控制，**缺省即冻结**。原因：
+//! 官方通道对群提醒的可达性不可靠，且账号风险高。复活方式见
+//! wrangler.toml 的 QQ 配置段（设变量 + 补凭证）。代码与配额策略原样
+//! 保留，冻结不删除任何东西。
 
 use crate::feedback::{history_records, http_call, json_headers};
 use relay_core::qqbot::{self, Binding, CallbackEvent, Command};
@@ -9,6 +15,14 @@ use worker::*;
 
 const QQ_API: &str = "https://api.sgroup.qq.com";
 const QQ_TOKEN_URL: &str = "https://bots.qq.com/app/getAppAccessToken";
+
+/// The master gate (see the module banner): absent var = the whole QQ
+/// bot surface stays dormant — outbound notifications skip silently and
+/// the callback endpoint answers 404 so the platform retires the
+/// webhook. Present = the pre-freeze behavior.
+fn notify_enabled(env: &Env) -> bool {
+    env.var(qqbot::NOTIFY_ENABLED_VAR).is_ok()
+}
 
 /// AppID + Secret 就够：Ed25519 密钥按官方方案从 Secret 派生（wiki
 /// event-emit.html / sign.html），控制台不下发单独的密钥对。
@@ -129,6 +143,11 @@ async fn send_c2c(
 // ── POST /api/qqbot/callback ───────────────────────────────────────────
 
 pub async fn handle_callback(mut req: Request, env: &Env) -> Result<Response> {
+    if !notify_enabled(&env) {
+        // Frozen (see the module banner): 404 lets the platform retire
+        // the webhook instead of retrying a half-alive endpoint.
+        return Response::error("qq bot frozen", 404);
+    }
     let Some(c) = creds(&env) else {
         return Response::error("qq bot not configured", 503);
     };
@@ -402,6 +421,9 @@ async fn reply_to_command(
 
 /// 受理通知：仅私聊（月配额内的自限额）；群配额留给处理结果。
 pub async fn notify_accepted(env: &Env, contact: &str, head: &str) -> Result<()> {
+    if !notify_enabled(env) {
+        return Ok(());
+    }
     let Some(c) = creds(env) else {
         return Ok(());
     };
@@ -432,6 +454,9 @@ pub async fn notify_accepted(env: &Env, contact: &str, head: &str) -> Result<()>
 /// 处理结果通知：已开PR → 群 @（bug 修复的群内单独 at）；其余 → 私聊
 /// （无 c2c 绑定回退群 @）。
 pub async fn notify_status(env: &Env, contact: &str, status: &str, pr: &str) -> Result<()> {
+    if !notify_enabled(env) {
+        return Ok(());
+    }
     let Some(c) = creds(env) else {
         return Ok(());
     };
