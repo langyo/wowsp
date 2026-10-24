@@ -370,13 +370,11 @@ export default defineComponent({
             </div>
           </div>
         ) : phase.value === "ready" ? (
-          // footerHeight=0: the default reserves the shittim-chest
-          // status-bar band (3rem) for pages that render one — this
-          // console doesn't, so the reservation read as a dead blank
-          // strip under the content.
-          <HkAdminShell navTitle="导航" footerHeight="0px">
-            {shellSlots}
-          </HkAdminShell>
+          // No footerHeight override: the shell's band is
+          // injection-driven upstream (a filled footer slot reserves it;
+          // this console mounts no status bar), so the default already
+          // reserves nothing.
+          <HkAdminShell navTitle="导航">{shellSlots}</HkAdminShell>
         ) : null}
       </div>
     );
