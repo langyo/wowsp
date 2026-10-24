@@ -13,7 +13,7 @@ allowBuilds:
   workerd: true
 minimumReleaseAgeExclude:
   - '@lucide/vue@1.38.0'
-  - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74 || 0.55.75 || 0.55.128 || 0.55.131 || 0.55.133 || 0.55.176 || 0.55.177 || 0.55.182 || 0.55.191 || 0.55.193'
+  - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74 || 0.55.75 || 0.55.128 || 0.55.131 || 0.55.133 || 0.55.176 || 0.55.177 || 0.55.182 || 0.55.191 || 0.55.193 || 0.55.202'
   - '@celestia-island/tairitsu-transport@0.1.0'
   # Patched versions of the 2026-10 dev-toolchain advisories (undici/sharp/
   # brace-expansion) are younger than the minimum-release-age window.
@@ -22,8 +22,7 @@ minimumReleaseAgeExclude:
   # until the braces maintainer ships a release; no override is possible.
   - undici@7.29.1
   - sharp@0.35.5
-  - brace-expansion@2.1.7
-  - brace-expansion@5.0.12
+  - brace-expansion@2.1.7 || 5.0.12
 overrides:
   # All override values are coarse carets (repo policy: ^MAJOR, or ^0.MINOR
   # on 0.x lines) so resolution always tracks the newest release. The

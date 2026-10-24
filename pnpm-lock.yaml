@@ -45,7 +45,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55
-        version: 0.55.193(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.202(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -94,7 +94,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55
-        version: 0.55.193(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.202(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -134,7 +134,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55
-        version: 0.55.193(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.202(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -333,8 +333,8 @@ packages:
     resolution: {integrity: sha512-c+xgSWboV2pdwXP67BUWDVRHi2BO5Q3KwxyFVs7taVTY+fsK47/L51ZXQoV9rozHJDNHvJ4v4WEsI/IlxV2l2A==}
     engines: {node: ^22.18.0 || >=24.11.0}
 
-  '@celestia-island/hikari@0.55.193':
-    resolution: {integrity: sha512-AHGo6tfiJ8RLqfjKf+XEHXJtPZvTyN5DTxcYk6VLs+rYcZNmao9ZkL5Nm9PYnsVwWgjVTnrzLt73WEk3BPoIlA==}
+  '@celestia-island/hikari@0.55.202':
+    resolution: {integrity: sha512-CZ7e8ALTVI5Req4CEzPms4IEH9nSQwHH7aJG1GdsLoeRMuhrJAY8XWN4f3GL0QFszSOxUH6Zy+kt1nEnau5bCw==}
     peerDependencies:
       '@types/three': ^*
       three: ^0.185
@@ -3309,7 +3309,7 @@ snapshots:
       '@babel/helper-string-parser': 8.0.6
       '@babel/helper-validator-identifier': 8.0.6
 
-  '@celestia-island/hikari@0.55.193(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.202(@types/three@0.185.4)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.185.4
@@ -3324,7 +3324,7 @@ snapshots:
       three: 0.185.1
       vue: 3.5.43(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.193(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.202(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.185.4
