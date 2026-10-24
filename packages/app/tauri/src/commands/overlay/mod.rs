@@ -277,6 +277,14 @@ const TAB_STORE_MIN_HOLD: Duration = Duration::from_millis(1200);
 /// chip misplacement to seconds while adding no work when the overlay is
 /// hidden.
 const ANCHOR_REVALIDATE_INTERVAL: Duration = Duration::from_secs(5);
+/// The SLOWED revalidation cadence for CERTIFIED geometry (overlay review
+/// H-1): certification used to stand the periodic arm down entirely, so a
+/// right-band/wrong-GRID cache (the band verify passes, the rows below it
+/// sit elsewhere) misaligned chips for a whole battle with no self-heal.
+/// Certified entries now re-detect once a minute instead of never — the
+/// steady-state cost is one capture+detect per minute while Tab is held,
+/// and a grid drift heals within that bound.
+const CERTIFIED_REVALIDATE_INTERVAL: Duration = Duration::from_secs(60);
 /// A capture is only attempted while the most recent battle roster
 /// (tempArenaInfo.json mtime) is younger than this — Tab in port or long
 /// after a battle stays a no-op.

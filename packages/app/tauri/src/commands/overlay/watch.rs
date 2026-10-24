@@ -501,19 +501,27 @@ pub(super) fn live_calibration_key(
 }
 
 /// Pure cadence decision for the pinned-anchor revalidation (unit-tested).
-/// Two arms:
+/// Three arms:
 ///
 /// - FORCED (`last == None` — the cache was just dropped): always run. A
 ///   certified geometry must still heal itself when the sink probe's band
 ///   gate proves the table moved.
-/// - PERIODIC (5 s cadence): skipped while the geometry is CERTIFIED
-///   stable (see `calibration.rs`) — this is the "stop re-detecting once
-///   several consecutive Tab presses agreed" contract; an uncertified
-///   geometry keeps the historical watchdog cadence.
+/// - PERIODIC (5 s cadence): the historical watchdog while the geometry
+///   is NOT yet certified.
+/// - PERIODIC-SLOW (60 s cadence): once CERTIFIED stable the watchdog
+///   slows down instead of standing down (review H-1) — a grid-level
+///   drift the band verify cannot see still heals within a minute.
 pub(super) fn revalidate_due(last: Option<Instant>, certified: bool, now: Instant) -> bool {
     match last {
         None => true,
-        Some(at) => !certified && now.duration_since(at) >= ANCHOR_REVALIDATE_INTERVAL,
+        Some(at) => {
+            let interval = if certified {
+                super::CERTIFIED_REVALIDATE_INTERVAL
+            } else {
+                ANCHOR_REVALIDATE_INTERVAL
+            };
+            now.duration_since(at) >= interval
+        },
     }
 }
 

@@ -51,6 +51,10 @@ pub(super) fn compute_anchor(
     let cal_key = super::watch::live_calibration_key(fsm, game);
     let mut verify_missed = false;
     let mut band_verified = false;
+    // Grid-probe miss on an otherwise band-verified frame (review H-1):
+    // set inside the cache block, acted on after it (the cache borrow
+    // must end before the retire mutates the FSM).
+    let mut grid_missed = false;
     // Set when this frame has ALREADY been proven table-bearing by a full
     // header scan (the early cache retire below) — the scene gate reuses it
     // instead of scanning the same frame twice.
@@ -73,9 +77,23 @@ pub(super) fn compute_anchor(
             break 'cache None;
         }
         if overlay_detect::verify_header_band(&rgba, w, h, &cache.band) {
+            profile_eff = cache.profile;
+            // GRID probe (overlay review H-1): the band verify only proves
+            // the HEADER is where the cache says — the rows below are what
+            // the chips anchor to. A band-right/grid-wrong cache (manual
+            // calibration off by rows, a client UI tweak) used to pass
+            // every verify and vote itself stable; retire it now and
+            // detect on THIS frame (the band IS on frame, so this is the
+            // self-heal the three-miss counter was too slow to deliver).
+            if !overlay_detect::verify_row_grid(&rgba, w, h, &cache.roster) {
+                tracing::info!(
+                    "header band verified but the row grid probe missed — roster geometry cache retired"
+                );
+                grid_missed = true;
+                break 'cache None;
+            }
             fsm.geometry_verify_fails = 0;
             band_verified = true;
-            profile_eff = cache.profile;
             if cache.team_sizes == team_sizes {
                 break 'cache Some(cache.roster.clone());
             }
@@ -159,6 +177,18 @@ pub(super) fn compute_anchor(
         }
         break 'cache None;
     };
+    if grid_missed {
+        // The band verified but the row grid did not (review H-1): retire
+        // the cache and the calibration vote it kept earning, then detect
+        // on THIS frame (the band is on frame — `frame_carries_table`
+        // lets the scene gate's scan run without re-proving the table).
+        fsm.geometry_cache = None;
+        fsm.geometry_verify_fails = 0;
+        if let Some(k) = cal_key.as_ref() {
+            fsm.calibration.note_unstable(k);
+        }
+        frame_carries_table = true;
+    }
     if verify_missed {
         // Band verify missed AND the frame carries no table anywhere: skip
         // BOTH the gate's full scans and the detection for THIS frame — the
@@ -170,10 +200,11 @@ pub(super) fn compute_anchor(
         // overlay for the whole miss budget.)
         return None;
     }
-    // A frame that verified the cached band is a STABLE press for the
-    // calibration store: one vote per Tab press episode, and after
-    // `STABLE_PRESSES_TO_CERTIFY` agreeing presses the entry is certified
-    // and the watcher's periodic revalidations stand down.
+    // A frame that verified the cached band AND its row grid is a STABLE
+    // press for the calibration store: one vote per Tab press episode,
+    // and after `STABLE_PRESSES_TO_CERTIFY` agreeing presses the entry
+    // is certified and the watcher's periodic revalidation slows to the
+    // certified cadence (never stands down — see H-1).
     if band_verified {
         if let Some(k) = cal_key.as_ref() {
             fsm.calibration.note_stable(k);
