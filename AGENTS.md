@@ -93,9 +93,11 @@ of improvising a launch.
 
 Every unit of work follows this pattern:
 
-1. **Branch off master** (`feat/<name>` / `fix/<name>`). For parallel tasks
-   use separate `git worktree`s so multiple agents never mutate the main
-   checkout at once.
+1. **Branch off master in a dedicated `git worktree`** (`<type>/<name>`
+   per §4): the worktree workflow below is the DEFAULT route for
+   every unit of work — the main checkout never leaves master, and
+   parallel tasks each get their own worktree so they never mutate the
+   main checkout at once.
 2. **3-round verification loop**, for every change:
    - Round 1: analyze → improve → verify (use a subagent for verification)
    - Round 2: analyze again → improve → verify
@@ -122,9 +124,11 @@ Every unit of work follows this pattern:
 
 ### Worktree-based PR workflow
 
-The main checkout stays on master. Use a separate `git worktree` whenever
-there are parallel tasks, or the task could interfere with the main
-checkout's build state:
+The main checkout stays on master. **Every unit of work uses its own
+`git worktree` by default** — opening the branch and the PR from a
+worktree is the standard route, not an opt-in for special cases (parallel
+tasks each get their own, which also keeps them from mutating the main
+checkout or disturbing its build state):
 
 1. **Create**: `git worktree add ../<repo>-wt-<task> -b <type>/<name>
    master` — sibling directory, `-wt-` prefix naming (e.g.
