@@ -4,6 +4,10 @@ packages:
   - 'packages/holo'
   - 'packages/pairing-relay'
   - 'packages/console'
+# pnpm 11's release-age cutoff is only active once the base is set explicitly;
+# `minimumReleaseAgeExclude` below is ignored wholesale without it, so the
+# family-package exemptions listed there would never apply (frontend-pnpm).
+minimumReleaseAge: 1440
 allowBuilds:
   '@parcel/watcher': true
   esbuild: true
