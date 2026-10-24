@@ -715,10 +715,12 @@ fn acquisition_retry_is_short_only_while_the_hold_is_young() {
 /// The pinned-anchor revalidation cadence under the calibration contract:
 /// a FORCED pass (the cache was just dropped — `None`) always runs, even
 /// over a certified geometry (the sink probe's band gate must be able to
-/// heal a genuinely moved table), while the PERIODIC 5 s arm stands down
-/// once the geometry is certified stable — and only then.
+/// heal a genuinely moved table); the PERIODIC 5 s arm runs while
+/// uncertified, and CERTIFICATION SLOWS it to a 60 s cadence instead of
+/// standing it down (review H-1: a grid drift the band verify cannot see
+/// must still self-heal).
 #[test]
-fn revalidation_stands_down_only_when_certified() {
+fn revalidation_slows_but_never_stands_down_when_certified() {
     let now = Instant::now();
     // Forced: always due, certified or not.
     assert!(watch::revalidate_due(None, false, now));
@@ -727,11 +729,15 @@ fn revalidation_stands_down_only_when_certified() {
     let young = now - ANCHOR_REVALIDATE_INTERVAL / 2;
     assert!(!watch::revalidate_due(Some(young), false, now));
     assert!(!watch::revalidate_due(Some(young), true, now));
-    // Mature pass: due while uncertified (the historical watchdog), stood
-    // down once certified.
+    // Mature pass: due while uncertified (the historical watchdog), NOT
+    // yet due once certified (the slow cadence has not elapsed).
     let mature = now - ANCHOR_REVALIDATE_INTERVAL;
     assert!(watch::revalidate_due(Some(mature), false, now));
     assert!(!watch::revalidate_due(Some(mature), true, now));
+    // Slow cadence elapsed: due even when certified.
+    let slow = now - CERTIFIED_REVALIDATE_INTERVAL;
+    assert!(watch::revalidate_due(Some(slow), true, now));
+    assert!(watch::revalidate_due(Some(slow), false, now));
 }
 
 /// The aim card's placement math: centered on the game window, hanging the

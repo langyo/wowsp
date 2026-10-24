@@ -152,6 +152,7 @@ pub(crate) use band::{
 pub(crate) use profile::DetectProfile;
 pub(crate) use roster::{
     DetectedRoster, detect_roster, detect_roster_with_band, resolve_wg_strip_profile,
+    verify_row_grid,
 };
 pub(crate) use scene::{detect_battle_scene, probe_battle_scene};
 pub(crate) use strip::{

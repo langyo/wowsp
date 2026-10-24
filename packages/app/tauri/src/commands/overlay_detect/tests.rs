@@ -110,11 +110,77 @@ fn synth_table(
     (img, rect, centers)
 }
 
-/// Lesta (Мир кораблей) scoreboard synth: proportions measured on a real
-/// 3072x1920 capture — bars ~26% of the width each with a ~9.5% center
-/// seam (WG: ~18-20% bars, ~3% seam), rows exactly one bar-height apart
-/// (pitch factor 1.00; WG 0.92), and BOTH name columns left-aligned in
-/// their panels (WG's enemy names right-align).
+/// Overlay review H-1: the cache-reuse GRID probe. The header band may
+/// verify while the row grid below it sits elsewhere — the probe must
+/// accept a frame whose nickname text sits AT the cached centers and
+/// refuse one whose cached centers sit half a row below the text (the
+/// exact band-right/grid-wrong shape that used to misalign chips all
+/// battle). Hand-built frame (dark table background + white name text)
+/// so the probe's text-white gate sees ONLY the text — the shared synth
+/// fixtures' 125–175 gray noise would bleed past the ≥170 threshold.
+#[test]
+fn verify_row_grid_accepts_aligned_and_rejects_shifted_grid() {
+    let (w, h) = (400u32, 300u32);
+    let put = |img: &mut Vec<u8>, x: u32, y: u32, (r, g, b): (u8, u8, u8)| {
+        let i = ((y * w + x) * 4) as usize;
+        img[i] = r;
+        img[i + 1] = g;
+        img[i + 2] = b;
+    };
+    // Table: 300px wide at x=50, rows every 20px starting y=60.
+    let rect = Rect {
+        x: 50,
+        y: 40,
+        width: 300,
+        height: 200,
+    };
+    let centers: Vec<i32> = (0..6).map(|k| 60 + 20 * k).collect();
+    let mut img = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            put(&mut img, x, y, (26, 30, 26)); // dark panel
+        }
+    }
+    for &c in &centers {
+        for dy in 0..8 {
+            for x in rect.x as u32 + 20..rect.x as u32 + 120 {
+                put(&mut img, x, (c + dy) as u32, (236, 236, 236));
+            }
+        }
+    }
+    let roster = DetectedRoster {
+        rect: Rect {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        },
+        row_centers: centers.clone(),
+        team_split: 0.5,
+    };
+    assert!(
+        verify_row_grid(&img, w, h, &roster),
+        "a frame whose rows sit at the cached centers must verify"
+    );
+    // The CACHED grid claims every row sits 12px lower than the text —
+    // the self-hardening shape: band right, rows wrong.
+    let shifted = DetectedRoster {
+        rect: roster.rect.clone(),
+        row_centers: centers.iter().map(|&c| c + 12).collect(),
+        team_split: 0.5,
+    };
+    assert!(
+        !verify_row_grid(&img, w, h, &shifted),
+        "a cached grid half a pitch off the text must be refused"
+    );
+    // Degenerate: an empty roster never verifies.
+    let empty = DetectedRoster {
+        rect: roster.rect,
+        row_centers: Vec::new(),
+        team_split: 0.5,
+    };
+    assert!(!verify_row_grid(&img, w, h, &empty));
+}
 fn synth_lesta_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
     let mut img = vec![0u8; (w * h * 4) as usize];
     let mut noise = Noise(0x9abC_def0);

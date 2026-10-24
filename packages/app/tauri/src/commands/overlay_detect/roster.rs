@@ -451,3 +451,62 @@ pub(crate) fn finish_roster(
         team_split,
     }
 }
+
+/// Cache-reuse GRID probe (overlay review H-1): `verify_header_band`
+/// proves the header still sits at the cached spot, but the ROW GRID
+/// below it is what the chips anchor to — a right-band/wrong-grid cache
+/// (a manual calibration off by rows, a client UI tweak) used to pass
+/// every band verify while CERTIFIED geometry had stopped re-detecting
+/// entirely, so the misalignment hardened itself for a whole battle.
+///
+/// The probe samples a spread of the cached row centers in the NICKNAME
+/// column (left ~35% of the table, inset past the header bar) and
+/// requires white-ish text pixels in at least half the sampled rows —
+/// the exact row signature the full detector keys on. Native-resolution
+/// sampling (a strided handful of rows; no downscale pass), so it stays
+/// cheap next to the band verify it accompanies.
+pub(crate) fn verify_row_grid(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    roster: &DetectedRoster,
+) -> bool {
+    if roster.row_centers.is_empty() || roster.rect.width <= 0 {
+        return false;
+    }
+    // Name-column window: 10%–35% across the table (the bar edge itself
+    // and the far stat columns are not nickname text).
+    let x0 = (roster.rect.x as i64 + roster.rect.width as i64 / 10).max(0);
+    let x1 = (roster.rect.x as i64 + roster.rect.width as i64 * 35 / 100)
+        .min(width as i64 - 1)
+        .max(x0 + 1);
+    // Sample at most 6 rows, evenly spread across the grid.
+    let step = roster.row_centers.len().div_ceil(6).max(1);
+    let sampled: Vec<i32> = roster.row_centers.iter().step_by(step).copied().collect();
+    let mut hits = 0usize;
+    for &y in &sampled {
+        if y < 0 || y as u32 >= height {
+            continue;
+        }
+        let y = y as u32;
+        let mut white = 0usize;
+        let mut x = x0 as u32;
+        while x <= x1 as u32 {
+            let i = ((y * width + x) * 4) as usize;
+            if i + 2 < rgba.len() {
+                let (r, g, b) = (rgba[i] as i16, rgba[i + 1] as i16, rgba[i + 2] as i16);
+                if is_text_white(r, g, b) {
+                    white += 1;
+                }
+            }
+            x += 2;
+        }
+        if white >= 2 {
+            hits += 1;
+        }
+    }
+    // Empty-name rows do not exist (every row is a player), but antialias
+    // straddling can dim one row's text: half the sampled rows hitting
+    // keeps the pass robust without re-opening the self-hardening hole.
+    hits * 2 >= sampled.len() && hits > 0
+}
