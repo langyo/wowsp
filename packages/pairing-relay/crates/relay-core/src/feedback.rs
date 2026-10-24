@@ -39,6 +39,22 @@ pub const STATUS_NEW: &str = "待审查";
 /// Every status the /erp console may set on a record.
 pub const STATUSES: &[&str] = &["待审查", "已确认", "已开PR", "无需修复", "需补充"];
 
+/// Read one field off the Feishu Bitable SINGLE-RECORD envelope family
+/// (create / single-get / public-history responses all share it): the
+/// record wraps under `/data/record`, so a field lives at
+/// `/data/record/fields/<name>`.
+///
+/// Pins the #1351 fix: `record_contact` (the console update flow's
+/// notification routing) used to read the TOP-LEVEL `/fields/<name>`,
+/// which never exists on this envelope — the lookup returned None for
+/// every record and `notify_status` never routed a single follow-up
+/// notification. The sibling witnesses are the submit flow's
+/// `/data/record/record_id` parse and the public history walk — both
+/// production-proven against the same envelope shape.
+pub fn record_field<'a>(v: &'a Value, field: &str) -> Option<&'a Value> {
+    v.pointer(&format!("/data/record/fields/{field}"))
+}
+
 // ── limits ─────────────────────────────────────────────────────────────
 
 pub const DESC_MAX: usize = 5_000;
@@ -479,6 +495,46 @@ pub fn urlencode(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The single-record envelope family, pinned (see [`record_field`]):
+    /// the field read must hit `/data/record/fields/<name>`, the submit
+    /// flow's record_id parse must hit the same record object, and the
+    /// OLD top-level `/fields/<name>` shape must keep MISSING — that
+    /// miss is exactly the #1351 regression being guarded against.
+    #[test]
+    fn single_record_envelope_field_read_is_pinned() {
+        let v = json!({
+            "code": 0,
+            "msg": "success",
+            "data": {
+                "record": {
+                    "record_id": "recWOWSP1351",
+                    "fields": {
+                        "联系方式": [{ "text": "13800000000" }],
+                        "处理状态": "已开PR"
+                    }
+                }
+            }
+        });
+        // The contact read the notification routing keys on.
+        let contact = record_field(&v, F_CONTACT).and_then(Value::as_array);
+        assert_eq!(
+            contact.and_then(|a| a.first()).and_then(|t| t.get("text")),
+            Some(&json!("13800000000"))
+        );
+        // Family witness: submit parses the record id off the SAME record.
+        assert_eq!(
+            v.pointer("/data/record/record_id"),
+            Some(&json!("recWOWSP1351"))
+        );
+        // The pre-fix shape (fields at the top level) never exists on
+        // this envelope — a read there must stay None forever.
+        assert!(v.pointer(&format!("/fields/{F_CONTACT}")).is_none());
+        // Missing record / missing field degrade to None (the caller
+        // skips the notification rather than guessing).
+        assert!(record_field(&v, "不存在的字段").is_none());
+        assert!(record_field(&json!({ "code": 0, "data": {} }), F_CONTACT).is_none());
+    }
 
     fn sample() -> Submission {
         Submission {
