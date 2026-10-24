@@ -1116,6 +1116,7 @@ mod tests {
     fn empty_decode() -> DecodedReplay {
         DecodedReplay {
             recorder_ship: None,
+            zone_entity_type: 14,
             cruise: Vec::new(),
             smoke_screens: Vec::new(),
             recorder_vehicle: None,
