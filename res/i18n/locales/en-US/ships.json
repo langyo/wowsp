@@ -28,6 +28,36 @@
     "Auxiliary": "Auxiliary",
     "Mixed": "Mixed"
   },
+  "typeInfo": {
+    "bb": {
+      "title": "Battleship",
+      "body": "The armoured gun platform: the largest guns and the hardest single hits, paid for with long reloads and sluggish handling. Angle your belt so incoming AP bounces, and aim at an enemy's midships citadel to get full damage; HE starts fires and grinds down angled targets. Most battleships carry no torpedoes and no smoke, so she suffers once spotted and focused, and destroyer torpedoes are lethal."
+    },
+    "cv": {
+      "title": "Aircraft Carrier",
+      "body": "A carrier fights entirely through her aircraft: keys 1/2/3 pick attack aircraft, torpedo bombers or bombers, and double-tapping launches them; left-click opens the attack run, a second click drops, W boosts (the engine overheats) and F recalls the squadron. Air groups are finite — flak that wipes a squadron takes all your damage with it — so strike and leave. The hull has almost no guns of her own: she survives on distance and cover, and her real value is spotting and cross-map pressure."
+    },
+    "ca": {
+      "title": "Heavy Cruiser",
+      "body": "A large cruiser built around 203 mm-class guns: heavy alpha and AP that punches through most cruiser armour, usually with radar or hydroacoustics to win the information fight. Tougher than a light cruiser but still citadel-vulnerable up close, so she kites at range and trades in the gaps between enemy salvos."
+    },
+    "cl": {
+      "title": "Light Cruiser",
+      "body": "A rapid-fire 152 mm gunboat: high damage per minute from volume of fire and HE, with smoke, hydroacoustics and good concealment as her tools. Thin armour and a shallow citadel make her easy to delete in a close-range duel, so she fights from cover and smoke; against heavy targets she leans on fires and torpedoes."
+    },
+    "cruiser": {
+      "title": "Cruiser",
+      "body": "The middleweight: heavy cruisers (CA) trade rate of fire for shell weight, light cruisers (CL) trade punch for volume. Most carry radar or hydroacoustics, making them the team's scouts, destroyer hunters and anti-air escort; the shared weakness is thin armour — one battleship salvo can end them."
+    },
+    "dd": {
+      "title": "Destroyer",
+      "body": "The stealth knife-fighter: a tiny silhouette, 5–7 km concealment, torpedoes for capital ships and smoke to disengage. Destroyers are the team's eyes — they spot, cap and contest — and the class most punished when overexposed: paper armour, no staying power, and radar strips away the concealment the whole playstyle rests on."
+    },
+    "ss": {
+      "title": "Submarine",
+      "body": "The underwater assassin: the bow and stern torpedo tubes are her main battery, most of them acoustic homing — ping a target with sonar first and the torpedoes steer onto it (a second ping tightens the homing and lasts longer; G clears the mark). C dives and F surfaces, moving between periscope depth and maximum depth: at surface and periscope depth the deck gun and unguided torpedoes still work, while at maximum depth only homing torpedoes remain and your own vision is nearly gone, so you fight on teammates' spotting. Diving drains the battery (it recharges on the surface), and a hit while submerged starts an oil leak unless you surface or use Damage Control within about five seconds — after that the spill itself betrays your position until you surface."
+    }
+  },
   "filterNation": "Nation",
   "filterType": "Type",
   "tier": "Tier",

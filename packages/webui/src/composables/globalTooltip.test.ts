@@ -121,6 +121,29 @@ describe("hintCardFrom branch-feature fields", () => {
   });
 });
 
+describe("hintCardFrom briefing paragraph", () => {
+  it("keeps a trimmed body and preserves its internal newlines", () => {
+    expect(hintCardFrom({ title: "潜艇", body: "  C 下潜，F 上浮。\n\n下潜会消耗电池。  " })).toEqual({
+      title: "潜艇",
+      body: "C 下潜，F 上浮。\n\n下潜会消耗电池。",
+    });
+  });
+
+  it("drops blank and non-string bodies", () => {
+    expect(hintCardFrom({ title: "潜艇", body: "   " })).toEqual({ title: "潜艇" });
+    expect(hintCardFrom({ title: "潜艇", body: 42 })).toEqual({ title: "潜艇" });
+    expect(hintCardFrom({ title: "潜艇", body: ["a"] })).toEqual({ title: "潜艇" });
+  });
+
+  it("keeps the white-glyph marker channel apart from the plain icon", () => {
+    expect(
+      hintCardFrom({ title: "潜艇", markerUrl: "/m.webp", iconUrl: "/i.webp" }),
+    ).toEqual({ title: "潜艇", markerUrl: "/m.webp", iconUrl: "/i.webp" });
+    expect(hintCardFrom({ title: "潜艇", markerUrl: "  " })).toEqual({ title: "潜艇" });
+    expect(hintCardFrom({ title: "潜艇", markerUrl: 7 })).toEqual({ title: "潜艇" });
+  });
+});
+
 describe("hintCardFrom row chips", () => {
   it("keeps validated good/bad chips and drops the blank value", () => {
     const card = hintCardFrom({

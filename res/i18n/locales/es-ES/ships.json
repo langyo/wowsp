@@ -28,6 +28,36 @@
     "Auxiliary": "Auxiliar",
     "Mixed": "Mixto"
   },
+  "typeInfo": {
+    "bb": {
+      "title": "Acorazado",
+      "body": "La plataforma artillera blindada: los cañones más grandes y los impactos individuales más duros, pagados con recargas eternas y una maniobra torpe. Inclina el cinturón para que los AP enemigos reboten y apunta a la ciudadela del centro de la eslora enemiga para hacer daño completo; el HE provoca incendios y desgasta a los objetivos angulados. La mayoría de los acorazados no lleva torpedos ni humo: sufre en cuanto lo detectan y lo enfocan, y los torpedos de los destructores son letales para él."
+    },
+    "cv": {
+      "title": "Portaaviones",
+      "body": "El portaaviones lucha únicamente con sus aeronaves: las teclas 1/2/3 eligen aviones de ataque, torpederos o bombarderos, y una doble pulsación los lanza; el clic izquierdo abre la pasada de ataque, un segundo clic suelta, W da un impulso (el motor se sobrecalienta) y F reclama la escuadrilla. Los grupos aéreos son finitos: una antiaérea que derriba una escuadrilla se lleva consigo todo tu daño, así que ataca y vete. El casco apenas tiene artillería propia: sobrevive a base de distancia y cobertura, y su verdadero valor es descubrir y presionar por todo el mapa."
+    },
+    "ca": {
+      "title": "Crucero pesado",
+      "body": "Un crucero grande construido en torno a cañones de 203 mm: gran alfa y AP que perfora el blindaje de la mayoría de los cruceros, normalmente con radar o hidroacústica para ganar la guerra de la información. Más duro que un crucero ligero, pero todavía vulnerable a la ciudadela de cerca: hace kiting a distancia e intercambia golpes en los huecos entre las salvas enemigas."
+    },
+    "cl": {
+      "title": "Crucero ligero",
+      "body": "Un cañonero rápido de 152 mm: alto daño por minuto a base de volumen de fuego y HE, con humo, hidroacústica y una gran ocultación como herramientas. El blindaje fino y una ciudadela poco profunda lo hacen fácil de borrar en un duelo a corta distancia: pelea desde coberturas y humo, y contra objetivos duros se apoya en incendios y torpedos."
+    },
+    "cruiser": {
+      "title": "Crucero",
+      "body": "El peso medio: los cruceros pesados (CA) cambian cadencia por peso de proyectil, los ligeros (CL) potencia por volumen de fuego. La mayoría lleva radar o hidroacústica, lo que los convierte en los ojos del equipo, cazadores de destructores y escolta antiaérea; su debilidad común es el blindaje fino: una salva de acorazado puede acabar con ellos."
+    },
+    "dd": {
+      "title": "Destructor",
+      "body": "El cuchillo sigiloso: una silueta diminuta, una detección de 5–7 km, torpedos para los grandes buques y humo para desengancharse. Los destructores son los ojos del equipo —detectan, capturan y disputan— y la clase más castigada cuando se sobreexpone: blindaje de papel, sin aguante, y el radar le quita la ocultación en la que se apoya todo su estilo de juego."
+    },
+    "ss": {
+      "title": "Submarino",
+      "body": "El asesino sumergido: los tubos de proa y popa son su arma principal, la mayoría acústicos autoguiados —lanza primero un ping de sonar sobre el objetivo y los torpedos se dirigirán a él (un segundo ping estrecha el guiado y dura más; G borra la marca). C sumerge y F emerge, entre profundidad periscópica y máxima: en superficie y a profundidad periscópica el cañón de cubierta y los torpedos sin guiar siguen funcionando, mientras que a profundidad máxima solo quedan los torpedos de guiado y tu visión casi desaparece, así que peleas con lo que detectan tus aliados. Sumergirse gasta la batería (que se recarga en superficie), y cualquier impacto bajo el agua daña el circuito de combustible: emerge o usa el equipo de control de daños en unos cinco segundos y no habrá fuga; si no, el combustible delata tu posición hasta que emerjas."
+    }
+  },
   "filterNation": "Nación",
   "filterType": "Tipo",
   "tier": "Nivel",

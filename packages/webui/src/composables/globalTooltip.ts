@@ -73,10 +73,20 @@ export interface HintCard {
   badge?: string;
   /** Decorative head icon (ship-class art); alt stays empty. */
   iconUrl?: string;
+  /** Head glyph from the game's battle HUD whose art is WHITE by design (the
+   *  minimap ship markers). It is painted onto a dark plate because a white
+   *  glyph would vanish on the light popup background — use `iconUrl` for
+   *  ordinary colored art. */
+  markerUrl?: string;
   /** Identity line under the head ("日本 · 战列舰"). */
   subtitle?: string;
   /** Small flag image leading the subtitle line. */
   subtitleFlagUrl?: string;
+  /** Long-form briefing paragraph under the identity line — what the entity
+   *  IS and how it is played (the water-table ship-class cards). Kept plain
+   *  text; the leading/trailing whitespace is trimmed, internal newlines are
+   *  preserved and rendered as line breaks. */
+  body?: string;
   /** Small feature icons under the identity line (tech-tree branches). */
   icons?: string[];
   /** Parameter rows under an optional hairline divider. */
@@ -94,6 +104,7 @@ export function hintCardFrom(parsed: unknown): HintCard | null {
   const card: HintCard = { title: o.title };
   if (typeof o.badge === "string" && o.badge.trim() !== "") card.badge = o.badge;
   if (typeof o.iconUrl === "string" && o.iconUrl.trim() !== "") card.iconUrl = o.iconUrl;
+  if (typeof o.markerUrl === "string" && o.markerUrl.trim() !== "") card.markerUrl = o.markerUrl;
   if (typeof o.subtitle === "string" && o.subtitle.trim() !== "") card.subtitle = o.subtitle;
   if (typeof o.subtitleFlagUrl === "string" && o.subtitleFlagUrl.trim() !== "") {
     card.subtitleFlagUrl = o.subtitleFlagUrl;
@@ -104,6 +115,7 @@ export function hintCardFrom(parsed: unknown): HintCard | null {
     );
     if (icons.length > 0) card.icons = icons.slice(0, 6);
   }
+  if (typeof o.body === "string" && o.body.trim() !== "") card.body = o.body.trim();
   if (typeof o.note === "string" && o.note.trim() !== "") card.note = o.note;
   if (Array.isArray(o.rows)) {
     const rows = o.rows.filter((raw): raw is HintCardRow => {
@@ -189,6 +201,18 @@ function renderCard(card: HintCard): HTMLElement {
 
   const head = document.createElement("div");
   head.className = "global-tooltip__card-head";
+  // A white HUD glyph needs its own plate to survive the light popup — see
+  // HintCard.markerUrl.
+  if (card.markerUrl) {
+    const plate = document.createElement("span");
+    plate.className = "global-tooltip__card-marker";
+    const marker = document.createElement("img");
+    marker.src = card.markerUrl;
+    marker.alt = "";
+    marker.draggable = false;
+    plate.appendChild(marker);
+    head.appendChild(plate);
+  }
   if (card.iconUrl) {
     const icon = document.createElement("img");
     icon.className = "global-tooltip__card-icon";
@@ -224,6 +248,15 @@ function renderCard(card: HintCard): HTMLElement {
     text.textContent = card.subtitle;
     sub.appendChild(text);
     root.appendChild(sub);
+  }
+
+  // The briefing paragraph sits above the parameter rows: identity line,
+  // then prose, then the numbers it explains.
+  if (card.body) {
+    const body = document.createElement("div");
+    body.className = "global-tooltip__card-body";
+    body.textContent = card.body;
+    root.appendChild(body);
   }
 
   if (card.icons && card.icons.length > 0) {
@@ -448,9 +481,12 @@ export function installGlobalTooltip(): void {
     const card = cardFor(anchor);
     if (card) {
       popup.classList.add("global-tooltip--card");
+      // Prose cards need a reading measure wider than the parameter cards'
+      // 300px cap (see globalTooltip.scss).
+      popup.classList.toggle("global-tooltip--paragraph", card.body != null);
       content.replaceChildren(renderCard(card));
     } else {
-      popup.classList.remove("global-tooltip--card");
+      popup.classList.remove("global-tooltip--card", "global-tooltip--paragraph");
       const text = overflowText ?? anchor.dataset.hint;
       if (!text) {
         hideNow();

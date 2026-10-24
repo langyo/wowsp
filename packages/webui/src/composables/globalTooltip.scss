@@ -92,6 +92,14 @@
   padding: 10px 12px;
 }
 
+/* Prose cards (a card carrying a `body` briefing — the water-table ship-class
+   hover cards): the parameter cards' 300px measure wraps a sentence into a
+   narrow column, so a paragraph card widens to a reading width instead. Both
+   classes sit on the popup, so this later rule wins over the 300px cap. */
+.global-tooltip--paragraph {
+  max-width: 380px;
+}
+
 .global-tooltip__card {
   display: flex;
   flex-direction: column;
@@ -109,6 +117,28 @@
   flex-shrink: 0;
   width: 20px;
   height: 20px;
+}
+
+/* White HUD glyphs (HintCard.markerUrl — the minimap ship markers) sit on a
+   slate plate: the popup is white in the light palette and #4b4b4b in the
+   dark one, and the game's marker art is pure white, so it needs a contrast
+   carrier in both. Fixed ink, like the HUD it comes from. */
+.global-tooltip__card-marker {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  background: #2b3036;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 14%);
+
+  img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+  }
 }
 
 .global-tooltip__card-title {
@@ -145,6 +175,16 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+/* The briefing paragraph: same secondary ink as the card's other prose
+   fields, calmer line rhythm than the parameter rows, and the supplied
+   newlines preserved (a card may split its briefing into stanzas). */
+.global-tooltip__card-body {
+  color: #3f3f3f;
+  font-size: var(--text-2xs);
+  line-height: 1.65;
+  white-space: pre-line;
 }
 
 .global-tooltip__card-flag {
@@ -242,6 +282,18 @@
 
   .global-tooltip__card-row-label {
     color: #cfcfcf;
+  }
+
+  .global-tooltip__card-marker {
+    /* The dark popup is #4b4b4b, so the light palette's slate plate loses
+       its edge — go a shade deeper and lift the hairline to keep the chip
+       readable while the glyph stays white. */
+    background: #171b20;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 22%);
+  }
+
+  .global-tooltip__card-body {
+    color: #d8d8d8;
   }
 
   .global-tooltip__card-note {
