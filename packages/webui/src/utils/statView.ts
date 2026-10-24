@@ -6,8 +6,9 @@
  *
  *   1. per-COLUMN scope — each configured roster column (see
  *      stores/statsPrefs' OverlayColumn) carries its own scope: the whole
- *      account career ("global"), the solo split ("solo"), exactly the
- *      row's current ship ("ship") or every ship of its type ("class");
+ *      account career ("global"), the account's solo split ("solo"),
+ *      exactly the row's current ship ("ship"), that ship's own solo
+ *      split ("shipSolo") or every ship of its type ("class");
  *   2. panel-wide battle scope — follow the battle / randoms / ranked /
  *      the global merge of the two, shared by every column.
  *
@@ -56,8 +57,11 @@ export function dimsNeedShipStats(dims: RosterStatsDims): boolean {
 
 /** One column scope → the ship/solo dims pair its views resolve through.
  *  "global" and "solo" read the account careers the roster batch already
- *  carries (the solo split included); only the ship/class scopes need the
- *  player's per-ship list (see dimsNeedShipStats). */
+ *  carries (the solo split included); the ship, ship-solo and class scopes
+ *  need the player's per-ship list (see dimsNeedShipStats) — "shipSolo"
+ *  being the ship × solo combination that answers "this ship's solo
+ *  career", the very question an account-solo column placed next to a
+ *  ship row is so easily misread as. */
 export function overlayColumnDims(
   scope: OverlayColumnScope,
   battle: RosterBattleScope,
@@ -67,6 +71,8 @@ export function overlayColumnDims(
       return { ship: "all", battle, solo: "solo" };
     case "ship":
       return { ship: "ship", battle, solo: "all" };
+    case "shipSolo":
+      return { ship: "ship", battle, solo: "solo" };
     case "class":
       return { ship: "class", battle, solo: "all" };
     default:
@@ -88,15 +94,16 @@ export function effectiveOverlayColumns(
  *  roster batch already carries — the rows then need the players' full
  *  per-ship lists (the pipeline in composables/useRosterStats). PR columns
  *  the rating master hides do not count: invisible columns must not drive
- *  fetches or spinners. Only the ship/class scopes go past the careers —
- *  the solo scope reads the career solo split (RosterStatViewSource.solo),
- *  so a global+solo column set costs no per-ship fetches at all. */
+ *  fetches or spinners. Only the ship / ship-solo / class scopes go past
+ *  the careers — the plain solo scope reads the career solo split
+ *  (RosterStatViewSource.solo), so a global+solo column set costs no
+ *  per-ship fetches at all. */
 export function columnsNeedShipStats(
   columns: readonly OverlayColumn[],
   prOn: boolean,
 ): boolean {
   return effectiveOverlayColumns(columns, prOn).some(
-    (c) => c.scope === "ship" || c.scope === "class",
+    (c) => c.scope === "ship" || c.scope === "shipSolo" || c.scope === "class",
   );
 }
 
@@ -142,7 +149,7 @@ const SOLO_SPLIT_FAKE_RATIO = 0.99;
 /** Whether a career solo split is trustworthy as a REAL division split.
  *  Some transports mirror the unsplit pvp node into `pvp_solo`, so a
  *  "solo" share that equals (or all but equals) the whole randoms career
- *  is the mirror artifact, not a measurement — presenting it as 单人 numbers
+ *  is the mirror artifact, not a measurement — presenting it as 单排 numbers
  *  would be fake data. Guard: an exact/near match on a career beyond
  *  SOLO_SPLIT_TRUST_BATTLES battles is unreliable; a short career may
  *  honestly be all solo, and a missing comparator (either count null)

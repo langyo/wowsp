@@ -350,6 +350,7 @@
     "colScopeGlobal": "전체",
     "colScopeSolo": "솔로만",
     "colScopeShip": "해당 함선만",
+    "colScopeShipSolo": "해당 함선 솔로만",
     "colScopeClass": "현재 함종만",
     "colMetricWinrate": "승률",
     "colMetricPr": "PR",

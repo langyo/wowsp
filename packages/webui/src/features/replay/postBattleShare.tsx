@@ -84,9 +84,9 @@ export interface RosterColumnSpec {
   id: string;
   scope: OverlayColumnScope;
   metric: OverlayColumnMetric;
-  /** Full tooltip label ("仅单人 · 胜率"). */
+  /** Full tooltip label ("仅单排 · 胜率"). */
   title: string;
-  /** Compact header label ("单人胜率" — the bare metric when global). */
+  /** Compact header label ("单排胜率" — the bare metric when global). */
   head: string;
   /** Fixed ch track so the columns align across rows: the aggregate
    *  header grids mirror the template AND the compact cells take it as
@@ -112,11 +112,12 @@ const COLUMN_MOD: Record<OverlayColumnMetric, string> = {
   damage: "dmg",
 };
 
-/** Short scope tag for compact labels ("单人" — global carries none: the
+/** Short scope tag for compact labels ("单排" — global carries none: the
  *  unmarked column IS the account career). */
 const SCOPE_TAG_KEY: Partial<Record<OverlayColumnScope, string>> = {
   solo: "replay.roster.scopeTagSolo",
   ship: "replay.roster.scopeTagShip",
+  shipSolo: "replay.roster.scopeTagShipSolo",
   class: "replay.roster.scopeTagClass",
 };
 
@@ -128,11 +129,13 @@ const METRIC_KEY: Record<OverlayColumnMetric, string> = {
   damage: "replay.roster.metricDamage",
 };
 
-/** Full scope name for tooltips (全局 / 仅单人 / 仅单船 / 仅当前舰种). */
+/** Full scope name for tooltips (全局（账号） / 仅单排（账号） / 仅单船（本船）
+ *  / 仅单船单排（本船） / 仅当前舰种). */
 const SCOPE_FULL_KEY: Record<OverlayColumnScope, string> = {
   global: "replay.roster.scopeGlobal",
   solo: "replay.roster.scopeSolo",
   ship: "replay.roster.scopeShip",
+  shipSolo: "replay.roster.scopeShipSolo",
   class: "replay.roster.scopeClass",
 };
 
@@ -152,7 +155,7 @@ export function rosterColumns(): RosterColumnSpec[] {
       const tagKey = SCOPE_TAG_KEY[c.scope];
       const tag = tagKey ? t(tagKey) : "";
       const metric = t(METRIC_KEY[c.metric]);
-      // CJK tags compound with the metric word (单人胜率); Latin tags
+      // CJK tags compound with the metric word (单排胜率); Latin tags
       // take a thin space (Solo WR) so the head never glues two words.
       // Printable ASCII only — the source used to carry raw NUL/DEL bytes
       // in this class, which turned the file binary for every tool.

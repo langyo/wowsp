@@ -216,7 +216,7 @@ html.overlay-hidden body {
 /* The per-side COLUMN HEAD row (.overlay-chip--head, one per side above
    the block's first row): one muted word per configured column — the
    metric word (胜率/PR/场次/场均), prefixed with the scope when the
-   column is not the global career (单人胜率 / Solo WR). The words ride
+   column is not the global career (单排胜率 / Solo WR). The words ride
    the same data-col cells the figures do, so chipFit's column pins hold
    header and figures to one width per column: the head reads as the top
    of the table the rows form. Quieter than a row: the text face (the

@@ -27,7 +27,7 @@ let batchCalls = 0;
 // figures align across rows of different magnitudes. `solo` is the career
 // solo split: langyo's EQUALS his battles count (the mirrored-split shape
 // soloSplitReliable rejects — his solo cell must show the drawn dash, not
-// the career winrate wearing a 单人 tag) and korea4950 carries none (the
+// the career winrate wearing a 单排 tag) and korea4950 carries none (the
 // plain absence dash), the other three carry real minority splits.
 const ROSTER = [
   { name: "[HERO]wersskysks", relation: 1, winrate: 54.3, pr: 1604, battles: 2391, dmg: 56000, soloWr: 51.2, soloBattles: 1502 },
@@ -84,7 +84,7 @@ beforeAll(async () => {
     STATS_PREFS_STORAGE_KEY,
     JSON.stringify({
       // Five columns including a scope-tagged SOLO winrate — the sample
-      // then shows the 单人 tag's vertical centering and its gap to the
+      // then shows the 单排 tag's vertical centering and its gap to the
       // figure, plus the dash faces a rejected (mirrored) split and a
       // missing figure render in their cells.
       overlayColumns: [
@@ -201,7 +201,7 @@ describe("overlay sample frame", () => {
     expect(document.querySelectorAll(".overlay-scope")).toHaveLength(0);
     // The per-side COLUMN HEAD rows: one per side, each a muted word per
     // column riding the same data-col cells as the figures — 胜率 / PR /
-    // 单人胜率 / 场次 / 场均 (zh join is empty), the ENEMY head mirroring
+    // 单排胜率 / 场次 / 场均 (zh join is empty), the ENEMY head mirroring
     // the column order like the rows do.
     const heads = [
       ...document.querySelectorAll<HTMLElement>(".overlay-chip--head"),
@@ -216,12 +216,12 @@ describe("overlay sample frame", () => {
     expect(headLabels("ally")).toEqual([
       { col: "0", text: "胜率" },
       { col: "1", text: "PR" },
-      { col: "2", text: "单人胜率" },
+      { col: "2", text: "单排胜率" },
       { col: "3", text: "场次" },
       { col: "4", text: "场均" },
     ]);
     expect(headLabels("enemy").map((c) => c.col)).toEqual(["4", "3", "2", "1", "0"]);
-    expect(headLabels("enemy")[2]).toEqual({ col: "2", text: "单人胜率" });
+    expect(headLabels("enemy")[2]).toEqual({ col: "2", text: "单排胜率" });
     expect(document.querySelectorAll(".overlay-chip__stat .overlay-unit")).toHaveLength(5);
     // The drawn dashes: langyo's mirrored solo split (rejected by
     // soloSplitReliable — never rendered as a figure), korea4950's absent

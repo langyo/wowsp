@@ -17,6 +17,7 @@
   "avgDmg": "平均ダメ",
   "colScopeSolo": "ソロ",
   "colScopeShip": "その艦",
+  "colScopeShipSolo": "その艦ソロ",
   "colScopeClass": "艦種",
   "colHeadWinrate": "勝率",
   "colHeadPr": "PR",

@@ -150,10 +150,11 @@ interface OverlayMessages {
   avgPr: string;
   avgDmg: string;
   /** Column-scope words the per-side COLUMN HEAD row prefixes onto a
-   *  non-global column's metric word (headRow — the muted 单人/单船/舰种
-   *  prefixes; global columns carry their metric word unprefixed). */
+   *  non-global column's metric word (headRow — the muted 单排/单船/单船单排/
+   *  舰种 prefixes; global columns carry their metric word unprefixed). */
   colScopeSolo: string;
   colScopeShip: string;
+  colScopeShipSolo: string;
   colScopeClass: string;
   /** The head row's metric words (colHeadWinrate → 胜率 / WR …). */
   colHeadWinrate: string;
@@ -161,7 +162,7 @@ interface OverlayMessages {
   colHeadBattles: string;
   colHeadDmg: string;
   /** How a scope prefix joins its metric word in the head row — empty for
-   *  the CJK locales (单人勝率 concatenates), one space for the spaced
+   *  the CJK locales (单排胜率 concatenates), one space for the spaced
    *  scripts ("Solo WR"). */
   colHeaderJoin: string;
 }
@@ -348,9 +349,10 @@ let ANY_CHIP_ON = effectiveOverlayColumns(PREFS.columns, PREFS.prOn).length > 0;
 // resolved per battle in render() ("follow" tracks the arena's mode key;
 // the fixed scopes and the global merge pin it).
 let statsMode: ResolvedStatsMode = "random";
-// Any configured column resolves past the account careers (a ship/class
-// column — the solo scope reads the career solo split): every landed
-// human stat then also carries the player's full per-ship list, and the
+// Any configured column resolves past the account careers (a ship,
+// ship-solo or class column — the plain solo scope reads the career solo
+// split): every landed human stat then also carries the player's full
+// per-ship list, and the
 // column views aggregate it through the SAME utils/shipStatsScope the
 // main-window panels use. Re-derived on every prefs refresh (refreshPrefs
 // below).
@@ -681,6 +683,7 @@ function stampNode(kind: StampKind): string {
 function scopeWord(scope: OverlayColumnScope): string {
   if (scope === "solo") return localized("colScopeSolo");
   if (scope === "ship") return localized("colScopeShip");
+  if (scope === "shipSolo") return localized("colScopeShipSolo");
   if (scope === "class") return localized("colScopeClass");
   return "";
 }
@@ -695,7 +698,7 @@ function headWord(metric: OverlayColumnMetric): string {
 
 /** The per-side COLUMN HEAD row: one muted word per configured column,
  *  prefixed with its scope when the column is not the global career
- *  (单人胜率 / Solo WR), riding the SAME data-col cells the figures do so
+ *  (单排胜率 / Solo WR), riding the SAME data-col cells the figures do so
  *  chipFit's alignMetricColumns pins header and figures to one width per
  *  column — the head line then reads as the top of the very table the
  *  rows form, and the ENEMY side mirrors the column order exactly like
@@ -744,15 +747,15 @@ function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string 
   for (const col of ordered) {
     const slot = `data-col="${colIndex.get(col) ?? 0}"`;
     const v = columnStatView(name, col.scope);
-    // A ship/class column whose per-ship list is still owed keeps the
-    // dots; everything else settles to the drawn dash (see statFace for
-    // the whole-row states — the batch itself still owed, or spent). The
-    // waiting face rides a col-waiting cell (CENTERED, bright) instead of
-    // the muted right-aligned dash face: beads pressed to the column's
-    // right edge with a hole to their left read as a gap in the row, not
-    // as "this column is coming".
+    // A ship, ship-solo or class column whose per-ship list is still owed
+    // keeps the dots; everything else settles to the drawn dash (see
+    // statFace for the whole-row states — the batch itself still owed, or
+    // spent). The waiting face rides a col-waiting cell (CENTERED, bright)
+    // instead of the muted right-aligned dash face: beads pressed to the
+    // column's right edge with a hole to their left read as a gap in the
+    // row, not as "this column is coming".
     const shipsOwed =
-      (col.scope === "ship" || col.scope === "class") &&
+      (col.scope === "ship" || col.scope === "shipSolo" || col.scope === "class") &&
       st.accountId != null &&
       st.ships === undefined;
     const absent = shipsOwed ? loadingDots() : DASH_HTML;
@@ -2025,7 +2028,7 @@ async function runBatch() {
               // that mirrors the unsplit pvp node into pvp_solo answers a
               // "solo" share equal to the whole career) caches as null:
               // the solo column shows the honest dash instead of the
-              // career numbers wearing a 单人 tag.
+              // career numbers wearing a 单排 tag.
               solo:
                 soloSplitReliable(r.soloBattles, r.battles) &&
                 (r.soloBattles != null || r.soloWr != null)

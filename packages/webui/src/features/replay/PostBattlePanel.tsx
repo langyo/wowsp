@@ -419,8 +419,9 @@ export default defineComponent({
           if (
             !st ||
             st.hidden ||
-            // Only the ship/class scopes wait on the per-ship lists — the
-            // solo scope reads the career split (utils/shipStatsScope).
+            // Only the per-ship scopes (ship / ship-solo / class) wait on
+            // the lists — the plain solo scope reads the career split
+            // (utils/shipStatsScope).
             (scope !== "global" && scope !== "solo" && st.shipsLoading)
           ) {
             return {

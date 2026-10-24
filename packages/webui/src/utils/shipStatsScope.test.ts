@@ -16,6 +16,8 @@ import {
 import {
   EMPTY_ROSTER_VIEW,
   columnsNeedShipStats,
+  overlayColumnDims,
+  type RosterBattleScope,
   type RosterStatsDims,
   type OverlayColumn,
 } from "@/utils/statView";
@@ -362,5 +364,45 @@ describe("columnsNeedShipStats", () => {
   it("a ship or class scope still forces the per-ship lists", () => {
     expect(columnsNeedShipStats([col("global"), col("ship")], true)).toBe(true);
     expect(columnsNeedShipStats([col("global"), col("class", "battles")], true)).toBe(true);
+    // The ship × solo combination aggregates the per-ship solo splits, so
+    // it rides the per-ship pipeline like the plain ship scope does.
+    expect(columnsNeedShipStats([col("global"), col("shipSolo", "battles")], true)).toBe(true);
+  });
+});
+
+describe("overlayColumnDims", () => {
+  const battle: RosterBattleScope = "follow";
+  const dimsOf = (scope: OverlayColumn["scope"]) => overlayColumnDims(scope, battle);
+
+  it("pins every column scope onto its ship/solo dims pair", () => {
+    expect(dimsOf("global")).toEqual({ ship: "all", battle, solo: "all" });
+    expect(dimsOf("solo")).toEqual({ ship: "all", battle, solo: "solo" });
+    expect(dimsOf("ship")).toEqual({ ship: "ship", battle, solo: "all" });
+    expect(dimsOf("shipSolo")).toEqual({ ship: "ship", battle, solo: "solo" });
+    expect(dimsOf("class")).toEqual({ ship: "class", battle, solo: "all" });
+  });
+
+  it("the ship-solo scope resolves the row ship's own solo split", () => {
+    // The dims pair the shipSolo column resolves through — feeding the
+    // exact combination the scopedRosterView suite above aggregates: ship
+    // 1's own 60 solo battles, never the career's 8000.
+    const career = {
+      winrate: 52.5,
+      pr: 1600,
+      battles: 12_000,
+      avgDamage: 85_000,
+      ranked: null,
+      global: null,
+      solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null },
+    };
+    const view = scopedRosterView(
+      { ...career, ships: SHIPS },
+      1,
+      dimsOf("shipSolo"),
+      "random",
+      "winrate",
+    );
+    expect(view.battles).toBe(60);
+    expect(view.winrate).toBeCloseTo(50, 6);
   });
 });

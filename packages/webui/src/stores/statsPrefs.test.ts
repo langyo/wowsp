@@ -207,6 +207,20 @@ describe("loadStatsPrefs", () => {
     ]);
   });
 
+  it("keeps the ship-solo scope the column editor can write", () => {
+    // The ship × solo column scope parses like every other scope — a blob
+    // written by this build round-trips instead of falling back.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        overlayColumns: [{ scope: "shipSolo", metric: "battles" }],
+      }),
+    );
+    expect(loadStatsPrefs().overlayColumns).toEqual([
+      { scope: "shipSolo", metric: "battles" },
+    ]);
+  });
+
   it("fills missing fields with defaults instead of dropping the blob", () => {
     localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify({ prEnabled: true }));
     const prefs = loadStatsPrefs();

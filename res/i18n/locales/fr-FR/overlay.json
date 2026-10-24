@@ -17,6 +17,7 @@
   "avgDmg": "Dégâts moy.",
   "colScopeSolo": "solo",
   "colScopeShip": "navire",
+  "colScopeShipSolo": "navire solo",
   "colScopeClass": "classe",
   "colHeadWinrate": "WR",
   "colHeadPr": "PR",
