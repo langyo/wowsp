@@ -149,9 +149,42 @@
       }
     }
 
+    /* Phone: the slider row folds — label and value share the top line,
+       the slider runs the full width underneath (grid, so the shared
+       column geometry of the desktop rows simply re-templates). */
     &__dpi-row {
-      flex-wrap: wrap;
+      grid-template-columns: minmax(0, 1fr) minmax(3.5rem, auto);
+      grid-template-areas:
+        "label value"
+        "slider slider";
+      row-gap: 0.4rem;
     }
+
+    &__dpi-actions {
+      margin-left: 0;
+    }
+  }
+
+  /* Feedback diagnostics card folds too: label becomes its own heading
+     line, the mono value keeps the full second line and the meta / copy
+     button share the trailing cell (the desktop label track alone would
+     starve the value column at phone widths). */
+  .settings-page__body .feedback__card {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .settings-page__body .feedback__label {
+    grid-column: 1 / -1;
+  }
+
+  .settings-page__body .feedback__file,
+  .settings-page__body .feedback__dir {
+    grid-column: 1;
+  }
+
+  .settings-page__body .feedback__meta,
+  .settings-page__body .feedback__row > :nth-child(3) {
+    grid-column: 2;
   }
 
   .settings-page__back-label {

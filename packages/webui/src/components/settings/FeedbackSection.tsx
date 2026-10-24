@@ -232,7 +232,7 @@ export default defineComponent({
           <div class="feedback__card">
             <div class="feedback__row">
               <span class="feedback__label">{t("settings.feedbackLatestLog")}</span>
-              <span class="feedback__file">{latest.value.name}</span>
+              <span class="feedback__file" title={latest.value.name}>{latest.value.name}</span>
               <span class="feedback__meta">
                 {formatBytes(latest.value.sizeBytes)}
                 {formatDateTime(lang.uiLocale.value, latest.value.modified)

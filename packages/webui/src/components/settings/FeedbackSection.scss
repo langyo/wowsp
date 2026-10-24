@@ -30,9 +30,19 @@
     font-size: var(--hi-text-sm, 0.8125rem);
   }
 
+  /* Key-value rows on the SAME shared grammar as the settings slider rows
+     (SettingsModal.scss __dpi-row): ONE card-level grid — fixed label
+     track (the --settings-row-label-w token), one fluid value column, one
+     auto trailing column — so the stacked rows start their mono values at
+     the same x with EXACTLY the same width, and the meta / copy button
+     share one trailing track. The rows themselves go transparent
+     (display: contents); each renders exactly label + value + trailing, so
+     auto-placement lands every child in its column. */
   &__card {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns:
+      var(--settings-row-label-w, 7.5rem) minmax(0, 1fr) auto;
+    align-items: center;
     gap: var(--hi-space-8, 8px);
     padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
     border: 1px solid var(--hi-color-border);
@@ -40,29 +50,31 @@
   }
 
   &__row {
-    display: flex;
-    align-items: center;
-    gap: var(--hi-space-8, 8px);
-    min-width: 0;
+    display: contents;
+
+    /* Meta text and the copy button right-align inside the shared
+       trailing track (default stretch would inflate the tiny button). */
+    > :nth-child(3) {
+      justify-self: end;
+    }
   }
 
   &__label {
-    flex: none;
     color: var(--hi-color-text-secondary);
     font-size: var(--hi-text-sm, 0.8125rem);
-    white-space: nowrap;
   }
 
   &__file {
+    min-width: 0;
     color: var(--hi-color-text-primary);
     font-size: var(--hi-text-sm, 0.8125rem);
     font-family: var(--font-mono, ui-monospace, monospace);
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__meta {
-    margin-left: auto;
-    flex: none;
     color: var(--hi-color-text-secondary);
     font-size: var(--hi-text-xs, 0.75rem);
     white-space: nowrap;
@@ -70,7 +82,6 @@
 
   &__dir {
     min-width: 0;
-    flex: 1;
     color: var(--hi-color-text-secondary);
     font-size: var(--hi-text-xs, 0.75rem);
     font-family: var(--font-mono, ui-monospace, monospace);
@@ -80,6 +91,7 @@
   }
 
   &__note {
+    grid-column: 1 / -1;
     margin: 0;
     color: var(--hi-color-text-secondary);
     font-size: var(--hi-text-xs, 0.75rem);
