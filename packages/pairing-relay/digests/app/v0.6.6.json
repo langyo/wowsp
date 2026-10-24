@@ -1,0 +1,15 @@
+{
+  "assets": {
+    "WoWSP_0.6.6_x64-installer-lite.exe": "4bd39c0370eda89b3b47224f548acb2913235d336a35096935185c365cf3d9d4",
+    "WoWSP_0.6.6_x64-installer-webview2.exe": "8ead428e05db045c34898629554f9fa4dbc64506b9a570c76622e813c40c01c7",
+    "WoWSP_0.6.6_x64-installer.exe": "4bd39c0370eda89b3b47224f548acb2913235d336a35096935185c365cf3d9d4",
+    "WoWSP_0.6.6_x64-portable.exe": "d67d4bdc03e7707178d760cd64c885fd913f03567df611fe804978f2983c948e",
+    "latest": "1076e9b67dd8c5b0721effc09f34012572c0fb636999a6d43fdfd94912cd2f6d"
+  },
+  "channel": "app",
+  "generated_at": "2026-10-24T01:36:07Z",
+  "key_id": "main",
+  "seq": 101,
+  "sig": "IwUOF06yz0zybqqA4qmVRPXdj0jVf0gTp+D+vbyPROkj/u49N/zlfq/yk65liplAcITaB3Dvc6spmpwbd/RMBA==",
+  "tag": "v0.6.6"
+}
