@@ -150,9 +150,42 @@ describe("aggregateShipScopeStats", () => {
     expect(aggregateShipScopeStats(SHIPS, null, q({ scope: "ship" }), resolver)).toBeNull();
   });
 
-  it("zero battles in scope answers the all-null view (the dash face)", () => {
+  it("zero battles in scope answers an honest 0 count with dashed ratios", () => {
     const none = [ship({ shipId: 7, battles: 0 })];
-    expect(aggregateShipScopeStats(none, 7, q(), resolver)).toEqual(EMPTY_ROSTER_VIEW);
+    expect(aggregateShipScopeStats(none, 7, q(), resolver)).toEqual({
+      winrate: null,
+      pr: null,
+      battles: 0,
+      avgDamage: null,
+    });
+    // The row's ship missing from the landed list entirely is the same
+    // verdict — never played IS zero battles, not a data miss.
+    expect(aggregateShipScopeStats(SHIPS, 99, q(), resolver)).toEqual({
+      winrate: null,
+      pr: null,
+      battles: 0,
+      avgDamage: null,
+    });
+    // Through the view resolver the same dims hold: the count renders 0,
+    // the ratio metrics keep the dash face.
+    const career = {
+      winrate: 52.5,
+      pr: 1600,
+      battles: 12_000,
+      avgDamage: 85_000,
+      ranked: null,
+      global: null,
+      solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null },
+    };
+    const dims: RosterStatsDims = { ship: "ship", battle: "random", solo: "all" };
+    expect(
+      scopedRosterView({ ...career, ships: SHIPS }, 99, dims, "random", "winrate"),
+    ).toEqual({
+      winrate: null,
+      pr: null,
+      battles: 0,
+      avgDamage: null,
+    });
   });
 
   it("the solo filter reads the randoms solo split", () => {

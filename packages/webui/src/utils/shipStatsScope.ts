@@ -148,11 +148,13 @@ function countersOf(
 
 /** Aggregate one player's per-ship list into the requested scope's display
  *  numbers. Null = the scope itself is unresolvable (the row's ship is
- *  unknown, so "same class/tier" has nothing to match on); an all-null
- *  view = resolved but zero battles (the row then shows the same "—" face
- *  as a career the player never played). Scope "all" sweeps the whole
- *  list and needs no target ship (the production solo-only views read the
- *  career instead — see scopedRosterView). */
+ *  unknown, so "same class/tier" has nothing to match on). A RESOLVED
+ *  scope with zero battles answers battles 0 with every ratio null: the
+ *  count is real (a row whose list landed shows "0 场", never the "—" a
+ *  data miss wears), while wins or damage over zero battles is not a
+ *  value — winrate / PR / avg damage keep the dash face. Scope "all"
+ *  sweeps the whole list and needs no target ship (the production
+ *  solo-only views read the career instead — see scopedRosterView). */
 export function aggregateShipScopeStats(
   ships: readonly PlayerShipStats[],
   targetShipId: number | null,
@@ -182,6 +184,11 @@ export function aggregateShipScopeStats(
         : (shipId) => resolveMeta(shipId)?.tier === key;
   }
 
+  // A solo view over the RANKED bucket has no split anywhere (see
+  // countersOf) — the all-dash face scopedRosterView already answers at
+  // its own choke point; a "measured" 0 would claim a split that does not
+  // exist on any transport.
+  if (opts.solo && opts.battle === "ranked") return EMPTY_ROSTER_VIEW;
   const totals: Counters = { battles: 0, wins: 0, damage: 0 };
   // Expected-PR aggregation: a battles-weighted mean of the per-row randoms
   // PRs — only valid where the bucket IS the randoms career (see the module
@@ -200,7 +207,14 @@ export function aggregateShipScopeStats(
       prSum += row.pr * row.battles;
     }
   }
-  if (totals.battles <= 0) return EMPTY_ROSTER_VIEW;
+  if (totals.battles <= 0) {
+    // Resolved but never played: an honest 0 for the count, the dash for
+    // every ratio (wins/damage over zero battles has no real value). A
+    // ship missing from the landed list lands here too — never played IS
+    // zero battles; only an unresolvable scope (unknown ship above)
+    // answers the all-null view.
+    return { winrate: null, pr: null, battles: 0, avgDamage: null };
+  }
   const winrate = (totals.wins / totals.battles) * 100;
   const pr =
     opts.prAlgo === "winrate"
