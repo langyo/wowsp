@@ -237,6 +237,12 @@ pub struct DecodedReplay {
     pub recorder_ship: Option<i32>,
     pub positions: BTreeMap<i32, Vec<PositionSample>>,
     pub kinds: BTreeMap<i32, EntityKind>,
+    /// The InteractiveZone entity-type index THIS replay's layout uses
+    /// (14 from client 14.5.0, 13 before; Lesta tracks WG). Stamped from
+    /// the layout profile so consumers (`caps::cap_points_of` and any
+    /// zone filter) never re-hardcode a version-dependent index (review
+    /// M-4: a pre-14.5.0 replay used to lose its cap geometry silently).
+    pub zone_entity_type: i16,
     /// Entity id → match time (seconds) at which the entity was destroyed.
     /// Ships whose id never appears here survived the whole match.
     pub destroys: BTreeMap<i32, f32>,

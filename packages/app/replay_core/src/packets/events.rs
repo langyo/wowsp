@@ -442,9 +442,7 @@ fn arena_layout_plausible(pairs: &[&Vec<PyVal>], f: &ArenaFields) -> bool {
         let ok = match player.avatar_id {
             Some(avatar) => player.entity_id as i64 == avatar as i64 + 1,
             None => {
-                player.ship_params_id >= 100_000_000
-                    && player.ship_params_id <= u32::MAX as u32
-                    && (player.team_id == 0 || player.team_id == 1)
+                player.ship_params_id >= 100_000_000 && (player.team_id == 0 || player.team_id == 1)
             },
         };
         if ok {

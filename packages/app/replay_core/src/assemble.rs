@@ -467,7 +467,8 @@ pub fn synthesize_lesta_arena_players(
 /// EntityCreate packets. Ships (type 2 with many samples) sort first.
 pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStream {
     let DecodedReplay {
-        recorder_ship: _, // consumed by the self-anchor synthesis upstream
+        recorder_ship: _,    // consumed by the self-anchor synthesis upstream
+        zone_entity_type: _, // consumed by caps::cap_points_of upstream
         positions,
         kinds,
         destroys,
@@ -709,6 +710,7 @@ mod tests {
     fn empty_decode() -> DecodedReplay {
         DecodedReplay {
             recorder_ship: None,
+            zone_entity_type: 14,
             positions: BTreeMap::new(),
             kinds: BTreeMap::new(),
             destroys: BTreeMap::new(),

@@ -23,6 +23,20 @@ use super::meta::{extract_descriptor_json, roster_from_raw};
 pub(crate) fn decode_replay_file_decoded(
     path: &std::path::Path,
 ) -> anyhow::Result<wowsp_replay_core::DecodedReplay> {
+    // Review M-6: the full decode legitimately buffers the whole file,
+    // but a pairing-pulled "replay" can claim any size — refuse past the
+    // bound before the read (the largest real capture is a few dozen MB;
+    // 512 MiB is two orders of headroom).
+    const MAX_DECODE_FILE_BYTES: u64 = 512 * 1024 * 1024;
+    let meta = fs::metadata(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
+    if meta.len() > MAX_DECODE_FILE_BYTES {
+        return Err(anyhow!(
+            "{}: {} bytes exceeds the {} MiB replay decode ceiling",
+            path.display(),
+            meta.len(),
+            MAX_DECODE_FILE_BYTES / (1024 * 1024)
+        ));
+    }
     let bytes = fs::read(path).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
     let stream = packet_stream_after_blocks(&bytes).ok_or_else(|| {
         anyhow!(
@@ -122,6 +136,16 @@ pub(crate) fn decode_replay_stream_sync(
 pub(crate) fn read_smoke_screens_sync(
     path: &str,
 ) -> anyhow::Result<Vec<wowsp_tauri_shared::SmokeScreenEvent>> {
+    // Same decode-size ceiling as the shared prologue (review M-6).
+    const MAX_DECODE_FILE_BYTES: u64 = 512 * 1024 * 1024;
+    let meta = fs::metadata(path).map_err(|e| anyhow!("read {path}: {e}"))?;
+    if meta.len() > MAX_DECODE_FILE_BYTES {
+        return Err(anyhow!(
+            "{path}: {} bytes exceeds the {} MiB replay decode ceiling",
+            meta.len(),
+            MAX_DECODE_FILE_BYTES / (1024 * 1024)
+        ));
+    }
     let bytes = fs::read(path).map_err(|e| anyhow!("read {path}: {e}"))?;
     let stream = packet_stream_after_blocks(&bytes)
         .ok_or_else(|| anyhow!("{path}: not a valid wowsreplay (no packet stream)"))?;
@@ -226,6 +250,18 @@ pub async fn read_live_replay_snapshot(
     path: String,
 ) -> CommandResult<wowsp_tauri_shared::LiveSelfStream> {
     Ok(tokio::task::spawn_blocking(move || {
+        // Same decode-size ceiling as the settled paths (review M-6): a
+        // game-written temp file never approaches it, so this only ever
+        // rejects a corrupted-loop read, never a live battle.
+        const MAX_DECODE_FILE_BYTES: u64 = 512 * 1024 * 1024;
+        let meta = fs::metadata(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
+        if meta.len() > MAX_DECODE_FILE_BYTES {
+            return Err(anyhow!(
+                "{path}: {} bytes exceeds the {} MiB replay decode ceiling",
+                meta.len(),
+                MAX_DECODE_FILE_BYTES / (1024 * 1024)
+            ));
+        }
         let bytes = fs::read(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
         Ok::<_, anyhow::Error>(live_snapshot_from_bytes(&path, &bytes))
     })
