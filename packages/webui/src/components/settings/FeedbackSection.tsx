@@ -83,7 +83,8 @@ export default defineComponent({
     const version = ref("");
     onMounted(async () => {
       // Running build, for the web form's prefilled version field
-      // (browser dev keeps "" — the form just shows an empty field).
+      // (browser dev keeps "" — the console then shows its configured
+      // latest version instead).
       try {
         version.value = await getVersion();
       } catch {
@@ -91,10 +92,12 @@ export default defineComponent({
       }
     });
 
-    /** The web form link carries the local build identity as prefill, and
-     *  the UI locale so the form (and its privacy note) opens in the
-     *  language the user already chose in the app. */
-    const webFormUrl = computed(() => {
+    /** The web links' shared prefill query: the local build identity and
+     *  the UI locale (so the form — and its privacy note — open in the
+     *  language the user already chose in the app), plus the active
+     *  account's server + game-ID row. The console prefills its form from
+     *  these and keeps the identity across view switches. */
+    function webFormQuery(): URLSearchParams {
       const q = new URLSearchParams({
         version: version.value,
         sysinfo: `desktop ${navigator.platform || "unknown"}`,
@@ -107,8 +110,10 @@ export default defineComponent({
         q.set("server", active.realm);
         q.set("game_id", String(active.accountId));
       }
-      return `${WEB_FORM_URL}?${q.toString()}`;
-    });
+      return q;
+    }
+
+    const webFormUrl = computed(() => `${WEB_FORM_URL}?${webFormQuery().toString()}`);
 
     const overview = ref<LogsOverview | null>(null);
     // Starts true: mount always kicks a load onMounted, so the first render
@@ -183,11 +188,14 @@ export default defineComponent({
       }
     }
 
-    /** The web form's history panel, focused (the browser remembers the
-     *  contact id in its own localStorage). Same lang handoff as the form
-     *  link above. */
+    /** The web form's history view, focused with the SAME identity prefill
+     *  as the form link above (?focus=history lands the console on it; the
+     *  lookup credential itself is the browser's saved token — the app has
+     *  no copy of it). */
     function openHistory() {
-      void openExternal(`${WEB_FORM_URL}?focus=history&lang=${lang.uiLocale.value}`);
+      const q = webFormQuery();
+      q.set("focus", "history");
+      void openExternal(`${WEB_FORM_URL}?${q.toString()}`);
     }
 
     return () => (
