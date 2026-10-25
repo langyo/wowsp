@@ -123,6 +123,25 @@ pub async fn mod_catalog_install(
     mod_hub::ensure_game_closed(&game_root)?;
     mod_hub::ensure_res_mods_active(&game_root)?;
 
+    // Version-compat guard, before the first byte moves: the entry's
+    // published game range against the version the client's own pin
+    // records. A pack one or more game versions stale is the classic
+    // silent crash source (stale prebuilt panel/ship-bar overrides on a
+    // newer binary — see version_guard's module docs), so a mismatch is
+    // logged here and rides the install report once the install lands.
+    let client_game_version = if game_root.is_empty() {
+        None
+    } else {
+        crate::commands::game_context::preferences_active_game_version(std::path::Path::new(
+            &game_root,
+        ))
+    };
+    let version_warning =
+        version_guard::compat_warning(&entry.game, client_game_version.as_deref());
+    if let (Some(warning), Some(client)) = (&version_warning, client_game_version.as_deref()) {
+        tracing::warn!(id = %entry.id, game = %entry.game, client, "{warning}");
+    }
+
     // Every package must be pinned and officially hosted before the first
     // byte moves (an unverifiable package must not half-install a mod).
     let expected_sha256 = packages
@@ -275,6 +294,12 @@ pub async fn mod_catalog_install(
     );
     report.conflicts = conflicts.clone();
     report.warnings.extend(conflicts);
+    // The version-compat verdict computed before the download: pinned onto
+    // the report the report pane renders verbatim, after the conflicts,
+    // so a stale-pack install can never look clean.
+    if let Some(warning) = version_warning {
+        report.warnings.push(warning);
+    }
 
     ledger.installs.push(ModInstallRecord {
         id: entry.id.clone(),
