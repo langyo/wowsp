@@ -6,16 +6,20 @@ import { useWallpaper } from "@/theme/useWallpaper";
 
 /**
  * Paints the active wallpaper, shittim-chest's way: a dedicated fixed media
- * element PREPENDED to <body> (z-index -1, below every app surface) instead
- * of a body background-image — a body background paints at the canvas level,
- * so any opaque surface anywhere in the chrome would hide it, which is
- * exactly how the first cut of this feature ended up invisible. The
- * readability scrim is body::before at z-index 0: above the wallpaper,
- * below #app (z-index 1, see theme.scss) — so the dim only ever applies to
- * the wallpaper itself, and translucent chrome (sidebar, cards, modals)
- * samples the scrim-adjusted image. The "solid" fallback (no resolvable
- * source) skips the layer entirely and falls back to body's
- * background-color.
+ * element PREPENDED to <body> (z-index -3, bottom of the negative band,
+ * below every app surface) instead of a body background-image — a body
+ * background paints at the canvas level, so any opaque surface anywhere in
+ * the chrome would hide it, which is exactly how the first cut of this
+ * feature ended up invisible. The readability scrim is body::before at
+ * z-index -2: above the wallpaper, below #app (z-index-free, paints later —
+ * see theme.scss) — so the dim only ever applies to the wallpaper itself,
+ * and translucent chrome (sidebar, cards, modals) samples the
+ * scrim-adjusted image. The whole wallpaper stack lives in the NEGATIVE
+ * band precisely so #app can stay stacking-context-free: a z-index on #app
+ * would trap the hikari title bar below every floating layer (the
+ * 2026-10-24 "title bar unclickable behind a modal" defect). The "solid"
+ * fallback (no resolvable source) skips the layer entirely and falls back
+ * to body's background-color.
  *
  * Writes (consumed by theme.scss):
  *   html[data-wallpaper-art]     scrim gate, only true for image wallpapers
