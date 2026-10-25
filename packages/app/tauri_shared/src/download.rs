@@ -6,9 +6,10 @@
 //! [`DownloadProgress`] payloads on [`DOWNLOAD_PROGRESS_EVENT`], and each
 //! webui store subscribes to the single stream, filtering by `kind`/`id`.
 //! Transfer phases (`queued`/`race`/`download`) come from the hub; the
-//! context that owns the job continues the story with its own phase
-//! vocabulary (`apply`/`installing`/`install`/`done`/`error`) on the same
-//! channel, so a listener never has to join two streams. A user cancel
+//! context that owns the job opens and continues the story with its own
+//! phase vocabulary (`verify`/`apply`/`installing`/`install`/`done`/
+//! `error`) on the same channel, so a listener never has to join two
+//! streams. A user cancel
 //! surfaces through the context's normal failure path (the command
 //! rejects with the request's cancel message; `model_pack` additionally
 //! reports it on its `error` phase).
@@ -48,6 +49,10 @@ pub mod phase {
     pub const APPLY: &str = "apply";
     /// A mod install moved to its unpack/write stage (`mod_catalog.rs`).
     pub const INSTALLING: &str = "installing";
+    /// The update's official version/digest lookup settles (`update.rs`;
+    /// precedes RACE — the digest channels are not mirrors, so a pass
+    /// parked here is verifying, not racing).
+    pub const VERIFY: &str = "verify";
     /// The update installer was spawned (`update.rs`).
     pub const INSTALL: &str = "install";
     /// The whole pass succeeded (context).

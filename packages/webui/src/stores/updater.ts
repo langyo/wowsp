@@ -12,6 +12,8 @@
  *
  * Progress arrives on the unified `wowsp://download-progress` channel
  * (kind "update", the single bus every download context shares):
+ * `verify` renders the indeterminate strip while the official
+ * version/digest lookup settles (before any mirror is touched);
  * `race`/`queued` render the indeterminate strip, `download` carries
  * `received`/`total`/`speedBps` — `received == total` is only ever sent
  * for a complete, verified file, so the bar can no longer hit ~100% and
@@ -41,7 +43,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
-import { showBlockingToast } from "@celestia-island/hikari";
+import { showBlockingToast, useToast } from "@celestia-island/hikari";
 
 import { api, type DownloadProgress } from "@/api";
 import { RPC } from "@/rpc";
@@ -69,6 +71,7 @@ interface UpdateStrandedInfo {
 const DOWNLOAD_PAGE_URL = "https://wowsp.langyo.xyz/download";
 
 export const useUpdaterStore = defineStore("updater", () => {
+  const toast = useToast();
   const available = ref(false);
   const version = ref<string | null>(null);
   const current = ref("");
@@ -76,10 +79,11 @@ export const useUpdaterStore = defineStore("updater", () => {
   const downloading = ref(false);
   const progress = ref<number | null>(null);
   const installing = ref(false);
-  // "race" while mirrors are probed / raced (or the pass waits in the
-  // download hub's FIFO queue), "download" while the winner streams,
-  // "install" once the installer is spawned.
-  const phase = ref<"race" | "download" | "install" | null>(null);
+  // "verify" while the official version/digest lookup settles (before
+  // any mirror is touched), "race" while mirrors are probed / raced (or
+  // the pass waits in the download hub's FIFO queue), "download" while
+  // the winner streams, "install" once the installer is spawned.
+  const phase = ref<"verify" | "race" | "download" | "install" | null>(null);
   const speedBps = ref<number | null>(null);
   const checked = ref(false);
   const error = ref<string | null>(null);
@@ -116,6 +120,7 @@ export const useUpdaterStore = defineStore("updater", () => {
   /** The pass card's live line for the current phase. */
   const statusText = computed(() => {
     if (installing.value) return t("about.updateInstalling");
+    if (phase.value === "verify") return t("about.updateVerifying");
     if (phase.value === "race") return t("about.updateRacing");
     if (phase.value === "download") {
       const pct = progress.value ?? 0;
@@ -130,7 +135,11 @@ export const useUpdaterStore = defineStore("updater", () => {
     // Stray events after a cancel / reset find the store idle — ignore
     // them so the card never paints a ghost pass.
     if (!running.value) return;
-    if (p.phase === "race" || p.phase === "queued") {
+    if (p.phase === "verify") {
+      // The official version/digest lookup is settling — mirrors have
+      // not been touched yet.
+      phase.value = "verify";
+    } else if (p.phase === "race" || p.phase === "queued") {
       // Mirrors are being probed / raced (or the pass waits behind
       // another download) — indeterminate card state.
       phase.value = "race";
@@ -269,7 +278,7 @@ export const useUpdaterStore = defineStore("updater", () => {
     if (portable.value || !available.value) return;
     if (running.value) return;
     downloading.value = true;
-    phase.value = "race";
+    phase.value = "verify";
     // Seeded to 0; a resumed pass (the hub retained its part file)
     // overwrites this on the first download event with the committed
     // offset — the bar jumps straight to where the last attempt died.
@@ -293,6 +302,13 @@ export const useUpdaterStore = defineStore("updater", () => {
         dismissed.value = true;
       } else {
         error.value = msg;
+        // The reset alone read as "nothing happened" (the 2026-10-25
+        // v0.6.7 stale-relay incident: the pass refused before any byte
+        // streamed and the banner simply re-offered) — say WHY it died
+        // before the idle prompt comes back. Copyable: the raw refusal
+        // (digest-channel disagreement et al.) is exactly what a support
+        // request needs.
+        toast.error(t("about.updateFailed", { message: msg }));
       }
       downloading.value = false;
       installing.value = false;

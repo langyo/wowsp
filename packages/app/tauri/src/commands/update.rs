@@ -58,8 +58,10 @@
 //! handoff spawn, so the frontend treats the command's promise never
 //! resolving (process exit) or resolving (installer spawned) as success
 //! by design; the only visible failure modes are `Err` strings
-//! (`"update cancelled"` maps to a clean frontend reset). The one-shot
-//! `update-pending.json` marker in the data dir lets the next launch
+//! (`"update cancelled"` maps to a clean frontend reset), and every
+//! non-cancel failure also leaves one `update pass failed` WARN in the
+//! support log — the fork in the trail when an update "did nothing".
+//! The one-shot `update-pending.json` marker in the data dir lets the next launch
 //! tell a landed update from a stranded one in the support log.
 //!
 //! Progress flows to the webui on the unified `wowsp://download-progress`
@@ -929,6 +931,15 @@ pub async fn update_download(window: tauri::Window, app: AppHandle) -> CommandRe
     let result = update_download_inner(&app, &guard.pass).await;
     // Cancellation wins over an API/rename error racing with the click.
     guard.pass.check_cancelled()?;
+    // The support-log fork this pass was missing: a refusal before any
+    // byte streams (official digest channels unavailable or disagreeing,
+    // no source reachable, a not-newer official release — the 2026-10-25
+    // v0.6.7 stale-relay incident) used to leave not one line behind, so
+    // "the update did nothing" had no answer in the log. Cancels bail at
+    // check_cancelled above and stay silent by design.
+    if let Err(err) = &result {
+        tracing::warn!(error = %err, "update pass failed");
+    }
     result.map_err(Into::into)
 }
 
@@ -939,15 +950,18 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     download_hub::clear_pending(kind::UPDATE, JOB_ID);
 
     // ── Phase 1: official version + mirror resolution race ─────────────
-    // The unified channel's race event lets the toast flip to its
-    // indeterminate strip while the lookups settle.
+    // The unified channel's verify event lets the toast flip to its
+    // indeterminate strip while the official lookups settle — the digest
+    // channels are NOT mirrors, and this window (tens of seconds on a
+    // CN-blocked GitHub) must not read as "testing mirror sources" (the
+    // 2026-10-25 stale-relay incident's misread).
     let watch = watch_config()?;
     let marker = watch
         .files
         .first()
         .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
     let client = build_http_client()?;
-    emit_phase(app, phase::RACE);
+    emit_phase(app, phase::VERIFY);
     // The version comes from the official channels — the relay digest
     // endpoint or api.github.com, cross-checked whenever both answer —
     // never from a mirror: the fastest mirror answering with an older
@@ -959,6 +973,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     let version = official.version;
     // Every source is probed in parallel with a 10 s cap each; all that
     // answer enter the artifact race.
+    emit_phase(app, phase::RACE);
     let candidates = pass
         .run(race_sources(&client, &watch.sources, marker, true))
         .await?;

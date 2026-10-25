@@ -16,12 +16,14 @@ const LEAVE_MS = 260;
 const QUIET_BUILD = isMobileApp();
 
 /**
- * UpdateToast — the updater's live pass card (下载中 / 测镜像 / 安装中),
- * raised once the user answers 立即更新 and torn down when the pass ends.
+ * UpdateToast — the updater's live pass card (校验官方渠道 / 测镜像 /
+ * 下载中 / 安装中), raised once the user answers 立即更新 and torn down
+ * when the pass ends.
  * Visual language mirrors hikari's blocking-toast card (same fixed
  * top-right column, same `--hk-z-toast` band, same info-blue variant
  * surface) but is rendered here, not through `showBlockingToast`: the
- * pass needs a bottom progress bar, a spinner icon while mirrors race,
+ * pass needs a bottom progress bar, a spinner icon while the official
+ * channels are verified and the mirrors race,
  * and a single 取消 action — the shared blocking card fixes the icon set
  * and always renders both buttons. No controls during install: once the
  * installer has spawned the app is about to be killed, so there is
