@@ -11,6 +11,12 @@
  * missing one name falls back to the inference (its names return —
  * game-true and inferred rows never interleave); a stale stream clears
  * the names wholesale and every side's names return.
+ *
+ * The fixture is the SINGLE-team table (co-op roster, anchor team_split
+ * exactly 1.0) — the layout that calibration was taken on; issue #1360
+ * gates the CN name-order road to it (a two-team CN battle renders the
+ * WG-family key order and never grades exact off ship names — see
+ * renderCnTwoTeam.test.ts).
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -18,7 +24,7 @@ type Handler = (e: { payload: unknown }) => void;
 const handlers = new Map<string, Handler>();
 
 const arena = {
-  matchGroup: "pvp",
+  matchGroup: "pve",
   dateTime: "20261018_cn_exact",
   scenario: null,
   eventType: null,
@@ -29,20 +35,22 @@ const arena = {
     { id: 4, name: "红男爵A", relation: 1, shipId: 4 },
     { id: 5, name: "青春北风寒", relation: 1, shipId: 5 },
     { id: 6, name: "langyo", relation: 0, shipId: 6 },
-    { id: 7, name: "敌方一", relation: 2, shipId: 7 },
-    { id: 8, name: "敌方二", relation: 2, shipId: 8 },
-    { id: 9, name: "敌方三", relation: 2, shipId: 9 },
-    { id: 10, name: "敌方四", relation: 2, shipId: 10 },
+    { id: 7, name: "敌方一", relation: 1, shipId: 7 },
+    { id: 8, name: "敌方二", relation: 1, shipId: 8 },
+    { id: 9, name: "敌方三", relation: 1, shipId: 9 },
+    { id: 10, name: "敌方四", relation: 1, shipId: 10 },
   ],
 };
 
-// The render.test.ts anchor geometry: 6 ally rows + 4 enemy rows.
+// The SINGLE-team table anchor geometry: one full-width team column, ten
+// ally rows, NO enemy block (the green-only header, team_split exactly
+// 1.0) — the co-op shape the CN static calibration was taken on.
 const anchor = {
   gameRect: { x: 0, y: 0, width: 3072, height: 1920 },
   overlayRect: { x: 0, y: 140, width: 3072, height: 911 },
   rosterRect: { x: 420, y: 91, width: 2208, height: 729 },
-  rowCenters: [173, 229, 285, 342, 398, 454, 175, 231, 287, 343],
-  teamSplit: 0.505,
+  rowCenters: [173, 229, 285, 342, 398, 454, 510, 566, 622, 678],
+  teamSplit: 1.0,
   tableDetected: true,
   rowAlive: Array(10).fill(true),
   rosterMode: "plugin",
@@ -90,10 +98,10 @@ describe("overlay page render (CN realm)", () => {
     const fullNames = Object.fromEntries(
       arena.vehicles.map((v) => [v.name, `船_${v.shipId}`]),
     );
-    // Full per-side client ship-name coverage (both sides): the calibrated
-    // arrangement's inputs are the rendered strings — every side grades
-    // exact and drops its name column. No sort keys needed: CN never
-    // renders key order.
+    // Full per-side client ship-name coverage: the calibrated
+    // arrangement's inputs are the rendered strings — the side grades
+    // exact and drops its name column. No sort keys needed: the CN
+    // single-team table never renders key order.
     handlers.get("wowsp://ingame-telemetry")!({
       payload: {
         t: Date.now(),
@@ -107,9 +115,9 @@ describe("overlay page render (CN realm)", () => {
     );
     expect(rowChips()).toHaveLength(10);
 
-    // One ally name missing = partial coverage on the ALLY side only: the
-    // side falls back to the inference and carries its names again, while
-    // the still-covered enemy side stays exact and nameless.
+    // One name missing = partial coverage: the side falls back to the
+    // inference and carries its names again (game-true and inferred rows
+    // never interleave).
     const partialNames = { ...fullNames };
     delete partialNames["langyo"];
     handlers.get("wowsp://ingame-telemetry")!({
@@ -121,10 +129,10 @@ describe("overlay page render (CN realm)", () => {
       },
     });
     await vi.waitFor(() =>
-      expect(document.querySelectorAll(".overlay-chip__name").length).toBe(6),
+      expect(document.querySelectorAll(".overlay-chip__name").length).toBe(10),
     );
 
-    // A stale stream (the plugin died) clears the names wholesale — every
+    // A stale stream (the plugin died) clears the names wholesale — the
     // side returns to the inference and its names.
     handlers.get("wowsp://ingame-telemetry")!({
       payload: { t: 1, battle: "cn_exact", players: alive, shipNames: partialNames },

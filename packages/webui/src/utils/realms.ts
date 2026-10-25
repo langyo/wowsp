@@ -18,6 +18,11 @@ export const isKnownRealm = (code: string): boolean =>
  *  of the 2026-10-09 capture was a misread — Bogatyr leading two
  *  St. Louis rows was Lesta's own NATION.SORT_ORDER ranking russia first,
  *  not a name collation. Only the CN build's HUD re-sorts by the
- *  localized name; the static never-re-sorts layout stays CN-only too. */
+ *  localized name; the static never-re-sorts layout stays CN-only too.
+ *  Both CN quirks were calibrated on the SINGLE-team (co-op/operation)
+ *  table and are gated to that LAYOUT by the callers (issue #1360: the
+ *  2026-10-23 two-team capture renders the decompiled nation rank) —
+ *  this flag answers "could this client?", the anchor's team_split
+ *  answers "is this the calibrated table?". */
 export const realmUsesShipNameOrder = (code: string): boolean =>
   code === "cn";
