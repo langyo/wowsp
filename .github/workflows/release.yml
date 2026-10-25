@@ -486,6 +486,9 @@ jobs:
       pull-requests: write
       # gh workflow run for ci.yml / commit-msg-lint.yml / site.yml.
       actions: write
+      # The failure alarm below opens/comments an issue when the digest
+      # never reaches the live relay.
+      issues: write
     env:
       WOWSP_DIGEST_SIGNING_KEY: ${{ secrets.WOWSP_DIGEST_SIGNING_KEY }}
       WOWSP_DIGEST_SIGNING_KEY_ID: ${{ vars.WOWSP_DIGEST_SIGNING_KEY_ID }}
@@ -695,3 +698,28 @@ jobs:
           done
           echo "::error::live /api/digests/app never reached $ref"
           exit 1
+
+      # The v0.6.7 stranding (2026-10-25) sat silent for ~40 minutes: a
+      # red job nobody was watching while every shipped client refused
+      # the update. A digest that never lands is release-blocking, so
+      # ANY failure in this job raises an issue the maintainer sees —
+      # deduped per tag, with the run link and the repair recipe. Issue
+      # creation needs no PR-permission toggle, so the alarm also fires
+      # when the ops-token route itself is what failed.
+      - name: Alarm — an unpublished digest strands every client
+        if: failure()
+        run: |
+          set -euo pipefail
+          ref="${{ github.ref_name }}"
+          title="Release blocked: digest publish failed for ${ref} — clients cannot update"
+          num="$(gh issue list --search "in:title ${title}" --state open --json number --jq '.[0].number')"
+          body="The Release workflow's digest job failed for ${ref}: the relay's app digest was not re-pointed, so every already-shipped client refuses the update (the official channels disagree) until the live endpoint serves ${ref}.
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Repair: fix the underlying cause and re-run the failed job (the publish step is idempotent and reuses an existing PR by head branch); if the PR step still cannot create, open the PR by hand from the pushed chore/app-digest-${ref} branch, merge it, dispatch Deploy Site, then re-run this job to re-verify the endpoint."
+          if [ -z "${num}" ] || [ "${num}" = "null" ]; then
+            gh issue create --title "${title}" --body "${body}"
+          else
+            gh issue comment "${num}" --body "Failed again: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi

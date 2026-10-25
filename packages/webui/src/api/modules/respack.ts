@@ -59,8 +59,8 @@ export interface ResIntegrity {
  *  pack, data pack, mod-hub packages) rides this one event; see
  *  `wowsp_tauri_shared::download` and `commands/download_hub.rs`.
  *  Hub phases: `queued | race | download`; context continuations:
- *  `apply | installing | install | done | error` (a user cancel surfaces
- *  through the context's error phase / the rejected command). */
+ *  `verify | apply | installing | install | done | error` (a user cancel
+ *  surfaces through the context's error phase / the rejected command). */
 export interface DownloadProgress {
   /** Job identity — what a store filters on ("update", "res-pack",
    *  "data-pack", or the mod-hub entry id). */
