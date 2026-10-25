@@ -502,20 +502,26 @@ fn player_stats_of(
         solo_battles: p.solo_battles,
         div2_battles: p.div2_battles,
         div3_battles: p.div3_battles,
+        // CN's normalized div nodes carry battles/wins only — the extract
+        // answers None and the solo K/D column renders its dash face.
+        solo_kd_ratio: p.solo_kd_ratio,
         // Ranked career comes off the normalized `seasons` tree (the extract
         // reads it); the coop fallback never touches ranked counters, so the
         // coop-only guard above does not apply here. The global view merges
-        // that with the pvp career the same extract produced.
+        // that with the pvp career the same extract produced. K/D is raw
+        // counters, not a rating — the coop PR guard never applies to it.
         ranked_battles: p.ranked.battles,
         ranked_winrate: p.ranked.winrate,
         ranked_avg_damage: p.ranked.avg_damage,
         ranked_pr: p.ranked.pr,
+        ranked_kd_ratio: p.ranked.kd_ratio,
         global_battles: p.global.battles,
         global_winrate: p.global.winrate,
         global_avg_damage: p.global.avg_damage,
         // Same co-op guard as `pr` above: the global blend would distill
         // the same fantasy rating out of the co-op counters.
         global_pr: if coop_fallback { None } else { p.global.pr },
+        global_kd_ratio: p.global.kd_ratio,
         // CN runs an isolated account pool — no cross-realm arbitration
         // ever reads it (see wg_api's cross-server pass).
         last_battle_time: None,

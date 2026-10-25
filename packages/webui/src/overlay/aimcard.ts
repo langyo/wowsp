@@ -62,7 +62,7 @@ import { careerStamp, type CareerStamp, type StampKind } from "@/utils/winrate";
 // Display prefs — the same tolerant read the table page uses, so the
 // card's PR can never disagree with the chips' under the configured
 // algorithm, and the seal kill switches gate the same kinds.
-import { readOverlayDisplayPrefs } from "./overlayPrefs";
+import { effectiveOverlayColumns, readOverlayDisplayPrefs } from "./overlayPrefs";
 import {
   aimDisplayName,
   careerLineHtml,
@@ -497,6 +497,16 @@ function render() {
   }
   const prefs = readOverlayDisplayPrefs();
   const s = stats.get(aimName);
+  // The optional K/D figure rides exactly when the user configured a K/D
+  // column — the same prefs the tab table's chips read, so the two faces
+  // never disagree about which figures exist. The check runs over the
+  // EFFECTIVE columns (what the table actually renders): the PR master
+  // switch cannot hide a K/D column (only PR columns drop), so today the
+  // effective read equals the raw one — the effective form simply stays
+  // true the day any other metric gains a master switch of its own.
+  const kdOn = effectiveOverlayColumns(prefs.columns, prefs.prOn).some(
+    (c) => c.metric === "kd",
+  );
   const tag = aimClanTag ? `<span class="aim-tag">[${escapeHtml(aimClanTag)}]</span>` : "";
   const head = `<div class="aim-head"><span class="aim-name">${tag}${escapeHtml(aimName)}</span></div>`;
   const pattern = localized("battlesCount");
@@ -509,9 +519,10 @@ function render() {
     s?.accountId != null ? shipsByAccount.get(`${entryRealm}:${s.accountId}`) : undefined;
   const shipRow = ships?.find((r) => r.shipId === shipId) ?? null;
   const shipLabel = shipRow?.name ?? shipNames[aimName] ?? "";
-  // Lines 2+3 share ONE four-column grid (one .aim-grid, the ship cells
-  // simply absent when the line doesn't apply) so the two figure rows read
-  // as aligned columns regardless of each row's digit count.
+  // Lines 2+3 share ONE column grid (one .aim-grid — four tracks, five
+  // while the K/D figure rides; the ship cells simply absent when the line
+  // doesn't apply) so the two figure rows read as aligned columns
+  // regardless of each row's digit count.
   let shipCells = "";
   if (shipId != null && s && !s.hidden && s.accountId != null && shipLabel) {
     shipCells = shipLineHtml(
@@ -521,6 +532,7 @@ function render() {
       pattern,
       // The shared clock phase-locks the dots' chase across rebuilds.
       performance.now(),
+      kdOn,
     );
   }
   // The seal line: the career verdict through the clan gate + the
@@ -546,7 +558,11 @@ function render() {
   body.innerHTML =
     `<div class="aim-card" style="font-size:${fontSize.toFixed(1)}px">` +
     `${head}` +
-    `<div class="aim-grid">${careerLineHtml(s, pattern)}${shipCells}</div>` +
+    // --aim-cols widens the shared figure grid to five tracks while the
+    // K/D figure rides (see the SCSS); the two rows stay one alignment.
+    `<div class="aim-grid" style="--aim-cols:${kdOn ? 5 : 4}">` +
+    `${careerLineHtml(s, pattern, kdOn)}${shipCells}` +
+    `</div>` +
     `${sealLine}` +
     `</div>`;
 }

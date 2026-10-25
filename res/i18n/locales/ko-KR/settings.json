@@ -355,7 +355,8 @@
     "colMetricWinrate": "승률",
     "colMetricPr": "PR",
     "colMetricBattles": "전투 수",
-    "colMetricDamage": "평균 피해"
+    "colMetricDamage": "평균 피해",
+    "colMetricKd": "킬/데스"
   },
   "schemeDefaultName": "기본",
   "pairingWip": "휴대폰 페어링 기능은 개발 중이며 아직 완성되지 않았습니다.",

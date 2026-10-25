@@ -81,6 +81,12 @@ pub struct PlayerStats {
     pub div2_battles: Option<i64>,
     #[serde(default)]
     pub div3_battles: Option<i64>,
+    /// Kills / deaths over the randoms solo split (`pvp_solo`); None when
+    /// the split or its frags/survival detail is absent (CN answers None —
+    /// its div nodes carry battles/wins only). Consumed by the K/D roster
+    /// column's solo scope.
+    #[serde(default)]
+    pub solo_kd_ratio: Option<f32>,
 
     // ── Ranked (排位) career stats ──────────────────────────────────────
     /// Career ranked battles (rank_solo + rank_div2 + rank_div3 on the WG
@@ -98,6 +104,12 @@ pub struct PlayerStats {
     /// weighted-winrate formula as the overall `pr`).
     #[serde(default)]
     pub ranked_pr: Option<i64>,
+    /// Kills / deaths over the ranked career (deaths = ranked battles −
+    /// survived, summed across the splits — the game's own 击杀比 caliber).
+    /// None = never played ranked / hidden profile. Consumed by the K/D
+    /// roster column under the ranked battle scope.
+    #[serde(default)]
+    pub ranked_kd_ratio: Option<f32>,
 
     // ── Global (全局 = randoms + ranked merged) career stats ───────────
     /// Combined career battles (randoms + ranked). For an account that
@@ -118,6 +130,11 @@ pub struct PlayerStats {
     /// expected PR algorithm.
     #[serde(default)]
     pub global_pr: Option<i64>,
+    /// Kills / deaths over the merged careers (Σfrags / Σdeaths across both
+    /// modes — never a mean of the two modes' ratios). Consumed by the K/D
+    /// roster column under the global battle scope.
+    #[serde(default)]
+    pub global_kd_ratio: Option<f32>,
 
     /// Unix time of the account's last finished battle (WG account/info's
     /// `last_battle_time`). The roster batch uses it to arbitrate

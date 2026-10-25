@@ -173,7 +173,8 @@
     "metricWinrate": "WR",
     "metricPr": "PR",
     "metricBattles": "Battles",
-    "metricDamage": "Avg dmg"
+    "metricDamage": "Avg dmg",
+    "metricKd": "K/D"
   },
   "minimap": {
     "zoom": "Zoomed map",

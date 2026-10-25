@@ -173,7 +173,8 @@
     "metricWinrate": "勝率",
     "metricPr": "PR",
     "metricBattles": "戦闘数",
-    "metricDamage": "平均"
+    "metricDamage": "平均",
+    "metricKd": "キル/デス"
   },
   "minimap": {
     "zoom": "拡大マップ",

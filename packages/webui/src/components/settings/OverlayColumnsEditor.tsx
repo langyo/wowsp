@@ -88,12 +88,14 @@ const METRIC_KEY: Record<OverlayColumnMetric, string> = {
   pr: "settings.overlayContent.colMetricPr",
   battles: "settings.overlayContent.colMetricBattles",
   damage: "settings.overlayContent.colMetricDamage",
+  kd: "settings.overlayContent.colMetricKd",
 };
 
 /** The add-menu's metric options (the issue-1082 ordering: 场均/PR/胜率/
- *  场次), render-time for the same reason. */
+ *  场次, 击杀比 appended when it joined the set), render-time for the same
+ *  reason. */
 const metricTabs = () =>
-  (["damage", "pr", "winrate", "battles"] as OverlayColumnMetric[]).map((key) => ({
+  (["damage", "pr", "winrate", "battles", "kd"] as OverlayColumnMetric[]).map((key) => ({
     key,
     label: t(METRIC_KEY[key]),
   }));

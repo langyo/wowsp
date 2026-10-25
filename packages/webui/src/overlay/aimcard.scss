@@ -70,18 +70,20 @@ body {
   font-weight: 600;
 }
 
-/* Lines 2 and 3 — the figure rows live in ONE shared four-column grid
-   (winrate → PR → battles → damage, the tab chips' column order): each
-   row's cells are direct grid children, so the two rows' columns hold one
-   alignment line regardless of each row's digit count. Digits are
-   right-aligned WITHIN the grid; the grid block itself centers as a whole
-   (the card centers every line — the rows are centered blocks of
-   right-aligned columns). The mono face rides the bold values. The ship
-   line's muted name tag rides INSIDE its first cell (.aim-ship-cell, the
-   tab scope tag's same trick), so the ship row also counts exactly four. */
+/* Lines 2 and 3 — the figure rows live in ONE shared column grid
+   (winrate → PR → battles → damage, the tab chips' column order, plus the
+   optional K/D figure as a fifth track while the user configured a K/D
+   column — aimcard.ts sets --aim-cols accordingly): each row's cells are
+   direct grid children, so the two rows' columns hold one alignment line
+   regardless of each row's digit count. Digits are right-aligned WITHIN
+   the grid; the grid block itself centers as a whole (the card centers
+   every line — the rows are centered blocks of right-aligned columns).
+   The mono face rides the bold values. The ship line's muted name tag
+   rides INSIDE its first cell (.aim-ship-cell, the tab scope tag's same
+   trick), so the ship row counts exactly as many cells as the career one. */
 .aim-grid {
   display: grid;
-  grid-template-columns: repeat(4, max-content);
+  grid-template-columns: repeat(var(--aim-cols, 4), max-content);
   column-gap: 0.9em;
   row-gap: 0.15em;
   justify-items: end;

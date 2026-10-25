@@ -23,6 +23,11 @@ export interface TeamStatEntry {
   /** Career average damage; null = no data. Plain arithmetic mean only —
    *  unlike winrate there is no tier weighting to argue about. */
   damage: number | null;
+  /** Career kills/deaths ratio; null = no data. Plain arithmetic mean
+   *  only — a ratio has no tier weighting either (and the mean of ratios
+   *  over players, unlike the mode merges, is exactly the team-shape
+   *  question the header asks). */
+  kd: number | null;
   /** Ship tier 1–11; null = ship unknown to the offline DB. */
   tier: number | null;
 }
@@ -36,6 +41,8 @@ export interface TeamAggregate {
   avgBattles: number | null;
   /** Arithmetic mean average damage over the players that have one. */
   avgDamage: number | null;
+  /** Arithmetic mean kills/deaths ratio over the players that have one. */
+  avgKd: number | null;
   /** How many players' winrates entered the aggregate. */
   counted: number;
 }
@@ -56,6 +63,9 @@ export function aggregateTeamStats(
   const battlesRated = entries.filter(
     (e): e is TeamStatEntry & { battles: number } => e.battles != null,
   );
+  const kdRated = entries.filter(
+    (e): e is TeamStatEntry & { kd: number } => e.kd != null,
+  );
   const avgPr =
     prRated.length > 0 ? prRated.reduce((a, e) => a + e.pr, 0) / prRated.length : null;
   const avgBattles =
@@ -66,12 +76,15 @@ export function aggregateTeamStats(
     dmgRated.length > 0
       ? dmgRated.reduce((a, e) => a + e.damage, 0) / dmgRated.length
       : null;
+  const avgKd =
+    kdRated.length > 0 ? kdRated.reduce((a, e) => a + e.kd, 0) / kdRated.length : null;
   if (rated.length === 0) {
     return {
       winrate: null,
       avgPr,
       avgBattles,
       avgDamage,
+      avgKd,
       counted: 0,
     };
   }
@@ -94,6 +107,7 @@ export function aggregateTeamStats(
     avgPr,
     avgBattles,
     avgDamage,
+    avgKd,
     counted: rated.length,
   };
 }

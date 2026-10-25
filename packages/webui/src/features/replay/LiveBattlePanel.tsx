@@ -755,6 +755,7 @@ export default defineComponent({
               pr: null,
               battles: null,
               damage: null,
+              kd: null,
               tier: shipTierOf(v.shipId),
             };
           }
@@ -764,6 +765,7 @@ export default defineComponent({
             pr: view.pr,
             battles: view.battles,
             damage: view.avgDamage,
+            kd: view.kd,
             tier: shipTierOf(v.shipId),
           };
         }),
@@ -861,6 +863,12 @@ export default defineComponent({
                     ? battlesColor(a.avgBattles)
                     : undefined,
               });
+            } else if (col.metric === "kd") {
+              parts.push({
+                col: idx,
+                label: col.scope === "global" ? t("replay.roster.metricKd") : col.head,
+                value: a.avgKd != null ? a.avgKd.toFixed(2) : "—",
+              });
             } else {
               parts.push({
                 col: idx,
@@ -949,6 +957,7 @@ export default defineComponent({
             }
             if (col.metric === "pr") return t("replay.roster.teamAvgPr");
             if (col.metric === "battles") return t("replay.roster.battles");
+            if (col.metric === "kd") return t("replay.roster.metricKd");
             return t("replay.postbattle.avgDamage");
           };
           const valueOf = (col: RosterColumnSpec): VNode => {
@@ -988,6 +997,13 @@ export default defineComponent({
                   {agg.avgBattles != null
                     ? Math.round(agg.avgBattles).toLocaleString()
                     : "—"}
+                </b>
+              );
+            }
+            if (col.metric === "kd") {
+              return (
+                <b class="live-battle__col-hval">
+                  {agg.avgKd != null ? agg.avgKd.toFixed(2) : "—"}
                 </b>
               );
             }
@@ -1055,7 +1071,9 @@ export default defineComponent({
                 ? t("replay.roster.teamAvgPr")
                 : col.metric === "battles"
                   ? t("replay.roster.battles")
-                  : t("replay.postbattle.avgDamage");
+                  : col.metric === "kd"
+                    ? t("replay.roster.metricKd")
+                    : t("replay.postbattle.avgDamage");
         let value: VNode;
         if (col.metric === "winrate") {
           value = (
@@ -1089,6 +1107,8 @@ export default defineComponent({
               {agg.avgBattles != null ? Math.round(agg.avgBattles).toLocaleString() : "—"}
             </b>
           );
+        } else if (col.metric === "kd") {
+          value = <b>{agg.avgKd != null ? agg.avgKd.toFixed(2) : "—"}</b>;
         } else {
           value = (
             <b

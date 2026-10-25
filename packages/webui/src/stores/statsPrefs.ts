@@ -27,8 +27,12 @@ export type SealDisableMap = Partial<Record<StampKind, boolean>>;
  *  ("class" — 仅当前舰种). */
 export type OverlayColumnScope = "global" | "solo" | "ship" | "shipSolo" | "class";
 
-/** Which number a roster column shows. */
-export type OverlayColumnMetric = "winrate" | "pr" | "battles" | "damage";
+/** Which number a roster column shows. `kd` is the game-caliber
+ *  kills/deaths ratio (击杀比 — frags / (battles − survived)); every surface
+ *  renders it plain (no tier color: there is no community color band for
+ *  K/D) and the localized column name falls back to the literal "K/D"
+ *  wherever the translated term would run long. */
+export type OverlayColumnMetric = "winrate" | "pr" | "battles" | "damage" | "kd";
 
 /** One configured roster column: a scope × metric pair. The column LIST
  *  (order included) is the persisted state — every roster surface (live
@@ -201,7 +205,7 @@ function isOverlayColumnScope(v: unknown): v is OverlayColumnScope {
 }
 
 function isOverlayColumnMetric(v: unknown): v is OverlayColumnMetric {
-  return v === "winrate" || v === "pr" || v === "battles" || v === "damage";
+  return v === "winrate" || v === "pr" || v === "battles" || v === "damage" || v === "kd";
 }
 
 /** The retired chip toggles, as last written by a pre-columns build —

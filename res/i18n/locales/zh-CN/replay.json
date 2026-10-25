@@ -173,7 +173,8 @@
     "metricWinrate": "胜率",
     "metricPr": "PR",
     "metricBattles": "场次",
-    "metricDamage": "场均"
+    "metricDamage": "场均",
+    "metricKd": "击杀比"
   },
   "minimap": {
     "zoom": "放大地图",

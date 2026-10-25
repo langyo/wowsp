@@ -355,7 +355,8 @@
     "colMetricWinrate": "Tasa de victoria",
     "colMetricPr": "PR",
     "colMetricBattles": "Batallas",
-    "colMetricDamage": "Daño medio"
+    "colMetricDamage": "Daño medio",
+    "colMetricKd": "K/D"
   },
   "schemeDefaultName": "Por defecto",
   "pairingWip": "El emparejamiento con el teléfono está en desarrollo y aún no está terminado.",

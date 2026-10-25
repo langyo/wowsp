@@ -9,11 +9,13 @@ const e = (
   pr: number | null = null,
   damage: number | null = null,
   battles: number | null = null,
+  kd: number | null = null,
 ): TeamStatEntry => ({
   winrate,
   pr,
   battles,
   damage,
+  kd,
   tier,
 });
 
@@ -73,6 +75,16 @@ describe("aggregateTeamStats", () => {
     expect(agg.avgDamage).toBeCloseTo(70000, 10);
   });
 
+  it("averages K/D only over players that have one (plain mean)", () => {
+    const agg = aggregateTeamStats(
+      [e(60, 10, null, null, null, 2.0), e(40, 5, null, null, null, null), e(50, 8, null, null, null, 1.0)],
+      // Like PR/damage the K/D mean stays plain whatever the winrate
+      // weighting — a ratio has no tier weighting either.
+      true,
+    );
+    expect(agg.avgKd).toBeCloseTo(1.5, 10);
+  });
+
   it("returns null aggregates when nothing landed", () => {
     const agg = aggregateTeamStats([e(null, 10), e(null, 8, null)], true);
     expect(agg).toEqual({
@@ -80,6 +92,7 @@ describe("aggregateTeamStats", () => {
       avgPr: null,
       avgBattles: null,
       avgDamage: null,
+      avgKd: null,
       counted: 0,
     });
   });
@@ -90,6 +103,7 @@ describe("aggregateTeamStats", () => {
       avgPr: null,
       avgBattles: null,
       avgDamage: null,
+      avgKd: null,
       counted: 0,
     });
   });

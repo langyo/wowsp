@@ -39,12 +39,18 @@ const ship = (over: Partial<PlayerShipStats>): PlayerShipStats =>
     ...over,
   }) as PlayerShipStats;
 
-const mode = (battles: number, wins: number, damage: number) => ({
+const mode = (
+  battles: number,
+  wins: number,
+  damage: number,
+  frags = 0,
+  survived = 0,
+) => ({
   battles,
   wins,
   damageCaused: damage,
-  frags: 0,
-  survivedBattles: 0,
+  frags,
+  survivedBattles: survived,
   winrate: (wins / battles) * 100,
   avgDamage: damage / battles,
 });
@@ -56,8 +62,19 @@ const SHIPS: PlayerShipStats[] = [
     battles: 100,
     wins: 55,
     damageCaused: 100_000,
-    // 60 solo battles at 50% + 40 div2 battles at 62.5%.
-    modes: { solo: mode(60, 30, 54_000), div2: mode(40, 25, 46_000), div3: null, coop: null, ranked: mode(20, 12, 22_000) },
+    // 120 frags, 40 survived → 120 frags / 60 deaths = 2.0 K/D.
+    frags: 120,
+    survivedBattles: 40,
+    // 60 solo battles at 50% + 40 div2 battles at 62.5%. Solo split: 90
+    // frags, 20 survived → 90/40 = 2.25; ranked: 30 frags, 4 survived →
+    // 30/16 = 1.875.
+    modes: {
+      solo: mode(60, 30, 54_000, 90, 20),
+      div2: mode(40, 25, 46_000),
+      div3: null,
+      coop: null,
+      ranked: mode(20, 12, 22_000, 30, 4),
+    },
   }),
   ship({
     shipId: 2,
@@ -157,6 +174,7 @@ describe("aggregateShipScopeStats", () => {
       pr: null,
       battles: 0,
       avgDamage: null,
+      kd: null,
     });
     // The row's ship missing from the landed list entirely is the same
     // verdict — never played IS zero battles, not a data miss.
@@ -165,6 +183,7 @@ describe("aggregateShipScopeStats", () => {
       pr: null,
       battles: 0,
       avgDamage: null,
+      kd: null,
     });
     // Through the view resolver the same dims hold: the count renders 0,
     // the ratio metrics keep the dash face.
@@ -173,9 +192,10 @@ describe("aggregateShipScopeStats", () => {
       pr: 1600,
       battles: 12_000,
       avgDamage: 85_000,
+      kd: 1.8,
       ranked: null,
       global: null,
-      solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null },
+      solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null, kd: 1.6 },
     };
     const dims: RosterStatsDims = { ship: "ship", battle: "random", solo: "all" };
     expect(
@@ -185,6 +205,7 @@ describe("aggregateShipScopeStats", () => {
       pr: null,
       battles: 0,
       avgDamage: null,
+      kd: null,
     });
   });
 
@@ -222,6 +243,32 @@ describe("aggregateShipScopeStats", () => {
     expect(view!.winrate).toBeCloseTo((55 + 12) / 1.2, 5);
   });
 
+  it("K/D aggregates the summed raw counters (Σfrags / Σdeaths)", () => {
+    // Ship 1's randoms career: 120 frags / (100 − 40 survived) = 2.0 — the
+    // game's own caliber over the row's counters.
+    const view = aggregateShipScopeStats(SHIPS, 1, q(), resolver);
+    expect(view!.kd).toBeCloseTo(2.0, 6);
+    // The solo split: 90 frags / (60 − 20) = 2.25.
+    const soloView = aggregateShipScopeStats(SHIPS, 1, q({ solo: true }), resolver);
+    expect(soloView!.kd).toBeCloseTo(2.25, 6);
+    // The ranked bucket: 30 frags / (20 − 4) = 1.875.
+    const rankedView = aggregateShipScopeStats(SHIPS, 1, q({ battle: "ranked" }), resolver);
+    expect(rankedView!.kd).toBeCloseTo(1.875, 6);
+    // The merged bucket SUMS both sides' counters first:
+    // (120 + 30) / ((100 − 40) + (20 − 4)) = 150/76.
+    const mergedView = aggregateShipScopeStats(SHIPS, 1, q({ battle: "all" }), resolver);
+    expect(mergedView!.kd).toBeCloseTo(150 / 76, 6);
+  });
+
+  it("an aggregate where nobody died answers the K/D dash, not zero", () => {
+    const immortal = [
+      ship({ shipId: 1, battles: 10, wins: 5, damageCaused: 0, frags: 7, survivedBattles: 10 }),
+    ];
+    const view = aggregateShipScopeStats(immortal, 1, q(), resolver);
+    expect(view!.battles).toBe(10);
+    expect(view!.kd).toBeNull();
+  });
+
   it("expected PR aggregates as the battles-weighted mean of per-row PRs (randoms only)", () => {
     const rows = [
       ship({ shipId: 1, battles: 100, wins: 50, damageCaused: 0, pr: 1000 }),
@@ -252,11 +299,13 @@ describe("scopedRosterView", () => {
     pr: 1600,
     battles: 12_000,
     avgDamage: 85_000,
-    ranked: { winrate: 48, pr: 1100, battles: 300, avgDamage: 60_000 },
+    kd: 1.8,
+    ranked: { winrate: 48, pr: 1100, battles: 300, avgDamage: 60_000, kd: 1.2 },
     global: null,
     // The career solo split, mapped data-only (PR/avgDamage null — the
-    // view derives the PR per algorithm).
-    solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null },
+    // view derives the PR per algorithm; kd rides when the wire carried
+    // it).
+    solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null, kd: 1.6 },
   };
 
   it("the default dims keep reading the account careers", () => {
@@ -266,7 +315,17 @@ describe("scopedRosterView", () => {
       pr: 1600,
       battles: 12_000,
       avgDamage: 85_000,
+      kd: 1.8,
     });
+  });
+
+  it("the solo-only dims carry the split's own K/D (or its dash)", () => {
+    const dims: RosterStatsDims = { ship: "all", battle: "random", solo: "solo" };
+    expect(scopedRosterView(CAREER, 1, dims, "random", "winrate").kd).toBeCloseTo(1.6, 6);
+    // A split without the K/D detail (CN's battles/wins-only div nodes)
+    // keeps the dash face — never the career K/D wearing a solo tag.
+    const noKd = { ...CAREER, solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null, kd: null } };
+    expect(scopedRosterView(noKd, 1, dims, "random", "winrate").kd).toBeNull();
   });
 
   it("a ship-scoped source aggregates the attached per-ship list", () => {
@@ -335,20 +394,20 @@ describe("scopedRosterView", () => {
     const dims: RosterStatsDims = { ship: "all", battle: "random", solo: "solo" };
     // The transport-mirror shape: pvp_solo just echoes pvp. However real
     // the winrate looks, the split is not a measurement.
-    const mirrored = { ...CAREER, solo: { winrate: 52.5, pr: null, battles: 12_000, avgDamage: null } };
+    const mirrored = { ...CAREER, solo: { winrate: 52.5, pr: null, battles: 12_000, avgDamage: null, kd: null } };
     expect(scopedRosterView(mirrored, 1, dims, "random", "winrate")).toEqual(EMPTY_ROSTER_VIEW);
     // A near-mirror (within the 1% line) dashes too.
-    const nearMirror = { ...CAREER, solo: { winrate: 52.4, pr: null, battles: 11_950, avgDamage: null } };
+    const nearMirror = { ...CAREER, solo: { winrate: 52.4, pr: null, battles: 11_950, avgDamage: null, kd: null } };
     expect(scopedRosterView(nearMirror, 1, dims, "random", "winrate")).toEqual(EMPTY_ROSTER_VIEW);
     // A genuinely dominant — but clearly split — solo share stays a figure.
-    const dominant = { ...CAREER, solo: { winrate: 51.9, pr: null, battles: 11_700, avgDamage: null } };
+    const dominant = { ...CAREER, solo: { winrate: 51.9, pr: null, battles: 11_700, avgDamage: null, kd: null } };
     const view = scopedRosterView(dominant, 1, dims, "random", "winrate");
     expect(view.battles).toBe(11_700);
     // The short-career exception: ≤50 battles may honestly be all solo.
     const fresh = {
       ...CAREER,
       battles: 50,
-      solo: { winrate: 51, pr: null, battles: 50, avgDamage: null },
+      solo: { winrate: 51, pr: null, battles: 50, avgDamage: null, kd: null },
     };
     expect(scopedRosterView(fresh, 1, dims, "random", "winrate").battles).toBe(50);
   });
@@ -424,9 +483,10 @@ describe("overlayColumnDims", () => {
       pr: 1600,
       battles: 12_000,
       avgDamage: 85_000,
+      kd: 1.8,
       ranked: null,
       global: null,
-      solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null },
+      solo: { winrate: 51, pr: null, battles: 8000, avgDamage: null, kd: 1.6 },
     };
     const view = scopedRosterView(
       { ...career, ships: SHIPS },

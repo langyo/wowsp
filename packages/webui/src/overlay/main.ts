@@ -156,11 +156,13 @@ interface OverlayMessages {
   colScopeShip: string;
   colScopeShipSolo: string;
   colScopeClass: string;
-  /** The head row's metric words (colHeadWinrate → 胜率 / WR …). */
+  /** The head row's metric words (colHeadWinrate → 胜率 / WR …; the K/D
+   *  word is the locale's short term or the literal "K/D"). */
   colHeadWinrate: string;
   colHeadPr: string;
   colHeadBattles: string;
   colHeadDmg: string;
+  colHeadKd: string;
   /** How a scope prefix joins its metric word in the head row — empty for
    *  the CJK locales (单排胜率 concatenates), one space for the spaced
    *  scripts ("Solo WR"). */
@@ -245,18 +247,25 @@ interface BatchStat {
   avgDamage?: number | null;
   pr?: number | null;
   battles?: number | null;
+  /** Kills / deaths over the randoms career (the game's own caliber). */
+  kdRatio?: number | null;
   rankedWinrate?: number | null;
   rankedPr?: number | null;
   rankedBattles?: number | null;
   rankedAvgDamage?: number | null;
+  rankedKdRatio?: number | null;
   globalWinrate?: number | null;
   globalPr?: number | null;
   globalBattles?: number | null;
   globalAvgDamage?: number | null;
+  globalKdRatio?: number | null;
   /** The career solo split (randoms-solo) — the solo-scope columns read
    *  this instead of summing per-ship split documents. */
   soloWr?: number | null;
   soloBattles?: number | null;
+  /** The solo split's own K/D; null when the split carried no frags/
+   *  survival detail (CN answers battles/wins only). */
+  soloKdRatio?: number | null;
   /** Clan id from the batch answer (null = clanless / not found) — joins
    *  the hidden-profile 过街老鼠 clan gate below. */
   clanId?: number | null;
@@ -688,11 +697,14 @@ function scopeWord(scope: OverlayColumnScope): string {
   return "";
 }
 
-/** Metric → the head row's word (colHeadWinrate → 胜率 / WR …). */
+/** Metric → the head row's word (colHeadWinrate → 胜率 / WR …; the K/D
+ *  word is the locale's short term, "K/D" itself wherever the translated
+ *  phrase would run long). */
 function headWord(metric: OverlayColumnMetric): string {
   if (metric === "winrate") return localized("colHeadWinrate");
   if (metric === "pr") return localized("colHeadPr");
   if (metric === "battles") return localized("colHeadBattles");
+  if (metric === "kd") return localized("colHeadKd");
   return localized("colHeadDmg");
 }
 
@@ -784,6 +796,14 @@ function chipColumns(name: string, side: "ally" | "enemy", st: RawStat): string 
         v.battles != null
           ? `<b ${slot}${color ? ` style="color:${color}"` : ""}>${battlesText(v.battles)}</b>`
           : `<b ${slot} class="${absentCls}">${fig("n-battles", absent)}</b>`,
+      );
+    } else if (col.metric === "kd") {
+      // The game's two-decimal K/D face, plain ink — no color band exists
+      // for a kills/deaths ratio, unlike the tier-colored figures.
+      parts.push(
+        v.kd != null
+          ? `<b ${slot}>${fig("n-kd", v.kd.toFixed(2))}</b>`
+          : `<b ${slot} class="${absentCls}">${fig("n-kd", absent)}</b>`,
       );
     } else {
       parts.push(
@@ -974,6 +994,7 @@ function teamAggregateFor(vehicles: Vehicle[]): SideTeamStats {
           pr: v2?.pr ?? null,
           battles: v2?.battles ?? null,
           damage: v2?.avgDamage ?? null,
+          kd: v2?.kd ?? null,
           tier: shipTierOf(v.shipId),
         };
       }),
@@ -2006,6 +2027,7 @@ async function runBatch() {
               avgDamage: r.avgDamage ?? null,
               pr: r.pr ?? null,
               battles: r.battles ?? null,
+              kd: r.kdRatio ?? null,
               ranked:
                 r.rankedBattles != null || r.rankedWinrate != null
                   ? {
@@ -2013,6 +2035,7 @@ async function runBatch() {
                       pr: r.rankedPr ?? null,
                       battles: r.rankedBattles ?? null,
                       avgDamage: r.rankedAvgDamage ?? null,
+                      kd: r.rankedKdRatio ?? null,
                     }
                   : null,
               global:
@@ -2022,6 +2045,7 @@ async function runBatch() {
                       pr: r.globalPr ?? null,
                       battles: r.globalBattles ?? null,
                       avgDamage: r.globalAvgDamage ?? null,
+                      kd: r.globalKdRatio ?? null,
                     }
                   : null,
               // The career solo split, data-only (PR derives per algorithm
@@ -2039,6 +2063,7 @@ async function runBatch() {
                       pr: null,
                       battles: r.soloBattles ?? null,
                       avgDamage: null,
+                      kd: r.soloKdRatio ?? null,
                     }
                   : null,
               clanId: r.clanId ?? null,
@@ -2057,6 +2082,7 @@ async function runBatch() {
               avgDamage: null,
               pr: null,
               battles: null,
+              kd: null,
               ranked: null,
               global: null,
               solo: null,
