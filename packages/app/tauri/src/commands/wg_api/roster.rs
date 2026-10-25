@@ -949,14 +949,17 @@ pub(super) fn player_stats_from_info(
         solo_battles: p.solo_battles,
         div2_battles: p.div2_battles,
         div3_battles: p.div3_battles,
+        solo_kd_ratio: p.solo_kd_ratio,
         ranked_battles: p.ranked.battles,
         ranked_winrate: p.ranked.winrate,
         ranked_avg_damage: p.ranked.avg_damage,
         ranked_pr: p.ranked.pr,
+        ranked_kd_ratio: p.ranked.kd_ratio,
         global_battles: p.global.battles,
         global_winrate: p.global.winrate,
         global_avg_damage: p.global.avg_damage,
         global_pr: p.global.pr,
+        global_kd_ratio: p.global.kd_ratio,
     }
 }
 

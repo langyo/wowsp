@@ -19,12 +19,19 @@ pub(crate) struct CareerModeStats {
     pub(crate) winrate: Option<f32>,
     pub(crate) avg_damage: Option<f32>,
     pub(crate) pr: Option<i64>,
+    /// Kills / deaths over the mode's summed counters (deaths = battles −
+    /// survived; the game's own 击杀比 caliber, same as the pvp `kd_ratio`).
+    /// None when the mode was never played or its splits carried no battles
+    /// to die in.
+    pub(crate) kd_ratio: Option<f32>,
 }
 
-/// Raw per-division counters for one career mode: (battles, wins, damage)
-/// × [solo, div2, div3]. Zeroed slots = that division never played. Feeds
-/// `ranked_career_of` and the global-mode split merge.
-pub(crate) type CareerSplits = [(i64, i64, i64); 3];
+/// Raw per-division counters for one career mode: (battles, wins, damage,
+/// frags, deaths) × [solo, div2, div3]. Zeroed slots = that division never
+/// played. Feeds `ranked_career_of` and the global-mode split merge (the
+/// K/D side sums raw frags/deaths — a battles-weighted mean of per-split
+/// ratios would not be the mode's true ratio).
+pub(crate) type CareerSplits = [(i64, i64, i64, i64, i64); 3];
 
 /// Extracts deep PvP stats from the WG account/info `statistics.pvp` node.
 /// All fields are optional — hidden profiles yield null, and casual accounts
@@ -49,6 +56,12 @@ pub(crate) struct PvpStats {
     pub(crate) solo_battles: Option<i64>,
     pub(crate) div2_battles: Option<i64>,
     pub(crate) div3_battles: Option<i64>,
+    /// Kills / deaths over the randoms SOLO split (`pvp_solo` — frags /
+    /// (battles − survived), the same caliber as `kd_ratio`). None when the
+    /// split or its frags/survival detail is absent (CN's normalized div
+    /// nodes carry battles/wins only — the solo K/D column shows its dash
+    /// there, the honest face over a made-up number).
+    pub(crate) solo_kd_ratio: Option<f32>,
     /// Career ranked stats (see [`CareerModeStats`]).
     pub(crate) ranked: CareerModeStats,
     /// Combined randoms+ranked career totals (see [`global_career_of`]).
@@ -139,15 +152,27 @@ impl PvpStats {
         let solo = div_stats(statistics, "pvp_solo");
         let div2 = div_stats(statistics, "pvp_div2");
         let div3 = div_stats(statistics, "pvp_div3");
+        // Solo-split K/D (the roster's solo-scope K/D column): the WG pvp_solo
+        // node carries the full counter set, so the ratio reads straight off
+        // it; CN's normalized div node (battles/wins only) answers None.
+        let solo_kd_ratio = div_kd(statistics, "pvp_solo");
         let pr = compute_pr(solo, div2, div3).or_else(|| match (winrate, battles) {
             (Some(w), Some(b)) if b > 0 => compute_pr(Some((w, b)), None, None),
             _ => None,
         });
         // Global career = randoms + ranked merged (raw pvp totals feed the
-        // winrate/damage blend; the split pairs feed the PR bucket merge).
+        // winrate/damage/K-D blends; the split pairs feed the PR bucket
+        // merge). The pvp K/D side rides as raw frags/deaths so the merge
+        // sums counters instead of averaging ratios.
         let global = global_career_of(
             match (battles, wins, damage) {
-                (Some(b), Some(w), Some(d)) if b > 0 => Some((b, w, d)),
+                (Some(b), Some(w), Some(d)) if b > 0 => Some((
+                    b,
+                    w,
+                    d,
+                    frags.unwrap_or(0),
+                    b - survived.unwrap_or(0).min(b),
+                )),
                 _ => None,
             },
             [solo, div2, div3],
@@ -171,6 +196,7 @@ impl PvpStats {
             solo_battles: solo.map(|(_, b)| b),
             div2_battles: div2.map(|(_, b)| b),
             div3_battles: div3.map(|(_, b)| b),
+            solo_kd_ratio,
             ranked,
             global,
         }
@@ -193,16 +219,33 @@ impl PvpStats {
             solo_battles: None,
             div2_battles: None,
             div3_battles: None,
+            solo_kd_ratio: None,
             ranked: CareerModeStats::default(),
             global: CareerModeStats::default(),
         }
     }
 }
 
-/// One battle-type stats node's raw counters: (battles, wins, damage).
-/// Null / zero-battle nodes read as None so a never-played split never
-/// dilutes the sums.
-fn mode_split(node: Option<&serde_json::Value>) -> Option<(i64, i64, i64)> {
+/// Kills/deaths ratio of one per-division stats node (frags /
+/// (battles − survived_battles) — the game's own 击杀比 caliber). None when
+/// the node is absent or does not carry the full counter set: a battles-only
+/// split (CN's normalized div nodes) must answer "no ratio" rather than a
+/// frags/battles figure wearing the wrong denominator.
+fn div_kd(statistics: &serde_json::Value, key: &str) -> Option<f32> {
+    let node = statistics.get(key).filter(|v| !v.is_null())?;
+    let b = get_i64(node, "battles")?;
+    let f = get_i64(node, "frags")?;
+    let s = get_i64(node, "survived_battles")?;
+    (b > s).then(|| f as f32 / (b - s) as f32)
+}
+
+/// One battle-type stats node's raw counters: (battles, wins, damage,
+/// frags, deaths — deaths = battles − survived_battles, the game's own
+/// 击杀比 denominator). Null / zero-battle nodes read as None so a
+/// never-played split never dilutes the sums; frags/survived default to 0
+/// when the node carries battles but not them (the WG rank_* nodes and the
+/// CN seasons tree always carry both).
+fn mode_split(node: Option<&serde_json::Value>) -> Option<(i64, i64, i64, i64, i64)> {
     let node = node.filter(|v| !v.is_null())?;
     let b = get_i64(node, "battles")?;
     if b <= 0 {
@@ -210,21 +253,27 @@ fn mode_split(node: Option<&serde_json::Value>) -> Option<(i64, i64, i64)> {
     }
     let w = get_i64(node, "wins").unwrap_or(0);
     let d = get_i64(node, "damage_dealt").or_else(|| get_i64(node, "damage_caused"))?;
-    Some((b, w, d))
+    let f = get_i64(node, "frags").unwrap_or(0);
+    let deaths = b - get_i64(node, "survived_battles").unwrap_or(0).min(b);
+    Some((b, w, d, f, deaths))
 }
 
 /// Assemble [`CareerModeStats`] out of summed raw counters plus the
 /// per-split (winrate, battles) pairs the PR proxy blends. Zero total
-/// battles → all-None (never played ranked).
+/// battles → all-None (never played ranked). The K/D sums the RAW frags
+/// and deaths first (Σfrags / Σdeaths) — the ratio the game's own 击杀比
+/// shows over the same counters, not a mean of per-split ratios.
 fn ranked_career_of(splits: CareerSplits) -> CareerModeStats {
-    let battles: i64 = splits.iter().map(|(b, _, _)| b).sum();
+    let battles: i64 = splits.iter().map(|(b, _, _, _, _)| b).sum();
     if battles <= 0 {
         return CareerModeStats::default();
     }
-    let wins: i64 = splits.iter().map(|(_, w, _)| w).sum();
-    let damage: i64 = splits.iter().map(|(_, _, d)| d).sum();
+    let wins: i64 = splits.iter().map(|(_, w, _, _, _)| w).sum();
+    let damage: i64 = splits.iter().map(|(_, _, d, _, _)| d).sum();
+    let frags: i64 = splits.iter().map(|(_, _, _, f, _)| f).sum();
+    let deaths: i64 = splits.iter().map(|(_, _, _, _, dd)| dd).sum();
     let winrate = 100.0 * wins as f32 / battles as f32;
-    let wr_pair = |s: (i64, i64, i64)| (100.0 * s.1 as f32 / s.0 as f32, s.0);
+    let wr_pair = |s: (i64, i64, i64, i64, i64)| (100.0 * s.1 as f32 / s.0 as f32, s.0);
     CareerModeStats {
         battles: Some(battles),
         winrate: Some(winrate),
@@ -234,6 +283,7 @@ fn ranked_career_of(splits: CareerSplits) -> CareerModeStats {
             (splits[1].0 > 0).then(|| wr_pair(splits[1])),
             (splits[2].0 > 0).then(|| wr_pair(splits[2])),
         ),
+        kd_ratio: (deaths > 0).then(|| frags as f32 / deaths as f32),
     }
 }
 
@@ -253,7 +303,7 @@ fn extract_ranked_parts(statistics: &serde_json::Value) -> (CareerModeStats, Car
         mode_split(statistics.get("rank_div3")),
     ];
     if splits.iter().any(|s| s.is_some()) {
-        let unwrap_or_zero = |s: Option<(i64, i64, i64)>| s.unwrap_or((0, 0, 0));
+        let unwrap_or_zero = |s: Option<(i64, i64, i64, i64, i64)>| s.unwrap_or((0, 0, 0, 0, 0));
         let parts = [
             unwrap_or_zero(splits[0]),
             unwrap_or_zero(splits[1]),
@@ -262,9 +312,9 @@ fn extract_ranked_parts(statistics: &serde_json::Value) -> (CareerModeStats, Car
         return (ranked_career_of(parts), parts);
     }
     let Some(seasons) = statistics.get("seasons").and_then(|s| s.as_object()) else {
-        return (CareerModeStats::default(), [(0, 0, 0); 3]);
+        return (CareerModeStats::default(), [(0, 0, 0, 0, 0); 3]);
     };
-    let mut parts = [(0i64, 0i64, 0i64); 3]; // per-division (battles, wins, damage)
+    let mut parts = [(0i64, 0i64, 0i64, 0i64, 0i64); 3]; // (battles, wins, damage, frags, deaths)
     for ships in seasons.values() {
         let Some(ships) = ships.as_object() else {
             continue;
@@ -282,10 +332,12 @@ fn extract_ranked_parts(statistics: &serde_json::Value) -> (CareerModeStats, Car
                     "rank_div3" => 2,
                     _ => continue,
                 };
-                if let Some((b, w, d)) = mode_split(Some(node)) {
+                if let Some((b, w, d, f, dd)) = mode_split(Some(node)) {
                     parts[slot].0 += b;
                     parts[slot].1 += w;
                     parts[slot].2 += d;
+                    parts[slot].3 += f;
+                    parts[slot].4 += dd;
                 }
             }
         }
@@ -297,8 +349,13 @@ fn extract_ranked_parts(statistics: &serde_json::Value) -> (CareerModeStats, Car
         parts[0].0 + parts[1].0 + parts[2].0,
         parts[0].1 + parts[1].1 + parts[2].1,
         parts[0].2 + parts[1].2 + parts[2].2,
+        parts[0].3 + parts[1].3 + parts[2].3,
+        parts[0].4 + parts[1].4 + parts[2].4,
     );
-    (ranked_career_of([total, (0, 0, 0), (0, 0, 0)]), parts)
+    (
+        ranked_career_of([total, (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)]),
+        parts,
+    )
 }
 
 /// Battles-weighted merge of one division's two mode buckets: equivalent to
@@ -334,20 +391,21 @@ fn merged_split(pvp: Option<(f32, i64)>, ranked: Option<(f32, i64)>) -> Option<(
 /// same extra gate so the case is theoretical; on CN the pvp side lacks
 /// splits too and the overall blend fires).
 pub(super) fn global_career_of(
-    pvp: Option<(i64, i64, i64)>,
+    pvp: Option<(i64, i64, i64, i64, i64)>,
     pvp_splits: [Option<(f32, i64)>; 3],
     ranked: CareerModeStats,
     ranked_splits: CareerSplits,
 ) -> CareerModeStats {
     let rank_pair =
-        |s: (i64, i64, i64)| (s.0 > 0).then_some((100.0 * s.1 as f32 / s.0 as f32, s.0));
+        |s: (i64, i64, i64, i64, i64)| (s.0 > 0).then_some((100.0 * s.1 as f32 / s.0 as f32, s.0));
     let ranked_pairs = [
         rank_pair(ranked_splits[0]),
         rank_pair(ranked_splits[1]),
         rank_pair(ranked_splits[2]),
     ];
-    let pvp_battles = pvp.map(|(b, _, _)| b).unwrap_or(0);
-    let pvp_pair = pvp.and_then(|(b, w, _)| (b > 0).then_some((100.0 * w as f32 / b as f32, b)));
+    let pvp_battles = pvp.map(|(b, _, _, _, _)| b).unwrap_or(0);
+    let pvp_pair =
+        pvp.and_then(|(b, w, _, _, _)| (b > 0).then_some((100.0 * w as f32 / b as f32, b)));
     let ranked_pair = match (ranked.winrate, ranked.battles) {
         (Some(wr), Some(b)) if b > 0 => Some((wr, b)),
         _ => None,
@@ -381,17 +439,24 @@ pub(super) fn global_career_of(
     } else {
         compute_pr(merged_split(pvp_pair, ranked_pair), None, None)
     };
+    // K/D over the merged RAW counters: Σfrags / Σdeaths across both modes
+    // — the same caliber each mode's own ratio keeps, never a mean of ratios.
+    let frags: i64 = pvp.map(|(_, _, _, f, _)| f).unwrap_or(0)
+        + ranked_splits.iter().map(|(_, _, _, f, _)| f).sum::<i64>();
+    let kd_deaths: i64 = pvp.map(|(_, _, _, _, dd)| dd).unwrap_or(0)
+        + ranked_splits.iter().map(|(_, _, _, _, dd)| dd).sum::<i64>();
     CareerModeStats {
         battles: Some(battles),
         winrate: blend(
-            pvp.and_then(|(b, w, _)| (b > 0).then_some(100.0 * w as f32 / b as f32)),
+            pvp.and_then(|(b, w, _, _, _)| (b > 0).then_some(100.0 * w as f32 / b as f32)),
             ranked.winrate,
         ),
         avg_damage: blend(
-            pvp.and_then(|(b, _, d)| (b > 0).then_some(d as f32 / b as f32)),
+            pvp.and_then(|(b, _, d, _, _)| (b > 0).then_some(d as f32 / b as f32)),
             ranked.avg_damage,
         ),
         pr,
+        kd_ratio: (kd_deaths > 0).then(|| frags as f32 / kd_deaths as f32),
     }
 }
 

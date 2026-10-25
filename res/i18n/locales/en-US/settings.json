@@ -355,7 +355,8 @@
     "colMetricWinrate": "Win rate",
     "colMetricPr": "PR",
     "colMetricBattles": "Battles",
-    "colMetricDamage": "Avg damage"
+    "colMetricDamage": "Avg damage",
+    "colMetricKd": "K/D"
   },
   "schemeDefaultName": "Default",
   "pairingWip": "Phone pairing is under development and not finished yet.",

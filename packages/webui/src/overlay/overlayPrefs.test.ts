@@ -21,17 +21,20 @@ const RAW: RawStat = {
   avgDamage: 85000,
   pr: 1600,
   battles: 12000,
+  kd: 1.8,
   ranked: {
     winrate: 48,
     avgDamage: 60000,
     pr: 1100,
     battles: 300,
+    kd: 1.2,
   },
   global: {
     winrate: 51.9,
     avgDamage: 82000,
     pr: 1550,
     battles: 12300,
+    kd: 1.75,
   },
   clanId: null,
   clanTag: null,
@@ -201,6 +204,7 @@ describe("rosterStatView", () => {
       pr: 1600,
       battles: 12000,
       avgDamage: 85000,
+      kd: 1.8,
     });
   });
 
@@ -210,6 +214,7 @@ describe("rosterStatView", () => {
       pr: 1100,
       battles: 300,
       avgDamage: 60000,
+      kd: 1.2,
     });
   });
 
@@ -219,6 +224,7 @@ describe("rosterStatView", () => {
       pr: 1550,
       battles: 12300,
       avgDamage: 82000,
+      kd: 1.75,
     });
   });
 
@@ -228,6 +234,7 @@ describe("rosterStatView", () => {
       pr: null,
       battles: null,
       avgDamage: null,
+      kd: null,
     });
   });
 
@@ -237,6 +244,7 @@ describe("rosterStatView", () => {
       pr: null,
       battles: null,
       avgDamage: null,
+      kd: null,
     });
   });
 
@@ -246,6 +254,7 @@ describe("rosterStatView", () => {
       pr: 1600,
       battles: 12000,
       avgDamage: 85000,
+      kd: 1.8,
     });
   });
 });

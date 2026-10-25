@@ -355,7 +355,8 @@
     "colMetricWinrate": "Taux de victoire",
     "colMetricPr": "PR",
     "colMetricBattles": "Batailles",
-    "colMetricDamage": "Dégâts moyens"
+    "colMetricDamage": "Dégâts moyens",
+    "colMetricKd": "K/D"
   },
   "schemeDefaultName": "Par défaut",
   "pairingWip": "Le jumelage téléphonique est en cours de développement et pas encore terminé.",

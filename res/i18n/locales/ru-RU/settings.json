@@ -355,7 +355,8 @@
     "colMetricWinrate": "Винрейт",
     "colMetricPr": "PR",
     "colMetricBattles": "Боёв",
-    "colMetricDamage": "Средний урон"
+    "colMetricDamage": "Средний урон",
+    "colMetricKd": "K/D"
   },
   "schemeDefaultName": "По умолчанию",
   "pairingWip": "Функция сопряжения с телефоном находится в разработке и ещё не завершена.",

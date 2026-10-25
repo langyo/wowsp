@@ -113,6 +113,11 @@ export interface RosterModeNumbers {
   pr: number | null;
   battles: number | null;
   avgDamage: number | null;
+  /** Kills / deaths (frags / (battles − survived) — the game's own K/D
+   *  caliber). No tier color anywhere: unlike the winrate/damage scales
+   *  there is no community color band for K/D, so the figure renders
+   *  plain. */
+  kd: number | null;
 }
 
 /** A stat entry the view resolver can read: the randoms fields plus the
@@ -124,9 +129,11 @@ export interface RosterStatViewSource extends RosterModeNumbers {
   global?: RosterModeNumbers | null;
   /** Solo (单排) split of the randoms career — the batch's `pvp_solo`
    *  node, mapped data-only (PR/avgDamage stay null; the view derives the
-   *  PR per algorithm). null = the career carried no solo split (never
-   *  played solo / hidden profile / older shell). There is no solo split
-   *  of ranked anywhere, so this bucket is randoms-only by definition. */
+   *  PR per algorithm, and kd rides only when the split carried its
+   *  frags/survival detail — CN's battles/wins-only split answers null).
+   *  null = the career carried no solo split (never played solo / hidden
+   *  profile / older shell). There is no solo split of ranked anywhere,
+   *  so this bucket is randoms-only by definition. */
   solo?: RosterModeNumbers | null;
 }
 
@@ -135,6 +142,7 @@ export const EMPTY_ROSTER_VIEW: RosterModeNumbers = {
   pr: null,
   battles: null,
   avgDamage: null,
+  kd: null,
 };
 
 /** Careers at or below this many randoms battles trust an (near-)all-solo
@@ -197,6 +205,7 @@ export function rosterStatView(
       pr: st.pr,
       battles: st.battles,
       avgDamage: st.avgDamage,
+      kd: st.kd,
     };
   }
   return {
@@ -204,5 +213,6 @@ export function rosterStatView(
     pr: st.pr,
     battles: st.battles,
     avgDamage: st.avgDamage,
+    kd: st.kd,
   };
 }

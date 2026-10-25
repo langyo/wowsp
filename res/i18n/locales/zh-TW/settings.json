@@ -355,7 +355,8 @@
     "colMetricWinrate": "勝率",
     "colMetricPr": "PR",
     "colMetricBattles": "場次",
-    "colMetricDamage": "場均"
+    "colMetricDamage": "場均",
+    "colMetricKd": "擊殺比"
   },
   "schemeDefaultName": "預設",
   "pairingWip": "手機配對功能正在開發中，尚未完工",

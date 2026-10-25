@@ -173,7 +173,8 @@
     "metricWinrate": "WR",
     "metricPr": "PR",
     "metricBattles": "Batailles",
-    "metricDamage": "Dégâts"
+    "metricDamage": "Dégâts",
+    "metricKd": "K/D"
   },
   "minimap": {
     "zoom": "Carte agrandie",

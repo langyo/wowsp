@@ -35,6 +35,9 @@ export interface RosterStat {
   pr: number | null;
   avgDamage: number | null;
   battles: number | null;
+  /** Kills / deaths over the randoms career (the game's K/D caliber);
+   *  null = miss / hidden / older shell. */
+  kd: number | null;
   /** Ranked (排位) career numbers off the same batch answer; null = never
    *  played ranked. Consumed by the stats-source mode selector
    *  (utils/statView) on every roster surface. */
@@ -121,6 +124,7 @@ const emptyStat = (loading: boolean): RosterStat => ({
   pr: null,
   avgDamage: null,
   battles: null,
+  kd: null,
   ranked: null,
   global: null,
   solo: null,
@@ -151,16 +155,20 @@ function rosterStatOf(r: {
   pr?: number | null;
   avgDamage?: number | null;
   battles?: number | null;
+  kdRatio?: number | null;
   rankedWinrate?: number | null;
   rankedPr?: number | null;
   rankedAvgDamage?: number | null;
   rankedBattles?: number | null;
+  rankedKdRatio?: number | null;
   globalWinrate?: number | null;
   globalPr?: number | null;
   globalAvgDamage?: number | null;
   globalBattles?: number | null;
+  globalKdRatio?: number | null;
   soloWr?: number | null;
   soloBattles?: number | null;
+  soloKdRatio?: number | null;
   accountId?: number | null;
   clanId?: number | null;
   clanTag?: string | null;
@@ -172,6 +180,7 @@ function rosterStatOf(r: {
     pr: r.pr ?? null,
     avgDamage: r.avgDamage ?? null,
     battles: r.battles ?? null,
+    kd: r.kdRatio ?? null,
     ranked: modeStatsOf(
       r.rankedBattles != null || r.rankedWinrate != null,
       () => ({
@@ -179,6 +188,7 @@ function rosterStatOf(r: {
         pr: r.rankedPr ?? null,
         battles: r.rankedBattles ?? null,
         avgDamage: r.rankedAvgDamage ?? null,
+        kd: r.rankedKdRatio ?? null,
       }),
     ),
     global: modeStatsOf(
@@ -188,6 +198,7 @@ function rosterStatOf(r: {
         pr: r.globalPr ?? null,
         battles: r.globalBattles ?? null,
         avgDamage: r.globalAvgDamage ?? null,
+        kd: r.globalKdRatio ?? null,
       }),
     ),
     // The career solo split, mapped data-only (PR/avgDamage stay null —
@@ -204,6 +215,9 @@ function rosterStatOf(r: {
             pr: null,
             battles: r.soloBattles ?? null,
             avgDamage: null,
+            // The split's own K/D when the wire carried it; a battles/wins-
+            // only split (CN) keeps the dash face.
+            kd: r.soloKdRatio ?? null,
           }),
         )
       : null,

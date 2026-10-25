@@ -173,7 +173,8 @@
     "metricWinrate": "ВР",
     "metricPr": "PR",
     "metricBattles": "Боёв",
-    "metricDamage": "Ср. урон"
+    "metricDamage": "Ср. урон",
+    "metricKd": "K/D"
   },
   "minimap": {
     "zoom": "Увеличенная карта",

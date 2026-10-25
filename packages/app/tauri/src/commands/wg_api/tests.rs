@@ -149,14 +149,17 @@ fn realm_hit(realm: &str, clan_id: Option<i64>, last_battle_time: Option<i64>) -
             solo_battles: None,
             div2_battles: None,
             div3_battles: None,
+            solo_kd_ratio: None,
             ranked_battles: None,
             ranked_winrate: None,
             ranked_avg_damage: None,
             ranked_pr: None,
+            ranked_kd_ratio: None,
             global_battles: None,
             global_winrate: None,
             global_avg_damage: None,
             global_pr: None,
+            global_kd_ratio: None,
             last_battle_time,
         },
     }
@@ -302,7 +305,30 @@ fn pvp_stats_extracts_all_fields() {
     assert_eq!(p.solo_battles, Some(600));
     assert_eq!(p.div2_battles, Some(200));
     assert_eq!(p.div3_battles, Some(200));
+    // The split carries battles/wins only — no frags/survival detail means
+    // no solo K/D (the dash face, never frags/battles in disguise).
+    assert_eq!(p.solo_kd_ratio, None);
     assert!(p.pr.is_some());
+}
+
+/// The solo K/D reads the pvp_solo node's own frags / (battles − survived) —
+/// the same caliber the pvp career's kd_ratio keeps (the game's 击杀比).
+#[test]
+fn solo_kd_ratio_reads_the_pvp_solo_split() {
+    let raw = serde_json::json!({
+        "pvp": { "battles": 1000, "wins": 550, "damage_dealt": 1_500_000 },
+        "pvp_solo": { "battles": 600, "wins": 330, "frags": 600, "survived_battles": 200 }
+    });
+    let p = PvpStats::extract(Some(&raw));
+    // 600 frags / 400 deaths = 1.5
+    assert!((p.solo_kd_ratio.unwrap() - 1.5).abs() < 0.001);
+    // A split where nobody ever died has no denominator — no ratio.
+    let raw = serde_json::json!({
+        "pvp": { "battles": 10, "wins": 5, "damage_dealt": 100_000 },
+        "pvp_solo": { "battles": 10, "wins": 5, "frags": 4, "survived_battles": 10 }
+    });
+    let p = PvpStats::extract(Some(&raw));
+    assert_eq!(p.solo_kd_ratio, None);
 }
 
 #[test]
@@ -329,8 +355,14 @@ fn pvp_stats_empty_when_no_statistics_node() {
 fn ranked_stats_sum_the_wg_rank_splits() {
     let node = serde_json::json!({
         "pvp": { "battles": 5000, "wins": 2500, "damage_dealt": 250_000_000 },
-        "rank_solo": { "battles": 80, "wins": 40, "damage_dealt": 4_000_000 },
-        "rank_div2": { "battles": 20, "wins": 10, "damage_dealt": 2_000_000 },
+        "rank_solo": {
+            "battles": 80, "wins": 40, "damage_dealt": 4_000_000,
+            "frags": 90, "survived_battles": 20
+        },
+        "rank_div2": {
+            "battles": 20, "wins": 10, "damage_dealt": 2_000_000,
+            "frags": 30, "survived_battles": 5
+        },
         "rank_div3": null
     });
     let p = PvpStats::extract(Some(&node));
@@ -339,6 +371,9 @@ fn ranked_stats_sum_the_wg_rank_splits() {
     assert!((r.winrate.unwrap() - 50.0).abs() < 0.01);
     assert!((r.avg_damage.unwrap() - 60_000.0).abs() < 1.0);
     assert!(r.pr.is_some());
+    // Σfrags / Σdeaths over the splits (120 / (60 + 15) = 1.6) — the raw
+    // counter ratio, never a mean of the splits' own ratios.
+    assert!((r.kd_ratio.unwrap() - 1.6).abs() < 0.001);
     // The overall pvp numbers stay untouched by the ranked splits.
     assert_eq!(p.battles, Some(5000));
 }
@@ -355,6 +390,7 @@ fn ranked_stats_absent_splits_stay_none() {
     assert_eq!(p.ranked.winrate, None);
     assert_eq!(p.ranked.avg_damage, None);
     assert_eq!(p.ranked.pr, None);
+    assert_eq!(p.ranked.kd_ratio, None);
 }
 
 /// The CN shape: no rank_* splits, ranked lives in the seasons tree
@@ -365,13 +401,31 @@ fn ranked_stats_sum_the_cn_seasons_tree() {
     let node = serde_json::json!({
         "pvp": { "battles": 100, "wins": 50, "damage_dealt": 5_000_000 },
         "seasons": {
-            "1024": { "0": { "rank_solo": { "battles": 6, "wins": 4, "damage_dealt": 300_000 } } },
+            "1024": {
+                "0": {
+                    "rank_solo": {
+                        "battles": 6, "wins": 4, "damage_dealt": 300_000,
+                        "frags": 9, "survived_battles": 2
+                    }
+                }
+            },
             "1022": {
                 "0": {
-                    "rank_solo": { "battles": 10, "wins": 5, "damage_dealt": 500_000 },
-                    "rank_div3": { "battles": 2, "wins": 1, "damage_dealt": 150_000 }
+                    "rank_solo": {
+                        "battles": 10, "wins": 5, "damage_dealt": 500_000,
+                        "frags": 5, "survived_battles": 3
+                    },
+                    "rank_div3": {
+                        "battles": 2, "wins": 1, "damage_dealt": 150_000,
+                        "frags": 4, "survived_battles": 0
+                    }
                 },
-                "1": { "rank_solo": { "battles": 2, "wins": 2, "damage_dealt": 160_000 } }
+                "1": {
+                    "rank_solo": {
+                        "battles": 2, "wins": 2, "damage_dealt": 160_000,
+                        "frags": 3, "survived_battles": 1
+                    }
+                }
             },
             // an unplayed season's empty mode node — skipped, not zeroed
             "1002": { "0": { "rank_solo": {} } }
@@ -383,6 +437,9 @@ fn ranked_stats_sum_the_cn_seasons_tree() {
     assert_eq!(r.winrate, Some(60.0));
     assert!((r.avg_damage.unwrap() - 55_500.0).abs() < 1.0);
     assert!(r.pr.is_some());
+    // Σfrags 9+5+4+3 = 21 over Σdeaths 4+7+2+1 = 14 — the seasons tree
+    // sums the same counters the WG splits do.
+    assert!((r.kd_ratio.unwrap() - 1.5).abs() < 0.001);
 }
 
 /// An account with ranked battles but NO random battles: the null pvp
@@ -424,19 +481,29 @@ fn compute_pr_returns_none_for_missing_inputs() {
 
 #[test]
 fn global_career_of_merges_both_modes() {
-    // 3000 randoms battles @ 48% wr / 90k avg + 1000 ranked @ 60% / 60k.
-    let pvp = Some((3_000i64, 1_440i64, 270_000_000i64));
+    // 3000 randoms battles @ 48% wr / 90k avg (900 frags, 1500 deaths) +
+    // 1000 ranked @ 60% / 60k (700 frags, 500 deaths).
+    let pvp = Some((3_000i64, 1_440i64, 270_000_000i64, 900i64, 1_500i64));
     let ranked = CareerModeStats {
         battles: Some(1_000),
         winrate: Some(60.0),
         avg_damage: Some(60_000.0),
         pr: Some(2_100),
+        kd_ratio: Some(1.4),
     };
-    let g = global_career_of(pvp, [None, None, None], ranked, [(0, 0, 0); 3]);
+    let g = global_career_of(
+        pvp,
+        [None, None, None],
+        ranked,
+        [(0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 0, 0, 700, 500)],
+    );
     assert_eq!(g.battles, Some(4_000));
     // Battles-weighted means: (48·3000 + 60·1000)/4000 = 51.
     assert!((g.winrate.unwrap() - 51.0).abs() < 0.01);
     assert!((g.avg_damage.unwrap() - 82_500.0).abs() < 1.0);
+    // K/D sums the RAW counters: (900 + 700) / (1500 + 500) = 0.8 — not a
+    // mean of the two modes' own ratios.
+    assert!((g.kd_ratio.unwrap() - 0.8).abs() < 0.001);
     // No split detail on either side → the blended overall winrate
     // carries the rating (51% lands between the 47% and 52% anchors).
     assert!(g.pr.unwrap() > 750 && g.pr.unwrap() < 1_350);
@@ -445,23 +512,31 @@ fn global_career_of_merges_both_modes() {
 #[test]
 fn global_career_of_handles_absent_sides() {
     // Never played ranked: the global view IS the randoms career.
-    let pvp = Some((2_000i64, 1_000i64, 100_000_000i64));
+    let pvp = Some((2_000i64, 1_000i64, 100_000_000i64, 400i64, 1_600i64));
     let g = global_career_of(
         pvp,
         [None, None, None],
         CareerModeStats::default(),
-        [(0, 0, 0); 3],
+        [(0, 0, 0, 0, 0); 3],
     );
     assert_eq!(g.battles, Some(2_000));
     assert!((g.winrate.unwrap() - 50.0).abs() < 0.01);
+    // 400 frags / 1600 deaths = 0.25.
+    assert!((g.kd_ratio.unwrap() - 0.25).abs() < 0.001);
     // Null pvp node (randoms never played): the global view IS ranked.
     let ranked = CareerModeStats {
         battles: Some(500),
         winrate: Some(55.0),
         avg_damage: Some(70_000.0),
         pr: Some(1_800),
+        kd_ratio: None,
     };
-    let g = global_career_of(None, [None, None, None], ranked, [(0, 0, 0); 3]);
+    let g = global_career_of(
+        None,
+        [None, None, None],
+        ranked,
+        [(0, 0, 0, 0, 0), (0, 0, 0, 0, 0), (0, 0, 0, 0, 0)],
+    );
     assert_eq!(g.battles, Some(500));
     assert_eq!(g.winrate, Some(55.0));
     // Hidden profile: both sides absent → all-None.
@@ -469,10 +544,11 @@ fn global_career_of_handles_absent_sides() {
         None,
         [None, None, None],
         CareerModeStats::default(),
-        [(0, 0, 0); 3],
+        [(0, 0, 0, 0, 0); 3],
     );
     assert_eq!(g.battles, None);
     assert_eq!(g.pr, None);
+    assert_eq!(g.kd_ratio, None);
 }
 
 #[test]

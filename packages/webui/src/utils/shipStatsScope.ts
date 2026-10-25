@@ -101,22 +101,39 @@ const defaultShipMeta: ShipMetaResolver = (shipId) => {
   return { tier, type: type === "" ? null : type };
 };
 
-/** Additive counters behind one aggregated view. */
+/** Additive counters behind one aggregated view. frags/survived ride along
+ *  so the K/D aggregates the RAW counters (Σfrags / Σ(battles − survived)) —
+ *  the same caliber the account careers carry, never a mean of per-ship
+ *  ratios. */
 interface Counters {
   battles: number;
   wins: number;
   damage: number;
+  frags: number;
+  survived: number;
 }
 
 function modeCounters(m: ShipModeStats | null | undefined): Counters | null {
   if (!m || m.battles <= 0) return null;
-  return { battles: m.battles, wins: m.wins, damage: m.damageCaused };
+  return {
+    battles: m.battles,
+    wins: m.wins,
+    damage: m.damageCaused,
+    frags: m.frags,
+    survived: m.survivedBattles,
+  };
 }
 
 function mergeCounters(a: Counters | null, b: Counters | null): Counters | null {
   if (!a) return b;
   if (!b) return a;
-  return { battles: a.battles + b.battles, wins: a.wins + b.wins, damage: a.damage + b.damage };
+  return {
+    battles: a.battles + b.battles,
+    wins: a.wins + b.wins,
+    damage: a.damage + b.damage,
+    frags: a.frags + b.frags,
+    survived: a.survived + b.survived,
+  };
 }
 
 /** One ship row's counters for the requested battle scope. Randoms = the
@@ -134,7 +151,13 @@ function countersOf(
     solo
       ? modeCounters(row.modes?.solo)
       : row.battles > 0
-        ? { battles: row.battles, wins: row.wins, damage: row.damageCaused }
+        ? {
+            battles: row.battles,
+            wins: row.wins,
+            damage: row.damageCaused,
+            frags: row.frags,
+            survived: row.survivedBattles,
+          }
         : null;
   switch (battle) {
     case "random":
@@ -189,7 +212,7 @@ export function aggregateShipScopeStats(
   // its own choke point; a "measured" 0 would claim a split that does not
   // exist on any transport.
   if (opts.solo && opts.battle === "ranked") return EMPTY_ROSTER_VIEW;
-  const totals: Counters = { battles: 0, wins: 0, damage: 0 };
+  const totals: Counters = { battles: 0, wins: 0, damage: 0, frags: 0, survived: 0 };
   // Expected-PR aggregation: a battles-weighted mean of the per-row randoms
   // PRs — only valid where the bucket IS the randoms career (see the module
   // doc); rows without a PR contribute no weight.
@@ -202,6 +225,8 @@ export function aggregateShipScopeStats(
     totals.battles += c.battles;
     totals.wins += c.wins;
     totals.damage += c.damage;
+    totals.frags += c.frags;
+    totals.survived += c.survived;
     if (opts.prAlgo === "expected" && opts.battle === "random" && !opts.solo && row.pr != null) {
       prWeight += row.battles;
       prSum += row.pr * row.battles;
@@ -213,7 +238,7 @@ export function aggregateShipScopeStats(
     // ship missing from the landed list lands here too — never played IS
     // zero battles; only an unresolvable scope (unknown ship above)
     // answers the all-null view.
-    return { winrate: null, pr: null, battles: 0, avgDamage: null };
+    return { winrate: null, pr: null, battles: 0, avgDamage: null, kd: null };
   }
   const winrate = (totals.wins / totals.battles) * 100;
   const pr =
@@ -222,11 +247,16 @@ export function aggregateShipScopeStats(
       : prWeight > 0
         ? Math.round(prSum / prWeight)
         : null;
+  // K/D over the summed raw counters — deaths = battles − survived, the
+  // game's own caliber (an aggregate where nobody died answers the dash:
+  // division by zero is not a 0 K/D, it is no ratio at all).
+  const deaths = totals.battles - Math.min(totals.survived, totals.battles);
   return {
     winrate,
     pr,
     battles: totals.battles,
     avgDamage: totals.damage / totals.battles,
+    kd: deaths > 0 ? totals.frags / deaths : null,
   };
 }
 
@@ -261,6 +291,9 @@ function careerSoloView(
     pr: prAlgo === "winrate" && solo.winrate != null ? prProxyFromWinrate(solo.winrate) : null,
     battles: solo.battles,
     avgDamage: null,
+    // The split's own K/D when the wire carried it (battles/wins-only
+    // splits — CN — answer null, the dash face).
+    kd: solo.kd ?? null,
   };
 }
 

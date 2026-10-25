@@ -6,16 +6,19 @@
  * The card is FOUR stacked lines under the crosshair (the user's spec):
  *   1. the aimed player's clan tag + nickname;
  *   2. the career (overall average) figures — the same four the tab chips
- *      render;
+ *      render, plus the optional fifth K/D figure when the user configured
+ *      a K/D column (the tab table's own rule, so the card and the chips
+ *      never disagree about which figures exist);
  *   3. the aimed player's per-ship figures for the ship they are sailing
  *      THIS battle, the readable ship name riding as the muted scope tag;
  *   4. the seal cluster (career verdict + composition tags) — the SAME
  *      stamps the tab chips flank their numbers with, as one horizontal
  *      line. Present only when a verdict exists.
  *
- * Lines 2 and 3 share one four-column grid (see the SCSS) so the two
- * figure rows read as aligned columns; the builders here emit one row's
- * cells in fixed winrate → PR → battles → damage order.
+ * Lines 2 and 3 share one column grid (see the SCSS — four tracks, five
+ * while the K/D figure rides) so the two figure rows read as aligned
+ * columns; the builders here emit one row's cells in fixed
+ * winrate → PR → battles → damage (+ K/D) order.
  */
 import {
   battlesColor,
@@ -35,6 +38,9 @@ export interface BatchStat {
   avgDamage?: number | null;
   pr?: number | null;
   battles?: number | null;
+  /** Kills / deaths over the randoms career (frags / (battles − survived)
+   *  — the game's own caliber, the same wire field the table page reads). */
+  kdRatio?: number | null;
   clanTag?: string | null;
   clanId?: number | null;
   accountId?: number | null;
@@ -55,6 +61,20 @@ export interface AimShipRow {
   avgDamage: number;
   battles: number;
   pr: number | null;
+  /** Raw counters the per-ship K/D derives from (frags / (battles −
+   *  survived), the game's caliber — same fields the table page's
+   *  ship-scoped columns aggregate). */
+  frags: number;
+  survivedBattles: number;
+}
+
+/** One per-ship row's K/D — the game's own frags / (battles − survived)
+ *  caliber. null when the row never had a death to divide by (an
+ *  all-survive career has no ratio, not a zero). */
+export function shipRowKd(row: AimShipRow): number | null {
+  return row.battles > row.survivedBattles
+    ? row.frags / (row.battles - row.survivedBattles)
+    : null;
 }
 
 /** Composition-seal verdict from `lookup_players_composition` (mirrors
@@ -146,17 +166,22 @@ export function battlesText(n: number, pattern: string, color?: string): string 
   );
 }
 
-/** The four career figure cells (line 2). Every missing value degrades to
- *  the em dash — a hidden profile and an in-flight lookup render the same
- *  face (the card is a glance, not a status board). */
+/** The career figure cells (line 2) — the four fixed figures plus the
+ *  optional K/D one when `showKd` is on (the user configured a K/D column;
+ *  aimcard.ts derives the switch off the same prefs the table reads).
+ *  Every missing value degrades to the em dash — a hidden profile and an
+ *  in-flight lookup render the same face (the card is a glance, not a
+ *  status board). */
 export function careerLineHtml(
   s: BatchStat | null | undefined,
   battlesPattern: string,
+  showKd = false,
 ): string {
   const wr = !s || s.hidden ? null : s.winrate;
   const pr = !s || s.hidden ? null : s.pr;
   const battles = !s || s.hidden ? null : s.battles;
   const dmg = !s || s.hidden ? null : s.avgDamage;
+  const kd = !s || s.hidden ? null : s.kdRatio;
   const prBand = prTier(pr);
   return [
     fig(wr != null ? `${wr.toFixed(1)}%` : "—", wr != null ? winrateColor(wr) : undefined),
@@ -165,6 +190,9 @@ export function careerLineHtml(
       ? battlesText(battles, battlesPattern, battlesColor(battles))
       : fig("—"),
     fig(dmg != null ? fmtDamage(dmg) : "—", dmg != null ? damageColor(dmg) : undefined),
+    // The game's two-decimal K/D face, plain ink — no tier color band
+    // exists for a kills/deaths ratio.
+    ...(showKd ? [fig(kd != null ? kd.toFixed(2) : "—")] : []),
   ].join("");
 }
 
@@ -175,7 +203,8 @@ export function careerLineHtml(
  *  ship's row (never played it) renders label + dashes. `null` is the
  *  failed-lookup verdict, same dashes. The readable ship name rides
  *  INSIDE the first cell (the tab scope tag's same trick), so the row
- *  stays four cells and the career row's shared grid keeps its columns;
+ *  counts exactly as many cells as the career one (four, five with the
+ *  K/D figure) and the shared grid keeps its columns;
  *  `shipLabel` is interpolated RAW — the caller escapes it (it is game
  *  data). `now` phase-locks the dots' chase to the shared clock so
  *  render() rebuilds never restart the animation (the table page's
@@ -187,6 +216,7 @@ export function shipLineHtml(
   shipLabel: string,
   battlesPattern: string,
   now = 0,
+  showKd = false,
 ): string {
   const tag = `<span class="aim-ship-tag">${shipLabel}</span>`;
   if (ships === undefined) {
@@ -207,6 +237,7 @@ export function shipLineHtml(
   const pr = row?.pr ?? null;
   const battles = row ? row.battles : null;
   const dmg = row ? row.avgDamage : null;
+  const kd = row ? shipRowKd(row) : null;
   const prBand = prTier(pr);
   return [
     `<span class="aim-ship-cell">${tag}` +
@@ -217,6 +248,9 @@ export function shipLineHtml(
     // 200 battles on one ship is the norm (the career line keeps its red).
     battles != null ? battlesText(battles, battlesPattern) : fig("—"),
     fig(dmg != null ? fmtDamage(dmg) : "—", dmg != null ? damageColor(dmg) : undefined),
+    // Same two-decimal plain-ink K/D face as the career line, over the
+    // row's own raw counters.
+    ...(showKd ? [fig(kd != null ? kd.toFixed(2) : "—")] : []),
   ].join("");
 }
 

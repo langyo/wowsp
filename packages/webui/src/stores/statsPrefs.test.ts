@@ -207,6 +207,26 @@ describe("loadStatsPrefs", () => {
     ]);
   });
 
+  it("keeps the K/D metric the column editor can write", () => {
+    // The 击杀比 column parses like every other metric — a blob written by
+    // this build round-trips instead of falling back.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        overlayColumns: [
+          { scope: "global", metric: "winrate" },
+          { scope: "global", metric: "kd" },
+          { scope: "ship", metric: "kd" },
+        ],
+      }),
+    );
+    expect(loadStatsPrefs().overlayColumns).toEqual([
+      { scope: "global", metric: "winrate" },
+      { scope: "global", metric: "kd" },
+      { scope: "ship", metric: "kd" },
+    ]);
+  });
+
   it("keeps the ship-solo scope the column editor can write", () => {
     // The ship × solo column scope parses like every other scope — a blob
     // written by this build round-trips instead of falling back.

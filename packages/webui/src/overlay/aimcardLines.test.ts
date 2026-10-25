@@ -90,6 +90,22 @@ describe("careerLineHtml", () => {
     const html = careerLineHtml({ ...ok, battles: 100 }, PATTERN);
     expect(cell(html, 2)).toContain('style="color:');
   });
+
+  it("appends the optional K/D cell only when asked for", () => {
+    // Default: exactly the four fixed cells, no fifth figure.
+    const plain = careerLineHtml({ ...ok, kdRatio: 2.05 }, PATTERN);
+    expect(plain.match(/<b /g)?.length).toBe(4);
+    expect(plain).not.toContain("2.05");
+    // showKd: the fifth cell rides at the end, plain ink (no tier color —
+    // there is no color band for a kills/deaths ratio).
+    const withKd = careerLineHtml({ ...ok, kdRatio: 2.05 }, PATTERN, true);
+    expect(withKd.match(/<b /g)?.length).toBe(5);
+    expect(cell(withKd, 4)).toContain(">2.05</b>");
+    expect(cell(withKd, 4)).not.toContain('style="color:');
+    // A missing K/D degrades to the em dash like every other figure.
+    const dashed = careerLineHtml({ ...ok, kdRatio: null }, PATTERN, true);
+    expect(cell(dashed, 4)).toContain("aim-none");
+  });
 });
 
 describe("battlesText", () => {
@@ -114,6 +130,9 @@ describe("shipLineHtml", () => {
     avgDamage: 31200,
     battles: 300,
     pr: 1100,
+    // 400 frags / (300 − 90 survived) = 400/210 ≈ 1.90.
+    frags: 400,
+    survivedBattles: 90,
   };
 
   it("renders the chasing dots while the list is still owed", () => {
@@ -163,6 +182,29 @@ describe("shipLineHtml", () => {
     );
     expect(html).toContain('>42<span class="aim-unit"> 场</span></b>');
     expect(cell(html, 3)).not.toContain("style=");
+  });
+
+  it("appends the optional K/D cell from the row's own counters", () => {
+    // Default: four cells only.
+    const plain = shipLineHtml([row], row.shipId, "瓦尔帕莱索", PATTERN);
+    expect(plain.match(/<b /g)?.length).toBe(4);
+    // showKd: 400 frags / (300 − 90) deaths ≈ 1.90, plain ink. The ship
+    // line's split segments: [0] tag-span prefix, then winrate/PR/battles/
+    // damage/K/D — the K/D cell is index 5.
+    const withKd = shipLineHtml([row], row.shipId, "瓦尔帕莱索", PATTERN, 0, true);
+    expect(withKd.match(/<b /g)?.length).toBe(5);
+    expect(cell(withKd, 5)).toContain(">1.90</b>");
+    expect(cell(withKd, 5)).not.toContain('style="color:');
+    // A row that never died has no ratio — the dash, never a zero.
+    const immortal = shipLineHtml(
+      [{ ...row, battles: 10, survivedBattles: 10 }],
+      row.shipId,
+      "瓦尔帕莱索",
+      PATTERN,
+      0,
+      true,
+    );
+    expect(cell(immortal, 5)).toContain("aim-none");
   });
 });
 

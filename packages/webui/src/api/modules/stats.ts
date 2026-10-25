@@ -49,6 +49,10 @@ export interface PlayerStats {
   soloBattles?: number | null;
   div2Battles?: number | null;
   div3Battles?: number | null;
+  /** Kills / deaths over the randoms solo split (frags / (battles −
+   *  survived) — the game's own K/D caliber); null when the split or its
+   *  frags/survival detail is absent (CN answers null). */
+  soloKdRatio?: number | null;
   // ── Ranked (排位) career stats ──────────────────────────────────────
   /** Career ranked battles; null = never played ranked / hidden. Absent
    *  on cache files written before these fields existed. Consumed by the
@@ -57,6 +61,9 @@ export interface PlayerStats {
   rankedWinrate?: number | null;
   rankedAvgDamage?: number | null;
   rankedPr?: number | null;
+  /** Kills / deaths over the ranked career (Σfrags / Σdeaths across the
+   *  splits); null = never played ranked / hidden. */
+  rankedKdRatio?: number | null;
   // ── Global (全局 = randoms + ranked merged) career stats ────────────
   /** Combined career battles (randoms + ranked); equals `battles` for an
    *  account that never played ranked. Absent on cache files written
@@ -65,6 +72,9 @@ export interface PlayerStats {
   globalWinrate?: number | null;
   globalAvgDamage?: number | null;
   globalPr?: number | null;
+  /** Kills / deaths over the merged careers (Σfrags / Σdeaths across both
+   *  modes — never a mean of the modes' own ratios). */
+  globalKdRatio?: number | null;
   /** Unix time of the account's last finished battle — the backend's
    *  same-name cross-realm arbiter (see `crossRealm` on
    *  `lookupPlayersStatsBatch`). Absent on older cache files. */

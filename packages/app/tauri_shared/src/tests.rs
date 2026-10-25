@@ -1564,7 +1564,7 @@ fn dog_tag_renames_texture_symbol_and_color_ids() {
 }
 
 /// Wire-critical payload: exact key set of the player card's data —
-/// 33 keys, every multi-word one renamed (client.ts: PlayerStats).
+/// 36 keys, every multi-word one renamed (client.ts: PlayerStats).
 #[test]
 fn player_stats_renames_every_deep_stat_field() {
     let stats = PlayerStats {
@@ -1598,14 +1598,17 @@ fn player_stats_renames_every_deep_stat_field() {
         solo_battles: Some(9_001),
         div2_battles: Some(9_002),
         div3_battles: Some(9_003),
+        solo_kd_ratio: Some(1.5),
         ranked_battles: Some(1_234),
         ranked_winrate: Some(54.5),
         ranked_avg_damage: Some(77_777.0),
         ranked_pr: Some(1_890),
+        ranked_kd_ratio: Some(1.75),
         global_battles: Some(13_579),
         global_winrate: Some(51.5),
         global_avg_damage: Some(80_922.0),
         global_pr: Some(2_390),
+        global_kd_ratio: Some(2.0),
         last_battle_time: Some(1_760_100_000),
     };
     let v = round_trips(stats);
@@ -1636,20 +1639,26 @@ fn player_stats_renames_every_deep_stat_field() {
             "soloBattles",
             "div2Battles",
             "div3Battles",
+            "soloKdRatio",
             "rankedBattles",
             "rankedWinrate",
             "rankedAvgDamage",
             "rankedPr",
+            "rankedKdRatio",
             "globalBattles",
             "globalWinrate",
             "globalAvgDamage",
             "globalPr",
+            "globalKdRatio",
             "lastBattleTime",
         ],
     );
     assert_eq!(v["clanTag"], "[SENT]");
     assert_eq!(v["div2Wr"], 52.25);
     assert_eq!(v["rankedPr"], 1_890);
+    assert_eq!(v["rankedKdRatio"], 1.75);
+    assert_eq!(v["soloKdRatio"], 1.5);
+    assert_eq!(v["globalKdRatio"], 2.0);
     assert_eq!(v["globalBattles"], 13_579);
     assert_eq!(v["lastBattleTime"], 1_760_100_000);
 }

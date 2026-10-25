@@ -103,6 +103,7 @@ const METRIC_WIDTH: Record<OverlayColumnMetric, string> = {
   pr: "5ch",
   battles: "7ch",
   damage: "7.5ch",
+  kd: "5ch",
 };
 
 const COLUMN_MOD: Record<OverlayColumnMetric, string> = {
@@ -110,6 +111,7 @@ const COLUMN_MOD: Record<OverlayColumnMetric, string> = {
   pr: "pr",
   battles: "battles",
   damage: "dmg",
+  kd: "kd",
 };
 
 /** Short scope tag for compact labels ("单排" — global carries none: the
@@ -121,12 +123,13 @@ const SCOPE_TAG_KEY: Partial<Record<OverlayColumnScope, string>> = {
   class: "replay.roster.scopeTagClass",
 };
 
-/** Short metric word for compact labels (胜率 / PR / 场次 / 场均). */
+/** Short metric word for compact labels (胜率 / PR / 场次 / 场均 / 击杀比). */
 const METRIC_KEY: Record<OverlayColumnMetric, string> = {
   winrate: "replay.roster.metricWinrate",
   pr: "replay.roster.metricPr",
   battles: "replay.roster.metricBattles",
   damage: "replay.roster.metricDamage",
+  kd: "replay.roster.metricKd",
 };
 
 /** Full scope name for tooltips (全局（账号） / 仅单排（账号） / 仅单船（本船）
@@ -190,6 +193,11 @@ function rosterColumnCell(
 ): { body: VNode; empty: boolean } {
   const v = metric === "damage" ? view.avgDamage : view[metric];
   if (v == null) return { body: <em>—</em>, empty: true };
+  if (metric === "kd") {
+    // Two decimals — the game's own K/D precision — with no tier color:
+    // there is no community color band for a kills/deaths ratio.
+    return { body: <b>{v.toFixed(2)}</b>, empty: false };
+  }
   if (metric === "battles") {
     const color = warn ? battlesColor(v) : undefined;
     return {
@@ -331,6 +339,15 @@ export function rosterStatLine(viewOf: (scope: OverlayColumnScope) => RosterMode
           {t("replay.roster.battles")}
         </>,
       );
+    } else if (col.metric === "kd") {
+      // The game's two-decimal face, plain ink — no color band exists for a
+      // kills/deaths ratio.
+      parts.push(
+        <>
+          {tag}
+          <b>{view.kd != null ? view.kd.toFixed(2) : "—"}</b> {label}
+        </>,
+      );
     } else {
       parts.push(
         <>
@@ -381,6 +398,9 @@ export function rosterShotCells(
     }
     if (col.metric === "pr") {
       return { text: `${Math.round(v)}`, color: prTier(v).color };
+    }
+    if (col.metric === "kd") {
+      return { text: v.toFixed(2) };
     }
     return { text: Math.round(v).toLocaleString(), color: damageColor(v) };
   });

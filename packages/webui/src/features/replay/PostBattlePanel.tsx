@@ -429,6 +429,7 @@ export default defineComponent({
               pr: null,
               battles: null,
               damage: null,
+              kd: null,
               tier: p.shipId != null ? shipTierOf(p.shipId) : null,
             };
           }
@@ -438,6 +439,7 @@ export default defineComponent({
             pr: view.pr,
             battles: view.battles,
             damage: view.avgDamage,
+            kd: view.kd,
             tier: p.shipId != null ? shipTierOf(p.shipId) : null,
           };
         }),
@@ -629,6 +631,12 @@ export default defineComponent({
                 value: a.avgDamage != null ? Math.round(a.avgDamage).toLocaleString() : "—",
                 valueColor: a.avgDamage != null ? damageColor(a.avgDamage) : undefined,
               });
+            } else if (col.metric === "kd") {
+              parts.push({
+                col: idx,
+                label: col.scope === "global" ? t("replay.roster.metricKd") : col.head,
+                value: a.avgKd != null ? a.avgKd.toFixed(2) : "—",
+              });
             }
           });
           agg = parts.length > 0 ? parts : undefined;
@@ -704,6 +712,7 @@ export default defineComponent({
           }
           if (col.metric === "pr") return t("replay.roster.teamAvgPr");
           if (col.metric === "battles") return t("replay.roster.battles");
+          if (col.metric === "kd") return t("replay.roster.metricKd");
           return t("replay.postbattle.avgDamage");
         };
         const valueOf = (col: RosterColumnSpec, cls = "replay-view__postbattle-col-hval"): VNode => {
@@ -743,6 +752,11 @@ export default defineComponent({
               >
                 {agg.avgBattles != null ? Math.round(agg.avgBattles).toLocaleString() : "—"}
               </b>
+            );
+          }
+          if (col.metric === "kd") {
+            return (
+              <b class={cls}>{agg.avgKd != null ? agg.avgKd.toFixed(2) : "—"}</b>
             );
           }
           return (
