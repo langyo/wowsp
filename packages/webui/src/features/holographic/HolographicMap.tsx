@@ -91,7 +91,6 @@ import { api as rpcApi, foldDamageStats } from "@/api";
 import { parsePostBattle } from "@/features/replay/postBattle";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import type { ResolvedStatsMode } from "@/utils/statView";
-import { realmUsesShipNameOrder } from "@/utils/realms";
 import { splitRosterSides } from "@/utils/rosterSides";
 import { isScriptedUnitName } from "@/utils/aiNames";
 import planeIcon from "./planeIcons";
@@ -247,6 +246,11 @@ export default defineComponent({
     /** Query realm for the strip-tooltip career stats (shared with the
      *  parent view — the replay belongs to the install, not the account). */
     realm: { type: String, default: "asia" },
+    /** The CN pinyin ship-name row order for the roster strip, resolved
+     *  by the parent from the replay's realm AND table shape (issue
+     *  #1360: the pinyin permutation rides the single-team layouts only —
+     *  a two-team CN battle renders the WG-family nation rank). */
+    shipNameOrder: { type: Boolean, default: false },
     /** Resolved stats-source battle scope for the tooltip's stat numbers
      *  (the same mode the post-battle panels show). */
     statsMode: { type: String as () => ResolvedStatsMode, default: "random" },
@@ -2047,7 +2051,7 @@ export default defineComponent({
             showKills={killerRosterIdOf.value != null}
             stats={nameStats.value}
             encyclopedia={props.encyclopedia}
-            shipNameOrder={realmUsesShipNameOrder(props.realm)}
+            shipNameOrder={props.shipNameOrder}
           />
         ) : null}
         {tipVehicle && tipAnchorEl.value ? (

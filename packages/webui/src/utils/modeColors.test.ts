@@ -4,7 +4,13 @@
  *  agree with `modeKey` about which battles render as a single team. */
 import { describe, expect, it } from "vitest";
 
-import { isCoopBattle, isOperationBattle, modeColor, modeKey } from "./modeColors";
+import {
+  isCoopBattle,
+  isOperationBattle,
+  isSingleTeamTabLayout,
+  modeColor,
+  modeKey,
+} from "./modeColors";
 
 describe("modeKey", () => {
   it("classifies a PCVO battle script as operation", () => {
@@ -162,5 +168,54 @@ describe("isCoopBattle", () => {
     // PCV* shape with the co-op PCVE one.
     expect(isCoopBattle("pve", null, "PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL")).toBe(false);
     expect(isCoopBattle(null, null, null)).toBe(false);
+  });
+});
+
+describe("isSingleTeamTabLayout", () => {
+  it("accepts operations and plain co-op (the one-column table)", () => {
+    // The vendored Narai golden replay's descriptor — operation scripts
+    // render the human team only.
+    expect(
+      isSingleTeamTabLayout("pve", null, "PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL", [
+        "langyo",
+        "WGR_bot",
+      ]),
+    ).toBe(true);
+    // Plain co-op: pve matchGroup, no fingerprints, :Name: bot fill.
+    expect(isSingleTeamTabLayout("pve", null, null, ["langyo", ":Yumashev:"])).toBe(true);
+    expect(isSingleTeamTabLayout("cooperative", "domination_3point", null, ["langyo"])).toBe(true);
+  });
+
+  it("rejects the asymmetric co-op family (two-team table)", () => {
+    // Issue #1360's companion rule: the ASYMMETRIC co-op family fields a
+    // two-team table (the 2026-10-22 anchoring note keys its anchor as
+    // the PvP class), so it splits back out of the co-op bucket.
+    expect(
+      isSingleTeamTabLayout("event", "asymm_3point_coop", "PCVE027", [
+        "langyo",
+        ":Buchan:",
+        ":Kongo:",
+      ]),
+    ).toBe(false);
+    expect(isSingleTeamTabLayout("pve", "asymm_2point_coop", null, ["langyo", ":Yumashev:"])).toBe(
+      false,
+    );
+  });
+
+  it("rejects the pvp family and the scripted tutorial layouts", () => {
+    expect(isSingleTeamTabLayout("pvp", "domination_3point", null, ["langyo", "WGR_bot"])).toBe(
+      false,
+    );
+    // The escort op / tutorial fleets field their scripted units as REAL
+    // team rows — a two-team layout isCoopBattle correctly refuses.
+    expect(
+      isSingleTeamTabLayout("pve", "LOW_LVL_OPERATION_1_LVL_2", null, [
+        "langyo",
+        "IDS_OP_15_DUMMY_01",
+      ]),
+    ).toBe(false);
+    expect(isSingleTeamTabLayout("intro", "FIRST_BATTLE", null, ["langyo", "IDS_AL_01"])).toBe(
+      false,
+    );
   });
 });

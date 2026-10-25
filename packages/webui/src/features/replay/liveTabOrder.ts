@@ -14,9 +14,12 @@
  * (pinyin-collated) instead of the decompiled nation rank, and never
  * re-sorts — sunk rows dim in place. `shipNameOrder` switches that row
  * order on, `staticOrder` adds the CN-only never-re-sorts behavior on
- * top — under IT alone, the sunk set only MARKS entries. (The Lesta
- * client used to be grouped here; the 2026-10-10 live capture showed it
- * renders its own sort-key order instead.)
+ * top — under IT alone, the sunk set only MARKS entries. BOTH quirks
+ * ride the SINGLE-team table layouts only (issue #1360: a two-team CN
+ * battle renders the WG-family key order), so the callers gate the two
+ * flags on the battle's table shape before handing them here. (The
+ * Lesta client used to be grouped here; the 2026-10-10 live capture
+ * showed it renders its own sort-key order instead.)
  *
  * `sortKeyOf` supersedes the offline permutations per battle: the plugin
  * telemetry can carry the game's OWN per-player sort keys (read off the
