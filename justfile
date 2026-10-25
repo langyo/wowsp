@@ -13,29 +13,6 @@ default:
 
 PM := "pnpm"
 
-# ── celestia-devtools ─────────────────────────────────────────────────────
-# Stage or refresh shared recipes into .just/ (gitignored).
-# Source order: explicit URL arg → local pip bundle (offline) → GitHub raw.
-[script('bash')]
-fetch URL='':
-    #!/usr/bin/env bash
-    set -euo pipefail
-    out=.just/celestia-devtools.just
-    mkdir -p .just
-    if [ -n "{{URL}}" ]; then
-      echo "[fetch] {{URL}} -> $out"
-      curl -fsSL "{{URL}}" -o "$out"
-    elif command -v celestia-devtools >/dev/null 2>&1; then
-      src=$(celestia-devtools include-path)
-      echo "[fetch] local bundle ($src) -> $out"
-      cp "$src" "$out"
-    else
-      echo "[fetch] github raw -> $out"
-      curl -fsSL "https://raw.githubusercontent.com/celestia-island/celestia-devtools/master/src/celestia_devtools/common.just" -o "$out"
-    fi
-    echo "[fetch] wrote $out"
-
-import? "./.just/git-bash-interop.just"
 import? "./.just/celestia-devtools.just"
 
 # ── dev ───────────────────────────────────────────────────────────────
