@@ -164,6 +164,7 @@ mod install;
 mod ledger;
 mod reconcile;
 mod uninstall;
+mod version_guard;
 
 #[cfg(test)]
 mod tests;

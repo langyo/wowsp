@@ -351,6 +351,10 @@ struct PinCacheEntry {
     len: u64,
     mtime: std::time::SystemTime,
     build: Option<u64>,
+    /// The game-version tuple the same tag carries (`15,8,0,13187581` →
+    /// `15.8.0`), parsed INDEPENDENTLY of the build: a tag whose trailing
+    /// build is unparsable still serves the version readers.
+    version: Option<String>,
 }
 
 /// The build the client itself records as live: `preferences.xml`'s
@@ -370,30 +374,57 @@ struct PinCacheEntry {
 /// unreadable mid-rewrite (never cached — retried on the next call) or
 /// carries no parseable tag.
 fn preferences_active_build(root: &Path) -> Option<u64> {
+    preferences_pin(root).0
+}
+
+/// The game version the SAME pin records (`15,9,1,13357625` → `15.9.1`),
+/// with the same stat-based caching as the build. `None` when the file is
+/// missing, unreadable mid-rewrite or the tag carries no version tuple
+/// (a bare build id). Consumers: the mod catalog's version-compat guard —
+/// a pack built for an older game version is the classic silent crash
+/// source, and the build id alone cannot be compared against the pack's
+/// published game range.
+pub(crate) fn preferences_active_game_version(root: &Path) -> Option<String> {
+    preferences_pin(root).1
+}
+
+/// One cached pin read: `(build, game version)` out of the client's own
+/// `preferences.xml`, re-read only when the file's stat moves (see
+/// [`preferences_active_build`]). The two halves parse independently and
+/// may be present alone.
+fn preferences_pin(root: &Path) -> (Option<u64>, Option<String>) {
     let path = root.join("preferences.xml");
-    let meta = std::fs::metadata(&path).ok()?;
-    let mtime = meta.modified().ok()?;
+    let meta = match std::fs::metadata(&path) {
+        Ok(meta) => meta,
+        Err(_) => return (None, None),
+    };
+    let mtime = match meta.modified() {
+        Ok(mtime) => mtime,
+        Err(_) => return (None, None),
+    };
     let root_key = super::game_detect::install_path_key(&root.to_string_lossy());
     {
         let guard = PIN_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = guard.as_ref() {
             if entry.root_key == root_key && entry.len == meta.len() && entry.mtime == mtime {
-                return entry.build;
+                return (entry.build, entry.version.clone());
             }
         }
     }
     let Ok(content) = std::fs::read_to_string(&path) else {
-        return None;
+        return (None, None);
     };
     let build = parse_last_server_build(&content);
+    let version = parse_last_server_game_version(&content);
     let mut guard = PIN_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     *guard = Some(PinCacheEntry {
         root_key,
         len: meta.len(),
         mtime,
         build,
+        version: version.clone(),
     });
-    build
+    (build, version)
 }
 
 /// The pin out of preferences.xml content. Tag matching is
@@ -401,20 +432,50 @@ fn preferences_active_build(root: &Path) -> Option<u64> {
 /// hand-rolled XML probes in this crate (`game_detect`); anything
 /// unexpected misses so the caller falls back to disk shape.
 fn parse_last_server_build(content: &str) -> Option<u64> {
-    // ASCII lowercasing preserves byte offsets, so indices found in the
-    // lowered copy address the original safely.
-    let lower = content.to_ascii_lowercase();
-    let open = lower.find("<last_server_version")?;
-    let value_at = open + lower[open..].find('>')? + 1;
-    let close = lower[value_at..].find("</last_server_version")? + value_at;
-    content[value_at..close]
-        .trim()
-        .rsplit(',')
+    let text = last_server_tag_text(content)?;
+    text.rsplit(',')
         .next()
         .unwrap_or("")
         .trim()
         .parse::<u64>()
         .ok()
+}
+
+/// The game-version tuple the same tag carries: every comma-separated
+/// field EXCEPT the trailing build id must be numeric, and the last up to
+/// three of them form the version (`15,8,0,13187581` → `15.8.0`,
+/// `0,15,9,1,13357625` → `15.9.1` — the tail keeps a leading era zero
+/// from joining the tuple). A tag that is a bare build id carries no
+/// version at all.
+fn parse_last_server_game_version(content: &str) -> Option<String> {
+    let text = last_server_tag_text(content)?.trim();
+    let fields: Vec<&str> = text.split(',').map(str::trim).collect();
+    // Need at least one field before the trailing build id.
+    if fields.len() < 2 {
+        return None;
+    }
+    let tuple = &fields[..fields.len() - 1];
+    // Observed pins are three-field quads (`15,8,0,13187581`); four
+    // pre-build fields is the tolerated maximum (a hypothetical leading
+    // era zero — the take-last-three rule below keeps such a shape
+    // correct). Anything longer is noise, and no verdict beats a
+    // confident-looking wrong one.
+    if tuple.len() > 4 || tuple.iter().any(|f| f.parse::<u32>().is_err()) {
+        return None;
+    }
+    let start = tuple.len().saturating_sub(3);
+    Some(tuple[start..].join("."))
+}
+
+/// The raw text between the `<last_server_version>` tags, located with
+/// the crate's hand-rolled XML probe rules: ASCII case-insensitive,
+/// attribute-tolerant, byte-offset-safe (lowercasing preserves offsets).
+fn last_server_tag_text(content: &str) -> Option<&str> {
+    let lower = content.to_ascii_lowercase();
+    let open = lower.find("<last_server_version")?;
+    let value_at = open + lower[open..].find('>')? + 1;
+    let close = lower[value_at..].find("</last_server_version")? + value_at;
+    Some(&content[value_at..close])
 }
 
 /// The preferences-pinned build among `dirs`, when the client records one
@@ -1131,6 +1192,94 @@ mod tests {
         assert_eq!(parse("<last_server_version/>"), None);
         assert_eq!(parse("<preferences></preferences>"), None);
         assert_eq!(parse(""), None);
+    }
+
+    /// The version-tuple parser reads the same tag's leading fields and
+    /// parses INDEPENDENTLY of the build: the real quads, the era-zero
+    /// five-field shape, a bare build id (no version), and a
+    /// garbage-build quad whose version half still reads.
+    #[test]
+    fn preferences_version_parser_shapes() {
+        use super::parse_last_server_game_version as parse;
+
+        assert_eq!(
+            parse(
+                "<p>\r\n\t\t<last_server_version>\t15,8,0,13187581\t</last_server_version>\r\n</p>"
+            ),
+            Some("15.8.0".into())
+        );
+        assert_eq!(
+            parse(r#"<last_server_version active="1">15,9,1,13357625</last_server_version>"#),
+            Some("15.9.1".into())
+        );
+        // Era-zero prefix: the tail three fields are the version.
+        assert_eq!(
+            parse("<last_server_version>0,15,9,1,13357625</last_server_version>"),
+            Some("15.9.1".into())
+        );
+        // Independent halves: an unparsable build still serves a version.
+        assert_eq!(
+            parse("<last_server_version>15,8,0,not-a-build</last_server_version>"),
+            Some("15.8.0".into())
+        );
+        // A bare build id carries no version tuple.
+        assert_eq!(
+            parse("<last_server_version>200</last_server_version>"),
+            None
+        );
+        // A two-field tag yields a one-part version (padded (15,0,0) when
+        // compared — a range floor of >=15.7 still catches it).
+        assert_eq!(
+            parse("<last_server_version>15,200</last_server_version>"),
+            Some("15".into())
+        );
+        // Noise shapes answer None rather than a wrong tuple.
+        assert_eq!(
+            parse("<last_server_version>1,2,3,4,5,200</last_server_version>"),
+            None
+        );
+        assert_eq!(parse("<last_server_version/>"), None);
+        assert_eq!(parse(""), None);
+    }
+
+    /// [`preferences_active_game_version`] reads a staged game root's pin
+    /// end to end (file → cache → accessor) and tracks a rewrite.
+    #[test]
+    fn preferences_game_version_reads_staged_root() {
+        let tmp = std::env::temp_dir().join(format!(
+            "wowsp-ctx-gver-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(
+            tmp.join("preferences.xml"),
+            "<root><last_server_version>15,9,1,13357625</last_server_version></root>",
+        )
+        .unwrap();
+
+        assert_eq!(
+            super::preferences_active_game_version(&tmp),
+            Some("15.9.1".into())
+        );
+
+        // The client rewrote the pin after an update: the stat change
+        // invalidates the cache and the new version reads through (the
+        // body deliberately differs in length so len alone busts the
+        // cache even on coarse-mtime filesystems).
+        std::fs::write(
+            tmp.join("preferences.xml"),
+            "<root><last_server_version>16,0,0,134444444</last_server_version></root>",
+        )
+        .unwrap();
+        assert_eq!(
+            super::preferences_active_game_version(&tmp),
+            Some("16.0.0".into())
+        );
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     /// The display-mode parser reads what real clients write (BOM'd,
