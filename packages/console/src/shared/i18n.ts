@@ -38,6 +38,20 @@ const TABLE: Record<string, DefineLocaleMessage> = {
 };
 
 function detectLocale(): string {
+  // The desktop app's handoff links carry ?lang= (its own UI locale) —
+  // the retired embedded page let a listed value outrank the saved pick,
+  // and the console keeps that precedence: query → saved → browser.
+  try {
+    const wanted = new URLSearchParams(window.location.search)
+      .get("lang")
+      ?.toLowerCase();
+    if (wanted) {
+      const hit = FEEDBACK_LOCALES.find((code) => code.toLowerCase() === wanted);
+      if (hit) return hit;
+    }
+  } catch {
+    /* no location — fall through to the stored pick */
+  }
   try {
     const saved = localStorage.getItem("wowsp-fb-locale");
     if (saved && saved in TABLE) return saved;

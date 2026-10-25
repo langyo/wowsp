@@ -1,13 +1,20 @@
 /**
  * FeedbackApp — the /feedback console page, parity port of the retired
- * server-rendered embedded page (spec: the HTML/JS in
- * packages/pairing-relay/crates/relay-core/src/feedback.rs).
+ * server-rendered embedded page (spec: its HTML/JS lived in
+ * packages/pairing-relay/crates/relay-core/src/feedback.rs until the
+ * hikari rebuild removed it — commit 2e0f9b16, parent revision for the
+ * exact source).
  *
  * Layout: the ORIGINAL two-pane shell on hikari components — one glass
  * card (HkCard) centered on the page, HSidebar docked left (brand /
  * view nav / language picker in its header/body/footer slots), the
  * active view scrolling right (HkScrollContainer). Panes stack below
  * 48rem. The rest is wiring only:
+ * - boot handoff: ?focus=history (the desktop app's 历史记录 button) or
+ *   ?token= lands on the history view, the query token outranks the
+ *   saved credential, and an available token auto-loads the list —
+ *   plus ?lang= in the locale detection (shared/i18n.ts), all restored
+ *   parity the port had dropped;
  * - form: description / contact (QQ|email) / version (config prefill) /
  *   sysinfo+channel+server+game_id query prefill / attachment preview;
  * - HkCaptchaWidget (Turnstile sitekey from getFeedbackConfig); a failed
@@ -149,7 +156,13 @@ export default defineComponent({
     const cfgError = ref("");
     const query = new URLSearchParams(window.location.search);
 
-    const view = ref<"form" | "history">("form");
+    // The retired embedded page landed on the history view when the link
+    // asked for it (?focus=history — the desktop app's 历史记录 button) or
+    // carried a lookup token; the hikari port dropped that handoff — keep
+    // the same trigger here.
+    const view = ref<"form" | "history">(
+      query.get("focus") === "history" || query.get("token") ? "history" : "form",
+    );
 
     // ── form state ─────────────────────────────────────────────────────
     const description = ref("");
@@ -272,7 +285,9 @@ export default defineComponent({
     }
 
     // ── history ────────────────────────────────────────────────────────
-    const histToken = ref(savedToken() || query.get("token") || "");
+    // An explicit ?token= handoff outranks the browser's saved credential
+    // (the embedded page's exact precedence).
+    const histToken = ref(query.get("token") || savedToken());
     const histLoading = ref(false);
     const histItems = ref<HistoryItem[] | null>(null);
 
@@ -332,6 +347,10 @@ export default defineComponent({
     };
 
     onMounted(async () => {
+      // Landing on the history view with a credential in hand (query
+      // token or the browser's saved one) loads the list straight away —
+      // the embedded page auto-loaded its focus=history handoff too.
+      if (view.value === "history" && histToken.value.trim()) void loadHistory();
       try {
         const conf = await getFeedbackConfig();
         cfg.value = conf;
