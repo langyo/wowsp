@@ -28,6 +28,19 @@
  * test's note) cannot be compared and are only counted in the printed
  * summary; a battle whose self identity fails to resolve always fails.
  *
+ * LEDGER INVARIANT (the 2026-10 regression pin): the per-target ledgers
+ * are a CLAIM PARTITION of the hulls' HP-loss timelines — every drop is
+ * credited once, split across its covering impacts. The old per-impact
+ * walk re-credited the full window delta per shell event and per
+ * attacker, summing the dealt rows to a 2.4x median of the results
+ * screen and the received rows to 7.7x (worst 13.8x). The bench
+ * therefore hard-pins, for EVERY resolved battle: neither ledger may
+ * exceed the gross HP loss it partitions (with rounding slack) — a
+ * breach means the partition double-counts again. Estimate-grade drift
+ * against the authoritative figures stays a printed summary (DoT is
+ * invisible to impacts; healed-back hulls read gross loss above the
+ * server's net damage taken), not a hard rule.
+ *
  * Known authority gap, for review context when a line trips: the hits
  * comparison's authoritative side is the ribbon total (main + secondary +
  * torpedo + depth-charge hits); aircraft rockets and bombs have NO
@@ -39,7 +52,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import type { LiveSelfStream, VehicleEntry } from "@/api";
+import type { HpSample, LiveSelfStream, VehicleEntry } from "@/api";
 import { parsePostBattle, type PostBattlePlayer } from "./postBattle";
 import {
   CALIB_DAMAGE_TOL,
@@ -73,6 +86,19 @@ function rosterOf(stream: LiveSelfStream): VehicleEntry[] {
       shipId: p.shipParamsId ?? 0,
     }),
   );
+}
+
+/** A hull's gross HP loss across its whole timeline — every downward
+ *  step summed, heals ignored (the budget the claim partition may
+ *  never exceed). */
+function grossHpLoss(hp: HpSample[] | undefined): number {
+  if (!hp || hp.length < 2) return 0;
+  let sum = 0;
+  for (let i = 1; i < hp.length; i++) {
+    const d = hp[i - 1].value - hp[i].value;
+    if (d > 0) sum += d;
+  }
+  return sum;
 }
 
 /** The authoritative direct-hit counter: the ribbon families with an
@@ -143,6 +169,10 @@ describe("live calibration corpus bench vs the drained archive", () => {
     const hits = new MetricBench("hits", CALIB_HITS_TOL);
     const kills = new MetricBench("kills", CALIB_FRAGS_TOL);
     const taken = new MetricBench("damage taken", CALIB_TAKEN_TOL);
+    /** Estimate-grade ledger drift against the authority (ratios, print
+     *  only — see the header's LEDGER INVARIANT note for the hard rule). */
+    const dealtRatios: number[] = [];
+    const recvRatios: number[] = [];
     const violations: string[] = [];
     let withAuthority = 0;
     let noAuthority = 0;
@@ -161,6 +191,25 @@ describe("live calibration corpus bench vs the drained archive", () => {
       if (m == null || m.selfEntityId == null) {
         violations.push(`line ${lineNo}: self identity unresolved (model=${m == null ? "null" : "no self entity"})`);
         return;
+      }
+      // ── LEDGER INVARIANT (every resolved battle): the ledgers are a
+      // claim partition of the hulls' gross HP loss — totals beyond that
+      // budget mean lost HP is being counted more than once.
+      const dealtSum = m.dealt.reduce((s, r) => s + r.damage, 0);
+      const recvSum = m.received.reduce((s, r) => s + r.damage, 0);
+      const budgetAll = stream.trajectories.reduce((s, t) => s + grossHpLoss(t.hpSamples), 0);
+      const budgetSelf = grossHpLoss(
+        stream.trajectories.find((t) => t.entityId === m.selfEntityId)?.hpSamples,
+      );
+      if (dealtSum > budgetAll * 1.05 + 200) {
+        violations.push(
+          `line ${lineNo}: dealt ledger ${Math.round(dealtSum)} exceeds the hulls' gross HP loss ${Math.round(budgetAll)} — the claim partition double-counts`,
+        );
+      }
+      if (recvSum > budgetSelf * 1.05 + 200) {
+        violations.push(
+          `line ${lineNo}: received ledger ${Math.round(recvSum)} exceeds my hull's gross HP loss ${Math.round(budgetSelf)} — the claim partition double-counts`,
+        );
       }
       // The AUTHORITY: the stream's own BattleResults payload. Self joins
       // in the same order mergeFinal uses (accountDBID, then the model's
@@ -186,6 +235,8 @@ describe("live calibration corpus bench vs the drained archive", () => {
         [kills, m.frags, self.frags, `kills ${m.frags} vs authoritative ${self.frags}`],
         [taken, m.taken, self.damageTaken, `damage taken ${m.taken} vs authoritative ${self.damageTaken}`],
       ];
+      if (self.damage > 0) dealtRatios.push(dealtSum / self.damage);
+      if (self.damageTaken > 0) recvRatios.push(recvSum / self.damageTaken);
       for (const [bench, estimate, authority, detail] of checks) {
         const drift = Math.abs(estimate - authority);
         if (!bench.record(lineNo, drift)) {
@@ -196,10 +247,20 @@ describe("live calibration corpus bench vs the drained archive", () => {
       }
     });
 
+    const ratioLine = (label: string, xs: number[]): string => {
+      if (xs.length === 0) return `  ${label}: —`;
+      const sorted = [...xs].sort((a, b) => a - b);
+      const med = sorted[Math.floor(sorted.length / 2)]!;
+      return `  ${label}: median ${med.toFixed(2)}x, max ${sorted[sorted.length - 1]!.toFixed(2)}x of ${xs.length}`;
+    };
     console.log(
       `[calib-corpus] ${lines.length} battle(s): ${withAuthority} compared against BattleResults, ` +
         `${noAuthority} without an authoritative payload (Lesta)\n` +
-        [damage, hits, kills, taken].map((b) => `  ${b.summary()}`).join("\n"),
+        [damage, hits, kills, taken].map((b) => `  ${b.summary()}`).join("\n") +
+        "\n" +
+        ratioLine("dealt ledger / authority damage", dealtRatios) +
+        "\n" +
+        ratioLine("received ledger / authority damageTaken", recvRatios),
     );
     expect(
       violations,

@@ -89,6 +89,28 @@ describe("live calibration vs a real Lesta battle", () => {
     const topDealt = m!.dealt[0]!;
     expect(topDealt.damage).toBeGreaterThan(0);
 
+    // LEDGER INVARIANT: the ledgers are a claim partition of the hulls'
+    // HP-loss timelines — neither may exceed the gross loss it partitions
+    // (with rounding slack). The 2026-10 regression this pins: per-impact
+    // full-window crediting summed the rows to multiples of reality.
+    const grossLoss = (hp: { time: number; value: number }[] | undefined): number => {
+      if (!hp || hp.length < 2) return 0;
+      let sum = 0;
+      for (let i = 1; i < hp.length; i++) {
+        const d = hp[i - 1].value - hp[i].value;
+        if (d > 0) sum += d;
+      }
+      return sum;
+    };
+    const dealtSum = m!.dealt.reduce((s, r) => s + r.damage, 0);
+    const recvSum = m!.received.reduce((s, r) => s + r.damage, 0);
+    expect(dealtSum).toBeLessThanOrEqual(
+      stream.trajectories.reduce((s, t) => s + grossLoss(t.hpSamples), 0) * 1.05 + 200,
+    );
+    expect(recvSum).toBeLessThanOrEqual(
+      grossLoss(stream.trajectories.find((t) => t.entityId === m!.selfEntityId)?.hpSamples) * 1.05 + 200,
+    );
+
     // Hull: ~3.3k taken of ~27k.
     expect(m!.taken).toBeGreaterThan(0);
     expect(m!.hpRatio).toBeGreaterThan(50);

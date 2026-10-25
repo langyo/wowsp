@@ -485,6 +485,115 @@ describe("buildSelfStats", () => {
     expect(m!.frags).toBe(1);
   });
 
+  it("counts one salvo's damage once: every shell claims a share of the drop", () => {
+    // Three shell events of one volley land inside the victim's ±window;
+    // the old per-impact walk credited the full 4,000 drop three times
+    // (12,000 on a 4,000 salvo — the corpus's dealt rows summed to a 2.4x
+    // median of the results screen).
+    const stream = baseStream();
+    stream.shotKills = [
+      impact(10.9, 10, 905, 5),
+      impact(11.0, 10, 902, 3),
+      impact(11.1, 10, 898, 1),
+    ];
+    const m = build(stream);
+    const dealt = m!.dealt.find((r) => r.entityId === 20);
+    expect(dealt!.damage).toBe(4000);
+    expect(m!.frags).toBe(1); // the kill window still credits
+  });
+
+  it("splits a focused drop across crossfiring attackers in the received ledger", () => {
+    // Two enemies' shells burst near me inside one window: my 4,000 HP drop
+    // is claimed ONCE and split evenly — the received rows sum to the
+    // hull's real loss instead of crediting both attackers in full (the
+    // corpus's received rows summed to a 7.7x median of damage taken).
+    const foe = traj(40, 104, { x: 300, z: 100 }, [
+      { time: 0, value: 30000 },
+      { time: 30, value: 30000 },
+    ]);
+    const stream = baseStream();
+    stream.trajectories = [...stream.trajectories, foe];
+    stream.shotKills = [
+      impact(14.9, 30, 5, 2),
+      impact(15.1, 40, -3, 6),
+    ];
+    const roster: VehicleEntry[] = [
+      ...ROSTER,
+      { id: 133, name: "Foe2", relation: 2, shipId: 104, shipName: "EnemyShip4" },
+    ];
+    stream.arenaPlayers = [
+      ...ARENA_PLAYERS,
+      { entityId: 40, teamId: 1, playerId: 133, shipParamsId: 104, maxHealth: 30000, name: "Foe2", isBot: false, avatarId: null, isSelf: false },
+    ];
+    const m = buildSelfStats({ stream, roster, dataLang: "en-US" });
+    expect(m!.received.find((r) => r.entityId === 30)!.damage).toBe(2000);
+    expect(m!.received.find((r) => r.entityId === 40)!.damage).toBe(2000);
+    expect(m!.received.reduce((s, r) => s + r.damage, 0)).toBe(4000);
+    expect(m!.taken).toBe(4000);
+  });
+
+  it("splits a crossfire drop in the dealt ledger too (teammate firing alongside)", () => {
+    // My shell and an ally's shell burst inside the victim's window: the
+    // drop splits evenly, so my row — and the heuristic fallback total —
+    // read my 2,000 slice of the 4,000 that actually left the hull.
+    const ally = traj(40, 104, { x: 1800, z: 0 }, [
+      { time: 0, value: 20000 },
+      { time: 30, value: 20000 },
+    ]);
+    const stream = baseStream();
+    stream.trajectories = [...stream.trajectories, ally];
+    stream.shotKills = [
+      impact(10.9, 10, 905, 5),
+      impact(11.0, 40, 897, 4), // the ally's shell, same window
+    ];
+    const roster: VehicleEntry[] = [
+      ...ROSTER,
+      { id: 111, name: "Stenga", relation: 1, shipId: 104, shipName: "AllyShip" },
+    ];
+    stream.arenaPlayers = [
+      ...ARENA_PLAYERS,
+      { entityId: 40, teamId: 0, playerId: 111, shipParamsId: 104, maxHealth: 20000, name: "Stenga", isBot: false, avatarId: null, isSelf: false },
+    ];
+    const m = buildSelfStats({ stream, roster, dataLang: "en-US" });
+    expect(m!.dealt.find((r) => r.entityId === 20)!.damage).toBe(2000);
+    expect(m!.damage).toBe(2000);
+    // The ally's slice stays out of the enemies-only list.
+    expect(m!.dealt.find((r) => r.entityId === 40)).toBeUndefined();
+  });
+
+  it("credits sequential salvos once each across adjacent claim windows", () => {
+    // Two salvos 2 s apart, each drop inside its own salvo's window: the
+    // victim loses 4,000 + 3,000 and the ledger reads exactly that, with
+    // salvo B's two shell events splitting the second drop between them.
+    const victim2 = traj(20, 102, { x: 900, z: 0 }, [
+      { time: 0, value: 40000 },
+      { time: 10, value: 40000 },
+      { time: 11, value: 36000 },
+      { time: 13, value: 33000 },
+      { time: 30, value: 33000 },
+    ]);
+    const stream = baseStream();
+    stream.trajectories = [stream.trajectories[0]!, victim2, stream.trajectories[2]!];
+    stream.shotKills = [
+      impact(10.9, 10, 905, 5), // salvo A: one shell event
+      impact(12.9, 10, 904, 2), // salvo B: two shell events, one window
+      impact(13.0, 10, 899, 6),
+    ];
+    const m = build(stream);
+    expect(m!.dealt.find((r) => r.entityId === 20)!.damage).toBe(7000);
+  });
+
+  it("leaves impact-less HP drops unattributed (DoT stays out of the rows)", () => {
+    // Fire/flood ticks carry no shot-kill events — the rows never see
+    // them, the server totals do.
+    const stream = baseStream();
+    stream.shotKills = [];
+    const m = build(stream);
+    expect(m!.dealt.find((r) => r.entityId === 20)).toBeUndefined();
+    expect(m!.received).toEqual([]);
+    expect(m!.frags).toBe(0);
+  });
+
   it("merges BattleResults figures even without a self trajectory", () => {
     // Every identity join missed but the battle settled: the early-exit
     // model still carries the server's authoritative totals, my kills and

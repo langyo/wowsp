@@ -3,8 +3,9 @@
  * LiveSelfPanel. Builds the "battle so far" personal report the panel and
  * its share shot render: authoritative totals from the recorder's
  * receiveDamageStat stream, the hit-level per-target damage attribution
- * (shot impacts + victim HP deltas — the same heuristic the replay review
- * view uses for its self card), achievements earned, and the post-battle
+ * (shot impacts claim shares of each victim's HP-drop timeline — one
+ * claim model per hull, so salvo volleys and crossfire cannot multiply
+ * the same lost HP), achievements earned, and the post-battle
  * authoritative merge once the BattleResults payload lands.
  *
  * Sources (all from one decoded stream — the live temp container or the
@@ -290,10 +291,16 @@ class RowBook {
     if (t > row.lastAt) row.lastAt = t;
   }
 
-  /** Stamp every row's current HP % at the model's battle time. */
+  /** Stamp every row's current HP % at the model's battle time, rounding
+   *  the attributed damage into display integers (the claim split is
+   *  fractional — one drop shared evenly across its covering impacts). */
   finish(trajectories: EntityTrajectory[], at: number): void {
     const byEntity = new Map(trajectories.map((t) => [t.entityId, t]));
     for (const row of this.rows.values()) {
+      row.damage = Math.round(row.damage);
+      for (const key of Object.keys(row.comp) as RowCompKey[]) {
+        row.comp[key] = Math.round(row.comp[key] ?? 0);
+      }
       const hp = byEntity.get(row.entityId)?.hpSamples;
       const now = hp?.length ? hpAtTime(hp, at) : null;
       if (row.maxHp && now != null && row.maxHp > 0) {
@@ -447,11 +454,17 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
   const selfEntityId = selfTraj.entityId;
   const selfMaxHp = maxHpOf(selfTraj, selfArena ?? undefined);
 
-  // ── hit-level attribution, both directions over the same walk: MY impacts
-  // near any other ship attribute that ship's HP drop to me (dealt); anyone
-  // else's impact near MY ship attributes MY HP drop to the firing entity
-  // (received). DoT and out-of-stream hits stay unattributed — the totals
-  // come from the server stream instead.
+  // ── hit-level attribution over ONE claim model per hull: each victim's
+  // HP-loss timeline is partitioned among the impacts (any owner) that sat
+  // near it, every drop credited ONCE and split evenly across its covering
+  // impacts. The old per-impact walk re-credited the FULL ±window HP delta
+  // once per shell event — a 12-shell salvo multiplied ~12x, and a focused
+  // hull's loss re-credited once per attacker shell (the 2026-10 corpus of
+  // 119 settled battles summed the dealt rows to a 2.4x median of the
+  // results screen and the received rows to 7.7x, worst 13.8x — the tiles
+  // read server truth while both ledgers grew into the hundreds of
+  // thousands). DoT and impact-less damage stay unattributed — the totals
+  // still come from the server stream instead.
   const dealtBook = new RowBook(trajectories, roster, arenaPlayers);
   const takenBook = new RowBook(trajectories, roster, arenaPlayers);
   const shipEntityIds = new Set(ships.map((t) => t.entityId));
@@ -459,6 +472,14 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
   // other) — classifies each impact once per event, both directions.
   const weaponOf = shotWeaponJoiner(stream.shellLaunches, stream.torpedoes);
   let heuristicDamage = 0;
+  const indexedImpacts = shotKills.map((e, idx) => ({ e, idx }));
+  // The claim candidates: any SHIP's impacts — a drop's budget is shared
+  // with teammates' and enemies' shells landing nearby just as with my
+  // own (squadron/ward owners are not in the ship set). The victim's own
+  // impacts never join its partition (a hull's shells cannot hurt it).
+  const shipImpacts = indexedImpacts.filter(({ e }) => shipEntityIds.has(e.ownerId));
+  const myImpacts = indexedImpacts.filter(({ e }) => e.ownerId === selfEntityId);
+  const othersImpacts = shipImpacts.filter(({ e }) => e.ownerId !== selfEntityId);
   /** Server-confirmed hits of mine — the game's 命中 counter semantics:
    *  one VOLLEY tick (shells arriving inside 0.25 s count once — the game
    *  ribbons per salvo, not per shell) landing near a ship ALIVE at impact
@@ -468,103 +489,193 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
    *  (91 events → 77 volleys → 73 game hits). */
   let impactHits = 0;
   let lastVolleyTick = -10.0;
-  /** One impact's victim HP delta, attributed by direction: my hit near a
-   *  ship credits me (row = victim); their hit near me credits the firing
-   *  entity (row = attacker, victim fixed to my own hull). */
-  const attribute = (
-    book: RowBook,
+  /** One near impact classified for a victim: the event (with its
+   *  shotKills index — the frag walk's engagement key) plus its weapon
+   *  bucket. */
+  interface VictimImpact {
+    idx: number;
+    e: ShotKillEvent;
+    compKey: RowCompKey;
+  }
+
+  /** Impacts whose terminal point sits within HIT_RADIUS_M of `victim` at
+   *  their own impact time — the covering candidates for the victim's HP
+   *  drops. The candidate list is time-ascending by construction (the
+   *  events arrive ascending; the filters preserve order). */
+  const impactsNear = (
     victim: EntityTrajectory,
-    rowKey: number,
-    e: ShotKillEvent,
-    compKey: RowCompKey,
-  ): number => {
-    const at = sampleAtTraj(victim, e.time);
-    if (!at) return 0;
-    if (Math.hypot(at.x - e.x, at.z - e.z) > HIT_RADIUS_M) return 0;
-    const hpBefore = hpAtTime(victim.hpSamples, e.time - HIT_HP_BEFORE_S);
-    const hpAfter = hpAtTime(victim.hpSamples, e.time + HIT_HP_AFTER_S);
-    if (hpBefore == null || hpAfter == null) return 0;
-    const delta = hpBefore - hpAfter;
-    if (delta < HIT_HP_MIN_DELTA) return 0;
-    book.add(rowKey, delta, e.time, compKey);
-    return delta;
+    events: { e: ShotKillEvent; idx: number }[],
+  ): VictimImpact[] => {
+    const out: VictimImpact[] = [];
+    for (const { e, idx } of events) {
+      const at = sampleAtTraj(victim, e.time);
+      if (!at) continue;
+      if (Math.hypot(at.x - e.x, at.z - e.z) > HIT_RADIUS_M) continue;
+      out.push({ idx, e, compKey: weaponOf(e.ownerId, e.shotId, e.time) ?? "other" });
+    }
+    return out;
   };
-  for (const e of shotKills) {
-    if (e.ownerId === selfEntityId) {
-      const newVolley = e.time - lastVolleyTick > 0.25;
-      if (newVolley) lastVolleyTick = e.time;
-      const compKey = weaponOf(e.ownerId, e.shotId, e.time) ?? "other";
-      let countedHit = false;
-      for (const tr of ships) {
-        if (tr.entityId === selfEntityId) continue;
-        // Hit accounting: an impact near a ship that was ALIVE at impact
-        // time is a direct hit (dead ships soak in-flight shells without
-        // ribboning — live calibration: unfiltered 91 vs the game's 73).
-        // Counted ONCE per impact even with overlapping hulls; the HP-delta
-        // attribution below runs unchanged.
-        const impactAt = sampleAtTraj(tr, e.time);
-        const diedBefore = tr.deathTime != null && tr.deathTime <= e.time;
-        if (
-          !countedHit &&
-          newVolley &&
-          impactAt &&
-          !diedBefore &&
-          // Enemy side only: the self entry anchors team 0, and friendly
-          // splashes do not ribbon.
-          (() => {
-            const ap = arenaPlayers.find((p) => p.entityId === tr.entityId);
-            return ap == null || ap.teamId !== 0;
-          })() &&
-          Math.hypot(impactAt.x - e.x, impactAt.z - e.z) <= HIT_RADIUS_M
-        ) {
-          impactHits++;
-          countedHit = true;
-        }
-        const delta = attribute(dealtBook, tr, tr.entityId, e, compKey);
-        if (delta > 0) {
-          // The server's totals (and this fallback) count ENEMY-side damage
-          // only — a teammate my splash grazed (the 2026-10-09 co-op battle
-          // credited an ally 693 HP here) is not damage dealt.
-          const victim = dealtBook.rows.get(tr.entityId);
-          if (!victim || victim.relation == null || victim.relation > 1) {
-            heuristicDamage += delta;
-          }
-          // Frag credit: MY impact's HP delta must have landed while the
-          // victim was still afloat (diedBefore rejects the sinking
-          // animation's post-death splash ticks — the 2026-10-08
-          // calibration battle over-credited 4 vs the game's 3 until the
-          // alive-at-impact gate joined the death-proximity window).
-          if (!diedBefore && tr.deathTime != null) {
-            // Kill credit is ENEMY-side only: a teammate's sinking under
-            // my splash window is never my frag (the 2026-10-08
-            // calibration battle credited an ally DoT death until this
-            // gate). Unjoined entities (unknown side) stay uncredited —
-            // an estimate never guesses a kill.
-            const ap = arenaPlayers.find((p) => p.entityId === tr.entityId);
-            const enemySide = ap != null && ap.teamId !== 0;
-            const dt = e.time - tr.deathTime; // <0: my hit before death
-            // DoT kills: the victim burns/floods out seconds after my last
-            // shell, so the death-window HP delta may be unreadable (sparse
-            // sampling near death) — my row's OWN attributed damage on the
-            // victim is the fallback proof of engagement.
-            const rowSoFar = dealtBook.rows.get(tr.entityId);
-            const engaged = delta > 0 || (rowSoFar?.damage ?? 0) > 0;
-            const credited =
-              enemySide &&
-              (Math.abs(dt) < FRAG_DEATH_WINDOW_S ||
-                (dt < 0 && -dt < FRAG_DOT_PRE_WINDOW_S && engaged));
-            if (credited) {
-              const row = dealtBook.rows.get(tr.entityId);
-              if (row) row.killed = true;
-            }
-          }
+
+  /** One hull's HP-loss timeline: every sample whose value fell by at
+   *  least HIT_HP_MIN_DELTA since the previous one (time-ascending; heals
+   *  never produce drops). The drops' sum is the hull's real HP loss —
+   *  the attribution budget its covering impacts share. */
+  const dropsOf = (victim: EntityTrajectory): { time: number; delta: number }[] => {
+    const hp = victim.hpSamples;
+    const out: { time: number; delta: number }[] = [];
+    if (!hp || hp.length < 2) return out;
+    for (let i = 1; i < hp.length; i++) {
+      const d = hp[i - 1].value - hp[i].value;
+      if (d >= HIT_HP_MIN_DELTA) out.push({ time: hp[i].time, delta: d });
+    }
+    return out;
+  };
+
+  /** Split `victim`'s HP drops evenly across their covering near impacts —
+   *  an impact covers a drop when the drop's sample lands inside its
+   *  attribution window (t − HIT_HP_BEFORE_S < drop ≤ t + HIT_HP_AFTER_S,
+   *  the same envelope the old hpBefore/hpAfter read). Both directions
+   *  partition the same victim timeline through here, so no lost HP can
+   *  be counted twice — not across one salvo's shells, not across
+   *  crossfiring attackers. Returns the per-impact shares and which
+   *  impacts covered anything (the frag walk's engagement proof). */
+  const partitionDrops = (
+    victim: EntityTrajectory,
+    refs: VictimImpact[],
+  ): { share: number[]; engaged: boolean[] } => {
+    const share = new Array<number>(refs.length).fill(0);
+    const engaged = new Array<boolean>(refs.length).fill(false);
+    const drops = dropsOf(victim);
+    if (refs.length === 0 || drops.length === 0) return { share, engaged };
+    let lo = 0; // refs ascend in time alongside the drops — a sliding window
+    for (const drop of drops) {
+      while (lo < refs.length && refs[lo].e.time + HIT_HP_AFTER_S < drop.time) lo++;
+      const covering: number[] = [];
+      for (let i = lo; i < refs.length && refs[i].e.time - HIT_HP_BEFORE_S < drop.time; i++) {
+        covering.push(i);
+      }
+      if (covering.length === 0) continue;
+      const per = drop.delta / covering.length;
+      for (const i of covering) {
+        share[i] += per;
+        engaged[i] = true;
+      }
+    }
+    return { share, engaged };
+  };
+  /** My impacts that covered ≥1 HP drop on a victim — the frag walk's
+   *  engagement proof, read off the claim partition (the old walk read it
+   *  off the per-impact window delta). */
+  const coveredByImpact = new Map<number, Set<number>>();
+  const noteCovered = (idx: number, victimId: number): void => {
+    const set = coveredByImpact.get(idx);
+    if (set) set.add(victimId);
+    else coveredByImpact.set(idx, new Set([victimId]));
+  };
+
+  // ── dealt: my impacts near each other hull claim their shares of its
+  // drops (row = victim hull). A focused hull's drop shared with my
+  // teammates' impacts credits me my slice only — the ledger can never
+  // exceed what actually left the hulls I was shooting at.
+  for (const tr of ships) {
+    if (tr.entityId === selfEntityId) continue;
+    const refs = impactsNear(
+      tr,
+      shipImpacts.filter(({ e }) => e.ownerId !== tr.entityId),
+    );
+    const { share, engaged } = partitionDrops(tr, refs);
+    for (let i = 0; i < refs.length; i++) {
+      if (refs[i].e.ownerId !== selfEntityId || share[i] <= 0) continue;
+      dealtBook.add(tr.entityId, share[i], refs[i].e.time, refs[i].compKey);
+      if (engaged[i]) noteCovered(refs[i].idx, tr.entityId);
+    }
+  }
+  // The server totals (and this fallback) count ENEMY-side damage only —
+  // a teammate my splash grazed (the 2026-10-09 co-op battle credited an
+  // ally 693 HP here) is not damage dealt.
+  for (const row of dealtBook.rows.values()) {
+    if (row.relation == null || row.relation > 1) heuristicDamage += row.damage;
+  }
+
+  // ── received: everyone else's ship impacts near MY hull claim their
+  // shares of my drops (row = attacker; squadron/ward owners are not in
+  // the ship set).
+  {
+    const refs = impactsNear(selfTraj, othersImpacts);
+    const { share } = partitionDrops(selfTraj, refs);
+    for (let i = 0; i < refs.length; i++) {
+      if (share[i] > 0) {
+        takenBook.add(refs[i].e.ownerId, share[i], refs[i].e.time, refs[i].compKey);
+      }
+    }
+  }
+
+  // ── the hits counter + death-proximity frag credit walk over MY impacts
+  // (damage attribution happened above, on the claim partition).
+  for (const { e, idx } of myImpacts) {
+    const newVolley = e.time - lastVolleyTick > 0.25;
+    if (newVolley) lastVolleyTick = e.time;
+    let countedHit = false;
+    for (const tr of ships) {
+      if (tr.entityId === selfEntityId) continue;
+      // Hit accounting: an impact near a ship that was ALIVE at impact
+      // time is a direct hit (dead ships soak in-flight shells without
+      // ribboning — live calibration: unfiltered 91 vs the game's 73).
+      // Counted ONCE per impact even with overlapping hulls; the claim
+      // partition above runs unchanged.
+      const impactAt = sampleAtTraj(tr, e.time);
+      const diedBefore = tr.deathTime != null && tr.deathTime <= e.time;
+      if (
+        !countedHit &&
+        newVolley &&
+        impactAt &&
+        !diedBefore &&
+        // Enemy side only: the self entry anchors team 0, and friendly
+        // splashes do not ribbon.
+        (() => {
+          const ap = arenaPlayers.find((p) => p.entityId === tr.entityId);
+          return ap == null || ap.teamId !== 0;
+        })() &&
+        Math.hypot(impactAt.x - e.x, impactAt.z - e.z) <= HIT_RADIUS_M
+      ) {
+        impactHits++;
+        countedHit = true;
+      }
+      // Frag credit: my impact must sit within HIT_RADIUS_M of this victim
+      // (the same proximity the old attribute() read before its window
+      // delta — a kill across the map never credits) and must have covered
+      // an HP drop on it while it was still afloat (diedBefore rejects the
+      // sinking animation's post-death splash ticks — the 2026-10-08
+      // calibration battle over-credited 4 vs the game's 3 until the
+      // alive-at-impact gate joined the death-proximity window).
+      const nearVictim =
+        impactAt != null && Math.hypot(impactAt.x - e.x, impactAt.z - e.z) <= HIT_RADIUS_M;
+      if (nearVictim && !diedBefore && tr.deathTime != null) {
+        // Kill credit is ENEMY-side only: a teammate's sinking under my
+        // splash window is never my frag (the 2026-10-08 calibration
+        // battle credited an ally DoT death until this gate). Unjoined
+        // entities (unknown side) stay uncredited — an estimate never
+        // guesses a kill.
+        const ap = arenaPlayers.find((p) => p.entityId === tr.entityId);
+        const enemySide = ap != null && ap.teamId !== 0;
+        const dt = e.time - tr.deathTime; // <0: my hit before death
+        // DoT kills: the victim burns/floods out seconds after my last
+        // shell, so the death-window impact may not have covered the fatal
+        // drop (sparse sampling near death) — my row's OWN attributed
+        // damage on the victim is the fallback proof of engagement.
+        const rowSoFar = dealtBook.rows.get(tr.entityId);
+        const engaged =
+          (coveredByImpact.get(idx)?.has(tr.entityId) ?? false) ||
+          (rowSoFar?.damage ?? 0) > 0;
+        const credited =
+          enemySide &&
+          (Math.abs(dt) < FRAG_DEATH_WINDOW_S ||
+            (dt < 0 && -dt < FRAG_DOT_PRE_WINDOW_S && engaged));
+        if (credited) {
+          const row = dealtBook.rows.get(tr.entityId);
+          if (row) row.killed = true;
         }
       }
-    } else {
-      // Received: only ship entities can be attackers (squadron/ward owners
-      // are not in the ship set).
-      if (!shipEntityIds.has(e.ownerId)) continue;
-      attribute(takenBook, selfTraj, e.ownerId, e, weaponOf(e.ownerId, e.shotId, e.time) ?? "other");
     }
   }
   dealtBook.finish(trajectories, battleTime);
