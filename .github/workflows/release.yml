@@ -339,7 +339,17 @@ jobs:
       - name: Settle, guard the tag, publish
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Prefer a human-held ops token. The repair path below PATCHes a
+          # draft release's tag_name, and GITHUB_TOKEN is hard-refused there
+          # ("Resource not accessible by integration" — job-level
+          # contents: write notwithstanding): that stranded the v0.6.7
+          # publish on 2026-10-25 when GitHub flipped the draft onto an
+          # untagged slug, and the release needed a manual owner-credential
+          # repair. Mint a fine-grained PAT scoped to this repository
+          # (Contents read+write) and store it as RELEASE_OPS_TOKEN;
+          # absent the secret this falls back to GITHUB_TOKEN and manual
+          # owner repair remains possible.
+          GH_TOKEN: ${{ secrets.RELEASE_OPS_TOKEN || github.token }}
           # This step needs no checkout — `gh release edit` below resolves
           # the repo from this (gh api calls spell their path out
           # instead; nothing below this job checks out).
@@ -479,7 +489,19 @@ jobs:
     env:
       WOWSP_DIGEST_SIGNING_KEY: ${{ secrets.WOWSP_DIGEST_SIGNING_KEY }}
       WOWSP_DIGEST_SIGNING_KEY_ID: ${{ vars.WOWSP_DIGEST_SIGNING_KEY_ID }}
-      GH_TOKEN: ${{ github.token }}
+      # Prefer a human-held ops token. The repo forbids GITHUB_TOKEN from
+      # creating pull requests ("GitHub Actions is not permitted to create
+      # or approve pull requests" — default_workflow_permissions read +
+      # can_approve_pull_request_reviews false), which broke this job's
+      # digest PR step on v0.6.7 (2026-10-25; the maintainer opened #1416
+      # by hand to finish that release). RELEASE_OPS_TOKEN — the same
+      # fine-grained PAT the publish job documents, plus Pull requests
+      # read+write and Actions read+write — restores the designed
+      # open-PR / dispatch / merge pipeline. Without the secret this
+      # falls back to GITHUB_TOKEN and the manual workaround still works:
+      # open the PR from the pushed chore/app-digest-* branch, then rerun
+      # this job (it reuses an existing PR by head branch).
+      GH_TOKEN: ${{ secrets.RELEASE_OPS_TOKEN || github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Publish the digest doc onto a PR branch
