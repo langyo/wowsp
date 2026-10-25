@@ -314,22 +314,41 @@ let identityRealms: Record<string, string> = {};
 let identityBattle = "";
 // App locale forwarded by create_overlay_window — picks the hint copy.
 const locale = new URLSearchParams(window.location.search).get("locale") || "en-US";
-// CN client static layout (realm 'cn' — the 360 client): its Tab table
-// NEVER re-sorts mid-battle — sunk rows dim in place at their battle-start
-// positions (observed on a real Tab capture, 2026-10-07: a 5-dead ally
-// block still interleaving alive rows; see utils/shipClass's module docs).
+// Whether the CURRENT anchor is the SINGLE-team table — the green-only
+// header (overlay_detect's team_split exactly 1.0), the co-op /
+// operation / story layout. A null anchor is not single-team. This
+// LAYOUT, not the realm alone, is what the 2026-10-07 CN calibration
+// actually observed: both CN HUD quirks below were measured on this one
+// table shape, and issue #1360's 2026-10-23 two-team capture proves they
+// do NOT extend to the standard two-team table — there the 360 client
+// renders the WG-family key order (pinyin contradicted 4/4 within one
+// (class, tier) group; see utils/shipClass's module docs).
+function singleTeamTable(): boolean {
+  return (anchor?.teamSplit ?? 0) >= 0.999;
+}
+// CN client static layout — realm 'cn' (the 360 client) on its
+// SINGLE-team table only: that table NEVER re-sorts mid-battle — sunk
+// rows dim in place at their battle-start positions (observed on the
+// real 2026-10-07 co-op Tab capture: a 5-dead ally block still
+// interleaving alive rows; see utils/shipClass's module docs). Its
+// two-team table moves like every WG-family client (the decompiled key
+// carries the alive prefix), so the blockwise machinery runs there.
 // The realm can also be unlocked later by the probe's ground-truth self
 // realm, so derive the flag per render.
-const cnLayout = () => realm === "cn";
+const cnLayout = () => realm === "cn" && singleTeamTable();
 // The row-ORDER half (localized ship name, never the nation rank) is the
-// CN build's alone now: the 2026-10-10 Lesta live capture showed that
-// client rendering its OWN sort-key order (the probe's keys reproduced
-// the table row for row), retiring the "shared with Lesta" reading of
-// the 2026-10-09 capture (Bogatyr leading two St. Louis rows was
-// Lesta's own nation rank putting russia first — see
+// CN build's alone now, and SINGLE-team only: the 2026-10-10 Lesta live
+// capture showed that client rendering its OWN sort-key order (the
+// probe's keys reproduced the table row for row), retiring the "shared
+// with Lesta" reading of the 2026-10-09 capture (Bogatyr leading two
+// St. Louis rows was Lesta's own nation rank putting russia first — see
 // utils/realms's realmUsesShipNameOrder). The never-re-sorts half stays
-// CN-only as well.
-const nameOrderLayout = () => realmUsesShipNameOrder(realm);
+// CN-only as well. Issue #1360: on a two-team table the 360 client
+// renders the decompiled nation rank like the WG family (the capture's
+// group ordered Salem(usa), Stalingrad(russia), Napoli(italy) — the
+// pinyin reading contradicted 4/4 there), so the permutation stands down
+// on that layout and the WG-family key inference takes over.
+const nameOrderLayout = () => realmUsesShipNameOrder(realm) && singleTeamTable();
 // The Lesta realm breaks EQUAL client keys by the roster's own order
 // (live 2026-10-10), so the exact-key sorts compare the keys alone there.
 const tieByRosterOrder = () => realm === "ru";
@@ -1171,10 +1190,11 @@ function clientNameResolver(
 
 /** Whether the side's row sort switches to the client's OWN keys: the
  *  probe's telemetry sort keys cover EVERY row of the side (a partial
- *  map must never interleave game-true and inferred rows) on a client
- *  that renders key order — a ship-name-order client (CN) re-sorts by
- *  localized ship name, an order the keys cannot express, so the key
- *  override never engages there (utils/realms). */
+ *  map must never interleave game-true and inferred rows) on a layout
+ *  that renders key order — the CN ship-name-order layout (the 360
+ *  client's SINGLE-team table) re-sorts by localized ship name, an order
+ *  the keys cannot express, so the key override never engages there
+ *  (nameOrderLayout above). */
 function keyCoverageExact(side: SunkSide): boolean {
   if (!arena || !telemetrySortKeys || nameOrderLayout()) return false;
   const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
@@ -1216,8 +1236,8 @@ function sideOrderExact(side: SunkSide): boolean {
  *  roster, the client's OWN comparison takes over entirely (the exact
  *  string __sortKeyAlive compares — no inference; the Lesta realm
  *  compares the keys alone so equal keys keep the roster order, live
- *  2026-10-10). A ship-name-order client (CN) never renders the key
- *  order, so there the override stands down. */
+ *  2026-10-10). A ship-name-order layout (the CN single-team table)
+ *  never renders the key order, so there the override stands down. */
 function sideFullOrder(side: SunkSide): string[] {
   if (!arena) return [];
   const list = side === "enemy" ? liveRosterSides().enemies : liveRosterSides().allies;
@@ -1283,10 +1303,11 @@ function sideFullOrder(side: SunkSide): string[] {
 /** The side's believed CURRENT alive order (full order minus the trusted
  *  sunk set) — what sink-attrib row indices resolve against. While the
  *  side is exact this is the game's alive block, verbatim. The channel is
- *  dormant on CN (the capture's alive vector is never blockwise there, so
- *  the Rust solver's gate rejects every transition and emits no rows) —
- *  should that ever change, its indices assume the WG blockwise model and
- *  must NOT be resolved against the CN static order. */
+ *  dormant on the CN single-team static layout (the capture's alive vector
+ *  is never blockwise there, so the Rust solver's gate rejects every
+ *  transition and emits no rows) — should that ever change, its indices
+ *  assume the WG blockwise model and must NOT be resolved against that
+ *  static order. */
 function sideAliveOrder(side: SunkSide): string[] {
   const sunkSet = sunk.sunkNames(side);
   const full = sideFullOrder(side);
@@ -1421,13 +1442,14 @@ function render() {
     rosterNames,
   );
   // The anchor's per-row alive classification: the reconcile check below
-  // reads the sunk COUNT off it (never a name), and the CN static layout —
-  // the one client whose rows never move — also uses it as its sunk flag
-  // source (vector row i IS player i there).
+  // reads the sunk COUNT off it (never a name), and the CN single-team
+  // static layout — the one layout whose rows never move — also uses it
+  // as its sunk flag source (vector row i IS player i there).
   const aliveArr: boolean[] | null = anchor.rowAlive ?? null;
-  // CN clients never re-sort the table (see cnLayout above): sunk rows dim
-  // IN PLACE, and the reconcile machinery below — whose blockwise alive-
-  // vector assumption is false there — must not run.
+  // The CN single-team static layout never re-sorts its table (see
+  // cnLayout above): sunk rows dim IN PLACE, and the reconcile machinery
+  // below — whose blockwise alive-vector assumption is false there — must
+  // not run.
   const staticLayout = cnLayout();
   if (anchor.rosterMode) {
     const allyN = allies.length;
@@ -1460,10 +1482,10 @@ function render() {
    *  members for the dim pass. A side without a trusted set (the solver
    *  degraded on a sink it could not explain) keeps the full order
    *  un-flagged — the flag is a claim about a KNOWN sunk set, never a
-   *  guess. CN is the exception both ways: its table never re-sorts, so
-   *  the order stays battle-start and the flag rides membership first
-   *  (the authoritative plugin set when telemetry is live) and the
-   *  row-aligned luma vector otherwise. */
+   *  guess. The CN single-team static layout is the exception both ways:
+   *  its table never re-sorts, so the order stays battle-start and the
+   *  flag rides membership first (the authoritative plugin set when
+   *  telemetry is live) and the row-aligned luma vector otherwise. */
   const sideRows = (side: "ally" | "enemy", blockOffset: number): RosterRow[] => {
     const full = sideFullOrder(side);
     const set = sunk.sunkNames(side);

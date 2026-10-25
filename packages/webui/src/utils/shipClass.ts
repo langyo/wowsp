@@ -40,6 +40,16 @@
  * {@link gameTabRowCompare} carries the
  * ship-name-order variant, gated per surface on the detected realm.
  *
+ * Issue #1360 bounds BOTH CN quirks to the table they were calibrated on:
+ * the 2026-10-23 two-team capture on the 360 client renders the decompiled
+ * NATION rank there — one (class, tier) group ordered 塞勒姆(Salem, usa) →
+ * 斯大林格勒(Stalingrad, russia) → 那不勒斯(Napoli, italy), exactly the
+ * nation order, while the pinyin reading puts 那不勒斯 first (na < sai <
+ * si) and is contradicted 4/4. The single-team table is the co-op /
+ * operation layout the 2026-10-07 capture was taken on, so both quirks
+ * gate on that layout (overlay/main.ts's singleTeamTable) and a two-team
+ * CN battle sorts by this WG-family key like every other realm.
+ *
  * The Lesta client renders its OWN sort-key order — settled by the
  * 2026-10-10 live capture (realm ru, the probe's bridged `sortKeys`
  * reproduced the rendered Tab row for row, equal keys keeping the
