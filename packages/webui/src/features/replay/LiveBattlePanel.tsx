@@ -99,7 +99,7 @@ import {
   type RosterColumnSpec,
 } from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
-import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
+import { isOperationBattle, isSingleTeamTabLayout, modeColor, modeKey } from "@/utils/modeColors";
 import { realmUsesShipNameOrder } from "@/utils/realms";
 import { sameGamePath } from "@/utils/gamePath";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
@@ -352,13 +352,17 @@ export default defineComponent({
       void runtimeShipEpoch.value;
       // The CN client follows the localized-ship-name row order
       // (utils/shipClass's module docs) instead of the decompiled WG rule
-      // and never re-sorts the table mid-battle, so the static layout is
-      // CN-gated too; the Lesta client renders its own sort-key order
-      // (live 2026-10-10) with equal keys keeping the roster order. The
-      // offline permutation is superseded per battle when the telemetry's
-      // sort-key map covers the roster (sortKeyOf) — except on CN, whose
-      // HUD re-sorts by name and never renders the key order.
-      const cn = realm.value === "cn";
+      // and never re-sorts the table mid-battle — on its SINGLE-team
+      // table only (issue #1360: a two-team CN battle renders the
+      // WG-family key order like every other realm, so both quirks stand
+      // down there and the blockwise machinery runs; singleTeamTable
+      // below is the roster-only twin of the overlay's anchor gate). The
+      // Lesta client renders its own sort-key order (live 2026-10-10)
+      // with equal keys keeping the roster order. The offline permutation
+      // is superseded per battle when the telemetry's sort-key map covers
+      // the roster (sortKeyOf) — except on the CN name-order layout,
+      // whose HUD re-sorts by name and never renders the key order.
+      const cn = realm.value === "cn" && singleTeamTable.value;
       // The probe-bridged roster order (telemetry `rosterOrder`): the
       // records' own sequence, pre-ordered so equal client keys (and
       // equal offline segments) tie by the roster's own order.
@@ -382,7 +386,7 @@ export default defineComponent({
         locale: dataLanguage.value,
         clanTagOf: (v: VehicleEntry) => stats.get(v.id)?.clanTag ?? null,
         sunk: sunk.sunkNames(side),
-        shipNameOrder: realmUsesShipNameOrder(realm.value),
+        shipNameOrder: realmUsesShipNameOrder(realm.value) && singleTeamTable.value,
         tieByRosterOrder: realm.value === "ru",
         staticOrder: cn,
         sortKeyOf: telemetrySortKeys ? (v: VehicleEntry) => telemetrySortKeys![v.name] : undefined,
@@ -411,6 +415,24 @@ export default defineComponent({
         props.arena?.vehicles.map((v) => v.name),
       ),
     );
+    /** Whether THIS battle's Tab table is the SINGLE-team layout (the
+     *  co-op/operation shape the 2026-10-07 CN calibration was taken on)
+     *  — the roster-only twin of the overlay's anchor gate (anchor
+     *  team_split exactly 1.0). A two-team CN battle renders the
+     *  WG-family key order and re-sorts blockwise like every other
+     *  realm (issue #1360), so the pinyin permutation and the static
+     *  never-re-sorts layout stand down there and sink-attrib indices
+     *  resolve against the same believed order the overlay uses. */
+    const singleTeamTable = computed(() => {
+      const a = props.arena;
+      if (!a) return false;
+      return isSingleTeamTabLayout(
+        a.matchGroup,
+        a.scenario,
+        a.eventType,
+        a.vehicles.map((v) => v.name),
+      );
+    });
     /** The battle's LIVE side split — scripted scenario NPCs (`IDS_*` /
      *  `#Name`) drop out of the ally block iff this is a real operation:
      *  the game's own Tab table renders the human team only there (the
@@ -439,12 +461,14 @@ export default defineComponent({
      *  names for EVERY row of BOTH sides (telemetry shipNames or the
      *  synthesized record lift): the comparator's inputs are then the
      *  strings the client renders, and its tie rule (player-name pinyin)
-     *  is the calibrated one. */
+     *  is the calibrated one. The CN road rides the SINGLE-team layout
+     *  only (issue #1360) — a two-team CN battle renders the WG-family
+     *  key order, so there only the sort keys can grade exact. */
     const telemetryExactOrder = (): boolean => {
       void sortKeyEpoch.value;
       const sides = liveSides.value;
       if (sides.allies.length + sides.enemies.length === 0) return false;
-      if (realmUsesShipNameOrder(realm.value)) {
+      if (realmUsesShipNameOrder(realm.value) && singleTeamTable.value) {
         const nameOf = (v: VehicleEntry): string | null =>
           telemetryShipNames?.[v.name] ?? v.shipName ?? null;
         return [...sides.allies, ...sides.enemies].every(

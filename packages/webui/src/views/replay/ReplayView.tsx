@@ -83,7 +83,7 @@ import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useStatsStore } from "@/stores/stats";
-import { isOperationBattle, modeColor, modeKey } from "@/utils/modeColors";
+import { isOperationBattle, isSingleTeamTabLayout, modeColor, modeKey } from "@/utils/modeColors";
 import { displayMapName } from "@/utils/mapNames";
 import { clientMenuOptions, installFolderName, serverTagOf } from "@/utils/installLabel";
 import { sameGamePath } from "@/utils/gamePath";
@@ -176,6 +176,11 @@ const PostBattleFallbackPanel = defineComponent({
      *  column — the scripted enemy block is a list nobody reads (the
      *  ally rows themselves still split by relation). */
     operation: { type: Boolean, default: false },
+    /** The CN pinyin ship-name row order, resolved by the parent from
+     *  the replay's realm AND table shape (the single-team layouts only
+     *  — issue #1360: a two-team CN battle renders the WG-family nation
+     *  rank). Gated upstream so the panel never re-derives it. */
+    shipNameOrder: { type: Boolean, default: false },
     /** The arena's initial player state — the authoritative entity→roster
      *  join for the per-row HP/death columns (mirror picks share one
      *  shipId, so shipId-keyed maps overwrite each other). */
@@ -419,12 +424,15 @@ const PostBattleFallbackPanel = defineComponent({
       }),
     );
     // Sort order: the client's Tab key (alive, class, tier desc, nation,
-    // ship name, '[tag]nick') — the verified WG-family base, with the OPEN
-    // REPLAY's realm picking the flavor: CN replays order the
-    // within-(class, tier) group by the localized ship name, everything
-    // else keeps the decompiled nation rank (Lesta included — the
-    // approximation, nation rank and name segment alike, is documented
-    // in utils/shipClass). The permutation is unstable
+    // ship name, '[tag]nick') — the verified WG-family base, with the
+    // replay's realm AND table shape picking the flavor: the CN
+    // single-team layouts (co-op / operations — the 2026-10-07
+    // calibration's table) order the within-(class, tier) group by the
+    // localized ship name, while a two-team CN battle renders the
+    // decompiled nation rank like every other realm (issue #1360);
+    // everything else keeps the decompiled nation rank (Lesta included —
+    // the approximation, nation rank and name segment alike, is
+    // documented in utils/shipClass). The permutation is unstable
     // per-client knowledge (utils/shipClass's module docs) — recalibrate
     // against rendered captures.
     const compareRows = (
@@ -437,7 +445,7 @@ const PostBattleFallbackPanel = defineComponent({
         {
           locale: dataLanguage.value,
           clanTagOf: (v) => nameStats.value.get(v.name)?.clanTag ?? null,
-          shipNameOrder: realmUsesShipNameOrder(realm.value),
+          shipNameOrder: props.shipNameOrder,
         },
       );
     // The comparator skips the alive prefix on purpose (each sort orders
@@ -1701,6 +1709,24 @@ export default defineComponent({
         cur.vehicles.map((v) => v.name),
       );
     });
+    /** The CN pinyin ship-name row order for THIS replay — realm AND
+     *  table shape (issue #1360: the 2026-10-07 pinyin calibration was
+     *  taken on the single-team layouts; a two-team CN replay renders
+     *  the WG-family nation rank). Drives the fallback matrix's row
+     *  order and the holographic map's roster strip. */
+    const shipNameOrder = computed(() => {
+      const cur = parser.current.value;
+      if (!cur) return false;
+      return (
+        realmUsesShipNameOrder(realm.value) &&
+        isSingleTeamTabLayout(
+          cur.matchGroup,
+          cur.scenario,
+          cur.eventType,
+          cur.vehicles.map((v) => v.name),
+        )
+      );
+    });
     const { loading: resultsLoading, error: trajectoryError } = useReplayPositions(parser.current, {
       reset() {
         trajectories.value = [];
@@ -2244,6 +2270,7 @@ export default defineComponent({
                                 damageStats={damageStats.value}
                                 realm={realm.value}
                                 operation={isOperation.value}
+                                shipNameOrder={shipNameOrder.value}
                                 arenaPlayers={arenaPlayers.value}
                                 inferredDeaths={inferredDeaths.value}
                                 statsMode={fallbackStatsMode.value}
@@ -2345,6 +2372,7 @@ export default defineComponent({
                           initialTime={initialSeek}
                           initialMinimapZoom={route.query.mm === "1"}
                           realm={realm.value}
+                          shipNameOrder={shipNameOrder.value}
                           statsMode={fallbackStatsMode.value}
                         />
                       )}

@@ -234,6 +234,40 @@ export function isCoopBattle(
   });
 }
 
+/**
+ * Whether this battle's Tab table is the SINGLE-team layout — the
+ * green-only header (overlay_detect's team_split exactly 1.0): operations
+ * (行动) render the human team only, and plain co-op draws the one-column
+ * table too. Every OTHER battle — PvP family, rooms, and the ASYMMETRIC
+ * co-op family — renders the standard two-team table (the 2026-10-22
+ * anchoring note keys the asymmetric anchor as the PvP class).
+ *
+ * This is the roster-only approximation of the anchor's team_split for
+ * surfaces that never see the capture (the live panel, the replay
+ * surfaces): the tutorial-family scripted battles (low_lvl_operation /
+ * first_battle / IDS_OP_15_*) field their scripted units as real team
+ * rows and correctly fail both halves, and a story battle whose
+ * descriptor carries no operation fingerprint is miscalled two-team —
+ * the rare tail the roster alone cannot classify.
+ *
+ * Consumers: the CN HUD quirks (the pinyin ship-name row order and the
+ * never-re-sorts static layout) were calibrated on the single-team table
+ * and gate on it — issue #1360 proved the 360 client renders the
+ * WG-family key order on a two-team table (utils/realms's
+ * realmUsesShipNameOrder answers "could this client?", this answers "is
+ * this the calibrated table?").
+ */
+export function isSingleTeamTabLayout(
+  matchGroup?: string | null,
+  scenario?: string | null,
+  eventType?: string | null,
+  names: string[] = [],
+): boolean {
+  if (isOperationBattle(matchGroup, scenario, eventType, names)) return true;
+  if (!isCoopBattle(matchGroup, scenario, eventType, names)) return false;
+  return modeKey(matchGroup, scenario, eventType) !== "asymmetric";
+}
+
 /** Resolve the colour triple for a battle mode. Unknown modes fall back to
  *  accent gold so the pill always has a colour. */
 export function modeColor(
