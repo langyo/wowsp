@@ -85,7 +85,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: clamp(320px, 58vh, 720px);
+  // Fit INSIDE the HkModal body's 70vh cap: the body hides its scrollbar, so
+  // an overflow silently pushes the shots strip + footer buttons off-screen
+  // (user report 2026-10-25: the calibration editor needed scrolling to reach
+  // the footer). The fixed chrome sharing the cap budgets ~180px — body
+  // padding 48 + body-gap 12 + metaline ~40 + stage gap 10 + shots strip ~69 —
+  // so the stage claims at most 70vh − 190px (10px slack); 220px is the
+  // smallest readable floor and 640px keeps the tall-window ceiling the old
+  // 58vh could reach without re-introducing the overflow. The canvas
+  // rescales through the stage's ResizeObserver, no layout math changes.
+  height: clamp(220px, calc(70vh - 190px), 640px);
   border-radius: 8px;
   background: rgb(10 14 20);
   overflow: hidden;
