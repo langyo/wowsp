@@ -642,15 +642,17 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
         countedHit = true;
       }
       // Frag credit: my impact must sit within HIT_RADIUS_M of this victim
-      // (the same proximity the old attribute() read before its window
-      // delta — a kill across the map never credits) and must have covered
-      // an HP drop on it while it was still afloat (diedBefore rejects the
-      // sinking animation's post-death splash ticks — the 2026-10-08
-      // calibration battle over-credited 4 vs the game's 3 until the
-      // alive-at-impact gate joined the death-proximity window).
+      // AND have covered an HP drop on it while it was still afloat — the
+      // exact gate master's attributed-delta>0 produced (proximity + a
+      // readable drop), so a miss splashing near an enemy that dies within
+      // the window never guesses the kill. diedBefore rejects the sinking
+      // animation's post-death splash ticks (the 2026-10-08 calibration
+      // battle over-credited 4 vs the game's 3 until the alive-at-impact
+      // gate joined the death-proximity window).
       const nearVictim =
         impactAt != null && Math.hypot(impactAt.x - e.x, impactAt.z - e.z) <= HIT_RADIUS_M;
-      if (nearVictim && !diedBefore && tr.deathTime != null) {
+      const covered = coveredByImpact.get(idx)?.has(tr.entityId) ?? false;
+      if (nearVictim && covered && !diedBefore && tr.deathTime != null) {
         // Kill credit is ENEMY-side only: a teammate's sinking under my
         // splash window is never my frag (the 2026-10-08 calibration
         // battle credited an ally DoT death until this gate). Unjoined
@@ -659,18 +661,9 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
         const ap = arenaPlayers.find((p) => p.entityId === tr.entityId);
         const enemySide = ap != null && ap.teamId !== 0;
         const dt = e.time - tr.deathTime; // <0: my hit before death
-        // DoT kills: the victim burns/floods out seconds after my last
-        // shell, so the death-window impact may not have covered the fatal
-        // drop (sparse sampling near death) — my row's OWN attributed
-        // damage on the victim is the fallback proof of engagement.
-        const rowSoFar = dealtBook.rows.get(tr.entityId);
-        const engaged =
-          (coveredByImpact.get(idx)?.has(tr.entityId) ?? false) ||
-          (rowSoFar?.damage ?? 0) > 0;
         const credited =
           enemySide &&
-          (Math.abs(dt) < FRAG_DEATH_WINDOW_S ||
-            (dt < 0 && -dt < FRAG_DOT_PRE_WINDOW_S && engaged));
+          (Math.abs(dt) < FRAG_DEATH_WINDOW_S || (dt < 0 && -dt < FRAG_DOT_PRE_WINDOW_S));
         if (credited) {
           const row = dealtBook.rows.get(tr.entityId);
           if (row) row.killed = true;
