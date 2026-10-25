@@ -1,92 +1,44 @@
 name: Commit Message Lint
 
+# One in-flight run per pull request (ci-ops 8.3.3): a superseded push cancels
+# its predecessor instead of queueing a second lint behind it on the lane the
+# repository resolves — which, on the farm, means one slot instead of many.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize]
-  # No merge_group trigger: this repo squash-merges PRs and runs no merge
-  # queue — a merge_group event would execute a job whose every step is
-  # gated on event_name == 'pull_request', i.e. a vacuous success.
-  #
-  # A PR opened by the default GITHUB_TOKEN (the Release workflow's
-  # digest job) fires NO pull_request events — GitHub suppresses runs
-  # triggered by that token — so this workflow also accepts a dispatch
-  # carrying the PR number: the digest job dispatches it on the PR
-  # branch to materialize the required lint-commits check on the head
-  # SHA (branch protection matches check runs by name there, whatever
-  # event created them). The dispatch path runs the REAL lint (title +
-  # subjects via the API), not a vacuous success — the digest PR's
-  # machine-generated subject is written to comply by construction.
+    types: [opened, edited, reopened, ready_for_review, synchronize]
+  merge_group:
+    types: [checks_requested]
+  # Fallback entry for the CNB lane (or an operator): dispatch this workflow on
+  # the pull request's head branch, so the single required check is served by
+  # the lane that can actually run. See the devtools callee for the lane rules.
   workflow_dispatch:
     inputs:
       pr:
-        description: PR number whose title + commit subjects to lint
+        description: "Pull request number to lint"
         required: true
-
-concurrency:
-  group: commit-msg-lint-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+        type: string
 
 permissions:
+  # A called workflow cannot grant itself a permission the caller withholds —
+  # the mismatch reads as startup_failure. The org default token permissions
+  # were tightened on 2026-10-02 and this caller was missed, so the single
+  # required check stopped reporting entirely. Grant exactly what the reusable
+  # lint declares and nothing more.
   contents: read
-  # The dispatch path reads the PR title + commit subjects through the
-  # Pull Request REST API (bot PRs fire no pull_request event that
-  # would carry them) — that needs pull-requests: read.
   pull-requests: read
 
 jobs:
   lint-commits:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
-        with:
-          fetch-depth: 0
-
-      # The PR title becomes the squash-merge subject, so it follows the
-      # exact same rule as commit subjects (AGENTS.md §1). Bot PRs
-      # (dependabot) are exempt: machine-generated subjects cannot follow
-      # the gitmoji rule and cannot be rewritten.
-      - name: Lint PR title (squash-merge subject)
-        if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && github.actor != 'github-actions[bot]'
-        env:
-          # Passed via env so a user-controlled title is never interpolated
-          # into shell syntax (quotes, $() and backticks are inert in env).
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: python scripts/commit_msg_lint.py check --subject "$PR_TITLE"
-
-      - name: Lint commit subjects in the PR
-        if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' && github.actor != 'github-actions[bot]'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: |
-          set -euo pipefail
-          git fetch origin "$BASE_REF" --quiet || true
-          base="origin/$BASE_REF"
-          # Bot-authored commits (dependabot "Bump ..." subjects) are exempt
-          # from the gitmoji rules; filter by committer author name.
-          git log --no-merges --format='%s%x09%an' "$base..HEAD" \
-            | awk -F'\t' '$2 !~ /\[bot\]$/ { print $1 }' \
-            | python scripts/commit_msg_lint.py check --stdin-subjects
-
-      # The dispatch twin of the two steps above (see the trigger
-      # comment): fetches the PR title and commit subjects through the
-      # API — no pull_request event ever carries them for a bot PR.
-      - name: Lint PR title (dispatch — bot PRs fire no pull_request event)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUM: ${{ github.event.inputs.pr }}
-        run: |
-          set -euo pipefail
-          title="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUM}" --jq .title)"
-          python scripts/commit_msg_lint.py check --subject "$title"
-
-      - name: Lint commit subjects in the PR (dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUM: ${{ github.event.inputs.pr }}
-        run: |
-          set -euo pipefail
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUM}/commits" --paginate \
-            --jq '.[].commit.message | split("\n")[0]' \
-            | python scripts/commit_msg_lint.py check --stdin-subjects
+    uses: celestia-island/celestia-devtools/.github/workflows/commit-msg-lint.yml@master
+    with:
+      # Lane switch without touching this tree: the org variables resolve to the
+      # self-hosted fleet while the hosted lane is down (2026-09-24 account
+      # payments: a job sent there sits fifteen minutes with no runner before
+      # being cancelled, indistinguishable from "the check never reports").
+      runner: ${{ vars.LINT_RUNNER || '["ubuntu-latest"]' }}
+      lane: ${{ vars.LINT_LANE || 'hosted' }}
+      pr: ${{ inputs.pr }}
