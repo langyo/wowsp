@@ -14,10 +14,10 @@
  * throttled cadence and the average luminance under each text's screen
  * rect is read back — exactly what the camera sees, whatever the art does.
  *
- * Cost: one extra scene render at ≤288 px wide plus one small GPU readback
- * per refresh (5 Hz by default) — orders of magnitude below the main
- * render, and the per-label tone write only touches the DOM when a label
- * actually flips.
+ * Cost: one extra scene render at ≤288 px wide plus one small (async, PBO)
+ * GPU readback per refresh (2 Hz by default) — orders of magnitude below
+ * the main render, and the per-label tone write only touches the DOM when
+ * a label actually flips.
  */
 import * as THREE from "three";
 import type { Ref } from "vue";
@@ -50,8 +50,9 @@ export function toneForLuma(prev: OsdTone | undefined, luma: number): OsdTone {
 const RT_MAX_EDGE = 288;
 /** Smallest usable target edge (degenerate 0×0 containers). */
 const RT_MIN_EDGE = 32;
-/** Seconds between refreshes (~5 Hz — tone flips are slow, backgrounds drift slowly). */
-export const OSD_REFRESH_S = 0.2;
+/** Seconds between refreshes (2 Hz — tone flips are slow, backgrounds drift
+ * slowly, and every refresh is one extra scene render + GPU readback). */
+export const OSD_REFRESH_S = 0.5;
 
 /** Average linear-space luminance (0..1) of the canvas-CSS-px `rect` over
  *  a bottom-up RGBA readback buffer. Pure — unit-testable. Returns -1 when
@@ -99,8 +100,9 @@ export function averageRectLuma(
 
 export interface OsdContrast {
   /** Re-render the scene into the readback target and pull the pixels.
-   *  Returns false when the scene/renderer wasn't ready. */
-  refresh(): boolean;
+   *  Resolves false when the scene/renderer wasn't ready or a pass is
+   *  already in flight; the buffer is only valid once it resolves true. */
+  refresh(): Promise<boolean>;
   /** Average scene luminance (0..1 linear) under a canvas-CSS-px rect, or
    *  -1 when nothing has been read back yet / the rect is off-canvas. */
   lumaUnder(x: number, y: number, w: number, h: number): number;
@@ -131,6 +133,7 @@ export function createOsdContrast(
   let rtH = 0;
   let cssW = 0;
   let cssH = 0;
+  let inFlight = false;
 
   const dispose = () => {
     rt?.dispose();
@@ -138,11 +141,13 @@ export function createOsdContrast(
     buf = new Uint8Array(0);
   };
 
-  const refresh = (): boolean => {
+  const refresh = async (): Promise<boolean> => {
     const a = api.value;
     const el = container.value;
     const canvas = a?.renderer.domElement;
     if (!a || !el || !canvas) return false;
+    if (inFlight) return false;
+    inFlight = true;
     cssW = canvas.clientWidth || 800;
     cssH = canvas.clientHeight || 600;
     // Keep the target's aspect matched to the canvas so screen rects map
@@ -161,14 +166,22 @@ export function createOsdContrast(
     rtW = w;
     rtH = h;
     if (buf.length !== w * h * 4) buf = new Uint8Array(w * h * 4);
-    const prevTarget = a.renderer.getRenderTarget();
-    hooks.cull?.();
-    a.renderer.setRenderTarget(rt);
-    a.renderer.render(a.scene, a.camera);
-    a.renderer.setRenderTarget(prevTarget);
-    hooks.restore?.();
-    a.renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf);
-    return true;
+    try {
+      const prevTarget = a.renderer.getRenderTarget();
+      hooks.cull?.();
+      a.renderer.setRenderTarget(rt);
+      a.renderer.render(a.scene, a.camera);
+      a.renderer.setRenderTarget(prevTarget);
+      hooks.restore?.();
+      // Async (PBO + GPU fence) readback: the synchronous readPixels this
+      // replaced stalled the whole pipeline until every queued draw
+      // finished — a visible periodic hitch; the async path resolves a few
+      // ms later without blocking the frame.
+      await a.renderer.readRenderTargetPixelsAsync(rt, 0, 0, w, h, buf);
+      return true;
+    } finally {
+      inFlight = false;
+    }
   };
 
   const lumaUnder = (x: number, y: number, w: number, h: number): number =>

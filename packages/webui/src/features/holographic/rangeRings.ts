@@ -433,24 +433,25 @@ export function disposeRangeRings(ctx: MapInternals): void {
 
 /** Reposition/hide the 3D rings for battle second `t`: they follow the
  *  recorder's marker and obey the prefs + the ship's liveness. Called from
- *  the playhead tick AND the RAF loop so the spotter/smoke radius ease
- *  keeps stepping while paused. */
-export function updateRangeRings(ctx: MapInternals, t: number): void {
+ *  the render tick so the spotter/smoke radius ease keeps stepping while
+ *  paused; returns whether any visible radius is still easing, so the
+ *  render loop's idle gate knows to keep repainting. */
+export function updateRangeRings(ctx: MapInternals, t: number): boolean {
   const on = rangeRingPrefs.enabled && rangeRingPrefs.show3d;
   const self = ctx.shipMarkers.find((m) => m.userData.role === "self");
   const firstT = self ? (self.userData.firstT as number | undefined) : undefined;
   const deathTime = self ? (self.userData.deathTime as number | null) : null;
   const alive =
     self != null && t >= (firstT ?? 0) && (deathTime == null || t < deathTime);
+  let easing = false;
   for (const slot of ctx.rangeRingSlots) {
     if (!on || !alive || !rangeRingPrefs.kinds[slot.kind]) {
       slot.line.visible = false;
       continue;
     }
-    const meters = animatedRingMeters(
-      slot.kind,
-      dynamicRingMeters(ctx, t, slot.kind, slot.baseMeters),
-    );
+    const target = dynamicRingMeters(ctx, t, slot.kind, slot.baseMeters);
+    const meters = animatedRingMeters(slot.kind, target);
+    if (Math.abs(meters - target) >= 1) easing = true;
     slot.line.visible = true;
     // The geometry bakes the stock radius; the animated (spotter/smoke)
     // radius rides a uniform scale so no buffers rebuild per frame.
@@ -458,4 +459,5 @@ export function updateRangeRings(ctx: MapInternals, t: number): void {
     slot.line.scale.setScalar(metersToUnits(meters) / bakedUnits);
     slot.line.position.set(self!.position.x, 1.2, self!.position.z);
   }
+  return easing;
 }

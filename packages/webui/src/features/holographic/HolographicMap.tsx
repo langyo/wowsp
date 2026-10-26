@@ -269,7 +269,11 @@ export default defineComponent({
     /** Text sprites hidden around the OSD readback render (see below). */
     let osdHiddenSprites: THREE.Sprite[] = [];
     const { ready, api } = useThreeScene(container, (dt) => {
-      advanceMmViewTween();
+      // The playback clock rides the render tick (ONE loop, capped with
+      // it): the old standalone rAF advanced the playhead at raw refresh
+      // rate — 165 Vue playhead writes per second on high-refresh panels.
+      advancePlayback(dt);
+      const mmTweenActive = advanceMmViewTween();
       updateLabelPositions(ctx);
       mmAccum += dt;
       if (mmAccum >= MM_REDRAW_S) {
@@ -278,18 +282,19 @@ export default defineComponent({
       }
       // Range-ring radius ease steps on the RAF clock (not the playhead)
       // so spotter/smoke transitions keep breathing while paused.
-      updateRangeRings(ctx, current.value);
+      const ringsEasing = updateRangeRings(ctx, current.value);
       if (originalView.value) applyOriginalCamera(current.value);
       else followSelected();
       // After the camera updates so the overlay scale reflects THIS frame's
       // distance/fov (the original replay camera changes fov per frame).
       updateOverlayScale(ctx);
       // OSD auto-contrast: re-render the scene into a tiny readback target
-      // at ~5 Hz and flip every in-scene text's ink to match the backdrop
+      // at 2 Hz and flip every in-scene text's ink to match the backdrop
       // it actually sits on (cyclone wash, smoke, light-theme sea). The
       // sampler is created lazily — the renderer only exists once mounted.
       // The text sprites are culled around the readback render so their
-      // own ink never biases the backdrop sample.
+      // own ink never biases the backdrop sample, and the readback itself
+      // is async (PBO) so it never stalls the pipeline.
       osdAccum += dt;
       if (osdAccum >= OSD_REFRESH_S) {
         osdAccum = 0;
@@ -317,8 +322,29 @@ export default defineComponent({
             },
           });
         }
-        if (ctx.osd && ctx.osd.refresh()) applyOsdTones(ctx, ctx.osd);
+        if (ctx.osd) {
+          // Capture the sampler: unmount disposes ctx.osd mid-flight, and a
+          // GPU reset rejects the async readback — both must stay silent.
+          const osd = ctx.osd;
+          osd
+            .refresh()
+            .then((ok) => {
+              if (!ok) return;
+              applyOsdTones(ctx, osd);
+              // A tone flip repaints canvas sprite textures — the main
+              // framebuffer needs one more pass to show it while paused.
+              api.value?.requestRender();
+            })
+            .catch(() => {
+              /* context lost / GPU reset — skip this pass */
+            });
+        }
       }
+      // Still animating? Gates the renderer's skip-idle logic (see
+      // useThreeScene): repaint while playing or while any eased overlay
+      // (minimap tween, range-ring radius) is converging. Camera orbit /
+      // pan is covered separately by the cameraMoved parameter.
+      return playing.value || mmTweenActive || ringsEasing;
     });
 
     // Playback state.
@@ -335,8 +361,6 @@ export default defineComponent({
     const playbackSpeed = ref(2);
     const speedMenuOpen = ref(false);
     const PLAYBACK_SPEEDS = [0.5, 1, 2, 3, 5, 10] as const;
-    let playRaf = 0;
-    let lastTick = 0;
 
     // Phone layout signal: on ≤767px the two HUD pop-up menus (playback
     // speed, camera mode) dock as bottom sheets — hikari's "phones never
@@ -357,6 +381,9 @@ export default defineComponent({
         const ctrl = api.value?.controls;
         if (ctrl) ctrl.enabled = true;
       }
+      // The paused scene swaps camera modes on this toggle — repaint now
+      // instead of waiting for the idle heartbeat.
+      api.value?.requestRender();
     });
 
     // Camera mode dropdown (upward-opening, replaces the old original-view
@@ -972,11 +999,17 @@ export default defineComponent({
             ensureRosterStats();
           }
         }
-        if (e.key === "Alt") showCapEta.value = true;
+        if (e.key === "Alt") {
+          showCapEta.value = true;
+          updateMarkersAt(ctx, current.value);
+        }
       };
       const onKeyUp = (e: KeyboardEvent) => {
         if (e.key === "Tab") showRoster.value = false;
-        if (e.key === "Alt") showCapEta.value = false;
+        if (e.key === "Alt") {
+          showCapEta.value = false;
+          updateMarkersAt(ctx, current.value);
+        }
       };
       window.addEventListener("keydown", onKey);
       window.addEventListener("keyup", onKeyUp);
@@ -1082,15 +1115,17 @@ export default defineComponent({
       return full ? computeViewBounds(ctx, full) : null;
     }
 
-    function advanceMmViewTween(): void {
+    /** Step the minimap view tween; returns true while one is running (the
+     *  render loop's idle gate keeps repainting until it lands). */
+    function advanceMmViewTween(): boolean {
       const tw = mmViewTween;
-      if (!tw) return;
+      if (!tw) return false;
       const p = Math.min(1, (performance.now() - tw.startedAt) / tw.durMs);
       if (p >= 1) {
         // Land exactly on the captured view (no 1-ulp float drift).
         mmView.value = { ...tw.to };
         mmViewTween = null;
-        return;
+        return false;
       }
       const e = 1 - Math.pow(1 - p, 3); // ease-out cubic
       mmView.value = {
@@ -1098,6 +1133,7 @@ export default defineComponent({
         cz: tw.from.cz + (tw.to.cz - tw.from.cz) * e,
         scale: tw.from.scale + (tw.to.scale - tw.from.scale) * e,
       };
+      return true;
     }
 
     /** Viewport handle handed to the tactical board (pan/zoom/wheel/tweens). */
@@ -1326,8 +1362,12 @@ export default defineComponent({
       selfRingsView.value = ctx.selfRings;
       buildRangeRings(ctx, ctx.selfRings);
       updateRangeRings(ctx, current.value);
+      api.value?.requestRender();
     });
-    watch(rangeRingPrefs, () => updateRangeRings(ctx, current.value), { deep: true });
+    watch(rangeRingPrefs, () => {
+      updateRangeRings(ctx, current.value);
+      api.value?.requestRender();
+    }, { deep: true });
 
     /** Weather restriction at the playhead — the top-right badge snapshot
      *  (null while the sky is clear with nothing announced). */
@@ -1374,7 +1414,6 @@ export default defineComponent({
       );
       cam.position.copy(behind);
       ctrl.target.copy(pos);
-      ctrl.update();
     }
 
     /** Replay the recorder's original camera when the original-view toggle is
@@ -1453,21 +1492,20 @@ export default defineComponent({
       selectShip(bestId);
     }
 
-    // Playback loop. rAF is paused while the page is hidden, so the first
-    // tick after resuming sees the whole hidden span as dt — clamp it so
-    // playback never fast-forwards through the match on return.
+    // Playback clock, driven by the render tick's dt (see the onFrame
+    // callback above). dt there already spans real time across the loop's
+    // 60 fps cap, and the render loop pauses with the page — the clamp
+    // keeps a tab-hidden span from fast-forwarding the match on return.
     const MAX_PLAYBACK_TICK_SECONDS = 0.5;
     /** Shadow-clock cadence for the HUD derivations (see hudCurrent). */
     const HUD_TICK_S = 0.1;
     let hudAccum = 0;
-    function playTick(now: number) {
+    function advancePlayback(dt: number) {
       if (!playing.value) return;
-      if (lastTick === 0) lastTick = now;
-      const dt = Math.min((now - lastTick) / 1000, MAX_PLAYBACK_TICK_SECONDS);
-      lastTick = now;
-      current.value += dt * playbackSpeed.value; // playback multiplier (0.5–10×)
+      const step = Math.min(dt, MAX_PLAYBACK_TICK_SECONDS);
+      current.value += step * playbackSpeed.value; // playback multiplier (0.5–10×)
       // 10 Hz shadow clock for the heavy HUD computeds (see hudCurrent).
-      hudAccum += dt;
+      hudAccum += step;
       if (hudAccum >= HUD_TICK_S) {
         hudAccum = 0;
         hudCurrent.value = current.value;
@@ -1477,18 +1515,14 @@ export default defineComponent({
         playing.value = false;
         hudCurrent.value = current.value;
       }
-      playRaf = requestAnimationFrame(playTick);
     }
     function togglePlay() {
       playing.value = !playing.value;
-      if (playing.value) {
-        lastTick = 0;
-        if (current.value >= duration.value) {
-          current.value = 0;
-          hudCurrent.value = 0;
-        }
-        playRaf = requestAnimationFrame(playTick);
+      if (playing.value && current.value >= duration.value) {
+        current.value = 0;
+        hudCurrent.value = 0;
       }
+      api.value?.requestRender();
     }
 
     // Reset playback when switching replays.
@@ -1609,16 +1643,14 @@ export default defineComponent({
     );
 
     // Deep link ?play=1: start playback once the trajectories are in —
-    // headless render checks exercise the NATURAL playback path (the RAF
-    // loop advancing current), not just seeks.
+    // headless render checks exercise the NATURAL playback path (the
+    // render tick advancing current), not just seeks.
     if (new URLSearchParams(location.search).get("play") === "1") {
       watch(
         () => props.trajectories.length,
         (n) => {
           if (n > 0 && current.value === 0 && !playing.value) {
             playing.value = true;
-            lastTick = 0;
-            playRaf = requestAnimationFrame(playTick);
           }
         },
         { immediate: true },
@@ -1647,7 +1679,6 @@ export default defineComponent({
     });
 
     onBeforeUnmount(() => {
-      cancelAnimationFrame(playRaf);
       endFreeLook();
       if (tipHideTimer != null) {
         window.clearTimeout(tipHideTimer);
