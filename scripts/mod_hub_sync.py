@@ -839,7 +839,7 @@ def build_and_upload_index(threads: list[dict], selection: dict | None, cache: P
                          "content_version": selection["content_version"],
                          "game_version": selection["game_version"]}
         for t in threads:
-            if t["stale"] and t["slug"] in idx["mods"]:
+            if t.get("stale") and t["slug"] in idx["mods"]:
                 idx["mods"][t["slug"]]["stale"] = {
                     "reason": t["stale"].get("reason", ""),
                     "since": t["stale"].get("since", ""),
@@ -1250,13 +1250,13 @@ def run_apply(args) -> int:
                          extra_aliases=t["aslain_ids"]) + "\n"
         m = mod_index.FRONT_MATTER_RE.match(t["body"])
         cur_fm = m.group(0) if m else ""
-        if cur_fm.strip() != fm_new.strip() or t["stale"]:
+        if cur_fm.strip() != fm_new.strip() or t.get("stale"):
             new_body = rewrite_front_matter(t["body"], fm_new)
             if new_body != t["body"]:
                 updates.append((t, new_body, None))
     for s in plan["stale"]:
         t = s["thread"]
-        if t["stale"] and t["stale"].get("reason") == s["reason"]:
+        if t.get("stale") and t["stale"].get("reason") == s["reason"]:
             continue  # already marked with the same reason
         m = mod_index.FRONT_MATTER_RE.match(t["body"])
         if not m:
@@ -1298,7 +1298,8 @@ def run_apply(args) -> int:
                              "author": {"login": "wowsp-sync"},
                              "comments": {"nodes": []}},
                     "packages": [{"name": p["asset"]} for p in rec["packages"]],
-                    "presets": []})
+                    "presets": [],
+                    "stale": None})
                 time.sleep(THREAD_UPDATE_SLEEP)
         for i, (t, body, title) in enumerate(updates):
             update_thread(t, body, title)
