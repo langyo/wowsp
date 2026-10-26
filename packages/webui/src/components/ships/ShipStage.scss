@@ -325,16 +325,16 @@
     padding: 2px;
   }
 
-  /* One combat-role section: a hairline divider separates it from the hull
-     row / the section above, the caption heading its airframe rows. The
-     vertical rhythm is deliberately tight: a three-role carrier section plus
-     the hull row must fit the 250px menu cap without scrolling (the stage
-     clips at its own edge), so headings/rows give up a couple px each. */
+  /* One combat-role section. Separation is spacing only — the muted caption
+     heading is the visual break, so no hairline rules around the sections
+     (they read as table borders). The vertical rhythm is deliberately tight:
+     a three-role carrier section plus the hull row must fit the 250px menu
+     cap without scrolling (the stage clips at its own edge), so headings and
+     rows give up a couple px each. */
   &__model-pick-group {
     display: flex;
     flex-direction: column;
-    padding-top: 2px;
-    border-top: 1px solid rgb(var(--color-border) / 22%);
+    padding-top: 3px;
   }
 
   &__model-pick-group-label {
