@@ -37,6 +37,10 @@ export default defineComponent({
   name: "HoloShipStatus",
   props: {
     label: { type: Object as PropType<ShipLabel>, required: true },
+    /** Host-managed positioning (see HoloLabel): the app's render loop
+     *  translates the wrapper slot imperatively, so the rows pin to the
+     *  slot origin instead of writing their own left/top per frame. */
+    hostPositioned: { type: Boolean, default: false },
   },
   setup(props) {
     return () => {
@@ -46,7 +50,10 @@ export default defineComponent({
       return (
         <div
           class="holo-ship-status"
-          style={{ left: `${l.belowX}px`, top: `${l.belowY}px` }}
+          style={{
+            left: props.hostPositioned ? "0px" : `${l.belowX}px`,
+            top: props.hostPositioned ? "0px" : `${l.belowY}px`,
+          }}
         >
           {st.actions.length > 0 ? (
             <div class="holo-ship-status__row">

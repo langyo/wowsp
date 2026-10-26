@@ -122,6 +122,13 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   // Chat + achievement ctx.feed events fire here too — the playhead is the
   // single clock every bottom-left notification hangs off.
   advanceEventFeed(ctx, t);
+  // Label CONTENT (hp / below-hull status rows) refreshes on a ~10 Hz gate —
+  // the same idea as hudCurrent: both are interpolated values whose per-frame
+  // churn used to re-render every label component each rendered frame.
+  // Positions are separate: labelOverlay applies them imperatively per frame.
+  // Event-level fields (dead, ghostText) stay unthrottled.
+  const contentDue = Math.abs(t - ctx.labelContentAt) >= 0.1;
+  if (contentDue) ctx.labelContentAt = t;
   const labels = ctx.shipLabels.value;
   // Alive counts are recomputed every frame from the markers' death times
   // (not incremented) so scrubbing backward restores sunk ships.
@@ -370,14 +377,16 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     marker.userData.yaw = s.yaw;
     if (label) {
       label.ghostText = null;
-      const currentHp = hpAtTime(traj.hpSamples, tEff);
-      if (currentHp != null) label.hp = currentHp;
-      // maxHp never changes mid-playback — it is resolved once at actor
-      // build from the arena's build health (see actorBuild / shipHp.ts),
-      // so there is no per-frame fallback to seed here.
-      // Below-hull combat status rows (actions / hits / dots) track the
-      // same effective clock — a dying ship freezes at its death instant.
-      label.status = shipStatusAt(ctx.shipStatus.get(entityId), tEff);
+      if (contentDue) {
+        const currentHp = hpAtTime(traj.hpSamples, tEff);
+        if (currentHp != null) label.hp = currentHp;
+        // maxHp never changes mid-playback — it is resolved once at actor
+        // build from the arena's build health (see actorBuild / shipHp.ts),
+        // so there is no per-frame fallback to seed here.
+        // Below-hull combat status rows (actions / hits / dots) track the
+        // same effective clock — a dying ship freezes at its death instant.
+        label.status = shipStatusAt(ctx.shipStatus.get(entityId), tEff);
+      }
     }
   }
   // Capture-zone ownership + estimated score at this instant.

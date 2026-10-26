@@ -366,7 +366,19 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
               : 0,
     });
   }
-  ctx.capDisplay.value = display;
+  // Publish only when something visibly changed: the scorebar's computed
+  // state maps this array, and re-assigning an identical-but-new array per
+  // frame used to invalidate it on every rendered frame. The cap-ring
+  // painters below markerUpdate read the LIVE simulation values (st), so
+  // they keep their per-frame cadence regardless.
+  let sig = "";
+  for (const d of display) {
+    sig += d.letter + ":" + d.owner + ":" + d.progress.toFixed(2) + ":" + d.alliesIn + ":" + d.enemiesIn + ":" + (d.contested ? "c" : "") + (d.capturing ? "t" : "") + ":" + d.etaSeconds + ":" + d.captureTeam + ";";
+  }
+  if (sig !== ctx._capDisplaySig) {
+    ctx._capDisplaySig = sig;
+    ctx.capDisplay.value = display;
+  }
   // Standard battles end at 1000 points — clamp both scores so the
   // reconstructed total can never exceed the real win condition.
   ctx.allyScore.value = Math.min(allyScoreNow, 1000);

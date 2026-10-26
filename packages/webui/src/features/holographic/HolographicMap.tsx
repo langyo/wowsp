@@ -601,10 +601,11 @@ export default defineComponent({
       const m = Math.floor(s / 60);
       return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
     }
-    /** Fixed "elapsed / total" readout. */
+    /** Fixed "elapsed / total" readout — rides the 10 Hz shadow clock so
+     *  the playhead's per-frame writes never re-render the map for it. */
     function displayTime(): string {
       const d = duration.value || 0;
-      const c = current.value;
+      const c = hudCurrent.value;
       return `${formatTime(c)} / ${formatTime(d)}`;
     }
 
@@ -1616,8 +1617,11 @@ export default defineComponent({
 
     // Recompute markers whenever the scrubber moves. The decision layer
     // rides the same playhead path (throttled internally; covers RAF
-    // playback advances and scrub seeks alike).
+    // playback advances and scrub seeks alike). While PAUSED every change
+    // is a user seek — bypass the label-content throttle so hp/status rows
+    // land on the exact frame the thumb stops on.
     watch(current, (t) => {
+      if (!playing.value) ctx.labelContentAt = -Infinity;
       updateMarkersAt(ctx, t);
       maybeFetchDecisions();
     });
@@ -1718,7 +1722,7 @@ export default defineComponent({
       // them is on screen — otherwise it'd run every playback frame.
       const killsNow =
         tipVehicleId.value != null || showRoster.value
-          ? killsByPlayerAt(current.value)
+          ? killsByPlayerAt(hudCurrent.value)
           : EMPTY_KILLS;
       const tipVehicle =
         tipVehicleId.value != null
@@ -1756,49 +1760,66 @@ export default defineComponent({
             onCanvasClick(e);
           }}
         />
-        {/* ── Floating ship labels (projected 3D→2D onto the canvas) ── */}
+        {/* ── Floating ship labels (projected 3D→2D onto the canvas) ──.
+            Each label/status pair sits in a 0×0 SLOT div the render loop
+            positions imperatively (labelOverlay.applySlot): per-frame
+            x/y churn stays out of Vue, and only the low-frequency content
+            below (name/hp/tone/status) re-renders — see markerUpdate's
+            label-content throttle. */}
         <div class={["holo-map__labels", showLabels.value ? "" : "holo-map__labels--hidden"]} aria-hidden="true">
           {shipLabels.value.map((lbl) => {
             // Local player markers (玩家标记): nickname-first match, the
             // resolved account id sharpens it when the stats batch landed.
             const st = nameStats.value.get(lbl.name);
             return (
-            <HoloLabel
+            <div
               key={lbl.entityId}
-              deadText={i18nT("replay.legend.dead")}
-              label={{
-                key: lbl.entityId,
-                x: lbl.x,
-                y: lbl.y,
-                role: lbl.role,
-                // Scripted NPCs have no player name — the label's ship slot
-                // already carries their identity.
-                name: lbl.scripted ? "" : lbl.name,
-                shipName: lbl.shipName,
-                tier: lbl.tier,
-                iconUrl:
-                  lbl.kind === "plane"
-                    ? (planeIcon(lbl.planeType ?? "attack")?.src ?? null)
-                    : lbl.type
-                      ? (shipIconUrl(lbl.type, lbl.role === "enemy" ? "enemy" : "ally") ?? null)
-                      : null,
-                hp: lbl.hp,
-                maxHp: lbl.maxHp,
-                dead: lbl.dead,
-                ghostText: lbl.ghostText,
-                visible: lbl.visible,
-                selected: selectedEntityId.value === lbl.entityId,
-                tone: lbl.tone,
-                markerColor: markers.colorOf(lbl.scripted ? null : lbl.name, st?.accountId),
-              }}
-            />
+              class="holo-map__label-slot"
+              ref={(el) => { ctx.labelSlotEls.set("l" + lbl.entityId, el as HTMLDivElement | null); }}
+            >
+              <HoloLabel
+                hostPositioned
+                deadText={i18nT("replay.legend.dead")}
+                label={{
+                  key: lbl.entityId,
+                  x: 0,
+                  y: 0,
+                  role: lbl.role,
+                  // Scripted NPCs have no player name — the label's ship slot
+                  // already carries their identity.
+                  name: lbl.scripted ? "" : lbl.name,
+                  shipName: lbl.shipName,
+                  tier: lbl.tier,
+                  iconUrl:
+                    lbl.kind === "plane"
+                      ? (planeIcon(lbl.planeType ?? "attack")?.src ?? null)
+                      : lbl.type
+                        ? (shipIconUrl(lbl.type, lbl.role === "enemy" ? "enemy" : "ally") ?? null)
+                        : null,
+                  hp: lbl.hp,
+                  maxHp: lbl.maxHp,
+                  dead: lbl.dead,
+                  ghostText: lbl.ghostText,
+                  visible: true,
+                  selected: selectedEntityId.value === lbl.entityId,
+                  tone: lbl.tone,
+                  markerColor: markers.colorOf(lbl.scripted ? null : lbl.name, st?.accountId),
+                }}
+              />
+            </div>
             );
           })}
           {/* Below-hull combat status rows (close-range only — the gate
               lives in labelOverlay's projection pass). */}
           {shipLabels.value.map((lbl) =>
             lbl.kind === "plane" ? null : (
-              <HoloShipStatus key={lbl.entityId} label={lbl} />
+              <div
+                key={lbl.entityId}
+                class="holo-map__label-slot"
+                ref={(el) => { ctx.labelSlotEls.set("s" + lbl.entityId, el as HTMLDivElement | null); }}
+              >
+                <HoloShipStatus hostPositioned label={lbl} />
+              </div>
             ),
           )}
         </div>
@@ -2049,8 +2070,8 @@ export default defineComponent({
               min={0}
               max={duration.value || 0}
               step={0.1}
-              value={current.value}
-              style={{ "--scrub-pct": `${duration.value ? (current.value / duration.value) * 100 : 0}%` }}
+              value={hudCurrent.value}
+              style={{ "--scrub-pct": `${duration.value ? (hudCurrent.value / duration.value) * 100 : 0}%` }}
               onInput={(e) => {
                 playing.value = false;
                 current.value = Number((e.target as HTMLInputElement).value);
@@ -2090,7 +2111,7 @@ export default defineComponent({
           <HoloRosterOverlay
             vehicles={props.vehicles}
             operation={props.operation}
-            time={current.value}
+            time={hudCurrent.value}
             rosterState={rosterState.value}
             kills={killsNow}
             showKills={killerRosterIdOf.value != null}
@@ -2103,7 +2124,7 @@ export default defineComponent({
           <HoloShipTooltip
             vehicle={tipVehicle}
             anchorEl={tipAnchorEl.value}
-            time={current.value}
+            time={hudCurrent.value}
             state={rosterState.value.get(tipVehicle.id) ?? null}
             kills={killsNow.get(tipVehicle.id) ?? 0}
             showKills={killerRosterIdOf.value != null}

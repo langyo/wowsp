@@ -80,6 +80,12 @@ export default defineComponent({
   props: {
     label: { type: Object as PropType<HoloLabelData>, required: true },
     deadText: { type: String, default: "SUNK" },
+    /** Host-managed positioning: the app wraps this label in a slot div the
+     *  render loop translates imperatively, so the label pins itself to the
+     *  slot's origin instead of writing its own left/top (which would fight
+     *  the wrapper and re-run style/layout per frame). Default false keeps
+     *  the historical self-positioning for hosts like the marketing site. */
+    hostPositioned: { type: Boolean, default: false },
   },
   setup(props) {
     // Hide-until-loaded (and stay hidden on error): a failed HUD icon must
@@ -106,8 +112,8 @@ export default defineComponent({
             l.selected ? "holo-label--selected" : "",
           ].join(" ")}
           style={{
-            left: `${l.x}px`,
-            top: `${l.y}px`,
+            left: props.hostPositioned ? "0px" : `${l.x}px`,
+            top: props.hostPositioned ? "0px" : `${l.y}px`,
             // Ink override only when the OSD sampler has spoken; otherwise
             // the stylesheet's theme-driven palette applies untouched.
             ...(l.tone ? TONE_INK_VARS[l.tone] : null),
