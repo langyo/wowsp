@@ -48,6 +48,10 @@ interface ConsumableVariant {
   rad?: number;
   /** defaultActivationMode == AUTO (no manual key). */
   a?: number;
+  /** Icon stem override: this variant's own iconIDs art differs from the
+   *  entity's icon (RN big-heal repairs, short sonars, quick engine boosts,
+   *  crawler/oil smokes — the client renders art per variant). */
+  i?: string;
 }
 
 interface ConsumableEntity {
@@ -188,7 +192,10 @@ function resolveEntry(
   const strings = DETAILS.strings[spec.t];
   const descStrings = spec.d ? DETAILS.strings[spec.d] : strings;
   const familyLabel = shipConsumableLabel(rec.family);
-  const iconStem = rec.icon || FAMILY_ICON.get(rec.family);
+  // The client renders art PER VARIANT: a variant whose own iconIDs names a
+  // different art (RN big-heal repairs, short sonars, quick engine boosts,
+  // crawler/oil smokes) overrides the entity's icon.
+  const iconStem = spec.i || rec.icon || FAMILY_ICON.get(rec.family);
   return {
     entity,
     variant,

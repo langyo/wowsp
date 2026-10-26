@@ -48,6 +48,8 @@ Output shapes::
                       "ds": 5880, "dt": 3960,  # logic distShip / distTorpedo (m, when present)
                       "rad": 450,              # logic radius — smoke cloud / fighter patrol (m)
                       "a": 1,                  # defaultActivationMode == AUTO (no manual key)
+                      "i": "stem",             # icon override: this variant's own iconIDs art
+                                                # differs from the entity's icon
                   } } } }
 
   res/images/consumables/<stem>.webp   # one file per DISTINCT source icon,
@@ -204,15 +206,23 @@ def pick_family_icons(
     unpacked size and crc32) share one webp regardless of path — named
     after the alphabetically first family or entity using it.
     """
-    def votes_of(ent: str, specs: list[dict[str, Any]]) -> Counter[str]:
+    def votes_of(
+        ent: str, specs: list[dict[str, Any]],
+    ) -> tuple[Counter[str], set[str]]:
+        """Per-variant votes plus every distinct variant-declared art — the
+        webp allocation must also cover arts that only individual variants
+        reference (the client renders those per variant)."""
         votes: Counter[str] = Counter()
+        arts: set[str] = set()
         for spec in specs:
             ic = spec.get("iconIDs")
             if ic and "_empty" not in ic:
-                votes[f"/gui/consumables/consumable_{ic}.png"] += 1
+                source = f"/gui/consumables/consumable_{ic}.png"
+                votes[source] += 1
+                arts.add(source)
             else:
                 votes[f"/gui/consumables/consumable_{ent}.png"] += 1
-        return votes
+        return votes, arts
 
     def first_existing(votes: Counter[str]) -> str | None:
         for source, _n in votes.most_common():
@@ -223,10 +233,12 @@ def pick_family_icons(
     fam_votes: dict[str, Counter[str]] = {}
     fam_entities: dict[str, list[str]] = {}
     ent_source: dict[str, str] = {}
+    variant_arts: set[str] = set()
     for ent, rec in sorted(entities.items()):
         fam = rec["family"]
         fam_entities.setdefault(fam, []).append(ent)
-        votes = votes_of(ent, rec["_specs"])
+        votes, arts = votes_of(ent, rec["_specs"])
+        variant_arts.update(arts)
         fam_votes.setdefault(fam, Counter()).update(votes)
         source = first_existing(votes)
         if source is None:
@@ -257,6 +269,14 @@ def pick_family_icons(
     by_content: dict[tuple[int, int], str] = {}
     ordered = [(fam_source[f], f.lower()) for f in sorted(fam_source)]
     ordered += [(ent_source[e], e.lower()) for e in sorted(ent_source)]
+    # variant-only arts sort last and are named after their art id
+    # ("consumable_PCY015_SpeedBooster_Imp_Premium.png" →
+    #  "pcy015_speedbooster_imp_premium"); byte-identical ones fold into
+    # whichever family/entity stem already carries that art.
+    ordered += [
+        (src, src.rsplit("consumable_", 1)[-1][:-4].lower())
+        for src in sorted(variant_arts)
+    ]
     for source, stem in ordered:
         entry = meta_by_path.get(source) or {}
         content = (int(entry.get("unpacked_size") or 0), int(entry.get("crc32") or 0))
@@ -267,6 +287,38 @@ def pick_family_icons(
         source_stem[source] = stem
         by_content[content] = stem
     return fam_source, ent_source, source_stem
+
+
+def stamp_variant_icons(
+    entities: dict[str, dict[str, Any]],
+    meta_by_path: dict[str, dict[str, Any]],
+    source_stem: dict[str, str],
+    ent_source: dict[str, str],
+    fam_source: dict[str, str],
+) -> None:
+    """Stamp per-variant icon overrides ("i" in the variant record) wherever
+    a variant's own `iconIDs` art resolves to a different stem than its
+    entity's icon — the client renders art PER VARIANT, so the RN big-heal
+    repairs (Eheal art), the short sonars, the quick engine boosts and the
+    crawler/oil smokes must not be flattened onto their entity's majority
+    art. A variant whose iconIDs is empty (or whose art file is missing)
+    renders the entity art, so it stays unstamped."""
+    for name, rec in entities.items():
+        ent_icon = rec["icon"]
+        for vname, ic in rec.pop("_icon_ids").items():
+            spec = rec["variants"].get(vname)
+            if spec is None:
+                continue
+            source = None
+            if ic and "_empty" not in ic:
+                candidate = f"/gui/consumables/consumable_{ic}.png"
+                if candidate in meta_by_path:
+                    source = candidate
+            if source is None:
+                source = ent_source.get(name) or fam_source.get(rec["family"])
+            stem = source_stem.get(source, "")
+            if stem and stem != ent_icon:
+                spec["i"] = stem
 
 
 def main(argv: list[str]) -> int:
@@ -301,6 +353,7 @@ def main(argv: list[str]) -> int:
         if not specs:
             continue
         variants: dict[str, dict[str, Any]] = {}
+        icon_ids: dict[str, str] = {}
         strings: dict[str, dict[str, dict[str, str]]] = {}
         for variant_name, raw in specs:
             spec = dict(raw, _entity=name)
@@ -308,6 +361,7 @@ def main(argv: list[str]) -> int:
             if rec is None:
                 continue
             variants[variant_name] = rec
+            icon_ids[variant_name] = str(raw.get("iconIDs") or "")
             for key in (rec["t"], rec.get("d")):
                 if key and key not in strings:
                     resolved = strings_for(lang, key)
@@ -326,6 +380,7 @@ def main(argv: list[str]) -> int:
                 "variants": variants,
                 "strings": strings,
                 "_specs": [raw for _vn, raw in specs],
+                "_icon_ids": icon_ids,
             }
 
     # Merge per-entity strings into the shared table.
@@ -354,6 +409,7 @@ def main(argv: list[str]) -> int:
         for name, rec in entities.items():
             source = ent_source.get(name) or fam_source.get(rec["family"])
             rec["icon"] = source_stem[source] if source else ""
+        stamp_variant_icons(entities, meta_by_path, source_stem, ent_source, fam_source)
         missing_fams = sorted(
             {r["family"] for r in entities.values() if not r["icon"]})
         if missing_fams:
