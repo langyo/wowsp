@@ -284,7 +284,7 @@ export default defineComponent({
     // so a hidden nick cannot leak into the image). Like the post-battle
     // panels, the state is ephemeral — a share-time privacy choice.
     const masking = useNickMasking();
-  const blacklist = useBlacklistStore();
+    const blacklist = useBlacklistStore();
     const root = ref<HTMLElement | null>(null);
     const shot = useShareShot(buildShotModel, () => root.value);
 

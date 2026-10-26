@@ -1,8 +1,14 @@
 //! The blacklist pull: account/info + private.grouped_contacts with the
-//! stored OpenID token (Authorization: Bearer — see the sibling auth module
-//! for why the token never rides in a URL), then a public batch nickname
-//! sweep over the blocked ids. Results land in blacklist-sync.json as a
-//! wholesale replacement snapshot.
+//! stored OpenID token, then a public batch nickname sweep over the blocked
+//! ids. Results land in blacklist-sync.json as a wholesale replacement
+//! snapshot.
+//!
+//! Token transport: the portals document access_token as a METHOD PARAMETER
+//! (the principles guide never mentions an Authorization header), so the
+//! pull sends it as the documented query parameter — and every error string
+//! is REDACTED before it can reach a log line or the upstream-health record
+//! (reqwest's Display embeds the full URL, and this URL contains the
+//! token). See redact_url.
 
 use anyhow::{Result, anyhow};
 
@@ -66,34 +72,59 @@ struct GroupedContacts {
     blocked: Option<Vec<i64>>,
 }
 
-/// GET with the Bearer token in the Authorization header, riding the same
-/// proxy-then-direct fallback as upstream_health::recorded_get (which cannot
-/// carry custom headers) and recording the outcome against the host so the
-/// upstream-health view stays honest. The URL is token-free by construction.
-async fn authed_get(
+/// Cut every query string out of an error message. reqwest's Display embeds
+/// the full request URL, and the private-data URL carries the access token —
+/// so no reqwest error text may ever reach a log line, a health record or an
+/// anyhow message unredacted (§7). Everything from the first '?' up to the
+/// closing paren of the Display form collapses to a marker.
+pub(crate) fn redact_url(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len());
+    let mut in_query = false;
+    for ch in msg.chars() {
+        match ch {
+            '?' if !in_query => {
+                in_query = true;
+                out.push_str("?..");
+            },
+            ')' if in_query => {
+                in_query = false;
+                out.push(ch);
+            },
+            _ if in_query => {},
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// GET carrying the access token as the documented query parameter, riding
+/// the same proxy-then-direct fallback as upstream_health::recorded_get and
+/// recording the outcome against the host so the upstream-health view stays
+/// honest — with every failure string REDACTED through redact_url first
+/// (the raw reqwest text embeds the token-bearing URL).
+async fn token_get(
     clients: &HttpPair,
-    token: &str,
     host: &str,
     label: &str,
     url: String,
 ) -> Result<reqwest::Response> {
-    let send = |client: &reqwest::Client| {
-        client
-            .get(&url)
-            .header("Authorization", format!("Bearer {token}"))
-            .send()
-    };
-    let outcome = send(clients.proxied()).await;
-    match outcome {
+    let send = |client: &reqwest::Client| client.get(&url).send();
+    let primary = send(clients.proxied()).await;
+    match primary {
         Ok(resp) => {
-            crate::commands::upstream_health::record_success(host);
+            let status = resp.status();
+            if status.is_success() {
+                crate::commands::upstream_health::record_success(host);
+            } else {
+                crate::commands::upstream_health::record_failure(host, &format!("HTTP {status}"));
+            }
             Ok(resp)
         },
-        Err(primary) => {
+        Err(first) => {
             let second = if clients.has_proxy() {
                 send(clients.direct()).await
             } else {
-                Err(primary)
+                Err(first)
             };
             match second {
                 Ok(resp) => {
@@ -101,38 +132,61 @@ async fn authed_get(
                     Ok(resp)
                 },
                 Err(e) => {
+                    let redacted = redact_url(&e.to_string());
                     crate::commands::upstream_health::record_failure(
                         host,
-                        &format!("{label} request: {e}"),
+                        &format!("{label} request: {redacted}"),
                     );
-                    Err(anyhow!("{label} request: {e}"))
+                    Err(anyhow!("{label} request: {redacted}"))
                 },
             }
         },
     }
 }
 
+/// What one private pull answered: the blocked ids plus whether the private
+/// contacts block came back at all.
+struct FetchOutcome {
+    ids: Vec<i64>,
+    /// The token was accepted (status ok) but the private block is MISSING.
+    /// That is either a legitimately-never-used contacts UI or a REJECTED
+    /// token scope — the two cannot be told apart from the response, so the
+    /// caller surfaces a warning message instead of a silent empty list.
+    private_missing: bool,
+}
+
+/// Pure core of the response parse: the data node keyed by the account id,
+/// the private/grouped_contacts nesting and its blocked list. ` + '`' + String.raw`None` + '`' + String.raw` on
+/// the whole node missing (private_missing signal); an empty grouped
+/// contacts block parses to an EMPTY list (legitimate empty blacklist).
+pub(crate) fn parse_blocked_response(data: Option<&Value>, account_id: i64) -> Option<Vec<i64>> {
+    let node = data?.get(account_id.to_string())?;
+    let private = node.get("private")?;
+    let contacts = private.get("grouped_contacts")?;
+    Some(
+        serde_json::from_value::<GroupedContacts>(contacts.clone())
+            .ok()
+            .and_then(|g| g.blocked)
+            .unwrap_or_default(),
+    )
+}
+
 /// Pull the account's own blocked-id list. The private block only exists in
-/// the response when the Authorization token belongs to the queried account,
-/// so this is structurally incapable of reading someone else's blacklist.
+/// the response when the access token belongs to the queried account (and
+/// the portal accepted its transport), so this is structurally incapable of
+/// reading someone else's blacklist.
 async fn fetch_blocked_ids(
     clients: &HttpPair,
     host: &str,
     auth: &super::auth::StoredAuth,
-) -> Result<Vec<i64>> {
+) -> Result<FetchOutcome> {
     let app_id = crate::commands::wg_realm::application_id(&auth.realm);
     let url = format!(
-        "https://{host}/wows/account/info/?application_id={app_id}&account_id={}&extra=private.grouped_contacts&fields=private.grouped_contacts",
+        "https://{host}/wows/account/info/?application_id={app_id}&account_id={}&access_token={}&extra=private.grouped_contacts&fields=private.grouped_contacts",
         auth.account_id,
+        crate::commands::wg_api::encode_query(&auth.access_token),
     );
-    let resp = authed_get(
-        clients,
-        &auth.access_token,
-        host,
-        "account/info(private)",
-        url,
-    )
-    .await?;
+    let resp = token_get(clients, host, "account/info(private)", url).await?;
     let parsed: WgEnvelope<Value> = resp
         .json()
         .await
@@ -140,16 +194,16 @@ async fn fetch_blocked_ids(
     if parsed.status != "ok" {
         return Err(anyhow!("account/info: {}", parsed.message()));
     }
-    let blocked = parsed
-        .data
-        .as_ref()
-        .and_then(|d| d.get(auth.account_id.to_string()))
-        .and_then(|v| v.get("private"))
-        .and_then(|v| v.get("grouped_contacts"))
-        .and_then(|v| serde_json::from_value::<GroupedContacts>(v.clone()).ok())
-        .and_then(|g| g.blocked)
-        .unwrap_or_default();
-    Ok(blocked)
+    match parse_blocked_response(parsed.data.as_ref(), auth.account_id) {
+        Some(ids) => Ok(FetchOutcome {
+            ids,
+            private_missing: false,
+        }),
+        None => Ok(FetchOutcome {
+            ids: Vec::new(),
+            private_missing: true,
+        }),
+    }
 }
 
 /// Public nickname sweep over <=100-id chunks; answers id -> nickname
@@ -286,10 +340,11 @@ pub(crate) fn load_config() -> BlacklistSyncConfig {
     }
 }
 
-fn save_config(config: &BlacklistSyncConfig) -> Result<()> {
+fn save_config(config: &BlacklistSyncConfig) -> Result<BlacklistSyncConfig> {
     let dir = paths::ensure_data_dir()?;
     let config = sanitize_config(*config);
-    settings_store::store(&dir, CONFIG_FILE, &canonical_config_toml(&config)?)
+    settings_store::store(&dir, CONFIG_FILE, &canonical_config_toml(&config)?)?;
+    Ok(config)
 }
 
 // ── the sync itself ──────────────────────────────────────────────────────────
@@ -328,17 +383,30 @@ async fn run_sync_inner(realm: &str, report: &mut BlacklistSyncReport) -> Result
     let dir = paths::ensure_data_dir()?;
     let clients = HttpPair::build(|b| b.timeout(Duration::from_secs(15)))?;
 
-    let ids = fetch_blocked_ids(&clients, host, &auth).await?;
-    report.fetched = ids.len();
+    let outcome = fetch_blocked_ids(&clients, host, &auth).await?;
+    report.fetched = outcome.ids.len();
+    if outcome.private_missing {
+        // Distinguishable failure (NOT a silent empty list): the portal said
+        // ok but the private contacts block never arrived — either the token
+        // transport was rejected or the account never used contacts. The
+        // message rides the successful report so the settings page shows the
+        // caveat next to the fresh snapshot.
+        report.message = Some(
+            "private contacts block missing — the token may have been rejected; try logging \
+             in again"
+                .to_string(),
+        );
+        tracing::warn!(realm = %realm, "blacklist pull: private block missing");
+    }
 
     // Nicknames: fresh sweep, with the previous snapshot's answers carried
     // over for ids the sweep could not answer this run (transient API
     // failures must not erase names the user can already read).
     let previous = load_snapshot_from(&dir, realm);
-    let mut fresh = sweep_nicknames(&clients, host, realm, &ids).await;
+    let mut fresh = sweep_nicknames(&clients, host, realm, &outcome.ids).await;
     let mut unresolved = 0usize;
-    let mut entries = Vec::with_capacity(ids.len());
-    for id in &ids {
+    let mut entries = Vec::with_capacity(outcome.ids.len());
+    for id in &outcome.ids {
         let carried = previous.as_ref().and_then(|p| {
             p.entries
                 .iter()
@@ -387,14 +455,19 @@ pub fn blacklist_load_config() -> CommandResult<BlacklistSyncConfig> {
     Ok(load_config())
 }
 
-/// Persist the sync knobs (main window only — a settings write).
+/// Persist the sync knobs (main window only — a settings write). Returns
+/// the SANITIZED config so the webui re-syncs from the response instead of
+/// keeping its optimistic local copy (the network-config save pattern).
 #[tauri::command]
 pub fn blacklist_save_config(
     window: tauri::Window,
     config: BlacklistSyncConfig,
-) -> CommandResult<()> {
+) -> CommandResult<BlacklistSyncConfig> {
     ensure_main_window_label(window.label())?;
-    save_config(&config).map_err(|e| anyhow!("save blacklist config: {e:#}").into())
+    let sanitized = save_config(&config).map_err(|e| {
+        wowsp_tauri_shared::CommandError::from(anyhow!("save blacklist config: {e:#}"))
+    })?;
+    Ok(sanitized)
 }
 
 /// The stored snapshot for one realm (settings list + marker matching).

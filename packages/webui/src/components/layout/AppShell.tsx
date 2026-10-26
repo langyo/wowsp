@@ -238,6 +238,14 @@ export default defineComponent({
       { immediate: true },
     );
 
+    // Blacklist auto-sync re-check (setup scope: lifecycle hooks registered
+    // inside an async onMounted callback never bind).
+    const blacklistSyncTimer = setInterval(
+      () => void blacklist.autoSyncIfDue(),
+      30 * 60 * 1000,
+    );
+    onBeforeUnmount(() => clearInterval(blacklistSyncTimer));
+
     onMounted(async () => {
       // Portable-mode probe runs on EVERY surface — desktop (normal and
       // portable), the phone build and browser dev: the ship-detail aircraft
@@ -267,11 +275,6 @@ export default defineComponent({
           // settings page drives the next pull.
         }
       })();
-      const blacklistSyncTimer = setInterval(
-        () => void blacklist.autoSyncIfDue(),
-        30 * 60 * 1000,
-      );
-      onBeforeUnmount(() => clearInterval(blacklistSyncTimer));
       // Production builds feel like a desktop app: no WebView2 context menu
       // on right-click. Editable elements keep the native menu (paste etc.),
       // and dev mode keeps everything for debugging.

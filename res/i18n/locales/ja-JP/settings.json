@@ -13,6 +13,7 @@
   "blacklistNotLoggedIn": "未ログイン",
   "blacklistTokenExpire": "認証の有効期限：",
   "blacklistReLoginDue": "認証が期限切れです。再度ログインしてください",
+  "blacklistReLoginSoon": "認証がまもなく期限切れです。再ログインを検討してください",
   "blacklistLogout": "連携解除",
   "blacklistSyncSettings": "同期設定",
   "blacklistAutoSync": "自動同期",

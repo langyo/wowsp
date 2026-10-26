@@ -13,6 +13,7 @@
   "blacklistNotLoggedIn": "Sin iniciar sesión",
   "blacklistTokenExpire": "La autorización caduca:",
   "blacklistReLoginDue": "Autorización caducada: vuelve a iniciar sesión",
+  "blacklistReLoginSoon": "La autorización caduca pronto: vuelve a iniciar sesión",
   "blacklistLogout": "Desvincular",
   "blacklistSyncSettings": "Programación de sincronización",
   "blacklistAutoSync": "Sincronizar automáticamente",

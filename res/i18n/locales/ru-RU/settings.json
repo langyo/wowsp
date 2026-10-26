@@ -13,6 +13,7 @@
   "blacklistNotLoggedIn": "Не выполнен вход",
   "blacklistTokenExpire": "Авторизация истекает:",
   "blacklistReLoginDue": "Авторизация истекла — войдите снова",
+  "blacklistReLoginSoon": "Авторизация скоро истечёт — войдите снова",
   "blacklistLogout": "Отвязать",
   "blacklistSyncSettings": "Расписание синхронизации",
   "blacklistAutoSync": "Синхронизировать автоматически",
