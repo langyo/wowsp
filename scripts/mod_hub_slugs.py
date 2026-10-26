@@ -159,6 +159,10 @@ SLUG_MAP = {
     "texts-east-asia-font-pack": "text.font.east-asia",
     # ── patch.* ──
     "ime-config": "patch.ime.compat",
+
+    # ── 2026-10 策展（UI 成就追踪 / 港口折扣百分比）──
+    "ui-achievementtracker": "ui.achievement.tracker",
+    "port-mods-discountpercentage": "port.discount.percentage",
 }
 
 # front-matter category normalization (old -> new). The one-off `patch`

@@ -1,4 +1,10 @@
 {
+ "port.discount.percentage": {
+  "zh-CN": "在港口的价格标签与提示框中，于折扣价旁显示数字折扣百分比（含配件价格）。"
+ },
+ "ui.achievement.tracker": {
+  "zh-CN": "战斗中实时追踪成就进度（高 caliber、纵火、进水等），无需再默记伤害量。"
+ },
  "_names": {
   "battle.expert.core": {
    "es-ES": "Experto de batalla"

@@ -1,0 +1,4 @@
+{
+ "_comment": "Per-entry sync policies for scripts/mod_hub_sync.py. Keys are catalog slugs; values: auto (default, full sync) | manual (selected, upstream changes held for approval) | skip (removed from the catalog; threads of skipped entries are never stale-marked). Absent = auto. See docs/en/designs/mod-hub.md section 7.",
+ "policies": {}
+}
