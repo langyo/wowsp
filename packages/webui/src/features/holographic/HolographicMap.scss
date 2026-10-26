@@ -144,7 +144,6 @@
     border: 1px solid var(--holo-hud-border);
     border-bottom: none;
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-    backdrop-filter: blur(6px);
   }
 
   &__shipcard {
@@ -412,7 +411,7 @@
   pointer-events: none;
 }
 
-/* Live self-stats — icon + short label + number per stat in a glassy
+/* Live self-stats — icon + short label + number per stat in a translucent
    strip to the right of the hull plaque. The strip itself bottom-aligns
    with the plaque; each stat inside is a centred mini column. */
 .holo-map__selfstats {
@@ -431,11 +430,13 @@
      narrow-map degradation is the explicit equal 2×2 grid further down,
      which never passes through a 3+1 state. */
   padding: 0.45rem 0.3rem;
-  background: var(--holo-hud-glass, rgb(96 108 126 / 42%));
+  /* The blur this used to carry sits directly over the animating WebGL
+     canvas, forcing the compositor to re-blur live content every frame —
+     the more opaque board token reads the same without the per-frame
+     GPU pass. */
+  background: var(--holo-hud-bg, rgb(8 12 20 / 62%));
   border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
   border-radius: 8px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   color: var(--holo-hud-text, rgb(255 255 255 / 92%));
   pointer-events: none;
 }

@@ -110,28 +110,22 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
   // Scale to the class's true engine length (see applyTrueScale).
   applyTrueScale(model, type);
 
-  // Apply the role-tinted holographic shader to every mesh. Collect first so
-  // the wireframe overlay (added as a child) doesn't recurse during traverse.
+  // Apply the role-tinted holographic shader to every mesh. The per-mesh
+  // wireframe overlay this used to add doubled the fleet's draw calls and
+  // rasterised ~3 blended line segments per triangle; the shader's own
+  // world-space grid term (uLinesGain) keeps the technical-drawing feel
+  // without a single extra draw.
   const { baseColor, fresnelColor } = holoColorsFor(role);
   const holoMat = makeHoloMaterial();
   holoMat.uniforms.baseColor.value.setHex(baseColor);
   holoMat.uniforms.fresnelColor.value.setHex(fresnelColor);
-  const wireMat = new THREE.MeshBasicMaterial({
-    color: baseColor,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.1,
-    depthWrite: false,
-  });
+  holoMat.uniforms.uLinesGain.value = 0.3;
   const meshes: THREE.Mesh[] = [];
   model.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
   });
   for (const mesh of meshes) {
     mesh.material = holoMat;
-    const wire = new THREE.Mesh(mesh.geometry, wireMat);
-    wire.raycast = () => {}; // overlay shouldn't intercept picks
-    mesh.add(wire);
   }
 
   return model;
@@ -172,28 +166,22 @@ export function buildMarkerFromSource(
   // Scale to the class's true engine length (see applyTrueScale).
   applyTrueScale(model, type);
 
-  // Apply the role-tinted holographic shader to every mesh. Collect first so
-  // the wireframe overlay (added as a child) doesn't recurse during traverse.
+  // Apply the role-tinted holographic shader to every mesh. The per-mesh
+  // wireframe overlay this used to add doubled the fleet's draw calls and
+  // rasterised ~3 blended line segments per triangle; the shader's own
+  // world-space grid term (uLinesGain) keeps the technical-drawing feel
+  // without a single extra draw.
   const { baseColor, fresnelColor } = holoColorsFor(role);
   const holoMat = makeHoloMaterial();
   holoMat.uniforms.baseColor.value.setHex(baseColor);
   holoMat.uniforms.fresnelColor.value.setHex(fresnelColor);
-  const wireMat = new THREE.MeshBasicMaterial({
-    color: baseColor,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.1,
-    depthWrite: false,
-  });
+  holoMat.uniforms.uLinesGain.value = 0.3;
   const meshes: THREE.Mesh[] = [];
   model.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
   });
   for (const mesh of meshes) {
     mesh.material = holoMat;
-    const wire = new THREE.Mesh(mesh.geometry, wireMat);
-    wire.raycast = () => {}; // overlay shouldn't intercept picks
-    mesh.add(wire);
   }
 
   return model;

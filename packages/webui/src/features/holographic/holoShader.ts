@@ -12,8 +12,10 @@
  * three r150+), as the replay's markers still do. Fresnel uses the normal vs.
  * the view direction; both paths orient it by dot(n, viewDir) instead of
  * gl_FrontFacing, whose winding test is unreliable on the baked hulls.
- * Scanlines sweep vertically over time; a separate wireframe overlay mesh is
- * drawn by the caller.
+ * Scanlines sweep vertically over time. The replay markers used to pair
+ * this material with a per-mesh wireframe overlay mesh — removed once it
+ * doubled the fleet's draw calls; the hull read now rides this shader's
+ * own terms (see uLinesGain) plus the caller's hull outline.
  *
  * Definition layer: the ship stage enables five extra terms that give large
  * panels surface reading (a flat pastel fill with nothing between the

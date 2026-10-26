@@ -1347,9 +1347,12 @@ export default defineComponent({
       // non-Auto scales; stopDpiWatch below re-runs this on changes
       // (setPixelRatio re-applies the current buffer size internally).
       const dpiZoom = useAppliedDpiScale();
-      rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2) * dpiZoom.value);
+      // Clamp the DPR×zoom PRODUCT (not the DPR alone): multiplying after
+      // the clamp let a 2× DPI zoom re-ask the GPU for up to 36× the CSS
+      // pixels. Same formula as the replay map's useThreeScene.
+      rnd.setPixelRatio(Math.min(window.devicePixelRatio * dpiZoom.value, 2));
       stopDpiWatch = watch(dpiZoom, (zoom) => {
-        rnd.setPixelRatio(Math.min(window.devicePixelRatio, 2) * zoom);
+        rnd.setPixelRatio(Math.min(window.devicePixelRatio * zoom, 2));
       });
       rnd.setSize(w, h);
       el.appendChild(rnd.domElement);

@@ -108,14 +108,11 @@ export async function tryLoadMapModel(ctx: MapInternals) {
     // terrain gets the contour shader (topographic + bathymetric bands);
     // islands get the plain holographic shader. Both share the same
     // time/scanOffset uniforms so one onFrame tick animates everything.
+    // The wireframe overlay this used to add per mesh rasterised ~3
+    // blended line segments per triangle — ~1M extra line primitives per
+    // frame on a 300k-triangle map — for a barely-visible 8% sheen; the
+    // contour shader's own banding carries the look alone.
     const contourMat = makeHoloContourMaterial();
-    const wireMat = new THREE.MeshBasicMaterial({
-      color: 0x2a8fb5,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.08,
-      depthWrite: false,
-    });
     const meshes: THREE.Mesh[] = [];
     model.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
@@ -132,14 +129,17 @@ export async function tryLoadMapModel(ctx: MapInternals) {
       } else {
         mesh.visible = false;
       }
-      const wire = new THREE.Mesh(mesh.geometry, wireMat);
-      wire.raycast = () => {}; // overlay shouldn't intercept picks
-      mesh.add(wire);
     }
     ctx.mapModel = model;
     scene.add(model);
+    // The terrain usually lands while the first frames are already playing,
+    // but a paused open must not wait out the idle heartbeat for the pop-in.
+    ctx.api.value?.requestRender();
   } catch (e) {
-    // Model load failed (corrupt GLB?) — silently fall back to grid.
+    // Model load failed (corrupt GLB?) — silently fall back to grid. The
+    // entry clearMapModel already stripped any previous terrain, so a
+    // paused scene must repaint to show the bare grid.
     console.warn("[HolographicMap] map model load failed:", e);
+    ctx.api.value?.requestRender();
   }
 }

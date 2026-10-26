@@ -300,6 +300,9 @@ export function buildTorpedoTraces(
     opacity: 0.55,
     depthWrite: false,
   });
+  // The template itself never reaches the GPU (every fish clones it);
+  // release it once the loop below has finished.
+  const wakeTemplate = wakeGeom;
   // Torpedo guidance updates keyed by (owner, shot) — the pair uniquely
   // identifies one fish across its salvo.
   const steerByFish = new Map<string, TorpedoSteer[]>();
@@ -312,7 +315,11 @@ export function buildTorpedoTraces(
   for (const list of steerByFish.values()) list.sort((a, b) => a.time - b.time);
   for (const tp of ctx.props.torpedoes) {
     const mesh = new THREE.Mesh(torpedoGeom, torpedoMat);
-    const wake = new THREE.Line(wakeGeom, wakeMat);
+    // Per-fish wake geometry (a clone owns its own position buffer): the
+    // single shared buffer this used to pass made every visible fish
+    // overwrite the SAME two vertices, so all wakes drew whichever segment
+    // was written last.
+    const wake = new THREE.Line(wakeGeom.clone(), wakeMat);
     mesh.visible = false;
     wake.visible = false;
     scene.add(mesh);
@@ -348,6 +355,7 @@ export function buildTorpedoTraces(
       tm.killZ = k.z;
     }
   }
+  wakeTemplate.dispose();
 }
 
 /** Swap the primitive placeholders for the real game models (baked GLBs
@@ -373,6 +381,7 @@ export function swapTracePropModels(
           scene.add(g);
           scene.remove(slot.shell);
           slot.shell = g;
+          ctx.api.value?.requestRender();
         })
         .catch(() => { /* keep the cone fallback */ });
     }
@@ -389,6 +398,7 @@ export function swapTracePropModels(
           scene.add(g);
           scene.remove(tm.mesh);
           tm.mesh = g;
+          ctx.api.value?.requestRender();
         })
         .catch(() => { /* keep the capsule fallback */ });
     }

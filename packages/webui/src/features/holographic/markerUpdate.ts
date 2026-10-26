@@ -811,4 +811,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   // The cyclone's dark core drifts across the sea (3D twin of the minimap
   // weather overlay — same geometry, same per-match drift seed).
   updateStormZone(ctx, t);
+  // The render loop may be idle-gated (paused + still camera): a playhead
+  // step or an async model install changed the scene, so make sure the
+  // next uncapped tick repaints.
+  ctx.api.value?.requestRender();
 }

@@ -161,7 +161,8 @@ export default defineComponent({
       );
       camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 2000);
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(window.devicePixelRatio * dpiZoom.value);
+      // Clamp the DPR×zoom product — see useThreeScene's ratio notes.
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio * dpiZoom.value, 2));
       renderer.setSize(width, height, true);
       el.appendChild(renderer.domElement);
 
@@ -212,7 +213,7 @@ export default defineComponent({
       { deep: false },
     );
     watch(dpiZoom, (zoom) => {
-      renderer?.setPixelRatio(window.devicePixelRatio * zoom);
+      renderer?.setPixelRatio(Math.min(window.devicePixelRatio * zoom, 2));
     });
     watch(effectiveMode, (mode) => {
       if (scene) {
