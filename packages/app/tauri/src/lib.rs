@@ -33,6 +33,8 @@ mod resource_pack;
 mod settings_store;
 #[cfg(feature = "test-harness")]
 mod test_harness;
+/// Browser arguments shared by every WebView2 window (see the module docs).
+mod webview_args;
 
 use tauri::Manager;
 #[cfg(desktop)]

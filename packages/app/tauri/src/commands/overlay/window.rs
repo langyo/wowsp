@@ -44,6 +44,9 @@ pub async fn create_overlay_window(
             WebviewUrl::App(overlay_page_url(spec.url_path, &realm, &locale).into()),
         )
         .title(spec.title)
+        // Same browser arguments as every config-declared window — see
+        // crate::webview_args (Windows-only switch bundle; no-op elsewhere).
+        .additional_browser_args(crate::webview_args::WEBVIEW_BROWSER_ARGS)
         .transparent(true)
         .decorations(false)
         .always_on_top(true)
