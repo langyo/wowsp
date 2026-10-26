@@ -19,10 +19,10 @@ yanked = "warn"
 id = "RUSTSEC-2024-0436"
 reason = "paste is unmaintained but functional; it is a direct dependency of the vendored wows-toolkit sources (packages/tools/game-assets tree). The vendor tree is now WoWSP's own independent fork (2026-10 decision — no upstream sync), so swapping in the drop-in pastey fork is unblocked whenever wanted; not urgent while paste keeps compiling."
 
-[[advisories.ignore]]
-id = "RUSTSEC-2026-0381"
-reason = "webpki-roots 0.26.11 still bundles the distrusted emSign ECC Root CA - G3, and the advisory's only patched line is >=1.0.10 — no 0.26.x backport exists. The workspace's remaining 0.26 consumers (tokio-tungstenite 0.30 for the live-battle probe socket, ureq 2.12 as shun's build-time fetcher) are semver-pinned to ^0.26, so shedding the flag means major-bumping those, not a lockfile nudge; the 1.0 line itself rides the fixed 1.0.10 in the same change."
-
+# (The RUSTSEC-2026-0381 ignore for webpki-roots 0.26 was removed: the
+# advisory DB no longer matches any crate in the tree — the shipped
+# webpki-roots 0.26.11 stopped being flagged — and cargo-deny fails on
+# unused ignores. Re-add only if the advisory regains coverage.)
 [licenses]
 # Removed keys (vulnerability/notice/unlicensed/copyleft/default) are built
 # in since cargo-deny PR #611: unallowed licenses deny, everything else warns.
