@@ -54,6 +54,20 @@ from fetch_oodle import ensure_decoder  # noqa: E402
 
 SKILL_PNGS = (
     "gui/crew_commander/skills/planes_consumables_regeneratehealth_upgrade.png",
+    "gui/crew_commander/skills/acoustic_specialist.png",
+    "gui/crew_commander/skills/buoyancy_speed.png",
+    "gui/crew_commander/skills/depth_charge_bomber_alert.png",
+    "gui/crew_commander/skills/extra_call_fighters.png",
+    "gui/crew_commander/skills/gun_main_shot_delay.png",
+    "gui/crew_commander/skills/pinger_speed_buff.png",
+    "gui/crew_commander/skills/shoot_shift_bonus.png",
+    "gui/crew_commander/skills/smoke_screen_setter.png",
+    "gui/crew_commander/skills/submarine_defense_hp.png",
+    "gui/crew_commander/skills/submarine_speed_on_buoyancy.png",
+    "gui/crew_commander/skills/submarine_torpedo_damage.png",
+    "gui/crew_commander/skills/submarine_vulnerability_depth_bomb.png",
+    "gui/crew_commander/skills/trigger_hydrophone_zone.png",
+    "gui/crew_commander/skills/trigger_torpedo_speed_reload.png",
 )
 SIGNAL_PNGS = ("gui/signal_flags/PCEF*",)
 
@@ -127,13 +141,19 @@ def main() -> int:
         out_rel = bpd.OUT_IMG.relative_to(bpd.REPO)
         print(f"[lesta-icons] wrote {len(wrote)} webp icons under {out_rel}")
 
-        # Resolution check — replicate the webui's lookups by name.
+        # Resolution check — replicate the webui's lookups by name. The skill
+        # set is the full decoded Lesta tree (see lesta_skill_grid.py), so
+        # every emitted skill stem must resolve as one of its codes.
         ok = True
-        want_skill = ui_skill_stem("PlanesConsumablesRegeneratehealthUpgrade")
+        grid_path = bpd.OUT_DATA / "skilltree_lesta.json"
+        skill_stems: set[str] | None = None
+        if grid_path.is_file():
+            tree = json.loads(grid_path.read_text(encoding="utf-8"))
+            skill_stems = {ui_skill_stem(row["code"]) for rows in tree.values() for row in rows}
         for kind, stem in sorted(wrote):
             note = ""
-            if kind == "skills" and stem != want_skill:
-                note = f"  !! expected stem {want_skill!r} (skillIconUrl)"
+            if kind == "skills" and skill_stems is not None and stem not in skill_stems:
+                note = f"  !! stem not referenced by skilltree_lesta.json"
                 ok = False
             if kind == "signals" and signals is not None:
                 hit = next((s for s in signals if s["name"].lower() == stem.lower()), None)
