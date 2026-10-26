@@ -84,6 +84,7 @@ export type {
   ReplayMeta,
   ReplayMetaLite,
   ArenaInfo,
+  PlayerBuild,
   GameMapEntry,
   CaptureResult,
   Rect,

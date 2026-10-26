@@ -45,7 +45,7 @@ import { useRouter } from "vue-router";
 import { Eye, EyeOff } from "@lucide/vue";
 import { HkIconButton, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
-import { type PlayerStats, type VehicleEntry } from "@/api";
+import { type PlayerBuild, type PlayerStats, type VehicleEntry } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -55,6 +55,11 @@ import RatingStamp from "@/components/base/RatingStamp";
 import StampTag from "@/components/base/StampTag";
 import StatsCard from "@/components/stats/StatsCard";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
+import {
+  joinPlayerBuild,
+  playerBuildView,
+  type PlayerBuildView,
+} from "./playerBuild";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
@@ -186,11 +191,31 @@ export default defineComponent({
     /** The replay's roster (descriptor vehicles) — names, relations and the
      *  self fallback for the self report's identity join. */
     roster: { type: Array as () => VehicleEntry[], default: () => [] },
+    /** Ally ship builds decoded off the same replay (ally-only IPC surface).
+     *  Joined to the roster rows by name / unique ship id; empty = no grid. */
+    builds: { type: Array as () => PlayerBuild[], default: () => [] },
   },
   emits: ["close"],
   setup(props, { emit }) {
     const parsed = computed(() => parsePostBattle(props.raw));
     const { dataLanguage, uiLocale } = useLanguage();
+    /** The replay build of one roster row (ally rows only — the caller never
+     *  asks for an enemy row: the IPC surface filters enemy loadouts out and
+     *  the ship-id fallback must not leak a teammate's build sideways). */
+    const buildOf = (
+      name: string | null | undefined,
+      shipId: number | null | undefined,
+    ): PlayerBuildView | null => {
+      if (props.builds.length === 0) return null;
+      const build = joinPlayerBuild(props.builds, name, shipId);
+      if (!build) return null;
+      const shipType = shipId != null ? shipOfflineEntry(shipId)?.type ?? null : null;
+      return playerBuildView(build, {
+        dataLanguage: dataLanguage.value,
+        shipType,
+        source: "replay",
+      });
+    };
     const loadingTasks = useLoadingTasksStore();
     const stats = useStatsStore();
     const router = useRouter();
@@ -1101,7 +1126,11 @@ export default defineComponent({
                   leaves the track reserved so nothing slides. */}
               <span class="replay-view__postbattle-fcell-meta">
                 {p.shipId != null ? (
-                  <LiveShipMeta shipId={p.shipId} ally={!enemy} />
+                  <LiveShipMeta
+                    shipId={p.shipId}
+                    ally={!enemy}
+                    build={enemy ? null : buildOf(p.name, p.shipId)}
+                  />
                 ) : null}
               </span>
               {/* The score track carries the XP cell alone now — the

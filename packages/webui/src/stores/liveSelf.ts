@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 
-import { api, type ArenaInfo } from "@/api";
+import { api, type ArenaInfo, type PlayerBuild } from "@/api";
 import { useLanguage } from "@/i18n/useLanguage";
 import { buildSelfStats, type SelfStatsModel } from "@/features/replay/liveSelfStats";
 import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
@@ -36,6 +36,12 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
   const arena = ref<ArenaInfo | null>(null);
   const battleStamp = ref<string | null>(null);
 
+  /** Ally builds decoded off the live container (per-battle set, ally-only).
+   *  The roster panel (/live 全员) consumes these through stores/liveBuilds;
+   *  the self panel ignores them. */
+  const allyBuilds = ref<PlayerBuild[]>([]);
+  const allyBuildsBattle = ref<string | null>(null);
+
   /** Temp-file size at last decode — the growth gate. */
   let lastSize: number | null = null;
   /** The settled replay path already parsed (re-arm per battle). */
@@ -59,6 +65,8 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
         battleStamp.value = stamp;
         lastSize = null;
         settledPath = null;
+        allyBuilds.value = [];
+        allyBuildsBattle.value = null;
       } else if (stamp == null && battleStamp.value != null) {
         // Roster cleared (battle-cap guard / next-battle transition): keep
         // the last model on screen — the ended battle's report stays useful.
@@ -88,6 +96,8 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
     battleStamp.value = null;
     lastSize = null;
     settledPath = null;
+    allyBuilds.value = [];
+    allyBuildsBattle.value = null;
   }
 
   /** Read phase behind a call so control-flow narrowing from tick()'s
@@ -125,6 +135,13 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
       // grown yet (otherwise one transient failure pins the gate shut
       // until the battle happens to write more).
       lastSize = temp.size;
+      // Loadouts are static per battle: once a decoded snapshot carries them,
+      // keep the set (an early snapshot can predate the create states, and a
+      // later one simply repeats the same builds).
+      if (stream.allyBuilds?.length) {
+        allyBuilds.value = stream.allyBuilds;
+        allyBuildsBattle.value = battleStamp.value;
+      }
       const next = buildSelfStats({
         stream,
         roster: roster.vehicles,
@@ -177,6 +194,10 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
       // see them.
       sanitizeReplayStream(stream);
       if (seq !== generation || settledPath !== path) return;
+      if (stream.allyBuilds?.length) {
+        allyBuilds.value = stream.allyBuilds;
+        allyBuildsBattle.value = battleStamp.value;
+      }
       const next = buildSelfStats({
         stream,
         roster: roster?.vehicles ?? [],
@@ -199,6 +220,37 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
     }
   }
 
+  /** One-shot load of this battle's ally builds for the ROSTER panel: the
+   *  heavy decode above only runs while the 我的 tab is open (the game has
+   *  first claim on the CPU), so the roster view asks for the loadout set
+   *  itself once instead of attaching the whole poll. Seconds-scale CPU per
+   *  call — callers retry on a slow timer only until the set lands. */
+  let buildsInFlight = false;
+  async function refreshBuilds(): Promise<void> {
+    const roster = arena.value;
+    const stamp = battleStamp.value;
+    if (!roster || !stamp || buildsInFlight) return;
+    if (allyBuildsBattle.value === stamp && allyBuilds.value.length > 0) return;
+    buildsInFlight = true;
+    const seq = generation;
+    try {
+      const temp = await api.liveTempReplay();
+      if (seq !== generation || temp == null) return;
+      const stream = await api.readLiveReplaySnapshot(temp.path);
+      if (seq !== generation) return;
+      if (stream.allyBuilds?.length) {
+        allyBuilds.value = stream.allyBuilds;
+        allyBuildsBattle.value = battleStamp.value;
+      }
+    } catch {
+      // A torn read while the game still flushes the container is routine —
+      // the caller retries; a persistent failure simply keeps the card
+      // spec-only.
+    } finally {
+      buildsInFlight = false;
+    }
+  }
+
   /** Panel mounted → start polling (first tick immediate). */
   function attach(): void {
     consumers += 1;
@@ -217,5 +269,17 @@ export const useLiveSelfStore = defineStore("liveSelf", () => {
     }
   }
 
-  return { model, phase, error, setArena, settle, attach, detach, reset };
+  return {
+    model,
+    phase,
+    error,
+    allyBuilds,
+    allyBuildsBattle,
+    setArena,
+    settle,
+    attach,
+    detach,
+    refreshBuilds,
+    reset,
+  };
 });

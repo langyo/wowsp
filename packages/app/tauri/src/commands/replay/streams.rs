@@ -125,9 +125,10 @@ pub(super) fn ally_builds_for(
         .iter()
         .filter_map(|raw| {
             let ship_id = i64::from(raw.ship_params_id);
-            let mut matched = roster.iter().filter(|v| v.ship_id == ship_id);
-            let first = matched.next()?;
-            if matched.any(|v| v.relation != first.relation) {
+            let matches: Vec<&VehicleEntry> =
+                roster.iter().filter(|v| v.ship_id == ship_id).collect();
+            let first = matches.first()?;
+            if matches.iter().any(|v| v.relation != first.relation) {
                 // Mirror pick: the same ship id is on both sides. The join
                 // cannot tell whose build this is, so it never reaches IPC.
                 return None;
@@ -135,7 +136,17 @@ pub(super) fn ally_builds_for(
             if first.relation > 1 {
                 return None;
             }
+            // Attribute the player name only when a UNIQUE ally roster entry
+            // plays this ship; two teammates on the same hull keep the build
+            // (entity_id still joins the trajectory) but stay anonymous
+            // rather than mis-attributed.
+            let name = if matches.iter().filter(|v| v.relation <= 1).count() == 1 {
+                Some(first.name.clone())
+            } else {
+                None
+            };
             Some(PlayerBuild {
+                name,
                 entity_id: raw.entity_id,
                 ship_params_id: raw.ship_params_id,
                 units: raw.units.clone(),

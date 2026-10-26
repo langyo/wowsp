@@ -409,6 +409,12 @@ pub struct PlayerBuild {
     /// GameParams ship id the config was built for (joins the roster).
     #[serde(default)]
     pub ship_params_id: u32,
+    /// Roster player name when the ship id maps to exactly one ally roster
+    /// entry. Two teammates on the same hull keep the build (entity_id still
+    /// joins the trajectory) but stay anonymous rather than mis-attributed;
+    /// probe-sourced builds always carry the name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Mounted hull/artillery/torpedo/sonar/engine module ids, hull first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub units: Vec<u32>,

@@ -198,6 +198,17 @@
   "bot": "Bot",
   "botNote": "Jugador de IA — sin historial de batallas",
   "live": {
+    "build": {
+      "title": "Configuración del combate",
+      "sourceReplay": "Análisis de la repetición",
+      "sourceProbe": "Plugin en directo",
+      "skills": "Habilidades del comandante",
+      "upgrades": "Mejoras",
+      "signals": "Señales",
+      "consumables": "Consumibles",
+      "points": "{used}/21 pts",
+      "retraining": "Comandante en readaptación"
+    },
     "title": "Batalla en vivo",
     "notStarted": "Aún no ha comenzado una nueva batalla",
     "idleTitle": "Seguimiento en vivo — en espera",

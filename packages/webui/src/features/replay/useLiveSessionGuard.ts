@@ -31,6 +31,7 @@ import { watch } from "vue";
 
 import type { PlayingAccount } from "@/api";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useLiveBuildsStore } from "@/stores/liveBuilds";
 import { useLiveSelfStore } from "@/stores/liveSelf";
 import { useOverlayStore } from "@/stores/overlay";
 import { useSessionStore } from "@/stores/session";
@@ -47,11 +48,13 @@ export function useLiveSessionGuard() {
   const gameStatus = useGameStatusStore();
   const overlay = useOverlayStore();
   const liveSelf = useLiveSelfStore();
+  const liveBuilds = useLiveBuildsStore();
   const session = useSessionStore();
 
   function clearLiveContent() {
     overlay.clearArenaInfo();
     liveSelf.reset();
+    liveBuilds.reset();
   }
 
   /** PID of the client session that wrote the roster currently on screen

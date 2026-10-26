@@ -88,6 +88,14 @@ export function familyIconUrl(family: string): string | null {
   return stem ? ICON_URLS[`../../res/images/consumables/${stem}.webp`] ?? null : null;
 }
 
+/** Consumable family of a baked ENTITY name (a decoded build's mounted
+ *  AbilitySlot id resolves to a GameParams code such as
+ *  `PCY009_CrashCrewPremium`, which is exactly the `entities` key here):
+ *  null when the bake does not know the entity. */
+export function consumableFamilyOfEntity(entity: string): string | null {
+  return DETAILS.entities[entity]?.family ?? null;
+}
+
 export type ConsumableTone =
   | "default"
   | "primary"

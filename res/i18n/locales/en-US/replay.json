@@ -198,6 +198,17 @@
   "bot": "Bot",
   "botNote": "AI player — no battle history",
   "live": {
+    "build": {
+      "title": "Battle build",
+      "sourceReplay": "Replay",
+      "sourceProbe": "Live plugin",
+      "skills": "Captain skills",
+      "upgrades": "Upgrades",
+      "signals": "Signals",
+      "consumables": "Consumables",
+      "points": "{used}/21 pts",
+      "retraining": "Captain retraining"
+    },
     "title": "Live battle",
     "notStarted": "A new battle has not started yet",
     "idleTitle": "Live tracking on standby",

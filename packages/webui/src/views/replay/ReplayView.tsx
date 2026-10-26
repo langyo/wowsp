@@ -32,6 +32,7 @@ import type {
   SquadronPlane,
   TorpedoLaunch,
   TorpedoSteer,
+  PlayerBuild,
   VehicleEntry,
   WeaponLockEvent,
   WeatherNotification,
@@ -1677,6 +1678,9 @@ export default defineComponent({
     /** Global-weather timeline (cyclone) — badge + minimap darkening. */
     const weatherTransitions = ref<WeatherTransition[]>([]);
     const weatherNotifications = ref<WeatherNotification[]>([]);
+    /** Ally ship builds decoded off the replay's create states (self + team
+     *  only — the Rust IPC exit filters enemy and mirror-ambiguous builds). */
+    const allyBuilds = ref<PlayerBuild[]>([]);
     const showResults = ref(false);
     const showChat = ref(false);
     /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
@@ -1756,6 +1760,7 @@ export default defineComponent({
         arenaPlayers.value = [];
         weatherTransitions.value = [];
         weatherNotifications.value = [];
+        allyBuilds.value = [];
         inferredDeaths.value = new Set();
         showChat.value = false;
         duration.value = 0;
@@ -1809,6 +1814,7 @@ export default defineComponent({
         arenaPlayers.value = stream.arenaPlayers ?? [];
         weatherTransitions.value = stream.weatherTransitions ?? [];
         weatherNotifications.value = stream.weatherNotifications ?? [];
+        allyBuilds.value = stream.allyBuilds ?? [];
         let maxT = 0;
         for (const tr of stream.trajectories) {
           for (const s of tr.samples) if (s.time > maxT) maxT = s.time;
@@ -2259,6 +2265,7 @@ export default defineComponent({
                                   torpedoes: torpedoes.value,
                                 }}
                                 roster={parser.current.value.vehicles}
+                                builds={allyBuilds.value}
                                 onClose={() => (showResults.value = false)}
                               />
                             ) : (

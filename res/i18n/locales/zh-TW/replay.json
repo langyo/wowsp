@@ -198,6 +198,17 @@
   "bot": "機器人",
   "botNote": "AI 玩家，無歷史戰績",
   "live": {
+    "build": {
+      "title": "本局配裝",
+      "sourceReplay": "錄影解析",
+      "sourceProbe": "外掛即時",
+      "skills": "艦長技能",
+      "upgrades": "升級品",
+      "signals": "信號旗",
+      "consumables": "消耗品",
+      "points": "{used}/21 點",
+      "retraining": "艦長重訓中"
+    },
     "title": "即時對局",
     "notStarted": "尚未開始新的對局",
     "idleTitle": "即時錄影待命中",

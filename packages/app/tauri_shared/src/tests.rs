@@ -2900,6 +2900,7 @@ fn player_build_serializes_camel_case_and_hides_empty_sections() {
     let rich = round_trips(PlayerBuild {
         entity_id: 677_453,
         ship_params_id: 4_065_212_112,
+        name: Some("langyo".to_owned()),
         units: vec![3_409_718_992, 3_421_482_704],
         modernization: vec![4_262_645_680, 4_221_751_216],
         exteriors: vec![4_200_198_064],
@@ -2922,6 +2923,7 @@ fn player_build_serializes_camel_case_and_hides_empty_sections() {
         &[
             "entityId",
             "shipParamsId",
+            "name",
             "units",
             "modernization",
             "exteriors",
@@ -2933,6 +2935,7 @@ fn player_build_serializes_camel_case_and_hides_empty_sections() {
         ],
     );
     assert_eq!(rich["entityId"], 677_453);
+    assert_eq!(rich["name"], "langyo");
     assert_eq!(rich["shipParamsId"], 4_065_212_112u64);
     assert_eq!(rich["abilities"][0], 4_284_653_488u64);
     assert_eq!(rich["learnedSkills"][3][4], 34);

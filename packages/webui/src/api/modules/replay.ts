@@ -728,6 +728,45 @@ export function foldDamageStats(
   return { damage: Math.round(damage), planeDamage: Math.round(planeDamage), hits };
 }
 
+/** One player's decoded ship build (replay build-decode wave). Mirrors
+ *  `wowsp_tauri_shared::PlayerBuild`.
+ *
+ *  The IPC surface is ALLY-ONLY by product decision: the Rust exit filters the
+ *  decode layer's builds to the roster's relation <= 1, so no enemy loadout
+ *  can ever reach the webui and this DTO has no enemy variant. Numeric
+ *  GameParams ids resolve through the baked data layer (gameparam_ids.json,
+ *  modernizations.json, signals.json, consumable_details.json,
+ *  crew_skill_types.json). */
+export interface PlayerBuild {
+  /** BigWorld vehicle entity id (joins EntityTrajectory.entityId). */
+  entityId: number;
+  /** GameParams ship id the config was built for (joins the roster). */
+  shipParamsId: number;
+  /** Roster player name when the ship id maps to exactly one ally roster
+   *  entry (probe-sourced builds always carry it); null for a hull shared by
+   *  two teammates — the build is still genuine, only anonymous. */
+  name?: string | null;
+  /** Mounted hull/artillery/torpedo/sonar/engine module ids, hull first. */
+  units?: number[];
+  /** Modernization (upgrade slot) item ids. */
+  modernization?: number[];
+  /** Exterior slots: camouflage/paintwork ids and signal-flag ids (PCEF). */
+  exteriors?: number[];
+  /** Mounted consumable (AbilitySlot) ids. */
+  abilities?: number[];
+  /** National flag / ensign slot ids. */
+  ensigns?: number[];
+  /** Economic bonus slot ids. */
+  ecoboosts?: number[];
+  /** Captain params id (GameParams crew entry: default or unique commander). */
+  crewParamsId?: number;
+  /** Captain is in adaptation (retraining) after a ship/class switch. */
+  isInAdaptation?: boolean;
+  /** Learned captain skills: per-species rows of GameParams skill ordinals
+   *  (CrewSkillType ids); see features/replay/playerBuild.ts for the row map. */
+  learnedSkills?: number[][];
+}
+
 /** Decoded packet stream: entity trajectories plus battle-effect events.
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
@@ -790,6 +829,9 @@ export interface ReplayStream {
   weatherTransitions?: WeatherTransition[];
   /** Announced upcoming weather changes (the in-game warning banners). */
   weatherNotifications?: WeatherNotification[];
+  /** Ally ship builds decoded off the create states (self + team only; any
+   *  empty array is omitted by the Rust side). */
+  allyBuilds?: PlayerBuild[];
 }
 
 /** The running client's in-progress replay container
@@ -818,6 +860,9 @@ export interface LiveSelfStream {
   shellLaunches?: ShellLaunchEvent[];
   torpedoes?: TorpedoLaunch[];
   battleResults?: string | null;
+  /** Ally ship builds decoded off the live container's create states (the
+   *  same ally-only surface as ReplayStream). */
+  allyBuilds?: PlayerBuild[];
 }
 
 /** One global-weather change window — mirrors
