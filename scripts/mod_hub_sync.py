@@ -62,6 +62,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -557,12 +558,15 @@ def rewrite_front_matter(body: str, new_fm: str, stale_reason: str = "",
     byte-for-byte) and add/remove the hidden stale marker. This is the
     minimal-diff path for unchanged entries and stale (de)marking."""
     body = STALE_BLOCK_RE.sub("", body)
+    body = body.replace(STALE_NOTE + "\n\n", "").replace("\n\n" + STALE_NOTE, "")
+    body = body.replace(STALE_NOTE, "")
+    body = re.sub(r"\n{3,}", "\n\n", body)
     m = mod_index.FRONT_MATTER_RE.match(body)
     rest = body[m.end():] if m else body
     rest = rest.lstrip("\n")
     if stale_reason:
         return (new_fm.rstrip("\n") + "\n\n" + stale_block_text(stale_reason, since, content_version)
-                + "\n\n" + rest)
+                + "\n\n" + STALE_NOTE + "\n\n" + rest)
     return new_fm.rstrip("\n") + "\n\n" + rest
 
 
@@ -711,6 +715,12 @@ def build_and_upload_index(threads: list[dict], selection: dict | None, cache: P
     """Rebuild mod-index.json from the crawled threads (the one true index
     source, hand-published threads included), gate it against the release,
     upload with rollback, and report whether its bytes changed."""
+    url = f"{RELEASE_URL_BASE}/mod-index.json"
+    prev = b""
+    try:
+        prev = pub.fetch_binary(url, cache / "mod-index.prev.json").read_bytes()
+    except Exception:
+        prev = b""
     idx = mod_index.index_discussions([t["node"] for t in threads])
     if selection:
         idx["source"] = {"kind": "aslain-ingest",
@@ -722,6 +732,15 @@ def build_and_upload_index(threads: list[dict], selection: dict | None, cache: P
                     "reason": t["stale"].get("reason", ""),
                     "since": t["stale"].get("since", ""),
                 }
+    elif prev:
+        # index-only carries the last published source stamp forward so its
+        # bytes stay stable and the digest does not repoint for nothing.
+        try:
+            prev_source = json.loads(prev.decode("utf-8")).get("source")
+        except Exception:
+            prev_source = None
+        if prev_source:
+            idx["source"] = prev_source
     assets = release_assets()
     dropped, total = gate_index(idx, set(assets))
     if pub.should_refuse_upload(total, dropped, len(idx["mods"])):
@@ -730,12 +749,6 @@ def build_and_upload_index(threads: list[dict], selection: dict | None, cache: P
                  "disagree; investigate before publishing")
     out = cache / "mod-index.json"
     data = (json.dumps(idx, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    url = f"{RELEASE_URL_BASE}/mod-index.json"
-    prev = b""
-    try:
-        prev = pub.fetch_binary(url, cache / "mod-index.prev.json").read_bytes()
-    except Exception:
-        prev = b""
     index_changed = (not prev) or sha256_hex(prev) != sha256_hex(data)
     result = {"index_changed": index_changed,
               "index_sha256": sha256_hex(data),
@@ -755,13 +768,11 @@ def build_and_upload_index(threads: list[dict], selection: dict | None, cache: P
                         "--clobber", str(out)], check=True)
         check = pub.fetch_binary(url, cache / "mod-index.verify.json").read_bytes()
         if sha256_hex(check) != result["index_sha256"]:
-            raise SystemExit("published mod-index.json does not read back byte-identical")
+            raise RuntimeError("published mod-index.json does not read back byte-identical")
         prev_count = len(json.loads(prev.decode("utf-8"))["mods"]) if prev else 0
         if prev_count and result["index_mods"] < prev_count * 0.9:
-            raise SystemExit(f"published index lost >10% of entries "
-                             f"({prev_count} -> {result['index_mods']})")
-    except SystemExit:
-        raise
+            raise RuntimeError(f"published index lost >10% of entries "
+                               f"({prev_count} -> {result['index_mods']})")
     except Exception as exc:
         if prev:
             print(f"publish failed ({exc}); rolling the previous index back", file=sys.stderr,
@@ -889,8 +900,9 @@ def render_summary(report: dict) -> str:
 def upsert_issue(report: dict, title: str) -> int:
     body = render_summary(report) + "\n<!-- wowsp-sync-report:v1\n" + \
         json.dumps(report, ensure_ascii=False, indent=1) + "\n-->\n"
-    issues = json.loads(pub.gh(f"repos/{REPO}/issues?state=open&per_page=100"))
-    existing = next((i for i in issues if i.get("title") == title), None)
+    query = urllib.parse.quote(f'repo:{REPO} is:issue is:open in:title "{title}"')
+    hits = json.loads(pub.gh(f"search/issues?q={query}&per_page=1")).get("items") or []
+    existing = hits[0] if hits and hits[0].get("title") == title else None
     if existing:
         payload = json.dumps({"body": body})
         pub.gh("-X", "PATCH", f"repos/{REPO}/issues/{existing['number']}", input_text=payload)
@@ -999,6 +1011,18 @@ def run_apply(args) -> int:
     for e in plan["changed"]:
         if not e.get("needs_download"):
             e["content_changed"] = False
+    if not args.dry_run:
+        # The report must reflect post-download reality (a naming-migration
+        # entry whose bytes stayed equal keeps its old version).
+        for e in plan["changed"]:
+            e["version"] = (selection["version"] if e.get("content_changed")
+                            else e["thread"]["version"])
+        report["changed"] = [
+            {"slug": e["record"]["id"], "aslain_id": e["record"]["aslain_id"],
+             "reason": e["reason"], "content_changed": e.get("content_changed"),
+             "version": e.get("version")}
+            for e in plan["changed"]
+        ]
     if args.include_new and not args.dry_run:
         for e in plan["new"]:
             if "." in e["record"]["id"]:
@@ -1119,7 +1143,7 @@ def run_apply(args) -> int:
     if args.json:
         Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=1),
                                    encoding="utf-8")
-    if args.issue:
+    if args.issue and not args.dry_run:
         upsert_issue(report, args.title)
     if report["warnings"]:
         print("warnings:", file=sys.stderr, flush=True)
@@ -1274,8 +1298,10 @@ def selftest() -> None:
     fm2 = "---\nwowsp-mod: m\nversion: 1\ngame: '>=15.9 <15.10'\ncategory: battle\n---"
     out = rewrite_front_matter(body, fm2, "removed", "2026-01-02", "v1")
     assert "KEEP ME" in out and "wowsp:sync-stale" in out and "2026-01-02" in out
+    assert "Sync source closed" in out, "visible stale notice must ride the marker"
     out2 = rewrite_front_matter(out, fm2)
     assert "wowsp:sync-stale" not in out2 and "KEEP ME" in out2
+    assert "Sync source closed" not in out2, "visible notice clears with the marker"
     assert rewrite_front_matter(out2, fm2) == out2  # idempotent
 
     # full rebuild regenerates download lines, keeps gallery + presets

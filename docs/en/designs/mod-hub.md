@@ -502,7 +502,9 @@ absolute-URL `.7z` entries are the exception — no fingerprint).
 
 `.github/workflows/mod-hub-sync.yml` (a `schedule` every 6 hours plus
 manual `workflow_dispatch`, runs serialized by `concurrency`) calls
-`scripts/mod_hub_sync.py` with four subcommands:
+`scripts/mod_hub_sync.py` (pipeline subcommands `detect` / `apply` /
+`index-only` plus the offline `selftest`; `render-summary` /
+`upsert-issue` re-render a saved report):
 
 | Command | Behavior |
 | --- | --- |
@@ -555,7 +557,7 @@ on its own.
 #### New entries go through curation
 
 New Aslain entries without a `SLUG_MAP` row are never auto-published:
-they only show up in the report's `pending_curation` list. The
+they only show up in the report's `pending` list. The
 maintainer fills `scripts/mod_hub_slugs.py` (optionally also
 `mod_hub_authors.json` / `mod_hub_desc_i18n.json` /
 `mod_hub_families.py`), then publishes them with a `workflow_dispatch`
@@ -593,8 +595,8 @@ app digest job of `release.yml`.
 
 #### Reporting
 
-Every run produces `sync-report.json` (a workflow artifact), a step
-summary, and a fixed-title issue **"[mod-hub-sync] Upstream sync
+Every run writes `sync-report.json` next to the run and renders it into
+the step summary plus a fixed-title issue **"[mod-hub-sync] Upstream sync
 report"** (its body is overwritten on every run and embeds a hidden
 JSON block, so agents and humans read the same source). A failed
 `apply` opens a separate alert issue.

@@ -263,7 +263,9 @@ Configuration 404）——搬运来的快照每次上游更新都会过时。上
 md5 的前 8 位十六进制，等于自带内容指纹（204 个绝对 URL 的 `.7z` 条目例外，无指纹）。
 
 `.github/workflows/mod-hub-sync.yml`（每 6 小时 `schedule` + `workflow_dispatch`
-手动触发，`concurrency` 串行）调用 `scripts/mod_hub_sync.py`，四个子命令：
+手动触发，`concurrency` 串行）调用 `scripts/mod_hub_sync.py`（流水线子命令
+`detect` / `apply` / `index-only` 与离线 `selftest`；`render-summary` /
+`upsert-issue` 负责把已保存的报告重新渲染/落帖）：
 
 | 子命令 | 行为 |
 | --- | --- |
@@ -300,7 +302,7 @@ md5 的前 8 位十六进制，等于自带内容指纹（204 个绝对 URL 的 
 
 #### 新条目提案制
 
-未登记 `SLUG_MAP` 的新 Aslain 条目绝不自动发布：只出现在报告的 `pending_curation`
+未登记 `SLUG_MAP` 的新 Aslain 条目绝不自动发布：只出现在报告的 `pending`
 清单里。维护者补 `scripts/mod_hub_slugs.py`（可选补 `mod_hub_authors.json` /
 `mod_hub_desc_i18n.json` / `mod_hub_families.py`）后，用 `workflow_dispatch`
 （`mode=apply`，`include_new=true`）发布。
@@ -331,7 +333,7 @@ job 模式。
 
 #### 报告
 
-每次运行产出 `sync-report.json`（工作流 artifact）+ 步骤摘要 + 固定标题 issue
+每次运行产出 `sync-report.json`（随运行落盘）并渲染进步骤摘要与固定标题 issue
 「[mod-hub-sync] Upstream sync report」（正文每次覆盖，内嵌隐藏 JSON 块，agent 与人
 读同一份来源）。`apply` 失败时另开告警 issue。
 

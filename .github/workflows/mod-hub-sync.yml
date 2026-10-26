@@ -37,6 +37,10 @@ permissions:
   discussions: write   # the thread create/update mutations
   issues: write        # the tracking report and the failure alarm
   actions: write       # dispatching ci.yml / commit-msg-lint.yml / site.yml for the digest PR
+  pull-requests: write # the digest bot PR's list/create/merge calls; the PR ops themselves
+                       # run on RELEASE_OPS_TOKEN (this repo forbids GITHUB_TOKEN from
+                       # creating PRs -- release.yml's #1416 note), this grant only keeps
+                       # the github.token fallback path functional
 
 jobs:
   sync:
@@ -181,13 +185,15 @@ jobs:
           done
           gh workflow run site.yml --ref master
           for attempt in $(seq 1 20); do
-            tag="$(curl -fsSL --max-time 20 "https://wowsp.langyo.xyz/api/digests/mod-hub" \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tag",""))' 2>/dev/null || true)"
-            if [ "$tag" = "mod-hub" ]; then
-              echo "live /api/digests/mod-hub serves mod-hub (attempt $attempt/20)"
+            read="$(curl -fsSL --max-time 20 "https://wowsp.langyo.xyz/api/digests/mod-hub" \
+              | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("tag",""), d.get("seq",0))' 2>/dev/null || true)"
+            tag="$(echo "$read" | awk '{print $1}')"
+            seq_live="$(echo "$read" | awk '{print $2}')"
+            if [ "$tag" = "mod-hub" ] && [ "${seq_live:-0}" -ge "$seq" ] 2>/dev/null; then
+              echo "live /api/digests/mod-hub serves mod-hub at seq $seq_live (attempt $attempt/20)"
               exit 0
             fi
-            echo "live tag is '${tag:-unreachable}' (attempt $attempt/20)"
+            echo "live is '${read:-unreachable}', want tag=mod-hub seq>=$seq (attempt $attempt/20)"
             sleep 60
           done
           echo "::error::live /api/digests/mod-hub never re-pointed"
