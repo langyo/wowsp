@@ -518,9 +518,15 @@
     "costRetrain": "重訓費用（估算）",
     "costRetrainHint": "估算口徑：每技能點 100,000 銀幣；實際以遊戲內為準。",
     "costFlags": "訊號旗",
-    "costFlagsNote": "裝備訊號旗不消耗貨幣"
+    "costFlagsNote": "裝備訊號旗不消耗貨幣",
+    "realm": "伺服器實作模式",
+    "realmHint": "在 WG 與 Lesta 伺服器實作之間切換整個艦船視圖：科技樹與百科資料來源、技能樹、艦長與訊號旗均跟隨所選伺服器。"
   },
   "flags": {
+    "tier1": "標準",
+    "tier2": "特別",
+    "tier3": "稀有",
+    "tier4": "精英",
     "effect": {
       "AAAuraDamage": "防空持續傷害",
       "AABubbleDamage": "防空彈幕傷害",
@@ -549,7 +555,20 @@
       "planeConsumableReloadTime": "艦載機消耗品裝填時間",
       "submarineLocatorReloadCoeff": "潛艦定位器裝填時間",
       "burnChanceFactorBig": "HE彈起火率",
-      "burnChanceFactorSmall": "HE彈起火率"
+      "burnChanceFactorSmall": "HE彈起火率",
+      "GMIdealRadius": "主砲散布",
+      "GMSIdealRadius": "副砲散布",
+      "burnChanceBonus": "HE彈起火率",
+      "floodChanceCommonBonus": "進水機率",
+      "planeSpreadMultiplier": "艦載機散布",
+      "planeTorpedoSpeedMultiplier": "航空魚雷航速",
+      "torpedoSpeedMultiplier": "魚雷航速",
+      "planeForsageTimeCoeff": "引擎增壓時間",
+      "ConsumablesWorkTime": "消耗品持續時間",
+      "planeConsumablesWorkTime": "艦載機消耗品持續時間",
+      "planeBubbleArmorCoeff": "艦載機承受的傷害",
+      "shootShift": "瞄準偏移",
+      "vulnerabilityDBomb": "俯衝轟炸承受的傷害"
     }
   },
   "talent": {

@@ -10,11 +10,19 @@
  * flying, the in-game recommended skill set within the 21-point budget,
  * and a STANDARD captain (no unique commander talents). Editing can then
  * only ever diverge from a sane full loadout, never from an empty one.
+ *
+ * Realm note: lineup defaults are deliberately REALM-AGNOSTIC and keep
+ * stamping the WG dataset (SIGNALS + WG recommended skills) — the tactical
+ * lineup has no realm switch of its own. The realm-aware catalogs live in
+ * signalsFor(); BuildPlanner prunes a lineup build to the active realm the
+ * moment it is edited there (pruneBuildForRealm).
  */
 import type { ShipInfo } from "@/api";
 import { gameNationOf } from "@/utils/nationCodes";
+import type { TechTreeRealm } from "@/utils/techTreeData";
 import modernizationsData from "../../data/modernizations.json";
 import signalsData from "../../data/signals.json";
+import signalsLestaData from "../../data/signals_lesta.json";
 import type { PlannerBuild } from "./modifierPipeline";
 import {
   classSkills,
@@ -31,6 +39,12 @@ export interface SignalEntry {
   desc: Record<string, string>;
   sortOrder: number;
   modifiers: Record<string, unknown>;
+  /** Lesta-catalog extras: the flag's family art stem, its tier within the
+   *  family (1..4) and the family grouping used to stack the flag grid.
+   *  WG entries (PCEF00x) carry none of these and render flat. */
+  group?: string;
+  tier?: number;
+  family?: string;
 }
 
 export interface ModernizationEntry {
@@ -49,9 +63,61 @@ export interface ModernizationEntry {
   tags?: string[];
 }
 
+/** The WG combat-signal catalog (PCEF00x), sortOrder-ascending. Also the
+ *  lineup default's flag set — lineup builds are realm-agnostic and always
+ *  stamp WG signals (see defaultBuildFor). */
 export const SIGNALS: SignalEntry[] = (signalsData as SignalEntry[]).slice().sort(
   (a, b) => a.sortOrder - b.sortOrder,
 );
+
+/** The Lesta catalog (PCEF1xx, disjoint indices), 6 families × 4 tiers,
+ *  sortOrder-ascending. */
+const SIGNALS_LESTA: SignalEntry[] = (signalsLestaData as SignalEntry[]).slice().sort(
+  (a, b) => a.sortOrder - b.sortOrder,
+);
+
+/** Combat-signal catalog of a realm. Defaults to WG — callers that are not
+ *  realm-aware (the lineup editor) keep seeing the WG list. */
+export function signalsFor(realm: TechTreeRealm = "wg"): SignalEntry[] {
+  return realm === "lesta" ? SIGNALS_LESTA : SIGNALS;
+}
+
+/** Result of {@link pruneBuildForRealm} — the build's captain-data slices,
+ *  already restricted to the active realm's catalogs. Null means the build
+ *  was fully in-catalog and needs no patch. */
+export interface RealmPruneResult {
+  skills: Record<string, 1>;
+  signals: string[];
+  commander: string | null;
+}
+
+/** Pure realm-switch prune for a planner build: drop skill codes that the
+ *  active realm's class tree does not know, signal indices outside the
+ *  active realm's catalog, and a commander outside the active roster.
+ *  Returns null when everything already belongs to the realm (no patch to
+ *  emit). Hull-capability bans are NOT applied here — callers layer their
+ *  own ban pass on top. */
+export function pruneBuildForRealm(
+  build: Pick<PlannerBuild, "skills" | "signals" | "commander">,
+  treeCodes: ReadonlySet<string>,
+  signalIndices: ReadonlySet<string>,
+  commanderNames: ReadonlySet<string>,
+): RealmPruneResult | null {
+  const skills = { ...build.skills };
+  let changed = false;
+  for (const code of Object.keys(skills)) {
+    if (!treeCodes.has(code)) {
+      delete skills[code];
+      changed = true;
+    }
+  }
+  const signals = build.signals.filter((s) => signalIndices.has(s));
+  if (signals.length !== build.signals.length) changed = true;
+  const commander =
+    build.commander != null && commanderNames.has(build.commander) ? build.commander : null;
+  if (commander !== build.commander) changed = true;
+  return changed ? { skills, signals, commander } : null;
+}
 
 export const MODERNIZATIONS: ModernizationEntry[] =
   modernizationsData as ModernizationEntry[];

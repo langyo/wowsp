@@ -518,9 +518,15 @@
     "costRetrain": "再訓練費用（推定）",
     "costRetrainHint": "推定：1スキルポイントにつき100,000クレジット。実際はゲーム内表記が優先。",
     "costFlags": "シグナル",
-    "costFlagsNote": "シグナルの装備は無料"
+    "costFlagsNote": "シグナルの装備は無料",
+    "realm": "サーバー実装",
+    "realmHint": "艦船ビュー全体をWGとLestaのサーバー実装で切り替えます：技術ツリーと図鑑のデータソース、スキルツリー、艦長、信号旗がすべて選択したサーバーに従います。"
   },
   "flags": {
+    "tier1": "標準",
+    "tier2": "特別",
+    "tier3": "レア",
+    "tier4": "エリート",
     "effect": {
       "AAAuraDamage": "継続対空ダメージ",
       "AABubbleDamage": "対空弾幕ダメージ",
@@ -549,7 +555,20 @@
       "planeConsumableReloadTime": "艦載機消耗品装填時間",
       "submarineLocatorReloadCoeff": "潜水艦探知機装填時間",
       "burnChanceFactorBig": "HE弾の火災発生率",
-      "burnChanceFactorSmall": "HE弾の火災発生率"
+      "burnChanceFactorSmall": "HE弾の火災発生率",
+      "GMIdealRadius": "主砲散布",
+      "GMSIdealRadius": "副砲散布",
+      "burnChanceBonus": "HE弾の火災発生率",
+      "floodChanceCommonBonus": "浸水確率",
+      "planeSpreadMultiplier": "艦載機散布",
+      "planeTorpedoSpeedMultiplier": "航空魚雷速度",
+      "torpedoSpeedMultiplier": "魚雷速度",
+      "planeForsageTimeCoeff": "エンジンブースト時間",
+      "ConsumablesWorkTime": "消耗品継続時間",
+      "planeConsumablesWorkTime": "艦載機消耗品継続時間",
+      "planeBubbleArmorCoeff": "艦載機が受けるダメージ",
+      "shootShift": "照準移動",
+      "vulnerabilityDBomb": "急降下爆撃で受けるダメージ"
     }
   },
   "talent": {

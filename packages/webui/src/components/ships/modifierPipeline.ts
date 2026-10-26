@@ -20,10 +20,18 @@
  *   - `healthPerLevel` (Survivability Expert) is the exception: it adds a flat
  *     `coef * shipTier` HP bonus instead of multiplying.
  *   - Modifier keys outside the stat map (pure-utility effects) are ignored.
+ *
+ * Captain-data realm: skill and signal lookups are realm-scoped — the Lesta
+ * catalogs (skills_lesta.json / signals_lesta.json) apply when the planner
+ * runs in Lesta mode. Modernizations have a single shared catalog (both
+ * clients mount the same gear), so upgrades stay realm-global.
  */
 import type { Profile } from "./shipSpecs";
+import type { TechTreeRealm } from "@/utils/techTreeData";
 import skillsData from "../../data/skills.json";
+import skillsLestaData from "../../data/skills_lesta.json";
 import signalsData from "../../data/signals.json";
+import signalsLestaData from "../../data/signals_lesta.json";
 import modernizationsData from "../../data/modernizations.json";
 
 /** The player-controlled parts of a build (commander is display-only). */
@@ -98,6 +106,10 @@ const STAT_MAP: Record<string, keyof Omit<ModifiedStats, "hp"> | "hp"> = {
 const STAT_ADDS: Record<string, { stat: keyof ModifiedStats; scale: number; minCaliber?: number; maxCaliber?: number }> = {
   burnChanceFactorBig: { stat: "fireChanceOut", scale: 100, minCaliber: 160 },
   burnChanceFactorSmall: { stat: "fireChanceOut", scale: 100, maxCaliber: 160 },
+  // Lesta yankee-family flags: flat additive fire chance, no caliber gate
+  // (the WG burnChanceFactor* split is caliber-conditional; the Lesta table
+  // is not). WG data never carries this key, so WG behavior is untouched.
+  burnChanceBonus: { stat: "fireChanceOut", scale: 100 },
 };
 
 /** Flat skills.json skill entry (per-class dicts or scalars). */
@@ -114,10 +126,18 @@ interface ModernizationJsonEntry {
   modifiers: Record<string, unknown>;
 }
 
-const SKILLS = skillsData as Record<string, SkillJsonEntry>;
-const SIGNALS = new Map<string, SignalJsonEntry>(
-  (signalsData as SignalJsonEntry[]).map((s) => [s.index, s]),
-);
+const SKILLS: Record<TechTreeRealm, Record<string, SkillJsonEntry>> = {
+  wg: skillsData as Record<string, SkillJsonEntry>,
+  lesta: skillsLestaData as Record<string, SkillJsonEntry>,
+};
+const SIGNALS: Record<TechTreeRealm, Map<string, SignalJsonEntry>> = {
+  wg: new Map<string, SignalJsonEntry>(
+    (signalsData as SignalJsonEntry[]).map((s) => [s.index, s]),
+  ),
+  lesta: new Map<string, SignalJsonEntry>(
+    (signalsLestaData as SignalJsonEntry[]).map((s) => [s.index, s]),
+  ),
+};
 const MODERNIZATIONS = new Map<string, ModernizationJsonEntry>(
   (modernizationsData as ModernizationJsonEntry[]).map((m) => [m.name, m]),
 );
@@ -193,6 +213,10 @@ function resolveCoef(value: unknown, shipType: string): number | null {
  *                  burnChanceFactorBig/Small gates are caliber-conditional;
  *                  pass the GameParams-derived value (mainCaliberMm) when
  *                  available so those modifiers actually apply.
+ * @param realm     Which server implementation's captain data to read —
+ *                  "wg" (default) reads skills.json / signals.json, "lesta"
+ *                  reads skills_lesta.json / signals_lesta.json. Callers
+ *                  without a realm (the lineup editor) keep WG behavior.
  */
 export function recomputeStats(
   profile: Profile,
@@ -201,6 +225,7 @@ export function recomputeStats(
   build: BuildConfig,
   healthPct: number,
   caliberMm?: number | null,
+  realm: TechTreeRealm = "wg",
 ): { base: ModifiedStats; modified: ModifiedStats } {
   const base = readBase(profile);
   const modified: ModifiedStats = { ...base };
@@ -241,15 +266,20 @@ export function recomputeStats(
   }
 
   // ── Source 1: captain skills (passive modifiers + HP-scaled triggers) ──
+  // Lookup table is realm-scoped; a code absent from the active realm's
+  // catalog (the WG/Lesta trees swap one CV skill, and Lesta triggers are
+  // all null) behaves exactly like any unknown code: no effect lines.
+  const skills = SKILLS[realm];
   for (const code of Object.keys(build?.skills ?? {})) {
-    const entry = SKILLS[code];
+    const entry = skills[code];
     if (!entry) continue;
     accumulate(entry.modifiers, false);
     if (entry.trigger) accumulate(entry.trigger.modifiers, true);
   }
   // ── Source 2: signal flags ─────────────────────────────────────────────
+  const signals = SIGNALS[realm];
   for (const index of build?.signals ?? []) {
-    const sig = SIGNALS.get(index);
+    const sig = signals.get(index);
     if (sig) accumulate(sig.modifiers, false);
   }
   // ── Source 3: modernization upgrades ───────────────────────────────────

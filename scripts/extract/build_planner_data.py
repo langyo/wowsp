@@ -25,7 +25,16 @@ Outputs (under packages/webui/src/):
   res/images/commanders/    (downscaled portraits)
 
 Usage:
-    python build_planner_data.py [--game PATH] [--pkg FILE] [--only NAME] [--no-icons] [--no-net]
+    python build_planner_data.py [--realm {wg,lesta}] [--game PATH] [--pkg FILE]
+        [--only NAME] [--no-icons] [--no-net]
+
+With --realm lesta the script instead emits the Lesta captain datasets
+(skilltree_lesta / skills_lesta / signals_lesta / commanders_lesta json plus
+the skilltree_lesta.NOTES.md provenance sibling) from the Lesta GameParams
+dump (--gameparams-lesta, default the WoWSP-extract cache) — fully offline,
+never downloading: the WG caches (names + layout) and the Lesta dump + mo
+caches must already exist. Lesta art (skill/flag PNGs from the Lesta client
+packages) is extracted by scripts/extract/lesta_planner_icons.py.
 """
 from __future__ import annotations
 
@@ -54,6 +63,16 @@ META_JSON = (
     / "WoWSP-extract"
     / "wows_meta.json"
 )
+# Lesta (Мир кораблей) counterpart dump — a separate client's GameParams, put
+# in the same cache dir by run.py's techtree-lesta step. The --realm lesta
+# captain datasets also read the ru/zh mo caches dumped next to it.
+GAMEPARAMS_LESTA_JSON = (
+    pathlib.Path(os.environ.get("LOCALAPPDATA", pathlib.Path.home() / ".local/share"))
+    / "WoWSP-extract"
+    / "GameParams_lesta.json"
+)
+LESTA_MO_RU_JSON = GAMEPARAMS_LESTA_JSON.parent / "mo_ru.json"
+LESTA_MO_ZH_JSON = GAMEPARAMS_LESTA_JSON.parent / "mo_zh.json"
 # Upstream data sources (cached next to the GameParams cache).
 WOWSFT_SKILLS_URL = (
     "https://raw.githubusercontent.com/alarian/WoWSFT-Kotlin/master/"
@@ -220,6 +239,23 @@ GP_CLASS_BY_CODE = {
     "AirCarrier": "CV", "Submarine": "SS",
 }
 
+# Curated repairs for WoWSFT layout cells the current WG crew table cannot
+# confirm (the upstream layout is a snapshot that drifts from the live
+# client). Keyed by (GameParams class, tier, column) → the replacement code;
+# the replacement must be learnable in the crew table at the cell's own tier
+# or the override is ignored and the hole is reported instead of silently
+# emitting a stale cell.
+LAYOUT_CELL_OVERRIDES: dict[tuple[str, int, int], str] = {
+    # build 13187581: the layout's CV tier-2 col-3 cell still teaches
+    # PlanesConsumablesRegeneratehealthUpgrade — a skill WG removed (no
+    # GameParams object, absent from the crew table), which punched a silent
+    # hole into the committed tree. The live tree teaches
+    # PlanesConsumablesActiveManeuveringUpgrade there (learnable, tier 2 for
+    # every class). Lesta still ships the Regeneratehealth skill — its tree
+    # override lives in LESTA_TREE_OVERRIDES below.
+    ("AirCarrier", 2, 3): "PlanesConsumablesActiveManeuveringUpgrade",
+}
+
 
 def _flatten_levels(action: dict) -> dict:
     """Split an action dict into {base, levels: {1: {...}, 2: {...}, ...}}.
@@ -294,6 +330,12 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
     over-offers Submarine-tiered skills the live sub UI does not carry
     (Combat Maneuver Specialist, Basics of Survivability, Radio Location,
     Fire Prevention Expert, Fearless Brawler, Concealment Expert).
+
+    Surface cells whose layout code the crew table cannot confirm are no
+    longer dropped silently: a curated match from LAYOUT_CELL_OVERRIDES
+    fills the cell (with a printed warning), anything else is reported as
+    a dropped hole — the committed tree used to come out with a silent CV
+    tier-2 hole because the WoWSFT layout still teaches a skill WG removed.
     """
     crew = None
     for _name, e in entries_of(txt, '"CrewPersonality"',
@@ -324,8 +366,33 @@ def extract_skilltree(txt: str, lang: dict, wowsft: dict) -> dict[str, list[dict
         flat = []
         for tier_skills in rows:
             for s in tier_skills:
+                override = LAYOUT_CELL_OVERRIDES.get((gp, s["tier"], s["column"]))
                 if s["name"] not in gp_tiers:
-                    continue  # not a learnable skill in the current crew table
+                    # The upstream layout snapshot teaches something the
+                    # current crew table cannot confirm: either a removed
+                    # skill (dead cell — the hole this loop once punched
+                    # silently) or layout drift. Fill curated cells, report
+                    # the rest.
+                    tier = override is not None and gp_tiers.get(override, {}).get(cls)
+                    if tier == s["tier"]:
+                        print(f"!! skilltree: {cls} tier {s['tier']} col "
+                              f"{s['column']}: layout cell {s['name']} is not "
+                              f"learnable in the crew table — substituted "
+                              f"{override}", file=sys.stderr)
+                        flat.append(named(override, s["tier"], s["column"]))
+                    else:
+                        print(f"!! skilltree: {cls} tier {s['tier']} col "
+                              f"{s['column']}: layout cell {s['name']} is not "
+                              "learnable in the crew table — dropped (hole)",
+                              file=sys.stderr)
+                    continue
+                if override is not None and override != s["name"]:
+                    # The layout learned the crew table's code back: the
+                    # curated override has gone stale.
+                    print(f"!! skilltree: {cls} tier {s['tier']} col "
+                          f"{s['column']}: layout cell is learnable again as "
+                          f"{s['name']} — the curated override {override} is "
+                          "obsolete", file=sys.stderr)
                 flat.append(named(s["name"], s["tier"], s["column"]))
         out[cls] = flat
 
@@ -404,6 +471,283 @@ def extract_ship_consumables(txt: str) -> dict[str, list[str]]:
     return {idx: sorted(fams) for idx, fams in sorted(out.items())}
 
 
+# ── Lesta (Мир кораблей) realm emission (--realm lesta) ─────────────────────
+# The Lesta client diverged from WG and its dump carries no crew table: no
+# canBeLearned, no per-class tier, no grid column anywhere. Skills live in the
+# PCOL001_CommonCrewSkills catalog (89 codes) and the PCOK001..091 modifier
+# objects ({EPIC, REGULAR: {availableShipTypes, modifiers}, skillType}); the
+# classic PCEF00x signal set is replaced by 24 tiered flags PCEF101..154
+# (species=Flags, families × tiers 标准/特别/稀有/精英); commanders keep the
+# CrewPersonality/UniqueSkills structure but have no per-captain Skills table
+# (no isEpic → no epicSkills). Everything below is offline: the Lesta dump and
+# the ru/zh mo caches come from the WoWSP-extract cache dir; the tree base and
+# every display name come from the WG caches this module already reads.
+
+
+# The one defensible grid delta vs the WG tree. Lesta's dump has no crew
+# table, so there is no independent grid source — the other Lesta-only
+# catalog codes stay unplaced rather than invented (see the NOTES sibling).
+# The overridden cell must exist in the regenerated WG tree or the emission
+# fails loudly instead of drifting silently.
+LESTA_TREE_OVERRIDES: dict[tuple[str, int, int], str] = {
+    # WG's dead CV tier-2 col-3 cell (see LAYOUT_CELL_OVERRIDES) is alive on
+    # Lesta: PCOK052's skillType is PlanesConsumablesRegeneratehealthUpgrade
+    # and the wowsinfo bridge still carries its name (WG's own loc had it
+    # while the skill lived).
+    ("AirCarrier", 2, 3): "PlanesConsumablesRegeneratehealthUpgrade",
+}
+
+# Lesta's tiered signal families (PCEF101..154), grid order: (family code,
+# art stem = GameParams flags[0], NATO display word). The client's own ru
+# loc spells the display names "<NATO> — <tier>" (mo_ru
+# IDS_PCEF1xx_<FAM>_SIGNALFLAG_<tier>_<tier>); the NATO word is the family
+# name in every language and only the tier word is translated (zh_sg keeps
+# NATO words untranslated across the whole signal set — see the committed
+# signals.json, where zh is "November Echo Setteseven").
+LESTA_SIGNAL_FAMILIES: list[tuple[str, str, str]] = [
+    ("HPBoost", "november", "November"),
+    ("GM", "yankee", "Yankee"),
+    ("ATBA", "foxtrot", "Foxtrot"),
+    ("Speed", "sierra", "Sierra"),
+    ("Consumable", "india", "India"),
+    ("Shift", "charlie", "Charlie"),
+]
+
+# tier → (per-locale tier word, ru reference word the mo_ru cross-check
+# expects). ru reference: Стандартный/Особый/Редкий/Элитный from mo_ru.
+LESTA_TIER_WORDS: dict[int, tuple[dict[str, str], str]] = {
+    1: ({"en": "Standard", "ja": "標準", "zh": "标准", "tw": "標準"}, "Стандартный"),
+    2: ({"en": "Special", "ja": "特別", "zh": "特别", "tw": "特別"}, "Особый"),
+    3: ({"en": "Rare", "ja": "レア", "zh": "稀有", "tw": "稀有"}, "Редкий"),
+    4: ({"en": "Elite", "ja": "エリート", "zh": "精英", "tw": "精英"}, "Элитный"),
+}
+
+
+def extract_skilltree_lesta(
+    wg_tree: dict[str, list[dict]], lang: dict
+) -> dict[str, list[dict]]:
+    """Lesta tree: the regenerated WG tree with LESTA_TREE_OVERRIDES applied.
+
+    The Lesta dump has no crew table and no layout snapshot, so there is no
+    independent grid source for its 15 Lesta-only skills — the 14 non-override
+    codes stay unplaced and are documented in the NOTES sibling file instead
+    of being invented into cells.
+    """
+    tree = {cls: [dict(r) for r in rows] for cls, rows in wg_tree.items()}
+    for (gp, tier, column), code in LESTA_TREE_OVERRIDES.items():
+        cls = GP_CLASS_BY_CODE[gp]
+        cell = next(
+            (r for r in tree[cls] if r["tier"] == tier and r["column"] == column), None
+        )
+        if cell is None:
+            raise SystemExit(
+                f"skilltree_lesta: base tree has no {cls} tier {tier} col "
+                f"{column} cell to override with {code} — regenerate "
+                "skilltree.json first"
+            )
+        print(f"[planner] skilltree_lesta: {cls} tier {tier} col {column}: "
+              f"{cell['code']} -> {code}")
+        cell.update({"code": code, **skill_names(lang, code)})
+    return tree
+
+
+def extract_skills_lesta(
+    tree: dict[str, list[dict]], wg_skills: dict, lesta_txt: str
+) -> tuple[dict[str, dict], dict]:
+    """Lesta skill modifiers keyed like skills.json ({"modifiers", "trigger"}).
+
+    Key set = the placed tree codes ∪ every PCOL001 catalog code that WG's
+    skills.json also carries (matched case-insensitively — the two dumps
+    spell a few codes differently, e.g. CallFighters vs Callfighters — with
+    the WG spelling as the key so existing consumers keep resolving). Values
+    come from the PCOK objects' REGULAR.modifiers; the Lesta dump has no
+    trigger framework on these objects, so trigger stays null like WG's
+    non-trigger rows. Returns (table, stats); stats carries the modifier-key
+    drift vs WG for the PR body.
+    """
+    pcok: dict[str, dict] = {}
+    catalog: list[str] = []
+    for _name, e in entries_of(lesta_txt, '"REGULAR"',
+                               lambda x: "REGULAR" in x and "skillType" in x):
+        pcok[e["skillType"].lower()] = e
+    for _name, e in entries_of(lesta_txt, '"PCOL001_CommonCrewSkills"',
+                               lambda x: x.get("name") == "PCOL001_CommonCrewSkills"):
+        catalog = [k for k in e if k not in ("id", "index", "name", "typeinfo")]
+    wg_lower = {c.lower(): c for c in wg_skills}
+    keys = sorted({r["code"] for rows in tree.values() for r in rows}
+                  | {wg_lower[c.lower()] for c in catalog if c.lower() in wg_lower})
+    out: dict[str, dict] = {}
+    for code in keys:
+        e = pcok.get(code.lower())
+        if e is None:
+            print(f"!! skills_lesta: {code} has no PCOK object — emitted with "
+                  "empty modifiers", file=sys.stderr)
+            out[code] = {"modifiers": {}, "trigger": None}
+            continue
+        out[code] = {"modifiers": e["REGULAR"].get("modifiers") or {}, "trigger": None}
+    wg_mod_keys = {k for v in wg_skills.values() for k in (v.get("modifiers") or {})}
+    lst_mod_keys = {k for v in out.values() for k in v["modifiers"]}
+    stats = {
+        "keys": len(out),
+        "catalogCodes": len(catalog),
+        "catalogAlsoInWgSkills": len({wg_lower[c.lower()] for c in catalog
+                                      if c.lower() in wg_lower}),
+        # Distinguish the two ways a key can come out empty: Lesta not
+        # carrying the skill at all vs a trigger-style PCOK object whose
+        # REGULAR.modifiers is legitimately {} (its logic is transient).
+        "noPcokObject": sorted(k for k in keys if k.lower() not in pcok),
+        "emptyModifiers": sorted(k for k, v in out.items() if not v["modifiers"]),
+        "modifierKeysNewVsWg": sorted(lst_mod_keys - wg_mod_keys),
+        "modifierKeysWgOnly": sorted(wg_mod_keys - lst_mod_keys),
+    }
+    return out, stats
+
+
+def extract_signals_lesta(lesta_txt: str, mo_ru: dict, mo_zh: dict) -> list[dict]:
+    """Lesta's 24 tiered signal flags (PCEF101..154), one row per flag.
+
+    GameParams carries no sortOrder and no display names: sortOrder is the
+    curated grid (LESTA_SIGNAL_FAMILIES order ×10 + tier); names follow the
+    client's own ru pattern "<NATO> — <tier>" (LESTA_TIER_WORDS) and are
+    cross-checked against mo_ru whenever it carries the key. desc stays
+    empty — no *_DESCRIPTION keys exist for the PCEF1xx set in either mo
+    cache; if one appears upstream it is picked up automatically.
+    """
+    fam_by_code = {fam: (i, group, nato)
+                   for i, (fam, group, nato) in enumerate(LESTA_SIGNAL_FAMILIES)}
+    rows = []
+    for name, e in entries_of(lesta_txt, '"species": "Flags"',
+                              lambda x: x.get("typeinfo", {}).get("species") == "Flags"):
+        m = re.fullmatch(r"PCEF\d+_(.+)_SignalFlag_\d+", name)
+        if m is None:
+            print(f"!! signals_lesta: unrecognized Lesta flag name {name} — "
+                  "skipped", file=sys.stderr)
+            continue
+        fam, tier = m.group(1), int(name.rsplit("_", 1)[-1])
+        if fam not in fam_by_code or tier not in LESTA_TIER_WORDS:
+            print(f"!! signals_lesta: {name}: unknown family {fam!r} / tier "
+                  f"{tier} — skipped", file=sys.stderr)
+            continue
+        fam_idx, group, nato = fam_by_code[fam]
+        flags = e.get("flags") or []
+        if flags and flags[0] != group:
+            print(f"!! signals_lesta: {name}: GameParams art stem {flags[0]!r} "
+                  f"!= curated {group!r} — trusting GameParams", file=sys.stderr)
+            group = flags[0]
+        words, ru_word = LESTA_TIER_WORDS[tier]
+        ref_key = "IDS_" + name.upper() + f"_{tier}"
+        expected = f"{nato} — {ru_word}"
+        # The client loc separates word and tier with a non-breaking space;
+        # the curated names use a plain space (display, not data source).
+        norm = lambda s: s.replace("\u00a0", " ")
+        if mo_ru.get(ref_key) is not None and norm(mo_ru[ref_key]) != norm(expected):
+            print(f"!! signals_lesta: {name}: mo_ru {ref_key} = "
+                  f"{mo_ru[ref_key]!r} != curated pattern {expected!r}",
+                  file=sys.stderr)
+        desc = {}
+        for tag, mo in (("ru", mo_ru), ("zh", mo_zh)):
+            v = mo.get("IDS_" + name.upper() + "_DESCRIPTION")
+            if v:
+                desc[tag] = v
+        rows.append({
+            "index": e.get("index", name[:7]),
+            "name": name,
+            "names": {tag: f"{nato} — {words[tag]}" for tag in ("en", "ja", "zh", "tw")},
+            "desc": desc,
+            "sortOrder": fam_idx * 10 + tier,
+            "modifiers": e.get("modifiers") or {},
+            "group": group,
+            "tier": tier,
+            "family": fam,
+        })
+    rows.sort(key=lambda r: r["sortOrder"])
+    return rows
+
+
+def extract_commanders_lesta(lesta_txt: str) -> list[dict]:
+    """Lesta's unique-commander roster in commanders.json shape.
+
+    Same CrewPersonality/UniqueSkills structure as WG, so extract_commanders
+    parses it unchanged; the Lesta dump has no per-captain Skills table (no
+    isEpic), so epicSkills never appears. Portraits are deliberately not
+    invented — the webui falls back to the initial-letter avatar.
+    """
+    rows = extract_commanders(lesta_txt)
+    for r in rows:
+        r.pop("epicSkills", None)
+    return rows
+
+
+def write_skilltree_lesta_notes(
+    tree: dict[str, list[dict]],
+    wg_tree: dict[str, list[dict]],
+    catalog: list[str],
+    wg_skills: dict,
+    out_path: pathlib.Path,
+) -> None:
+    """Sibling provenance note for skilltree_lesta.json (machine-readable)."""
+    wg_codes = {r["code"] for rows in wg_tree.values() for r in rows}
+    lesta_codes = {r["code"] for rows in tree.values() for r in rows}
+    catalog_lower = {c.lower() for c in catalog}
+    lesta_codes_lower = {c.lower() for c in lesta_codes}
+    wg_only = sorted(c for c in lesta_codes if c.lower() not in catalog_lower)
+    wg_lower = {c.lower() for c in wg_skills}
+    lesta_only = sorted(
+        c for c in catalog
+        if c.lower() not in wg_lower and c.lower() not in lesta_codes_lower
+    )
+    payload = {
+        "realm": "lesta",
+        "base": {
+            "file": "skilltree.json",
+            "generatedFrom": {
+                "gameparams": "GameParams.json (WG client dump, WoWSP-extract cache)",
+                "layout": "wowsft_skills.json (WoWSFT-Kotlin live layout cache)",
+                "names": "wowsinfo_lang.json (IDS_SKILL_* bridge)",
+            },
+        },
+        "override": [
+            {
+                "cell": {"class": "CV", "tier": 2, "column": 3},
+                "wgCode": "PlanesConsumablesActiveManeuveringUpgrade",
+                "lestaCode": "PlanesConsumablesRegeneratehealthUpgrade",
+                "why": "WG removed the Regeneratehealth skill (dead WoWSFT "
+                       "layout cell, substituted on WG per "
+                       "LAYOUT_CELL_OVERRIDES); Lesta still ships it as "
+                       "PCOK052. Names from wowsinfo "
+                       "IDS_SKILL_PLANES_CONSUMABLES_REGENERATEHEALTH_UPGRADE.",
+            }
+        ],
+        "knownUnknowns": {
+            "wgOnlySkillsKeptAsApproximation": wg_only,
+            "wgOnlySkillsNote":
+                "Present in the Lesta tree only because the tree is a WG-tree "
+                "copy; Lesta's PCOL001 catalog does not carry these codes, so "
+                "treat those cells as approximate.",
+            "lestaOnlySkillsNotPlaced": lesta_only,
+            "lestaOnlySkillsNote":
+                "In Lesta's PCOL001 catalog but absent from WG's skills.json "
+                "and unplaced on any grid — no defensible (tier, column) "
+                "source exists, so they are deliberately not invented into "
+                "the tree.",
+        },
+    }
+    text = (
+        "# skilltree_lesta.json — provenance & caveats\n"
+        "\n"
+        "Machine-readable sibling note for the Lesta build-planner skill tree.\n"
+        "Regenerate both together with:\n"
+        "`python scripts/extract/build_planner_data.py --realm lesta`\n"
+        "(offline: reads the WG + Lesta GameParams dumps and the ru/zh mo\n"
+        "caches in the WoWSP-extract cache dir; never downloads).\n"
+        "\n"
+        "```json\n"
+        + json.dumps(payload, ensure_ascii=False, indent=1) + "\n"
+        "```\n"
+    )
+    out_path.write_text(text, encoding="utf-8")
+
+
 # ── icon extraction (PNG blob slicing matched by size+crc against metadata) ──
 
 def find_pkg_png(pkg_data: bytes, size: int, crc: int | None) -> bytes | None:
@@ -441,6 +785,95 @@ def png_to_webp(png: bytes, max_side: int | None = None) -> bytes:
     return buf.getvalue()
 
 
+def emit_lesta(args) -> int:
+    """--realm lesta: the four Lesta captain datasets + the provenance note.
+
+    Fully offline and deterministic: reads the WG GameParams + wowsinfo +
+    WoWSFT caches (the base tree and every display name), the Lesta dump
+    (--gameparams-lesta) and the ru/zh mo caches. Emits
+    skilltree_lesta.json / skills_lesta.json / signals_lesta.json /
+    commanders_lesta.json into OUT_DATA plus the skilltree_lesta.NOTES.md
+    provenance sibling. --only / --no-net / --no-icons are WG-flow options
+    and are rejected here to keep the emission contract exact.
+    """
+    if args.only or args.no_net or args.no_icons:
+        print("error: --realm lesta emits the full captain dataset set; "
+              "--only/--no-net/--no-icons are WG-flow options", file=sys.stderr)
+        return 1
+    lesta_path = pathlib.Path(args.gameparams_lesta)
+    if not lesta_path.is_file():
+        print(f"error: Lesta GameParams not found: {lesta_path}", file=sys.stderr)
+        return 1
+    for cache in (LESTA_MO_RU_JSON, LESTA_MO_ZH_JSON):
+        if not cache.is_file():
+            print(f"error: {cache} not found — dump the Lesta mo caches first",
+                  file=sys.stderr)
+            return 1
+
+    print(f"[planner] lesta: loading WG base + {lesta_path.name} "
+          f"({lesta_path.stat().st_size >> 20} MB) ...", flush=True)
+    txt = GAMEPARAMS_JSON.read_text(encoding="utf-8")
+    lesta_txt = lesta_path.read_text(encoding="utf-8")
+    lang = load_lang()
+    wowsft = json.loads(
+        fetch_cached(WOWSFT_SKILLS_URL, "wowsft_skills.json").read_text(encoding="utf-8"))
+    wg_tree = extract_skilltree(txt, lang, wowsft)
+    wg_skills = json.loads((OUT_DATA / "skills.json").read_text(encoding="utf-8"))
+    mo_ru = json.loads(LESTA_MO_RU_JSON.read_text(encoding="utf-8"))
+    mo_zh = json.loads(LESTA_MO_ZH_JSON.read_text(encoding="utf-8"))
+
+    tree = extract_skilltree_lesta(wg_tree, lang)
+    (OUT_DATA / "skilltree_lesta.json").write_text(
+        json.dumps(tree, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    print("[planner] skilltree_lesta.json: "
+          + ", ".join(f"{c}={len(v)}" for c, v in tree.items()))
+    cv23 = lambda t: next((r["code"] for r in t["CV"]
+                           if r["tier"] == 2 and r["column"] == 3), None)
+    print(f"[planner] CV tier-2 col-3: WG={cv23(wg_tree)} Lesta={cv23(tree)}")
+
+    skills, stats = extract_skills_lesta(tree, wg_skills, lesta_txt)
+    (OUT_DATA / "skills_lesta.json").write_text(
+        json.dumps(skills, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    n_new = len(stats["modifierKeysNewVsWg"])
+    n_wg_only = len(stats["modifierKeysWgOnly"])
+    print(f"[planner] skills_lesta.json: {stats['keys']} codes "
+          f"(catalog {stats['catalogCodes']}, of which "
+          f"{stats['catalogAlsoInWgSkills']} also in WG skills.json); "
+          f"modifier keys new vs WG: {n_new}, WG-only: {n_wg_only}")
+    if stats["noPcokObject"]:
+        print("[planner] skills_lesta.json: no PCOK object for "
+              + ", ".join(stats["noPcokObject"]))
+    if stats["emptyModifiers"]:
+        print("[planner] skills_lesta.json: empty REGULAR.modifiers (trigger "
+              "skills) for " + ", ".join(stats["emptyModifiers"]))
+    if stats["modifierKeysNewVsWg"]:
+        print("[planner]   new modifier keys: "
+              + ", ".join(stats["modifierKeysNewVsWg"]))
+
+    signals = extract_signals_lesta(lesta_txt, mo_ru, mo_zh)
+    (OUT_DATA / "signals_lesta.json").write_text(
+        json.dumps(signals, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    tiers = sorted({s["tier"] for s in signals})
+    fams = sorted({s["family"] for s in signals})
+    print(f"[planner] signals_lesta.json: {len(signals)} flags "
+          f"({len(fams)} families x tiers {tiers})")
+
+    commanders = extract_commanders_lesta(lesta_txt)
+    (OUT_DATA / "commanders_lesta.json").write_text(
+        json.dumps(commanders, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    print(f"[planner] commanders_lesta.json: {len(commanders)} unique commanders")
+
+    catalog = []
+    for _name, e in entries_of(lesta_txt, '"PCOL001_CommonCrewSkills"',
+                               lambda x: x.get("name") == "PCOL001_CommonCrewSkills"):
+        catalog = [k for k in e if k not in ("id", "index", "name", "typeinfo")]
+    write_skilltree_lesta_notes(
+        tree, wg_tree, catalog, wg_skills, OUT_DATA / "skilltree_lesta.NOTES.md")
+    print(f"[planner] skilltree_lesta.NOTES.md: base + override + "
+          f"{len(catalog)}-code catalog cross-reference")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--game", default=None, help="WoWS install root (default auto-detect)")
@@ -448,6 +881,15 @@ def main() -> int:
     ap.add_argument("--portrait-size", type=int, default=256)
     ap.add_argument("--no-icons", action="store_true", help="data only, skip icon downloads/scan")
     ap.add_argument("--no-net", action="store_true", help="data only from GameParams (skip upstream names/layout)")
+    ap.add_argument("--realm", choices=("wg", "lesta"), default="wg",
+                    help="wg (default): the WG datasets as before; lesta: emit "
+                         "the Lesta captain datasets (skilltree_lesta.json, "
+                         "skills_lesta.json, signals_lesta.json, "
+                         "commanders_lesta.json + skilltree_lesta.NOTES.md) "
+                         "and skip the WG emission")
+    ap.add_argument("--gameparams-lesta", default=str(GAMEPARAMS_LESTA_JSON),
+                    help="Lesta GameParams.json for --realm lesta (default: "
+                         "the WoWSP-extract cache dump)")
     ap.add_argument("--only", choices=("signals", "modernizations", "commanders", "skilltree",
                                        "consumables", "crew-presets", "ship-basics"),
                     help="regenerate a single dataset (skip the rest and all icon work)")
@@ -456,6 +898,9 @@ def main() -> int:
     if not GAMEPARAMS_JSON.exists():
         print(f"error: {GAMEPARAMS_JSON} not found — run `just extract` first", file=sys.stderr)
         return 1
+
+    if args.realm == "lesta":
+        return emit_lesta(args)
 
     print(f"[planner] loading {GAMEPARAMS_JSON} ...", flush=True)
     txt = GAMEPARAMS_JSON.read_text(encoding="utf-8")

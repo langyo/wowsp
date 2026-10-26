@@ -1384,6 +1384,23 @@
    }
   },
   {
+   "code": "PlanesConsumablesActiveManeuveringUpgrade",
+   "tier": 2,
+   "column": 3,
+   "name": {
+    "en": "Combat Maneuver Specialist",
+    "ja": "戦闘機動専門家",
+    "zh": "战斗机动专家",
+    "tw": "戰鬥機動專家"
+   },
+   "desc": {
+    "en": " ",
+    "ja": " ",
+    "zh": " ",
+    "tw": " "
+   }
+  },
+  {
    "code": "AaDamageConstantBubblesCv",
    "tier": 2,
    "column": 4,

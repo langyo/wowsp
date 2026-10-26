@@ -518,9 +518,15 @@
     "costRetrain": "Reciclado (est.)",
     "costRetrainHint": "Estimado: 100.000 créditos por punto de habilidad; manda el precio del juego.",
     "costFlags": "Señales",
-    "costFlagsNote": "Equipar señales no cuesta nada"
+    "costFlagsNote": "Equipar señales no cuesta nada",
+    "realm": "Implementación de servidor",
+    "realmHint": "Cambia toda la vista de barcos entre las implementaciones de servidor WG y Lesta: el árbol tecnológico y la fuente de datos de la enciclopedia, los árboles de habilidades, los comandantes y las señales siguen el clúster elegido."
   },
   "flags": {
+    "tier1": "Estándar",
+    "tier2": "Especial",
+    "tier3": "Raro",
+    "tier4": "Élite",
     "effect": {
       "AAAuraDamage": "Daños AA continuos",
       "AABubbleDamage": "Daños de nubes antiaéreas",
@@ -549,7 +555,20 @@
       "planeConsumableReloadTime": "Recarga de consumibles de aeronaves",
       "submarineLocatorReloadCoeff": "Recarga del localizador de submarinos",
       "burnChanceFactorBig": "Probabilidad de incendio de los obuses HE",
-      "burnChanceFactorSmall": "Probabilidad de incendio de los obuses HE"
+      "burnChanceFactorSmall": "Probabilidad de incendio de los obuses HE",
+      "GMIdealRadius": "Dispersión de la artillería principal",
+      "GMSIdealRadius": "Dispersión de la artillería secundaria",
+      "burnChanceBonus": "Probabilidad de incendio de los obuses HE",
+      "floodChanceCommonBonus": "Probabilidad de inundación",
+      "planeSpreadMultiplier": "Dispersión de las aeronaves",
+      "planeTorpedoSpeedMultiplier": "Velocidad de los torpedos aéreos",
+      "torpedoSpeedMultiplier": "Velocidad de los torpedos",
+      "planeForsageTimeCoeff": "Duración del impulso del motor",
+      "ConsumablesWorkTime": "Duración de los consumibles",
+      "planeConsumablesWorkTime": "Duración de los consumibles de aeronaves",
+      "planeBubbleArmorCoeff": "Daños recibidos por las aeronaves",
+      "shootShift": "Desplazamiento del punto de mira",
+      "vulnerabilityDBomb": "Daños de bombardeo en picado recibidos"
     }
   },
   "talent": {

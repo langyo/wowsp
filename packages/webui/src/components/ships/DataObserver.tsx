@@ -5,6 +5,7 @@ import { HkIconButtonGroup, HkScrollContainer } from "@celestia-island/hikari";
 import { buildShipSpecs } from "./shipSpecs";
 import { recomputeStats, type ModifiedStats, type PlannerBuild } from "./modifierPipeline";
 import { mainCaliberMm } from "./shipParts";
+import type { TechTreeRealm } from "@/utils/techTreeData";
 import { t } from "@/i18n";
 import type { ShipInfo } from "@/api";
 import "./DataObserver.scss";
@@ -52,6 +53,10 @@ export default defineComponent({
     /** Raw GameParams entry (lazy-fetched by the modal) — feeds the
      *  per-band AA rows; null keeps the AA group absent. */
     gameparams: { type: Object as PropType<Record<string, unknown> | null>, default: null },
+    /** Which server implementation's captain data the build uses — the
+     *  planner's realm (skills / signals catalogs). Defaults to WG so any
+     *  non-planner host keeps its behavior. */
+    realm: { type: String as PropType<TechTreeRealm>, default: "wg" },
   },
   setup(props) {
     const profile = computed(() => (props.ship.defaultProfile ?? {}) as Record<string, unknown>);
@@ -66,6 +71,7 @@ export default defineComponent({
         // WG's default_profile has no caliber field; the GameParams-derived
         // value un-gates the caliber-conditional fire-chance modifiers.
         mainCaliberMm(props.gameparams),
+        props.realm,
       ),
     );
 

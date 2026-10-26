@@ -518,9 +518,15 @@
     "costRetrain": "Переобучение (оценка)",
     "costRetrainHint": "Оценка: 100 000 кредитов за очко навыка; в игре цена может отличаться.",
     "costFlags": "Сигнальные флаги",
-    "costFlagsNote": "Флаги не расходуют валюту"
+    "costFlagsNote": "Флаги не расходуют валюту",
+    "realm": "Реализация сервера",
+    "realmHint": "Переключает весь раздел кораблей между реализациями серверов WG и Lesta: дерево исследований и источник данных энциклопедии, деревья навыков, командиры и сигнальные флаги следуют выбранному кластеру."
   },
   "flags": {
+    "tier1": "Стандартный",
+    "tier2": "Особый",
+    "tier3": "Редкий",
+    "tier4": "Элитный",
     "effect": {
       "AAAuraDamage": "Непрерывный урон ПВО",
       "AABubbleDamage": "Урон от разрывов ПВО",
@@ -549,7 +555,20 @@
       "planeConsumableReloadTime": "Перезарядка снаряжения авиации",
       "submarineLocatorReloadCoeff": "Перезарядка локатора подлодок",
       "burnChanceFactorBig": "Шанс пожара от ОФ",
-      "burnChanceFactorSmall": "Шанс пожара от ОФ"
+      "burnChanceFactorSmall": "Шанс пожара от ОФ",
+      "GMIdealRadius": "Рассеивание орудий ГК",
+      "GMSIdealRadius": "Рассеивание ПМК",
+      "burnChanceBonus": "Шанс пожара от ОФ",
+      "floodChanceCommonBonus": "Шанс затопления",
+      "planeSpreadMultiplier": "Рассеивание авиации",
+      "planeTorpedoSpeedMultiplier": "Скорость авиаторпед",
+      "torpedoSpeedMultiplier": "Скорость торпед",
+      "planeForsageTimeCoeff": "Время форсажа",
+      "ConsumablesWorkTime": "Время действия снаряжения",
+      "planeConsumablesWorkTime": "Время действия снаряжения авиации",
+      "planeBubbleArmorCoeff": "Урон, получаемый авиацией",
+      "shootShift": "Смещение точки прицеливания",
+      "vulnerabilityDBomb": "Получаемый урон от бомб пикирования"
     }
   },
   "talent": {

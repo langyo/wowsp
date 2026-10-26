@@ -518,9 +518,15 @@
     "costRetrain": "重训费用（估算）",
     "costRetrainHint": "估算口径：每技能点 100,000 银币；实际以游戏内为准。",
     "costFlags": "信号旗",
-    "costFlagsNote": "装备信号旗不消耗货币"
+    "costFlagsNote": "装备信号旗不消耗货币",
+    "realm": "服务器实现模式",
+    "realmHint": "在 WG 与 Lesta 服务器实现之间切换整个舰船视图：科技树与百科数据源、技能树、舰长与信号旗均跟随所选服务器。"
   },
   "flags": {
+    "tier1": "标准",
+    "tier2": "特别",
+    "tier3": "稀有",
+    "tier4": "精英",
     "effect": {
       "AAAuraDamage": "防空持续伤害",
       "AABubbleDamage": "防空弹幕伤害",
@@ -549,7 +555,20 @@
       "planeConsumableReloadTime": "舰载机消耗品装填时间",
       "submarineLocatorReloadCoeff": "潜艇定位器装填时间",
       "burnChanceFactorBig": "HE弹起火率",
-      "burnChanceFactorSmall": "HE弹起火率"
+      "burnChanceFactorSmall": "HE弹起火率",
+      "GMIdealRadius": "主炮散布",
+      "GMSIdealRadius": "副炮散布",
+      "burnChanceBonus": "HE弹起火率",
+      "floodChanceCommonBonus": "进水几率",
+      "planeSpreadMultiplier": "舰载机散布",
+      "planeTorpedoSpeedMultiplier": "航空鱼雷航速",
+      "torpedoSpeedMultiplier": "鱼雷航速",
+      "planeForsageTimeCoeff": "引擎增压时间",
+      "ConsumablesWorkTime": "消耗品持续时间",
+      "planeConsumablesWorkTime": "舰载机消耗品持续时间",
+      "planeBubbleArmorCoeff": "舰载机受到的伤害",
+      "shootShift": "瞄准偏移",
+      "vulnerabilityDBomb": "俯冲轰炸承受的伤害"
     }
   },
   "talent": {

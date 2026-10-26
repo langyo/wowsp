@@ -518,9 +518,15 @@
     "costRetrain": "Recyclage (est.)",
     "costRetrainHint": "Estimation : 100 000 crédits par point de compétence ; le prix en jeu prime.",
     "costFlags": "Signaux",
-    "costFlagsNote": "Équiper des signaux ne coûte rien"
+    "costFlagsNote": "Équiper des signaux ne coûte rien",
+    "realm": "Implémentation serveur",
+    "realmHint": "Bascule toute la vue navires entre les implémentations serveur WG et Lesta : l'arbre technologique et la source de données de l'encyclopédie, les arbres de compétences, les commandants et les pavillons suivent le cluster choisi."
   },
   "flags": {
+    "tier1": "Standard",
+    "tier2": "Spécial",
+    "tier3": "Rare",
+    "tier4": "Élite",
     "effect": {
       "AAAuraDamage": "Dégâts AA continus",
       "AABubbleDamage": "Dégâts des nuages AA",
@@ -549,7 +555,20 @@
       "planeConsumableReloadTime": "Rechargement des consommables aériens",
       "submarineLocatorReloadCoeff": "Rechargement du localisateur de sous-marins",
       "burnChanceFactorBig": "Chance d'incendie des obus HE",
-      "burnChanceFactorSmall": "Chance d'incendie des obus HE"
+      "burnChanceFactorSmall": "Chance d'incendie des obus HE",
+      "GMIdealRadius": "Dispersion de l'artillerie principale",
+      "GMSIdealRadius": "Dispersion de l'artillerie secondaire",
+      "burnChanceBonus": "Chance d'incendie des obus HE",
+      "floodChanceCommonBonus": "Chance d'inondation",
+      "planeSpreadMultiplier": "Dispersion des avions",
+      "planeTorpedoSpeedMultiplier": "Vitesse des torpilles aériennes",
+      "torpedoSpeedMultiplier": "Vitesse des torpilles",
+      "planeForsageTimeCoeff": "Durée du boost moteur",
+      "ConsumablesWorkTime": "Durée des consommables",
+      "planeConsumablesWorkTime": "Durée des consommables aériens",
+      "planeBubbleArmorCoeff": "Dégâts subis par les avions",
+      "shootShift": "Décalage du point de visée",
+      "vulnerabilityDBomb": "Dégâts de bombardement en piqué subis"
     }
   },
   "talent": {
