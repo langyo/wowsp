@@ -24,5 +24,13 @@
   "colHeadBattles": "场次",
   "colHeadDmg": "场均",
   "colHeadKd": "击杀比",
-  "colHeaderJoin": ""
+  "colHeaderJoin": "",
+  "chat": {
+    "title": "聊天翻译",
+    "loading": "正在翻译…",
+    "ready": "翻译就绪",
+    "pasteHint": "按 Enter 打开聊天，Ctrl+V 粘贴发送",
+    "unavailable": "翻译不可用",
+    "remaining": "还剩 {count} 条待粘贴"
+  }
 }

@@ -24,5 +24,13 @@
   "colHeadBattles": "Бои",
   "colHeadDmg": "Урон",
   "colHeadKd": "K/D",
-  "colHeaderJoin": " "
+  "colHeaderJoin": " ",
+  "chat": {
+    "title": "Перевод чата",
+    "loading": "Перевод…",
+    "ready": "Перевод готов",
+    "pasteHint": "Нажмите Enter, чтобы открыть чат, и Ctrl+V, чтобы вставить и отправить",
+    "unavailable": "Перевод недоступен",
+    "remaining": "Осталось вставить: {count}"
+  }
 }

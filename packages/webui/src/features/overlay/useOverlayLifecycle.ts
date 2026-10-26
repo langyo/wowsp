@@ -1,15 +1,17 @@
 /**
  * Live-battle display lifecycle (main window): while the game runs and
- * EITHER overlay window switch wants a window — the view mode
- * (`overlayConfig.table`) is `"detect"` or the aimed-player stats card
- * (`overlayConfig.aimCard`) is on — the hidden transparent overlay windows
- * exist (created once — they preload the webui so the first Tab press is
- * instant) and the Rust Tab watcher is running (`create_overlay_window`
- * starts both, idempotently). The two switches are independent and each
- * suppresses only its own window (the watcher reads the persisted flags
- * every tick); both off — or game exit — tears the mode down. The retired
- * `"ingame"` backend (the in-game plugin's stats bridge) is gone — a
- * stored pick migrates to `"detect"` (see stores/overlayConfig).
+ * ANY overlay window switch wants a window — the view mode
+ * (`overlayConfig.table`) is `"detect"`, the aimed-player stats card
+ * (`overlayConfig.aimCard`) is on, or the battle-chat translation card
+ * (`overlayConfig.chatPanel`) is on — the hidden transparent overlay
+ * windows exist (created once — they preload the webui so the first Tab
+ * press is instant) and the Rust Tab watcher is running
+ * (`create_overlay_window` starts both, idempotently). The switches are
+ * independent and each suppresses only its own window (the watcher reads
+ * the persisted flags every tick); all off — or game exit — tears the mode
+ * down. The retired `"ingame"` backend (the in-game plugin's stats bridge)
+ * is gone — a stored pick migrates to `"detect"` (see
+ * stores/overlayConfig).
  *
  * Mounted once from App.tsx (the main window root); the gameStatus store's
  * 3-second process poll drives it.
@@ -46,10 +48,12 @@ export function useOverlayLifecycle() {
   async function sync() {
     if (!overlayCfg.loaded) return;
     const running = game.process.running;
-    // Either window switch keeps the mode up; each switch's enforcement is
+    // Any window switch keeps the mode up; each switch's enforcement is
     // the watcher's per-tick read of the persisted flags, not the windows'
     // existence.
-    const wantOverlay = running && (overlayCfg.table === "detect" || overlayCfg.aimCard);
+    const wantOverlay =
+      running &&
+      (overlayCfg.table === "detect" || overlayCfg.aimCard || overlayCfg.chatPanel);
     // Realm of the running client: the probe's ground truth while its
     // telemetry stream is fresh (the local player's cluster straight off
     // the game's roster), else the process/install detection, else the
@@ -116,6 +120,7 @@ export function useOverlayLifecycle() {
       () => game.process.running,
       () => overlayCfg.table,
       () => overlayCfg.aimCard,
+      () => overlayCfg.chatPanel,
       () => overlayCfg.loaded,
       () => game.process.realm,
       // The active install's realm rides the same list: the config store's

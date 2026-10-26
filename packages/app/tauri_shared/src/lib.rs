@@ -9,6 +9,7 @@
 mod arena;
 mod blacklist;
 mod capabilities;
+mod chat_translate;
 mod contribution;
 mod decision;
 pub mod download;
@@ -28,6 +29,7 @@ mod supporters;
 pub use arena::*;
 pub use blacklist::*;
 pub use capabilities::*;
+pub use chat_translate::*;
 pub use contribution::*;
 pub use decision::*;
 pub use download::*;

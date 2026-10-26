@@ -139,6 +139,11 @@ export const RPC = {
   set_network_config: "set_network_config",
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
+  // Chat translation (commands/chat_translate/): provider config storage
+  // plus the OpenAI-compatible endpoint's connectivity test.
+  get_chat_translate_config: "get_chat_translate_config",
+  set_chat_translate_config: "set_chat_translate_config",
+  test_chat_translate_provider: "test_chat_translate_provider",
   ingame_plugin_status: "ingame_plugin_status",
   ingame_plugin_install: "ingame_plugin_install",
   ingame_plugin_uninstall: "ingame_plugin_uninstall",

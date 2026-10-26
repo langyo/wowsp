@@ -21,6 +21,7 @@ export type SettingsSection =
   | "installCleanup"
   | "changelog"
   | "overlayCalibration"
+  | "chatTranslate"
   | "feedback"
   | "about"
   | "attributions"
@@ -45,7 +46,7 @@ export interface SettingsGroupSpec {
 
 export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "general", sections: ["language", "appearance", "closeBehavior"] },
-  { id: "game", sections: ["stats", "overlayCalibration", "gamePath"] },
+  { id: "game", sections: ["stats", "overlayCalibration", "chatTranslate", "gamePath"] },
   { id: "connection", sections: ["account", "network", "blacklistSync", "pairing"] },
   { id: "app", sections: ["updates", "resources", "installCleanup", "changelog"] },
   { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
@@ -85,6 +86,10 @@ const MOBILE_HIDDEN_SECTIONS: readonly SettingsSection[] = [
   // Tab-overlay detector's world, which the phone build (no overlay
   // window) has no use for.
   "overlayCalibration",
+  // Desktop-only: chat translation configures the in-game chat bridge and
+  // the transparent overlay's translation panel — neither exists on the
+  // phone build (no overlay window, no game chat there).
+  "chatTranslate",
   // Desktop-only: the phone build has no system tray and no window close
   // button, so there is no close behavior to configure.
   "closeBehavior",

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WoWSP Chat Translation</title>
+    <script type="module" src="/src/overlay/chat.ts"></script>
+  </head>
+  <body>
+    <!-- Populated by src/overlay/chat.ts from wowsp://chat-translate events
+         (the battle's translated chat lines, rendered bottom-left while Tab
+         is held). Deliberately static: no Vue, no loading state — the Rust
+         watcher only shows this window when a battle is known, the chat
+         translation card is enabled and Tab is down; with no lines the page
+         paints nothing at all. -->
+  </body>
+</html>

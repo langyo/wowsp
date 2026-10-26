@@ -24,5 +24,13 @@
   "colHeadBattles": "Batailles",
   "colHeadDmg": "Dégâts",
   "colHeadKd": "K/D",
-  "colHeaderJoin": " "
+  "colHeaderJoin": " ",
+  "chat": {
+    "title": "Traduction du chat",
+    "loading": "Traduction…",
+    "ready": "Traduction prête",
+    "pasteHint": "Appuyez sur Entrée pour ouvrir le chat, Ctrl+V pour coller et envoyer",
+    "unavailable": "Traduction indisponible",
+    "remaining": "{count} message(s) restant(s) à coller"
+  }
 }

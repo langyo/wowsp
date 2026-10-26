@@ -29,6 +29,8 @@ import type { OverlayDiag } from "@/api";
 import {
   AIM_CARD_HANG_SLIDER_MAX,
   AIM_CARD_HANG_SLIDER_MIN,
+  CHAT_PANEL_MAX_LINES_MAX,
+  CHAT_PANEL_MAX_LINES_MIN,
   useOverlayConfigStore,
   type RosterRecognitionMode,
   type TableAnchorMode,
@@ -118,10 +120,11 @@ export default defineComponent({
     return () => (
           <>
           {/* The in-game water meter — the window switches pick which of
-              the two transparent windows are up while the game runs: the
-              hold-Tab team table (per-player WR / avg damage) and the
-              aimed-player stats card hanging below the crosshair. They are
-              independent — the overlay mode stays up while either is on.
+              the transparent windows are up while the game runs: the
+              hold-Tab team table (per-player WR / avg damage), the
+              aimed-player stats card hanging below the crosshair and the
+              battle-chat translation card at the bottom-left. They are
+              independent — the overlay mode stays up while any is on.
               The roster switch picks the plugin telemetry (the default) or
               the screen-capture pipeline, and its strip auto-disables
               while the table switch is off; the plugin's Discussions page
@@ -196,11 +199,47 @@ export default defineComponent({
                     />
                   </div>
                 </div>
+                {/* The battle-chat translation card — the third transparent
+                    window (bottom-left, revealed while Tab is held). OFF by
+                    default: the translation feature is opt-in, and its own
+                    master switch lives in the chat section. This switch only
+                    makes the window eligible; the watcher still gates on a
+                    known battle and the Tab hold. */}
+                <div class="stats-prefs__row">
+                  <span class="stats-prefs__row-text">
+                    <span class="stats-prefs__row-label">{t("settings.chatTranslate.panelEnable")}</span>
+                    <span class="stats-prefs__row-desc">{t("settings.chatTranslate.panelEnableDesc")}</span>
+                  </span>
+                  <HkSwitch
+                    modelValue={overlayCfg.chatPanel}
+                    onUpdate:modelValue={(v: boolean) => void overlayCfg.setChatPanel(v)}
+                  />
+                </div>
+                {/* The card's per-battle line cap — the same window the shell
+                    clamps to (3–30 lines). Greys out with the card's switch
+                    off, like the aim card's hang row above. */}
+                <div class="stats-prefs__row">
+                  <span class="stats-prefs__row-text">
+                    <span class="stats-prefs__row-label">{t("settings.chatTranslate.panelMaxLines")}</span>
+                  </span>
+                  <div class="overlay-sec__hang-controls">
+                    <HkSlider
+                      class="overlay-sec__hang-slider"
+                      min={CHAT_PANEL_MAX_LINES_MIN}
+                      max={CHAT_PANEL_MAX_LINES_MAX}
+                      step={1}
+                      modelValue={overlayCfg.chatPanelMaxLines}
+                      onUpdate:modelValue={(v: number) => void overlayCfg.setChatPanelMaxLines(v)}
+                      disabled={!overlayCfg.chatPanel}
+                      ariaLabel={t("settings.chatTranslate.panelMaxLines")}
+                    />
+                  </div>
+                </div>
               </div>
-              {/* Fullscreen limits the overlay windows only — with both
-                  switches off there is nothing to display in the first
+              {/* Fullscreen limits the overlay windows only — with every
+                  switch off there is nothing to display in the first
                   place. */}
-              {overlayCfg.table === "detect" || overlayCfg.aimCard ? (
+              {overlayCfg.table === "detect" || overlayCfg.aimCard || overlayCfg.chatPanel ? (
                 <HkSettingsHint>{t("settings.overlayFullscreenNote")}</HkSettingsHint>
               ) : null}
             </HkSettingsSub>
