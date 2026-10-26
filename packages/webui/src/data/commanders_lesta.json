@@ -1,0 +1,1190 @@
+[
+ {
+  "name": "PAW100_Willis_Lee",
+  "person": "Willis_Lee",
+  "nations": [
+   "USA"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "allConsumableReloadTime": 0.925,
+       "allConsumableWorkTime": 1.075,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 24
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerAchievement2",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "allWeaponsReloadFactor": 0.9,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 25
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PAW102_Halsey",
+  "person": "Halsey",
+  "nations": [
+   "USA"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "planeVisibilityFactor": 0.9,
+       "uniqueType": 3
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerAchievement2",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMSShotDelay": 0.8,
+       "GMShotDelay": 0.8,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.9,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 2
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PBW100_Cunningham",
+  "person": "CUNNINGHAM",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMSShotDelay": 0.9,
+       "GMShotDelay": 0.9,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.9,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 2
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "speedCoef": 1.05,
+       "uniqueType": 8
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "planeSpeed": 1.05,
+       "uniqueType": 15
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons2",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "additionalConsumables": 1,
+       "levelDependent": false,
+       "percentTalent": true,
+       "planeAdditionalConsumables": 0,
+       "uniqueType": 0
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PFW405_Auboyneau",
+  "person": "AUBOYNEAU",
+  "nations": [
+   "France"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMSShotDelay": 0.95,
+       "GMShotDelay": 0.95,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.95,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 2
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerDamage1",
+    "triggerType": "damage",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "speedCoef": 1.08,
+       "uniqueType": 8
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "burnChanceBonus": 0.01,
+       "burnChanceFactorBig": 0.0,
+       "floodChanceFactorTorpedo": 1.1,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 7
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PGW103_Lutjens",
+  "person": "LUTJENS",
+  "nations": [
+   "Germany"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GSShotDelay": 0.85,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 14
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons2",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMSShotDelay": 0.925,
+       "GMShotDelay": 0.925,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 13
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons3",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": true,
+       "percentTalent": false,
+       "regenerationHPSpeed": 300,
+       "uniqueType": 1,
+       "workTime": 0.0
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons4",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 12
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PIW101_Sansonetti",
+  "person": "SANSONETTI",
+  "nations": [
+   "Italy"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMSShotDelay": 0.85,
+       "GMShotDelay": 0.85,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 13
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "ConsumablesWorkTime": 1.1,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 10
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons2",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMMaxDist": 1.08,
+       "GMSMaxDist": 1.08,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 9
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PJW018_Yamamoto",
+  "person": "Yamamoto",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "additionalConsumables": 1,
+       "levelDependent": false,
+       "percentTalent": true,
+       "planeAdditionalConsumables": 1,
+       "uniqueType": 0
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerAchievement2",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMSShotDelay": 0.66,
+       "GMShotDelay": 0.66,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.84,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 2
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "regenerationHPSpeed": 0.004,
+       "uniqueType": 1,
+       "workTime": 120.0
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PJW461_Togo_Heihachiro",
+  "person": "TOGO",
+  "nations": [
+   "Japan"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 20
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "SGRudderTime": 0.75,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 21
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "speedCoef": 1.075,
+       "uniqueType": 8
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMSShotDelay": 0.98,
+       "GMShotDelay": 0.98,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 0.98,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 2
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PRW406_Kuznetsov",
+  "person": "KUZNETSOV",
+  "nations": [
+   "Russia"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "additionalConsumables": 1,
+       "levelDependent": false,
+       "percentTalent": true,
+       "planeAdditionalConsumables": 1,
+       "uniqueType": 0
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerHealth1",
+    "triggerType": "health",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 5,
+       "workTime": 15.0
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "regenerationHPSpeed": 0.0035,
+       "uniqueType": 1,
+       "workTime": 15.0
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "shootShift": 1.2,
+       "uniqueType": 6,
+       "workTime": 15.0
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PRW444_Makarov",
+  "person": "MAKAROV",
+  "nations": [
+   "Russia"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerDeadAllies1",
+    "triggerType": "deadAllies",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "additionalConsumables": 1,
+       "levelDependent": false,
+       "percentTalent": true,
+       "planeAdditionalConsumables": 1,
+       "uniqueType": 0
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "ConsumablesWorkTime": 1.1,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 10
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 17
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMMaxDist": 1.015,
+       "GMSMaxDist": 1.015,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 9
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "GMIdealRadius": 0.985,
+       "GMSIdealRadius": 0.985,
+       "levelDependent": false,
+       "percentTalent": true,
+       "planeSpreadMultiplier": 0.985,
+       "uniqueType": 22
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PVW404_Jason_Tumanoff_Legend",
+  "person": "Jason_Tumanoff",
+  "nations": [
+   "Pan_America"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerEnemyVehiclesDead1",
+    "triggerType": "enemyVehiclesDead",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMAPDamageCoeff": 1.03,
+       "GMSAPDamageCoeff": 1.03,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 23
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRageMode1",
+    "triggerType": "rageMode",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": true,
+       "percentTalent": true,
+       "regenerationHPSpeed": 0.0035,
+       "uniqueType": 1,
+       "workTime": 0.0
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "speedCoef": 1.1,
+       "uniqueType": 8
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PWW010_Swirski",
+  "person": "SWIRSKI",
+  "nations": [
+   "Europe"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GTShotDelay": 0.95,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 11
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons2",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 16
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PZW426_Sa_Zhenbing",
+  "person": "Sa_Zhenbing",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": [
+   {
+    "id": "UniqueSkillTriggerAchievement1",
+    "triggerType": "achievement",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "GMSShotDelay": 0.8,
+       "GMShotDelay": 0.8,
+       "GSShotDelay": 1.0,
+       "GTShotDelay": 1.0,
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 2
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerDamage1",
+    "triggerType": "damage",
+    "activatorType": "",
+    "maxTriggerNum": 100,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "uniqueType": 17
+      },
+      "levels": {}
+     }
+    ]
+   },
+   {
+    "id": "UniqueSkillTriggerRibbons1",
+    "triggerType": "ribbons",
+    "activatorType": "",
+    "maxTriggerNum": 1,
+    "activator": {},
+    "actions": [
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "torpedoReloaderAdditionalConsumables": 1,
+       "torpedoReloaderReloadCoeff": 0.75,
+       "uniqueType": 19
+      },
+      "levels": {}
+     },
+     {
+      "base": {
+       "levelDependent": false,
+       "percentTalent": true,
+       "torpedoSpeedMultiplier": 1.05,
+       "uniqueType": 18
+      },
+      "levels": {}
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "name": "PAW101_Seagal",
+  "person": "Seagal",
+  "nations": [
+   "USA"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PAW103_UsaCap",
+  "person": "USACAP",
+  "nations": [
+   "USA"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PAW404_Ovechkin",
+  "person": "USAOVECHKIN",
+  "nations": [
+   "USA"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PAW405_OvechkinPrem",
+  "person": "USAOVECHKINPREM",
+  "nations": [
+   "USA"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PAW406_OvechkinPremHell",
+  "person": "USAOVECHKINPREMHELL",
+  "nations": [
+   "USA"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PAW410_Theodore_Chandler",
+  "person": "THEODORECHANDLER",
+  "nations": [
+   "USA"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PBW101_Dunk_Capn",
+  "person": "Dunk_Capn",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PBW102_UKCap",
+  "person": "UKCAP",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PBW406_Horace_Hood",
+  "person": "HORACEHOOD",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PBW424_Unsinkable_Sam",
+  "person": "Unsinkable_Sam_UK",
+  "nations": [
+   "United_Kingdom"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PFW101_France_Cap",
+  "person": "FRANCE_CAP",
+  "nations": [
+   "France"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PFW102_France_Cap_Prem",
+  "person": "FRANCECAPPREM",
+  "nations": [
+   "France"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PGW101_GerCap",
+  "person": "GERCAP",
+  "nations": [
+   "Germany"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PGW102_GerCapPrem",
+  "person": "GERCAPPREM",
+  "nations": [
+   "Germany"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PGW407_Friedrich_Bonte",
+  "person": "FRIEDRICHBONTE",
+  "nations": [
+   "Germany"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PGW420_HannoverCap",
+  "person": "HANNOVER_CAP",
+  "nations": [],
+  "talents": []
+ },
+ {
+  "name": "PGW430_Unsinkable_Sam",
+  "person": "Unsinkable_Sam_Ger",
+  "nations": [
+   "Germany"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PHW101_Ruyter_Cap",
+  "person": "De_Ruyter",
+  "nations": [
+   "Netherlands"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PHW102_Klaas_Cap",
+  "person": "De_Jong",
+  "nations": [
+   "Netherlands"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PJW019_GoldCap",
+  "person": "Raizo_Suzuki",
+  "nations": [
+   "Japan"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PJW020_JapCap",
+  "person": "Takeo_Suzuki",
+  "nations": [
+   "Japan"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PJW408_Ijuin_Matsuji",
+  "person": "IJUINMATSUJI",
+  "nations": [
+   "Japan"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PJW415_Kaguya",
+  "person": "Kaguya",
+  "nations": [
+   "Japan"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PJW424_SatsumaCap",
+  "person": "SATSUMA_CAP",
+  "nations": [],
+  "talents": []
+ },
+ {
+  "name": "PJW460_ChangeDual",
+  "person": "ChangeDual",
+  "nations": [
+   "Japan"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PRW002_MayCap",
+  "person": "MayCap",
+  "nations": [
+   "Russia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PRW003_RusCap",
+  "person": "RUSCAP",
+  "nations": [
+   "Russia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PRW404_Ovechkin",
+  "person": "USSROVECHKIN",
+  "nations": [
+   "Russia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PRW410_Trubetskoy_VV",
+  "person": "TRUBETSKOY",
+  "nations": [
+   "Russia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PRW422_MK_MT_fan",
+  "person": "MK_MT",
+  "nations": [
+   "Russia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PRW448_OvechkinPrem",
+  "person": "USSROVECHKINPREM",
+  "nations": [
+   "Russia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PRW449_OvechkinPremHell",
+  "person": "USSROVECHKINPREMHELL",
+  "nations": [
+   "Russia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PVW101_Francisco_Ferreira",
+  "person": "FRANCISCO_FERREIRA",
+  "nations": [
+   "Pan_America"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PVW102_Pedro_Max",
+  "person": "Pedro_Max",
+  "nations": [
+   "Pan_America"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PWW011_Grzegorz",
+  "person": "GRZEGORZ",
+  "nations": [
+   "Europe"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PXW117_Dr_Frankenship_H18",
+  "person": "Dr_Frankenship_H18",
+  "nations": [],
+  "talents": []
+ },
+ {
+  "name": "PXW118_Mina_Ura_H18",
+  "person": "Mina_Ura_H18",
+  "nations": [],
+  "talents": []
+ },
+ {
+  "name": "PXW119_Sairus_Gerrero_H18",
+  "person": "Sairus_Gerrero_H18",
+  "nations": [],
+  "talents": []
+ },
+ {
+  "name": "PXW120_Klaus_Teslau_H18",
+  "person": "Klaus_Teslau_H18",
+  "nations": [],
+  "talents": []
+ },
+ {
+  "name": "PXW121_Lazar_Kent_H18",
+  "person": "Lazar_Kent_H18",
+  "nations": [],
+  "talents": []
+ },
+ {
+  "name": "PZW404_Da_Rong",
+  "person": "Da_Rong",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PZW405_Quan_Rong",
+  "person": "Quan_Rong",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PZW409_ChangeDual",
+  "person": "ChangeDual",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PZW410_Houyi",
+  "person": "Houyi",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PZW416_CnBanny",
+  "person": "CNBANNY",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": []
+ },
+ {
+  "name": "PZW417_CnRabbit",
+  "person": "CNRABBIT",
+  "nations": [
+   "Pan_Asia"
+  ],
+  "talents": []
+ }
+]

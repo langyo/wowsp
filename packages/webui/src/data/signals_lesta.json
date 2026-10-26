@@ -1,0 +1,554 @@
+[
+ {
+  "index": "PCEF101",
+  "name": "PCEF101_HPBoost_SignalFlag_1",
+  "names": {
+   "en": "November — Standard",
+   "ja": "November — 標準",
+   "zh": "November — 标准",
+   "tw": "November — 標準"
+  },
+  "desc": {},
+  "sortOrder": 1,
+  "modifiers": {
+   "burnTime": 0.875,
+   "floodTime": 0.875,
+   "healthHullCoeff": 1.025
+  },
+  "group": "november",
+  "tier": 1,
+  "family": "HPBoost"
+ },
+ {
+  "index": "PCEF102",
+  "name": "PCEF102_HPBoost_SignalFlag_2",
+  "names": {
+   "en": "November — Special",
+   "ja": "November — 特別",
+   "zh": "November — 特别",
+   "tw": "November — 特別"
+  },
+  "desc": {},
+  "sortOrder": 2,
+  "modifiers": {
+   "burnTime": 0.85,
+   "floodTime": 0.85,
+   "healthHullCoeff": 1.03
+  },
+  "group": "november",
+  "tier": 2,
+  "family": "HPBoost"
+ },
+ {
+  "index": "PCEF103",
+  "name": "PCEF103_HPBoost_SignalFlag_3",
+  "names": {
+   "en": "November — Rare",
+   "ja": "November — レア",
+   "zh": "November — 稀有",
+   "tw": "November — 稀有"
+  },
+  "desc": {},
+  "sortOrder": 3,
+  "modifiers": {
+   "burnTime": 0.825,
+   "floodTime": 0.825,
+   "healthHullCoeff": 1.035
+  },
+  "group": "november",
+  "tier": 3,
+  "family": "HPBoost"
+ },
+ {
+  "index": "PCEF104",
+  "name": "PCEF104_HPBoost_SignalFlag_4",
+  "names": {
+   "en": "November — Elite",
+   "ja": "November — エリート",
+   "zh": "November — 精英",
+   "tw": "November — 精英"
+  },
+  "desc": {},
+  "sortOrder": 4,
+  "modifiers": {
+   "burnTime": 0.8,
+   "floodTime": 0.8,
+   "healthHullCoeff": 1.04
+  },
+  "group": "november",
+  "tier": 4,
+  "family": "HPBoost"
+ },
+ {
+  "index": "PCEF111",
+  "name": "PCEF111_GM_SignalFlag_1",
+  "names": {
+   "en": "Yankee — Standard",
+   "ja": "Yankee — 標準",
+   "zh": "Yankee — 标准",
+   "tw": "Yankee — 標準"
+  },
+  "desc": {},
+  "sortOrder": 11,
+  "modifiers": {
+   "GMIdealRadius": 0.975,
+   "GMSIdealRadius": 0.975,
+   "burnChanceBonus": 0.0125,
+   "floodChanceCommonBonus": 0.125,
+   "planeSpreadMultiplier": 0.975
+  },
+  "group": "yankee",
+  "tier": 1,
+  "family": "GM"
+ },
+ {
+  "index": "PCEF112",
+  "name": "PCEF112_GM_SignalFlag_2",
+  "names": {
+   "en": "Yankee — Special",
+   "ja": "Yankee — 特別",
+   "zh": "Yankee — 特别",
+   "tw": "Yankee — 特別"
+  },
+  "desc": {},
+  "sortOrder": 12,
+  "modifiers": {
+   "GMIdealRadius": 0.97,
+   "GMSIdealRadius": 0.97,
+   "burnChanceBonus": 0.015,
+   "floodChanceCommonBonus": 0.15,
+   "planeSpreadMultiplier": 0.97
+  },
+  "group": "yankee",
+  "tier": 2,
+  "family": "GM"
+ },
+ {
+  "index": "PCEF113",
+  "name": "PCEF113_GM_SignalFlag_3",
+  "names": {
+   "en": "Yankee — Rare",
+   "ja": "Yankee — レア",
+   "zh": "Yankee — 稀有",
+   "tw": "Yankee — 稀有"
+  },
+  "desc": {},
+  "sortOrder": 13,
+  "modifiers": {
+   "GMIdealRadius": 0.965,
+   "GMSIdealRadius": 0.965,
+   "burnChanceBonus": 0.0175,
+   "floodChanceCommonBonus": 0.175,
+   "planeSpreadMultiplier": 0.965
+  },
+  "group": "yankee",
+  "tier": 3,
+  "family": "GM"
+ },
+ {
+  "index": "PCEF114",
+  "name": "PCEF114_GM_SignalFlag_4",
+  "names": {
+   "en": "Yankee — Elite",
+   "ja": "Yankee — エリート",
+   "zh": "Yankee — 精英",
+   "tw": "Yankee — 精英"
+  },
+  "desc": {},
+  "sortOrder": 14,
+  "modifiers": {
+   "GMIdealRadius": 0.96,
+   "GMSIdealRadius": 0.96,
+   "burnChanceBonus": 0.02,
+   "floodChanceCommonBonus": 0.2,
+   "planeSpreadMultiplier": 0.96
+  },
+  "group": "yankee",
+  "tier": 4,
+  "family": "GM"
+ },
+ {
+  "index": "PCEF121",
+  "name": "PCEF121_ATBA_SignalFlag_1",
+  "names": {
+   "en": "Foxtrot — Standard",
+   "ja": "Foxtrot — 標準",
+   "zh": "Foxtrot — 标准",
+   "tw": "Foxtrot — 標準"
+  },
+  "desc": {},
+  "sortOrder": 21,
+  "modifiers": {
+   "AAAuraDamage": {
+    "AirCarrier": 1.05,
+    "Auxiliary": 1.05,
+    "Battleship": 1.05,
+    "Cruiser": 1.05,
+    "Destroyer": 1.05,
+    "Submarine": 1.05
+   },
+   "GSIdealRadius": 0.95,
+   "GSShotDelay": 0.95,
+   "planeTorpedoSpeedMultiplier": 1.025,
+   "torpedoSpeedMultiplier": 1.025
+  },
+  "group": "foxtrot",
+  "tier": 1,
+  "family": "ATBA"
+ },
+ {
+  "index": "PCEF122",
+  "name": "PCEF122_ATBA_SignalFlag_2",
+  "names": {
+   "en": "Foxtrot — Special",
+   "ja": "Foxtrot — 特別",
+   "zh": "Foxtrot — 特别",
+   "tw": "Foxtrot — 特別"
+  },
+  "desc": {},
+  "sortOrder": 22,
+  "modifiers": {
+   "AAAuraDamage": {
+    "AirCarrier": 1.06,
+    "Auxiliary": 1.06,
+    "Battleship": 1.06,
+    "Cruiser": 1.06,
+    "Destroyer": 1.06,
+    "Submarine": 1.06
+   },
+   "GSIdealRadius": 0.94,
+   "GSShotDelay": 0.94,
+   "planeTorpedoSpeedMultiplier": 1.03,
+   "torpedoSpeedMultiplier": 1.03
+  },
+  "group": "foxtrot",
+  "tier": 2,
+  "family": "ATBA"
+ },
+ {
+  "index": "PCEF123",
+  "name": "PCEF123_ATBA_SignalFlag_3",
+  "names": {
+   "en": "Foxtrot — Rare",
+   "ja": "Foxtrot — レア",
+   "zh": "Foxtrot — 稀有",
+   "tw": "Foxtrot — 稀有"
+  },
+  "desc": {},
+  "sortOrder": 23,
+  "modifiers": {
+   "AAAuraDamage": {
+    "AirCarrier": 1.07,
+    "Auxiliary": 1.07,
+    "Battleship": 1.07,
+    "Cruiser": 1.07,
+    "Destroyer": 1.07,
+    "Submarine": 1.07
+   },
+   "GSIdealRadius": 0.93,
+   "GSShotDelay": 0.93,
+   "planeTorpedoSpeedMultiplier": 1.035,
+   "torpedoSpeedMultiplier": 1.035
+  },
+  "group": "foxtrot",
+  "tier": 3,
+  "family": "ATBA"
+ },
+ {
+  "index": "PCEF124",
+  "name": "PCEF124_ATBA_SignalFlag_4",
+  "names": {
+   "en": "Foxtrot — Elite",
+   "ja": "Foxtrot — エリート",
+   "zh": "Foxtrot — 精英",
+   "tw": "Foxtrot — 精英"
+  },
+  "desc": {},
+  "sortOrder": 24,
+  "modifiers": {
+   "AAAuraDamage": {
+    "AirCarrier": 1.08,
+    "Auxiliary": 1.08,
+    "Battleship": 1.08,
+    "Cruiser": 1.08,
+    "Destroyer": 1.08,
+    "Submarine": 1.08
+   },
+   "GSIdealRadius": 0.92,
+   "GSShotDelay": 0.92,
+   "planeTorpedoSpeedMultiplier": 1.04,
+   "torpedoSpeedMultiplier": 1.04
+  },
+  "group": "foxtrot",
+  "tier": 4,
+  "family": "ATBA"
+ },
+ {
+  "index": "PCEF131",
+  "name": "PCEF131_Speed_SignalFlag_1",
+  "names": {
+   "en": "Sierra — Standard",
+   "ja": "Sierra — 標準",
+   "zh": "Sierra — 标准",
+   "tw": "Sierra — 標準"
+  },
+  "desc": {},
+  "sortOrder": 31,
+  "modifiers": {
+   "planeForsageTimeCoeff": 1.1,
+   "speedCoef": 1.05
+  },
+  "group": "sierra",
+  "tier": 1,
+  "family": "Speed"
+ },
+ {
+  "index": "PCEF132",
+  "name": "PCEF132_Speed_SignalFlag_2",
+  "names": {
+   "en": "Sierra — Special",
+   "ja": "Sierra — 特別",
+   "zh": "Sierra — 特别",
+   "tw": "Sierra — 特別"
+  },
+  "desc": {},
+  "sortOrder": 32,
+  "modifiers": {
+   "planeForsageTimeCoeff": 1.12,
+   "speedCoef": 1.06
+  },
+  "group": "sierra",
+  "tier": 2,
+  "family": "Speed"
+ },
+ {
+  "index": "PCEF133",
+  "name": "PCEF133_Speed_SignalFlag_3",
+  "names": {
+   "en": "Sierra — Rare",
+   "ja": "Sierra — レア",
+   "zh": "Sierra — 稀有",
+   "tw": "Sierra — 稀有"
+  },
+  "desc": {},
+  "sortOrder": 33,
+  "modifiers": {
+   "planeForsageTimeCoeff": 1.14,
+   "speedCoef": 1.07
+  },
+  "group": "sierra",
+  "tier": 3,
+  "family": "Speed"
+ },
+ {
+  "index": "PCEF134",
+  "name": "PCEF134_Speed_SignalFlag_4",
+  "names": {
+   "en": "Sierra — Elite",
+   "ja": "Sierra — エリート",
+   "zh": "Sierra — 精英",
+   "tw": "Sierra — 精英"
+  },
+  "desc": {},
+  "sortOrder": 34,
+  "modifiers": {
+   "planeForsageTimeCoeff": 1.16,
+   "speedCoef": 1.08
+  },
+  "group": "sierra",
+  "tier": 4,
+  "family": "Speed"
+ },
+ {
+  "index": "PCEF141",
+  "name": "PCEF141_Consumable_SignalFlag_1",
+  "names": {
+   "en": "India — Standard",
+   "ja": "India — 標準",
+   "zh": "India — 标准",
+   "tw": "India — 標準"
+  },
+  "desc": {},
+  "sortOrder": 41,
+  "modifiers": {
+   "ConsumableReloadTime": {
+    "AirCarrier": 0.95,
+    "Auxiliary": 0.95,
+    "Battleship": 0.95,
+    "Cruiser": 0.95,
+    "Destroyer": 0.95,
+    "Submarine": 0.95
+   },
+   "ConsumablesWorkTime": 1.05,
+   "planeConsumableReloadTime": 0.95,
+   "planeConsumablesWorkTime": 1.05
+  },
+  "group": "india",
+  "tier": 1,
+  "family": "Consumable"
+ },
+ {
+  "index": "PCEF142",
+  "name": "PCEF142_Consumable_SignalFlag_2",
+  "names": {
+   "en": "India — Special",
+   "ja": "India — 特別",
+   "zh": "India — 特别",
+   "tw": "India — 特別"
+  },
+  "desc": {},
+  "sortOrder": 42,
+  "modifiers": {
+   "ConsumableReloadTime": {
+    "AirCarrier": 0.94,
+    "Auxiliary": 0.94,
+    "Battleship": 0.94,
+    "Cruiser": 0.94,
+    "Destroyer": 0.94,
+    "Submarine": 0.94
+   },
+   "ConsumablesWorkTime": 1.06,
+   "planeConsumableReloadTime": 0.94,
+   "planeConsumablesWorkTime": 1.06
+  },
+  "group": "india",
+  "tier": 2,
+  "family": "Consumable"
+ },
+ {
+  "index": "PCEF143",
+  "name": "PCEF143_Consumable_SignalFlag_3",
+  "names": {
+   "en": "India — Rare",
+   "ja": "India — レア",
+   "zh": "India — 稀有",
+   "tw": "India — 稀有"
+  },
+  "desc": {},
+  "sortOrder": 43,
+  "modifiers": {
+   "ConsumableReloadTime": {
+    "AirCarrier": 0.93,
+    "Auxiliary": 0.93,
+    "Battleship": 0.93,
+    "Cruiser": 0.93,
+    "Destroyer": 0.93,
+    "Submarine": 0.93
+   },
+   "ConsumablesWorkTime": 1.07,
+   "planeConsumableReloadTime": 0.93,
+   "planeConsumablesWorkTime": 1.07
+  },
+  "group": "india",
+  "tier": 3,
+  "family": "Consumable"
+ },
+ {
+  "index": "PCEF144",
+  "name": "PCEF144_Consumable_SignalFlag_4",
+  "names": {
+   "en": "India — Elite",
+   "ja": "India — エリート",
+   "zh": "India — 精英",
+   "tw": "India — 精英"
+  },
+  "desc": {},
+  "sortOrder": 44,
+  "modifiers": {
+   "ConsumableReloadTime": {
+    "AirCarrier": 0.92,
+    "Auxiliary": 0.92,
+    "Battleship": 0.92,
+    "Cruiser": 0.92,
+    "Destroyer": 0.92,
+    "Submarine": 0.92
+   },
+   "ConsumablesWorkTime": 1.08,
+   "planeConsumableReloadTime": 0.92,
+   "planeConsumablesWorkTime": 1.08
+  },
+  "group": "india",
+  "tier": 4,
+  "family": "Consumable"
+ },
+ {
+  "index": "PCEF151",
+  "name": "PCEF151_Shift_SignalFlag_1",
+  "names": {
+   "en": "Charlie — Standard",
+   "ja": "Charlie — 標準",
+   "zh": "Charlie — 标准",
+   "tw": "Charlie — 標準"
+  },
+  "desc": {},
+  "sortOrder": 51,
+  "modifiers": {
+   "planeBubbleArmorCoeff": 0.9,
+   "shootShift": 1.025,
+   "vulnerabilityDBomb": 0.95
+  },
+  "group": "charlie",
+  "tier": 1,
+  "family": "Shift"
+ },
+ {
+  "index": "PCEF152",
+  "name": "PCEF152_Shift_SignalFlag_2",
+  "names": {
+   "en": "Charlie — Special",
+   "ja": "Charlie — 特別",
+   "zh": "Charlie — 特别",
+   "tw": "Charlie — 特別"
+  },
+  "desc": {},
+  "sortOrder": 52,
+  "modifiers": {
+   "planeBubbleArmorCoeff": 0.88,
+   "shootShift": 1.03,
+   "vulnerabilityDBomb": 0.94
+  },
+  "group": "charlie",
+  "tier": 2,
+  "family": "Shift"
+ },
+ {
+  "index": "PCEF153",
+  "name": "PCEF153_Shift_SignalFlag_3",
+  "names": {
+   "en": "Charlie — Rare",
+   "ja": "Charlie — レア",
+   "zh": "Charlie — 稀有",
+   "tw": "Charlie — 稀有"
+  },
+  "desc": {},
+  "sortOrder": 53,
+  "modifiers": {
+   "planeBubbleArmorCoeff": 0.86,
+   "shootShift": 1.035,
+   "vulnerabilityDBomb": 0.93
+  },
+  "group": "charlie",
+  "tier": 3,
+  "family": "Shift"
+ },
+ {
+  "index": "PCEF154",
+  "name": "PCEF154_Shift_SignalFlag_4",
+  "names": {
+   "en": "Charlie — Elite",
+   "ja": "Charlie — エリート",
+   "zh": "Charlie — 精英",
+   "tw": "Charlie — 精英"
+  },
+  "desc": {},
+  "sortOrder": 54,
+  "modifiers": {
+   "planeBubbleArmorCoeff": 0.84,
+   "shootShift": 1.04,
+   "vulnerabilityDBomb": 0.92
+  },
+  "group": "charlie",
+  "tier": 4,
+  "family": "Shift"
+ }
+]

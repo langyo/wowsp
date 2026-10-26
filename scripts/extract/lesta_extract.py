@@ -260,17 +260,38 @@ def main() -> int:
         raise SystemExit("game-assets not found (build: just build game-assets)")
 
     idx_dir = latest_idx_dir(game)
-    pkg_dir = game / "res_packages"
     print(f"[lesta-extract] game: {game} (idx: {idx_dir.name})")
     meta = load_meta(ensure_metadata(game, game_assets))
-    by_crc, volnames = build_index(idx_dir)
+    n_ok, _n_miss, n_fail = extract_patterns(
+        args.patterns, meta, idx_dir, game / "res_packages", decoder, Path(args.out),
+    )
+    return 0 if n_fail == 0 else 1
 
-    outdir = Path(args.out)
+
+def extract_patterns(
+    patterns: list[str],
+    meta: dict[str, dict],
+    idx_dir: Path,
+    pkg_dir: Path,
+    decoder: OozDecoder,
+    outdir: Path,
+) -> tuple[int, int, int]:
+    """Extract every pkg-internal path matching any glob `patterns` into
+    `outdir` (the pkg path tree is preserved under it).
+
+    The idx files under `idx_dir` are joined against `meta` (the
+    path → {crc32, sizes} map) on crc+size; Oodle chunk containers decode
+    through `decoder`. Returns (extracted, missing, failed) — `missing`
+    counts paths the idx has no byte-identical candidate for, `failed`
+    decode/CRC errors. Callable directly (lesta_planner_icons.py reuses it
+    for the planner art set).
+    """
+    by_crc, volnames = build_index(idx_dir)
     pkg_files: dict[str, object] = {}
     n_ok = n_miss = n_fail = 0
     total = 0
     for path in meta:
-        if not any(fnmatch.fnmatch(path, pat) for pat in args.patterns):
+        if not any(fnmatch.fnmatch(path, pat) for pat in patterns):
             continue
         e = meta[path]
         cands = [
@@ -341,7 +362,7 @@ def main() -> int:
         f"[lesta-extract] extracted {n_ok} files ({total / 1048576:.1f} MB unpacked); "
         f"missing={n_miss} failed={n_fail} -> {outdir}"
     )
-    return 0 if n_fail == 0 else 1
+    return n_ok, n_miss, n_fail
 
 
 if __name__ == "__main__":
