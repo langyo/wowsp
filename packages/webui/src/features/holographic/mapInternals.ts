@@ -438,6 +438,19 @@ export interface MapInternals extends MapInternalsDeps {
   _projVec: THREE.Vector3;
   /** Torpedo-wake tail scratch (per-frame wake line endpoint). */
   _wakeTail: THREE.Vector3;
+  /** Imperative label/status slot elements, keyed `l<entityId>` /
+   *  `s<entityId>` — the render loop writes translate3d/display straight to
+   *  these (see labelOverlay), bypassing Vue so per-frame position churn
+   *  never re-renders the map. */
+  labelSlotEls: Map<string, HTMLDivElement | null>;
+  /** Playhead (s) the label CONTENT (hp / status rows) was last refreshed
+   *  at — content updates are throttled to ~10 Hz while positions stay
+   *  per-frame (see markerUpdate). */
+  labelContentAt: number;
+  /** Change signature of the last published capDisplay array (see
+   *  capSimulator): identical frames skip the re-assign so the scorebar's
+   *  computed state is not invalidated every rendered frame. */
+  _capDisplaySig: string;
   /** OSD auto-contrast sampler (osdContrast.ts) — created lazily once the
    *  scene is live, disposed on unmount. Null until then. */
   osd: OsdContrast | null;
@@ -507,6 +520,9 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     achPtr: 0,
     reportedSinks: new Set(),
     capSim: new Map(),
+    labelSlotEls: new Map(),
+    labelContentAt: -Infinity,
+    _capDisplaySig: "",
 
     _projVec: new THREE.Vector3(),
     _wakeTail: new THREE.Vector3(),
@@ -635,6 +651,12 @@ export function clearActors(ctx: MapInternals) {
   ctx.enemyAlive.value = ctx.enemyTotal.value;
   ctx.capStatus.value = [0, 0, 0];
   ctx.capDisplay.value = [];
+  // Reset the publish/change latches with the arrays they shadow: a
+  // same-map replay switch replays a byte-identical t=0 cap signature, and
+  // the freshly seeded labels (hp = maxHp) must not be pinned by the
+  // content throttle either — every rebuild path funnels through here.
+  ctx._capDisplaySig = "";
+  ctx.labelContentAt = -Infinity;
   ctx.allyScore.value = 0;
   ctx.enemyScore.value = 0;
   ctx.reportedSinks.clear();

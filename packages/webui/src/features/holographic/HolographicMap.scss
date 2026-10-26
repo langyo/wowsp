@@ -397,10 +397,22 @@
       display: none;
     }
   }
+
+  /* 0×0 slot the render loop translates imperatively (labelOverlay applies
+     translate3d + display per frame — compositor-only writes, never layout;
+     the label/status components inside pin to the slot's origin). Hidden by
+     default: applySlot shows it with display:block, so a not-yet-projected
+     label can never flash at the layer origin. */
+  &__label-slot {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    display: none;
+  }
 }
 
-/* Each ship label is absolutely positioned in screen pixels; the (x,y) come
-   from a per-frame `vector.project` transform so labels track their ship. */
 /* Score bar — the shared @wowsp/holo HoloScorebar, positioned top-center. */
 .holo-map__scorebar-wrap {
   position: absolute;

@@ -20,8 +20,32 @@ const HULL_HALF_LEN = 30;
 /** Gap between the hull's lower screen edge and the first row. */
 const STATUS_ROW_GAP_PX = 10;
 
+/** Position one imperative label/status slot: translate3d keeps the write
+ *  compositor-only (no layout), display gates on-screen visibility. The
+ *  slots are plain wrapper divs (see HolographicMap's template) — writing
+ *  them directly keeps the per-frame position churn OUT of Vue's render
+ *  path; only low-frequency content (name/hp/status) re-renders. */
+function applySlot(
+  slot: HTMLDivElement | null | undefined,
+  visible: boolean,
+  x: number,
+  y: number,
+): void {
+  if (!slot) return;
+  if (!visible) {
+    if (slot.style.display !== "none") slot.style.display = "none";
+    return;
+  }
+  slot.style.transform = "translate3d(" + x.toFixed(1) + "px," + y.toFixed(1) + "px,0)";
+  // "block", not "": the stylesheet ships the slots display:none by default
+  // (so a not-yet-projected label can never flash at the layer origin), and
+  // an empty inline display would let that default win again.
+  if (slot.style.display === "none" || slot.style.display === "") slot.style.display = "block";
+}
+
 /** Project every visible marker's world position into screen pixels and
- *  write them into `ctx.shipLabels` so the overlay <div>s track the ships. */
+ *  write them into `ctx.shipLabels` (for OSD sampling / tooltips) and the
+ *  imperative slot elements (for the actual DOM positioning). */
 export function updateLabelPositions(ctx: MapInternals) {
   const cam = ctx.api.value?.camera;
   const rnd = ctx.api.value?.renderer;
@@ -41,6 +65,10 @@ export function updateLabelPositions(ctx: MapInternals) {
     if (!marker.visible && !dead) {
       label.visible = false;
       label.belowVisible = false;
+      // The slot's display is the ONLY hide mechanism now (the template no
+      // longer consumes label.visible) — skip paths must hide explicitly.
+      applySlot(ctx.labelSlotEls.get("l" + label.entityId), false, 0, 0);
+      applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
       continue;
     }
     // Sunk markers are hidden, but their position keeps tracking the live
@@ -85,12 +113,23 @@ export function updateLabelPositions(ctx: MapInternals) {
       label.belowX = label.x;
       label.belowY = bottomY + STATUS_ROW_GAP_PX;
     }
+    applySlot(ctx.labelSlotEls.get("l" + label.entityId), label.visible, label.x, label.y);
+    applySlot(
+      ctx.labelSlotEls.get("s" + label.entityId),
+      label.belowVisible && label.status != null,
+      label.belowX,
+      label.belowY,
+    );
   }
   // Aircraft labels project above the carrier's currently airborne
   // squadrons (the newest sample of the newest sortie).
   for (const [labelId] of ctx.planeLabelCarriers) {
     const label = labels.find((l) => l.entityId === labelId);
-    if (!label || !label.visible) continue;
+    if (!label || !label.visible) {
+      // Carrier label not currently airborne-visible: hide its slot too.
+      if (label) applySlot(ctx.labelSlotEls.get("l" + label.entityId), false, 0, 0);
+      continue;
+    }
     let anchor: SquadronPlane | null = null;
     for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
       if (labelOf !== labelId) continue;
@@ -99,12 +138,19 @@ export function updateLabelPositions(ctx: MapInternals) {
       const sp = trail.samples[trail.samples.length - 1];
       if (!anchor || sp.time > anchor.time) anchor = sp;
     }
-    if (!anchor) { label.visible = false; continue; }
+    if (!anchor) {
+      label.visible = false;
+      applySlot(ctx.labelSlotEls.get("l" + label.entityId), false, 0, 0);
+      applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
+      continue;
+    }
     ctx._projVec.set(anchor.x, Math.max(60, anchor.y) + 30, -anchor.z);
     ctx._projVec.project(cam);
     label.x = (ctx._projVec.x * hw) + hw;
     label.y = (-ctx._projVec.y * hh) + hh;
     if (ctx._projVec.z >= 1) label.visible = false;
+    applySlot(ctx.labelSlotEls.get("l" + label.entityId), label.visible, label.x, label.y);
+    applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
   }
 }
 
