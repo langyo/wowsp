@@ -10,9 +10,9 @@
  * DOM APIs only, so anchor-supplied strings never become markup.
  * `data-hint-card` (JSON `HintCard`, pre-localized) replaces the text
  * entirely with a structured hover card — head row (icon / title /
- * badge), optional flagged subtitle and label/value rows — for anchors
- * that present an entity's basic parameters (e.g. the replay list's
- * own-ship tag). Because the hook delegates pointer/focus
+ * badge), optional flagged subtitle, itemized key lines ("press X to do
+ * Y", HintCard.keys) and label/value rows — for anchors that present an
+ * entity's basic parameters (e.g. the replay list's own-ship tag). Because the hook delegates pointer/focus
  * events, rows rendered long after install (spec tables, filter chips,
  * map HUD buttons…) are covered with no per-component wiring.
  *
@@ -52,6 +52,17 @@ export interface HintTag {
 
 const TAG_TONES: ReadonlySet<string> = new Set(["epic", "rec", "good", "bad"]);
 
+/** One itemized control line of a structured hint card (see `HintCard`):
+ *  a keyboard-style keycap legend and the action it drives ("press G to
+ *  clear the sonar mark"). Call sites pass these pre-localized via the
+ *  card JSON, same contract as every other card field. */
+export interface HintCardKey {
+  /** Keycap legend ("G", "1–3", "左键", …) rendered as a key chip. */
+  key: string;
+  /** What the key does / what the armament entry provides. */
+  text: string;
+}
+
 /** A label/value line of a structured hint card (see `HintCard`). */
 export interface HintCardRow {
   label: string;
@@ -74,9 +85,9 @@ export interface HintCard {
   /** Decorative head icon (ship-class art); alt stays empty. */
   iconUrl?: string;
   /** Head glyph from the game's battle HUD whose art is WHITE by design (the
-   *  minimap ship markers). It is painted onto a dark plate because a white
-   *  glyph would vanish on the light popup background — use `iconUrl` for
-   *  ordinary colored art. */
+   *  minimap ship markers). The glyph carries no plate: the card CSS
+   *  filter-tints it to the popup's ink (dark on the light palette, white on
+   *  the dark one) — use `iconUrl` for ordinary colored art. */
   markerUrl?: string;
   /** Identity line under the head ("日本 · 战列舰"). */
   subtitle?: string;
@@ -87,6 +98,11 @@ export interface HintCard {
    *  text; the leading/trailing whitespace is trimmed, internal newlines are
    *  preserved and rendered as line breaks. */
   body?: string;
+  /** Itemized special controls under the briefing — one keycap legend +
+   *  action line each ("C — dive"), so a control-heavy card reads as a
+   *  short intro followed by scannable entries instead of one long
+   *  paragraph (the water-table submarine/carrier cards). */
+  keys?: HintCardKey[];
   /** Small feature icons under the identity line (tech-tree branches). */
   icons?: string[];
   /** Parameter rows under an optional hairline divider. */
@@ -116,6 +132,17 @@ export function hintCardFrom(parsed: unknown): HintCard | null {
     if (icons.length > 0) card.icons = icons.slice(0, 6);
   }
   if (typeof o.body === "string" && o.body.trim() !== "") card.body = o.body.trim();
+  if (Array.isArray(o.keys)) {
+    const keys = o.keys.reduce<HintCardKey[]>((acc, k) => {
+      if (typeof k !== "object" || k === null) return acc;
+      // Trimmed at rest: a padded legend would render as a stretched keycap.
+      const key = typeof k.key === "string" ? k.key.trim() : "";
+      const text = typeof k.text === "string" ? k.text.trim() : "";
+      if (key !== "" && text !== "") acc.push({ key, text });
+      return acc;
+    }, []);
+    if (keys.length > 0) card.keys = keys.slice(0, 8);
+  }
   if (typeof o.note === "string" && o.note.trim() !== "") card.note = o.note;
   if (Array.isArray(o.rows)) {
     const rows = o.rows.filter((raw): raw is HintCardRow => {
@@ -201,17 +228,15 @@ function renderCard(card: HintCard): HTMLElement {
 
   const head = document.createElement("div");
   head.className = "global-tooltip__card-head";
-  // A white HUD glyph needs its own plate to survive the light popup — see
-  // HintCard.markerUrl.
+  // A white HUD glyph, tinted to the popup's ink by CSS — no carrier plate
+  // behind it (see HintCard.markerUrl).
   if (card.markerUrl) {
-    const plate = document.createElement("span");
-    plate.className = "global-tooltip__card-marker";
     const marker = document.createElement("img");
+    marker.className = "global-tooltip__card-marker";
     marker.src = card.markerUrl;
     marker.alt = "";
     marker.draggable = false;
-    plate.appendChild(marker);
-    head.appendChild(plate);
+    head.appendChild(marker);
   }
   if (card.iconUrl) {
     const icon = document.createElement("img");
@@ -250,13 +275,34 @@ function renderCard(card: HintCard): HTMLElement {
     root.appendChild(sub);
   }
 
-  // The briefing paragraph sits above the parameter rows: identity line,
-  // then prose, then the numbers it explains.
+  // The briefing paragraph sits above the itemized controls: identity
+  // line, then prose, then the key entries that drive it.
   if (card.body) {
     const body = document.createElement("div");
     body.className = "global-tooltip__card-body";
     body.textContent = card.body;
     root.appendChild(body);
+  }
+
+  // Itemized controls ("press X to do Y"): a keycap chip leads each action
+  // line, set off from the briefing by the rows' hairline.
+  if (card.keys && card.keys.length > 0) {
+    const list = document.createElement("div");
+    list.className = "global-tooltip__card-keys";
+    for (const item of card.keys) {
+      const line = document.createElement("div");
+      line.className = "global-tooltip__card-key";
+      const cap = document.createElement("kbd");
+      cap.className = "global-tooltip__key-cap";
+      cap.textContent = item.key;
+      line.appendChild(cap);
+      const text = document.createElement("span");
+      text.className = "global-tooltip__card-key-text";
+      text.textContent = item.text;
+      line.appendChild(text);
+      list.appendChild(line);
+    }
+    root.appendChild(list);
   }
 
   if (card.icons && card.icons.length > 0) {
@@ -481,9 +527,12 @@ export function installGlobalTooltip(): void {
     const card = cardFor(anchor);
     if (card) {
       popup.classList.add("global-tooltip--card");
-      // Prose cards need a reading measure wider than the parameter cards'
-      // 300px cap (see globalTooltip.scss).
-      popup.classList.toggle("global-tooltip--paragraph", card.body != null);
+      // Prose and key-item cards need a reading measure wider than the
+      // parameter cards' 300px cap (see globalTooltip.scss).
+      popup.classList.toggle(
+        "global-tooltip--paragraph",
+        card.body != null || card.keys != null,
+      );
       content.replaceChildren(renderCard(card));
     } else {
       popup.classList.remove("global-tooltip--card", "global-tooltip--paragraph");

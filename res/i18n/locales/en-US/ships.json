@@ -35,7 +35,25 @@
     },
     "cv": {
       "title": "Aircraft Carrier",
-      "body": "A carrier fights entirely through her aircraft: keys 1/2/3 pick attack aircraft, torpedo bombers or bombers, and double-tapping launches them; left-click opens the attack run, a second click drops, W boosts (the engine overheats) and F recalls the squadron. Air groups are finite — flak that wipes a squadron takes all your damage with it — so strike and leave. The hull has almost no guns of her own: she survives on distance and cover, and her real value is spotting and cross-map pressure."
+      "body": "A carrier fights entirely through her aircraft: air groups are finite — flak that wipes a squadron takes all your damage with it — so strike and leave. The hull has almost no guns of her own: she survives on distance and cover, and her real value is spotting and cross-map pressure.",
+      "keys": {
+        "1": {
+          "key": "1/2/3",
+          "text": "Pick attack aircraft, torpedo bombers or bombers; double-tap to launch the squadron."
+        },
+        "2": {
+          "key": "LMB",
+          "text": "Open the attack run; click again to drop the payload."
+        },
+        "3": {
+          "key": "W",
+          "text": "Engine boost (it overheats — pace it)."
+        },
+        "4": {
+          "key": "F",
+          "text": "Recall the squadron."
+        }
+      }
     },
     "ca": {
       "title": "Heavy Cruiser",
@@ -55,7 +73,22 @@
     },
     "ss": {
       "title": "Submarine",
-      "body": "The underwater assassin: the bow and stern torpedo tubes are her main battery, most of them acoustic homing — ping a target with sonar first and the torpedoes steer onto it (a second ping tightens the homing and lasts longer; G clears the mark). C dives and F surfaces, moving between periscope depth and maximum depth: at surface and periscope depth the deck gun and unguided torpedoes still work, while at maximum depth only homing torpedoes remain and your own vision is nearly gone, so you fight on teammates' spotting. Diving drains the battery (it recharges on the surface), and a hit while submerged starts an oil leak unless you surface or use Damage Control within about five seconds — after that the spill itself betrays your position until you surface."
+      "body": "The underwater assassin: the bow and stern torpedo tubes are her main battery, most of them acoustic homing — ping a target with sonar first and the torpedoes steer onto it; a second ping tightens the homing and makes the mark last longer.",
+      "keys": {
+        "1": {
+          "key": "C",
+          "text": "Dive: at maximum depth only homing torpedoes remain and your own vision is nearly gone — fight on teammates' spotting."
+        },
+        "2": {
+          "key": "F",
+          "text": "Surface: at surface and periscope depth the deck gun and unguided torpedoes still work."
+        },
+        "3": {
+          "key": "G",
+          "text": "Clear the sonar mark you have put on a target."
+        }
+      },
+      "note": "Diving drains the battery (it recharges on the surface). A hit while submerged damages the fuel system: surface or use Damage Control within about five seconds to stop the leak, or the spill betrays your position until you surface."
     }
   },
   "filterNation": "Nation",

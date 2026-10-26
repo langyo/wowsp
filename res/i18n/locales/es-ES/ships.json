@@ -35,7 +35,25 @@
     },
     "cv": {
       "title": "Portaaviones",
-      "body": "El portaaviones lucha únicamente con sus aeronaves: las teclas 1/2/3 eligen aviones de ataque, torpederos o bombarderos, y una doble pulsación los lanza; el clic izquierdo abre la pasada de ataque, un segundo clic suelta, W da un impulso (el motor se sobrecalienta) y F reclama la escuadrilla. Los grupos aéreos son finitos: una antiaérea que derriba una escuadrilla se lleva consigo todo tu daño, así que ataca y vete. El casco apenas tiene artillería propia: sobrevive a base de distancia y cobertura, y su verdadero valor es descubrir y presionar por todo el mapa."
+      "body": "El portaaviones lucha únicamente con sus aeronaves: los grupos aéreos son finitos —una antiaérea que derriba una escuadrilla se lleva consigo todo tu daño—, así que ataca y vete. El casco apenas tiene artillería propia: sobrevive a base de distancia y cobertura, y su verdadero valor es descubrir y presionar por todo el mapa.",
+      "keys": {
+        "1": {
+          "key": "1/2/3",
+          "text": "Elegir aviones de ataque, torpederos o bombarderos; una doble pulsación los lanza."
+        },
+        "2": {
+          "key": "Clic izq.",
+          "text": "Abrir la pasada de ataque; un segundo clic suelta las bombas."
+        },
+        "3": {
+          "key": "W",
+          "text": "Impulso del motor (se sobrecalienta; dosifícalo)."
+        },
+        "4": {
+          "key": "F",
+          "text": "Reclamar la escuadrilla."
+        }
+      }
     },
     "ca": {
       "title": "Crucero pesado",
@@ -55,7 +73,22 @@
     },
     "ss": {
       "title": "Submarino",
-      "body": "El asesino sumergido: los tubos de proa y popa son su arma principal, la mayoría acústicos autoguiados —lanza primero un ping de sonar sobre el objetivo y los torpedos se dirigirán a él (un segundo ping estrecha el guiado y dura más; G borra la marca). C sumerge y F emerge, entre profundidad periscópica y máxima: en superficie y a profundidad periscópica el cañón de cubierta y los torpedos sin guiar siguen funcionando, mientras que a profundidad máxima solo quedan los torpedos de guiado y tu visión casi desaparece, así que peleas con lo que detectan tus aliados. Sumergirse gasta la batería (que se recarga en superficie), y cualquier impacto bajo el agua daña el circuito de combustible: emerge o usa el equipo de control de daños en unos cinco segundos y no habrá fuga; si no, el combustible delata tu posición hasta que emerjas."
+      "body": "El asesino sumergido: los tubos de proa y popa son su arma principal, la mayoría acústicos autoguiados —lanza primero un ping de sonar sobre el objetivo y los torpedos se dirigirán a él; un segundo ping estrecha el guiado y hace que la marca dure más.",
+      "keys": {
+        "1": {
+          "key": "C",
+          "text": "Sumergirse: a profundidad máxima solo quedan los torpedos de guiado y tu visión casi desaparece, así que peleas con lo que detectan tus aliados."
+        },
+        "2": {
+          "key": "F",
+          "text": "Emerger: en superficie y a profundidad periscópica el cañón de cubierta y los torpedos sin guiar siguen funcionando."
+        },
+        "3": {
+          "key": "G",
+          "text": "Borrar la marca de sonar puesta sobre un objetivo."
+        }
+      },
+      "note": "Sumergirse gasta la batería (que se recarga en superficie). Cualquier impacto bajo el agua daña el circuito de combustible: emerge o usa el equipo de control de daños en unos cinco segundos y no habrá fuga; si no, el combustible delata tu posición hasta que emerjas."
     }
   },
   "filterNation": "Nación",
