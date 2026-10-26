@@ -963,9 +963,15 @@ function statFaceSparse(name: string): boolean {
 // on the NEXT pass (the same late-arrival pattern as the stamps' images).
 const blacklistByRealm = new Map<string, Set<number>>();
 const blacklistLoading = new Set<string>();
+/** Per-realm failure cooldown — a broken backend must not be re-queried on
+ *  every render pass. */
+const blacklistFailedAt = new Map<string, number>();
+const BLACKLIST_RETRY_MS = 60_000;
 
 function ensureBlacklist(realm: string): void {
   if (blacklistLoading.has(realm)) return;
+  const failedAt = blacklistFailedAt.get(realm);
+  if (failedAt != null && Date.now() - failedAt < BLACKLIST_RETRY_MS) return;
   blacklistLoading.add(realm);
   if (!tauri) {
     // Browser dev (no Tauri runtime): no snapshot — no dots, no fetches.
@@ -981,9 +987,13 @@ function ensureBlacklist(realm: string): void {
         realm,
         new Set((snap?.entries ?? []).map((entry) => entry.accountId)),
       );
+      blacklistFailedAt.delete(realm);
       render();
     } catch {
       blacklistByRealm.set(realm, new Set());
+      blacklistFailedAt.set(realm, Date.now());
+      // Allow a retry once the cooldown lapses.
+      blacklistLoading.delete(realm);
     }
   })();
 }

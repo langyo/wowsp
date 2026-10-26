@@ -338,20 +338,31 @@ async fn accept_loop(
     port: u16,
     realm: String,
     mut cancel_rx: watch::Receiver<bool>,
+    done_tx: watch::Sender<bool>,
+    mut done_rx: watch::Receiver<bool>,
 ) {
     let deadline = tokio::time::Instant::now() + AUTH_FLOW_TIMEOUT;
     loop {
         tokio::select! {
             _ = cancel_rx.changed() => break,
+            _ = done_rx.changed() => break,
             _ = tokio::time::sleep_until(deadline) => {
                 tracing::info!(realm = %realm, "blacklist login flow timed out");
                 break;
             },
             accepted = listener.accept() => {
                 let Ok((stream, _)) = accepted else { break };
-                if handle_conn(stream, realm.clone()).await {
-                    break;
-                }
+                // Per-connection task: browsers open speculative preconnects
+                // that send nothing — an inlined handle_conn would hold the
+                // accept loop on its 10 s read timeout and delay a real
+                // callback landing behind them.
+                let realm2 = realm.clone();
+                let done_tx = done_tx.clone();
+                tokio::spawn(async move {
+                    if handle_conn(stream, realm2).await {
+                        let _ = done_tx.send(true);
+                    }
+                });
             },
         }
     }
@@ -396,13 +407,21 @@ pub async fn blacklist_auth_start(
     }
 
     let (cancel_tx, cancel_rx) = watch::channel(false);
+    let (done_tx, done_rx) = watch::channel(false);
     if let Ok(mut slot) = AUTH_FLOW.lock() {
         *slot = Some(AuthFlow {
             port,
             cancel: cancel_tx,
         });
     }
-    tokio::spawn(accept_loop(listener, port, realm.clone(), cancel_rx));
+    tokio::spawn(accept_loop(
+        listener,
+        port,
+        realm.clone(),
+        cancel_rx,
+        done_tx.clone(),
+        done_rx,
+    ));
     tracing::info!(realm = %realm, port, "blacklist login flow started");
     Ok(login_url)
 }
@@ -448,9 +467,12 @@ pub async fn blacklist_auth_forget(window: tauri::Window, realm: String) -> Comm
             crate::commands::wg_realm::api_host(&realm),
             portal_base(&realm),
         ) {
-            // The logout endpoint takes the token as a query parameter (its
-            // documented shape); the URL never reaches a log line because
-            // best-effort transport failures are discarded.
+            // Server-side logout, strictly best-effort: the documented shape
+            // carries the token in the URL, so this request bypasses the
+            // health recorder entirely and every transport error collapses
+            // to a FIXED string — no reqwest Display (which embeds the full
+            // token-bearing URL) may reach a log line or a health record.
+            // Removing the local file below is the authoritative part.
             let url = format!(
                 "https://{host}{base}/auth/logout/?application_id={}&access_token={}",
                 crate::commands::wg_realm::application_id(&realm),
@@ -459,8 +481,10 @@ pub async fn blacklist_auth_forget(window: tauri::Window, realm: String) -> Comm
             let clients =
                 crate::commands::network::HttpPair::build(|b| b.timeout(Duration::from_secs(10)))
                     .map_err(|e| anyhow!("http client: {e:#}"))?;
-            crate::commands::upstream_health::best_effort_get(&clients, host, "auth/logout", url)
-                .await;
+            let send = |client: &reqwest::Client| client.get(&url).send();
+            if send(clients.proxied()).await.is_err() && clients.has_proxy() {
+                let _ = send(clients.direct()).await;
+            }
         }
     }
     clear_auth().map_err(|e| anyhow!("clear blacklist credential: {e:#}"))?;

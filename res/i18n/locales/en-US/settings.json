@@ -13,6 +13,7 @@
   "blacklistNotLoggedIn": "Not logged in",
   "blacklistTokenExpire": "Authorization expires:",
   "blacklistReLoginDue": "Authorization expired — log in again",
+  "blacklistReLoginSoon": "Authorization expires soon — consider logging in again",
   "blacklistLogout": "Unbind",
   "blacklistSyncSettings": "Sync schedule",
   "blacklistAutoSync": "Sync automatically",

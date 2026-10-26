@@ -13,6 +13,7 @@
   "blacklistNotLoggedIn": "未登入",
   "blacklistTokenExpire": "授權到期：",
   "blacklistReLoginDue": "授權已過期，請重新登入",
+  "blacklistReLoginSoon": "授權即將到期，建議重新登入",
   "blacklistLogout": "解除綁定",
   "blacklistSyncSettings": "同步設定",
   "blacklistAutoSync": "自動同步",

@@ -15,7 +15,7 @@ use super::auth::{
 };
 use super::sync::{
     CONFIG_FILE, SNAPSHOT_FILE, canonical_config_toml, load_config_from, load_snapshot_from,
-    sanitize_config, snapshot_path, store_snapshot,
+    parse_blocked_response, redact_url, sanitize_config, snapshot_path, store_snapshot,
 };
 
 fn temp_dir(tag: &str) -> std::path::PathBuf {
@@ -180,4 +180,39 @@ fn snapshot_roundtrips_and_filters_by_realm() {
     assert_eq!(load_snapshot_from(&dir, "eu").as_ref(), Some(&snap));
     // A different realm must not see the snapshot (one realm per file).
     assert!(load_snapshot_from(&dir, "na").is_none());
+}
+
+#[test]
+fn redact_url_cuts_every_query_string() {
+    let msg = "error sending request for url (https://api.worldofwarships.eu/wows/account/info/?application_id=abc&access_token=tok) caused by x";
+    let out = redact_url(msg);
+    assert!(!out.contains("tok"), "token leaked: {out}");
+    assert!(!out.contains("application_id"), "query leaked: {out}");
+    assert!(out.contains("account/info/?..)"), "path kept: {out}");
+    // Messages without a query pass through byte-for-byte.
+    assert_eq!(redact_url("plain failure"), "plain failure");
+}
+
+#[test]
+fn parse_blocked_response_covers_the_branches() {
+    use serde_json::json;
+    // The full block: ids come back (order untouched — sorting is the
+    // caller's job).
+    let full = json!({ "42": { "private": { "grouped_contacts": { "blocked": [5, 3] } } } });
+    assert_eq!(parse_blocked_response(Some(&full), 42), Some(vec![5, 3]));
+    // The PRIVATE node missing = the private_missing signal (None) — the
+    // "token transport rejected" shape the sync must not render as a
+    // silent empty blacklist.
+    let bare = json!({ "42": { "nickname": "x" } });
+    assert_eq!(parse_blocked_response(Some(&bare), 42), None);
+    // An account that never used contacts returns an EMPTY block — a
+    // legitimate empty blacklist, not a failure.
+    let blank = json!({ "42": { "private": { "grouped_contacts": { "blocked": [] } } } });
+    assert_eq!(
+        parse_blocked_response(Some(&blank), 42),
+        Some(Vec::<i64>::new())
+    );
+    // Another account's node must not match.
+    assert_eq!(parse_blocked_response(Some(&full), 43), None);
+    assert_eq!(parse_blocked_response(None, 42), None);
 }

@@ -33,6 +33,9 @@ export const useBlacklistStore = defineStore("blacklist", () => {
   /** Login URL shown for manual copy/paste while a flow is open. */
   const loginUrl = ref<string | null>(null);
   let loadedRealm = "";
+  /** Monotonic ticket for ensureRealm — a slow EARLIER request must never
+   *  overwrite the state a later request already committed. */
+  let realmSeq = 0;
 
   const blockedIds = computed(
     () => new Set(snapshot.value?.entries.map((entry) => entry.accountId) ?? []),
@@ -41,20 +44,23 @@ export const useBlacklistStore = defineStore("blacklist", () => {
   /** Load one realm's binding + snapshot + knobs once (idempotent). */
   async function ensureRealm(target: BlacklistRealm): Promise<void> {
     if (loadedRealm === target && !loading.value) return;
+    const seq = ++realmSeq;
     loading.value = true;
     try {
-      realm.value = target;
       const [authState, snap, cfg] = await Promise.all([
         api.blacklistAuthState(target),
         api.blacklistSnapshot(target),
         api.blacklistLoadConfig(),
       ]);
+      // Superseded by a newer ensureRealm while in flight — drop everything.
+      if (seq !== realmSeq) return;
+      realm.value = target;
       auth.value = authState;
       snapshot.value = snap;
       config.value = cfg;
       loadedRealm = target;
     } finally {
-      loading.value = false;
+      if (seq === realmSeq) loading.value = false;
     }
   }
 
@@ -121,7 +127,12 @@ export const useBlacklistStore = defineStore("blacklist", () => {
   }
 
   async function saveConfig(): Promise<void> {
-    config.value = await api.blacklistSaveConfig(config.value);
+    // Adopt the SANITIZED response (the network-config save pattern) — but
+    // never let a null/undefined wire answer clobber the local config: the
+    // settings section reads config on every render and a null here would
+    // crash it (the P0 the store test pins).
+    const saved = await api.blacklistSaveConfig(config.value);
+    if (saved) config.value = saved;
   }
 
   return {

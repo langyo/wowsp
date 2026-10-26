@@ -13,6 +13,7 @@
   "blacklistNotLoggedIn": "로그인되지 않음",
   "blacklistTokenExpire": "인증 만료:",
   "blacklistReLoginDue": "인증이 만료되었습니다. 다시 로그인하세요",
+  "blacklistReLoginSoon": "인증이 곧 만료됩니다. 다시 로그인하세요",
   "blacklistLogout": "연결 해제",
   "blacklistSyncSettings": "동기화 설정",
   "blacklistAutoSync": "자동 동기화",

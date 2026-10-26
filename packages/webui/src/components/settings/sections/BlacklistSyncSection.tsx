@@ -40,7 +40,10 @@ export default defineComponent({
   },
   setup() {
     const store = useBlacklistStore();
-    const realm = ref<BlacklistRealm>("eu");
+    // Seed from the store's already-armed realm (AppShell boots it from the
+    // detected install) — a hardcoded default would RE-ARM "eu" on every
+    // settings open and strip a non-EU player's synced snapshot.
+    const realm = ref<BlacklistRealm>(store.realm || "eu");
     void store.ensureRealm(realm.value);
     watch(realm, (next) => void store.ensureRealm(next));
 
@@ -108,9 +111,14 @@ export default defineComponent({
       await store.saveConfig();
     }
 
-    const tokenExpired = computed(() => {
+    /** Expiring within three days → a re-login nudge (the plain expiry
+     *  readout stays; the backend keeps logged_in true until actually
+     *  expired, so a hard "expired" badge on a logged-in row is unreachable). */
+    const tokenExpiringSoon = computed(() => {
       const expires = store.auth?.expiresAt;
-      return expires != null && expires * 1000 < Date.now();
+      if (expires == null) return false;
+      const left = expires * 1000 - Date.now();
+      return left > 0 && left < 72 * 3600 * 1000;
     });
     const lastSyncText = computed(() => {
       const stamp = store.snapshot?.lastSyncedAt;
@@ -143,8 +151,8 @@ export default defineComponent({
                 {t("settings.blacklistBoundAs")}
                 {" "}
                 <strong>{store.auth.nickname}</strong>
-                {tokenExpired.value ? (
-                  <span class="blacklist-sync__expired">{t("settings.blacklistReLoginDue")}</span>
+                {tokenExpiringSoon.value ? (
+                  <span class="blacklist-sync__expired">{t("settings.blacklistReLoginSoon")}</span>
                 ) : (
                   <span class="blacklist-sync__muted">
                     {t("settings.blacklistTokenExpire")}
@@ -211,7 +219,11 @@ export default defineComponent({
                   submitOnEnter={() => void saveInterval()}
                 />
               </div>
-              <HkButton size="sm" disabled={!intervalDirty.value} onClick={() => void saveInterval()}>
+              <HkButton
+                size="sm"
+                disabled={!intervalDirty.value || Number.isNaN(Number.parseInt(intervalInput.value, 10))}
+                onClick={() => void saveInterval()}
+              >
                 {t("settings.blacklistSave")}
               </HkButton>
             </div>
@@ -237,6 +249,9 @@ export default defineComponent({
                 : t("settings.blacklistSyncFailed", {
                     msg: store.lastReport.message ?? "",
                   })}
+              {store.lastReport.ok && store.lastReport.message ? (
+                <span class="blacklist-sync__muted"> {store.lastReport.message}</span>
+              ) : null}
             </div>
           ) : null}
         </HkSettingsGroup>
