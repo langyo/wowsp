@@ -213,4 +213,3 @@ jobs:
           Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EOF
           python3 scripts/mod_hub_sync.py issue --title "$title" --body-file "$bodyfile"
-          fi
