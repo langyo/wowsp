@@ -739,6 +739,7 @@ pub fn run() {
             commands::ingame_plugin::ingame_plugin_status,
             commands::ingame_plugin::ingame_plugin_install,
             commands::ingame_plugin::ingame_plugin_uninstall,
+            commands::ingame_plugin::ingame_builds_snapshot,
             commands::ranked::get_ranked_stats,
             commands::ranked::get_ranked_ship_stats,
             // Changelog feed for the settings' 更新日志 section — GitHub

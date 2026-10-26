@@ -34,6 +34,13 @@ companion app consumes:
     for the Rust synthesizer's order preservation, plus the walk's side
     membership (sides — the records-dead class's only team split; EMPTY
     lists when the walk stands down),
+  - builds.json: the per-battle build bridge — one frame per battle with
+    every roster record's raw SHIP_CONFIG blob (shipConfigDump; hex on the
+    WG family, the base64 body Lesta's SafeClass repr hands over) and the
+    captain-skill picks (crewModifiersCompactParams/crewParams
+    learnedSkills), the local player's team, and the quit-clear — planted
+    records cover the py2-str hex codec, the %-table fallback, both crew
+    field names and all three read levels, plus the oversized-dump skip,
   - heartbeat.json written with the roster count,
   - the scheduler survives tick-over-tick (no swallowed exception text).
 
@@ -73,6 +80,7 @@ anywhere; it is the "constraints list" harness the plugin design doc
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -108,6 +116,132 @@ class FakeRecord(object):
 
     def __getitem__(self, key):
         return self._f[key]
+
+
+# ── builds.json planting (the per-battle build bridge) ──────────────────
+# The live record shapes the bridge reads: the raw SHIP_CONFIG blob under
+# 'shipConfigDump' (bytes on the WG family, a base64 body in Lesta's
+# SafeClass repr) and a crew-params object whose learnedSkills are the
+# captain's picks (Lesta: 'crewModifiersCompactParams'; WG-family records
+# answer 'crewParams' as a two-slot list). Every access level the probe
+# falls back through gets a dedicated shape below, so the harness proves
+# the three-level read instead of trusting it.
+BUILD_DUMP_HEAD = b"\x01\x00\x00\x00"
+
+
+def build_dump_blob(name):
+    """A deterministic, name-derived SHIP_CONFIG stand-in: the real blob's
+    leading u32s (version=1, ship_params_id, element_count, unit_count)
+    plus the name, so a hex mismatch names its own culprit."""
+    return (BUILD_DUMP_HEAD + b"\x2a\x00\x00\x00\x0e\x00\x00\x00"
+            + name.encode("ascii") + b"\x06\x00\x00\x00")
+
+
+class FakeCrew(object):
+    """A crew-params object: subscripts resolve (the SafeClass first
+    level); item_access=False models a wrapper that only forwards
+    attributes — the probe's second read level."""
+
+    def __init__(self, params_id, is_in_adaptation=False,
+                 learned_skills=None, item_access=True):
+        self.paramsId = params_id
+        self.isInAdaptation = is_in_adaptation
+        self.learnedSkills = learned_skills if learned_skills is not None else []
+        self._item_access = item_access
+
+    def __getitem__(self, key):
+        if not self._item_access:
+            raise KeyError(key)
+        return {"paramsId": self.paramsId,
+                "isInAdaptation": self.isInAdaptation,
+                "learnedSkills": self.learnedSkills}[key]
+
+
+class FakeCrewDictOnly(object):
+    """The third read level: subscript and attribute access both fail, so
+    only obj.__dict__[key] can reach the value."""
+
+    def __init__(self, params_id, is_in_adaptation=False, learned_skills=None):
+        self.__dict__["paramsId"] = params_id
+        self.__dict__["isInAdaptation"] = is_in_adaptation
+        self.__dict__["learnedSkills"] = (
+            learned_skills if learned_skills is not None else [])
+
+    def __getitem__(self, key):
+        raise KeyError(key)
+
+    def __getattribute__(self, name):
+        if name == "learnedSkills":
+            raise AttributeError(name)
+        return object.__getattribute__(self, name)
+
+
+class FakeCrewList(object):
+    """The ModsAPI's container wrapper shape: iterable but NOT a py3 list
+    (its class name is not 'list'), so the probe's bounded duck iteration
+    is what reaches WG's two-slot crewParams crew object inside it."""
+
+    def __init__(self, items):
+        self._items = items
+
+    def __iter__(self):
+        return iter(self._items)
+
+
+class FakePy2Dump(object):
+    """The py2-str hex codec path: '.encode("hex")' is the probe's primary
+    hex route (a bound method, no builtins). The harness's own bytes
+    exercise the %-table fallback; this wrapper pins the codec branch."""
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def encode(self, codec):
+        if codec != "hex":
+            raise LookupError(codec)
+        return self._raw.hex()
+
+
+# Planted crew plans: name -> (params_id, is_in_adaptation,
+# learned_skills, access_level). access_level: "item" = subscript,
+# "attr" = attribute only, "list" = WG's two-slot crewParams list,
+# "dict" = obj.__dict__ only.
+BUILD_CREW_PLAN = {
+    "langyo": (310000000, False, [[1, 2, 3], [4, 5]], "item"),
+    "Ally01": (310000001, True, [[6]], "attr"),
+    "Ally02": (310000002, False, [[7], []], "list"),
+    "Ally03": (310000003, False, [[9, 10]], "dict"),
+    "Foe00": (320000000, False, [[11]], "item"),
+}
+
+
+def plant_build_fields(fields, name, builds):
+    """One record's build fields per pass mode (builds=None plants
+    nothing — the historical passes pin the no-field degrade)."""
+    raw = build_dump_blob(name)
+    if builds == "b64" and name == "langyo":
+        fields["shipConfigDump"] = base64.b64encode(raw).decode("ascii")
+    elif builds == "b64" and name == "Ally01":
+        fields["shipConfigDump"] = base64.b64encode(raw)
+    elif builds == "oversize" and name == "Ally01":
+        fields["shipConfigDump"] = BUILD_DUMP_HEAD + b"\x00" * 4100
+    elif name == "Foe00":
+        fields["shipConfigDump"] = FakePy2Dump(raw)
+    else:
+        fields["shipConfigDump"] = raw
+    plan = BUILD_CREW_PLAN.get(name)
+    if plan is None:
+        return
+    params_id, flag, skills, level = plan
+    if level == "list":
+        fields["crewParams"] = FakeCrewList(
+            [None, FakeCrew(params_id, flag, skills)])
+    elif level == "dict":
+        fields["crewModifiersCompactParams"] = FakeCrewDictOnly(
+            params_id, flag, skills)
+    else:
+        fields["crewModifiersCompactParams"] = FakeCrew(
+            params_id, flag, skills, item_access=(level == "item"))
 
 
 class StubUtils(object):
@@ -438,7 +572,11 @@ def build_roster_order():
     return order
 
 
-def build_roster(self_name="langyo", with_ship_names=True, drift_records=False):
+def build_roster(self_name="langyo", with_ship_names=True, drift_records=False,
+                 builds=None):
+    """The records mapping. 'builds' = a builds.json pass mode: the records
+    then carry the live build fields (shipConfigDump + crew params) planted
+    by plant_build_fields; None keeps the historical field-less shape."""
     players = {}
     for i in range(ROSTER_SIZE - ENEMY_COUNT):
         name = self_name if i == 0 else "Ally%02d" % i
@@ -447,6 +585,8 @@ def build_roster(self_name="langyo", with_ship_names=True, drift_records=False):
                   "isBot": False, "teamId": 1, "isAlive": True}
         if with_ship_names:
             fields["shipName"] = SHIP_LOCALIZED[name]
+        if builds:
+            plant_build_fields(fields, name, builds)
         if drift_records and name == "Ally02":
             # The drifted shape (the 2026-10-11 CN360 failure class): the
             # record carries no `isBot` at all. The probe must treat it as
@@ -460,11 +600,16 @@ def build_roster(self_name="langyo", with_ship_names=True, drift_records=False):
         players[100 + i] = FakeRecord(**fields)
     for i in range(ENEMY_COUNT):
         name = "Foe%02d" % i
-        players[200 + i] = FakeRecord(name=name, accountDBID=320000000 + i,
-                                      realm="ru", shipParamsId=428000000 + i,
-                                      isBot=False, teamId=2, isAlive=True,
-                                      **({"shipName": SHIP_LOCALIZED[name]}
-                                         if with_ship_names else {}))
+        fields = {"name": name, "accountDBID": 320000000 + i,
+                  "realm": "ru", "shipParamsId": 428000000 + i,
+                  "isBot": False, "teamId": 2, "isAlive": True}
+        if with_ship_names:
+            fields["shipName"] = SHIP_LOCALIZED[name]
+        if builds:
+            # Enemies carry the same vehicle ALL_CLIENTS props — the bridge
+            # must include them (the /live tooltip is for BOTH sides).
+            plant_build_fields(fields, name, builds)
+        players[200 + i] = FakeRecord(**fields)
     players[300] = FakeRecord(name=BOT_NAME, accountDBID=0, realm="",
                               shipParamsId=438000000, isBot=True, teamId=2,
                               isAlive=True,
@@ -527,11 +672,39 @@ def crippled_builtins():
     return table
 
 
+def expected_build_players(builds):
+    """name -> the builds.json row the planted records must produce (the
+    bot carries no build fields and must be skipped silently; the
+    oversize pass's Ally01 is skipped with a soft log instead)."""
+    base = build_roster(with_ship_names=True)
+    out = {}
+    for _key, rec in base.items():
+        name = rec["name"]
+        if name == BOT_NAME:
+            continue
+        if builds == "oversize" and name == "Ally01":
+            continue
+        raw = build_dump_blob(name)
+        enc, body = "hex", raw.hex()
+        if builds == "b64" and name in ("langyo", "Ally01"):
+            enc, body = "b64", base64.b64encode(raw).decode("ascii")
+        crew = None
+        plan = BUILD_CREW_PLAN.get(name)
+        if plan is not None:
+            params_id, flag, skills, _level = plan
+            crew = {"learned_skills": skills, "params_id": params_id,
+                    "is_in_adaptation": 1 if flag else 0}
+        out[name] = {"team": rec["teamId"],
+                     "ship_params_id": rec["shipParamsId"],
+                     "dump_enc": enc, "dump": body, "crew": crew}
+    return out
+
+
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
              raising_constants, fail_plain, ships, with_ship_names,
              drift_records, failures, raw_collection=True, aim_duck=False,
-             degraded=None):
-    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s"
+             degraded=None, builds=None, allow_soft=()):
+    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s builds=%s"
              % ("records" if encode_records else "projection",
                 "yes" if with_manifest else "missing",
                 "yes" if with_ui else "absent",
@@ -542,7 +715,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 "yes" if drift_records else "no",
                 "yes" if raw_collection else "missing",
                 "yes" if aim_duck else "no",
-                degraded or "no"))
+                degraded or "no",
+                builds or "none"))
     utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle() if raw_collection else StubBattleNoRaw()
     events = StubEvents()
@@ -557,7 +731,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
     #   "partial" — langyo's slot resolves to a nonexistent ship id, so
     #               the key map comes back one short of the roster.
     roster = build_roster(with_ship_names=with_ship_names,
-                          drift_records=drift_records)
+                          drift_records=drift_records, builds=builds)
     dh_avatars = []
     dh_ships = []
     avatar_by_name = {}
@@ -685,7 +859,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # Battle start: records become available, then drive the tick loop
         # (each tick re-schedules itself; call the latest pending callback).
         battle.players = build_roster(with_ship_names=with_ship_names,
-                                      drift_records=drift_records)
+                                      drift_records=drift_records,
+                                      builds=builds)
         if degraded:
             battle.degraded = degraded
         start = events.handlers.get("onBattleStart")
@@ -990,8 +1165,14 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # every path succeeds and nothing lands here.
         probe = env.get("probe")
         if probe is not None and probe.last_error:
-            failures.append("[%s] probe recorded a soft error: %r"
-                            % (label, probe.last_error))
+            waived = False
+            for pattern in allow_soft:
+                if pattern in probe.last_error:
+                    waived = True
+                    break
+            if not waived:
+                failures.append("[%s] probe recorded a soft error: %r"
+                                % (label, probe.last_error))
         # The in-game panel's row order (merge_order's fold of the walk).
         # With FULL key coverage the alive block sorts by the keys alone,
         # stable — the live-observed client rule (equal keys keep the
@@ -1127,6 +1308,74 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             if env_cfg.get("barcode") != 0:
                 failures.append("[%s] default mode flag flipped: %r"
                                 % (label, env_cfg))
+        # ── builds.json: the per-battle build bridge ────────────────────
+        # Contract: ONE frame per roster session (never one per 1s tick);
+        # every record's SHIP_CONFIG blob encoded hex — or the base64 body
+        # Lesta's SafeClass repr hands over — plus the crew picks, the
+        # local player's team, and the oversized dump skipped with a soft
+        # log. The quit-clear is asserted in the quit block below.
+        if builds:
+            build_probe = env.get("probe")
+            try:
+                with open("builds.json") as fh:
+                    builds_frame = json.load(fh)
+            except Exception as e:
+                failures.append("[%s] builds.json unreadable: %r" % (label, e))
+                builds_frame = None
+            if builds_frame is not None:
+                if builds_frame.get("v") != 1:
+                    failures.append("[%s] builds v=%r (expected 1)"
+                                    % (label, builds_frame.get("v")))
+                if type(builds_frame.get("t")) is not int:
+                    failures.append("[%s] builds t is %s (must be int)"
+                                    % (label, type(builds_frame.get("t")).__name__))
+                if build_probe is not None and builds_frame.get("battle") != build_probe.session:
+                    failures.append("[%s] builds battle=%r (expected the session %r)"
+                                    % (label, builds_frame.get("battle"),
+                                       build_probe.session))
+                if builds_frame.get("self_team") != 1:
+                    failures.append("[%s] builds self_team=%r (expected 1)"
+                                    % (label, builds_frame.get("self_team")))
+                expected_builds = expected_build_players(builds)
+                got_players = builds_frame.get("players") or {}
+                if set(got_players) != set(expected_builds):
+                    failures.append("[%s] builds players %r != expected %r"
+                                    % (label, sorted(got_players),
+                                       sorted(expected_builds)))
+                for name, want in expected_builds.items():
+                    got = got_players.get(name)
+                    if not isinstance(got, dict):
+                        continue
+                    for key in ("team", "ship_params_id", "dump_enc", "dump"):
+                        if got.get(key) != want[key]:
+                            failures.append(
+                                "[%s] builds %s.%s=%r, expected %r"
+                                % (label, name, key, got.get(key), want[key]))
+                    if want["crew"] is None:
+                        if "crew" in got:
+                            failures.append(
+                                "[%s] builds %s fabricated a crew block: %r"
+                                % (label, name, got["crew"]))
+                    elif got.get("crew") != want["crew"]:
+                        failures.append("[%s] builds %s.crew=%r, expected %r"
+                                        % (label, name, got.get("crew"),
+                                           want["crew"]))
+                writes = [line for line in utils.lines
+                          if "builds written players=" in line]
+                if len(writes) != 1:
+                    failures.append(
+                        "[%s] builds written %d times (must be exactly 1): %r"
+                        % (label, len(writes), writes[:3]))
+                elif "players=%d" % len(expected_builds) not in writes[0]:
+                    failures.append("[%s] builds log players mismatch: %r"
+                                    % (label, writes[0]))
+                if builds == "oversize":
+                    too_big = [line for line in utils.lines
+                               if "builds dump too large" in line]
+                    if not too_big:
+                        failures.append(
+                            "[%s] the oversized dump was not skipped with a log"
+                            % label)
         # The session-opening log line: the stabilized path announces
         # 'roster stable players=', the degraded ones announce their
         # synthesis source instead — a degraded pass must NEVER show the
@@ -1146,6 +1395,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # rosterOrder/shipNames), so a leftover file from a closed client
         # can never keep pinning a consumer's tie base or name segment.
         if probe is not None:
+            builds_session = probe.session
             probe.quit()
             try:
                 with open("telemetry.json") as fh:
@@ -1159,6 +1409,31 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 if cleared.get("rosterOrder") != [] or cleared.get("shipNames") != {}:
                     failures.append("[%s] quit telemetry did not clear the order bridge: %r"
                                     % (label, cleared))
+            if builds:
+                # The build bridge's quit-clear: players blanked, the
+                # finished battle's id preserved, v/t intact.
+                try:
+                    with open("builds.json") as fh:
+                        cleared_builds = json.load(fh)
+                except Exception as e:
+                    failures.append("[%s] quit builds.json unreadable: %r"
+                                    % (label, e))
+                else:
+                    if cleared_builds.get("players") != {}:
+                        failures.append("[%s] quit builds did not clear players: %r"
+                                        % (label, cleared_builds.get("players")))
+                    if cleared_builds.get("v") != 1:
+                        failures.append("[%s] quit builds v=%r"
+                                        % (label, cleared_builds.get("v")))
+                    if type(cleared_builds.get("t")) is not int:
+                        failures.append("[%s] quit builds t is %s (must be int)"
+                                        % (label,
+                                           type(cleared_builds.get("t")).__name__))
+                    if cleared_builds.get("battle") != builds_session:
+                        failures.append(
+                            "[%s] quit builds battle=%r, expected the finished "
+                            "session %r" % (label, cleared_builds.get("battle"),
+                                            builds_session))
     finally:
         os.chdir(cwd)
 
@@ -1245,13 +1520,33 @@ def main(argv):
         run_once(plugin_src, workdir, True, True, False, False, False,
                  "full", True, False, failures, degraded="churn")
 
+    # The builds.json passes (the per-battle build bridge). The planted
+    # records carry the live shapes: raw SHIP_CONFIG bytes (the WG family),
+    # the base64 body Lesta's SafeClass repr hands over, the py2-str hex
+    # codec wrapper, both crew field names (crewModifiersCompactParams /
+    # crewParams) and all three read levels (subscript / attribute /
+    # __dict__), plus an oversized dump. Assertions: the frame's exact
+    # per-player rows and single write, the hand-rolled-serializer path
+    # (fail_plain), the oversized-skip soft log, and the quit-clear.
+    build_passes = 0
+    for builds_mode, builds_plain in (("normal", False), ("b64", False),
+                                      ("normal", True), ("oversize", False)):
+        allow_soft = (("builds dump too large",)
+                      if builds_mode == "oversize" else ())
+        with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+            run_once(plugin_src, workdir, True, True, False, False,
+                     builds_plain, "full", True, False, failures,
+                     builds=builds_mode, allow_soft=allow_soft)
+        build_passes += 1
+
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
         for line in failures:
             print(" - " + line)
         return 1
     print("SANDBOX CONFORMANCE: PASS (%d passes, %s, crippled builtins: %s)"
-          % (len(passes) + 4, os.path.basename(os.path.normpath(plugin)),
+          % (len(passes) + 4 + build_passes,
+             os.path.basename(os.path.normpath(plugin)),
              ", ".join(SAFE_BUILTINS)))
     return 0
 

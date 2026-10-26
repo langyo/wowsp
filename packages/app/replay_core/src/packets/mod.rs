@@ -703,7 +703,7 @@ mod frames;
 mod payloads;
 mod pickle;
 
-pub use build::VehicleBuildRaw;
+pub use build::{ShipConfigRaw, VehicleBuildRaw, decode_ship_config_blob};
 
 #[cfg(test)]
 mod tests;
