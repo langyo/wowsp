@@ -244,12 +244,13 @@
    [name][enabled roster columns][xp], the exact template set INLINE per
    render (rosterColumns() + the 6ch XP cell) because the chip toggles
    decide which columns exist. The template below is the all-global
-   shape, kept as the fallback/documentation (scoped columns swap in
-   calc(Nch + 3ch) tracks per render). The grid element carries the mono
-   face so its ch matches the cells'. */
+   shape, kept as the fallback/documentation — every stat column rides
+   ONE uniform 7.5ch track (see ROSTER_COL_WIDTH in postBattleShare.tsx),
+   so the columns sit an even pitch apart. The grid element carries the
+   mono face so its ch matches the cells'. */
 .replay-view__postbattle-col-title--agg {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 6.5ch 5ch 7ch 7.5ch 6ch;
+  grid-template-columns: minmax(0, 1fr) repeat(4, 7.5ch) 6ch;
   column-gap: 8px;
   row-gap: 1px;
   align-items: end;

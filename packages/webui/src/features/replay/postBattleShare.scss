@@ -7,8 +7,12 @@
 
 /* Roster stat columns (overall WR / PR / battles / avg damage) right-aligned
    in a mono face; values are tier-colored inline (battles: red under 200
-   battles, plain above — the count carries no tier color); fixed ch widths
-   keep each column aligned across rows on every surface. */
+   battles, plain above — the count carries no tier color); ONE fixed ch
+   track per column keeps every column aligned across rows on every surface
+   AND the neighbor-to-neighbor pitch even — right-aligned numbers sit gap +
+   track apart, so per-metric tracks read as lurching gaps (user feedback).
+   The inline minWidth from rosterColumns() mirrors the header grids'
+   tracks; the min-width below is the bare fallback. */
 /* A scoped column's tag (单排/单船/单船单排/舰种 …) inside the full card's stat
    text line — the muted small face, so the tag reads as a qualifier of
    the number it prefixes, never as a value. */
@@ -33,8 +37,9 @@
      values (and the header labels above them) right-align. Park it on the
      same right edge its number will land on. */
   .hk-spinner-wrapper { justify-content: flex-end; }
-  &--wr { min-width: 6.5ch; }
-  &--pr { min-width: 5ch; }
-  &--battles { min-width: 7ch; }
-  &--dmg { min-width: 7.5ch; }
+  /* One uniform track (rosterColumns()' ROSTER_COL_WIDTH) — the per-metric
+     min-widths this used to carry sat each column gap + its own track
+     apart, an uneven pitch. The --wr/--pr/--battles/--dmg modifiers stay
+     on the cells as semantic hooks only. */
+  min-width: 7.5ch;
 }

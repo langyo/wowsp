@@ -91,20 +91,22 @@ export interface RosterColumnSpec {
   /** Fixed ch track so the columns align across rows: the aggregate
    *  header grids mirror the template AND the compact cells take it as
    *  their min-width — one width source, so each header label lands
-   *  exactly on its own column; scoped columns widen for their scope
-   *  tag. */
+   *  exactly on its own column. Every column rides the SAME uniform
+   *  track (ROSTER_COL_WIDTH) so the gap between any two neighbors is
+   *  constant; a header label that outgrows its track spills into the
+   *  name track (justify-self: end), never off its own column. */
   width: string;
 }
 
-/** Metric → the fixed track's base width (the value cells' ch widths the
- *  mono faces pin). */
-const METRIC_WIDTH: Record<OverlayColumnMetric, string> = {
-  winrate: "6.5ch",
-  pr: "5ch",
-  battles: "7ch",
-  damage: "7.5ch",
-  kd: "5ch",
-};
+/** ONE uniform track width for every roster stat column. The value cells
+ *  right-align inside their track, so the pitch between adjacent columns
+ *  is flex gap + the RIGHT column's width — per-metric widths made that
+ *  pitch lurch (worst on a scoped column: its old +3ch scope-tag bonus sat
+ *  it far off the PR column; user feedback), so every column now rides the
+ *  same track and all the neighbor gaps read equal. 7.5ch covers the
+ *  widest value (a 7-character damage count); a compact header's scope tag
+ *  overflows into the name track when its CJK label outgrows the track. */
+const ROSTER_COL_WIDTH = "7.5ch";
 
 const COLUMN_MOD: Record<OverlayColumnMetric, string> = {
   winrate: "wr",
@@ -173,9 +175,7 @@ export function rosterColumns(): RosterColumnSpec[] {
         metric: c.metric,
         title: `${t(SCOPE_FULL_KEY[c.scope])} · ${metric}`,
         head,
-        width: tag
-          ? `calc(${METRIC_WIDTH[c.metric]} + 3ch)`
-          : METRIC_WIDTH[c.metric],
+        width: ROSTER_COL_WIDTH,
       };
     });
 }
@@ -263,9 +263,9 @@ export function rosterStatCols(
         return (
           <span
             class={`replay-view__postbattle-cell-stat replay-view__postbattle-cell-stat--${COLUMN_MOD[col.metric]}`}
-            // The cell mirrors the header grid's track — the class min-width
-            // below is the bare metric, so without this the +3ch the scoped
-            // header tracks reserve drifts every label left of its column.
+            // The cell mirrors the header grid's track (one uniform width,
+            // see ROSTER_COL_WIDTH) — without the inline min-width a wider
+            // header track would drift its label left of the cells' column.
             style={{ minWidth: col.width }}
             data-hint={tip}
           >
