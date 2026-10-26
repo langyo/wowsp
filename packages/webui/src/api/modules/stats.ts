@@ -547,6 +547,13 @@ export const statsApi = {
     }),
   getShipGameparams: (shipId: number, gameRoot: string) =>
     transport.invoke<unknown>(RPC.get_ship_gameparams, { shipId, gameRoot }),
+  /** Background warm of the whole per-ship GameParams cache for an install
+   *  (desktop): one decode bulk-fills every ship's slice, so opening any
+   *  ship later is a cache hit. False when skipped — already filled for the
+   *  live build, no resolvable install, or mobile. Fire-and-forget: callers
+   *  swallow failures (older shells lack the command). */
+  warmShipGameparamsCache: (gameRoot: string) =>
+    transport.invoke<boolean>(RPC.warm_ship_gameparams_cache, { gameRoot }),
   /** Modernization price data walked from the install's GameParams.data:
    *  keyed by index (PCM027) AND full entity name; `cost` is credits. */
   getUpgradePrices: (gameRoot: string) =>

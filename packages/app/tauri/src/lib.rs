@@ -662,6 +662,7 @@ pub fn run() {
             commands::ship_stats::snapshot_player_stats,
             commands::upstream_health::upstream_health,
             commands::gameparams::get_ship_gameparams,
+    commands::gameparams::warm_ship_gameparams_cache,
             commands::gameparams::get_upgrade_prices,
             commands::game_maps::list_game_maps,
             commands::data_pack::data_pack_info,

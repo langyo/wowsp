@@ -106,6 +106,9 @@ export const RPC = {
   upstream_health: "upstream_health",
   snapshot_player_stats: "snapshot_player_stats",
   get_ship_gameparams: "get_ship_gameparams",
+  // Background warm: one GameParams decode bulk-fills every ship's slice
+  // into the per-ship cache (desktop only; a no-op on the phone).
+  warm_ship_gameparams_cache: "warm_ship_gameparams_cache",
   get_upgrade_prices: "get_upgrade_prices",
   get_player_trend: "get_player_trend",
   get_patches: "get_patches",

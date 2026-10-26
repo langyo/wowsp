@@ -23,8 +23,14 @@
 //!   4. In-app unpack: mount the install's idx/pkg VFS, read
 //!      `content/GameParams.data`, decode the pickle, pick the ship's entry
 //!      → cache → return. This is the path every fresh player install takes
-//!      (nobody runs game-assets by hand); it costs a few seconds once per
-//!      ship, then the per-ship cache makes re-opens instant.
+//!      (nobody runs game-assets by hand); the decode dominates its cost, so
+//!      it no longer serves just the requested ship: one decode bulk-fills
+//!      the per-ship cache for the WHOLE roster (`fill_ship_cache_from_pickle`),
+//!      making every later ship — this session and until the game build
+//!      changes — an instant cache hit. Heavy paths serialize behind one
+//!      flight lock ([`UNPACK_FLIGHT`]), and
+//!      `warm_ship_gameparams_cache` runs the same fill in the background
+//!      at startup so even the first open is a hit.
 //!
 //! The cache is keyed to the game's current `bin/<build>` number: when the
 //! game updates, stale slices are dropped so armor data never lags the
@@ -47,7 +53,9 @@ use std::path::Path;
 
 use wowsp_tauri_shared::CommandResult;
 
-use super::appdata::{appdata_dir_path, read_appdata_json, write_appdata_json};
+use super::appdata::{
+    appdata_dir_path, read_appdata_json, read_json_in, write_appdata_json, write_json_in,
+};
 
 // ── bundled Lesta ship data ───────────────────────────────────────────────
 
@@ -106,6 +114,343 @@ fn inflate_bundled_pack() -> Result<Vec<u8>, std::io::Error> {
 /// the map stays cached for the process's lifetime.
 fn bundled_lesta_slice(ship_id: i64) -> Option<serde_json::Value> {
     bundled_lesta_ships().get(&ship_id.to_string()).cloned()
+}
+
+// ── bulk per-ship cache fill ─────────────────────────────────────────────
+
+/// Flight lock around the heavy GameParams decode paths (install unpack and
+/// the startup warm): the decode dominates their cost, so concurrent lookups
+/// serialize instead of each paying their own decode — whoever acquires the
+/// lock next re-checks the per-ship cache first and usually finds its slice
+/// already written by the previous flight (the bulk fill makes that the
+/// common case, not the exception).
+#[cfg(desktop)]
+static UNPACK_FLIGHT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Marker naming the build whose roster the per-ship cache currently holds
+/// in bulk (`gameparams/bulk-filled-build.txt`). The startup warm skips its
+/// decode entirely while it matches the resolved build; a game update
+/// changes the live build (and the build-change wipe drops this file with
+/// the whole `gameparams/` dir), so it is always re-verified against the
+/// live build, never trusted alone.
+#[cfg(desktop)]
+fn bulk_fill_marker_matches(data_dir: &Path, build: u32) -> bool {
+    match read_json_in(data_dir, "gameparams/bulk-filled-build.txt") {
+        Ok(Some(text)) => text.trim().parse::<u32>().ok() == Some(build),
+        _ => false,
+    }
+}
+
+/// The fill only marks itself done when the build it decoded still matches
+/// the live install — a game update mid-fill would otherwise leave stale
+/// slices under a marker claiming they are fresh.
+#[cfg(desktop)]
+fn write_bulk_fill_marker(data_dir: &Path, build: u32) {
+    let _ = write_json_in(
+        data_dir,
+        "gameparams/bulk-filled-build.txt",
+        &build.to_string(),
+    );
+}
+
+/// Numeric id of a decoded entry — the same id → ShipId chain
+/// `pickled_entry_matches` matches with, surfaced as a value.
+#[cfg(desktop)]
+fn pickled_entry_id(v: &pickled::Value) -> Option<i64> {
+    pickled_get(v, "id")
+        .or_else(|| pickled_get(v, "ShipId"))
+        .and_then(|v| pickled_as_i64(&v))
+}
+
+/// (carries A_Artillery, carries any A_* weapon key) — one scan of the
+/// entry's top-level keys; the served-slice priority needs both.
+#[cfg(desktop)]
+fn entry_weapon_keys(v: &pickled::Value) -> (bool, bool) {
+    let mut artillery = false;
+    let mut armed = false;
+    if let Some(entries) = dict_entries(v) {
+        for (k, _) in entries {
+            if let pickled::HashableValue::String(s) = &k {
+                let key = s.inner();
+                if key == "A_Artillery" {
+                    artillery = true;
+                    armed = true;
+                } else if !armed && key.starts_with("A_") {
+                    armed = true;
+                }
+            }
+            if artillery && armed {
+                break;
+            }
+        }
+    }
+    (artillery, armed)
+}
+
+/// Per-ship-id candidate slots into the root entry list. The pick order
+/// mirrors `ship_slice_from_pickle`: the direct id-keyed entry wins
+/// outright (the lookup's early return), else the first A_Artillery entry,
+/// else the first any-A_* entry, else the first id-matching entry — all in
+/// root order.
+#[cfg(desktop)]
+#[derive(Default)]
+struct SliceCandidates {
+    direct: Option<usize>,
+    artillery: Option<usize>,
+    armed: Option<usize>,
+    first: Option<usize>,
+}
+
+impl SliceCandidates {
+    /// The entry the lookup would serve: (root-entry index, picked from the
+    /// direct id-keyed form), if any.
+    fn pick(&self) -> Option<(usize, bool)> {
+        if let Some(idx) = self.direct {
+            return Some((idx, true));
+        }
+        self.artillery
+            .or(self.armed)
+            .or(self.first)
+            .map(|idx| (idx, false))
+    }
+}
+
+/// Walk the decoded params dict once and resolve every ship id the lookup
+/// can serve to its entry index. Groups restricted to SHIP-shaped picks
+/// (direct-keyed, or carrying a weapon key): module-only entities such as
+/// aircraft and upgrades stay lazy, so the cache never grows for ids
+/// nothing queries. Sorted by id for deterministic write order.
+#[cfg(desktop)]
+fn group_pickle_ship_picks(
+    entries: &[(pickled::HashableValue, pickled::Value)],
+) -> Vec<(i64, usize)> {
+    let mut groups: std::collections::HashMap<i64, SliceCandidates> =
+        std::collections::HashMap::new();
+    for (idx, (k, v)) in entries.iter().enumerate() {
+        if let pickled::HashableValue::String(s) = k {
+            if let Ok(sid) = s.inner().parse::<i64>() {
+                groups.entry(sid).or_default().direct.get_or_insert(idx);
+            }
+        }
+        if let Some(sid) = pickled_entry_id(v) {
+            let group = groups.entry(sid).or_default();
+            if group.first.is_none() {
+                group.first = Some(idx);
+            }
+            let (artillery, armed) = entry_weapon_keys(v);
+            if artillery && group.artillery.is_none() {
+                group.artillery = Some(idx);
+            }
+            if armed && group.armed.is_none() {
+                group.armed = Some(idx);
+            }
+        }
+    }
+    let mut picks: Vec<(i64, usize)> = groups
+        .into_iter()
+        .filter_map(|(sid, group)| group.pick().map(|(idx, is_direct)| (sid, idx, is_direct)))
+        .filter(|(_, idx, is_direct)| {
+            // Ship-shaped only: id-matched groups must resolve to a hull
+            // entry (the same heuristic ship_slice_from_pickle prefers), not
+            // a bare module entity; the direct-keyed form is what the lookup
+            // returns outright, so its group stays regardless of shape.
+            *is_direct || entry_weapon_keys(&entries[*idx].1).1
+        })
+        .map(|(sid, idx, _)| (sid, idx))
+        .collect();
+    picks.sort_by_key(|(sid, _)| *sid);
+    picks
+}
+
+/// Serialize + write one slice unless the cache file already holds it.
+/// Some(true) written · Some(false) already cached · None failed.
+#[cfg(desktop)]
+fn write_slice_cache(data_dir: &Path, ship_id: i64, slice: &serde_json::Value) -> Option<bool> {
+    let file = format!("gameparams/{ship_id}.json");
+    if matches!(read_json_in(data_dir, &file), Ok(Some(_))) {
+        return Some(false);
+    }
+    match serde_json::to_string(slice) {
+        Ok(text) => write_json_in(data_dir, &file, &text).ok().map(|_| true),
+        Err(_) => None,
+    }
+}
+
+/// Shared fill executor: given the resolved (ship id → pick) list and a
+/// slice materializer, write every uncached slice. The build guard re-reads
+/// the live install build every `BUILD_CHECK_EVERY` picks and on the final
+/// one — a game update mid-fill aborts the fill and drops the directory
+/// (the same wipe `invalidate_cache_on_build_change` performs), so stale
+/// slices can never survive under a fresh marker. Returns (written,
+/// skipped-existing, aborted).
+#[cfg(desktop)]
+const BUILD_CHECK_EVERY: usize = 256;
+
+#[cfg(desktop)]
+fn fill_ship_cache_exec(
+    picks: Vec<(i64, usize)>,
+    slice_at: impl Fn(usize) -> Option<serde_json::Value>,
+    data_dir: &Path,
+    game_root: &str,
+    build: u32,
+) -> (usize, usize, bool) {
+    // Cheap enough per batch: one bin/ readdir. An unresolvable root
+    // (loose-dump flow, tests) cannot contradict the build — keep going.
+    let build_changed =
+        || matches!(latest_build_with_idx(Path::new(game_root)), Some(b) if b != build);
+    let mut written = 0usize;
+    let mut skipped = 0usize;
+    let mut aborted = build_changed();
+    for (n, (sid, idx)) in picks.iter().enumerate() {
+        if aborted {
+            break;
+        }
+        if n % BUILD_CHECK_EVERY == BUILD_CHECK_EVERY - 1 && build_changed() {
+            aborted = true;
+            break;
+        }
+        let Some(slice) = slice_at(*idx) else {
+            continue;
+        };
+        match write_slice_cache(data_dir, *sid, &slice) {
+            Some(true) => written += 1,
+            Some(false) => skipped += 1,
+            None => {},
+        }
+    }
+    if !aborted {
+        aborted = build_changed();
+    }
+    if aborted {
+        // Same wipe invalidate_cache_on_build_change performs: drop whatever
+        // this fill (or a racing lookup) landed for the OLD build so the
+        // next miss re-unpacks against the new one. Wipes the fill's OWN
+        // data dir (the injected one — tests pass a temp dir, production
+        // the AppData root), never a freshly resolved global.
+        let _ = fs::remove_dir_all(data_dir.join("gameparams"));
+        tracing::warn!("GameParams build changed mid-fill; dropped the partial cache");
+    }
+    (written, skipped, aborted)
+}
+
+/// Bulk-write the per-ship cache from a decoded pickle. Best-effort: per-id
+/// failures are skipped. See `fill_ship_cache_exec` for the return tuple.
+#[cfg(desktop)]
+fn fill_ship_cache_from_pickle(
+    pickle: &pickled::Value,
+    data_dir: &Path,
+    game_root: &str,
+    build: u32,
+) -> (usize, usize, bool) {
+    let Some(params) = params_root(pickle) else {
+        return (0, 0, false);
+    };
+    let Some(entries) = dict_entries(&params) else {
+        return (0, 0, false);
+    };
+    let picks = group_pickle_ship_picks(&entries);
+    let slice_at = |idx: usize| to_json(&entries[idx].1).ok();
+    fill_ship_cache_exec(picks, slice_at, data_dir, game_root, build)
+}
+
+/// Bulk-write the per-ship cache from an already-parsed loose
+/// GameParams.json (the pre-unpacked dev/extract-cache fallback). Supports
+/// the same four top-level shapes `extract_ship_slice` does.
+#[cfg(desktop)]
+fn fill_ship_cache_from_json(
+    parsed: &serde_json::Value,
+    data_dir: &Path,
+    game_root: &str,
+    build: u32,
+) -> (usize, usize, bool) {
+    // Gather (direct numeric key, entry) pairs across the supported shapes.
+    let mut pairs: Vec<(Option<i64>, &serde_json::Value)> = Vec::new();
+    if let Some(arr) = parsed.as_array() {
+        pairs.extend(arr.iter().map(|v| (None, v)));
+    } else if let Some(obj) = parsed.as_object() {
+        if let Some(ships) = obj.get("ships").and_then(|v| v.as_array()) {
+            pairs.extend(ships.iter().map(|v| (None, v)));
+        }
+        for (k, v) in obj {
+            pairs.push((k.parse::<i64>().ok(), v));
+        }
+    }
+    // Group with the same priority as the pickle variant (entry id chain:
+    // numeric id → string id → ShipId, mirroring entry_matches_id).
+    let entry_id = |v: &serde_json::Value| -> Option<i64> {
+        v.get("id")
+            .and_then(|v| v.as_i64())
+            .or_else(|| {
+                v.get("id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse().ok())
+            })
+            .or_else(|| v.get("ShipId").and_then(|v| v.as_i64()))
+    };
+    #[derive(Default)]
+    struct Group {
+        direct: Option<usize>,
+        artillery: Option<usize>,
+        armed: Option<usize>,
+        first: Option<usize>,
+    }
+    impl Group {
+        fn pick(&self) -> Option<usize> {
+            self.direct.or(self.artillery).or(self.armed).or(self.first)
+        }
+    }
+    let mut groups: std::collections::HashMap<i64, Group> = std::collections::HashMap::new();
+    for (idx, (direct, v)) in pairs.iter().enumerate() {
+        if let Some(sid) = direct {
+            groups.entry(*sid).or_default().direct.get_or_insert(idx);
+        }
+        if let Some(sid) = entry_id(v) {
+            let group = groups.entry(sid).or_default();
+            if group.first.is_none() {
+                group.first = Some(idx);
+            }
+            let obj = v.as_object();
+            let artillery = obj.is_some_and(|o| o.contains_key("A_Artillery"));
+            let armed = artillery || obj.is_some_and(|o| o.keys().any(|k| k.starts_with("A_")));
+            if artillery && group.artillery.is_none() {
+                group.artillery = Some(idx);
+            }
+            if armed && group.armed.is_none() {
+                group.armed = Some(idx);
+            }
+        }
+    }
+    let mut picks: Vec<(i64, usize)> = groups
+        .into_iter()
+        .filter_map(|(sid, group)| group.pick().map(|idx| (sid, idx)))
+        .filter(|(sid, idx)| {
+            pairs[*idx].0 == Some(*sid) || {
+                let v = pairs[*idx].1;
+                v.as_object()
+                    .is_some_and(|o| o.keys().any(|k| k.starts_with("A_")))
+            }
+        })
+        .collect();
+    picks.sort_by_key(|(sid, _)| *sid);
+    let slice_at = |idx: usize| Some(pairs[idx].1.clone());
+    fill_ship_cache_exec(picks, slice_at, data_dir, game_root, build)
+}
+
+/// Pre-warm the modernization price cache from a decode already in hand —
+/// the planner's first price-panel open otherwise pays its own decode.
+#[cfg(desktop)]
+fn prewarm_upgrade_prices(pickle: &pickled::Value) {
+    if matches!(
+        read_appdata_json("gameparams/upgrade-prices.json"),
+        Ok(Some(_))
+    ) {
+        return;
+    }
+    if let Ok(prices) = upgrade_prices_from_pickle(pickle) {
+        if let Ok(text) = serde_json::to_string(&prices) {
+            let _ = write_appdata_json("gameparams/upgrade-prices.json", &text);
+        }
+    }
 }
 
 /// Extract one ship's GameParams subtree. `game_root` is the directory
@@ -174,7 +519,73 @@ pub async fn get_ship_gameparams(
     {
         // The handle only serves the mobile branch; keep desktop silent.
         let _ = &app;
+        // Heavy-path flight: serialize against the startup warm (and other
+        // lookups) so at most one GameParams decode runs at a time, then
+        // re-check the cache — the flight that just finished usually wrote
+        // this slice as part of its bulk fill.
+        let _flight = UNPACK_FLIGHT.lock().await;
+        if let Ok(Some(raw)) = read_appdata_json(&cache_file) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(v);
+            }
+        }
         Ok(ship_from_install_or_loose(&game_root, ship_id, cache_file).await?)
+    }
+}
+
+/// Warm the per-ship GameParams cache for the resolved install in the
+/// background: mount the VFS once, decode GameParams once, and write every
+/// ship's slice into `gameparams/<id>.json` (plus the modernization price
+/// cache), so opening ANY ship — carrier or not — is a cache hit instead of
+/// its own multi-second unpack. The AppShell fires it after game-path
+/// detection; idempotent and cheap while the fill marker matches the
+/// resolved build (one bin/ readdir), re-fills only after a game update
+/// wiped the cache. Desktop only — the phone serves its bundled pack.
+/// Returns true when a fill actually ran.
+#[tauri::command]
+pub async fn warm_ship_gameparams_cache(game_root: String) -> CommandResult<bool> {
+    #[cfg(mobile)]
+    {
+        let _ = game_root;
+        return Ok(false);
+    }
+    #[cfg(desktop)]
+    {
+        let Some(build) = latest_build_with_idx(Path::new(&game_root)) else {
+            // No resolvable install — nothing to warm (the lookup path will
+            // surface the proper error if the user opens a ship anyway).
+            return Ok(false);
+        };
+        // Same freshness gate every lookup runs: a build change wipes stale
+        // slices BEFORE any decision on the marker below.
+        invalidate_cache_on_build_change(build);
+        let dir = appdata_dir_path()?;
+        if bulk_fill_marker_matches(&dir, build) {
+            return Ok(false);
+        }
+        let _flight = UNPACK_FLIGHT.lock().await;
+        // Re-check after the flight: a lookup's unpack may have completed
+        // the whole fill while we waited for the decode.
+        if bulk_fill_marker_matches(&dir, build) {
+            return Ok(false);
+        }
+        let root2 = game_root.clone();
+        let (written, skipped, aborted) =
+            tokio::task::spawn_blocking(move || -> Result<(usize, usize, bool)> {
+                let pickle = decode_gameparams_pickle(&root2)?;
+                let dir = appdata_dir_path()?;
+                let res = fill_ship_cache_from_pickle(&pickle, &dir, &root2, build);
+                prewarm_upgrade_prices(&pickle);
+                Ok(res)
+            })
+            .await
+            .map_err(|e| anyhow!("GameParams 预热任务异常退出：{e}"))??;
+        if aborted {
+            return Ok(false);
+        }
+        write_bulk_fill_marker(&dir, build);
+        tracing::info!(written, skipped, build, "GameParams cache warmed");
+        Ok(true)
     }
 }
 
@@ -222,7 +633,27 @@ async fn ship_from_install_or_loose(
     ];
     if let Some(path) = json_candidates.iter().find(|p| p.exists()) {
         let raw = fs::read_to_string(path).map_err(|e| anyhow!("read GameParams.json: {e}"))?;
-        let slice = extract_ship_slice(&raw, ship_id)?;
+        // Parse ONCE and serve the whole roster from it — the same bulk-fill
+        // contract as the install path; the parse is this path's decode.
+        let parsed: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| anyhow!("parse GameParams.json: {e}"))?;
+        let build = latest_build_with_idx(root).unwrap_or(0);
+        match appdata_dir_path() {
+            Ok(dir) => {
+                let (written, skipped, aborted) =
+                    fill_ship_cache_from_json(&parsed, &dir, game_root, build);
+                if written > 0 || aborted {
+                    tracing::info!(
+                        written,
+                        skipped,
+                        aborted,
+                        "bulk-filled the per-ship GameParams cache from the loose dump"
+                    );
+                }
+            },
+            Err(e) => tracing::warn!(error = %e, "bulk fill skipped: no data dir"),
+        }
+        let slice = extract_ship_slice_from_parsed(&parsed, ship_id)?;
         let serialized = serde_json::to_string(&slice).unwrap_or_default();
         let _ = write_appdata_json(&cache_file, &serialized);
         return Ok(slice);
@@ -238,8 +669,11 @@ async fn ship_from_install_or_loose(
 /// does, minus writing a 350MB intermediate JSON: mount the VFS, read
 /// `content/GameParams.data`, decode, pick the ship, serialize just that
 /// entry.
+/// Mount the install VFS and decode `content/GameParams.data` — the shared
+/// expensive front half of every install-path lookup (ship slice, bulk
+/// fill, price walk).
 #[cfg(desktop)]
-fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json::Value> {
+fn decode_gameparams_pickle(game_root: &str) -> Result<pickled::Value> {
     let root = Path::new(game_root);
     if !root.join("bin").is_dir() {
         bail!("游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。");
@@ -255,11 +689,43 @@ fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json:
 
     let bytes = read_game_params_bytes(&vfs)?;
 
-    let pickle = game_assets::game_params::convert::game_params_to_pickle(bytes)
-        .map_err(|e| anyhow!("解析 GameParams.data 失败：{e}"))?;
+    game_assets::game_params::convert::game_params_to_pickle(bytes)
+        .map_err(|e| anyhow!("解析 GameParams.data 失败：{e}"))
+}
 
-    ship_slice_from_pickle(&pickle, ship_id)
-        .ok_or_else(|| anyhow!("ship_id {ship_id} not found in GameParams"))
+#[cfg(desktop)]
+fn unpack_ship_from_install(game_root: &str, ship_id: i64) -> Result<serde_json::Value> {
+    // The fill's build-change guard needs the resolved build alongside the
+    // decode; resolving it here is one bin/ readdir.
+    let build = latest_build_with_idx(Path::new(game_root)).unwrap_or(0);
+    let pickle = decode_gameparams_pickle(game_root)?;
+
+    // The requested slice is resolved first so a fill problem can never
+    // break the caller; the fill itself is best-effort (per-id failures
+    // skipped, build-change abort drops the partial dir).
+    let requested = ship_slice_from_pickle(&pickle, ship_id);
+
+    // The decode is paid either way — serve the WHOLE roster from it: every
+    // later ship (this session and until the game build changes) becomes an
+    // instant cache hit.
+    match appdata_dir_path() {
+        Ok(dir) => {
+            let (written, skipped, aborted) =
+                fill_ship_cache_from_pickle(&pickle, &dir, game_root, build);
+            if written > 0 || aborted {
+                tracing::info!(
+                    written,
+                    skipped,
+                    aborted,
+                    "bulk-filled the per-ship GameParams cache"
+                );
+            }
+            prewarm_upgrade_prices(&pickle);
+        },
+        Err(e) => tracing::warn!(error = %e, "bulk fill skipped: no data dir"),
+    }
+
+    requested.ok_or_else(|| anyhow!("ship_id {ship_id} not found in GameParams"))
 }
 
 /// `content/GameParams.data` bytes out of the mounted install VFS. WG ships
@@ -423,20 +889,15 @@ pub async fn get_upgrade_prices(
 
 #[cfg(desktop)]
 fn upgrade_prices_from_install(game_root: &str) -> Result<serde_json::Value> {
-    let root = Path::new(game_root);
-    if !root.join("bin").is_dir() {
-        bail!("游戏目录无效：{game_root}（应包含 bin/ 子目录）。请在设置中重新指定游戏安装路径。");
-    }
-    let build = latest_build_with_idx(root).ok_or_else(|| {
-        anyhow!("在 {game_root}\\bin 下未找到带 idx/ 的版本目录，无法读取游戏资源索引。")
-    })?;
-    let vfs = game_assets::game_data::build_game_vfs_for_build(root, build)
-        .map_err(|e| anyhow!("读取游戏资源索引失败（build {build}）：{e}"))?;
-    let bytes = read_game_params_bytes(&vfs)?;
-    let pickle = game_assets::game_params::convert::game_params_to_pickle(bytes)
-        .map_err(|e| anyhow!("解析 GameParams.data 失败：{e}"))?;
+    let pickle = decode_gameparams_pickle(game_root)?;
+    upgrade_prices_from_pickle(&pickle)
+}
 
-    let params = params_root(&pickle).ok_or_else(|| anyhow!("GameParams 根结构无法识别"))?;
+/// The price walk over an already-decoded pickle (shared with the bulk
+/// fill's prewarm).
+#[cfg(desktop)]
+fn upgrade_prices_from_pickle(pickle: &pickled::Value) -> Result<serde_json::Value> {
+    let params = params_root(pickle).ok_or_else(|| anyhow!("GameParams 根结构无法识别"))?;
     let mut out = serde_json::Map::new();
     let entries = dict_entries(&params).ok_or_else(|| anyhow!("GameParams 根不是字典"))?;
     for (k, v) in entries {
@@ -608,11 +1069,13 @@ fn pickled_as_i64(v: &pickled::Value) -> Option<i64> {
 /// like aircraft squadrons don't carry weapon data.
 /// The per-ship AppData cache makes subsequent calls instant regardless of
 /// file size.
+/// The scan over a loose GameParams.json dump (the bulk fill parses the
+/// dump once for the whole roster, so the slice walk must not re-parse).
 #[cfg(desktop)]
-pub(crate) fn extract_ship_slice(raw: &str, ship_id: i64) -> Result<serde_json::Value> {
-    let parsed: serde_json::Value =
-        serde_json::from_str(raw).map_err(|e| anyhow!("parse GameParams.json: {e}"))?;
-
+pub(crate) fn extract_ship_slice_from_parsed(
+    parsed: &serde_json::Value,
+    ship_id: i64,
+) -> Result<serde_json::Value> {
     let mut candidates: Vec<serde_json::Value> = Vec::new();
 
     if let Some(arr) = parsed.as_array() {
@@ -887,7 +1350,8 @@ mod tests {
             }
         ])
         .to_string();
-        let ship = extract_ship_slice(&raw, 4282948544).unwrap();
+        let ship = extract_ship_slice_from_parsed(&serde_json::from_str(&raw).unwrap(), 4282948544)
+            .unwrap();
         assert_eq!(
             ship.get("name").and_then(|v| v.as_str()),
             Some("PASB510_Montana")
@@ -909,7 +1373,8 @@ mod tests {
             ]
         })
         .to_string();
-        let ship = extract_ship_slice(&raw, 200).unwrap();
+        let ship =
+            extract_ship_slice_from_parsed(&serde_json::from_str(&raw).unwrap(), 200).unwrap();
         assert_eq!(ship.get("name").and_then(|v| v.as_str()), Some("B"));
     }
 
@@ -920,14 +1385,16 @@ mod tests {
             "200": { "name": "B" }
         })
         .to_string();
-        let ship = extract_ship_slice(&raw, 200).unwrap();
+        let ship =
+            extract_ship_slice_from_parsed(&serde_json::from_str(&raw).unwrap(), 200).unwrap();
         assert_eq!(ship.get("name").and_then(|v| v.as_str()), Some("B"));
     }
 
     #[test]
     fn missing_ship_returns_error() {
         let raw = serde_json::json!([{ "id": 1, "name": "A" }]).to_string();
-        let err = extract_ship_slice(&raw, 999).unwrap_err();
+        let err =
+            extract_ship_slice_from_parsed(&serde_json::from_str(&raw).unwrap(), 999).unwrap_err();
         assert!(err.to_string().contains("not found"));
     }
 
@@ -950,7 +1417,8 @@ mod tests {
             }
         })
         .to_string();
-        let ship = extract_ship_slice(&raw, 4276041424).unwrap();
+        let ship = extract_ship_slice_from_parsed(&serde_json::from_str(&raw).unwrap(), 4276041424)
+            .unwrap();
         assert_eq!(
             ship.get("name").and_then(|v| v.as_str()),
             Some("PJSB018_Yamato_1944")
@@ -1324,6 +1792,172 @@ mod tests {
             ship.get("name").and_then(|v| v.as_str()),
             Some("PASB510_Montana")
         );
+    }
+
+    // ── bulk per-ship cache fill ──────────────────────────────────────
+
+    /// JSON dump, name-keyed (the game-assets CLI shape): the armed hull
+    /// entry wins over an id-sharing module sibling, module-only entities
+    /// (no A_* keys) are not cached, and the direct id-keyed form wins
+    /// outright — the exact slices `get_ship_gameparams` would serve.
+    #[test]
+    fn bulk_fill_from_json_caches_ship_picks() {
+        let dir = crate::commands::pairing::tests::tempfile_dir();
+        let parsed = serde_json::json!({
+            "PASA002_Bogue": {
+                "id": 4292851696_i64,
+                "name": "PASA002_Bogue",
+                "A_Hull": { "maxHP": 1 }
+            },
+            // Same id as the hull, but a bare module: must NOT win the pick
+            // (and must not shadow it as a separate file).
+            "PASA002_planes": {
+                "id": 4292851696_i64,
+                "name": "PASA002_planes"
+            },
+            // Module-only entity with its own id: never cached.
+            "PJAD999_plane": {
+                "id": 3248324304_i64,
+                "name": "PJAD999_plane"
+            },
+            // Direct id-keyed form: cached regardless of shape (the lookup
+            // returns it outright).
+            "3247341360": {
+                "name": "direct_entry"
+            }
+        });
+        let (written, _skipped, aborted) = fill_ship_cache_from_json(&parsed, &dir, "", 0);
+        assert!(!aborted);
+        assert_eq!(written, 2);
+
+        let hull = fs::read_to_string(dir.join("gameparams").join("4292851696.json")).unwrap();
+        assert!(
+            hull.contains("PASA002_Bogue"),
+            "hull entry must win: {hull}"
+        );
+        let direct = fs::read_to_string(dir.join("gameparams").join("3247341360.json")).unwrap();
+        assert!(direct.contains("direct_entry"));
+        assert!(
+            !dir.join("gameparams").join("3248324304.json").exists(),
+            "module-only entities stay out of the cache"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Already-cached ships are skipped (their files untouched), so a
+    /// session's existing slices never pay a rewrite — and the fill's
+    /// counter says how much work actually happened.
+    #[test]
+    fn bulk_fill_skips_existing_cache_files() {
+        let dir = crate::commands::pairing::tests::tempfile_dir();
+        fs::create_dir_all(dir.join("gameparams")).unwrap();
+        let cached = dir.join("gameparams").join("4292851696.json");
+        fs::write(&cached, "{\"name\":\"cached\"}").unwrap();
+        let parsed = serde_json::json!({
+            "PASA002_Bogue": { "id": 4292851696_i64, "name": "PASA002_Bogue", "A_Hull": {} },
+            "PJSB018_Yamato_1944": { "id": 4276041424_i64, "name": "PJSB018_Yamato_1944", "A_Artillery": {} }
+        });
+        let (written, skipped, aborted) = fill_ship_cache_from_json(&parsed, &dir, "", 0);
+        assert!(!aborted);
+        assert_eq!((written, skipped), (1, 1));
+        assert_eq!(
+            fs::read_to_string(&cached).unwrap(),
+            "{\"name\":\"cached\"}",
+            "existing cache file must not be rewritten"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The fill marker: absent → no match, written build matches, a newer
+    /// build does not — the startup warm's skip contract.
+    #[test]
+    fn bulk_fill_marker_roundtrip() {
+        let dir = crate::commands::pairing::tests::tempfile_dir();
+        assert!(!bulk_fill_marker_matches(&dir, 1200));
+        write_bulk_fill_marker(&dir, 1200);
+        assert!(bulk_fill_marker_matches(&dir, 1200));
+        assert!(!bulk_fill_marker_matches(&dir, 1300));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The pickled variant groups id-sharing entries the same way the
+    /// single-ship lookup does: the armed hull wins over its squadrons.
+    #[test]
+    fn bulk_fill_from_pickle_groups_shared_ids() {
+        let dir = crate::commands::pairing::tests::tempfile_dir();
+        let pickle = pdict(&[
+            (
+                "PASA002_Bogue",
+                pdict(&[
+                    ("id", pickled::Value::I64(4292851696)),
+                    ("name", pstr("PASA002_Bogue")),
+                    (
+                        "A_Artillery",
+                        pdict(&[("maxCaliber", pickled::Value::I64(127))]),
+                    ),
+                ]),
+            ),
+            (
+                // CV squadrons share the ship's id — never the served pick.
+                "PASA002_planes",
+                pdict(&[
+                    ("id", pickled::Value::I64(4292851696)),
+                    ("name", pstr("PASA002_planes")),
+                ]),
+            ),
+            (
+                "PJSB018_Yamato_1944",
+                pdict(&[
+                    ("id", pickled::Value::I64(4276041424)),
+                    ("name", pstr("PJSB018_Yamato_1944")),
+                    (
+                        "A_Artillery",
+                        pdict(&[("maxCaliber", pickled::Value::I64(460))]),
+                    ),
+                ]),
+            ),
+        ]);
+        let (written, _skipped, aborted) = fill_ship_cache_from_pickle(&pickle, &dir, "", 0);
+        assert!(!aborted);
+        assert_eq!(written, 2);
+        let hull = fs::read_to_string(dir.join("gameparams").join("4292851696.json")).unwrap();
+        assert!(hull.contains("PASA002_Bogue"));
+        assert!(
+            !hull.contains("PASA002_planes"),
+            "squadron sibling must not win: {hull}"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A game update mid-fill aborts and drops the partial directory, so
+    /// stale slices can never survive under a fresh marker. (An
+    /// unresolvable game root — the "" fixture above — cannot contradict
+    /// the build and never aborts.)
+    #[test]
+    fn bulk_fill_aborts_when_the_build_changes() {
+        let dir = crate::commands::pairing::tests::tempfile_dir();
+        // A resolvable install with build 200 (idx-carrying, same fixture
+        // shape latest_build_with_idx_prefers_idx_carriers uses).
+        let game_root = dir.join("install");
+        fs::create_dir_all(game_root.join("bin").join("200").join("idx")).unwrap();
+        fs::create_dir_all(dir.join("gameparams")).unwrap();
+
+        let parsed = serde_json::json!({
+            "PJSB018_Yamato_1944": { "id": 4276041424_i64, "name": "PJSB018_Yamato_1944", "A_Artillery": {} }
+        });
+        let (_written, _skipped, aborted) = fill_ship_cache_from_json(
+            &parsed,
+            &dir,
+            game_root.to_string_lossy().as_ref(),
+            100, // the fill was decoded against an older build
+        );
+        assert!(aborted, "stale-build fill must abort");
+        assert!(
+            !dir.join("gameparams").join("4276041424.json").exists()
+                || !dir.join("gameparams").exists(),
+            "the abort wipe must not leave stale slices behind"
+        );
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// `latest_build_with_idx` picks the highest-numbered bin/<build>/ that

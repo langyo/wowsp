@@ -408,6 +408,22 @@ export default defineComponent({
       void accounts.load();
       gameStatus.start();
       session.start();
+      // Warm the whole per-ship GameParams cache for the resolved install in
+      // the background (desktop): the backend decodes GameParams once and
+      // writes every ship's slice, so opening any ship is a cache hit
+      // instead of its own multi-second unpack. The command is idempotent —
+      // a fill marker matching the live build skips in one readdir — and
+      // every failure (older shell, no install) stays silent. Fires when
+      // detection lands and on later install switches (a different build
+      // re-fills through the same marker contract).
+      watch(
+        () => config.activeInstall?.path ?? "",
+        (root) => {
+          if (root && isTauri() && !mobileApp) {
+            void api.warmShipGameparamsCache(root).catch(() => {});
+          }
+        },
+      );
       // Follow the playing identity: when a battle roster identifies the
       // account actually logged in (the Rust session hub's display, matched
       // against the bound profiles), switch the active selection to it —
