@@ -897,21 +897,65 @@ def render_summary(report: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def upsert_issue(report: dict, title: str) -> int:
-    body = render_summary(report) + "\n<!-- wowsp-sync-report:v1\n" + \
-        json.dumps(report, ensure_ascii=False, indent=1) + "\n-->\n"
+CREATE_ISSUE_MUTATION = """
+mutation($input: CreateIssueInput!) {
+  createIssue(input: $input) { issue { number } }
+}
+"""
+
+UPDATE_ISSUE_MUTATION = """
+mutation($input: UpdateIssueInput!) {
+  updateIssue(input: $input) { issue { number } }
+}
+"""
+
+
+def ensure_issue(title: str, body: str) -> int:
+    """Create or overwrite the open issue carrying exactly this title. REST
+    first, GraphQL on the installation-token 422 (see below)."""
     query = urllib.parse.quote(f'repo:{REPO} is:issue is:open in:title "{title}"')
     hits = json.loads(pub.gh(f"search/issues?q={query}&per_page=1")).get("items") or []
     existing = hits[0] if hits and hits[0].get("title") == title else None
     if existing:
         payload = json.dumps({"body": body})
-        pub.gh("-X", "PATCH", f"repos/{REPO}/issues/{existing['number']}", input_text=payload)
+        try:
+            pub.gh("-X", "PATCH", f"repos/{REPO}/issues/{existing['number']}",
+                   input_text=payload)
+        except RuntimeError:
+            # GitHub validates issue bodies through a task-list "links" schema
+            # on REST writes made with installation tokens ("links/0/schema",
+            # HTTP 422) and rejects them even though the identical bytes POST
+            # fine with a user token. GraphQL takes the body verbatim, so that
+            # is the fallback lane.
+            node_id = existing.get("node_id")
+            if not node_id:
+                node_id = json.loads(
+                    pub.gh(f"repos/{REPO}/issues/{existing['number']}")).get("node_id")
+            result = pub.gh_graphql(UPDATE_ISSUE_MUTATION,
+                                    input={"id": node_id, "body": body})
+            check = result["updateIssue"]["issue"]["number"]
+            if check != existing["number"]:
+                raise SystemExit(f"updated issue #{check} instead of "
+                                 f"#{existing['number']}")
         print(f"report issue updated: #{existing['number']}", flush=True)
         return existing["number"]
     payload = json.dumps({"title": title, "body": body})
-    created = json.loads(pub.gh("-X", "POST", f"repos/{REPO}/issues", input_text=payload))
-    print(f"report issue created: #{created['number']}", flush=True)
-    return created["number"]
+    try:
+        created = json.loads(pub.gh("-X", "POST", f"repos/{REPO}/issues", input_text=payload))
+        number = created["number"]
+    except RuntimeError:
+        result = pub.gh_graphql(CREATE_ISSUE_MUTATION,
+                                input={"repositoryId": repo_node(), "title": title,
+                                       "body": body})
+        number = result["createIssue"]["issue"]["number"]
+    print(f"report issue created: #{number}", flush=True)
+    return number
+
+
+def upsert_issue(report: dict, title: str) -> int:
+    body = render_summary(report) + "\n<!-- wowsp-sync-report:v1\n" + \
+        json.dumps(report, ensure_ascii=False, indent=1) + "\n-->\n"
+    return ensure_issue(title, body)
 
 
 # --------------------------------------------------------------------------- runs
@@ -1378,6 +1422,9 @@ def main(argv: list[str] | None = None) -> int:
     common(idx)
     common(sub.add_parser("render-summary", help="print the markdown summary of a report json"))
     common(sub.add_parser("upsert-issue", help="upsert the tracking issue from a report json"))
+    issue = sub.add_parser("issue", help="create/overwrite one open issue from --body-file")
+    issue.add_argument("--title", required=True)
+    issue.add_argument("--body-file", required=True)
     sub.add_parser("selftest", help="offline checks")
 
     args = ap.parse_args(argv)
@@ -1390,6 +1437,10 @@ def main(argv: list[str] | None = None) -> int:
             print(render_summary(report))
         else:
             upsert_issue(report, args.title)
+        return 0
+    if args.stage == "issue":
+        body = Path(args.body_file).read_text(encoding="utf-8")
+        ensure_issue(args.title, body)
         return 0
     if args.stage == "detect":
         return run_detect(args)
