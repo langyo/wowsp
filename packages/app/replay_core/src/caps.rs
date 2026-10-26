@@ -171,6 +171,7 @@ mod tests {
             vision_events: Vec::new(),
             consumable_uses: Vec::new(),
             engine_states: Vec::new(),
+            vehicle_builds: Vec::new(),
         }
     }
 }

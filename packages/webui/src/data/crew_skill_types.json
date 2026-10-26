@@ -1,0 +1,904 @@
+{
+ "1": {
+  "code": "GmReloadAaDamageConstant",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "2": {
+  "code": "DefenceCritFireFlooding",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "3": {
+  "code": "GmTurn",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 2,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "4": {
+  "code": "TorpedoReload",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 2,
+   "Battleship": 1,
+   "Cruiser": 2,
+   "Destroyer": 3,
+   "Submarine": 2
+  }
+ },
+ "5": {
+  "code": "ConsumablesCrashcrewRegencrewReload",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "6": {
+  "code": "ConsumablesDuration",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 3
+  }
+ },
+ "7": {
+  "code": "DetectionTorpedoRange",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "8": {
+  "code": "HeFireProbability",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 2,
+   "Battleship": 1,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "9": {
+  "code": "GmRangeAaDamageBubbles",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "10": {
+  "code": "PlanesDefenseDamageConstant",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "11": {
+  "code": "PlanesForsageDuration",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "12": {
+  "code": "DetectionVisibilityRange",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "13": {
+  "code": "ConsumablesReload",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "14": {
+  "code": "DefenceFireProbability",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "15": {
+  "code": "PlanesAimingBoost",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "16": {
+  "code": "PlanesSpeed",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "17": {
+  "code": "ConsumablesAdditional",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "18": {
+  "code": "DefenseCritProbability",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 2
+  }
+ },
+ "19": {
+  "code": "DetectionAlert",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "20": {
+  "code": "Maneuverability",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "21": {
+  "code": "GmShellReload",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "22": {
+  "code": "PlanesConsumablesCallfightersUpgrade",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "23": {
+  "code": "ArmamentReloadAaDamage",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 4
+  }
+ },
+ "24": {
+  "code": "TorpedoSpeed",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 2,
+   "Submarine": 1
+  }
+ },
+ "25": {
+  "code": "DefenseHp",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "26": {
+  "code": "AtbaAccuracy",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "27": {
+  "code": "AaPrioritysectorDamageConstant",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 3,
+   "Cruiser": 2,
+   "Destroyer": 1,
+   "Submarine": 2
+  }
+ },
+ "28": {
+  "code": "DetectionAiming",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 1
+  }
+ },
+ "29": {
+  "code": "PlanesReload",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "30": {
+  "code": "TorpedoDamage",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "31": {
+  "code": "ConsumablesFighterAdditional",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "32": {
+  "code": "PlanesConsumablesSpeedboosterReload",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "33": {
+  "code": "HePenetration",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 4,
+   "Battleship": 2,
+   "Cruiser": 4,
+   "Destroyer": 3,
+   "Submarine": 4
+  }
+ },
+ "34": {
+  "code": "DetectionDirection",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "35": {
+  "code": "AaDamageConstantBubbles",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 4,
+   "Battleship": 2,
+   "Cruiser": 4,
+   "Destroyer": 1,
+   "Submarine": 4
+  }
+ },
+ "36": {
+  "code": "AaDamageConstantBubblesCv",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "37": {
+  "code": "ApDamageBb",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "38": {
+  "code": "ApDamageCa",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "39": {
+  "code": "ApDamageDd",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "40": {
+  "code": "AtbaRange",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "41": {
+  "code": "AtbaUpgrade",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "42": {
+  "code": "ConsumablesCrashcrewRegencrewUpgrade",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "43": {
+  "code": "ConsumablesSpotterUpgrade",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "44": {
+  "code": "DefenceUw",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "45": {
+  "code": "DetectionVisibilityCrashcrew",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "46": {
+  "code": "HeFireProbabilityCv",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "47": {
+  "code": "HeSapDamage",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "48": {
+  "code": "PlanesApDamage",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "49": {
+  "code": "PlanesConsumablesCallfightersAdditional",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "50": {
+  "code": "PlanesConsumablesCallfightersPreparationtime",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "51": {
+  "code": "PlanesConsumablesCallfightersRange",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "52": {
+  "code": "PlanesConsumablesActiveManeuveringUpgrade",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "53": {
+  "code": "PlanesDefenseDamageBubbles",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "54": {
+  "code": "PlanesDivebomberSpeed",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "55": {
+  "code": "PlanesForsageRenewal",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "56": {
+  "code": "PlanesHp",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "57": {
+  "code": "PlanesTorpedoArmingrange",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "58": {
+  "code": "PlanesTorpedoSpeed",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "59": {
+  "code": "PlanesTorpedoUwReduced",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "60": {
+  "code": "TorpedoFloodingProbability",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "61": {
+  "code": "TriggerSpeedBb",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "62": {
+  "code": "TriggerGmAtbaReloadBb",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "63": {
+  "code": "TriggerGmAtbaReloadCa",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "64": {
+  "code": "TriggerGmReload",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "65": {
+  "code": "TriggerSpeed",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "66": {
+  "code": "TriggerSpeedAccuracy",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "67": {
+  "code": "TriggerSpreading",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "68": {
+  "code": "TriggerPingerReloadBuff",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "69": {
+  "code": "TriggerPingerSpeedBuff",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "70": {
+  "code": "SubmarineHoldSectors",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "71": {
+  "code": "TriggerConsSonarTimeCoeff",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "72": {
+  "code": "TriggerSeenTorpedoReload",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "73": {
+  "code": "SubmarineTorpedoPingDamage",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "74": {
+  "code": "TriggerConsRudderTimeCoeff",
+  "tier": {
+   "AirCarrier": 1,
+   "Auxiliary": 1,
+   "Battleship": 1,
+   "Cruiser": 1,
+   "Destroyer": 1,
+   "Submarine": 1
+  }
+ },
+ "75": {
+  "code": "SubmarineBatteryCapacity",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "76": {
+  "code": "SubmarineDangerAlert",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "77": {
+  "code": "SubmarineBatteryBurnDown",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "78": {
+  "code": "SubmarineSpeed",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "79": {
+  "code": "SubmarineConsumablesReload",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 3
+  }
+ },
+ "80": {
+  "code": "SubmarineConsumablesDuration",
+  "tier": {
+   "AirCarrier": 2,
+   "Auxiliary": 2,
+   "Battleship": 2,
+   "Cruiser": 2,
+   "Destroyer": 2,
+   "Submarine": 2
+  }
+ },
+ "81": {
+  "code": "TriggerBurnGmReload",
+  "tier": {
+   "AirCarrier": 4,
+   "Auxiliary": 4,
+   "Battleship": 4,
+   "Cruiser": 4,
+   "Destroyer": 4,
+   "Submarine": 4
+  }
+ },
+ "82": {
+  "code": "ArmamentReloadSubmarine",
+  "tier": {
+   "AirCarrier": 3,
+   "Auxiliary": 3,
+   "Battleship": 3,
+   "Cruiser": 3,
+   "Destroyer": 3,
+   "Submarine": 4
+  }
+ }
+}

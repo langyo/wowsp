@@ -1,3 +1,4 @@
+use super::build::decode_vehicle_build;
 use super::*;
 /// Hostile-stream budget: how many distinct entities the frame walk may
 /// track. Real battles carry O(10²) entities; a synthetic EntityCreate
@@ -64,6 +65,9 @@ pub(super) fn walk_frames(
     // The recorder's own vehicle: set once the avatar's 0x2c stream links to
     // the vehicle it occupies.
     let mut recorder_vehicle: Option<i32> = None;
+    // Per-vehicle build payloads decoded out of the EntityCreate state stream
+    // (both teams — the IPC exit filters to allies; see `packets::build`).
+    let mut vehicle_builds: Vec<VehicleBuildRaw> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -134,6 +138,34 @@ pub(super) fn walk_frames(
                     kind.ship_id = scan_state_for_ship_id(&payload[38..], ship_id_candidates);
                     if kind.entity_type == 2 {
                         kind.max_health = scan_state_for_max_health(&payload[38..]);
+                        // Build decode (pinned to the 15.9.x era): the trailing
+                        // create state carries the vehicle's shipConfig and the
+                        // captain's crew modifiers. A state the walk cannot
+                        // trust is skipped and counted — it never fails the
+                        // whole replay.
+                        if profile.builds {
+                            // Destroy-and-recreate (respawn / re-enter) repeats
+                            // the SAME create state: keep the first build per
+                            // entity, mirroring the kinds map's first-creation
+                            // rule above.
+                            if !vehicle_builds.iter().any(|build| build.entity_id == eid) {
+                                let version_key = version_key.unwrap_or((0, 0, 0));
+                                if let Some(build) =
+                                    decode_vehicle_build(eid, &payload[38..], version_key)
+                                {
+                                    vehicle_builds.push(build);
+                                    diagnostics.builds_decoded += 1;
+                                } else {
+                                    diagnostics.builds_skipped += 1;
+                                }
+                            }
+                        } else if version_key.is_some() && !kinds.contains_key(&eid) {
+                            // Other client versions have no pinned build layout:
+                            // count the entity as skipped (once) so the
+                            // diagnostics distinguish "no build support for this
+                            // version" from "the stream carried nothing".
+                            diagnostics.builds_skipped += 1;
+                        }
                     }
                     // Smoke screens: walk the create state for the radius /
                     // height properties (experiment E8). Only the event list
@@ -659,6 +691,7 @@ pub(super) fn walk_frames(
         vision_events,
         consumable_uses,
         engine_states,
+        vehicle_builds,
     }
 }
 

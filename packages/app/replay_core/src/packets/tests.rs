@@ -80,6 +80,7 @@ fn profile_for(lesta: bool) -> LayoutProfile {
         shotkill_has_ballistics: true,
         arena_state_method: None,
         e11: None,
+        builds: false,
         lesta,
     }
 }
@@ -3342,4 +3343,238 @@ fn e11_engine_states_on_real_replay() {
         agreed, checked,
         "sustained full throttle must read power 10"
     );
+}
+
+// ── vehicle build decode (15.9 create-state properties) ────────────────────
+//
+// The fixtures below are raw EntityCreate (0x05) payloads from the 2026-10-25
+// reference capture (20261025_144331_..._e09_Halloween_2019.wowsreplay): the
+// recorder's own ship (roster relation 0) and an ENEMY ship (relation 2). They
+// prove the DECODE layer keeps both teams' builds; the IPC exit filters to
+// allies (covered in the Tauri crate's tests).
+
+/// Raw EntityCreate payload, 475 bytes: entity 677453, ship 4065212112
+/// (PJSD219 Kitakaze), relation 0, 6 modernizations, 4 + 2 empty consumable
+/// slots, 4 economic bonuses and 5 learned captain skills.
+const FIXTURE_ALLY_SELF_HEX: &str = "4d560a0002000b17000000000000e774b6c300000000788bcec39ceb453f0000000000000000b10100003600000100020003000400050106010701080109000a000b000c000d000e000f0010001100120013000014ffff159f11160000179f111800001900001a00001b000000001c0054ba461d000000001e000000001f0054ba462000000000210000000022005043482300000000244c560a00250000000026b36a0e002700000000280000000029000000002a00000000000000002b04000000002c0400010101020103012d002e002fdc01000000d0364ef2340000000e000000d02e3ccbd0aeefcbd02e16cdd0ae36cbd0ae4dcb0000000000000000000000000000000000000000000000000000000000000000000000000000000006000000b0cf12feb0cfa2fbb0cfe2fdb0cf72feb0cf42feb0cf22ff0000000000000000000000000000000006000000b09f62ffb09f12ffb09f02ffb09fd2fe00000000000000000000000004000000b0ef2fffb0ef8ffeb0efeffdb0ef4ffd06000000000000000800000000000000000000000000000000000000000000000000000000000000000000001b00000030d0a6e2ff0006000000050c12141922000031003200330580024b002e3404b0c7e6ff350001000000000100";
+
+/// Raw EntityCreate payload, 525 bytes: entity 677451, ship 3750639408
+/// (PGSD519 Z-44), relation 2, 6 modernizations, camouflage + 5 signal flags
+/// (PCEP/PCEF ids in the exterior slots) and 17 learned captain skills.
+const FIXTURE_ENEMY_HEX: &str = "4b560a0002000b17000000000000fa98f942518e3632df7501c3777bddbf0000000000000000e301000036000001000200030004010500060107010801090a0a010b000c000d000e000f0010001100120013000014221a15221a16000017601118000019ea001a00001b000000001c002cb0461d000000001e000000001f002cb0462000000000210000000022005043482301000000244a560a00250000000026495a1400270000000028920a063f29000000002a00000000000000002b01002c0100012d002e002ffc0100000030378edf3c0000000e000000302f7ccd30af9fcd302f86cd30af76cd30af9dcd0000000000000000000000000000000000000000000000000000000000000000000000000000000006000000b0cf12feb0cfa2fbb0cf92fbb0cf72feb0cf42feb0cf12ff06000000b06f28f9b06fcdfeb06fadffb06f1dffb06f9dffb06f3dfe0000000001000000b06f28f9010000000000000006000000b09f62ffb09f12ffb09f02ff0000000000000000000000000000000004000000b0ef4fffb0ef9ffeb0effffdb0ef4ffd1e00000000000000080000000000000000000000000000000000000000000000000000000000000000000000100000003030a7e2ff000600000903080c11131517192608040c111214171819000031003200330580024b002e3404b0c7e6ff3500010110c5c9f6030100000000000080bf000000000100";
+
+/// The 15.9.x version key the fixtures were captured on.
+const FIXTURE_VERSION: (u32, u32, u32) = (15, 9, 0);
+
+#[test]
+fn decodes_ally_vehicle_build_from_the_reference_capture() {
+    let payload = hex_literal(FIXTURE_ALLY_SELF_HEX);
+    assert_eq!(payload.len(), 475, "fixture byte length");
+    let build = super::build::decode_vehicle_build(677_453, &payload[38..], FIXTURE_VERSION)
+        .expect("ally build must decode");
+    assert_eq!(build.entity_id, 677_453);
+    assert_eq!(build.ship_params_id, 4_065_212_112);
+    // Hull/artillery/torpedo/sonar/engine modules (zero-padded to 14 slots).
+    assert_eq!(build.units.len(), 14);
+    assert_eq!(
+        build.units[..5],
+        [
+            0xcb3c_2ed0,
+            0xcbef_aed0,
+            0xcd16_2ed0,
+            0xcb36_aed0,
+            0xcb4d_aed0
+        ]
+    );
+    assert!(build.units[5..].iter().all(|unit| *unit == 0));
+    assert_eq!(
+        build.modernization,
+        [
+            0xfe12_cfb0,
+            0xfba2_cfb0,
+            0xfde2_cfb0,
+            0xfe72_cfb0,
+            0xfe42_cfb0,
+            0xff22_cfb0
+        ]
+    );
+    // No camouflage/signal exterior slots on this capture's recoder ship.
+    assert!(build.exteriors.is_empty());
+    // AbilitySlots: 4 mounted consumables + 2 empty slots.
+    assert_eq!(
+        build.abilities,
+        [0xff62_9fb0, 0xff12_9fb0, 0xff02_9fb0, 0xfed2_9fb0, 0, 0]
+    );
+    assert!(build.ensigns.is_empty());
+    assert_eq!(
+        build.ecoboosts,
+        [0xff2f_efb0, 0xfe8f_efb0, 0xfdef_efb0, 0xfd4f_efb0]
+    );
+    // Captain + per-species learned-skill arrays (6 rows, destroyer row = 3).
+    assert_eq!(build.crew_params_id, 0xffe2_a6d0);
+    assert!(!build.is_in_adaptation);
+    assert_eq!(build.learned_skills.len(), 6);
+    assert_eq!(build.learned_skills[3], [12, 18, 20, 25, 34]);
+    assert!(build.learned_skills[0].is_empty());
+}
+
+#[test]
+fn decodes_enemy_vehicle_build_from_the_reference_capture() {
+    let payload = hex_literal(FIXTURE_ENEMY_HEX);
+    assert_eq!(payload.len(), 525, "fixture byte length");
+    let build = super::build::decode_vehicle_build(677_451, &payload[38..], FIXTURE_VERSION)
+        .expect("enemy build must decode in the decode layer");
+    assert_eq!(build.entity_id, 677_451);
+    assert_eq!(build.ship_params_id, 3_750_639_408);
+    assert_eq!(build.units.len(), 14);
+    assert_eq!(build.modernization.len(), 6);
+    // Camouflage + signal flags live in the ExteriorSlots section.
+    assert_eq!(build.exteriors.len(), 6);
+    assert_eq!(build.exteriors[0], 0xf928_6fb0);
+    assert_eq!(build.abilities.len(), 6);
+    assert_eq!(build.ecoboosts.len(), 4);
+    assert_eq!(build.crew_params_id, 0xffe2_a730);
+    assert_eq!(build.learned_skills.len(), 6);
+    assert_eq!(build.learned_skills[2], [3, 8, 12, 17, 19, 21, 23, 25, 38]);
+    assert_eq!(build.learned_skills[3], [4, 12, 17, 18, 20, 23, 24, 25]);
+}
+
+#[test]
+fn vehicle_build_walk_rejects_a_desynced_create_state() {
+    let payload = hex_literal(FIXTURE_ALLY_SELF_HEX);
+    let state = &payload[38..];
+    assert!(super::build::decode_vehicle_build(1, &state[..100], FIXTURE_VERSION).is_none());
+    // Wrong property count byte.
+    let mut wrong_count = state.to_vec();
+    wrong_count[4] = 53;
+    assert!(super::build::decode_vehicle_build(1, &wrong_count, FIXTURE_VERSION).is_none());
+    // Declared total length disagrees with the slice.
+    let mut wrong_len = state.to_vec();
+    wrong_len[0] ^= 0xff;
+    assert!(super::build::decode_vehicle_build(1, &wrong_len, FIXTURE_VERSION).is_none());
+}
+
+#[test]
+fn builds_are_counted_as_skipped_on_older_client_versions() {
+    // The synthetic container pins client 15.8.0: the decoder must leave
+    // vehicle_builds empty, count each ship entity as skipped, and never run
+    // a decode against the wrong property map.
+    let decoded = decode_synthetic_replay();
+    assert!(decoded.vehicle_builds.is_empty());
+    assert_eq!(decoded.diagnostics.builds_decoded, 0);
+    assert_eq!(
+        decoded.diagnostics.builds_skipped, 2,
+        "the synthetic replay has two ship entities"
+    );
+}
+
+#[test]
+fn build_decode_is_pinned_to_the_15_9_era() {
+    assert!(super::build::builds_supported(Some((15, 9, 0))));
+    assert!(super::build::builds_supported(Some((15, 9, 7))));
+    assert!(!super::build::builds_supported(Some((15, 8, 1))));
+    assert!(!super::build::builds_supported(None));
+}
+
+/// The 15.9 shipConfig inserted one u32 between the color-scheme section and
+/// the ability slots: the SAME bytes must read the ability section under the
+/// 15.8 order and fail the sanity caps under the 15.9 order.
+#[test]
+fn ship_config_section_order_is_version_gated() {
+    fn push_u32(blob: &mut Vec<u8>, value: u32) {
+        blob.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut blob = Vec::new();
+    // header: version, ship_params_id, element_count, unit_count, units[1],
+    // 13.2+ unknown field.
+    for value in [1u32, 4_065_212_112, 0, 1, 100] {
+        push_u32(&mut blob, value);
+    }
+    push_u32(&mut blob, 0); // >= 13.2 unknown
+    // modernization section (1 item).
+    push_u32(&mut blob, 1);
+    push_u32(&mut blob, 0xff12_cfb0);
+    // exteriors (empty), supply state, color schemes (empty).
+    push_u32(&mut blob, 0);
+    push_u32(&mut blob, 0);
+    push_u32(&mut blob, 0);
+    // ability slots (2), ensign slots (0), ecoboost slots (1).
+    push_u32(&mut blob, 2);
+    push_u32(&mut blob, 0xff62_9fb0);
+    push_u32(&mut blob, 0xff12_9fb0);
+    push_u32(&mut blob, 0);
+    push_u32(&mut blob, 1);
+    push_u32(&mut blob, 0xff2f_efb0);
+
+    let old =
+        super::build::decode_ship_config(&blob, (15, 8, 1)).expect("15.8 layout matches the bytes");
+    assert_eq!(old.abilities, [0xff62_9fb0, 0xff12_9fb0]);
+    assert!(old.ensigns.is_empty());
+    assert_eq!(old.ecoboosts, [0xff2f_efb0]);
+
+    // 15.9 reads the ability COUNT as the extra u32 slot, then interprets the
+    // first ability id as a section count — over the sanity cap, so the whole
+    // config is refused instead of silently shifted.
+    assert!(super::build::decode_ship_config(&blob, (15, 9, 0)).is_none());
+}
+
+/// Corpus check on the real reference capture (read-only): the decode layer
+/// covers every vehicle, INCLUDING the enemy team, and the per-player values
+/// stay within the format's slot bounds.
+#[test]
+fn decodes_every_vehicle_build_on_the_reference_capture() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("decodes_every_vehicle_build_on_the_reference_capture");
+        return;
+    };
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let stream = crate::meta::packet_stream_after_blocks(&bytes).expect("packet stream");
+    let json = crate::meta::extract_descriptor_json(&bytes).expect("descriptor JSON");
+    let raw: serde_json::Value = serde_json::from_str(&json).expect("descriptor must be JSON");
+    let roster = crate::meta::roster_from_raw(std::path::Path::new(&path), &raw);
+    let ship_relations: std::collections::HashMap<i64, i64> =
+        roster.iter().map(|v| (v.ship_id, v.relation)).collect();
+    let candidates: std::collections::HashSet<u32> = roster
+        .iter()
+        .filter(|v| v.ship_id > 0)
+        .map(|v| v.ship_id as u32)
+        .collect();
+    let version = raw
+        .get("clientVersionFromExe")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let decoded = decode_replay(stream, &candidates, version.as_deref(), false)
+        .expect("reference capture must decode");
+    eprintln!(
+        "[build] {} vehicle builds decoded, {} skipped",
+        decoded.diagnostics.builds_decoded, decoded.diagnostics.builds_skipped
+    );
+    assert!(
+        decoded.vehicle_builds.len() >= 6,
+        "the reference capture has 6 vehicles, got {}",
+        decoded.vehicle_builds.len()
+    );
+    assert_eq!(
+        decoded.vehicle_builds.len(),
+        decoded.diagnostics.builds_decoded as usize,
+        "diagnostics must count every decoded build"
+    );
+    let mut enemies = 0usize;
+    for build in &decoded.vehicle_builds {
+        assert!(
+            candidates.contains(&build.ship_params_id),
+            "build ship id {} must join the roster",
+            build.ship_params_id
+        );
+        assert!(!build.units.is_empty(), "hull/module units must decode");
+        assert!(build.modernization.len() <= 6);
+        assert!(build.abilities.len() <= 6);
+        assert_eq!(build.learned_skills.len(), 6);
+        if ship_relations.get(&i64::from(build.ship_params_id)) == Some(&2) {
+            enemies += 1;
+        }
+    }
+    // Decode-layer completeness: the enemy team's builds are decoded too (the
+    // IPC exit is what drops them).
+    assert!(enemies >= 1, "enemy builds must exist in the decode layer");
 }

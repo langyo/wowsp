@@ -740,6 +740,7 @@ fn replay_stream_omits_empty_sections() {
         arena_players: Vec::new(),
         weather_transitions: Vec::new(),
         weather_notifications: Vec::new(),
+        ally_builds: Vec::new(),
         self_team: None,
     };
     let v = round_trips(minimal);
@@ -1230,6 +1231,8 @@ fn diagnostic_counts_renames_every_counter() {
         cruise_states: 212,
         shot_trackings: 213,
         gun_markers: 214,
+        builds_decoded: 215,
+        builds_skipped: 216,
     });
     assert_exact_keys(
         &v,
@@ -1248,6 +1251,8 @@ fn diagnostic_counts_renames_every_counter() {
             "cruiseStates",
             "shotTrackings",
             "gunMarkers",
+            "buildsDecoded",
+            "buildsSkipped",
         ],
     );
 }
@@ -2879,4 +2884,58 @@ fn contribution_mine_doc_heals_the_fresh_contributor_shape() {
     });
     assert_exact_keys(&v, &["staged", "archiveBytes", "creditCount"]);
     assert_eq!(v["staged"][0]["sizeBytes"], 2048);
+}
+
+/// The build DTO speaks camelCase and hides empty optional sections (the
+/// webui reads absent keys as "no data"); a populated build keeps every
+/// section so the hover tooltip can render the whole loadout.
+#[test]
+fn player_build_serializes_camel_case_and_hides_empty_sections() {
+    let empty = round_trips(PlayerBuild::default());
+    assert_exact_keys(
+        &empty,
+        &["entityId", "shipParamsId", "crewParamsId", "isInAdaptation"],
+    );
+
+    let rich = round_trips(PlayerBuild {
+        entity_id: 677_453,
+        ship_params_id: 4_065_212_112,
+        units: vec![3_409_718_992, 3_421_482_704],
+        modernization: vec![4_262_645_680, 4_221_751_216],
+        exteriors: vec![4_200_198_064],
+        abilities: vec![4_284_653_488],
+        ensigns: vec![],
+        ecoboosts: vec![4_281_331_632],
+        crew_params_id: 4_293_043_920,
+        is_in_adaptation: false,
+        learned_skills: vec![
+            vec![],
+            vec![],
+            vec![],
+            vec![12, 18, 20, 25, 34],
+            vec![],
+            vec![],
+        ],
+    });
+    assert_exact_keys(
+        &rich,
+        &[
+            "entityId",
+            "shipParamsId",
+            "units",
+            "modernization",
+            "exteriors",
+            "abilities",
+            "ecoboosts",
+            "crewParamsId",
+            "isInAdaptation",
+            "learnedSkills",
+        ],
+    );
+    assert_eq!(rich["entityId"], 677_453);
+    assert_eq!(rich["shipParamsId"], 4_065_212_112u64);
+    assert_eq!(rich["abilities"][0], 4_284_653_488u64);
+    assert_eq!(rich["learnedSkills"][3][4], 34);
+    // The empty ensign section stays absent, like every other empty Vec.
+    assert!(!rich.as_object().unwrap().contains_key("ensigns"));
 }

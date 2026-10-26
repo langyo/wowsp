@@ -516,6 +516,10 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         vision_events: _,
         consumable_uses: _,
         engine_states: _,
+        // Consumed by the app's ally-only IPC exit before grouping (the
+        // ReplayStream shape stays build-free — several experiment modules
+        // construct it literally).
+        vehicle_builds: _,
     } = decoded;
     // The recorder's team slot comes from its own arena entry.
     let self_team = arena_players.iter().find(|p| p.is_self).map(|p| p.team_id);
@@ -636,6 +640,10 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
     out.sort_by_key(|t| Reverse(t.samples.len()));
     wowsp_tauri_shared::ReplayStream {
         trajectories: out,
+        // The ally-only filter lives at the app's IPC exit (it needs the
+        // descriptor roster relations); the pure grouping core cannot know
+        // teams, so it leaves the field for the caller to fill.
+        ally_builds: Vec::new(),
         recorder_vehicle_id: recorder_vehicle,
         shell_launches,
         explosions,
@@ -751,6 +759,7 @@ mod tests {
             vision_events: Vec::new(),
             consumable_uses: Vec::new(),
             engine_states: Vec::new(),
+            vehicle_builds: Vec::new(),
         }
     }
 

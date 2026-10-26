@@ -17,6 +17,14 @@
 //! Battle-effect arg layouts come from the per-version `alias.xml` type
 //! definitions: `SHOTS_PACK` / `TORPEDOES_PACK` / `receive_*MinimapSquadron`.
 //!
+//! Vehicle build payloads (`shipConfig` modules/upgrades/camouflage/signals/
+//! consumables and the captain's `crewModifiersCompactParams`) ride the SAME
+//! EntityCreate state stream as exposed PROPERTIES — decoded by [`build`], which
+//! pins the 15.9.x property index map (see its module docs for the generator
+//! plan that replaces the pinned constants). The output is the decode-layer
+//! [`VehicleBuildRaw`] list: BOTH teams, so the app's IPC exit can decide what
+//! to expose (it currently exposes allies only).
+//!
 //! Moved wholesale out of the Tauri app crate (`wowsp_tauri::commands::
 //! packets`) into the reusable decoding core (wave 4a); the app re-exports
 //! this module under its historical path.
@@ -193,6 +201,10 @@ struct LayoutProfile {
     /// E11 experimental decoders (minimap vision, consumable uses, engine
     /// state projection) — only for versions whose ids/indices are pinned.
     e11: Option<E11MethodIds>,
+    /// Vehicle build decode (create-state property walk → shipConfig + crew
+    /// modifiers). Pinned to the 15.9.x era (see `packets::build`); other
+    /// versions skip it and count a diagnostic.
+    builds: bool,
     /// The arena's initial state broadcast (onArenaStateReceived) — the
     /// authoritative ship-entity → team/player mapping. `None` when the
     /// version's exposed id isn't pinned (>0); the arena player list then
@@ -345,6 +357,12 @@ pub struct DecodedReplay {
     /// without the pinned property indices.
     #[allow(dead_code)]
     pub engine_states: Vec<wowsp_tauri_shared::EngineStateSample>,
+    /// Per-vehicle player builds decoded out of the EntityCreate state stream
+    /// (`shipConfig` modules/upgrades/camouflage/signals/consumables and the
+    /// captain's crew modifiers). Decode-layer completeness: BOTH teams'
+    /// vehicles are kept here; the IPC exit filters to allies only. Empty on
+    /// client versions without a pinned build layout (currently only 15.9.x).
+    pub vehicle_builds: Vec<VehicleBuildRaw>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -520,6 +538,11 @@ fn build_layout_profile(
         arena_state_method: methods
             .map(|m| m.avatar_on_arena_state_received)
             .filter(|id| *id > 0 && version_key.is_some()),
+        // Build data is decoded from the SAME create-state stream, but its
+        // property index map + the shipConfig binary layout are pinned for
+        // the 15.9.x era only (see `packets::build`); Lesta containers use
+        // their own entity defs, so they stay off until pinned.
+        builds: !lesta && build::builds_supported(version_key),
         lesta,
     }
 }
@@ -674,10 +697,13 @@ fn read_bytes<const N: usize>(data: &[u8], off: usize) -> Option<[u8; N]> {
     data.get(off..off + N).and_then(|s| s.try_into().ok())
 }
 
+mod build;
 mod events;
 mod frames;
 mod payloads;
 mod pickle;
+
+pub use build::VehicleBuildRaw;
 
 #[cfg(test)]
 mod tests;
