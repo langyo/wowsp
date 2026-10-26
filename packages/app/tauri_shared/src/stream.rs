@@ -390,6 +390,55 @@ fn is_zero_u32(v: &u32) -> bool {
     *v == 0
 }
 
+/// One player's decoded ship build (replay build-decode wave): the loadout the
+/// server broadcast over the vehicle entity's `shipConfig` create property plus
+/// the captain's crew modifiers.
+///
+/// IPC surface is ALLY-ONLY by product decision: the decode layer keeps both
+/// teams' builds (tests + completeness), but the command exit filters to the
+/// roster's relation <= 1 (self + team) and this DTO never carries an enemy
+/// build. Camouflage/signals live in `exteriors` as GameParams ExteriorSlot
+/// ids (PCEP/PCEM/PCED camos, PCEF signal flags); `abilities` are the mounted
+/// consumables (PCY ids) and `ecoboosts` the economic bonuses (PCEA ids).
+/// Numeric GameParamId -> name/icon resolution is the webui's data layer.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerBuild {
+    /// BigWorld vehicle entity id (joins `EntityTrajectory.entityId`).
+    pub entity_id: i32,
+    /// GameParams ship id the config was built for (joins the roster).
+    #[serde(default)]
+    pub ship_params_id: u32,
+    /// Mounted hull/artillery/torpedo/sonar/engine module ids, hull first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub units: Vec<u32>,
+    /// Modernization (upgrade) slot item ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modernization: Vec<u32>,
+    /// Exterior slots: camouflage/paintwork ids and signal-flag ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exteriors: Vec<u32>,
+    /// Mounted consumable (AbilitySlot) ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub abilities: Vec<u32>,
+    /// National flag / ensign slot ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ensigns: Vec<u32>,
+    /// Economic bonus slot ids.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ecoboosts: Vec<u32>,
+    /// Captain params id (GameParams crew entry: default or unique commander).
+    #[serde(default)]
+    pub crew_params_id: u32,
+    /// Captain is in adaptation (retraining) after a ship/class switch.
+    #[serde(default)]
+    pub is_in_adaptation: bool,
+    /// Learned captain skills, per-species arrays of GameParams skill ordinals
+    /// (CrewSkillType ids; the webui maps them to names/icons/costs).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub learned_skills: Vec<Vec<u8>>,
+}
+
 /// One global-weather transition (`state.weather.globalWeather`'s "item"
 /// SetKey on the BattleLogic entity, NestedPropertyUpdate 0x23): the match's
 /// ambient weather blends from one weather logic to another over a linear
@@ -520,6 +569,12 @@ pub struct ReplayStream {
     /// checks; consumers then fall back to the EntityCreate shipId join.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arena_players: Vec<ArenaPlayer>,
+    /// Per-player ship builds for the recorder's SIDE only — self + teammates
+    /// (roster relation <= 1). The decoder decodes both teams; this field is
+    /// filtered at the command exit per the product decision that enemy
+    /// loadouts are never displayed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ally_builds: Vec<PlayerBuild>,
     /// Global-weather transitions (cyclone/storm timeline) from the
     /// BattleLogic entity's nested-property stream — interpolation windows
     /// between weather logics, in battle seconds.
@@ -575,6 +630,10 @@ pub struct LiveSelfStream {
     /// The authoritative ship-entity → player join.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub arena_players: Vec<ArenaPlayer>,
+    /// Ally-only per-player ship builds (self + teammates; enemy builds are
+    /// dropped at the command exit, see `ReplayStream::ally_builds`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ally_builds: Vec<PlayerBuild>,
     /// Artillery launches (receiveArtilleryShots) — the (ownerId, shotId)
     /// join that classifies a hit event's damage as gun fire for the
     /// per-target damage composition.
@@ -601,6 +660,7 @@ impl LiveSelfStream {
             damage_stats: full.damage_stats,
             achievements: full.achievements,
             arena_players: full.arena_players,
+            ally_builds: full.ally_builds,
             shell_launches: full.shell_launches,
             torpedoes: full.torpedoes,
             battle_results: full.battle_results,
@@ -625,6 +685,12 @@ pub struct DiagnosticCounts {
     pub cruise_states: u32,
     pub shot_trackings: u32,
     pub gun_markers: u32,
+    /// Vehicle EntityCreate states whose build payload decoded fully.
+    pub builds_decoded: u32,
+    /// Vehicle EntityCreate states skipped by the build decoder (unsupported
+    /// client version, shape mismatch, or a length byte the decoder cannot
+    /// trust — see `wowsp_replay_core::packets::build`).
+    pub builds_skipped: u32,
 }
 
 impl DiagnosticCounts {

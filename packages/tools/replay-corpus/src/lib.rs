@@ -1157,6 +1157,7 @@ mod tests {
             arena_players: Vec::new(),
             weather_transitions: Vec::new(),
             weather_notifications: Vec::new(),
+            vehicle_builds: Vec::new(),
         }
     }
 

@@ -282,7 +282,7 @@ fn learn_cap_layouts(space_id: &str, dir: Option<String>) -> anyhow::Result<Vec<
 /// never fired and the recorder-team join below could not succeed.
 #[cfg(desktop)]
 fn caps_of_replay(path: &std::path::Path) -> Option<(Vec<LearnedCapPoint>, Option<i8>)> {
-    let decoded = super::streams::decode_replay_file_decoded(path).ok()?;
+    let (decoded, _roster) = super::streams::decode_replay_file_decoded(path).ok()?;
     let caps = wowsp_replay_core::caps::cap_points_of(&decoded)
         .into_iter()
         .map(|c| LearnedCapPoint {

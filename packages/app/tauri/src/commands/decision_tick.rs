@@ -799,6 +799,7 @@ mod tests {
             value: Some(1.0),
         }];
         let stream = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: vec![rec],
             recorder_vehicle_id: Some(7),
             ..minimal_stream()
@@ -820,6 +821,7 @@ mod tests {
         );
         // A replay without the recorder join degrades to a zeroed report.
         let empty = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: Vec::new(),
             recorder_vehicle_id: None,
             ..minimal_stream()
@@ -911,6 +913,7 @@ mod tests {
             value: 350,
         }];
         let stream = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: vec![rec, enemy, lost, ally, zone],
             recorder_vehicle_id: Some(7),
             shell_launches: vec![
@@ -1041,6 +1044,7 @@ mod tests {
         ];
         let traj = trajectory(9, kind(2, Some(222)), samples);
         let stream = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: vec![
                 trajectory(
                     7,
@@ -1068,6 +1072,7 @@ mod tests {
     #[test]
     fn observed_now_boundary_is_inclusive_at_gap_threshold() {
         let stream = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: vec![
                 trajectory(
                     7,
@@ -1126,6 +1131,7 @@ mod tests {
             trajectory(eid, kind(2, Some(eid as i64 * 10)), v)
         };
         let stream = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: vec![
                 mk(7, 5.0, (0.0, 100.0)),
                 mk(9, 150.0, (60.0, 74.5)), // enemy, observed, behind wall
@@ -1160,6 +1166,7 @@ mod tests {
     #[test]
     fn tick_state_requires_recorder_join() {
         let stream = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: Vec::new(),
             recorder_vehicle_id: None,
             ..minimal_stream()
@@ -1188,6 +1195,7 @@ mod tests {
 
     fn minimal_stream() -> ReplayStream {
         ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: Vec::new(),
             recorder_vehicle_id: None,
             shell_launches: Vec::new(),
@@ -1500,6 +1508,7 @@ mod tests {
             trajectory(eid, kind(2, Some(ship)), v)
         };
         let stream = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: vec![
                 mk(7, 0.0, 111, (0.0, 100.0)),
                 mk(9, 30.0, 222, (0.0, 99.5)),

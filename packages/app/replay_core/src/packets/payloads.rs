@@ -630,7 +630,11 @@ pub(super) fn scan_state_for_radius(state: &[u8]) -> Option<f32> {
 /// Parse an EntityCreate (0x05) payload. WoWS layout (from
 /// `clients/wows/network/packets/EntityCreate.py`):
 ///   i32 entity_id, i16 type, i32 vehicle_id, i32 space_id,
-///   f32×3 position, f32×3 direction, [BinaryStream state — skipped]
+///   f32×3 position, f32×3 direction, [BinaryStream state]
+///
+/// The fixed header is parsed here; the trailing state stream is left to its
+/// consumers (the shipId/HP/smoke scans below and the 15.9 vehicle build walk
+/// in [`super::build`]).
 ///
 /// `zone_entity_type` is the version-dependent InteractiveZone index (13
 /// before 14.5.0, 14 after) — only zone entities get the radius / control

@@ -34,7 +34,9 @@ pub mod method_tables_lesta;
 pub mod packets;
 
 pub use assemble::live_self_stream_from_settled;
-pub use packets::{DecodedReplay, PropertyChange, decode_replay, decode_replay_partial};
+pub use packets::{
+    DecodedReplay, PropertyChange, VehicleBuildRaw, decode_replay, decode_replay_partial,
+};
 
 /// Whether `ext` is the Lesta (Мир кораблей) replay container extension.
 /// Case-insensitive. Inline of the app crate's per-client compat registry

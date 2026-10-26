@@ -1033,6 +1033,7 @@ mod tests {
 
     fn minimal_stream() -> ReplayStream {
         ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: Vec::new(),
             recorder_vehicle_id: None,
             shell_launches: Vec::new(),
@@ -1093,6 +1094,7 @@ mod tests {
             }
         }
         let stream = ReplayStream {
+            ally_builds: Vec::new(),
             trajectories: vec![mk(9, 10.0, 222), mk(8, 50.0, 111), mk(7, 0.0, 110)],
             recorder_vehicle_id: Some(8),
             shell_launches: shells,

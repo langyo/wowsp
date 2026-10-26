@@ -8,7 +8,7 @@
 use anyhow::anyhow;
 use std::fs;
 
-use wowsp_tauri_shared::{CommandResult, VehicleEntry};
+use wowsp_tauri_shared::{CommandResult, PlayerBuild, VehicleEntry};
 
 use super::meta::{extract_descriptor_json, roster_from_raw};
 
@@ -20,9 +20,12 @@ use super::meta::{extract_descriptor_json, roster_from_raw};
 /// this — the cap lifter's former hand-rolled copy passed no version and
 /// no roster candidates, so the version-gated layouts (the arena join
 /// included) never fired there.
+/// Returns the decoded replay plus the descriptor roster: the exit layer
+/// needs the roster relations to project the decode-layer build set onto the
+/// ally-only IPC surface ([`ally_builds_from`]).
 pub(crate) fn decode_replay_file_decoded(
     path: &std::path::Path,
-) -> anyhow::Result<wowsp_replay_core::DecodedReplay> {
+) -> anyhow::Result<(wowsp_replay_core::DecodedReplay, Vec<VehicleEntry>)> {
     // Review M-6: the full decode legitimately buffers the whole file,
     // but a pairing-pulled "replay" can claim any size — refuse past the
     // bound before the read (the largest real capture is a few dozen MB;
@@ -91,7 +94,62 @@ pub(crate) fn decode_replay_file_decoded(
             decoded.recorder_ship,
         );
     }
-    Ok(decoded)
+    Ok((decoded, roster))
+}
+
+/// Project the decode-layer vehicle builds onto the IPC DTO for the recorder's
+/// SIDE only.
+///
+/// Product decision (user): enemy loadouts are never displayed, even though the
+/// replay carries them (the decode layer keeps both teams for completeness and
+/// tests). This exit is the single place that enforces the rule: a build whose
+/// roster entry has relation > 1 (the other team / spectator) is dropped here.
+/// A ship id that appears on BOTH sides (mirror picks share one shipId) makes
+/// the join ambiguous, so that build is dropped too rather than risk showing an
+/// enemy loadout as an ally's. Builds that join no roster entry are dropped
+/// (unknown player identity).
+fn ally_builds_from(
+    decoded: &wowsp_replay_core::DecodedReplay,
+    roster: &[VehicleEntry],
+) -> Vec<PlayerBuild> {
+    ally_builds_for(&decoded.vehicle_builds, roster)
+}
+
+/// The roster-relation join behind [`ally_builds_from`] (split out so the
+/// exit-filter tests can feed synthetic builds without a full decode).
+pub(super) fn ally_builds_for(
+    builds: &[wowsp_replay_core::VehicleBuildRaw],
+    roster: &[VehicleEntry],
+) -> Vec<PlayerBuild> {
+    builds
+        .iter()
+        .filter_map(|raw| {
+            let ship_id = i64::from(raw.ship_params_id);
+            let mut matched = roster.iter().filter(|v| v.ship_id == ship_id);
+            let first = matched.next()?;
+            if matched.any(|v| v.relation != first.relation) {
+                // Mirror pick: the same ship id is on both sides. The join
+                // cannot tell whose build this is, so it never reaches IPC.
+                return None;
+            }
+            if first.relation > 1 {
+                return None;
+            }
+            Some(PlayerBuild {
+                entity_id: raw.entity_id,
+                ship_params_id: raw.ship_params_id,
+                units: raw.units.clone(),
+                modernization: raw.modernization.clone(),
+                exteriors: raw.exteriors.clone(),
+                abilities: raw.abilities.clone(),
+                ensigns: raw.ensigns.clone(),
+                ecoboosts: raw.ecoboosts.clone(),
+                crew_params_id: raw.crew_params_id,
+                is_in_adaptation: raw.is_in_adaptation,
+                learned_skills: raw.learned_skills.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Decode the packet stream of one `.wowsreplay` and return per-entity
@@ -108,8 +166,11 @@ pub async fn read_replay_positions(
     path: String,
 ) -> CommandResult<wowsp_tauri_shared::ReplayStream> {
     Ok(tokio::task::spawn_blocking(move || {
-        let decoded = decode_replay_file_decoded(std::path::Path::new(&path))?;
-        Ok::<_, anyhow::Error>(group_by_entity(decoded))
+        let (decoded, roster) = decode_replay_file_decoded(std::path::Path::new(&path))?;
+        let ally_builds = ally_builds_from(&decoded, &roster);
+        let mut stream = group_by_entity(decoded);
+        stream.ally_builds = ally_builds;
+        Ok::<_, anyhow::Error>(stream)
     })
     .await
     .map_err(|e| anyhow!("replay positions task failed: {e}"))??)
@@ -127,8 +188,11 @@ pub async fn read_replay_positions(
 pub(crate) fn decode_replay_stream_sync(
     path: &str,
 ) -> anyhow::Result<wowsp_tauri_shared::ReplayStream> {
-    let decoded = decode_replay_file_decoded(std::path::Path::new(path))?;
-    Ok(group_by_entity(decoded))
+    let (decoded, roster) = decode_replay_file_decoded(std::path::Path::new(path))?;
+    let ally_builds = ally_builds_from(&decoded, &roster);
+    let mut stream = group_by_entity(decoded);
+    stream.ally_builds = ally_builds;
+    Ok(stream)
 }
 
 /// Sync smoke-screen decode (experiment E8) — same preamble as
@@ -389,7 +453,12 @@ pub(super) fn live_snapshot_from_bytes(
     // projection. Lives in the decoding core and is shared with the settled
     // corpus bench (wowsp_replay_core::assemble::finish_self_stream), so
     // the live and settled snapshots agree by construction.
-    wowsp_replay_core::assemble::finish_self_stream(decoded, lesta, &roster)
+    // The ally-only build projection must happen BEFORE the decode output is
+    // moved into the shared post-decode tail (grouping consumes it).
+    let ally_builds = ally_builds_from(&decoded, &roster);
+    let mut snapshot = wowsp_replay_core::assemble::finish_self_stream(decoded, lesta, &roster);
+    snapshot.ally_builds = ally_builds;
+    snapshot
 }
 
 /// Skip the magic + JSON header blocks and return a slice over the encrypted

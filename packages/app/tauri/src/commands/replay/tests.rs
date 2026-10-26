@@ -1799,3 +1799,110 @@ async fn dump_replay_stream_ipc_json() {
         "snake_case field leaked onto the wire"
     );
 }
+
+// ── ally-only build IPC exit ───────────────────────────────────────────────
+
+/// The decode layer keeps BOTH teams' builds; this exit is the single place
+/// enforcing the product rule that only self + teammates reach IPC. Enemy and
+/// mirror-ambiguous joins are dropped.
+#[test]
+fn ally_build_filter_drops_enemy_unknown_and_ambiguous_joins() {
+    let build = |entity_id: i32, ship_params_id: u32| wowsp_replay_core::VehicleBuildRaw {
+        entity_id,
+        ship_params_id,
+        units: vec![1, 2],
+        modernization: vec![0xfe12_cfb0],
+        exteriors: Vec::new(),
+        abilities: vec![0xff62_9fb0],
+        ensigns: Vec::new(),
+        ecoboosts: Vec::new(),
+        crew_params_id: 0xffe2_a6d0,
+        is_in_adaptation: false,
+        learned_skills: vec![vec![], vec![], vec![], vec![12, 18], vec![], vec![]],
+    };
+    let entry = |ship_id: i64, relation: i64| VehicleEntry {
+        id: relation + 1,
+        name: format!("p{ship_id}"),
+        relation,
+        ship_id,
+        ship_name: None,
+    };
+    let roster = vec![
+        entry(100, 0), // recorder
+        entry(200, 1), // teammate
+        entry(300, 2), // enemy
+        entry(400, 1), // mirror pick — ally side...
+        entry(400, 2), // ...and enemy side: join is ambiguous
+    ];
+    let builds = vec![
+        build(1, 100),
+        build(2, 200),
+        build(3, 300),
+        build(4, 400),
+        build(5, 999), // joins no roster entry
+    ];
+    let allies = super::streams::ally_builds_for(&builds, &roster);
+    assert_eq!(
+        allies.iter().map(|b| b.entity_id).collect::<Vec<_>>(),
+        vec![1, 2],
+        "only self + teammate builds reach IPC"
+    );
+    assert_eq!(allies[0].ship_params_id, 100);
+    assert_eq!(allies[0].learned_skills[3], [12, 18]);
+}
+
+/// Corpus check: on the real reference capture the IPC exit carries only
+/// roster relation <= 1 builds, with every decoded field inside the format's
+/// slot bounds.
+#[test]
+fn ally_only_builds_on_the_reference_capture() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        return; // no real replay on this machine — skip
+    };
+    let stream = decode_replay_stream_sync(&path).expect("reference capture must decode");
+    let bytes = fs::read(&path).expect("read replay");
+    let json = extract_descriptor_json(&bytes).expect("descriptor JSON");
+    let raw: serde_json::Value = serde_json::from_str(&json).expect("descriptor must be JSON");
+    let roster = roster_from_raw(std::path::Path::new(&path), &raw);
+    let relations: std::collections::HashMap<i64, i64> =
+        roster.iter().map(|v| (v.ship_id, v.relation)).collect();
+    eprintln!(
+        "[build] roster={} allies=[{}] ipc builds={}",
+        roster.len(),
+        roster.iter().filter(|v| v.relation <= 1).count(),
+        stream.ally_builds.len()
+    );
+    assert!(
+        stream.ally_builds.len() >= 2,
+        "the reference capture must expose at least self + one teammate build, got {}",
+        stream.ally_builds.len()
+    );
+    for build in &stream.ally_builds {
+        let relation = relations
+            .get(&i64::from(build.ship_params_id))
+            .copied()
+            .unwrap_or_else(|| {
+                panic!(
+                    "IPC build ship {} must join the roster",
+                    build.ship_params_id
+                )
+            });
+        assert!(
+            relation <= 1,
+            "enemy build leaked to IPC: ship {} relation {relation}",
+            build.ship_params_id
+        );
+        assert!(!build.units.is_empty(), "hull/module units missing");
+        assert!(build.modernization.len() <= 6, "modernization slot bound");
+        assert!(build.abilities.len() <= 6, "ability slot bound");
+        assert_eq!(build.learned_skills.len(), 6, "per-species skill rows");
+    }
+    // The enemy team is present in the roster, so the exit must have dropped
+    // something: the IPC set can never equal the full roster.
+    if roster.iter().any(|v| v.relation > 1) {
+        assert!(
+            stream.ally_builds.len() < roster.len(),
+            "enemy builds must be filtered out of IPC"
+        );
+    }
+}
