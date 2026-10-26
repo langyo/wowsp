@@ -31,6 +31,9 @@
     "ready": "翻譯就緒",
     "pasteHint": "按 Enter 開啟聊天，Ctrl+V 貼上傳送",
     "unavailable": "翻譯無法使用",
-    "remaining": "還剩 {count} 條待貼上"
+    "remaining": "還剩 {count} 條待貼上",
+    "teamTag": "[隊]",
+    "selfTag": "我",
+    "lineOriginalA11y": "來自 {name} 的原文"
   }
 }

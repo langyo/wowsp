@@ -506,3 +506,49 @@ pub struct RecentChatLine {
     pub from: String,
     pub text: String,
 }
+
+// ── live chat source (M2 live-source, WA) ───────────────────────────────────
+
+/// One battle-chat line as the live panel consumes it: the source line joined
+/// with its roster identity, plus the translation the pipeline fills in later.
+/// Stable by [ChatLine::id] (per-battle monotonic sequence), so a page may
+/// dedupe snapshots that re-send a line it already rendered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatLine {
+    /// Per-battle monotonic sequence id (the page's duplicate key).
+    pub id: i64,
+    /// Wall-clock processing time, unix milliseconds (page order/debug only).
+    pub t: i64,
+    /// Sender nickname joined from the battle roster; "" when unknown.
+    pub from: String,
+    /// Chat channel namespace ("battle_common", "battle_team", ...).
+    pub ns: String,
+    /// Translation target language tag (or the local detector's script hint on
+    /// a skipped line); absent until the pipeline resolves it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lang: Option<String>,
+    /// Original message body.
+    pub text: String,
+    /// Translated body; absent/empty means the page draws the original text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub translated: Option<String>,
+    /// Whether the sender is the recorder (the page's "self" highlight).
+    pub self_line: bool,
+}
+
+/// Snapshot event the live source broadcasts on `wowsp://chat-translate`: the
+/// battle's stable id, its recent lines (oldest to newest, capped) and the
+/// panel's current line cap. Sent only when a line/translation landed or the
+/// battle changed; a page dedupes by [ChatLine::id] and clears on a new battle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatTranslateEvent {
+    /// Stable per-battle id (the temp replay's descriptor dateTime, else a
+    /// path+mtime fallback).
+    pub battle: String,
+    /// Recent lines, oldest to newest, at most `max_lines` of them.
+    pub lines: Vec<ChatLine>,
+    /// Panel line cap in force (min of the two settings).
+    pub max_lines: i64,
+}

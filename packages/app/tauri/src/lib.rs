@@ -260,6 +260,10 @@ pub fn run() {
             // authoritative sink/order source when the roster mode is
             // "plugin" (see docs/en/designs/ingame-stats-plugin.md).
             commands::ingame_plugin::spawn_telemetry_poller(app.handle().clone());
+            // The live chat-translation source (commands/chat_translate/live):
+            // tails the running client's in-progress temp replay and broadcasts
+            // the chat overlay panel's wowsp://chat-translate snapshots.
+            commands::chat_translate::spawn_live_chat_source(app.handle().clone());
             // The session hub's process poller (commands/session): the
             // Rust-side source of truth for "what is running / who is
             // playing", broadcast to every window as wowsp://session-changed.
