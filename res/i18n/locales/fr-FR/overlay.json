@@ -31,6 +31,9 @@
     "ready": "Traduction prête",
     "pasteHint": "Appuyez sur Entrée pour ouvrir le chat, Ctrl+V pour coller et envoyer",
     "unavailable": "Traduction indisponible",
-    "remaining": "{count} message(s) restant(s) à coller"
+    "remaining": "{count} message(s) restant(s) à coller",
+    "teamTag": "[Équipe]",
+    "selfTag": "moi",
+    "lineOriginalA11y": "Message original de {name}"
   }
 }

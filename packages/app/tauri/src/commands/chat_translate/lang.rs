@@ -19,7 +19,9 @@
 //! 5. [VerdictReason::SymbolsOnly] — punctuation/whitespace/emoji only (the
 //!    digit-only line lands here too: nothing in it is translatable);
 //! 6. [VerdictReason::Filler] — the whole line is chat filler ("gg", "gl hf",
-//!    "wp", "o7", …), case/punctuation/emoji tolerated;
+//!    "wp", "o7", …) or every word in it is filler vocabulary ("gg wp",
+//!    "gl hf wp"), case/punctuation/emoji/zero-width tolerated; any content
+//!    word ("gg push mid") keeps the line prose;
 //! 7. [VerdictReason::OwnEcho] — our own translated output echoed back (see
 //!    [looks_like_own_echo]; W3's compose stage reuses the same predicate);
 //! 8. script census — hand-written Unicode range buckets for Han, Hiragana,
@@ -304,10 +306,11 @@ const SIMPLIFIED_EXCLUSIVE: &str = "这们说对发读齐齿龙么样还儿卖�
 
 // ── Chat filler ──────────────────────────────────────────────────────────
 
-/// Whole-line chat filler that carries no content worth a request (contract
-/// §2 rule 6 requires ≥25; the list is English/abbreviation-based because the
-/// in-game battle chat is). Matched after case folding + punctuation/emoji
-/// stripping, so "GG WP!", "thx 👍" and "gl hf" all hit.
+/// Whole-line chat filler PHRASES that carry no content worth a request
+/// (contract §2 rule 6 requires ≥25; the list is English/abbreviation-based
+/// because the in-game battle chat is). Matched after case folding +
+/// punctuation/emoji/zero-width stripping, so "GG WP!", "thx 👍" and
+/// "gl hf" all hit.
 const FILLERS: &[&str] = &[
     "afk",
     "brb",
@@ -350,6 +353,17 @@ const FILLERS: &[&str] = &[
     "wow",
     "yes",
     "yo",
+];
+
+/// The single-word filler VOCABULARY: every word a [FILLERS] phrase is built
+/// from. A line whose words are ALL in this set is the same noise spread over
+/// several words — "gg wp", "gl hf wp", "gg gg!" — and is skipped as filler
+/// too; one word outside it ("gg push mid") makes the line prose again.
+const FILLER_WORDS: &[&str] = &[
+    "afk", "brb", "cya", "done", "game", "gg", "ggwp", "gj", "gl", "glhf", "good", "hello", "hey",
+    "hf", "hi", "job", "k", "lmao", "lol", "luck", "nice", "no", "np", "o7", "ok", "okay", "omg",
+    "played", "problem", "rofl", "see", "sup", "thank", "thanks", "thx", "ty", "well", "wp", "wow",
+    "yes", "yo", "you",
 ];
 
 // ── Latin-language stopwords ─────────────────────────────────────────────
@@ -654,8 +668,19 @@ fn fold_fullwidth(c: char) -> Option<char> {
 }
 
 fn is_filler(text: &str) -> bool {
-    let normalized = words(text).join(" ");
-    !normalized.is_empty() && FILLERS.contains(&normalized.as_str())
+    let tokens = words(text);
+    if tokens.is_empty() {
+        return false;
+    }
+    if FILLERS.contains(&tokens.join(" ").as_str()) {
+        return true;
+    }
+    // A line built ONLY from filler words is the same chat noise spread over
+    // several words ("gg wp", "gl hf wp", "gg gg"). A single content word
+    // ("gg push mid") keeps the line prose.
+    tokens
+        .iter()
+        .all(|token| FILLER_WORDS.contains(&token.as_str()))
 }
 
 fn has_own_stopword(text: &str, own: &str) -> bool {
@@ -1177,10 +1202,15 @@ mod tests {
         ] {
             expect_skip(sample, "en", VerdictReason::Filler);
         }
-        // Filler plus ANY content word is prose again.
-        expect_translate("gg wp lol no", "en", VerdictReason::LatinForeign, None);
+        // A line whose words are ALL filler vocabulary is filler too, no
+        // matter how many words it takes ("gl hf wp", "gg wp", "gg gg").
+        for sample in ["gg wp", "gl hf wp", "gg wp gg", "GG WP!", "gg gg", "lol no"] {
+            expect_skip(sample, "en", VerdictReason::Filler);
+        }
+        // One content word makes the line prose again.
+        expect_translate("gg push mid", "en", VerdictReason::LatinForeign, None);
         assert_eq!(
-            detect_line("nice job done", "en", 2).reason,
+            detect_line("nice job push", "en", 2).reason,
             VerdictReason::LatinForeign
         );
     }
@@ -1193,6 +1223,20 @@ mod tests {
             assert!(!entry.is_empty());
             assert_eq!(*entry, entry.to_lowercase(), "{entry:?} is lowercase");
             assert!(seen.insert(*entry), "{entry:?} is unique");
+            // Every phrase word is in the single-word vocabulary: the
+            // all-token rule must be able to see the phrase's own words.
+            for word in entry.split_whitespace() {
+                assert!(
+                    FILLER_WORDS.contains(&word),
+                    "phrase {entry:?} word {word:?} missing from FILLER_WORDS"
+                );
+            }
+        }
+        let mut seen_words = HashSet::new();
+        for word in FILLER_WORDS {
+            assert!(!word.is_empty());
+            assert_eq!(*word, word.to_lowercase(), "{word:?} is lowercase");
+            assert!(seen_words.insert(*word), "{word:?} is unique");
         }
     }
 

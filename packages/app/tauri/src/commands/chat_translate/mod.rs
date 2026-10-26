@@ -29,7 +29,10 @@ mod cache;
 mod client;
 mod compose;
 mod config;
+mod context;
+mod flow;
 mod lang;
+mod live;
 mod prompt;
 mod translate;
 
@@ -43,6 +46,8 @@ use wowsp_tauri_shared::{
 };
 
 use translate::{LineTranslation, TranslationSource};
+
+pub(crate) use live::spawn as spawn_live_chat_source;
 
 /// The chat-translation settings as the webui renders them. Never carries the
 /// API key — `ChatTranslateConfigResponse`'s `apiKeySet` / `envKeyOverride`
@@ -59,10 +64,15 @@ pub fn get_chat_translate_config() -> CommandResult<ChatTranslateConfigResponse>
 /// replace.
 #[tauri::command]
 pub fn set_chat_translate_config(
+    app: tauri::AppHandle,
     update: ChatTranslateConfigUpdate,
 ) -> CommandResult<ChatTranslateConfigResponse> {
     let merged = config::apply_update(config::load(), update);
     let stored = config::save(merged)?;
+    // A settings save re-shapes the live chat panel (display.maxLines) — the
+    // panel window listens on `wowsp://chat-prefs`. Best-effort; no panel up
+    // is the normal case.
+    config::emit_prefs(&app, &stored);
     Ok(config::response(&stored))
 }
 

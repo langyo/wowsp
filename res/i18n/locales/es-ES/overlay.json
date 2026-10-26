@@ -31,6 +31,9 @@
     "ready": "Traducción lista",
     "pasteHint": "Pulsa Enter para abrir el chat y Ctrl+V para pegar y enviar",
     "unavailable": "Traducción no disponible",
-    "remaining": "Quedan {count} por pegar"
+    "remaining": "Quedan {count} por pegar",
+    "teamTag": "[Equipo]",
+    "selfTag": "yo",
+    "lineOriginalA11y": "Mensaje original de {name}"
   }
 }

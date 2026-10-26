@@ -31,6 +31,9 @@
     "ready": "Translation ready",
     "pasteHint": "Press Enter to open chat, Ctrl+V to paste and send",
     "unavailable": "Translation unavailable",
-    "remaining": "{count} left to paste"
+    "remaining": "{count} left to paste",
+    "teamTag": "[Team]",
+    "selfTag": "me",
+    "lineOriginalA11y": "Original message from {name}"
   }
 }

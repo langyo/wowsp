@@ -1,5 +1,5 @@
 /* Battle-chat translation card — self-contained styles. This page does NOT
-   load the app theme (bare HTML), so colors are literal and follow the Tab
+   load the app theme (bare DOM), so colors are literal and follow the Tab
    overlay's glass convention (overlay.scss:1-60). The window is transparent
    and click-through (WS_EX_TRANSPARENT + WS_EX_NOACTIVATE on the Win32
    side); nothing here may interact with the pointer either. */
@@ -43,13 +43,59 @@ body {
   text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
 }
 
+/* One chat line = (up to) TWO stacked rows: the original row on top (sender,
+   muted original text, badges) and the translated body under it. A faint
+   separator keeps consecutive lines from reading as one block; the local
+   player's own lines get a soft left accent bar and a lifted sender color. */
 .chat-panel__line {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 3px 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.chat-panel__line + .chat-panel__line {
+  border-top: 1px solid rgb(255 255 255 / 6%);
+}
+
+.chat-panel__line--self {
+  margin-left: -10px;
+  padding-left: 8px;
+  border-left: 2px solid rgb(140 195 255 / 55%);
+}
+
+.chat-panel__line--self .chat-panel__from {
+  color: rgb(170 212 255);
+  font-weight: 600;
+}
+
+/* The original row: channel marker + sender + self tag + original text +
+   language badge, all on ONE baseline. */
+.chat-panel__orig {
   display: flex;
   align-items: baseline;
   gap: 0.45em;
-  padding: 1px 0;
-  font-size: 0.8125rem;
-  line-height: 1.35;
+  min-width: 0;
+}
+
+/* The channel marker: team chat carries the localized "[Team]" tag in muted
+   blue, division/pre-battle chat a language-neutral gold diamond. Both are
+   decoration for the reader — the channel is also in the a11y text. */
+.chat-panel__ns {
+  flex: 0 0 auto;
+  font-size: 0.72em;
+  letter-spacing: 0.02em;
+}
+
+.chat-panel__ns--team {
+  color: rgb(140 190 245);
+}
+
+.chat-panel__ns--prebattle {
+  color: rgb(235 200 130);
+  font-size: 0.6em;
 }
 
 /* The sender's nickname — muted so it reads as attribution, not content.
@@ -57,24 +103,64 @@ body {
 .chat-panel__from {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 42%;
+  max-width: 38%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: rgb(165 175 185);
 }
 
-/* The translated body — at most two rows per line, with long unbroken runs
-   (URLs, kana strings) wrapping anywhere instead of overflowing. */
+/* The local player's tag on their own line ("me" / 我 / ...), riding right
+   after the sender: an accent chip, not a second nickname. */
+.chat-panel__self {
+  flex: 0 0 auto;
+  padding: 0 0.35em;
+  border-radius: 0.3em;
+  background: rgb(140 195 255 / 16%);
+  border: 1px solid rgb(140 195 255 / 35%);
+  color: rgb(180 218 255);
+  font-size: 0.78em;
+  line-height: 1.2;
+}
+
+/* The ORIGINAL body — the reader may not understand it, so it stays quiet:
+   muted color, ONE line, ellipsized. The translation below carries the
+   weight. */
 .chat-panel__text {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgb(178 190 202);
+}
+
+/* The source-language badge, right-aligned in the original row: a small
+   quiet plate so it reads as metadata instead of text. */
+.chat-panel__lang {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 0.35em;
+  border-radius: 0.3em;
+  background: rgb(255 255 255 / 8%);
+  color: rgb(160 172 184);
+  font-size: 0.72em;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+/* The translated body — the line's payload: at most two rows, with long
+   unbroken runs (URLs, kana strings) wrapping anywhere instead of
+   overflowing. Absent entirely when the bridge carries no translation. */
+.chat-panel__translated {
   white-space: normal;
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+  color: rgb(236 241 246);
 }
 
 /* The chasing three-dot loading face — COPIED from the Tab table's own

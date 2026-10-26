@@ -3,12 +3,18 @@
  * production drives it: the real chat.ts bootstrap against a mocked
  * `window.__TAURI__`, then the bridge's two events.
  *
- * Pins the card's buffer contract (chat.ts): the window keeps only the
- * newest `maxLines` lines, a DIFFERENT battle id clears everything first, a
- * re-emitted line id is ignored, the cap follows `wowsp://chat-prefs` live,
- * every row carries its translation's `lang`, the body is drawn with
- * `textContent` (arbitrary chat input — any markup stays literal), and an
- * empty buffer renders NO nodes at all (the window is fully transparent).
+ * Pins the upgraded line face (chat.ts):
+ *   - TWO rows per line — the original row (channel marker + sender + self
+ *     tag + muted original + language badge) above the translated body;
+ *   - no translated row at all when the translation is empty;
+ *   - the team/division channel markers (battle_team muted blue tag,
+ *     battle_prebattle gold diamond, every other channel unmarked);
+ *   - the local player's own line highlighted with the localized "me" tag;
+ *   - the buffer contract (newest `maxLines` only, chat order kept by id, a
+ *     different battle id clears everything, re-emitted ids merge in place
+ *     so a late translation fills its row, an empty buffer renders NO nodes
+ *     at all);
+ *   - `textContent` rendering only — arbitrary chat input stays literal.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,8 +28,17 @@ const panel = (): HTMLElement | null => document.querySelector<HTMLElement>(".ch
 const rows = (): HTMLElement[] => [
   ...document.querySelectorAll<HTMLElement>(".chat-panel__line"),
 ];
-const rowTexts = (): string[] =>
+/** Each row's ORIGINAL text cell (the muted top line). */
+const originals = (): string[] =>
   rows().map((r) => r.querySelector(".chat-panel__text")?.textContent ?? "");
+/** Each row's translated cell, or null when the row has no translation. */
+const translations = (): Array<string | null> =>
+  rows().map((r) => {
+    const body = r.querySelector<HTMLElement>(".chat-panel__translated");
+    return body ? body.textContent : null;
+  });
+const fromOf = (row: HTMLElement): string | undefined =>
+  row.querySelector<HTMLElement>(".chat-panel__from")?.textContent ?? undefined;
 
 function emit(event: string, payload: unknown) {
   const handler = handlers.get(event);
@@ -79,58 +94,117 @@ describe("chat translation card", () => {
     expect(document.body.textContent).toBe("");
   });
 
-  it("keeps the newest lines only and stamps each row's language", () => {
+  it("renders a two-row line: muted original above, translation below", () => {
     emit("wowsp://chat-translate", {
       battle: currentBattle,
       maxLines: 2,
       lines: [
-        { id: 1, from: "one", lang: "ja", translated: "一" },
-        { id: 2, from: "two", lang: "ko", translated: "이" },
-        { id: 3, from: "three", lang: "zh-TW", translated: "三" },
+        { id: 1, from: "Foe", lang: "ja", text: "原文一", translated: "译文一" },
+        { id: 2, from: "Mate", lang: "ko", text: "원문", translated: "번역" },
+        { id: 3, from: "Third", lang: "zh-TW", text: "三", translated: "三譯" },
       ],
     });
-    expect(rowTexts()).toEqual(["이", "三"]);
-    expect(rows().map((r) => r.getAttribute("lang"))).toEqual(["ko", "zh-TW"]);
-    // The sender rides its own muted cell ahead of the body.
-    expect(rows()[0].querySelector(".chat-panel__from")?.textContent).toBe("two");
+    // The cap keeps the newest two lines only.
+    expect(rows().length).toBe(2);
+    expect(originals()).toEqual(["원문", "三"]);
+    expect(translations()).toEqual(["번역", "三譯"]);
+    // The original and the translation are SEPARATE rows of one line: the
+    // translated cell is not inside the original row.
+    const first = rows()[0];
+    expect(first.querySelector(".chat-panel__orig")?.contains(
+      first.querySelector(".chat-panel__translated"),
+    )).toBe(false);
+    // Sender + language badge ride the original row.
+    expect(fromOf(first)).toBe("Mate");
+    expect(first.querySelector(".chat-panel__lang")?.textContent).toBe("ko");
+    // A line's row carries its source language for glyph selection.
+    expect(first.getAttribute("lang")).toBe("ko");
     expect(panel()?.getAttribute("role")).toBe("log");
     expect(panel()?.getAttribute("aria-label")).toBe("Chat translation");
   });
 
-  it("clears the buffer when the battle id changes", () => {
-    emit("wowsp://chat-translate", {
-      battle: currentBattle,
-      maxLines: 8,
-      lines: [{ id: 1, from: "old", lang: "ja", translated: "前の戦闘" }],
-    });
-    expect(rowTexts()).toEqual(["前の戦闘"]);
-    // A new battle's first line — the finished battle's line must not leak.
-    emit("wowsp://chat-translate", {
-      battle: newBattle(),
-      maxLines: 8,
-      lines: [{ id: 1, from: "new", lang: "ko", translated: "새 전투" }],
-    });
-    expect(rowTexts()).toEqual(["새 전투"]);
-    expect(panel()?.querySelector(".chat-panel__from")?.textContent).toBe("new");
-  });
-
-  it("draws chat input literally and falls back to the original text", () => {
-    const hostile = '<img src=x onerror="alert(1)"><b>bold</b>';
+  it("renders only the original row when the translation is empty", () => {
     emit("wowsp://chat-translate", {
       battle: currentBattle,
       lines: [
-        { id: 1, lang: "en", text: "original", translated: hostile },
-        // Pending translation — the original body still reads.
-        { id: 2, from: "muted", lang: "ja", text: "原文", translated: "" },
+        { id: 1, from: "one", lang: "en", text: "gg", translated: "" },
+        { id: 2, from: "two", lang: "ja", text: "了解" },
+        { id: 3, from: "three", lang: "ko", text: "확인", translated: "   " },
       ],
     });
-    const texts = rowTexts();
-    expect(texts[0]).toBe(hostile);
-    expect(texts[1]).toBe("原文");
+    expect(originals()).toEqual(["gg", "了解", "확인"]);
+    // No translated node exists on any of them — the line stays single-row.
+    expect(translations()).toEqual([null, null, null]);
+    for (const row of rows()) {
+      expect(row.querySelector(".chat-panel__translated")).toBeNull();
+    }
+  });
+
+  it("marks team and division channels with their own colored markers", () => {
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      lines: [
+        { id: 1, ns: "battle_team", from: "A", text: "team", translated: "t" },
+        { id: 2, ns: "battle_prebattle", from: "B", text: "div", translated: "d" },
+        { id: 3, ns: "battle_common", from: "C", text: "all", translated: "a" },
+      ],
+    });
+    const [team, division, common] = rows();
+    const teamMarker = team.querySelector<HTMLElement>(".chat-panel__ns");
+    expect(teamMarker?.classList.contains("chat-panel__ns--team")).toBe(true);
+    // The localized team tag names the channel.
+    expect(teamMarker?.textContent).toBe("[Team]");
+    const divisionMarker = division.querySelector<HTMLElement>(".chat-panel__ns");
+    expect(divisionMarker?.classList.contains("chat-panel__ns--prebattle")).toBe(true);
+    // Division chat is a language-neutral gold diamond (the team tag would
+    // name the wrong channel).
+    expect(divisionMarker?.textContent).toBe("◆");
+    // battle_common carries no marker at all.
+    expect(common.querySelector(".chat-panel__ns")).toBeNull();
+  });
+
+  it("highlights the local player's own line with the localized self tag", () => {
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      lines: [
+        { id: 1, from: "me", selfLine: true, lang: "zh-CN", text: "我发的", translated: "my line" },
+        { id: 2, from: "other", selfLine: false, lang: "zh-CN", text: "别人", translated: "theirs" },
+      ],
+    });
+    const [mine, theirs] = rows();
+    expect(mine.classList.contains("chat-panel__line--self")).toBe(true);
+    expect(mine.querySelector(".chat-panel__self")?.textContent).toBe("me");
+    expect(theirs.classList.contains("chat-panel__line--self")).toBe(false);
+    expect(theirs.querySelector(".chat-panel__self")).toBeNull();
+  });
+
+  it("names each line for assistive tech from its original sender", () => {
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      lines: [
+        { id: 1, from: "[TAG]Friend", text: "hi" },
+        // Unknown sender: nothing to name the group after.
+        { id: 2, text: "system?" },
+      ],
+    });
+    const [named, anonymous] = rows();
+    expect(named.getAttribute("role")).toBe("group");
+    expect(named.getAttribute("aria-label")).toBe("Original message from [TAG]Friend");
+    expect(anonymous.getAttribute("aria-label")).toBeNull();
+  });
+
+  it("draws chat input literally and falls back to nothing but the original", () => {
+    const hostile = '<img src=x onerror="alert(1)"><b>bold</b>';
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      lines: [{ id: 1, from: "evil", lang: "en", text: hostile, translated: hostile }],
+    });
+    expect(originals()[0]).toBe(hostile);
+    expect(translations()[0]).toBe(hostile);
     // No markup was built: the hostile string is text, not DOM.
     expect(document.querySelector(".chat-panel img")).toBeNull();
     expect(document.querySelector(".chat-panel b")).toBeNull();
-    expect(rows()[0].querySelector(".chat-panel__text")?.childElementCount).toBe(0);
+    expect(rows()[0].querySelector(".chat-panel__translated")?.childElementCount).toBe(0);
   });
 
   it("follows the settings' live line cap and clears on a new battle", () => {
@@ -138,20 +212,20 @@ describe("chat translation card", () => {
       battle: currentBattle,
       maxLines: 8,
       lines: [
-        { id: 1, lang: "ja", translated: "一" },
-        { id: 2, lang: "ja", translated: "二" },
-        { id: 3, lang: "ja", translated: "三" },
-        { id: 4, lang: "ja", translated: "四" },
+        { id: 1, lang: "ja", text: "一", translated: "one" },
+        { id: 2, lang: "ja", text: "二", translated: "two" },
+        { id: 3, lang: "ja", text: "三", translated: "three" },
+        { id: 4, lang: "ja", text: "四", translated: "four" },
       ],
     });
     expect(rows().length).toBe(4);
     emit("wowsp://chat-prefs", { maxLines: 2 });
-    expect(rowTexts()).toEqual(["三", "四"]);
+    expect(originals()).toEqual(["三", "四"]);
     // A junk cap is ignored outright; the last good value stands.
     emit("wowsp://chat-prefs", { maxLines: "many" });
     expect(rows().length).toBe(2);
-    // Intake is append-only: a same-battle payload with no new lines keeps
-    // the window (the buffer is the page's own state, not a snapshot).
+    // A same-battle payload with no new lines keeps the window (the buffer
+    // is the page's own state; the event is just a snapshot to merge).
     emit("wowsp://chat-translate", {
       battle: currentBattle,
       maxLines: 8,
@@ -168,12 +242,58 @@ describe("chat translation card", () => {
     expect(document.body.textContent).toBe("");
   });
 
-  it("ignores a re-emitted line id", () => {
-    const line = { id: 7, lang: "ko", translated: "중복" };
+  it("merges a re-emitted snapshot line in place (translation lands late)", () => {
+    // The snapshot first carries the line while its translation is pending...
     emit("wowsp://chat-translate", {
       battle: currentBattle,
-      lines: [line, line],
+      lines: [{ id: 7, from: "mate", lang: "ja", text: "原文", translated: "" }],
     });
-    expect(rowTexts()).toEqual(["중복"]);
+    expect(rows().length).toBe(1);
+    expect(translations()).toEqual([null]);
+    // ...and a later snapshot re-sends the SAME id with the translation: the
+    // row is updated, never duplicated.
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      lines: [{ id: 7, from: "mate", lang: "ja", text: "原文", translated: "译文" }],
+    });
+    expect(rows().length).toBe(1);
+    expect(originals()).toEqual(["原文"]);
+    expect(translations()).toEqual(["译文"]);
+    // A duplicated id inside ONE payload collapses to a single row.
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      lines: [
+        { id: 8, lang: "ko", text: "중복", translated: "dup" },
+        { id: 8, lang: "ko", text: "중복", translated: "dup" },
+      ],
+    });
+    expect(rows().length).toBe(2);
+  });
+
+  it("keeps chat order when a grown snapshot back-fills older lines", () => {
+    // A 2-line cap trims the buffer to the newest lines...
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      maxLines: 2,
+      lines: [
+        { id: 1, text: "一", translated: "one" },
+        { id: 2, text: "二", translated: "two" },
+        { id: 3, text: "三", translated: "three" },
+      ],
+    });
+    expect(originals()).toEqual(["二", "三"]);
+    // ...then the cap grows and the snapshot back-fills the older ids: they
+    // must land BACK in chat order (sorted by id), not after the newer ones.
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      maxLines: 8,
+      lines: [
+        { id: 1, text: "一", translated: "one" },
+        { id: 2, text: "二", translated: "two" },
+        { id: 3, text: "三", translated: "three" },
+      ],
+    });
+    expect(originals()).toEqual(["一", "二", "三"]);
+    expect(translations()).toEqual(["one", "two", "three"]);
   });
 });

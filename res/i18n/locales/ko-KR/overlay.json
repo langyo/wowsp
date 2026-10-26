@@ -31,6 +31,9 @@
     "ready": "번역 준비 완료",
     "pasteHint": "Enter로 채팅을 열고 Ctrl+V로 붙여넣어 전송",
     "unavailable": "번역을 사용할 수 없음",
-    "remaining": "붙여넣을 메시지 {count}개 남음"
+    "remaining": "붙여넣을 메시지 {count}개 남음",
+    "teamTag": "[팀]",
+    "selfTag": "나",
+    "lineOriginalA11y": "{name}님의 원문"
   }
 }

@@ -31,6 +31,9 @@
     "ready": "Перевод готов",
     "pasteHint": "Нажмите Enter, чтобы открыть чат, и Ctrl+V, чтобы вставить и отправить",
     "unavailable": "Перевод недоступен",
-    "remaining": "Осталось вставить: {count}"
+    "remaining": "Осталось вставить: {count}",
+    "teamTag": "[Команда]",
+    "selfTag": "я",
+    "lineOriginalA11y": "Оригинал от {name}"
   }
 }

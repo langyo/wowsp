@@ -17,13 +17,17 @@
 
 use anyhow::{Result, anyhow};
 
+use serde::Serialize;
 use std::path::Path;
+
+use tauri::Emitter;
 
 use wowsp_tauri_shared::{
     ChatTranslateConfig, ChatTranslateConfigPublic, ChatTranslateConfigResponse,
     ChatTranslateConfigUpdate, DEFAULT_BASE_URL, DEFAULT_MODEL, SUPPORTED_LANGS,
 };
 
+use crate::commands::overlay::CHAT_PREFS_EVENT;
 use crate::paths;
 use crate::settings_store::{self, SettingsSource};
 
@@ -317,6 +321,33 @@ fn effective_key(stored: &str, env_override: Option<&str>) -> Option<String> {
 /// The key an outbound request must use (environment override first).
 pub(crate) fn effective_api_key(config: &ChatTranslateConfig) -> Option<String> {
     effective_key(&config.provider.api_key, api_key_env_override().as_deref())
+}
+
+/// The chat panel's display prefs as the panel window receives them
+/// (`wowsp://chat-prefs`). One field today — the configured data-side line
+/// cap; the overlay window's own `chatPanelMaxLines` caps the same list
+/// window-side. camelCase wire shape, mirroring the webui's listener.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChatPrefsPayload {
+    pub max_lines: i64,
+}
+
+/// Payload for [`emit_prefs`]: the sanitized `display.maxLines` (pure, so the
+/// wire shape is unit-tested without an app handle).
+pub(crate) fn prefs_payload(config: &ChatTranslateConfig) -> ChatPrefsPayload {
+    ChatPrefsPayload {
+        max_lines: config.display.max_lines,
+    }
+}
+
+/// Notify the live chat panel that the settings changed (a settings save just
+/// landed). Best-effort: no window listening is normal (the panel window is
+/// only up while the game runs), so a failed emit is not an error.
+pub(crate) fn emit_prefs(app: &tauri::AppHandle, config: &ChatTranslateConfig) {
+    if let Err(error) = app.emit(CHAT_PREFS_EVENT, prefs_payload(config)) {
+        tracing::debug!(error = %error, "emit chat-prefs failed");
+    }
 }
 
 /// The config as the webui receives it, with the key stripped and the two
@@ -663,5 +694,29 @@ mod tests {
             Some("sk-stored")
         );
         assert_eq!(effective_key("", Some("sk-env")).as_deref(), Some("sk-env"));
+    }
+
+    /// The chat-panel prefs payload is the camelCase wire shape the panel's
+    /// `wowsp://chat-prefs` listener reads, carrying the SANITIZED
+    /// `display.maxLines` (a hand-edited out-of-range value arrives clamped).
+    #[test]
+    fn prefs_payload_carries_the_sanitized_display_cap() {
+        let config = config_with(|c| c.display.max_lines = 12);
+        let payload = prefs_payload(&config);
+        assert_eq!(payload.max_lines, 12);
+        let value = serde_json::to_value(payload).expect("prefs payload serializes");
+        assert_eq!(value["maxLines"], 12);
+        assert_eq!(
+            value.as_object().map(|object| object.len()),
+            Some(1),
+            "the panel prefs contract is exactly one field today"
+        );
+
+        // Out-of-range stored values sanitize on the way in; the payload only
+        // ever carries the clamp.
+        let clamped = sanitize(config_with(|c| c.display.max_lines = 999));
+        assert_eq!(prefs_payload(&clamped).max_lines, 30);
+        let low = sanitize(config_with(|c| c.display.max_lines = 1));
+        assert_eq!(prefs_payload(&low).max_lines, 3);
     }
 }

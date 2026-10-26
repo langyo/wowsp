@@ -31,6 +31,9 @@
     "ready": "翻訳の準備完了",
     "pasteHint": "Enter でチャットを開き、Ctrl+V で貼り付けて送信",
     "unavailable": "翻訳を利用できません",
-    "remaining": "残り {count} 件を貼り付け"
+    "remaining": "残り {count} 件を貼り付け",
+    "teamTag": "[チーム]",
+    "selfTag": "自分",
+    "lineOriginalA11y": "{name} の原文"
   }
 }
