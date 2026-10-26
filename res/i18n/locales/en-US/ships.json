@@ -740,9 +740,13 @@
     "scout": "Scout",
     "asw": "ASW Aircraft",
     "mine": "Minelayer",
+    "dive": "Supply Plane",
+    "airship": "Airship",
+    "auxiliary": "Auxiliary Plane",
+    "smoke": "Smoke Plane",
     "cfg": {
-      "stock": "stock",
-      "top": "top"
+      "base": "Base",
+      "variant": "Variant"
     }
   }
 }

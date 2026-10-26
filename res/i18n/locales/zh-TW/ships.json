@@ -740,9 +740,13 @@
     "scout": "偵察機",
     "asw": "反潛機",
     "mine": "佈雷機",
+    "dive": "補給機",
+    "airship": "飛艇",
+    "auxiliary": "輔助機",
+    "smoke": "發煙機",
     "cfg": {
-      "stock": "白板",
-      "top": "頂級"
+      "base": "基礎",
+      "variant": "變種"
     }
   }
 }

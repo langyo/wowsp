@@ -740,9 +740,13 @@
     "scout": "Éclaireur",
     "asw": "Avion ASM",
     "mine": "Poseur de mines",
+    "dive": "Avion de ravitaillement",
+    "airship": "Dirigeable",
+    "auxiliary": "Avion auxiliaire",
+    "smoke": "Avion fumigène",
     "cfg": {
-      "stock": "stock",
-      "top": "top"
+      "base": "Base",
+      "variant": "Variante"
     }
   }
 }

@@ -28,7 +28,7 @@ import ShipMyStatsPanel from "./ShipMyStatsPanel";
 import ServerTrendPanel from "./ServerTrendPanel";
 import { emptyBuild, type PlannerBuild } from "./modifierPipeline";
 import { resolveShipParts } from "./shipParts";
-import ShipStage, { type FocusZone, type ArmorZone, type PlaneModelOption } from "./ShipStage";
+import ShipStage, { type FocusZone, type ArmorZone } from "./ShipStage";
 import WeaponBar from "./WeaponBar";
 import { shipRarity, RARITY_VARIANT } from "@/utils/shipRarity";
 import { authoritativeEvent } from "@/utils/shipEventData";
@@ -39,6 +39,7 @@ import {
   buildPlaneOptionsFromSeed,
   buildPlaneOptionsFromSlice,
   squadronSeed,
+  type PlaneModelOption,
 } from "./shipSquadrons";
 import "./ShipDetailModal.scss";
 
@@ -375,11 +376,10 @@ export default defineComponent({
     const planeModels = computed<PlaneModelOption[]>(() => {
       const ship = viewShip.value;
       if (!ship) return [];
-      const name = ship.name;
       const gp = gameparams.value as Record<string, unknown> | null;
-      if (gp) return buildPlaneOptionsFromSlice(gp, name);
+      if (gp) return buildPlaneOptionsFromSlice(gp);
       const seed = squadronSeed(ship.shipId);
-      return seed ? buildPlaneOptionsFromSeed(seed, name) : [];
+      return seed ? buildPlaneOptionsFromSeed(seed) : [];
     });
 
     /** The staged airframe, or null while the hull is shown. */
