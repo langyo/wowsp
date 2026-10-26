@@ -20,8 +20,9 @@
 //! Vehicle build payloads (`shipConfig` modules/upgrades/camouflage/signals/
 //! consumables and the captain's `crewModifiersCompactParams`) ride the SAME
 //! EntityCreate state stream as exposed PROPERTIES — decoded by [`build`], which
-//! pins the 15.9.x property index map (see its module docs for the generator
-//! plan that replaces the pinned constants). The output is the decode-layer
+//! resolves the payloads BY NAME from the generated per-version property table
+//! (`packets/property_tables.rs`, script `scripts/gen_property_tables.py`). The
+//! output is the decode-layer
 //! [`VehicleBuildRaw`] list: BOTH teams, so the app's IPC exit can decide what
 //! to expose (it currently exposes allies only).
 //!
@@ -702,6 +703,7 @@ mod events;
 mod frames;
 mod payloads;
 mod pickle;
+mod property_tables;
 
 pub use build::{ShipConfigRaw, VehicleBuildRaw, decode_ship_config_blob};
 
