@@ -54,6 +54,20 @@ from fetch_oodle import ensure_decoder  # noqa: E402
 
 SKILL_PNGS = (
     "gui/crew_commander/skills/planes_consumables_regeneratehealth_upgrade.png",
+    "gui/crew_commander/skills/acoustic_specialist.png",
+    "gui/crew_commander/skills/buoyancy_speed.png",
+    "gui/crew_commander/skills/depth_charge_bomber_alert.png",
+    "gui/crew_commander/skills/extra_call_fighters.png",
+    "gui/crew_commander/skills/gun_main_shot_delay.png",
+    "gui/crew_commander/skills/pinger_speed_buff.png",
+    "gui/crew_commander/skills/shoot_shift_bonus.png",
+    "gui/crew_commander/skills/smoke_screen_setter.png",
+    "gui/crew_commander/skills/submarine_defense_hp.png",
+    "gui/crew_commander/skills/submarine_speed_on_buoyancy.png",
+    "gui/crew_commander/skills/submarine_torpedo_damage.png",
+    "gui/crew_commander/skills/submarine_vulnerability_depth_bomb.png",
+    "gui/crew_commander/skills/trigger_hydrophone_zone.png",
+    "gui/crew_commander/skills/trigger_torpedo_speed_reload.png",
 )
 SIGNAL_PNGS = ("gui/signal_flags/PCEF*",)
 

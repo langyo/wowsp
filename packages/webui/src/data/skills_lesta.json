@@ -2,36 +2,36 @@
  "AaDamageConstantBubbles": {
   "modifiers": {
    "AAAuraDamage": {
-    "AirCarrier": 1.0,
-    "Auxiliary": 1.0,
+    "AirCarrier": 1,
+    "Auxiliary": 1,
     "Battleship": 1.1,
     "Cruiser": 1.2,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Destroyer": 1,
+    "Submarine": 1
    },
    "AABubbleDamage": {
-    "AirCarrier": 1.0,
-    "Auxiliary": 1.0,
+    "AirCarrier": 1,
+    "Auxiliary": 1,
     "Battleship": 1.1,
     "Cruiser": 1.2,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Destroyer": 1,
+    "Submarine": 1
    },
    "GSAlphaFactor": {
-    "AirCarrier": 1.0,
-    "Auxiliary": 1.0,
+    "AirCarrier": 1,
+    "Auxiliary": 1,
     "Battleship": 1.1,
     "Cruiser": 1.15,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Destroyer": 1,
+    "Submarine": 1
    },
    "dcAlphaDamageMultiplier": {
-    "AirCarrier": 1.0,
-    "Auxiliary": 1.0,
+    "AirCarrier": 1,
+    "Auxiliary": 1,
     "Battleship": 1.1,
     "Cruiser": 1.15,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Destroyer": 1,
+    "Submarine": 1
    }
   },
   "trigger": null
@@ -40,36 +40,36 @@
   "modifiers": {
    "AAAuraDamage": {
     "AirCarrier": 1.1,
-    "Auxiliary": 1.0,
-    "Battleship": 1.0,
-    "Cruiser": 1.0,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Auxiliary": 1,
+    "Battleship": 1,
+    "Cruiser": 1,
+    "Destroyer": 1,
+    "Submarine": 1
    },
    "AABubbleDamage": {
     "AirCarrier": 1.1,
-    "Auxiliary": 1.0,
-    "Battleship": 1.0,
-    "Cruiser": 1.0,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Auxiliary": 1,
+    "Battleship": 1,
+    "Cruiser": 1,
+    "Destroyer": 1,
+    "Submarine": 1
    },
    "GSAlphaFactor": {
     "AirCarrier": 1.1,
-    "Auxiliary": 1.0,
-    "Battleship": 1.0,
-    "Cruiser": 1.0,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Auxiliary": 1,
+    "Battleship": 1,
+    "Cruiser": 1,
+    "Destroyer": 1,
+    "Submarine": 1
    },
    "GSShotDelay": 0.9,
    "dcAlphaDamageMultiplier": {
     "AirCarrier": 1.1,
-    "Auxiliary": 1.0,
-    "Battleship": 1.0,
-    "Cruiser": 1.0,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Auxiliary": 1,
+    "Battleship": 1,
+    "Cruiser": 1,
+    "Destroyer": 1,
+    "Submarine": 1
    }
   },
   "trigger": null
@@ -281,7 +281,7 @@
  "DetectionAlert": {
   "modifiers": {
    "artilleryAlertEnabled": true,
-   "artilleryAlertMinDistance": 150.0
+   "artilleryAlertMinDistance": 150
   },
   "trigger": null
  },
@@ -295,7 +295,7 @@
   "modifiers": {
    "mineDetectionCoefficient": 1.25,
    "torpedoDetectionCoefficient": 1.25,
-   "torpedoDetectionCoefficientByPlane": 1.0,
+   "torpedoDetectionCoefficientByPlane": 1,
    "uwCoeffBonus": 7
   },
   "trigger": null
@@ -366,20 +366,20 @@
  "GmTurn": {
   "modifiers": {
    "GMRotationSpeed": {
-    "AirCarrier": 1.0,
-    "Auxiliary": 1.0,
+    "AirCarrier": 1,
+    "Auxiliary": 1,
     "Battleship": 1.2,
     "Cruiser": 1.15,
     "Destroyer": 1.15,
-    "Submarine": 1.0
+    "Submarine": 1
    },
    "GMSRotationSpeed": {
-    "AirCarrier": 1.0,
-    "Auxiliary": 1.0,
+    "AirCarrier": 1,
+    "Auxiliary": 1,
     "Battleship": 1.2,
     "Cruiser": 1.15,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Destroyer": 1,
+    "Submarine": 1
    }
   },
   "trigger": null
@@ -387,12 +387,12 @@
  "HeFireProbability": {
   "modifiers": {
    "artilleryBurnChanceBonus": {
-    "AirCarrier": 0.0,
-    "Auxiliary": 0.0,
+    "AirCarrier": 0,
+    "Auxiliary": 0,
     "Battleship": 0.01,
     "Cruiser": 0.01,
     "Destroyer": 0.01,
-    "Submarine": 0.0
+    "Submarine": 0
    },
    "dcSplashSizeMultiplier": 1.15
   },
@@ -421,19 +421,19 @@
    "GMHECSDamageCoeff": 1.1,
    "GMSHECSDamageCoeff": 1.1,
    "GSMaxDist": {
-    "AirCarrier": 1.0,
-    "Auxiliary": 1.0,
-    "Battleship": 1.0,
+    "AirCarrier": 1,
+    "Auxiliary": 1,
+    "Battleship": 1,
     "Cruiser": 1.2,
-    "Destroyer": 1.0,
-    "Submarine": 1.0
+    "Destroyer": 1,
+    "Submarine": 1
    }
   },
   "trigger": null
  },
  "Maneuverability": {
   "modifiers": {
-   "SGCritRudderTime": 2.0,
+   "SGCritRudderTime": 2,
    "damagedEngineCoeff": 0.2167,
    "softCriticalEnabled": true
   },
@@ -696,6 +696,75 @@
   "trigger": null
  },
  "TriggerSpreading": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "ExtraCallFighters": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "TriggerTorpedoSpeedReload": {
+  "modifiers": {
+   "GTShotDelay": 0.97,
+   "planeTorpedoSpeedMultiplier": 1.015,
+   "torpedoSpeedMultiplier": 1.015
+  },
+  "trigger": null
+ },
+ "PingerSpeedBuff": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "GunMainShotDelay": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "SmokeScreenSetter": {
+  "modifiers": {
+   "GMShotDelay": 0.8
+  },
+  "trigger": null
+ },
+ "ShootShiftBonus": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "DepthChargeBomberAlert": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "TriggerHydrophoneZone": {
+  "modifiers": {
+   "torpedoDetectionCoefficient": 1.05,
+   "vulnerabilityTorpedo": 0.95
+  },
+  "trigger": null
+ },
+ "SubmarineSpeedOnBuoyancy": {
+  "modifiers": {
+   "speedCoef": 1.1
+  },
+  "trigger": null
+ },
+ "AcousticSpecialist": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "SubmarineDefenseHp": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "SubmarineTorpedoDamage": {
+  "modifiers": {},
+  "trigger": null
+ },
+ "SubmarineVulnerabilityDepthBomb": {
+  "modifiers": {
+   "vulnerabilityDBomb": 0.67
+  },
+  "trigger": null
+ },
+ "BuoyancySpeed": {
   "modifiers": {},
   "trigger": null
  }

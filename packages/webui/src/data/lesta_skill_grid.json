@@ -1,0 +1,206 @@
+[
+ {
+  "class": "AIRCARRIER",
+  "tiers": [],
+  "pending": [
+   [
+    "ATTACK",
+    [
+     "PlanesForsageRenewal",
+     "PlanesForsageDuration",
+     "PlanesConsumablesSpeedboosterReload"
+    ]
+   ],
+   [
+    "SUPPORT",
+    [
+     "PlanesConsumablesCallfightersRange"
+    ]
+   ],
+   [
+    "ATTACK",
+    [
+     "PlanesTorpedoArmingrange",
+     "PlanesTorpedoSpeed",
+     "PlanesSpeed"
+    ]
+   ],
+   [
+    "SUPPORT",
+    [
+     "PlanesConsumablesCallfightersAdditional"
+    ]
+   ],
+   [
+    "ATTACK",
+    [
+     "PlanesAimingBoost",
+     "PlanesApDamage",
+     "HeFireProbabilityCv"
+    ]
+   ],
+   [
+    "SUPPORT",
+    [
+     "ExtraCallFighters"
+    ]
+   ],
+   [
+    "ATTACK",
+    [
+     "PlanesDivebomberSpeed",
+     "PlanesTorpedoUwReduced",
+     "AtbaUpgrade"
+    ]
+   ],
+   [
+    "SUPPORT",
+    [
+     "PlanesConsumablesCallfightersPreparationtime"
+    ]
+   ]
+  ]
+ },
+ {
+  "class": "BATTLESHIP",
+  "tiers": [
+   {
+    "ATTACK": [
+     "GmShellReload",
+     "HeFireProbability",
+     "ConsumablesReload"
+    ]
+   },
+   {
+    "DEFENCE": [
+     "DetectionTorpedoRange",
+     "DetectionAiming",
+     "AaDamageConstantBubbles"
+    ],
+    "ATTACK": [
+     "ApDamageBb",
+     "AtbaRange",
+     "ArmamentReloadAaDamage"
+    ]
+   }
+  ],
+  "pending": [
+   [
+    "DEFENCE",
+    [
+     "ConsumablesCrashcrewRegencrewUpgrade",
+     "DetectionVisibilityRange",
+     "DefenceFireProbability"
+    ]
+   ]
+  ]
+ },
+ {
+  "class": "CRUISER",
+  "tiers": [
+   {
+    "ATTACK": [
+     "GmTurn",
+     "TorpedoSpeed",
+     "ConsumablesReload",
+     "GmShellReload"
+    ]
+   },
+   {
+    "DEFENCE": [
+     "DetectionAiming",
+     "AaPrioritysectorDamageConstant"
+    ],
+    "ATTACK": [
+     "HeSapDamage",
+     "TorpedoDamage",
+     "ArmamentReloadAaDamage",
+     "ApDamageCa"
+    ]
+   },
+   {
+    "DEFENCE": [
+     "DetectionAlert",
+     "Maneuverability"
+    ],
+    "ATTACK": [
+     "HeFireProbability",
+     "TorpedoReload",
+     "ConsumablesDuration",
+     "ConsumablesSpotterUpgrade"
+    ]
+   },
+   {
+    "DEFENCE": [
+     "ConsumablesAdditional",
+     "DefenseHp"
+    ],
+    "ATTACK": [
+     "TriggerGmAtbaReloadCa",
+     "TriggerSpeedAccuracy",
+     "DetectionDirection",
+     "HePenetration"
+    ]
+   },
+   {},
+   {}
+  ],
+  "pending": [
+   [
+    "DEFENCE",
+    [
+     "DetectionVisibilityRange",
+     "AaDamageConstantBubbles"
+    ]
+   ]
+  ]
+ },
+ {
+  "class": "DESTROYER",
+  "tiers": [
+   {
+    "ATTACK": [
+     "GmReloadAaDamageConstant",
+     "TorpedoReload",
+     "TriggerSpreading",
+     "ConsumablesAdditional"
+    ]
+   }
+  ],
+  "pending": [
+   [
+    "ATTACK",
+    [
+     "GmRangeAaDamageBubbles",
+     "TriggerSpeed",
+     "DetectionDirection",
+     "TriggerGmReload"
+    ]
+   ],
+   [
+    "ATTACK",
+    [
+     "PingerSpeedBuff",
+     "TorpedoFloodingProbability",
+     "DefenseCritProbability"
+    ]
+   ],
+   [
+    "ATTACK",
+    [
+     "SubmarineBatteryCapacity",
+     "TriggerSeenTorpedoReload",
+     "TriggerConsRudderTimeCoeff"
+    ]
+   ],
+   [
+    "ATTACK",
+    [
+     "ArmamentReloadSubmarine",
+     "SubmarineTorpedoDamage",
+     "SubmarineVulnerabilityDepthBomb"
+    ]
+   ]
+  ]
+ }
+]

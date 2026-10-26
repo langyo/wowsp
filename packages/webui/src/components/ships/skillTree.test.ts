@@ -155,22 +155,22 @@ describe("classSkills realms", () => {
   const cvCell = (realm: "wg" | "lesta") =>
     classSkills("CV", realm).find((s) => s.tier === 2 && s.column === 3)?.code;
 
-  it("carries the full per-class counts in BOTH realms (24/24/24/24/20)", () => {
+  it("carries the full per-class counts in BOTH realms (WG's sub tree is 20 cells; the decoded Lesta one is 24)", () => {
     for (const realm of REALMS) {
       expect(classSkills("BB", realm)).toHaveLength(24);
       expect(classSkills("CA", realm)).toHaveLength(24);
       expect(classSkills("DD", realm)).toHaveLength(24);
       expect(classSkills("CV", realm)).toHaveLength(24);
-      expect(classSkills("SS", realm)).toHaveLength(20);
+      expect(classSkills("SS", realm)).toHaveLength(realm === "lesta" ? 24 : 20);
     }
   });
 
-  it("keeps the 6-column grid (SS in 5) and no stacked cells in both realms", () => {
+  it("keeps the 6-column grid in both realms (WG's SS stays 5) and no stacked cells", () => {
     for (const realm of REALMS) {
       for (const cls of CLASSES) {
         const list = classSkills(cls, realm);
         const width = Math.max(...list.map((s) => s.column)) + 1;
-        expect(width).toBe(cls === "SS" ? 5 : 6);
+        expect(width).toBe(cls === "SS" && realm === "wg" ? 5 : 6);
         const cells = list.map((s) => `${s.tier}:${s.column}`);
         expect(new Set(cells).size).toBe(cells.length);
       }
@@ -189,12 +189,18 @@ describe("classSkills realms", () => {
     expect(classSkills("CV")).toEqual(classSkills("CV", "wg"));
   });
 
-  it("the two CV catalogs differ by exactly that one swapped code", () => {
+  it("the two CV catalogs differ by the swapped cell plus the Lesta-only patrol skill", () => {
     const wg = classSkills("CV", "wg").map((s) => s.code).sort();
     const lesta = classSkills("CV", "lesta").map((s) => s.code).sort();
     expect(wg).not.toEqual(lesta);
-    expect(wg.filter((c) => !lesta.includes(c))).toEqual(["PlanesConsumablesActiveManeuveringUpgrade"]);
-    expect(lesta.filter((c) => !wg.includes(c))).toEqual(["PlanesConsumablesRegeneratehealthUpgrade"]);
+    expect(wg.filter((c) => !lesta.includes(c))).toEqual([
+      "PlanesConsumablesActiveManeuveringUpgrade",
+      "PlanesConsumablesCallfightersUpgrade",
+    ]);
+    expect(lesta.filter((c) => !wg.includes(c))).toEqual([
+      "ExtraCallFighters",
+      "PlanesConsumablesRegeneratehealthUpgrade",
+    ]);
   });
 });
 
