@@ -446,6 +446,16 @@
     "suffixPerSegment": "Por idioma",
     "suffixUnified": "Un solo aviso",
     "splitChars": "Dividir mensajes de más de (caracteres)",
-    "hintTimeout": "Duración del aviso de pegado (s)"
+    "hintTimeout": "Duración del aviso de pegado (s)",
+    "tryTitle": "Probar una traducción",
+    "tryLabel": "Texto a traducir",
+    "tryBtn": "Traducir",
+    "tryRunning": "Traduciendo…",
+    "tryResult": "Resultado · {lang}",
+    "tryEmpty": "No se devolvió texto traducible; prueba una frase más larga.",
+    "trySourceModel": "modelo",
+    "trySourcePassthrough": "ya está en ese idioma",
+    "trySourceUntranslatable": "no traducible",
+    "tryNeedKey": "Activa primero la traducción del chat y guarda una clave API."
   }
 }

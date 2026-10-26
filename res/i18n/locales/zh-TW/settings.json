@@ -446,6 +446,16 @@
     "suffixPerSegment": "逐語言",
     "suffixUnified": "合併一則",
     "splitChars": "超過此字元數則拆分訊息",
-    "hintTimeout": "貼上提示保留（秒）"
+    "hintTimeout": "貼上提示保留（秒）",
+    "tryTitle": "試翻譯",
+    "tryLabel": "要翻譯的文字",
+    "tryBtn": "翻譯",
+    "tryRunning": "翻譯中…",
+    "tryResult": "結果 · {lang}",
+    "tryEmpty": "沒有回傳任何可翻譯內容，試試更長的句子。",
+    "trySourceModel": "模型",
+    "trySourcePassthrough": "已是目標語言",
+    "trySourceUntranslatable": "無法翻譯",
+    "tryNeedKey": "請先開啟聊天翻譯並設定 API 金鑰。"
   }
 }

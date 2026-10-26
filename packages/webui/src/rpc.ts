@@ -139,11 +139,13 @@ export const RPC = {
   set_network_config: "set_network_config",
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
-  // Chat translation (commands/chat_translate/): provider config storage
-  // plus the OpenAI-compatible endpoint's connectivity test.
+  // Chat translation (commands/chat_translate/): provider config storage,
+  // the OpenAI-compatible endpoint's connectivity test, and the settings
+  // card's end-to-end try-translation probe.
   get_chat_translate_config: "get_chat_translate_config",
   set_chat_translate_config: "set_chat_translate_config",
   test_chat_translate_provider: "test_chat_translate_provider",
+  debug_translate_text: "debug_translate_text",
   ingame_plugin_status: "ingame_plugin_status",
   // Probe-sourced ally ship builds (commands/ingame_plugin.rs): the cross-root
   // latest frame, pulled by /live when it mounts after the event fired.

@@ -609,12 +609,14 @@ pub fn run() {
             commands::installer::installer_language,
             commands::overlay_config::get_overlay_config,
             commands::overlay_config::set_overlay_config,
-            // Chat translation (设置 → 聊天翻译): settings + the provider
-            // connectivity probe. Cross-platform; the webui keeps the section
-            // desktop-only on its own.
+            // Chat translation (设置 → 聊天翻译): settings, the provider
+            // connectivity probe and the settings page's end-to-end
+            // try-translation probe. Cross-platform; the webui keeps the
+            // section desktop-only on its own.
             commands::chat_translate::get_chat_translate_config,
             commands::chat_translate::set_chat_translate_config,
             commands::chat_translate::test_chat_translate_provider,
+            commands::chat_translate::debug_translate_text,
             commands::game_config::get_game_config,
             commands::game_config::set_game_config,
             commands::game_config::add_replay_dir,

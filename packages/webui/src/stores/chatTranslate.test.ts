@@ -7,6 +7,7 @@ const { chatMock, savedMock } = vi.hoisted(() => ({
     getChatTranslateConfig: vi.fn(),
     setChatTranslateConfig: vi.fn(),
     testChatTranslateProvider: vi.fn(),
+    debugTranslateText: vi.fn(),
   },
   savedMock: { notifySettingsSaved: vi.fn() },
 }));
@@ -216,6 +217,69 @@ describe("chat translation settings", () => {
     await store.testProvider();
     expect(store.testResult?.ok).toBe(false);
     expect(store.testResult?.error).toContain("synthetic provider timeout");
+  });
+
+  it("records a try-translation result and normalizes its wire shape", async () => {
+    chatMock.debugTranslateText.mockResolvedValueOnce({
+      detected: "ja",
+      translations: [
+        { lang: "zh-CN", text: "请保护我", source: "model" },
+        { lang: "en", text: "Protect me", source: "passthrough" },
+        // A newer/odd shell row still degrades to a usable entry.
+        { lang: "ko", text: null, source: "untranslatable" },
+        { text: "no lang, dropped" },
+      ],
+      elapsedMs: 812,
+    });
+    const store = useChatTranslateStore();
+    await store.load();
+    await store.debugTranslate("  プロテクトして  ", ["zh-CN", "en"]);
+    // The draft is trimmed before it leaves the store.
+    expect(chatMock.debugTranslateText).toHaveBeenCalledWith("プロテクトして", ["zh-CN", "en"]);
+    expect(store.debugging).toBe(false);
+    expect(store.debugError).toBeNull();
+    expect(store.debugResult).toEqual({
+      detected: "ja",
+      translations: [
+        { lang: "zh-CN", text: "请保护我", source: "model" },
+        { lang: "en", text: "Protect me", source: "passthrough" },
+        { lang: "ko", text: "", source: "untranslatable" },
+      ],
+      elapsedMs: 812,
+    });
+  });
+
+  it("surfaces try-translation failures and ignores blank input", async () => {
+    const store = useChatTranslateStore();
+    await store.load();
+    chatMock.debugTranslateText.mockRejectedValueOnce(
+      new Error("no API key configured — save one in Settings → Chat translation"),
+    );
+    await store.debugTranslate("hello");
+    expect(store.debugging).toBe(false);
+    expect(store.debugResult).toBeNull();
+    expect(store.debugError).toContain("no API key configured");
+    // Blank / whitespace-only input never reaches the shell.
+    chatMock.debugTranslateText.mockClear();
+    await store.debugTranslate("   ");
+    expect(chatMock.debugTranslateText).not.toHaveBeenCalled();
+  });
+
+  it("ignores a second probe while one is already in flight", async () => {
+    const store = useChatTranslateStore();
+    await store.load();
+    let release!: (value: unknown) => void;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    chatMock.debugTranslateText.mockImplementationOnce(() => gate.then(() => ({})));
+    const first = store.debugTranslate("hello");
+    await store.debugTranslate("hello again");
+    // The re-entrant call is a no-op: still exactly one shell call.
+    expect(chatMock.debugTranslateText).toHaveBeenCalledTimes(1);
+    release({});
+    await first;
+    expect(store.debugging).toBe(false);
   });
 
   it("never applies an older reply over a newer choice", async () => {

@@ -341,3 +341,168 @@ pub struct ProviderTestResult {
     #[serde(default)]
     pub error: Option<String>,
 }
+
+// ── Local detection DTOs (M1 lang-detect) ────────────────────────────────
+//
+// The app crate's `commands/chat_translate/lang.rs` classifies one chat line
+// LOCALLY (no network) before any translation request: is this line in a
+// language the user does not read? The answer is [LangVerdict] — a decision
+// plus the diagnostics the pipeline logs/tests against. Keeping the wire
+// shape here (shared, serde camelCase) mirrors the rest of this module, so a
+// future overlay/debug surface can carry the verdict without a second DTO.
+
+/// One Unicode script family the local detector counts a chat line's letters
+/// into. Not a language tag: Han covers Chinese AND Japanese kanji, and the
+/// detector resolves the ambiguity separately (kana presence, Hans/Hant
+/// exclusive-character frequencies) before it names a language. The enum is
+/// the bucket vocabulary of the detector, serialized camelCase for diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LangScript {
+    /// CJK ideographs — Chinese (both scripts) and Japanese kanji.
+    Han,
+    /// Hiragana (Japanese-only).
+    Hiragana,
+    /// Katakana (Japanese-only).
+    Katakana,
+    /// Hangul syllables/jamo (Korean).
+    Hangul,
+    /// Cyrillic letters (Russian, Ukrainian, …).
+    Cyrillic,
+    /// Greek letters.
+    Greek,
+    /// Thai letters.
+    Thai,
+    /// Latin letters (all Latin-script languages, incl. Vietnamese/Polish).
+    Latin,
+    /// Arabic letters and Arabic-Indic digits.
+    Arabic,
+    /// Any other alphabetic script (Hebrew, Devanagari, …) — a foreign-script
+    /// signal without a language tag v1 can target.
+    Other,
+}
+
+/// What the local detector wants done with one chat line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Verdict {
+    /// The line is in a language the user does not read: send it to the
+    /// translation pipeline.
+    Translate,
+    /// The line is not worth a request (own language, chat noise, a command,
+    /// a URL, or our own translated output): leave it alone.
+    Skip,
+}
+
+/// Why [LangVerdict] reached its [Verdict] — the diagnostic half of the
+/// detection answer. Serialized camelCase; rules are applied in this enum's
+/// order (see `lang.rs`'s module docs for the exact rule sequence).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VerdictReason {
+    /// A script outside the caller's expected set is present (Han for an
+    /// English reader, kana for a Chinese reader, …).
+    ForeignScript,
+    /// All letters are Latin but the line does not read as the caller's own
+    /// Latin-script language (no own-language stopword hit).
+    LatinForeign,
+    /// The line reads as the caller's own language (a stopword hit or an
+    /// expected-script-only line).
+    SameLangStopwords,
+    /// Pure chat filler ("gg", "gl hf", "wp", "lol", …) — no content to
+    /// translate.
+    Filler,
+    /// A game chat command ("/help", "/invite", …).
+    Command,
+    /// A URL, not prose.
+    Url,
+    /// Fewer effective characters than the configured minimum.
+    TooShort,
+    /// No letters at all after stripping punctuation/whitespace/emoji.
+    SymbolsOnly,
+    /// Our own translated output (the `[WOWSP…]` suffix/segments) echoed
+    /// back through the chat stream.
+    OwnEcho,
+}
+
+/// One local detection answer for one chat line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LangVerdict {
+    /// Translate it, or leave it alone.
+    pub verdict: Verdict,
+    /// Best-effort language hint ("ja", "ko", "zh-TW", …). `None` when the
+    /// script(s) cannot name a v1 language: pure Latin, ambiguous Han, Greek,
+    /// Arabic, other scripts.
+    #[serde(default)]
+    pub script_hint: Option<String>,
+    /// Why the verdict is what it is.
+    pub reason: VerdictReason,
+}
+
+// ── match context (translation prompt input, W2) ────────────────────────────
+
+/// The battle context a translation request is built from (M2 fills it from
+/// the live roster/tempArenaInfo; the prompt builder condenses it into a
+/// budgeted blob). Every field is optional so a context-less call (the
+/// settings page's "try translate" debug command) is the default value.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MatchContext {
+    /// Realm tag ("asia", "ru", "eu", "na", "cn"), when known.
+    pub realm: Option<String>,
+    /// Match group / mode ("pvp", "ranked", "clan", "coop", "event", ...).
+    pub mode: Option<String>,
+    /// Map display name.
+    pub map: Option<String>,
+    /// Scenario name (e.g. "domination_3point").
+    pub scenario: Option<String>,
+    /// Battle start, unix seconds.
+    pub started_at: Option<i64>,
+    /// The local player's nickname.
+    pub self_name: Option<String>,
+    /// The local player's ship, in the client's display language.
+    pub self_ship: Option<String>,
+    /// The local player's ship, English spelling (glossary anchor).
+    pub self_ship_en: Option<String>,
+    /// Both teams' condensed rosters.
+    pub teams: Option<TeamBrief>,
+    /// Recent chat lines (oldest first) for conversational context.
+    pub recent: Vec<RecentChatLine>,
+    /// Proper nouns the model must keep verbatim (ship/map/nickname list).
+    pub glossary: Vec<String>,
+    /// The languages this line should be translated into.
+    pub targets: Vec<String>,
+}
+
+/// Both teams' condensed rosters for the prompt.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TeamBrief {
+    pub ally: Vec<PlayerBrief>,
+    pub enemy: Vec<PlayerBrief>,
+}
+
+/// One player as the prompt needs them (no account ids — chat text plus
+/// names/ships is all the model gets).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PlayerBrief {
+    pub name: String,
+    /// Ship name in the client's display language.
+    pub ship: Option<String>,
+    /// Ship name in English (the glossary anchor).
+    pub ship_en: Option<String>,
+    pub tier: Option<i32>,
+    /// Ship class short tag ("BB", "CA", "DD", "CV", "SS", ...).
+    pub class: Option<String>,
+    pub bot: bool,
+}
+
+/// One recent chat line carried into the prompt as conversational context.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct RecentChatLine {
+    pub from: String,
+    pub text: String,
+}
