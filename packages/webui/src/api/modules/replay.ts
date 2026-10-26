@@ -813,6 +813,18 @@ export interface PlayerBuild {
   learnedSkills?: number[][];
 }
 
+/** One probe-sourced build frame: the payload of the
+ *  `wowsp://ingame-builds` event AND the `ingame_builds_snapshot` command
+ *  (the cross-root latest frame, pulled when the panel mounts after the
+ *  event already fired). Mirrors the Rust payload 1:1 — camelCase, every
+ *  build carries the player `name`, enemy builds are filtered by the Rust
+ *  exit and never appear here. */
+export interface IngameBuildsFrame {
+  /** Probe session stamp (epoch-ms) of the battle the builds belong to. */
+  battle: string;
+  builds: PlayerBuild[];
+}
+
 /** Decoded packet stream: entity trajectories plus battle-effect events.
  *  Mirrors `wowsp_tauri_shared::ReplayStream`. */
 export interface ReplayStream {
@@ -981,6 +993,16 @@ export const replayApi = {
   stopArenaWatcher: () => transport.invoke<null>(RPC.stop_arena_watcher),
   listenArenaInfo: (handler: (info: ArenaInfo) => void) =>
     transport.listen?.<ArenaInfo>("wowsp://arena-info", handler),
+  /** Probe-sourced ally ship builds: one frame per content change while the
+   *  in-game bridge observes a battle (wowsp://ingame-builds). Optional
+   *  source — an older shell simply never fires it. */
+  listenIngameBuilds: (handler: (frame: IngameBuildsFrame) => void) =>
+    transport.listen?.<IngameBuildsFrame>("wowsp://ingame-builds", handler),
+  /** The newest probe build frame across every running install (the event is
+   *  transition-only, so a panel mounting after the frame landed pulls it
+   *  instead). Null = no probe battle frame right now / older shell. */
+  ingameBuildsSnapshot: () =>
+    transport.invoke<IngameBuildsFrame | null>(RPC.ingame_builds_snapshot),
   captureGameWindow: () => transport.invoke<CaptureResult>(RPC.capture_game_window),
   setOverlayVisible: (visible: boolean) =>
     transport.invoke<null>(RPC.set_overlay_visible, { visible }),

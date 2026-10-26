@@ -3506,8 +3506,8 @@ fn ship_config_section_order_is_version_gated() {
     push_u32(&mut blob, 1);
     push_u32(&mut blob, 0xff2f_efb0);
 
-    let old =
-        super::build::decode_ship_config(&blob, (15, 8, 1)).expect("15.8 layout matches the bytes");
+    let old = super::build::decode_ship_config_blob(&blob, (15, 8, 1))
+        .expect("15.8 layout matches the bytes");
     assert_eq!(old.abilities, [0xff62_9fb0, 0xff12_9fb0]);
     assert!(old.ensigns.is_empty());
     assert_eq!(old.ecoboosts, [0xff2f_efb0]);
@@ -3515,7 +3515,7 @@ fn ship_config_section_order_is_version_gated() {
     // 15.9 reads the ability COUNT as the extra u32 slot, then interprets the
     // first ability id as a section count — over the sanity cap, so the whole
     // config is refused instead of silently shifted.
-    assert!(super::build::decode_ship_config(&blob, (15, 9, 0)).is_none());
+    assert!(super::build::decode_ship_config_blob(&blob, (15, 9, 0)).is_none());
 }
 
 /// Corpus check on the real reference capture (read-only): the decode layer

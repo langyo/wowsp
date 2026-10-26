@@ -30,7 +30,7 @@ pub(crate) const MOD_ENTRY: &str = "Main.py";
 /// per-session battle state the plugin rewrites from scratch every run. An
 /// install wipes any leftovers, so a dead session's roster and ordering can
 /// never survive a reinstall into a tree that carried them in.
-const RUNTIME_BRIDGE_FILES: [&str; 8] = [
+const RUNTIME_BRIDGE_FILES: [&str; 9] = [
     "telemetry.json",
     "heartbeat.json",
     "request.json",
@@ -39,7 +39,50 @@ const RUNTIME_BRIDGE_FILES: [&str; 8] = [
     "roster_journal.jsonl",
     "manual_refresh.flag",
     "order_probe.json",
+    "builds.json",
 ];
+
+/// The plugin's per-battle build bridge (`builds.json`, written once per
+/// roster session by the probe's `write_builds`; quit-clear = `players: {}`).
+const BUILDS_FILE_NAME: &str = "builds.json";
+
+/// The build bridge's event: one [`IngameBuildsFrame`] per content change, and
+/// an empty `builds` list on the quit-clear. Ally-only by construction (the
+/// probe rows are filtered to `self_team` before they leave this module).
+pub(crate) const INGAME_BUILDS_EVENT: &str = "wowsp://ingame-builds";
+
+/// A `builds.json` frame is written ONCE at battle start, so its `t` ages for
+/// the whole battle. Anything older than this is a leftover from a previous
+/// session (the probe contract treats stale/missing as "no build data"): the
+/// longest battles plus loading stay far below it, while a crashed client's
+/// bridge file never resurfaces as today's loadouts.
+const BUILDS_STALE_MS: i64 = 2 * 60 * 60 * 1000;
+
+/// Bounds mirrored from the probe (its `BUILDS_MAX_PLAYERS` /
+/// `BUILDS_MAX_DUMP_CHARS`) plus a file-size ceiling: a hand-edited or hostile
+/// bridge file must never drive unbounded work.
+const BUILDS_MAX_PLAYERS: usize = 64;
+const BUILDS_MAX_DUMP_CHARS: usize = 8192;
+const BUILDS_MAX_FILE_BYTES: usize = 1024 * 1024;
+
+/// The SHIP_CONFIG layout era the probe's dump is decoded with. The probe
+/// bridges the game's `shipConfigDump` verbatim and carries no client version
+/// stamp, so the pinned 15.9 era is assumed; a future client's shifted layout
+/// fails [`wowsp_replay_core::decode_ship_config_blob`]'s section sanity caps
+/// (0 items / over-cap counts) and the row is skipped instead of mis-read.
+const BUILDS_SHIP_CONFIG_ERA: (u32, u32, u32) = (15, 9, 0);
+
+/// One `wowsp://ingame-builds` payload (camelCase on the wire).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IngameBuildsFrame {
+    /// The probe's session id (the battle the builds belong to). The quit-clear
+    /// frame preserves the finished battle's id with an empty `builds` list.
+    pub battle: String,
+    /// Ally-only player builds (the probe carries the whole roster; every
+    /// non-`self_team` row is dropped in this module).
+    pub builds: Vec<wowsp_tauri_shared::PlayerBuild>,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -372,6 +415,443 @@ fn heartbeat_file(game_root: &std::path::Path) -> Option<std::path::PathBuf> {
     Some(dir.join("PnFMods").join(MOD_DIR).join("heartbeat.json"))
 }
 
+/// The plugin's build bridge file for a game root — None when the root has no
+/// versioned bin/ layout to hang res_mods off.
+pub(crate) fn builds_file(game_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dir = super::game_context::res_mods_dir(game_root).ok()?;
+    Some(dir.join("PnFMods").join(MOD_DIR).join(BUILDS_FILE_NAME))
+}
+
+/// One raw probe build row, parsed from the builds.json players map.
+struct ProbeBuildRow {
+    name: String,
+    team: Option<i64>,
+    ship_params_id: Option<u32>,
+    dump_enc: Option<String>,
+    dump: Option<String>,
+    crew: Option<ProbeCrew>,
+}
+
+/// The probe's crew block (captain params + learned skills). Every field is
+/// optional in the contract: older probe shapes omit the crew key entirely,
+/// and a crew object without learnedSkills is never fabricated by the probe.
+#[derive(Default)]
+struct ProbeCrew {
+    params_id: Option<u32>,
+    is_in_adaptation: Option<i64>,
+    learned_skills: Option<Vec<Vec<u8>>>,
+}
+
+/// One parsed builds.json document.
+struct ProbeBuildsDoc {
+    battle: String,
+    written_ms: Option<i64>,
+    self_team: Option<i64>,
+    players: Vec<ProbeBuildRow>,
+}
+
+/// Tolerant integer read: numbers, numeric strings (the sandbox serializer can
+/// spell fields as strings), floats truncated.
+fn json_int(value: &serde_json::Value) -> Option<i64> {
+    value
+        .as_i64()
+        .or_else(|| value.as_f64().map(|f| f as i64))
+        .or_else(|| value.as_str().and_then(|s| s.trim().parse::<i64>().ok()))
+}
+
+/// Tolerant text read: strings verbatim, integers rendered as text (the probe's
+/// session id is a formatted integer string, but defensive both ways).
+fn json_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// An object value, transparently re-parsing one level of JSON-in-a-string
+/// (the probe's full-encode shape double-encodes some records).
+fn json_object(value: &serde_json::Value) -> Option<serde_json::Map<String, serde_json::Value>> {
+    match value {
+        serde_json::Value::Object(map) => Some(map.clone()),
+        serde_json::Value::String(s) => match serde_json::from_str(s) {
+            Ok(serde_json::Value::Object(map)) => Some(map),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Parse the probe's learned-skills matrix: rows of u8 skill ordinals. Values
+/// are bounded to the u8 range; a row of any other shape skips the whole crew
+/// block rather than storing garbage.
+fn parse_skill_matrix(value: &serde_json::Value) -> Option<Vec<Vec<u8>>> {
+    let rows = value.as_array()?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let ids = row.as_array()?;
+        let mut row_out = Vec::with_capacity(ids.len());
+        for id in ids {
+            let id = json_int(id)?;
+            row_out.push(u8::try_from(id).ok()?);
+        }
+        out.push(row_out);
+    }
+    Some(out)
+}
+
+/// Parse one probe crew block; None when the block carries no readable learned
+/// skills (the probe omits the key in that case — never fabricate).
+fn parse_probe_crew(value: &serde_json::Value) -> Option<ProbeCrew> {
+    let map = json_object(value)?;
+    let learned_skills = map.get("learned_skills").and_then(parse_skill_matrix)?;
+    Some(ProbeCrew {
+        params_id: map.get("params_id").and_then(json_int).map(|v| v as u32),
+        is_in_adaptation: map.get("is_in_adaptation").and_then(json_int),
+        learned_skills: Some(learned_skills),
+    })
+}
+
+/// Parse one player row of the probe's players map.
+fn parse_probe_build_row(name: &str, value: &serde_json::Value) -> Option<ProbeBuildRow> {
+    let map = json_object(value)?;
+    Some(ProbeBuildRow {
+        name: name.to_string(),
+        team: map.get("team").and_then(json_int),
+        ship_params_id: map
+            .get("ship_params_id")
+            .and_then(json_int)
+            .map(|v| v as u32),
+        dump_enc: map.get("dump_enc").and_then(json_text),
+        dump: map.get("dump").and_then(json_text),
+        crew: map.get("crew").and_then(parse_probe_crew),
+    })
+}
+
+/// Parse one builds.json document (double-encoded JSON tolerated).
+fn parse_probe_builds(raw: &str) -> Option<ProbeBuildsDoc> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.len() > BUILDS_MAX_FILE_BYTES {
+        return None;
+    }
+    let mut value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    if let serde_json::Value::String(inner) = &value {
+        value = serde_json::from_str(inner).ok()?;
+    }
+    let map = value.as_object()?;
+    // Contract: v=1 (a future shape bump must not be half-read).
+    if map.get("v").and_then(json_int) != Some(1) {
+        return None;
+    }
+    let battle = map.get("battle").and_then(json_text).unwrap_or_default();
+    let written_ms = map.get("t").and_then(json_int);
+    let self_team = map.get("self_team").and_then(json_int);
+    let mut players = Vec::new();
+    if let Some(rows) = map.get("players").and_then(|v| v.as_object()) {
+        for (name, row) in rows {
+            if players.len() >= BUILDS_MAX_PLAYERS {
+                break;
+            }
+            if let Some(row) = parse_probe_build_row(name, row) {
+                players.push(row);
+            }
+        }
+    }
+    Some(ProbeBuildsDoc {
+        battle,
+        written_ms,
+        self_team,
+        players,
+    })
+}
+
+/// Decode one probe dump body: hex (WG family) or standard base64 (the Lesta
+/// SafeClass repr). The char bound mirrors the probe's own cap.
+fn decode_probe_dump(enc: &str, body: &str) -> Option<Vec<u8>> {
+    if body.is_empty() || body.len() > BUILDS_MAX_DUMP_CHARS {
+        return None;
+    }
+    match enc {
+        "hex" => {
+            let bytes = body.as_bytes();
+            if bytes.len() % 2 != 0 {
+                return None;
+            }
+            let mut out = Vec::with_capacity(bytes.len() / 2);
+            for pair in bytes.chunks_exact(2) {
+                let hi = (pair[0] as char).to_digit(16)?;
+                let lo = (pair[1] as char).to_digit(16)?;
+                out.push(((hi << 4) | lo) as u8);
+            }
+            Some(out)
+        },
+        "b64" => {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.decode(body).ok()
+        },
+        _ => None,
+    }
+}
+
+/// Decode one probe row's dump into a PlayerBuild: the raw SHIP_CONFIG blob
+/// through the replay decoder's public parser (the probe bridges the game's own
+/// shipConfigDump verbatim), plus the optional crew block. entity_id stays 0 —
+/// probe builds join by name.
+fn probe_player_build(row: &ProbeBuildRow) -> Option<wowsp_tauri_shared::PlayerBuild> {
+    let enc = row.dump_enc.as_deref()?;
+    let dump = row.dump.as_deref()?;
+    let blob = decode_probe_dump(enc, dump)?;
+    let config = wowsp_replay_core::decode_ship_config_blob(&blob, BUILDS_SHIP_CONFIG_ERA)?;
+    // The dump's own header ship id is authoritative; a row-level id that
+    // disagrees means a drifted record, so trust the parsed dump.
+    if config.ship_params_id == 0 {
+        return None;
+    }
+    let crew = row.crew.as_ref();
+    Some(wowsp_tauri_shared::PlayerBuild {
+        entity_id: 0,
+        ship_params_id: config.ship_params_id,
+        name: Some(row.name.clone()),
+        units: config.units,
+        modernization: config.modernization,
+        exteriors: config.exteriors,
+        abilities: config.abilities,
+        ensigns: config.ensigns,
+        ecoboosts: config.ecoboosts,
+        crew_params_id: crew.and_then(|c| c.params_id).unwrap_or(0),
+        is_in_adaptation: crew
+            .and_then(|c| c.is_in_adaptation)
+            .is_some_and(|flag| flag != 0),
+        learned_skills: crew
+            .and_then(|c| c.learned_skills.clone())
+            .unwrap_or_default(),
+    })
+}
+
+/// Content key for the poller's dedupe: (battle, every player's encoded dump +
+/// crew). The probe rewrites the file with only t changing, so keying on the
+/// payload (not the file bytes) is what keeps the event at one emit per battle.
+/// Sorted by name so map iteration order never changes the key.
+fn builds_content_key(doc: &ProbeBuildsDoc) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut rows: Vec<&ProbeBuildRow> = doc.players.iter().collect();
+    rows.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    doc.battle.hash(&mut hasher);
+    for row in rows {
+        row.name.hash(&mut hasher);
+        row.team.hash(&mut hasher);
+        row.ship_params_id.hash(&mut hasher);
+        row.dump_enc.hash(&mut hasher);
+        row.dump.hash(&mut hasher);
+        if let Some(crew) = &row.crew {
+            crew.params_id.hash(&mut hasher);
+            crew.is_in_adaptation.hash(&mut hasher);
+            crew.learned_skills.hash(&mut hasher);
+        }
+    }
+    hasher.finish()
+}
+
+/// What one parsed frame means for the bridge.
+enum BuildsIngest {
+    /// The probe's quit-clear: empty snapshot + an empty-builds event so an
+    /// already-mounted grid drops yesterday's loadouts.
+    Clear { battle: String, key: u64 },
+    /// A fresh frame with the ally-only builds.
+    Frame {
+        battle: String,
+        builds: Vec<wowsp_tauri_shared::PlayerBuild>,
+        key: u64,
+    },
+    /// The probe could not name the local player, so team ownership is unknown:
+    /// drop the whole frame (never guess which side is ours).
+    MissingSelfTeam,
+    /// Unparseable / stale / contract-violating.
+    Skip,
+}
+
+/// Fold one parsed document into the poller's decision. Ally-only rule: only
+/// rows whose team equals self_team survive; enemy rows are dropped here (Rust
+/// side) and never reach the event/snapshot.
+fn builds_ingest(doc: ProbeBuildsDoc, now_ms: i64) -> BuildsIngest {
+    let Some(written_ms) = doc.written_ms else {
+        return BuildsIngest::Skip;
+    };
+    if now_ms.saturating_sub(written_ms) > BUILDS_STALE_MS {
+        return BuildsIngest::Skip;
+    }
+    if doc.battle.is_empty() && doc.players.is_empty() {
+        return BuildsIngest::Skip;
+    }
+    let key = builds_content_key(&doc);
+    if doc.players.is_empty() {
+        // The quit-clear: players blanked, the finished battle's id preserved.
+        return BuildsIngest::Clear {
+            battle: doc.battle,
+            key,
+        };
+    }
+    let Some(self_team) = doc.self_team.filter(|team| *team == 0 || *team == 1) else {
+        return BuildsIngest::MissingSelfTeam;
+    };
+    let mut builds: Vec<wowsp_tauri_shared::PlayerBuild> = Vec::new();
+    let mut skipped = 0usize;
+    for row in &doc.players {
+        if row.team != Some(self_team) {
+            continue;
+        }
+        match probe_player_build(row) {
+            Some(build) => builds.push(build),
+            None => skipped += 1,
+        }
+    }
+    builds.sort_by(|a, b| a.name.cmp(&b.name));
+    tracing::debug!(
+        battle = %doc.battle,
+        allies = builds.len(),
+        skipped,
+        "probe builds frame decoded"
+    );
+    BuildsIngest::Frame {
+        battle: doc.battle,
+        builds,
+        key,
+    }
+}
+
+/// Per-root build-bridge bookkeeping: the last emitted content key (the probe
+/// rewrites builds.json every tick, so the payload key — not the file bytes —
+/// is the dedupe) and the one-shot missing-self_team warning.
+#[derive(Default)]
+struct BuildsWatch {
+    last_key: Option<u64>,
+    warned_missing_self_team: bool,
+}
+
+impl BuildsWatch {
+    /// True when this content key is new (the caller may emit).
+    fn accept_key(&mut self, key: u64) -> bool {
+        if self.last_key == Some(key) {
+            return false;
+        }
+        self.last_key = Some(key);
+        true
+    }
+
+    /// True once per root: the missing-self_team warning fires on the first
+    /// such frame and stays quiet while the probe keeps answering without it.
+    fn warn_missing_self_team(&mut self) -> bool {
+        if self.warned_missing_self_team {
+            return false;
+        }
+        self.warned_missing_self_team = true;
+        true
+    }
+}
+
+/// The latest ally-only build frame across every running install — what
+/// ingame_builds_snapshot serves to a UI that mounts mid-battle.
+struct LatestBuilds {
+    root: String,
+    frame: IngameBuildsFrame,
+}
+
+static LATEST_BUILDS: std::sync::Mutex<Option<LatestBuilds>> = std::sync::Mutex::new(None);
+
+fn store_latest_builds(root: &str, frame: IngameBuildsFrame) {
+    if let Ok(mut latest) = LATEST_BUILDS.lock() {
+        *latest = Some(LatestBuilds {
+            root: root.to_string(),
+            frame,
+        });
+    }
+}
+
+/// Drop the latest frame when its owning install exits (a dead client's battle
+/// must not be served as live data after the process is gone).
+fn clear_latest_builds_for_root(root: &str) {
+    if let Ok(mut latest) = LATEST_BUILDS.lock() {
+        if latest.as_ref().is_some_and(|l| l.root == root) {
+            *latest = None;
+        }
+    }
+}
+
+/// Latest ally-only build frame for the CURRENT battle, or None while no probe
+/// frame has arrived (old probe / port / install without the plugin).
+/// Late-mounting consumers call this once, then follow wowsp://ingame-builds.
+#[tauri::command]
+pub fn ingame_builds_snapshot() -> Option<IngameBuildsFrame> {
+    LATEST_BUILDS
+        .lock()
+        .ok()
+        .and_then(|latest| latest.as_ref().map(|l| l.frame.clone()))
+}
+
+/// Emit one build frame to every window.
+fn emit_builds(app: &tauri::AppHandle, frame: &IngameBuildsFrame) {
+    if let Err(e) = app.emit(INGAME_BUILDS_EVENT, frame) {
+        tracing::warn!(error = %e, "emit ingame-builds failed");
+    }
+}
+
+/// Read + fold ONE root's raw builds.json content into the bridge stream. A
+/// parse failure (half write / old shape) leaves the watch untouched, so the
+/// next good rewrite still emits.
+fn ingest_builds(
+    app: &tauri::AppHandle,
+    root: &str,
+    raw: &str,
+    watch: &mut BuildsWatch,
+    now_ms: i64,
+) {
+    let Some(doc) = parse_probe_builds(raw) else {
+        return;
+    };
+    match builds_ingest(doc, now_ms) {
+        BuildsIngest::Skip => {},
+        BuildsIngest::MissingSelfTeam => {
+            if watch.warn_missing_self_team() {
+                tracing::warn!(
+                    root,
+                    "probe builds bridge carries no self_team — whole frame dropped (the ally-only filter cannot run)"
+                );
+            }
+        },
+        BuildsIngest::Frame {
+            battle,
+            builds,
+            key,
+        } => {
+            if watch.accept_key(key) {
+                tracing::info!(
+                    root,
+                    battle = %battle,
+                    allies = builds.len(),
+                    "probe builds frame acquired"
+                );
+                let frame = IngameBuildsFrame { battle, builds };
+                store_latest_builds(root, frame.clone());
+                emit_builds(app, &frame);
+            }
+        },
+        BuildsIngest::Clear { battle, key } => {
+            if watch.accept_key(key) {
+                tracing::info!(root, battle = %battle, "probe builds cleared (battle quit)");
+                clear_latest_builds_for_root(root);
+                emit_builds(
+                    app,
+                    &IngameBuildsFrame {
+                        battle,
+                        builds: Vec::new(),
+                    },
+                );
+            }
+        },
+    }
+}
+
 /// One parsed `heartbeat.json` frame (the plugin rewrites it whole every
 /// tick; see its Main.py `tick`).
 struct HeartbeatFrame {
@@ -624,6 +1104,9 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
     struct RootWatch {
         telemetry: (Option<String>, bool),
         health: ProbeHealthState,
+        /// The builds.json ingestion state (content dedupe + the one-shot
+        /// missing-self_team warning) — independent of the telemetry stream.
+        builds: BuildsWatch,
     }
     let _ = std::thread::Builder::new()
         .name("ingame-telemetry-poll".into())
@@ -668,6 +1151,9 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                     true
                 });
                 for root in evicted {
+                    // A dead client's build frame must not stay served as live
+                    // data after its process is gone.
+                    clear_latest_builds_for_root(&root);
                     if let Some(mut watch) = states.remove(&root) {
                         emit_once(
                             &app,
@@ -679,6 +1165,16 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                     }
                 }
                 for root in roots {
+                    let root_key = root.display().to_string();
+                    // The build bridge is read independently of telemetry.json:
+                    // builds.json lands once when the roster stabilizes even on
+                    // clients whose telemetry stream stays empty.
+                    if let Some(raw) =
+                        builds_file(&root).and_then(|p| std::fs::read_to_string(p).ok())
+                    {
+                        let watch = states.entry(root_key.clone()).or_default();
+                        ingest_builds(&app, &root_key, &raw, &mut watch.builds, now_unix_ms());
+                    }
                     let Some(path) = telemetry_file(&root) else {
                         continue;
                     };
@@ -690,7 +1186,7 @@ pub fn spawn_telemetry_poller(app: tauri::AppHandle) {
                         .and_then(|p| std::fs::read_to_string(p).ok())
                         .and_then(|raw| parse_heartbeat(&raw, now_unix_ms()));
                     let raw = std::fs::read_to_string(&path).ok();
-                    let watch = states.entry(root.display().to_string()).or_default();
+                    let watch = states.entry(root_key).or_default();
                     for event in watch.health.observe(
                         heartbeat
                             .as_ref()
@@ -925,6 +1421,7 @@ mod tests {
             "roster_journal.jsonl",
             "manual_refresh.flag",
             "order_probe.json",
+            "builds.json",
         ];
         assert_eq!(runtime_files, RUNTIME_BRIDGE_FILES);
         for file in runtime_files {
@@ -1168,5 +1665,286 @@ mod tests {
                 .observe(Some(("battle", true, None)), true)
                 .is_empty()
         );
+    }
+
+    // ── builds.json bridge (probe -> ally-only IPC) ───────────────────────
+
+    /// A valid 15.9 SHIP_CONFIG blob: header, 1 unit, 1 modernization, no
+    /// exteriors, 2 ability slots and 1 ecoboost. Mirrors the replay parser's
+    /// verified layout so the probe path exercises the SAME parser.
+    fn sample_ship_config_blob(ship_params_id: u32) -> Vec<u8> {
+        fn push(out: &mut Vec<u8>, values: &[u32]) {
+            for value in values {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let mut blob = Vec::new();
+        push(&mut blob, &[1, ship_params_id, 0, 1]); // version, ship, elem, units
+        push(&mut blob, &[100]); // one hull slot
+        push(&mut blob, &[0]); // >= 13.2 unknown
+        push(&mut blob, &[1, 0xff12_cfb0]); // modernization
+        push(&mut blob, &[0]); // exteriors
+        push(&mut blob, &[0]); // supply state
+        push(&mut blob, &[0]); // color schemes
+        push(&mut blob, &[0]); // >= 15.9 unknown
+        push(&mut blob, &[2, 0xff62_9fb0, 0xff12_9fb0]); // ability slots
+        push(&mut blob, &[0]); // ensign slots
+        push(&mut blob, &[1, 0xff2f_efb0]); // ecoboost slots
+        blob
+    }
+
+    fn hex_body(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    fn b64_body(bytes: &[u8]) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    /// One planted builds.json document at a given write timestamp.
+    fn builds_doc_json(players: serde_json::Value, self_team: Option<i64>, t: i64) -> String {
+        let mut doc = serde_json::json!({
+            "v": 1,
+            "t": t,
+            "battle": "1800000000000",
+            "players": players,
+        });
+        if let Some(team) = self_team {
+            doc["self_team"] = serde_json::json!(team);
+        }
+        doc.to_string()
+    }
+
+    /// One planted player row (hex dump, optionally with a crew block).
+    fn probe_row(team: i64, ship_params_id: u32, with_crew: bool) -> serde_json::Value {
+        let mut row = serde_json::json!({
+            "team": team,
+            "ship_params_id": ship_params_id,
+            "dump_enc": "hex",
+            "dump": hex_body(&sample_ship_config_blob(ship_params_id)),
+        });
+        if with_crew {
+            row["crew"] = serde_json::json!({
+                "params_id": 310_000_000u32,
+                "is_in_adaptation": 1,
+                "learned_skills": [[1, 2, 3], [4, 5]],
+            });
+        }
+        row
+    }
+
+    /// Hex and base64 bodies decode to the same bytes and the same parsed
+    /// SHIP_CONFIG sections; malformed bodies are refused.
+    #[test]
+    fn probe_dump_decodes_identically_from_hex_and_base64() {
+        let blob = sample_ship_config_blob(4_065_212_112);
+        let from_hex = decode_probe_dump("hex", &hex_body(&blob)).expect("hex dump");
+        let from_b64 = decode_probe_dump("b64", &b64_body(&blob)).expect("base64 dump");
+        assert_eq!(from_hex, from_b64);
+        assert_eq!(from_hex, blob);
+        let config = wowsp_replay_core::decode_ship_config_blob(&from_hex, BUILDS_SHIP_CONFIG_ERA)
+            .expect("planted blob decodes");
+        assert_eq!(config.ship_params_id, 4_065_212_112);
+        assert_eq!(config.units, [100]);
+        assert_eq!(config.modernization, [0xff12_cfb0]);
+        assert_eq!(config.abilities, [0xff62_9fb0, 0xff12_9fb0]);
+        assert_eq!(config.ecoboosts, [0xff2f_efb0]);
+        assert!(decode_probe_dump("hex", "abc").is_none());
+        assert!(decode_probe_dump("b64", "!!!").is_none());
+        assert!(decode_probe_dump("raw", "00").is_none());
+        // A drifted blob (garbage after the header) fails the parser instead of
+        // mis-reading ids.
+        assert!(
+            wowsp_replay_core::decode_ship_config_blob(
+                &[1u8, 0, 0, 0, 9, 9, 9, 9, 255, 255],
+                BUILDS_SHIP_CONFIG_ERA
+            )
+            .is_none()
+        );
+    }
+
+    /// The ally-only rule + the optional crew block: enemy rows are dropped,
+    /// crew-less rows keep zero/empty crew fields (never fabricated).
+    #[test]
+    fn builds_ingest_filters_to_self_team_and_keeps_crew_optional() {
+        let players = serde_json::json!({
+            "Ally": probe_row(1, 4_065_212_112, true),
+            "Foe": probe_row(0, 3_750_639_408, true),
+            "Teammate": probe_row(1, 4_180_555_728, false),
+        });
+        let raw = builds_doc_json(players, Some(1), 1_800_000_000_000);
+        let doc = parse_probe_builds(&raw).expect("planted document parses");
+        let BuildsIngest::Frame { battle, builds, .. } = builds_ingest(doc, 1_800_000_000_500)
+        else {
+            panic!("expected a frame");
+        };
+        assert_eq!(battle, "1800000000000");
+        assert_eq!(builds.len(), 2, "the enemy row never reaches IPC");
+        let names: Vec<&str> = builds
+            .iter()
+            .map(|build| build.name.as_deref().unwrap_or(""))
+            .collect();
+        assert_eq!(names, ["Ally", "Teammate"]);
+        let ally = &builds[0];
+        assert_eq!(ally.entity_id, 0, "probe builds join by name");
+        assert_eq!(ally.ship_params_id, 4_065_212_112);
+        assert_eq!(ally.modernization, [0xff12_cfb0]);
+        assert_eq!(ally.abilities, [0xff62_9fb0, 0xff12_9fb0]);
+        assert_eq!(ally.crew_params_id, 310_000_000);
+        assert!(ally.is_in_adaptation);
+        assert_eq!(ally.learned_skills, [vec![1, 2, 3], vec![4, 5]]);
+        let teammate = &builds[1];
+        assert_eq!(teammate.crew_params_id, 0);
+        assert!(teammate.learned_skills.is_empty());
+        assert!(!teammate.is_in_adaptation);
+    }
+
+    /// A probe that cannot name the local player carries no usable team
+    /// ownership: the whole frame is dropped and the warning latches once.
+    #[test]
+    fn missing_self_team_drops_the_frame_and_warns_once() {
+        let players = serde_json::json!({"Ally": probe_row(1, 4_065_212_112, false)});
+        let raw = builds_doc_json(players, None, 1_800_000_000_000);
+        let doc = parse_probe_builds(&raw).expect("document parses");
+        assert!(matches!(
+            builds_ingest(doc, 1_800_000_000_000),
+            BuildsIngest::MissingSelfTeam
+        ));
+        // A self_team outside 0/1 is equally unusable.
+        let players = serde_json::json!({"Ally": probe_row(1, 4_065_212_112, false)});
+        let raw = builds_doc_json(players, Some(7), 1_800_000_000_000);
+        let doc = parse_probe_builds(&raw).expect("document parses");
+        assert!(matches!(
+            builds_ingest(doc, 1_800_000_000_000),
+            BuildsIngest::MissingSelfTeam
+        ));
+        let mut watch = BuildsWatch::default();
+        assert!(watch.warn_missing_self_team(), "first frame warns");
+        assert!(!watch.warn_missing_self_team(), "warn once per root");
+    }
+
+    /// The probe's quit-clear blanks the players map and keeps the finished
+    /// battle id: the snapshot clears and repeated ticks stay deduped.
+    #[test]
+    fn quit_clear_clears_the_snapshot_frame() {
+        let raw = r#"{"v":1,"t":1800000000000,"battle":"1800000000000","players":{}}"#;
+        let doc = parse_probe_builds(raw).expect("quit-clear parses");
+        let BuildsIngest::Clear { battle, key } = builds_ingest(doc, 1_800_000_000_100) else {
+            panic!("expected a clear");
+        };
+        assert_eq!(battle, "1800000000000");
+        let mut watch = BuildsWatch::default();
+        assert!(watch.accept_key(key));
+        assert!(!watch.accept_key(key), "a repeated quit-clear is deduped");
+    }
+
+    /// The content key tracks the payload (dumps + crew), not the rewrite
+    /// timestamp, so the once-per-battle file emits once; a changed dump
+    /// re-emits.
+    #[test]
+    fn build_content_key_ignores_timestamp_and_tracks_dump_changes() {
+        let players = serde_json::json!({"Ally": probe_row(1, 4_065_212_112, true)});
+        let first = parse_probe_builds(&builds_doc_json(
+            players.clone(),
+            Some(1),
+            1_800_000_000_000,
+        ))
+        .unwrap();
+        let second = parse_probe_builds(&builds_doc_json(
+            players.clone(),
+            Some(1),
+            1_800_000_001_000,
+        ))
+        .unwrap();
+        assert_eq!(
+            builds_content_key(&first),
+            builds_content_key(&second),
+            "t is not content"
+        );
+        let other = serde_json::json!({"Ally": probe_row(1, 3_750_639_408, true)});
+        let third =
+            parse_probe_builds(&builds_doc_json(other, Some(1), 1_800_000_000_000)).unwrap();
+        assert_ne!(
+            builds_content_key(&first),
+            builds_content_key(&third),
+            "a changed dump re-emits"
+        );
+        let mut watch = BuildsWatch::default();
+        assert!(watch.accept_key(builds_content_key(&first)));
+        assert!(!watch.accept_key(builds_content_key(&second)));
+        assert!(watch.accept_key(builds_content_key(&third)));
+    }
+
+    /// Stale / contract-violating files are skipped; a single unreadable dump
+    /// only drops that row; oversize bodies and the double-encoded JSON shape
+    /// are handled without panics.
+    #[test]
+    fn stale_or_malformed_build_frames_are_skipped() {
+        let now = 1_800_000_000_000i64;
+        let players = serde_json::json!({"Ally": probe_row(1, 4_065_212_112, false)});
+        // Stale: older than the bridge's battle-lifetime cap (a leftover).
+        let stale = parse_probe_builds(&builds_doc_json(
+            players.clone(),
+            Some(1),
+            now - BUILDS_STALE_MS - 1,
+        ))
+        .unwrap();
+        assert!(matches!(builds_ingest(stale, now), BuildsIngest::Skip));
+        // Non-v1 / junk / no timestamp.
+        assert!(parse_probe_builds(r#"{"v":2,"players":{}}"#).is_none());
+        assert!(parse_probe_builds("not json").is_none());
+        assert!(parse_probe_builds(r#"{"v":1,"players":{}}"#).is_some());
+        // A drifted / unparseable dump only drops that row, never the frame.
+        let bad =
+            serde_json::json!({"Ally": {"team":1,"dump_enc":"hex","dump":"01000000deadbeef"}});
+        let doc = parse_probe_builds(&builds_doc_json(bad, Some(1), now)).unwrap();
+        let BuildsIngest::Frame { builds, .. } = builds_ingest(doc, now) else {
+            panic!("expected a frame");
+        };
+        assert!(builds.is_empty(), "undecodable dump skipped");
+        // Oversize body (mirror of the probe's own dump cap).
+        let huge = "0".repeat(BUILDS_MAX_DUMP_CHARS + 2);
+        let oversize = serde_json::json!({"Ally": {"team":1,"dump_enc":"hex","dump":huge}});
+        let doc = parse_probe_builds(&builds_doc_json(oversize, Some(1), now)).unwrap();
+        assert!(matches!(
+            builds_ingest(doc, now),
+            BuildsIngest::Frame { builds, .. } if builds.is_empty()
+        ));
+        // The probe's full-encode shape: the whole document as a JSON string.
+        let inner = builds_doc_json(players, Some(1), now);
+        let double = serde_json::to_string(&serde_json::Value::String(inner)).unwrap();
+        assert!(parse_probe_builds(&double).is_some());
+    }
+
+    /// The snapshot command serves the latest ally-only frame; an exited
+    /// root's frame is cleared without touching another root's.
+    #[test]
+    fn latest_snapshot_round_trips_and_clears_per_root() {
+        let frame = IngameBuildsFrame {
+            battle: "1800000000000".into(),
+            builds: Vec::new(),
+        };
+        store_latest_builds("C:/root/a", frame.clone());
+        assert_eq!(ingame_builds_snapshot(), Some(frame.clone()));
+        clear_latest_builds_for_root("C:/root/b");
+        assert_eq!(
+            ingame_builds_snapshot(),
+            Some(frame),
+            "another root's frame is untouched"
+        );
+        clear_latest_builds_for_root("C:/root/a");
+        assert_eq!(ingame_builds_snapshot(), None);
+    }
+
+    #[test]
+    fn builds_file_hangs_off_the_probe_dir() {
+        let game = fixture_game_root("builds_file");
+        let path = builds_file(&game).expect("versioned install resolves res_mods");
+        let text = path.to_string_lossy();
+        assert!(text.contains(MOD_DIR), "path under the probe dir: {text}");
+        assert!(text.ends_with(".json"), "path: {text}");
+        assert!(text.contains("builds"), "path: {text}");
+        std::fs::remove_dir_all(game.parent().unwrap()).ok();
     }
 }

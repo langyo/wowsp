@@ -19,6 +19,13 @@ sandbox has no networking, so this probe observes and bridges out:
     targets off it) and the walk's side membership ('sides' — the
     records-dead build class's only team split, the companion's
     probe-arena synthesizer's frame fallback),
+  - each battle's full-roster BUILD bridge (builds.json): once the
+    roster stabilizes, every player's raw SHIP_CONFIG blob
+    (shipConfigDump: units/modernizations/exteriors/ensigns/consumables)
+    plus the captain-skill picks (crewModifiersCompactParams.learnedSkills,
+    the WG-family crewParams shape as the fallback) go out for the app's
+    /live build lookup — the roster records carry these from the game's
+    own shared data, enemies included (vehicle props are ALL_CLIENTS);
   - the ONE thing still rendered is the capture side channel's barcode
     strips: the unbound view (WoWSPProbe.unbound, installed to
     gui/unbound2/mods/ where the game auto-discovers + mounts battle
@@ -66,6 +73,7 @@ ROSTER_RAW_FILE = 'roster_raw.json'
 ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
 TELEMETRY_FILE = 'telemetry.json'
 ORDER_PROBE_FILE = 'order_probe.json'
+BUILDS_FILE = 'builds.json'
 
 # Tool config: WoWSP maintains res_mods/wowsp.toml and seeds our table
 # ([tools."battle.ingame.stats"]) with these values; the keys below are the
@@ -96,6 +104,17 @@ JOURNAL_LIMIT = CONFIG_DEFAULTS['journal_limit']
 # degraded build still gets its stream before the WARN arms, and a
 # healthy build never reaches the count.
 ROSTER_GRACE_TICKS = 5
+
+# builds.json bounds (see write_builds). The bridge carries the roster's
+# raw SHIP_CONFIG blobs; the app caps the roster at 64 players, an encoded
+# dump over the char bound is skipped (one oversized record must never
+# blow up the file), and the retry counter bounds the old-build shape
+# whose records exist but carry no build fields at all — after a handful
+# of ticks the battle is declared build-less instead of re-reading the
+# roster forever.
+BUILDS_MAX_PLAYERS = 64
+BUILDS_MAX_DUMP_CHARS = 8192
+BUILDS_MAX_TRIES = 3
 
 # The barcode strip's frozen geometry contract (see the design doc's
 # capture side-channel section): the overlay's decoder is written against
@@ -456,6 +475,252 @@ def _exc_text(limit):
         return '?'
 
 
+# ── builds-bridge primitives (builds.json) ────────────────────────────
+# The per-battle build bridge: every roster record's raw SHIP_CONFIG blob
+# (shipConfigDump — the game's own shared-data field, ALL_CLIENTS on the
+# vehicle entity) plus the captain-skill compact params (learnedSkills).
+# No binascii/base64 exists in the sandbox, so the bodies ride out as hex
+# with a pre-built %-formatting table; the one base64-shape client (Lesta's
+# SafeClass repr hands the field over base64) is detected and passed
+# through as dump_enc='b64'. Everything below is pure syntax / bound
+# methods: no builtin NAME is looked up (the Lesta whitelist withholds
+# str/chr/int/range/sorted — same discipline as the core helpers above).
+_B64_CHARS = ('ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+              'abcdefghijklmnopqrstuvwxyz0123456789+/=')
+
+
+def _build_hex_table():
+    """char -> two-digit hex for the py2-str fallback; %-formatting only
+    (a %c / %02x conversion is a bytecode operation, never a name
+    lookup), so a whitelist that drops chr/range cannot empty it."""
+    table = {}
+    i = 0
+    while i < 256:
+        table['%c' % (i,)] = '%02x' % (i,)
+        i += 1
+    return table
+
+
+_HEX_TABLE = _build_hex_table()
+
+
+def _char_text(ch):
+    """One iteration element as a one-char string: py2 str / py3 str
+    already yield chars, py3 bytes and both bytearrays yield ints."""
+    if _is_kind(ch, 'int', 'long'):
+        try:
+            return '%c' % (ch,)
+        except:
+            return None
+    return ch
+
+
+def _looks_base64(value):
+    """True for a printable base64 body (Lesta's SafeClass dump repr):
+    every element in the base64 alphabet, length a multiple of four. A
+    binary SHIP_CONFIG can never pass — its leading 0x01 fails the
+    alphabet. False on any uniterable/odd value (never raises)."""
+    try:
+        count = 0
+        for ch in value:
+            text = _char_text(ch)
+            if text is None or text not in _B64_CHARS:
+                return False
+            count += 1
+        return count >= 16 and (count % 4) == 0
+    except:
+        return False
+
+
+def _as_text(value):
+    """JSON text for a base64 body (py3 bytes/bytearray decoded; a py2 str
+    is already text). None when it cannot be decoded."""
+    if _is_kind(value, 'bytes', 'bytearray'):
+        try:
+            return value.decode('ascii')
+        except:
+            return None
+    return value
+
+
+def _hex_encode(value):
+    """Hex body with NO binascii: the py2 str 'hex' codec first (a bound
+    method call, no builtin lookup), then the %-formatting table per
+    element for py3 bytes/bytearray (ints) and py2 str (chars). None = the
+    value is not a byte string this sandbox can encode."""
+    try:
+        return value.encode('hex')
+    except:
+        pass
+    out = []
+    try:
+        for ch in value:
+            text = None
+            try:
+                text = '%02x' % (ch,)
+            except:
+                text = _HEX_TABLE.get(ch)
+            if text is None:
+                return None
+            out.append(text)
+    except:
+        return None
+    return ''.join(out)
+
+
+def _encode_dump(value):
+    """(dump_enc, body) for one shipConfigDump value, or (None, None).
+
+    Two live shapes: the WG family hands raw SHIP_CONFIG bytes (archive
+    logs 2026-10-10/25 show the version/ship_params_id/element_count u32
+    header), Lesta hands the same field over in its base64 repr shape.
+    Base64 is probed FIRST so a textual body is never hex-encoded into
+    garbage; a real blob cannot be mistaken for it (leading control byte)."""
+    if value is None:
+        return None, None
+    try:
+        if _looks_base64(value):
+            text = _as_text(value)
+            if text is not None:
+                return 'b64', text
+    except:
+        pass
+    try:
+        body = _hex_encode(value)
+    except:
+        body = None
+    if body:
+        return 'hex', body
+    return None, None
+
+
+def _record_field(record, key):
+    """One raw record field: SafeClass subscript first (the live-proven
+    contract), __dict__ second; None when the field is not exposed."""
+    try:
+        return record[key]
+    except:
+        try:
+            return record.__dict__[key]
+        except:
+            return None
+
+
+def _record_int(record, key, default=0):
+    """One integer record field with the same guarded read as
+    _record_field; callables and unreadable shapes fall back to default."""
+    value = _record_field(record, key)
+    if value is None or _is_callable(value):
+        return default
+    try:
+        return _to_int(value)
+    except:
+        return default
+
+
+def _crew_field(obj, key):
+    """One crew-params field, three levels, each its own bare except:
+    subscript (SafeClass contract), attribute SYNTAX (LOAD_ATTR — no
+    builtin name lookup, so the Lesta whitelist is never consulted), then
+    __dict__ (the object's own storage, the read_field fallback idiom)."""
+    try:
+        return obj[key]
+    except:
+        pass
+    try:
+        if key == 'learnedSkills':
+            return obj.learnedSkills
+        if key == 'paramsId':
+            return obj.paramsId
+        if key == 'isInAdaptation':
+            return obj.isInAdaptation
+    except:
+        pass
+    try:
+        return obj.__dict__[key]
+    except:
+        return None
+
+
+def _crew_int(obj, key):
+    """Integer crew field, None when absent/unreadable (the caller omits
+    the key rather than fabricating a value)."""
+    value = _crew_field(obj, key)
+    if value is None or _is_callable(value):
+        return None
+    try:
+        return _to_int(value)
+    except:
+        return None
+
+
+def _skills_matrix(value):
+    """learnedSkills as JSON-safe list-of-lists of ints (alias.xml's
+    ARRAY<ARRAY<UINT8>>), or None when the shape is unreadable. Strings
+    are rejected outright: iterating one would forge a per-character
+    matrix. Bounded (64x64) so a pathological wrapper cannot stall the
+    tick; the real table is small."""
+    if value is None or _is_callable(value):
+        return None
+    if _is_kind(value, 'str', 'unicode', 'bytes', 'bytearray'):
+        return None
+    rows = []
+    try:
+        for row in value:
+            cells = []
+            for cell in row:
+                cells.append(_to_int(cell))
+            rows.append(cells)
+            if len(rows) >= 64:
+                break
+    except:
+        return None
+    return rows
+
+
+def _crew_from(obj, depth=0):
+    """Crew block off one crew-params object, or None when no readable
+    learnedSkills exist (the caller then OMITS the crew key entirely —
+    never fabricates one). WG-family records answer crewParams as a
+    two-slot list, so a list/tuple is walked element by element (bounded
+    depth) looking for the real object instead of guessed indices."""
+    if obj is None or depth > 2:
+        return None
+    learned = _skills_matrix(_crew_field(obj, 'learnedSkills'))
+    if learned is not None:
+        crew = {'learned_skills': learned}
+        params = _crew_int(obj, 'paramsId')
+        if params is not None:
+            crew['params_id'] = params
+        flag = _crew_int(obj, 'isInAdaptation')
+        if flag is not None:
+            crew['is_in_adaptation'] = flag
+        return crew
+    if _is_kind(obj, 'str', 'unicode', 'bytes', 'bytearray'):
+        return None
+    items = []
+    if _is_kind(obj, 'list', 'tuple'):
+        items = obj
+    else:
+        # The ModsAPI's own container wrappers do not carry the codec class
+        # names: WG's two-slot crewParams reaches us as a SafeClass
+        # list-like, so a bounded duck iteration is the only way to reach
+        # the crew object inside it. Four items is generous for a two-slot
+        # wrapper; anything that is not iterable degrades to None.
+        try:
+            for item in obj:
+                items.append(item)
+                if len(items) >= 4:
+                    break
+        except:
+            return None
+    for item in items:
+        found = _crew_from(item, depth + 1)
+        if found is not None:
+            return found
+    return None
+
+
 # Deliberately AFTER the helper block: `load_tool_config` calls `_to_int`,
 # and name resolution happens at CALL time — while this statement ran
 # above the helpers, the NameError was swallowed by the loader's bare
@@ -554,6 +819,11 @@ class Probe:
         self.last_bots_cache = None
         self.raw_isalive_seen = False
         self.discovered = False
+        # builds.json bookkeeping (see write_builds): the one-shot guard
+        # and the retry counter for the old-build shape whose records
+        # exist but carry no build fields at all.
+        self.builds_written = False
+        self.builds_tries = 0
         self.journal = []
         self.empty_ticks = 0
         self.dead_latch = {None} - {None}
@@ -645,6 +915,124 @@ class Probe:
 
     def write_json(self, name, data):
         _bridge_write(name, json_encode_safe(data))
+
+    def write_builds(self, records):
+        """One-shot per battle: bridge the whole roster's build data.
+
+        Every live roster record carries the game's own shared-data build
+        fields (the vehicle entity's ALL_CLIENTS props): the raw
+        SHIP_CONFIG blob (shipConfigDump — units, modernizations, exterior
+        slots/signals, ensigns, abilities, ...) and a crew-params object
+        whose learnedSkills are the captain's skill picks (Lesta:
+        crewModifiersCompactParams; the WG-family records answer the same
+        data under crewParams). Both are bridged verbatim; the app decodes
+        the blob with its replay-RPC parser and maps the GameParam ids
+        offline, so the probe invents nothing.
+
+        Contract: builds.json is written ONCE per roster session
+        (builds_written), retrying at most BUILDS_MAX_TRIES ticks for the
+        old-build shape whose records exist but expose no build fields;
+        quit() writes the quit-clear (empty players). A missing file means
+        "this probe build predates the bridge" — consumers degrade.
+        """
+        if self.builds_written or not self.session:
+            return
+        if not records:
+            return
+        if self.builds_tries >= BUILDS_MAX_TRIES:
+            self.builds_written = True
+            log('builds unavailable records=' + _fmt(len(records)))
+            return
+        self.builds_tries += 1
+        players = {}
+        skipped = 0
+        try:
+            for key in records:
+                if len(players) >= BUILDS_MAX_PLAYERS:
+                    break
+                record = records[key]
+                name = _record_field(record, 'name')
+                if name is None or _is_callable(name):
+                    continue
+                if name in players:
+                    continue
+                row = {'team': _record_int(record, 'teamId'),
+                       'ship_params_id': _record_int(record, 'shipParamsId')}
+                enc, body = _encode_dump(_record_field(record, 'shipConfigDump'))
+                if not body:
+                    # No dump field (older build) or an unencodable shape:
+                    # skip that player, never fabricate one.
+                    skipped += 1
+                    continue
+                if len(body) > BUILDS_MAX_DUMP_CHARS:
+                    skipped += 1
+                    self.soft('builds dump too large name=' + _fmt(name))
+                    continue
+                row['dump_enc'] = enc
+                row['dump'] = body
+                crew = None
+                for field in ('crewModifiersCompactParams', 'crewParams'):
+                    crew = _crew_from(_record_field(record, field))
+                    if crew is not None:
+                        break
+                if crew is not None:
+                    row['crew'] = crew
+                players[name] = row
+            if not players:
+                if self.builds_tries >= BUILDS_MAX_TRIES:
+                    self.builds_written = True
+                    log('builds unavailable records=' + _fmt(len(records)))
+                return
+            self.builds_written = True
+            data = {'v': 1,
+                    't': _to_int(time.time() * 1000),
+                    'battle': self.session,
+                    'players': players}
+            self_team = self.self_team_of(records)
+            if self_team is not None:
+                data['self_team'] = self_team
+            _bridge_write(BUILDS_FILE, json_encode_safe(data))
+            log('builds written players=' + _fmt(len(players)) +
+                ' skipped=' + _fmt(skipped))
+        except:
+            # One failed assembly must neither retry forever nor leave a
+            # half-written file: mark the battle attempted and log the
+            # sandbox-safe exception text. An absent file = no build data.
+            self.builds_written = True
+            self.soft('builds failed=' + _exc_text(120))
+
+    def self_team_of(self, records):
+        """The local player's record teamId (0/1) for builds.json's
+        self_team, or None when the roster never names the local player
+        (the walk-sourced classes). Name resolution order: the walk's own
+        self latch (entity_walk), then the game API's self view."""
+        self_name = ''
+        try:
+            self_name = self.self_name or ''
+        except:
+            self_name = ''
+        if not self_name:
+            try:
+                self_name = bare_name(_fmt(battle.getSelfPlayerInfo()['name']))
+            except:
+                self_name = ''
+        if not self_name:
+            return None
+        try:
+            for key in records:
+                record = records[key]
+                name = _record_field(record, 'name')
+                if name is None:
+                    continue
+                if bare_name(_fmt(name)) != self_name:
+                    continue
+                team = _record_field(record, 'teamId')
+                if team is None or _is_callable(team):
+                    return None
+                return _to_int(team)
+        except:
+            return None
+        return None
 
     # -- UI data components (stage-B groundwork) ---------------------------
 
@@ -1518,6 +1906,9 @@ class Probe:
             log('shell[%s] bigworld failed=%s' % (phase, _exc_text(120)))
 
     def quit(self, *args):
+        # The finished battle's id for the build bridge's quit-clear: the
+        # session itself clears below, exactly like telemetry's own clear.
+        battle_id = self.session or ''
         self.roster = []
         self.latest_raw = {}
         self.raw_isalive_seen = False
@@ -1542,6 +1933,15 @@ class Probe:
                                                             'bots': []}))
         except:
             self.soft('telemetry clear failed=' + _exc_text(120))
+        # The build bridge's quit-clear: a leftover builds.json from a
+        # closed client must never keep presenting yesterday's loadouts.
+        try:
+            _bridge_write(BUILDS_FILE, json_encode_safe({'v': 1,
+                                                        't': _to_int(time.time() * 1000),
+                                                        'battle': battle_id,
+                                                        'players': {}}))
+        except:
+            self.soft('builds clear failed=' + _exc_text(120))
         log('battle cleared')
 
     def details_reset(self):
@@ -1579,6 +1979,10 @@ class Probe:
         # The client order probe is per battle: a stale verdict must not
         # describe the next battle's roster.
         self.order_probe_done = False
+        # The build bridge re-arms per battle: one write per roster
+        # session, never one battle's frame inherited by the next.
+        self.builds_written = False
+        self.builds_tries = 0
         # The degraded-roster fallback re-arms per battle too: grace
         # counting starts over and the next battle's session reports its
         # own (or no) fallback source.
@@ -2039,6 +2443,11 @@ class Probe:
         self.write_telemetry()
         if not self.session:
             return
+        # The build bridge: one builds.json per battle, written on the
+        # first post-stabilization tick that yields readable build fields
+        # (a bounded retry covers the old-build shape); see write_builds.
+        if not self.builds_written:
+            self.write_builds(self.latest_raw)
         # One-shot client order source probe (see client_order_probe): run
         # on the FIRST stabilized tick — a replay can stop a second later,
         # and the AvatarSystem collections are already built by then. It

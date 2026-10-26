@@ -1,28 +1,28 @@
 //! Vehicle build decoder: the EntityCreate (0x05) state property walk plus the
-//! two per-ship loadout payloads it carries — \`shipConfig\` (modules, upgrades,
+//! two per-ship loadout payloads it carries — `shipConfig` (modules, upgrades,
 //! camouflages/signals, consumables, economic bonuses) and the captain's
-//! \`crewModifiersCompactParams\` (commander id + learned skills).
+//! `crewModifiersCompactParams` (commander id + learned skills).
 //!
 //! ## Wire format (verified offline on real 15.9.0 / build 13357625 replays)
 //!
 //! The create state is a BigWorld property stream:
 //!
-//! \`\`\`text
+//! ```text
 //! u32 total_len | u8 property_count | { [u8 property_index][value] } × count
-//! \`\`\`
+//! ```
 //!
 //! The entries appear in ASCENDING exposed-property-index order, and the index
 //! map is the client-visible property list sorted by wire size (the exact rule
-//! \`scripts/experiments/exposed_index.py\` documents for client METHODS). For
+//! `scripts/experiments/exposed_index.py` documents for client METHODS). For
 //! the 15.9 Vehicle entity that list has 54 entries; the first 43 are
 //! fixed-width (1/2/4/8 bytes) and the last 11 are variable-width. The two
 //! properties this module needs are:
 //!
-//! - index 47 = \`shipConfig\` (USER_TYPE, serialized as \`u8 len + blob\`),
-//! - index 48 = \`crewModifiersCompactParams\` (FIXED_DICT, inline).
+//! - index 47 = `shipConfig` (USER_TYPE, serialized as `u8 len + blob`),
+//! - index 48 = `crewModifiersCompactParams` (FIXED_DICT, inline).
 //!
 //! Variable-width properties use the BigWorld compact encoding: unsized ARRAY =
-//! \`u8 count + elements\`, STRING/BLOB = \`u8 len + bytes\`. A \`0xff\` length
+//! `u8 count + elements`, STRING/BLOB = `u8 len + bytes`. A `0xff` length
 //! escape was never observed on the reference corpus (the largest observed
 //! shipConfig blob is 252 bytes), so the decoder REFUSES such an entity rather
 //! than guess at the escape framing — the caller counts it as skipped.
@@ -32,11 +32,11 @@
 //! The property index map drifts whenever the entity defs change, so this
 //! decoder is pinned to client 15.9.x only: other versions skip build decoding
 //! (and count a diagnostic) until a generated
-//! \`packets/property_tables.rs\` replaces the constants below — the planned
-//! counterpart of \`method_tables\` (see \`scripts/gen_method_tables.py\` and the
-//! property-index probe in \`scripts/experiments/exposed_index.py\`).
+//! `packets/property_tables.rs` replaces the constants below — the planned
+//! counterpart of `method_tables` (see `scripts/gen_method_tables.py` and the
+//! property-index probe in `scripts/experiments/exposed_index.py`).
 //!
-//! The \`shipConfig\` binary itself is version-gated too: 13.2+ carries one extra
+//! The `shipConfig` binary itself is version-gated too: 13.2+ carries one extra
 //! u32 after the unit slots, and 15.9 inserted one extra u32 between the
 //! color-scheme section and the ability (consumable) section. The offsets are
 //! verified on 15.8.1 and 15.9.0 captures; the >= 15.9 branch is the one the
@@ -46,9 +46,9 @@
 /// (15.9 entity defs; verified against real captures: state[4] == 54).
 pub(super) const VEHICLE_CREATE_PROPERTY_COUNT: u8 = 54;
 
-/// \`shipConfig\` exposed-property index (15.9 Vehicle defs).
+/// `shipConfig` exposed-property index (15.9 Vehicle defs).
 pub(super) const PROP_SHIP_CONFIG: u8 = 47;
-/// \`crewModifiersCompactParams\` exposed-property index (15.9 Vehicle defs).
+/// `crewModifiersCompactParams` exposed-property index (15.9 Vehicle defs).
 pub(super) const PROP_CREW_MODIFIERS: u8 = 48;
 
 /// The only client version era whose Vehicle property map + shipConfig binary
@@ -80,7 +80,7 @@ pub struct VehicleBuildRaw {
 /// Fixed wire width of the first 43 client-visible Vehicle properties, sorted
 /// by type size (19 × 1-byte, 8 × 2-byte, 15 × 4-byte, 1 × 8-byte); 43..=53
 /// are variable and handled separately. Derived from the 15.9 entity defs with
-/// the \`exposed_index.py\` sort rule (see the module docs).
+/// the `exposed_index.py` sort rule (see the module docs).
 fn fixed_width(property_index: u8) -> Option<usize> {
     match property_index {
         0..=18 => Some(1),
@@ -92,7 +92,7 @@ fn fixed_width(property_index: u8) -> Option<usize> {
 }
 
 /// A bounds-checked little-endian cursor over a byte slice; every read returns
-/// \`None\` on truncation so the walk is total on malformed input.
+/// `None` on truncation so the walk is total on malformed input.
 struct Cursor<'a> {
     data: &'a [u8],
     pos: usize,
@@ -124,7 +124,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// Read one 15.9 \`shipConfig\` property value (the u8 length prefix, then the
+/// Read one 15.9 `shipConfig` property value (the u8 length prefix, then the
 /// ShipConfig binary) and decode it.
 fn read_ship_config(cursor: &mut Cursor<'_>, version: (u32, u32, u32)) -> Option<ShipConfigRaw> {
     let len = cursor.u8()? as usize;
@@ -134,22 +134,28 @@ fn read_ship_config(cursor: &mut Cursor<'_>, version: (u32, u32, u32)) -> Option
         return None;
     }
     let blob = cursor.take(len)?;
-    decode_ship_config(blob, version)
+    decode_ship_config_blob(blob, version)
 }
 
-/// Raw \`shipConfig\` sections this module surfaces (the rest of the binary —
+/// The `shipConfig` sections this module surfaces (the rest of the binary —
 /// supplies, color schemes, flags/tail — is walked but not exposed).
-pub(crate) struct ShipConfigRaw {
-    pub(crate) ship_params_id: u32,
-    pub(crate) units: Vec<u32>,
-    pub(crate) modernization: Vec<u32>,
-    pub(crate) exteriors: Vec<u32>,
-    pub(crate) abilities: Vec<u32>,
-    pub(crate) ensigns: Vec<u32>,
-    pub(crate) ecoboosts: Vec<u32>,
+///
+/// Public so non-replay producers of the SAME SHIP_CONFIG blob can reuse the
+/// parser: the in-game probe's `builds.json` bridges the game's own
+/// `shipConfigDump` verbatim (see `commands::ingame_plugin`), and its layout is
+/// exactly this binary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShipConfigRaw {
+    pub ship_params_id: u32,
+    pub units: Vec<u32>,
+    pub modernization: Vec<u32>,
+    pub exteriors: Vec<u32>,
+    pub abilities: Vec<u32>,
+    pub ensigns: Vec<u32>,
+    pub ecoboosts: Vec<u32>,
 }
 
-/// One u32-count-prefixed id section (\`count\` then \`count\` × u32). The count
+/// One u32-count-prefixed id section (`count` then `count` × u32). The count
 /// is capped so a corrupt length can never drive a huge allocation.
 fn read_section(cursor: &mut Cursor<'_>, cap: usize) -> Option<Vec<u32>> {
     let count = cursor.u32()? as usize;
@@ -163,20 +169,27 @@ fn read_section(cursor: &mut Cursor<'_>, cap: usize) -> Option<Vec<u32>> {
     Some(out)
 }
 
-/// Decode the \`shipConfig\` binary (port of the vendored wows-toolkit layout in
-/// \`packages/tools/game-assets/src/data/ship_config.rs\`, extended with the
+/// Decode the `shipConfig` binary (port of the vendored wows-toolkit layout in
+/// `packages/tools/game-assets/src/data/ship_config.rs`, extended with the
 /// 15.9 section shift).
 ///
 /// Verified layout (GameParams id prefixes used as the tell):
-/// \`\`\`text
+/// ```text
 /// u32 version, u32 ship_params_id, u32 element_count, u32 unit_count,
 /// u32[unit_count] units, [>=13.2] u32 unknown,
 /// modernization[PCM*], exteriors[PCEP/PCEM/PCED cammo + PCEF signals],
 /// u32 supply_state, color_schemes: u32 count + (slot, scheme) u32 pairs,
 /// [>=15.9] u32 unknown (0 on every reference capture),
 /// abilities[PCY*], ensigns, ecoboosts[PCEA*], ...tail (not read)
-/// \`\`\`
-pub(crate) fn decode_ship_config(blob: &[u8], version: (u32, u32, u32)) -> Option<ShipConfigRaw> {
+/// ```
+/// Decode one raw `SHIP_CONFIG` blob (no property-stream length prefix).
+///
+/// `version` selects the layout era: 13.2+ carries the extra unknown u32 after
+/// the unit slots and 15.9+ the extra unknown u32 before the ability slots. A
+/// caller that only knows the current layout (the in-game probe bridges a bare
+/// dump with no version stamp) passes a fixed era — a drifted future layout
+/// fails the section sanity caps and answers `None` instead of mis-reading ids.
+pub fn decode_ship_config_blob(blob: &[u8], version: (u32, u32, u32)) -> Option<ShipConfigRaw> {
     let mut cursor = Cursor::new(blob);
     let _blob_version = cursor.u32()?;
     let ship_params_id = cursor.u32()?;
@@ -221,8 +234,8 @@ pub(crate) fn decode_ship_config(blob: &[u8], version: (u32, u32, u32)) -> Optio
     })
 }
 
-/// Read one 15.9 \`crewModifiersCompactParams\` FIXED_DICT:
-/// \`u32 paramsId | u8 isInAdaptation | u8 outer | { u8 len, u8 skill ids } × outer\`.
+/// Read one 15.9 `crewModifiersCompactParams` FIXED_DICT:
+/// `u32 paramsId | u8 isInAdaptation | u8 outer | { u8 len, u8 skill ids } × outer`.
 fn read_crew_modifiers(cursor: &mut Cursor<'_>) -> Option<CrewModifiersRaw> {
     let params_id = cursor.u32()?;
     let is_in_adaptation = cursor.u8()? != 0;
@@ -251,7 +264,7 @@ struct CrewModifiersRaw {
 }
 
 /// Skip one BigWorld compact STRING/BLOB value. The 0xff length escape is
-/// unverified for the property stream (same reasoning as \`read_ship_config\`),
+/// unverified for the property stream (same reasoning as `read_ship_config`),
 /// so an escaped string aborts the whole build for this entity.
 fn skip_string(cursor: &mut Cursor<'_>) -> Option<()> {
     let len = cursor.u8()? as usize;
@@ -261,8 +274,8 @@ fn skip_string(cursor: &mut Cursor<'_>) -> Option<()> {
     cursor.skip(len)
 }
 
-/// Skip the variable-width property at \`index\` (43..=46 on 15.9; 47/48 are read
-/// by the caller). Returns \`None\` when the value shape is unsupported.
+/// Skip the variable-width property at `index` (43..=46 on 15.9; 47/48 are read
+/// by the caller). Returns `None` when the value shape is unsupported.
 fn skip_variable_property(cursor: &mut Cursor<'_>, index: u8) -> Option<()> {
     match index {
         // airDefenseTargetIds: ARRAY<of>ARRAY<of>PLANE_ID(INT64)</of></of>
@@ -296,8 +309,8 @@ fn skip_variable_property(cursor: &mut Cursor<'_>, index: u8) -> Option<()> {
 
 /// Decode one vehicle's build out of its EntityCreate state stream.
 ///
-/// \`state\` is everything after the 38-byte EntityCreate fixed header and
-/// \`version\` is the replay's parsed client version. \`None\` means "skip this
+/// `state` is everything after the 38-byte EntityCreate fixed header and
+/// `version` is the replay's parsed client version. `None` means "skip this
 /// entity" (unsupported shape/version escape — the caller counts it); it is
 /// never a partial build.
 pub(crate) fn decode_vehicle_build(

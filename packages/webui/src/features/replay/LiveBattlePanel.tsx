@@ -207,16 +207,40 @@ export default defineComponent({
     const liveBuilds = useLiveBuildsStore();
     const battleStamp = computed(() => props.arena?.dateTime ?? null);
     let buildsRetry: number | null = null;
+
+    /** Stop the (bounded) replay-decode retry loop — called when the set
+     *  lands, when the retry budget is spent, or as soon as a probe frame
+     *  proves this battle's loadout is already live other than replay stream. */
+    function stopBuildsRetry(): void {
+      if (buildsRetry !== null) {
+        clearInterval(buildsRetry);
+        buildsRetry = null;
+      }
+    }
+
+    /** Pull the probe's cross-root latest frame (mount + every battle change):
+     *  the event is transition-only, so a panel mounting after the bridge
+     *  published its frame would otherwise wait for the next change. The
+     *  probe is an OPTIONAL source — an older shell has no command and the
+     *  rejection is swallowed (the replay/self pipeline still runs). */
+    async function pullProbeBuilds(): Promise<void> {
+      try {
+        const frame = await api.ingameBuildsSnapshot();
+        if (!frame) return;
+        liveBuilds.applyProbeBuilds(frame);
+        if (liveBuilds.probeLive()) stopBuildsRetry();
+      } catch {
+        // Optional source: no bridge / older shell — replay or nothing.
+      }
+    }
     watch(
       battleStamp,
       (stamp) => {
         liveBuilds.beginBattle(stamp);
         liveSelfFeed.setArena(props.arena ?? null);
-        if (buildsRetry !== null) {
-          clearInterval(buildsRetry);
-          buildsRetry = null;
-        }
+        stopBuildsRetry();
         if (!stamp) return;
+        void pullProbeBuilds();
         // One decode per battle is enough (loadouts are static): retry slowly
         // only until the set lands, then stop — the game has first claim on
         // the CPU (same rule as the self panel's poll). The retry is BOUNDED:
@@ -225,16 +249,14 @@ export default defineComponent({
         // seconds-scale decode every 10 s for the whole match would tax the
         // game; the loadout lands within seconds on supported versions, so
         // ~90 s of attempts is ample.
-        const stopRetry = () => {
-          if (buildsRetry !== null) {
-            clearInterval(buildsRetry);
-            buildsRetry = null;
-          }
-        };
         let attempts = 0;
         const attempt = () => {
-          if (liveSelfFeed.allyBuilds.length > 0 || ++attempts > 9) {
-            stopRetry();
+          if (
+            liveBuilds.probeLive() ||
+            liveSelfFeed.allyBuilds.length > 0 ||
+            ++attempts > 9
+          ) {
+            stopBuildsRetry();
             return;
           }
           void liveSelfFeed.refreshBuilds();
@@ -386,6 +408,7 @@ export default defineComponent({
     const settingsUi = useSettingsUiStore();
     let unlistenStatus: (() => void) | null = null;
     let unlistenDiag: (() => void) | null = null;
+    let unlistenBuilds: (() => void) | null = null;
     // Set by the first push — guards the catch-up pull below from
     // clobbering a fresher event that landed mid-round-trip.
     let diagPushed = false;
@@ -685,12 +708,17 @@ export default defineComponent({
         sortKeyEpoch.value += 1;
         sinkEpoch.value += 1;
       })) as (() => void) | null;
+      // Probe-sourced builds (optional source, PR-2): the event carries every
+      // content change; the mount-time snapshot covers a frame that landed
+      // before this listener did. Enemy builds never reach either payload.
+      unlistenBuilds = (await api.listenIngameBuilds((frame) => {
+        liveBuilds.applyProbeBuilds(frame);
+        if (liveBuilds.probeLive()) stopBuildsRetry();
+      })) as (() => void) | null;
+      await pullProbeBuilds();
     });
     onBeforeUnmount(() => {
-      if (buildsRetry !== null) {
-        clearInterval(buildsRetry);
-        buildsRetry = null;
-      }
+      stopBuildsRetry();
       unlistenStatus?.();
       unlistenStatus = null;
       unlistenDiag?.();
@@ -699,6 +727,8 @@ export default defineComponent({
       unlistenSinkAttrib = null;
       unlistenTelemetry?.();
       unlistenTelemetry = null;
+      unlistenBuilds?.();
+      unlistenBuilds = null;
     });
 
     const locateState = computed(() => {

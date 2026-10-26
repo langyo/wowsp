@@ -145,6 +145,9 @@ export const RPC = {
   set_chat_translate_config: "set_chat_translate_config",
   test_chat_translate_provider: "test_chat_translate_provider",
   ingame_plugin_status: "ingame_plugin_status",
+  // Probe-sourced ally ship builds (commands/ingame_plugin.rs): the cross-root
+  // latest frame, pulled by /live when it mounts after the event fired.
+  ingame_builds_snapshot: "ingame_builds_snapshot",
   ingame_plugin_install: "ingame_plugin_install",
   ingame_plugin_uninstall: "ingame_plugin_uninstall",
   get_game_config: "get_game_config",
