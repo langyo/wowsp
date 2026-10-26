@@ -154,6 +154,14 @@ export function t(key: string, params?: Record<string, unknown>): string {
   return i18n.global.t(key, params as never);
 }
 
+/** Whether a message is registered for the key — the warning-free probe
+ *  for optional message branches (t() on an absent key both echoes the
+ *  key path and fires vue-i18n's missing-warn on every lookup). Callers
+ *  still guard t()'s echoed-path sentinel; this just skips the noise. */
+export function te(key: string): boolean {
+  return i18n.global.te(key);
+}
+
 /**
  * Localize an error string that may be EITHER an i18n key or a raw
  * backend sentence. The plugin lifecycle stores' error contract mixes

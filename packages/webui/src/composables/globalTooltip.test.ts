@@ -144,6 +144,51 @@ describe("hintCardFrom briefing paragraph", () => {
   });
 });
 
+describe("hintCardFrom key items", () => {
+  it("keeps validated keycap entries and caps the list at eight", () => {
+    const card = hintCardFrom({
+      title: "潜艇",
+      keys: [
+        { key: "C", text: "下潜。" },
+        { key: "F", text: "上浮。" },
+        { key: "G", text: "解除声呐标记。" },
+      ],
+    });
+    expect(card).toEqual({
+      title: "潜艇",
+      keys: [
+        { key: "C", text: "下潜。" },
+        { key: "F", text: "上浮。" },
+        { key: "G", text: "解除声呐标记。" },
+      ],
+    });
+    expect(
+      hintCardFrom({
+        title: "T",
+        keys: Array.from({ length: 9 }, (_, i) => ({ key: String(i), text: "t" })),
+      })?.keys,
+    ).toHaveLength(8);
+  });
+
+  it("drops non-object / blank entries instead of throwing", () => {
+    const card = hintCardFrom({
+      title: "潜艇",
+      keys: [
+        null,
+        42,
+        "G",
+        { key: "", text: "x" },
+        { key: "F" },
+        { key: "F", text: "   " },
+        { key: "F", text: "上浮。" },
+      ],
+    });
+    expect(card).toEqual({ title: "潜艇", keys: [{ key: "F", text: "上浮。" }] });
+    expect(hintCardFrom({ title: "T", keys: "G" })).toEqual({ title: "T" });
+    expect(hintCardFrom({ title: "T", keys: [{ key: "F", text: "" }] })).toEqual({ title: "T" });
+  });
+});
+
 describe("hintCardFrom row chips", () => {
   it("keeps validated good/bad chips and drops the blank value", () => {
     const card = hintCardFrom({

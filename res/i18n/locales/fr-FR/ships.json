@@ -35,7 +35,25 @@
     },
     "cv": {
       "title": "Porte-avions",
-      "body": "Un porte-avions ne combat que par ses aéronefs : les touches 1/2/3 choisissent les avions d'attaque, les torpilleurs ou les bombardiers, et un double appui les lance ; le clic gauche ouvre la passe d'attaque, un second clic largue, W donne un boost (le moteur surchauffe) et F rappelle l'escadrille. Les groupes aériens sont limités : une DCA qui abat une escadrille emporte avec elle tous vos dégâts — frappez, puis dégagez. La coque n'a presque pas d'artillerie propre : elle survit par la distance et le couvert, et sa vraie valeur tient à la détection et à la pression sur toute la carte."
+      "body": "Un porte-avions ne combat que par ses aéronefs : les groupes aériens sont limités — une DCA qui abat une escadrille emporte avec elle tous vos dégâts — frappez, puis dégagez. La coque n'a presque pas d'artillerie propre : elle survit par la distance et le couvert, et sa vraie valeur tient à la détection et à la pression sur toute la carte.",
+      "keys": {
+        "1": {
+          "key": "1/2/3",
+          "text": "Choisir avions d'attaque, torpilleurs ou bombardiers ; un double appui lance l'escadrille."
+        },
+        "2": {
+          "key": "Clic gauche",
+          "text": "Ouvrir la passe d'attaque ; un second clic largue."
+        },
+        "3": {
+          "key": "W",
+          "text": "Boost (le moteur surchauffe — dosez)."
+        },
+        "4": {
+          "key": "F",
+          "text": "Rappeler l'escadrille."
+        }
+      }
     },
     "ca": {
       "title": "Croiseur lourd",
@@ -55,7 +73,22 @@
     },
     "ss": {
       "title": "Sous-marin",
-      "body": "L'assassin des profondeurs : les tubes avant et arrière sont son arme principale, la plupart acoustiques à tête chercheuse — faites d'abord un ping au sonar sur une cible et les torpilles se dirigent dessus (un second ping resserre l'accrochage et tient plus longtemps ; G efface la marque). C plonge et F fait surface, entre profondeur périscopique et profondeur maximale : en surface et au périscope, le canon de pont et les torpilles non guidées fonctionnent encore, tandis qu'à profondeur maximale il ne reste que les torpilles à tête chercheuse et que votre vision disparaît presque — vous combattez alors sur la détection de vos alliés. La plongée vide la batterie (elle se recharge en surface), et tout coup reçu sous l'eau endommage le circuit de carburant : refaites surface ou utilisez l'équipe de contrôle des dégâts dans les cinq secondes, sinon la fuite trahit votre position jusqu'à ce que vous remontiez."
+      "body": "L'assassin des profondeurs : les tubes avant et arrière sont son arme principale, la plupart acoustiques à tête chercheuse — faites d'abord un ping au sonar sur une cible et les torpilles se dirigent dessus ; un second ping resserre l'accrochage et fait durer la marque plus longtemps.",
+      "keys": {
+        "1": {
+          "key": "C",
+          "text": "Plonger : à profondeur maximale, il ne reste que les torpilles à tête chercheuse et la vision disparaît presque — vous combattez sur la détection de vos alliés."
+        },
+        "2": {
+          "key": "F",
+          "text": "Faire surface : en surface et au périscope, le canon de pont et les torpilles non guidées fonctionnent encore."
+        },
+        "3": {
+          "key": "G",
+          "text": "Effacer la marque de sonar posée sur une cible."
+        }
+      },
+      "note": "La plongée vide la batterie (elle se recharge en surface). Tout coup reçu sous l'eau endommage le circuit de carburant : refaites surface ou utilisez l'équipe de contrôle des dégâts dans les cinq secondes, sinon la fuite trahit votre position jusqu'à ce que vous remontiez."
     }
   },
   "filterNation": "Nation",
