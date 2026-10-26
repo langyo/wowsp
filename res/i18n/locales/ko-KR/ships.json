@@ -740,9 +740,13 @@
     "scout": "정찰기",
     "asw": "대잠기",
     "mine": "기뢰부설기",
+    "dive": "보급기",
+    "airship": "비행선",
+    "auxiliary": "지원기",
+    "smoke": "연막기",
     "cfg": {
-      "stock": "초기",
-      "top": "최종"
+      "base": "기본형",
+      "variant": "파생형"
     }
   }
 }

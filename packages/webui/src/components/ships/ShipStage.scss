@@ -252,8 +252,9 @@
   }
 
   /* Carrier model picker (3D only, carriers): a compact dropdown in the same
-     pill language as the rest of the control row — the button shows the
-     staged model, the menu lists the hull plus every baked airframe. */
+     pill language as the rest of the control row — the trigger shows the
+     staged model (plus its base/variant tag), the menu lists the hull first
+     and then every baked airframe under its combat-role heading. */
   &__model-pick {
     position: relative;
     display: inline-flex;
@@ -263,7 +264,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    max-width: 200px;
+    max-width: 260px;
     padding: 0.22rem 0.6rem;
     border: 1px solid rgb(var(--color-border) / 30%);
     border-radius: var(--radius-full);
@@ -284,21 +285,33 @@
     }
   }
 
+  /* The trigger's designation ellipsizes; the version tag after it keeps its
+     own width so the rank never gets clipped away. */
   &__model-pick-label {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   /* Dropdown list: hikari's scroll container owns the scrollbar (overlay
-     thumb on the menu's right edge; the native bar stays hidden). */
+     thumb on the menu's right edge; the native bar stays hidden). max-content
+     lets a long designation claim room past the trigger, the 280px cap keeps
+     the panel compact, and the 250px height cap scrolls taller menus INSIDE
+     the panel. The stage clips at its own rounded overflow and the control
+     row sits 0.6rem down, leaving ~277px below the trigger on a 322px stage:
+     a three-role carrier menu (~246px) fits with room to spare, while the
+     8-row / four-plus-role ones (~290px) would lose their last rows under
+     the stage edge unless the cap makes them scroll. */
   &__model-pick-menu {
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
     z-index: 3;
+    width: max-content;
     min-width: 100%;
-    max-height: 240px;
+    max-width: 280px;
+    max-height: 250px;
     border-radius: var(--radius-md);
     background: rgb(var(--color-surface) / 92%);
     border: 1px solid rgb(var(--color-border) / 30%);
@@ -309,14 +322,38 @@
   &__model-pick-menu-inner {
     display: flex;
     flex-direction: column;
-    padding: 3px;
+    padding: 2px;
+  }
+
+  /* One combat-role section: a hairline divider separates it from the hull
+     row / the section above, the caption heading its airframe rows. The
+     vertical rhythm is deliberately tight: a three-role carrier section plus
+     the hull row must fit the 250px menu cap without scrolling (the stage
+     clips at its own edge), so headings/rows give up a couple px each. */
+  &__model-pick-group {
+    display: flex;
+    flex-direction: column;
+    padding-top: 2px;
+    border-top: 1px solid rgb(var(--color-border) / 22%);
+  }
+
+  &__model-pick-group-label {
+    padding: 0.22rem 0.55rem 0.1rem;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: rgb(var(--color-muted) / 80%);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__model-pick-item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     width: 100%;
-    max-width: 220px;
-    padding: 0.24rem 0.55rem;
+    padding: 0.2rem 0.55rem;
     border: 0;
     border-radius: var(--radius-xs);
     background: transparent;
@@ -324,8 +361,6 @@
     color: rgb(var(--color-muted));
     text-align: left;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     cursor: pointer;
     transition: color 0.15s, background 0.15s;
 
@@ -335,6 +370,36 @@
     }
 
     &.is-active {
+      color: rgb(var(--color-primary));
+      background: rgb(var(--color-primary) / 14%);
+    }
+  }
+
+  /* The designation takes the remaining width and ellipsizes; the version
+     tag after it never shrinks — it is the row's whole second signal. */
+  &__model-pick-item-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Version tag: a tiny pill, neutral for the base airframe of a hull
+     configuration and primary-tinted for its upgraded variant (the same
+     tone language as the ship-detail name tags). */
+  &__model-pick-tag {
+    flex: none;
+    padding: 0.02rem 0.35rem;
+    border-radius: var(--radius-full);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-muted) / 12%);
+
+    &.is-variant {
       color: rgb(var(--color-primary));
       background: rgb(var(--color-primary) / 14%);
     }

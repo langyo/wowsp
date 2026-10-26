@@ -29,21 +29,19 @@ import { isMobileApp } from "@/utils/platform";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t, i18n } from "@/i18n";
 import type { ShipInfo } from "@/api";
+import {
+  groupPlaneModelOptions,
+  showsVersionTag,
+  type PlaneConfigRank,
+  type PlaneModelOption,
+} from "./shipSquadrons";
+import PlaneModelMenu from "./PlaneModelMenu";
 import "./ShipStage.scss";
 
 /** Armor-zone data fed from GameParams via the parent. */
 export interface ArmorZone {
   name: string;       /** "citadel", "mainBelt", "deck", "bow", "stern", … */
   thickness: number;  /** mm — 0 if unknown */
-}
-
-/** A carrier airframe the stage can swap in, fed from GameParams via the
- *  parent: `index` is the baked GLB stem under models/planes/, `label` the
- *  i18n'd combat role ("鱼雷机" / "AP轰炸机"), qualified when a ship fields
- *  two airframes of the same role. */
-export interface PlaneModelOption {
-  index: string;
-  label: string;
 }
 
 /**
@@ -1657,10 +1655,28 @@ export default defineComponent({
         });
     }
 
-    const currentModelLabel = computed(() => {
+    /** Staged picker value's readout — the trigger pill's label plus the
+     *  airframe's version tag (the hull carries none, and an airframe only
+     *  carries one when its picker section offers both versions). */
+    const currentModel = computed<{
+      label: string;
+      config: PlaneConfigRank | null;
+      showConfig: boolean;
+    }>(() => {
       const key = modelSelection.value;
-      if (key === "hull") return t("ships.detail.stage.hull");
-      return props.planeModels.find((p) => p.index === key)?.label ?? key;
+      if (key === "hull") {
+        return { label: t("ships.detail.stage.hull"), config: null, showConfig: false };
+      }
+      const staged = props.planeModels.find((p) => p.index === key);
+      if (!staged) return { label: key, config: null, showConfig: false };
+      const group = groupPlaneModelOptions(props.planeModels).find((g) =>
+        g.options.some((option) => option.index === key),
+      );
+      return {
+        label: staged.label,
+        config: staged.config,
+        showConfig: group != null && showsVersionTag(group, staged),
+      };
     });
 
     function onModelPickDocPointerDown(e: PointerEvent): void {
@@ -2184,37 +2200,26 @@ export default defineComponent({
                       onClick={() => { modelPickOpen.value = !modelPickOpen.value; }}
                     >
                       <Plane size={12} strokeWidth={2.2} />
-                      <span class="ship-stage__model-pick-label">{currentModelLabel.value}</span>
+                      <span class="ship-stage__model-pick-label">{currentModel.value.label}</span>
+                      {currentModel.value.showConfig && currentModel.value.config ? (
+                        <span
+                          class={["ship-stage__model-pick-tag", "is-" + currentModel.value.config].join(" ")}
+                        >
+                          {t(`ships.plane.cfg.${currentModel.value.config}`)}
+                        </span>
+                      ) : null}
                       <ChevronDown size={11} strokeWidth={2.2} />
                     </button>
                     {modelPickOpen.value ? (
                       /* Dropdown list scrolls through hikari's scroll
-                         container (overlay thumb, native bar hidden). */
+                         container (overlay thumb, native bar hidden); the
+                         airframes are grouped under their combat roles. */
                       <HkScrollContainer class="ship-stage__model-pick-menu">
-                        <div class="ship-stage__model-pick-menu-inner" role="listbox" aria-label={t("ships.detail.stage.modelPicker")}>
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={modelSelection.value === "hull"}
-                          class={["ship-stage__model-pick-item", modelSelection.value === "hull" ? "is-active" : ""].join(" ")}
-                          onClick={() => setModelSelection("hull")}
-                        >
-                          {t("ships.detail.stage.hull")}
-                        </button>
-                        {props.planeModels.map((p) => (
-                          <button
-                            type="button"
-                            role="option"
-                            key={p.index}
-                            aria-selected={modelSelection.value === p.index}
-                            class={["ship-stage__model-pick-item", modelSelection.value === p.index ? "is-active" : ""].join(" ")}
-                            title={p.label}
-                            onClick={() => setModelSelection(p.index)}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                        </div>
+                        <PlaneModelMenu
+                          options={props.planeModels}
+                          selected={modelSelection.value}
+                          onSelect={setModelSelection}
+                        />
                       </HkScrollContainer>
                     ) : null}
                   </div>

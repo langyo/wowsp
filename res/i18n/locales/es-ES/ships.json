@@ -740,9 +740,13 @@
     "scout": "Explorador",
     "asw": "Avión antisubmarino",
     "mine": "Avión minador",
+    "dive": "Avión de suministros",
+    "airship": "Dirigible",
+    "auxiliary": "Avión auxiliar",
+    "smoke": "Avión de humo",
     "cfg": {
-      "stock": "stock",
-      "top": "top"
+      "base": "Base",
+      "variant": "Variante"
     }
   }
 }
