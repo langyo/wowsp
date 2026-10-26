@@ -740,7 +740,9 @@ def gate_index(idx: dict, asset_names: set) -> tuple[int, int]:
     dropped = 0
     for slug in list(idx["mods"]):
         entry = idx["mods"][slug]
-        if entry.get("delisted") or entry.get("stale") or entry.get("bundled"):
+        entry_bundled = entry.get("bundled") or any(
+            v.get("bundled") for v in entry["versions"].values())
+        if entry.get("delisted") or entry.get("stale") or entry_bundled:
             continue
         dead_versions = []
         for vname, v in entry["versions"].items():
@@ -833,9 +835,21 @@ def build_and_upload_index(threads: list[dict], selection: dict | None, cache: P
     try:
         subprocess.run(["gh", "release", "upload", RELEASE_TAG, "--repo", REPO,
                         "--clobber", str(out)], check=True)
-        check = pub.fetch_binary(url, cache / "mod-index.verify.json").read_bytes()
-        if sha256_hex(check) != result["index_sha256"]:
-            raise RuntimeError("published mod-index.json does not read back byte-identical")
+        # Verify through the API-computed asset digest: the public download
+        # URL sits behind a CDN that serves stale bytes right after a
+        # clobber, so the byte readback here raced the edge cache and rolled
+        # back a perfectly good publish. Readback stays as the fallback for
+        # assets that carry no digest yet.
+        assets_now = release_assets()
+        digest = (assets_now.get("mod-index.json") or {}).get("digest", "")
+        if digest and digest != f"sha256:{result['index_sha256']}":
+            raise RuntimeError("published mod-index.json digest disagrees "
+                               "with the local bytes")
+        if not digest:
+            check = pub.fetch_binary(url, cache / "mod-index.verify.json").read_bytes()
+            if sha256_hex(check) != result["index_sha256"]:
+                raise RuntimeError("published mod-index.json does not read "
+                                   "back byte-identical")
         prev_count = len(json.loads(prev.decode("utf-8"))["mods"]) if prev else 0
         if prev_count and result["index_mods"] < prev_count * 0.9:
             raise RuntimeError(f"published index lost >10% of entries "
@@ -1475,6 +1489,12 @@ def selftest() -> None:
                                 "size_bytes": 128000})
     nb = rebuild_body(dep, None, "2", ">=15.9 <15.10", "", "v1")
     assert "shared runtime package" in nb and "pkg-729863db.zip" in nb
+
+    # version-level bundled entries survive the gate without packages
+    idx["mods"]["stats"] = {"id": "stats", "versions": {"1": {
+        "game": "*", "packages": [], "bundled": True, "presets": []}}}
+    gate_index(idx, {"ok.zip"})
+    assert "stats" in idx["mods"] and idx["mods"]["stats"]["versions"]
 
     print("selftest ok")
 
