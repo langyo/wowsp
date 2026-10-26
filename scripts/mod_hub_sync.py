@@ -243,6 +243,33 @@ def collect_selection(cache: Path) -> dict:
                 "packages": packages,
                 "total_kb": sum(p["size_kb"] for p in packages),
             })
+    # Shared runtime packages (<Implicit>): Aslain's manager installs these
+    # alongside every mod listed in their RequiresAny -- TTaroModUtils (the
+    # TTaro framework mods import it on their first line) and the ModForge
+    # blueprint engine (ForgeBlueprints-only mods are inert without it).
+    # WoWSP bundles them into each dependent's package list so an install is
+    # self-contained; the shared-copy uninstall edge is documented on the
+    # thread itself.
+    implicit: list[dict] = []
+    for imp in cfg.iter("Implicit"):
+        for pkg in imp.iter("Package"):
+            file_attr = pkg.attrib.get("File", "")
+            if not file_attr:
+                continue
+            name = posixpath.basename(file_attr.replace("\\", "/"))
+            implicit.append({
+                "url": pub.resolve_url(base_url, file_attr),
+                "name": name,
+                "size_kb": int(pkg.attrib.get("SizeKb", "0") or 0),
+                "order": 0,
+                "token": upstream_token(name),
+                "sha256": "",
+                "size_bytes": 0,
+                "asset": "",
+                "requires_any": [mid for mid
+                                 in (pkg.attrib.get("RequiresAny") or "").split("|")
+                                 if mid],
+            })
     mods.sort(key=lambda m: (m["category"], m["aslain_id"]))
     # Two Aslain ids mapping onto one slug would fight over a single thread;
     # keep the first and say so instead of corrupting the state.
@@ -260,6 +287,11 @@ def collect_selection(cache: Path) -> dict:
         deduped.append(m)
     print(f"upstream catalog {content_version} (game {game_version}, range {game}, bin {bin_max}): "
           f"{len(deduped)} mods, {sum(m['total_kb'] for m in deduped) / 1024:.1f} MB", flush=True)
+    bundled = bundle_implicit_packages(deduped, implicit)
+    if bundled:
+        print(f"bundled {bundled} shared-runtime package refs into "
+              f"{sum(1 for m in deduped if m.get('requires_runtime'))} dependents "
+              f"({len(implicit)} implicit packages)", flush=True)
     return {
         "content_version": content_version,
         "version": version,
@@ -270,6 +302,8 @@ def collect_selection(cache: Path) -> dict:
         "catalog_ids": catalog_ids,
         "disabled_ids": disabled_ids,
         "scope_ids": {m["aslain_id"] for m in deduped},
+        "implicit_packages": len(implicit),
+        "implicit_bundled": bundled,
         "duplicates": duplicates,
     }
 
@@ -332,6 +366,30 @@ def fetch_thread_state(repo: str) -> list[dict]:
     print(f"{len(out)} mod threads on Discussions "
           f"({sum(1 for t in out if t['closed'])} closed)", flush=True)
     return out
+
+
+def bundle_implicit_packages(mods: list[dict], implicit: list[dict]) -> int:
+    """Attach each <Implicit> shared-runtime package to every selected mod
+    listed in its RequiresAny (returns the number of package refs added).
+    Bundling is per-build: a package is skipped when the mod already carries
+    the same url or upstream token."""
+    by_mod: dict = {}
+    for pkg in implicit:
+        for mid in pkg["requires_any"]:
+            by_mod.setdefault(mid, []).append(pkg)
+    added = 0
+    for m in mods:
+        for pkg in by_mod.get(m["aslain_id"], []):
+            if any(p["url"] == pkg["url"] or (pkg["token"] and p["token"] == pkg["token"])
+                   for p in m["packages"]):
+                continue
+            clone = {k: pkg[k] for k in ("url", "name", "size_kb", "token",
+                                         "sha256", "size_bytes", "asset")}
+            clone["order"] = len(m["packages"])
+            m["packages"].append(clone)
+            m["requires_runtime"] = True
+            added += 1
+    return added
 
 
 # ---------------------------------------------------------------- classification
@@ -597,6 +655,15 @@ def rebuild_body(rec: dict, thread: dict | None, version: str, game: str,
     desc = (pub.DESC_I18N.get(slug) or {}).get("en-US") or rec["description"] or ""
     if desc:
         parts += [desc, ""]
+    if rec.get("requires_runtime"):
+        parts += [
+            "> ℹ️ 本条目自带运行所需的共享组件包（TTaro 公共组件 / ModForge 蓝图引擎等）——"
+            "多个插件共享同一份，若卸载其中一个插件后同类插件失效，重装任意一个即可恢复。 "
+            "/ This entry ships the shared runtime package it needs (the TTaro utilities, "
+            "the ModForge blueprint engine, ...). Several mods share one copy -- if a "
+            "sibling mod stops working after an uninstall, reinstall any of them.",
+            "",
+        ]
     if thread:
         pm = pub.PRESETS_BLOCK_SRC_RE.search(thread["body"])
         if pm:
@@ -995,6 +1062,8 @@ def build_report(mode: str, selection: dict, threads: list[dict], plan: dict,
             "packages": sum(len(m["packages"]) for m in selection["mods"]),
             "unique_tokens": len({p["token"] for m in selection["mods"]
                                   for p in m["packages"] if p["token"]}),
+            "implicit_packages": selection.get("implicit_packages", 0),
+            "implicit_bundled": selection.get("implicit_bundled", 0),
         },
         "counts": counts,
         "changed": changed_out,
@@ -1389,6 +1458,23 @@ def selftest() -> None:
                                            "changed": [], "stale": [], "pending": [],
                                            "new_published": [],
                                            "actions": {}, "warnings": []})
+
+    # shared-runtime bundling: RequiresAny attach + the visible runtime note
+    dep = rec("battle.timer.clock", "UI_Timers_BattleClock", ["8be69ddb"])
+    implicit = [{"url": "u-imp", "name": "Implicit_modforge_729863db.zip",
+                 "size_kb": 125, "order": 0, "token": "729863db", "sha256": "",
+                 "size_bytes": 0, "asset": "",
+                 "requires_any": ["UI_Timers_BattleClock", "UI_NotSelected"]}]
+    assert bundle_implicit_packages([dep], implicit) == 1
+    assert dep["requires_runtime"] is True
+    assert dep["packages"][-1]["token"] == "729863db"
+    assert bundle_implicit_packages([dep], implicit) == 0  # re-bundling: no-op
+    dep["packages"][0].update({"asset": "pkg-8be69ddb.zip", "sha256": "d" * 64,
+                               "size_bytes": 2048})
+    dep["packages"][-1].update({"asset": "pkg-729863db.zip", "sha256": "e" * 64,
+                                "size_bytes": 128000})
+    nb = rebuild_body(dep, None, "2", ">=15.9 <15.10", "", "v1")
+    assert "shared runtime package" in nb and "pkg-729863db.zip" in nb
 
     print("selftest ok")
 
