@@ -596,8 +596,21 @@ app digest job of `release.yml`.
   ModForge blueprint engine) are bundled into every `RequiresAny` dependent's
   package list, so installs are self-contained; several mods share one copy,
   and the thread says so (if a sibling mod stops working after an uninstall,
-  reinstall any of them). Package-level `Requires`/`UnpackTo` verbs and the
-  full package dependency graph remain unhandled (roadmap).
+  reinstall any of them). Package-level `Requires`/`RequiresAny` attributes
+  are Aslain's conditional-variant selectors ("install the part matching your
+  other choices"); WoWSP ships every package of an entry, as it always has, so
+  they are deliberately not modeled. `UnpackTo`/`Preserve` need no modeling
+  either: the installer already carries zip-root native libraries (the
+  `gettext_x64r.dll` class) to the game root as `@game/...` drops.
+
+#### Per-entry sync policies
+
+`scripts/mod_hub_sync_policies.json` maps catalog slugs to a policy the sync
+honors on every run: `"auto"` (default — full sync), `"manual"` (selected,
+but upstream changes are held out of the publish and listed in the report
+until the policy flips back to auto), and `"skip"` (removed from the catalog;
+threads of skipped entries are never stale-marked). Absent means auto, so
+nothing changes without a deliberate registry edit.
 
 #### Reporting
 

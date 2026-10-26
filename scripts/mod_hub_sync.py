@@ -102,6 +102,16 @@ THREAD_UPDATE_SLEEP = 1.0   # content-generating secondary limit: 80/min
 UPLOAD_BATCH = 20
 DOWNLOAD_WORKERS = 4
 
+# Per-entry sync policies (scripts/mod_hub_sync_policies.json): "auto"
+# (default, full sync), "manual" (selected, but upstream changes are held
+# out of the publish until the policy flips back) and "skip" (removed from
+# the catalog; threads of skipped entries are never stale-marked).
+_POLICIES_PATH = Path(__file__).with_name("mod_hub_sync_policies.json")
+POLICY_BY_SLUG: dict = (
+    json.loads(_POLICIES_PATH.read_text(encoding="utf-8")).get("policies", {})
+    if _POLICIES_PATH.exists() else {}
+)
+
 
 # --------------------------------------------------------------------------- utils
 
@@ -292,16 +302,25 @@ def collect_selection(cache: Path) -> dict:
         print(f"bundled {bundled} shared-runtime package refs into "
               f"{sum(1 for m in deduped if m.get('requires_runtime'))} dependents "
               f"({len(implicit)} implicit packages)", flush=True)
+    kept, manual_ids, skipped_ids = apply_policies(deduped)
+    if skipped_ids:
+        print(f"policy skip: {len(skipped_ids)} entries excluded from the catalog",
+              flush=True)
+    if manual_ids:
+        print(f"policy manual: {len(manual_ids)} entries held for manual approval",
+              flush=True)
     return {
         "content_version": content_version,
         "version": version,
         "game_version": game_version,
         "game": game,
         "bin_max": bin_max,
-        "mods": deduped,
+        "mods": kept,
         "catalog_ids": catalog_ids,
         "disabled_ids": disabled_ids,
-        "scope_ids": {m["aslain_id"] for m in deduped},
+        "scope_ids": {m["aslain_id"] for m in kept},
+        "policy_skipped_ids": skipped_ids,
+        "policy_manual_ids": manual_ids,
         "implicit_packages": len(implicit),
         "implicit_bundled": bundled,
         "duplicates": duplicates,
@@ -392,6 +411,28 @@ def bundle_implicit_packages(mods: list[dict], implicit: list[dict]) -> int:
     return added
 
 
+def apply_policies(mods: list[dict], policies: dict | None = None):
+    """Split selection entries by their sync policy (default "auto").
+    Returns (kept, manual_ids, skipped_ids): kept entries join the normal
+    flow, manual ids are frozen at apply time, skipped ids leave the
+    catalog entirely and their threads are never stale-marked."""
+    table = POLICY_BY_SLUG if policies is None else policies
+    kept: list[dict] = []
+    manual: list[str] = []
+    skipped: list[str] = []
+    for m in mods:
+        pol = table.get(m["id"], "auto")
+        m["policy"] = pol
+        if pol == "skip":
+            skipped.append(m["aslain_id"])
+        elif pol == "manual":
+            manual.append(m["id"])
+            kept.append(m)
+        else:
+            kept.append(m)
+    return kept, manual, skipped
+
+
 # ---------------------------------------------------------------- classification
 
 
@@ -465,6 +506,8 @@ def classify(selection: dict, threads: list[dict]) -> dict:
     for t in threads:
         if t["slug"] in managed or not t["aslain_ids"]:
             continue
+        if any(aid in selection.get("policy_skipped_ids", ()) for aid in t["aslain_ids"]):
+            continue  # policy skip is a deliberate freeze, never a stale mark
         reason = None
         for aid in t["aslain_ids"]:
             if aid in selection["disabled_ids"]:
@@ -942,7 +985,8 @@ def render_summary(report: dict) -> str:
             f"- unchanged {counts.get('unchanged', 0)} · changed {counts.get('changed', 0)} · "
             f"new {counts.get('new', 0)} · pending curation {counts.get('pending', 0)} · "
             f"stale {counts.get('stale', 0)} · hand-published {counts.get('hand', 0)} · "
-            f"closed-managed {counts.get('closed_managed', 0)} (kept fresh, never reopened)")
+            f"closed-managed {counts.get('closed_managed', 0)} (kept fresh, never reopened) · "
+            f"held by policy {counts.get('held_manual', 0)}")
     if actions:
         lines.append(
             f"- actions: {actions.get('assets_uploaded', 0)} assets uploaded, "
@@ -971,6 +1015,11 @@ def render_summary(report: dict) -> str:
         lines += ["", "### Published new entries", ""]
         for p in report["new_published"]:
             lines.append(f"- `{p['slug']}` -> #{p['number']}")
+    if report.get("held_manual"):
+        lines += ["", "### Held by sync policy (manual approval required)", ""]
+        for slug in report["held_manual"]:
+            lines.append(f"- `{slug}`")
+        lines += ["", "Flip the slug's policy in scripts/mod_hub_sync_policies.json to auto, then re-run."]
     if report.get("warnings"):
         lines += ["", "### Warnings", ""]
         for w in report["warnings"]:
@@ -1118,7 +1167,14 @@ def run_apply(args) -> int:
     selection = collect_selection(cache)
     threads = fetch_thread_state(args.repo)
     plan = classify(selection, threads)
+    held_manual = [e for e in plan["changed"] if e["record"].get("policy") == "manual"]
+    plan["changed"] = [e for e in plan["changed"] if e["record"].get("policy") != "manual"]
+    held_new = [e for e in plan["new"] if e["record"].get("policy") == "manual"]
+    plan["new"] = [e for e in plan["new"] if e["record"].get("policy") != "manual"]
     report = build_report("apply", selection, threads, plan, started, args.dry_run)
+    report["held_manual"] = [e["record"]["id"] for e in held_manual] + \
+        [e["record"]["id"] for e in held_new]
+    report["counts"]["held_manual"] = len(held_manual) + len(held_new)
     cv = selection["content_version"]
     if plan["new"] and not args.include_new:
         report["warnings"].append(
@@ -1495,6 +1551,22 @@ def selftest() -> None:
         "game": "*", "packages": [], "bundled": True, "presets": []}}}
     gate_index(idx, {"ok.zip"})
     assert "stats" in idx["mods"] and idx["mods"]["stats"]["versions"]
+
+    # sync policies: split + stale exemption for skipped ids
+    m_auto = rec("battle.panel.same", "UI_A", ["aa11bb22"])
+    m_man = rec("ui.achievement.held", "UI_Held", ["bb22cc33"])
+    m_skip = rec("battle.panel.gone", "UI_Skip", ["cc33dd44"])
+    kept, manual_ids, skipped_ids = apply_policies(
+        [m_auto, m_man, m_skip],
+        {"ui.achievement.held": "manual", "battle.panel.gone": "skip"})
+    assert [m["id"] for m in kept] == ["battle.panel.same", "ui.achievement.held"]
+    assert manual_ids == ["ui.achievement.held"] and skipped_ids == ["UI_Skip"]
+    assert m_auto["policy"] == "auto" and m_man["policy"] == "manual"
+    sel_p = dict(selection)
+    sel_p["mods"] = [m_auto]
+    sel_p["scope_ids"] = {"UI_A"}
+    sel_p["policy_skipped_ids"] = {"Markers_Orphan"}
+    assert classify(sel_p, [thread("legacy.orphan", "Markers_Orphan", ["old-asset.zip"])])["stale"] == []
 
     print("selftest ok")
 

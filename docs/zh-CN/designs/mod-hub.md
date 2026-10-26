@@ -333,7 +333,17 @@ job 模式。
 - 共享运行时包（Aslain 的 `<Implicit>` 块——TTaroModUtils、ModForge 蓝图引擎）
   会并进每个 `RequiresAny` 依赖条目的包列表，安装即自包含；多个插件共享同一份，
   帖子里有说明（卸载某个插件后同类插件失效，重装任意一个即可恢复）。包级
-  `Requires`/`UnpackTo` 动词与完整包依赖图仍未处理（路线图）。
+  `Requires`/`RequiresAny` 是 Aslain 的条件变体选择器（按你勾选的其他插件
+  安装对应分包）；WoWSP 与过去一样发布条目的全部分包，因此刻意不建模。
+  `UnpackTo`/`Preserve` 同样无需建模：安装器已会把 zip 根目录的原生库
+  （`gettext_x64r.dll` 这一类）作为 `@game/...` 落点搬进游戏根目录。
+
+#### 按条目同步策略
+
+`scripts/mod_hub_sync_policies.json` 把目录 slug 映射到每次同步都会遵守的
+策略：`"auto"`（默认——完整同步）、`"manual"`（条目保持选中，但上游变更被
+扣下不发布、仅在报告中列出，直到策略改回 auto）、`"skip"`（从目录移除；被
+跳过条目的帖子永远不会被标记失效）。缺省即 auto——不改登记表就什么都不变。
 
 #### 报告
 
