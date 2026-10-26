@@ -198,6 +198,17 @@
   "bot": "ボット",
   "botNote": "AI プレイヤー — 戦績履歴なし",
   "live": {
+    "build": {
+      "title": "本戦のビルド",
+      "sourceReplay": "リプレイ解析",
+      "sourceProbe": "プラグイン（リアルタイム）",
+      "skills": "艦長スキル",
+      "upgrades": "アップグレード",
+      "signals": "信号旗",
+      "consumables": "消耗品",
+      "points": "{used}/21 pt",
+      "retraining": "艦長再訓練中"
+    },
     "title": "進行中の戦闘",
     "notStarted": "新しい戦闘はまだ開始されていません",
     "idleTitle": "ライブ対戦は待機中",

@@ -1833,6 +1833,8 @@ fn ally_build_filter_drops_enemy_unknown_and_ambiguous_joins() {
         entry(300, 2), // enemy
         entry(400, 1), // mirror pick — ally side...
         entry(400, 2), // ...and enemy side: join is ambiguous
+        entry(500, 1), // two teammates on the SAME hull...
+        entry(500, 1), // ...both allies: build kept, attribution ambiguous
     ];
     let builds = vec![
         build(1, 100),
@@ -1840,15 +1842,20 @@ fn ally_build_filter_drops_enemy_unknown_and_ambiguous_joins() {
         build(3, 300),
         build(4, 400),
         build(5, 999), // joins no roster entry
+        build(6, 500),
     ];
     let allies = super::streams::ally_builds_for(&builds, &roster);
     assert_eq!(
         allies.iter().map(|b| b.entity_id).collect::<Vec<_>>(),
-        vec![1, 2],
+        vec![1, 2, 6],
         "only self + teammate builds reach IPC"
     );
     assert_eq!(allies[0].ship_params_id, 100);
     assert_eq!(allies[0].learned_skills[3], [12, 18]);
+    // Unique ally ship -> named; shared ally hull -> anonymous but present.
+    assert_eq!(allies[0].name.as_deref(), Some("p100"));
+    assert_eq!(allies[1].name.as_deref(), Some("p200"));
+    assert_eq!(allies[2].name, None);
 }
 
 /// Corpus check: on the real reference capture the IPC exit carries only

@@ -75,6 +75,8 @@ import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
+import { useLiveBuildsStore } from "@/stores/liveBuilds";
+import { useLiveSelfStore } from "@/stores/liveSelf";
 import { useOverlayConfigStore } from "@/stores/overlayConfig";
 import { SETTINGS_ANCHOR_CALIBRATION_LIST, useSettingsUiStore } from "@/stores/settingsUi";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -83,6 +85,7 @@ import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/
 import { displayMapName } from "@/utils/mapNames";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
+import { playerBuildView, type PlayerBuildView } from "./playerBuild";
 import LiveStatLine from "./LiveStatLine";
 import LiveStatsModeChip from "./LiveStatsModeChip";
 import MapNameTag from "./MapNameTag";
@@ -192,6 +195,76 @@ export default defineComponent({
     const gameRoot = computed(
       () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
     );
+
+    // ── Decoded ally builds (the hover card's loadout grid) ──────────────
+    // Two sources live behind one store: the live temp-replay snapshot this
+    // panel asks for itself (the self panel's poll only runs on the 我的 tab)
+    // and — in a later wave — the in-game probe's event. Enemy builds do not
+    // exist on the IPC surface, and buildViewFor() below never hands a view
+    // to an enemy row.
+    const liveSelfFeed = useLiveSelfStore();
+    const liveBuilds = useLiveBuildsStore();
+    const battleStamp = computed(() => props.arena?.dateTime ?? null);
+    let buildsRetry: number | null = null;
+    watch(
+      battleStamp,
+      (stamp) => {
+        liveBuilds.beginBattle(stamp);
+        liveSelfFeed.setArena(props.arena ?? null);
+        if (buildsRetry !== null) {
+          clearInterval(buildsRetry);
+          buildsRetry = null;
+        }
+        if (!stamp) return;
+        // One decode per battle is enough (loadouts are static): retry slowly
+        // only until the set lands, then stop — the game has first claim on
+        // the CPU (same rule as the self panel's poll). The retry is BOUNDED:
+        // a client whose version the decoder does not cover (or one that never
+        // writes a temp replay) yields nothing all battle, and a
+        // seconds-scale decode every 10 s for the whole match would tax the
+        // game; the loadout lands within seconds on supported versions, so
+        // ~90 s of attempts is ample.
+        const stopRetry = () => {
+          if (buildsRetry !== null) {
+            clearInterval(buildsRetry);
+            buildsRetry = null;
+          }
+        };
+        let attempts = 0;
+        const attempt = () => {
+          if (liveSelfFeed.allyBuilds.length > 0 || ++attempts > 9) {
+            stopRetry();
+            return;
+          }
+          void liveSelfFeed.refreshBuilds();
+        };
+        attempt();
+        if (attempts <= 9) buildsRetry = window.setInterval(attempt, 10_000);
+      },
+      { immediate: true },
+    );
+    watch(
+      () => liveSelfFeed.allyBuilds,
+      (builds) => {
+        const stamp = liveSelfFeed.allyBuildsBattle;
+        if (stamp && builds.length > 0) liveBuilds.applyReplayBuilds(stamp, builds);
+      },
+      { immediate: true },
+    );
+
+    /** Hover-card loadout for one roster row: ally human rows only (enemy and
+     *  AI rows never receive a build), null when no build joined the row. */
+    const buildViewFor = (v: VehicleEntry): PlayerBuildView | null => {
+      if (v.relation > 1 || isAiName(v.name)) return null;
+      const hit = liveBuilds.lookup(v.name, v.shipId);
+      if (!hit) return null;
+      const shipType = v.shipId != null ? shipOfflineEntry(v.shipId)?.type ?? null : null;
+      return playerBuildView(hit.build, {
+        dataLanguage: dataLanguage.value,
+        shipType,
+        source: hit.source,
+      });
+    };
     // Backfill ships the offline bake predates: on every roster (or game
     // root) change, probe the unknown shipIds against the client's own
     // GameParams. Fire-and-forget — the resolver dedupes, attempts once per
@@ -604,6 +677,10 @@ export default defineComponent({
       })) as (() => void) | null;
     });
     onBeforeUnmount(() => {
+      if (buildsRetry !== null) {
+        clearInterval(buildsRetry);
+        buildsRetry = null;
+      }
       unlistenStatus?.();
       unlistenStatus = null;
       unlistenDiag?.();
@@ -1547,7 +1624,11 @@ export default defineComponent({
                 ally rows additionally carry the consumable/module/flag
                 summary. Enemies get parameters only — and operations have
                 no enemies at all. */}
-            <LiveShipMeta shipId={v.shipId} ally={v.relation <= 1} />
+            <LiveShipMeta
+              shipId={v.shipId}
+              ally={v.relation <= 1}
+              build={buildViewFor(v)}
+            />
             {/* The primary seal's host: the stampstack span PINS grid track
                 3 (auto-placement would slide the seal into the elastic
                 middle track whenever the meta strip renders nothing). The

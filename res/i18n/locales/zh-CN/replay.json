@@ -198,6 +198,17 @@
   "bot": "机器人",
   "botNote": "AI 玩家，无历史战绩",
   "live": {
+    "build": {
+      "title": "本局配装",
+      "sourceReplay": "录像解析",
+      "sourceProbe": "插件实时",
+      "skills": "舰长技能",
+      "upgrades": "升级品",
+      "signals": "信号旗",
+      "consumables": "消耗品",
+      "points": "{used}/21 点",
+      "retraining": "舰长重训中"
+    },
     "title": "实时对局",
     "notStarted": "尚未开始新的对局",
     "idleTitle": "实时录像待命中",

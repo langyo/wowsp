@@ -16,6 +16,9 @@
 
 /** Card body width (set as fixed inline style); the height is content-driven. */
 export const LIVE_CARD_WIDTH_PX = 360;
+/** Wider body when the card carries the player-build section (four grids need
+ *  the extra room); the same measure-then-place pass handles the rest. */
+export const LIVE_CARD_BUILD_WIDTH_PX = 460;
 /** Gap kept between the card and the anchor strip. */
 export const LIVE_CARD_GAP_PX = 8;
 /** Viewport clamp margin, same contract as the global tooltip popup. */

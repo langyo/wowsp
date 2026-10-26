@@ -12,10 +12,11 @@
  * signal-flag capacity as compact badges.
  *
  * Hovering the strip floats a condensed ship card (teleported to <body>,
- * fixed position): the ship's spec groups, nothing else. Loadouts are NOT
- * listed for either side — per-player fits do not exist in the battle data
- * (neither GameParams nor the WG API exposes them), and a speculative
- * "could have" list reads as filler.
+ * fixed position): the player's decoded loadout (the PlayerBuildGrid section,
+ * ally rows only — the IPC surface never carries enemy builds) followed by
+ * the ship's spec groups. A row whose build has not been decoded yet (or a
+ * client version the build decoder does not cover) keeps the spec-only card,
+ * exactly as before.
  *
  * Renders nothing when no database knows the ship: the baked offline DBs
  * first, then the runtime GameParams registrations — a runtime entry
@@ -46,7 +47,13 @@ import {
   shipTypeShort,
   tierRoman,
 } from "./shipLiveStats";
-import { LIVE_CARD_WIDTH_PX, placeLiveCard } from "./liveCardPlacement";
+import {
+  LIVE_CARD_BUILD_WIDTH_PX,
+  LIVE_CARD_WIDTH_PX,
+  placeLiveCard,
+} from "./liveCardPlacement";
+import PlayerBuildGrid from "./PlayerBuildGrid";
+import { playerBuildHasContent, type PlayerBuildView } from "./playerBuild";
 import "./LiveShipMeta.scss";
 
 /** Consumable families worth a row badge, in slot order. */
@@ -76,6 +83,9 @@ export default defineComponent({
     /** Ally rows (relation ≤ 1) additionally carry the consumable/module/
      *  flag summary badges; enemy rows carry identity + parameters only. */
     ally: { type: Boolean, default: false },
+    /** The player's decoded loadout view (playerBuild.ts), ally rows only.
+     *  Null keeps the card spec-only and its original width. */
+    build: { type: Object as () => PlayerBuildView | null, default: null },
   },
   setup(props) {
     const { dataLanguage } = useLanguage();
@@ -109,6 +119,16 @@ export default defineComponent({
     const upgrades = computed(() => stats.value?.upg ?? []);
     const flagCap = computed(() => stats.value?.flags ?? null);
 
+    // ── Decoded player build (ally rows only) ─────────────────────────────
+    // The grid renders only when the decode carried a loadout; an empty or
+    // partial build keeps the card exactly as it was (spec-only).
+    const showBuild = computed(() => playerBuildHasContent(props.build));
+    /** Card body width — the four build grids need more room than the spec
+     *  card (the measure-then-place pass re-wraps either way). */
+    const cardWidth = computed(() =>
+      showBuild.value ? LIVE_CARD_BUILD_WIDTH_PX : LIVE_CARD_WIDTH_PX,
+    );
+
     // ── Flyout card ────────────────────────────────────────────────────────
     const flyoutOpen = ref(false);
     const flyoutPos = ref<CSSProperties>({});
@@ -140,7 +160,7 @@ export default defineComponent({
           flyoutPos.value = {
             left: "0px",
             top: "0px",
-            width: `${LIVE_CARD_WIDTH_PX}px`,
+            width: cardWidth.value + "px",
             visibility: "hidden",
           };
           flyoutOpen.value = true;
@@ -158,7 +178,7 @@ export default defineComponent({
           flyoutPos.value = {
             left: `${Math.round(left)}px`,
             top: `${Math.round(top)}px`,
-            width: `${LIVE_CARD_WIDTH_PX}px`,
+            width: cardWidth.value + "px",
             visibility: "visible",
           };
         });
@@ -213,7 +233,12 @@ export default defineComponent({
     );
 
     return () => {
-      if (!entry.value || (!chips.value.length && !tier.value)) return null;
+      // A decoded build alone is enough to render the hover target (a
+      // runtime-registered hull can miss the offline identity strip); without
+      // a build the original "nothing known" skip stands.
+      if (!showBuild.value && (!entry.value || (!chips.value.length && !tier.value))) {
+        return null;
+      }
 
       const identity = (
         <span class="live-ship-meta__id">
@@ -301,6 +326,8 @@ export default defineComponent({
                 ) : null}
               </div>
 
+              {showBuild.value && props.build ? <PlayerBuildGrid view={props.build} /> : null}
+
               {specGroups.value.length ? (
                 <div class="live-ship-card__groups">
                   {specGroups.value.map(([group, rows]) => (
@@ -334,6 +361,11 @@ export default defineComponent({
           {/* One clipping line: identity + the leading parameter chips. The
               badges ride a second line below (ally rows only). */}
           <span class="live-ship-meta__row">
+            {!entry.value && showBuild.value ? (
+              <span class="live-ship-meta__badge live-ship-meta__badge--build">
+                {t("replay.live.build.title")}
+              </span>
+            ) : null}
             {identity}
             {chipEls.length ? (
               <span class="live-ship-meta__chips">{chipEls}</span>

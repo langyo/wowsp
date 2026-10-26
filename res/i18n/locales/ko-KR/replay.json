@@ -198,6 +198,17 @@
   "bot": "봇",
   "botNote": "AI 플레이어 — 전적 기록 없음",
   "live": {
+    "build": {
+      "title": "전투 빌드",
+      "sourceReplay": "리플레이 분석",
+      "sourceProbe": "플러그인 실시간",
+      "skills": "함장 스킬",
+      "upgrades": "업그레이드",
+      "signals": "신호기",
+      "consumables": "소모품",
+      "points": "{used}/21 pt",
+      "retraining": "함장 재훈련 중"
+    },
     "title": "실시간 전투",
     "notStarted": "아직 새 전투가 시작되지 않았습니다",
     "idleTitle": "실시간 기록 대기 중",
