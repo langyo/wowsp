@@ -1,4 +1,4 @@
-import { computed, defineComponent, onMounted, onUnmounted, ref, watch, type CSSProperties } from "vue";
+import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type CSSProperties } from "vue";
 import { Copy, Eye, EyeOff, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
@@ -1786,7 +1786,12 @@ export default defineComponent({
           replay.vehicles,
           stream.arenaPlayers,
         );
-        trajectories.value = stream.trajectories;
+        // markRaw: the decoded timelines are immutable bulk data (~46k
+        //  position samples per 20-min match) — every hot-path reader
+        //  (sampleAt, hpAtTime, the painters) was paying a reactive-proxy
+        //  toll per property read. Consumers only ever react to the ARRAY
+        //  being replaced, which the ref still tracks.
+        trajectories.value = markRaw(stream.trajectories);
         recorderVehicleId.value = stream.recorderVehicleId ?? null;
         shellLaunches.value = stream.shellLaunches ?? [];
         explosions.value = stream.explosions ?? [];

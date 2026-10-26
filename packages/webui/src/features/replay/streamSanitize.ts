@@ -32,11 +32,12 @@ function finiteHp(s: HpSample | null | undefined): s is HpSample {
 }
 
 /** Keep the ORIGINAL array when nothing was dropped — the streams are large
- *  and the clean case is the norm, so the filter must not copy per open. */
+ *  and the clean case is the norm, so the pass must not copy per open: a
+ *  zero-allocation scan first, filter only when it actually finds dirt. */
 function cleanHp(list: HpSample[] | null | undefined): HpSample[] | undefined {
   if (list == null) return undefined;
-  const kept = list.filter(finiteHp);
-  return kept.length === list.length ? list : kept;
+  for (const s of list) if (!finiteHp(s)) return list.filter(finiteHp);
+  return list;
 }
 
 /** Normalize one trajectory in place; returns false when the entry itself is
@@ -46,8 +47,14 @@ function cleanTrajectory(tr: EntityTrajectory | null | undefined): tr is EntityT
   // A malformed payload could carry a non-array `samples` — every consumer
   // indexes it, so coerce to the empty timeline rather than trust the shape.
   if (Array.isArray(tr.samples)) {
-    const kept = tr.samples.filter(finitePos);
-    if (kept.length !== tr.samples.length) tr.samples = kept;
+    let dirty = false;
+    for (const s of tr.samples) {
+      if (!finitePos(s)) {
+        dirty = true;
+        break;
+      }
+    }
+    if (dirty) tr.samples = tr.samples.filter(finitePos);
   } else {
     tr.samples = [];
   }
@@ -58,10 +65,23 @@ function cleanTrajectory(tr: EntityTrajectory | null | undefined): tr is EntityT
 }
 
 /** Drop degenerate entries from a freshly decoded stream, in place. Call
- *  once at the apply() boundary — before any reactive consumer reads it. */
+ *  once at the apply() boundary — before any reactive consumer reads it.
+ *  Same zero-allocation rule as the per-array helpers: the top-level filter
+ *  only runs when some entry actually failed. */
 export function sanitizeReplayStream(stream: ReplayStream): void {
   if (Array.isArray(stream.trajectories)) {
-    stream.trajectories = stream.trajectories.filter(cleanTrajectory);
+    let dirty = false;
+    for (const tr of stream.trajectories) {
+      if (!cleanTrajectory(tr)) {
+        dirty = true;
+        break;
+      }
+    }
+    if (dirty) {
+      // Re-run every entry: the early break above skipped normalisation of
+      // the tail, and the filter needs the predicate's side effects too.
+      stream.trajectories = stream.trajectories.filter(cleanTrajectory);
+    }
   } else {
     stream.trajectories = [];
   }
