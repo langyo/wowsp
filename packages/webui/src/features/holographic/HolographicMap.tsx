@@ -118,6 +118,7 @@ for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
  *  read the same tables. */
 
 import { useStatsStore } from "@/stores/stats";
+import { useBlacklistStore } from "@/stores/blacklist";
 import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
 import TacticalBoard from "./tactical/TacticalBoard";
 import {
@@ -831,6 +832,7 @@ export default defineComponent({
     const nameStats = ref<Map<string, RosterStat>>(new Map());
     const nameStatsLoading = ref(false);
     let nameStatsLoadedFor = "";
+    const blacklist = useBlacklistStore();
     function ensureRosterStats(): void {
       if (nameStatsLoadedFor === props.replayPath) return;
       const names = [...new Set(props.vehicles.map((v) => v.name))].filter(
@@ -848,6 +850,17 @@ export default defineComponent({
           if (nameStatsLoadedFor === path) nameStatsLoading.value = false;
         });
     }
+    /** The blacklist dot rides the same resolution: a synced snapshot arms
+     *  the batch eagerly so the dots light up without a hover. Blacklist
+     *  users pay one roster batch per replay; everyone else keeps the lazy
+     *  behavior untouched. */
+    watch(
+      () => blacklist.snapshot?.entries.length ?? 0,
+      (count) => {
+        if (count > 0) ensureRosterStats();
+      },
+      { immediate: true },
+    );
     /** Strip-icon hover tooltip: which roster player, anchored to which
      *  slot element. Stays mounted a beat after both icon and card are
      *  left so the pointer can travel between them. */
@@ -1724,7 +1737,11 @@ export default defineComponent({
         />
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ── */}
         <div class={["holo-map__labels", showLabels.value ? "" : "holo-map__labels--hidden"]} aria-hidden="true">
-          {shipLabels.value.map((lbl) => (
+          {shipLabels.value.map((lbl) => {
+            // Blacklist matching keys on the RESOLVED account id + realm
+            // (rename-proof; unresolved names never light the dot).
+            const st = nameStats.value.get(lbl.name);
+            return (
             <HoloLabel
               key={lbl.entityId}
               deadText={i18nT("replay.legend.dead")}
@@ -1751,9 +1768,11 @@ export default defineComponent({
                 visible: lbl.visible,
                 selected: selectedEntityId.value === lbl.entityId,
                 tone: lbl.tone,
+                blacklisted: blacklist.isBlocked(st?.realm, st?.accountId),
               }}
             />
-          ))}
+            );
+          })}
           {/* Below-hull combat status rows (close-range only — the gate
               lives in labelOverlay's projection pass). */}
           {shipLabels.value.map((lbl) =>

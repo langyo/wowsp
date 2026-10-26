@@ -26,6 +26,10 @@ export interface HoloLabelData {
   ghostText?: string | null;
   visible?: boolean;
   selected?: boolean;
+  /** Blacklist hit (黑名单同步): a yellow bead at the ship icon's
+   *  bottom-right corner. Optional and default-off — hosts that never set
+   *  it (the marketing sandbox) render exactly as before. */
+  blacklisted?: boolean;
   /** OSD auto-contrast ink tone (the host samples the rendered backdrop
    *  under the label and flips this). Undefined → theme-driven ink. */
   tone?: "light" | "dark" | null;
@@ -116,6 +120,7 @@ export default defineComponent({
           ) : null}
           {l.shipName ? (
             <span class="holo-label__ship">
+              {l.blacklisted ? <span class="holo-label__bl" /> : null}
               {icon.src.value ? (
                 <img
                   class="holo-label__icon"

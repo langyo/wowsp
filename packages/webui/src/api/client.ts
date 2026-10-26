@@ -8,6 +8,7 @@
  * `@/api/client` importers see the exact same surface as before the split.
  */
 import { shellApi } from "./modules/shell";
+import { blacklistApi } from "./modules/blacklist";
 import { gameApi } from "./modules/game";
 import { replayApi } from "./modules/replay";
 import { statsApi } from "./modules/stats";
@@ -18,6 +19,7 @@ import { contributionApi } from "./modules/contribution";
 import { decisionApi } from "./modules/decision";
 
 export * from "./modules/shell";
+export * from "./modules/blacklist";
 export * from "./modules/game";
 export * from "./modules/replay";
 export * from "./modules/stats";
@@ -30,6 +32,7 @@ export * from "./modules/decision";
 export const api = {
   ...decisionApi,
   ...shellApi,
+  ...blacklistApi,
   ...gameApi,
   ...replayApi,
   ...statsApi,

@@ -12,6 +12,7 @@ import StatsSection from "@/components/settings/sections/StatsSection";
 import GamePathSection from "@/components/settings/sections/GamePathSection";
 import AccountSection from "@/components/settings/sections/AccountSection";
 import NetworkSection from "@/components/settings/sections/NetworkSection";
+import BlacklistSyncSection from "@/components/settings/sections/BlacklistSyncSection";
 import PairingSection from "@/components/settings/sections/PairingSection";
 import UpdatesSection from "@/components/settings/sections/UpdatesSection";
 import ResourcesSection from "@/components/settings/sections/ResourcesSection";
@@ -80,6 +81,7 @@ export default defineComponent({
           gamePath: () => <GamePathSection ctx={ctx} />,
           account: () => <AccountSection />,
           network: () => <NetworkSection ctx={ctx} />,
+          blacklistSync: () => <BlacklistSyncSection ctx={ctx} />,
           pairing: () => <PairingSection ctx={ctx} />,
           updates: () => <UpdatesSection ctx={ctx} />,
           resources: () => <ResourcesSection ctx={ctx} />,

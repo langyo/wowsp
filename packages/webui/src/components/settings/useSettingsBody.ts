@@ -21,6 +21,7 @@ import {
   Smartphone,
   Upload,
   UserRound,
+  UserX,
 } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -174,6 +175,7 @@ export function useSettingsBody(props: { active: boolean }) {
     gamePath: FolderCog,
     account: UserRound,
     network: Globe,
+    blacklistSync: UserX,
     pairing: Smartphone,
     updates: RefreshCw,
     resources: Database,
@@ -193,6 +195,7 @@ export function useSettingsBody(props: { active: boolean }) {
     gamePath: t("settings.gamePath"),
     account: t("settings.account"),
     network: t("settings.network"),
+    blacklistSync: t("settings.blacklistSync"),
     pairing: mobileApp ? t("settings.pairingMobile") : t("settings.pairing"),
     updates: t("settings.updates"),
     resources: t("settings.resourcesPage"),

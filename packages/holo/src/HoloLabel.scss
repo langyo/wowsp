@@ -175,3 +175,22 @@
 
   &--self { border-color: #374151; }
 }
+
+/* Blacklist hit bead (黑名单同步): a small yellow dot pinned to the ship
+   icon's bottom-right corner — the host passes blacklisted on the label
+   data; nothing renders for hosts that leave it off. */
+.holo-label__ship {
+  position: relative;
+}
+
+.holo-label__bl {
+  position: absolute;
+  left: 8px;
+  bottom: -1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffd400;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+}

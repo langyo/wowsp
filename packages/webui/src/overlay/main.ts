@@ -957,6 +957,51 @@ function statFaceSparse(name: string): boolean {
  *  visible at all (every number toggle off, no seals landed yet) still
  *  returns the EMPTY STRING — the render loop skips the row instead of
  *  painting an empty chip pill. */
+// ── Blacklist markers (黑名单同步) ── the synced snapshot per realm,
+// fetched once through the same bare invoke the stamps use. A row whose
+// stats resolved on a realm whose snapshot is still loading renders the dot
+// on the NEXT pass (the same late-arrival pattern as the stamps' images).
+const blacklistByRealm = new Map<string, Set<number>>();
+const blacklistLoading = new Set<string>();
+
+function ensureBlacklist(realm: string): void {
+  if (blacklistLoading.has(realm)) return;
+  blacklistLoading.add(realm);
+  if (!tauri) {
+    // Browser dev (no Tauri runtime): no snapshot — no dots, no fetches.
+    blacklistByRealm.set(realm, new Set());
+    return;
+  }
+  void (async () => {
+    try {
+      const snap = (await tauri.core.invoke("blacklist_snapshot", { realm })) as {
+        entries: Array<{ accountId: number }>;
+      } | null;
+      blacklistByRealm.set(
+        realm,
+        new Set((snap?.entries ?? []).map((entry) => entry.accountId)),
+      );
+      render();
+    } catch {
+      blacklistByRealm.set(realm, new Set());
+    }
+  })();
+}
+
+/** The row's blacklist dot — keyed on the RESOLVED account id + realm (the
+ *  ghost-proof identity the stats batch brings), never the raw nickname. */
+function blacklistDot(name: string): string {
+  if (AI_NAME.test(name)) return "";
+  const st = stats.get(cacheKey(name));
+  if (!st?.accountId || !st.realm) return "";
+  const set = blacklistByRealm.get(st.realm);
+  if (!set) {
+    ensureBlacklist(st.realm);
+    return "";
+  }
+  return set.has(st.accountId) ? '<span class="overlay-chip__bl"></span>' : "";
+}
+
 function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): string {
   const stat = statFace(name, side);
   const seals = sealNodes(name);
@@ -970,7 +1015,7 @@ function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): str
     if (!stat && !seals) return "";
     return side === "ally" ? seals + cell : cell + seals;
   }
-  const label = `<span class="overlay-chip__name">${displayNameOf(name)}</span>`;
+  const label = `<span class="overlay-chip__name">${displayNameOf(name)}${blacklistDot(name)}</span>`;
   return side === "ally" ? seals + label + cell : cell + label + seals;
 }
 

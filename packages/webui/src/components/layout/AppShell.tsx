@@ -27,6 +27,7 @@ import { useCloseBehaviorStore } from "@/stores/closeBehavior";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { usePluginPromptStore } from "@/stores/pluginPrompt";
 import { useDuplicateInstallStore } from "@/stores/duplicateInstall";
+import { useBlacklistStore, SUPPORTED_BLACKLIST_REALMS, type BlacklistRealm } from "@/stores/blacklist";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { peekLastRunVersion } from "@/utils/lastRunVersion";
@@ -95,6 +96,7 @@ export default defineComponent({
     const ingamePlugin = useIngamePluginStore();
     const pluginPrompt = usePluginPromptStore();
     const dupInstall = useDuplicateInstallStore();
+  const blacklist = useBlacklistStore();
     const route = useRoute();
     const router = useRouter();
     // Phone LAYOUT (viewport width — NOT the phone-app platform gate):
@@ -244,6 +246,32 @@ export default defineComponent({
       // gates). The updater PASSES themselves stay desktop-only as documented
       // in UpdateToast.tsx; this probe merely resolves the build flavor.
       void updater.probePortable();
+      // Blacklist sync boot (黑名单同步): arm the bound realm from the
+      // detected install, then let the store decide whether a pull is due
+      // (logged in + enabled + stale past the interval). Best-effort — the
+      // settings section is the real control surface, this only keeps the
+      // snapshot fresh enough for the battle markers to be meaningful.
+      void (async () => {
+        try {
+          const installs = await api.detectGameInstall();
+          const installRealm = installs.find((entry) => entry.realm)?.realm ?? null;
+          if (
+            installRealm &&
+            (SUPPORTED_BLACKLIST_REALMS as readonly string[]).includes(installRealm)
+          ) {
+            await blacklist.ensureRealm(installRealm as BlacklistRealm);
+            await blacklist.autoSyncIfDue();
+          }
+        } catch {
+          // boot sync is strictly optional — a failure just means the
+          // settings page drives the next pull.
+        }
+      })();
+      const blacklistSyncTimer = setInterval(
+        () => void blacklist.autoSyncIfDue(),
+        30 * 60 * 1000,
+      );
+      onBeforeUnmount(() => clearInterval(blacklistSyncTimer));
       // Production builds feel like a desktop app: no WebView2 context menu
       // on right-click. Editable elements keep the native menu (paste etc.),
       // and dev mode keeps everything for debugging.
