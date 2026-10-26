@@ -2006,7 +2006,9 @@ fn mod_hub_real_samples_classify() {
             continue;
         }
         let path_string = path.to_string_lossy().into_owned();
-        super::pick_source::grant_source_path(&path_string);
+        // Manual harness: a failed grant surfaces through the classify
+        // error below, so the Result itself is deliberately dropped.
+        let _ = super::pick_source::grant_source_path(&path_string);
         match classify_path(&path_string) {
             Ok(plan) => {
                 println!(
