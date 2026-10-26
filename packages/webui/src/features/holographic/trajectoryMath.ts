@@ -76,15 +76,14 @@ export function angleDiff(a: number, b: number): number {
   return d;
 }
 
-/** Find the last HP value at or before time t. */
+/** Find the last HP value at or before time t. Binary search: called per
+ *  ship by the marker refresh, the roster rows and the self-stats strip —
+ *  the linear scan used to walk ~800 samples × 24 ships per refresh.
+ *  Requires ascending `time` (the decoder appends chronologically and the
+ *  dark-death inference inserts its anchor at the front). */
 export function hpAtTime(samples: HpSample[] | undefined, t: number): number | null {
   if (!samples || samples.length === 0) return null;
-  let last: number = samples[0].value;
-  for (const s of samples) {
-    if (s.time > t) break;
-    last = s.value;
-  }
-  return last;
+  return samples[samplesUpTo(samples, t) - 1]?.value ?? samples[0].value;
 }
 
 /** Capture progress (0..1000) at time t from the game's own stream.
@@ -96,10 +95,5 @@ export function hpAtTime(samples: HpSample[] | undefined, t: number): number | n
 export function progressAtTime(samples: HpSample[] | undefined, t: number): number | null {
   if (!samples || samples.length === 0) return null;
   if (t < samples[0].time) return 0;
-  let v = samples[0].value;
-  for (const s of samples) {
-    if (s.time <= t) v = s.value;
-    else break;
-  }
-  return v;
+  return samples[samplesUpTo(samples, t) - 1]?.value ?? 0;
 }

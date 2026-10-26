@@ -1431,11 +1431,21 @@ export default defineComponent({
         return;
       }
       ctrl.enabled = false;
-      let frame = frames[frames.length - 1];
-      for (const f of frames) {
-        if (f.time > t) break;
-        frame = f;
+      // Binary search (a 20-min match carries ~11.5k camera frames; the
+      // linear scan walked all of them every rendered frame late-game).
+      // Picks the last frame at or before t. NOTE: before the FIRST frame's
+      // time this now clamps to frames[0] — the old scan's frames[last]
+      // initializer made a pre-start playhead jump to the end-of-match
+      // pose, which was never intended (that initializer was only reachable
+      // pre-start; t past the end still clamps to the final frame).
+      let lo = 0;
+      let hi = frames.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (frames[mid].time <= t) lo = mid;
+        else hi = mid - 1;
       }
+      const frame = frames[lo];
       // Scene z is mirrored (z' = -z), so the camera z mirrors too.
       cam.position.set(frame.x, frame.y, -frame.z);
       cam.quaternion.set(frame.rotX, frame.rotY, frame.rotZ, frame.rotW);
@@ -1579,13 +1589,12 @@ export default defineComponent({
           return;
         }
         recomputeBoundsAndCamera();
-        rebuildActors(ctx);
+        scheduleRebuild();
         // One-shot deep-link seek: ?t=<seconds> jumps playback on load.
         if (props.initialTime > 0 && current.value === 0) {
           current.value = Math.min(props.initialTime, duration.value);
           hudCurrent.value = current.value;
         }
-        updateMarkersAt(ctx, current.value);
       },
       { deep: false },
     );
@@ -1593,24 +1602,33 @@ export default defineComponent({
     // Rebuild when the roster arrives/changes (team roles + shipId resolution)
     // or when the encyclopedia finishes loading (enables tier-based fallback
     // models). Both are needed because they resolve independently of the
-    // trajectory stream.
+    // trajectory stream. A replay open fires several of these watchers in
+    // quick succession (trajectories + roster + encyclopedia + scene-ready)
+    // and each rebuildActors disposed and re-created the whole actor set —
+    // coalesce them into ONE rebuild per microtask instead.
+    let rebuildScheduled = false;
+    let mapTornDown = false;
+    function scheduleRebuild(): void {
+      if (rebuildScheduled || mapTornDown) return;
+      rebuildScheduled = true;
+      void Promise.resolve().then(() => {
+        rebuildScheduled = false;
+        if (mapTornDown || !ready.value || props.trajectories.length === 0) return;
+        rebuildActors(ctx);
+        updateMarkersAt(ctx, current.value);
+      });
+    }
     watch(
       () => props.vehicles,
       () => {
-        if (ready.value) {
-          rebuildActors(ctx);
-          updateMarkersAt(ctx, current.value);
-        }
+        if (ready.value) scheduleRebuild();
       },
       { deep: false },
     );
     watch(
       () => props.encyclopedia.size,
       (s) => {
-        if (ready.value && s > 0) {
-          rebuildActors(ctx);
-          updateMarkersAt(ctx, current.value);
-        }
+        if (ready.value && s > 0) scheduleRebuild();
       },
       { immediate: true },
     );
@@ -1683,6 +1701,7 @@ export default defineComponent({
     });
 
     onBeforeUnmount(() => {
+      mapTornDown = true;
       endFreeLook();
       if (tipHideTimer != null) {
         window.clearTimeout(tipHideTimer);

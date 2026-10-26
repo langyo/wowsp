@@ -19,22 +19,35 @@ import * as THREE from "three";
 
 import { loadGlbModel } from "./modelLoader";
 
-const glbCache = new Map<string, THREE.Group>();
+const glbCache = new Map<string, Promise<THREE.Group>>();
 
-async function loadShared(url: string): Promise<THREE.Group> {
-  let g = glbCache.get(url);
-  if (!g) {
-    g = await loadGlbModel(url);
-    g.traverse((child) => {
-      const mesh = child as THREE.Mesh;
-      if (mesh.geometry?.attributes.position) {
-        mesh.geometry.computeBoundingBox();
-        mesh.geometry.computeBoundingSphere();
-      }
+/** Shared decode with in-flight dedup: a match start fires ~220 shell-trace
+ *  swaps (plus one per torpedo) at once, and a result-only cache made every
+ *  concurrent call miss and re-fetch + re-parse the SAME two prop GLBs.
+ *  Caching the PROMISE collapses them into one load; failures are dropped
+ *  from the cache so a later caller can retry. */
+function loadShared(url: string): Promise<THREE.Group> {
+  const pending = glbCache.get(url);
+  if (pending) return pending;
+  const load = loadGlbModel(url)
+    .then((g) => {
+      g.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.geometry?.attributes.position) {
+          mesh.geometry.computeBoundingBox();
+          mesh.geometry.computeBoundingSphere();
+        }
+      });
+      return g;
+    })
+    .catch((e) => {
+      // Evict only OUR entry: a post-clear reload may already have installed
+      // a newer promise for the same URL by the time this one rejects.
+      if (glbCache.get(url) === load) glbCache.delete(url);
+      throw e;
     });
-    glbCache.set(url, g);
-  }
-  return g;
+  glbCache.set(url, load);
+  return load;
 }
 
 export interface BuildPropOpts {
@@ -92,13 +105,19 @@ export async function buildPropMarker(opts: BuildPropOpts): Promise<THREE.Group>
 /** Release the shared prop cache (call when leaving the replay view). */
 export function clearPropMarkerCache(): void {
   for (const group of glbCache.values()) {
-    group.traverse((o) => {
-      const mesh = o as THREE.Mesh;
-      mesh.geometry?.dispose();
-      const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-      if (!mat) return;
-      for (const m of Array.isArray(mat) ? mat : [mat]) m.dispose();
-    });
+    void group
+      .then((g) => {
+        g.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          mesh.geometry?.dispose();
+          const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+          if (!mat) return;
+          for (const m of Array.isArray(mat) ? mat : [mat]) m.dispose();
+        });
+      })
+      .catch(() => {
+        /* failed loads hold nothing */
+      });
   }
   glbCache.clear();
 }
