@@ -1,0 +1,135 @@
+{
+  "_comment": "Hand-curated display-name overrides for the map-catalog extraction (consumed by extract_map_names.py; priority: this file > game catalogs > prettified space id). Covers the Lesta-exclusive spaces the catalogs leave Russian-only or entirely unnamed — every other locale is translated by hand so no server language ever falls back to a raw space id. Keys: space id -> {langLoc: name}; keys starting with _ are documentation. Keep zh-CN and zh-SG identical (no per-server official translation exists).",
+  "e05_April_2019_Estuary": {
+    "zh-CN": "凯旋",
+    "zh-SG": "凯旋",
+    "zh-TW": "凱旋",
+    "en-US": "Triumph",
+    "ja-JP": "凱旋",
+    "ko-KR": "개선",
+    "ru-RU": "Триумф",
+    "fr-FR": "Triomphe",
+    "es-ES": "Triunfo"
+  },
+  "e06_April_2019_Naval_Mission": {
+    "zh-CN": "炼狱",
+    "zh-SG": "炼狱",
+    "zh-TW": "煉獄",
+    "en-US": "Purgatory",
+    "ja-JP": "煉獄",
+    "ko-KR": "연옥",
+    "ru-RU": "Чистилище",
+    "fr-FR": "Purgatoire",
+    "es-ES": "Purgatorio"
+  },
+  "e07_April_2019_Path_Warrior": {
+    "zh-CN": "冲突升级",
+    "zh-SG": "冲突升级",
+    "zh-TW": "衝突升級",
+    "en-US": "Escalation",
+    "ja-JP": "エスカレーション",
+    "ko-KR": "확전",
+    "ru-RU": "Эскалация",
+    "fr-FR": "Escalade",
+    "es-ES": "Escalada"
+  },
+  "e13_Trials_MapPrime": {
+    "zh-CN": "试炼基地",
+    "zh-SG": "试炼基地",
+    "zh-TW": "試煉基地",
+    "en-US": "Proving Grounds",
+    "ja-JP": "試験基地",
+    "ko-KR": "시험 기지",
+    "ru-RU": "Испытательная база",
+    "fr-FR": "Base d'essais",
+    "es-ES": "Base de pruebas"
+  },
+  "e15_2025_WaffenTrager": {
+    "zh-CN": "格里姆斯比群岛",
+    "zh-SG": "格里姆斯比群岛",
+    "zh-TW": "格里姆斯比群島",
+    "en-US": "Grimsby Islands",
+    "ja-JP": "グリムスビー諸島",
+    "ko-KR": "그림스비 제도",
+    "ru-RU": "Острова Гримсби",
+    "fr-FR": "Îles de Grimsby",
+    "es-ES": "Islas de Grimsby"
+  },
+  "e17_2026_Lukomorye": {
+    "zh-CN": "布扬岛",
+    "zh-SG": "布扬岛",
+    "zh-TW": "布揚島",
+    "en-US": "Buyan Island",
+    "ja-JP": "ブヤン島",
+    "ko-KR": "부얀섬",
+    "ru-RU": "Остров Буян",
+    "fr-FR": "Île de Bouïan",
+    "es-ES": "Isla de Buyán"
+  },
+  "56_Kamchatka": {
+    "zh-CN": "堪察加",
+    "zh-SG": "堪察加",
+    "zh-TW": "堪察加",
+    "en-US": "Kamchatka",
+    "ja-JP": "カムチャツカ",
+    "ko-KR": "캄차카",
+    "ru-RU": "Камчатка",
+    "fr-FR": "Kamtchatka",
+    "es-ES": "Kamchatka"
+  },
+  "57_AOTS": {
+    "zh-CN": "最后的港湾",
+    "zh-SG": "最后的港湾",
+    "zh-TW": "最後的港灣",
+    "en-US": "The Last Harbor",
+    "ja-JP": "最後の港",
+    "ko-KR": "마지막 항구",
+    "ru-RU": "Последняя гавань",
+    "fr-FR": "Le dernier havre",
+    "es-ES": "El último puerto"
+  },
+  "58_Waterfall_roar": {
+    "zh-CN": "怒瀑轰鸣",
+    "zh-SG": "怒瀑轰鸣",
+    "zh-TW": "怒瀑轟鳴",
+    "en-US": "Roar of the Waterfall",
+    "ja-JP": "滝の咆哮",
+    "ko-KR": "폭포의 포효",
+    "ru-RU": "Рёв водопада",
+    "fr-FR": "Le rugissement de la cascade",
+    "es-ES": "El rugido de la cascada"
+  },
+  "61_Rhodes": {
+    "zh-CN": "疏离之海",
+    "zh-SG": "疏离之海",
+    "zh-TW": "疏離之海",
+    "en-US": "Sea of Estrangement",
+    "ja-JP": "乖離の海",
+    "ko-KR": "소외의 바다",
+    "ru-RU": "Море отчуждения",
+    "fr-FR": "La mer de l'aliénation",
+    "es-ES": "El mar de la extrañeza"
+  },
+  "as03_NewYear_2025": {
+    "zh-CN": "新年客厅",
+    "zh-SG": "新年客厅",
+    "zh-TW": "新年客廳",
+    "en-US": "New Year Lounge",
+    "ja-JP": "ニューイヤーラウンジ",
+    "ko-KR": "새해 라운지",
+    "ru-RU": "Новогодняя гостиная",
+    "fr-FR": "Salon du Nouvel An",
+    "es-ES": "Salón de Año Nuevo"
+  },
+  "as_09_may_2025": {
+    "zh-CN": "胜利日2025",
+    "zh-SG": "胜利日2025",
+    "zh-TW": "勝利日2025",
+    "en-US": "Victory Day 2025",
+    "ja-JP": "戦勝記念日2025",
+    "ko-KR": "전승기념일 2025",
+    "ru-RU": "День Победы 2025",
+    "fr-FR": "Jour de la Victoire 2025",
+    "es-ES": "Día de la Victoria 2025"
+  }
+}
