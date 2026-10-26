@@ -206,11 +206,10 @@ jobs:
         run: |
           set -euo pipefail
           title="Mod Hub sync failed -- the catalog needs a look"
-          num="$(gh issue list --search "in:title $title" --state open --json number --jq '.[0].number')"
-          body="The Mod Hub Sync workflow failed. Safety notes: assets and threads may be ahead of the index (safe -- the old catalog stays servable), and a failed index publish rolls back to the previous bytes automatically. Re-run via Actions (Mod Hub Sync, mode=apply) or locally with python scripts/mod_hub_sync.py apply.
-          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if [ -n "$num" ] && [ "$num" != "null" ]; then
-            gh issue comment "$num" --body "$body"
-          else
-            gh issue create --title "$title" --body "$body"
+          bodyfile="$D(mktemp)"
+          cat > "$Dbodyfile" <<EOF
+          The Mod Hub Sync workflow failed. Safety notes: assets and threads may be ahead of the index (safe -- the old catalog stays servable), and a failed index publish rolls back to the previous bytes automatically. Re-run via Actions (Mod Hub Sync, mode=apply) or locally with python scripts/mod_hub_sync.py apply.
+          Run: ${{ github.server_url }}/$D{{ github.repository }}/actions/runs/$D{{ github.run_id }}
+          EOF
+          python3 scripts/mod_hub_sync.py issue --title "$Dtitle" --body-file "$Dbodyfile"
           fi
