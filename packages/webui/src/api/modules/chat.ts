@@ -1,7 +1,8 @@
 /** Chat-translation domain of the WoWSP API client: the provider config
  *  (chat-translate.toml, see commands/chat_translate/), the sanitized
- *  read/write pair the settings section drives, and the provider
- *  connectivity test. Composed into `api` by client.ts.
+ *  read/write pair the settings section drives, the provider connectivity
+ *  test and the end-to-end try-translation probe. Composed into `api` by
+ *  client.ts.
  *
  *  Secret discipline: the shell NEVER returns the API key — the public
  *  config's `provider.apiKey` is always "" and the state lives in the
@@ -178,6 +179,30 @@ export interface ProviderTestResult {
   error: string | null;
 }
 
+/** How one debug-translation line was produced: a real model translation, a
+ *  passthrough (the text was already the target language) or an
+ *  untranslatable verdict (symbols/numbers only). Matches the shell's
+ *  `TranslationSource` projection in debug_translate_text. */
+export type DebugTranslationSource = "model" | "passthrough" | "untranslatable";
+
+/** One target language's line in the try-translation result. */
+export interface DebugTranslation {
+  /** Target language tag (BCP 47, shell-validated). */
+  lang: string;
+  /** Translated text; "" for an untranslatable line. */
+  text: string;
+  source: DebugTranslationSource;
+}
+
+/** `debug_translate_text` result: the detected source language (when the
+ *  model reported one), one entry per target language, and the round-trip
+ *  latency. */
+export interface DebugTranslateResult {
+  detected: string | null;
+  translations: DebugTranslation[];
+  elapsedMs: number;
+}
+
 export const chatTranslateApi = {
   getChatTranslateConfig: () =>
     transport.invoke<ChatTranslateConfigResponse>(RPC.get_chat_translate_config),
@@ -187,4 +212,14 @@ export const chatTranslateApi = {
     }),
   testChatTranslateProvider: () =>
     transport.invoke<ProviderTestResult>(RPC.test_chat_translate_provider),
+  /** Run one line through the real translation pipeline (detect → prompt →
+   *  provider → repair/validate) with an empty match context. `targets`
+   *  empty = the shell resolves the configured `always` list, then "en".
+   *  Rejects with the shell's user-facing error text (disabled feature,
+   *  missing key, provider failure). */
+  debugTranslateText: (text: string, targets: string[] = []) =>
+    transport.invoke<DebugTranslateResult>(RPC.debug_translate_text, {
+      text,
+      targets,
+    }),
 };

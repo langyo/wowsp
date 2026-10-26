@@ -461,6 +461,16 @@
     "suffixPerSegment": "逐语言",
     "suffixUnified": "合并一条",
     "splitChars": "超过此字符数则拆分消息",
-    "hintTimeout": "粘贴提示保留（秒）"
+    "hintTimeout": "粘贴提示保留（秒）",
+    "tryTitle": "试翻译",
+    "tryLabel": "要翻译的文本",
+    "tryBtn": "翻译",
+    "tryRunning": "翻译中…",
+    "tryResult": "结果 · {lang}",
+    "tryEmpty": "没有返回任何可翻译的内容，试试更长的句子。",
+    "trySourceModel": "模型",
+    "trySourcePassthrough": "已是目标语言",
+    "trySourceUntranslatable": "不可翻译",
+    "tryNeedKey": "请先开启聊天翻译并配置 API 密钥。"
   }
 }

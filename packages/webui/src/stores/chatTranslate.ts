@@ -14,6 +14,11 @@
  * The shell sanitizes every value (clamps, unknown enum healing, known-
  * language filtering), so the store applies the RESPONSE as the truth and
  * treats its own draft as disposable.
+ *
+ * The try-translation probe (`debugTranslate`) is the section's one
+ * end-to-end check: it runs a typed line through the shell's real pipeline
+ * and keeps the last result/error so the card can render them. The text
+ * itself stays in the component (a draft input, not settings state).
  */
 import { defineStore } from "pinia";
 import { ref } from "vue";
@@ -26,6 +31,9 @@ import type {
   ChatTranslateLanguagesConfig,
   ChatTranslateProviderConfig,
   ChatTranslateSendConfig,
+  DebugTranslateResult,
+  DebugTranslation,
+  DebugTranslationSource,
   ProviderTestResult,
 } from "@/api/modules/chat";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
@@ -125,6 +133,46 @@ function normalizeConfig(raw: unknown): ChatTranslateConfigPublic {
   };
 }
 
+/** The three debug sources, mirrored from the shell's projection. Unknown
+ *  values from a newer shell degrade to "model" (a translated line is the
+ *  common case and the label stays truthful enough for a debug row). */
+function normalizeDebugSource(raw: unknown): DebugTranslationSource {
+  return raw === "passthrough" || raw === "untranslatable" ? raw : "model";
+}
+
+/** Tolerant read of the shell's try-translation result: a malformed answer
+ *  can only ever drop rows, never crash the card. */
+function normalizeDebugResult(raw: unknown): DebugTranslateResult {
+  if (raw === null || typeof raw !== "object") {
+    return { detected: null, translations: [], elapsedMs: 0 };
+  }
+  const r = raw as {
+    detected?: unknown;
+    translations?: unknown;
+    elapsedMs?: unknown;
+  };
+  const translations: DebugTranslation[] = Array.isArray(r.translations)
+    ? r.translations
+        .filter(
+          (entry): entry is { lang: string; text: unknown; source: unknown } =>
+            entry !== null &&
+            typeof entry === "object" &&
+            typeof (entry as { lang?: unknown }).lang === "string",
+        )
+        .map((entry) => ({
+          lang: entry.lang,
+          text: typeof entry.text === "string" ? entry.text : "",
+          source: normalizeDebugSource(entry.source),
+        }))
+    : [];
+  return {
+    detected: typeof r.detected === "string" && r.detected !== "" ? r.detected : null,
+    translations,
+    elapsedMs:
+      typeof r.elapsedMs === "number" && Number.isFinite(r.elapsedMs) ? r.elapsedMs : 0,
+  };
+}
+
 export const useChatTranslateStore = defineStore("chatTranslate", () => {
   const config = ref<ChatTranslateConfigPublic>(defaultConfig());
   /** A key is stored on disk (the value itself never leaves the shell). */
@@ -135,6 +183,13 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
   const testing = ref(false);
   /** Last connectivity-test result; null until the first run. */
   const testResult = ref<ProviderTestResult | null>(null);
+  /** Try-translation probe is in flight. */
+  const debugging = ref(false);
+  /** Last try-translation result; null until the first run (or after a
+   *  failure, which lands in `debugError`). */
+  const debugResult = ref<DebugTranslateResult | null>(null);
+  /** User-facing error text from the last try-translation failure. */
+  const debugError = ref<string | null>(null);
   let pendingLoad: Promise<void> | null = null;
   let pendingSave = Promise.resolve();
   let saveSequence = 0;
@@ -271,6 +326,34 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
     }
   }
 
+  /** Run one line through the shell's real translation pipeline. The
+   *  pending save is flushed first, so the probe uses exactly the provider
+   *  settings the card shows. Any failure (feature disabled, no key,
+   *  provider error) lands in `debugError` as user-facing text. */
+  async function debugTranslate(text: string, targets: string[] = []): Promise<void> {
+    const trimmed = text.trim();
+    if (trimmed === "") return;
+    // Re-entry guard, armed SYNCHRONOUSLY before the first await: the card's
+    // Enter path bypasses the button's disabled state, and a guard checked
+    // after `await load()` would still let a second press slip through the
+    // micro-task gap (the first finisher then clears `debugging` early and
+    // the result becomes last-completion-wins).
+    if (debugging.value) return;
+    debugging.value = true;
+    debugResult.value = null;
+    debugError.value = null;
+    try {
+      await load();
+      await pendingSave;
+      const result = await chatTranslateApi.debugTranslateText(trimmed, targets);
+      debugResult.value = normalizeDebugResult(result);
+    } catch (error) {
+      debugError.value = error instanceof Error ? error.message : String(error);
+    } finally {
+      debugging.value = false;
+    }
+  }
+
   return {
     config,
     apiKeySet,
@@ -278,6 +361,9 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
     loaded,
     testing,
     testResult,
+    debugging,
+    debugResult,
+    debugError,
     load,
     setEnabled,
     acceptConsent,
@@ -285,5 +371,6 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
     setLanguages,
     setSend,
     testProvider,
+    debugTranslate,
   };
 });

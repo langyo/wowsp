@@ -461,6 +461,16 @@
     "suffixPerSegment": "언어별",
     "suffixUnified": "하나로 합침",
     "splitChars": "이 글자 수를 넘으면 메시지 분할",
-    "hintTimeout": "붙여넣기 힌트 유지(초)"
+    "hintTimeout": "붙여넣기 힌트 유지(초)",
+    "tryTitle": "번역 시험",
+    "tryLabel": "번역할 텍스트",
+    "tryBtn": "번역",
+    "tryRunning": "번역 중…",
+    "tryResult": "결과 · {lang}",
+    "tryEmpty": "번역할 수 있는 내용이 반환되지 않았습니다. 더 긴 문장을 시도하세요.",
+    "trySourceModel": "모델",
+    "trySourcePassthrough": "이미 해당 언어",
+    "trySourceUntranslatable": "번역 불가",
+    "tryNeedKey": "먼저 채팅 번역을 켜고 API 키를 저장하세요."
   }
 }

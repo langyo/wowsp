@@ -461,6 +461,16 @@
     "suffixPerSegment": "言語ごと",
     "suffixUnified": "1 つにまとめる",
     "splitChars": "この文字数を超えたらメッセージを分割",
-    "hintTimeout": "貼り付けヒントの表示（秒）"
+    "hintTimeout": "貼り付けヒントの表示（秒）",
+    "tryTitle": "試し翻訳",
+    "tryLabel": "翻訳するテキスト",
+    "tryBtn": "翻訳",
+    "tryRunning": "翻訳中…",
+    "tryResult": "結果 · {lang}",
+    "tryEmpty": "翻訳できる内容が返されませんでした。長めの文を試してください。",
+    "trySourceModel": "モデル",
+    "trySourcePassthrough": "すでにその言語です",
+    "trySourceUntranslatable": "翻訳不可",
+    "tryNeedKey": "先にチャット翻訳を有効にし、API キーを保存してください。"
   }
 }

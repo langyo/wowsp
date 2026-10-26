@@ -27,6 +27,7 @@ import { t } from "@/i18n";
 import {
   SUPPORTED_TRANSLATE_LANGS,
   TRANSLATE_LANG_LABELS,
+  type DebugTranslationSource,
   type TranslateLang,
 } from "@/api/modules/chat";
 import { useChatTranslateStore } from "@/stores/chatTranslate";
@@ -144,6 +145,38 @@ export default defineComponent({
             ms: result.latencyMs,
           })
         : t("settings.chatTranslate.testOk", { ms: result.latencyMs });
+    }
+
+    // ── try-translation probe ────────────────────────────────────────────
+    // The typed line runs through the shell's real pipeline (detection →
+    // prompt → provider → validation) with an empty match context; the
+    // result lists one row per target language plus the detected source
+    // language. The draft stays LOCAL: it is a probe input, not settings.
+    const debugDraft = ref("");
+
+    function runDebugTranslate() {
+      void store.debugTranslate(debugDraft.value);
+    }
+
+    /** The source badge's copy for one result row. */
+    function debugSourceLabel(source: DebugTranslationSource): string {
+      switch (source) {
+        case "passthrough":
+          return t("settings.chatTranslate.trySourcePassthrough");
+        case "untranslatable":
+          return t("settings.chatTranslate.trySourceUntranslatable");
+        default:
+          return t("settings.chatTranslate.trySourceModel");
+      }
+    }
+
+    /** Result header: the detected source language when the model reported
+     *  one, otherwise a neutral dash placeholder. Resolved in the render
+     *  pass like every other t() call so a locale switch re-renders it. */
+    function debugResultTitle(): string | null {
+      const result = store.debugResult;
+      if (!result) return null;
+      return t("settings.chatTranslate.tryResult", { lang: result.detected ?? "—" });
     }
 
     // ── language card ────────────────────────────────────────────────────
@@ -342,6 +375,62 @@ export default defineComponent({
               </HkButton>
               {testLine() ? <HkSettingsHint>{testLine()}</HkSettingsHint> : null}
             </div>
+
+            {/* Try-translation probe — the end-to-end check: one line goes
+                through detection/prompt/provider/validation with an empty
+                match context, one result row per target language plus the
+                source badge. The shell refuses while the feature is off or
+                no key is stored (explicit error copy); the button is
+                disabled with the same reason here so the card explains it
+                up front. */}
+            <HkSettingsHint>{t("settings.chatTranslate.tryTitle")}</HkSettingsHint>
+            <div class="settings-modal__netmanual">
+              <div class="settings-modal__netinput">
+                <HkInput
+                  modelValue={debugDraft.value}
+                  onUpdate:modelValue={(v: string) => (debugDraft.value = v)}
+                  placeholder={t("settings.chatTranslate.tryLabel")}
+                  submitOnEnter={runDebugTranslate}
+                />
+              </div>
+              <HkButton
+                size="sm"
+                variant="ghost"
+                disabled={store.debugging || !store.config.enabled || !store.apiKeySet}
+                onClick={runDebugTranslate}
+              >
+                {store.debugging
+                  ? t("settings.chatTranslate.tryRunning")
+                  : t("settings.chatTranslate.tryBtn")}
+              </HkButton>
+            </div>
+            {!store.config.enabled || !store.apiKeySet ? (
+              <HkSettingsHint>{t("settings.chatTranslate.tryNeedKey")}</HkSettingsHint>
+            ) : null}
+            {debugResultTitle() ? (
+              <HkSettingsHint>{debugResultTitle()}</HkSettingsHint>
+            ) : null}
+            {store.debugResult && store.debugResult.translations.length === 0 ? (
+              <HkSettingsHint>{t("settings.chatTranslate.tryEmpty")}</HkSettingsHint>
+            ) : null}
+            {store.debugResult && store.debugResult.translations.length > 0 ? (
+              <div class="settings-modal__langs">
+                {store.debugResult.translations.map((row) => (
+                  <div class="settings-modal__lang" key={row.lang} lang={row.lang}>
+                    <span class="settings-modal__netmanual">
+                      <span class="settings-modal__lang-label">{row.lang}</span>
+                      <HkTag variant="info" size="sm">
+                        {debugSourceLabel(row.source)}
+                      </HkTag>
+                    </span>
+                    <span>{row.text || "—"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {store.debugError ? (
+              <HkSettingsHint>{store.debugError}</HkSettingsHint>
+            ) : null}
           </HkSettingsSub>
 
           {/* ── languages ── */}

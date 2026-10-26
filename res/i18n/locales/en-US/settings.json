@@ -461,6 +461,16 @@
     "suffixPerSegment": "Per language",
     "suffixUnified": "One hint",
     "splitChars": "Split messages longer than (characters)",
-    "hintTimeout": "Paste hint stays (seconds)"
+    "hintTimeout": "Paste hint stays (seconds)",
+    "tryTitle": "Try a translation",
+    "tryLabel": "Text to translate",
+    "tryBtn": "Translate",
+    "tryRunning": "Translating…",
+    "tryResult": "Result · {lang}",
+    "tryEmpty": "No translatable text came back — try a longer sentence.",
+    "trySourceModel": "model",
+    "trySourcePassthrough": "already in that language",
+    "trySourceUntranslatable": "not translatable",
+    "tryNeedKey": "Enable chat translation and save an API key first."
   }
 }

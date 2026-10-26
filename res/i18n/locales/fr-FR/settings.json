@@ -461,6 +461,16 @@
     "suffixPerSegment": "Par langue",
     "suffixUnified": "Une seule mention",
     "splitChars": "Découper les messages de plus de (caractères)",
-    "hintTimeout": "Durée de l'indication de collage (s)"
+    "hintTimeout": "Durée de l'indication de collage (s)",
+    "tryTitle": "Tester une traduction",
+    "tryLabel": "Texte à traduire",
+    "tryBtn": "Traduire",
+    "tryRunning": "Traduction…",
+    "tryResult": "Résultat · {lang}",
+    "tryEmpty": "Aucun texte traduisible renvoyé — essayez une phrase plus longue.",
+    "trySourceModel": "modèle",
+    "trySourcePassthrough": "déjà dans cette langue",
+    "trySourceUntranslatable": "non traduisible",
+    "tryNeedKey": "Activez d'abord la traduction du chat et enregistrez une clé API."
   }
 }
