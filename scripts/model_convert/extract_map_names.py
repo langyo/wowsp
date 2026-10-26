@@ -13,6 +13,11 @@ game VFS, reads the translated names for the supported languages, and writes
 
 The frontend falls back to the prettified space id when a language is
 missing. Run `game-assets list` on the spaces root to discover the ids.
+
+Entries in `map_names_curated.json` override the catalogs (priority:
+curated > game texts > prettified id) — the Lesta-only spaces carry
+Russian-only catalog names, so their remaining locales are curated by
+hand and survive every future extraction pass.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from _common import find_game_assets, find_game_path  # noqa: E402
 from extract_ship_names import LANG_DIRS, latest_bin_dir, load_mo  # noqa: E402
 
 DEFAULT_OUT = REPO_ROOT / "packages" / "webui" / "src" / "data" / "map_names.json"
+CURATED_PATH = SCRIPT_DIR / "map_names_curated.json"
 
 
 def list_spaces(game: str, game_assets: Path) -> list[str]:
@@ -55,6 +61,11 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--game-dir", default=None)
+    ap.add_argument(
+        "--curated",
+        default=str(CURATED_PATH),
+        help="{ space id: { langLoc: name } } hand-curated overrides",
+    )
     ap.add_argument("--merge", action="store_true",
                     help="keep existing entries in --out untouched and only "
                          "add ids the current install carries that are "
@@ -113,6 +124,28 @@ def main() -> int:
               f"added {len(added)} new"
               + (f" ({', '.join(added[:8])}{'…' if len(added) > 8 else ''})"
                  if added else ""))
+
+    # Curated overrides win over everything this run extracted (both the
+    # fresh WG pass and the --merge Lesta pass — the merge deliberately
+    # keeps existing entries untouched, so the override lands on top).
+    curated_file = Path(args.curated)
+    curated: dict[str, dict[str, str]] = (
+        json.loads(curated_file.read_text(encoding="utf-8"))
+        if curated_file.exists() else {}
+    )
+    applied, absent = 0, []
+    for sid, names in curated.items():
+        if sid.startswith("_"):
+            continue
+        if sid not in db:
+            absent.append(sid)
+            continue
+        db[sid].update({code: name for code, name in names.items() if name})
+        applied += 1
+    print(f"[map-names] curated overrides: {applied} applied from "
+          f"{curated_file.name}"
+          + (f", {len(absent)} not in this install ({', '.join(absent)})"
+             if absent else ""))
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(

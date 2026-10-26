@@ -310,6 +310,13 @@ python scripts/model_convert/extract_map_names.py \
   --game-dir "D:/WoWS_Korabli" --merge   # Lesta: fill ids WG lacks, keep WG names
 ```
 
+Hand-curated overrides live in `map_names_curated.json` (consumed by
+`extract_map_names.py`; priority: this file > game catalogs > prettified
+id). It carries the Lesta-exclusive spaces whose catalogs only name them
+in Russian — every other locale is translated by hand so the UI never
+falls back to a raw space id (`utils/mapNames.test.ts` guards the
+coverage).
+
 ### Lesta-only maps
 
 The Lesta (Мир кораблей) client's pkgs are Oodle-compressed, so the WG VFS
