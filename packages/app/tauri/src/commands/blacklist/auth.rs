@@ -218,6 +218,10 @@ pub(crate) fn clear_auth() -> Result<()> {
 // ── the one live login flow ──────────────────────────────────────────────────
 
 struct AuthFlow {
+    /// The listener's loopback port — the identity guard for cleanup: an
+    /// old flow finishing (timeout / superseded) must never clear the slot
+    /// of a NEWER flow that already replaced it.
+    port: u16,
     cancel: watch::Sender<bool>,
 }
 
@@ -228,6 +232,16 @@ fn cancel_flow() {
     if let Ok(mut slot) = AUTH_FLOW.lock() {
         if let Some(flow) = slot.take() {
             let _ = flow.cancel.send(true);
+        }
+    }
+}
+
+/// Clear the slot ONLY when it still holds this flow's port (identity
+/// guard against the supersede race — see AuthFlow::port).
+fn cancel_flow_for(port: u16) {
+    if let Ok(mut slot) = AUTH_FLOW.lock() {
+        if slot.as_ref().map(|flow| flow.port) == Some(port) {
+            *slot = None;
         }
     }
 }
@@ -319,7 +333,12 @@ async fn handle_conn(mut stream: TcpStream, realm: String) -> bool {
     }
 }
 
-async fn accept_loop(listener: TcpListener, realm: String, mut cancel_rx: watch::Receiver<bool>) {
+async fn accept_loop(
+    listener: TcpListener,
+    port: u16,
+    realm: String,
+    mut cancel_rx: watch::Receiver<bool>,
+) {
     let deadline = tokio::time::Instant::now() + AUTH_FLOW_TIMEOUT;
     loop {
         tokio::select! {
@@ -336,7 +355,7 @@ async fn accept_loop(listener: TcpListener, realm: String, mut cancel_rx: watch:
             },
         }
     }
-    cancel_flow();
+    cancel_flow_for(port);
 }
 
 // ── commands ─────────────────────────────────────────────────────────────────
@@ -378,9 +397,12 @@ pub async fn blacklist_auth_start(
 
     let (cancel_tx, cancel_rx) = watch::channel(false);
     if let Ok(mut slot) = AUTH_FLOW.lock() {
-        *slot = Some(AuthFlow { cancel: cancel_tx });
+        *slot = Some(AuthFlow {
+            port,
+            cancel: cancel_tx,
+        });
     }
-    tokio::spawn(accept_loop(listener, realm.clone(), cancel_rx));
+    tokio::spawn(accept_loop(listener, port, realm.clone(), cancel_rx));
     tracing::info!(realm = %realm, port, "blacklist login flow started");
     Ok(login_url)
 }
