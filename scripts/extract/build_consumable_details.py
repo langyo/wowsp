@@ -180,47 +180,93 @@ def variant_record(spec: dict[str, Any], lang: dict) -> dict[str, Any] | None:
 
 def pick_family_icons(
     entities: dict[str, dict[str, Any]],
-    meta_paths: set[str],
-) -> tuple[dict[str, str], dict[str, str]]:
-    """family → icon source path, and source path → webp stem.
+    meta_by_path: dict[str, dict[str, Any]],
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """family → icon source path, entity → icon source path, and source
+    path → webp stem.
 
-    Preference per family: the most-referenced non-empty `iconIDs` across its
-    variants whose `consumable_<ID>.png` exists in the game files; else the
-    first entity-name icon file (`consumable_<Entity>.png`) — the art most
-    variants of un-iconIDs'd entities ship under. `_empty` (greyed) art is
-    never chosen.
+    Preference per ENTITY: the most-referenced art across its variants whose
+    file exists in the game files. A variant's non-empty `iconIDs` names its
+    art (`consumable_<iconIDs>.png`); an EMPTY `iconIDs` means the client
+    renders the entity-name art (`consumable_<Entity>.png`) — those variants
+    vote for it instead of abstaining, so a family whose mainstream variants
+    are un-iconIDs'd cannot be outvoted by one rare event variant (the CV
+    auto damage control's family vote was once won by the StarTrek event art
+    that way). `_empty` (greyed) art is never chosen. An entity whose votes
+    resolve to nothing falls back to its entity-name file, then to its
+    family's most-referenced art.
+
+    The family map serves family-level pickers (no entity context): the
+    most-referenced art across the family's entities, else the first
+    entity's own resolution.
+
+    Dedupe: one webp per distinct icon art — byte-identical files (same
+    unpacked size and crc32) share one webp regardless of path — named
+    after the alphabetically first family or entity using it.
     """
-    fam_votes: dict[str, Counter[str]] = {}
-    fam_entities: dict[str, list[str]] = {}
-    for ent, rec in sorted(entities.items()):
-        fam = rec["family"]
-        fam_entities.setdefault(fam, []).append(ent)
-        votes = fam_votes.setdefault(fam, Counter())
-        for spec in rec["_specs"]:
+    def votes_of(ent: str, specs: list[dict[str, Any]]) -> Counter[str]:
+        votes: Counter[str] = Counter()
+        for spec in specs:
             ic = spec.get("iconIDs")
             if ic and "_empty" not in ic:
                 votes[f"/gui/consumables/consumable_{ic}.png"] += 1
+            else:
+                votes[f"/gui/consumables/consumable_{ent}.png"] += 1
+        return votes
+
+    def first_existing(votes: Counter[str]) -> str | None:
+        for source, _n in votes.most_common():
+            if source in meta_by_path:
+                return source
+        return None
+
+    fam_votes: dict[str, Counter[str]] = {}
+    fam_entities: dict[str, list[str]] = {}
+    ent_source: dict[str, str] = {}
+    for ent, rec in sorted(entities.items()):
+        fam = rec["family"]
+        fam_entities.setdefault(fam, []).append(ent)
+        votes = votes_of(ent, rec["_specs"])
+        fam_votes.setdefault(fam, Counter()).update(votes)
+        source = first_existing(votes)
+        if source is None:
+            source = f"/gui/consumables/consumable_{ent}.png"
+            if source not in meta_by_path:
+                source = None
+        if source is not None:
+            ent_source[ent] = source
 
     fam_source: dict[str, str] = {}
     for fam in sorted(fam_votes):
-        for source, _n in fam_votes[fam].most_common():
-            if source in meta_paths:
-                fam_source[fam] = source
-                break
-        if fam in fam_source:
-            continue
-        for ent in fam_entities[fam]:
-            source = f"/gui/consumables/consumable_{ent}.png"
-            if source in meta_paths:
-                fam_source[fam] = source
-                break
-    # Dedupe sources: one webp per distinct icon art, named after the
-    # alphabetically first family using it.
+        source = first_existing(fam_votes[fam])
+        if source is None:
+            for ent in fam_entities[fam]:
+                if ent in ent_source:
+                    source = ent_source[ent]
+                    break
+        if source is None:
+            for ent in fam_entities[fam]:
+                candidate = f"/gui/consumables/consumable_{ent}.png"
+                if candidate in meta_by_path:
+                    source = candidate
+                    break
+        if source is not None:
+            fam_source[fam] = source
+
     source_stem: dict[str, str] = {}
-    for fam in sorted(fam_source):
-        source = fam_source[fam]
-        source_stem.setdefault(source, fam.lower())
-    return fam_source, source_stem
+    by_content: dict[tuple[int, int], str] = {}
+    ordered = [(fam_source[f], f.lower()) for f in sorted(fam_source)]
+    ordered += [(ent_source[e], e.lower()) for e in sorted(ent_source)]
+    for source, stem in ordered:
+        entry = meta_by_path.get(source) or {}
+        content = (int(entry.get("unpacked_size") or 0), int(entry.get("crc32") or 0))
+        known = by_content.get(content)
+        if known is not None:
+            source_stem[source] = known
+            continue
+        source_stem[source] = stem
+        by_content[content] = stem
+    return fam_source, ent_source, source_stem
 
 
 def main(argv: list[str]) -> int:
@@ -304,10 +350,9 @@ def main(argv: list[str]) -> int:
             return 2
         meta = json.loads(META_JSON.read_text(encoding="utf-8"))
         meta_by_path = {e.get("path"): e for e in meta if isinstance(e, dict)}
-        meta_paths = set(meta_by_path)
-        fam_source, source_stem = pick_family_icons(entities, meta_paths)
-        for rec in entities.values():
-            source = fam_source.get(rec["family"])
+        fam_source, ent_source, source_stem = pick_family_icons(entities, meta_by_path)
+        for name, rec in entities.items():
+            source = ent_source.get(name) or fam_source.get(rec["family"])
             rec["icon"] = source_stem[source] if source else ""
         missing_fams = sorted(
             {r["family"] for r in entities.values() if not r["icon"]})
