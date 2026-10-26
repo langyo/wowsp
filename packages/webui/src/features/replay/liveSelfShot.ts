@@ -7,10 +7,10 @@
  * rides along regardless of window state.
  *
  * Layout mirrors the panel: head (title + mode pill + map/同步至 line), the
- * self identity line, a summary stat strip (damage / plane damage / hits /
- * taken / frags — exp once final), the achievements run, then the two
- * per-ship damage columns (dealt / received) with the shared estimate
- * footnote.
+ * self identity line, a summary stat strip (damage / potential + spotting
+ * damage when the server stream reported them / plane damage / hits / taken /
+ * frags — exp once final), the achievements run, then the two per-ship
+ * damage columns (dealt / received) with the shared estimate footnote.
  */
 import { shipIconUrl, type ShipIconVariant } from "@/features/holographic/shipIcons";
 import {

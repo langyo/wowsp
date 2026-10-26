@@ -2,9 +2,11 @@
  * Sharing + shared-row utilities for the post-battle panels (replay 结果
  * modal and the incomplete-results fallback matrix) and the live battle
  * panel: nickname masking (hide all / hide single players), the "copy share
- * shot" flow that renders the matrix to a watermarked PNG and pushes it onto
- * the system clipboard (the copy flow itself lives in the shared share kit —
- * features/share/useShareImage.ts), and the aligned roster-stat columns
+ * shot" flow that renders the combined sheet (the personal 我的战绩 banner
+ * above the roster matrix, see postBattleShot.ts) to a watermarked PNG and
+ * pushes it onto the system clipboard (the copy flow itself lives in the
+ * shared share kit — features/share/useShareImage.ts), and the aligned
+ * roster-stat columns
  * (`rosterStatCols` / `rosterColumns` / `rosterStatLine`) every roster row
  * renders — the column LIST (scope × metric, order included) follows the
  * stats prefs' overlayColumns, and each column's numbers resolve through
