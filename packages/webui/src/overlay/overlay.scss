@@ -488,3 +488,15 @@ html.overlay-hidden body {
   z-index: 2147483647;
   pointer-events: none;
 }
+
+/* Blacklist hit bead (黑名单同步) — a small yellow bead beside the name of
+   a row whose resolved account id is in the synced in-game blacklist. */
+.overlay-chip__bl {
+  display: inline-block;
+  width: 0.32em;
+  height: 0.32em;
+  margin-left: 0.28em;
+  border-radius: 50%;
+  background: #ffd400;
+  box-shadow: 0 0 2px rgb(0 0 0 / 85%);
+}
