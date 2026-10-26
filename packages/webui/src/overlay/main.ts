@@ -957,59 +957,65 @@ function statFaceSparse(name: string): boolean {
  *  visible at all (every number toggle off, no seals landed yet) still
  *  returns the EMPTY STRING — the render loop skips the row instead of
  *  painting an empty chip pill. */
-// ── Blacklist markers (黑名单同步) ── the synced snapshot per realm,
-// fetched once through the same bare invoke the stamps use. A row whose
-// stats resolved on a realm whose snapshot is still loading renders the dot
-// on the NEXT pass (the same late-arrival pattern as the stamps' images).
-const blacklistByRealm = new Map<string, Set<number>>();
-const blacklistLoading = new Set<string>();
-/** Per-realm failure cooldown — a broken backend must not be re-queried on
- *  every render pass. */
-const blacklistFailedAt = new Map<string, number>();
-const BLACKLIST_RETRY_MS = 60_000;
+// ── Player markers (玩家标记) ── the LOCAL colored marker list, fetched
+// once through the same bare invoke the stamps use. Every row matches by
+// nickname (the user typed the name); the resolved account id sharpens the
+// match when the stats batch brought one. A failed fetch cools down for a
+// minute instead of retrying on every render pass.
+type OverlayMarkerColor = "red" | "yellow" | "purple";
+const markersByNickname = new Map<string, OverlayMarkerColor>();
+const markersByAccountId = new Map<number, OverlayMarkerColor>();
+let markersLoaded = false;
+let markersLoading = false;
+let markersFailedAt = 0;
+const MARKERS_RETRY_MS = 60_000;
 
-function ensureBlacklist(realm: string): void {
-  if (blacklistLoading.has(realm)) return;
-  const failedAt = blacklistFailedAt.get(realm);
-  if (failedAt != null && Date.now() - failedAt < BLACKLIST_RETRY_MS) return;
-  blacklistLoading.add(realm);
+function normNick(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function ensureMarkers(): void {
+  if (markersLoaded || markersLoading) return;
+  if (markersFailedAt !== 0 && Date.now() - markersFailedAt < MARKERS_RETRY_MS) return;
   if (!tauri) {
-    // Browser dev (no Tauri runtime): no snapshot — no dots, no fetches.
-    blacklistByRealm.set(realm, new Set());
+    // Browser dev (no Tauri runtime): no markers — no dots, no fetches.
+    markersLoaded = true;
     return;
   }
+  markersLoading = true;
   void (async () => {
     try {
-      const snap = (await tauri.core.invoke("blacklist_snapshot", { realm })) as {
-        entries: Array<{ accountId: number }>;
-      } | null;
-      blacklistByRealm.set(
-        realm,
-        new Set((snap?.entries ?? []).map((entry) => entry.accountId)),
-      );
-      blacklistFailedAt.delete(realm);
+      const list = (await tauri.core.invoke("markers_list")) as Array<{
+        nickname: string;
+        color: OverlayMarkerColor;
+        accountId?: number | null;
+      }>;
+      for (const entry of list ?? []) {
+        markersByNickname.set(normNick(entry.nickname), entry.color);
+        if (entry.accountId != null) {
+          markersByAccountId.set(entry.accountId, entry.color);
+        }
+      }
+      markersLoaded = true;
       render();
     } catch {
-      blacklistByRealm.set(realm, new Set());
-      blacklistFailedAt.set(realm, Date.now());
-      // Allow a retry once the cooldown lapses.
-      blacklistLoading.delete(realm);
+      markersFailedAt = Date.now();
+    } finally {
+      markersLoading = false;
     }
   })();
 }
 
-/** The row's blacklist dot — keyed on the RESOLVED account id + realm (the
- *  ghost-proof identity the stats batch brings), never the raw nickname. */
-function blacklistDot(name: string): string {
+/** The row's marker dot — nickname (the user's typed judgment) first, the
+ *  resolved account id second. */
+function markerDot(name: string): string {
   if (AI_NAME.test(name)) return "";
   const st = stats.get(cacheKey(name));
-  if (!st?.accountId || !st.realm) return "";
-  const set = blacklistByRealm.get(st.realm);
-  if (!set) {
-    ensureBlacklist(st.realm);
-    return "";
-  }
-  return set.has(st.accountId) ? '<span class="overlay-chip__bl"></span>' : "";
+  const color =
+    markersByNickname.get(normNick(name)) ??
+    (st?.accountId != null ? markersByAccountId.get(st.accountId) : undefined);
+  if (!color) return "";
+  return `<span class="overlay-chip__mk overlay-chip__mk--${color}"></span>`;
 }
 
 function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): string {
@@ -1025,7 +1031,7 @@ function rowFace(name: string, side: "ally" | "enemy", exactOrder: boolean): str
     if (!stat && !seals) return "";
     return side === "ally" ? seals + cell : cell + seals;
   }
-  const label = `<span class="overlay-chip__name">${displayNameOf(name)}${blacklistDot(name)}</span>`;
+  const label = `<span class="overlay-chip__name">${displayNameOf(name)}${markerDot(name)}</span>`;
   return side === "ally" ? seals + label + cell : cell + label + seals;
 }
 
@@ -1422,6 +1428,9 @@ function removeVerifyMarker(): void {
 function render() {
   const root = document.body;
   root.textContent = "";
+  // Local player markers (玩家标记): lazy one-shot fetch, re-rendered once
+  // the list lands (the same late-arrival pattern as the stamps).
+  ensureMarkers();
   if (!anchor) return;
   // Battle is on but the table itself wasn't located — show the centered
   // status card instead of chips that would sit on guessed rows. Two copy

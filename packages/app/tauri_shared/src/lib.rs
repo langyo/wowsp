@@ -7,7 +7,6 @@
 //! regenerate the TS bindings (planned: ts-rs) and update the webui types.
 
 mod arena;
-mod blacklist;
 mod capabilities;
 mod chat_translate;
 mod contribution;
@@ -16,6 +15,7 @@ pub mod download;
 mod encyclopedia;
 pub mod error;
 mod game;
+mod markers;
 mod mod_hub;
 mod overlay;
 mod pairing;
@@ -27,7 +27,6 @@ mod stream;
 mod supporters;
 
 pub use arena::*;
-pub use blacklist::*;
 pub use capabilities::*;
 pub use chat_translate::*;
 pub use contribution::*;
@@ -36,6 +35,7 @@ pub use download::*;
 pub use encyclopedia::*;
 pub use error::{CommandError, CommandResult};
 pub use game::*;
+pub use markers::*;
 pub use mod_hub::*;
 pub use overlay::*;
 pub use pairing::*;

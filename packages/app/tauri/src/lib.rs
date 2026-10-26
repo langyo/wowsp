@@ -621,17 +621,12 @@ pub fn run() {
             commands::game_config::remove_replay_dir,
             commands::open_external::open_external,
             commands::network::set_network_config,
-            // Blacklist sync (设置-黑名单同步): OpenID login + the read-only
-            // private.grouped_contacts pull + its knobs. All state-changing
+            // Player markers (设置-玩家标记): the LOCAL, user-built colored
+            // marker list — no login, no sync, no upload. State-changing
             // commands gate on the main window like every settings write.
-            commands::blacklist::blacklist_auth_state,
-            commands::blacklist::blacklist_auth_start,
-            commands::blacklist::blacklist_auth_cancel,
-            commands::blacklist::blacklist_auth_forget,
-            commands::blacklist::blacklist_sync_now,
-            commands::blacklist::blacklist_snapshot,
-            commands::blacklist::blacklist_load_config,
-            commands::blacklist::blacklist_save_config,
+            commands::markers::markers_list,
+            commands::markers::markers_add,
+            commands::markers::markers_remove,
             // Mobile replay acquisition + desktop pairing (all targets — the
             // start/stop server commands answer with the mobile marker, the
             // client commands run anywhere, a desktop can pull from another

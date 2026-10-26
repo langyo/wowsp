@@ -326,7 +326,7 @@ pub struct ChatTranslateConfigResponse {
 /// Result of the settings page's "test connection" button. Expected failures
 /// (no key, timeout, non-2xx answer) land in `error` with `ok = false`
 /// instead of rejecting the command, so the card can render the reason
-/// inline — the same shape the blacklist sync report uses.
+/// inline — the same shape the player-marker store's report lines use.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderTestResult {

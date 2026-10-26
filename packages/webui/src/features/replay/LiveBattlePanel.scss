@@ -843,15 +843,26 @@
   }
 }
 
-/* Blacklist hit bead (黑名单同步) — the same yellow dot the ship labels
+/* Player-marker bead (玩家标记) — the same colored dot the ship labels
    carry, inline beside the nickname on the live roster rows. */
-.live-battle__bl-dot {
+.live-battle__mk-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
   margin-left: 0.3rem;
   border-radius: 50%;
-  background: #ffd400;
   box-shadow: 0 0 2px rgb(0 0 0 / 85%);
   flex: none;
+
+  &--red {
+    background: #e5484d;
+  }
+
+  &--yellow {
+    background: #ffd400;
+  }
+
+  &--purple {
+    background: #a855f7;
+  }
 }

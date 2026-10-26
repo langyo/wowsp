@@ -176,21 +176,34 @@
   &--self { border-color: #374151; }
 }
 
-/* Blacklist hit bead (黑名单同步): a small yellow dot pinned to the ship
-   icon's bottom-right corner — the host passes blacklisted on the label
-   data; nothing renders for hosts that leave it off. */
+/* Player-marker bead (玩家标记): a small colored dot pinned to the ship
+   icon's bottom-right corner — the host passes markerColor on the label
+   data; nothing renders for hosts that leave it off. The three colors are
+   the feature's shared visual language (settings section, live rows and
+   the overlay use the same hex values). */
 .holo-label__ship {
   position: relative;
 }
 
-.holo-label__bl {
+.holo-label__marker {
   position: absolute;
   left: 8px;
   bottom: -1px;
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #ffd400;
   box-shadow: 0 0 2px rgba(0, 0, 0, 0.85);
   pointer-events: none;
+
+  &--red {
+    background: #e5484d;
+  }
+
+  &--yellow {
+    background: #ffd400;
+  }
+
+  &--purple {
+    background: #a855f7;
+  }
 }

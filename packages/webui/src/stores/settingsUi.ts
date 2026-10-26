@@ -14,7 +14,7 @@ export type SettingsSection =
   | "gamePath"
   | "account"
   | "network"
-  | "blacklistSync"
+  | "markers"
   | "pairing"
   | "updates"
   | "resources"
@@ -46,8 +46,8 @@ export interface SettingsGroupSpec {
 
 export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "general", sections: ["language", "appearance", "closeBehavior"] },
-  { id: "game", sections: ["stats", "overlayCalibration", "chatTranslate", "gamePath"] },
-  { id: "connection", sections: ["account", "network", "blacklistSync", "pairing"] },
+  { id: "game", sections: ["stats", "markers", "overlayCalibration", "chatTranslate", "gamePath"] },
+  { id: "connection", sections: ["account", "network", "pairing"] },
   { id: "app", sections: ["updates", "resources", "installCleanup", "changelog"] },
   { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
 ];
