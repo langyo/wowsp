@@ -783,3 +783,188 @@ fn aim_card_hangs_below_the_game_center() {
     assert_eq!(r3.y + r3.height, small.y + small.height);
     assert!(r3.x >= small.x && r3.x + r3.width <= small.x + small.width);
 }
+/// The chat panel placement math: parked at the game window BOTTOM-LEFT
+/// corner, sized from the panel logical size DPI-scaled here, and clamped
+/// so the panel never falls off the game rect at the top (the game rect is
+/// already monitor-clamped; negative origins included). The size itself is
+/// deliberately never shrunk - the same stance the aim card takes when its
+/// hang overflows a tiny game window.
+#[test]
+fn chat_panel_parks_at_the_game_bottom_left() {
+    let game = Rect {
+        x: 0,
+        y: 0,
+        width: 2560,
+        height: 1440,
+    };
+    let r = placement::chat_rect(&game, 1.0);
+    assert_eq!((r.width, r.height), (520, 240), "logical size at 1.0 DPI");
+    assert_eq!((r.x, r.y), (0, game.height - 240), "bottom-left corner");
+    // A zero/negative DPI scale floors at 1.0 (the aim card same rule).
+    assert_eq!(placement::chat_rect(&game, 0.0), r);
+    // DPI scaling grows the panel and keeps it pinned to the bottom-left.
+    let r2 = placement::chat_rect(&game, 2.0);
+    assert_eq!((r2.width, r2.height), (1040, 480));
+    assert_eq!((r2.x, r2.y), (0, game.height - 480));
+    // A game window on another monitor / negative origin keeps the panel at
+    // ITS bottom-left corner, not at screen coordinates.
+    let off = Rect {
+        x: -1280,
+        y: 216,
+        width: 1920,
+        height: 1080,
+    };
+    let r3 = placement::chat_rect(&off, 1.0);
+    assert_eq!((r3.x, r3.y), (off.x, off.y + off.height - 240));
+    // A game window shorter than the panel pins the panel TOP edge to the
+    // game window top instead of letting it fall off-window (the size is
+    // not shrunk - a real client is never this short).
+    let small = Rect {
+        x: 100,
+        y: 100,
+        width: 800,
+        height: 200,
+    };
+    let r4 = placement::chat_rect(&small, 1.0);
+    assert_eq!((r4.x, r4.y), (small.x, small.y));
+    assert_eq!((r4.width, r4.height), (520, 240));
+}
+/// All flags permissive - the baseline every scheduler test perturbs.
+fn overlay_ctx() -> watch::OverlayContext {
+    watch::OverlayContext {
+        focused_on_game: true,
+        tab_down: true,
+        battle_known: true,
+        picker_open: false,
+        table_off: false,
+        aim_card_on: true,
+        chat_panel_on: true,
+        chat_input_focused: false,
+    }
+}
+
+/// The unified window scheduler (watch::schedule_windows) reproduces the
+/// historical table + aim-card wants exactly, and gates the chat panel on a
+/// Tab HOLD plus its own switch. Each gate suppresses only the windows it
+/// owns: the chat panel survives table_off (a table-off player keeps the
+/// translation panel), and the reserved chat-input signal closes only the
+/// chat panel.
+#[test]
+fn window_scheduler_gates_each_window_independently() {
+    // Tab held + every switch on: table and chat show, the aim card stands
+    // down (it owns the Tab-up screen).
+    let wants = watch::schedule_windows(overlay_ctx());
+    assert!(wants.table && wants.chat && !wants.aim_card);
+
+    // Tab released: the aim card takes over, the chat panel hides.
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        tab_down: false,
+        ..overlay_ctx()
+    });
+    assert!(!wants.table && !wants.chat && wants.aim_card);
+
+    // The table switch is independent: the chat panel survives it.
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        table_off: true,
+        ..overlay_ctx()
+    });
+    assert!(!wants.table && wants.chat && !wants.aim_card);
+
+    // The chat switch is independent: the table keeps its own want.
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        chat_panel_on: false,
+        ..overlay_ctx()
+    });
+    assert!(wants.table && !wants.chat);
+
+    // The folded aim-card switch (config switch AND battle class) only
+    // affects the card.
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        tab_down: false,
+        aim_card_on: false,
+        ..overlay_ctx()
+    });
+    assert!(!wants.aim_card && !wants.chat);
+
+    // The reserved in-game-chat-input gate closes ONLY the panel.
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        chat_input_focused: true,
+        ..overlay_ctx()
+    });
+    assert!(!wants.chat && wants.table);
+
+    // Focus, battle and the picker layer gate all three windows.
+    for ctx in [
+        watch::OverlayContext {
+            focused_on_game: false,
+            ..overlay_ctx()
+        },
+        watch::OverlayContext {
+            battle_known: false,
+            ..overlay_ctx()
+        },
+        watch::OverlayContext {
+            picker_open: true,
+            ..overlay_ctx()
+        },
+    ] {
+        let wants = watch::schedule_windows(ctx);
+        assert!(
+            !wants.table && !wants.aim_card && !wants.chat,
+            "ctx must gate every window: {ctx:?}"
+        );
+    }
+}
+/// The overlay window registry is the single source of the window family:
+/// three kinds, unique labels, and the creation facts the old hand-written
+/// builders carried (titles, URLs, sizes) preserved verbatim for the two
+/// pre-existing windows.
+#[test]
+fn overlay_window_registry_covers_the_whole_family() {
+    assert_eq!(
+        OVERLAY_WINDOWS.len(),
+        3,
+        "one registry entry per OverlayWindowKind"
+    );
+    for kind in [
+        OverlayWindowKind::Table,
+        OverlayWindowKind::AimCard,
+        OverlayWindowKind::Chat,
+    ] {
+        let spec = kind.spec();
+        assert_eq!(spec.kind, kind);
+        assert_eq!(
+            OVERLAY_WINDOWS.iter().filter(|s| s.kind == kind).count(),
+            1,
+            "{kind:?} must be registered exactly once"
+        );
+    }
+    let labels: std::collections::BTreeSet<&str> =
+        OVERLAY_WINDOWS.iter().map(|spec| spec.label).collect();
+    assert_eq!(labels.len(), OVERLAY_WINDOWS.len(), "labels are unique");
+
+    // Table: anchor-placed - its create size is only a first paint, so the
+    // registry carries no fixed logical size for it.
+    let table = OverlayWindowKind::Table.spec();
+    assert!(!table.fixed_size);
+    assert_eq!(table.logical_size, None);
+    assert_eq!(
+        (table.label, table.url_path),
+        (OVERLAY_LABEL, "/overlay.html")
+    );
+    assert_eq!(table.title, "WoWSP Overlay");
+
+    // Aim card: spec-placed, historical label/url/size untouched.
+    let aim = OverlayWindowKind::AimCard.spec();
+    assert!(aim.fixed_size);
+    assert_eq!(aim.logical_size, Some(AIM_CARD_LOGICAL_SIZE));
+    assert_eq!((aim.label, aim.url_path), (AIM_CARD_LABEL, "/aimcard.html"));
+    assert_eq!(aim.title, "WoWSP Aim Card");
+
+    // Chat: the third window - spec-placed at the bottom-left corner.
+    let chat = OverlayWindowKind::Chat.spec();
+    assert!(chat.fixed_size);
+    assert_eq!(chat.logical_size, Some(CHAT_LOGICAL_SIZE));
+    assert_eq!((chat.label, chat.url_path), (CHAT_LABEL, "/chat.html"));
+    assert_eq!(chat.title, "WoWSP Chat Panel");
+}

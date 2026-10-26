@@ -18,8 +18,24 @@ function deferred<T>() {
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
-  apiMock.getOverlayConfig.mockResolvedValue({ table: "detect", roster: "plugin", aimCard: true, aimCardHangPx: 60 });
-  apiMock.setOverlayConfig.mockImplementation(async (table: string, roster: string, aimCard: boolean, aimCardHangPx: number) => ({ table, roster, aimCard, aimCardHangPx }));
+  apiMock.getOverlayConfig.mockResolvedValue({
+    table: "detect",
+    roster: "plugin",
+    aimCard: true,
+    aimCardHangPx: 60,
+    chatPanel: false,
+    chatPanelMaxLines: 8,
+  });
+  apiMock.setOverlayConfig.mockImplementation(
+    async (
+      table: string,
+      roster: string,
+      aimCard: boolean,
+      aimCardHangPx: number,
+      chatPanel: boolean,
+      chatPanelMaxLines: number,
+    ) => ({ table, roster, aimCard, aimCardHangPx, chatPanel, chatPanelMaxLines }),
+  );
 });
 
 describe("overlay settings persistence", () => {
@@ -70,7 +86,7 @@ describe("overlay settings persistence", () => {
     expect(apiMock.setOverlayConfig).not.toHaveBeenCalled();
     read.resolve({ table: "ingame", roster: "passive", aimCard: true });
     await Promise.all([loading, changing]);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60, false, 8);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
   });
@@ -87,7 +103,7 @@ describe("overlay settings persistence", () => {
     expect(apiMock.setOverlayConfig).toHaveBeenCalledTimes(1);
     firstWrite.resolve({ table: "off", roster: "plugin", aimCard: true });
     await Promise.all([first, second]);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60, false, 8);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
   });
@@ -98,7 +114,7 @@ describe("overlay settings persistence", () => {
     apiMock.setOverlayConfig.mockRejectedValueOnce(new Error("synthetic locked settings"));
     await store.setTable("off");
     await store.setRoster("passive");
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "passive", true, 60, false, 8);
     expect(store.table).toBe("off");
     expect(store.roster).toBe("passive");
   });
@@ -107,13 +123,13 @@ describe("overlay settings persistence", () => {
     const store = useOverlayConfigStore();
     await store.load();
     await store.setAimCard(false);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", false, 60);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", false, 60, false, 8);
     expect(store.aimCard).toBe(false);
     // The table switch stays untouched by an aim-card flip, and the next
     // write carries both current choices.
     expect(store.table).toBe("detect");
     await store.setTable("off");
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "plugin", false, 60);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("off", "plugin", false, 60, false, 8);
   });
 
   it("commits the aim-card hang with rounding, a zero floor and no ceiling", async () => {
@@ -122,15 +138,15 @@ describe("overlay settings persistence", () => {
     // Below the slider's 60 floor and far above its 240 ceiling both ride
     // through — the box is deliberately unbounded; only negatives clamp.
     await store.setAimCardHangPx(30);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 30);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 30, false, 8);
     await store.setAimCardHangPx(480);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 480);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 480, false, 8);
     expect(store.aimCardHangPx).toBe(480);
     await store.setAimCardHangPx(-25);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 0);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 0, false, 8);
     expect(store.aimCardHangPx).toBe(0);
     await store.setAimCardHangPx(137.6);
-    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 138);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 138, false, 8);
     // A non-finite input is ignored outright (the box reverts its draft).
     await store.setAimCardHangPx(Number.NaN);
     expect(store.aimCardHangPx).toBe(138);
@@ -150,5 +166,63 @@ describe("overlay settings persistence", () => {
     apiMock.getOverlayConfig.mockResolvedValueOnce({ table: "detect", roster: "plugin", aimCard: true, aimCardHangPx: "far" });
     await store.load();
     expect(store.aimCardHangPx).toBe(60);
+  });
+
+  it("persists the chat card's switch and line cap independently", async () => {
+    const store = useOverlayConfigStore();
+    await store.load();
+    expect(store.chatPanel).toBe(false);
+    expect(store.chatPanelMaxLines).toBe(8);
+    await store.setChatPanel(true);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 60, true, 8);
+    expect(store.chatPanel).toBe(true);
+    // The other switches stay untouched by the chat-card flips, and every
+    // later write carries the chat fields too.
+    await store.setChatPanelMaxLines(12);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 60, true, 12);
+    expect(store.chatPanelMaxLines).toBe(12);
+    expect(store.aimCard).toBe(true);
+    expect(store.chatPanel).toBe(true);
+  });
+
+  it("clamps the chat line cap to the shell's 3–30 band", async () => {
+    const store = useOverlayConfigStore();
+    await store.load();
+    // Both ends of the band clamp; fractional input rounds first.
+    await store.setChatPanelMaxLines(1);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 60, false, 3);
+    await store.setChatPanelMaxLines(99);
+    expect(apiMock.setOverlayConfig).toHaveBeenLastCalledWith("detect", "plugin", true, 60, false, 30);
+    await store.setChatPanelMaxLines(21.6);
+    expect(store.chatPanelMaxLines).toBe(22);
+    // A non-finite input is ignored outright (the slider cannot emit one,
+    // but an older/hostile shell merge could).
+    await store.setChatPanelMaxLines(Number.NaN);
+    expect(store.chatPanelMaxLines).toBe(22);
+    // A no-op value (already current) skips the IPC round-trip entirely.
+    apiMock.setOverlayConfig.mockClear();
+    await store.setChatPanelMaxLines(22);
+    expect(apiMock.setOverlayConfig).not.toHaveBeenCalled();
+  });
+
+  it("lands missing or junk chat-panel replies on the off/8 defaults", async () => {
+    // An older shell without the fields (or a corrupted file) must not turn
+    // the opt-in card on — the tolerant parse mirrors the Rust heal.
+    apiMock.getOverlayConfig.mockResolvedValueOnce({ table: "detect", roster: "plugin", aimCard: true, aimCardHangPx: 60 });
+    const store = useOverlayConfigStore();
+    await store.load();
+    expect(store.chatPanel).toBe(false);
+    expect(store.chatPanelMaxLines).toBe(8);
+    apiMock.getOverlayConfig.mockResolvedValueOnce({
+      table: "detect",
+      roster: "plugin",
+      aimCard: true,
+      aimCardHangPx: 60,
+      chatPanel: "yes",
+      chatPanelMaxLines: "many",
+    });
+    await store.load();
+    expect(store.chatPanel).toBe(false);
+    expect(store.chatPanelMaxLines).toBe(8);
   });
 });

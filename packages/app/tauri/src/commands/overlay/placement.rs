@@ -265,6 +265,74 @@ pub(crate) fn aim_card_rect(game: &Rect, dpi_scale: f32, hang_px: i32) -> Rect {
     }
 }
 
+/// The chat-translation panel's rect over this game window: parked at the
+/// game window's BOTTOM-LEFT corner (the in-game chat HUD's neighborhood),
+/// sized from the panel's logical size DPI-scaled here, and clamped so the
+/// panel never leaves the game rect vertically (the game rect is already
+/// monitor-clamped, so this stays multi-monitor safe; an oversized height
+/// simply pins the panel's top edge to the game window's top, the same
+/// degradation the aim card's oversized hang gets at the bottom). Pure math;
+/// unit-tested.
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn chat_rect(game: &Rect, dpi_scale: f32) -> Rect {
+    let s = dpi_scale.max(1.0);
+    let w = (CHAT_LOGICAL_SIZE.0 * f64::from(s)).round() as i32;
+    let h = (CHAT_LOGICAL_SIZE.1 * f64::from(s)).round() as i32;
+    let y = (game.y + game.height - h).max(game.y);
+    Rect {
+        x: game.x,
+        y,
+        width: w.max(1),
+        height: h.max(1),
+    }
+}
+
+/// Move/resize the chat-panel window over this game window. Returns false
+/// when the window does not exist (creation is async — the caller must not
+/// stamp its placed-rect cache from a no-op).
+#[cfg(target_os = "windows")]
+pub(super) fn place_chat(app: &AppHandle, game_rect: &Rect, dpi_scale: f32) -> bool {
+    let Some(win) = app.get_webview_window(OverlayWindowKind::Chat.spec().label) else {
+        return false;
+    };
+    let Ok(hwnd) = win.hwnd() else {
+        return false;
+    };
+    place_window_async(
+        windows::Win32::Foundation::HWND(hwnd.0),
+        &chat_rect(game_rect, dpi_scale),
+    );
+    true
+}
+
+/// Bring the chat-panel window back onto the topmost band and show it
+/// without activating (the topmost bit does not survive ordinary use — see
+/// [`place_window_async`]).
+#[cfg(target_os = "windows")]
+pub(super) fn show_chat(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(OverlayWindowKind::Chat.spec().label)
+        && let Ok(hwnd) = win.hwnd()
+    {
+        reassert_topmost(windows::Win32::Foundation::HWND(hwnd.0));
+        show_async(windows::Win32::Foundation::HWND(hwnd.0));
+    }
+}
+
+/// Hide the chat-panel window (Tab released, picker open, battle gone).
+/// Native hide only — the page renders its buffer while hidden (the reveal
+/// is a single show, never a fetch), so no HTML-level event is needed.
+#[cfg(target_os = "windows")]
+pub(super) fn hide_chat(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(OverlayWindowKind::Chat.spec().label)
+        && let Ok(hwnd) = win.hwnd()
+    {
+        use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindowAsync};
+        unsafe {
+            let _ = ShowWindowAsync(windows::Win32::Foundation::HWND(hwnd.0), SW_HIDE);
+        }
+    }
+}
+
 /// Move/resize the aim-card window over this game window. Returns false
 /// when the window does not exist (creation is async — the caller must not
 /// stamp its placed-rect cache from a no-op).
@@ -331,3 +399,14 @@ pub(super) fn show_aim_card(_app: &AppHandle) {}
 
 #[cfg(not(target_os = "windows"))]
 pub(super) fn hide_aim_card(_app: &AppHandle) {}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn place_chat(_app: &AppHandle, _game_rect: &Rect, _dpi_scale: f32) -> bool {
+    false
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn show_chat(_app: &AppHandle) {}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn hide_chat(_app: &AppHandle) {}

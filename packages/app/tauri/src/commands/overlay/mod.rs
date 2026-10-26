@@ -113,24 +113,30 @@
 //! `destroy_overlay_window` (when the game exits or overlay mode is turned
 //! off). The main shell window keeps running underneath.
 //!
-//! TWO windows serve this ONE mode: the table window (`overlay`, everything
-//! above) and the AIM CARD (`aim-card`) — the second transparent window that
-//! hangs below the game window's center (the crosshair) while a battle is
-//! on and Tab is up, showing the aimed player's stats. Each window has its
-//! OWN switch in `overlay-config.toml` (`table` / `aim_card`): the switches
-//! are independent — either being on keeps the mode (windows + watcher) up,
-//! each suppressing only its own window, and only both-off tears the mode
-//! down (the webui lifecycle's decision). The card's data is
-//! the in-game probe's per-tick `aim` verdict (telemetry.json, relayed to
-//! the page by the telemetry poller's `wowsp://ingame-telemetry` event);
-//! the page resolves the name through the same WG batch command the table
-//! page uses, so the three surfaces share one session cache. The watcher
-//! owns the card's native window only (the per-tick pass at the top of
-//! `watch_tab_tick`): shown while the battle is on and `aim_card` is on,
-//! hidden while Tab is held (the table owns the screen then), placed at the
-//! game center + the configured hang (overlay-config's `aim_card_hang_px`,
-//! default 60 logical px). What the card DRAWS is the
-//! page's own data-driven decision — the native visibility and the content
+//! THREE windows serve this ONE mode, all described by ONE registry
+//! ([OVERLAY_WINDOWS], each entry an [OverlayWindowSpec]): the table window
+//! (`overlay`, everything above), the AIM CARD (`aim-card`) — the
+//! transparent window that hangs below the game window's center (the
+//! crosshair) while a battle is on and Tab is up, showing the aimed
+//! player's stats — and the CHAT PANEL (`chat-overlay`): the bottom-left
+//! chat-translation panel shown on a Tab hold when its own switch is on.
+//! Each window has its OWN switch in `overlay-config.toml` (`table` /
+//! `aim_card` / `chat_panel`): the switches are independent — any being on
+//! keeps the mode (windows + watcher) up, each suppressing only its own
+//! window, and only all-off tears the mode down (the webui lifecycle's
+//! decision). The card's data is the in-game probe's per-tick `aim` verdict
+//! (telemetry.json, relayed to the page by the telemetry poller's
+//! `wowsp://ingame-telemetry` event); the page resolves the name through the
+//! same WG batch command the table page uses, so the surfaces share one
+//! session cache. The watcher owns the native windows only (the per-tick
+//! passes in `watch_tab_tick`, decided by the pure
+//! [`watch::schedule_windows`] scheduler): the card is shown while the battle
+//! is on and `aim_card` is on, hidden while Tab is held (the table owns the
+//! screen then), placed at the game center + the configured hang
+//! (overlay-config's `aim_card_hang_px`, default 60 logical px); the chat
+//! panel is shown on a Tab hold while `chat_panel` is on, parked at the game
+//! window's bottom-left (`placement::chat_rect`). What each page DRAWS is
+//! its own data-driven decision — the native visibility and the content
 //! never gate each other.
 //!
 //! Threading: every command here is `async` so it runs on the Tauri async
@@ -171,6 +177,108 @@ const AIM_CARD_LABEL: &str = "aim-card";
 /// physical rect on every game-window change anyway; this only sizes the
 /// first paint.
 const AIM_CARD_LOGICAL_SIZE: (f64, f64) = (380.0, 120.0);
+
+/// Label of the THIRD transparent overlay window: the chat-translation
+/// panel. Shown on a Tab hold while its `chat_panel` switch is on, parked at
+/// the game window's bottom-left; the page's content is driven entirely by
+/// the chat-translate pipeline's events (this module only owns the native
+/// window). Listed in `capabilities/secondary.json` like its siblings.
+const CHAT_LABEL: &str = "chat-overlay";
+
+/// First-paint size (logical px) of the anchor-driven TABLE window. The
+/// detector resizes the window to the table's physical rect on every show;
+/// this only sizes the hidden pre-created window (and its WebView2 surface
+/// before the first detection).
+const TABLE_LOGICAL_SIZE: (f64, f64) = (420.0, 320.0);
+
+/// The chat panel's logical size (DPI-scaled at placement): wide enough for
+/// a chat line plus its translation, tall enough for a short stack of
+/// lines. Placement resizes the window to the DPI-scaled physical rect on
+/// every game-window change anyway; this only sizes the first paint.
+const CHAT_LOGICAL_SIZE: (f64, f64) = (520.0, 240.0);
+
+/// One transparent overlay window serving the overlay mode — the resource
+/// registry's key. The mode has THREE top-level transparent windows; every
+/// create/destroy/place/show/hide path is keyed off this kind so a new
+/// window is registered once instead of being special-cased across the
+/// watcher, window management and teardown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OverlayWindowKind {
+    /// The hold-Tab stat table (ANCHOR-placed: sized and positioned by the
+    /// detected team table, not by a fixed logical size).
+    Table,
+    /// The aimed-player stats card (spec-placed below the crosshair).
+    AimCard,
+    /// The chat-translation panel (spec-placed at the game window's
+    /// bottom-left; shown on a Tab hold).
+    Chat,
+}
+
+/// One entry of [OVERLAY_WINDOWS]: the immutable facts every window manager
+/// needs. Placement is NOT described here — each kind keeps its own rect
+/// math (`placement::aim_card_rect` / `placement::chat_rect` / the detected
+/// anchor) because the inputs differ (hang config, anchor); this spec only
+/// owns identity, creation and the creation-time size.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct OverlayWindowSpec {
+    pub(crate) kind: OverlayWindowKind,
+    /// Tauri window label (also the `capabilities/secondary.json` entry —
+    /// a label missing there loses its event permission).
+    pub(crate) label: &'static str,
+    /// OS title of the window (never visible — the windows are
+    /// decorationless — but it is what desktop window enumeration reports).
+    pub(crate) title: &'static str,
+    /// App-relative page path the window loads.
+    pub(crate) url_path: &'static str,
+    /// The window's fixed logical size when [`Self::fixed_size`] is true.
+    pub(crate) logical_size: Option<(f64, f64)>,
+    /// True when the window is positioned at a spec-derived rect (a
+    /// DPI-scaled logical size): the aim card and the chat panel. The table
+    /// window is ANCHOR-sized instead — its creation size is only a first
+    /// paint, and placement resizes it to the detected table rect.
+    pub(crate) fixed_size: bool,
+}
+
+/// The overlay mode's complete window set, in creation/teardown order: the
+/// table window first (the mode's primary window), then the two spec-placed
+/// companions. Keep this list and `capabilities/secondary.json` in sync.
+pub(crate) const OVERLAY_WINDOWS: &[OverlayWindowSpec] = &[
+    OverlayWindowSpec {
+        kind: OverlayWindowKind::Table,
+        label: OVERLAY_LABEL,
+        title: "WoWSP Overlay",
+        url_path: "/overlay.html",
+        logical_size: None,
+        fixed_size: false,
+    },
+    OverlayWindowSpec {
+        kind: OverlayWindowKind::AimCard,
+        label: AIM_CARD_LABEL,
+        title: "WoWSP Aim Card",
+        url_path: "/aimcard.html",
+        logical_size: Some(AIM_CARD_LOGICAL_SIZE),
+        fixed_size: true,
+    },
+    OverlayWindowSpec {
+        kind: OverlayWindowKind::Chat,
+        label: CHAT_LABEL,
+        title: "WoWSP Chat Panel",
+        url_path: "/chat.html",
+        logical_size: Some(CHAT_LOGICAL_SIZE),
+        fixed_size: true,
+    },
+];
+
+impl OverlayWindowKind {
+    /// The registry entry for this kind (every kind is registered exactly
+    /// once — see `OVERLAY_WINDOWS`).
+    pub(crate) fn spec(self) -> &'static OverlayWindowSpec {
+        OVERLAY_WINDOWS
+            .iter()
+            .find(|spec| spec.kind == self)
+            .expect("every OverlayWindowKind has a registry entry")
+    }
+}
 
 /// Minimum accepted size (physical px) of a manual roster selection, per
 /// axis — anything smaller cannot carry a readable table row.
@@ -220,6 +328,25 @@ pub const OVERLAY_VERIFY_EVENT: &str = "wowsp://overlay-verify";
 /// the overlay settings section badge the failed verdict and its risk
 /// flags from it.
 pub const OVERLAY_DIAG_EVENT: &str = "wowsp://overlay-diag";
+
+/// Tauri event carrying translated battle-chat lines to the chat overlay
+/// window. Emitted by the chat-translate pipeline as results land (never
+/// fetched on the Tab path — the panel reveals a pre-rendered buffer); the
+/// chat page is event-only like the other secondary windows.
+///
+/// This PR ships the CONTRACT, not the emitter: the chat-translate service
+/// lands later, so no code path references these two constants yet. They
+/// still live here (the overlay module owns the window family's event
+/// vocabulary) and are `pub` for that emitter.
+#[allow(dead_code)]
+pub const CHAT_TRANSLATE_EVENT: &str = "wowsp://chat-translate";
+
+/// Tauri event carrying the chat panel's display prefs (currently the
+/// configured max line count), so a settings flip re-shapes the live panel
+/// without a window reload. Same contract-only stance as
+/// [`CHAT_TRANSLATE_EVENT`].
+#[allow(dead_code)]
+pub const CHAT_PREFS_EVENT: &str = "wowsp://chat-prefs";
 
 /// Watcher poll period — fast enough that ≤30 ms of Tab latency is
 /// imperceptible, slow enough that two cheap Win32 calls are noise.
@@ -384,8 +511,8 @@ use manual::{
 #[cfg(test)]
 use manual::{manual_row_centers, validate_manual_selection};
 use placement::{
-    hide_aim_card, hide_overlay, place_aim_card, place_and_show, reassert_topmost, show_aim_card,
-    show_async, tab_held_for, tab_key_down,
+    hide_aim_card, hide_chat, hide_overlay, place_aim_card, place_and_show, place_chat,
+    reassert_topmost, show_aim_card, show_async, show_chat, tab_held_for, tab_key_down,
 };
 use reconcile::{HeldStatus, held_status, pin_matches, revalidate_pinned_anchor, sink_check_pass};
 #[cfg(test)]

@@ -25,6 +25,9 @@ pub mod appdata;
 pub mod arena_info;
 pub mod blacklist;
 pub mod changelog;
+// Chat-translation settings + provider connectivity test (settings →
+// 聊天翻译). Cross-platform: appdata + the proxy-aware HTTP client only.
+pub mod chat_translate;
 pub mod contribution;
 pub mod data_pack;
 #[cfg(feature = "ai")]

@@ -20,6 +20,13 @@
  *   oversized hangs to the game window's bottom edge). Same live path:
  *   the watcher re-reads the config every tick, so a change re-places
  *   the card immediately — no window reload, no restart.
+ * - `chatPanel` — the battle-chat translation card's window (the third
+ *   transparent window, bottom-left while Tab is held). Off by default: the
+ *   feature is opt-in and its Rust side only shows the window when this
+ *   switch AND the translation feature toggle are both on. `chatPanelMaxLines`
+ *   is the card's per-battle line cap (8 by default, clamped 3–30 shell-side);
+ *   like the aim card's hang, the watcher re-reads both every tick, so a
+ *   change applies live without touching the window lifecycle.
  * - `roster` — roster attribution: "plugin" (the default and preferred:
  *   the in-game plugin's telemetry is the primary detector) or "passive"
  *   (the screen-capture pipeline; a stored "off" pick lands here — the
@@ -53,6 +60,17 @@ export type RosterRecognitionMode = "plugin" | "passive";
 const DEFAULT_TABLE: TableAnchorMode = "detect";
 const DEFAULT_ROSTER: RosterRecognitionMode = "plugin";
 const DEFAULT_AIM_CARD = true;
+/** The chat-translation card's window switch (schema v2 `chat_panel`):
+ *  OFF by default — the translation feature is opt-in, and a user who never
+ *  enabled it must not see a third transparent window. */
+const DEFAULT_CHAT_PANEL = false;
+/** The card's per-battle line cap (schema v2 `chat_panel_max_lines`; the
+ *  Rust-side clamp band's default, must stay in sync with overlay_config.rs). */
+const DEFAULT_CHAT_PANEL_MAX_LINES = 8;
+/** The card's line-cap band (the settings slider's options; the shell
+ *  clamps to the same 3–30 window, so no write can land outside it). */
+export const CHAT_PANEL_MAX_LINES_MIN = 3;
+export const CHAT_PANEL_MAX_LINES_MAX = 30;
 /** Default hang of the aim card below the crosshair, in logical px (the
  *  Rust-side `AIM_CARD_HANG_DEFAULT_PX`; must stay in sync). */
 export const DEFAULT_AIM_CARD_HANG_PX = 60;
@@ -86,6 +104,22 @@ function parseAimCard(raw: unknown): boolean {
   return typeof raw === "boolean" ? raw : DEFAULT_AIM_CARD;
 }
 
+function parseChatPanel(raw: unknown): boolean {
+  return typeof raw === "boolean" ? raw : DEFAULT_CHAT_PANEL;
+}
+
+/** The line cap in whole lines, clamped to the shell's 3–30 band; anything
+ *  but a finite number (older shell, wrong type, junk) lands on the default
+ *  — the Rust read path heals the file to the same value. */
+function parseChatPanelMaxLines(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number.NaN;
+  if (!Number.isFinite(n)) return DEFAULT_CHAT_PANEL_MAX_LINES;
+  return Math.min(
+    CHAT_PANEL_MAX_LINES_MAX,
+    Math.max(CHAT_PANEL_MAX_LINES_MIN, Math.round(n)),
+  );
+}
+
 /** The hang in whole logical px; anything but a non-negative finite number
  *  (older shell, wrong type, junk) lands on the default — the Rust read
  *  path heals the file to the same value. */
@@ -100,6 +134,8 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
   const roster = ref<RosterRecognitionMode>(DEFAULT_ROSTER);
   const aimCard = ref(DEFAULT_AIM_CARD);
   const aimCardHangPx = ref(DEFAULT_AIM_CARD_HANG_PX);
+  const chatPanel = ref(DEFAULT_CHAT_PANEL);
+  const chatPanelMaxLines = ref(DEFAULT_CHAT_PANEL_MAX_LINES);
   const loaded = ref(false);
   let pendingLoad: Promise<void> | null = null;
   let pendingSave = Promise.resolve();
@@ -114,6 +150,8 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
           roster.value = parseRoster(cfg?.roster);
           aimCard.value = parseAimCard(cfg?.aimCard);
           aimCardHangPx.value = parseAimCardHangPx(cfg?.aimCardHangPx);
+          chatPanel.value = parseChatPanel(cfg?.chatPanel);
+          chatPanelMaxLines.value = parseChatPanelMaxLines(cfg?.chatPanelMaxLines);
         } catch {
           // missing command / mock backend — keep the defaults
         } finally {
@@ -134,6 +172,8 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
       roster: roster.value,
       aimCard: aimCard.value,
       aimCardHangPx: aimCardHangPx.value,
+      chatPanel: chatPanel.value,
+      chatPanelMaxLines: chatPanelMaxLines.value,
     };
     pendingSave = pendingSave.then(async () => {
       try {
@@ -142,12 +182,16 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
           snapshot.roster,
           snapshot.aimCard,
           snapshot.aimCardHangPx,
+          snapshot.chatPanel,
+          snapshot.chatPanelMaxLines,
         );
         if (sequence !== saveSequence) return;
         table.value = parseTable(saved?.table);
         roster.value = parseRoster(saved?.roster);
         aimCard.value = parseAimCard(saved?.aimCard);
         aimCardHangPx.value = parseAimCardHangPx(saved?.aimCardHangPx);
+        chatPanel.value = parseChatPanel(saved?.chatPanel);
+        chatPanelMaxLines.value = parseChatPanelMaxLines(saved?.chatPanelMaxLines);
         notifySettingsSaved();
       } catch {
         // best-effort persistence; the in-memory flag still applies
@@ -174,6 +218,31 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
     await persist();
   }
 
+  /** The chat-translation card's window switch. Persisted like every other
+   *  switch; the watcher's per-tick read is what actually shows/hides the
+   *  window, so no lifecycle call rides a flip. */
+  async function setChatPanel(v: boolean) {
+    await load();
+    if (chatPanel.value === v) return;
+    chatPanel.value = v;
+    await persist();
+  }
+
+  /** Set the card's per-battle line cap (whole lines, clamped 3–30 — the
+   *  same band the shell sanitizes to, so the stored value can never drift
+   *  out of range). A no-op value skips the IPC round-trip. */
+  async function setChatPanelMaxLines(v: number) {
+    await load();
+    if (!Number.isFinite(v)) return;
+    const next = Math.min(
+      CHAT_PANEL_MAX_LINES_MAX,
+      Math.max(CHAT_PANEL_MAX_LINES_MIN, Math.round(v)),
+    );
+    if (next === chatPanelMaxLines.value) return;
+    chatPanelMaxLines.value = next;
+    await persist();
+  }
+
   /** Set the hang (logical px). Input is rounded to whole pixels and
    *  clamped ≥ 0 (the box can sit BELOW the slider's 60 floor, but not
    *  above the crosshair) and deliberately NOT capped on this side — the
@@ -194,11 +263,15 @@ export const useOverlayConfigStore = defineStore("overlayConfig", () => {
     roster,
     aimCard,
     aimCardHangPx,
+    chatPanel,
+    chatPanelMaxLines,
     loaded,
     load,
     setTable,
     setRoster,
     setAimCard,
     setAimCardHangPx,
+    setChatPanel,
+    setChatPanelMaxLines,
   };
 });

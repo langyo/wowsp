@@ -349,6 +349,22 @@ pub(crate) fn set_managed_enabled(res_mods: &Path, records: &[ModInstallRecord],
     }
 }
 
+/// Tool table id of the bundled in-game probe — installed from
+/// `commands/ingame_plugin.rs`, which seeds this table at install time.
+const PROBE_TOOL_ID: &str = "battle.ingame.stats";
+
+/// Forward-compatibility keys seeded into the probe's tool table, missing
+/// only — a hand-tuned value is never overwritten. The seeding rides the
+/// probe's install/update path (`ingame_plugin_install`), so an existing
+/// install picks the keys up on its next probe install or update. The
+/// shipped probe parser ignores unknown integer keys today (it only accepts
+/// keys in its own `CONFIG_DEFAULTS`), so the keys sit dormant until a
+/// chat-bridge probe build reads them directly.
+/// `chat` is the master switch, `chat_limit` the panel line cap,
+/// `chat_max_line` the per-line character cap.
+const PROBE_CHAT_DEFAULTS: [(&str, i64); 3] =
+    [("chat", 0), ("chat_limit", 40), ("chat_max_line", 240)];
+
 /// Ensure a tool's config table exists with the given defaults (keys the
 /// tool already set — by hand or a previous seed — are never overwritten).
 pub(crate) fn seed_tool_config(res_mods: &Path, tool_id: &str, defaults: &BTreeMap<String, i64>) {
@@ -364,8 +380,16 @@ pub(crate) fn seed_tool_config(res_mods: &Path, tool_id: &str, defaults: &BTreeM
     let Some(table) = table.as_table_mut() else {
         return; // a tool id occupied by a non-table value is not ours to fix
     };
+    // The probe's chat-bridge keys ride every seed for that tool (missing
+    // only): the app ships them ahead of the probe build that reads them.
+    let mut seeded = defaults.clone();
+    if tool_id == PROBE_TOOL_ID {
+        for (key, value) in PROBE_CHAT_DEFAULTS {
+            seeded.entry(key.to_string()).or_insert(value);
+        }
+    }
     let mut changed = false;
-    for (key, value) in defaults {
+    for (key, value) in &seeded {
         if !table.contains_key(key) {
             table.insert(key.clone(), toml::Value::from(*value));
             changed = true;
@@ -561,9 +585,18 @@ mod tests {
         let m = load(&dir).manifest;
         assert!(m.managed.is_empty());
         assert!(m.tools.contains_key("battle.ingame.stats"));
-        // …and a re-seed never overwrites the existing key.
+        // The probe's forward-compat chat-bridge keys ride the seed even
+        // though the caller does not pass them (missing-only defaults).
+        let table = &m.tools["battle.ingame.stats"];
+        assert_eq!(table.get("chat").unwrap().as_integer(), Some(0));
+        assert_eq!(table.get("chat_limit").unwrap().as_integer(), Some(40));
+        assert_eq!(table.get("chat_max_line").unwrap().as_integer(), Some(240));
+        // …and a re-seed never overwrites an existing key (the caller's
+        // defaults and the forward-compat keys alike).
         let raw = fs::read_to_string(manifest_path(&dir)).unwrap();
-        let hand_tuned = raw.replace("panel_fade_ticks = 3", "panel_fade_ticks = 9");
+        let hand_tuned = raw
+            .replace("panel_fade_ticks = 3", "panel_fade_ticks = 9")
+            .replace("chat = 0", "chat = 1");
         fs::write(manifest_path(&dir), hand_tuned).unwrap();
         seed_tool_config(&dir, "battle.ingame.stats", &defaults);
         let m = load(&dir).manifest;
@@ -575,6 +608,48 @@ mod tests {
             Some(9),
             "seed must not clobber hand-tuned values"
         );
+        assert_eq!(
+            m.tools["battle.ingame.stats"]
+                .get("chat")
+                .unwrap()
+                .as_integer(),
+            Some(1),
+            "the forward-compat chat keys are missing-only too"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The probe's chat-bridge forward-compat keys are seeded only for the
+    /// probe's own tool id, and only when absent (a later app update ships
+    /// them ahead of the probe build that reads them).
+    #[test]
+    fn probe_chat_forward_compat_keys_are_seeded_missing_only() {
+        let dir = tmp_res_mods("probe-chat-keys");
+        let mut defaults = BTreeMap::new();
+        defaults.insert("panel_fade_ticks".to_string(), 3i64);
+        seed_tool_config(&dir, PROBE_TOOL_ID, &defaults);
+        let m = load(&dir).manifest;
+        let table = &m.tools[PROBE_TOOL_ID];
+        assert_eq!(table.get("panel_fade_ticks").unwrap().as_integer(), Some(3));
+        assert_eq!(table.get("chat").unwrap().as_integer(), Some(0));
+        assert_eq!(table.get("chat_limit").unwrap().as_integer(), Some(40));
+        assert_eq!(table.get("chat_max_line").unwrap().as_integer(), Some(240));
+
+        // A hand-tuned chat switch survives the next seed.
+        let raw = fs::read_to_string(manifest_path(&dir)).unwrap();
+        fs::write(manifest_path(&dir), raw.replace("chat = 0", "chat = 7")).unwrap();
+        seed_tool_config(&dir, PROBE_TOOL_ID, &defaults);
+        let m = load(&dir).manifest;
+        assert_eq!(
+            m.tools[PROBE_TOOL_ID].get("chat").unwrap().as_integer(),
+            Some(7)
+        );
+
+        // Some OTHER tool's table never receives the probe's keys.
+        seed_tool_config(&dir, "other.tool", &defaults);
+        let m = load(&dir).manifest;
+        assert!(m.tools["other.tool"].get("chat").is_none());
+        assert!(m.tools["other.tool"].get("chat_limit").is_none());
         fs::remove_dir_all(&dir).ok();
     }
 

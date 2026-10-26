@@ -236,6 +236,19 @@ pub(super) struct WatchFsm {
     /// setting has changed (a settings flip re-places the card even on an
     /// unmoved game window). `None` forces the next show to place first.
     pub(super) aim_card_placed: Option<(Rect, i32)>,
+    /// Whether the chat-translation panel window (the THIRD transparent
+    /// overlay window) is logically shown. Its want is "its `chat_panel`
+    /// switch on, battle active, game focused, Tab held, no picker layer,
+    /// the in-game chat input NOT focused": the panel appears while the
+    /// player holds Tab and is hidden otherwise. The PAGE decides its own
+    /// content from the chat-translate events; this flag only drives the
+    /// native window.
+    pub(super) chat_shown: bool,
+    /// Game rect the chat panel was last placed at — placement is skipped
+    /// while the game window has not moved (a settings flip does not change
+    /// the panel's geometry, only its content). `None` forces the next show
+    /// to place first.
+    pub(super) chat_placed: Option<Rect>,
     /// Presentation-verify state machine (see `diag.rs`): which shows owe a
     /// marker check and the current broadcast verdict. Reset to default
     /// (Unverified) when the screen configuration changes.
@@ -357,6 +370,9 @@ fn watch_tab_loop(app: AppHandle, stop: Arc<AtomicBool>) {
     if fsm.aim_card_shown {
         hide_aim_card(&app);
     }
+    if fsm.chat_shown {
+        hide_chat(&app);
+    }
     // Nor a leftover badge in the main window: drop the panel to idle (a
     // no-op when the last emitted state already was idle). The manual anchor
     // is cleared FIRST — it lives in this FSM and dies with the loop — so
@@ -477,6 +493,97 @@ pub(super) fn acquisition_retry_interval(held: Option<Duration>) -> Duration {
     } else {
         CAPTURE_MIN_INTERVAL
     }
+}
+
+/// One tick's inputs for the transparent-window scheduler ([schedule_windows]).
+/// Pure flags — the whole point of factoring them out is that the three
+/// windows' visibility rules can be unit-tested without Win32, a game
+/// window or a watcher loop.
+#[cfg(any(target_os = "windows", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct OverlayContext {
+    /// The game window is the foreground window (the overlay never shows
+    /// over another app).
+    pub(super) focused_on_game: bool,
+    /// The physical Tab key is down (the watcher's 30 ms poll).
+    pub(super) tab_down: bool,
+    /// A battle roster is known (`arena_seen_within`) — port time shows
+    /// nothing.
+    pub(super) battle_known: bool,
+    /// The main window's manual-locate picker layer is open (the player is
+    /// re-drawing the anchor box).
+    pub(super) picker_open: bool,
+    /// The table window's own switch is off (`overlay-config.toml` `table`).
+    pub(super) table_off: bool,
+    /// The aim card's own switch is on AND the battle class allows it (PvE /
+    /// all-AI enemy battles fold their gates into this flag so the pure
+    /// scheduler keeps one switch per window).
+    pub(super) aim_card_on: bool,
+    /// The chat panel's own switch is on (`overlay-config.toml`
+    /// `chat_panel`).
+    pub(super) chat_panel_on: bool,
+    /// The game's battle-chat INPUT currently owns the keyboard. Reserved
+    /// for the probe/chat bridge's chat-input signal — this build has no
+    /// chat-input source, so the watcher passes `false`; the scheduler
+    /// already honors it so a real source can flip it without touching the
+    /// show/hide branches.
+    pub(super) chat_input_focused: bool,
+}
+
+/// The windows the window manager should keep visible for one tick — the
+/// output side of [schedule_windows].
+#[cfg(any(target_os = "windows", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct WindowWants {
+    pub(super) table: bool,
+    pub(super) aim_card: bool,
+    pub(super) chat: bool,
+}
+
+/// The ONE visibility decision for all three transparent overlay windows
+/// (pure — unit-tested). Table and aim-card rules are the historical
+/// formulas, unchanged; the chat panel joins them with its own switch and
+/// its own Tab-held (rather than Tab-up) gate — it is INDEPENDENT of
+/// `table_off` (a table-off player keeps the translation panel) and of the
+/// aim card's battle-class gates.
+#[cfg(any(target_os = "windows", test))]
+pub(super) fn schedule_windows(ctx: OverlayContext) -> WindowWants {
+    WindowWants {
+        // The hold-Tab stat table: the historical want (battle known, game
+        // focused, Tab held, no picker, table switch not off).
+        table: ctx.focused_on_game
+            && ctx.tab_down
+            && ctx.battle_known
+            && !ctx.picker_open
+            && !ctx.table_off,
+        // The crosshair stats card: the historical want (battle known, game
+        // focused, Tab UP, card switch effective, no picker).
+        aim_card: ctx.focused_on_game
+            && ctx.battle_known
+            && ctx.aim_card_on
+            && !ctx.picker_open
+            && !ctx.tab_down,
+        // The chat-translation panel: Tab HELD (the player is looking at
+        // the table/chat) during a battle, its own switch on, no picker and
+        // no in-game chat input stealing the keyboard.
+        chat: ctx.focused_on_game
+            && ctx.battle_known
+            && !ctx.picker_open
+            && ctx.chat_panel_on
+            && ctx.tab_down
+            && !ctx.chat_input_focused,
+    }
+}
+
+/// Whether the game's battle-chat input currently owns the keyboard.
+///
+/// PLACEHOLDER: this build has no chat-input source (the probe/chat bridge
+/// cannot report it yet), so the scheduler's gate stays open. Kept as a
+/// named function instead of an inline `false` so the wiring point is
+/// auditable when a real signal lands.
+#[cfg(target_os = "windows")]
+fn chat_input_focused() -> bool {
+    false
 }
 
 /// Assemble the persistent calibration's LIVE identity for this moment:
@@ -683,6 +790,10 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // pass so the placement key below covers a settings change, not just a
     // game-window move (the TTL cache makes this another mutex memcpy).
     let aim_hang = super::overlay_config::aim_card_hang_px();
+    // The chat panel's own switch (schema v2 `chat_panel`): the watcher
+    // consults it every tick like the other window switches, so a settings
+    // flip applies live without a window lifecycle change.
+    let chat_panel_on = super::overlay_config::chat_panel_on();
 
     // Declare the OVERLAY view mode in the probe's wowsp.toml (barcode = 1
     // — the capture side channel's strips own the screen): the probe
@@ -758,6 +869,28 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         picker_open = false;
     }
 
+    // WINDOW SCHEDULER — the ONE visibility decision for all three
+    // transparent windows (pure; see `schedule_windows`). The historical
+    // table + aim-card wants and the chat panel's new one are derived here
+    // in one place so a later window cannot drift into its own ad-hoc
+    // formula. The aim card's battle-class gates (PvE / all-AI enemy — see
+    // the pass comment below) fold into `aim_card_on` here, so the
+    // scheduler keeps one switch per window while the branch behaviour stays
+    // exactly the historical one. `chat_input_focused` is the reserved
+    // in-game-chat-input placeholder (this build has no source for it).
+    let wants = schedule_windows(OverlayContext {
+        focused_on_game,
+        tab_down,
+        battle_known,
+        picker_open,
+        table_off,
+        aim_card_on: aim_card_on
+            && !super::arena_info::last_battle_pve()
+            && !super::arena_info::last_enemy_all_ai(),
+        chat_panel_on,
+        chat_input_focused: chat_input_focused(),
+    });
+
     // AIM-CARD pass — the second transparent window serving the one overlay
     // mode: shown while a battle is active and the game is focused and its
     // OWN switch (`aim_card`, read above) is on — independent of the table
@@ -780,14 +913,10 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // game-window move AND every settings change; the PAGE decides its own
     // content visibility from the telemetry aim verdict, so this only
     // drives the native window and costs a few flag compares per idle tick.
-    let want_aim_card = focused_on_game
-        && battle_known
-        && aim_card_on
-        && !picker_open
-        && !tab_down
-        && !super::arena_info::last_battle_pve()
-        && !super::arena_info::last_enemy_all_ai();
-    if want_aim_card {
+    // The decision itself is the window scheduler's (`schedule_windows`
+    // above); its `aim_card_on` input carries the battle-class gates folded
+    // in, so this branch is exactly the historical behaviour.
+    if wants.aim_card {
         if let Some(g) = game.as_ref() {
             let rect = rect_from_win32(g.rect);
             // A moved/resized game window OR a changed hang re-places; a
@@ -808,6 +937,37 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     } else if fsm.aim_card_shown {
         hide_aim_card(app);
         fsm.aim_card_shown = false;
+    }
+
+    // CHAT-PANEL pass — the THIRD transparent window: the bottom-left
+    // chat-translation panel, shown while the player HOLDS Tab during a
+    // battle and its own `chat_panel` switch is on. It is independent of
+    // the table switch (a table-off player keeps the panel) and of the aim
+    // card's battle-class gates (the panel is useful in PvE too). Placement
+    // parks the window at the game window's bottom-left (see
+    // `placement::chat_rect`) and follows every game-window move; the PAGE
+    // decides its own content from the chat-translate events, so this pass
+    // only drives the native window and costs a few flag compares per idle
+    // tick.
+    if wants.chat {
+        if let Some(g) = game.as_ref() {
+            let rect = rect_from_win32(g.rect);
+            // A moved/resized game window re-places; a no-op placement
+            // (window not created yet — creation is async) must not stamp
+            // the cache, or the panel would stay unplaced after creation.
+            if fsm.chat_placed.as_ref() != Some(&rect)
+                && place_chat(app, &rect, window_dpi_scale(g.hwnd))
+            {
+                fsm.chat_placed = Some(rect);
+            }
+            if !fsm.chat_shown && app.get_webview_window(CHAT_LABEL).is_some() {
+                show_chat(app);
+                fsm.chat_shown = true;
+            }
+        }
+    } else if fsm.chat_shown {
+        hide_chat(app);
+        fsm.chat_shown = false;
     }
 
     let battle = super::arena_info::last_arena_stamp();
@@ -855,7 +1015,10 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         None
     };
 
-    let want_visible = focused_on_game && tab_down && battle_known && !picker_open && !table_off;
+    // The table window's want: the window scheduler's historical formula
+    // (battle known, game focused, Tab held, no picker, table switch on) —
+    // see `schedule_windows`. Manual anchors gate on the same want below.
+    let want_visible = wants.table;
     if let Some((m, manual_game)) = manual_active {
         // Place ONCE per manual hold, not every 30 ms tick.
         if !fsm.overlay_shown || !fsm.manual_shown {

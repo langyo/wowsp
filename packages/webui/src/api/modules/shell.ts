@@ -131,11 +131,41 @@ export const shellApi = {
    *  shell (see commands/overlay_config.rs). Unknown values reset to the
    *  field's default on the Rust side, so the response is always valid.
    *  `aimCardHangPx` (logical px below the crosshair) is rounded and
-   *  clamped ≥ 0 shell-side; the slider only offers 60–240. */
+   *  clamped ≥ 0 shell-side; the slider only offers 60–240.
+   *  `chatPanel` is the battle-chat translation card's window switch and
+   *  `chatPanelMaxLines` its per-battle line cap (clamped 3–30 shell-side). */
   getOverlayConfig: () =>
-    transport.invoke<{ table: string; roster: string; aimCard: boolean; aimCardHangPx: number }>(RPC.get_overlay_config),
-  setOverlayConfig: (table: string, roster: string, aimCard: boolean, aimCardHangPx: number) =>
-    transport.invoke<{ table: string; roster: string; aimCard: boolean; aimCardHangPx: number }>(RPC.set_overlay_config, { table, roster, aimCard, aimCardHangPx }),
+    transport.invoke<{
+      table: string;
+      roster: string;
+      aimCard: boolean;
+      aimCardHangPx: number;
+      chatPanel: boolean;
+      chatPanelMaxLines: number;
+    }>(RPC.get_overlay_config),
+  setOverlayConfig: (
+    table: string,
+    roster: string,
+    aimCard: boolean,
+    aimCardHangPx: number,
+    chatPanel: boolean,
+    chatPanelMaxLines: number,
+  ) =>
+    transport.invoke<{
+      table: string;
+      roster: string;
+      aimCard: boolean;
+      aimCardHangPx: number;
+      chatPanel: boolean;
+      chatPanelMaxLines: number;
+    }>(RPC.set_overlay_config, {
+      table,
+      roster,
+      aimCard,
+      aimCardHangPx,
+      chatPanel,
+      chatPanelMaxLines,
+    }),
   /** In-game stats plugin presence in a game install (see
    *  commands/ingame_plugin.rs) — powers the roster "plugin detection"
    *  option's enabled state and its Discussions page link. */

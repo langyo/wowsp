@@ -17,6 +17,7 @@ import { modHubApi } from "./modules/modhub";
 import { pairingApi } from "./modules/pairing";
 import { contributionApi } from "./modules/contribution";
 import { decisionApi } from "./modules/decision";
+import { chatTranslateApi } from "./modules/chat";
 
 export * from "./modules/shell";
 export * from "./modules/blacklist";
@@ -28,6 +29,7 @@ export * from "./modules/modhub";
 export * from "./modules/pairing";
 export * from "./modules/contribution";
 export * from "./modules/decision";
+export * from "./modules/chat";
 
 export const api = {
   ...decisionApi,
@@ -40,4 +42,5 @@ export const api = {
   ...modHubApi,
   ...pairingApi,
   ...contributionApi,
+  ...chatTranslateApi,
 };

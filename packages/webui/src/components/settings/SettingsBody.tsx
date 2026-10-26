@@ -19,6 +19,7 @@ import ResourcesSection from "@/components/settings/sections/ResourcesSection";
 import InstallCleanupSection from "@/components/settings/sections/InstallCleanupSection";
 import ChangelogSection from "@/components/settings/ChangelogSection";
 import OverlayCalibrationSection from "@/components/settings/sections/OverlayCalibrationSection";
+import ChatTranslateSection from "@/components/settings/sections/ChatTranslateSection";
 import FeedbackSection from "@/components/settings/FeedbackSection";
 import AboutSection from "@/components/settings/sections/AboutSection";
 import AttributionsSection from "@/components/settings/sections/AttributionsSection";
@@ -92,6 +93,7 @@ export default defineComponent({
           </>
           ),
           overlayCalibration: () => <OverlayCalibrationSection ctx={ctx} />,
+          chatTranslate: () => <ChatTranslateSection />,
           feedback: () => (
           <>
           <FeedbackSection />

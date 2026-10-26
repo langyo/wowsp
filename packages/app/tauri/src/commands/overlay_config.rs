@@ -78,8 +78,8 @@ const LEGACY_OVERLAY_CONFIG_FILE: &str = "overlay-config.json";
 
 /// Header prepended to the canonical file. Part of the canonical text used
 /// for the heal-write comparison, like in `commands/network`.
-const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\", aim_card = true | false, aim_card_hang_px = <integer px>.\n\
-                           # Invalid values are reset to the defaults by the app.\n";
+const FILE_HEADER: &str = "# WoWSP overlay settings. table = \"detect\" | \"off\", roster = \"plugin\" | \"passive\", aim_card = true | false, aim_card_hang_px = <integer px>,\n\
+                           # chat_panel = true | false, chat_panel_max_lines = <integer 3..=30>. Invalid values are reset to the defaults by the app.\n";
 
 /// Default hang of the aim card's top edge below the game window's vertical
 /// center (where the crosshair sits), in logical px before DPI scaling.
@@ -94,6 +94,19 @@ const AIM_CARD_HANG_DEFAULT_PX: i32 = 60;
 /// an oversized value just pins the card to the game window's bottom edge —
 /// the clamp only keeps absurd hand-edited numbers from overflowing.
 const AIM_CARD_HANG_MAX_PX: i64 = 100_000;
+
+/// Default line cap of the chat-translation panel (`chat_panel_max_lines`):
+/// the panel keeps at most this many translated lines in its bounded buffer
+/// and the webui settings row edits it. The data side has its own
+/// `display.maxLines` in chat-translate.toml; this is the OVERLAY panel's
+/// cap and the smaller of the two effectively applies at render time.
+const CHAT_PANEL_MAX_LINES_DEFAULT: i64 = 8;
+
+/// Sanity clamp for the chat panel's line cap: fewer than three lines makes
+/// the panel useless, and past thirty it would cover the game HUD (and the
+/// page's buffer/render budget). Stored/set values are clamped here.
+const CHAT_PANEL_MAX_LINES_MIN: i64 = 3;
+const CHAT_PANEL_MAX_LINES_MAX: i64 = 30;
 
 /// How long a cached read stays fresh. The file only changes when the user
 /// flips a settings switch, so a couple of seconds of staleness bounds the
@@ -160,6 +173,13 @@ pub(crate) struct OverlayConfig {
     /// center and the card's top edge, before DPI scaling. Already
     /// sanitized on every path that builds a config ([`sanitize_hang_px`]).
     pub(crate) aim_card_hang_px: i32,
+    /// The chat-translation panel's window switch (schema v2 `chat_panel`):
+    /// shown on a Tab hold during a battle unless the user turned it off.
+    pub(crate) chat_panel: bool,
+    /// The chat panel's line cap (schema v2 `chat_panel_max_lines`): the
+    /// most translated lines the panel keeps on screen. Already sanitized
+    /// on every path that builds a config ([`sanitize_chat_panel_max_lines`]).
+    pub(crate) chat_panel_max_lines: i64,
 }
 
 impl Default for OverlayConfig {
@@ -169,6 +189,8 @@ impl Default for OverlayConfig {
             roster: RosterRecognition::Plugin,
             aim_card: true,
             aim_card_hang_px: AIM_CARD_HANG_DEFAULT_PX,
+            chat_panel: false,
+            chat_panel_max_lines: CHAT_PANEL_MAX_LINES_DEFAULT,
         }
     }
 }
@@ -179,6 +201,14 @@ impl Default for OverlayConfig {
 /// game rect's bottom edge anyway).
 fn sanitize_hang_px(raw: i64) -> i32 {
     raw.clamp(0, AIM_CARD_HANG_MAX_PX) as i32
+}
+
+/// Clamp the chat panel's line cap from any integer source (file or IPC)
+/// into [`CHAT_PANEL_MAX_LINES_MIN`]..=[`CHAT_PANEL_MAX_LINES_MAX`]. The
+/// panel's bounded buffer reads this value, so an absurd hand-edited number
+/// must never become a render budget — the clamp is the only fence.
+fn sanitize_chat_panel_max_lines(raw: i64) -> i64 {
+    raw.clamp(CHAT_PANEL_MAX_LINES_MIN, CHAT_PANEL_MAX_LINES_MAX)
 }
 
 /// Parse the v2 `table` field. Present-but-unknown values (a typo, a wrong
@@ -218,6 +248,8 @@ struct RawOverlayFields {
     roster: Option<String>,
     aim_card: Option<bool>,
     aim_card_hang_px: Option<i64>,
+    chat_panel: Option<bool>,
+    chat_panel_max_lines: Option<i64>,
     enabled: Option<bool>,
 }
 
@@ -245,6 +277,11 @@ fn resolve_fields(fields: RawOverlayFields) -> OverlayConfig {
             .aim_card_hang_px
             .map(sanitize_hang_px)
             .unwrap_or(AIM_CARD_HANG_DEFAULT_PX),
+        chat_panel: fields.chat_panel.unwrap_or(false),
+        chat_panel_max_lines: fields
+            .chat_panel_max_lines
+            .map(sanitize_chat_panel_max_lines)
+            .unwrap_or(CHAT_PANEL_MAX_LINES_DEFAULT),
     }
 }
 
@@ -265,6 +302,8 @@ fn fields_from_json(raw: &str) -> RawOverlayFields {
             .map(str::to_string),
         aim_card: map.get("aim_card").and_then(|v| v.as_bool()),
         aim_card_hang_px: map.get("aim_card_hang_px").and_then(|v| v.as_i64()),
+        chat_panel: map.get("chat_panel").and_then(|v| v.as_bool()),
+        chat_panel_max_lines: map.get("chat_panel_max_lines").and_then(|v| v.as_i64()),
         enabled: map.get("enabled").and_then(|v| v.as_bool()),
     }
 }
@@ -290,6 +329,8 @@ fn fields_from_toml(raw: &str) -> RawOverlayFields {
             .map(str::to_string),
         aim_card: map.get("aim_card").and_then(|v| v.as_bool()),
         aim_card_hang_px: map.get("aim_card_hang_px").and_then(|v| v.as_integer()),
+        chat_panel: map.get("chat_panel").and_then(|v| v.as_bool()),
+        chat_panel_max_lines: map.get("chat_panel_max_lines").and_then(|v| v.as_integer()),
         enabled: map.get("enabled").and_then(|v| v.as_bool()),
     }
 }
@@ -307,6 +348,8 @@ struct OverlayConfigTomlFile {
     roster: String,
     aim_card: bool,
     aim_card_hang_px: i32,
+    chat_panel: bool,
+    chat_panel_max_lines: i64,
 }
 
 /// Serialize the canonical file text (header + flat TOML keys).
@@ -316,6 +359,8 @@ fn canonical_toml(config: OverlayConfig) -> Result<String> {
         roster: config.roster.as_str().to_string(),
         aim_card: config.aim_card,
         aim_card_hang_px: config.aim_card_hang_px,
+        chat_panel: config.chat_panel,
+        chat_panel_max_lines: config.chat_panel_max_lines,
     };
     let body = toml::to_string(&file).map_err(|e| anyhow!("serialize overlay config: {e}"))?;
     Ok(format!("{FILE_HEADER}{body}"))
@@ -412,6 +457,24 @@ pub(crate) fn aim_card_hang_px() -> i32 {
     current().aim_card_hang_px
 }
 
+/// Whether the chat-translation panel window must be shown on a Tab hold:
+/// the watcher's per-tick chat pass consults this, so a flip applies live
+/// while the windows stay owned by the lifecycle.
+pub(crate) fn chat_panel_on() -> bool {
+    current().chat_panel
+}
+
+/// The chat panel's configured line cap (the page's bounded buffer reads
+/// it). The watcher's chat pass re-reads the config every tick, so a
+/// settings flip applies live. Contract accessor: this PR's watcher gates
+/// only on [`chat_panel_on`], and the page receives its cap through the
+/// chat-prefs event payload — this is the settings/emitter surface's read
+/// path for a later PR.
+#[allow(dead_code)]
+pub(crate) fn chat_panel_max_lines() -> i64 {
+    current().chat_panel_max_lines
+}
+
 /// Pure core of [`table_overlay_off`], unit-testable without the cache.
 fn overlay_suppressed(table: TableAnchor) -> bool {
     table != TableAnchor::Detect
@@ -429,6 +492,8 @@ pub struct OverlayConfigResponse {
     pub roster: String,
     pub aim_card: bool,
     pub aim_card_hang_px: i32,
+    pub chat_panel: bool,
+    pub chat_panel_max_lines: i64,
 }
 
 impl From<OverlayConfig> for OverlayConfigResponse {
@@ -438,6 +503,8 @@ impl From<OverlayConfig> for OverlayConfigResponse {
             roster: config.roster.as_str().to_string(),
             aim_card: config.aim_card,
             aim_card_hang_px: config.aim_card_hang_px,
+            chat_panel: config.chat_panel,
+            chat_panel_max_lines: config.chat_panel_max_lines,
         }
     }
 }
@@ -460,16 +527,20 @@ pub fn set_overlay_config(
     roster: String,
     aim_card: bool,
     aim_card_hang_px: i64,
+    chat_panel: bool,
+    chat_panel_max_lines: i64,
 ) -> CommandResult<OverlayConfigResponse> {
     let config = OverlayConfig {
         table: parse_table_field(&table),
         roster: parse_roster_field(&roster),
         aim_card,
         aim_card_hang_px: sanitize_hang_px(aim_card_hang_px),
+        chat_panel,
+        chat_panel_max_lines: sanitize_chat_panel_max_lines(chat_panel_max_lines),
     };
     let dir = paths::ensure_data_dir()?;
     let canonical = canonical_toml(config)?;
-    tracing::info!(table = ?config.table, roster = ?config.roster, aim_card = config.aim_card, aim_card_hang_px = config.aim_card_hang_px, "overlay config saved");
+    tracing::info!(table = ?config.table, roster = ?config.roster, aim_card = config.aim_card, aim_card_hang_px = config.aim_card_hang_px, chat_panel = config.chat_panel, chat_panel_max_lines = config.chat_panel_max_lines, "overlay config saved");
     settings_store::store(&dir, OVERLAY_CONFIG_FILE, &canonical)?;
     settings_store::retire_legacy_json(&dir, LEGACY_OVERLAY_CONFIG_FILE);
     let mut cache = CACHE
@@ -645,6 +716,70 @@ mod tests {
         assert_eq!(sanitize_hang_px(i64::MAX), AIM_CARD_HANG_MAX_PX as i32);
     }
 
+    /// The chat-panel fields (schema v2 `chat_panel` /
+    /// `chat_panel_max_lines`): absent/wrong-typed values land on their
+    /// defaults, the line cap clamps into [3, 30] on both file formats and
+    /// the IPC sanitizer, and an explicit off/false survives.
+    #[test]
+    fn chat_panel_fields_parse_and_clamp() {
+        // Defaults: panel off, the shipped 8-line cap.
+        let cfg = parse_config("{}");
+        assert!(!cfg.chat_panel);
+        assert_eq!(cfg.chat_panel_max_lines, CHAT_PANEL_MAX_LINES_DEFAULT);
+
+        // Explicit values ride through; the JSON read path accepts them too.
+        let cfg = parse_config(r#"{"chat_panel":true,"chat_panel_max_lines":12}"#);
+        assert!(cfg.chat_panel);
+        assert_eq!(cfg.chat_panel_max_lines, 12);
+        let cfg = parse_config(r#"{"chat_panel":false,"chat_panel_max_lines":30}"#);
+        assert!(!cfg.chat_panel);
+        assert_eq!(cfg.chat_panel_max_lines, 30);
+
+        // Wrong types fall back per field (the read path heals the file).
+        let cfg = parse_config(r#"{"chat_panel":"on","chat_panel_max_lines":"8"}"#);
+        assert!(!cfg.chat_panel);
+        assert_eq!(cfg.chat_panel_max_lines, CHAT_PANEL_MAX_LINES_DEFAULT);
+
+        // Both file formats clamp the cap into [3, 30].
+        for (raw, want) in [
+            (-5, 3),
+            (0, 3),
+            (2, 3),
+            (3, 3),
+            (8, 8),
+            (30, 30),
+            (31, 30),
+            (4000, 30),
+        ] {
+            assert_eq!(
+                parse_config(&format!(r#"{{"chat_panel_max_lines":{raw}}}"#)).chat_panel_max_lines,
+                want,
+                "json raw: {raw}"
+            );
+            assert_eq!(
+                resolve_fields(fields_from_toml(&format!("chat_panel_max_lines = {raw}\n")))
+                    .chat_panel_max_lines,
+                want,
+                "toml raw: {raw}"
+            );
+            assert_eq!(
+                sanitize_chat_panel_max_lines(raw),
+                want,
+                "sanitizer raw: {raw}"
+            );
+        }
+
+        // TOML path mirrors the fields and the clamp.
+        let cfg = resolve_fields(fields_from_toml(
+            "chat_panel = true\nchat_panel_max_lines = 15\n",
+        ));
+        assert!(cfg.chat_panel);
+        assert_eq!(cfg.chat_panel_max_lines, 15);
+        let cfg = resolve_fields(fields_from_toml("chat_panel_max_lines = 999\n"));
+        assert!(!cfg.chat_panel);
+        assert_eq!(cfg.chat_panel_max_lines, CHAT_PANEL_MAX_LINES_MAX);
+    }
+
     /// TOML parse: canonical text round-trips (the aim-card boolean
     /// included), garbage/non-table TOML and unknown values fall back per
     /// field, and a v1-style TOML `enabled` key resolves the same way the
@@ -656,10 +791,14 @@ mod tests {
             roster: RosterRecognition::Passive,
             aim_card: false,
             aim_card_hang_px: 240,
+            chat_panel: true,
+            chat_panel_max_lines: 12,
         })
         .unwrap();
         assert!(canonical.contains("aim_card = false"));
         assert!(canonical.contains("aim_card_hang_px = 240"));
+        assert!(canonical.contains("chat_panel = true"));
+        assert!(canonical.contains("chat_panel_max_lines = 12"));
         assert_eq!(
             resolve_fields(fields_from_toml(&canonical)),
             OverlayConfig {
@@ -667,6 +806,8 @@ mod tests {
                 roster: RosterRecognition::Passive,
                 aim_card: false,
                 aim_card_hang_px: 240,
+                chat_panel: true,
+                chat_panel_max_lines: 12,
             }
         );
         for raw in ["", "garbage [", "42", "[1,2]", "table = \"plugin\""] {

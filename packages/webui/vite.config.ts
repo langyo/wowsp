@@ -312,11 +312,12 @@ export default defineConfig({
     emptyOutDir: false,
     target: 'es2020',
     rollupOptions: {
-      // Four entries: the main shell (Vue app), the two pre-rendered
+      // Five entries: the main shell (Vue app), the three pre-rendered
       // overlay pages (bare DOM) the Rust watcher loads — the Tab-table
-      // window (src/overlay/main.ts) and the crosshair aim card
-      // (src/overlay/aimcard.ts) — and the tray panel (mini Vue app) the
-      // tray left click loads — see src/tray/main.ts. (The manual-locate
+      // window (src/overlay/main.ts), the crosshair aim card
+      // (src/overlay/aimcard.ts) and the battle-chat translation card
+      // (src/overlay/chat.ts) — and the tray panel (mini Vue app) the tray
+      // left click loads — see src/tray/main.ts. (The manual-locate
       // drag-box picker used to be an extra entry rendered in a dedicated
       // window; it now lives inside the main app as
       // features/replay/ManualLocateOverlay.)
@@ -324,6 +325,7 @@ export default defineConfig({
         main: resolve(pkgDir, "index.html"),
         overlay: resolve(pkgDir, "overlay.html"),
         aimcard: resolve(pkgDir, "aimcard.html"),
+        chat: resolve(pkgDir, "chat.html"),
         tray: resolve(pkgDir, "tray.html"),
       },
       output: {

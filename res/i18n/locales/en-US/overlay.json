@@ -24,5 +24,13 @@
   "colHeadBattles": "Battles",
   "colHeadDmg": "Avg dmg",
   "colHeadKd": "K/D",
-  "colHeaderJoin": " "
+  "colHeaderJoin": " ",
+  "chat": {
+    "title": "Chat translation",
+    "loading": "Translating…",
+    "ready": "Translation ready",
+    "pasteHint": "Press Enter to open chat, Ctrl+V to paste and send",
+    "unavailable": "Translation unavailable",
+    "remaining": "{count} left to paste"
+  }
 }

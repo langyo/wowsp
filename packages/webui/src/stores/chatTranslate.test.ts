@@ -1,0 +1,254 @@
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { flushPromises } from "@vue/test-utils";
+
+const { chatMock, savedMock } = vi.hoisted(() => ({
+  chatMock: {
+    getChatTranslateConfig: vi.fn(),
+    setChatTranslateConfig: vi.fn(),
+    testChatTranslateProvider: vi.fn(),
+  },
+  savedMock: { notifySettingsSaved: vi.fn() },
+}));
+vi.mock("@/api/modules/chat", () => ({ chatTranslateApi: chatMock }));
+vi.mock("@/stores/settingsSavedFlash", () => savedMock);
+import { useChatTranslateStore } from "./chatTranslate";
+import type {
+  ChatTranslateConfigPublic,
+  ChatTranslateConfigResponse,
+} from "@/api/modules/chat";
+
+/** The shell's default config (chat-translate.toml pristine state). */
+function baseConfig(): ChatTranslateConfigPublic {
+  return {
+    enabled: false,
+    consentVersion: 0,
+    provider: {
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-chat",
+      apiKey: "",
+      timeoutMs: 10000,
+      temperature: 0,
+    },
+    languages: { selfLang: "", mode: "auto", always: [], exclude: [], maxTargets: 4 },
+    detect: { minChars: 2 },
+    context: { shipNames: true, teams: true, recentLines: 8, nicknames: false },
+    display: { maxLines: 8 },
+    send: {
+      mode: "clipboard",
+      suffixEnabled: true,
+      suffixFormat: "per-segment",
+      splitChars: 120,
+      paceMs: 500,
+      maxPerSend: 3,
+      perBattleCap: 20,
+      cooldownS: 10,
+      hintTimeoutS: 60,
+    },
+  };
+}
+
+function response(
+  overrides: Partial<ChatTranslateConfigPublic> = {},
+  extra: { apiKeySet?: boolean; envKeyOverride?: boolean } = {},
+): ChatTranslateConfigResponse {
+  return {
+    config: { ...baseConfig(), ...overrides },
+    apiKeySet: extra.apiKeySet ?? false,
+    envKeyOverride: extra.envKeyOverride ?? false,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  setActivePinia(createPinia());
+  chatMock.getChatTranslateConfig.mockResolvedValue(response());
+  chatMock.setChatTranslateConfig.mockImplementation(
+    async (update: { enabled: boolean; consentVersion: number }) =>
+      response({ enabled: update.enabled, consentVersion: update.consentVersion }),
+  );
+});
+
+describe("chat translation settings", () => {
+  it("shares one initial read across concurrent callers", async () => {
+    const read = deferred<ChatTranslateConfigResponse>();
+    chatMock.getChatTranslateConfig.mockReturnValueOnce(read.promise);
+    const store = useChatTranslateStore();
+    const first = store.load();
+    let secondFinished = false;
+    const second = store.load().then(() => {
+      secondFinished = true;
+    });
+    await flushPromises();
+    expect(store.loaded).toBe(false);
+    expect(secondFinished).toBe(false);
+    expect(chatMock.getChatTranslateConfig).toHaveBeenCalledTimes(1);
+    read.resolve(response({ provider: { ...baseConfig().provider, model: "test-model" } }));
+    await Promise.all([first, second]);
+    expect(store.loaded).toBe(true);
+    expect(store.config.provider.model).toBe("test-model");
+  });
+
+  it("falls back to the defaults when the shell has no command yet", async () => {
+    chatMock.getChatTranslateConfig.mockRejectedValueOnce(new Error("command not found"));
+    const store = useChatTranslateStore();
+    await store.load();
+    expect(store.loaded).toBe(true);
+    expect(store.config.enabled).toBe(false);
+    expect(store.config.provider.baseUrl).toBe("https://api.deepseek.com");
+    expect(store.config.send.splitChars).toBe(120);
+  });
+
+  it("writes the API key tri-state conservatively", async () => {
+    const store = useChatTranslateStore();
+    await store.load();
+    // null = leave the stored key untouched (an unrelated provider edit
+    // must never wipe it).
+    await store.setProvider({ baseUrl: "https://example.test/v1" }, null);
+    expect(chatMock.setChatTranslateConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({
+          baseUrl: "https://example.test/v1",
+          apiKey: null,
+        }),
+      }),
+    );
+    // "" = clear.
+    await store.setProvider({}, "");
+    expect(chatMock.setChatTranslateConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({ provider: expect.objectContaining({ apiKey: "" }) }),
+    );
+    // a value = replace (test fixture only; never a real key).
+    await store.setProvider({}, "sk-test-placeholder");
+    expect(chatMock.setChatTranslateConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({ apiKey: "sk-test-placeholder" }),
+      }),
+    );
+  });
+
+  it("stamps consent together with the enable write", async () => {
+    const store = useChatTranslateStore();
+    await store.load();
+    await store.acceptConsent();
+    expect(chatMock.setChatTranslateConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: true, consentVersion: 1 }),
+    );
+    expect(store.config.enabled).toBe(true);
+    expect(store.config.consentVersion).toBe(1);
+  });
+
+  it("merges section patches without dropping the other fields", async () => {
+    const store = useChatTranslateStore();
+    await store.load();
+    await store.setLanguages({ mode: "fixed", always: ["ja", "ko"] });
+    expect(chatMock.setChatTranslateConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        languages: expect.objectContaining({
+          mode: "fixed",
+          always: ["ja", "ko"],
+          // untouched fields survive the merge
+          selfLang: "",
+          maxTargets: 4,
+        }),
+        send: expect.objectContaining({ splitChars: 120 }),
+      }),
+    );
+    await store.setSend({ suffixEnabled: false, suffixFormat: "unified" });
+    expect(chatMock.setChatTranslateConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        send: expect.objectContaining({
+          suffixEnabled: false,
+          suffixFormat: "unified",
+          hintTimeoutS: 60,
+        }),
+      }),
+    );
+  });
+
+  it("applies the sanitized response and the key flags as the truth", async () => {
+    chatMock.setChatTranslateConfig.mockResolvedValueOnce(
+      response(
+        { languages: { ...baseConfig().languages, maxTargets: 6 } },
+        { apiKeySet: true, envKeyOverride: true },
+      ),
+    );
+    const store = useChatTranslateStore();
+    await store.load();
+    await store.setLanguages({ maxTargets: 99 });
+    // The shell clamps 1..=6 — the store accepts the reply.
+    expect(store.config.languages.maxTargets).toBe(6);
+    expect(store.apiKeySet).toBe(true);
+    expect(store.envKeyOverride).toBe(true);
+    expect(savedMock.notifySettingsSaved).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a connectivity-test result and surfaces command failures", async () => {
+    const store = useChatTranslateStore();
+    await store.load();
+    chatMock.testChatTranslateProvider.mockResolvedValueOnce({
+      ok: true,
+      latencyMs: 87,
+      modelEcho: "deepseek-chat",
+      error: null,
+    });
+    await store.testProvider();
+    expect(store.testing).toBe(false);
+    expect(store.testResult).toEqual({
+      ok: true,
+      latencyMs: 87,
+      modelEcho: "deepseek-chat",
+      error: null,
+    });
+    chatMock.testChatTranslateProvider.mockRejectedValueOnce(
+      new Error("synthetic provider timeout"),
+    );
+    await store.testProvider();
+    expect(store.testResult?.ok).toBe(false);
+    expect(store.testResult?.error).toContain("synthetic provider timeout");
+  });
+
+  it("never applies an older reply over a newer choice", async () => {
+    // Later writes echo their own update back (the real shell sanitizes and
+    // returns what it stored); the STALE first reply below claims the
+    // untouched defaults, so applying it would flip both choices back.
+    chatMock.setChatTranslateConfig.mockImplementation(
+      async (update: {
+        enabled: boolean;
+        consentVersion: number;
+        languages: ChatTranslateConfigPublic["languages"];
+        send: ChatTranslateConfigPublic["send"];
+      }) =>
+        response({
+          enabled: update.enabled,
+          consentVersion: update.consentVersion,
+          languages: update.languages,
+          send: update.send,
+        }),
+    );
+    const store = useChatTranslateStore();
+    await store.load();
+    const firstWrite = deferred<ChatTranslateConfigResponse>();
+    chatMock.setChatTranslateConfig.mockReturnValueOnce(firstWrite.promise);
+    const first = store.setLanguages({ mode: "fixed" });
+    await flushPromises();
+    const second = store.setSend({ suffixEnabled: false });
+    await flushPromises();
+    expect(chatMock.setChatTranslateConfig).toHaveBeenCalledTimes(1);
+    // The stale reply claims the untouched defaults; it must be dropped.
+    firstWrite.resolve(response());
+    await Promise.all([first, second]);
+    expect(store.config.languages.mode).toBe("fixed");
+    expect(store.config.send.suffixEnabled).toBe(false);
+  });
+});
