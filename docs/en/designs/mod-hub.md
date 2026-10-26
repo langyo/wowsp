@@ -592,6 +592,12 @@ app digest job of `release.yml`.
 - post-publish readback verification of the released index;
 - on failure: roll back to the previous index and open an alert issue;
 - Discussion batch updates are rate-limited to ≥ 1 s per call.
+- Shared runtime packages (Aslain's `<Implicit>` blocks — TTaroModUtils, the
+  ModForge blueprint engine) are bundled into every `RequiresAny` dependent's
+  package list, so installs are self-contained; several mods share one copy,
+  and the thread says so (if a sibling mod stops working after an uninstall,
+  reinstall any of them). Package-level `Requires`/`UnpackTo` verbs and the
+  full package dependency graph remain unhandled (roadmap).
 
 #### Reporting
 
