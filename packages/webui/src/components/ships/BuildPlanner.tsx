@@ -1,13 +1,13 @@
 import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
 import { AlertTriangle, Ban, Coins, Lock, RotateCcw, X } from "@lucide/vue";
 
-import { HkButton } from "@celestia-island/hikari";
+import { HkButton, HkTabs } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import type { HintTag } from "@/composables/globalTooltip";
 import { AssetImage } from "@/components/base/AssetImage";
-import { techTreeNode } from "@/utils/techTreeData";
-import { useShipsUiStore } from "@/stores/shipsUi";
+import { techTreeNode, type TechTreeRealm } from "@/utils/techTreeData";
+import { useShipsUiStore, type ShipsTreeRealm } from "@/stores/shipsUi";
 import type { ShipInfo } from "@/api";
 import {
   classSkills,
@@ -28,8 +28,9 @@ import {
 import { type PlannerBuild } from "./modifierPipeline";
 import {
   MODERNIZATIONS,
-  SIGNALS,
+  pruneBuildForRealm,
   shipUpgradeSlots,
+  signalsFor,
   upgradeMountable,
   type ModernizationEntry,
   type SignalEntry,
@@ -40,6 +41,7 @@ import { isMobileApp } from "@/utils/platform";
 import { gameNationOf } from "@/utils/nationCodes";
 import DataObserver from "./DataObserver";
 import commandersData from "../../data/commanders.json";
+import commandersLestaData from "../../data/commanders_lesta.json";
 import shipConsumablesData from "../../data/ship_consumables.json";
 import "./BuildPlanner.scss";
 
@@ -54,6 +56,12 @@ import "./BuildPlanner.scss";
  *
  * Build state lives in the parent (ShipDetailModal) so it survives tab
  * switches and resets when the ship changes.
+ *
+ * Realm: the bar's WG/Lesta switch drives the shared shipsUi.treeRealm —
+ * the same state the tech tree and encyclopedia consume — and re-scopes
+ * every captain dataset here (skill tree, commanders, signals, skill
+ * numbers in the pipeline). Switching prunes the build to the active
+ * realm's catalogs (see the realm watch).
  */
 
 // ── Asset resolvers (real in-game art under src/res/images) ──────────────
@@ -124,9 +132,21 @@ interface FlagEffect {
   good: boolean;
 }
 
-const COMMANDERS = (commandersData as CommanderEntry[])
-  .slice()
-  .sort((a, b) => (b.talents.length > 0 ? 1 : 0) - (a.talents.length > 0 ? 1 : 0) || a.person.localeCompare(b.person));
+/** Legendary-first, then by person — the roster sort both realms share. */
+function sortCommanders(list: CommanderEntry[]): CommanderEntry[] {
+  return list
+    .slice()
+    .sort(
+      (a, b) => (b.talents.length > 0 ? 1 : 0) - (a.talents.length > 0 ? 1 : 0) || a.person.localeCompare(b.person),
+    );
+}
+/** Roster per realm. commanders_lesta.json entries carry no epicSkills and
+ *  no portrait, so in Lesta mode the green epic ribbons drop out naturally
+ *  and portraits fall back to the initial-letter tile. */
+const COMMANDERS_BY_REALM: Record<TechTreeRealm, CommanderEntry[]> = {
+  wg: sortCommanders(commandersData as CommanderEntry[]),
+  lesta: sortCommanders(commandersLestaData as CommanderEntry[]),
+};
 /** Tech-tree index → consumable ability families (Spotter / Fighter / …)
  *  extracted from GameParams ShipAbilities (the WG API hides loadouts);
  *  backs the consumable-gated skill bans. */
@@ -143,26 +163,40 @@ const DATA_KEY_BY_LANG: Record<string, string> = {
 };
 
 /** Signal modifier keys where BELOW 1 is the player-friendly side (reload
- *  times, burn/flood durations, dispersion...); every unlisted key is
- *  higher-is-better — including GSMaxDist, which is secondary-battery
- *  RANGE (MY6 carries it at 1.05 = +5% range). Drives the green/red
- *  coloring of the flag hover card. */
+ *  times, burn/flood durations, dispersion, damage taken...); every unlisted
+ *  key is higher-is-better — including GSMaxDist, which is secondary-battery
+ *  RANGE (MY6 carries it at 1.05 = +5% range), and Lesta's shootShift
+ *  (aim-point shift, 1.04 at tier 4 = faster/better). Polarity cross-checked
+ *  against the Lesta tier gradients (values slide toward the better side as
+ *  the tier climbs). Drives the green/red coloring of the flag hover card. */
 const LOWER_IS_BETTER_EFFECTS = new Set([
   "ConsumableReloadTime",
   "auxTorpBoosterReloadCoeff",
+  "GMIdealRadius",
+  "GMSIdealRadius",
   "GSIdealRadius",
   "GSShotDelay",
   "burnTime",
   "collisionDamageNerf",
   "floodTime",
   "hydrophoneReloadCoeff",
+  "planeBubbleArmorCoeff",
   "planeConsumableReloadTime",
+  "planeSpreadMultiplier",
   "submarineLocatorReloadCoeff",
+  "vulnerabilityDBomb",
 ]);
 
 /** Additive percentage-point signal modifiers (0.01 = +1pp), not
- *  multipliers — formatted (and signed) differently from coefficients. */
-const PP_EFFECTS = new Set(["burnChanceFactorBig", "burnChanceFactorSmall"]);
+ *  multipliers — formatted (and signed) differently from coefficients.
+ *  burnChanceBonus / floodChanceCommonBonus are the Lesta yankee family's
+ *  flat additive chances (WG's burnChanceFactor* split is caliber-gated). */
+const PP_EFFECTS = new Set([
+  "burnChanceBonus",
+  "burnChanceFactorBig",
+  "burnChanceFactorSmall",
+  "floodChanceCommonBonus",
+]);
 
 /** Commander-talent modifier keys that are activation plumbing, never
  *  player-visible stats — dropped from the talent rows entirely.
@@ -221,6 +255,11 @@ export default defineComponent({
     const shipsUi = useShipsUiStore();
     const section = ref<Section>(props.initialSection);
 
+    /** Active server implementation — the SAME store state the tech tree
+     *  and the encyclopedia consume, so the whole ships view moves as one
+     *  coherent mode. */
+    const realm = computed(() => shipsUi.treeRealm as TechTreeRealm);
+
     const dataLangKey = computed(() => DATA_KEY_BY_LANG[dataLanguage.value] ?? "en");
 
     /** Tree node of the planned ship in the selected branch source — a
@@ -242,7 +281,7 @@ export default defineComponent({
 
     // ── Skills section ─────────────────────────────────────────────────────
     const cls = computed(() => skillClassFor(props.ship.type));
-    const tree = computed(() => classSkills(cls.value));
+    const tree = computed(() => classSkills(cls.value, realm.value));
 
     // ── Top bar ────────────────────────────────────────────────────────────
     // Weighted by tier row: a tier-2 skill costs 2 pts, tier-3 → 3, tier-4 → 4.
@@ -302,6 +341,52 @@ export default defineComponent({
       { immediate: true },
     );
 
+    // ── Realm switch prune ─────────────────────────────────────────────────
+    // The active realm's catalogs, as membership sets for the prune.
+    const realmSignals = computed(() => signalsFor(realm.value));
+    const realmCommanders = computed(() => COMMANDERS_BY_REALM[realm.value]);
+    const treeCodes = computed(() => new Set(tree.value.map((s) => s.code)));
+    const signalIndices = computed(() => new Set(realmSignals.value.map((s) => s.index)));
+    const commanderNames = computed(() => new Set(realmCommanders.value.map((c) => c.name)));
+
+    // Switching WG ⇄ Lesta swaps the skill tree, the signal catalog
+    // (PCEF00x ⇄ PCEF1xx — disjoint indices) and the commander roster under
+    // a build that may reference the other realm's data (restored lineup
+    // builds are always stamped WG). Prune the build in place — the same
+    // contract as the ship-change prune above — so the points counter
+    // refunds dead codes, flying flags stay resolvable and the selected
+    // captain either exists or drops to standard. The hull-capability bans
+    // also depend on the realm (consumableFamilies reads the realm-scoped
+    // tech-tree index), so the ban pass rides the same patch — one emit,
+    // no resurrection of a skill the ship watch just dropped.
+    watch(
+      realm,
+      () => {
+        const base = pruneBuildForRealm(
+          props.build,
+          treeCodes.value,
+          signalIndices.value,
+          commanderNames.value,
+        );
+        const skills = { ...(base ? base.skills : props.build.skills) };
+        let banPruned = false;
+        for (const code of Object.keys(skills)) {
+          if (skillUnavailable(code, props.ship.defaultProfile as Record<string, unknown> | null, consumableFamilies.value)) {
+            delete skills[code];
+            banPruned = true;
+          }
+        }
+        if (base || banPruned) {
+          setBuild({
+            skills: banPruned ? skills : base!.skills,
+            signals: base ? base.signals : props.build.signals,
+            commander: base ? base.commander : props.build.commander,
+          });
+        }
+      },
+      { immediate: true },
+    );
+
     function pointsBelowTier(tier: number): number {
       return skillPointsBelow(props.build.skills, tree.value, tier);
     }
@@ -334,10 +419,13 @@ export default defineComponent({
     /** WG lowercase nation → GameParams nation of the current ship (drives
      *  both the commander pool and modernization gating). */
     const gpNation = computed(() => gameNationOf(props.ship.nation));
-    /** Commanders usable on THIS ship. Filtering by nation also drops the
-     *  7 event-bound commanders (empty nations). COMMANDERS is pre-sorted
-     *  legendary-first then by person — the filter preserves that order. */
-    const shipCommanders = computed(() => COMMANDERS.filter((c) => c.nations.includes(gpNation.value)));
+    /** Commanders usable on THIS ship in the active realm. Filtering by
+     *  nation also drops the event-bound commanders (empty nations). The
+     *  roster is pre-sorted legendary-first then by person — the filter
+     *  preserves that order. */
+    const shipCommanders = computed(() =>
+      realmCommanders.value.filter((c) => c.nations.includes(gpNation.value)),
+    );
     function commanderDisplayName(cmd: CommanderEntry): string {
       const key = `ships.commanders.${cmd.person}`;
       return hasMsg(key) ? t(key) : cmd.person.replace(/_/g, " ");
@@ -351,7 +439,7 @@ export default defineComponent({
     }
     const selectedCommander = computed(() =>
       props.build.commander
-        ? COMMANDERS.find((c) => c.name === props.build.commander) ?? null
+        ? realmCommanders.value.find((c) => c.name === props.build.commander) ?? null
         : null,
     );
     /** Skills the selected legendary captain teaches at enhanced ("epic")
@@ -365,9 +453,10 @@ export default defineComponent({
     });
     /** Skills the game itself recommends for THIS ship (crew-presets table,
      *  most specific of exact ship / group / class) — the amber corner
-     *  ribbon. */
+     *  ribbon. Realm-scoped: the Lesta extract has no preset table, so the
+     *  ribbon simply disappears in Lesta mode. */
     const recommended = computed(() =>
-      recommendedSkills(treeIndexOf(props.ship.shipId), props.ship.type),
+      recommendedSkills(treeIndexOf(props.ship.shipId), props.ship.type, realm.value),
     );
     /** Numeric key:value pairs of one modifier dict, with plain keys hidden
      *  when their *UI twin is present, internal enums and activation
@@ -797,7 +886,12 @@ export default defineComponent({
                 <div class="planner-v__talent" key={talent.activatorType + ti}>
                   <div class="planner-v__talent-head">
                     <span class="planner-v__talent-trigger">
-                      {t("ships.skills.talentTrigger")} · {activatorLabel(talent.activatorType)}
+                      {/* Lesta talents trigger on achievements with no
+                          activator enum — render the plain label instead
+                          of a dangling "· ". */}
+                      {talent.activatorType
+                        ? `${t("ships.skills.talentTrigger")} · ${activatorLabel(talent.activatorType)}`
+                        : t("ships.skills.talentTrigger")}
                     </span>
                     {talent.maxTriggerNum > 0 ? (
                       <span class="planner-v__talent-max">
@@ -825,34 +919,63 @@ export default defineComponent({
 
     function renderFlags() {
       const tip = flagTip.value;
+      const signals = realmSignals.value;
+      // Lesta catalogs carry a family grouping (6 stems × 4 tiers): one
+      // stack per family, tiers ascending, each tile tier-badged. WG
+      // entries carry no group/tier and keep the flat grid as-is.
+      const grouped = signals.length > 0 && signals.every((s) => s.group != null);
+      const familyStacks = grouped
+        ? (() => {
+            const fams = new Map<string, SignalEntry[]>();
+            for (const sig of signals) {
+              const list = fams.get(sig.group!);
+              if (list) list.push(sig);
+              else fams.set(sig.group!, [sig]);
+            }
+            return [...fams.entries()].map(([stem, list]) => ({
+              stem,
+              list: list.slice().sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0)),
+            }));
+          })()
+        : [];
+      const tile = (sig: SignalEntry) => {
+        const active = props.build.signals.includes(sig.index);
+        const name = signalName(sig);
+        return (
+          <button
+            type="button"
+            class={["planner-v__flag", active ? "planner-v__flag--active" : ""]}
+            key={sig.index}
+            onClick={() => toggleSignal(sig.index)}
+            onMouseenter={(e) => showFlagTip(sig, e.currentTarget as HTMLElement)}
+            onMouseleave={hideFlagTip}
+            onFocus={(e) => showFlagTip(sig, e.currentTarget as HTMLElement)}
+            onBlur={hideFlagTip}
+          >
+            {sig.tier != null ? (
+              <span class="planner-v__flag-tier">{t(`ships.flags.tier${sig.tier}`)}</span>
+            ) : null}
+            <span class="planner-v__flag-icon">
+              <AssetImage
+                class="planner-v__flag-img"
+                src={signalIconUrl(sig.name)}
+                alt={name}
+                fallback={<span>{name.charAt(0)}</span>}
+              />
+            </span>
+            <span class="planner-v__flag-name">{name}</span>
+          </button>
+        );
+      };
       return (
-        <div class="planner-v__flags">
-          {SIGNALS.map((sig) => {
-            const active = props.build.signals.includes(sig.index);
-            const name = signalName(sig);
-            return (
-              <button
-                type="button"
-                class={["planner-v__flag", active ? "planner-v__flag--active" : ""]}
-                key={sig.index}
-                onClick={() => toggleSignal(sig.index)}
-                onMouseenter={(e) => showFlagTip(sig, e.currentTarget as HTMLElement)}
-                onMouseleave={hideFlagTip}
-                onFocus={(e) => showFlagTip(sig, e.currentTarget as HTMLElement)}
-                onBlur={hideFlagTip}
-              >
-                <span class="planner-v__flag-icon">
-                  <AssetImage
-                    class="planner-v__flag-img"
-                    src={signalIconUrl(sig.name)}
-                    alt={name}
-                    fallback={<span>{name.charAt(0)}</span>}
-                  />
-                </span>
-                <span class="planner-v__flag-name">{name}</span>
-              </button>
-            );
-          })}
+        <div class={grouped ? "planner-v__flags planner-v__flags--grouped" : "planner-v__flags"}>
+          {grouped
+            ? familyStacks.map(({ stem, list }) => (
+                <div class="planner-v__flag-family" key={stem}>
+                  {list.map(tile)}
+                </div>
+              ))
+            : signals.map(tile)}
           {tip ? (
             /* Teleported to <body>: the ship-detail modal content carries a
                transform, which would re-anchor a plain fixed card and its
@@ -1088,6 +1211,21 @@ export default defineComponent({
                 ? t("ships.skills.remaining", { n: remaining.value })
                 : t("ships.skills.overBudget")}
             </span>
+            {/* WG / Lesta server implementation — the SAME store state the
+                tech tree and encyclopedia consume (ShipsView's switcher);
+                skills, commanders and signals follow it from here too. */}
+            <div class="planner-v__realm" data-hint={t("ships.skills.realmHint")}>
+              <span class="planner-v__realm-label">{t("ships.skills.realm")}</span>
+              <HkTabs
+                variant="segmented"
+                modelValue={shipsUi.treeRealm}
+                onUpdate:modelValue={(v: string) => shipsUi.setTreeRealm(v as ShipsTreeRealm)}
+                tabs={[
+                  { key: "wg", label: "WG" },
+                  { key: "lesta", label: "Lesta" },
+                ]}
+              />
+            </div>
             <HkButton
               variant="ghost"
               size="sm"
@@ -1147,7 +1285,7 @@ export default defineComponent({
                   onInput={(e) => setBuild({ healthPct: Number((e.target as HTMLInputElement).value) / 100 })}
                 />
               </div>
-              <DataObserver ship={props.ship} build={b} gameparams={props.gameparams} />
+              <DataObserver ship={props.ship} build={b} gameparams={props.gameparams} realm={realm.value} />
             </aside>
           </div>
         </div>

@@ -103,3 +103,53 @@ describe("recomputeStats", () => {
     expect(gunboat.modified.fireChanceOut).toBeCloseTo(43.5, 5);
   });
 });
+
+describe("recomputeStats realm routing", () => {
+  // The WG and Lesta captain datasets are disjoint where it matters: the
+  // signal indices never overlap (PCEF00x vs PCEF1xx) and the CV skill the
+  // two trees swap exists on one side only. Same call shape as the tests
+  // above; the realm rides the trailing parameter.
+  it("a WG-only signal (Sierra Mike, PCEF005) applies only in the WG realm", () => {
+    const build: PlannerBuild = { ...emptyBuild(), signals: ["PCEF005"] };
+    const wg = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "wg").modified;
+    expect(wg.speed).toBeCloseTo(31.5, 5);
+    const lesta = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "lesta").modified;
+    expect(lesta.speed).toBe(30);
+  });
+
+  it("a Lesta-only signal (sierra tier-3, PCEF133) applies only in the Lesta realm", () => {
+    const build: PlannerBuild = { ...emptyBuild(), signals: ["PCEF133"] };
+    expect(recomputeStats(PROFILE, "Cruiser", 8, build, 1).modified.speed).toBe(30);
+    const lesta = recomputeStats(PROFILE, "Cruiser", 8, build, 1, null, "lesta").modified;
+    expect(lesta.speed).toBeCloseTo(30 * 1.07, 5);
+  });
+
+  it("the swapped CV skill code is a realm-local lookup, not a crash", () => {
+    // WG-only skill: known to WG (its modifiers map to no displayed row),
+    // unknown to Lesta — both realms stay at base, and the WG realm must
+    // not silently treat the code as unknown either.
+    const build: PlannerBuild = { ...emptyBuild(), skills: { PlanesConsumablesActiveManeuveringUpgrade: 1 } };
+    const wg = recomputeStats(PROFILE, "AirCarrier", 8, build, 1, null, "wg").modified;
+    const lesta = recomputeStats(PROFILE, "AirCarrier", 8, build, 1, null, "lesta").modified;
+    const base = recomputeStats(PROFILE, "AirCarrier", 8, emptyBuild(), 1, null, "wg").modified;
+    expect(wg).toEqual(base);
+    expect(lesta).toEqual(base);
+  });
+
+  it("Lesta yankee's burnChanceBonus adds flat fire chance with no caliber gate", () => {
+    // Yankee elite (PCEF114): burnChanceBonus +0.02 — unlike the WG
+    // burnChanceFactor* split there is NO caliber condition.
+    const build: PlannerBuild = { ...emptyBuild(), signals: ["PCEF114"] };
+    const battleship = recomputeStats(PROFILE, "Battleship", 8, build, 1, null, "lesta").modified;
+    expect(battleship.fireChanceOut).toBeCloseTo(45, 5); // 43% + 2pp
+    const noCaliber = recomputeStats(NO_CALIBER_PROFILE, "Cruiser", 8, build, 1, null, "lesta").modified;
+    expect(noCaliber.fireChanceOut).toBeCloseTo(45, 5); // still applies, ungated
+  });
+
+  it("defaults to WG when the realm is omitted", () => {
+    const build: PlannerBuild = { ...emptyBuild(), signals: ["PCEF133"] };
+    expect(recomputeStats(PROFILE, "Cruiser", 8, build, 1).modified.speed).toBe(30);
+    const wg: PlannerBuild = { ...emptyBuild(), signals: ["PCEF005"] };
+    expect(recomputeStats(PROFILE, "Cruiser", 8, wg, 1).modified.speed).toBeCloseTo(31.5, 5);
+  });
+});

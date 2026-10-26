@@ -518,9 +518,15 @@
     "costRetrain": "재훈련 비용 (추정)",
     "costRetrainHint": "추정: 스킬 포인트당 100,000 크레딧. 실제는 게임 내 표기 기준.",
     "costFlags": "신호기",
-    "costFlagsNote": "신호기 장착은 무료"
+    "costFlagsNote": "신호기 장착은 무료",
+    "realm": "서버 구현",
+    "realmHint": "함선 보기 전체를 WG와 Lesta 서버 구현 간에 전환합니다: 기술 트리와 도감 데이터 소스, 스킬 트리, 함장, 신호기가 모두 선택한 서버를 따릅니다."
   },
   "flags": {
+    "tier1": "일반",
+    "tier2": "특별",
+    "tier3": "희귀",
+    "tier4": "정예",
     "effect": {
       "AAAuraDamage": "지속 대공 피해",
       "AABubbleDamage": "대공 탄막 피해",
@@ -549,7 +555,20 @@
       "planeConsumableReloadTime": "함재기 소모품 재장전 시간",
       "submarineLocatorReloadCoeff": "잠수함 탐지기 재장전 시간",
       "burnChanceFactorBig": "HE탄 화재 확률",
-      "burnChanceFactorSmall": "HE탄 화재 확률"
+      "burnChanceFactorSmall": "HE탄 화재 확률",
+      "GMIdealRadius": "주포 산포",
+      "GMSIdealRadius": "부포 산포",
+      "burnChanceBonus": "HE탄 화재 확률",
+      "floodChanceCommonBonus": "침수 확률",
+      "planeSpreadMultiplier": "함재기 산포",
+      "planeTorpedoSpeedMultiplier": "항공 어뢰 속도",
+      "torpedoSpeedMultiplier": "어뢰 속도",
+      "planeForsageTimeCoeff": "엔진 부스트 시간",
+      "ConsumablesWorkTime": "소모품 지속 시간",
+      "planeConsumablesWorkTime": "함재기 소모품 지속 시간",
+      "planeBubbleArmorCoeff": "함재기가 받는 피해",
+      "shootShift": "조준 이동",
+      "vulnerabilityDBomb": "급강하 폭격 시 받는 피해"
     }
   },
   "talent": {

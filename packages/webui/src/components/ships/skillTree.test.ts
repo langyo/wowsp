@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   classSkills,
+  recommendedSkills,
   SKILL_BUDGET,
   skillAffordable,
   skillCost,
@@ -145,5 +146,65 @@ describe("classSkills data", () => {
     const ss = classSkills("SS");
     expect(ss).toHaveLength(20);
     expect(new Set(ss.map(cell)).size).toBe(20);
+  });
+});
+
+describe("classSkills realms", () => {
+  const CLASSES = ["BB", "CA", "DD", "CV", "SS"] as const;
+  const REALMS = ["wg", "lesta"] as const;
+  const cvCell = (realm: "wg" | "lesta") =>
+    classSkills("CV", realm).find((s) => s.tier === 2 && s.column === 3)?.code;
+
+  it("carries the full per-class counts in BOTH realms (24/24/24/24/20)", () => {
+    for (const realm of REALMS) {
+      expect(classSkills("BB", realm)).toHaveLength(24);
+      expect(classSkills("CA", realm)).toHaveLength(24);
+      expect(classSkills("DD", realm)).toHaveLength(24);
+      expect(classSkills("CV", realm)).toHaveLength(24);
+      expect(classSkills("SS", realm)).toHaveLength(20);
+    }
+  });
+
+  it("keeps the 6-column grid (SS in 5) and no stacked cells in both realms", () => {
+    for (const realm of REALMS) {
+      for (const cls of CLASSES) {
+        const list = classSkills(cls, realm);
+        const width = Math.max(...list.map((s) => s.column)) + 1;
+        expect(width).toBe(cls === "SS" ? 5 : 6);
+        const cells = list.map((s) => `${s.tier}:${s.column}`);
+        expect(new Set(cells).size).toBe(cells.length);
+      }
+    }
+  });
+
+  it("swaps exactly the CV tier-2 col-3 cell between realms", () => {
+    // WG patched its hole to the Active Maneuvering skill; Lesta still
+    // ships the Regenerate Health skill in that cell (see
+    // skilltree_lesta.NOTES.md's override entry).
+    expect(cvCell("wg")).toBe("PlanesConsumablesActiveManeuveringUpgrade");
+    expect(cvCell("lesta")).toBe("PlanesConsumablesRegeneratehealthUpgrade");
+  });
+
+  it("defaults to the WG catalog", () => {
+    expect(classSkills("CV")).toEqual(classSkills("CV", "wg"));
+  });
+
+  it("the two CV catalogs differ by exactly that one swapped code", () => {
+    const wg = classSkills("CV", "wg").map((s) => s.code).sort();
+    const lesta = classSkills("CV", "lesta").map((s) => s.code).sort();
+    expect(wg).not.toEqual(lesta);
+    expect(wg.filter((c) => !lesta.includes(c))).toEqual(["PlanesConsumablesActiveManeuveringUpgrade"]);
+    expect(lesta.filter((c) => !wg.includes(c))).toEqual(["PlanesConsumablesRegeneratehealthUpgrade"]);
+  });
+});
+
+describe("recommendedSkills", () => {
+  it("resolves the WG crew-presets cascade for a real tree index", () => {
+    expect(recommendedSkills("PJSB018", "Battleship").size).toBeGreaterThan(0);
+  });
+
+  it("yields nothing in Lesta — no CrewSkillRecomendationPresets extract", () => {
+    expect(recommendedSkills("PJSB018", "Battleship", "lesta")).toEqual(new Set());
+    expect(recommendedSkills(null, "Battleship", "lesta")).toEqual(new Set());
   });
 });
