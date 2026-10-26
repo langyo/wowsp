@@ -14,8 +14,9 @@
 //! Every request rides `network::build_http_client()`, so the Settings →
 //! Network proxy choice applies. Expected failures (no key, timeout, non-2xx)
 //! are REPORTED in [ProviderTestResult] instead of rejecting the command, so
-//! the settings card renders the reason inline (same shape as the blacklist
-//! sync report). The API key never appears in a message, and no request
+//! the settings card renders the reason inline (the same report-shape
+//! pattern the player-marker and network settings use). The API key never
+//! appears in a message, and no request
 //! header or body is ever logged.
 
 use std::time::{Duration, Instant};

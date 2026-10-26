@@ -23,7 +23,6 @@ pub(crate) fn ensure_main_window_label(label: &str) -> CommandResult<()> {
 pub mod app_migrations;
 pub mod appdata;
 pub mod arena_info;
-pub mod blacklist;
 pub mod changelog;
 // Chat-translation settings + provider connectivity test (settings →
 // 聊天翻译). Cross-platform: appdata + the proxy-aware HTTP client only.
@@ -55,6 +54,7 @@ pub mod ingame_plugin;
 pub mod installer;
 pub mod logs;
 pub mod lookup_error;
+pub mod markers;
 pub mod media;
 pub mod mod_catalog;
 pub mod mod_hub;

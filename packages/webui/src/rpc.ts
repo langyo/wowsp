@@ -244,17 +244,12 @@ export const RPC = {
   decision_tick_state: "decision_tick_state",
   replay_visibility_probe: "replay_visibility_probe",
   read_replay_smoke_screens: "read_replay_smoke_screens",
-  // ── Blacklist sync (黑名单同步) — commands/blacklist/: the WG / Lesta
-  //    OpenID login, the read-only private.grouped_contacts pull and its
-  //    knobs. Read-only by design; cn has no public API and never joins. ──
-  blacklist_auth_state: "blacklist_auth_state",
-  blacklist_auth_start: "blacklist_auth_start",
-  blacklist_auth_cancel: "blacklist_auth_cancel",
-  blacklist_auth_forget: "blacklist_auth_forget",
-  blacklist_sync_now: "blacklist_sync_now",
-  blacklist_snapshot: "blacklist_snapshot",
-  blacklist_load_config: "blacklist_load_config",
-  blacklist_save_config: "blacklist_save_config",
+  // ── Player markers (玩家标记) — commands/markers/: the LOCAL, user-
+  //    built colored marker list (red / yellow / purple). No login, no
+  //    sync, no upload. ──
+  markers_list: "markers_list",
+  markers_add: "markers_add",
+  markers_remove: "markers_remove",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

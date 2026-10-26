@@ -134,7 +134,8 @@ import { useLiveCompositions } from "@/composables/useLiveCompositions";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
-import { useBlacklistStore } from "@/stores/blacklist";
+import { useMarkersStore } from "@/stores/markers";
+import type { MarkerColor } from "@/api";
 import StampTag from "@/components/base/StampTag";
 import { HkSpinner } from "@celestia-island/hikari";
 import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
@@ -357,7 +358,16 @@ export default defineComponent({
     // so a hidden nick cannot leak into the image). Like the post-battle
     // panels, the state is ephemeral — a share-time privacy choice.
     const masking = useNickMasking();
-    const blacklist = useBlacklistStore();
+  const markerLabel = (color: MarkerColor): string =>
+    t(
+      color === "red"
+        ? "settings.markersColorRed"
+        : color === "yellow"
+          ? "settings.markersColorYellow"
+          : "settings.markersColorPurple",
+    );
+    const markers = useMarkersStore();
+  void markers.ensureLoaded();
     const root = ref<HTMLElement | null>(null);
     const shot = useShareShot(buildShotModel, () => root.value);
 
@@ -1445,14 +1455,17 @@ export default defineComponent({
                 {st?.clanTag ? (
                   <span class="live-battle__crow-clan">[{st.clanTag}]</span>
                 ) : null}
-                {/* Blacklist hit (黑名单同步): keyed on the resolved account
-                    id + realm — unresolved rows never light the dot. */}
-                {blacklist.isBlocked(st?.realm, st?.accountId) ? (
-                  <span
-                    class="live-battle__bl-dot"
-                    title={t("settings.blacklistSync")}
-                  />
-                ) : null}
+                {/* Local player marker (玩家标记): nickname-first, account id
+                    sharpens. */}
+                {(() => {
+                  const color = markers.colorOf(v.name, st?.accountId);
+                  return color ? (
+                    <span
+                      class={["live-battle__mk-dot", `live-battle__mk-dot--${color}`].join(" ")}
+                      title={markerLabel(color)}
+                    />
+                  ) : null;
+                })()}
                 {ai ? <em class="live-battle__crow-bot">{t("replay.bot")}</em> : null}
                 {/* The secondary seal (成分章) presses BESIDE the nickname —
                     the four-char wording reads as part of the identity line,
@@ -1575,12 +1588,15 @@ export default defineComponent({
               {st?.clanTag ? (
                 <span class="live-battle__player-clan">[{st.clanTag}]</span>
               ) : null}
-              {blacklist.isBlocked(st?.realm, st?.accountId) ? (
-                <span
-                  class="live-battle__bl-dot"
-                  title={t("settings.blacklistSync")}
-                />
-              ) : null}
+              {(() => {
+                const color = markers.colorOf(v.name, st?.accountId);
+                return color ? (
+                  <span
+                    class={["live-battle__mk-dot", `live-battle__mk-dot--${color}`].join(" ")}
+                    title={markerLabel(color)}
+                  />
+                ) : null;
+              })()}
               {isAiName(v.name) ? (
                 <em class="live-battle__player-bot">{t("replay.bot")}</em>
               ) : null}

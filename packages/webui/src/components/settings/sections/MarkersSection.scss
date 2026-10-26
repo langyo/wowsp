@@ -1,0 +1,110 @@
+// Player markers section (玩家标记) — the add row, the color tabs and the
+// marked-player list. The three dot colors are the feature's whole visual
+// language and repeat on the battle surfaces (same hex values there).
+$marker-red: #e5484d;
+$marker-yellow: #ffd400;
+$marker-purple: #a855f7;
+
+.markers-section {
+  &__add {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0.5rem 0;
+  }
+
+  &__add-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  &__add-input {
+    flex: 1 1 10rem;
+    min-width: 0;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0.4rem 0;
+  }
+
+  &__search {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__muted {
+    opacity: 0.72;
+    font-size: 0.92em;
+  }
+
+  &__list {
+    height: 16rem;
+    margin-top: 0.4rem;
+  }
+
+  &__list-inner {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__entry {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.35rem 0.25rem;
+
+    & + & {
+      border-top: 1px solid rgb(128 128 128 / 18%);
+    }
+  }
+
+  &__dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 2px rgb(0 0 0 / 45%);
+
+    &--red {
+      background: $marker-red;
+    }
+
+    &--yellow {
+      background: $marker-yellow;
+    }
+
+    &--purple {
+      background: $marker-purple;
+    }
+  }
+
+  &__entry-name {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__entry-note {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.7;
+    font-size: 0.9em;
+  }
+
+  &__entry-id {
+    flex: none;
+    margin-left: auto;
+    opacity: 0.55;
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -26,10 +26,10 @@ export interface HoloLabelData {
   ghostText?: string | null;
   visible?: boolean;
   selected?: boolean;
-  /** Blacklist hit (黑名单同步): a yellow bead at the ship icon's
-   *  bottom-right corner. Optional and default-off — hosts that never set
-   *  it (the marketing sandbox) render exactly as before. */
-  blacklisted?: boolean;
+  /** Local player-marker color (玩家标记): a colored bead at the ship
+   *  icon's bottom-right corner. Optional and default-off — hosts that
+   *  never set it (the marketing sandbox) render exactly as before. */
+  markerColor?: "red" | "yellow" | "purple" | null;
   /** OSD auto-contrast ink tone (the host samples the rendered backdrop
    *  under the label and flips this). Undefined → theme-driven ink. */
   tone?: "light" | "dark" | null;
@@ -120,7 +120,9 @@ export default defineComponent({
           ) : null}
           {l.shipName ? (
             <span class="holo-label__ship">
-              {l.blacklisted ? <span class="holo-label__bl" /> : null}
+              {l.markerColor ? (
+                <span class={["holo-label__marker", `holo-label__marker--${l.markerColor}`].join(" ")} />
+              ) : null}
               {icon.src.value ? (
                 <img
                   class="holo-label__icon"
