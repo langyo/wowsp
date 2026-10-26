@@ -25,6 +25,7 @@ import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useAudioPlayerStore } from "@/stores/audioPlayer";
 import { useUpdaterStore } from "@/stores/updater";
+import LoadingNote from "@/components/base/LoadingNote";
 import ModelStage from "./ModelStage";
 import { compareByScene, humanizeEvent, humanizeState, sceneLabel } from "./voiceScenes";
 
@@ -224,7 +225,11 @@ export default defineComponent({
     return () => {
       if (loading.value) {
         if (props.silentEmpty) return null;
-        return <div class="asset-preview__note">{t("resources.loadingAssets")}</div>;
+        return (
+          <div class="asset-preview__note">
+            <LoadingNote text={t("resources.loadingAssets")} />
+          </div>
+        );
       }
       const kinds = props.mode === "texture" ? ["image", "model"] : [props.mode];
       const usable = files.value.filter((f) => kinds.includes(f.kind));

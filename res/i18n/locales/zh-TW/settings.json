@@ -210,7 +210,7 @@
   "resourcesBakedHint": "預先烘焙的 3D 模型、貼圖與決策模型資料，按內容雜湊下載或由獨立資料包提供，與遊戲本體檔案無關。",
   "resourcesAiTitle": "AI 推論",
   "resourcesAiHint": "內建決策模型使用 CPU 推論。隨附的 DirectML 執行階段僅用於滿足 ONNX Runtime 的載入期依賴，推論不會使用 GPU。",
-  "resourcesAiChecking": "正在檢查…",
+  "resourcesAiChecking": "正在檢查",
   "resourcesAiInference": "決策模型推論",
   "resourcesAiAvailable": "此版本已包含，推論與評分在 CPU 上執行。",
   "resourcesAiUnavailable": "此版本不包含 AI 推論與評分能力。",

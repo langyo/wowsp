@@ -18,6 +18,7 @@ import { useTheme } from "@/theme";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import type { ModelPreviewPart } from "@/api";
 import ErrorCard from "@/components/base/ErrorCard";
+import LoadingNote from "@/components/base/LoadingNote";
 import { isTauri } from "@/utils/platform";
 import { makeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { loadGlbModel } from "@/features/holographic/modelLoader";
@@ -244,7 +245,9 @@ export default defineComponent({
       <div class="model-stage">
         <div ref={host} class="model-stage__canvas" />
         {busy.value ? (
-          <div class="model-stage__note">{t("resources.loadingAssets")}</div>
+          <div class="model-stage__note">
+            <LoadingNote text={t("resources.loadingAssets")} />
+          </div>
         ) : failed.value ? (
           <div class="model-stage__error">
             <ErrorCard error={failed.value} />

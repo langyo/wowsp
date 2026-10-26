@@ -22,6 +22,7 @@ import {
 
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
 import ErrorCard from "@/components/base/ErrorCard";
+import LoadingNote from "@/components/base/LoadingNote";
 import type { CatalogEntry, InstalledMod } from "@/api";
 import {
   CATALOG_CATS,
@@ -144,11 +145,20 @@ export default defineComponent({
      *  placeholder. */
     const emptyNote = (text: string) => <div class="resources-view__empty">{text}</div>;
 
+    /** Loading twin of emptyNote (mid-fetch / mid-scan): hikari's ring above
+     *  the status copy — motion carries the "in progress" cue, so the line
+     *  itself drops the trailing ellipsis (LoadingNote contract). */
+    const loadingNote = (text: string) => (
+      <div class="resources-view__empty">
+        <LoadingNote text={text} />
+      </div>
+    );
+
     /** What an empty online list means depends on WHY it is empty: mid-fetch
      *  is not the same as "nothing matched", and a failed fetch is already
      *  talking through the error banner above the list. */
     const catalogEmptyNote = () => {
-      if (hub.catalogLoading.value) return emptyNote(t("resources.refreshing"));
+      if (hub.catalogLoading.value) return loadingNote(t("resources.refreshing"));
       if (hub.catalogError.value) return null;
       const listed = listedEntries(hub.catalog.value);
       return emptyNote(
@@ -157,7 +167,9 @@ export default defineComponent({
     };
 
     const installedEmptyNote = () =>
-      emptyNote(hub.scanning.value ? t("resources.scanning") : t("resources.empty"));
+      hub.scanning.value
+        ? loadingNote(t("resources.scanning"))
+        : emptyNote(t("resources.empty"));
 
     return () => {
       const sourceTabs = [

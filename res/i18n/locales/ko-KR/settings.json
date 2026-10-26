@@ -210,7 +210,7 @@
   "resourcesBakedHint": "미리 베이크된 3D 모델, 텍스처, 결정 모델 데이터입니다. 콘텐츠 해시로 배포되거나 별도 팩으로 제공되며 게임 본체 파일과는 무관합니다.",
   "resourcesAiTitle": "AI 추론",
   "resourcesAiHint": "내장 결정 모델은 CPU에서 추론합니다. 포함된 DirectML 런타임은 ONNX Runtime의 로드 시점 의존성을 충족하기 위한 것일 뿐이며 추론에는 GPU를 사용하지 않습니다.",
-  "resourcesAiChecking": "확인 중…",
+  "resourcesAiChecking": "확인 중",
   "resourcesAiInference": "결정 모델 추론",
   "resourcesAiAvailable": "이 빌드에 포함되어 있습니다. 추론과 점수 계산은 CPU에서 실행됩니다.",
   "resourcesAiUnavailable": "이 빌드에는 AI 추론과 점수 계산이 포함되어 있지 않습니다.",

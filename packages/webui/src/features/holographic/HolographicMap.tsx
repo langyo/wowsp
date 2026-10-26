@@ -89,6 +89,7 @@ import type {
 // different local name.
 import { api as rpcApi, foldDamageStats } from "@/api";
 import { parsePostBattle } from "@/features/replay/postBattle";
+import LoadingNote from "@/components/base/LoadingNote";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import type { ResolvedStatsMode } from "@/utils/statView";
 import { splitRosterSides } from "@/utils/rosterSides";
@@ -1761,7 +1762,11 @@ export default defineComponent({
             ),
           )}
         </div>
-        {!ready.value ? <div class="holo-map__hint">Initializing holographic scene…</div> : null}
+        {!ready.value ? (
+          <div class="holo-map__hint">
+            <LoadingNote text="Initializing holographic scene" />
+          </div>
+        ) : null}
         {/* Follow-mode free look: centered mode banner while RMB is held. */}
         {freeLook.value ? <div class="holo-map__freelook">{i18nT("replay.camera.freeLook")}</div> : null}
         {props.replayPath ? (

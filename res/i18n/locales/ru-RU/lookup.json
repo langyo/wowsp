@@ -6,7 +6,7 @@
   "searchClanTitle": "Поиск кланов",
   "searchClanPlaceholder": "Название клана или ID",
   "searchHint": "Введите минимум 3 символа (для UID — без ограничений)",
-  "searching": "Поиск…",
+  "searching": "Поиск",
   "searchingWho": "Проверяем {name}…",
   "noResults": "Совпадений нет",
   "history": "История",

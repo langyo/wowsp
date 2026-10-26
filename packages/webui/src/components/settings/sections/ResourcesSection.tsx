@@ -12,6 +12,7 @@ import { HkButton, HkSettingsGroup, HkSettingsHint } from "@celestia-island/hika
 
 import { t } from "@/i18n";
 import ErrorCard from "@/components/base/ErrorCard";
+import LoadingNote from "@/components/base/LoadingNote";
 import { formatEta, formatLocalStamp, formatSpeed } from "@/utils/format";
 import { isMobileApp } from "@/utils/platform";
 import { SETTINGS_ANCHOR_BAKED_MODELS } from "@/stores/settingsUi";
@@ -324,9 +325,14 @@ export default defineComponent({
                     {t("settings.resourcesDecisionsDesc")}
                   </span>
                   <span class="settings-modal__pack-meta">
-                    {!resources.decisionsChecked.value
-                      ? t("settings.resourcesAiChecking")
-                      : resources.decisionsError.value && d == null
+                    {!resources.decisionsChecked.value ? (
+                      /* Inline checking value: the ring rides beside the copy
+                         — a stacked block would break the pack row's line. */
+                      <LoadingNote
+                        inline
+                        text={t("settings.resourcesAiChecking")}
+                      />
+                    ) : resources.decisionsError.value && d == null
                         ? t("settings.resourcesDecisionsUnknown")
                         : d?.present
                           ? `${formatBytes(d.sizeBytes)} · ${
@@ -399,7 +405,11 @@ export default defineComponent({
           <HkSettingsGroup title={t("settings.resourcesAiTitle")}>
             <HkSettingsHint>{t("settings.resourcesAiHint")}</HkSettingsHint>
             {!aiKnown ? (
-              <HkSettingsHint>{t("settings.resourcesAiChecking")}</HkSettingsHint>
+              /* Mid-check hint: the shared ring-above-text placeholder —
+                 the copy arrives WITHOUT its ellipsis. */
+              <HkSettingsHint>
+                <LoadingNote text={t("settings.resourcesAiChecking")} />
+              </HkSettingsHint>
             ) : !caps.aiInference ? (
               <p class="settings-modal__packs-banner">
                 {t("settings.resourcesAiUnavailable")}
@@ -411,9 +421,12 @@ export default defineComponent({
                   {t("settings.resourcesAiInference")}
                 </span>
                 <span class="settings-modal__pack-desc">
-                  {!aiKnown
-                    ? t("settings.resourcesAiChecking")
-                    : caps.aiInference
+                  {!aiKnown ? (
+                    <LoadingNote
+                      inline
+                      text={t("settings.resourcesAiChecking")}
+                    />
+                  ) : caps.aiInference
                       ? t("settings.resourcesAiAvailable")
                       : t("settings.resourcesAiUnavailableHint")}
                 </span>

@@ -72,7 +72,9 @@ async function mountInstalled() {
   // — render the (mocked) host for real so its slot content (rows, empty
   // notes, detail cards) stays visible under shallowMount.
   const view = shallowMount(ResourcesView, {
-    global: { stubs: { HkScrollContainer: false } },
+    // LoadingNote renders too: the mid-scan empty note keeps its copy (the
+    // ring is the stubbed HkSpinner), and the notes below assert on it.
+    global: { stubs: { HkScrollContainer: false, LoadingNote: false } },
   });
   view.findAllComponents({ name: "HkTabs" }).find((tabs) => tabs.props("modelValue") === "online")!
     .vm.$emit("update:modelValue", "installed");
