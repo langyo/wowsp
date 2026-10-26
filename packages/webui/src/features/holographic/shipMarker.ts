@@ -35,6 +35,98 @@ export { SHIP_CLASS_LEN, shipClassTargetLen };
  *  matchmaking) share one entry here. */
 const glbCache = new Map<string, THREE.Group>();
 
+/** Merged single-geometry hulls, keyed by the decoded source group. The
+ *  published pack still carries multi-mesh hulls (median ~40 meshes for
+ *  T8-10 index bakes, p90 ~90): one draw per mesh dominated the fleet's
+ *  submission cost (~1,900 draw calls for 20 visible ships). Each unique
+ *  hull merges ONCE into a plain position+index buffer baked in the mesh's
+ *  transform relative to the GLB root; every marker of that hull then
+ *  renders as ONE mesh sharing that buffer. Null = merge impossible (the
+ *  marker builder falls back to the per-mesh clone path). */
+const mergedGeoCache = new Map<THREE.Group, THREE.BufferGeometry | null>();
+
+/** Merge every mesh under `source` into a single indexed position buffer.
+ *  Deliberately hand-rolled instead of BufferGeometryUtils.mergeGeometries:
+ *  that helper requires identical attribute sets across inputs, while the
+ *  baked hulls mix bare-position meshes with (occasionally) extra
+ *  attributes — and the holo shader only ever reads POSITION (normals come
+ *  from screen-space derivatives). Returns null when the source carries no
+ *  usable geometry. */
+function mergedHullGeometry(source: THREE.Group): THREE.BufferGeometry | null {
+  const cached = mergedGeoCache.get(source);
+  if (cached !== undefined) return cached;
+  let result: THREE.BufferGeometry | null = null;
+  try {
+    source.updateMatrixWorld(true);
+    const invRoot = source.matrixWorld.clone().invert();
+    const parts: {
+      attr: THREE.BufferAttribute;
+      index: THREE.BufferAttribute | null;
+      matrix: THREE.Matrix4;
+    }[] = [];
+    let totalVerts = 0;
+    let totalIdx = 0;
+    source.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      const pos = mesh.geometry?.getAttribute("position");
+      if (!mesh.isMesh || !pos) return;
+      // Interleaved position attributes would need strided reads — bail to
+      // the per-mesh fallback rather than reading stride-contaminated data
+      // silently. (The bakes never interleave; this is the safety net.)
+      if ((pos as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute) {
+        throw new Error("interleaved position attribute");
+      }
+      // Hidden nodes were respected by the old clone path — skip them too.
+      if (!mesh.visible) return;
+      parts.push({
+        attr: pos as THREE.BufferAttribute,
+        index: mesh.geometry.getIndex(),
+        matrix: new THREE.Matrix4().multiplyMatrices(invRoot, mesh.matrixWorld),
+      });
+      totalVerts += pos.count;
+      totalIdx += mesh.geometry.getIndex()?.count ?? pos.count;
+    });
+    if (parts.length > 0 && totalVerts > 0) {
+      const positions = new Float32Array(totalVerts * 3);
+      // Uint32 indices: a merged hull can far exceed the 16-bit range.
+      const indices = new Uint32Array(totalIdx);
+      const v = new THREE.Vector3();
+      let vBase = 0;
+      let iOff = 0;
+      for (const p of parts) {
+        const arr = p.attr.array as ArrayLike<number>;
+        for (let i = 0; i < p.attr.count; i++) {
+          v.set(arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2]).applyMatrix4(p.matrix);
+          const o = (vBase + i) * 3;
+          positions[o] = v.x;
+          positions[o + 1] = v.y;
+          positions[o + 2] = v.z;
+        }
+        if (p.index) {
+          const ia = p.index.array as ArrayLike<number>;
+          for (let i = 0; i < p.index.count; i++) indices[iOff + i] = ia[i] + vBase;
+          iOff += p.index.count;
+        } else {
+          for (let i = 0; i < p.attr.count; i++) indices[iOff + i] = i + vBase;
+          iOff += p.attr.count;
+        }
+        vBase += p.attr.count;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geo.setIndex(new THREE.BufferAttribute(indices, 1));
+      geo.computeBoundingBox();
+      geo.computeBoundingSphere();
+      result = geo;
+    }
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn("[shipMarker] hull merge failed, falling back:", e);
+    result = null; // fall back to the per-mesh path for this hull
+  }
+  mergedGeoCache.set(source, result);
+  return result;
+}
+
 /** GLB cache key for a single URL or an ordered candidate chain. */
 function glbCacheKey(url: string | string[]): string {
   return Array.isArray(url) ? url.join("\u0000") : url;
@@ -94,39 +186,42 @@ export async function buildShipMarker(opts: BuildShipMarkerOpts): Promise<THREE.
     glbCache.set(cacheKey, source);
   }
 
-  // Clone the cached graph: geometry is shared, but we need our own materials
-  // (per-role tint) and transforms.
-  const model = cloneWithSharedGeometry(source);
-
-  // Recompute bounding box (baked GLBs drop POSITION min/max).
-  model.traverse((child) => {
-    const mesh = child as THREE.Mesh;
-    if (mesh.geometry?.attributes.position) {
-      mesh.geometry.computeBoundingBox();
-      mesh.geometry.computeBoundingSphere();
-    }
-  });
-
-  // Scale to the class's true engine length (see applyTrueScale).
-  applyTrueScale(model, type);
-
-  // Apply the role-tinted holographic shader to every mesh. The per-mesh
-  // wireframe overlay this used to add doubled the fleet's draw calls and
-  // rasterised ~3 blended line segments per triangle; the shader's own
-  // world-space grid term (uLinesGain) keeps the technical-drawing feel
-  // without a single extra draw.
+  // Prefer ONE merged mesh per hull (see mergedHullGeometry): the marker
+  // then costs a single draw instead of one per GLB mesh. Falls back to
+  // the shared-geometry clone when a hull cannot merge.
   const { baseColor, fresnelColor } = holoColorsFor(role);
   const holoMat = makeHoloMaterial();
   holoMat.uniforms.baseColor.value.setHex(baseColor);
   holoMat.uniforms.fresnelColor.value.setHex(fresnelColor);
   holoMat.uniforms.uLinesGain.value = 0.3;
-  const meshes: THREE.Mesh[] = [];
-  model.traverse((child) => {
-    if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
-  });
-  for (const mesh of meshes) {
-    mesh.material = holoMat;
+
+  const merged = mergedHullGeometry(source);
+  let model: THREE.Group;
+  let meshes: THREE.Mesh[];
+  if (merged) {
+    model = new THREE.Group();
+    model.add(new THREE.Mesh(merged, holoMat));
+  } else {
+    model = cloneWithSharedGeometry(source);
+    // Recompute bounding box (baked GLBs drop POSITION min/max).
+    model.traverse((child) => {
+      const m = child as THREE.Mesh;
+      if (m.geometry?.attributes.position) {
+        m.geometry.computeBoundingBox();
+        m.geometry.computeBoundingSphere();
+      }
+    });
+    meshes = [];
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+    });
+    for (const mesh of meshes) {
+      mesh.material = holoMat;
+    }
   }
+
+  // Scale to the class's true engine length (see applyTrueScale).
+  applyTrueScale(model, type);
 
   return model;
 }
@@ -152,37 +247,37 @@ export function buildMarkerFromSource(
   role: TeamRole,
   type?: string | null,
 ): THREE.Group {
-  const model = cloneWithSharedGeometry(source);
-
-  // Recompute bounding box (baked GLBs drop POSITION min/max).
-  model.traverse((child) => {
-    const mesh = child as THREE.Mesh;
-    if (mesh.geometry?.attributes.position) {
-      mesh.geometry.computeBoundingBox();
-      mesh.geometry.computeBoundingSphere();
-    }
-  });
-
-  // Scale to the class's true engine length (see applyTrueScale).
-  applyTrueScale(model, type);
-
-  // Apply the role-tinted holographic shader to every mesh. The per-mesh
-  // wireframe overlay this used to add doubled the fleet's draw calls and
-  // rasterised ~3 blended line segments per triangle; the shader's own
-  // world-space grid term (uLinesGain) keeps the technical-drawing feel
-  // without a single extra draw.
   const { baseColor, fresnelColor } = holoColorsFor(role);
   const holoMat = makeHoloMaterial();
   holoMat.uniforms.baseColor.value.setHex(baseColor);
   holoMat.uniforms.fresnelColor.value.setHex(fresnelColor);
   holoMat.uniforms.uLinesGain.value = 0.3;
-  const meshes: THREE.Mesh[] = [];
-  model.traverse((child) => {
-    if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
-  });
-  for (const mesh of meshes) {
-    mesh.material = holoMat;
+
+  // Same merged-single-mesh preference as buildShipMarker (one draw per
+  // hull); the substitute-hull pool shares the merged buffer too.
+  const merged = mergedHullGeometry(source);
+  let model: THREE.Group;
+  if (merged) {
+    model = new THREE.Group();
+    model.add(new THREE.Mesh(merged, holoMat));
+  } else {
+    model = cloneWithSharedGeometry(source);
+    // Recompute bounding box (baked GLBs drop POSITION min/max).
+    model.traverse((child) => {
+      const m = child as THREE.Mesh;
+      if (m.geometry?.attributes.position) {
+        m.geometry.computeBoundingBox();
+        m.geometry.computeBoundingSphere();
+      }
+    });
+    model.traverse((child) => {
+      const m = child as THREE.Mesh;
+      if (m.isMesh) m.material = holoMat;
+    });
   }
+
+  // Scale to the class's true engine length (see applyTrueScale).
+  applyTrueScale(model, type);
 
   return model;
 }
@@ -220,6 +315,10 @@ export function clearShipMarkerCache(): void {
     });
   }
   glbCache.clear();
+  // The merged hulls are independent buffers (they no longer share the GLB
+  // geometries) — release them with the sources they were derived from.
+  for (const geo of mergedGeoCache.values()) geo?.dispose();
+  mergedGeoCache.clear();
 }
 
 /** Prefetch a model URL (or an ordered candidate chain — the winning
