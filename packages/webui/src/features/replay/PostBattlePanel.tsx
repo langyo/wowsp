@@ -20,10 +20,11 @@
  * store; a flip re-resolves these rows immediately).
  *
  * Share-time privacy: nicknames can be masked wholesale or per player (the
- * row-end eye), and "复制截图" paints the matrix into a watermarked PNG on
- * the clipboard — see postBattleShare.tsx / postBattleShot.ts. The share
- * model is built from the masked display strings, so a hidden nick cannot
- * leak into the image.
+ * row-end eye), and "复制截图" paints the combined sheet into a watermarked
+ * PNG on the clipboard — the personal 我的战绩 banner above the roster matrix
+ * (see postBattleShare.tsx / postBattleShot.ts), so a share no longer needs
+ * one copy from each view. The share model is built from the masked display
+ * strings, so a hidden nick cannot leak into the image.
  *
  * Clicking a player opens a second-level modal with the match result +
  * on-demand global stats (title bar chip while loading) and a jump link
@@ -83,7 +84,7 @@ import {
 import { parsePostBattle, type PostBattleRibbon } from "./postBattle";
 import { buildSelfStats, type SelfStatsModel, type SelfStatsStream } from "./liveSelfStats";
 import { renderLiveSelfShot, type SelfShotModel } from "./liveSelfShot";
-import { buildSelfShotModel } from "./selfReportView";
+import { buildSelfShotModel, selfShotBannerOf } from "./selfReportView";
 import { shareFooterStrings } from "@/features/share/shotKit";
 import { useShareImage } from "@/features/share/useShareImage";
 import LiveShipMeta from "./LiveShipMeta";
@@ -646,6 +647,17 @@ export default defineComponent({
                 value: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
                 valueColor: a.avgPr != null ? prTier(a.avgPr).color : undefined,
               });
+            } else if (col.metric === "battles") {
+              parts.push({
+                col: idx,
+                label: col.scope === "global" ? t("replay.roster.battles") : col.head,
+                value:
+                  a.avgBattles != null ? Math.round(a.avgBattles).toLocaleString() : "—",
+                valueColor:
+                  col.scope === "global" && a.avgBattles != null
+                    ? battlesColor(a.avgBattles)
+                    : undefined,
+              });
             } else if (col.metric === "damage") {
               parts.push({
                 col: idx,
@@ -664,7 +676,12 @@ export default defineComponent({
               });
             }
           });
-          agg = parts.length > 0 ? parts : undefined;
+          // The XP column closes the row (the last stat cell every row
+          // carries), so the header must caption it too — label-only: a
+          // single-battle figure has no team aggregate. The on-screen
+          // compact header renders the identical cell.
+          parts.push({ col: cols.length, label: t("replay.postbattle.xp") });
+          agg = parts;
         }
         return {
           title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
@@ -690,6 +707,17 @@ export default defineComponent({
           }),
         };
       };
+      // The personal banner: the live self model (settlement payload merged
+      // in by the panel's computed) reduced to the ShotSelf vocabulary. Null
+      // when the decoded stream yields no self model — the matrix still
+      // copies, exactly as before the banner existed.
+      const selfName = selfModel.value?.selfName ?? null;
+      const selfBanner = selfShotBannerOf(selfModel.value, {
+        title: t("replay.live.selfTitle"),
+        lang: dataLanguage.value,
+        maskOf: masking.maskOf,
+        clanTag: selfName ? (nameStats.value.get(selfName)?.clanTag ?? null) : null,
+      });
       return {
         title: t("replay.results"),
         mode,
@@ -698,6 +726,7 @@ export default defineComponent({
           : null,
         metaLine: shotMetaLine(head),
         botLabel: t("replay.bot"),
+        ...(selfBanner ? { self: selfBanner } : {}),
         // Mirror the DOM's single-column rule: one column whenever there is
         // no enemy roster (operations AND any single-team payload edge).
         columns:
@@ -720,7 +749,10 @@ export default defineComponent({
       const colTitle = (label: string, list: typeof rows.value) => {
         const title = <span class="replay-view__postbattle-col-name">{label}</span>;
         const cols = rosterColumns();
-        if (cols.length === 0) {
+        // Full cards carry no aligned stat columns, so an empty column set
+        // leaves the title alone there. The compact header still renders its
+        // XP caption when every configured column is switched off.
+        if (cols.length === 0 && fullMode.value) {
           return <div class="replay-view__postbattle-col-title">{title}</div>;
         }
         /** One column's aggregate label — the aggregate flavor wording on
@@ -817,8 +849,9 @@ export default defineComponent({
         // Compact rows: a two-line mini table header on a grid mirroring
         // the row columns (rosterColumns + the XP cell), so each aggregate
         // number lands exactly on its column. Every stat column carries a
-        // label and a team mean (battles included); only the XP cell stays
-        // an empty fill — a per-battle result has no team aggregate.
+        // label and a team mean (battles included); the XP cell carries the
+        // 经验 caption WITHOUT a value — a per-battle result has no team
+        // aggregate, but the last number needs a name.
         const template = `minmax(0, 1fr) ${cols.map((c) => c.width).join(" ")} 6ch`;
         const fill = <span class="replay-view__postbattle-col-hfill" />;
         return (
@@ -839,7 +872,9 @@ export default defineComponent({
             {cols.map((c) => (
               <span class="replay-view__postbattle-col-hlbl">{labelOf(c)}</span>
             ))}
-            {fill}
+            <span class="replay-view__postbattle-col-hlbl">
+              {t("replay.postbattle.xp")}
+            </span>
             {cols.map((c) => valueOf(c))}
             {fill}
           </div>

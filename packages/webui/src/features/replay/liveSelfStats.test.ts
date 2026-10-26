@@ -627,4 +627,53 @@ describe("buildSelfStats", () => {
     expect(m!.final!.killerName).toBe("Killer");
     expect(m!.dealt.find((r) => r.name === "Victim")!.killed).toBe(true);
   });
+
+  it("exposes the server's spotting and potential damage on the main model", () => {
+    // receiveDamageStat also carries categories 2 (spotting) / 3 (potential
+    // "agro") — server truth the per-hit attribution cannot reconstruct.
+    const stream = baseStream();
+    stream.damageStats = [
+      { time: 20, weapon: 1, category: 0, count: 6, total: 5123 },
+      { time: 20, weapon: 1, category: 2, count: 0, total: 45600.4 },
+      { time: 21, weapon: 7, category: 3, count: 0, total: 1234000.6 },
+    ];
+    const m = build(stream);
+    expect(m!.damage).toBe(5123);
+    expect(m!.spotDamage).toBe(45600); // rounded at the shared fold
+    expect(m!.potentialDamage).toBe(1234001);
+  });
+
+  it("exposes spotting / potential on the early no-trajectory model too", () => {
+    // Loading screen: the server dict already flows, no ship entity yet —
+    // the early return must carry the same figures (the combined shot banner
+    // reads them from whichever model exists).
+    const stream = baseStream();
+    stream.trajectories = [];
+    stream.shotKills = [];
+    stream.arenaPlayers = [];
+    stream.damageStats = [
+      { time: 3, weapon: 1, category: 0, count: 2, total: 800 },
+      { time: 3, weapon: 1, category: 2, count: 0, total: 45600 },
+      { time: 3, weapon: 7, category: 3, count: 0, total: 1234000 },
+    ];
+    const m = build(stream);
+    expect(m).not.toBeNull();
+    expect(m!.selfEntityId).toBeNull();
+    expect(m!.spotDamage).toBe(45600);
+    expect(m!.potentialDamage).toBe(1234000);
+  });
+
+  it("keeps spotting / potential null when the stream never decoded them", () => {
+    // Older clients / unpinned method ids: no category 2/3 tick ever lands.
+    // null (not 0) lets the UI hide the stat instead of printing 0.
+    const stream = baseStream();
+    stream.damageStats = [{ time: 20, weapon: 1, category: 0, count: 6, total: 5123 }];
+    const server = build(stream);
+    expect(server!.spotDamage).toBeNull();
+    expect(server!.potentialDamage).toBeNull();
+    // Heuristic-only model (no damageStats at all) reads null too.
+    const heuristic = build(baseStream());
+    expect(heuristic!.spotDamage).toBeNull();
+    expect(heuristic!.potentialDamage).toBeNull();
+  });
 });

@@ -300,6 +300,8 @@
     "selfSettled": "Settled",
     "selfDamage": "Damage",
     "selfPlaneDamage": "Plane damage",
+    "selfPotential": "Potential damage",
+    "selfSpot": "Spotting damage",
     "selfHits": "Hits",
     "selfTaken": "Damage taken",
     "selfFrags": "Sinks",

@@ -300,6 +300,8 @@
     "selfSettled": "已结算",
     "selfDamage": "伤害",
     "selfPlaneDamage": "飞机伤害",
+    "selfPotential": "潜在伤害",
+    "selfSpot": "侦察伤害",
     "selfHits": "命中",
     "selfTaken": "总承伤",
     "selfFrags": "击沉",

@@ -300,6 +300,8 @@
     "selfSettled": "Résolu",
     "selfDamage": "Dégâts",
     "selfPlaneDamage": "Dégâts avions",
+    "selfPotential": "Dégâts potentiels",
+    "selfSpot": "Dégâts de repérage",
     "selfHits": "Touches",
     "selfTaken": "Dégâts subis",
     "selfFrags": "Coulés",

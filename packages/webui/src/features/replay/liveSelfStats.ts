@@ -10,7 +10,9 @@
  *
  * Sources (all from one decoded stream — the live temp container or the
  * settled replay; see `stores/liveSelf.ts`):
- *  - `damageStats`  — cumulative per-weapon damage dealt (server truth).
+ *  - `damageStats`  — cumulative per-weapon damage dealt (server truth),
+ *                     plus the spotting (category 2) and potential "agro"
+ *                     (category 3) totals the share banner's aux line shows.
  *  - `shotKills`    — server-confirmed hits with firing entity + impact
  *                     point: the per-target attribution key.
  *  - `shellLaunches`/`torpedoes` — launch joins classifying each hit's
@@ -145,6 +147,11 @@ export interface SelfStatsModel {
   damage: number;
   planeDamage: number;
   hits: number;
+  /** Spotting damage (receiveDamageStat category 2) — null before the stream
+   *  reports it / on captures that never decoded the category. */
+  spotDamage: number | null;
+  /** Potential damage ("agro", category 3) — same null contract. */
+  potentialDamage: number | null;
   /** Hull HP I lost so far (max − current). */
   taken: number;
   /** My current hull HP % (0..100). */
@@ -437,6 +444,8 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
       damage: folded?.damage ?? 0,
       planeDamage: folded?.planeDamage ?? 0,
       hits: folded?.hits ?? 0,
+      spotDamage: folded?.spotDamage ?? null,
+      potentialDamage: folded?.potentialDamage ?? null,
       taken: 0,
       hpRatio: null,
       sunk: false,
@@ -697,6 +706,11 @@ export function buildSelfStats(input: BuildSelfStatsInput): SelfStatsModel | nul
     // The impact count matches the game's hit counter; the server dict's
     // damage-dealing-only count stays the fallback (no ship entity yet).
     hits: impactHits > 0 ? impactHits : (folded?.hits ?? 0),
+    // Spotting / potential come only from the server dict — there is no
+    // hit-level attribution equivalent; null keeps an undecoded category
+    // hidden instead of printing a zero.
+    spotDamage: folded?.spotDamage ?? null,
+    potentialDamage: folded?.potentialDamage ?? null,
     taken,
     hpRatio,
     sunk: selfTraj.deathTime != null,

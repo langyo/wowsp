@@ -649,8 +649,13 @@ export interface ShotKillEvent {
 /** One cumulative damage-stat tick (receiveDamageStat): the server's running
  *  total for a (weapon, category) pair at a battle time. CUMULATIVE and
  *  replace-per-pair — fold by keeping the latest sample per pair (at or
- *  before time T), never by summing samples. category 0 = damage dealt;
- *  weapons 11/12/28/41-43/51-58/63-70/74-81 are aircraft weapons. */
+ *  before time T), never by summing samples. category is the game's
+ *  DamageStatsType: 0 = damage dealt to enemies, 1 = damage dealt to allied
+ *  ships, 2 = spotting (teammates' damage on targets I spotted), 3 =
+ *  potential damage / "agro" (incoming fire aimed at me). The fold keeps
+ *  0/2/3 — 2 and 3 are server truth with no hit-level attribution
+ *  equivalent, so discarding them loses the only source. weapons
+ *  11/12/28/41-43/51-58/63-70/74-81 are aircraft weapons. */
 export interface DamageStatSample {
   time: number;
   weapon: number;
@@ -702,15 +707,39 @@ export function isPlaneWeapon(weapon: number): boolean {
   return PLANE_WEAPON_IDS.has(weapon);
 }
 
+/** Folded damage-stat totals at one battle time. `damage` / `planeDamage` /
+ *  `hits` are the enemy-damage family (category 0) the HUD, the composition
+ *  strip and the live panel read; `spotDamage` / `potentialDamage` are the
+ *  server's spotting (category 2) and potential ("agro", category 3) credit
+ *  the post-battle banner shows. */
+export interface DamageStatTotals {
+  damage: number;
+  planeDamage: number;
+  hits: number;
+  /** Spotting damage (category 2, server truth); null when the stream
+   *  never reported one (older client / undecoded capture). */
+  spotDamage: number | null;
+  /** Potential damage ("agro", category 3, server truth); null when the
+   *  stream never reported one. */
+  potentialDamage: number | null;
+}
+
 /** Fold cumulative damage-stat samples into the totals at (or before) `t`.
  *  Keeps the latest sample per (weapon, category) pair — the values are
  *  running totals, so summing across samples would multi-count. The game
  *  stream carries fractional totals (f64 damage), but damage displays as an
- *  integer everywhere, so round at the shared fold instead of per view. */
+ *  integer everywhere, so round at the shared fold instead of per view.
+ *  Category 0 folds into the dealt family; category 2 (spotting) and
+ *  category 3 (potential "agro") fold into their own sums because they are
+ *  the only source for those figures — no hit-level attribution can
+ *  reconstruct them. Category 1 (allied damage) has no consumer and stays
+ *  out. A category the stream never carried reads null, not 0: the UI then
+ *  hides the stat instead of printing a wrong zero (older clients / streams
+ *  whose method id isn't pinned yet). */
 export function foldDamageStats(
   samples: DamageStatSample[] | null | undefined,
   t: number,
-): { damage: number; planeDamage: number; hits: number } {
+): DamageStatTotals {
   const latest = new Map<string, DamageStatSample>();
   for (const s of samples ?? []) {
     if (s.time > t) continue;
@@ -719,13 +748,30 @@ export function foldDamageStats(
   let damage = 0;
   let planeDamage = 0;
   let hits = 0;
+  // null, not 0: "this category never decoded" must stay distinguishable
+  // from a genuine zero so the banner can hide it.
+  let spotDamage: number | null = null;
+  let potentialDamage: number | null = null;
   for (const s of latest.values()) {
-    if (s.category !== 0) continue; // 1=ally, 2=spot, 3=agro — not damage dealt
-    damage += s.total;
-    hits += s.count;
-    if (isPlaneWeapon(s.weapon)) planeDamage += s.total;
+    if (s.category === 0) {
+      damage += s.total;
+      hits += s.count;
+      if (isPlaneWeapon(s.weapon)) planeDamage += s.total;
+    } else if (s.category === 2) {
+      spotDamage = (spotDamage ?? 0) + s.total;
+    } else if (s.category === 3) {
+      potentialDamage = (potentialDamage ?? 0) + s.total;
+    }
+    // 1 = allied damage — never displayed. Unknown future categories stay
+    // out until the game gives them a meaning.
   }
-  return { damage: Math.round(damage), planeDamage: Math.round(planeDamage), hits };
+  return {
+    damage: Math.round(damage),
+    planeDamage: Math.round(planeDamage),
+    hits,
+    spotDamage: spotDamage == null ? null : Math.round(spotDamage),
+    potentialDamage: potentialDamage == null ? null : Math.round(potentialDamage),
+  };
 }
 
 /** One player's decoded ship build (replay build-decode wave). Mirrors

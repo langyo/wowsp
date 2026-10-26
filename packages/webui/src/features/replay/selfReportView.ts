@@ -2,8 +2,9 @@
  * Shared display layer for the 我的战绩 report — the pure helpers behind
  * BOTH hosts (the live panel's body and the replay results modal's self
  * view) and their share shots: one row view, one summary-tile list, one
- * damage-composition vocabulary, one shot model. The copied image can
- * never disagree with the panel beside it.
+ * damage-composition vocabulary, one shot model and one compact banner for
+ * the combined post-battle shot (the personal report riding above the roster
+ * matrix). The copied image can never disagree with the panel beside it.
  */
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import type { ShipIconVariant } from "@/features/holographic/shipIcons";
@@ -12,6 +13,7 @@ import { damageColor } from "@/utils/winrate";
 import { rowCompEntries, type FamilyDamage } from "./damageComp";
 import type { SelfCombatRow, SelfStatsModel } from "./liveSelfStats";
 import type { SelfShotColumn, SelfShotModel, SelfShotRow, SelfShotStat } from "./liveSelfShot";
+import type { ShotPair, ShotSelf } from "./postBattleShot";
 
 /** Masking is a per-host concern (the live head's toggle drives its whole
  *  panel; the modal has its own bar) — helpers take the resolver. */
@@ -103,8 +105,11 @@ export interface SelfTile {
   color?: string;
 }
 
-/** The summary tiles: damage / plane damage / hits / taken / frags — exp
- *  once the authoritative results landed. */
+/** The summary tiles: damage / spotting + potential damage / plane damage /
+ *  hits / taken / frags — exp once the authoritative results landed. The two
+ *  server-stream-only stats (spot / agro) appear only when the damage stream
+ *  reported that category: a capture without them hides the tile instead of
+ *  claiming a zero. */
 export function selfTilesOf(m: SelfStatsModel | null): SelfTile[] {
   const tiles: SelfTile[] = [
     {
@@ -112,11 +117,22 @@ export function selfTilesOf(m: SelfStatsModel | null): SelfTile[] {
       value: m ? m.damage.toLocaleString() : "—",
       color: m ? damageColor(m.damage) : undefined,
     },
+  ];
+  if (m?.potentialDamage != null) {
+    tiles.push({
+      label: t("replay.live.selfPotential"),
+      value: m.potentialDamage.toLocaleString(),
+    });
+  }
+  if (m?.spotDamage != null) {
+    tiles.push({ label: t("replay.live.selfSpot"), value: m.spotDamage.toLocaleString() });
+  }
+  tiles.push(
     { label: t("replay.live.selfPlaneDamage"), value: m ? m.planeDamage.toLocaleString() : "—" },
     { label: t("replay.live.selfHits"), value: m ? String(m.hits) : "—" },
     { label: t("replay.live.selfTaken"), value: m ? m.taken.toLocaleString() : "—" },
     { label: t("replay.live.selfFrags"), value: m ? String(m.frags) : "—" },
-  ];
+  );
   if (m?.final && m.final.exp != null) {
     tiles.push({
       label: t("replay.live.selfExp"),
@@ -124,6 +140,66 @@ export function selfTilesOf(m: SelfStatsModel | null): SelfTile[] {
     });
   }
   return tiles;
+}
+
+/** Options the post-battle host fills for the combined shot's personal
+ *  banner (see postBattleShot's ShotSelf). */
+export interface SelfBannerOptions {
+  /** Section caption (我的战绩). */
+  title: string;
+  /** Data language for the ship display name. */
+  lang: string;
+  /** The host's nickname resolver — masking stays a per-host concern. */
+  maskOf: MaskOf;
+  /** The self row's clan tag when the roster lookup resolved one. */
+  clanTag?: string | null;
+}
+
+/** The personal banner of the COMBINED post-battle shot: the 我的战绩 report
+ *  reduced to what a shared image needs — masked identity, the damage/frag
+ *  headline, the settlement ribbon run and the secondary stats compressed
+ *  onto one muted line (潜在伤害 first when the stream reported it). Null
+ *  when no self model exists, in which case the shot renders the roster
+ *  matrix alone. */
+export function selfShotBannerOf(
+  m: SelfStatsModel | null,
+  opts: SelfBannerOptions,
+): ShotSelf | null {
+  if (!m) return null;
+  const aux: ShotPair[] = [];
+  if (m.potentialDamage != null) {
+    aux.push({ label: t("replay.live.selfPotential"), value: m.potentialDamage.toLocaleString() });
+  }
+  if (m.spotDamage != null) {
+    aux.push({ label: t("replay.live.selfSpot"), value: m.spotDamage.toLocaleString() });
+  }
+  if (m.planeDamage > 0) {
+    aux.push({ label: t("replay.live.selfPlaneDamage"), value: m.planeDamage.toLocaleString() });
+  }
+  aux.push({ label: t("replay.live.selfHits"), value: String(m.hits) });
+  aux.push({ label: t("replay.live.selfTaken"), value: m.taken.toLocaleString() });
+  if (m.final?.exp != null) {
+    aux.push({ label: t("replay.live.selfExp"), value: m.final.exp.toLocaleString() });
+  }
+  return {
+    title: opts.title,
+    // An unjoined self identity still renders a placeholder bar, never an
+    // empty identity row: maskOf("") would paint nothing at all.
+    nick: m.selfName != null ? opts.maskOf(m.selfName) : "—",
+    clanTag: opts.clanTag ?? null,
+    shipName:
+      m.selfShipId != null ? (shipNameFromOfflineDb(m.selfShipId, opts.lang) ?? null) : null,
+    shipType: m.selfShipId != null ? (shipOfflineEntry(m.selfShipId)?.type ?? null) : null,
+    iconVariant: m.sunk ? "sunk" : "white",
+    sunk: m.sunk,
+    sunkLabel: m.sunk ? t("replay.live.selfSunk") : null,
+    damage: m.damage.toLocaleString(),
+    damageColor: damageColor(m.damage),
+    damageLabel: t("replay.live.selfDamage"),
+    frags: { label: t("replay.live.selfFrags"), value: String(m.frags) },
+    ribbons: (m.final?.ribbons ?? []).map((r) => ({ key: r.key, value: r.value })),
+    aux,
+  };
 }
 
 /** The server's damage split by weapon family — the strip under the tiles.

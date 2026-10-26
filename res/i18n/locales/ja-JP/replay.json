@@ -300,6 +300,8 @@
     "selfSettled": "集計済み",
     "selfDamage": "ダメージ",
     "selfPlaneDamage": "航空機ダメージ",
+    "selfPotential": "潜在ダメージ",
+    "selfSpot": "偵察ダメージ",
     "selfHits": "命中",
     "selfTaken": "被ダメージ",
     "selfFrags": "撃沈",

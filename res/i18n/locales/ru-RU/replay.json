@@ -300,6 +300,8 @@
     "selfSettled": "Рассчитано",
     "selfDamage": "Урон",
     "selfPlaneDamage": "Урон по авиации",
+    "selfPotential": "Потенциальный урон",
+    "selfSpot": "Урон по засвету",
     "selfHits": "Попадания",
     "selfTaken": "Полученный урон",
     "selfFrags": "Потопления",

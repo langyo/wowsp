@@ -1,7 +1,14 @@
 /**
- * Share-shot renderer for the post-battle panels: paints the two-column
- * result matrix onto an offscreen canvas and returns PNG bytes, ready for the
+ * Share-shot renderer for the post-battle panels: paints the combined battle
+ * sheet onto an offscreen canvas and returns PNG bytes, ready for the
  * clipboard copy (`api.copyImageToClipboard`) or a save-file fallback.
+ *
+ * One copied image carries BOTH halves the results window otherwise splits:
+ * the personal banner (我的战绩 — identity, damage/frag headline, settlement
+ * ribbons, one compressed secondary-stat line) rides above the two-column
+ * roster matrix, so sharing the team water table no longer takes a second
+ * copy from the self view. Hosts without a self model (the incomplete-results
+ * fallback, payload edges) render the matrix alone.
  *
  * The image is a hand-drawn canvas composite built on the shared share-shot
  * kit (features/share/shotKit.ts — palette, fonts, seal painter and the
@@ -15,6 +22,7 @@
  * draws (same-origin vite assets, so the canvas never taints).
  */
 import { shipIconUrl, type ShipIconVariant } from "@/features/holographic/shipIcons";
+import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import {
   FOOT_H,
   LOGO_URL,
@@ -24,6 +32,7 @@ import {
   drawFooter,
   drawSealTag,
   drawStampSeal,
+  ellipsize,
   font,
   footerMinWidth,
   loadImage,
@@ -33,6 +42,7 @@ import {
   sealTagWidth,
   statCellOrigins,
   type ShotFooterStrings,
+  type ShotPalette,
 } from "@/features/share/shotKit";
 import { stampTier, type CareerStamp } from "@/utils/winrate";
 
@@ -80,13 +90,57 @@ export interface ShotRow {
   stats: ShotStat[];
 }
 
-/** One label+value pair of the column-title aggregate (team mean WR / mean
- *  PR): `col` is the stat column index whose x-origin the value right-aligns
- *  onto, so the header numbers line up with the cells below them. */
+/** One label+value pair compressed onto the personal banner's muted line
+ *  (潜在伤害 / 侦察伤害 / …). */
+export interface ShotPair {
+  label: string;
+  value: string;
+}
+
+/** The personal banner riding above the roster matrix (我的战绩). It exists
+ *  so the team water table and the personal report share ONE copied image:
+ *  identity, the damage/frag headline, the settlement ribbon run (勋章) and
+ *  the secondary stats compressed onto exactly one muted line. The nick
+ *  arrives ALREADY masked by the caller — the same privacy contract as
+ *  ShotRow: a hidden nickname cannot leak into the image. */
+export interface ShotSelf {
+  /** Section caption (我的战绩). */
+  title: string;
+  nick: string;
+  clanTag?: string | null;
+  /** Ship display name; null drops the suffix. */
+  shipName?: string | null;
+  /** Ship-class HUD icon (bundled PNG url) + its variant. */
+  shipType?: string | null;
+  iconVariant?: ShipIconVariant;
+  /** Sunk: the identity carries the caller's localized marker. */
+  sunk?: boolean;
+  sunkLabel?: string | null;
+  /** Big damage figure (pre-formatted; damageColor supplies its tier). */
+  damage: string;
+  damageColor?: string;
+  /** Caption over the damage figure (伤害). */
+  damageLabel: string;
+  /** Frags pair beside the headline (击沉 N). */
+  frags?: ShotPair;
+  /** Settlement ribbons (key → bundled icon) with their counts. */
+  ribbons: { key: string; value: number }[];
+  /** Secondary stats, painted as ONE muted line. */
+  aux: ShotPair[];
+}
+
+/** One column-title header entry — the team mean of a configured column
+ *  (weighted/plain WR, mean PR, mean battles, avg damage, K/D), or a
+ *  label-only caption (the XP column): `col` is the stat column index whose
+ *  x-origin the value right-aligns onto, so the header lands exactly on its
+ *  column below. */
 export interface ShotAgg {
   col: number;
   label: string;
-  value: string;
+  /** Formatted value drawn under the label. Omitted for a label-only header
+   *  entry — the XP column carries a caption but no team aggregate (a
+   *  single-battle figure has no mean). */
+  value?: string;
   valueColor?: string;
 }
 
@@ -107,6 +161,9 @@ export interface ShotModel {
   metaLine?: string | null;
   /** Short bot marker label appended after masked/plain nicks (t("replay.bot")). */
   botLabel?: string;
+  /** Personal banner above the matrix (我的战绩). Absent on hosts with no
+   *  self model — the fallback matrix and legacy payload edges. */
+  self?: ShotSelf | null;
   columns: ShotColumn[];
 }
 
@@ -126,6 +183,163 @@ const STAMP_SLOT = STAMP_SIZE + 4;
 const ROW_H = 44;
 const HEAD_H = 66;
 const COL_TITLE_H = 34;
+
+/** Personal banner geometry, in logical units: the air under the head rule,
+ *  the card's inner padding, the identity/headline row, and the optional
+ *  ribbon + secondary-stat rows. selfBannerHeight() reserves exactly these
+ *  before the canvas exists, so the matrices below can never overlap the
+ *  banner. */
+const SELF_TOP_GAP = 12;
+const SELF_BOTTOM_GAP = 12;
+const SELF_INNER_PAD = 8;
+const SELF_IDENTITY_ROW_H = 40;
+const SELF_RIBBON_ROW_H = 22;
+const SELF_AUX_ROW_H = 20;
+/** Ribbon icon box in the banner — the DOM 我的战绩 report's own run size. */
+const RIBBON_W = 40;
+const RIBBON_H = 15;
+const RIBBON_COUNT_GAP = 6;
+const RIBBON_ITEM_GAP = 16;
+
+/** The banner card's height for the parts this model actually carries: the
+ *  single source both the renderer's height reservation and the painter
+ *  read, so the two can never disagree. */
+function selfBannerHeight(self: ShotSelf): number {
+  return (
+    SELF_INNER_PAD * 2 +
+    SELF_IDENTITY_ROW_H +
+    (self.ribbons.length > 0 ? SELF_RIBBON_ROW_H : 0) +
+    (self.aux.length > 0 ? SELF_AUX_ROW_H : 0)
+  );
+}
+
+/** Paint the banner card. `top` is the card's own top edge (the head rule
+ *  sits just above it, the roster columns start below SELF_BOTTOM_GAP). The
+ *  masked nick / pre-formatted figures arrive from the caller's model; the
+ *  renderer only lays them out. */
+function drawSelfBanner(
+  ctx: CanvasRenderingContext2D,
+  palette: ShotPalette,
+  width: number,
+  self: ShotSelf,
+  top: number,
+  icon: HTMLImageElement | null,
+  ribbonIcons: (HTMLImageElement | null)[],
+): void {
+  const cardH = selfBannerHeight(self);
+  const x = PAD;
+  const w = width - PAD * 2;
+  ctx.fillStyle = rgba(palette.text, 0.05);
+  ctx.beginPath();
+  ctx.roundRect(x, top, w, cardH, 10);
+  ctx.fill();
+
+  const left = x + 14;
+  const right = x + w - 14;
+  let y = top + SELF_INNER_PAD;
+
+  // Caption row: the section title left, the damage caption right — the
+  // panel's label-over-value header treatment, kept tiny.
+  ctx.textAlign = "left";
+  ctx.font = font(10.5, 500);
+  ctx.fillStyle = rgba(palette.text, 0.5);
+  ctx.fillText(self.title, left, y + 6);
+  ctx.textAlign = "right";
+  ctx.fillText(self.damageLabel, right, y + 6);
+
+  // Headline row: the damage figure anchors the right edge; its width (with
+  // the frags pair and their gaps) bounds the identity line on the left, so
+  // a long nick ellipsizes instead of painting over the number.
+  const cy = y + 24;
+  ctx.font = font(22, 700, true);
+  const dmgW = ctx.measureText(self.damage).width;
+  ctx.fillStyle = self.damageColor ?? rgba(palette.text, 0.9);
+  ctx.fillText(self.damage, right, cy + 2);
+  let headLeft = right - dmgW;
+  if (self.frags) {
+    ctx.font = font(11.5, 600);
+    const frags = `${self.frags.label} ${self.frags.value}`;
+    const fragsW = ctx.measureText(frags).width;
+    ctx.fillStyle = rgba(palette.text, 0.62);
+    ctx.fillText(frags, headLeft - 18, cy + 3);
+    headLeft -= fragsW + 18;
+  }
+  headLeft -= 14;
+
+  // Identity line: class icon + masked nick (+ clan) + sunk marker + ship.
+  ctx.textAlign = "left";
+  let tx = left;
+  if (icon) {
+    ctx.drawImage(icon, tx, cy - 9, 18, 18);
+    tx += 26;
+  }
+  const identityW = Math.max(headLeft - tx, 80);
+  let nick = self.nick;
+  if (self.clanTag) nick += `  [${self.clanTag}]`;
+  ctx.font = font(15.5, 700);
+  ctx.fillStyle = rgba(palette.text, 0.95);
+  nick = ellipsize(ctx, nick, identityW);
+  ctx.fillText(nick, tx, cy);
+  tx += ctx.measureText(nick).width + 10;
+  if (self.sunk && self.sunkLabel && tx < headLeft) {
+    ctx.font = font(10.5, 600);
+    ctx.fillStyle = rgba(palette.text, 0.5);
+    const label = ellipsize(ctx, self.sunkLabel, headLeft - tx);
+    ctx.fillText(label, tx, cy);
+    tx += ctx.measureText(label).width + 10;
+  }
+  if (self.shipName && tx < headLeft) {
+    const room = headLeft - tx;
+    if (room >= 48) {
+      ctx.font = font(12.5, 400);
+      ctx.fillStyle = rgba(palette.text, 0.6);
+      ctx.fillText(ellipsize(ctx, `· ${self.shipName}`, room), tx, cy + 1);
+    }
+  }
+
+  // Ribbon run: the settlement 勋章 icons + counts (the DOM report's own
+  // order). Unmatched keys drop out exactly like the DOM run's missing art.
+  y += SELF_IDENTITY_ROW_H;
+  if (self.ribbons.length > 0) {
+    const rowCenter = y + SELF_RIBBON_ROW_H / 2;
+    let rx = left;
+    for (let i = 0; i < self.ribbons.length; i++) {
+      const img = ribbonIcons[i];
+      const rib = self.ribbons[i];
+      if (!img) continue;
+      ctx.font = font(11, 600, true);
+      const count = String(rib.value);
+      const countW = ctx.measureText(count).width;
+      const itemW = RIBBON_W + RIBBON_COUNT_GAP + countW;
+      // A narrow card (single-team shots) can run out of room before the
+      // settlement's ribbon kinds do — say so instead of silently dropping
+      // the tail: the muted ellipsis marks the cut (the DOM report wraps;
+      // the banner has no second row to spare).
+      if (rx + itemW > right) {
+        ctx.font = font(12, 600);
+        ctx.fillStyle = rgba(palette.text, 0.45);
+        ctx.fillText("…", Math.min(rx, right - 8), rowCenter + 1);
+        break;
+      }
+      ctx.drawImage(img, rx, rowCenter - RIBBON_H / 2, RIBBON_W, RIBBON_H);
+      ctx.textAlign = "left";
+      ctx.fillStyle = rgba(palette.text, 0.72);
+      ctx.fillText(count, rx + RIBBON_W + RIBBON_COUNT_GAP, rowCenter + 1);
+      rx += itemW + RIBBON_ITEM_GAP;
+    }
+    y += SELF_RIBBON_ROW_H;
+  }
+
+  // Secondary stats, compressed onto exactly one muted line.
+  if (self.aux.length > 0) {
+    const line = self.aux.map((p) => `${p.label} ${p.value}`).join("  ·  ");
+    ctx.textAlign = "left";
+    ctx.font = font(11.5, 400);
+    ctx.fillStyle = rgba(palette.text, 0.62);
+    ctx.fillText(ellipsize(ctx, line, w - 28), left, y + SELF_AUX_ROW_H / 2 + 1);
+  }
+  ctx.textAlign = "left";
+}
 
 /** Measure the widest right-aligned stat cell per column index so every row's
  *  cells share one x-origin — the aligned-table look of the live panel. */
@@ -149,6 +363,9 @@ export async function renderPostBattleShot(
 ): Promise<Uint8Array> {
   const palette = readPalette(opts.el);
   const cols = model.columns;
+  const self = model.self ?? null;
+  const selfH = self ? selfBannerHeight(self) : 0;
+  const selfBlockH = self ? SELF_TOP_GAP + selfH + SELF_BOTTOM_GAP : 0;
   // A single-team column lands below the footer's no-overlap minimum —
   // floor the content width on it so the watermark lines never collide.
   // Sized for the logo present: it loads for the footer in the normal path.
@@ -157,7 +374,8 @@ export async function renderPostBattleShot(
     footerMinWidth(opts, true),
   );
   const maxRows = Math.max(...cols.map((c) => c.rows.length), 0);
-  const height = HEAD_H + COL_TITLE_H + maxRows * (ROW_H + 6) + 10 + FOOT_H;
+  const height =
+    HEAD_H + selfBlockH + COL_TITLE_H + maxRows * (ROW_H + 6) + 10 + FOOT_H;
 
   const { canvas, ctx } = newShotCanvas(width, height, palette);
 
@@ -238,6 +456,14 @@ export async function renderPostBattleShot(
     loadImage(LOGO_URL),
   ]);
   const logo = icons.pop() ?? null;
+  // The banner's own art (its class icon + the settlement ribbon run) joins
+  // the same cached wave; both settle instantly when the host had no banner.
+  const bannerIcon = self
+    ? await loadImage(shipIconUrl(self.shipType, self.iconVariant ?? "white"))
+    : null;
+  const ribbonIcons = self
+    ? await Promise.all(self.ribbons.map((r) => loadImage(bundledRibbonUrl(r.key))))
+    : [];
   // Seal faces load in a second wave (bundled same-origin PNGs, so this
   // settles near-instantly and only when seals are on at all).
   const stampImages = new Map<CareerStamp, HTMLImageElement | null>();
@@ -253,11 +479,17 @@ export async function renderPostBattleShot(
       kinds.map(async (k) => stampImages.set(k, await loadImage(STAMP_URL[k]))),
     );
   }
+  if (self) {
+    drawSelfBanner(ctx, palette, width, self, HEAD_H + SELF_TOP_GAP, bannerIcon, ribbonIcons);
+  }
+  // The matrix starts below the banner (or under the head rule on hosts
+  // without one) — the reserved selfBlockH is exactly the banner's budget.
+  const columnsTop = HEAD_H + selfBlockH;
   let iconIdx = 0;
   for (let ci = 0; ci < cols.length; ci++) {
     const col = cols[ci];
     const cx = PAD + ci * (COL_WIDTH + COL_GAP);
-    let y = HEAD_H;
+    let y = columnsTop;
 
     // Title + aggregate. The aggregate is a two-line mini table header —
     // tiny label over a mono value — with the value right-aligned onto its
@@ -277,9 +509,13 @@ export async function renderPostBattleShot(
         ctx.font = font(10.5, 400);
         ctx.fillStyle = rgba(palette.text, 0.5);
         ctx.fillText(part.label, vx, ty - 10);
-        ctx.font = font(12.5, 600, true);
-        ctx.fillStyle = part.valueColor ?? rgba(palette.text, 0.85);
-        ctx.fillText(part.value, vx, ty + 7);
+        // Label-only entries (the XP column's 经验 caption) stop here: a
+        // single-battle figure has no team aggregate to print under it.
+        if (part.value != null) {
+          ctx.font = font(12.5, 600, true);
+          ctx.fillStyle = part.valueColor ?? rgba(palette.text, 0.85);
+          ctx.fillText(part.value, vx, ty + 7);
+        }
       }
       ctx.textAlign = "left";
     }

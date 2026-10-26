@@ -300,6 +300,8 @@
     "selfSettled": "Calculado",
     "selfDamage": "Daño",
     "selfPlaneDamage": "Daño a aviones",
+    "selfPotential": "Daño potencial",
+    "selfSpot": "Daño de exploración",
     "selfHits": "Impactos",
     "selfTaken": "Daño recibido",
     "selfFrags": "Hundimientos",

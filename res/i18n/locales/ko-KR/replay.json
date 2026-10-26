@@ -300,6 +300,8 @@
     "selfSettled": "정산 완료",
     "selfDamage": "피해",
     "selfPlaneDamage": "항공기 피해",
+    "selfPotential": "잠재 피해",
+    "selfSpot": "정찰 피해",
     "selfHits": "명중",
     "selfTaken": "받은 피해",
     "selfFrags": "격침",
