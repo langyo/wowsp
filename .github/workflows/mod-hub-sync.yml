@@ -1,0 +1,210 @@
+name: Mod Hub Sync
+
+# Keeps the Aslain-ingested half of the Mod Hub catalog current: content-
+# addressed asset re-hosting, incremental thread updates, the crawled
+# mod-index.json, and the relay's signed mod-hub digest. The design
+# (stateless reconciliation, per-entry version semantics, two-phase
+# delisting, safety gates) lives in docs/en/designs/mod-hub.md §7; the
+# engine is scripts/mod_hub_sync.py. The maintainer's manual ingest
+# pipeline (scripts/mod_hub_publish.py stages) stays available alongside.
+
+on:
+  schedule:
+    - cron: "23 */6 * * *" # the upstream rebuilds at any hour; 4 checks a day is plenty
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "detect = read-only report; apply = full sync; index-only = republish the index"
+        type: choice
+        default: detect
+        options:
+          - detect
+          - apply
+          - index-only
+      include_new:
+        description: "apply only: also publish new upstream entries whose slugs are curated"
+        type: boolean
+        default: false
+
+# One sync at a time -- a half-applied catalog must never interleave with
+# another run's clobber uploads.
+concurrency:
+  group: mod-hub-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write      # release asset uploads and the digest branch
+  discussions: write   # the thread create/update mutations
+  issues: write        # the tracking report and the failure alarm
+  actions: write       # dispatching ci.yml / commit-msg-lint.yml / site.yml for the digest PR
+
+jobs:
+  sync:
+    name: Sync the Mod Hub catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # MODHUB_SYNC_TOKEN (optional): a PAT with Discussions write, for the
+      # case where GITHUB_TOKEN's discussions scope proves insufficient.
+      GH_TOKEN: ${{ secrets.MODHUB_SYNC_TOKEN || github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install p7zip (the 7z repack path)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq p7zip-full
+
+      - name: Offline selftests first
+        run: |
+          python3 scripts/mod_hub_publish.py selftest
+          python3 scripts/mod_index.py --selftest
+          python3 scripts/mod_hub_sync.py selftest
+
+      - name: Sync (schedule defaults to apply)
+        id: sync
+        run: |
+          set -euo pipefail
+          mode="${{ inputs.mode }}"
+          if [ -z "$mode" ]; then
+            mode="apply"   # the schedule keeps the catalog current unattended
+          fi
+          if [ "$mode" = "apply" ]; then
+            args=(--json sync-report.json)
+            if [ "${{ inputs.include_new }}" = "true" ]; then
+              args+=(--include-new)
+            fi
+            python3 scripts/mod_hub_sync.py apply "${args[@]}"
+          elif [ "$mode" = "index-only" ]; then
+            python3 scripts/mod_hub_sync.py index-only --json sync-report.json
+          else
+            python3 scripts/mod_hub_sync.py detect --json sync-report.json
+          fi
+
+      - name: Job summary and tracking issue
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -f sync-report.json ]; then
+            echo "no sync report this run (the failure happened before any stage ran)" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 scripts/mod_hub_sync.py render-summary --json sync-report.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 scripts/mod_hub_sync.py upsert-issue --json sync-report.json
+
+      # Second official digest channel (the mirror-crosscheck trust anchor):
+      # after the index bytes change, re-point the relay's signed mod-hub
+      # doc. The first doc for a channel must land together with its
+      # wrangler.toml negations (build_worker_site.py's drift guard enforces
+      # it), so this step edits both into one bot PR, squash-merges it green,
+      # dispatches the site deploy and verifies the live endpoint -- the
+      # exact pattern of release.yml's app digest job, minus the tag variable.
+      - name: Re-point the relay digest
+        if: success()
+        env:
+          WOWSP_DIGEST_SIGNING_KEY: ${{ secrets.WOWSP_DIGEST_SIGNING_KEY }}
+          WOWSP_DIGEST_SIGNING_KEY_ID: ${{ vars.WOWSP_DIGEST_SIGNING_KEY_ID }}
+          GH_TOKEN: ${{ secrets.RELEASE_OPS_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          changed="$(python3 -c 'import json; print("yes" if json.load(open("sync-report.json"))["actions"]["index_changed"] else "no")')"
+          if [ "$changed" != "yes" ]; then
+            echo "index bytes unchanged -- the digest stays"
+            exit 0
+          fi
+          sha="$(python3 -c 'import json; print(json.load(open("sync-report.json"))["actions"]["index_sha256"])')"
+          python3 scripts/publish_digests.py --channel mod-hub --tag mod-hub \
+            --assets "mod-index.json=$sha" --latest --require-signed
+          python3 - <<'PY'
+          # First-doc lane: the negations and the published-channels var
+          # ride the same commit as the first doc (idempotent on reruns).
+          import pathlib
+          p = pathlib.Path("packages/pairing-relay/wrangler.toml")
+          s = p.read_text(encoding="utf-8")
+          if "!/api/digests/mod-hub" not in s:
+              s = s.replace(
+                  'run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*"]',
+                  'run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*",'
+                  ' "!/api/digests/mod-hub", "!/api/digests/mod-hub/*"]')
+          if 'DIGEST_PUBLISHED_CHANNELS = "app"' in s:
+              s = s.replace('DIGEST_PUBLISHED_CHANNELS = "app"',
+                            'DIGEST_PUBLISHED_CHANNELS = "app,mod-hub"')
+          p.write_text(s, encoding="utf-8")
+          PY
+          branch="chore/mod-hub-digest"
+          rm -rf repo
+          git clone --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" -b master repo
+          cd repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -b "$branch"
+          mkdir -p packages/pairing-relay/digests/mod-hub
+          cp -a ../packages/pairing-relay/digests/mod-hub/. packages/pairing-relay/digests/mod-hub/
+          cp ../packages/pairing-relay/wrangler.toml packages/pairing-relay/wrangler.toml
+          seq="$(python3 -c 'import json; print(json.load(open("packages/pairing-relay/digests/mod-hub/latest.json"))["seq"])"')"
+          git add packages/pairing-relay
+          if git diff --cached --quiet; then
+            echo "digest doc already at seq $seq -- nothing to commit"
+          else
+            git commit -q -m "📦 Publish the mod-hub digest doc." \
+              -m "Generated by the Mod Hub Sync workflow (scripts/publish_digests.py --channel mod-hub): the relay's mod-hub channel must re-point whenever the crawled index bytes change, or clients with both channels reachable keep their stale cache."
+            git fetch -q origin "$branch" || true
+            git push -q --force-with-lease origin "$branch"
+          fi
+          pr="$(gh pr list --head "$branch" --base master --json number --jq '.[0].number')"
+          if [ -z "$pr" ] || [ "$pr" = "null" ]; then
+            url="$(gh pr create --title "📦 Publish the mod-hub digest doc." --base master \
+              --body "Automated relay-digest publish from the Mod Hub Sync workflow: mod-hub/latest.json seq bumped, signed with the app-pinned key, asset table byte-matches the release API. Merged automatically once CI is green; the Deploy Site workflow then ships it.")"
+            pr="${url##*/}"
+          fi
+          echo "digest PR #$pr (seq $seq)"
+          gh workflow run ci.yml --ref "$branch"
+          gh workflow run commit-msg-lint.yml --ref "$branch" -f pr="$pr"
+          sleep 60
+          for attempt in $(seq 1 50); do
+            set +e
+            out="$(gh pr checks "$pr" 2>&1)"; rc=$?
+            set -e
+            if [ "$rc" -eq 0 ]; then
+              gh pr merge "$pr" --squash --delete-branch
+              break
+            fi
+            if [ "$rc" -eq 8 ] || echo "$out" | grep -q "no checks"; then
+              sleep 30
+              continue
+            fi
+            echo "::error::digest PR checks failed (rc=$rc): $out"
+            exit 1
+          done
+          gh workflow run site.yml --ref master
+          for attempt in $(seq 1 20); do
+            tag="$(curl -fsSL --max-time 20 "https://wowsp.langyo.xyz/api/digests/mod-hub" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tag",""))' 2>/dev/null || true)"
+            if [ "$tag" = "mod-hub" ]; then
+              echo "live /api/digests/mod-hub serves mod-hub (attempt $attempt/20)"
+              exit 0
+            fi
+            echo "live tag is '${tag:-unreachable}' (attempt $attempt/20)"
+            sleep 60
+          done
+          echo "::error::live /api/digests/mod-hub never re-pointed"
+          exit 1
+
+      - name: Alarm on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_OPS_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          title="Mod Hub sync failed -- the catalog needs a look"
+          num="$(gh issue list --search "in:title $title" --state open --json number --jq '.[0].number')"
+          body="The Mod Hub Sync workflow failed. Safety notes: assets and threads may be ahead of the index (safe -- the old catalog stays servable), and a failed index publish rolls back to the previous bytes automatically. Re-run via Actions (Mod Hub Sync, mode=apply) or locally with python scripts/mod_hub_sync.py apply.
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$num" ] && [ "$num" != "null" ]; then
+            gh issue comment "$num" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

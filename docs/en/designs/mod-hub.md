@@ -482,9 +482,139 @@ A scheduled GitHub Actions workflow (also manually triggerable):
 1. GraphQL-crawl resource posts carrying the `wowsp-mod` front-matter;
 2. Parse front-matter + attachment links + version reports from comments;
 3. Emit `mod-index.json` (aggregated by category, with latest versions,
-   hashes, compatibility signals), committed to the `gh-pages` branch;
+   hashes, compatibility signals) — published by
+   `scripts/mod_hub_sync.py` as the `mod-index.json` asset of the
+   `mod-hub` release;
 4. The website `/mods` catalog page and the in-app browser share this
    JSON — **no self-hosted backend**.
+
+### 7. Upstream sync automation
+
+The catalog's 142 tool-class entries were carried over from Aslain's
+WoWs Modpack in an offline batch port (`scripts/mod_hub_publish.py`,
+run by the maintainer on demand). Upstream never stands still: drops
+roll continuously, each tagged with its `ContentVersion` (e.g.
+`v.15.9.0 #05`), and the public catalog keeps only the current version
+(older Configuration pages 404) — so the ported snapshot goes stale on
+every upstream update. Upstream zip file names embed the first 8 hex
+digits of the content md5, a free content fingerprint (the 204
+absolute-URL `.7z` entries are the exception — no fingerprint).
+
+`.github/workflows/mod-hub-sync.yml` (a `schedule` every 6 hours plus
+manual `workflow_dispatch`, runs serialized by `concurrency`) calls
+`scripts/mod_hub_sync.py` with four subcommands:
+
+| Command | Behavior |
+| --- | --- |
+| `detect` | Read-only diff against upstream + report |
+| `apply` | The real sync; flags `--dry-run` / `--include-new` / `--no-gc` |
+| `index-only` | Rebuild + re-publish the index only |
+| `selftest` | Offline self-check |
+
+#### Stateless reconciliation
+
+No upstream snapshot is persisted anywhere. Packages switch to
+content-addressed names — `pkg-<md5 8>.zip` / `pkg7-<sha256 12>.zip`
+(identical content shared across entries dedupes automatically) — so
+the published Discussion threads themselves (the asset name + sha256
+in each download line) **are** the sync state: every run diffs
+upstream's Configuration against the live threads and acts on the
+delta. The first migration run rewraps the legacy `<slug>-partN.zip`
+naming wholesale (a one-time pass).
+
+#### Version semantics
+
+Only entries whose package content actually changed get a `version`
+bump (the webui `pluginUpdates` store signals updates by string
+equality, so unchanged content must never bump). The game
+compatibility range (the `game` front-matter) is refreshed on every
+run — derived from upstream `root.xml` `Cache.Version` into a range
+like `>=15.9 <15.10` — without bumping `version`, therefore without a
+mass update prompt. Game minor-version bumps are followed
+automatically (maintainer's decision); no human gate.
+
+#### Two-phase delisting
+
+When an upstream entry disappears / is disabled / leaves the sync
+scope:
+
+1. **Stale mark**: the thread body gains a hidden `wowsp:sync-stale`
+   comment block (`reason` / `since` / `content_version`) plus a
+   visible bilingual warning ("sync source closed, pending manual
+   review before delisting"); the entry stays installable;
+2. **Delist** (manual): closing the Discussion is the takedown — the
+   crawler reads `closed` as delisted. Release assets no longer
+   referenced by any thread are garbage-collected after a 24 h grace
+   window (150 assets per run cap; the GC pass is skipped when the
+   reference set looks too small). The sync-report issue lists every
+   entry pending review.
+
+If upstream restores the entry, the next sync removes the stale mark
+on its own.
+
+#### New entries go through curation
+
+New Aslain entries without a `SLUG_MAP` row are never auto-published:
+they only show up in the report's `pending_curation` list. The
+maintainer fills `scripts/mod_hub_slugs.py` (optionally also
+`mod_hub_authors.json` / `mod_hub_desc_i18n.json` /
+`mod_hub_families.py`), then publishes them with a `workflow_dispatch`
+run (`mode=apply`, `include_new=true`).
+
+#### Trust chain & relay hardening
+
+`mod-index.json` remains an asset of the `mod-hub` release. The same
+facility also brings the relay's signed `mod-hub` digest channel
+online: whenever the index bytes change, the workflow signs a document
+under `packages/pairing-relay/digests/mod-hub/` with
+`WOWSP_DIGEST_SIGNING_KEY`:
+
+    scripts/publish_digests.py --channel mod-hub --tag mod-hub \
+        --assets mod-index.json=<sha256> --latest --require-signed
+
+The same PR adds the two `!/api/digests/mod-hub` negation rules and
+the `DIGEST_PUBLISHED_CHANNELS` extension to `wrangler.toml`. The
+first digest document MUST ship in the same deploy batch as its
+negation rules — otherwise the path falls through to a SPA 200
+instead of a gated 404. The PR auto-squash-merges and triggers the
+site deployment, then the workflow verifies
+`https://wowsp.langyo.xyz/api/digests/mod-hub`. Details mirror the
+app digest job of `release.yml`.
+
+#### Safety gates
+
+- zip magic / unpack / repack validation for every downloaded package;
+- asset uploads are digest-idempotent (same sha → skip);
+- index asset-existence gate: more than 25% missing assets refuses the
+  index upload (delisted / stale entries are exempt);
+- post-publish readback verification of the released index;
+- on failure: roll back to the previous index and open an alert issue;
+- Discussion batch updates are rate-limited to ≥ 1 s per call.
+
+#### Reporting
+
+Every run produces `sync-report.json` (a workflow artifact), a step
+summary, and a fixed-title issue **"[mod-hub-sync] Upstream sync
+report"** (its body is overwritten on every run and embeds a hidden
+JSON block, so agents and humans read the same source). A failed
+`apply` opens a separate alert issue.
+
+#### Runbook
+
+- Manual trigger: the Actions page (`workflow_dispatch`), or
+  `gh workflow run mod-hub-sync.yml -f mode=apply`;
+- New-entry curation: fill the slug registry (see above), then run
+  apply with `include_new=true`;
+- Stale review: closing the Discussion delists the entry; if upstream
+  comes back, the next sync clears the stale mark automatically.
+
+#### Compliance posture
+
+The rehosting posture is unchanged — rehost + attribution + source
+link + takedown on notice (`license: Unspecified (upstream)`).
+Automation does not change that posture but does scale it up;
+adjusting the sync policy entry by entry via a per-author /
+per-license registry is a follow-up item.
 
 ## Milestones (M10)
 

@@ -251,8 +251,102 @@ Aslain 整合包的清单行 ID 与落盘目录名。索引器将其采集进
 
 1. GraphQL 拉取带 `wowsp-mod` front-matter 的资源帖；
 2. 解析 front-matter + 附件链接 + 评论区的版本回报信号；
-3. 产出 `mod-index.json`（按分类聚合，含最新版本、哈希、兼容性信号），提交到 `gh-pages` 分支；
+3. 产出 `mod-index.json`（按分类聚合，含最新版本、哈希、兼容性信号），由 `scripts/mod_hub_sync.py` 发布为 `mod-hub` release 的同名资产；
 4. 官网 `/mods` 目录页与应用内浏览器共用这份 JSON——**无自建后端**。
+
+### 7. 上游自动同步
+
+Mod Hub 现有的 142 个工具类条目来自 Aslain's WoWs Modpack 的一次离线批量搬运
+（`scripts/mod_hub_publish.py`，维护者手动按需执行）。上游从不静止：以
+`ContentVersion`（如 `v.15.9.0 #05`）持续滚动更新，公开目录只保留当前版本（旧版本
+Configuration 404）——搬运来的快照每次上游更新都会过时。上游 zip 文件名内嵌内容
+md5 的前 8 位十六进制，等于自带内容指纹（204 个绝对 URL 的 `.7z` 条目例外，无指纹）。
+
+`.github/workflows/mod-hub-sync.yml`（每 6 小时 `schedule` + `workflow_dispatch`
+手动触发，`concurrency` 串行）调用 `scripts/mod_hub_sync.py`，四个子命令：
+
+| 子命令 | 行为 |
+| --- | --- |
+| `detect` | 只读 diff 上游 + 报告 |
+| `apply` | 真实同步；`--dry-run` / `--include-new` / `--no-gc` |
+| `index-only` | 仅重建并重发 index |
+| `selftest` | 离线自检 |
+
+#### 无状态对账
+
+不持久化任何上游快照。包改用内容寻址命名——`pkg-<md5 8>.zip` / `pkg7-<sha256 12>.zip`
+（跨条目相同内容自动去重）——因此**已发布的 Discussion 帖正文本身就是同步状态**
+（下载行里的资产名 + sha256）：每次运行拿上游 Configuration 与活帖做 diff，只处理
+差量。首次迁移会把旧 `<slug>-partN.zip` 命名一次性全面翻新。
+
+#### 版本语义
+
+只有包内容真正变化的条目才升 `version`（webui 的 `pluginUpdates` store 以字符串相等
+判断更新提示，内容未变绝不能升号）。游戏兼容区间（`game` front-matter）每次都刷新——
+由上游 `root.xml` 的 `Cache.Version` 派生出形如 `>=15.9 <15.10` 的区间——不升
+`version`，也就不触发全量更新提示。游戏小版本升级自动跟进（维护者已拍板），不做人工闸。
+
+#### 两阶段下架
+
+上游条目消失 / 被禁用 / 移出同步范围时：
+
+1. **标记 stale**：帖子正文加入隐藏的 `wowsp:sync-stale` 注释块（`reason` / `since` /
+   `content_version`）与可见的双语警示（"同步来源已关闭，待人工复核后下架"）；条目仍可安装；
+2. **下架（人工）**：关闭该 Discussion 即彻底下架——爬虫据 `closed` 判定 delisted。
+   24 小时宽限后，未被任何帖子引用的 release 资产被 GC（单次上限 150 个；引用集过小则
+   跳过本次）。同步报告 issue 会列出全部待复核条目。
+
+上游恢复后，下次同步自动摘除 stale 标记。
+
+#### 新条目提案制
+
+未登记 `SLUG_MAP` 的新 Aslain 条目绝不自动发布：只出现在报告的 `pending_curation`
+清单里。维护者补 `scripts/mod_hub_slugs.py`（可选补 `mod_hub_authors.json` /
+`mod_hub_desc_i18n.json` / `mod_hub_families.py`）后，用 `workflow_dispatch`
+（`mode=apply`，`include_new=true`）发布。
+
+#### 信任链与 relay 加固
+
+`mod-index.json` 仍是 `mod-hub` release 的资产。本设施同步启用 relay 的 mod-hub 签名
+digest 通道：index 字节一有变化，工作流就用 `WOWSP_DIGEST_SIGNING_KEY` 签发
+`packages/pairing-relay/digests/mod-hub/` 文档：
+
+    scripts/publish_digests.py --channel mod-hub --tag mod-hub \
+        --assets mod-index.json=<sha256> --latest --require-signed
+
+同一 PR 在 `wrangler.toml` 补上 `!/api/digests/mod-hub` 两条 negation 与
+`DIGEST_PUBLISHED_CHANNELS` 扩展。首份 digest 文档必须与 negation 同批部署——否则该
+路径会落到 SPA 200 而不是 gated 404。PR 自动 squash merge 并触发 site 部署，随后验证
+`https://wowsp.langyo.xyz/api/digests/mod-hub`。细节对齐 `release.yml` 的 app digest
+job 模式。
+
+#### 安全闸
+
+- 每个下载包做 zip magic / 解压 / repack 校验；
+- 资产上传按 digest 幂等（相同 sha → 跳过）；
+- index 资产存在性闸：缺失超过 25% 拒绝上传 index（delisted / stale 条目豁免）；
+- 发布后回读校验已发布的 index；
+- 失败时回滚到上一份 index，并开告警 issue；
+- 讨论区批量更新限速 ≥1 秒/次。
+
+#### 报告
+
+每次运行产出 `sync-report.json`（工作流 artifact）+ 步骤摘要 + 固定标题 issue
+「[mod-hub-sync] Upstream sync report」（正文每次覆盖，内嵌隐藏 JSON 块，agent 与人
+读同一份来源）。`apply` 失败时另开告警 issue。
+
+#### 运行手册
+
+- 手动触发：Actions 页 `workflow_dispatch`，或
+  `gh workflow run mod-hub-sync.yml -f mode=apply`；
+- 新条目策展：补 slug 登记表（见上），然后以 `include_new=true` 跑 apply；
+- stale 复核：关闭 Discussion 即下架；上游恢复则下次同步自动摘除标记。
+
+#### 合规姿态
+
+维持"重托管 + 署名 + 来源链接 + 通知下架"的现状（`license: Unspecified (upstream)`）。
+自动化不改变该姿态，但会放大规模；后续按作者 / 许可登记表逐条调整同步策略（登记表
+本身设计为后续项）。
 
 ## 里程碑拆解（M10）
 
