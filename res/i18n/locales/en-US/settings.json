@@ -210,7 +210,7 @@
   "resourcesBakedHint": "Pre-baked 3D models, textures and decision-model data. These are content-addressed downloads or out-of-band packs, never game-client files.",
   "resourcesAiTitle": "AI inference",
   "resourcesAiHint": "The built-in decision model runs on the CPU. The bundled DirectML runtime only satisfies ONNX Runtime's load-time import; inference never uses the GPU.",
-  "resourcesAiChecking": "Checking…",
+  "resourcesAiChecking": "Checking",
   "resourcesAiInference": "Decision-model inference",
   "resourcesAiAvailable": "Included in this build. Inference and scoring run on the CPU.",
   "resourcesAiUnavailable": "AI inference and scoring are not included in this build.",

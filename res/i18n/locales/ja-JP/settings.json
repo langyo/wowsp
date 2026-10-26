@@ -210,7 +210,7 @@
   "resourcesBakedHint": "事前にベイクした 3D モデル、テクスチャ、意思決定モデルのデータです。内容ハッシュで配信されるか別個のパックとして提供され、ゲーム本体のファイルとは無関係です。",
   "resourcesAiTitle": "AI 推論",
   "resourcesAiHint": "内蔵の意思決定モデルは CPU で推論します。同梱の DirectML ランタイムは ONNX Runtime の読み込み時依存を満たすためだけのもので、推論に GPU は使いません。",
-  "resourcesAiChecking": "確認中…",
+  "resourcesAiChecking": "確認中",
   "resourcesAiInference": "意思決定モデルの推論",
   "resourcesAiAvailable": "このビルドに含まれています。推論とスコアリングは CPU で実行されます。",
   "resourcesAiUnavailable": "このビルドには AI 推論とスコアリングが含まれていません。",

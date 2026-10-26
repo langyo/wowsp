@@ -210,7 +210,7 @@
   "resourcesBakedHint": "Modelos 3D, texturas y datos del modelo de decisión precalculados. Se distribuyen por hash de contenido o en paquetes aparte, nunca como archivos del cliente del juego.",
   "resourcesAiTitle": "Inferencia de IA",
   "resourcesAiHint": "El modelo de decisión integrado se ejecuta en la CPU. El runtime de DirectML incluido solo satisface la importación de carga de ONNX Runtime; la inferencia no usa la GPU.",
-  "resourcesAiChecking": "Comprobando…",
+  "resourcesAiChecking": "Comprobando",
   "resourcesAiInference": "Inferencia del modelo de decisión",
   "resourcesAiAvailable": "Incluido en esta versión. La inferencia y la puntuación se ejecutan en la CPU.",
   "resourcesAiUnavailable": "Esta versión no incluye la inferencia de IA ni la puntuación.",

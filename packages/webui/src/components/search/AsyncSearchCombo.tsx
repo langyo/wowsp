@@ -32,6 +32,7 @@ import { Search } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import ErrorCard from "@/components/base/ErrorCard";
+import LoadingNote from "@/components/base/LoadingNote";
 
 import "./AsyncSearchCombo.scss";
 
@@ -237,7 +238,11 @@ export default defineComponent({
                   <ErrorCard error={error.value} />
                 </div>
               ) : loading.value ? (
-                <div class="async-search-combo__hint">{props.searchingText}</div>
+                /* Mid-fetch hint: the shared ring-above-text placeholder —
+                   the searchingText copy arrives WITHOUT its ellipsis. */
+                <div class="async-search-combo__hint">
+                  <LoadingNote text={props.searchingText} />
+                </div>
               ) : query.value.trim() && !gateOk(query.value.trim()) ? (
                 <div class="async-search-combo__hint">{props.minCharsHint}</div>
               ) : items.value.length > 0 ? (

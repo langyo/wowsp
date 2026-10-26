@@ -105,7 +105,9 @@ Every unit of work follows this pattern:
    - **Any failed round restarts the count from zero.**
 3. **Commit** in gitmoji format.
 4. **Push** the branch.
-5. **Create the PR** with `gh pr create` (title follows §1).
+5. **Create the PR** with `gh pr create` (title follows §1) — for
+   handed-over work that passed the gates this is the agent's own call;
+   no per-PR ask (see §5).
 6. **Squash merge** (autonomous once the §5 gates pass): the subject becomes
    `<gitmoji> Summary. (#PRID)`.
 7. **Delete** the feature branch after merging.
@@ -255,8 +257,14 @@ Before submitting, the relevant subset of `just lint` (or scoped
   seven-place agreement. Never tag a version that skips numbers, and never
   let the tag and the built version string disagree. Per §4, pushing a
   release tag is reserved for the user.
-- **Create PRs only when asked, or as a step of an approved workflow**;
-  never open unsolicited PRs.
+- **Completed work lands through the PR workflow autonomously**: once a
+  unit of work passed its §3 verification gates, walk §3 to the end — open
+  the PR and squash merge under the §5 gates without waiting for a per-PR
+  human confirmation; finished work must not sit uncommitted in a worktree
+  waiting to be asked for. Still ask first for PRs carrying
+  nobody-requested substantial work (refactor waves, new feature ideas);
+  never open PRs without completed, verified work in them. PR economy
+  (§5.3) still applies.
 
 ## 6. Build & Test
 

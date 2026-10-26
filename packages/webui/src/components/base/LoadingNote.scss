@@ -1,0 +1,22 @@
+/* LoadingNote — the ring loading placeholder shared by list empty states,
+   dropdown hints, overlay pills and inline row seats. The default stacks
+   hikari's ring ABOVE the copy and centers both (span promoted to a flex
+   column, so it also nests legally inside hint/paragraph seats); text
+   styling inherits from the seat (its font-size / muted color stay the
+   site's choice). */
+.loading-note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+
+  /* Inline variant — compact row seats: the ring rides beside the copy on
+     one line, currentcolor-toned so it sits inside the seat's own color. */
+  &--inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.375rem;
+    text-align: left;
+  }
+}
