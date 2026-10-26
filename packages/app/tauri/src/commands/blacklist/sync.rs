@@ -110,16 +110,15 @@ async fn token_get(
 ) -> Result<reqwest::Response> {
     let send = |client: &reqwest::Client| client.get(&url).send();
     let primary = send(clients.proxied()).await;
-    let outcome = match primary {
+    match primary {
         Ok(resp) => {
             let status = resp.status();
             if status.is_success() {
                 crate::commands::upstream_health::record_success(host);
-                Ok(resp)
             } else {
                 crate::commands::upstream_health::record_failure(host, &format!("HTTP {status}"));
-                Ok(resp)
             }
+            Ok(resp)
         },
         Err(first) => {
             let second = if clients.has_proxy() {
@@ -142,8 +141,7 @@ async fn token_get(
                 },
             }
         },
-    };
-    outcome
+    }
 }
 
 /// What one private pull answered: the blocked ids plus whether the private
