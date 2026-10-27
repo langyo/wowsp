@@ -1,9 +1,9 @@
 /* Styles for the shared compact-row pieces in postBattleShare.tsx.
    Kept in their own sheet (NOT PostBattlePanel.scss) because the module
    rides every chunk that renders roster rows: the replay view's 结果
-   modal, its incomplete-results fallback AND the live panel's compact
-   mode — a route-level code split must never strand these rules in an
-   unrelated view's CSS chunk. */
+   modal, its incomplete-results fallback AND the live panel's roster rows
+   (both densities) — a route-level code split must never strand these rules
+   in an unrelated view's CSS chunk. */
 
 /* Roster stat columns (overall WR / PR / battles / avg damage) right-aligned
    in a mono face; values are tier-colored inline (battles: red under 200

@@ -1,10 +1,11 @@
 /**
  * Ship-identity strip + hover combat card for the live-battle roster rows.
  *
- * Sits in the middle of every player card (between the card's name/ship
- * stack — the post-battle full card keeps its stat line in that stack too —
- * and the career seal; the live panel's full card runs its stat strip below,
- * in a second row) and shows, synchronously from the baked
+ * Sits in the middle of the live roster's FULL density row (between the
+ * identity stack — nick/clan + ship name — and the shared aligned stat
+ * columns; compact rows drop it entirely) and in the post-battle full card's
+ * middle ground (whose name stack keeps its own stat line), and shows,
+ * synchronously from the baked
  * `ship_live_stats.json`: the tier (roman), the class icon + short code, the
  * nation flag, the leading combat-relevant parameters (main/secondary/
  * torpedo range, ASW airstrike — capped so the strip holds one line), and —

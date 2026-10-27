@@ -226,8 +226,8 @@
   &--pad-seal { padding-right: 86px; }
 }
 /* Full-card mode's aggregate: no aligned columns sit under the title, so
-   the numbers ride its right end as inline text (the live panel's column
-   title treatment). */
+   the numbers ride its right end as inline text (its own treatment — the
+   live roster aligns its equivalents under the shared two-line header). */
 .replay-view__postbattle-col-aggtext {
   min-width: 0;
   overflow: hidden;
@@ -424,15 +424,14 @@
   font-family: var(--font-mono);
 }
 
-/* ── Full-card rows (the live panel's card look) ───────────────────────
-   A sibling of .live-battle__player in LiveBattlePanel.scss: a fixed
-   name/ship/stat text stack, an elastic-but-clipping middle for the
-   LiveShipMeta strip, then this panel's own avg-damage / XP numbers and a
-   fixed seal track. The live card itself has since moved its stat line to
-   a full-width bottom strip (LiveStatLine) and gained the class icon +
-   PR-tier wash — the two share the idea, not the exact geometry. The whole
-   card is the drill-down button (hover and clicks cover the seal); the
-   mask eye rides outside it. */
+/* ── Full-card rows (the live roster's richer density, carried as a card) ──
+   A sibling of the live panel's .live-battle__crow rows: that roster renders
+   ONE shared row in both densities (full only inserts the LiveShipMeta strip
+   in the middle), while this card keeps its own fixed name/ship/stat text
+   stack, an elastic-but-clipping middle for the LiveShipMeta strip, then
+   its own avg-damage / XP numbers and a fixed seal track. The two share the
+   idea, not the exact geometry. The whole card is the drill-down button
+   (hover and clicks cover the seal); the mask eye rides outside it. */
 .replay-view__postbattle-fcell {
   display: flex;
   align-items: stretch;
