@@ -90,6 +90,7 @@
   "pluginUpdateCount": "Доступны обновления: {count}",
   "pluginUpdateCountMulti": "Доступны обновления: {count} · клиентов: {clients}",
   "pluginUpdateOne": "Обновить всё",
+  "pluginUpdateRunning": "Обновление…",
   "pluginUpdateBlockedRunning": "Игра запущена — закройте для обновления",
   "pluginUpdateBusyElsewhere": "Эти плагины уже обновляются в другом окне.",
   "pluginUpdateStaleWarning": "Плагин запущенного клиента устарел — показываемая при удержании Tab статистика может быть неточной.",
