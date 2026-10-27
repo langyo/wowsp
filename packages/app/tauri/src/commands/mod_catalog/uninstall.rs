@@ -17,8 +17,10 @@ pub struct UninstallReport {
 }
 
 /// Windows file spelling and the disabled twin refer to one ownership slot.
-fn uninstall_path_key(name: &str) -> String {
-    let mut key = name.to_ascii_lowercase();
+/// Path keys normalize case and separators so a record's `/` spelling and a
+/// snapshot's OS-native `\` spelling compare equal.
+pub(crate) fn uninstall_path_key(name: &str) -> String {
+    let mut key = name.to_ascii_lowercase().replace('\\', "/");
     if key.ends_with(".bak") {
         key.truncate(key.len() - 4);
     }
@@ -115,6 +117,40 @@ pub async fn mod_catalog_uninstall(
     Ok(report)
 }
 
+/// How a rewind treats files that another ledger record also claims.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RewindMode {
+    /// A user uninstall: the strict ownership ordering guard applies and every
+    /// recorded file is removed or restored.
+    Strict,
+    /// A reinstall (the catalog install and the local same-name flow): the
+    /// record is being replaced, so a file another record on the SAME game
+    /// root and bin_version still claims is left to that owner instead of
+    /// blocking the update. A record keyed at another bin_version owns
+    /// physically different files under a different bin, so it protects
+    /// nothing here - protecting its spelling would instead leave stale files
+    /// behind after a game update.
+    Reinstall,
+}
+
+/// Ownership keys another record on the same game root and bin still claims.
+/// Duplicate records of the same catalog id are one logical install and are
+/// rewound together, so they protect nothing.
+fn shared_claims(
+    installs: &[ModInstallRecord],
+    record: &ModInstallRecord,
+    game_root: &str,
+) -> std::collections::HashSet<String> {
+    installs
+        .iter()
+        .filter(|r| r.id != record.id)
+        .filter(|r| r.bin_version == record.bin_version)
+        .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
+        .flat_map(|r| r.files.iter())
+        .map(|rel| uninstall_path_key(rel))
+        .collect()
+}
+
 /// Uninstall core, split from the command so tests can drive it against a
 /// plain record list. Removes recorded files (`@game/` entries from the game
 /// root, the rest from res_mods), restores snapshots, drops the record.
@@ -123,7 +159,32 @@ pub(crate) fn uninstall_from_ledger(
     mod_id: &str,
     game_root: &str,
 ) -> anyhow::Result<UninstallReport> {
-    validate_uninstall_order(installs, mod_id, game_root)?;
+    rewind_from_ledger(installs, mod_id, game_root, RewindMode::Strict)
+}
+
+/// Reinstall-mode rewind: like [`uninstall_from_ledger`], but the strict
+/// ordering guard is skipped and files another record on the same game root
+/// and bin_version also claims are neither removed nor restored from this
+/// record's snapshot - their bytes belong to that owner. Same-family mods
+/// legitimately share support-package files, so the strict guard used to
+/// block those updates forever.
+pub(crate) fn rewind_for_reinstall(
+    installs: &mut Vec<ModInstallRecord>,
+    mod_id: &str,
+    game_root: &str,
+) -> anyhow::Result<UninstallReport> {
+    rewind_from_ledger(installs, mod_id, game_root, RewindMode::Reinstall)
+}
+
+fn rewind_from_ledger(
+    installs: &mut Vec<ModInstallRecord>,
+    mod_id: &str,
+    game_root: &str,
+    mode: RewindMode,
+) -> anyhow::Result<UninstallReport> {
+    if mode == RewindMode::Strict {
+        validate_uninstall_order(installs, mod_id, game_root)?;
+    }
     // The ledger is global: the same catalog id can exist for several game
     // installs. Operate on THIS root's record (pre-field empty stamps
     // match every root, preserving the old single-install behavior).
@@ -134,6 +195,11 @@ pub(crate) fn uninstall_from_ledger(
     else {
         return Err(anyhow!("{mod_id} has no install record"));
     };
+    let protected: std::collections::HashSet<String> = match mode {
+        RewindMode::Strict => std::collections::HashSet::new(),
+        RewindMode::Reinstall => shared_claims(installs, &record, game_root),
+    };
+    let mut kept_shared = 0usize;
 
     // The files may live under an older bin/<version> after a game update —
     // clean up where they were actually written.
@@ -148,6 +214,12 @@ pub(crate) fn uninstall_from_ledger(
         // uninstall; our own 0-byte placeholder is dropped by the
         // ref-count pass below once the last user is gone.
         if rel == "PnFModsLoader.py" {
+            continue;
+        }
+        // Reinstall mode: another record on this root and bin owns the file;
+        // leave its bytes (and its snapshot restore) alone.
+        if protected.contains(&uninstall_path_key(rel)) {
+            kept_shared += 1;
             continue;
         }
         let path = match rel.strip_prefix("@game/") {
@@ -182,8 +254,20 @@ pub(crate) fn uninstall_from_ledger(
     }
     // Pre-release twins lose the same files (see preload_mirror) — one
     // hook covers every caller: the mod-list uninstall, unit uninstalls
-    // and the same-name reinstall rewind.
-    mod_hub::preload_mirror::mirror_removed(game_root, &record.files);
+    // and the same-name reinstall rewind. A reinstall keeps files another
+    // record on this root and bin owns, so their mirrored copies stay too.
+    match mode {
+        RewindMode::Strict => mod_hub::preload_mirror::mirror_removed(game_root, &record.files),
+        RewindMode::Reinstall => {
+            let mirrored: Vec<String> = record
+                .files
+                .iter()
+                .filter(|rel| !protected.contains(&uninstall_path_key(rel)))
+                .cloned()
+                .collect();
+            mod_hub::preload_mirror::mirror_removed(game_root, &mirrored);
+        },
+    }
     // A record still keyed at an older bin after the pin flipped: the
     // pre-release fan-out put its copies into the bin the client NOW
     // loads — remove them there too, or the mod survives its own
@@ -227,12 +311,23 @@ pub(crate) fn uninstall_from_ledger(
         }
     }
 
-    // Bring back whatever this install had snapshotted over.
+    if mode == RewindMode::Reinstall && kept_shared > 0 {
+        tracing::info!(
+            id = %record.id,
+            bin = %record.bin_version,
+            kept = kept_shared,
+            "reinstall rewind kept files another install on this root owns"
+        );
+    }
+
+    // Bring back whatever this install had snapshotted over. A reinstall keeps
+    // shared files at their owner's bytes, so their snapshot entries are not
+    // restored either.
     let mut restored = 0usize;
     if let Some(dir) = record.restore_dir.as_ref() {
         let restore = PathBuf::from(dir);
         if restore.is_dir() {
-            restored = restore_tree(&restore, &res_mods, Path::new(game_root))?;
+            restored = restore_tree(&restore, &res_mods, Path::new(game_root), &protected)?;
             fs::remove_dir_all(&restore).ok();
         }
     }
@@ -274,8 +369,15 @@ pub(crate) fn uninstall_from_ledger(
 }
 
 /// Copy a snapshot tree back: entries under `@game/` land in the game root,
-/// everything else in res_mods. Returns the restored file count.
-fn restore_tree(from: &Path, res_mods: &Path, game_root: &Path) -> anyhow::Result<usize> {
+/// everything else in res_mods. Paths in `protected` are skipped (a reinstall
+/// keeps files another record owns, so its snapshot must not overwrite them).
+/// Returns the restored file count.
+fn restore_tree(
+    from: &Path,
+    res_mods: &Path,
+    game_root: &Path,
+    protected: &std::collections::HashSet<String>,
+) -> anyhow::Result<usize> {
     let mut count = 0usize;
     let mut stack = vec![from.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -291,6 +393,9 @@ fn restore_tree(from: &Path, res_mods: &Path, game_root: &Path) -> anyhow::Resul
             let Ok(rel) = src.strip_prefix(from) else {
                 continue;
             };
+            if protected.contains(&uninstall_path_key(&rel.to_string_lossy())) {
+                continue;
+            }
             let dest = if let Ok(rest) = rel.strip_prefix("@game") {
                 let rest = rest.to_string_lossy();
                 let rest = rest.trim_start_matches(['/', '\\']);

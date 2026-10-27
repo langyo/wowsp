@@ -2,8 +2,9 @@ import { defineComponent, onBeforeUnmount, ref, Teleport, watch } from "vue";
 import { PackageCheck } from "@lucide/vue";
 
 import { t } from "@/i18n";
-import { isMobileApp } from "@/utils/platform";
 import { MOD_PASS_CARD_GRACE_MS, usePluginUpdatesStore } from "@/stores/pluginUpdates";
+import { formatSpeed } from "@/utils/format";
+import { isMobileApp } from "@/utils/platform";
 import "./ModUpdateToast.scss";
 
 /** Leave transition length — must match the --leave duration below. */
@@ -23,10 +24,15 @@ const QUIET_BUILD = isMobileApp();
  * cannot be aborted mid-flight, so the card simply runs to completion
  * and folds failures into an error toast at the end.
  *
+ * The row is split in two on purpose: the step line (item name + count)
+ * takes all the ellipsis, while the meta line (live "downloading N% ·
+ * X MB/s" — the app-updater parity — or the install verb) never shrinks,
+ * so a long mod name can no longer swallow the progress readout.
+ *
  * The pass ending plays a leave transition instead of snapping away
- * (delayed unmount + frozen snapshot, the UpdateToast pattern). Renders
- * nothing while the store is idle, so it is safe to keep mounted
- * unconditionally at the shell level.
+ * (delayed unmount + frozen snapshot, the UpdateToast pattern; the meta
+ * text is frozen too). Renders nothing while the store is idle, so it is
+ * safe to keep mounted unconditionally at the shell level.
  */
 export default defineComponent({
   name: "ModUpdateToast",
@@ -36,23 +42,33 @@ export default defineComponent({
     const mounted = ref(false);
     const leaving = ref(false);
     /** Frozen pass state served while the leave transition runs. */
-    const held = ref({ statusText: "", determinate: false, progress: 0 });
+    const held = ref({ stepText: "", metaText: "", determinate: false, progress: 0 });
     let leaveTimer: number | undefined;
     let mountTimer: number | undefined;
 
-    function statusText(): string {
-      const step = t("resources.pluginUpdateStep", {
+    /** The ellipsized line: which item the pass is on plus its step count. */
+    function stepText(): string {
+      return t("resources.pluginUpdateStep", {
         name: updates.currentName,
         done: updates.done + 1,
         total: updates.total,
       });
-      const phaseText =
-        updates.phase === "download" && updates.percent != null
-          ? t("resources.pluginUpdateDownloading", { percent: updates.percent })
-          : updates.phase === "install"
-            ? t("resources.pluginUpdateInstalling")
-            : "";
-      return phaseText ? `${step} · ${phaseText}` : step;
+    }
+
+    /** The never-shrinking meta: live download percent + transfer rate
+     *  (formatSpeed is the app updater's formatter, em-dash until the
+     *  mirror produces a sample), the install verb once streaming ends,
+     *  and empty while the item's fraction is unknown (the bar animates
+     *  the indeterminate slide then). */
+    function metaText(): string {
+      if (updates.phase === "download" && updates.percent != null) {
+        const percent = t("resources.pluginUpdateDownloading", {
+          percent: updates.percent,
+        });
+        return `${percent} · ${formatSpeed(updates.speedBps)}`;
+      }
+      if (updates.phase === "install") return t("resources.pluginUpdateInstalling");
+      return "";
     }
 
     watch(
@@ -85,7 +101,8 @@ export default defineComponent({
           }
           if (mounted.value && !leaving.value) {
             held.value = {
-              statusText: statusText(),
+              stepText: stepText(),
+              metaText: metaText(),
               determinate: updates.overallPercent != null,
               progress: updates.overallPercent ?? 0,
             };
@@ -111,7 +128,8 @@ export default defineComponent({
     return () => {
       if (QUIET_BUILD || !mounted.value) return null;
       const live = updates.running;
-      const text = live ? statusText() : held.value.statusText;
+      const step = live ? stepText() : held.value.stepText;
+      const meta = live ? metaText() : held.value.metaText;
       const determinate = live ? updates.overallPercent != null : held.value.determinate;
       const progress = live ? (updates.overallPercent ?? 0) : held.value.progress;
       return (
@@ -121,7 +139,10 @@ export default defineComponent({
               <span class="mod-update-toast__icon">
                 <PackageCheck size={14} />
               </span>
-              <p class="mod-update-toast__message">{text}</p>
+              <p class="mod-update-toast__message" title={step}>
+                {step}
+              </p>
+              {meta && <span class="mod-update-toast__meta">{meta}</span>}
             </div>
             <div class="mod-update-toast__track">
               <div

@@ -6,11 +6,12 @@
  *  The api module is mocked; the config/gameStatus stores are real
  *  (their refs are set directly). */
 import { createPinia, setActivePinia } from "pinia";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useToast } from "@celestia-island/hikari";
 
 import type { CatalogEntry, ModInstallRecord } from "@/api";
+import { setLocale } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
 
 vi.mock("@/api", () => {
@@ -31,7 +32,7 @@ vi.mock("@/api", () => {
 import { api } from "@/api";
 import { useGameStatusStore } from "./gameStatus";
 import { useIngamePluginStore } from "./ingamePlugin";
-import { usePluginUpdatesStore } from "./pluginUpdates";
+import { failureDetail, usePluginUpdatesStore } from "./pluginUpdates";
 
 const GAME = "D:\\Games\\World of Warships";
 const OTHER = "E:\\OtherClient";
@@ -321,6 +322,121 @@ describe("usePluginUpdatesStore.updateAll", () => {
     expect(updates.running).toBe(false);
   });
 
+  it("captures the per-item download speed and drops it on a zero-rate tick", async () => {
+    let emit:
+      | ((p: {
+          id: string;
+          kind: string;
+          phase: string;
+          received: number;
+          total: number;
+          speedBps: number;
+        }) => void)
+      | undefined;
+    mocked.listen.mockImplementationOnce((handler: unknown) => {
+      emit = handler as typeof emit;
+      return () => undefined;
+    });
+    let release!: () => void;
+    mocked.install.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({} as never);
+          setTimeout(() => {
+            emit?.({
+              id: "a",
+              kind: "mod-package",
+              phase: "download",
+              received: 20,
+              total: 100,
+              speedBps: 2_097_152,
+            });
+          }, 0);
+        }) as never,
+    );
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: false },
+    };
+
+    const run = updates.updateAll();
+    await vi.waitFor(() => expect(updates.speedBps).toBe(2_097_152));
+
+    // mod_catalog sends speedBps 0 on its own phase transitions — that must
+    // read as "no sample", never stick to the last rate.
+    emit?.({
+      id: "a",
+      kind: "mod-package",
+      phase: "download",
+      received: 25,
+      total: 100,
+      speedBps: 0,
+    });
+    await vi.waitFor(() => expect(updates.speedBps).toBeNull());
+
+    release();
+    await run;
+    expect(updates.speedBps).toBeNull(); // the pass cleared it with phase/percent
+    expect(updates.running).toBe(false);
+  });
+
+  it("resets the captured speed at every task start", async () => {
+    let emit:
+      | ((p: {
+          id: string;
+          kind: string;
+          phase: string;
+          received: number;
+          total: number;
+          speedBps: number;
+        }) => void)
+      | undefined;
+    mocked.listen.mockImplementationOnce((handler: unknown) => {
+      emit = handler as typeof emit;
+      return () => undefined;
+    });
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    mocked.install
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (releaseA = () => resolve({} as never))) as never,
+      )
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (releaseB = () => resolve({} as never))) as never,
+      );
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: {
+        mods: [
+          { id: "a", name: "mod-a", preset: null },
+          { id: "b", name: "mod-b", preset: null },
+        ],
+        probeOutdated: false,
+      },
+    };
+
+    const run = updates.updateAll();
+    await vi.waitFor(() => expect(updates.currentName).toBe("mod-a"));
+    emit?.({
+      id: "a",
+      kind: "mod-package",
+      phase: "download",
+      received: 20,
+      total: 100,
+      speedBps: 1_048_576,
+    });
+    await vi.waitFor(() => expect(updates.speedBps).toBe(1_048_576));
+
+    releaseA();
+    await vi.waitFor(() => expect(updates.currentName).toBe("mod-b"));
+    // The next item starts clean — never the previous item's rate.
+    expect(updates.speedBps).toBeNull();
+
+    releaseB();
+    await run;
+    expect(updates.speedBps).toBeNull();
+  });
+
   it("a throwing progress listener never strands the pass", async () => {
     // The shared bus registers handlers synchronously; a throwing
     // registration must not strand the pass either.
@@ -561,7 +677,7 @@ describe("usePluginUpdatesStore per-client summary", () => {
     await updates.updateAll();
 
     const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
-    expect(texts).toContain("resources.pluginUpdatePartialClients");
+    expect(texts).toContain("resources.pluginUpdatePartialClientsDetail");
     expect(useToast().toasts.some((s) => s.type === "error")).toBe(false);
     expect(updates.failures.join("|")).toContain("other refused");
   });
@@ -580,7 +696,7 @@ describe("usePluginUpdatesStore per-client summary", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]?.duration).toBe(0);
     expect(errors[0]?.copyable).toBe(true);
-    expect(errors[0]?.messages.some((m) => m.text.includes("resources.pluginUpdateAllFailedClients"))).toBe(true);
+    expect(errors[0]?.messages.some((m) => m.text.includes("resources.pluginUpdateAllFailedClientsDetail"))).toBe(true);
     expect(updates.failures.length).toBe(2);
   });
 
@@ -710,5 +826,103 @@ describe("usePluginUpdatesStore shared per-item orchestration", () => {
     release();
     await Promise.all([first, joined]);
     await vi.waitFor(() => expect(mocked.refresh).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("failureDetail", () => {
+  it("joins the failed items verbatim under the cap", () => {
+    expect(failureDetail([])).toBe("");
+    expect(failureDetail(["a: boom"])).toBe("a: boom");
+    expect(failureDetail(["a: boom", "b: boom", "c: boom"])).toBe("a: boom; b: boom; c: boom");
+  });
+
+  it("folds the overflow into a +N tail", () => {
+    expect(failureDetail(["a: 1", "b: 2", "c: 3", "d: 4", "e: 5"])).toBe("a: 1; b: 2; c: 3; +2");
+    expect(failureDetail(["a", "b", "c", "d"], 2)).toBe("a; b; +2");
+  });
+});
+
+describe("usePluginUpdatesStore multi-client failure detail", () => {
+  // Multi-client summaries used to name only the failed clients, dropping
+  // the per-item errors — the reason plugins could sit stale with no clue
+  // why (the backend bug's silent failures hid behind exactly this gap).
+  // The en-US catalog is loaded here so t() interpolates and these
+  // assertions read the RENDERED copy; the earlier suites keep the
+  // missing-catalog raw-key behavior on purpose.
+  beforeAll(async () => {
+    await setLocale("en-US");
+  });
+
+  it("a mixed multi-client run carries the concrete failed items in its warning", async () => {
+    mocked.probeInstall
+      .mockResolvedValueOnce("ok" as never) // GAME's probe lands
+      .mockRejectedValueOnce(new Error("other refused") as never); // OTHER's refused
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+      [OTHER]: { mods: [], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    const warning = useToast().toasts.find((s) => s.type === "warning");
+    const text = warning?.messages.at(-1)?.text ?? "";
+    expect(text).toContain("Plugins updated on 1 client(s)");
+    expect(text).toContain("Built-in probe plugin");
+    expect(text).toContain("other refused");
+    expect(useToast().toasts.some((s) => s.type === "error")).toBe(false);
+  });
+
+  it("a total multi-client refusal keeps the sticky error and carries the detail", async () => {
+    mocked.probeInstall
+      .mockRejectedValueOnce(new Error("game A refused") as never)
+      .mockRejectedValueOnce(new Error("game B refused") as never);
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+      [OTHER]: { mods: [], probeOutdated: true },
+    };
+
+    await updates.updateAll();
+
+    const errors = useToast().toasts.filter((s) => s.type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.duration).toBe(0);
+    expect(errors[0]?.copyable).toBe(true);
+    const text = errors[0]?.messages.at(-1)?.text ?? "";
+    expect(text).toContain("Plugin updates failed on all 2 client(s)");
+    expect(text).toContain("game A refused");
+    expect(text).toContain("game B refused");
+  });
+
+  it("caps a long failure list at three items plus a +N fold", async () => {
+    mocked.probeInstall.mockResolvedValueOnce("ok" as never); // GAME lands
+    mocked.install.mockImplementation((id: unknown) =>
+      Promise.reject(new Error(`boom-${String(id)}`)) as never,
+    );
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [], probeOutdated: true },
+      [OTHER]: {
+        mods: [
+          { id: "a", name: "mod-a", preset: null },
+          { id: "b", name: "mod-b", preset: null },
+          { id: "c", name: "mod-c", preset: null },
+          { id: "d", name: "mod-d", preset: null },
+        ],
+        probeOutdated: false,
+      },
+    };
+
+    await updates.updateAll();
+
+    const warning = useToast().toasts.find((s) => s.type === "warning");
+    const text = warning?.messages.at(-1)?.text ?? "";
+    expect(text).toContain("boom-a");
+    expect(text).toContain("boom-b");
+    expect(text).toContain("boom-c");
+    expect(text).toContain("+1");
+    expect(text).not.toContain("boom-d");
+    expect(updates.failures).toHaveLength(4);
   });
 });

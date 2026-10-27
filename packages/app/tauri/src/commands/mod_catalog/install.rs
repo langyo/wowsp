@@ -89,6 +89,26 @@ pub async fn mod_catalog_install(
     preset: Option<String>,
 ) -> CommandResult<InstallReport> {
     crate::commands::ensure_main_window_label(window.label())?;
+    // Wrapped so every post-guard failure (download, unpack, ledger) lands in
+    // one warn line naming the mod and the client root. Those failures used
+    // to be log-invisible, which made user reports impossible to diagnose.
+    let log_id = mod_id.clone();
+    let log_root = game_root.clone();
+    match mod_catalog_install_inner(mod_id, game_root, app, preset).await {
+        Ok(report) => Ok(report),
+        Err(e) => {
+            tracing::warn!(id = %log_id, game_root = %log_root, error = %e, "mod_catalog_install failed");
+            Err(e.into())
+        },
+    }
+}
+
+async fn mod_catalog_install_inner(
+    mod_id: String,
+    game_root: String,
+    app: AppHandle,
+    preset: Option<String>,
+) -> anyhow::Result<InstallReport> {
     // Every failure of this command is otherwise log-invisible (its early
     // guards return before any download or install line) — the entry line
     // keeps "the user pressed install" distinguishable from "the UI never
@@ -108,8 +128,7 @@ pub async fn mod_catalog_install(
     if entry.delisted {
         return Err(anyhow!(
             "{mod_id} has been delisted from the catalog — its discussion thread is closed"
-        )
-        .into());
+        ));
     }
     // A scheme IS a different prebuilt payload, not an overlay: the chosen
     // preset's packages fully replace the default list for this install.
@@ -164,55 +183,82 @@ pub async fn mod_catalog_install(
     // FIFO-queue behind whatever else is downloading instead of
     // contending for the disk.
     let mut received_total = 0u64;
+    // Download savings evidence: how many packages (and bytes) came from the
+    // content-addressed cache instead of the network.
+    let mut cache_hits = 0u32;
+    let mut cache_bytes = 0u64;
     for (i, pkg) in packages.iter().enumerate() {
-        let done = download_hub::transfer(
-            Some(&app),
-            DownloadRequest {
-                expected_sha256: Some(expected_sha256[i].clone()),
-                timeout: Some(std::time::Duration::from_secs(600)),
-                base_received: received_total,
-                // Actual byte counts accumulate over the pass; the total
-                // is the catalog's (KiB-rounded) sum minus this package.
-                base_total: total.saturating_sub(pkg.size),
-                total_hint: pkg.size,
-                detail: Some(serde_json::json!({
-                    "package": (i + 1) as u32,
-                    "packages": package_count,
-                })),
-                ..DownloadRequest::new(
-                    &entry.id,
-                    kind::MOD_PACKAGE,
-                    download_candidates(&pkg.url),
-                    package_archive(&work.0, i).with_extension("part"),
-                )
-            },
-        )
-        .await
-        .map_err(|e| {
-            // The hub's anyhow error crosses through its Display (the
-            // historical message) — same text the String arm produced.
-            let e = e.to_string();
-            if e.contains("sha256 mismatch") {
-                anyhow!(
-                    "{} failed the SHA-256 check; refresh the catalog and retry — the cached index may be stale, or the package on the release is damaged ({e})",
-                    pkg.name
-                )
-            } else {
-                anyhow!("download {}: {e}", pkg.name)
-            }
-        })?;
-        if !size_within_catalog(done.bytes as usize, pkg.size) {
-            return Err(anyhow!(
-                "{} downloaded {} bytes, outside the catalog's listed {} (KiB-rounded) — refresh the catalog and retry; the cached index may be stale",
-                pkg.name, done.bytes, pkg.size
-            )
-            .into());
-        }
         let dest = package_archive(&work.0, i);
-        tokio::fs::rename(&done.path, &dest)
-            .await
-            .map_err(|e| anyhow!("assemble {}: {e}", dest.display()))?;
-        received_total += done.bytes;
+        // Content-addressed hit: shared support packages recur across dozens
+        // of catalog entries, so a hash-verified cached archive is reused
+        // instead of downloading the same bytes again for every mod and every
+        // client.
+        let cached = super::pkg_cache::copy_hit(&expected_sha256[i], &dest).then(|| {
+            std::fs::metadata(&dest)
+                .map(|m| m.len())
+                .unwrap_or(pkg.size)
+        });
+        let bytes = match cached {
+            Some(bytes) => {
+                cache_hits += 1;
+                cache_bytes += bytes;
+                bytes
+            },
+            None => {
+                let done = download_hub::transfer(
+                    Some(&app),
+                    DownloadRequest {
+                        expected_sha256: Some(expected_sha256[i].clone()),
+                        timeout: Some(std::time::Duration::from_secs(600)),
+                        base_received: received_total,
+                        // Actual byte counts accumulate over the pass; the total
+                        // is the catalog's (KiB-rounded) sum minus this package.
+                        base_total: total.saturating_sub(pkg.size),
+                        total_hint: pkg.size,
+                        detail: Some(serde_json::json!({
+                            "package": (i + 1) as u32,
+                            "packages": package_count,
+                        })),
+                        ..DownloadRequest::new(
+                            &entry.id,
+                            kind::MOD_PACKAGE,
+                            download_candidates(&pkg.url),
+                            package_archive(&work.0, i).with_extension("part"),
+                        )
+                    },
+                )
+                .await
+                .map_err(|e| {
+                    // The hub's anyhow error crosses through its Display (the
+                    // historical message) — same text the String arm produced.
+                    let e = e.to_string();
+                    if e.contains("sha256 mismatch") {
+                        anyhow!(
+                            "{} failed the SHA-256 check; refresh the catalog and retry — the cached index may be stale, or the package on the release is damaged ({e})",
+                            pkg.name
+                        )
+                    } else {
+                        anyhow!("download {}: {e}", pkg.name)
+                    }
+                })?;
+                if !size_within_catalog(done.bytes as usize, pkg.size) {
+                    return Err(anyhow!(
+                        "{} downloaded {} bytes, outside the catalog's listed {} (KiB-rounded) — refresh the catalog and retry; the cached index may be stale",
+                        pkg.name,
+                        done.bytes,
+                        pkg.size
+                    ));
+                }
+                tokio::fs::rename(&done.path, &dest)
+                    .await
+                    .map_err(|e| anyhow!("assemble {}: {e}", dest.display()))?;
+                // Cache the verified archive for the next install (best effort:
+                // a cache failure must never fail the install).
+                super::pkg_cache::store(&expected_sha256[i], &dest);
+                done.bytes
+            },
+        };
+        received_total += bytes;
         emit_progress(
             &app,
             &entry.id,
@@ -277,7 +323,7 @@ pub async fn mod_catalog_install(
             if let Err(se) = save_ledger(&ledger) {
                 tracing::warn!(error = %se, "ledger save failed after failed install");
             }
-            return Err(e.into());
+            return Err(e);
         },
     };
 
@@ -364,7 +410,13 @@ pub async fn mod_catalog_install(
         received_total,
         total,
     );
-    tracing::info!(id = %entry.id, version = %entry.version, "mod_catalog_install done");
+    tracing::info!(
+        id = %entry.id,
+        version = %entry.version,
+        cached_packages = cache_hits,
+        cached_bytes = cache_bytes,
+        "mod_catalog_install done"
+    );
     Ok(report)
 }
 
@@ -426,32 +478,49 @@ pub async fn mod_catalog_preview_files(
     let work = WorkDir::create(&std::env::temp_dir())?;
     let mut received_total = 0u64;
     for (i, pkg) in packages.iter().enumerate() {
-        let done = download_hub::transfer(
-            Some(&app),
-            DownloadRequest {
-                expected_sha256: Some(expected_sha256[i].clone()),
-                timeout: Some(std::time::Duration::from_secs(600)),
-                base_received: received_total,
-                base_total: total.saturating_sub(pkg.size),
-                total_hint: pkg.size,
-                detail: Some(serde_json::json!({
-                    "package": (i + 1) as u32,
-                    "packages": package_count,
-                })),
-                ..DownloadRequest::new(
-                    &progress_id,
-                    kind::MOD_PACKAGE,
-                    download_candidates(&pkg.url),
-                    work.0.join(format!("pkg-{i:02}.zip.part")),
+        let archive = work.0.join(format!("pkg-{i:02}.zip"));
+        // Same content-addressed cache as an install: a preview of a sibling
+        // entry that shares a package costs no download at all.
+        let cached = super::pkg_cache::copy_hit(&expected_sha256[i], &archive).then(|| {
+            std::fs::metadata(&archive)
+                .map(|m| m.len())
+                .unwrap_or(pkg.size)
+        });
+        let bytes = match cached {
+            Some(bytes) => bytes,
+            None => {
+                let done = download_hub::transfer(
+                    Some(&app),
+                    DownloadRequest {
+                        expected_sha256: Some(expected_sha256[i].clone()),
+                        timeout: Some(std::time::Duration::from_secs(600)),
+                        base_received: received_total,
+                        base_total: total.saturating_sub(pkg.size),
+                        total_hint: pkg.size,
+                        detail: Some(serde_json::json!({
+                            "package": (i + 1) as u32,
+                            "packages": package_count,
+                        })),
+                        ..DownloadRequest::new(
+                            &progress_id,
+                            kind::MOD_PACKAGE,
+                            download_candidates(&pkg.url),
+                            work.0.join(format!("pkg-{i:02}.zip.part")),
+                        )
+                    },
                 )
+                .await
+                .map_err(|e| anyhow!("download {}: {e}", pkg.name))?;
+                tokio::fs::rename(&done.path, &archive)
+                    .await
+                    .map_err(|e| anyhow!("assemble package {i}: {e}"))?;
+                // Best effort: the next install/preview of a sibling entry
+                // reuses these verified bytes.
+                super::pkg_cache::store(&expected_sha256[i], &archive);
+                done.bytes
             },
-        )
-        .await
-        .map_err(|e| anyhow!("download {}: {e}", pkg.name))?;
-        received_total += done.bytes;
-        tokio::fs::rename(&done.path, work.0.join(format!("pkg-{i:02}.zip")))
-            .await
-            .map_err(|e| anyhow!("assemble package {i}: {e}"))?;
+        };
+        received_total += bytes;
         emit_progress(
             &app,
             &progress_id,
@@ -685,9 +754,9 @@ pub(crate) fn unpack_and_install(
     let mut installed_variants: Vec<String> = Vec::new();
     for r in installs.iter() {
         // Duplicate same-id records are a legacy-ledger quirk (an older
-        // append wrote one per game root); uninstall_from_ledger sweeps
-        // them together, so collect each id ONCE or the second call
-        // would fail on "no install record" mid-rewind.
+        // append wrote one per game root); rewind_for_reinstall sweeps them
+        // together, so collect each id ONCE or the second call would fail on
+        // "no install record" mid-rewind.
         if (r.game_root.is_empty() || r.game_root == game_root)
             && rewind_ids.contains(&r.id.as_str())
             && !installed_variants.contains(&r.id)
@@ -695,12 +764,124 @@ pub(crate) fn unpack_and_install(
             installed_variants.push(r.id.clone());
         }
     }
+    // Records after the FIRST rewound one are the newer owners whose stale
+    // snapshots must follow the replacement's bytes (see
+    // refresh_newer_snapshots). Starting at the first match also covers a
+    // legacy duplicate same-id record with an owner sitting between the two.
+    let newer_owners = newer_owner_records(installs, &rewind_ids, game_root);
+    // Reinstall rewind: a file another record on this root and bin still owns
+    // stays at that owner's bytes instead of failing the update.
     for id in &installed_variants {
-        uninstall_from_ledger(installs, id, game_root)?;
+        rewind_for_reinstall(installs, id, game_root)?;
     }
     let applied = mod_hub::install_plan_with_loose(&plan_root, game_root, &plan, &loose)?;
+    // Best effort: keep the newer owners' snapshots of the files this install
+    // just rewrote in sync, so their uninstall restores the current bytes.
+    refresh_newer_snapshots(
+        game_root,
+        &applied.report.bin_version,
+        &applied.written,
+        &newer_owners,
+    );
 
     Ok((applied.report, applied.written, applied.restore_dir))
+}
+
+/// Records that sit AFTER the first rewound one in ledger order - the "newer
+/// owners" the strict uninstall guard protects. Their snapshot of a shared
+/// file may hold the bytes a reinstall is about to replace, so the caller
+/// refreshes those snapshots afterwards. Records rewound together (mod_id and
+/// its superseded variants) are excluded; records of another game root never
+/// match.
+pub(crate) fn newer_owner_records(
+    installs: &[ModInstallRecord],
+    rewound_ids: &[&str],
+    game_root: &str,
+) -> Vec<ModInstallRecord> {
+    let Some(cut) = installs.iter().position(|r| {
+        (r.game_root.is_empty() || r.game_root == game_root) && rewound_ids.contains(&r.id.as_str())
+    }) else {
+        return Vec::new();
+    };
+    installs
+        .iter()
+        .skip(cut + 1)
+        .filter(|r| !rewound_ids.contains(&r.id.as_str()))
+        .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
+        .cloned()
+        .collect()
+}
+
+/// Refresh a NEWER record's pre-overwrite snapshot of a shared file after a
+/// reinstall of its older owner replaced the bytes. Only records after the
+/// rewound one qualify: an older record's snapshot may hold the vanilla
+/// original, so overwriting it with the updated mod's bytes would corrupt its
+/// uninstall restore. A record keyed at another bin_version owns physically
+/// different files, so it is skipped too. Best effort - a failed refresh only
+/// logs and never fails the install. Shared by the catalog install and the
+/// local same-name reinstall.
+pub(crate) fn refresh_newer_snapshots(
+    game_root: &str,
+    bin_version: &str,
+    written: &[String],
+    newer_owners: &[ModInstallRecord],
+) {
+    if newer_owners.is_empty() {
+        return;
+    }
+    let res_mods = Path::new(game_root)
+        .join("bin")
+        .join(bin_version)
+        .join("res_mods");
+    let mut refreshed = 0usize;
+    for owner in newer_owners {
+        if owner.bin_version != bin_version {
+            continue;
+        }
+        let Some(dir) = owner.restore_dir.as_ref() else {
+            continue;
+        };
+        let restore = Path::new(dir);
+        if !restore.is_dir() {
+            continue;
+        }
+        let claimed: std::collections::HashSet<String> = owner
+            .files
+            .iter()
+            .map(|rel| super::uninstall::uninstall_path_key(rel))
+            .collect();
+        for rel in written {
+            if !claimed.contains(&super::uninstall::uninstall_path_key(rel)) {
+                continue;
+            }
+            let (snapshot, source) = match rel.strip_prefix("@game/") {
+                Some(rest) => (
+                    restore.join("@game").join(rest),
+                    Path::new(game_root).join(rest),
+                ),
+                None => (restore.join(rel), res_mods.join(rel)),
+            };
+            // Only refresh snapshots that already exist: a file this owner
+            // never overwrote has nothing to keep in sync.
+            if !snapshot.is_file() || !source.is_file() {
+                continue;
+            }
+            match fs::copy(&source, &snapshot) {
+                Ok(_) => refreshed += 1,
+                Err(e) => tracing::debug!(
+                    snapshot = %snapshot.display(),
+                    error = %e,
+                    "shared snapshot refresh failed (install continues)"
+                ),
+            }
+        }
+    }
+    if refreshed > 0 {
+        tracing::info!(
+            refreshed,
+            "refreshed newer owners' snapshots of rewritten shared files"
+        );
+    }
 }
 
 /// Files sitting at the zip root next to `res_mods/` (game-root payloads).
