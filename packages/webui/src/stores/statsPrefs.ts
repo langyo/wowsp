@@ -110,18 +110,21 @@ export interface StatsPrefs {
    *  count more) or the plain arithmetic mean. */
   weightedTeamWr: boolean;
   /** Live-battle roster rows compressed to the post-battle matrix's
-   *  one-line look (battle icon + WR/PR/avg-damage columns + the career
-   *  seal, no ship-meta strip). Full cards stay the default. */
+   *  compact row look (battle icon + WR/PR/avg-damage columns + the career
+   *  seal, no ship-meta strip). Compact rows are the shipped default; the
+   *  full mode keeps the same aligned stat columns and only adds the
+   *  ship-meta strip in the middle of each row. */
   liveRosterCompact: boolean;
   /** Live-roster rows washed with the player's PR-tier color (a translucent
-   *  background tint — red band red, purple band purple). Applies to both
-   *  the full cards and the compact rows, over the row's resolved
+   *  background tint — red band red, purple band purple). The same wash
+   *  applies in both live-roster density modes, over the row's resolved
    *  stats-source PR; AND-composed with `prEnabled`. */
   liveRosterPrTint: boolean;
   /** Post-battle roster rows expanded to a full-card look in the live
-   *  panel's spirit (name/ship/stat stack + ship-meta strip + career seal +
-   *  XP column; the live panel's own cards carry their stat line as a
-   *  full-width bottom strip instead). Compact rows stay the default. */
+   *  roster's richer-density spirit (name/ship/stat stack + ship-meta strip +
+   *  career seal + XP column; the live roster adds the same strip to its
+   *  shared aligned row instead of a separate card). Compact rows stay the
+   *  default. */
   postbattleRosterFull: boolean;
   /** The Tab overlay's team-averages line under each side (mean winrate /
    *  mean PR / mean damage, one line, all-or-nothing). Ships off — the
@@ -168,7 +171,7 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   sealsEnabled: true,
   localizedTiers: true,
   weightedTeamWr: true,
-  liveRosterCompact: false,
+  liveRosterCompact: true,
   liveRosterPrTint: true,
   postbattleRosterFull: false,
   teamAvgEnabled: false,

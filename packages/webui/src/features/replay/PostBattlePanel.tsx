@@ -12,8 +12,8 @@
  * panel: clan tags, PR column, career seals, team aggregates in the column
  * titles and the battle mode/map head. Rows default to the compact one-line
  * look; the share bar's mode toggle expands them to full cards in the live
- * panel's spirit (name/ship/stat stack + the LiveShipMeta ship strip — the
- * live panel's own cards carry their stat line as a full-width bottom strip
+ * roster's richer-density spirit (name/ship/stat stack + the LiveShipMeta
+ * ship strip; the live roster adds the same strip to its shared aligned row
  * instead), a persisted stats pref. The share bar also leads with the
  * stats-source chip — the
  * identical selector the live panel's head mounts (one shared statsPrefs
@@ -385,9 +385,10 @@ export default defineComponent({
       compRealms,
     );
 
-    /** Roster density: compact rows (the default) or the live panel's full
-     *  cards — a persisted stats pref, flipped from the share bar's mode
-     *  toggle (PostBattleShareBar). */
+    /** Roster density: compact rows (the default) or the expanded full
+     *  cards (the live roster's richer density carried as a card here) — a
+     *  persisted stats pref, flipped from the share bar's mode toggle
+     *  (PostBattleShareBar). */
     const statsPrefs = useStatsPrefsStore();
     const fullMode = computed(() => prefs.value.postbattleRosterFull);
     const toggleFullMode = () =>
@@ -828,9 +829,10 @@ export default defineComponent({
           );
         };
         // Full cards carry no aligned stat columns under the title, so the
-        // aggregate rides the title's right end as inline text — the live
-        // panel's own column-title treatment: one labeled mean per
-        // configured column, each in its own scope's view.
+        // aggregate rides the title's right end as inline text — its own
+        // column-title treatment (the live roster aligns its equivalents
+        // under the shared two-line header): one labeled mean per configured
+        // column, each in its own scope's view.
         if (fullMode.value) {
           const parts: VNode[] = [];
           cols.forEach((col, i) => {
@@ -1090,11 +1092,11 @@ export default defineComponent({
           </div>
         );
       };
-      /** Full-card row (the live panel's card look): name/ship/stat-strip
-       *  stack (the strip carries EVERY configured column now, damage
-       *  included — one text line per scope), the LiveShipMeta strip, then
-       *  the XP column ahead of the career seal. Like the compact row, the
-       *  whole card minus the eye is one button. */
+      /** Full-card row (the live roster's richer density, carried as a
+       *  card here): name/ship/stat-strip stack (the strip carries EVERY
+       *  configured column now, damage included — one text line per scope),
+       *  the LiveShipMeta strip, then the XP column ahead of the career seal.
+       *  Like the compact row, the whole card minus the eye is one button. */
       const fullCell = (p: (typeof allies.value)[number]) => {
         const enemy = !props.operation && isEnemy(p);
         const ai = isAiName(p.name);
@@ -1115,7 +1117,7 @@ export default defineComponent({
             );
           }
           // The configured columns' numbers, each in its own scope — the
-          // same shared text line the live panel's full cards render.
+          // shared rosterStatLine text line every full-card surface renders.
           const line = rosterStatLine((scope) =>
             colViewOf(scope, stat, p.shipId ?? null),
           );

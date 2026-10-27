@@ -15,6 +15,7 @@
  */
 import { useTheme } from "@celestia-island/hikari";
 
+import { STATS_PREFS_STORAGE_KEY, seedStatsPrefs } from "@/stores/statsPrefs";
 import { UI_OPACITY_STORAGE_KEY, seedUiOpacityPercent } from "@/theme/uiOpacityPreference";
 
 export const WEBUI_MIGRATION_ACTIONS: Record<string, () => void> = {
@@ -47,5 +48,40 @@ export const WEBUI_MIGRATION_ACTIONS: Record<string, () => void> = {
     // Seed (not set): a migration is a historical fact, not a user edit —
     // it must not flash the title-bar Saved chip.
     seedUiOpacityPercent(raisedDefault);
+  },
+  live_roster_compact_default_on: () => {
+    // Historical facts of the 0.6.8 change — deliberately hardcoded, NOT
+    // read from statsPrefs, whose default may move again later.
+    const previousDefault = false;
+    const raisedDefault = true;
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(STATS_PREFS_STORAGE_KEY);
+    } catch {
+      return;
+    }
+    // No stored blob → the raised DEFAULT_STATS_PREFS default already
+    // carries a fresh profile (and keeps following future default changes).
+    // Only the OLD default moves: a stored true is already the new default,
+    // and a deliberate old-default full choice is indistinguishable — the
+    // same trade-off the opacity precedent accepts.
+    if (stored == null) return;
+    let blob: unknown;
+    try {
+      blob = JSON.parse(stored);
+    } catch {
+      return;
+    }
+    if (blob == null || typeof blob !== "object") return;
+    if ((blob as Record<string, unknown>).liveRosterCompact !== previousDefault) {
+      return;
+    }
+    // Seed (not set): a migration is a historical fact, not a user edit —
+    // it must not flash the title-bar Saved chip. statsPrefs hydrated from
+    // this same storage at module import (main.ts loads the migration graph
+    // before first paint, and this body runs after that), so seeding
+    // rewrites the whole normalized blob and preserves every other pref.
+    // Idempotent: a second pass reads the written true and no-ops.
+    seedStatsPrefs({ liveRosterCompact: raisedDefault });
   },
 };

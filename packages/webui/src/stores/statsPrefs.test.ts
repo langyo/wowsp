@@ -48,16 +48,16 @@ describe("loadStatsPrefs", () => {
     // PR / battles / avg damage) ship on; the fun wording, seals and the
     // tier-weighted team winrate ship on. The team-averages line ships
     // off (dense already); the consumable-intel line above it has no
-    // switch at all. Both roster-density overrides ship off: full cards
-    // on the live panel and compact rows post-battle are the defaults.
-    // The PR-tier row wash ships on.
+    // switch at all. Compact rows on the live panel ship on; compact rows
+    // post-battle (the full-card override off) stay the default. The
+    // PR-tier row wash ships on.
     expect(DEFAULT_STATS_PREFS).toEqual({
       prEnabled: true,
       prAlgo: "winrate",
       sealsEnabled: true,
       localizedTiers: true,
       weightedTeamWr: true,
-      liveRosterCompact: false,
+      liveRosterCompact: true,
       liveRosterPrTint: true,
       postbattleRosterFull: false,
       teamAvgEnabled: false,

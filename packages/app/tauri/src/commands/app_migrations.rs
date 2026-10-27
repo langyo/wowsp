@@ -38,6 +38,14 @@ mod registry {
     /// the body and reports back.
     #[once("0.5.2", delegate)]
     fn ui_opacity_95_on_default_theme() {}
+
+    /// 0.6.8 — flip the live-battle roster density pref from full cards to
+    /// compact rows for profiles still on the old default. The pref rides
+    /// in the WebView's stats-prefs blob (`wowsp-stats-prefs`, key
+    /// `liveRosterCompact`), which the shell cannot reach: the webui runs
+    /// the body and reports back.
+    #[once("0.6.8", delegate)]
+    fn live_roster_compact_default_on() {}
 }
 
 /// Ledger file under the data root (see `paths` for the layout modes).
@@ -121,6 +129,8 @@ pub fn app_migration_completed(id: String) -> CommandResult<bool> {
 mod tests {
     use super::*;
 
+    use hifumi::app::AppMigrationAction;
+
     fn temp_store_path(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "wowsp-app-migrations-{name}-{}.json",
@@ -135,24 +145,41 @@ mod tests {
         let path = temp_store_path("upgrade");
 
         // First boot after the 0.5.1 → 0.5.2 upgrade: the webui hint seeds
-        // the fresh ledger and the delegated action surfaces.
-        assert_eq!(
-            run_pass(&path, Some("0.5.1")).unwrap(),
-            vec!["ui_opacity_95_on_default_theme".to_string()]
-        );
+        // the fresh ledger and the delegated action surfaces. The exact set
+        // grows whenever a later release adds an action, so the test pins no
+        // list — it stays valid before AND after the 0.6.8 version bump.
+        let pending = run_pass(&path, Some("0.5.1")).unwrap();
+        assert!(pending.contains(&"ui_opacity_95_on_default_theme".to_string()));
         // Unresolved: the run version stays unrecorded, so a crash here
-        // retries (and a repeated pass with no hint still sees it pending).
-        assert_eq!(run_pass(&path, None).unwrap().len(), 1);
+        // retries (and a repeated pass with no hint still sees the same
+        // pending set).
+        assert_eq!(run_pass(&path, None).unwrap(), pending);
 
-        // The webui reports completion: nothing remains due, the run
-        // version records, and later boots see an empty pending list.
-        assert!(complete(&path, "ui_opacity_95_on_default_theme").unwrap());
+        // The webui reports completion of everything surfaced: nothing
+        // remains due, the run version records, and later boots see an
+        // empty pending list.
+        for id in &pending {
+            assert!(complete(&path, id).unwrap());
+        }
         assert!(run_pass(&path, None).unwrap().is_empty());
 
         // Unknown ids report false and write nothing.
         assert!(!complete(&path, "unknown").unwrap());
 
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn live_roster_compact_default_on_is_registered_delegated() {
+        let set = registry::registry();
+        let entry = set
+            .find("live_roster_compact_default_on")
+            .expect("live-roster density migration must be registered");
+        // The id is the webui body's key, the version is the release that
+        // introduced the flip, and the body runs in the WebView.
+        assert_eq!(entry.id, "live_roster_compact_default_on");
+        assert_eq!(entry.since, "0.6.8");
+        assert_eq!(entry.action, AppMigrationAction::Delegated);
     }
 
     #[test]

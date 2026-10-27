@@ -328,7 +328,7 @@
     /* Single-sided battle (operations): the enemy list hides (its side is
        all scripted spawns) and the allies column keeps the two-column
        layout's column width, centered on the page — a full-width roster of
-       stretched cards reads looser than the game's own compact team block.
+       stretched rows reads looser than the game's own compact team block.
        The modifier rides the container root above (see the tsx). */
     .live-battle__matrix--single & {
       grid-template-columns: minmax(0, 1fr);
@@ -367,33 +367,20 @@
     white-space: nowrap;
   }
 
-  /* Team aggregate (weighted WR + mean PR) riding the column title's right
-     end — the caption voice without the caption letter-spacing (numbers
-     read poorly tracked); values carry their tier colors inline. Clipping
-     keeps a narrow window from pushing it into the sibling column. */
-  &__col-agg {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    letter-spacing: normal;
-    white-space: nowrap;
-
-    b {
-      font-weight: 600;
-    }
-  }
-
-  /* Compact mode's team aggregate: the title becomes a two-line mini table
-     header (tiny label over a mono value) on a grid mirroring the compact
-     rows' stat columns — [name][enabled rosterColumns() widths], the exact
-     template set INLINE per render (the chip toggles decide which columns
-     exist) so every team average lands exactly on its own column. The grid
-     element carries the cells' mono face at the cells' xs size so its ch
-     matches theirs; the caption name keeps the plain title's voice and
-     spans both rows. Right-edge compensation: compact rows spend width on
-     the career-seal slot (44px + one flex gap) beyond the stat columns
-     whenever seals show, plus the row's own 8px padding either way — the
-     modifiers reserve that same run in place of the base 2px. */
+  /* The roster header — ONE aligned render path for BOTH densities:
+     compact rows and the full rows (which merely add the ship-meta strip in
+     the middle) put their stat cells on the exact same grid. The title
+     becomes the two-line mini table header (tiny label over a mono value) on
+     a grid mirroring the roster rows' stat columns — [name][enabled
+     rosterColumns() widths], the exact template set INLINE per render (the
+     chip toggles decide which columns exist) so every team average lands
+     exactly on its own column. The grid element carries the cells' mono face
+     at the cells' xs size so its ch matches theirs; the caption name keeps
+     the plain title's voice and spans both rows. Right-edge compensation:
+     EVERY roster row spends width on the career-seal slot (44px + one flex
+     gap) beyond the stat columns whenever seals show, plus the row's own 8px
+     padding either way — the --pad-seal modifier reserves that same run in
+     place of the base 2px, in both densities. */
   &__col-title--agg {
     display: grid;
     /* Fallback only — the real template rides inline per render. */
@@ -407,7 +394,9 @@
     padding-right: 8px;
   }
 
-  /* Seal-slot compensation — AFTER --agg so it wins the padding-right. */
+  /* Seal-slot compensation — AFTER --agg so it wins the padding-right. The
+     modifier is applied in BOTH densities: a full row reserves the same seal
+     slot as a compact one, so its stat columns keep the shared x. */
   &__col-title--pad-seal {
     padding-right: 60px;
   }
@@ -440,148 +429,6 @@
     line-height: 1.2;
   }
 
-  /* Strict three-track card: a fixed name column, an elastic-but-clipping
-     middle for the ship-meta strip, and a fixed seal column. Every card in
-     both rosters shares the same tracks, so the left/middle/right grounds
-     line up across the whole panel and no content can push them around.
-     The PR-tier wash rides custom properties (set inline by the panel):
-     tinted rows set --row-tint (an "R G B" triplet) plus --row-tint-a;
-     untinted rows fall back to the neutral 4% text wash. */
-  &__player {
-    display: grid;
-    grid-template-columns: 10rem minmax(0, 1fr) 2.5rem;
-    column-gap: 10px;
-    align-items: center;
-    padding: 7px 9px;
-    border-radius: 6px;
-    background: rgb(var(--row-tint, var(--color-text)) / var(--row-tint-a, 0.04));
-  }
-
-  /* Text stack (name / ship), first grid track. `min-width: 0` keeps long
-     names ellipsizing inside the fixed track. Explicit placement keeps every
-     card's geometry identical even when a middle piece renders nothing (ship
-     missing from the offline DBs) — auto-placement would then slide the seal
-     into the middle track. */
-  &__player-main {
-    grid-column: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  /* The card's seal column: the primary career seal (RatingStamp, 一级章)
-     pinned to the right edge — the same "pressed onto the card" look as
-     the account card's stamp. Its grid track stays reserved even for cards
-     without a seal (hidden stats, prefs off), so both rosters keep
-     identical column geometry. The secondary tier (成分章, StampTag) does
-     NOT live here — it presses beside the nickname in the name track
-     instead. */
-  &__player-stampstack {
-    grid-column: 3;
-    justify-self: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-  }
-
-  /* Human players: the whole card jumps to the lookup view. */
-  &__player--link {
-    border: none;
-    color: rgb(var(--color-text));
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-    transition: background 0.15s;
-
-    /* The hover brightens whichever wash the row carries (tinted or
-       neutral) by the same step — calc() keeps one rule for both. Sunk
-       cards sit this out: their gray veil is the point, and this rule's
-       tint would repaint band color over the whole drained row. */
-    &:not(.live-battle__player--sunk):hover {
-      background: rgb(
-        var(--row-tint, var(--color-text)) / calc(var(--row-tint-a, 0.04) + 0.06)
-      );
-    }
-
-    &:focus-visible {
-      outline: 1px solid rgb(var(--color-text) / 0.4);
-    }
-  }
-
-  /* Sunk mid-battle (recognized off the dim-gray in-game Tab row): the
-     game's own Tab table grays the row, and the panel follows — the card
-     swaps to a neutral gray wash and the dim-and-drain (same 0.45 +
-     grayscale the game shows) rides EVERY child, the seal included. No
-     PR-tier tint survives the sink: a colored placard under the stamp used
-     to re-press the band color there (#870), which read as a leftover
-     alive-row tint on an otherwise drained row — the sunk row now reads
-     uniformly gray, seal and all. */
-  &__player--sunk {
-    background: rgb(var(--color-text) / 0.055);
-
-    > * {
-      opacity: 0.45;
-      filter: grayscale(0.9);
-    }
-  }
-
-  /* Player-entry text runs ONE step up the --text-* scale (xs→sm,
-     2xs→xs) so the live roster reads slightly larger than the chrome
-     around it — head pills and column titles stay untouched. */
-  &__player-name {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    font-size: var(--text-sm);
-  }
-
-  /* The name itself: a real ellipsis inside the fixed track (the flex
-     container above cannot ellipsize its anonymous text node). */
-  &__player-nick {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* The secondary tags (成分章, StampTag) press BESIDE THE NICKNAME — the
-     four-char wording reads as part of the identity line, not as a
-     score-column ornament (user feedback). A step smaller so the tag
-     sings in the clan tag's register instead of shouting over the nick. */
-  &__player-name .stamp-tag {
-    font-size: 0.78em;
-  }
-
-  &__player-bot {
-    display: inline-flex;
-    align-items: center;
-    flex: none;
-    height: 1.2em;
-    padding: 0 5px;
-    border-radius: 4px;
-    background: rgb(var(--color-text) / 0.14);
-    color: rgb(var(--color-text) / 0.62);
-    font-size: 0.72em;
-    font-style: normal;
-    line-height: 1;
-  }
-
-  /* Clan tag ([HOOD] etc.) riding the nickname — quiet identity metadata,
-     not a badge: muted text, no pill, so a roster where most players have
-     clans stays calm. */
-  &__player-clan {
-    flex: none;
-    color: rgb(var(--color-text) / 0.5);
-    font-size: 0.78em;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-  }
-
   /* Cross-server Clan-Battles chip (欧服 etc.) — unlike the clan tag this
      IS a badge: it flags that the row's numbers came from another
      cluster's API, which only cross-server CW rows ever show. */
@@ -601,75 +448,14 @@
     white-space: nowrap;
   }
 
-  /* Ship line: class marker (BattleIcon, team/sunk variant) + the name.
-     The icon pins left; only the name ellipsizes when the fixed track runs
-     out. */
-  &__player-ship {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    min-width: 0;
-    color: rgb(var(--color-text) / 0.45);
-    font-size: var(--text-xs);
-  }
-
-  &__player-ship-ico {
-    flex: 0 0 auto;
-    display: inline-flex;
-  }
-
-  &__player-ship-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* The stat strip (LiveStatLine): the card's second row, spanning ALL
-     three tracks — the one line long enough to outgrow the 10rem name
-     track, so it reaches across the middle ground and the seal's air to
-     read in full instead of ellipsizing. A hairline top border separates
-     it from the identity row above. */
-  &__player-stat {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    margin-top: 4px;
-    padding-top: 5px;
-    border-top: 1px solid rgb(var(--color-text) / 0.08);
-    font-size: var(--text-xs);
-    color: rgb(var(--color-text) / 0.7);
-
-    /* WR / PR values carry their tier color inline (winrateColor / prTier). */
-    b {
-      font-weight: 600;
-    }
-  }
-
-  &__player-statline {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Hidden profile: a red notice, not a bare "—" (the player could have
-   * stats — they chose to hide them). */
-  &__player-hidden {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: rgb(var(--color-error));
-  }
-
-  /* ── Compact rows (the post-battle matrix's one-line look) ──────────
-     Mirrors .replay-view__postbattle-cell / -cell-btn in
-     PostBattlePanel.scss: battle icon, nick/clan + ship stack, the shared
-     rosterStatCols columns (their own SCSS) and the career seal — one
-     line, no ship-meta strip. The whole row is the lookup jump, so hover
-     and clicks cover the seal too. */
+  /* ── Roster rows (the post-battle matrix's compact row look) ─────────
+     ONE row shared by BOTH densities (compact is the shipped default):
+     battle icon, nick/clan + ship stack, the shared rosterStatCols columns
+     (their own SCSS) and the career seal. Full density only adds the
+     LiveShipMeta strip between the identity stack and the stat columns (see
+     &__crow-main--split below) — every shared piece keeps the same x, so
+     both densities line up under the one aligned column header. The whole
+     row is the lookup jump, so hover and clicks cover the seal too. */
   &__crow {
     display: flex;
     align-items: center;
@@ -678,7 +464,8 @@
     padding: 4px 8px;
     border: none;
     border-radius: 6px;
-    /* PR-tier wash, same variables as the full cards (see &__player). */
+    /* PR-tier wash — the --row-tint custom properties prTintVars sets inline
+       on every row (see the panel). */
     background: rgb(var(--row-tint, var(--color-text)) / var(--row-tint-a, 0.04));
     color: rgb(var(--color-text));
     /* Kill the UA button font, then re-apply the compact size — one rule
@@ -698,6 +485,35 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  /* Full density only: the main block turns horizontal — a fixed-width
+     identity stack, then the ship-meta strip filling the middle ground.
+     Compact rows keep the plain column stack above, so both densities
+     render the identical outer line (icon · main · stat columns · seal). */
+  &__crow-main--split {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* The full row's identity stack: the same nick/clan + ship-name lines the
+     compact main block renders, pinned to a 10rem-ish track and allowed to
+     shrink — long names ellipsize inside it (min-width: 0). */
+  &__crow-id {
+    flex: 0 1 10rem;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* The meta strip is a direct child of the split main block: it fills the
+     remaining middle width and clips inside it (LiveShipMeta's own row /
+     chips / badges carry the overflow rules), so it can never push the
+     aligned stat columns or the seal slot around. */
+  &__crow-main--split > .live-ship-meta {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   &__crow-name {
@@ -748,8 +564,8 @@
 
   /* Career seal slot: reserved whenever seals show at all (mirroring the
      post-battle matrix's own rule), so the shared stat columns keep their
-     x position on every row — sealed or not — and the seal keeps air on
-     both sides. */
+     x position on every row — sealed or not, compact or full — and the
+     seal keeps air on both sides. */
   &__crow-stampslot {
     flex: 0 0 44px;
     display: inline-flex;
@@ -762,8 +578,9 @@
     flex: 0 0 auto;
   }
 
-  /* The compact row's secondary tag presses BESIDE THE NICKNAME too (the
-     full card's rule above), at the same clan-tag register. */
+  /* The row's secondary tag (成分章) presses BESIDE THE NICKNAME — the
+     single highest tier, in both densities — at the same clan-tag register
+     the identity line uses. */
   &__crow-name .stamp-tag {
     font-size: 0.78em;
   }
@@ -784,10 +601,9 @@
     }
   }
 
-  /* Sunk mid-battle: the compact row's split of the full card's rule —
-     every child dims and drains to gray, the seal slot included. The old
-     PR-tint lane behind the stamp (#870) is gone with it: a sunk row
-     reads uniformly gray, right edge included. */
+  /* Sunk mid-battle (both densities): every child dims and drains to gray,
+     the seal slot included. The old PR-tint lane behind the stamp (#870) is
+     gone with it: a sunk row reads uniformly gray, right edge included. */
   &__crow--sunk {
     background: rgb(var(--color-text) / 0.055);
 

@@ -1,11 +1,16 @@
-/* Ship-identity strip riding the middle of each live-battle roster card, and
-   the teleported hover combat card. Tokens mirror LiveBattlePanel.scss. */
+/* Ship-identity strip riding the middle of each live-battle roster row (full
+   density mode) and of the post-battle full card, plus the teleported hover
+   combat card. Tokens mirror LiveBattlePanel.scss. */
 
-/* The card's middle grid track (between the name stack and the career seal):
-   identity + leading params on one line, badges on a second (ally rows).
-   Explicitly the second track so a null render can never shuffle the seal. */
+/* The roster row's middle ground (full density only): the full row inserts
+   this strip between the identity stack and the aligned stat columns while
+   the compact row drops it entirely (the density pref only adds info, it
+   never re-lays the row out). Identity + leading params ride one line, the
+   badges a second (ally rows). min-width: 0 lets the strip clip inside the
+   middle ground instead of pushing the aligned columns around; the host
+   (the live row's split main block, or the post-battle card's middle track)
+   decides where that ground is. */
 .live-ship-meta {
-  grid-column: 2;
   min-width: 0;
   display: flex;
   flex-direction: column;

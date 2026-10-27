@@ -232,7 +232,8 @@ function rosterColumnCell(
  *  Both rosters read the columns in the same configured order (the live
  *  panel's enemy side no longer mirrors — user feedback). Shared by every
  *  roster row surface: the post-battle results panel, the replay view's
- *  fallback matrix and the live panel's compact mode — one definition,
+ *  fallback matrix and the live panel's roster rows (both densities) — one
+ *  definition,
  *  identical geometry everywhere. */
 export function rosterStatCols(
   name: string,
@@ -418,8 +419,9 @@ export { rosterStatView };
  *  carries — one shared statsPrefs store, so a flip here re-resolves the
  *  roster and shows up in the live head / settings immediately), the
  *  hide-all-nicknames toggle (with the per-row eye hint), the optional
- *  roster-density toggle (compact rows ⇄ the live panel's full cards —
- *  rendered only when the host passes the props) and the copy-share-shot
+ *  roster-density toggle (compact rows ⇄ the expanded full cards — the live
+ *  roster's richer density carried as a card here; rendered only when the
+ *  host passes the props) and the copy-share-shot
  *  action. In the 我的 view the roster-only controls (stats chip, density,
  *  mask hint) sit out — the camera button then copies the self report.
  *  Shared by the results panel and the incomplete-results fallback so both
@@ -512,7 +514,8 @@ export const PostBattleShareBar = defineComponent({
             onClick={() => emit("toggleMode")}
           >
             {/* Icon + label show the mode a click switches TO — Rows2 = the
-                compact two-line row, Rows3 = the full three-line card. */}
+                compact row, Rows3 = the full mode (the same row plus the
+                middle info on the live roster, a full card in this panel). */}
             {props.fullMode ? <Rows2 size={13} /> : <Rows3 size={13} />}
             {props.fullMode
               ? t("replay.roster.compactMode")
