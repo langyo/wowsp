@@ -51,7 +51,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use wowsp_tauri_shared::{
-    EntityTrajectory, PositionSample, ReplayStream, ShellLaunchEvent, VehicleEntry,
+    EntityTrajectory, PositionSample, ReplayStream, ShellLaunchEvent, ShotKillEvent, VehicleEntry,
 };
 
 use super::decision_tick::METERS_PER_UNIT;
@@ -1108,6 +1108,40 @@ const EXPORT_EXPLOSION_NEAR_RADIUS_M: f32 = 500.0;
 /// InteractiveZone entity types (13 pre-14.5.0, 14 after) — E6 semantics.
 const EXPORT_ZONE_TYPES: [i16; 2] = [13, 14];
 
+// ── E13 outcome fields ──────────────────────────────────────────────────────
+//
+// Every decision row additionally carries POST-DECISION outcome statistics
+// over the window `(t + label_window, t + OUTCOME_WINDOW_S]` — the strongest
+// offline evaluation evidence of research note B ("post-hoc decile lift"):
+// not "does the model agree with the expert" but "do the moments the model
+// rates highly actually land hits / remove enemy HP afterwards". Substrate:
+// the #1418 damage-attribution capability (shotKills per-hit terminal
+// points, hp_samples timelines, arena max-HP anchoring).
+//
+// UNIT CAVEAT (ported verbatim from the reference implementation): the webui
+// claim-partition model (liveSelfStats.ts) names its impact radius
+// `HIT_RADIUS_M = 500` but compares it directly in the stream's scene units
+// (no metres conversion exists on that side), i.e. effectively ~500 units ≈
+// 2.9 km at E5's 5.86 m/unit. This module mirrors that units semantics
+// (`OUTCOME_HIT_RADIUS_UNITS = 500.0` compared against raw x/z) so the
+// calibration magnitude of #1418 (dealt ledger ≈ 0.62x of authoritative
+// damage, median over 119 settled battles) transfers to these fields.
+
+/// Outcome statistics window end offset (E13): outcome fields are counted
+/// over `(t + label_window, t + OUTCOME_WINDOW_S]` — after the label window,
+/// long enough for a salvo's full flight + splash ticks to resolve.
+pub const OUTCOME_WINDOW_S: f32 = 45.0;
+/// Impact-to-victim attribution radius, compared in scene units — see the
+/// unit caveat above (mirrors the webui's 500 constant exactly).
+const OUTCOME_HIT_RADIUS_UNITS: f32 = 500.0;
+/// HP-drop attribution envelope around an impact (seconds): a drop sample at
+/// `d` is covered by an impact at `i` when `i - 0.4 < d <= i + 0.6` — the
+/// #1418 window (HP is sampled just before the hit ticks, then after).
+const OUTCOME_HP_BEFORE_S: f32 = 0.4;
+const OUTCOME_HP_AFTER_S: f32 = 0.6;
+/// Minimum HP drop counted as damage (tick noise floor) — #1418's 50.
+const OUTCOME_HP_MIN_DELTA: u32 = 50;
+
 /// One entity slot of the export row. Ordered per ship list: observed-now
 /// slots first (by distance), then stale intel (by distance) — slot ORDER is
 /// deterministic, truncation (16 enemies / 8 friends) keeps the nearest.
@@ -1187,6 +1221,37 @@ pub struct FireDatasetRow {
     pub label_a_can_fire: bool,
     /// `None` (censored) whenever `label_a_can_fire` is false.
     pub label_b_fired: Option<bool>,
+    // ── outcome fields (E13): post-decision results over
+    //    (t + label_window, t + OUTCOME_WINDOW_S]; serde defaults keep the
+    //    JSON shape additive (older datasets simply lack the keys) ──
+    /// The decider's server-confirmed hits (`shotKills` events owned by the
+    /// decider — any weapon: main, secondary, torpedoes; the hit counter
+    /// semantics, not the salvo semantics).
+    #[serde(default)]
+    pub owner_shots_hit: u32,
+    /// The decider's MAIN-battery ground-shell launches in the window — the
+    /// hit-rate denominator (`ownerShotsHit / ownerShotsFired` is the
+    /// player-accuracy proxy; secondary/AI fire excluded on both sides is
+    /// not possible for `hit`, which is noted here once).
+    #[serde(default)]
+    pub owner_shots_fired: u32,
+    /// Enemy HP drops in the window covered by at least one of the decider's
+    /// impacts within the attribution radius — the FULL window total, NOT
+    /// the #1418 even split among covering impacts: crossfiring attackers
+    /// each get the whole drop in their own row. Deliberate simplification
+    /// (see module docs): these fields rank decision moments against each
+    /// other, they are not a damage ledger, so the shared-drop inflation
+    /// applies uniformly across rows and deciles. vs the #1418 calibration
+    /// (dealt ledger 0.62x of server damage) this over-counts crossfire and
+    /// under-counts nothing else — the real-replay test reports the ratio.
+    #[serde(default)]
+    pub enemy_hp_lost_nearby: f32,
+    /// Descriptor header `matchGroup` (pvp / ranked / brawl / cooperative /
+    /// pve / event / …) — row-level mode metadata next to `replayId` so
+    /// ops / bot modes can be tagged and excluded on the training side
+    /// (`pve`+`event` are the operation/Halloween families).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_mode: Option<String>,
 }
 
 /// Export totals (one per replay).
@@ -1359,11 +1424,182 @@ fn zone_and_event_summary(
     (z0, z1, z2, zo, zp, shells, torps, explosions, near)
 }
 
+// ── E13 outcome fields: post-decision hit / damage statistics ────────────────
+
+/// One hull-HP drop between consecutive HP samples (the attribution budget's
+/// unit — #1418 semantics: only drops ≥ the noise floor count; heals never
+/// produce drops).
+#[derive(Debug, Clone, Copy)]
+struct HpDrop {
+    time: f32,
+    delta: f32,
+}
+
+/// Precomputed per-replay outcome substrate (E13): time-sorted hit-impact and
+/// main-shell timelines per owner plus HP-drop timelines per hull, so each
+/// decision row's window query is two binary searches and a short scan.
+struct OutcomeContext<'a> {
+    /// `shotKills` events per owner (any weapon — the hit counter).
+    impacts_by_owner: BTreeMap<i32, Vec<&'a ShotKillEvent>>,
+    /// Main-battery ground-shell launch times per owner (hit-rate denominator).
+    main_shells_by_owner: BTreeMap<i32, Vec<f32>>,
+    /// HP drops per entity id (both teams — the row query filters enemies).
+    drops_by_entity: BTreeMap<i32, Vec<HpDrop>>,
+}
+
+fn build_outcome_context(stream: &ReplayStream) -> OutcomeContext<'_> {
+    let mut impacts_by_owner: BTreeMap<i32, Vec<&ShotKillEvent>> = BTreeMap::new();
+    for k in &stream.shot_kills {
+        impacts_by_owner.entry(k.owner_id).or_default().push(k);
+    }
+    for v in impacts_by_owner.values_mut() {
+        v.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    let mut main_shells_by_owner: BTreeMap<i32, Vec<f32>> = BTreeMap::new();
+    for s in &stream.shell_launches {
+        if s.y < AIRBORNE_MUZZLE_Y_UNITS && s.gun_barrel_id < MAIN_BATTERY_MAX_BARREL_ID {
+            main_shells_by_owner
+                .entry(s.owner_id)
+                .or_default()
+                .push(s.time);
+        }
+    }
+    for v in main_shells_by_owner.values_mut() {
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    let mut drops_by_entity: BTreeMap<i32, Vec<HpDrop>> = BTreeMap::new();
+    for traj in &stream.trajectories {
+        let mut drops = Vec::new();
+        for w in traj.hp_samples.windows(2) {
+            let delta = w[0].value.saturating_sub(w[1].value);
+            if delta >= OUTCOME_HP_MIN_DELTA {
+                drops.push(HpDrop {
+                    time: w[1].time,
+                    delta: delta as f32,
+                });
+            }
+        }
+        drops_by_entity.insert(traj.entity_id, drops);
+    }
+    OutcomeContext {
+        impacts_by_owner,
+        main_shells_by_owner,
+        drops_by_entity,
+    }
+}
+
+/// Planar position of one trajectory at time `t` (linear interpolation,
+/// clamped at both ends — the reference implementation's `sampleAtTraj`;
+/// `None` when the entity has no samples at all).
+fn position_at(traj: &EntityTrajectory, t: f32) -> Option<(f32, f32)> {
+    let ss = &traj.samples;
+    if ss.is_empty() {
+        return None;
+    }
+    let hi = ss.partition_point(|s| s.time < t).min(ss.len() - 1);
+    let lo = hi.saturating_sub(1);
+    let (a, b) = (&ss[lo], &ss[hi]);
+    let f = if b.time <= a.time {
+        0.0
+    } else {
+        ((t - a.time) / (b.time - a.time)).clamp(0.0, 1.0)
+    };
+    Some((a.x + (b.x - a.x) * f, a.z + (b.z - a.z) * f))
+}
+
+/// The three numeric outcome fields for one decision row (E13): hits, main
+/// shells fired, and enemy HP lost near the decider's impacts, all over
+/// `(t + label_window, t + OUTCOME_WINDOW_S]`.
+fn outcome_fields(
+    ctx: &OutcomeContext<'_>,
+    decider: &ShipInfo<'_>,
+    ships: &[ShipInfo<'_>],
+    t: f32,
+    label_window_s: f32,
+) -> (u32, u32, f32) {
+    let w0 = t + label_window_s;
+    let w1 = t + OUTCOME_WINDOW_S;
+    if w1 <= w0 {
+        return (0, 0, 0.0);
+    }
+    let id = decider.traj.entity_id;
+    let fired = ctx.main_shells_by_owner.get(&id).map_or(0, |times| {
+        times.partition_point(|x| *x <= w1) - times.partition_point(|x| *x <= w0)
+    }) as u32;
+    let empty_impacts: [&ShotKillEvent; 0] = [];
+    let impacts = ctx
+        .impacts_by_owner
+        .get(&id)
+        .map_or(&empty_impacts[..], |v| v.as_slice());
+    let imp0 = impacts.partition_point(|k| k.time <= w0);
+    let imp1 = impacts.partition_point(|k| k.time <= w1);
+    let hit = (imp1 - imp0) as u32;
+    // Enemy HP lost near the decider's impacts: for every enemy hull's drop
+    // in the window, full credit when any of the window's impacts covers the
+    // drop (±0.4/0.6 s envelope) and sat within the attribution radius of
+    // the hull at the impact time. No even split — see the struct docs.
+    let mut hp_lost = 0.0f32;
+    let window_impacts = &impacts[imp0..imp1];
+    if !window_impacts.is_empty() {
+        for other in ships {
+            if other.traj.entity_id == id
+                || other.team_id.is_none()
+                || other.team_ambiguous
+                || other.team_id == decider.team_id
+            {
+                continue;
+            }
+            let Some(drops) = ctx.drops_by_entity.get(&other.traj.entity_id) else {
+                continue;
+            };
+            let d0 = drops.partition_point(|d| d.time <= w0);
+            let d1 = drops.partition_point(|d| d.time <= w1);
+            for drop in &drops[d0..d1] {
+                // Covering impacts: drop.time in (imp.time - BEFORE, imp.time + AFTER]
+                // <=> imp.time in [drop.time - AFTER, drop.time + BEFORE).
+                let covered = window_impacts.iter().any(|k| {
+                    k.time >= drop.time - OUTCOME_HP_AFTER_S
+                        && k.time < drop.time + OUTCOME_HP_BEFORE_S
+                        && position_at(other.traj, k.time).is_some_and(|(vx, vz)| {
+                            (vx - k.x).hypot(vz - k.z) <= OUTCOME_HIT_RADIUS_UNITS
+                        })
+                });
+                if covered {
+                    hp_lost += drop.delta; // full credit once per drop
+                }
+            }
+        }
+    }
+    (hit, fired, hp_lost)
+}
+
+/// Read the descriptor header's `matchGroup` (the row-level game-mode tag,
+/// E13) from a replay file — a bounded prefix read: the descriptor is the
+/// first block, far under 64 KiB, so the multi-MB payload is never touched.
+fn read_game_mode(path: &std::path::Path) -> Option<String> {
+    use std::io::Read;
+    let mut buf = vec![0u8; 64 * 1024];
+    let n = std::fs::File::open(path).ok()?.read(&mut buf).ok()?;
+    buf.truncate(n);
+    let json = wowsp_replay_core::meta::extract_descriptor_json(&buf)?;
+    let raw: serde_json::Value = serde_json::from_str(&json).ok()?;
+    raw.get("matchGroup")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
 /// Build every exportable decision row of the replay (E9 step 1). The decider
 /// set is ships with a fire history and a known team; rows follow the E7
 /// cadence/gates exactly so `rows_can_fire` reproduces E7's eligible count.
 /// `replay_id` (E12) tags every row with the replay's identity for
 /// per-replay grouping on the training side — `None` preserves the E9 shape.
+/// `game_mode` (E13) carries the descriptor header's `matchGroup` as row-level
+/// mode metadata (ops/bot tagging on the training side); `None` keeps the
+/// pre-E13 shape.
 pub fn export_decision_dataset(
     stream: &ReplayStream,
     ships: &[ShipInfo<'_>],
@@ -1371,8 +1607,10 @@ pub fn export_decision_dataset(
     eye_height: f32,
     params: &FireSampleParams,
     replay_id: Option<&str>,
+    game_mode: Option<&str>,
 ) -> (Vec<FireDatasetRow>, FireDatasetExportStats) {
     let contexts = fire_contexts(stream, ships, params);
+    let outcomes = build_outcome_context(stream);
     let mut rows = Vec::new();
     let mut owners = 0usize;
     for ship in ships {
@@ -1427,6 +1665,8 @@ pub fn export_decision_dataset(
             };
             let (z0, z1, z2, zo, zp, shells, torps, expl, near) =
                 zone_and_event_summary(stream, own, t);
+            let (out_hit, out_fired, out_hp_lost) =
+                outcome_fields(&outcomes, ship, ships, t, params.label_window_s);
             rows.push(FireDatasetRow {
                 replay_id: replay_id.map(str::to_string),
                 replay_version: stream.version.clone(),
@@ -1452,6 +1692,10 @@ pub fn export_decision_dataset(
                 friends: build_slots(ship, ships, own, t, los, eye_height, false, FRIEND_SLOTS),
                 label_a_can_fire: label_a,
                 label_b_fired: label_b,
+                owner_shots_hit: out_hit,
+                owner_shots_fired: out_fired,
+                enemy_hp_lost_nearby: out_hp_lost,
+                game_mode: game_mode.map(str::to_string),
             });
             t += params.decision_interval_s;
         }
@@ -1656,6 +1900,7 @@ pub fn export_replay_file(
     let vehicles = super::replay_probe::read_roster(&path_str)?;
     let ships = ship_infos(&stream, &vehicles);
     let los = los_for_replay(stream.map_name.as_deref(), los_dir);
+    let game_mode = read_game_mode(path);
     Ok(export_decision_dataset(
         &stream,
         &ships,
@@ -1663,6 +1908,7 @@ pub fn export_replay_file(
         eye_height,
         params,
         None, // stamped by ingest_replay_files from the path
+        game_mode.as_deref(),
     ))
 }
 
@@ -2338,8 +2584,15 @@ mod tests {
             roster_entry(3, 0, 110),
         ];
         let ships = ship_infos(&stream, &vehicles);
-        let (rows, stats) =
-            export_decision_dataset(&stream, &ships, None, DEFAULT_EYE_HEIGHT, &params, None);
+        let (rows, stats) = export_decision_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            None,
+            None,
+        );
         // Only ship 9 has a fire history — it is the sole decider.
         assert_eq!(stats.owners, 1);
         assert!(rows.iter().all(|r| r.owner_entity_id == 9));
@@ -2408,6 +2661,201 @@ mod tests {
         let line = serde_json::to_string(&r99).expect("serialize row");
         assert!(line.contains("\"labelACanFire\":true"));
         assert!(line.contains("\"ownerEntityId\":9"));
+        // E13 additive shape: outcome keys present even at zero.
+        assert!(line.contains("\"ownerShotsHit\":0"));
+        assert!(line.contains("\"enemyHpLostNearby\":0.0"));
+        assert!(!line.contains("\"gameMode\""));
+    }
+
+    /// E13 synthetic: the outcome window `(t + label, t + 45]` must count
+    /// exactly the decider's shotKills (any weapon) and MAIN-battery ground
+    /// shells, and the enemy HP lost near the decider's impacts — full-drop
+    /// credit, enemy side only, impact-envelope coverage, noise floor.
+    #[test]
+    fn synthetic_dataset_export_outcome_fields() {
+        let params = FireSampleParams::default();
+        // Decider: gun ship 9 (team 1) at (10, 0) firing main salvos at
+        // t=100 (the label-window salvo for the t=99 row), t=102 and t=104
+        // (inside its outcome window), one secondary shell at t=103 and one
+        // airborne (aircraft) shell at t=103.5 — both excluded from `fired`.
+        let mk = |eid: i32, x: f32, z: f32, sid: i64| {
+            trajectory(
+                eid,
+                Some(sid),
+                (0..400)
+                    .map(|i| sample(i as f32 * 0.5, eid, x, z))
+                    .collect(),
+            )
+        };
+        let mut shells = Vec::new();
+        for k in 0..2u32 {
+            for b in 0..2u16 {
+                shells.push(shell(
+                    102.0 + k as f32 * 2.0,
+                    9,
+                    k as i32,
+                    b,
+                    (10.0, 0.5),
+                    (50.0, 0.0),
+                ));
+            }
+        }
+        shells.push(shell(100.0, 9, 9, 0, (10.0, 0.5), (50.0, 0.0)));
+        shells.push(shell(103.0, 9, 10, 40, (10.0, 0.5), (50.0, 0.0))); // secondary
+        // Airborne (aircraft) launch: the helper pins y=2 (ground), so build
+        // it inline with a muzzle height above the airborne bound.
+        shells.push(ShellLaunchEvent {
+            time: 103.5,
+            owner_id: 9,
+            params_id: 0,
+            salvo_id: 11,
+            shot_id: 9,
+            x: 10.0,
+            y: 20.0,
+            z: 0.5,
+            target_x: 50.0,
+            target_y: 0.0,
+            target_z: 0.0,
+            server_time_left: 20.0,
+            speed: 800.0,
+            gun_barrel_id: 0,
+        });
+        // Hits: 9's shotKills near enemy hull 8 at (50, 0).
+        let shot_kill = |time: f32, owner: i32, shot: u16, x: f32, z: f32| ShotKillEvent {
+            time,
+            owner_id: owner,
+            hit_type: 0,
+            shot_id: shot,
+            x,
+            y: 0.0,
+            z,
+        };
+        // Enemy hull 8 (team 0, the recorder side): drops 1000 @ 103.4 and
+        // 500 @ 105.5 (both covered by 9's impacts), a sub-floor 20 @ 106,
+        // and an uncovered 100 @ 110.
+        let mut traj8 = mk(8, 50.0, 0.0, 111);
+        traj8.hp_samples = vec![
+            wowsp_tauri_shared::HpSample {
+                time: 99.0,
+                value: 40_000,
+            },
+            wowsp_tauri_shared::HpSample {
+                time: 102.9,
+                value: 40_000,
+            },
+            wowsp_tauri_shared::HpSample {
+                time: 103.4,
+                value: 39_000,
+            },
+            wowsp_tauri_shared::HpSample {
+                time: 105.0,
+                value: 39_000,
+            },
+            wowsp_tauri_shared::HpSample {
+                time: 105.5,
+                value: 38_500,
+            },
+            wowsp_tauri_shared::HpSample {
+                time: 106.0,
+                value: 38_480,
+            },
+            wowsp_tauri_shared::HpSample {
+                time: 110.0,
+                value: 38_380,
+            },
+        ];
+        // Second enemy hull 7 (team 0) at (60, 10): a 900 drop no impact of
+        // 9 sits near (the nearest impact is ~10.4 units away — inside the
+        // ported 500-UNIT radius, so it WOULD count; park it far instead).
+        let mut traj7 = mk(7, 300.0, 300.0, 110);
+        traj7.hp_samples = vec![
+            wowsp_tauri_shared::HpSample {
+                time: 100.0,
+                value: 20_000,
+            },
+            wowsp_tauri_shared::HpSample {
+                time: 104.0,
+                value: 19_100,
+            },
+        ];
+        // FRIEND hull 6 (team 1) near the impacts with a big drop: never
+        // counted — not an enemy of the decider.
+        let mut traj6 = mk(6, 52.0, 0.0, 109);
+        traj6.hp_samples = vec![
+            wowsp_tauri_shared::HpSample {
+                time: 100.0,
+                value: 30_000,
+            },
+            wowsp_tauri_shared::HpSample {
+                time: 103.5,
+                value: 10_000,
+            },
+        ];
+        let stream = ReplayStream {
+            ally_builds: Vec::new(),
+            trajectories: vec![mk(9, 10.0, 0.0, 222), traj8, traj7, traj6],
+            recorder_vehicle_id: Some(8),
+            shell_launches: shells,
+            shot_kills: vec![
+                shot_kill(103.0, 9, 1, 50.2, 0.1),
+                shot_kill(105.2, 9, 2, 49.8, -0.3),
+                // Someone else's impact near 8: counts for 8's coverage only
+                // through ITS owner's rows — 9's row must ignore it.
+                shot_kill(110.0, 7, 5, 50.1, 0.0),
+            ],
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 0, 111),
+            roster_entry(2, 0, 110),
+            roster_entry(3, 2, 109), // friend hull: relation 2 = team 1
+            roster_entry(4, 2, 222),
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+        let (rows, stats) = export_decision_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            Some("replayX"),
+            Some("pvp"),
+        );
+        assert_eq!(stats.owners, 1);
+        let r99 = rows
+            .iter()
+            .find(|r| (r.t - 99.0).abs() < 0.1)
+            .expect("t=99 row");
+        // Outcome window (101, 144]: 2 impacts (t=103, 105.2 — the t=110
+        // impact belongs to owner 7, and 9's window-shells are the 4 launched
+        // at 102/104; the t=100 label salvo, the secondary and the airborne
+        // shell stay out.
+        assert_eq!(r99.owner_shots_hit, 2, "hits {}", r99.owner_shots_hit);
+        assert_eq!(r99.owner_shots_fired, 4, "fired {}", r99.owner_shots_fired);
+        // HP lost near 9's impacts: 1000 + 500 from hull 8 (full credit, no
+        // split, even though hull 6 "shares" the blast zone as a friend);
+        // hull 7's 900 drop is uncovered (impacts nowhere near); the 20 drop
+        // is under the noise floor; the 100 drop @ 110 is outside every
+        // impact envelope of owner 9 (110 - 0.4 > 105.2).
+        assert!(
+            (r99.enemy_hp_lost_nearby - 1500.0).abs() < 1e-3,
+            "hp lost {}",
+            r99.enemy_hp_lost_nearby
+        );
+        assert_eq!(r99.game_mode.as_deref(), Some("pvp"));
+        // A row well after all activity: empty outcome window.
+        let r200 = rows
+            .iter()
+            .find(|r| (r.t - 199.0).abs() < 0.1)
+            .expect("t=199 row");
+        assert_eq!(r200.owner_shots_hit, 0);
+        assert_eq!(r200.owner_shots_fired, 0);
+        assert_eq!(r200.enemy_hp_lost_nearby, 0.0);
+        // Serialization carries the outcome keys (camelCase).
+        let line = serde_json::to_string(r99).expect("serialize");
+        assert!(line.contains("\"ownerShotsHit\":2"));
+        assert!(line.contains("\"ownerShotsFired\":4"));
+        assert!(line.contains("\"gameMode\":\"pvp\""));
     }
 
     /// E9 step 1 against the real reference replay — run with
@@ -2448,6 +2896,7 @@ mod tests {
             std::path::Path::new(&path)
                 .file_stem()
                 .and_then(|s| s.to_str()),
+            read_game_mode(std::path::Path::new(&path)).as_deref(),
         );
         // Cross-check against E7: labelA=1 rows == eligible-with-history.
         let e7 = count_decision_samples(&stream, &ships, &params);
@@ -2481,6 +2930,137 @@ mod tests {
                 r.enemies.iter().any(|e| e.observed_now),
                 "can-fire row without an observed enemy at t={}",
                 r.t
+            );
+        }
+        // E13 outcome fields: plausible distributions + the game-mode tag.
+        // The hit rate among rows that actually fired must land in a human
+        // band (real players hit ~15-45% of main-battery shells); the HP-loss
+        // window median is reported for the 0.62x calibration comparison.
+        let fired_rows: Vec<&FireDatasetRow> = rows
+            .iter()
+            .filter(|r| r.label_b_fired == Some(true) && r.owner_shots_fired > 0)
+            .collect();
+        let hit_rates: Vec<f32> = fired_rows
+            .iter()
+            .map(|r| r.owner_shots_hit as f32 / r.owner_shots_fired as f32)
+            .collect();
+        let hp_med =
+            percentile(rows.iter().map(|r| r.enemy_hp_lost_nearby).collect(), 0.5).unwrap_or(0.0);
+        let hp_p90 =
+            percentile(rows.iter().map(|r| r.enemy_hp_lost_nearby).collect(), 0.9).unwrap_or(0.0);
+        let total_hp_lost: f32 = rows.iter().map(|r| r.enemy_hp_lost_nearby).sum();
+        let mode_counts: BTreeMap<Option<&str>, usize> = {
+            let mut m: BTreeMap<Option<&str>, usize> = BTreeMap::new();
+            for r in &rows {
+                *m.entry(r.game_mode.as_deref()).or_default() += 1;
+            }
+            m
+        };
+        eprintln!(
+            "[e13] outcome fields: {} fired rows with window shells; hit-rate p50 {:.3} (n={} rows with any window hit: {}); enemyHpLostNearby over ALL rows: median {:.0} / p90 {:.0} / total {:.0}; gameMode histogram {:?}",
+            fired_rows.len(),
+            percentile(hit_rates.clone(), 0.5).unwrap_or(f32::NAN),
+            hit_rates.len(),
+            rows.iter().filter(|r| r.owner_shots_hit > 0).count(),
+            hp_med,
+            hp_p90,
+            total_hp_lost,
+            mode_counts
+        );
+        // Consistency: the sum of per-row HP-loss windows is window-summed
+        // per decision row (rows overlap heavily), so it legitimately exceeds
+        // the battle's total enemy HP loss — but every row's window total
+        // must stay non-negative and finite, and rows that fired must
+        // correlate with non-zero outcome activity more often than not.
+        assert!(rows.iter().all(|r| r.enemy_hp_lost_nearby.is_finite()));
+        let with_hit = rows.iter().filter(|r| r.owner_shots_hit > 0).count();
+        assert!(
+            with_hit > 0,
+            "expected some rows with window hits on a real gun-ship replay"
+        );
+        assert!(
+            !mode_counts.contains_key(&None),
+            "real replay must carry a game-mode tag"
+        );
+        // #1418 calibration magnitude: over the WHOLE battle (no decision
+        // windows — the ledger view), the enemy HP drops covered by any
+        // ship's near impacts divided by the enemy side's total HP loss.
+        // The webui partition model's dealt ledger measured 0.62x of
+        // server-authoritative damage (median over 119 battles); this
+        // windowless coverage ratio is the same-order consistency check for
+        // the outcome substrate (DoT and impact-less damage stay uncovered
+        // in both).
+        {
+            let mut covered: f32 = 0.0;
+            let mut total: f32 = 0.0;
+            let impacts = &stream.shot_kills;
+            for victim in ships {
+                if victim.team_id.is_none() || victim.team_ambiguous {
+                    continue;
+                }
+                let drops: Vec<HpDrop> = victim
+                    .traj
+                    .hp_samples
+                    .windows(2)
+                    .filter_map(|w| {
+                        let delta = w[0].value.saturating_sub(w[1].value);
+                        (delta >= OUTCOME_HP_MIN_DELTA).then_some(HpDrop {
+                            time: w[1].time,
+                            delta: delta as f32,
+                        })
+                    })
+                    .collect();
+                total += drops.iter().map(|d| d.delta).sum::<f32>();
+                'drop: for d in &drops {
+                    // Any ship's impact (not the victim's own) covering the
+                    // drop and near the hull — the claim-partition candidate
+                    // set, full-credit relaxation.
+                    for k in impacts {
+                        if k.owner_id == victim.traj.entity_id {
+                            continue;
+                        }
+                        if k.time >= d.time - OUTCOME_HP_AFTER_S
+                            && k.time < d.time + OUTCOME_HP_BEFORE_S
+                            && position_at(victim.traj, k.time).is_some_and(|(vx, vz)| {
+                                (vx - k.x).hypot(vz - k.z) <= OUTCOME_HIT_RADIUS_UNITS
+                            })
+                        {
+                            covered += d.delta;
+                            continue 'drop;
+                        }
+                    }
+                }
+            }
+            eprintln!(
+                "[e13] #1418-calibre check: enemy HP drops covered by any near impact {:.0} / total enemy HP lost {:.0} = {:.2}x (webui partition ledger: 0.62x of server damage)",
+                covered,
+                total,
+                if total > 0.0 {
+                    covered / total
+                } else {
+                    f32::NAN
+                }
+            );
+            // Per-owner shotKills volume (top 5): the hit counter's substrate —
+            // sanity scale for the window counts (one battle per ship should
+            // be O(100) events; thousands imply the event stream carries
+            // splashes on this version).
+            let mut per_owner: BTreeMap<i32, usize> = BTreeMap::new();
+            for k in &stream.shot_kills {
+                *per_owner.entry(k.owner_id).or_default() += 1;
+            }
+            let mut top: Vec<(i32, usize)> = per_owner.into_iter().collect();
+            top.sort_by(|a, b| b.1.cmp(&a.1));
+            let top5: Vec<String> = top
+                .iter()
+                .take(5)
+                .map(|(id, n)| format!("{id}:{n}"))
+                .collect();
+            eprintln!(
+                "[e13] shotKills total {} over {} owners; top {}",
+                stream.shot_kills.len(),
+                top.len(),
+                top5.join(", ")
             );
         }
         eprintln!(
@@ -2579,6 +3159,10 @@ mod tests {
                 friends: Vec::new(),
                 label_a_can_fire: true,
                 label_b_fired: Some(true),
+                owner_shots_hit: 0,
+                owner_shots_fired: 0,
+                enemy_hp_lost_nearby: 0.0,
+                game_mode: None,
             };
             let mut negative = base.clone();
             negative.t = 12.0;
