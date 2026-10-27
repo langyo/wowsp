@@ -21,14 +21,28 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* The bottom-left stacking column: the reading card on top, the outgoing
+   paste hint under it (the hint is the bottom-most, z-order-above child).
+   Anchored to the screen's corner; the page renders NOTHING (not even this
+   column) when it has neither lines nor a hint. */
+.chat-overlay {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: min(520px, 90vw);
+  pointer-events: none;
+}
+
 /* The card itself: bottom-left glass slab, hugging the screen's corner.
    Sizing is capped in BOTH axes so a flood of lines can never swallow the
    battle view — the newest lines live at the bottom (the buffer keeps the
    last N; see chat.ts). */
 .chat-panel {
-  position: fixed;
-  left: 0;
-  bottom: 0;
   box-sizing: border-box;
   max-width: min(520px, 90vw);
   max-height: min(240px, 45vh);
@@ -163,11 +177,87 @@ body {
   color: rgb(236 241 246);
 }
 
+/* The outgoing paste hint card (M3): the bottom-most child of the column,
+   above the reading card in z-order. Muted glass, same font stack (inherited
+   from body), no pointer interaction. */
+.chat-hint {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  max-width: min(520px, 90vw);
+  padding: 6px 10px 7px;
+  border-radius: 0 0.5em 0 0;
+  background: rgb(12 16 24 / 78%);
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-left: none;
+  border-bottom: none;
+  color: rgb(236 241 246);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 85%);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Translating: the bead row + label share one baseline row. */
+.chat-hint__row {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  min-width: 0;
+}
+
+.chat-hint__label {
+  color: rgb(200 210 220);
+}
+
+/* Ready: the composed preview — two rows, breaking anywhere (kana/URL runs),
+   then the paste instruction + remaining count. */
+.chat-hint__preview {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: rgb(236 241 246);
+}
+
+.chat-hint__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  min-width: 0;
+  font-size: 0.75em;
+  color: rgb(178 190 202);
+}
+
+.chat-hint__paste {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-hint__remaining {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: rgb(180 218 255);
+  white-space: nowrap;
+}
+
+/* Error: the shell's user-facing sentence in a weak red (never a stack
+   trace: the Rust side hands over a display string). */
+.chat-hint__message {
+  color: rgb(255 176 176);
+  overflow-wrap: anywhere;
+}
+
 /* The chasing three-dot loading face — COPIED from the Tab table's own
    overlay.scss (.overlay-dots, lines 293-345 there; "复制自战绩表同款").
-   This PR does not drive it yet; it is here for the card's future
-   translating/paste status hint, so the hint wears the same face as the
-   table's pending numbers instead of inventing a second loader. Beads take
+   The paste hint's translating face wears the same loader as the table's
+   pending numbers instead of inventing a second one. Beads take
    currentColor; animation-delay arrives INLINE per bead (phase-locked to a
    shared clock, see the source), this block only names the animation. */
 .overlay-dots {

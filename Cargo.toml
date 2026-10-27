@@ -176,6 +176,10 @@ windows = { version = "^0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_Storage_Xps",
+    # GetClipboardSequenceNumber: the outgoing-translation hint's paste
+    # monitor (commands/overlay/paste.rs) watches the clipboard sequence to
+    # tell its OWN copy apart from a third-party overwrite.
+    "Win32_System_DataExchange",
 ] }
 
 # Image handling for capture analysis

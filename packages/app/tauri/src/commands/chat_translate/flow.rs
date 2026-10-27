@@ -398,11 +398,18 @@ pub(crate) async fn translate_and_publish(
 /// The live source's per-line entry point: run the synchronous half, and when
 /// it hands back a job, spawn the async half. Never blocks the caller's tick.
 pub(crate) fn submit(
-    _app: AppHandle,
+    app: AppHandle,
     state: SharedLiveState,
     config: ChatTranslateConfig,
     line: ChatLine,
 ) {
+    // M3 outgoing: an OWN line also feeds the clipboard autofill hint (its
+    // translations get composed and the first message is prepared for
+    // pasting). Inert unless every send gate holds, so no request runs for a
+    // foreign line or a disabled mode.
+    if line.self_line {
+        super::outgoing::begin(app.clone(), state.clone(), config.clone(), line.clone());
+    }
     let Some(job) = handle_line(&state, &config, &line, now_ms()) else {
         return;
     };

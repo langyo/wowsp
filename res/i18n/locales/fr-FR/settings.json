@@ -456,6 +456,10 @@
     "trySourceModel": "modèle",
     "trySourcePassthrough": "déjà dans cette langue",
     "trySourceUntranslatable": "non traduisible",
-    "tryNeedKey": "Activez d'abord la traduction du chat et enregistrez une clé API."
+    "tryNeedKey": "Activez d'abord la traduction du chat et enregistrez une clé API.",
+    "sendMode": "Envoyer au presse-papiers",
+    "sendModeDesc": "Lors de l'envoi d'un message, la traduction est copiée dans le presse-papiers : Ctrl+V la colle directement.",
+    "sendModeOff": "Désactivé",
+    "sendModeClipboard": "Presse-papiers"
   }
 }

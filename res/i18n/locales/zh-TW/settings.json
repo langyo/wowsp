@@ -456,6 +456,10 @@
     "trySourceModel": "模型",
     "trySourcePassthrough": "已是目標語言",
     "trySourceUntranslatable": "無法翻譯",
-    "tryNeedKey": "請先開啟聊天翻譯並設定 API 金鑰。"
+    "tryNeedKey": "請先開啟聊天翻譯並設定 API 金鑰。",
+    "sendMode": "傳送到剪貼簿",
+    "sendModeDesc": "傳送訊息時自動把翻譯複製到剪貼簿，按 Ctrl+V 即可直接貼上傳送。",
+    "sendModeOff": "關閉",
+    "sendModeClipboard": "剪貼簿"
   }
 }

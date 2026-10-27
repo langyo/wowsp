@@ -456,6 +456,10 @@
     "trySourceModel": "モデル",
     "trySourcePassthrough": "すでにその言語です",
     "trySourceUntranslatable": "翻訳不可",
-    "tryNeedKey": "先にチャット翻訳を有効にし、API キーを保存してください。"
+    "tryNeedKey": "先にチャット翻訳を有効にし、API キーを保存してください。",
+    "sendMode": "クリップボードへ送信",
+    "sendModeDesc": "メッセージを送信すると翻訳がクリップボードにコピーされ、Ctrl+V ですぐ貼り付けられます。",
+    "sendModeOff": "オフ",
+    "sendModeClipboard": "クリップボード"
   }
 }

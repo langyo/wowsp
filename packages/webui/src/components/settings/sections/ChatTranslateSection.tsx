@@ -27,6 +27,7 @@ import { t } from "@/i18n";
 import {
   SUPPORTED_TRANSLATE_LANGS,
   TRANSLATE_LANG_LABELS,
+  type ChatTranslateSendMode,
   type DebugTranslationSource,
   type TranslateLang,
 } from "@/api/modules/chat";
@@ -534,8 +535,41 @@ export default defineComponent({
             </div>
           </HkSettingsSub>
 
-          {/* ── send suffix ── */}
+          {/* ── send ── */}
           <HkSettingsSub title={t("settings.chatTranslate.sendTitle")}>
+            {/* How the outgoing translation reaches the player: off (the card
+                only configures) or clipboard (the composed message is copied
+                and the overlay shows the paste hint). */}
+            <div class="stats-prefs">
+              <div class="stats-prefs__row">
+                <span class="stats-prefs__row-text">
+                  <span class="stats-prefs__row-label">
+                    {t("settings.chatTranslate.sendMode")}
+                  </span>
+                  <span class="stats-prefs__row-desc">
+                    {t("settings.chatTranslate.sendModeDesc")}
+                  </span>
+                </span>
+                <HkTabs
+                  block
+                  variant="segmented"
+                  modelValue={store.sendMode}
+                  onUpdate:modelValue={(v: string) =>
+                    void store.setSendMode(v as ChatTranslateSendMode)
+                  }
+                  tabs={[
+                    {
+                      key: "off",
+                      label: t("settings.chatTranslate.sendModeOff"),
+                    },
+                    {
+                      key: "clipboard",
+                      label: t("settings.chatTranslate.sendModeClipboard"),
+                    },
+                  ]}
+                />
+              </div>
+            </div>
             <div class="stats-prefs">
               <div class="stats-prefs__row">
                 <span class="stats-prefs__row-text">

@@ -35,6 +35,10 @@ const SEPARATOR_WIDTH: usize = 3;
 /// Fixed family order for the emitted languages; anything else sorts after
 /// these, alphabetically.
 const PRIORITY_LANGS: [&str; 5] = ["zh-TW", "ja", "ko", "ru", "en"];
+
+/// Test-visible alias of [`PRIORITY_LANGS`] — outgoing's target cut must not
+/// drift from this rendering order (see its equality test).
+pub(crate) const PRIORITY_LANGS_FOR_TEST: [&str; 5] = PRIORITY_LANGS;
 /// Sentence-ending punctuation the splitter cuts AFTER first.
 const SENTENCE_ENDS: [char; 8] = ['。', '！', '？', '!', '?', '.', ';', '…'];
 /// Room a continuation needs at minimum: the widest marker plus one

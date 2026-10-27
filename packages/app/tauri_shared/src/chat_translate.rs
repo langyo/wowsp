@@ -171,9 +171,10 @@ impl Default for ChatTranslateDisplayConfig {
     }
 }
 
-/// Outgoing translated-message knobs (executed by the in-game bridge, not
-/// this app build yet — the config exists so a later probe release and the
-/// settings UI share one shape).
+/// Outgoing translated-message knobs — how the app hands the player's own
+/// translated lines back (clipboard autofill + paste hint), and its pacing
+/// and suffix layout. The `off` default keeps the whole path inert until
+/// the user opts in on the settings card.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ChatTranslateSendConfig {
@@ -189,14 +190,19 @@ pub struct ChatTranslateSendConfig {
     /// Character threshold for splitting one translated message;
     /// clamped 40..=138 (the in-game chat limit is 140 with margin).
     pub split_chars: i64,
-    /// Delay between two outgoing messages, milliseconds; clamped
-    /// 200..=5 000.
+    /// RESERVED (parsed + clamped, no consumer yet): pacing between two
+    /// clipboard hand-offs, milliseconds; clamped 200..=5 000. The current
+    /// flow advances on the player's paste, not on a timer.
     pub pace_ms: i64,
-    /// Maximum outgoing messages per send; clamped 1..=5.
+    /// RESERVED (parsed + clamped, no consumer yet): upper bound on the
+    /// messages one own line may fan out into; clamped 1..=5. The composer
+    /// currently splits on the character budget alone.
     pub max_per_send: i64,
-    /// Maximum auto-sent messages per battle; clamped 1..=100.
+    /// RESERVED (parsed + clamped, no consumer yet): upper bound on the
+    /// hand-offs per battle; clamped 1..=100.
     pub per_battle_cap: i64,
-    /// Cooldown between two auto-sends, seconds; clamped 0..=300.
+    /// RESERVED (parsed + clamped, no consumer yet): cooldown between two
+    /// hand-offs, seconds; clamped 0..=300.
     pub cooldown_s: i64,
     /// How long the send hint stays on screen, seconds; clamped 5..=600.
     pub hint_timeout_s: i64,
@@ -205,7 +211,11 @@ pub struct ChatTranslateSendConfig {
 impl Default for ChatTranslateSendConfig {
     fn default() -> Self {
         Self {
-            mode: "clipboard".to_string(),
+            // Conservative default: the outgoing path (clipboard autofill
+            // + paste hint) stays OFF until the user opts in via the settings
+            // card — enabling chat translation must not silently start
+            // shipping every own message to the provider.
+            mode: "off".to_string(),
             suffix_enabled: true,
             suffix_format: "per-segment".to_string(),
             split_chars: 120,
@@ -551,4 +561,32 @@ pub struct ChatTranslateEvent {
     pub lines: Vec<ChatLine>,
     /// Panel line cap in force (min of the two settings).
     pub max_lines: i64,
+}
+
+// ── outgoing paste hint (M3 send, WA) ─────────────────────────────────────
+
+/// The outgoing clipboard hint's wire state (`wowsp://chat-hint`): what the
+/// bottom of the chat overlay card shows while a prepared translation waits
+/// to be pasted into the in-game chat input.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatHintEvent {
+    /// Battle the hint belongs to; a page drops a hint from another battle.
+    pub battle: String,
+    /// "translating" | "ready" | "error" | "dismissed" (unknown states are
+    /// ignored by the page).
+    pub state: String,
+    /// "ready": the message currently on the clipboard (the composed line or
+    /// the next one after a paste).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    /// "ready": messages still waiting to be pasted AFTER the current one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining: Option<i32>,
+    /// "ready": total messages composed for this own line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<i32>,
+    /// "error": user-facing reason (never contains chat text or keys).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }

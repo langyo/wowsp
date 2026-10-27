@@ -456,6 +456,10 @@
     "trySourceModel": "modelo",
     "trySourcePassthrough": "ya está en ese idioma",
     "trySourceUntranslatable": "no traducible",
-    "tryNeedKey": "Activa primero la traducción del chat y guarda una clave API."
+    "tryNeedKey": "Activa primero la traducción del chat y guarda una clave API.",
+    "sendMode": "Enviar al portapapeles",
+    "sendModeDesc": "Al enviar un mensaje, la traducción se copia al portapapeles y Ctrl+V la pega directamente.",
+    "sendModeOff": "Desactivado",
+    "sendModeClipboard": "Portapapeles"
   }
 }

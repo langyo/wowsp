@@ -21,7 +21,7 @@
  * itself stays in the component (a draft input, not settings state).
  */
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
 import { chatTranslateApi } from "@/api/modules/chat";
 import type {
@@ -31,6 +31,7 @@ import type {
   ChatTranslateLanguagesConfig,
   ChatTranslateProviderConfig,
   ChatTranslateSendConfig,
+  ChatTranslateSendMode,
   DebugTranslateResult,
   DebugTranslation,
   DebugTranslationSource,
@@ -57,7 +58,9 @@ function defaultConfig(): ChatTranslateConfigPublic {
     context: { shipNames: true, teams: true, recentLines: 8, nicknames: false },
     display: { maxLines: 8 },
     send: {
-      mode: "clipboard",
+      // Conservative default, mirroring the shell: the outgoing path stays
+      // OFF until the user opts in on the settings card.
+      mode: "off",
       suffixEnabled: true,
       suffixFormat: "per-segment",
       splitChars: 120,
@@ -118,7 +121,14 @@ function normalizeConfig(raw: unknown): ChatTranslateConfigPublic {
     },
     display: { maxLines: number(display.maxLines, base.display.maxLines) },
     send: {
-      mode: typeof send.mode === "string" ? send.mode : base.send.mode,
+      // The shell heals unknown modes to "off"; a missing field (an
+      // older shell) also falls back to the conservative "off" default.
+      mode:
+        send.mode === "off" || send.mode === "clipboard"
+          ? send.mode
+          : typeof send.mode === "string"
+            ? "off"
+            : base.send.mode,
       suffixEnabled:
         typeof send.suffixEnabled === "boolean" ? send.suffixEnabled : base.send.suffixEnabled,
       suffixFormat:
@@ -294,6 +304,18 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
     await persist(config.value, null);
   }
 
+  /** The send mode as the settings row reads it: the shell's sanitized value
+   *  narrowed to the two supported picks (anything else = off, the safe
+   *  reading — never silently auto-copy). */
+  const sendMode = computed<ChatTranslateSendMode>(() =>
+    config.value.send.mode === "clipboard" ? "clipboard" : "off",
+  );
+
+  /** The send card's mode row: off / clipboard (the shell heals the rest). */
+  async function setSendMode(mode: ChatTranslateSendMode): Promise<void> {
+    await setSend({ mode });
+  }
+
   /** Run the shell's connectivity probe against the STORED provider
    *  config (pending writes are flushed first, so "save then test" always
    *  tests what the card shows). A rejected command lands as a failed
@@ -370,6 +392,8 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
     setProvider,
     setLanguages,
     setSend,
+    sendMode,
+    setSendMode,
     testProvider,
     debugTranslate,
   };

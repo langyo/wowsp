@@ -36,7 +36,8 @@ function baseConfig(): ChatTranslateConfigPublic {
     context: { shipNames: true, teams: true, recentLines: 8, nicknames: false },
     display: { maxLines: 8 },
     send: {
-      mode: "clipboard",
+      // Conservative default — must mirror the shell's Default (off).
+      mode: "off",
       suffixEnabled: true,
       suffixFormat: "per-segment",
       splitChars: 120,
@@ -314,5 +315,38 @@ describe("chat translation settings", () => {
     await Promise.all([first, second]);
     expect(store.config.languages.mode).toBe("fixed");
     expect(store.config.send.suffixEnabled).toBe(false);
+  });
+
+  it("exposes and writes the send mode", async () => {
+    const store = useChatTranslateStore();
+    await store.load();
+    expect(store.sendMode).toBe("off");
+    chatMock.setChatTranslateConfig.mockResolvedValueOnce(
+      response({ send: { ...baseConfig().send, mode: "off" } }),
+    );
+    await store.setSendMode("off");
+    expect(chatMock.setChatTranslateConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        send: expect.objectContaining({ mode: "off" }),
+      }),
+    );
+    // The shell's reply is the truth: the row flips with it.
+    expect(store.sendMode).toBe("off");
+    await store.setSendMode("clipboard");
+    expect(chatMock.setChatTranslateConfig).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        send: expect.objectContaining({ mode: "clipboard" }),
+      }),
+    );
+  });
+
+  it("heals an unknown stored send mode to off (never auto-copies)", async () => {
+    chatMock.getChatTranslateConfig.mockResolvedValueOnce(
+      response({ send: { ...baseConfig().send, mode: "weird-value" } }),
+    );
+    const store = useChatTranslateStore();
+    await store.load();
+    expect(store.sendMode).toBe("off");
+    expect(store.config.send.mode).toBe("off");
   });
 });
