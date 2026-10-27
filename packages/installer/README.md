@@ -52,6 +52,20 @@ WoWSP's own manifest-listed files out of the old one — the game
 folder itself survives untouched. Upgrades everywhere else never
 re-answer their location, so auto-updates are never stranded.
 
+shun 0.6.31 adds the swap-safety floors underneath (armed by the
+pinned SHUN_TAG, no manifest key of ours): the dir-rules probe
+extends one level below the target — the shared-games-root shape,
+an install whose direct child IS a game folder, relocates exactly
+like the game-folder shape (the 2026-10 incident: a player's WoWSP
+at `F:\Games` had the game carried into the `.shun-old` backup and
+destroyed by the wholesale backup sweep, twice) — the swap refuses
+any directory holding files shun never delivered (recursive,
+fail-safe on unreadable trees), and a swapped-out backup is
+deleted only when purely shun-owned, foreign content preserved
+with a warning instead. The app side keeps its own twin guard:
+the updater and the stranded-recovery wizard refuse the handoff
+while the running install directory overlaps a game tree.
+
 The build script also publishes `WoWSP_<version>_x64-portable.exe`: the
 single-exe 便捷版 — a dedicated `--no-default-features --features portable`
 compile of the app (no install step, no marker or file-name probing):
@@ -76,8 +90,11 @@ mirrors). One such bridge update lands them on a client that fetches
   (shun >= 0.6.30: a bare drive root and a fresh non-empty directory
   are refused outright — the default guards — and the manifest's
   `dir-rules` entry vetoes the game folder for fresh picks while
-  relocating installs that already live in one; upgrades elsewhere
-  never re-veto their location), registers ARP/uninstall,
+  relocating installs that already live in one; shun >= 0.6.31:
+  the dir-rules probe reaches one level below the target, the swap
+  refuses directories holding files shun never delivered, and
+  swapped-out backups are spared unless purely shun-owned; upgrades
+  elsewhere never re-veto their location), registers ARP/uninstall,
   refreshes existing shortcuts by presence (a kept launcher is updated
   in place, a deleted one is never re-created — silent updates must not
   spray `.lnk` files), honors the updater's `--silent --dir

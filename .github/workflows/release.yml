@@ -31,7 +31,13 @@ env:
   # shun.toml.template), and the relocation lane a `relocate` rule
   # triggers — legacy game-folder installs move through the wizard
   # instead of swapping the game directory aside.
-  SHUN_TAG: v0.6.30
+  # v0.6.31 adds the swap-safety guards on top: dir-rules probe one
+  # level below the target (the shared-games-root install shape),
+  # the swap refuses directories holding content shun never
+  # delivered, and swapped-out backups are spared unless purely
+  # shun-owned — the 2026-10 incident where a player's game client
+  # was carried into the .shun-old backup and destroyed, twice.
+  SHUN_TAG: v0.6.31
 
 # One release flow per ref, never cancelled mid-flight: a cancelled run can
 # leave a half-uploaded draft; a re-push of the same tag queues behind this
