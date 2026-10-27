@@ -44,6 +44,13 @@ export interface ReplayMeta {
    *  fills carry `:Name:` bots only, so a non-zero count in a pve-family
    *  match group marks an operation (see `modeKey`). */
   scriptedUnitCount?: number | null;
+  /** Enemy-side roster entries (relation >= 2) — the other half of the
+   *  roster shape. A pve-family roster with listed players but ZERO
+   *  enemy-side entries is the single-team story/operation shape (WW2
+   *  operations): official co-op always fields the enemy bot team, so the
+   *  count marks an operation for the lite-metadata classifier
+   *  (`singleTeamRosterFromCounts`). Counted from `vehicles`. */
+  enemyCount?: number | null;
   vehicles: VehicleEntry[];
   raw: unknown;
 }
@@ -72,6 +79,12 @@ export interface ReplayMetaLite {
    *  of `botCount` (see `ReplayMeta.scriptedUnitCount`). The list view has
    *  no roster to scan, so the classifier reads this count instead. */
   scriptedUnitCount?: number | null;
+  /** Enemy-side roster entries (relation >= 2) — the lite twin of
+   *  `ReplayMeta.enemyCount`. A pve-family row with listed players but
+   *  zero enemy-side entries is the single-team story/operation shape, the
+   *  rule `singleTeamRosterFromCounts` applies for the list card / mode
+   *  filter. */
+  enemyCount?: number | null;
   /** The recorder's ship id (roster relation == 0). Drives the ship preview. */
   ownShipId?: number | null;
   /** The recorder's NICKNAME — the descriptor's `playerName`, or the

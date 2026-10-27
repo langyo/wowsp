@@ -19,7 +19,7 @@ import type { PlaytimeBattle, PlaytimeOverview } from "@/api";
 import shipNamesDbRaw from "../../data/ship_names.json";
 import { sameGamePath } from "@/utils/gamePath";
 import { canonicalNation } from "@/utils/nationFlags";
-import { modeColorOfKey, modeKey } from "@/utils/modeColors";
+import { modeColorOfKey, modeKey, singleTeamRosterFromCounts } from "@/utils/modeColors";
 
 /** The battle-derived content's scope: one install's root path (the scope
  *  menu offers every detected client) or [`SCOPE_ALL`] for every client at
@@ -156,12 +156,23 @@ function tierRank(key: string): number {
 
 /** Group by battle mode — the canonical mode classifier shared with the
  *  replay list (utils/modeColors modeKey) fed with the descriptor's layered
- *  identity fields. Rows with no mode fingerprint at all land in
- *  "unknown". */
+ *  identity fields. The battle row carries the roster's summary counts, so
+ *  the single-team story-operation shape (players listed, no enemy side) is
+ *  read through `singleTeamRosterFromCounts`: a pve-family operation with
+ *  no scenario/script fingerprint still labels 行动 instead of 联合作战.
+ *  Rows with no mode fingerprint at all land in "unknown". */
 export function breakdownByMode(rows: PlaytimeBattle[]): BreakdownEntry[] {
   const counts = new Map<string, number>();
   for (const r of rows) {
-    const key = modeKey(r.matchGroup, r.scenario, r.eventType, r.botCount, r.scriptedUnitCount) || "unknown";
+    const key =
+      modeKey(
+        r.matchGroup,
+        r.scenario,
+        r.eventType,
+        r.botCount,
+        r.scriptedUnitCount,
+        singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
+      ) || "unknown";
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return finalize(counts);

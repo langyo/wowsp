@@ -47,6 +47,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     ownShipId: 4276041424,
     playerName: "MockCaptain",
     playerCount: 12,
+    enemyCount: 12,
   },
   {
     path: "20260917_195542.wowsreplay",
@@ -57,6 +58,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     ownShipId: 3760109008,
     playerName: "MockAlt",
     playerCount: 14,
+    enemyCount: 14,
   },
   {
     path: "20260915_221301.wowsreplay",
@@ -67,6 +69,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     ownShipId: 4281219056,
     playerName: "MockCaptain",
     playerCount: 12,
+    enemyCount: 12,
   },
   {
     path: "20260912_184417.wowsreplay",
@@ -77,6 +80,9 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     ownShipId: 4276041424,
     playerName: "MockCaptain",
     playerCount: 8,
+    // Plain co-op: the enemy bot side is listed, so the single-team rule
+    // must not relabel this mock row as an operation.
+    enemyCount: 8,
   },
   {
     path: "20260910_201803.wowsreplay",
@@ -87,6 +93,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     ownShipId: 4277090288,
     playerName: "MockAlt",
     playerCount: 12,
+    enemyCount: 12,
   },
 ];
 
@@ -174,6 +181,7 @@ const MOCK_BATTLES = {
       eventType: null,
       botCount: 0,
       scriptedUnitCount: 0,
+      enemyCount: 12,
       ownShipId: 4276041424, // Yamato
       playerName: "MockCaptain",
       playerCount: 12,
@@ -188,6 +196,7 @@ const MOCK_BATTLES = {
       eventType: "PCVO009_OP_02_02",
       botCount: 8,
       scriptedUnitCount: 8,
+      enemyCount: 8,
       ownShipId: 4179605488, // Midway
       playerName: "MockCaptain",
       playerCount: 7,
@@ -202,6 +211,11 @@ const MOCK_BATTLES = {
       eventType: null,
       botCount: 11,
       scriptedUnitCount: 0,
+      // Plain co-op: the enemy bot side is listed, so the single-team
+      // operation rule leaves this mock row on 联合作战. 4 works with
+      // playerCount 9 — with scriptedUnitCount 0 every roster entry is a
+      // listed player, so enemyCount can never exceed playerCount.
+      enemyCount: 4,
       ownShipId: 4281219056, // Gearing
       playerName: "MockCaptain",
       playerCount: 9,
@@ -216,6 +230,7 @@ const MOCK_BATTLES = {
       eventType: null,
       botCount: 0,
       scriptedUnitCount: 0,
+      enemyCount: 12,
       ownShipId: 3760109008, // Stalingrad
       playerName: "MockAlt",
       playerCount: 12,
@@ -230,6 +245,7 @@ const MOCK_BATTLES = {
       eventType: null,
       botCount: 0,
       scriptedUnitCount: 0,
+      enemyCount: 8,
       ownShipId: 4282267344, // Shimakaze
       playerName: "MockAlt",
       playerCount: 8,
@@ -245,6 +261,7 @@ const MOCK_BATTLES = {
       eventType: null,
       botCount: 0,
       scriptedUnitCount: 0,
+      enemyCount: 0,
       ownShipId: null,
       playerName: null,
       playerCount: 0,
@@ -269,6 +286,7 @@ function liteForName(path: string): Record<string, unknown> {
     ownShipId: null,
     playerName: null,
     playerCount: 0,
+    enemyCount: 0,
     installPath: null,
     installKind: null,
     installRealm: null,

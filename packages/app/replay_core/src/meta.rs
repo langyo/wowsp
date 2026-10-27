@@ -115,6 +115,8 @@ pub fn lite_and_client_version(path: &std::path::Path) -> (ReplayMetaLite, Optio
             event_type: None,
             bot_count: 0,
             scripted_unit_count: 0,
+            // Header unreadable — no roster, so no enemy-side entries.
+            enemy_count: 0,
             own_ship_id: None,
             player_name: None,
             player_count: 0,
@@ -195,6 +197,11 @@ pub fn lite_from_raw(
                 scripted + u32::from(is_scripted_unit_nickname(&v.name)),
             )
         });
+    // Enemy-side roster entries — the single-team signal the frontend mode
+    // classifier keys on: a pve-family roster that lists its own team only
+    // (no relation >= 2 entry) is an operation (行动), not plain co-op
+    // (user report 2026-10-26, WW2 operation replay listed as co-op).
+    let enemy_count = vehicles.iter().filter(|v| v.relation >= 2).count() as u32;
     let own = vehicles.iter().find(|v| v.relation == 0);
     let own_ship_id = own.map(|v| v.ship_id);
     // The recorder's identity: the descriptor's own `playerName` (the
@@ -223,6 +230,7 @@ pub fn lite_from_raw(
         event_type,
         bot_count,
         scripted_unit_count,
+        enemy_count,
         own_ship_id,
         player_name,
         player_count,
@@ -323,6 +331,9 @@ pub fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         .iter()
         .filter(|v| is_scripted_unit_nickname(&v.name))
         .count() as u32;
+    // Enemy-side roster entries — see `ReplayMeta::enemy_count`: ZERO with a
+    // non-empty roster is the single-team story/operation shape.
+    let enemy_count = vehicles.iter().filter(|v| v.relation >= 2).count() as u32;
 
     ReplayMeta {
         // Replay files carry no timestamp in the descriptor (filename wins);
@@ -341,6 +352,7 @@ pub fn meta_from_raw(path: String, raw: serde_json::Value) -> ReplayMeta {
         event_type,
         bot_count,
         scripted_unit_count,
+        enemy_count,
         vehicles,
         raw,
     }
@@ -367,8 +379,9 @@ pub fn is_scripted_unit_nickname(name: &str) -> bool {
     name.starts_with("IDS_") || (name.len() >= 2 && name.starts_with('#'))
 }
 
-/// Whether this battle is a REAL operation (行动) — the PCVO*/`_op_`/`_hl_`
-/// descriptor fingerprints plus the roster scan for arena files whose
+/// Whether this battle is a REAL operation (行动) — the PCVO*/`_op_`/
+/// `_hl_`/`operation` descriptor fingerprints, the single-team roster rule
+/// inside the pve/coop family, plus the roster scan for arena files whose
 /// descriptor carries no scenario (a `pve` matchGroup with `IDS_OP_*`
 /// nicknames), EXCLUDING the tutorial family (`low_lvl_operation`,
 /// `first_battle`, the `IDS_OP_15_*` escort op) whose scripted units field
@@ -378,12 +391,20 @@ pub fn is_scripted_unit_nickname(name: &str) -> bool {
 /// `splitLiveRosterSides`) keys on the same rule on both sides of the IPC
 /// boundary, so the sink solver's ally block and the frontend's ally order
 /// stay index-aligned.
+///
+/// The single-team rule exists because the WW2 operation family
+/// (`WW2_OPERATION_1_1011LVL`, matchGroup `pve`) lists the player's own team
+/// only: real co-op fills the roster with its enemy bot side (relation >= 2),
+/// so a pve-family roster with listed players but NO enemy-side entry can only
+/// be an operation. User report 2026-10-26: such a replay was labelled co-op
+/// (联合作战) on the list card and in the viewer header instead of 行动.
 pub fn is_operation_battle(
     match_group: Option<&str>,
     scenario: Option<&str>,
     event_type: Option<&str>,
     vehicles: &[wowsp_tauri_shared::VehicleEntry],
 ) -> bool {
+    let mg = match_group.unwrap_or("").to_lowercase();
     let sc = scenario.unwrap_or("").to_lowercase();
     let et = event_type.unwrap_or("").to_lowercase();
     if sc.starts_with("low_lvl_operation") || sc == "first_battle" {
@@ -404,10 +425,35 @@ pub fn is_operation_battle(
     if et.contains("_op_") || sc.contains("_op_") || sc.contains("_hl_") {
         return true;
     }
-    match_group.unwrap_or("").eq_ignore_ascii_case("pve")
+    // Battle-script / scenario ids that spell "operation" outright — the WW2
+    // operation family (`WW2_OPERATION_*`) carries no PCVO / `_op_`
+    // fingerprint, so this is its strong descriptor-level signal. The tutorial
+    // family never reaches here (its exclusions return above, and
+    // `low_lvl_operation` starts with the same word but is matched first).
+    if sc.contains("operation") || et.contains("operation") {
+        return true;
+    }
+    if mg == "pve"
         && vehicles
             .iter()
             .any(|v| v.name.to_uppercase().starts_with("IDS_OP_"))
+    {
+        return true;
+    }
+    // Single-team roster rule — the mirror of the frontend's
+    // `hasSingleTeamRoster` argument: inside the pve / coop family a
+    // non-empty roster with NO enemy-side entry (relation >= 2) is an
+    // operation, never plain co-op (co-op always lists its enemy bot side).
+    // The pvp family, the Lesta tutorial (`intro`) and an empty roster never
+    // qualify.
+    let pvp_family = mg == "pvp"
+        || mg.contains("random")
+        || mg.starts_with("ranked")
+        || mg.contains("clan")
+        || mg.contains("brawl")
+        || mg.contains("squad");
+    let coop_family = !pvp_family && mg != "intro" && (mg == "pve" || mg.contains("coop"));
+    coop_family && !vehicles.is_empty() && !vehicles.iter().any(|v| v.relation >= 2)
 }
 
 /// Filenames look like `20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay`;

@@ -124,6 +124,15 @@ export interface PlaytimeBattle {
   eventType: string | null;
   botCount: number;
   scriptedUnitCount: number;
+  /** Enemy-side roster entries (relation >= 2). A pve-family battle with
+   *  listed players but ZERO enemy-side entries is the single-team story/
+   *  operation shape (WW2 operations) — official co-op always fields the
+   *  enemy bot team — the rule the playtime mode breakdown's
+   *  `singleTeamRosterFromCounts` gate applies. Optional/nullable like the
+   *  replay wire types: an older host's payload (or a battle cache written
+   *  before the field existed) may omit it, and the helper treats absence
+   *  as UNKNOWN — never as an empty enemy side. */
+  enemyCount?: number | null;
   ownShipId: number | null;
   /** The recorder's NICKNAME — the descriptor's `playerName`, absent (null)
    *  when the header is unparseable or carries no roster. Renamed from

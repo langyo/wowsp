@@ -3,6 +3,7 @@ import { Copy, Eye, EyeOff, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lu
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useReplayPositions } from "@/features/replay/useReplayPositions";
+import { analyzeSpawnSymmetry, type EntitySide } from "@/features/replay/spawnSymmetry";
 import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
@@ -84,7 +85,15 @@ import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useStatsStore } from "@/stores/stats";
-import { isOperationBattle, isSingleTeamTabLayout, modeColor, modeKey } from "@/utils/modeColors";
+import {
+  hasSingleTeamRoster,
+  isOperationBattle,
+  isSingleTeamTabLayout,
+  modeColor,
+  modeColorOfKey,
+  modeKey,
+  singleTeamRosterFromCounts,
+} from "@/utils/modeColors";
 import { displayMapName } from "@/utils/mapNames";
 import { clientMenuOptions, installFolderName, serverTagOf } from "@/utils/installLabel";
 import { sameGamePath } from "@/utils/gamePath";
@@ -102,15 +111,21 @@ import type { PlayerStats } from "@/api";
 import "./ReplayView.scss";
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
- *  eventType / roster bots) with a generic fallback. */
+ *  eventType / roster bots / roster shape) with a generic fallback. The
+ *  `singleTeamRoster` flag is the count/roster twin of hasSingleTeamRoster:
+ *  a pve-family battle with players but no enemy side is a story-operation
+ *  shape (行动), not plain co-op (see utils/modeColors.ts). */
 function modeLabel(
   group?: string | null,
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
   scriptedUnitCount = 0,
+  singleTeamRoster: boolean | null = null,
 ): string {
-  return modeLabelOfKey(modeKey(group, scenario, eventType, botCount, scriptedUnitCount));
+  return modeLabelOfKey(
+    modeKey(group, scenario, eventType, botCount, scriptedUnitCount, singleTeamRoster),
+  );
 }
 
 /** Player count label: team-vs-team modes show "12v12" (split by the roster
@@ -1018,6 +1033,56 @@ function assignTrajectoriesByVehicle(
   return out;
 }
 
+/** Entity-id → battle-side resolver for the decode-time spawn-symmetry probe
+ *  (features/replay/spawnSymmetry.ts). The arena's initial state is
+ *  authoritative when it decoded: `teamId` against the recorder's side (the
+ *  `isSelf` entry, or the entry matching `recorderVehicleId`). Replays whose
+ *  arena state is missing/version-drifted fall back to the roster's
+ *  unique-shipId join — only when BOTH the roster and the decoded entity
+ *  stream carry that shipId exactly once, because mirror picks and bot lines
+ *  share shipIds and a crossed join would assign the wrong side. Entities
+ *  neither path can place return null, so the probe reports "not enough
+ *  data" instead of guessing. */
+function spawnSideResolver(
+  vehicles: VehicleEntry[],
+  arenaPlayers: ArenaPlayer[],
+  recorderVehicleId: number | null,
+  trajectories: EntityTrajectory[],
+): (entityId: number) => EntitySide | null {
+  let selfTeam: number | null = arenaPlayers.find((p) => p.isSelf)?.teamId ?? null;
+  if (selfTeam == null && recorderVehicleId != null) {
+    selfTeam = arenaPlayers.find((p) => p.entityId === recorderVehicleId)?.teamId ?? null;
+  }
+  const arenaTeam = new Map<number, number>();
+  if (selfTeam != null) {
+    for (const p of arenaPlayers) arenaTeam.set(p.entityId, p.teamId);
+  }
+  const rosterShipIds = new Map<number, VehicleEntry>();
+  const rosterShipIdCounts = new Map<number, number>();
+  for (const v of vehicles) {
+    rosterShipIds.set(v.shipId, v);
+    rosterShipIdCounts.set(v.shipId, (rosterShipIdCounts.get(v.shipId) ?? 0) + 1);
+  }
+  const trajByEntity = new Map<number, EntityTrajectory>();
+  const trajShipIdCounts = new Map<number, number>();
+  for (const traj of trajectories) {
+    trajByEntity.set(traj.entityId, traj);
+    const sid = traj.kind?.shipId;
+    if (sid != null) trajShipIdCounts.set(sid, (trajShipIdCounts.get(sid) ?? 0) + 1);
+  }
+  return (entityId) => {
+    const team = arenaTeam.get(entityId);
+    if (team != null) return team === selfTeam ? "ally" : "enemy";
+    const sid = trajByEntity.get(entityId)?.kind?.shipId;
+    if (sid == null) return null;
+    if (rosterShipIdCounts.get(sid) !== 1 || trajShipIdCounts.get(sid) !== 1) {
+      return null;
+    }
+    const entry = rosterShipIds.get(sid);
+    return entry ? (entry.relation < 2 ? "ally" : "enemy") : null;
+  };
+}
+
 /** One chat row joined to the roster + the sender's trajectory: everything
  *  the timeline, the copy button and the sender tooltip need. */
 interface ChatRow {
@@ -1701,34 +1766,83 @@ export default defineComponent({
         eventType: cur?.eventType ?? null,
       });
     });
+    /** Decode-time spawn-symmetry probe for the OPENED replay — the weak,
+     *  supplemental 行动 signal from the user's criterion: fleet battles
+     *  (co-op / PvP) spawn both sides in roughly mirrored clusters, while a
+     *  scripted operation spawns its enemies progressively in waves, so the
+     *  enemy spawn cloud is not a mirror of the ally cloud. Only available
+     *  after the packet decode (the list scan cannot see packets); null until
+     *  then or when the sides cannot be resolved. See spawnSymmetry.ts for
+     *  the model, heuristic thresholds and limitations. */
+    const spawnSymmetry = computed(() => {
+      const cur = parser.current.value;
+      if (!cur || trajectories.value.length === 0) return null;
+      return analyzeSpawnSymmetry(
+        trajectories.value,
+        spawnSideResolver(
+          cur.vehicles,
+          arenaPlayers.value,
+          recorderVehicleId.value,
+          trajectories.value,
+        ),
+      );
+    });
+    /** Decode-time operation refinement: ONLY a plain-co-op descriptor label
+     *  plus CLEARLY one-sided enemy spawns may promote the battle to 行动.
+     *  Never a non-cooperative descriptor key, never operation -> co-op, and
+     *  never on a null/true probe — a weak heuristic must only add the label
+     *  the user's operation replay was missing, not overrule the descriptor. */
+    const spawnSymmetryOperation = computed(() => {
+      const cur = parser.current.value;
+      if (!cur) return false;
+      const key = modeKey(
+        cur.matchGroup,
+        cur.scenario,
+        cur.eventType,
+        cur.botCount ?? 0,
+        cur.scriptedUnitCount ?? 0,
+        hasSingleTeamRoster(cur.vehicles),
+      );
+      return key === "cooperative" && spawnSymmetry.value?.symmetric === false;
+    });
     /** Operation scenario (行动): single-team battle — drives the single
-     *  allies column, the "N players" count and the icon variants. */
+     *  allies column, the "N players" count and the icon variants. The
+     *  descriptor/roster classifier is authoritative; the decode-time probe
+     *  only promotes its residual plain-co-op label (see above). */
     const isOperation = computed(() => {
       const cur = parser.current.value;
       if (!cur) return false;
-      return isOperationBattle(
+      const descriptorOperation = isOperationBattle(
         cur.matchGroup,
         cur.scenario,
         cur.eventType,
         cur.vehicles.map((v) => v.name),
+        hasSingleTeamRoster(cur.vehicles),
       );
+      return descriptorOperation || spawnSymmetryOperation.value;
     });
     /** The CN pinyin ship-name row order for THIS replay — realm AND
      *  table shape (issue #1360: the 2026-10-07 pinyin calibration was
      *  taken on the single-team layouts; a two-team CN replay renders
      *  the WG-family nation rank). Drives the fallback matrix's row
-     *  order and the holographic map's roster strip. */
+     *  order and the holographic map's roster strip. A battle promoted to
+     *  operation by the decode-time spawn probe counts as the single-team
+     *  layout too — the promotion is exactly what makes it single-team, so
+     *  without the OR the CN row order would disagree with the promoted
+     *  layout and mix the two calibrations on screen. */
     const shipNameOrder = computed(() => {
       const cur = parser.current.value;
       if (!cur) return false;
       return (
         realmUsesShipNameOrder(realm.value) &&
-        isSingleTeamTabLayout(
+        (isSingleTeamTabLayout(
           cur.matchGroup,
           cur.scenario,
           cur.eventType,
           cur.vehicles.map((v) => v.name),
-        )
+          hasSingleTeamRoster(cur.vehicles),
+        ) ||
+          spawnSymmetryOperation.value)
       );
     });
     const { loading: resultsLoading, error: trajectoryError } = useReplayPositions(parser.current, {
@@ -1916,6 +2030,11 @@ export default defineComponent({
                         r.eventType,
                         r.botCount ?? 0,
                         r.scriptedUnitCount ?? 0,
+                        // The lite row carries only the scan's summary
+                        // counts: a pve-family operation with players but no
+                        // enemy side is a story operation (行动) even when
+                        // its descriptor has no scenario/script fingerprint.
+                        singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
                       ) as CSSProperties
                     }
                   >
@@ -1925,6 +2044,7 @@ export default defineComponent({
                       r.eventType,
                       r.botCount ?? 0,
                       r.scriptedUnitCount ?? 0,
+                      singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
                     )}
                   </span>
                 ) : null}
@@ -2162,22 +2282,31 @@ export default defineComponent({
                       <span
                         class="replay-view__meta-item replay-view__pill"
                         style={
-                          modeColor(
-                            parser.current.value.matchGroup,
-                            parser.current.value.scenario,
-                            parser.current.value.eventType,
-                            parser.current.value.botCount ?? 0,
-                            parser.current.value.scriptedUnitCount ?? 0,
-                          ) as CSSProperties
+                          (spawnSymmetryOperation.value
+                            ? // Decode-time refinement: the spawn probe
+                              // promoted a plain-co-op descriptor label to
+                              // 行动 (see spawnSymmetryOperation above).
+                              modeColorOfKey("operation")
+                            : modeColor(
+                                parser.current.value.matchGroup,
+                                parser.current.value.scenario,
+                                parser.current.value.eventType,
+                                parser.current.value.botCount ?? 0,
+                                parser.current.value.scriptedUnitCount ?? 0,
+                                hasSingleTeamRoster(parser.current.value.vehicles),
+                              )) as CSSProperties
                         }
                       >
-                        {modeLabel(
-                          parser.current.value.matchGroup,
-                          parser.current.value.scenario,
-                          parser.current.value.eventType,
-                          parser.current.value.botCount ?? 0,
-                          parser.current.value.scriptedUnitCount ?? 0,
-                        )}
+                        {spawnSymmetryOperation.value
+                          ? modeLabelOfKey("operation")
+                          : modeLabel(
+                              parser.current.value.matchGroup,
+                              parser.current.value.scenario,
+                              parser.current.value.eventType,
+                              parser.current.value.botCount ?? 0,
+                              parser.current.value.scriptedUnitCount ?? 0,
+                              hasSingleTeamRoster(parser.current.value.vehicles),
+                            )}
                       </span>
                     ) : null}
                     <span class="replay-view__meta-item replay-view__count">

@@ -56,15 +56,30 @@ import { HkDatePicker, HkSelect } from "@celestia-island/hikari";
 import { t } from "@/i18n";
 import type { ReplayMetaLite } from "@/api";
 import { sameGamePath } from "@/utils/gamePath";
-import { MODE_KEY_ORDER, modeColorOfKey, modeKey } from "@/utils/modeColors";
+import {
+  MODE_KEY_ORDER,
+  modeColorOfKey,
+  modeKey,
+  singleTeamRosterFromCounts,
+} from "@/utils/modeColors";
 import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
 
 const PERSIST_KEY = "wowsp.replayFilter.v1";
 
 /** Canonical battle-mode key of a replay entry — the same resolution the
- *  card pill colour and label go through. */
+ *  card pill colour and label go through. The lite row carries only summary
+ *  counts, so the single-team story-operation shape (players listed, no
+ *  enemy side) is read through `singleTeamRosterFromCounts`: a pve-family
+ *  operation with no scenario/script fingerprint still labels 行动. */
 export function replayModeKeyOf(r: ReplayMetaLite): string {
-  return modeKey(r.matchGroup, r.scenario, r.eventType, r.botCount ?? 0, r.scriptedUnitCount ?? 0);
+  return modeKey(
+    r.matchGroup,
+    r.scenario,
+    r.eventType,
+    r.botCount ?? 0,
+    r.scriptedUnitCount ?? 0,
+    singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
+  );
 }
 
 /** Localized label for an already-resolved mode key (unknown keys fall

@@ -116,6 +116,13 @@ pub struct PlaytimeBattle {
     pub event_type: Option<String>,
     pub bot_count: u32,
     pub scripted_unit_count: u32,
+    /// Enemy-side roster entries (`relation >= 2`) — see
+    /// [`ReplayMeta::enemy_count`]. The ledger row has no roster to scan, so
+    /// a pve-family row with listed players but zero enemy-side entries is
+    /// the single-team operation shape (WW2 operations); `#[serde(default)]`
+    /// keeps battle-cache JSON written before the field parsing.
+    #[serde(default)]
+    pub enemy_count: u32,
     pub own_ship_id: Option<i64>,
     /// The recording player's nickname (see `ReplayMetaLite::player_name`) —
     /// absent when the header is unparseable or carries no roster.

@@ -37,6 +37,9 @@ function row(over: Partial<PlaytimeBattle>): PlaytimeBattle {
     eventType: null,
     botCount: 0,
     scriptedUnitCount: 0,
+    // A normal two-side roster — a literal 0 enemy count would read as the
+    // single-team story-operation shape (singleTeamRosterFromCounts).
+    enemyCount: 12,
     ownShipId: 4276041424,
     playerName: "Yamato",
     playerCount: 12,
@@ -192,6 +195,21 @@ describe("breakdownByMode", () => {
       count: 1,
       share: 1 / 6,
     });
+  });
+
+  it("labels the WW2 story operation / single-team pve rows as operation", () => {
+    const rows = [
+      // The user's 2026-10-26 WW2 replay: the scenario fingerprint decides.
+      row({ matchGroup: "pve", scenario: "WW2_OPERATION_1_1011LVL", eventType: null }),
+      // No descriptor fingerprint at all: the single-team counts decide.
+      row({ matchGroup: "pve", scenario: null, eventType: null, playerCount: 7, enemyCount: 0 }),
+      // The same counts inside the pvp family change nothing.
+      row({ matchGroup: "pvp", scenario: null, eventType: null, playerCount: 7, enemyCount: 0 }),
+    ];
+    expect(breakdownByMode(rows).map((e) => [e.key, e.count])).toEqual([
+      ["operation", 2],
+      ["pvp", 1],
+    ]);
   });
 
   it("buckets rows with no mode fingerprint into unknown", () => {

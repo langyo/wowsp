@@ -795,8 +795,47 @@ fn lite_from_raw_finds_own_ship() {
     assert_eq!(lite.match_group.as_deref(), Some("ranked"));
     assert_eq!(lite.map_name.as_deref(), Some("15_NE_north"));
     assert_eq!(lite.player_count, 3);
+    // One roster entry rides the enemy side (relation 2).
+    assert_eq!(lite.enemy_count, 1);
     assert_eq!(lite.own_ship_id, Some(4182828960));
     assert_eq!(lite.player_name.as_deref(), Some("Alpha"));
+}
+
+/// The enemy-side count the list/playtime classifier keys on: roster entries
+/// with `relation >= 2`. The WW2 operation shape (2026-10-26 user report)
+/// lists the player's own team only — ZERO enemy-side entries with a
+/// non-empty roster, which is exactly the single-team signal — while a plain
+/// two-team roster counts every relation-2 entry.
+#[test]
+fn enemy_count_projects_the_roster_enemy_side() {
+    let ww2 = r#"{"matchGroup":"pve","scenario":"WW2_OPERATION_1_1011LVL","eventType":"","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"Alpha","relation":1,"shipId":2},
+            {"id":3,"name":"Bravo","relation":1,"shipId":3},
+            {"id":4,"name":"Charlie","relation":1,"shipId":4},
+            {"id":5,"name":"Delta","relation":1,"shipId":5},
+            {"id":6,"name":"Echo","relation":1,"shipId":6},
+            {"id":7,"name":"Foxtrot","relation":1,"shipId":7}
+        ]}"#;
+    let raw: serde_json::Value = serde_json::from_str(ww2).unwrap();
+    let meta = meta_from_raw("x.wowsreplay".into(), raw.clone());
+    let lite = lite_from_raw("x.wowsreplay".into(), None, raw);
+    assert_eq!(meta.enemy_count, 0);
+    assert_eq!(lite.enemy_count, 0);
+    assert_eq!(lite.player_count, 7);
+    assert_eq!(meta.vehicles.len(), 7);
+
+    let two_team = r#"{"matchGroup":"pvp","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"Alpha","relation":1,"shipId":2},
+            {"id":3,"name":"EnemyA","relation":2,"shipId":3},
+            {"id":4,"name":"EnemyB","relation":2,"shipId":4}
+        ]}"#;
+    let raw: serde_json::Value = serde_json::from_str(two_team).unwrap();
+    let meta = meta_from_raw("x.wowsreplay".into(), raw.clone());
+    let lite = lite_from_raw("x.wowsreplay".into(), None, raw);
+    assert_eq!(meta.enemy_count, 2);
+    assert_eq!(lite.enemy_count, 2);
 }
 
 /// Unique temp file path for `lite_from_path` tests (this crate has no
@@ -1421,6 +1460,10 @@ fn scripted_unit_count_splits_operation_rosters() {
     let lite = lite_from_raw("x.wowsreplay".into(), None, raw);
     assert_eq!(meta.bot_count, 5);
     assert_eq!(meta.scripted_unit_count, 4);
+    // Enemy side: the three relation-2 entries (#Krebs, :Revel:, #Aylard) —
+    // every entry with relation >= 2 counts.
+    assert_eq!(meta.enemy_count, 3);
+    assert_eq!(lite.enemy_count, 3);
     assert_eq!(lite.bot_count, 5);
     assert_eq!(lite.scripted_unit_count, 4);
     // Listed players only: the human recorder plus the `:Revel:` co-op
@@ -1437,6 +1480,9 @@ fn scripted_unit_count_splits_operation_rosters() {
     let meta = meta_from_raw("x.wowsreplay".into(), raw);
     assert_eq!(meta.bot_count, 2);
     assert_eq!(meta.scripted_unit_count, 0);
+    // Plain co-op lists its enemy bot side — the discriminator the
+    // single-team operation rule reads.
+    assert_eq!(meta.enemy_count, 2);
 }
 
 /// is_operation_battle — the Rust mirror of the frontend's classifier
@@ -1505,6 +1551,48 @@ fn operation_classifier_mirrors_the_frontend() {
         ]}"#,
     );
     assert!(is_operation_battle(Some("pve"), None, None, &bare));
+    // The WW2 operation family (2026-10-26 user report): matchGroup "pve",
+    // scenario "WW2_OPERATION_1_1011LVL", no eventType — the `operation`
+    // substring in the scenario id is the descriptor-level fingerprint.
+    let ww2 = roster(
+        r#"{"matchGroup":"pve","scenario":"WW2_OPERATION_1_1011LVL","eventType":"","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"Alpha","relation":1,"shipId":2},
+            {"id":3,"name":"Bravo","relation":1,"shipId":3},
+            {"id":4,"name":"Charlie","relation":1,"shipId":4},
+            {"id":5,"name":"Delta","relation":1,"shipId":5},
+            {"id":6,"name":"Echo","relation":1,"shipId":6},
+            {"id":7,"name":"Foxtrot","relation":1,"shipId":7}
+        ]}"#,
+    );
+    assert!(is_operation_battle(
+        Some("pve"),
+        Some("WW2_OPERATION_1_1011LVL"),
+        None,
+        &ww2
+    ));
+    // Even when the descriptor carries no `operation` word: the same
+    // single-team roster inside the pve family can only be an operation —
+    // real co-op always lists its enemy bot side.
+    assert!(is_operation_battle(Some("pve"), None, None, &ww2));
+    // The Lesta "cooperative" matchGroup names the same co-op family.
+    assert!(is_operation_battle(Some("cooperative"), None, None, &ww2));
+    // Plain co-op is two-sided: its enemy bots fill relation 2, so the
+    // single-team rule never fires.
+    let plain_coop = roster(
+        r#"{"matchGroup":"pve","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":":Yumashev:","relation":2,"shipId":3}
+        ]}"#,
+    );
+    assert!(!is_operation_battle(Some("pve"), None, None, &plain_coop));
+    // A single-team roster outside the pve/coop family is a descriptor edge,
+    // not an operation: PvP, ranked, the Lesta `intro` tutorial and plain
+    // training rows stay two-team / unclassified.
+    assert!(!is_operation_battle(Some("pvp"), None, None, &ww2));
+    assert!(!is_operation_battle(Some("ranked"), None, None, &ww2));
+    assert!(!is_operation_battle(Some("intro"), None, None, &ww2));
+    assert!(!is_operation_battle(Some("training"), None, None, &ww2));
     // PvP / plain co-op never classify as operations.
     let coop = roster(
         r#"{"matchGroup":"pve","scenario":"domination_3point","vehicles":[

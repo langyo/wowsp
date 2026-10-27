@@ -13,7 +13,7 @@ import { api, type ArenaInfo, type VehicleEntry } from "@/api";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { isOperationBattle } from "@/utils/modeColors";
+import { hasSingleTeamRoster, isOperationBattle } from "@/utils/modeColors";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
 
 export const useOverlayStore = defineStore("arenaOverlay", () => {
@@ -75,6 +75,10 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
         arenaInfo.value?.scenario,
         arenaInfo.value?.eventType,
         (arenaInfo.value?.vehicles ?? []).map((v) => v.name),
+        // Single-team roster (players listed, no enemy side) inside the pve
+        // family = story operation (行动): the scripted ally block is
+        // filtered out and the enemy side stays empty.
+        hasSingleTeamRoster(arenaInfo.value?.vehicles),
       ),
     ),
   );

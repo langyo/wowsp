@@ -102,7 +102,13 @@ import {
   type RosterColumnSpec,
 } from "./postBattleShare";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
-import { isOperationBattle, isSingleTeamTabLayout, modeColor, modeKey } from "@/utils/modeColors";
+import {
+  hasSingleTeamRoster,
+  isOperationBattle,
+  isSingleTeamTabLayout,
+  modeColor,
+  modeKey,
+} from "@/utils/modeColors";
 import { realmUsesShipNameOrder } from "@/utils/realms";
 import { sameGamePath } from "@/utils/gamePath";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
@@ -142,15 +148,16 @@ import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
 import "./LiveBattlePanel.scss";
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
- *  battle script / roster bots). */
+ *  battle script / roster bots / single-team roster shape). */
 function modeLabelOf(
   group?: string | null,
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
   scriptedUnitCount = 0,
+  singleTeamRoster: boolean | null = null,
 ): string {
-  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount);
+  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount, singleTeamRoster);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = "replay.mode." + key;
   const lbl = t(i18nKey);
@@ -511,16 +518,26 @@ export default defineComponent({
     /** Manual stats-refresh button state (approximate: the composable
      *  settles row spinners itself, the button just needs a cooldown). */
     const rosterRefreshing = ref(false);
+    /** The roster's single-team shape (players listed, NO enemy-side entry).
+     *  Inside the pve family that is the story-operation shape (行动) — real
+     *  co-op always fields the enemy bot team. The Rust sink solver keys its
+     *  ally block on the SAME rule (arena_info's note_arena_seen applies
+     *  is_operation_battle with the roster), so every classifier call below
+     *  must forward it or the frontend and the server-side solver would
+     *  disagree on this battle's row layout. */
+    const singleTeamRoster = computed(() => hasSingleTeamRoster(props.arena?.vehicles ?? []));
     // Whether THIS battle is a real operation (行动) — PCVO*/_op_/_hl_
-    // fingerprints, minus the tutorial family (low_lvl_operation /
-    // first_battle / IDS_OP_15_*) that fields its scripted units as real
-    // team rows. Decides the live side split below.
+    // fingerprints and the single-team roster rule, minus the tutorial
+    // family (low_lvl_operation / first_battle / IDS_OP_15_*) that fields
+    // its scripted units as real team rows. Decides the live side split
+    // below.
     const operation = computed(() =>
       isOperationBattle(
         props.arena?.matchGroup,
         props.arena?.scenario,
         props.arena?.eventType,
         props.arena?.vehicles.map((v) => v.name),
+        singleTeamRoster.value,
       ),
     );
     /** Whether THIS battle's Tab table is the SINGLE-team layout (the
@@ -539,6 +556,7 @@ export default defineComponent({
         a.scenario,
         a.eventType,
         a.vehicles.map((v) => v.name),
+        singleTeamRoster.value,
       );
     });
     /** The battle's LIVE side split — scripted scenario NPCs (`IDS_*` /
@@ -551,8 +569,9 @@ export default defineComponent({
      *  overlay's Tab row blocks). Every other battle keeps the raw
      *  relation split — the tutorial-family scripted fills really do render
      *  as team rows in-game. The Rust sink solver keys its ally-row count
-     *  on the same rule (arena_info's note_arena_seen), so sink
-     *  attributions stay index-aligned with the orders below.
+     *  on the same rule (arena_info's note_arena_seen — the single-team
+     *  roster rule included), so sink attributions stay index-aligned with
+     *  the orders below.
      *  operations (行动) also empty the enemy side — all scripted spawns,
      *  a list nobody reads. */
     const liveSides = computed(() =>
@@ -802,6 +821,7 @@ export default defineComponent({
           props.arena?.eventType,
           props.arena?.botCount ?? 0,
           props.arena?.scriptedUnitCount ?? 0,
+          singleTeamRoster.value,
         ) === "operation",
     );
     // The ally side: the live split's allies (scripted NPCs filtered iff
@@ -929,6 +949,7 @@ export default defineComponent({
           arena.eventType,
           arena.botCount ?? 0,
           arena.scriptedUnitCount ?? 0,
+          singleTeamRoster.value,
         );
         mode = {
           label: modeLabelOf(
@@ -937,6 +958,7 @@ export default defineComponent({
             arena.eventType,
             arena.botCount ?? 0,
             arena.scriptedUnitCount ?? 0,
+            singleTeamRoster.value,
           ),
           color: c.color,
           background: c.background,
@@ -1311,6 +1333,7 @@ export default defineComponent({
               props.arena.eventType,
               props.arena.botCount ?? 0,
               props.arena.scriptedUnitCount ?? 0,
+              singleTeamRoster.value,
             ) as CSSProperties
           }
         >
@@ -1320,6 +1343,7 @@ export default defineComponent({
             props.arena.eventType,
             props.arena.botCount ?? 0,
             props.arena.scriptedUnitCount ?? 0,
+            singleTeamRoster.value,
           )}
         </span>
       ) : null;

@@ -19,6 +19,10 @@ function liteFromMeta(m: ReplayMeta): ReplayMetaLite {
     eventType: m.eventType,
     botCount: m.botCount,
     scriptedUnitCount: m.scriptedUnitCount,
+    // The same enemy-side roster count the Rust lite reader projects — the
+    // single-team operation rule reads it to keep a picked co-op replay on
+    // its co-op label (an absent count must not read as "no enemy side").
+    enemyCount: m.enemyCount,
     ownShipId: own?.shipId ?? null,
     // The relation-0 roster entry's `name` IS the recorder's nickname —
     // the same value the lite reader's playerName carries for scanned

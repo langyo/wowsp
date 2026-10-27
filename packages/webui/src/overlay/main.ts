@@ -97,7 +97,7 @@ import {
   type TabRowCompareOptions,
   type TabSortVehicle,
 } from "@/utils/shipClass";
-import { isCoopBattle, isOperationBattle } from "@/utils/modeColors";
+import { hasSingleTeamRoster, isCoopBattle, isOperationBattle } from "@/utils/modeColors";
 // The live side split — scripted scenario NPCs filtered iff this is a real
 // operation (行动), exactly the rows the game's own Tab table renders. The
 // Rust sink solver keys its ally block on the same rule (arena_info's
@@ -1231,6 +1231,9 @@ function liveRosterSides(): RosterSides<Vehicle> {
       arena.scenario,
       arena.eventType,
       arena.vehicles.map((v) => v.name),
+      // Full roster at hand: the single-team shape (players, no enemy side)
+      // is a story operation even with no descriptor fingerprint.
+      hasSingleTeamRoster(arena.vehicles),
     ),
   );
 }
@@ -1476,11 +1479,13 @@ function render() {
   // scripted spawns, and mid-battle waves grow past the roster
   // tempArenaInfo ever sees).
   const rosterNames = arena.vehicles.map((v) => v.name);
+  const singleTeamRoster = hasSingleTeamRoster(arena.vehicles);
   const operation = isOperationBattle(
     arena.matchGroup,
     arena.scenario,
     arena.eventType,
     rosterNames,
+    singleTeamRoster,
   );
   const { allies, enemies } = liveRosterSides();
   const allyBlock = rows.slice(0, allies.length);
@@ -1504,6 +1509,7 @@ function render() {
     arena.scenario,
     arena.eventType,
     rosterNames,
+    singleTeamRoster,
   );
   // The anchor's per-row alive classification: the reconcile check below
   // reads the sunk COUNT off it (never a name), and the CN single-team

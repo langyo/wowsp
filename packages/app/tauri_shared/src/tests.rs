@@ -128,6 +128,7 @@ fn replay_meta_renames_every_multi_word_field() {
         event_type: Some("PCVE027".into()),
         bot_count: 2,
         scripted_unit_count: 2,
+        enemy_count: 2,
         vehicles: vec![VehicleEntry {
             id: 7,
             name: ":Bot:".into(),
@@ -148,6 +149,7 @@ fn replay_meta_renames_every_multi_word_field() {
         "eventType",
         "botCount",
         "scriptedUnitCount",
+        "enemyCount",
         "vehicles",
         "raw",
     ] {
@@ -156,10 +158,12 @@ fn replay_meta_renames_every_multi_word_field() {
     let vehicle = &v["vehicles"][0];
     assert_eq!(vehicle["shipId"], 4_282_948_544_i64);
     assert_eq!(vehicle["shipName"], "Montana");
-    // bot_count is serde-defaulted: an old payload without it parses
-    // (the Option fields already default to None; `raw` stays required).
+    // The roster counts are serde-defaulted: an old payload without them
+    // parses (the Option fields already default to None; `raw` stays
+    // required).
     let legacy = serde_json::json!({ "path": "p", "vehicles": [], "raw": {} });
-    assert!(serde_json::from_value::<ReplayMeta>(legacy).is_ok());
+    let legacy: ReplayMeta = serde_json::from_value(legacy).unwrap();
+    assert_eq!(legacy.enemy_count, 0, "enemyCount is serde-defaulted");
 }
 
 #[test]
@@ -174,6 +178,7 @@ fn replay_meta_lite_renames_player_and_install_fields() {
         event_type: None,
         bot_count: 0,
         scripted_unit_count: 0,
+        enemy_count: 1,
         own_ship_id: Some(4282948544),
         player_name: Some("langyo".into()),
         player_count: 12,
@@ -189,6 +194,7 @@ fn replay_meta_lite_renames_player_and_install_fields() {
         "dateTime",
         "matchGroup",
         "scriptedUnitCount",
+        "enemyCount",
         "installPath",
         "installKind",
         "installRealm",
@@ -203,7 +209,8 @@ fn replay_meta_lite_renames_player_and_install_fields() {
     let legacy = serde_json::json!({
         "path": "p", "playerCount": 0, "ownShipId": null, "playerName": null,
     });
-    assert!(serde_json::from_value::<ReplayMetaLite>(legacy).is_ok());
+    let legacy: ReplayMetaLite = serde_json::from_value(legacy).unwrap();
+    assert_eq!(legacy.enemy_count, 0, "enemyCount is serde-defaulted");
 }
 
 /// Wire-critical payload: pin the EXACT key set so an additive field
@@ -220,6 +227,7 @@ fn replay_meta_pins_the_exact_wire_key_set() {
         event_type: Some("PCVE027".into()),
         bot_count: 9,
         scripted_unit_count: 0,
+        enemy_count: 3,
         vehicles: Vec::new(),
         raw: serde_json::json!({ "pin": true }),
     });
@@ -235,6 +243,7 @@ fn replay_meta_pins_the_exact_wire_key_set() {
             "eventType",
             "botCount",
             "scriptedUnitCount",
+            "enemyCount",
             "vehicles",
             "raw",
         ],
@@ -254,6 +263,7 @@ fn replay_meta_lite_pins_the_exact_wire_key_set() {
         event_type: Some("PCVE999".into()),
         bot_count: 8,
         scripted_unit_count: 0,
+        enemy_count: 0,
         own_ship_id: Some(4_279_574_672_i64),
         player_name: Some("Kremlin".into()),
         player_count: 7,
@@ -273,6 +283,7 @@ fn replay_meta_lite_pins_the_exact_wire_key_set() {
             "eventType",
             "botCount",
             "scriptedUnitCount",
+            "enemyCount",
             "ownShipId",
             "playerName",
             "playerCount",
@@ -2577,6 +2588,7 @@ fn playtime_battle_pins_the_exact_wire_key_set() {
         event_type: Some("PCVE027".into()),
         bot_count: 6,
         scripted_unit_count: 4,
+        enemy_count: 3,
         own_ship_id: Some(4_182_828_960),
         player_name: Some("langyo".into()),
         player_count: 7,
@@ -2593,6 +2605,7 @@ fn playtime_battle_pins_the_exact_wire_key_set() {
             "eventType",
             "botCount",
             "scriptedUnitCount",
+            "enemyCount",
             "ownShipId",
             "playerName",
             "playerCount",
@@ -2613,6 +2626,7 @@ fn playtime_battle_pins_the_exact_wire_key_set() {
         event_type: None,
         bot_count: 0,
         scripted_unit_count: 0,
+        enemy_count: 0,
         own_ship_id: None,
         player_name: None,
         player_count: 0,
@@ -2620,6 +2634,39 @@ fn playtime_battle_pins_the_exact_wire_key_set() {
     assert!(bare["kind"].is_null());
     assert!(bare["dateTime"].is_null());
     assert_eq!(bare["playerCount"], 0);
+    assert_eq!(bare["enemyCount"], 0);
+
+    // The battle cache predates enemyCount: a row written before the field
+    // existed keeps parsing (heals to 0) instead of dropping the history.
+    let legacy: PlaytimeBattle = serde_json::from_value(serde_json::json!({
+        "installPath": r"C:\Games\WoWS",
+        "kind": null, "realm": null, "dateTime": null,
+        "matchGroup": null, "scenario": null, "eventType": null,
+        "botCount": 0, "scriptedUnitCount": 0, "ownShipId": null,
+        "playerName": null, "playerCount": 0,
+    }))
+    .unwrap();
+    assert_eq!(legacy.enemy_count, 0, "enemyCount is serde-defaulted");
+
+    // The WW2 operation row (2026-10-26 report): the own team only, so the
+    // enemy-side count is what tells the frontend classifier it is 行动.
+    let ww2 = round_trips(PlaytimeBattle {
+        install_path: r"C:\Games\WoWS".into(),
+        kind: None,
+        realm: None,
+        date_time: Some("20261026_201239".into()),
+        match_group: Some("pve".into()),
+        scenario: Some("WW2_OPERATION_1_1011LVL".into()),
+        event_type: Some("".into()),
+        bot_count: 0,
+        scripted_unit_count: 0,
+        enemy_count: 0,
+        own_ship_id: Some(4_182_828_960),
+        player_name: Some("langyo".into()),
+        player_count: 7,
+    });
+    assert_eq!(ww2["enemyCount"], 0);
+    assert_eq!(ww2["playerCount"], 7);
 }
 
 /// The `playtime_battles` reply envelope: the battle list under one key.
@@ -2636,6 +2683,7 @@ fn playtime_battles_pins_the_exact_wire_key_set() {
             event_type: None,
             bot_count: 0,
             scripted_unit_count: 0,
+            enemy_count: 0,
             own_ship_id: None,
             player_name: None,
             player_count: 0,
