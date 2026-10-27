@@ -200,6 +200,9 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
   const debugResult = ref<DebugTranslateResult | null>(null);
   /** User-facing error text from the last try-translation failure. */
   const debugError = ref<string | null>(null);
+  /** Whether the LAST config write reached the shell (the provider window
+   *  keeps itself open and says so instead of closing on a failed save). */
+  const lastSaveOk = ref(true);
   let pendingLoad: Promise<void> | null = null;
   let pendingSave = Promise.resolve();
   let saveSequence = 0;
@@ -242,6 +245,7 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
       send: { ...next.send },
     };
     const sequence = ++saveSequence;
+    lastSaveOk.value = true;
     pendingSave = pendingSave.then(async () => {
       try {
         const saved = await chatTranslateApi.setChatTranslateConfig(update);
@@ -252,7 +256,10 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
         testResult.value = null;
         notifySettingsSaved();
       } catch {
-        // best-effort persistence; the in-memory draft still applies
+        // Best-effort persistence keeps the in-memory draft; only a STALE
+        // failure is ignored — the newest write's failure is surfaced to
+        // the caller (the provider window reads `lastSaveOk`).
+        if (sequence === saveSequence) lastSaveOk.value = false;
       }
     });
     return pendingSave;
@@ -386,6 +393,7 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
     debugging,
     debugResult,
     debugError,
+    lastSaveOk,
     load,
     setEnabled,
     acceptConsent,
