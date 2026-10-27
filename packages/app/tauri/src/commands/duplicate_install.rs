@@ -268,8 +268,10 @@ fn game_root_child(dir: &Path) -> Option<PathBuf> {
 
 /// Whether an uninstaller sweeping `dir` could reach game files or a
 /// whole drive: `dir` is a bare drive root, sits at/inside a game root,
-/// or carries a game root among its direct children.
-fn sweep_reaches_beyond_wowsp(dir: &Path) -> bool {
+/// or carries a game root among its direct children. Shared with the
+/// auto-updater's handoff guard — the same sweep shape a silent
+/// update's directory swap would endanger.
+pub(crate) fn sweep_reaches_beyond_wowsp(dir: &Path) -> bool {
     dir.parent().is_none() || game_root_at_or_above(dir).is_some() || game_root_child(dir).is_some()
 }
 

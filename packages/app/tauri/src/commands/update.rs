@@ -1062,6 +1062,31 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
         .parent()
         .ok_or_else(|| anyhow!("current exe has no parent directory"))?
         .to_path_buf();
+    // The 2026-10 incident guard: the handoff passes shun the running
+    // exe's directory, and shun's atomic swap renames the WHOLE
+    // directory aside before installing over it. When that directory
+    // overlaps a game tree — WoWSP installed into the game folder,
+    // inside one, or in a parent that holds one — the swap carries
+    // the game into the `.shun-old` backup slot and the backup sweep
+    // destroys it (a player lost their client twice this way before
+    // the guard existed). Newer shun refuses such swaps on its own
+    // (the dir-rules relocation lane probes one level down and the
+    // swap's foreign-content guard errs loudly); this check keeps
+    // every older installer artifact honest and explains itself in
+    // the UI instead of handing off blind.
+    #[cfg(windows)]
+    {
+        if crate::commands::duplicate_install::sweep_reaches_beyond_wowsp(&install_dir) {
+            tracing::error!(
+                install_dir = %install_dir.display(),
+                "update handoff refused: the install directory overlaps a game tree"
+            );
+            Err(anyhow!(
+                "更新已中止：WoWSP 的安装目录（{}）与《战舰世界》游戏目录重叠，静默更新的目录交换会波及游戏本体。请先把 WoWSP 重新安装到独立目录（例如 %LOCALAPPDATA%\\Programs\\WoWSP），再更新。",
+                install_dir.display()
+            ))?;
+        }
+    }
     // Tell the webui the install phase started even though this process
     // exits before the command's promise settles.
     pass.begin_install()?;
@@ -1166,6 +1191,28 @@ pub fn update_reinstall_from_cache(window: tauri::Window) -> CommandResult<()> {
     // the handoff verified the download, but the version-scoped %TEMP% name
     // is predictable and a wizard relaunch can happen much later.
     let verified = ensure_stranded_installer_verified(installer, stranded.sha256.as_deref())?;
+    // The handoff guard's twin, covering the interactive lane too: the
+    // wizard's install step defaults to swapping THIS app's install
+    // directory, so an install directory overlapping a game tree must
+    // refuse here exactly like the silent handoff does — an old cached
+    // artifact predating shun's own swap guards would otherwise carry
+    // the game into the .shun-old backup on a click-through.
+    #[cfg(windows)]
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    {
+        if crate::commands::duplicate_install::sweep_reaches_beyond_wowsp(&dir) {
+            tracing::error!(
+                install_dir = %dir.display(),
+                "recovery wizard refused: the install directory overlaps a game tree"
+            );
+            Err(anyhow!(
+                "恢复向导未启动：WoWSP 的安装目录（{}）与《战舰世界》游戏目录重叠，安装向导的目录交换会波及游戏本体。请先把 WoWSP 重新安装到独立目录（例如 %LOCALAPPDATA%\\Programs\\WoWSP）。",
+                dir.display()
+            ))?;
+        }
+    }
     // Temp CWD for the same reason the handoff installer gets one: the
     // wizard's install step swaps this very directory, and a wizard
     // parked on it as its working directory would fight its own swap.
@@ -1463,6 +1510,45 @@ mod tests {
         let retry = UpdateGuard::begin(&registry).unwrap();
         previous.cancel();
         assert!(retry.pass.check_cancelled().is_ok());
+    }
+
+    /// The 2026-10 incident shapes: the handoff guard must refuse an
+    /// install directory that IS a game root, sits inside one, or
+    /// holds one among its direct children (the shared-games-root
+    /// install whose silent update carried the game into the swap
+    /// backup and destroyed it) — and pass a plain install directory.
+    #[cfg(windows)]
+    #[test]
+    fn handoff_refuses_install_dirs_overlapping_a_game_tree() {
+        let root =
+            std::env::temp_dir().join(format!("wowsp-update-guard-tests-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let install = |name: &str| {
+            let dir = root.join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            dir
+        };
+        let plain = install("plain");
+        assert!(!crate::commands::duplicate_install::sweep_reaches_beyond_wowsp(&plain));
+
+        let game_root = install("game");
+        std::fs::write(game_root.join("WorldOfWarships.exe"), b"MZ").unwrap();
+        assert!(crate::commands::duplicate_install::sweep_reaches_beyond_wowsp(&game_root));
+        let nested = game_root.join("bin").join("WoWSP");
+        std::fs::create_dir_all(&nested).unwrap();
+        assert!(crate::commands::duplicate_install::sweep_reaches_beyond_wowsp(&nested));
+
+        // The shared-games-root shape the incident lived on: the game
+        // one level BELOW the install directory.
+        let shared = install("shared");
+        let game_child = shared.join("World_of_Warships_CN360");
+        std::fs::create_dir_all(&game_child).unwrap();
+        std::fs::write(game_child.join("WorldOfWarships.exe"), b"MZ").unwrap();
+        assert!(crate::commands::duplicate_install::sweep_reaches_beyond_wowsp(&shared));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
