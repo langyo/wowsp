@@ -126,7 +126,11 @@ tar = "^0.4"
 # Replay-share contribution packages (commands/contribution/): the wire
 # format is tar.zstd (contract §8). Already in the lockfile transitively;
 # zstd-sys prebuilt CC builds keep every platform's compile painless.
-zstd = "^0.13"
+# >=0.14.3 pulls zstd-safe 8.2+, the line that patches RUSTSEC-2026-0391
+# (abandoned-stream data leak on a reused context), RUSTSEC-2026-0398
+# (Seekable::decompress Vec length beyond capacity) and RUSTSEC-2026-0403
+# (uninitialized memory on failed legacy-frame streaming decompression).
+zstd = "^0.14"
 
 # Mod Hub package unpacking (catalog zips) — direct dep of the app crate
 zip = { version = "^9", default-features = false, features = ["deflate"] }
