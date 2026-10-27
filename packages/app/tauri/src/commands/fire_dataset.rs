@@ -47,14 +47,16 @@
 #![allow(dead_code)]
 
 use anyhow::bail;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use wowsp_tauri_shared::{
-    EntityTrajectory, PositionSample, ReplayStream, ShellLaunchEvent, ShotKillEvent, VehicleEntry,
+    ConsumableUseEvent, EngineStateSample, EntityTrajectory, PlayerBuild, PositionSample,
+    ReplayStream, ShellLaunchEvent, ShotKillEvent, SmokeScreenEvent, VehicleEntry, VisionEvent,
+    WeatherNotification, WeatherTransition,
 };
 
-use super::decision_tick::METERS_PER_UNIT;
+use super::decision_tick::{METERS_PER_GP_UNIT, METERS_PER_UNIT};
 use super::replay_probe::{GAP_THRESHOLD, battle_results_conflicts, resolve_team, roster_sides};
 use super::terrain_los::{LosGrid, los_blocked};
 
@@ -1095,6 +1097,463 @@ fn trailing_speed_kt(ships: &[ShipInfo<'_>], entity_id: i32, t: f32) -> Option<f
 //        (a hold during reload is not a decision, it is physics).
 // Rows with labelA=0 are exported TOO: head A needs negatives, head B's loss
 // masks them out on the training side.
+//
+// E15 · hit-conditioned labels: labelB's plain form treats every fired salvo
+// as a full positive — a blap into open water scores the same as a
+// devstrike. The outcome fields (E13) allow sharpening the target:
+//   labelBHit  — fired ∧ ≥1 server-confirmed hit in the outcome window. The
+//        hardest form: a well-chosen salvo that RNG scatters into misses
+//        becomes a NEGATIVE, injecting outcome noise the expert does not
+//        control (survivor-bias risk — only "lucky" fire moments stay
+//        positive).
+//   labelBSoft — 0.3 + 0.7·hit on fired rows (held stays 0.0), i.e.
+//        fired∧hit → 1.0, fired∧miss → 0.3. The interpolated form: keeps
+//        every fired moment above every held moment (ordering information
+//        the plain label has) while the outcome only modulates WITHIN the
+//        fired class, so dispersion noise moves a target 0.3↔1.0 instead of
+//        0↔1. Which form actually helps (vs importing survivor bias) is an
+//        empirical question the E15 evaluation answers via the outcome-lift
+//        curves — all three variants ride the same rows.
+
+// ── E14: feature v2 sources (E11 events / smoke / weather / ally builds) ───
+//
+// v1 features stopped at what `ReplayStream` carries. Four already-decoded
+// data families were never in the feature rows:
+//   * E11 `updateMinimapVisionInfo` — the EXPLICIT spot/unspot timeline (the
+//     v1 `observedNow` infers it from position-stream gaps; 89/89 gap ends
+//     align with a vision event, so the explicit stream can CORRECT the
+//     inference — e.g. radar lighting a ship through a stale position track);
+//   * E11 `onConsumableUsed` — consumable activation windows (raw type ids;
+//     only 0≈damage-control and 8≈repair-party are NAMED, the id→GameParams
+//     name map is deferred exactly as E11 left it — every other id folds
+//     into the generic "other consumable" window);
+//   * E11 `enginePower`/`engineDir` — per-vehicle engine output level
+//     (tenths) and force sign, all ships;
+//   * E8 smoke lifecycles + the weather (cyclone) timeline + #1435 ally
+//     builds — all on/near `ReplayStream` already but unused by features.
+// COVERAGE caveat (drives the sentinel design): the E11 method ids are
+// pinned for 15.8.x ONLY (`layout_tables::e11_for`), and ally builds decode
+// on 15.9.x only — on other versions those streams are legitimately EMPTY,
+// so every dependent feature carries a "known" sentinel (-1 / None / a
+// row-level `e11EventsKnown` flag) that lets the model learn when the
+// feature is signal and when it is absence.
+
+/// Feature schema version stamped on every exported row (E14). v1 rows
+/// (pre-E13/E14 datasets) carry no `featureVersion` key — the training side
+/// reads them as version 1 and branches on the layout.
+pub const FEATURE_VERSION: u32 = 2;
+
+/// E11 consumable raw type ids with a pinned meaning (E11 report): 0 fires
+/// with a ~5 s window on the damage-control immunity, 8 with ~28 s on the
+/// repair party. Every other observed id {1,3,4,6,9,10,65} folds into the
+/// generic "other" window — naming them is a GameParams-side task.
+const CONSUMABLE_ID_DAMCON: u8 = 0;
+const CONSUMABLE_ID_REPAIR: u8 = 8;
+
+/// Ally-build ability-entity ids of the RADAR family (GameParams RLSSearch*:
+/// PCY/PXY base + premium/super/timebased + the PCT/PCM captain-modified
+/// variants). Numeric ids joined from the webui's baked GameParams tables
+/// (`gameparam_ids.json` × `consumable_details.json`, 15.x dump — entity ids
+/// are stable across these builds). Radar = ship-only detection at 7.5–12 km.
+const RADAR_ABILITY_IDS: [u32; 11] = [
+    3_960_642_832, // PXY318_RLSSearch_PVP
+    4_128_420_784, // PCT158_RLSSearch_Mod_I_5_Ouroboros
+    4_137_857_968, // PCT149_RLSSearch_Mod_I_15_Ouroboros
+    4_178_746_640, // PXY110_RLSSearchPremium
+    4_180_849_584, // PCT108_RLSSearch_Mod_I
+    4_224_884_656, // PCY066_RLSSearchPremium_TimeBased
+    4_250_062_768, // PCM042_RLSSearch_Mod_I
+    4_260_536_240, // PCY032_RLSSearchSuper
+    4_273_119_152, // PCY020_RLSSearchPremium
+    4_274_167_728, // PCY019_RLSSearch
+    4_283_604_240, // PXY010_RLSSearch
+];
+
+/// Ally-build ability-entity ids of the HYDROACOUSTIC family (GameParams
+/// SonarSearch* — hydrophone — plus the submarine PCY045_Hydrophone; same
+/// provenance as [`RADAR_ABILITY_IDS`]). Hydro = ship + torpedo detection
+/// at 3–6 km.
+const HYDRO_ABILITY_IDS: [u32; 12] = [
+    3_961_691_408, // PXY317_SonarSearch_PVP
+    4_127_372_208, // PCT159_SonarSearch_Mod_I_5_RDragon
+    4_136_809_392, // PCT150_SonarSearch_Mod_I_15_RDragon
+    4_181_898_160, // PCT107_SonarSearch_Mod_I
+    4_225_933_232, // PCY065_SonarSearchPremium_TimeBased
+    4_246_904_752, // PCY045_Hydrophone
+    4_251_113_444, // PCM041_SonarSearch_Mod_I
+    4_262_633_392, // PCY030_SonarSearchSuper
+    4_267_875_600, // PXY025_SonarSearch
+    4_277_313_456, // PCY016_SonarSearchPremium
+    4_282_556_664, // PXY011_SonarSearch
+    4_285_702_064, // PCY008_SonarSearch
+];
+
+/// Nominal radar detection range for the "enemy possibly radar-lit" slot
+/// flag (metres): the largest common radar range (12 km RLSSearch). The
+/// flag is deliberately a POSSIBILITY signal — the corpus carries either
+/// build data (who HAS radar, 15.9) or activation events (15.8, unnamed
+/// ids), never both, so "has radar AND in range" is the honest bound.
+const RADAR_NOMINAL_RANGE_M: f32 = 12_000.0;
+
+/// Unrestricted ship-spotting cap (GlobalWeather world units × 30 m ≈
+/// 60 km) — the value every non-restrictive / unknown weather param gets.
+const WEATHER_DEFAULT_CAP_UNITS: f32 = 2000.0;
+/// Spotting caps below this (world units) count as a restrictive weather
+/// state for the approach-warning feature (the webui weather badge's
+/// threshold).
+const WEATHER_RESTRICTIVE_MAX_UNITS: f32 = 1500.0;
+/// Normalizer for the weather approach fraction: an announced restrictive
+/// weather ramps the feature 0→1 over the last 300 s before it lands.
+const WEATHER_INCOMING_WINDOW_S: f32 = 300.0;
+
+/// GlobalWeather GameParams id → ship-spotting cap in world units, ported
+/// from the webui weather table (packages/webui/src/features/holographic/
+/// weather.ts; values baked from a 15.8 GameParams dump, ids stable across
+/// builds). Only the RESTRICTIVE params are listed — everything else
+/// (including unknown ids) is [`WEATHER_DEFAULT_CAP_UNITS`].
+const WEATHER_CAP_UNITS: &[(u32, f32)] = &[
+    (4_277_454_768, 587.0),    // PCOW016_USS_CL_Storm (event)
+    (4_287_940_528, 266.6664), // PCOW006_Storm_Logic (cyclone, 8 km)
+    (4_283_746_224, 266.6664), // PCOW010_Rain_Logic (cyclone, 8 km)
+    (4_284_794_800, 266.6664), // PCOW009_Snowstorm_Logic (8 km)
+    (4_269_066_160, 399.9996), // PCOW024_Rain_Logic_12km
+    (4_268_017_584, 399.9996), // PCOW025_Storm_Logic_12km
+    (4_275_357_616, 570.0),    // PCOW018_USS_CL_Light_Big
+    (4_265_920_432, 1333.332), // PCOW027_CvC_Logic_Cloudy
+    (4_264_871_856, 466.6662), // PCOW028_CvC_Logic
+    (4_263_823_280, 433.3329), // PCOW029_CvCWeather_Logic_13km
+    (4_262_774_704, 1333.332), // PCOW030_CvCWeather_Logic_40km
+];
+
+fn weather_cap_units(param: u32) -> f32 {
+    WEATHER_CAP_UNITS
+        .iter()
+        .find(|(p, _)| *p == param)
+        .map_or(WEATHER_DEFAULT_CAP_UNITS, |(_, cap)| *cap)
+}
+
+/// Whether a replay version decodes the E11 event streams: the method ids
+/// are pinned per exact minor (15.8.x — `layout_tables::e11_for`). Mirrors
+/// that gate on the exporter side so rows can carry the availability flag.
+fn e11_events_expected(version: Option<&str>) -> bool {
+    let Some(v) = version else {
+        return false;
+    };
+    let mut parts = v.split(',');
+    matches!(
+        (parts.next(), parts.next()),
+        (Some(a), Some(b)) if a.trim() == "15" && b.trim() == "8"
+    )
+}
+
+/// The four decode-side event families behind feature v2 (E14), borrowed
+/// from the `DecodedReplay` the stream projection drops. `e11_known` mirrors
+/// [`e11_events_expected`] and separates "stream unavailable" (-1 sentinels)
+/// from genuine "no event".
+#[derive(Debug, Clone, Copy)]
+pub struct FeatureEvents<'a> {
+    pub vision: &'a [VisionEvent],
+    pub consumables: &'a [ConsumableUseEvent],
+    pub engine: &'a [EngineStateSample],
+    pub smokes: &'a [SmokeScreenEvent],
+    pub e11_known: bool,
+}
+
+impl<'a> FeatureEvents<'a> {
+    /// The "no event families at all" view (synthetic v1-style inputs).
+    pub fn empty() -> Self {
+        Self {
+            vision: &[],
+            consumables: &[],
+            engine: &[],
+            smokes: &[],
+            e11_known: false,
+        }
+    }
+
+    /// Assemble from a decode, stamping availability from the replay version.
+    pub fn for_version(version: Option<&str>, events: &'a super::replay::ReplayEvents) -> Self {
+        Self {
+            vision: &events.vision,
+            consumables: &events.consumables,
+            engine: &events.engine,
+            smokes: &events.smokes,
+            e11_known: e11_events_expected(version),
+        }
+    }
+}
+
+/// One ACTIVE smoke cloud at a decision time (E8 lifecycles + the drift
+/// centre from the smoke entity's own position trail — `decision_tick`'s
+/// semantics, reimplemented locally so the exporter stays self-contained).
+#[derive(Debug, Clone, Copy)]
+struct ActiveSmoke {
+    x: f32,
+    z: f32,
+    /// Radius in metres (GP units × 30). Clouds whose create state did not
+    /// decode a radius are dropped entirely (they cannot gate geometry).
+    radius_m: f32,
+}
+
+/// Every cloud active at `t` (creation ≤ t < observed dissipation; no
+/// observed end ⇒ still active), with the drifting centre.
+fn active_smokes_at(
+    stream: &ReplayStream,
+    smokes: &[SmokeScreenEvent],
+    t: f32,
+) -> Vec<ActiveSmoke> {
+    smokes
+        .iter()
+        .filter(|ev| ev.time <= t && !ev.end_time.is_some_and(|end| t >= end))
+        .filter_map(|ev| {
+            let radius_m = ev.radius? * METERS_PER_GP_UNIT;
+            let (cx, cz) = stream
+                .trajectories
+                .iter()
+                .find(|tr| tr.entity_id == ev.entity_id)
+                .and_then(|tr| tr.samples.iter().rfind(|s| s.time <= t))
+                .map(|s| (s.x, s.z))
+                .unwrap_or((ev.x, ev.z));
+            Some(ActiveSmoke {
+                x: cx,
+                z: cz,
+                radius_m,
+            })
+        })
+        .collect()
+}
+
+/// Whether a last-known scene position sits inside one of the active clouds
+/// (scene-unit distance → metres on the E5 axis vs the GP-unit radius).
+fn inside_any_smoke(x: f32, z: f32, active: &[ActiveSmoke]) -> bool {
+    active
+        .iter()
+        .any(|s| (x - s.x).hypot(z - s.z) * METERS_PER_UNIT < s.radius_m)
+}
+
+/// Total active-cloud area (km²) — π r² summed, cloud overlaps NOT merged
+/// (a deliberate over-count that is uniform across rows).
+fn active_smoke_area_km2(active: &[ActiveSmoke]) -> f32 {
+    active
+        .iter()
+        .map(|s| std::f32::consts::PI * (s.radius_m / 1000.0) * (s.radius_m / 1000.0))
+        .sum()
+}
+
+/// Per-replay feature substrate built once per export (E14): per-entity
+/// event views plus the ally radar/hydro holder sets and the sorted weather
+/// timelines.
+struct FeatureIndex<'a> {
+    /// entity → time-sorted (time, visible) vision entries.
+    vision: BTreeMap<i32, Vec<(f32, bool)>>,
+    /// entity → time-sorted consumable uses.
+    consumables: BTreeMap<i32, Vec<&'a ConsumableUseEvent>>,
+    /// entity → time-sorted engine-state samples.
+    engine: BTreeMap<i32, Vec<&'a EngineStateSample>>,
+    /// Recorder-side entity ids whose build mounts radar / hydro.
+    radar_holders: BTreeSet<i32>,
+    hydro_holders: BTreeSet<i32>,
+    /// Whether the replay decoded ANY ally build (the shipConfig layout is
+    /// pinned to 15.9.x): false ⇒ the holder sets are unknown, not empty.
+    builds_decoded: bool,
+    weather_sorted: Vec<WeatherTransition>,
+    notifications: Vec<WeatherNotification>,
+}
+
+fn build_feature_index<'a>(
+    events: &FeatureEvents<'a>,
+    ally_builds: &[PlayerBuild],
+    weather: &[WeatherTransition],
+    notifications: &[WeatherNotification],
+) -> FeatureIndex<'a> {
+    let mut vision: BTreeMap<i32, Vec<(f32, bool)>> = BTreeMap::new();
+    for v in events.vision {
+        vision
+            .entry(v.entity_id)
+            .or_default()
+            .push((v.time, v.visible));
+    }
+    for list in vision.values_mut() {
+        list.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    let mut consumables: BTreeMap<i32, Vec<&ConsumableUseEvent>> = BTreeMap::new();
+    for c in events.consumables {
+        consumables.entry(c.entity_id).or_default().push(c);
+    }
+    for list in consumables.values_mut() {
+        list.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    let mut engine: BTreeMap<i32, Vec<&EngineStateSample>> = BTreeMap::new();
+    for e in events.engine {
+        engine.entry(e.entity_id).or_default().push(e);
+    }
+    for list in engine.values_mut() {
+        list.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    let mut radar_holders = BTreeSet::new();
+    let mut hydro_holders = BTreeSet::new();
+    for b in ally_builds {
+        if b.abilities.iter().any(|id| RADAR_ABILITY_IDS.contains(id)) {
+            radar_holders.insert(b.entity_id);
+        }
+        if b.abilities.iter().any(|id| HYDRO_ABILITY_IDS.contains(id)) {
+            hydro_holders.insert(b.entity_id);
+        }
+    }
+    let mut weather_sorted = weather.to_vec();
+    weather_sorted.sort_by(|a, b| {
+        a.start_time
+            .partial_cmp(&b.start_time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    FeatureIndex {
+        vision,
+        consumables,
+        engine,
+        radar_holders,
+        hydro_holders,
+        builds_decoded: !ally_builds.is_empty(),
+        weather_sorted,
+        notifications: notifications.to_vec(),
+    }
+}
+
+impl FeatureIndex<'_> {
+    /// EXPLICIT spotted verdict at `t` (the recorder's minimap stream — the
+    /// same perspective the position gaps come from): the entity's last
+    /// vision entry at or before `t`. `None` when the stream knows nothing
+    /// about the entity (or does not exist for this replay version).
+    fn spotted_at(&self, entity_id: i32, t: f32) -> Option<bool> {
+        let list = self.vision.get(&entity_id)?;
+        let idx = list.partition_point(|(time, _)| *time <= t);
+        if idx == 0 {
+            return None;
+        }
+        Some(list[idx - 1].1)
+    }
+
+    /// Consumable remaining-time fraction at `t` for one id family: the max
+    /// `(end - t) / duration` over the uses still covering `t`, 0.0 when the
+    /// entity's stream exists but no window of this family covers `t`,
+    /// `None` when the entity has no consumable uses at all (the caller
+    /// decides unknown-vs-inactive — see [`consumable_frac_or_unknown`]).
+    fn consumable_frac_raw(&self, entity_id: i32, t: f32, want_id: Option<u8>) -> Option<f32> {
+        let list = self.consumables.get(&entity_id)?;
+        let mut best = 0.0f32;
+        for c in list.iter().take_while(|c| c.time <= t) {
+            let matches = match want_id {
+                Some(id) => c.consumable_id == id,
+                None => {
+                    c.consumable_id != CONSUMABLE_ID_DAMCON
+                        && c.consumable_id != CONSUMABLE_ID_REPAIR
+                },
+            };
+            if !matches || c.duration <= 0.0 {
+                continue;
+            }
+            let end = c.time + c.duration;
+            if t < end {
+                best = best.max(((end - t) / c.duration).clamp(0.0, 1.0));
+            }
+        }
+        Some(best)
+    }
+
+    /// Engine output level (0..1, tenths of max) and force direction (+1
+    /// ahead / −1 braking) at `t` — the step-fold of the entity's samples
+    /// (each sample carries exactly one of the two).
+    fn engine_at(&self, entity_id: i32, t: f32) -> (Option<f32>, Option<f32>) {
+        let Some(list) = self.engine.get(&entity_id) else {
+            return (None, None);
+        };
+        let mut power: Option<u8> = None;
+        let mut dir: Option<i8> = None;
+        for e in list.iter().take_while(|e| e.time <= t) {
+            if let Some(p) = e.power {
+                power = Some(p);
+            }
+            if let Some(d) = e.dir {
+                dir = Some(d);
+            }
+        }
+        let p = power.map(|p| (p as f32 / 10.0).clamp(0.0, 1.0));
+        let d = dir.map(|d| d as f32);
+        (p, d)
+    }
+
+    /// Lerped ship-spotting cap at `t` (metres): walk the sorted transition
+    /// windows — a window that has STARTED lerps the running cap toward its
+    /// target (linear, matching the server's interpolation), a window that
+    /// has ENDED sets the running cap to its target.
+    fn vision_cap_m(&self, t: f32) -> f32 {
+        let mut cap = WEATHER_DEFAULT_CAP_UNITS;
+        for tr in &self.weather_sorted {
+            if tr.start_time > t {
+                break;
+            }
+            let to_cap = weather_cap_units(tr.to_param);
+            if t < tr.end_time && tr.end_time > tr.start_time {
+                let f = ((t - tr.start_time) / (tr.end_time - tr.start_time)).clamp(0.0, 1.0);
+                return (cap + (to_cap - cap) * f) * METERS_PER_GP_UNIT;
+            }
+            cap = to_cap;
+        }
+        cap * METERS_PER_GP_UNIT
+    }
+
+    /// Restrictive-weather approach fraction at `t`: the closest pending
+    /// announcement of a restrictive weather ramps 0→1 over the final
+    /// [`WEATHER_INCOMING_WINDOW_S`] before it lands. Announcements whose
+    /// param is not restrictive (or already landed) contribute nothing.
+    fn weather_incoming_frac(&self, t: f32) -> f32 {
+        self.notifications
+            .iter()
+            .filter(|n| n.at_time > t && weather_cap_units(n.param) < WEATHER_RESTRICTIVE_MAX_UNITS)
+            .map(|n| 1.0 - ((n.at_time - t) / WEATHER_INCOMING_WINDOW_S).clamp(0.0, 1.0))
+            .fold(0.0f32, f32::max)
+    }
+
+    /// Whether an enemy slot's last-known position is possibly radar-lit:
+    /// some recorder-side radar holder's last-known position at `t` sits
+    /// within the nominal radar range of the slot entity.
+    fn radar_lit(&self, stream: &ReplayStream, x: f32, z: f32, t: f32) -> bool {
+        self.radar_holders.iter().any(|&id| {
+            stream
+                .trajectories
+                .iter()
+                .find(|tr| tr.entity_id == id)
+                .and_then(|tr| tr.samples.iter().rfind(|s| s.time <= t))
+                .is_some_and(|s| {
+                    (s.x - x).hypot(s.z - z) * METERS_PER_UNIT <= RADAR_NOMINAL_RANGE_M
+                })
+        })
+    }
+}
+
+/// The decider-level consumable windows with the availability sentinel: -1
+/// when the replay has no E11 stream at all, else the raw fraction (0 when
+/// inactive).
+fn consumable_frac_or_unknown(
+    idx: &FeatureIndex<'_>,
+    e11_known: bool,
+    entity_id: i32,
+    t: f32,
+    want_id: Option<u8>,
+) -> f32 {
+    if !e11_known {
+        return -1.0;
+    }
+    idx.consumable_frac_raw(entity_id, t, want_id)
+        .unwrap_or(0.0)
+}
 
 /// Fixed enemy-slot count of the exported feature rows.
 pub const ENEMY_SLOTS: usize = 16;
@@ -1171,6 +1630,35 @@ pub struct FireDatasetSlot {
     /// only observed-now enemies get one (E6 semantics); `None` without a
     /// grid or for stale/friendly slots.
     pub terrain_blocked: Option<bool>,
+    // ── feature v2 (E14) additions; serde defaults keep the JSON shape
+    //    additive (v1 datasets simply lack the keys) ──
+    /// EXPLICIT spotted verdict from the E11 minimap-vision stream at t —
+    /// the dual track next to the gap-inferred `observed_now` (the model
+    /// chooses which to trust; this one can CORRECT the inference, e.g.
+    /// radar lighting a ship whose position track went stale). `None` when
+    /// the replay has no vision stream or the entity never appeared in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spotted_now: Option<bool>,
+    /// The entity's LAST-KNOWN position sits inside an active smoke cloud
+    /// (E8 geometry; a stale track inside a cloud is exactly the "gone dark
+    /// in smoke" signal).
+    #[serde(default)]
+    pub inside_smoke: bool,
+    /// ENEMY slots only: a recorder-side radar holder's last-known position
+    /// is within the nominal 12 km radar range of this entity — the
+    /// "possibly radar-lit" possibility flag (build data is has-radar, not
+    /// activation; see [`RADAR_NOMINAL_RANGE_M`]).
+    #[serde(default)]
+    pub radar_lit: bool,
+    /// Slot side marker: v1's layout concatenated enemy+friend slots with
+    /// no explicit flag (only the terrain sentinel implicitly separated
+    /// them) — an explicit marker is cheaper than inferring it.
+    #[serde(default)]
+    pub is_enemy: bool,
+    /// Engine output level at t from the E11 property stream, tenths of
+    /// maximum → [0, 1]; `None` without engine samples for the entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_power_frac: Option<f32>,
 }
 
 /// One exported decision point (one JSONL line).
@@ -1252,6 +1740,88 @@ pub struct FireDatasetRow {
     /// (`pve`+`event` are the operation/Halloween families).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<String>,
+    // ── feature v2 (E14) additions ──
+    /// Feature schema version (see [`FEATURE_VERSION`]); v1 datasets carry
+    /// no key and the training side reads them as 1.
+    #[serde(default = "default_feature_version")]
+    pub feature_version: u32,
+    /// Decider's damage-control window remaining fraction at t (0 inactive,
+    /// (0,1] while the ~5 s immunity runs); **-1 when the replay has no E11
+    /// consumable stream** (non-15.8 versions).
+    #[serde(default)]
+    pub own_damcon_frac: f32,
+    /// Same for the repair-party window (~28 s); -1 = stream unavailable.
+    #[serde(default)]
+    pub own_repair_frac: f32,
+    /// Max remaining fraction of any OTHER consumable window (radar / hydro
+    /// / boost / fighter — the raw ids beyond 0 and 8 are unnamed, E11);
+    /// -1 = stream unavailable.
+    #[serde(default)]
+    pub own_other_consumable_frac: f32,
+    /// Decider's engine output level at t (tenths of max → [0, 1]); -1 when
+    /// the replay has no engine stream.
+    #[serde(default)]
+    pub own_engine_power: f32,
+    /// Decider's engine force direction at t: +1 driving, -1 braking /
+    /// astern, 0 unknown (the two real values are exactly ±1).
+    #[serde(default)]
+    pub own_engine_dir: f32,
+    /// The decider's last-known position sits inside an active smoke cloud.
+    #[serde(default)]
+    pub own_in_smoke: bool,
+    /// Clouds active at t, count normalized `min(count / 8, 1)`.
+    #[serde(default)]
+    pub active_smoke_count_frac: f32,
+    /// Total active-cloud area (km², overlaps not merged) through
+    /// `log1p(·)/3` — bounded in practice (10 clouds ≈ 1.3).
+    #[serde(default)]
+    pub active_smoke_area_feat: f32,
+    /// Lerped ship-spotting cap at t from the weather (cyclone) timeline,
+    /// as a fraction of the unrestricted 60 km cap (1.0 = clear; ~0.13 at
+    /// full 8 km cyclone).
+    #[serde(default = "default_vision_cap_frac")]
+    pub vision_cap_frac: f32,
+    /// Restrictive-weather approach ramp at t: the closest pending
+    /// announcement ramps 0→1 over its final 300 s.
+    #[serde(default)]
+    pub weather_incoming_frac: f32,
+    /// Teammates of the decider (recorder-side builds only — the stream
+    /// never carries enemy builds, so deciders on the OTHER side report -1)
+    /// whose build mounts radar, `min(count / 4, 1)`; -1 = builds
+    /// unavailable (pre-15.9 replays / enemy-side deciders).
+    #[serde(default = "default_unknown_frac")]
+    pub ally_radar_count_frac: f32,
+    /// Same for hydroacoustic builds.
+    #[serde(default = "default_unknown_frac")]
+    pub ally_hydro_count_frac: f32,
+    /// Whether this replay decodes the E11 event streams at all (15.8.x):
+    /// gates the -1 sentinels above ("unknown") against 0 ("known
+    /// inactive").
+    #[serde(default)]
+    pub e11_events_known: bool,
+    // ── hit-conditioned labels (E15) ──
+    /// "Fired AND the outcome window landed at least one server-confirmed
+    /// hit": the plain label sharpened by the post-decision outcome. Censored
+    /// exactly like `label_b_fired` (None whenever labelA is false).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_b_hit: Option<bool>,
+    /// Outcome-smoothed fire label: fired∧hit → 1.0, fired∧missed → 0.3,
+    /// held → 0.0 (0.3 + 0.7·hit — the brief's form; see the E15 module
+    /// docs for the rationale). Censored with labelA.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_b_soft: Option<f32>,
+}
+
+fn default_feature_version() -> u32 {
+    1
+}
+
+fn default_vision_cap_frac() -> f32 {
+    1.0
+}
+
+fn default_unknown_frac() -> f32 {
+    -1.0
 }
 
 /// Export totals (one per replay).
@@ -1293,6 +1863,7 @@ fn wrap_angle(a: f32) -> f32 {
 /// first, then stale, each by ascending distance; truncated to `max_slots`.
 #[allow(clippy::too_many_arguments)]
 fn build_slots(
+    stream: &ReplayStream,
     decider: &ShipInfo<'_>,
     ships: &[ShipInfo<'_>],
     own: &PositionSample,
@@ -1301,6 +1872,8 @@ fn build_slots(
     eye_height: f32,
     enemy_side: bool,
     max_slots: usize,
+    idx: &FeatureIndex<'_>,
+    active: &[ActiveSmoke],
 ) -> Vec<FireDatasetSlot> {
     let mut candidates: Vec<(bool, f32, &ShipInfo<'_>, &PositionSample)> = Vec::new();
     for other in ships {
@@ -1349,6 +1922,7 @@ fn build_slots(
             } else {
                 None
             };
+            let (engine_power, _engine_dir) = idx.engine_at(other.traj.entity_id, t);
             FireDatasetSlot {
                 entity_id: other.traj.entity_id,
                 entity_type: other.traj.kind.as_ref().map_or(-1, |k| k.entity_type),
@@ -1360,6 +1934,11 @@ fn build_slots(
                 obs_age_s: t - last.time,
                 observed_now: t - last.time <= GAP_THRESHOLD,
                 terrain_blocked,
+                spotted_now: idx.spotted_at(other.traj.entity_id, t),
+                inside_smoke: inside_any_smoke(last.x, last.z, active),
+                radar_lit: enemy_side && idx.radar_lit(stream, last.x, last.z, t),
+                is_enemy: enemy_side,
+                engine_power_frac: engine_power,
             }
         })
         .collect()
@@ -1582,8 +2161,18 @@ fn outcome_fields(
 /// first block, far under 64 KiB, so the multi-MB payload is never touched.
 fn read_game_mode(path: &std::path::Path) -> Option<String> {
     use std::io::Read;
+    // Loop until full or EOF: File::read may short-read, and the descriptor
+    // being the first block must not depend on the OS filling the buffer.
     let mut buf = vec![0u8; 64 * 1024];
-    let n = std::fs::File::open(path).ok()?.read(&mut buf).ok()?;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut n = 0usize;
+    while n < buf.len() {
+        match f.read(&mut buf[n..]) {
+            Ok(0) => break,
+            Ok(k) => n += k,
+            Err(_) => break,
+        }
+    }
     buf.truncate(n);
     let json = wowsp_replay_core::meta::extract_descriptor_json(&buf)?;
     let raw: serde_json::Value = serde_json::from_str(&json).ok()?;
@@ -1599,7 +2188,9 @@ fn read_game_mode(path: &std::path::Path) -> Option<String> {
 /// per-replay grouping on the training side — `None` preserves the E9 shape.
 /// `game_mode` (E13) carries the descriptor header's `matchGroup` as row-level
 /// mode metadata (ops/bot tagging on the training side); `None` keeps the
-/// pre-E13 shape.
+/// pre-E13 shape. `events` (E14) supplies the feature-v2 sources (explicit
+/// vision / consumables / engine / smoke lifecycles).
+#[allow(clippy::too_many_arguments)]
 pub fn export_decision_dataset(
     stream: &ReplayStream,
     ships: &[ShipInfo<'_>],
@@ -1608,9 +2199,16 @@ pub fn export_decision_dataset(
     params: &FireSampleParams,
     replay_id: Option<&str>,
     game_mode: Option<&str>,
+    events: &FeatureEvents<'_>,
 ) -> (Vec<FireDatasetRow>, FireDatasetExportStats) {
     let contexts = fire_contexts(stream, ships, params);
     let outcomes = build_outcome_context(stream);
+    let idx = build_feature_index(
+        events,
+        &stream.ally_builds,
+        &stream.weather_transitions,
+        &stream.weather_notifications,
+    );
     let mut rows = Vec::new();
     let mut owners = 0usize;
     for ship in ships {
@@ -1625,6 +2223,21 @@ pub fn export_decision_dataset(
             continue;
         }
         owners += 1;
+        // Ally radar/hydro counts are decider-constant: recorder-side builds
+        // only (enemy builds never ride the stream), so deciders on the
+        // recorder's side get counts of their TEAMMATES and enemy-side
+        // deciders get the unknown sentinel. A replay that decoded NO builds
+        // at all (the shipConfig layout is pinned to 15.9.x) is unknown for
+        // EVERYONE — an empty holder set must not masquerade as "no radar".
+        let (ally_radar, ally_hydro) = if !idx.builds_decoded {
+            (-1.0, -1.0)
+        } else if ship.team_id == Some(0) {
+            let r = idx.radar_holders.iter().filter(|&&aid| aid != id).count();
+            let h = idx.hydro_holders.iter().filter(|&&aid| aid != id).count();
+            ((r.min(4) as f32 / 4.0), (h.min(4) as f32 / 4.0))
+        } else {
+            (-1.0, -1.0)
+        };
         let (from, to) = alive_window(ship);
         let mut t = from + 5.0;
         while t <= to {
@@ -1667,6 +2280,12 @@ pub fn export_decision_dataset(
                 zone_and_event_summary(stream, own, t);
             let (out_hit, out_fired, out_hp_lost) =
                 outcome_fields(&outcomes, ship, ships, t, params.label_window_s);
+            // ── feature v2 per-row state (E14) ──
+            let active = active_smokes_at(stream, events.smokes, t);
+            let (own_engine_power, own_engine_dir) = idx.engine_at(id, t);
+            let vision_cap_frac = (idx.vision_cap_m(t)
+                / (WEATHER_DEFAULT_CAP_UNITS * METERS_PER_GP_UNIT))
+                .clamp(0.0, 1.0);
             rows.push(FireDatasetRow {
                 replay_id: replay_id.map(str::to_string),
                 replay_version: stream.version.clone(),
@@ -1688,14 +2307,78 @@ pub fn export_decision_dataset(
                 events_torps_30s: torps,
                 events_explosions_30s: expl,
                 events_explosions_near_30s: near,
-                enemies: build_slots(ship, ships, own, t, los, eye_height, true, ENEMY_SLOTS),
-                friends: build_slots(ship, ships, own, t, los, eye_height, false, FRIEND_SLOTS),
+                enemies: build_slots(
+                    stream,
+                    ship,
+                    ships,
+                    own,
+                    t,
+                    los,
+                    eye_height,
+                    true,
+                    ENEMY_SLOTS,
+                    &idx,
+                    &active,
+                ),
+                friends: build_slots(
+                    stream,
+                    ship,
+                    ships,
+                    own,
+                    t,
+                    los,
+                    eye_height,
+                    false,
+                    FRIEND_SLOTS,
+                    &idx,
+                    &active,
+                ),
                 label_a_can_fire: label_a,
                 label_b_fired: label_b,
                 owner_shots_hit: out_hit,
                 owner_shots_fired: out_fired,
                 enemy_hp_lost_nearby: out_hp_lost,
                 game_mode: game_mode.map(str::to_string),
+                feature_version: FEATURE_VERSION,
+                own_damcon_frac: consumable_frac_or_unknown(
+                    &idx,
+                    events.e11_known,
+                    id,
+                    t,
+                    Some(CONSUMABLE_ID_DAMCON),
+                ),
+                own_repair_frac: consumable_frac_or_unknown(
+                    &idx,
+                    events.e11_known,
+                    id,
+                    t,
+                    Some(CONSUMABLE_ID_REPAIR),
+                ),
+                own_other_consumable_frac: consumable_frac_or_unknown(
+                    &idx,
+                    events.e11_known,
+                    id,
+                    t,
+                    None,
+                ),
+                own_engine_power: own_engine_power.unwrap_or(-1.0),
+                own_engine_dir: own_engine_dir.unwrap_or(0.0),
+                own_in_smoke: inside_any_smoke(own.x, own.z, &active),
+                active_smoke_count_frac: (active.len() as f32 / 8.0).min(1.0),
+                active_smoke_area_feat: (active_smoke_area_km2(&active) + 1.0).ln() / 3.0,
+                vision_cap_frac,
+                weather_incoming_frac: idx.weather_incoming_frac(t),
+                ally_radar_count_frac: ally_radar,
+                ally_hydro_count_frac: ally_hydro,
+                e11_events_known: events.e11_known,
+                label_b_hit: label_b.map(|fired| fired && out_hit > 0),
+                label_b_soft: label_b.map(|fired| {
+                    if fired {
+                        if out_hit > 0 { 1.0 } else { 0.3 }
+                    } else {
+                        0.0
+                    }
+                }),
             });
             t += params.decision_interval_s;
         }
@@ -1896,11 +2579,14 @@ pub fn export_replay_file(
     params: &FireSampleParams,
 ) -> anyhow::Result<(Vec<FireDatasetRow>, FireDatasetExportStats)> {
     let path_str = path.to_string_lossy().into_owned();
-    let stream = super::replay::decode_replay_stream_sync(&path_str)?;
+    // ONE decode pass carrying the E14 event families alongside the stream
+    // (the assemble projection drops vision/consumable/engine/smoke).
+    let (stream, ev) = super::replay::decode_replay_stream_with_events(&path_str)?;
     let vehicles = super::replay_probe::read_roster(&path_str)?;
     let ships = ship_infos(&stream, &vehicles);
     let los = los_for_replay(stream.map_name.as_deref(), los_dir);
     let game_mode = read_game_mode(path);
+    let events = FeatureEvents::for_version(stream.version.as_deref(), &ev);
     Ok(export_decision_dataset(
         &stream,
         &ships,
@@ -1909,6 +2595,7 @@ pub fn export_replay_file(
         params,
         None, // stamped by ingest_replay_files from the path
         game_mode.as_deref(),
+        &events,
     ))
 }
 
@@ -2592,6 +3279,7 @@ mod tests {
             &params,
             None,
             None,
+            &FeatureEvents::empty(),
         );
         // Only ship 9 has a fire history — it is the sole decider.
         assert_eq!(stats.owners, 1);
@@ -2665,6 +3353,8 @@ mod tests {
         assert!(line.contains("\"ownerShotsHit\":0"));
         assert!(line.contains("\"enemyHpLostNearby\":0.0"));
         assert!(!line.contains("\"gameMode\""));
+        // E14: every row stamps the feature schema version.
+        assert!(line.contains("\"featureVersion\":2"));
     }
 
     /// E13 synthetic: the outcome window `(t + label, t + 45]` must count
@@ -2820,6 +3510,7 @@ mod tests {
             &params,
             Some("replayX"),
             Some("pvp"),
+            &FeatureEvents::empty(),
         );
         assert_eq!(stats.owners, 1);
         let r99 = rows
@@ -2856,6 +3547,321 @@ mod tests {
         assert!(line.contains("\"ownerShotsHit\":2"));
         assert!(line.contains("\"ownerShotsFired\":4"));
         assert!(line.contains("\"gameMode\":\"pvp\""));
+        // E15 labels: r99 fired (salvo at 100) and its outcome window holds
+        // 2 hits → hit/soft at their maxima; a held row (t=97: salvo at 100
+        // outside (97,99]) censors nothing (labelA=1) but stays 0 on both.
+        assert_eq!(r99.label_b_hit, Some(true));
+        assert!((r99.label_b_soft.unwrap() - 1.0).abs() < 1e-6);
+        let r97 = rows
+            .iter()
+            .find(|r| (r.t - 97.0).abs() < 0.1)
+            .expect("t=97 row");
+        assert_eq!(r97.label_b_fired, Some(false));
+        assert_eq!(r97.label_b_hit, Some(false));
+        assert!(r97.label_b_soft.unwrap().abs() < 1e-6);
+    }
+
+    /// E14/E15 synthetic: every feature-v2 field against hand-computed
+    /// values — explicit-vision CORRECTION of the gap inference (stale
+    /// position track but spotted), consumable remaining fractions, engine
+    /// fold, own/slot smoke flags, cloud count/area, the lerped cyclone
+    /// spotting cap, the approach ramp, ally radar/hydro counts from builds,
+    /// the radar-lit enemy flag, and the hit/soft label variants — plus the
+    /// unknown-stream sentinels under `FeatureEvents::empty`.
+    #[test]
+    fn synthetic_dataset_export_v2_features() {
+        let params = FireSampleParams::default();
+        // Decider: gun ship 9, RECORDER side (team 0), firing 4-shell main
+        // salvos at t=100 and t=124. Enemy 8 (team 1) observed 0..96 s,
+        // dark 97..120 (the gap), back 120..200. Ally 7 (team 0, never
+        // fires) at (30, 0).
+        let mk = |eid: i32, x: f32, sid: i64| {
+            trajectory(
+                eid,
+                Some(sid),
+                (0..400)
+                    .map(|i| sample(i as f32 * 0.5, eid, x, 0.0))
+                    .collect(),
+            )
+        };
+        // Enemy 8: samples 0..96 then 120..200 (the >4 s gap in between).
+        let mut traj8 = mk(8, 50.0, 111);
+        traj8.samples = (0..=192)
+            .chain(240..400)
+            .map(|i| sample(i as f32 * 0.5, 8, 50.0, 0.0))
+            .collect();
+        let mut shells = Vec::new();
+        for k in 0..2u32 {
+            for b in 0..4u16 {
+                shells.push(shell(
+                    100.0 + k as f32 * 24.0,
+                    9,
+                    k as i32,
+                    b,
+                    (10.0, 0.5),
+                    (50.0, 0.0),
+                ));
+            }
+        }
+        // Ally 7 mounts radar (PCY019_RLSSearch) — the only radar build.
+        let mut radar_build = PlayerBuild::default();
+        radar_build.entity_id = 7;
+        radar_build.abilities = vec![4_274_167_728];
+        let stream = ReplayStream {
+            trajectories: vec![mk(9, 10.0, 222), traj8, mk(7, 30.0, 110)],
+            recorder_vehicle_id: Some(8),
+            shell_launches: shells,
+            version: Some("15,8,0,0".into()),
+            ally_builds: vec![radar_build],
+            weather_transitions: vec![WeatherTransition {
+                time: 90.0,
+                start_time: 100.0,
+                end_time: 200.0,
+                from_param: 4_293_183_408, // PCOW001_Sunny (2000 units)
+                to_param: 4_287_940_528,   // PCOW006_Storm_Logic (266.6664)
+            }],
+            weather_notifications: vec![WeatherNotification {
+                time: 90.0,
+                at_time: 350.0,
+                param: 4_287_940_528,
+            }],
+            shot_kills: vec![ShotKillEvent {
+                time: 110.0,
+                owner_id: 9,
+                hit_type: 0,
+                shot_id: 1,
+                x: 50.1,
+                y: 0.0,
+                z: 0.1,
+            }],
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 2, 111), // enemy target
+            roster_entry(2, 0, 222), // decider, recorder side
+            roster_entry(3, 0, 110), // radar ally
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+        let events = FeatureEvents {
+            vision: &[
+                VisionEvent {
+                    time: 0.0,
+                    entity_id: 7,
+                    visible: true,
+                    packed_data: 0,
+                },
+                // 8 lit at 98 while its position track went dark at 96 — the
+                // radar-correction case: stale by gaps, spotted explicitly.
+                VisionEvent {
+                    time: 98.0,
+                    entity_id: 8,
+                    visible: true,
+                    packed_data: 0,
+                },
+            ],
+            consumables: &[
+                ConsumableUseEvent {
+                    time: 100.0,
+                    entity_id: 9,
+                    usage_type: 1,
+                    consumable_id: 0,
+                    duration: 5.0,
+                    target_x: None,
+                    target_z: None,
+                    target_id: None,
+                },
+                ConsumableUseEvent {
+                    time: 90.0,
+                    entity_id: 9,
+                    usage_type: 1,
+                    consumable_id: 8,
+                    duration: 28.0,
+                    target_x: None,
+                    target_z: None,
+                    target_id: None,
+                },
+                ConsumableUseEvent {
+                    time: 95.0,
+                    entity_id: 9,
+                    usage_type: 1,
+                    consumable_id: 3,
+                    duration: 20.0,
+                    target_x: None,
+                    target_z: None,
+                    target_id: None,
+                },
+            ],
+            engine: &[
+                EngineStateSample {
+                    time: 80.0,
+                    entity_id: 9,
+                    power: Some(8),
+                    dir: None,
+                },
+                EngineStateSample {
+                    time: 90.0,
+                    entity_id: 9,
+                    power: None,
+                    dir: Some(-1),
+                },
+            ],
+            smokes: &[SmokeScreenEvent {
+                time: 90.0,
+                entity_id: 21,
+                x: 30.0,
+                y: 0.0,
+                z: 0.0,
+                radius: Some(17.0), // GP units → 510 m
+                height: Some(5.0),
+                end_time: Some(150.0),
+            }],
+            e11_known: true,
+        };
+        let (rows, _stats) = export_decision_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            Some("replayV2"),
+            Some("pvp"),
+            &events,
+        );
+        assert!(rows.iter().all(|r| r.owner_entity_id == 9));
+
+        // ── t=101: the feature-probe row (labelA=0 — 8 is dark by gaps). ──
+        let r101 = rows
+            .iter()
+            .find(|r| (r.t - 101.0).abs() < 0.1)
+            .expect("t=101 row");
+        assert!(!r101.label_a_can_fire);
+        assert_eq!(r101.label_b_fired, None);
+        assert_eq!(r101.label_b_hit, None);
+        assert_eq!(r101.label_b_soft, None);
+        assert_eq!(r101.feature_version, 2);
+        assert!(r101.e11_events_known);
+        // Consumable windows: damcon (100,5 s) → (105-101)/5 = 0.8; repair
+        // (90,28 s) → 17/28; other id-3 (95,20 s) → 14/20.
+        assert!((r101.own_damcon_frac - 0.8).abs() < 1e-5);
+        assert!((r101.own_repair_frac - 17.0 / 28.0).abs() < 1e-5);
+        assert!((r101.own_other_consumable_frac - 0.7).abs() < 1e-5);
+        // Engine fold: power 8/10 at 80, dir -1 at 90 — both still current.
+        assert!((r101.own_engine_power - 0.8).abs() < 1e-5);
+        assert!((r101.own_engine_dir - (-1.0)).abs() < 1e-5);
+        // Smoke: one cloud (r=17 GP → 510 m) at (30, 0); the decider at
+        // (10, 0) is 20 units (117 m) from its centre → inside.
+        assert!(r101.own_in_smoke);
+        assert!((r101.active_smoke_count_frac - 1.0 / 8.0).abs() < 1e-6);
+        let area = std::f32::consts::PI * 0.51f32 * 0.51;
+        assert!(
+            (r101.active_smoke_area_feat - (area + 1.0).ln() / 3.0).abs() < 1e-4,
+            "area {}",
+            r101.active_smoke_area_feat
+        );
+        // Weather: 1 % into the 100 s lerp 2000 → 266.6664 units → cap
+        // 1982.67 units = 59 480 m → 0.9913 of the 60 km ceiling; the
+        // cyclone announced at 350 s is 249 s out → ramp 0.17.
+        assert!(
+            (r101.vision_cap_frac - (1982.6666 * 30.0 / 60000.0)).abs() < 1e-3,
+            "cap {}",
+            r101.vision_cap_frac
+        );
+        assert!((r101.weather_incoming_frac - 0.17).abs() < 1e-3);
+        // Ally builds: exactly one TEAMMATE (7) with radar → 1/4; no hydro.
+        assert!((r101.ally_radar_count_frac - 0.25).abs() < 1e-6);
+        assert!(r101.ally_hydro_count_frac.abs() < 1e-6);
+        // Enemy slot 8: gap-stale but EXPLICITLY spotted (the correction),
+        // inside the cloud, radar-lit (ally 7 sits 20 units from 8 — far
+        // inside the nominal 12 km), engine unknown (no samples).
+        assert_eq!(r101.enemies.len(), 1);
+        let e8 = &r101.enemies[0];
+        assert_eq!(e8.entity_id, 8);
+        assert!(!e8.observed_now);
+        assert_eq!(e8.spotted_now, Some(true));
+        assert!(e8.inside_smoke);
+        assert!(e8.radar_lit);
+        assert!(e8.is_enemy);
+        assert_eq!(e8.engine_power_frac, None);
+        // Friend slot 7: recorder-side, never radar-flagged, spotted since 0.
+        assert_eq!(r101.friends.len(), 1);
+        let f7 = &r101.friends[0];
+        assert_eq!(f7.entity_id, 7);
+        assert!(f7.is_enemy == false);
+        assert!(!f7.radar_lit);
+        assert_eq!(f7.spotted_now, Some(true));
+        // Serialization: v2 keys, camelCase.
+        let line = serde_json::to_string(r101).expect("serialize");
+        assert!(line.contains("\"featureVersion\":2"));
+        assert!(line.contains("\"spottedNow\":true"));
+        assert!(line.contains("\"radarLit\":true"));
+        assert!(line.contains("\"e11EventsKnown\":true"));
+
+        // ── t=123: back in contact; fired (salvo at 124) but the outcome
+        //    window (125, 168] holds NO hit → hit=false, soft=0.3. ──
+        let r123 = rows
+            .iter()
+            .find(|r| (r.t - 123.0).abs() < 0.1)
+            .expect("t=123 row");
+        assert!(r123.label_a_can_fire);
+        assert_eq!(r123.label_b_fired, Some(true));
+        assert_eq!(r123.owner_shots_hit, 0);
+        assert_eq!(r123.label_b_hit, Some(false));
+        assert!((r123.label_b_soft.unwrap() - 0.3).abs() < 1e-6);
+        // 23 % into the lerp: cap 1601.33 units = 48 040 m → 0.8007.
+        assert!(
+            (r123.vision_cap_frac - (1601.3333 * 30.0 / 60000.0)).abs() < 1e-3,
+            "cap {}",
+            r123.vision_cap_frac
+        );
+
+        // ── t=99: fired (salvo at 100) and the window (101, 144] contains
+        //    the t=110 shotKill → hit=true, soft=1.0. ──
+        let r99 = rows
+            .iter()
+            .find(|r| (r.t - 99.0).abs() < 0.1)
+            .expect("t=99 row");
+        assert_eq!(r99.label_b_fired, Some(true));
+        assert_eq!(r99.owner_shots_hit, 1);
+        assert_eq!(r99.label_b_hit, Some(true));
+        assert!((r99.label_b_soft.unwrap() - 1.0).abs() < 1e-6);
+
+        // ── no-events export: every E11-derived value takes its unknown
+        //    sentinel (-1 / None / flag false); smoke rides the same view
+        //    so it goes to zero too, while weather (on the stream) and the
+        //    ally builds stay live. ──
+        let (rows_v1ish, _) = export_decision_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            None,
+            None,
+            &FeatureEvents::empty(),
+        );
+        let s101 = rows_v1ish
+            .iter()
+            .find(|r| (r.t - 101.0).abs() < 0.1)
+            .expect("t=101 row (empty events)");
+        assert!(!s101.e11_events_known);
+        assert_eq!(s101.own_damcon_frac, -1.0);
+        assert_eq!(s101.own_repair_frac, -1.0);
+        assert_eq!(s101.own_other_consumable_frac, -1.0);
+        assert_eq!(s101.own_engine_power, -1.0);
+        assert_eq!(s101.own_engine_dir, 0.0);
+        assert_eq!(s101.enemies[0].spotted_now, None);
+        assert_eq!(s101.enemies[0].engine_power_frac, None);
+        assert!(!s101.own_in_smoke);
+        assert_eq!(s101.active_smoke_count_frac, 0.0);
+        // Radar geometry (builds) and the cyclone lerp (weather stream)
+        // survive the empty-E11 view untouched.
+        assert!(s101.enemies[0].radar_lit);
+        assert!((s101.ally_radar_count_frac - 0.25).abs() < 1e-6);
+        assert!(
+            (s101.vision_cap_frac - (1982.6666 * 30.0 / 60000.0)).abs() < 1e-3,
+            "cap {}",
+            s101.vision_cap_frac
+        );
     }
 
     /// E9 step 1 against the real reference replay — run with
@@ -2871,8 +3877,9 @@ mod tests {
             return;
         };
         let params = FireSampleParams::default();
-        let stream =
-            super::super::replay::decode_replay_stream_sync(&path).expect("decode real replay");
+        let (stream, ev) = super::super::replay::decode_replay_stream_with_events(&path)
+            .expect("decode real replay");
+        let events = FeatureEvents::for_version(stream.version.as_deref(), &ev);
         let vehicles = read_roster(&path).expect("roster");
         let ships = ship_infos(&stream, &vehicles);
         let grid_path = match std::env::var("WOWSP_TEST_LOS_GRID") {
@@ -2897,6 +3904,7 @@ mod tests {
                 .file_stem()
                 .and_then(|s| s.to_str()),
             read_game_mode(std::path::Path::new(&path)).as_deref(),
+            &events,
         );
         // Cross-check against E7: labelA=1 rows == eligible-with-history.
         let e7 = count_decision_samples(&stream, &ships, &params);
@@ -2923,6 +3931,43 @@ mod tests {
             assert!(r.enemies.len() <= ENEMY_SLOTS);
             assert!(r.friends.len() <= FRIEND_SLOTS);
             assert_eq!(r.label_b_fired.is_some(), r.label_a_can_fire);
+            assert_eq!(r.feature_version, FEATURE_VERSION);
+            // E15: the hit/soft variants censor exactly with labelB.
+            assert_eq!(r.label_b_hit.is_some(), r.label_b_fired.is_some());
+            assert_eq!(r.label_b_soft.is_some(), r.label_b_fired.is_some());
+        }
+        // E14 coverage: the E11 streams exist iff this replay is 15.8.x —
+        // and when they do, the explicit spotted verdicts must cover a real
+        // share of slots (the reference 15.8 capture fires ~1.8k events).
+        let expect_e11 = e11_events_expected(stream.version.as_deref());
+        assert_eq!(
+            rows.iter().all(|r| r.e11_events_known == expect_e11),
+            true,
+            "e11EventsKnown must match the version gate uniformly"
+        );
+        if expect_e11 {
+            let slots: usize = rows.iter().map(|r| r.enemies.len() + r.friends.len()).sum();
+            let spotted: usize = rows
+                .iter()
+                .flat_map(|r| r.enemies.iter().chain(r.friends.iter()))
+                .filter(|s| s.spotted_now.is_some())
+                .count();
+            let corrected: usize = rows
+                .iter()
+                .flat_map(|r| r.enemies.iter().chain(r.friends.iter()))
+                .filter(|s| s.spotted_now == Some(true) && !s.observed_now)
+                .count();
+            let smoky: usize = rows.iter().filter(|r| r.own_in_smoke).count();
+            eprintln!(
+                "[e14] v2 coverage on {}: {} slots, {} with explicit vision verdict ({:.1}%), {} gap-vs-vision corrections, {} own-in-smoke rows",
+                path,
+                slots,
+                spotted,
+                100.0 * spotted as f32 / slots.max(1) as f32,
+                corrected,
+                smoky
+            );
+            assert!(spotted > 0, "explicit vision stream must cover slots");
         }
         // labelA=1 rows must carry at least one observed-now in-range enemy.
         for r in rows.iter().filter(|r| r.label_a_can_fire) {
@@ -3163,6 +4208,22 @@ mod tests {
                 owner_shots_fired: 0,
                 enemy_hp_lost_nearby: 0.0,
                 game_mode: None,
+                feature_version: FEATURE_VERSION,
+                own_damcon_frac: -1.0,
+                own_repair_frac: -1.0,
+                own_other_consumable_frac: -1.0,
+                own_engine_power: -1.0,
+                own_engine_dir: 0.0,
+                own_in_smoke: false,
+                active_smoke_count_frac: 0.0,
+                active_smoke_area_feat: 0.0,
+                vision_cap_frac: 1.0,
+                weather_incoming_frac: 0.0,
+                ally_radar_count_frac: -1.0,
+                ally_hydro_count_frac: -1.0,
+                e11_events_known: false,
+                label_b_hit: None,
+                label_b_soft: None,
             };
             let mut negative = base.clone();
             negative.t = 12.0;

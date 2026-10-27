@@ -629,6 +629,16 @@ fn build_slots(
                 obs_age_s: t - last.time,
                 observed_now,
                 terrain_blocked,
+                // Feature-v2 fields (E14): the serve path still featurizes
+                // for the packed v1 model and decodes no E11 event streams,
+                // so every event-derived field carries its "unknown"
+                // sentinel — only the side marker is exact. Wiring the live
+                // v2 featurization happens when a v2 model is packed.
+                spotted_now: None,
+                inside_smoke: false,
+                radar_lit: false,
+                is_enemy: enemy_side,
+                engine_power_frac: None,
             }
         })
         .collect()
@@ -1124,6 +1134,12 @@ mod tests {
             obs_age_s: 90.0,
             observed_now: false,
             terrain_blocked: Some(true),
+            // v2 fields: sentinels, v1 featurizer ignores them.
+            spotted_now: None,
+            inside_smoke: false,
+            radar_lit: false,
+            is_enemy: true,
+            engine_power_frac: None,
         };
         let f = featurize_slot(&slot);
         let expected = [

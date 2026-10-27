@@ -206,6 +206,37 @@ pub(crate) fn decode_replay_stream_sync(
     Ok(stream)
 }
 
+/// The event families the assemble projection drops, returned alongside the
+/// stream by [`decode_replay_stream_with_events`] (experiment E14's feature
+/// sources): the E11 minimap-vision / consumable-use / engine-state streams
+/// and the E8 smoke-screen lifecycles.
+pub(crate) struct ReplayEvents {
+    pub vision: Vec<wowsp_tauri_shared::VisionEvent>,
+    pub consumables: Vec<wowsp_tauri_shared::ConsumableUseEvent>,
+    pub engine: Vec<wowsp_tauri_shared::EngineStateSample>,
+    pub smokes: Vec<wowsp_tauri_shared::SmokeScreenEvent>,
+}
+
+/// Sync decode of one replay into the full [`ReplayStream`] PLUS the
+/// dropped event families ([`ReplayEvents`]). One decode pass — the four
+/// vectors are MOVED out of the [`wowsp_replay_core::DecodedReplay`]
+/// before grouping consumes it, so this never re-reads the file.
+pub(crate) fn decode_replay_stream_with_events(
+    path: &str,
+) -> anyhow::Result<(wowsp_tauri_shared::ReplayStream, ReplayEvents)> {
+    let (mut decoded, roster) = decode_replay_file_decoded(std::path::Path::new(path))?;
+    let events = ReplayEvents {
+        vision: std::mem::take(&mut decoded.vision_events),
+        consumables: std::mem::take(&mut decoded.consumable_uses),
+        engine: std::mem::take(&mut decoded.engine_states),
+        smokes: std::mem::take(&mut decoded.smoke_screens),
+    };
+    let ally_builds = ally_builds_from(&decoded, &roster);
+    let mut stream = group_by_entity(decoded);
+    stream.ally_builds = ally_builds;
+    Ok((stream, events))
+}
+
 /// Sync smoke-screen decode (experiment E8) — same preamble as
 /// [`decode_replay_stream_sync`], keeping the two paths identical.
 pub(crate) fn read_smoke_screens_sync(
