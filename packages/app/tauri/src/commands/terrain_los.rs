@@ -728,11 +728,15 @@ mod tests {
             grid.heights.iter().filter(|h| **h > EPS as f32).count() as f32
                 / (grid.res() * grid.res()) as f32
         );
-        // The E4 bake of 50_Gold_harbor (res 256, minimaps.json bounds
-        // ±(-700/600)) — sanity only, not exact assertions on land stats.
+        // The bake of 50_Gold_harbor (res 256) must span the CURRENT
+        // minimaps.json bounds — ±(-700/700) since the #490 minimap-drift
+        // fix restored the symmetric extent (the E4-era ±(-700/600) here
+        // went stale with it; a freshly baked raster follows whatever
+        // minimaps.json says, so this pins the raster-to-bounds contract,
+        // not a magic number).
         assert_eq!(grid.res(), 256);
-        assert!((min_x - -700.0).abs() < 1.0 && (max_x - 600.0).abs() < 1.0);
-        assert!((min_z - -700.0).abs() < 1.0 && (max_z - 600.0).abs() < 1.0);
+        assert!((min_x - -700.0).abs() < 1.0 && (max_x - 700.0).abs() < 1.0);
+        assert!((min_z - -700.0).abs() < 1.0 && (max_z - 700.0).abs() < 1.0);
         // A pair of sea-level points across open water must see each other.
         let mut sea_pair = None;
         'outer: for r in (0..grid.res()).step_by(7) {
