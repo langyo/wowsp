@@ -1180,20 +1180,21 @@ const HYDRO_ABILITY_IDS: [u32; 12] = [
     4_181_898_160, // PCT107_SonarSearch_Mod_I
     4_225_933_232, // PCY065_SonarSearchPremium_TimeBased
     4_246_904_752, // PCY045_Hydrophone
-    4_251_113_444, // PCM041_SonarSearch_Mod_I
+    4_251_111_344, // PCM041_SonarSearch_Mod_I
     4_262_633_392, // PCY030_SonarSearchSuper
     4_267_875_600, // PXY025_SonarSearch
     4_277_313_456, // PCY016_SonarSearchPremium
-    4_282_556_664, // PXY011_SonarSearch
+    4_282_555_664, // PXY011_SonarSearch
     4_285_702_064, // PCY008_SonarSearch
 ];
 
 /// Nominal radar detection range for the "enemy possibly radar-lit" slot
-/// flag (metres): the largest common radar range (12 km RLSSearch). The
+/// flag (metres): the longest radar in the consumable table (15 km on a few
+/// late-tier variants; most sit at 9–12 km). The
 /// flag is deliberately a POSSIBILITY signal — the corpus carries either
 /// build data (who HAS radar, 15.9) or activation events (15.8, unnamed
 /// ids), never both, so "has radar AND in range" is the honest bound.
-const RADAR_NOMINAL_RANGE_M: f32 = 12_000.0;
+const RADAR_NOMINAL_RANGE_M: f32 = 15_000.0;
 
 /// Unrestricted ship-spotting cap (GlobalWeather world units × 30 m ≈
 /// 60 km) — the value every non-restrictive / unknown weather param gets.
@@ -1523,18 +1524,29 @@ impl FeatureIndex<'_> {
 
     /// Whether an enemy slot's last-known position is possibly radar-lit:
     /// some recorder-side radar holder's last-known position at `t` sits
-    /// within the nominal radar range of the slot entity.
-    fn radar_lit(&self, stream: &ReplayStream, x: f32, z: f32, t: f32) -> bool {
-        self.radar_holders.iter().any(|&id| {
-            stream
-                .trajectories
-                .iter()
-                .find(|tr| tr.entity_id == id)
-                .and_then(|tr| tr.samples.iter().rfind(|s| s.time <= t))
-                .is_some_and(|s| {
-                    (s.x - x).hypot(s.z - z) * METERS_PER_UNIT <= RADAR_NOMINAL_RANGE_M
-                })
-        })
+    /// within the nominal radar range of the slot entity. Recorder-side
+    /// builds only — an enemy-side decider's "enemies" are the recorder's
+    /// team, so the flag is meaningless there and is forced false (same gate
+    /// as the ally radar/hydro counts).
+    fn radar_lit(
+        &self,
+        stream: &ReplayStream,
+        x: f32,
+        z: f32,
+        t: f32,
+        recorder_side: bool,
+    ) -> bool {
+        recorder_side
+            && self.radar_holders.iter().any(|&id| {
+                stream
+                    .trajectories
+                    .iter()
+                    .find(|tr| tr.entity_id == id)
+                    .and_then(|tr| tr.samples.iter().rfind(|s| s.time <= t))
+                    .is_some_and(|s| {
+                        (s.x - x).hypot(s.z - z) * METERS_PER_UNIT <= RADAR_NOMINAL_RANGE_M
+                    })
+            })
     }
 }
 
@@ -1936,7 +1948,9 @@ fn build_slots(
                 terrain_blocked,
                 spotted_now: idx.spotted_at(other.traj.entity_id, t),
                 inside_smoke: inside_any_smoke(last.x, last.z, active),
-                radar_lit: enemy_side && idx.radar_lit(stream, last.x, last.z, t),
+                radar_lit: enemy_side
+                    && decider.team_id == Some(0)
+                    && idx.radar_lit(stream, last.x, last.z, t, true),
                 is_enemy: enemy_side,
                 engine_power_frac: engine_power,
             }
