@@ -323,6 +323,9 @@ lookup: {
     assets: "Ressources de la release",
     notes: "Toutes les ressources sont publiées sur GitHub Releases",
     mirrorNote: "Le téléchargement passera par le miroir {host}, sélectionné automatiquement",
+    qqTitle: "Rejoindre le groupe de notification QQ ({n})",
+    qqDesc: "Les installateurs sont aussi déposés dans les fichiers du groupe : vous pouvez les y récupérer si GitHub est lent ou inaccessible. Les mises à jour et les correctifs y sont également annoncés.",
+    qqJoin: "Rejoindre le groupe",
   },
   footer: {
     license: "Sous licence SySL-1.0",

@@ -323,6 +323,9 @@ lookup: {
     assets: "릴리스 에셋",
     notes: "모든 에셋은 GitHub Releases에 게시됩니다",
     mirrorNote: "파일 다운로드는 자동으로 선택된 미러 {host}를 통해 진행됩니다",
+    qqTitle: "QQ 알림 그룹 참여 ({n})",
+    qqDesc: "각 설치 프로그램은 그룹 파일에도 올려 두었습니다. GitHub가 느리거나 접속되지 않을 때는 그룹 파일에서 내려받을 수 있습니다. 업데이트와 수정 소식도 그룹에서 알려 드립니다.",
+    qqJoin: "그룹 참여",
   },
   footer: {
     license: "SySL-1.0 라이선스",
