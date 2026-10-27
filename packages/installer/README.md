@@ -50,7 +50,9 @@ over to the interactive wizard (`--relocate-from`), which opens on
 the location step, installs into a fresh folder, and then sweeps ONLY
 WoWSP's own manifest-listed files out of the old one — the game
 folder itself survives untouched. Upgrades everywhere else never
-re-answer their location, so auto-updates are never stranded.
+re-answer their location through a veto, so auto-updates are never
+stranded — the only escalation is the relocation lanes below, which
+hand the choice to the player instead of failing or deleting.
 
 shun 0.6.31 adds the swap-safety floors underneath (armed by the
 pinned SHUN_TAG, no manifest key of ours): the dir-rules probe
@@ -65,6 +67,18 @@ deleted only when purely shun-owned, foreign content preserved
 with a warning instead. The app side keeps its own twin guard:
 the updater and the stranded-recovery wizard refuse the handoff
 while the running install directory overlaps a game tree.
+
+shun 0.6.32 completes the lane for the rule-less shape: an
+unattended update whose target directory holds foreign content no
+dir-rule names (a player's own files dropped beside the app) no
+longer fails the update outright — the silent installer pauses as
+the same relocation wizard, opening on the location step and asking
+for a fresh folder (exit 0, the updater contract sees success;
+cancelling keeps the old install, and the next silent update asks
+again). Interactive runs see the equivalent refusal at the location
+step before any extraction, and a refused swap cleans its own
+`.shun-partial` staging tree — a blocked auto-update leaves no
+extracted payload beside the install.
 
 The build script also publishes `WoWSP_<version>_x64-portable.exe`: the
 single-exe 便捷版 — a dedicated `--no-default-features --features portable`
@@ -94,7 +108,10 @@ mirrors). One such bridge update lands them on a client that fetches
   the dir-rules probe reaches one level below the target, the swap
   refuses directories holding files shun never delivered, and
   swapped-out backups are spared unless purely shun-owned; upgrades
-  elsewhere never re-veto their location), registers ARP/uninstall,
+  elsewhere never re-veto their location except through the two
+  relocation lanes — a flagged dir-rule or, shun >= 0.6.32, content
+  the swap cannot account for hands the update to the wizard
+  instead), registers ARP/uninstall,
   refreshes existing shortcuts by presence (a kept launcher is updated
   in place, a deleted one is never re-created — silent updates must not
   spray `.lnk` files), honors the updater's `--silent --dir

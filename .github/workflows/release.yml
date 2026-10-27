@@ -37,7 +37,13 @@ env:
   # delivered, and swapped-out backups are spared unless purely
   # shun-owned — the 2026-10 incident where a player's game client
   # was carried into the .shun-old backup and destroyed, twice.
-  SHUN_TAG: v0.6.31
+  # v0.6.32 turns the rule-less refusal into the same handover: an
+  # unattended update whose target directory holds foreign content
+  # no dir-rule names pauses as the relocation wizard asking for a
+  # new folder (exit 0, the updater contract sees success), the
+  # interactive location step faults the shape pre-extraction, and
+  # a refused swap cleans its own staging tree.
+  SHUN_TAG: v0.6.32
 
 # One release flow per ref, never cancelled mid-flight: a cancelled run can
 # leave a half-uploaded draft; a re-push of the same tag queues behind this
