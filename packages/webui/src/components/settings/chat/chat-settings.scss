@@ -1,0 +1,74 @@
+/* Shared little bits for the chat-translation settings panes: the read-only
+   summary value inside a stats-prefs row, the consent window's body copy and
+   the secondary windows' grouping title. Everything else reuses the global
+   settings-modal__* / stats-prefs__* grammar. */
+
+.chat-settings__value {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm, 6px);
+  background: rgb(var(--color-border) / 12%);
+  color: rgb(var(--color-text));
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+/* The key-status cell of the provider summary: the state tag (plus the
+   env-override badge when one applies) sits on the row's right edge. */
+.chat-settings__tags {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+/* ── consent window body ──────────────────────────────────────────────── */
+
+.chat-settings__consent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.chat-settings__consent-body {
+  margin: 0;
+  color: rgb(var(--color-muted));
+}
+
+.chat-settings__consent-lead {
+  margin: 0;
+  font-weight: 600;
+  color: rgb(var(--color-text));
+}
+
+.chat-settings__consent-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: rgb(var(--color-muted));
+}
+
+/* ── secondary windows: one titled group above its controls ───────────── */
+
+.chat-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.chat-settings__hint-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
