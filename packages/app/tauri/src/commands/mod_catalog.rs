@@ -162,6 +162,7 @@ mod extract;
 mod index;
 mod install;
 mod ledger;
+mod pkg_cache;
 mod reconcile;
 mod uninstall;
 mod version_guard;
@@ -178,11 +179,11 @@ pub(crate) use extract::TEST_EXTRACT_CAPS;
 pub(crate) use index::load_cached_index;
 #[cfg(test)]
 pub(crate) use index::parse_index;
-pub(crate) use install::entry_display_name;
 #[cfg(test)]
 pub(crate) use install::{
     WorkDir, package_archive, size_within_catalog, unpack_and_install, validate_path_segment,
 };
+pub(crate) use install::{entry_display_name, newer_owner_records, refresh_newer_snapshots};
 #[cfg(test)]
 pub(crate) use install::{loose_root_files, package_install_layout};
 #[cfg(test)]
@@ -194,7 +195,8 @@ pub(crate) use reconcile::heal_record_names;
 pub(crate) use reconcile::reconcile_core_with_grace;
 
 pub(crate) use uninstall::{
-    UninstallReport, uninstall_from_ledger, validate_file_removal_order, validate_uninstall_order,
+    UninstallReport, rewind_for_reinstall, uninstall_from_ledger, validate_file_removal_order,
+    validate_uninstall_order,
 };
 // The Tauri commands ride with their macro twins (same pattern as
 // `commands::pairing`'s re-export block) so the generate_handler

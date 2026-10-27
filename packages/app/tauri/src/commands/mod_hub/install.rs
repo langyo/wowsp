@@ -46,7 +46,10 @@ pub async fn mod_hub_install(
         // Reinstalling a same-named mod must first rewind its previous
         // record: files the old version shipped would linger under the new
         // one, and chained snapshots used to make a later uninstall restore
-        // the previous MOD's files instead of the vanilla original.
+        // the previous MOD's files instead of the vanilla original. This is
+        // the reinstall-mode rewind: a file another record on the same root
+        // and bin owns is left to that owner instead of failing the install
+        // (same-family mods legitimately share support-package files).
         let mut failure = None;
         // Same plan name on THIS install only — a same-named record of
         // another game install is not ours to rewind, and the scoped
@@ -60,9 +63,16 @@ pub async fn mod_hub_install(
             })
             .map(|r| r.id.clone())
             .collect();
+        // Owners recorded AFTER the rewound one: their snapshots of shared
+        // files may hold the bytes this install replaces, so they must follow
+        // the new bytes (see refresh_newer_snapshots). Captured before the
+        // rewind drops these records.
+        let rewound_ids: Vec<&str> = old.iter().map(|id| id.as_str()).collect();
+        let newer_owners =
+            super::mod_catalog::newer_owner_records(&ledger.installs, &rewound_ids, &game_root);
         for id in old {
             if let Err(e) =
-                super::mod_catalog::uninstall_from_ledger(&mut ledger.installs, &id, &game_root)
+                super::mod_catalog::rewind_for_reinstall(&mut ledger.installs, &id, &game_root)
             {
                 failure = Some(e);
                 break;
@@ -76,6 +86,15 @@ pub async fn mod_hub_install(
                 // local installs used to leave overwritten originals
                 // unrestorable.
                 Ok(mut applied) => {
+                    // A local reinstall overwrites the same shared files a
+                    // catalog one does: keep the newer owners' snapshots in
+                    // sync (best effort, never fails the install).
+                    super::mod_catalog::refresh_newer_snapshots(
+                        &game_root,
+                        &applied.report.bin_version,
+                        &applied.written,
+                        &newer_owners,
+                    );
                     let record = local_record(&applied, &plan, &game_root);
                     let id = record.id.clone();
                     // Local installs speak the same wowsp.toml contract as

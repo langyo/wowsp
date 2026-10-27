@@ -9,6 +9,7 @@
  * The api module is mocked (the store under it is real); fake timers
  * drive the grace and leave windows.
  */
+import { nextTick } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, mount } from "@vue/test-utils";
@@ -26,7 +27,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/api", () => ({ api: mocks }));
 
-import { initLocaleMessages } from "@/i18n";
+import { initLocaleMessages, t } from "@/i18n";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import ModUpdateToast from "./ModUpdateToast";
 
@@ -124,5 +125,80 @@ describe("ModUpdateToast mount grace", () => {
     expect(card()).toBeNull();
     await vi.advanceTimersByTimeAsync(1);
     expect(card()).not.toBeNull();
+  });
+});
+
+describe("ModUpdateToast live meta", () => {
+  const LONG_NAME =
+    "[Mod] Secondary Armament Status with a name long enough to fill the whole step line and then some more words";
+
+  /** The download-phase pass state, long name included. */
+  function primeDownload(): void {
+    const updates = usePluginUpdatesStore();
+    updates.running = true;
+    updates.currentName = LONG_NAME;
+    updates.done = 0;
+    updates.total = 3;
+    updates.phase = "download";
+    updates.percent = 42;
+    updates.speedBps = 1.5 * 1_048_576;
+  }
+
+  it("keeps the download percent and speed visible beside a long mod name", async () => {
+    primeDownload();
+    mount(ModUpdateToast);
+    await vi.advanceTimersByTimeAsync(400); // grace elapsed → card mounted
+
+    const message = document.body.querySelector<HTMLElement>(".mod-update-toast__message");
+    const meta = document.body.querySelector<HTMLElement>(".mod-update-toast__meta");
+    // The meta is a SIBLING of the ellipsized message line — the structure
+    // that keeps it out of the name's overflow, so a long name cannot cut
+    // the progress readout off the card.
+    expect(message?.textContent).toContain(LONG_NAME);
+    expect(message?.textContent).not.toContain("MB/s");
+    expect(meta?.textContent).toContain("42%");
+    expect(meta?.textContent).toContain("1.5 MB/s");
+  });
+
+  it("shows the install verb once streaming hands off", async () => {
+    const updates = usePluginUpdatesStore();
+    updates.running = true;
+    updates.currentName = LONG_NAME;
+    updates.done = 0;
+    updates.total = 1;
+    updates.phase = "install";
+    updates.percent = 100;
+    updates.speedBps = null;
+    mount(ModUpdateToast);
+    await vi.advanceTimersByTimeAsync(400);
+
+    const meta = document.body.querySelector<HTMLElement>(".mod-update-toast__meta");
+    expect(meta?.textContent).toBe(t("resources.pluginUpdateInstalling"));
+    expect(meta?.textContent).not.toContain("MB/s");
+  });
+
+  it("freezes the live meta through the leave transition", async () => {
+    primeDownload();
+    mount(ModUpdateToast);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(document.body.querySelector(".mod-update-toast__meta")?.textContent).toContain("1.5 MB/s");
+
+    // The store drops running and clears phase/percent/speed in the same
+    // sync block — the sync watcher must freeze the meta first.
+    const updates = usePluginUpdatesStore();
+    updates.running = false;
+    updates.phase = null;
+    updates.percent = null;
+    updates.speedBps = null;
+    updates.currentName = "";
+    await nextTick();
+
+    expect(card()).not.toBeNull();
+    const frozen = document.body.querySelector<HTMLElement>(".mod-update-toast__meta");
+    expect(frozen?.textContent).toContain("42%");
+    expect(frozen?.textContent).toContain("1.5 MB/s");
+
+    await vi.advanceTimersByTimeAsync(260);
+    expect(card()).toBeNull();
   });
 });

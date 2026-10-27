@@ -72,11 +72,22 @@
 
 .mod-update-toast__message {
   margin: 0;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+// The live readout (download percent + transfer rate, or the install
+// verb) rides its own flex child: the message above absorbs ALL the
+// ellipsis, this one keeps its intrinsic width (flex: 0 0 auto +
+// nowrap), so a long mod name can never cut the progress off the card.
+// Tabular figures keep the digits from jittering while the rate updates.
+.mod-update-toast__meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 // Bottom progress bar: translucent track + white fill. During the mirror

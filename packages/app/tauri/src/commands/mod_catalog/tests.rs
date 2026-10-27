@@ -450,6 +450,205 @@ mod tests {
         fs::remove_dir_all(mod_hub::restore_root()).ok();
     }
 
+    /// Download-time failure regression, part 2: reinstalling an OLDER record
+    /// must not be blocked by a newer record that shares a support file. The
+    /// reinstall rewind keeps the newer owner's bytes and only rewinds what
+    /// this record exclusively owns; the strict user-uninstall guard must
+    /// still refuse the same pair.
+    #[test]
+    fn reinstall_rewind_keeps_files_a_newer_record_owns() {
+        let tmp = std::env::temp_dir().join("wowsp_reinstall_shared_rewind");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods/gui");
+        fs::create_dir_all(&rm).unwrap();
+        fs::write(rm.join("shared.css"), b"newer b bytes").unwrap();
+        fs::write(rm.join("only-a.css"), b"a v1 bytes").unwrap();
+        let restore_a = tmp.join("restore-a");
+        fs::create_dir_all(restore_a.join("gui")).unwrap();
+        fs::write(restore_a.join("gui/shared.css"), b"vanilla shared").unwrap();
+        fs::write(restore_a.join("gui/only-a.css"), b"vanilla only").unwrap();
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk = |id: &str, files: &[&str], restore: Option<&Path>| ModInstallRecord {
+            id: id.into(),
+            name: id.to_uppercase(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| (*f).to_string()).collect(),
+            restore_dir: restore.map(|p| p.to_string_lossy().into_owned()),
+            game_root: String::new(),
+        };
+        let mut installs = vec![
+            mk("a", &["gui/shared.css", "gui/only-a.css"], Some(&restore_a)),
+            mk("b", &["gui/shared.css"], None),
+        ];
+
+        // The strict user-uninstall path still refuses the shared claim.
+        let err = validate_uninstall_order(&installs, "a", &game_root).unwrap_err();
+        assert!(err.to_string().contains("shares gui/shared.css"), "{err}");
+
+        let report = rewind_for_reinstall(&mut installs, "a", &game_root).unwrap();
+        // Only only-a.css was removed, and its vanilla snapshot came back.
+        assert_eq!(report.removed_files, 1);
+        assert_eq!(report.restored_files, 1);
+        assert_eq!(fs::read(rm.join("shared.css")).unwrap(), b"newer b bytes");
+        assert_eq!(fs::read(rm.join("only-a.css")).unwrap(), b"vanilla only");
+        assert_eq!(installs.len(), 1);
+        assert_eq!(installs[0].id, "b");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Pre-release mirror fan-out: a reinstall must keep the mirrored copy of
+    /// a file another record on the live bin owns, and only remove the
+    /// exclusively-owned paths from the PTS twin.
+    #[test]
+    fn reinstall_rewind_keeps_shared_files_in_preload_mirrors() {
+        let tmp = std::env::temp_dir().join("wowsp_reinstall_mirror_rewind");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let live = game.join("bin/100/res_mods/gui");
+        let mirror = game.join("bin/200/res_mods/gui");
+        fs::create_dir_all(&live).unwrap();
+        fs::create_dir_all(&mirror).unwrap();
+        fs::create_dir_all(game.join("bin/200/idx")).unwrap();
+        fs::write(live.join("shared.css"), b"live shared").unwrap();
+        fs::write(live.join("only-a.css"), b"live only").unwrap();
+        fs::write(mirror.join("shared.css"), b"mirror shared").unwrap();
+        fs::write(mirror.join("only-a.css"), b"mirror only").unwrap();
+        // The pin names bin/100 as live; bin/200 is the staged pre-release
+        // twin every mutation is mirrored into.
+        fs::write(
+            game.join("preferences.xml"),
+            "<root><last_server_version> 15,8,0,100 </last_server_version></root>",
+        )
+        .unwrap();
+        let game_root = game.to_string_lossy().into_owned();
+        let mk = |id: &str, files: &[&str]| ModInstallRecord {
+            id: id.into(),
+            name: id.to_uppercase(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "100".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| (*f).to_string()).collect(),
+            restore_dir: None,
+            game_root: String::new(),
+        };
+        let mut installs = vec![
+            mk("a", &["gui/shared.css", "gui/only-a.css"]),
+            mk("b", &["gui/shared.css"]),
+        ];
+        rewind_for_reinstall(&mut installs, "a", &game_root).unwrap();
+        assert!(
+            mirror.join("shared.css").is_file(),
+            "a newer owner still mirrors the shared file"
+        );
+        assert!(
+            !mirror.join("only-a.css").exists(),
+            "the exclusively-owned file leaves the twin"
+        );
+        assert!(installs.iter().all(|r| r.id != "a"));
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Drive a catalog reinstall of id "a" whose package rewrites
+    /// res_mods/gui/shared.css with `bytes` (shared by the snapshot-refresh
+    /// assertions below).
+    fn reinstall_shared_css(
+        work: &Path,
+        game_root: &str,
+        installs: &mut Vec<ModInstallRecord>,
+        bytes: &str,
+    ) {
+        fs::create_dir_all(work).unwrap();
+        zip_fixture(
+            &package_archive(work, 0),
+            &[("res_mods/gui/shared.css", bytes.as_bytes())],
+        );
+        let packages = vec![CatalogPackage {
+            url: "https://example.com/part.zip".into(),
+            sha256: String::new(),
+            size: 0,
+            name: "part.zip".into(),
+        }];
+        unpack_and_install("a", "A", work, game_root, &packages, &[], installs).unwrap();
+    }
+
+    /// Reinstalling an older owner must refresh a NEWER owner's snapshot of
+    /// the shared file it rewrote (otherwise that mod's later uninstall would
+    /// restore the previous version). The inverse must hold too: an older
+    /// record's snapshot may hold the vanilla original and must stay
+    /// untouched when the newer owner is reinstalled.
+    #[test]
+    fn reinstall_refreshes_newer_snapshots_only() {
+        let tmp = std::env::temp_dir().join("wowsp_reinstall_snapshot_refresh");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods/gui");
+        fs::create_dir_all(&rm).unwrap();
+        fs::write(rm.join("shared.css"), b"b v1").unwrap();
+        let restore_a = tmp.join("restore-a");
+        fs::create_dir_all(restore_a.join("gui")).unwrap();
+        fs::write(restore_a.join("gui/shared.css"), b"vanilla shared").unwrap();
+        let restore_b = tmp.join("restore-b");
+        fs::create_dir_all(restore_b.join("gui")).unwrap();
+        fs::write(restore_b.join("gui/shared.css"), b"a v1").unwrap();
+        let restore_d = tmp.join("restore-d");
+        fs::create_dir_all(restore_d.join("gui")).unwrap();
+        fs::write(restore_d.join("gui/shared.css"), b"d stale").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk = |id: &str, bin: &str, restore: &Path| ModInstallRecord {
+            id: id.into(),
+            name: id.to_uppercase(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: bin.into(),
+            installed_at: String::new(),
+            files: vec!["gui/shared.css".into()],
+            restore_dir: Some(restore.to_string_lossy().into_owned()),
+            game_root: String::new(),
+        };
+        let mut installs = vec![
+            mk("a", "1", &restore_a),
+            mk("b", "1", &restore_b),
+            // Owns the same spelling at ANOTHER bin's res_mods: physically
+            // different files, so its snapshot must not be refreshed.
+            mk("d", "0", &restore_d),
+        ];
+
+        // Reinstall the OLDER owner: B's snapshot follows the new bytes.
+        reinstall_shared_css(&tmp.join("work1"), &game_root, &mut installs, "a v2");
+        assert_eq!(fs::read(rm.join("shared.css")).unwrap(), b"a v2");
+        assert_eq!(fs::read(restore_b.join("gui/shared.css")).unwrap(), b"a v2");
+        assert_eq!(
+            fs::read(restore_d.join("gui/shared.css")).unwrap(),
+            b"d stale"
+        );
+        assert!(installs.iter().all(|r| r.id != "a"));
+
+        // Now A is newer than B: reinstalling it must NOT touch B's snapshot.
+        installs.push(mk("a", "1", &tmp.join("restore-a2")));
+        reinstall_shared_css(&tmp.join("work2"), &game_root, &mut installs, "a v3");
+        assert_eq!(fs::read(rm.join("shared.css")).unwrap(), b"a v3");
+        assert_eq!(
+            fs::read(restore_b.join("gui/shared.css")).unwrap(),
+            b"a v2",
+            "an older record's snapshot must keep the bytes it captured"
+        );
+        fs::remove_dir_all(&tmp).ok();
+        fs::remove_dir_all(mod_hub::restore_root()).ok();
+    }
+
     #[test]
     fn uninstall_drops_shared_loader_only_when_last() {
         // The 0-byte loader marker is ref-counted across records; a

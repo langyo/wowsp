@@ -80,6 +80,26 @@ export const PROBE_ITEM = "probe:builtin";
  *  instead of the card's leave snapshot as its only visible trace. */
 export const MOD_PASS_CARD_GRACE_MS = 400;
 
+/** How many failed items a multi-client summary spells out before folding
+ *  the rest into a "+N" tail. The toast body clamps to three lines, so the
+ *  detail must stay short; the sticky all-failed error is copyable, and its
+ *  fold still names the count of the items left out (the pass's
+ *  `failures` ref keeps the complete list). */
+export const SUMMARY_FAILURE_LIMIT = 3;
+
+/** Capped per-item failure fold for the multi-client summary toasts: the
+ *  first `limit` "{name}: {error}" items joined with "; ", plus a "; +N"
+ *  tail when the list is longer. The single-client message keeps the full
+ *  list — this cap only serves the multi-client rollup, which used to drop
+ *  the concrete errors entirely and name the failed clients alone. */
+export function failureDetail(
+  failures: readonly string[],
+  limit = SUMMARY_FAILURE_LIMIT,
+): string {
+  if (failures.length <= limit) return failures.join("; ");
+  return `${failures.slice(0, limit).join("; ")}; +${failures.length - limit}`;
+}
+
 /** Lifecycle op an item is mid-way through. */
 export type PluginItemOp = "install" | "update" | "uninstall";
 
@@ -130,6 +150,12 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   const phase = ref<"download" | "install" | null>(null);
   /** Current item's percent 0-100, null while unknown (indeterminate). */
   const percent = ref<number | null>(null);
+  /** Current item's smoothed transfer rate (bytes/sec), null while there is
+   *  no live sample — the card's always-visible meta renders it through
+   *  formatSpeed exactly like the app-updater card. mod_catalog sends
+   *  speedBps 0 on its own phase transitions, so 0 must read as "no
+   *  sample" or the text would stick to the last rate. */
+  const speedBps = ref<number | null>(null);
   /** Failed items of the last run ("{name}: {error}"). */
   const failures = ref<string[]>([]);
 
@@ -366,9 +392,10 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
    * the moment the last item lands) and still fans out a freshness sync
    * that confirms against catalog/ledger. The end-of-pass toast speaks
    * per client when several were attempted: all updated → success with
-   * the client count, a mixed run → warning naming the failed clients,
-   * none updated → sticky error; a single client keeps the per-item
-   * failure detail it always had.
+   * the client count, a mixed run → warning naming the failed clients PLUS
+   * a capped fold of the failed items (failureDetail), none updated →
+   * sticky error carrying the same detail; a single client keeps the
+   * per-item failure detail it always had.
    */
   async function updateAll(): Promise<void> {
     if (running.value) return;
@@ -500,9 +527,13 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
               p.total > 0
                 ? Math.min(100, Math.round((p.received / p.total) * 100))
                 : null;
+            // bytes/sec EWMA from the unified bus; 0 = no sample yet.
+            speedBps.value = p.speedBps > 0 ? p.speedBps : null;
           } else if (p.phase === "installing") {
             phase.value = "install";
             percent.value = 100;
+            // The streaming half is over — the meta shows the install verb.
+            speedBps.value = null;
           }
         });
       } catch {
@@ -514,6 +545,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         currentName.value = task.name;
         phase.value = null; // probe phase / pre-first-event — indeterminate
         percent.value = null;
+        speedBps.value = null; // never carry the previous item's rate
         try {
           await task.run();
           // The write landed (or a concurrent op owns the item and will
@@ -533,6 +565,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
       running.value = false;
       phase.value = null;
       percent.value = null;
+      speedBps.value = null;
       currentName.value = "";
       // A client counts as updated only when EVERY one of its tasks
       // landed; a single failure marks the whole client for the summary.
@@ -548,6 +581,12 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         .map(([, label]) => label);
       const okClients = attempted.length - failedClients.length;
       if (failures.value.length > 0) {
+        // Multi-client summaries carry the concrete failed items too — the
+        // client names alone left the user unable to tell WHY a plugin
+        // stayed stale (the backend bug's silent failures hid behind this
+        // gap). Capped: the detail is folded into the copyable sticky error
+        // and the auto-dismissing warning alike.
+        const detail = failureDetail(failures.value);
         if (multiClients && okClients === 0) {
           // Every client was refused — typically the guard-refusal shape
           // (safe mode, permissions) that dies in well under a second
@@ -556,15 +595,19 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
           // no auto-dismiss, copyable) per the single-client rationale
           // below.
           showStickyError(
-            t("resources.pluginUpdateAllFailedClients", { count: attempted.length }),
+            t("resources.pluginUpdateAllFailedClientsDetail", {
+              count: attempted.length,
+              details: detail,
+            }),
           );
         } else if (multiClients) {
           // Mixed machine: some work DID land — a warning (auto-dismiss)
           // reporting the success count plus the failed clients' names.
           toast.warning(
-            t("resources.pluginUpdatePartialClients", {
+            t("resources.pluginUpdatePartialClientsDetail", {
               ok: okClients,
               names: failedClients.join("/"),
+              details: detail,
             }),
           );
         } else {
@@ -613,6 +656,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     currentName,
     phase,
     percent,
+    speedBps,
     overallPercent,
     failures,
     pendingInstalls,
