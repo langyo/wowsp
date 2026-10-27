@@ -52,6 +52,7 @@ pub mod tactics_profile;
 pub mod hardware_info;
 pub mod ingame_plugin;
 pub mod installer;
+pub mod local_battles;
 pub mod logs;
 pub mod lookup_error;
 pub mod markers;

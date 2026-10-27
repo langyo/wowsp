@@ -6,9 +6,13 @@
  *  - `computeRecentDelta` picks the latest baseline at or before the cutoff,
  *    subtracts per-ship totals, derives winrate/avgDamage from the deltas,
  *    keeps first-seen ships whole, drops untouched ships, clamps negative
- *    totals, drops ships whose last battle predates the labeled window
- *    start (a positive delta there is a missing-baseline artifact), and
- *    reports null when no old-enough baseline exists. A finite
+ *    totals, and reports null when no old-enough baseline exists. The
+ *    last-battle stamp is treated as evidence: a stale one (zero — the
+ *    vortex transport serves none — or predating the ship's own baseline
+ *    point, i.e. carried from an older write) keeps the real after-baseline
+ *    delta and re-dates the row at the window end, while the missing-baseline
+ *    resurrection — old stamp with no baseline at all, or a stamp consistent
+ *    with its baseline yet before the window start — still drops. A finite
  *    `endSec` bounds the window the same way — the latest snapshot at or
  *    before it closes the window, so a past end day never leaks newer
  *    battles in;
@@ -300,13 +304,95 @@ describe("computeRecentDelta", () => {
     expect(delta.ships.find((s) => s.shipId === 3)!.battles).toBe(1);
   });
 
-  it("drops rows carrying no battle time from delta views", () => {
-    // battles > 0 with lastBattleTime 0 is the anomaly class itself — the
-    // career fallback already excluded such rows; the delta view does too.
+  it("keeps a re-played ship whose zero stamp cannot date it", () => {
+    // The vortex per-ship transport serves no lastBattleTime (0), and the
+    // disk-cache carry-forward can only copy an older write. A ship re-played
+    // since the baseline still arrives with a zero stamp, so the positive
+    // delta decides: keep the row and re-date it at the window end so the
+    // views' date column does not show the epoch.
     const current = [ship({ shipId: 1, battles: 30, wins: 15, damageCaused: 600_000 })];
     const history = [
       point(cutoff - 1, [
         { shipId: 1, battles: 10, wins: 5, damageCaused: 200_000, frags: 4, survivedBattles: 2, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff)!;
+    expect(delta.ships).toHaveLength(1);
+    expect(delta.ships[0].battles).toBe(20);
+    expect(delta.ships[0].lastBattleTime).toBe(delta.endTs);
+  });
+
+  it("includes a never-stamped ship with no baseline as first played in the window", () => {
+    // The reported fresh-ship bug: Lightning/Jervis/Admiral Scheer were played
+    // after the baseline, are absent from it, and carry lastBattleTime 0 — the
+    // old guard dropped them from the 1d/7d tabs entirely ("0 艘 · 0 场").
+    const current = [
+      ship({ shipId: 1, battles: 3, wins: 0, damageCaused: 29_301 }),
+      ship({ shipId: 2, battles: 2, wins: 1, damageCaused: 10_865 }),
+    ];
+    const history = [
+      // A baseline point exists for the window label, but never saw ships 1/2.
+      point(cutoff - 86_400, [
+        { shipId: 3, battles: 10, wins: 5, damageCaused: 200_000, frags: 4, survivedBattles: 2, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff)!;
+    expect(delta.sinceTs).toBe(cutoff - 86_400);
+    const byId = new Map(delta.ships.map((s) => [s.shipId, s]));
+    expect(byId.get(1)!.battles).toBe(3);
+    expect(byId.get(2)!.battles).toBe(2);
+    // Dated at the window end — a new ship was played inside this window.
+    expect(byId.get(1)!.lastBattleTime).toBe(delta.endTs);
+    expect(byId.get(2)!.lastBattleTime).toBe(delta.endTs);
+  });
+
+  it("keeps a re-played ship whose stale carried stamp predates its baseline", () => {
+    // Carry-forward copies the previous write's stamp, so a ship re-played
+    // after a gap can keep a stamp from BEFORE the baseline it is diffed
+    // against. That stamp cannot account for the delta — the battles are real
+    // window battles, the stamp is the artifact.
+    const staleStamp = now - 60 * 86_400;
+    const current = [
+      ship({ shipId: 1, battles: 120, wins: 60, damageCaused: 12_000_000, lastBattleTime: staleStamp }),
+    ];
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 1, battles: 100, wins: 50, damageCaused: 10_000_000, frags: 100, survivedBattles: 20, lastBattleTime: staleStamp },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, cutoff)!;
+    expect(delta.ships[0].battles).toBe(20);
+    expect(delta.ships[0].damageCaused).toBe(2_000_000);
+    expect(delta.ships[0].lastBattleTime).toBe(delta.endTs);
+  });
+
+  it("dates a stale-stamp ship at the closing snapshot in a bounded window", () => {
+    // Same rescue in a custom [from, to] window: the date must be the window's
+    // close (endTs), never "now", and the delta must close at the snapshot.
+    const current = [ship({ shipId: 1, battles: 10, wins: 5, damageCaused: 100_000 })];
+    const history = [
+      point(now - 15 * 86_400, []),
+      point(now - 10 * 86_400, [
+        { shipId: 1, battles: 10, wins: 5, damageCaused: 100_000, frags: 4, survivedBattles: 2, lastBattleTime: 0 },
+      ]),
+    ];
+    const delta = computeRecentDelta(current, history, now - 15 * 86_400, now - 10 * 86_400)!;
+    expect(delta.endTs).toBe(now - 10 * 86_400);
+    expect(delta.ships[0].battles).toBe(10);
+    expect(delta.ships[0].lastBattleTime).toBe(now - 10 * 86_400);
+  });
+
+  it("drops an old-stamp ship with no baseline (poisoned-baseline artifact)", () => {
+    // No healthy baseline row exists (its only recorded row is poisoned), so
+    // the real stamp is the only evidence: last battle long before the window
+    // means the resurrected full-career delta is an artifact. (Phra Ruang in
+    // the reported cache: 1 career battle from 2023, no baseline row.)
+    const current = [
+      ship({ shipId: 5, battles: 55, wins: 30, damageCaused: 1_100_000, lastBattleTime: now - 1_000 * 86_400 }),
+    ];
+    const history = [
+      point(cutoff - 1, [
+        { shipId: 5, battles: 50, wins: 27, damageCaused: 0, frags: 0, survivedBattles: 25, lastBattleTime: now - 1_000 * 86_400 },
       ]),
     ];
     const delta = computeRecentDelta(current, history, cutoff)!;
@@ -402,6 +488,58 @@ describe("shipRecentDelta (single-ship slice)", () => {
       ]),
     ];
     expect(shipRecentDelta(current, history, cutoff)).toBeNull();
+  });
+
+  it("includes a first-seen ship with no stamp as played in the window", () => {
+    // Single-ship counterpart of the fresh-ship bug: no baseline row for the
+    // ship (it was absent from the baseline fetch) and a zero stamp — the
+    // whole career is the recent delta, labeled from the baseline point.
+    const fresh = ship({ shipId: 9, battles: 12, wins: 9, damageCaused: 2_400_000, lastBattleTime: 0 });
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 7, battles: 300, wins: 160, damageCaused: 20_400_000, frags: 380, survivedBattles: 110, lastBattleTime: 0 },
+      ]),
+    ];
+    const d = shipRecentDelta(fresh, history, cutoff)!;
+    expect(d.battles).toBe(12);
+    expect(d.wins).toBe(9);
+    expect(d.avgDamage).toBeCloseTo(200_000, 5);
+    expect(d.sinceTs).toBe(now - 40 * 86_400);
+  });
+
+  it("includes a re-played ship whose stale carried stamp predates its baseline", () => {
+    // Carry-forward cannot advance the stamp, so it can predate the very
+    // baseline row it is diffed against — the delta is real, the stamp is not.
+    const staleStamp = now - 60 * 86_400;
+    const replayed = ship({
+      shipId: 7,
+      battles: 320,
+      wins: 176,
+      damageCaused: 21_824_000,
+      frags: 412,
+      survivedBattles: 120,
+      lastBattleTime: staleStamp,
+    });
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 7, battles: 300, wins: 160, damageCaused: 20_400_000, frags: 380, survivedBattles: 110, lastBattleTime: staleStamp },
+      ]),
+    ];
+    const d = shipRecentDelta(replayed, history, cutoff)!;
+    expect(d.battles).toBe(20);
+    expect(d.sinceTs).toBe(now - 40 * 86_400);
+  });
+
+  it("returns null for an old-stamp ship with no baseline row", () => {
+    // The resurrected full career is dated before the window and the ship has
+    // no healthy baseline row to prove otherwise — keep it out.
+    const stale = ship({ shipId: 7, battles: 5, wins: 2, damageCaused: 100_000, lastBattleTime: now - 1_000 * 86_400 });
+    const history = [
+      point(now - 40 * 86_400, [
+        { shipId: 8, battles: 10, wins: 5, damageCaused: 200_000, frags: 4, survivedBattles: 2, lastBattleTime: 0 },
+      ]),
+    ];
+    expect(shipRecentDelta(stale, history, cutoff)).toBeNull();
   });
 });
 

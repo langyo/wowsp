@@ -247,13 +247,15 @@ async fn raw_ship_stats_shared(
     let result = fetch_ship_stats(account_id, realm, true, ctx.as_deref())
         .await
         .map(|mut raw| {
-            // The vortex transport serves no per-ship last_battle_time (the
-            // retired WG API did). Carry the previous disk-cache write's
-            // stamps forward BEFORE the session insert, so every serving
-            // path (session cache, disk cache, direct return) agrees and
-            // the date-range career fallback keeps filtering on recency. A
-            // ship the previous write never saw stays 0 — the face a
-            // brand-new ship always had.
+            // The vortex transport serves no per-ship last_battle_time; the
+            // official racer's stamps were already merged in by
+            // `fetch_ship_stats` when it answered. This carry therefore only
+            // covers the racer-abandoned path (vortex answered first) and
+            // ships the racer never listed: take the previous disk-cache
+            // write's stamps forward BEFORE the session insert, so every
+            // serving path (session cache, disk cache, direct return) agrees
+            // and the date-range career fallback keeps filtering on recency.
+            // A ship no earlier write ever saw stays 0.
             if !raw.is_empty() {
                 let prev = read_prev_ship_stats(realm, account_id);
                 carry_last_battle_times(&mut raw, &prev);
@@ -296,7 +298,8 @@ fn read_prev_ship_stats(realm: &str, account_id: i64) -> Vec<PlayerShipStats> {
 }
 
 /// Zero `last_battle_time` stamps take the previous write's value for the
-/// same ship (pure so the carry rule is unit-testable without disk).
+/// same ship — the fallback for stamps the official racer did not supply on
+/// this round (pure so the carry rule is unit-testable without disk).
 pub(super) fn carry_last_battle_times(raw: &mut [RawShipStats], prev: &[PlayerShipStats]) {
     if prev.is_empty() {
         return;

@@ -29,11 +29,15 @@ use super::wg_api::PrAlgo;
 //
 // Whichever arm finishes first fills the table (the racer's rows ship as a
 // partial-rows event); vortex keeps running for the splits and its answer
-// wins when it lands. A vortex failure falls back to the racer's rows, and
-// only both arms failing fails the fetch (then the caller's disk-cache
-// fallback applies). Both arms read through the same stall-tolerant body
-// reader, so "slow but flowing" streams keep going instead of dying at a
-// 15s whole-request timeout — see [`read_body_streamed`].
+// wins when it lands. The racer's rows are kept even then: they carry the
+// per-ship `last_battle_time` stamps the vortex transport never serves, so
+// the winning answer takes them in the stamp merge (see
+// [`merge_last_battle_times`]). A vortex failure falls back to the racer's
+// rows, and only both arms failing fails the fetch (then the caller's
+// disk-cache fallback applies). Both arms read through the same
+// stall-tolerant body reader, so "slow but flowing" streams keep going
+// instead of dying at a 15s whole-request timeout — see
+// [`read_body_streamed`].
 
 /// Event carrying streaming progress for one per-ship fetch. The phases:
 /// `"partial"` — rows ready, the lookup table fills progressively;
@@ -228,8 +232,9 @@ async fn with_terminal_progress<T>(
 ///     still gets a terminal signal (it may already have crossed "slow";
 ///     a source dropped mid-flight must not leave the chip hanging);
 ///   - the racer finishing Ok first surfaces its rows via `on_racer_rows`,
-///     then vortex keeps running: its Ok wins (the splits), its Err falls
-///     back to the racer's rows;
+///     then vortex keeps running: its Ok wins (the splits) and the racer's
+///     rows ride along in the [`RaceOutcome`] so the caller can merge
+///     their stamps; its Err falls back to the racer's rows;
 ///   - vortex Err first still awaits the racer (it may rescue the fetch);
 ///   - the racer Err first is ignored — vortex decides alone.
 ///
@@ -241,7 +246,7 @@ pub(super) async fn race_dual_path(
     primary: impl std::future::Future<Output = Result<Vec<RawShipStats>>>,
     mut on_racer_rows: impl FnMut(&[RawShipStats]),
     mut on_racer_abandoned: impl FnMut(),
-) -> Result<Vec<RawShipStats>> {
+) -> Result<RaceOutcome> {
     /// Which arm settled first at the select — carries that arm's result
     /// out; the OTHER arm stays pending for its branch to await.
     enum Settled {
@@ -259,11 +264,19 @@ pub(super) async fn race_dual_path(
             // give its source a terminal signal first.
             Ok(rows) => {
                 on_racer_abandoned();
-                Ok(rows)
+                Ok(RaceOutcome {
+                    rows,
+                    racer_rows: None,
+                })
             },
             // Vortex failed; the still-running racer may rescue the fetch.
+            // Its rows next become the answer AND stay available for the
+            // (idempotent) stamp merge.
             Err(primary_err) => match racer.await {
-                Ok(racer_rows) => Ok(racer_rows),
+                Ok(racer_rows) => Ok(RaceOutcome {
+                    rows: racer_rows.clone(),
+                    racer_rows: Some(racer_rows),
+                }),
                 Err(_) => Err(primary_err),
             },
         },
@@ -272,14 +285,58 @@ pub(super) async fn race_dual_path(
                 on_racer_rows(&racer_rows);
                 // Vortex keeps running for the splits; its Err falls back
                 // to the racer's already-answered table.
-                match primary.await {
-                    Ok(primary_rows) => Ok(primary_rows),
-                    Err(_) => Ok(racer_rows),
-                }
+                let rows = match primary.await {
+                    Ok(primary_rows) => primary_rows,
+                    Err(_) => racer_rows.clone(),
+                };
+                Ok(RaceOutcome {
+                    rows,
+                    racer_rows: Some(racer_rows),
+                })
             },
             // The racer failed early — vortex decides alone.
-            Err(_) => primary.await,
+            Err(_) => primary.await.map(|rows| RaceOutcome {
+                rows,
+                racer_rows: None,
+            }),
         },
+    }
+}
+
+/// Result of [`race_dual_path`]: the fetch's final rows plus the official
+/// arm's rows when that arm settled Ok. The latter exist purely for their
+/// per-ship `last_battle_time` stamps — the vortex transport serves none —
+/// and are `None` on the racer-abandoned path (vortex wins first), where
+/// the caller's disk-cache carry-forward is the fallback instead. When the
+/// racer's own rows ARE the answer the field still carries them: merging is
+/// idempotent, so callers apply the merge unconditionally.
+#[derive(Debug)]
+pub(super) struct RaceOutcome {
+    /// The final rows: vortex's when it answered Ok, else the racer's.
+    pub(super) rows: Vec<RawShipStats>,
+    /// The official arm's rows, when that arm reached a successful answer.
+    pub(super) racer_rows: Option<Vec<RawShipStats>>,
+}
+
+/// Copy the racer's per-ship `last_battle_time` stamps into the final rows
+/// wherever the final row has none. The vortex transport serves no stamps
+/// at all, so without this a ship played for the first time (or first time
+/// since the disk cache was written) reaches the range math with 0 and its
+/// recent battle delta is dropped as a stale artifact. A non-zero final
+/// stamp is authoritative and never overwritten; a ship the racer didn't
+/// list (or an empty racer answer) is left untouched. Pure so the rule is
+/// unit-testable without HTTP.
+pub(super) fn merge_last_battle_times(
+    final_rows: &mut [RawShipStats],
+    racer_rows: &[RawShipStats],
+) {
+    if racer_rows.is_empty() {
+        return;
+    }
+    for row in final_rows.iter_mut().filter(|r| r.last_battle_time == 0) {
+        if let Some(racer) = racer_rows.iter().find(|r| r.ship_id == row.ship_id) {
+            row.last_battle_time = racer.last_battle_time;
+        }
     }
 }
 
@@ -287,7 +344,9 @@ pub(super) async fn race_dual_path(
 /// plus the official WG-API racer on every realm that has one (CN never
 /// had a WG-style API — vortex only there). See the section header for the
 /// race semantics and [`read_body_streamed`] for the degraded-transport
-/// behavior.
+/// behavior. The racer's per-ship `last_battle_time` stamps — the only
+/// ones served — are merged into the winning answer (see
+/// [`merge_last_battle_times`]).
 pub(super) async fn fetch_ship_stats(
     account_id: i64,
     realm: &str,
@@ -318,7 +377,20 @@ pub(super) async fn fetch_ship_stats(
             ctx.emit_progress("done", "official", None);
         }
     };
-    race_dual_path(racer, primary, on_racer_rows, on_racer_abandoned).await
+    let outcome = race_dual_path(racer, primary, on_racer_rows, on_racer_abandoned).await?;
+    // The racer reached an answer (settled first, or rescued a failed
+    // primary): its stamps are the only per-ship `last_battle_time`
+    // source, so they must survive vortex's winning answer. On the
+    // racer-abandoned path `racer_rows` is None here — the caller's
+    // disk-cache carry-forward (`carry_last_battle_times`) covers that.
+    let RaceOutcome {
+        mut rows,
+        racer_rows,
+    } = outcome;
+    if let Some(racer_rows) = racer_rows {
+        merge_last_battle_times(&mut rows, &racer_rows);
+    }
+    Ok(rows)
 }
 
 /// Vortex per-battle-type bulk endpoints

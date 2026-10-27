@@ -5,7 +5,7 @@ import StatsCard from "@/components/stats/StatsCard";
 import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
 import RefreshStatsButton from "@/components/stats/RefreshStatsButton";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import { HkTag, HkTabs, HkButton, HkScrollContainer } from "@celestia-island/hikari";
+import { HkTag, HkTabs, HkButton, HkScrollContainer, useToast } from "@celestia-island/hikari";
 
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
@@ -18,6 +18,7 @@ import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
+import { useLocalBattlesStore } from "@/stores/localBattles";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useTrendsStore } from "@/stores/trends";
 import { useRankedStore } from "@/stores/ranked";
@@ -41,6 +42,7 @@ import {
   type DateRange,
 } from "@/utils/shipAggregation";
 import { shipNameFromModelDb, shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { summarizeLocalBattles } from "@/utils/localBattleSummary";
 import { t } from "@/i18n";
 import "./DashboardView.scss";
 
@@ -81,10 +83,12 @@ export default defineComponent({
     const accounts = useAccountStore();
     const stats = useStatsStore();
     const shipStats = useShipStatsStore();
+    const localBattles = useLocalBattlesStore();
     const encyclopedia = useEncyclopediaStore();
     const trends = useTrendsStore();
     const ranked = useRankedStore();
     const loadingTasks = useLoadingTasksStore();
+    const toast = useToast();
     const router = useRouter();
     const prefs = useStatsPrefsStore();
     const { uiLocale } = useLanguage();
@@ -129,11 +133,48 @@ export default defineComponent({
       return computeRecentDelta(playerShips.value, hist, dateRangeCutoff(dateRange.value));
     });
 
-    // Ships shown for the selected range: true deltas when a baseline
-    // exists, otherwise the labeled career fallback (recently-played ships
-    // carrying career totals — see the range note below).
-    const dateFiltered = computed(
-      () => recentDelta.value?.ships ?? filterByDateRange(playerShips.value, dateRange.value),
+    // ── Local replay source ───────────────────────────────────────────
+    // The WG API serves career totals only, so the range tabs prefer REAL
+    // battle rows from the local replay battle log when the window holds
+    // any random/ranked battle; the snapshot delta stays as the fallback
+    // (it needs an old-enough local history point and is empty for most
+    // accounts). The cached log's window is validated against the selected
+    // range, so the previous range's rows never flash under a newly
+    // clicked tab while its load is in flight.
+    /** The store's log when it was loaded for EXACTLY the current range —
+     *  the backend window is [now - days, now], so an equal length ending
+     *  at the load's `to` is the same range. */
+    const replayLog = computed(() => {
+      const acc = activeAccount.value;
+      if (!acc || dateRange.value === "all") return null;
+      const win = localBattles.windowFor(acc.accountId, acc.realm);
+      if (!win) return null;
+      if (win.fromSec !== dateRangeCutoff(dateRange.value, win.toSec)) return null;
+      return localBattles.logFor(acc.accountId, acc.realm);
+    });
+
+    /** Replay-derived range summary (random + ranked only) — null until the
+     *  current range's window has loaded. */
+    const replaySummary = computed(() => {
+      const log = replayLog.value;
+      const acc = activeAccount.value;
+      if (!log || !acc) return null;
+      const win = localBattles.windowFor(acc.accountId, acc.realm);
+      if (!win) return null;
+      return summarizeLocalBattles(log.battles, win.fromSec, win.toSec);
+    });
+
+    /** Source switch: replay rows win when the window has ≥1 battle. */
+    const replayActive = computed(() => (replaySummary.value?.battles ?? 0) > 0);
+
+    // Ships shown for the selected range: real replay-derived rows when the
+    // local log covers the window, else true snapshot deltas, else the
+    // labeled career fallback (recently-played ships carrying career totals
+    // — see the range note below).
+    const dateFiltered = computed(() =>
+      replayActive.value
+        ? replaySummary.value!.ships
+        : (recentDelta.value?.ships ?? filterByDateRange(playerShips.value, dateRange.value)),
     );
 
     /** Filtered + multi-key-sorted ships and search-hit names, from
@@ -151,6 +192,32 @@ export default defineComponent({
     const typeSummary = computed(() =>
       aggregateByType(filteredShips.value, encyclopedia.byId),
     );
+
+    /** Load the local replay battle log for the currently selected range
+     *  (no-op on the "all" tab — career totals need no window). Failures are
+     *  surfaced through the store's error state; the snapshot fallback keeps
+     *  rendering, so a missing/unreadable replay folder never blanks the
+     *  dashboard. */
+    async function loadLocalLog(force = false): Promise<void> {
+      const acc = activeAccount.value;
+      if (!acc || dateRange.value === "all") return;
+      // One clock reading closes the window: deriving the cutoff from a
+      // SECOND Date.now() can slip across a second boundary and make
+      // [from, to] one second longer than the range, which the source
+      // validation below would then reject.
+      const nowSec = Math.floor(Date.now() / 1000);
+      try {
+        await localBattles.load(
+          acc.accountId,
+          acc.realm,
+          dateRangeCutoff(dateRange.value, nowSec),
+          nowSec,
+          { force },
+        );
+      } catch {
+        // store.error already carries the reason
+      }
+    }
 
     async function refresh(force = false) {
       const acc = activeAccount.value;
@@ -199,6 +266,9 @@ export default defineComponent({
           trends.loadPlayer(acc.accountId, acc.realm),
           ranked.load(acc.accountId, acc.realm, undefined, ttlOpts),
         ]);
+        // Phase 4: the range tabs' replay source. A non-forced run reuses a
+        // decoded same-window log; the refresh pill forces a re-scan.
+        await loadLocalLog(force);
       } finally {
         loadingTasks.end(taskId);
         if (refreshingFor.value === runKey) refreshingFor.value = null;
@@ -211,6 +281,22 @@ export default defineComponent({
     watch(activeAccount, (acc) => {
       if (acc) void refresh();
     }, { immediate: true });
+
+    // The replay source follows the range tabs: switching 1D/7D/30D loads
+    // that window's battle log (the account-change path goes through
+    // refresh() above). The store dedupes/caches per window.
+    watch(dateRange, () => void loadLocalLog());
+
+    /** Refresh pill: force-refresh the stats and the replay log, then toast
+     *  what the replay source picked up — the pill's only visible feedback.
+     *  Only an explicit click toasts; the mount/account watchers never do. */
+    async function onRefreshPill(): Promise<void> {
+      const before = replaySummary.value?.battles ?? 0;
+      await refresh(true);
+      const added = Math.max(0, (replaySummary.value?.battles ?? 0) - before);
+      if (added > 0) toast.success(t("dashboard.refreshDone", { n: added }));
+      else toast.info(t("dashboard.refreshUpToDate"));
+    }
 
     function shipName(shipId: number, fallbackName: string): string {
       return (
@@ -252,9 +338,12 @@ export default defineComponent({
         "90d": t("dashboard.range90d"),
         all: t("dashboard.rangeAll"),
       }[dateRange.value];
+      const rangeSinceTs = replayActive.value
+        ? replaySummary.value?.sinceTs
+        : recentDelta.value?.sinceTs;
       const rangeLabel =
-        dateRange.value !== "all" && recentDelta.value
-          ? `${rangeText} · ${new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString()}`
+        dateRange.value !== "all" && rangeSinceTs
+          ? `${rangeText} · ${new Date(rangeSinceTs * 1000).toLocaleDateString()}`
           : rangeText;
       const pr = prTier(s.pr);
       // Same anomaly flag the card's KPI strip uses — battles with zero
@@ -398,7 +487,7 @@ export default defineComponent({
                     <>
                       <RefreshStatsButton
                         busy={refreshing.value}
-                        onRefresh={() => void refresh(true)}
+                        onRefresh={() => void onRefreshPill()}
                       />
                       <ShareShotButton
                         busy={shot.busy.value}
@@ -445,15 +534,22 @@ export default defineComponent({
                   />
                 </div>
 
-                {/* What the selected range actually covers — WG only serves
-                    career totals, so deltas need a local baseline. */}
+                {/* What the selected range actually covers, and where it
+                    came from: the local replay battle log when it has
+                    random/ranked battles in the window, else the local
+                    stat-snapshot delta (which needs an old-enough baseline). */}
                 {dateRange.value !== "all" ? (
                   <p class="dash-range-note">
-                    {recentDelta.value
-                      ? t("dashboard.rangeSince", {
-                          date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                    {replayActive.value && replaySummary.value
+                      ? t("dashboard.rangeReplay", {
+                          date: new Date(replaySummary.value.sinceTs * 1000).toLocaleDateString(),
+                          count: replaySummary.value.battles,
                         })
-                      : t("dashboard.rangeNoHistory")}
+                      : recentDelta.value
+                        ? t("dashboard.rangeSince", {
+                            date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                          })
+                        : t("dashboard.rangeNoHistory")}
                   </p>
                 ) : null}
 

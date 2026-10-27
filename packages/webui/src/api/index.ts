@@ -79,6 +79,8 @@ export type {
   VehicleEntry,
   ReplayMeta,
   ReplayMetaLite,
+  LocalBattle,
+  LocalBattleLog,
   ArenaInfo,
   PlayerBuild,
   IngameBuildsFrame,

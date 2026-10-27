@@ -23,6 +23,16 @@
  *  diffing against one would resurrect the whole career total as the
  *  "recent" delta while battles stay a true small delta (see
  *  `isPoisonedCareerRow`).
+ *
+ *  The per-ship `lastBattleTime` guard treats a stamp as stale evidence when
+ *  it is zero (the vortex per-ship transport serves none, and the disk-cache
+ *  carry-forward can only copy a previous write) or when it predates the very
+ *  baseline row it is diffed against. A stale stamp no longer drops real
+ *  window battles: the row stays and is dated at the window's end reference.
+ *  Only a stamp that is consistent with its baseline — landing after that
+ *  baseline's timestamp yet before the window start — still drops the row as
+ *  the missing-baseline resurrection artifact (see
+ *  `lastBattleTimeDecision`).
  */
 import type { PlayerShipStats, ShipCareerTotals, ShipStatsHistoryPoint } from "@/api";
 import type { ShipInfo } from "@/api";
@@ -126,9 +136,11 @@ export interface RecentDelta {
   ships: PlayerShipStats[];
   /** Baseline point timestamp — the latest history point at or before the
    *  cutoff. A ship whose rows there are absent or poisoned falls back to
-   *  its latest healthy earlier point for the counters, but is only shown
-   *  when its last battle itself lands in the window (see the
-   *  `lastBattleTime` guard in `computeRecentDelta`). */
+   *  its latest healthy earlier point for the counters. A row whose stored
+   *  last-battle stamp is stale evidence (zero, or predating that earlier
+   *  point) is kept anyway — the delta proves window battles — and is dated
+   *  at `endTs`; only a stamp consistent with its baseline can still drop
+   *  the row (see `lastBattleTimeDecision`). */
   sinceTs: number;
   /** Window end actually used — the history point that closed a finite end
    *  bound, or "now" (the current rows) for the classic [cutoff, now]
@@ -161,14 +173,46 @@ export function isPoisonedCareerRow(row: ShipCareerTotals): boolean {
   return row.battles > 0 && row.damageCaused === 0 && row.frags === 0;
 }
 
+/** How the window guard treats one row's stored career-last battle time.
+ *
+ *  A stamp can only date the delta when it can account for it: it has to land
+ *  after the row's baseline point and inside the window. Two shapes are stale
+ *  evidence instead — the vortex per-ship transport serves no stamp at all
+ *  (0), and the disk-cache carry-forward can only copy a PREVIOUS write's
+ *  value, so a ship re-played after a gap keeps a stamp that predates the
+ *  baseline it is now diffed against. There a positive battle delta proves
+ *  real window battles and the stamp is the artifact: keep the row and
+ *  re-date it at the window end (`"stamp"`). A nonzero stamp that lands
+ *  after its baseline but before the window start is consistent evidence the
+ *  battles it counts were fought before the window — that positive delta is
+ *  the missing-baseline resurrection artifact (truncated fetch / poisoned
+ *  row), so drop it (`"drop"`).
+ *
+ *  `baseTs` is undefined when the ship has no healthy baseline row: a
+ *  first-ever ship. A zero stamp is then a new ship first played in the
+ *  window (keep and date at the window end), while a real old stamp proves
+ *  the resurrected career predates the window (drop). */
+function lastBattleTimeDecision(
+  lastBattleTime: number,
+  sinceTs: number,
+  baseTs: number | undefined,
+): "keep" | "stamp" | "drop" {
+  const stale = lastBattleTime === 0 || (baseTs !== undefined && lastBattleTime <= baseTs);
+  if (lastBattleTime < sinceTs) return stale ? "stamp" : "drop";
+  return "keep";
+}
+
 /** Compute one ship's real recent stats: current career totals minus the
  *  totals at the latest non-poisoned history row at or before `cutoffSec`
  *  (single-ship counterpart of `computeRecentDelta`). Deltas are clamped at 0
  *  to tolerate WG-side data corrections; a zero/negative battle delta yields
  *  null (not played in the window is indistinguishable from no baseline
- *  coverage per ship), and so does a `lastBattleTime` before the window's
- *  labeled start — a positive delta there would be the same missing-baseline
- *  artifact `computeRecentDelta` guards against. */
+ *  coverage per ship). A stale `lastBattleTime` no longer discards real
+ *  window battles — zero stamps and stamps predating the ship's own baseline
+ *  point are the transport artifact, not the delta (see
+ *  `lastBattleTimeDecision`) — while a no-baseline ship whose real stamp
+ *  predates the window still yields null (the missing-baseline resurrection
+ *  artifact). */
 export function shipRecentDelta(
   current: PlayerShipStats,
   history: ShipStatsHistoryPoint[],
@@ -195,10 +239,17 @@ export function shipRecentDelta(
   const sinceTs = base ? baseTs : latestTs;
   const battles = current.battles - (base?.battles ?? 0);
   if (battles <= 0) return null;
-  // Same artifact guard as computeRecentDelta: a resurrected full-career
-  // delta for a ship last played before the window start is a missing
-  // (poisoned) baseline, not a recent battle.
-  if (current.lastBattleTime < sinceTs) return null;
+  // Same evidence rule as computeRecentDelta: a stale stamp (zero, or
+  // predating the ship's own baseline point) does not discard a real
+  // after-baseline delta; only a no-baseline career resurrection dated
+  // before the window drops.
+  const hasBaseline = base !== undefined && base.battles > 0;
+  if (
+    lastBattleTimeDecision(current.lastBattleTime, sinceTs, hasBaseline ? baseTs : undefined) ===
+    "drop"
+  ) {
+    return null;
+  }
   const wins = Math.max(0, current.wins - (base?.wins ?? 0));
   const frags = Math.max(0, current.frags - (base?.frags ?? 0));
   const damage = Math.max(0, current.damageCaused - (base?.damageCaused ?? 0));
@@ -228,15 +279,19 @@ export function shipRecentDelta(
  *  newer battles in. Without a snapshot that old the window effectively
  *  runs to now — the current rows close it, and `endTs` says so.
  *
- *  Ships are dropped when the career-last battle time at the window's end
- *  reference (the current rows in the classic view) predates `sinceTs`:
- *  the window is labeled [sinceTs, end] and a career-last battle before
- *  `sinceTs` means nothing was played in it. A positive battle delta under
- *  that condition is a baseline artifact — the ship's row is missing up to
- *  the cutoff (poisoned rows never record one, or a truncated fetch dropped
- *  it) and the diff resurrects stale career totals — never a window
- *  battle. The views' date column renders the current row's same field, so
- *  the guard keeps the filter and the displayed date in agreement. */
+ *  The career-last battle time at the window's end reference (the current
+ *  rows in the classic view, the closing snapshot in a bounded window)
+ *  decides the last guard. A stale stamp — zero (the vortex per-ship
+ *  transport serves none), or predating the ship's own baseline point (a
+ *  carried stamp) — does not drop the row: the positive delta proves real
+ *  after-baseline battles, so the ship stays and its row is re-dated at the
+ *  window end (`endTs`) instead, keeping the views' date column honest. A
+ *  nonzero stamp that lands after its baseline yet before `sinceTs` is
+ *  consistent evidence the battles were fought before the window — the
+ *  missing-baseline resurrection artifact (the ship's row is absent from the
+ *  latest baseline fetch: poisoned, or a truncated fetch dropped it, so the
+ *  diff resurrects stale career totals) — and the row drops. See
+ *  `lastBattleTimeDecision` for the full rule. */
 export function computeRecentDelta(
   current: PlayerShipStats[],
   history: ShipStatsHistoryPoint[],
@@ -245,6 +300,9 @@ export function computeRecentDelta(
 ): RecentDelta | null {
   let sinceTs = 0;
   const baseByShip = new Map<number, ShipCareerTotals>();
+  // Timestamp of each ship's baseline point — the freshness witness the
+  // lastBattleTime guard compares a carried stamp against.
+  const baseTsByShip = new Map<number, number>();
   for (const point of history) {
     if (point.timestamp > cutoffSec) continue;
     sinceTs = point.timestamp;
@@ -253,6 +311,7 @@ export function computeRecentDelta(
     for (const row of point.ships) {
       if (isPoisonedCareerRow(row)) continue;
       baseByShip.set(row.shipId, row);
+      baseTsByShip.set(row.shipId, point.timestamp);
     }
   }
   if (sinceTs === 0) return null;
@@ -287,13 +346,16 @@ export function computeRecentDelta(
     const end = endByShip ? endByShip.get(cur.shipId) : cur;
     const battles = (end?.battles ?? 0) - (prev?.battles ?? 0);
     if (battles <= 0) continue;
-    // Career-last battle before the labeled window start → nothing was
-    // played in it; the delta is a missing-baseline artifact, not recent
-    // battles (see the doc comment above). Read at the window-end reference
-    // — the current rows in the classic view, the closing snapshot in a
-    // bounded window — so a resurrected delta is dated by the snapshot it
-    // was diffed against, not by battles fought after the window.
-    if ((end ?? cur).lastBattleTime < sinceTs) continue;
+    // Guard/dating evidence, read at the window-end reference — the current
+    // rows in the classic view, the closing snapshot in a bounded window —
+    // so a resurrected delta is dated by the snapshot it was diffed against,
+    // not by battles fought after the window. A stale stamp keeps the row
+    // (and is re-dated at endTs below); only consistent pre-window stamps
+    // drop it (see `lastBattleTimeDecision`).
+    const baseTs =
+      prev !== undefined && prev.battles > 0 ? (baseTsByShip.get(cur.shipId) ?? sinceTs) : undefined;
+    const decision = lastBattleTimeDecision((end ?? cur).lastBattleTime, sinceTs, baseTs);
+    if (decision === "drop") continue;
     const wins = Math.max(0, (end?.wins ?? 0) - (prev?.wins ?? 0));
     const damageCaused = Math.max(0, (end?.damageCaused ?? 0) - (prev?.damageCaused ?? 0));
     ships.push({
@@ -305,6 +367,10 @@ export function computeRecentDelta(
       survivedBattles: Math.max(0, (end?.survivedBattles ?? 0) - (prev?.survivedBattles ?? 0)),
       winrate: (wins / battles) * 100,
       avgDamage: damageCaused / battles,
+      // Stale/absent stamps are dated at the window's end reference so the
+      // views' date column never shows a pre-window (or epoch) date for a
+      // battle the delta counted in this window.
+      lastBattleTime: decision === "stamp" ? endTs : cur.lastBattleTime,
     });
   }
   return { ships, sinceTs, endTs };
