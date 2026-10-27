@@ -2,6 +2,7 @@ import { computed, defineComponent, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   HardDriveDownload, Usb, Download, ExternalLink, FileDown, Check, Zap,
+  ChevronRight, MessageCircle,
 } from "@lucide/vue";
 import { LinkButton, Reveal } from "@/components/ui";
 import { siteBase } from "@/composables/siteBase";
@@ -23,6 +24,15 @@ const MIRROR_PREFIXES = [
   "https://ghfast.top/",
   "https://ghproxy.net/",
 ];
+
+/* QQ notification group — the same group the desktop app's About panel and
+ * the repo README point at. `qm.qq.com/q/<share-code>` is QQ's direct join
+ * link: opening it hands off to QQ (or the web join page) with the group
+ * already loaded, so nobody has to search a group number by hand. The
+ * group's file list also carries every installer — the fallback when GitHub
+ * is slow or unreachable — and release/fix news is announced there too. */
+const QQ_GROUP = "612331811";
+const QQ_JOIN = "https://qm.qq.com/q/ExDBBawuLC";
 
 interface ReleaseAsset {
   name: string;
@@ -319,6 +329,35 @@ export default defineComponent({
             )}
           </Reveal>
           <p class="download__notes">{t("download.notes")}</p>
+          {/* ── QQ notification group ─────────────────────────────
+           * The community row under the installer cards. The whole row is
+           * one anchor to QQ's direct join link, so a click anywhere joins
+           * the group and there is no nested button for the keyboard to
+           * tab into. Its file list mirrors every installer (the fallback
+           * when GitHub is slow or unreachable); release news and fixes
+           * are announced there too. */}
+          <Reveal delay={140}>
+            <a
+              class="download__qq glass-panel"
+              href={QQ_JOIN}
+              target="_blank"
+              rel="noopener"
+            >
+              <span class="download__qq-icon" aria-hidden="true">
+                <MessageCircle size={20} />
+              </span>
+              <span class="download__qq-body">
+                <span class="download__qq-title">
+                  {t("download.qqTitle", { n: QQ_GROUP })}
+                </span>
+                <span class="download__qq-desc">{t("download.qqDesc")}</span>
+              </span>
+              <span class="download__qq-cta hk-btn hk-btn-primary hk-btn-md">
+                {t("download.qqJoin")}
+                <ChevronRight size={14} />
+              </span>
+            </a>
+          </Reveal>
         </section>
       </div>
     );

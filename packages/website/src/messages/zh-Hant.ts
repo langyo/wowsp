@@ -323,6 +323,9 @@ lookup: {
     assets: "發佈資源",
     notes: "所有資源均發佈在 GitHub Releases",
     mirrorNote: "檔案下載將經由自動選擇的鏡像 {host} 進行",
+    qqTitle: "加入 QQ 通知群（{n}）",
+    qqDesc: "群檔案裡也備好了各個安裝包，GitHub 打不開或下載慢時可以直接在群裡拿；版本更新與問題修復也會在群內同步。",
+    qqJoin: "直接入群",
   },
   footer: {
     license: "以 SySL-1.0 授權發佈",

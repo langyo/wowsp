@@ -323,6 +323,9 @@ lookup: {
     assets: "Release assets",
     notes: "All assets are published on GitHub Releases",
     mirrorNote: "File downloads are served through mirror {host} (auto-selected)",
+    qqTitle: "Join the WoWSP QQ notification group ({n})",
+    qqDesc: "The installers are also available in the group's file list — grab them there when GitHub is slow or unreachable. Release news and fixes are announced in the group too.",
+    qqJoin: "Join the group",
   },
   footer: {
     license: "Licensed under SySL-1.0",
