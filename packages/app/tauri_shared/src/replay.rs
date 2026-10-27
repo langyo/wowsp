@@ -47,6 +47,15 @@ pub struct ReplayMeta {
     /// into the operation label.
     #[serde(default)]
     pub scripted_unit_count: u32,
+    /// Roster entries on the ENEMY side (`relation >= 2`).
+    /// Factual count only — a pve-family roster with listed players but ZERO
+    /// enemy-side entries is the single-team story/operation shape (WW2
+    /// operations list only the player's own team), which is how the frontend
+    /// mode classifier tells a real operation (行动) from plain co-op
+    /// (user report 2026-10-26: a WW2 operation replay was listed as
+    /// co-op 联合作战).
+    #[serde(default)]
+    pub enemy_count: u32,
     /// Per-player roster.
     pub vehicles: Vec<VehicleEntry>,
     /// Raw JSON block preserved for the frontend to render arbitrary fields.
@@ -96,6 +105,13 @@ pub struct ReplayMetaLite {
     /// lite entry carries no roster to scan.
     #[serde(default)]
     pub scripted_unit_count: u32,
+    /// Enemy-side roster entries (`relation >= 2`) — see
+    /// [`ReplayMeta::enemy_count`]. The list view carries no roster to scan,
+    /// so a pve-family row with listed players but zero enemy-side entries is
+    /// how the single-team operation (WW2 operations list the own team only)
+    /// is told from plain co-op, whose enemy bots fill relation >= 2.
+    #[serde(default)]
+    pub enemy_count: u32,
     /// The recording player's ship id — the roster entry with `relation == 0`.
     /// Used to render the per-replay holographic ship preview.
     pub own_ship_id: Option<i64>,

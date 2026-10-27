@@ -50,7 +50,7 @@ import {
   type PairedHost,
 } from "@/stores/pairing";
 import type { DiscoveredHost, RemoteReplayEntry } from "@/api";
-import { modeColor, modeKey } from "@/utils/modeColors";
+import { modeColor, modeKey, singleTeamRosterFromCounts } from "@/utils/modeColors";
 import "./PairingWizard.scss";
 
 /** `YYYYMMDD[_HHMMSS]` → locale-friendly date(+time); raw when unparseable. */
@@ -63,6 +63,15 @@ function formatDateTime(dt?: string | null): string {
   return `${y}-${mo}-${d}${hhmm}`;
 }
 
+/** The single-team story-operation shape of a remote lite row — the count
+ *  twin of the arena rule. The host serves ReplayMetaLite entries (no
+ *  roster), so a pve-family row with listed players and a literal-zero
+ *  enemy side is a WW2-style operation (行动). Strict zero: a lagging host
+ *  without the enemyCount field reads as UNKNOWN, never as "no enemy". */
+function singleTeamOf(e: RemoteReplayEntry): boolean {
+  return singleTeamRosterFromCounts(e.playerCount, e.enemyCount);
+}
+
 /** Mode pill label with the generic fallback (same rule as the rail cards). */
 function modeLabel(e: RemoteReplayEntry): string {
   const key = modeKey(
@@ -71,6 +80,7 @@ function modeLabel(e: RemoteReplayEntry): string {
     e.eventType,
     e.botCount ?? 0,
     e.scriptedUnitCount ?? 0,
+    singleTeamOf(e),
   );
   if (!key) return t("replay.mode._fallback");
   const lbl = t(`replay.mode.${key}`);
@@ -657,6 +667,7 @@ export default defineComponent({
                                       e.eventType,
                                       e.botCount ?? 0,
                                       e.scriptedUnitCount ?? 0,
+                                      singleTeamOf(e),
                                     ) as CSSProperties
                                   }
                                 >

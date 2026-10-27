@@ -28,7 +28,7 @@ import { useLiveUiStore } from "@/stores/liveUi";
 import { useOverlayStore } from "@/stores/overlay";
 import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
-import { modeKey } from "@/utils/modeColors";
+import { hasSingleTeamRoster, modeKey } from "@/utils/modeColors";
 import { replaysDir } from "@/utils/mapNames";
 import "./LiveView.scss";
 
@@ -194,6 +194,11 @@ export default defineComponent({
         null,
         a.botCount ?? 0,
         a.scriptedUnitCount ?? 0,
+        // The live arena carries the full roster: a pve-family battle with
+        // players but no enemy side is a story operation (行动) even when
+        // its descriptor has no operation fingerprint — it must take the
+        // PvE battle-duration cap, not the PvP one.
+        hasSingleTeamRoster(a.vehicles),
       );
       const pvp =
         key === "pvp" ||

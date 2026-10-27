@@ -349,6 +349,7 @@ mod tests {
             event_type: None,
             bot_count: 0,
             scripted_unit_count: 0,
+            enemy_count: 0,
             own_ship_id: None,
             player_name: None,
             player_count: 0,

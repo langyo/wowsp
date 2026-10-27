@@ -65,8 +65,12 @@ beforeEach(() => {
   localStorage.clear();
 });
 
+/** Lite replay fixture. `enemyCount` defaults to a two-side roster: a
+ *  literal 0 enemy count would read as the single-team story-operation
+ *  shape (see modeColors singleTeamRosterFromCounts) and flip pve rows to
+ *  operation. */
 function meta(partial: Partial<ReplayMetaLite> & { path: string }): ReplayMetaLite {
-  return { playerCount: 1, ...partial };
+  return { playerCount: 1, enemyCount: 5, ...partial };
 }
 
 /** Click an option pill inside the (single) teleported popup. */
@@ -128,6 +132,31 @@ describe("replayModeKeyOf / filterReplays", () => {
     expect(replayModeKeyOf(meta({ path: "b", matchGroup: "pve", scriptedUnitCount: 3 }))).toBe(
       "operation",
     );
+  });
+
+  it("labels the WW2 operation row by its scenario / single-team counts", () => {
+    // The user's 2026-10-26 WW2 replay: matchGroup pve + scenario
+    // WW2_OPERATION_1_1011LVL, seven listed players, no enemy side.
+    expect(
+      replayModeKeyOf(
+        meta({
+          path: "ww2",
+          matchGroup: "pve",
+          scenario: "WW2_OPERATION_1_1011LVL",
+          eventType: "",
+          playerCount: 7,
+          enemyCount: 0,
+        }),
+      ),
+    ).toBe("operation");
+    // No scenario fingerprint: the single-team counts alone classify it.
+    expect(
+      replayModeKeyOf(meta({ path: "story", matchGroup: "pve", playerCount: 7, enemyCount: 0 })),
+    ).toBe("operation");
+    // A normal co-op row (enemy side present) stays co-op.
+    expect(
+      replayModeKeyOf(meta({ path: "coop", matchGroup: "pve", playerCount: 9, enemyCount: 9 })),
+    ).toBe("cooperative");
   });
 
   it("empty selection passes the input through untouched (identity)", () => {

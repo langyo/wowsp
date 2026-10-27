@@ -38,7 +38,7 @@ import { shareFooterStrings } from "@/features/share/shotKit";
 import { useShareImage } from "@/features/share/useShareImage";
 import { useLiveSelfStore } from "@/stores/liveSelf";
 import { displayMapName } from "@/utils/mapNames";
-import { modeColor, modeKey } from "@/utils/modeColors";
+import { hasSingleTeamRoster, modeColor, modeKey } from "@/utils/modeColors";
 import { useNickMasking } from "./postBattleShare";
 import { renderLiveSelfShot, type SelfShotModel } from "./liveSelfShot";
 import { buildSelfShotModel, fmtClock } from "./selfReportView";
@@ -51,15 +51,17 @@ import "./LiveBattlePanel.scss";
 import "./LiveSelfPanel.scss";
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
- *  battle script / roster bots) — the roster panel's helper, verbatim. */
+ *  battle script / roster bots / single-team roster shape) — the roster
+ *  panel's helper, verbatim. */
 function modeLabelOf(
   group?: string | null,
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
   scriptedUnitCount = 0,
+  singleTeamRoster: boolean | null = null,
 ): string {
-  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount);
+  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount, singleTeamRoster);
   if (!key) return t("replay.mode._fallback");
   const i18nKey = "replay.mode." + key;
   const lbl = t(i18nKey);
@@ -102,6 +104,12 @@ export default defineComponent({
 
     const model = computed<SelfStatsModel | null>(() => live.model);
 
+    /** The roster's single-team shape (players listed, no enemy side) — the
+     *  same rule the live roster panel forwards into the classifier: inside
+     *  the pve family it marks a story operation (行动), so the pill and
+     *  the copy shot must label it "operation" instead of "cooperative". */
+    const singleTeamRoster = computed(() => hasSingleTeamRoster(props.arena?.vehicles ?? []));
+
     /** The battle-mode pill data (label + colors) for the share shot — the
      *  head's pill builds its own span, same vocabulary. */
     const shotMode = (): SelfShotModel["mode"] => {
@@ -113,6 +121,7 @@ export default defineComponent({
         arena.eventType,
         arena.botCount ?? 0,
         arena.scriptedUnitCount ?? 0,
+        singleTeamRoster.value,
       );
       return {
         label: modeLabelOf(
@@ -121,6 +130,7 @@ export default defineComponent({
           arena.eventType,
           arena.botCount ?? 0,
           arena.scriptedUnitCount ?? 0,
+          singleTeamRoster.value,
         ),
         color: c.color,
         background: c.background,
@@ -172,6 +182,7 @@ export default defineComponent({
               arena.eventType,
               arena.botCount ?? 0,
               arena.scriptedUnitCount ?? 0,
+              singleTeamRoster.value,
             ) as CSSProperties
           }
         >
@@ -181,6 +192,7 @@ export default defineComponent({
             arena.eventType,
             arena.botCount ?? 0,
             arena.scriptedUnitCount ?? 0,
+            singleTeamRoster.value,
           )}
         </span>
       );

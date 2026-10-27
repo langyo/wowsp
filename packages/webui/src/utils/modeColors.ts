@@ -9,6 +9,12 @@
  *   - scriptedUnitCount — the scripted-unit half of botCount (`IDS_*` text
  *     keys / `#Name` scenario style); co-op and random fills carry `:Name:`
  *     bots only, so a non-zero count in the pve family means operation (行动)
+ *   - singleTeamRoster — listed players but NO enemy-side roster entry
+ *     (relation >= 2). Official co-op always fields the enemy bot team, so
+ *     this shape inside the pve family is a story operation (行动): the
+ *     2026-10-26 WW2 replay arrived as matchGroup "pve" + scenario
+ *     "WW2_OPERATION_1_1011LVL" with seven relation-0/1 players and no
+ *     enemy side.
  *
  * The eventType is the most specific signal (a WG battle-script id); scenario
  * is next; matchGroup is the fallback. botCount subdivides WITHIN that layering
@@ -52,6 +58,46 @@ const FALLBACK_HEX = "e6a817";
 export const MODE_KEY_ORDER: readonly string[] = Object.keys(MODE_HEX);
 
 /**
+ * Whether a FULL roster is the single-team shape: non-empty, and every
+ * entry on the recorder's side (relation < 2). A pve-family battle with
+ * listed players and NO enemy-side entry cannot be real co-op — official
+ * co-op always fields the enemy bot team — it is the story/operation
+ * roster (行动), the shape of the 2026-10-26 WW2 operation replay (seven
+ * relation-0/1 players, no enemy side).
+ *
+ * Callers holding the roster: the live arena (ArenaInfo.vehicles), the
+ * replay viewer header, the in-game overlay. Lite-metadata callers (the
+ * replay list card / mode filter, the playtime breakdown) have no roster
+ * and use the count twin `singleTeamRosterFromCounts` instead.
+ */
+export function hasSingleTeamRoster(
+  vehicles: readonly { relation: number }[] | null | undefined,
+): boolean {
+  return !!vehicles && vehicles.length > 0 && vehicles.every((v) => v.relation < 2);
+}
+
+/**
+ * Whether the LITE metadata describes the single-team shape: `playerCount`
+ * listed players and no enemy-side entry. `playerCount` excludes scripted
+ * units and `enemyCount` is the wire struct's count of relation >= 2 roster
+ * entries, so this is the count twin of `hasSingleTeamRoster` — the
+ * surfaces that only carry the scan's summary counts read the same rule
+ * without a roster.
+ *
+ * Only a LITERAL zero counts as "no enemy side". The current Rust wire
+ * always sends the number (0 for a genuinely empty enemy side), so an
+ * ABSENT count means UNKNOWN — a lite row from an older host release (the
+ * mobile app pairs with desktop hosts that may lag) must keep its
+ * historical label instead of being promoted to 行动.
+ */
+export function singleTeamRosterFromCounts(
+  playerCount: number | null | undefined,
+  enemyCount: number | null | undefined,
+): boolean {
+  return (playerCount ?? 0) > 0 && enemyCount === 0;
+}
+
+/**
  * Resolve a battle's canonical mode key from its layered identity fields.
  * Battle-script (eventType) wins, then the custom-room subdivision, then
  * scenario, then matchGroup.
@@ -66,6 +112,15 @@ export const MODE_KEY_ORDER: readonly string[] = Object.keys(MODE_HEX);
  *     pvp-family matchGroup (pvp / ranked / clan / brawl / squad), or when
  *     the tournament scenario confirms the room. Bot rosters in pve-family
  *     groups keep their official labels (Co-op, Asymmetric, Operations).
+ *
+ * Story operations are also fingerprinted by their NAMES: any scenario or
+ * battle script containing "operation" is 行动 (the WW2 story family —
+ * `WW2_OPERATION_1_1011LVL` — as well as the new-account escort op), and
+ * the optional `singleTeamRoster` shape flag (see `hasSingleTeamRoster` /
+ * `singleTeamRosterFromCounts`) marks a pve-family roster with players but
+ * no enemy side, which real co-op can never produce. The flag defaults to
+ * null (unknown) so every caller that cannot see the roster keeps the
+ * historical classification.
  */
 export function modeKey(
   matchGroup?: string | null,
@@ -73,6 +128,7 @@ export function modeKey(
   eventType?: string | null,
   botCount = 0,
   scriptedUnitCount = 0,
+  singleTeamRoster: boolean | null = null,
 ): string {
   const et = (eventType ?? "").toLowerCase();
   const sc = (scenario ?? "").toLowerCase();
@@ -98,6 +154,12 @@ export function modeKey(
   if (et.includes("airships")) return "event";
   if (et.includes("airbarrier")) return "event";
   if (et.includes("respawns")) return "event";
+  // Generic operation fingerprint — any battle script whose id says
+  // "operation" is 行动 (the `WW2_OPERATION_*` family; the new-account
+  // `LOW_LVL_OPERATION_*` prefix is caught by its own line above). Placed
+  // after the event/asymmetric branches so it never steals a more specific
+  // label.
+  if (et.includes("operation")) return "operation";
   if (et.includes("_op_")) return "operation";
 
   // Custom-room level (see doc above).
@@ -119,18 +181,24 @@ export function modeKey(
   if (sc.includes("armsrace")) return "armsrace";
   if (sc.includes("ranked")) return "ranked";
   if (sc.startsWith("pcvo") || sc.includes("_op_") || sc.includes("_hl_")) return "operation";
-  // The low-level escort op (new-account) is an operation too — its scenario
-  // id says so even though its roster LAYOUT stays two-team (isOperationBattle
-  // keeps that split; only the label here is operation 行动).
-  if (sc.startsWith("low_lvl_operation")) return "operation";
+  // Generic scenario-level operation fingerprint — any scenario id naming an
+  // operation labels 行动: the WW2 story family (`WW2_OPERATION_1_1011LVL`,
+  // the user's misclassified 2026-10-26 WW2 replay) as much as the
+  // new-account escort op (`LOW_LVL_OPERATION_*`, whose roster LAYOUT stays
+  // two-team — isOperationBattle keeps that split; only the label here is
+  // operation).
+  if (sc.includes("operation")) return "operation";
 
   // matchGroup level. `pve` alone (no operation fingerprint above) is the
   // plain co-op bucket — operations normally arrive as `pve` too, but they
-  // are caught by the scenario/script levels first. The one late-caught case
-  // is the descriptor with NO operation fingerprint at all: scripted units
-  // (`IDS_*` / `#Name`) never field in plain co-op, so their presence inside
-  // the co-op family marks an operation (the escort op arrives this way when
-  // the scenario field is empty).
+  // are caught by the scenario/script levels first. Two late-caught cases
+  // remain, both descriptors with NO operation fingerprint at all:
+  // scripted units (`IDS_*` / `#Name`) never field in plain co-op, so their
+  // presence inside the co-op family marks an operation (the escort op
+  // arrives this way when the scenario field is empty); and the single-team
+  // roster shape (players listed, no enemy-side entry) is impossible for
+  // real co-op — its rosters always carry the enemy bot team — so it marks
+  // a story operation (the 2026-10-26 WW2 replay's shape).
   if (mg.startsWith("ranked")) return "ranked";
   if (mg === "pvp" || mg.includes("random")) return "pvp";
   if (mg.includes("clan")) return "clan";
@@ -143,7 +211,7 @@ export function modeKey(
     // (gameType "CooperativeBattle"); WG's equivalent arrives as
     // low_lvl_operation.
     mg === "intro";
-  if (coopFamily && scriptedUnitCount > 0) return "operation";
+  if (coopFamily && (scriptedUnitCount > 0 || singleTeamRoster === true)) return "operation";
   if (coopFamily) return "cooperative";
   if (mg.includes("event")) return "event";
   if (mg.includes("train") || mg.includes("sandbox")) return "training";
@@ -170,21 +238,44 @@ export function modeKey(
  * battles whose enemy block reads like any co-op's, so they take the
  * ordinary two-column layout. Their mode LABEL is still "operation" (see
  * modeKey) — only the roster layout stays two-team here.
+ *
+ * Two fingerprints since the 2026-10-26 WW2 operation report: any scenario
+ * or battle script containing "operation" is 行动 (`WW2_OPERATION_*`; the
+ * tutorial-family exclusions above still win), and — for arenas whose
+ * descriptor carries no operation fingerprint at all — the optional
+ * `singleTeamRoster` shape flag: a pve-family battle with listed players
+ * but no enemy-side roster entry cannot be real co-op (its rosters always
+ * carry the enemy bot team), so it is a story operation. The flag defaults
+ * to null (unknown), keeping every roster-blind caller's behaviour.
  */
 export function isOperationBattle(
   matchGroup?: string | null,
   scenario?: string | null,
   eventType?: string | null,
   names: string[] = [],
+  singleTeamRoster: boolean | null = null,
 ): boolean {
   const et = (eventType ?? "").toLowerCase();
   const sc = (scenario ?? "").toLowerCase();
   if (sc.startsWith("low_lvl_operation") || sc === "first_battle") return false;
   if (et.startsWith("low_lvl_operation") || et === "first_battle") return false;
   if (names.some((n) => n.toUpperCase().startsWith("IDS_OP_15_"))) return false;
+  // Generic descriptor fingerprint: any operation-named scenario / battle
+  // script is 行动 — `WW2_OPERATION_1_1011LVL` (the 2026-10-26 WW2 replay)
+  // included. The tutorial-family exclusions above still keep their
+  // two-team layouts.
+  if (et.includes("operation") || sc.includes("operation")) return true;
   if (et.startsWith("pcvo") || sc.startsWith("pcvo")) return true;
   if (et.includes("_op_") || sc.includes("_op_") || sc.includes("_hl_")) return true;
-  if ((matchGroup ?? "").toLowerCase() === "pve" && names.some((n) => n.toUpperCase().startsWith("IDS_OP_"))) {
+  // Single-team roster rule: inside the co-op family a roster with listed
+  // players but no enemy-side entries is the story-operation shape (real
+  // co-op always fields the enemy bot team). The pvp family never takes
+  // this rule — its battles are always two-team, and a 1v0 roster there is
+  // a parsing accident, not an operation layout.
+  const mg = (matchGroup ?? "").toLowerCase();
+  const coopFamily = mg.startsWith("pve") || mg.includes("coop") || mg.includes("cooperative");
+  if (coopFamily && singleTeamRoster === true) return true;
+  if (mg === "pve" && names.some((n) => n.toUpperCase().startsWith("IDS_OP_"))) {
     return true;
   }
   return false;
@@ -211,12 +302,18 @@ export function isOperationBattle(
  * fill labels, the radar/hydro/smoke intel card) on co-op battles and
  * suppresses it on the story/operation single-team layouts — see the
  * overlay page's `storyLayout` gate.
+ *
+ * The optional `singleTeamRoster` (5th) is forwarded to
+ * `isOperationBattle`, so a caller that can see the roster opts into the
+ * single-team operation rule: a pve-family battle with listed players and
+ * no enemy side is an operation, not plain co-op.
  */
 export function isCoopBattle(
   matchGroup?: string | null,
   scenario?: string | null,
   eventType?: string | null,
   names: string[] = [],
+  singleTeamRoster: boolean | null = null,
 ): boolean {
   const mg = (matchGroup ?? "").toLowerCase();
   const sc = (scenario ?? "").toLowerCase();
@@ -227,7 +324,7 @@ export function isCoopBattle(
     sc.includes("coop") ||
     et.startsWith("pcve");
   if (!coopFamily) return false;
-  if (isOperationBattle(matchGroup, scenario, eventType, names)) return false;
+  if (isOperationBattle(matchGroup, scenario, eventType, names, singleTeamRoster)) return false;
   return !names.some((n) => {
     const u = n.toUpperCase();
     return u.startsWith("IDS_") || u.startsWith("#");
@@ -256,28 +353,38 @@ export function isCoopBattle(
  * WG-family key order on a two-team table (utils/realms's
  * realmUsesShipNameOrder answers "could this client?", this answers "is
  * this the calibrated table?").
+ *
+ * The optional `singleTeamRoster` (5th) is forwarded to the two
+ * classifiers: a pve-family roster with players but no enemy side takes
+ * the operation branch and reads as the single-team table.
  */
 export function isSingleTeamTabLayout(
   matchGroup?: string | null,
   scenario?: string | null,
   eventType?: string | null,
   names: string[] = [],
+  singleTeamRoster: boolean | null = null,
 ): boolean {
-  if (isOperationBattle(matchGroup, scenario, eventType, names)) return true;
-  if (!isCoopBattle(matchGroup, scenario, eventType, names)) return false;
+  if (isOperationBattle(matchGroup, scenario, eventType, names, singleTeamRoster)) return true;
+  if (!isCoopBattle(matchGroup, scenario, eventType, names, singleTeamRoster)) return false;
   return modeKey(matchGroup, scenario, eventType) !== "asymmetric";
 }
 
 /** Resolve the colour triple for a battle mode. Unknown modes fall back to
- *  accent gold so the pill always has a colour. */
+ *  accent gold so the pill always has a colour. The optional
+ *  `singleTeamRoster` flag is forwarded into `modeKey` (default null keeps
+ *  the historical colour for roster-blind callers). */
 export function modeColor(
   matchGroup?: string | null,
   scenario?: string | null,
   eventType?: string | null,
   botCount = 0,
   scriptedUnitCount = 0,
+  singleTeamRoster: boolean | null = null,
 ): ModeColor {
-  return modeColorOfKey(modeKey(matchGroup, scenario, eventType, botCount, scriptedUnitCount));
+  return modeColorOfKey(
+    modeKey(matchGroup, scenario, eventType, botCount, scriptedUnitCount, singleTeamRoster),
+  );
 }
 
 /** Colour triple for an ALREADY-RESOLVED canonical mode key — for callers

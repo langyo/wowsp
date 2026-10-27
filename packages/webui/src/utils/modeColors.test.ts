@@ -5,11 +5,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  hasSingleTeamRoster,
   isCoopBattle,
   isOperationBattle,
   isSingleTeamTabLayout,
   modeColor,
+  modeColorOfKey,
   modeKey,
+  singleTeamRosterFromCounts,
 } from "./modeColors";
 
 describe("modeKey", () => {
@@ -59,6 +62,45 @@ describe("modeKey", () => {
     expect(modeKey("pvp", "domination_3point", null, 0, 1)).toBe("pvp");
   });
 
+  it("classifies the WW2 story operation family as operation by scenario / script", () => {
+    // The user's 2026-10-26 WW2 operation replay: matchGroup "pve", the
+    // operation scenario id, empty eventType. The scenario alone decides.
+    expect(modeKey("pve", "WW2_OPERATION_1_1011LVL", "")).toBe("operation");
+    expect(modeKey("pve", "ww2_operation_1_1011lvl", null)).toBe("operation");
+    // Some clients echo the script into eventType instead.
+    expect(modeKey("pve", null, "WW2_OPERATION_1_1011LVL")).toBe("operation");
+  });
+
+  it("classifies the single-team roster shape inside the pve family as operation", () => {
+    // No descriptor fingerprint at all — only the roster shape (6th arg)
+    // distinguishes the story operation from plain co-op. The 2026-10-26
+    // WW2 replay is this shape: listed players, no enemy-side entry.
+    expect(modeKey("pve", null, null, 0, 0, true)).toBe("operation");
+    expect(modeKey("cooperative", null, null, 0, 0, true)).toBe("operation");
+    expect(modeKey("pve", "domination_3point", null, 0, 0, true)).toBe("operation");
+  });
+
+  it("keeps the historical labels when the roster is unknown or two-team", () => {
+    // The default null (roster-blind callers) and an explicit false (a
+    // normal two-side co-op roster) both keep pve => cooperative.
+    expect(modeKey("pve", null, null)).toBe("cooperative");
+    expect(modeKey("pve", null, null, 0, 0, null)).toBe("cooperative");
+    expect(modeKey("pve", null, null, 0, 0, false)).toBe("cooperative");
+    // Outside the pve family the shape flag never relabels the mode.
+    expect(modeKey("pvp", "domination_3point", null, 0, 0, true)).toBe("pvp");
+    expect(modeKey("ranked", null, null, 0, 0, true)).toBe("ranked");
+  });
+
+  it("does not let the new fingerprints override the earlier branches", () => {
+    expect(modeKey("pve", "asymm_3point_coop", null, 0, 0, true)).toBe("asymmetric");
+    expect(modeKey("pve", "convoy_escort", null, 0, 0, true)).toBe("convoy");
+    expect(modeKey("pve", null, "PVP222ASYM", 0, 0, true)).toBe("asymmetric");
+    expect(modeKey("pve", null, "HALLOWEEN_2025", 0, 0, true)).toBe("halloween");
+    // The custom-room fingerprint also keeps precedence over the late
+    // matchGroup-level roster rule.
+    expect(modeKey("pvp", "domination_tournament_3point", null, 0, 0, true)).toBe("training");
+  });
+
   it("classifies asymmetric co-op by battle script and scenario", () => {
     expect(modeKey("pve", "asymm_3point_coop", "PCVE027")).toBe("asymmetric");
     expect(modeKey("pve", "asymm_3point_coop", null)).toBe("asymmetric");
@@ -74,6 +116,45 @@ describe("modeKey", () => {
     const c = modeColor("pve", undefined, "PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL");
     expect(c.background).toContain("rgb(");
     expect(c.color).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it("forwards the single-team roster flag into the colour resolution", () => {
+    expect(modeColor("pve", null, null, 0, 0, true).color).toBe(modeColorOfKey("operation").color);
+    expect(modeColor("pve", null, null, 0, 0, false).color).toBe(
+      modeColorOfKey("cooperative").color,
+    );
+    // Roster-blind default keeps the plain co-op colour.
+    expect(modeColor("pve", null, null).color).toBe(modeColorOfKey("cooperative").color);
+  });
+});
+
+describe("hasSingleTeamRoster", () => {
+  it("is true only for a non-empty all-recorder-side roster", () => {
+    // The user's WW2 replay roster: seven entries, all relation 0/1.
+    expect(hasSingleTeamRoster([{ relation: 0 }, { relation: 1 }])).toBe(true);
+    expect(hasSingleTeamRoster([{ relation: 1 }])).toBe(true);
+    expect(hasSingleTeamRoster([])).toBe(false);
+    expect(hasSingleTeamRoster(null)).toBe(false);
+    expect(hasSingleTeamRoster(undefined)).toBe(false);
+    // A real co-op roster carries the enemy bot side (relation >= 2).
+    expect(hasSingleTeamRoster([{ relation: 0 }, { relation: 2 }])).toBe(false);
+  });
+});
+
+describe("singleTeamRosterFromCounts", () => {
+  it("is true only when players are listed and the enemy side is literally empty", () => {
+    expect(singleTeamRosterFromCounts(7, 0)).toBe(true);
+    // An ABSENT count is unknown, not zero: an older host release serves
+    // lite rows without the enemy count, and those must keep their
+    // historical label (a pve co-op row must never flip to 行动).
+    expect(singleTeamRosterFromCounts(7, undefined)).toBe(false);
+    expect(singleTeamRosterFromCounts(7, null)).toBe(false);
+    // Real co-op always lists its enemy bot team.
+    expect(singleTeamRosterFromCounts(7, 6)).toBe(false);
+    // No listed players at all is not the story-operation shape.
+    expect(singleTeamRosterFromCounts(0, 0)).toBe(false);
+    expect(singleTeamRosterFromCounts(null, 0)).toBe(false);
+    expect(singleTeamRosterFromCounts(null, null)).toBe(false);
   });
 });
 
@@ -118,6 +199,38 @@ describe("isOperationBattle", () => {
     expect(isOperationBattle("pve", "coop_1point", null, [":Yumashev:", "langyo"])).toBe(false);
     expect(isOperationBattle("pvp", "domination_3point", null, ["langyo", "WGR_bot"])).toBe(false);
     expect(isOperationBattle("pve", null, null, ["langyo", ":Yumashev:"])).toBe(false);
+  });
+
+  it("recognizes the WW2 operation scenario / script fingerprint", () => {
+    // The 2026-10-26 WW2 operation replay — scenario only, empty eventType.
+    expect(isOperationBattle("pve", "WW2_OPERATION_1_1011LVL", "")).toBe(true);
+    expect(isOperationBattle("pve", null, "WW2_OPERATION_1_1011LVL")).toBe(true);
+  });
+
+  it("treats a single-team pve roster as an operation", () => {
+    // The 5th arg is the roster shape every arena caller computes
+    // (hasSingleTeamRoster): players listed, no enemy side.
+    expect(isOperationBattle("pve", null, null, ["langyo", ":Yumashev:"], true)).toBe(true);
+    expect(isOperationBattle("cooperative", null, null, [], true)).toBe(true);
+    // A normal co-op roster (enemy side present) is NOT an operation, and
+    // the roster-blind default keeps the historical answer.
+    expect(isOperationBattle("pve", null, null, [":Yumashev:"], false)).toBe(false);
+    expect(isOperationBattle("pve", null, null, [":Yumashev:"])).toBe(false);
+    expect(isOperationBattle("pve", null, null, [":Yumashev:"], null)).toBe(false);
+    // pvp-family and intro (tutorial family) battles never take the rule.
+    expect(isOperationBattle("pvp", "domination_3point", null, ["langyo"], true)).toBe(false);
+    expect(isOperationBattle("ranked", null, null, ["langyo"], true)).toBe(false);
+    expect(isOperationBattle("intro", null, null, ["langyo"], true)).toBe(false);
+  });
+
+  it("keeps the tutorial-family exclusions first even with a single-team flag", () => {
+    // The escort op / tutorial rosters are two-team LAYOUTS — their mode
+    // label is operation, but they must never flip to the single-team
+    // visual rules.
+    expect(isOperationBattle("pve", "LOW_LVL_OPERATION_1_LVL_2", null, [], true)).toBe(false);
+    expect(isOperationBattle("pve", null, "LOW_LVL_OPERATION_1_LVL_2", [], true)).toBe(false);
+    expect(isOperationBattle("intro", "FIRST_BATTLE", null, [], true)).toBe(false);
+    expect(isOperationBattle("pve", null, null, ["IDS_OP_15_DUMMY_01"], true)).toBe(false);
   });
 });
 
@@ -169,6 +282,17 @@ describe("isCoopBattle", () => {
     expect(isCoopBattle("pve", null, "PCVO009_OP_02_02_s06_Atoll_MEDIUM_LVL")).toBe(false);
     expect(isCoopBattle(null, null, null)).toBe(false);
   });
+
+  it("rejects the WW2 operation descriptor and the single-team roster", () => {
+    // The descriptor fingerprint alone already excludes it...
+    expect(isCoopBattle("pve", "WW2_OPERATION_1_1011LVL", "")).toBe(false);
+    // ...and the roster shape (5th arg) excludes a fingerprint-less
+    // single-team pve battle: it is a story operation, not plain co-op.
+    expect(isCoopBattle("pve", null, null, [":Yumashev:"], true)).toBe(false);
+    // A two-side co-op roster stays co-op — with the flag present or absent.
+    expect(isCoopBattle("pve", null, null, [":Yumashev:"], false)).toBe(true);
+    expect(isCoopBattle("pve", null, null, [":Yumashev:"])).toBe(true);
+  });
 });
 
 describe("isSingleTeamTabLayout", () => {
@@ -217,5 +341,24 @@ describe("isSingleTeamTabLayout", () => {
     expect(isSingleTeamTabLayout("intro", "FIRST_BATTLE", null, ["langyo", "IDS_AL_01"])).toBe(
       false,
     );
+  });
+
+  it("takes the single-team table for a single-team pve roster", () => {
+    // The WW2 operation shape: one human team, no enemy side. The roster
+    // argument is the only signal when the descriptor carries no
+    // operation fingerprint.
+    expect(isSingleTeamTabLayout("pve", null, null, [":Yumashev:"], true)).toBe(true);
+    expect(isSingleTeamTabLayout("pve", "WW2_OPERATION_1_1011LVL", null, [], true)).toBe(true);
+    // The pvp family and the tutorial-family layouts keep two-team tables.
+    expect(isSingleTeamTabLayout("pvp", "domination_3point", null, ["langyo"], true)).toBe(false);
+    // The escort op's scripted roster fails the roster scan first.
+    expect(
+      isSingleTeamTabLayout("pve", "LOW_LVL_OPERATION_1_LVL_2", null, [
+        "langyo",
+        "IDS_OP_15_DUMMY_01",
+      ], true),
+    ).toBe(false);
+    // Roster-blind callers keep the historical answer.
+    expect(isSingleTeamTabLayout("pve", null, null, [":Yumashev:"])).toBe(true);
   });
 });

@@ -598,8 +598,14 @@ struct BattleCache {
 /// the cached payload became the projected `PlaytimeBattle` row (install
 /// attribution frozen at parse time) and entries stopped being pruned when
 /// their file disappears; a v3 blob re-parses once and rebuilds history
-/// from whatever is still on disk.
-const BATTLES_CACHE_VERSION: u32 = 4;
+/// from whatever is still on disk. v5: the mode classifier reads
+/// `enemy_count` (enemy-side roster entries) to label a single-team pve
+/// battle an operation (the 2026-10-26 WW2 report) — a v4 row heals that
+/// field to 0, which is EXACTLY the single-team shape, so every cached
+/// plain co-op battle would be mislabelled 行动; v4 re-parses once and
+/// rebuilds history from the replays still on disk (a vanished replay's
+/// row is the accepted loss, as in v3→v4).
+const BATTLES_CACHE_VERSION: u32 = 5;
 
 impl Default for BattleCache {
     fn default() -> Self {
@@ -610,7 +616,7 @@ impl Default for BattleCache {
     }
 }
 
-/// The v4 cache is permanent history, so read/parse failures must leave it
+/// The v5 cache is permanent history, so read/parse failures must leave it
 /// untouched for a later retry. Only missing files and known pre-history
 /// schemas start empty; legacy payloads re-parse from their live replays.
 fn load_battle_cache_in(dir: &Path) -> Result<BattleCache> {
@@ -683,6 +689,7 @@ fn battle_of(root: &Path, owner: &Option<GameInstall>, lite: &ReplayMetaLite) ->
             event_type: lite.event_type.clone(),
             bot_count: lite.bot_count,
             scripted_unit_count: lite.scripted_unit_count,
+            enemy_count: lite.enemy_count,
             own_ship_id: lite.own_ship_id,
             player_name: lite.player_name.clone(),
             player_count: lite.player_count,
@@ -1033,11 +1040,11 @@ mod tests {
         );
         let path = fixture.0.join(BATTLES_CACHE_FILE);
         for original in [
-            b"{\"version\":4,\"entries\":{\"recoverable-history\":".as_slice(),
+            b"{\"version\":5,\"entries\":{\"recoverable-history\":".as_slice(),
             &[0xff],
-            br#"{"version":4,"entries":{"gone":{"len":1,"mtimeMs":1,"battle":null}}}"#,
+            br#"{"version":5,"entries":{"gone":{"len":1,"mtimeMs":1,"battle":null}}}"#,
             br#"{"entries":{}}"#,
-            br#"{"version":4}"#,
+            br#"{"version":5}"#,
             br#"{"version":0,"entries":{}}"#,
         ] {
             std::fs::write(&path, original).unwrap();
@@ -1048,12 +1055,14 @@ mod tests {
     }
 
     #[test]
-    fn battle_cache_persistence_reparses_v3_rows_and_keeps_v4_history() {
+    fn battle_cache_persistence_reparses_v4_rows_and_keeps_v5_history() {
         let fixture = StoreFixture::new();
         let root = fixture.0.join("replays");
         let replay = root.join("20261008_100000_live.wowsreplay");
         write_synthetic_replay(&replay, r#"{"matchGroup":"pvp"}"#);
-        let old = r#"{"version":3,"entries":{"old.wowsreplay":{"len":1,"mtimeMs":2,"lite":{"path":"old.wowsreplay","dateTime":"20261001_100000"}}}}"#;
+        // A v4 payload heals `enemyCount` to 0 — the single-team operation
+        // shape — so it must NOT be trusted; the scan re-parses instead.
+        let old = r#"{"version":4,"entries":{"old.wowsreplay":{"len":1,"mtimeMs":2,"battle":{"installPath":"old.wowsreplay","dateTime":"20261001_100000","playerCount":2}}}}"#;
         std::fs::write(fixture.0.join(BATTLES_CACHE_FILE), old).unwrap();
         let first = scan_fixture_battles(&fixture.0, &root).unwrap();
         assert_eq!(first.battles.len(), 1);
@@ -1062,7 +1071,7 @@ mod tests {
         assert_eq!(cache.entries.len(), 1);
         std::fs::remove_file(replay).unwrap();
         let historical = scan_fixture_battles(&fixture.0, &root).unwrap();
-        assert_eq!(historical.battles.len(), 1, "v4 history survives deletion");
+        assert_eq!(historical.battles.len(), 1, "v5 history survives deletion");
     }
 
     #[test]
@@ -1073,7 +1082,7 @@ mod tests {
             &root.join("20261008_100000_live.wowsreplay"),
             r#"{"matchGroup":"pvp"}"#,
         );
-        let original = r#"{"version":5,"entries":{"gone":{"newBattleFormat":"retained"}}}"#;
+        let original = r#"{"version":6,"entries":{"gone":{"newBattleFormat":"retained"}}}"#;
         let path = fixture.0.join(BATTLES_CACHE_FILE);
         std::fs::write(&path, original).unwrap();
         let result = scan_fixture_battles(&fixture.0, &root);
@@ -1548,12 +1557,44 @@ mod tests {
         }
         assert_eq!(battles[0].match_group.as_deref(), Some("pvp"));
         assert_eq!(battles[0].bot_count, 1);
+        // One enemy-side roster entry (relation 2) rides the row.
+        assert_eq!(battles[0].enemy_count, 1);
         assert_eq!(battles[0].player_count, 2);
         assert_eq!(battles[0].own_ship_id, Some(4182828960));
         assert_eq!(battles[0].player_name.as_deref(), Some("langyo"));
         assert_eq!(battles[1].match_group.as_deref(), Some("ranked"));
         // The scan upserted every seen file into the cache.
         assert_eq!(cache.entries.len(), 3);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The WW2 operation shape (2026-10-26 user report): matchGroup `pve`,
+    /// scenario `WW2_OPERATION_1_1011LVL`, and a roster that lists the
+    /// recorder's own team only — no relation >= 2 entry. The ledger row must
+    /// carry `enemyCount: 0` (the single-team signal the frontend mode
+    /// classifier reads) next to the seven listed players.
+    #[test]
+    fn battle_rows_carry_the_enemy_side_count() {
+        let dir = temp_battle_dir("enemy-count");
+        write_synthetic_replay(
+            &dir.join("20261026_201239_PJSS820-BA-I56_s12_WW2_OP1.wowsreplay"),
+            r#"{"matchGroup":"pve","scenario":"WW2_OPERATION_1_1011LVL","eventType":"","vehicles":[
+                {"id":1,"name":"langyo","relation":0,"shipId":4182828960},
+                {"id":2,"name":"Alpha","relation":1,"shipId":2},
+                {"id":3,"name":"Bravo","relation":1,"shipId":3},
+                {"id":4,"name":"Charlie","relation":1,"shipId":4},
+                {"id":5,"name":"Delta","relation":1,"shipId":5},
+                {"id":6,"name":"Echo","relation":1,"shipId":6},
+                {"id":7,"name":"Foxtrot","relation":1,"shipId":7}
+            ]}"#,
+        );
+        let mut cache = BattleCache::default();
+        let battles = battles_from_roots(&[(dir.clone(), None)], &mut cache);
+        assert_eq!(battles.len(), 1);
+        let b = &battles[0];
+        assert_eq!(b.scenario.as_deref(), Some("WW2_OPERATION_1_1011LVL"));
+        assert_eq!(b.player_count, 7);
+        assert_eq!(b.enemy_count, 0, "the roster lists the own team only");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1600,6 +1641,7 @@ mod tests {
         assert_eq!(b.event_type, None);
         assert_eq!(b.bot_count, 0);
         assert_eq!(b.scripted_unit_count, 0);
+        assert_eq!(b.enemy_count, 0);
         assert_eq!(b.own_ship_id, None);
         assert_eq!(b.player_name, None);
         assert_eq!(b.player_count, 0);
@@ -1653,6 +1695,9 @@ mod tests {
         assert_eq!(b.player_name.as_deref(), Some("langyo"));
         assert_eq!(b.player_count, 2);
         assert_eq!(b.bot_count, 1);
+        // The synthesized Lesta roster puts the recorder and the bot on
+        // opposite teams, so the bot is an enemy-side entry.
+        assert_eq!(b.enemy_count, 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1690,6 +1735,7 @@ mod tests {
                     event_type: None,
                     bot_count: 0,
                     scripted_unit_count: 0,
+                    enemy_count: 0,
                     own_ship_id: None,
                     player_name: None,
                     player_count: 0,

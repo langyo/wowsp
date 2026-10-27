@@ -66,7 +66,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
 import { ANALYSABLE_SPACE_IDS, isAnalysableSpace } from "@/utils/tacticsMaps";
 import { bucketOf, isPveSpace, type MapModeBucket } from "@/utils/mapModes";
-import { modeKey } from "@/utils/modeColors";
+import { modeKey, singleTeamRosterFromCounts } from "@/utils/modeColors";
 import "./TacticsView.scss";
 
 export default defineComponent({
@@ -478,6 +478,11 @@ export default defineComponent({
                 m.eventType,
                 m.botCount ?? 0,
                 m.scriptedUnitCount ?? 0,
+                // The history scan returns lite metadata (no roster), so
+                // the single-team story-operation shape reads through the
+                // summary counts: a pve-family operation with no
+                // scenario/script fingerprint still buckets as an operation.
+                singleTeamRosterFromCounts(m.playerCount, m.enemyCount),
               ),
             );
             let set = acc.get(m.mapName);
