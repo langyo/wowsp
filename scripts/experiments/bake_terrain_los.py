@@ -43,6 +43,15 @@ Usage:
         --res 256 --eye-height 20 --obs-grid 8 \
         --out scripts/experiments/out/
 
+    Meshopt-compressed packs (the optimize_glbs.py output, extensions
+    EXT_meshopt_compression + KHR_mesh_quantization) cannot be parsed here —
+    extract world-space positions first and hand them over instead:
+    node scripts/experiments/extract_glb_positions.mjs \
+        --glb <map.glb> --out scripts/experiments/out/<map>.positions.npy
+    python scripts/experiments/bake_terrain_los.py \
+        --glb <map.glb> --positions scripts/experiments/out/<map>.positions.npy \
+        --res 256 --out scripts/experiments/out/
+
 Outputs (under --out/<map_id>/):
     heightmap.png     shaded-relief height raster (stdlib PNG writer)
     los_r<r>_c<c>.png visibility mask per observer (green=visible)
@@ -562,11 +571,19 @@ def run_bake(
     obs_grid: int,
     tgt_height: float,
     bounds_json: Path | None,
+    positions: np.ndarray | None = None,
 ) -> dict:
     t0 = time.perf_counter()
 
-    gltf = parse_glb(glb_path)
-    verts, mesh_infos = extract_vertices(gltf)
+    if positions is not None:
+        # Pre-extracted world-space vertices (extract_glb_positions.mjs) —
+        # for the meshopt-compressed packs the model pipeline now ships,
+        # which the stdlib GLB reader above cannot parse.
+        verts = positions
+        mesh_infos = [{"source": "positions-npy", "vertices": int(len(positions))}]
+    else:
+        gltf = parse_glb(glb_path)
+        verts, mesh_infos = extract_vertices(gltf)
     t_parse = time.perf_counter()
 
     map_id = glb_path.stem
@@ -853,6 +870,17 @@ def main() -> int:
         description="Bake terrain height + LOS rasters from a WoWSP map GLB"
     )
     parser.add_argument("--glb", type=Path, help="input map GLB (e.g. 50_Gold_harbor.glb)")
+    parser.add_argument(
+        "--positions",
+        type=Path,
+        default=None,
+        help=(
+            "pre-extracted world-space vertex array (.npy, float32 Nx3) from "
+            "extract_glb_positions.mjs — use INSTEAD of parsing the GLB's "
+            "geometry (needed for the meshopt-compressed packs); --glb still "
+            "names the map (its stem is the map id for the bounds lookup)"
+        ),
+    )
     parser.add_argument("--res", type=int, default=256, help="raster resolution (default 256)")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output directory")
     parser.add_argument("--eye-height", type=float, default=20.0,
@@ -878,10 +906,21 @@ def main() -> int:
     if not glb.exists():
         print(f"error: GLB not found: {glb}", file=sys.stderr)
         return 1
+    if args.positions is not None:
+        if not args.positions.exists():
+            print(f"error: positions not found: {args.positions}", file=sys.stderr)
+            return 1
+        pos = np.load(args.positions).astype(np.float64)
+        if pos.ndim != 2 or pos.shape[1] != 3:
+            print(f"error: positions must be Nx3, got {pos.shape}", file=sys.stderr)
+            return 1
+    else:
+        pos = None
 
     out_dir = args.out / glb.stem
     summary = run_bake(
-        glb, args.res, out_dir, args.eye_height, args.obs_grid, args.tgt_height, args.bounds_json
+        glb, args.res, out_dir, args.eye_height, args.obs_grid, args.tgt_height,
+        args.bounds_json, pos,
     )
 
     print(f"[bake_terrain_los] map={summary['map_id']}  bounds={summary['bounds_source']}")
