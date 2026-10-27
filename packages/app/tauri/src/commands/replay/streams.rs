@@ -183,9 +183,7 @@ pub(super) fn ally_builds_for(
 /// for this command (same object shape) — only the Tauri transport decodes
 /// bytes (see transport.invokeBin in the webui).
 #[tauri::command]
-pub async fn read_replay_positions(
-    path: String,
-) -> CommandResult<tauri::ipc::Response> {
+pub async fn read_replay_positions(path: String) -> CommandResult<tauri::ipc::Response> {
     let stream = tokio::task::spawn_blocking(move || {
         let (decoded, roster) = decode_replay_file_decoded(std::path::Path::new(&path))?;
         let ally_builds = ally_builds_from(&decoded, &roster);

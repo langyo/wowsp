@@ -1926,37 +1926,34 @@ fn ally_only_builds_on_the_reference_capture() {
 /// the TS types promise.
 #[test]
 fn replay_stream_msgpack_wire_round_trip() {
-    let stream: wowsp_tauri_shared::ReplayStream = serde_json::from_value(
-        serde_json::json!({
-            "trajectories": [{
-                "entityId": 42,
-                "kind": {
-                    "entityType": 2,
-                    "vehicleId": 7,
-                    "initialX": 123.5,
-                    "initialY": 0.0,
-                    "initialZ": -45.25
-                },
-                "samples": [{
-                    "time": 1.0, "entityId": 42, "vehicleId": 7,
-                    "x": 1.5, "y": 0.0, "z": 2.5, "yaw": 0.25
-                }],
-                "hpSamples": [{ "time": 1.0, "value": 42000 }],
-                "deathTime": 600.0
+    let stream: wowsp_tauri_shared::ReplayStream = serde_json::from_value(serde_json::json!({
+        "trajectories": [{
+            "entityId": 42,
+            "kind": {
+                "entityType": 2,
+                "vehicleId": 7,
+                "initialX": 123.5,
+                "initialY": 0.0,
+                "initialZ": -45.25
+            },
+            "samples": [{
+                "time": 1.0, "entityId": 42, "vehicleId": 7,
+                "x": 1.5, "y": 0.0, "z": 2.5, "yaw": 0.25
             }],
-            "recorderVehicleId": 42,
-            "camera": [{
-                "time": 2.0, "x": 0.0, "y": 10.0, "z": 20.0,
-                "rotX": 0.0, "rotY": 0.0, "rotZ": 0.0, "rotW": 1.0,
-                "fov": 1.2
-            }],
-            "leaves": { "42": 55.5 }
-        }),
-    )
+            "hpSamples": [{ "time": 1.0, "value": 42000 }],
+            "deathTime": 600.0
+        }],
+        "recorderVehicleId": 42,
+        "camera": [{
+            "time": 2.0, "x": 0.0, "y": 10.0, "z": 20.0,
+            "rotX": 0.0, "rotY": 0.0, "rotZ": 0.0, "rotW": 1.0,
+            "fov": 1.2
+        }],
+        "leaves": { "42": 55.5 }
+    }))
     .expect("fixture parses (field names mirror the wire)");
     let packed = rmp_serde::to_vec_named(&stream).expect("pack");
-    let decoded: wowsp_tauri_shared::ReplayStream =
-        rmp_serde::from_slice(&packed).expect("unpack");
+    let decoded: wowsp_tauri_shared::ReplayStream = rmp_serde::from_slice(&packed).expect("unpack");
     let round = serde_json::to_value(&decoded).expect("json mirror");
     let direct = serde_json::to_value(&stream).expect("json direct");
     assert_eq!(round, direct, "msgpack wire must mirror the JSON shape");
