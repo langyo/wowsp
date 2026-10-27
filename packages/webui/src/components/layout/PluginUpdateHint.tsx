@@ -1,18 +1,18 @@
 import { computed, defineComponent, nextTick, onBeforeUnmount, ref, Teleport, watch } from "vue";
 import type { PropType, Ref } from "vue";
-import { AlertTriangle, ArrowUpCircle } from "@lucide/vue";
-import { HkScrollContainer } from "@celestia-island/hikari";
+import { useRouter } from "vue-router";
+import { AlertTriangle, ArrowUpCircle, ChevronRight, Crosshair, Puzzle } from "@lucide/vue";
+import { HkMenuActionItem, HkMenuPanel, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import { INGAME_PLUGIN_MOD_ID } from "@/components/settings/useSettingsGamePaths";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
-import type { PendingInstall, PluginUpdateInfo } from "@/stores/pluginUpdates";
+import { usePluginUpdatesStore, PROBE_ITEM } from "@/stores/pluginUpdates";
+import type { PendingInstall } from "@/stores/pluginUpdates";
 import { sameGamePath } from "@/utils/gamePath";
 import { installFolderName, installLabel } from "@/utils/installLabel";
 import "./PluginUpdateHint.scss";
 
-/** Names shown per client group before the "+N" fold. */
-const LIST_CAP = 6;
 /** Hover-in delay before the hint opens (the global tooltip's rhythm). */
 const OPEN_DELAY_MS = 250;
 /** Grace between leaving the trigger/popup and actually closing. */
@@ -22,18 +22,33 @@ const ANCHOR_GAP_PX = 10;
 /** Viewport breathing room kept above/below the popup. */
 const EDGE_PX = 8;
 
+/** One clickable row of the hint list: a stale catalog mod or the
+ *  built-in probe plugin, deep-linking its mod-hub page. */
+interface HintEntry {
+  /** Stable row key: the catalog mod id, or the probe's busy-table key. */
+  key: string;
+  label: string;
+  /** Catalog id the row deep-links (/resources?mod=<id>). */
+  modId: string;
+  /** The probe row rides the plugin's own mod-hub page (the settings
+   *  overlay section deep-links the same id). */
+  probe: boolean;
+}
+
 /**
  * PluginUpdateHint — the hover surface on the sidebar's client-version
  * selector. While ANY install has plugins awaiting updates the wrapped
  * button gains a count badge, and hovering it opens this card to the
  * RIGHT of the game-status card, vertically centered on it (the anchor
- * element arrives as the `anchor` ref prop), listing what is stale per
- * client — the built-in probe plugin plus outdated catalog mods — with
- * one 一键更新 action that starts the batch pass across every pending
- * install (progress lands in the ModUpdateToast card). hikari's HkTooltip
- * is text-only, so this is a purpose-built two-target hover popup:
- * entering either the trigger or the card keeps it open, leaving both
- * starts a short close grace.
+ * element arrives as the `anchor` ref prop). The stale items render as
+ * hikari's menu rows inside a capped HkScrollContainer — every row
+ * clickable, deep-linking the mod hub's page for that plugin — with one
+ * 一键更新 action that starts the batch pass across every pending
+ * install (progress lands in the ModUpdateToast card; while it runs the
+ * action becomes a spinner + the updating label). hikari's HkTooltip is
+ * text-only, so this is a purpose-built two-target hover popup: entering
+ * either the trigger or the card keeps it open, leaving both starts a
+ * short close grace.
  *
  * While the RUNNING client's probe plugin is stale the card is PINNED:
  * it opens on its own and stays put (no hover needed, no close grace) —
@@ -59,6 +74,7 @@ export default defineComponent({
   setup(props, { slots }) {
     const updates = usePluginUpdatesStore();
     const gameStatus = useGameStatusStore();
+    const router = useRouter();
 
     const open = ref(false);
     const popStyle = ref<{ left: string; top: string; transform: string } | null>(null);
@@ -194,10 +210,24 @@ export default defineComponent({
       window.removeEventListener("resize", onResize);
     });
 
-    function itemNames(info: PluginUpdateInfo): string[] {
+    /** The card's rows for one pending install: the probe first (it is
+     *  what the batch pass runs first too), then the stale mods. */
+    function entriesOf(g: PendingInstall): HintEntry[] {
       return [
-        ...(info.probeOutdated ? [t("resources.pluginProbeName")] : []),
-        ...info.mods.map((m) => m.name),
+        ...(g.info.probeOutdated
+          ? [{
+              key: PROBE_ITEM,
+              label: t("resources.pluginProbeName"),
+              modId: INGAME_PLUGIN_MOD_ID,
+              probe: true,
+            }]
+          : []),
+        ...g.info.mods.map((m) => ({
+          key: m.id,
+          label: m.name,
+          modId: m.id,
+          probe: false,
+        })),
       ];
     }
 
@@ -205,15 +235,44 @@ export default defineComponent({
       return installLabel(g.install?.kind, g.install?.realm) || installFolderName(g.path);
     }
 
+    /** A row click lands on the plugin's mod-hub page (ResourcesView's
+     *  ?mod= deep link selects the entry — update lives there too).
+     *  The card closes first: acting on an item ends the reminder,
+     *  pinned or not. */
+    function openEntry(modId: string): void {
+      close();
+      void router.push({ path: "/resources", query: { mod: modId } });
+    }
+
     return () => {
       const count = updates.totalCount;
       const groups = updates.pendingInstalls;
       const multi = groups.length > 1;
-      // The single-client case renders the flat list the card always
-      // had — no group chrome until a second client is actually pending.
-      const singleNames = multi ? [] : (groups[0] ? itemNames(groups[0].info) : []);
-      const singleShown = singleNames.slice(0, LIST_CAP);
-      const singleFolded = singleNames.length - singleShown.length;
+      const renderItem = (entry: HintEntry) => (
+        <HkMenuActionItem
+          key={entry.key}
+          label={entry.label}
+          icon={entry.probe ? <Crosshair size={13} /> : <Puzzle size={13} />}
+          onClick={() => openEntry(entry.modId)}
+          v-slots={{
+            suffix: () => <ChevronRight size={12} class="plugin-update-hint__item-go" />,
+          }}
+        />
+      );
+      const renderGroup = (g: PendingInstall) => {
+        const entries = entriesOf(g);
+        return (
+          <div class="plugin-update-hint__group" key={g.path}>
+            {/* The client header only earns its place when a second
+                client is actually pending ("Steam · ASIA" over that
+                client's rows); a single client stays a flat list. */}
+            {multi ? (
+              <span class="plugin-update-hint__group-label">{groupLabel(g)}</span>
+            ) : null}
+            {entries.map(renderItem)}
+          </div>
+        );
+      };
       return (
         <span
           class="plugin-update-hint"
@@ -250,44 +309,19 @@ export default defineComponent({
                     {t("resources.pluginUpdateStaleWarning")}
                   </p>
                 ) : null}
-                {/* Both list shapes share the capped scroller: hikari's
-                    overlay scrollbar owns the overflow; the lines scroll
-                    in the viewport. */}
-                {multi ? (
-                  <HkScrollContainer class="plugin-update-hint__list">
-                    <ul class="plugin-update-hint__list-inner">
-                      {groups.map((g) => {
-                        const names = itemNames(g.info);
-                        const shown = names.slice(0, LIST_CAP);
-                        const folded = names.length - shown.length;
-                        return (
-                          <li class="plugin-update-hint__group" key={g.path}>
-                            <span class="plugin-update-hint__group-label">{groupLabel(g)}</span>
-                            <ul class="plugin-update-hint__group-items">
-                              {shown.map((name) => (
-                                <li key={name}>{name}</li>
-                              ))}
-                              {folded > 0 ? (
-                                <li class="plugin-update-hint__more">+{folded}</li>
-                              ) : null}
-                            </ul>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </HkScrollContainer>
-                ) : (
-                  <HkScrollContainer class="plugin-update-hint__list">
-                    <ul class="plugin-update-hint__list-inner">
-                      {singleShown.map((name) => (
-                        <li key={name}>{name}</li>
-                      ))}
-                      {singleFolded > 0 ? (
-                        <li class="plugin-update-hint__more">+{singleFolded}</li>
-                      ) : null}
-                    </ul>
-                  </HkScrollContainer>
-                )}
+                {/* The stale list scrolls when tall (hikari's scroll
+                    container owns the overlay scrollbar — this card keeps
+                    its rail standing so the cap never reads as a clip)
+                    and renders rows with the menu grammar: every row a
+                    button deep-linking its mod-hub page. */}
+                <HkScrollContainer class="plugin-update-hint__list">
+                  <HkMenuPanel
+                    class="plugin-update-hint__menu"
+                    label={t("resources.pluginUpdateBadge")}
+                  >
+                    {groups.map(renderGroup)}
+                  </HkMenuPanel>
+                </HkScrollContainer>
                 <button
                   type="button"
                   class="plugin-update-hint__go"
@@ -297,10 +331,16 @@ export default defineComponent({
                     void updates.updateAll();
                   }}
                 >
-                  <ArrowUpCircle size={13} />
-                  {allRunning.value
-                    ? t("resources.pluginUpdateBlockedRunning")
-                    : t("resources.pluginUpdateOne")}
+                  {updates.running ? (
+                    <HkSpinner size="xs" tone="current" />
+                  ) : (
+                    <ArrowUpCircle size={13} />
+                  )}
+                  {updates.running
+                    ? t("resources.pluginUpdateRunning")
+                    : allRunning.value
+                      ? t("resources.pluginUpdateBlockedRunning")
+                      : t("resources.pluginUpdateOne")}
                 </button>
               </div>
             </Teleport>

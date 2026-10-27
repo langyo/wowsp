@@ -3,8 +3,9 @@
  * (running client + stale probe opens the card on its own and keeps it
  * up, with the stale-stats warning line), the hover rhythm when not
  * pinned, the anchor geometry (right of the game-status card, vertically
- * centered on it), and the one-click action driving the all-installs
- * pass.
+ * centered on it), the clickable rows deep-linking each stale plugin's
+ * mod-hub page, the busy action's spinner + updating label, and the
+ * one-click action driving the all-installs pass.
  *
  * The api module is mocked; the pinia stores are real (their refs are
  * set directly). happy-dom measures every box as 0×0, so the anchor
@@ -26,9 +27,13 @@ const mocks = vi.hoisted(() => ({
   modCatalogInstall: vi.fn(),
   modCatalogUninstall: vi.fn(),
   listenDownloadProgress: vi.fn(),
+  routerPush: vi.fn(),
 }));
 
 vi.mock("@/api", () => ({ api: mocks }));
+// The hint's rows navigate via router.push; the test harness has no
+// router — the spy is the navigation assertion surface.
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.routerPush }) }));
 
 import { initLocaleMessages, t } from "@/i18n";
 import type { GameInstall } from "@/api";
@@ -114,6 +119,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   document.body.innerHTML = "";
   for (const m of Object.values(mocks)) m.mockReset();
+  mocks.routerPush.mockResolvedValue(undefined);
   mocks.listenDownloadProgress.mockReturnValue(() => undefined);
   mocks.modCatalogRefresh.mockResolvedValue({
     mods: [],
@@ -316,13 +322,95 @@ describe("PluginUpdateHint", () => {
         (n) => n.textContent,
       ),
     ).toEqual([installLabel("steam", "asia"), installLabel("wargaming", "eu")]);
-    // The probe + one mod on the active client, the probe on the other.
+    // The probe + one mod on the active client, the probe on the other —
+    // each group's rows are the menu grammar's buttons.
     expect(
-      groups.map((g) => g.querySelectorAll(".plugin-update-hint__group-items li").length),
+      groups.map((g) => g.querySelectorAll(".hk-menu-action-item").length),
     ).toEqual([2, 1]);
     expect(el?.querySelector(".plugin-update-hint__title")?.textContent).toBe(
       t("resources.pluginUpdateCountMulti", { count: 3, clients: 2 }),
     );
     expect(wrapper.find(".plugin-update-hint__badge").text()).toBe("3");
+  });
+
+  it("renders every stale item as a clickable row deep-linking the mod hub", async () => {
+    // Nine stale items — past the old "+N" fold: the card scrolls, so
+    // every row must exist. The probe leads (the batch pass runs it
+    // first) and deep-links the plugin's own mod-hub page.
+    const { wrapper } = await mountHint(
+      {
+        probeOutdated: true,
+        running: false,
+        mods: [
+          { id: "a", name: "mod-a" },
+          { id: "b", name: "mod-b" },
+          { id: "c", name: "mod-c" },
+          { id: "d", name: "mod-d" },
+          { id: "e", name: "mod-e" },
+          { id: "f", name: "mod-f" },
+          { id: "g", name: "mod-g" },
+          { id: "h", name: "mod-h" },
+        ],
+      },
+      anchorCard(),
+    );
+    await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+    vi.advanceTimersByTime(250);
+    await flushPromises();
+
+    const rows = Array.from(
+      pop()?.querySelectorAll<HTMLButtonElement>(".hk-menu-action-item") ?? [],
+    );
+    expect(rows.length).toBe(9);
+    expect(rows[0]?.textContent).toContain(t("resources.pluginProbeName"));
+
+    rows[0]?.click();
+    await flushPromises();
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: "/resources",
+      query: { mod: "battle.ingame.stats" },
+    });
+    // Acting on a row ends the reminder — the card closes.
+    expect(pop()).toBeNull();
+  });
+
+  it("deep-links a stale mod row to its catalog page", async () => {
+    const { wrapper } = await mountHint(
+      { probeOutdated: false, running: false, mods: [{ id: "mod-x", name: "X mod" }] },
+      anchorCard(),
+    );
+    await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+    vi.advanceTimersByTime(250);
+    await flushPromises();
+
+    const row = pop()?.querySelector<HTMLButtonElement>(".hk-menu-action-item");
+    expect(row?.textContent).toContain("X mod");
+    row?.click();
+    await flushPromises();
+
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: "/resources",
+      query: { mod: "mod-x" },
+    });
+    expect(pop()).toBeNull();
+  });
+
+  it("swaps the action to a spinner and the updating label while the pass runs", async () => {
+    const { wrapper, updates } = await mountHint(
+      { probeOutdated: true, running: false },
+      anchorCard(),
+    );
+    await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+    vi.advanceTimersByTime(250);
+    await flushPromises();
+    expect(pop()?.querySelector(".plugin-update-hint__go .hk-spinner")).toBeNull();
+
+    updates.running = true;
+    await flushPromises();
+
+    const btn = pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__go");
+    expect(btn?.disabled).toBe(true);
+    expect(btn?.querySelector(".hk-spinner")).not.toBeNull();
+    expect(btn?.textContent).toContain(t("resources.pluginUpdateRunning"));
   });
 });

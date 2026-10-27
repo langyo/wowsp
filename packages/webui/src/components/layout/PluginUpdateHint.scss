@@ -3,7 +3,8 @@
 // teleported to body, anchored to the RIGHT of the game-status card and
 // vertically centered on it, in hikari's popup z-band (the tooltip
 // band), with an app-surface look (dark surface tokens like the settings
-// cards).
+// cards). The stale list is hikari's menu-row grammar inside a capped
+// scroll container — rows deep-link their plugin's mod-hub page.
 
 .plugin-update-hint {
   position: relative;
@@ -32,6 +33,9 @@
     z-index: var(--hk-z-tooltip, 4100);
     width: 20rem;
     max-width: calc(100vw - 2rem);
+    // The menu panel's own inset would double-pad inside the card —
+    // rows align with the title instead (the rows keep their padding).
+    --hk-menu-panel-inset: 0px;
     padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
     border: 1px solid rgb(var(--color-border) / 25%);
     border-radius: var(--radius-sm, 6px);
@@ -67,8 +71,28 @@
     margin-top: 1px;
   }
 
+  // The stale list's capped window: hikari's scroll container owns the
+  // scrollbar; the menu rows scroll inside its viewport.
+  &__list {
+    max-height: 14rem;
+
+    // hikari's overlay rail is auto-hiding (it only paints while
+    // scrolling/hovering) — on a hover card the pointer usually rests on
+    // the trigger, so a capped list would read as clipped content. The
+    // container mirrors its sensed vertical overflow as data-v-overflow
+    // on its root; while content hides, keep the rail standing.
+    &[data-v-overflow="end"],
+    &[data-v-overflow="start"],
+    &[data-v-overflow="both"] {
+      .hk-scrollbar-track:not([data-axis="horizontal"]) {
+        opacity: 1;
+        pointer-events: auto;
+      }
+    }
+  }
+
   // Client group headers — only rendered when more than one client has
-  // pending items ("Steam · ASIA" over that client's stale list).
+  // pending items ("Steam · ASIA" over that client's stale rows).
   &__group {
     display: flex;
     flex-direction: column;
@@ -88,48 +112,27 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    // HkMenuPanel's row gap is the panel's own; the header breathes
+    // against the first row beneath it.
+    margin-bottom: 2px;
   }
 
-  &__group-items {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+  // The row suffix's "opens a page" cue — quiet at rest, brightening on
+  // the row's hover face. An explicit rule is required: the rest color
+  // below blocks inheritance (the row's own icon has none and inherits
+  // the hover face; the suffix otherwise never brightened).
+  .hk-menu-action-item:hover &__item-go {
+    color: rgb(var(--color-text));
   }
 
-  /* The stale-item list's capped window: hikari's scroll container owns
-     the scrollbar (auto-hiding overlay track); the lines scroll inside
-     its viewport. */
-  &__list {
-    max-height: 9rem;
-  }
-
-  /* Former list element, now inside the viewport — keeps the list
-     semantics and the line rhythm scrolling with the items. */
-  &__list-inner {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-
-    li {
-      font-size: var(--text-xs, 0.75rem);
-      color: rgb(var(--color-text));
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-  }
-
-  &__more {
+  &__item-go {
+    flex: none;
     color: rgb(var(--color-muted));
   }
 
-  // The one-click action — primary tint, quiet at rest.
+  // The one-click action — primary tint, quiet at rest; while the pass
+  // runs it swaps the icon for hikari's spinner (currentcolor tone) and
+  // the updating label.
   &__go {
     display: inline-flex;
     align-items: center;
@@ -153,6 +156,10 @@
     &:disabled {
       opacity: 0.55;
       cursor: default;
+    }
+
+    .hk-spinner-wrapper {
+      flex: none;
     }
   }
 }

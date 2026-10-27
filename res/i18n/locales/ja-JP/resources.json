@@ -90,6 +90,7 @@
   "pluginUpdateCount": "{count} 件のプラグイン更新あり",
   "pluginUpdateCountMulti": "{count} 件のプラグイン更新あり · {clients} クライアント",
   "pluginUpdateOne": "一括更新",
+  "pluginUpdateRunning": "更新中…",
   "pluginUpdateBlockedRunning": "ゲーム実行中 — 終了後に更新可能",
   "pluginUpdateBusyElsewhere": "これらのプラグインは別の画面で更新中です。",
   "pluginUpdateStaleWarning": "実行中のクライアントのプラグインが最新ではないため、Tab キーを押している間に表示される戦績が正確でない場合があります。",

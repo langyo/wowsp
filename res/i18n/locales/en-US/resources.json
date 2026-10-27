@@ -90,6 +90,7 @@
   "pluginUpdateCount": "{count} plugin update(s) available",
   "pluginUpdateCountMulti": "{count} plugin update(s) · {clients} client(s)",
   "pluginUpdateOne": "Update all",
+  "pluginUpdateRunning": "Updating…",
   "pluginUpdateBlockedRunning": "Game running — close it to update",
   "pluginUpdateBusyElsewhere": "These plugins are already being updated elsewhere.",
   "pluginUpdateStaleWarning": "The running client's plugin is out of date — stats shown while holding Tab may be inaccurate.",

@@ -90,6 +90,7 @@
   "pluginUpdateCount": "{count} 个插件可更新",
   "pluginUpdateCountMulti": "{count} 个插件可更新 · {clients} 个客户端",
   "pluginUpdateOne": "一键更新",
+  "pluginUpdateRunning": "正在更新",
   "pluginUpdateBlockedRunning": "游戏运行中，关闭后才能更新",
   "pluginUpdateBusyElsewhere": "这些插件正在其他入口更新中。",
   "pluginUpdateStaleWarning": "正在运行的客户端插件不是最新版本，按住 Tab 时显示的战绩可能不准确。",
