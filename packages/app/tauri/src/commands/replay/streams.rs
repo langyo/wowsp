@@ -172,11 +172,19 @@ pub(super) fn ally_builds_for(
 /// + zlib inflate of a real match's packet stream is seconds-scale CPU work —
 /// it runs on the blocking pool so the UI thread never stalls (same rule as
 /// [`pick_replay_files`]).
+///
+/// WIRE FORMAT: the response is a RAW [`tauri::ipc::Response`] carrying the
+/// whole [`wowsp_tauri_shared::ReplayStream`] as MessagePack (rmp-serde
+/// `to_vec_named` honours the same camelCase / skip_serializing_if attrs the
+/// old JSON codec used, so the decoded object shape is identical). A
+/// 20-minute 24-ship match was ~10 MB of JSON; the packer cuts the wire to
+/// roughly half and the webui's MessagePack decode replaces JSON.parse of
+/// that whole string. The browser-dev/mock transports keep answering JSON
+/// for this command (same object shape) — only the Tauri transport decodes
+/// bytes (see transport.invokeBin in the webui).
 #[tauri::command]
-pub async fn read_replay_positions(
-    path: String,
-) -> CommandResult<wowsp_tauri_shared::ReplayStream> {
-    Ok(tokio::task::spawn_blocking(move || {
+pub async fn read_replay_positions(path: String) -> CommandResult<tauri::ipc::Response> {
+    let stream = tokio::task::spawn_blocking(move || {
         let (decoded, roster) = decode_replay_file_decoded(std::path::Path::new(&path))?;
         let ally_builds = ally_builds_from(&decoded, &roster);
         let mut stream = group_by_entity(decoded);
@@ -184,7 +192,10 @@ pub async fn read_replay_positions(
         Ok::<_, anyhow::Error>(stream)
     })
     .await
-    .map_err(|e| anyhow!("replay positions task failed: {e}"))??)
+    .map_err(|e| anyhow!("replay positions task failed: {e}"))??;
+    let bytes = rmp_serde::to_vec_named(&stream)
+        .map_err(|e| anyhow!("replay stream msgpack encode: {e}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// Smoke-screen lifecycles of one `.wowsreplay` (experiment E8): every

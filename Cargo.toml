@@ -131,6 +131,10 @@ tar = "^0.4"
 # (Seekable::decompress Vec length beyond capacity) and RUSTSEC-2026-0403
 # (uninitialized memory on failed legacy-frame streaming decompression).
 zstd = "^0.14"
+# MessagePack codec for the replay stream IPC wire (commands/replay/streams.rs
+# read_replay_positions): rmp-serde honours the shared types' serde attrs, so
+# the packed payload decodes to the exact object shape the old JSON carried.
+rmp-serde = "^1"
 
 # Mod Hub package unpacking (catalog zips) — direct dep of the app crate
 zip = { version = "^9", default-features = false, features = ["deflate"] }

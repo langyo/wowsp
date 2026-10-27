@@ -51,6 +51,7 @@ tar.workspace = true
 # Replay-share contribution packages (commands/contribution/) — tar.zstd
 # per the wave-1 contract, plus the v4 anonId the share identity mints.
 zstd.workspace = true
+rmp-serde.workspace = true
 uuid.workspace = true
 
 # Catalog package integrity + unpacking (Mod Hub); ed25519 also verifies
