@@ -39,6 +39,17 @@ E12 additions over E9:
   - E13: `--holdout-version 15,8` holds out every row of one client version
     (train on the rest, or on `--train-version 14,5` only) — the
     out-of-distribution stress test across game versions.
+  - E14: feature-schema routing — datasets stamp `featureVersion` (v1 rows
+    carry no key); v2 adds the E14 families (explicit vision / consumables /
+    engine / smoke / weather / ally radar-hydro), entity 10->15 and global
+    14->27 dims, model input widths follow the schema (hidden structure
+    untouched). `--ablate {e11,smoke,weather,builds}` zeroes one feature
+    family before training for the feature-group ablations.
+  - E15: `--label {plain,hit,soft}` selects the head-B target — plain =
+    expert fired (the E9-E13 default, backward-comparable), hit = fired AND
+    the outcome window landed a server-confirmed hit, soft = 0.3 + 0.7*hit
+    on fired rows. Loss stays BCE; a plain-label "comparability anchor"
+    block is reported whenever a non-plain target trains the head.
 
 SCOPE (important): this validates the PIPELINE, not model quality. The
 training data available today is ONE replay (3584 rows / 1330 can-fire /
@@ -89,8 +100,27 @@ ENEMY_SLOTS = 16
 FRIEND_SLOTS = 8
 SLOTS = ENEMY_SLOTS + FRIEND_SLOTS
 
-ENTITY_DIM = 10
-GLOBAL_DIM = 14
+# Schema versions (E14): v1 rows carry no featureVersion key (read as 1).
+# v1 = the E9/E13 layout; v2 adds the E14 feature families — entity slots
+# gain the explicit vision verdict / smoke / radar / side / engine columns,
+# the global block gains consumable windows, engine state, smoke geometry,
+# the weather (cyclone) timeline, ally radar/hydro build counts and the
+# E11 availability flag. All v2 features are PRE-NORMALIZED on the Rust side
+# (bounded fractions or -1/0 unknown sentinels) and pass through unchanged.
+ENTITY_DIM_V1 = 10
+GLOBAL_DIM_V1 = 14
+ENTITY_DIM_V2 = 15
+GLOBAL_DIM_V2 = 27
+
+# v2 entity column groups (for --ablate; indices within ENTITY_DIM_V2).
+V2_ENT_E11 = [10, 14]  # spottedNow, enginePowerFrac
+V2_ENT_SMOKE = [11]  # insideSmoke
+V2_ENT_BUILDS = [12]  # radarLit
+# v2 global column groups (indices within GLOBAL_DIM_V2).
+V2_GLB_E11 = [14, 15, 16, 17, 18, 26]  # consumables x3, engine x2, known flag
+V2_GLB_SMOKE = [19, 20, 21]  # ownInSmoke, count, area
+V2_GLB_WEATHER = [22, 23]  # vision cap, incoming ramp
+V2_GLB_BUILDS = [24, 25]  # ally radar / hydro counts
 
 # Normalization constants — deliberately fixed (no fitted scalers: one replay
 # of data; every scale documented so the Rust side could mirror them later).
@@ -114,16 +144,16 @@ OBS_COUNT_BUCKETS = [(0, 0, "0"), (1, 1, "1"), (2, 2, "2"), (3, None, "3+")]
 KAPPA_MIN_N = 30
 
 
-def featurize_slot(slot: dict | None) -> list[float]:
+def featurize_slot(slot: dict | None, ver: int = 1) -> list[float]:
     """One entity slot -> ENTITY_DIM floats. `None` (padding) -> zeros."""
     if slot is None:
-        return [0.0] * ENTITY_DIM
+        return [0.0] * (ENTITY_DIM_V1 if ver == 1 else ENTITY_DIM_V2)
     dist = min(slot["distM"] / DIST_SCALE_M, 2.0)
     b = slot["bearingRelRad"]
     speed = slot.get("speedKt")
     hp = slot.get("hpFrac")
     los = slot.get("terrainBlocked")
-    return [
+    base = [
         dist,
         math.sin(b),
         math.cos(b),
@@ -135,17 +165,32 @@ def featurize_slot(slot: dict | None) -> list[float]:
         1.0 if slot["entityType"] == 2 else 0.0,  # EntityKind one-hot summary
         1.0 if speed is not None else 0.0,  # speedKnown flag
     ]
+    if ver == 1:
+        return base
+    spotted = slot.get("spottedNow")
+    engine = slot.get("enginePowerFrac")
+    return base + [
+        (-1.0 if spotted is None else (1.0 if spotted else 0.0)),
+        1.0 if slot.get("insideSmoke") else 0.0,
+        1.0 if slot.get("radarLit") else 0.0,
+        1.0 if slot.get("isEnemy") else 0.0,
+        engine if engine is not None else -1.0,
+    ]
 
 
-def featurize_row(row: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, int | None]:
+def featurize_row(row: dict, ver: int = 1) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, float | None]:
     """One exported JSON row -> (entity[SLOTS, ENTITY_DIM], global[GLOBAL_DIM],
-    mask[SLOTS], labelA, labelB)."""
+    mask[SLOTS], labelA, labelB). `labelB` is the PLAIN fire label (float for
+    E15 soft rows); the hit/soft variants are pulled off the raw row by
+    `load_datasets`."""
+    entity_dim = ENTITY_DIM_V1 if ver == 1 else ENTITY_DIM_V2
+    global_dim = GLOBAL_DIM_V1 if ver == 1 else GLOBAL_DIM_V2
     entities: list[dict | None] = list(row["enemies"])[:ENEMY_SLOTS]
     entities += list(row["friends"])[:FRIEND_SLOTS]
-    entity = np.zeros((SLOTS, ENTITY_DIM), dtype=np.float32)
+    entity = np.zeros((SLOTS, entity_dim), dtype=np.float32)
     mask = np.zeros((SLOTS,), dtype=np.float32)
     for i, slot in enumerate(entities):
-        entity[i] = featurize_slot(slot)
+        entity[i] = featurize_slot(slot, ver)
         mask[i] = 1.0
     own_speed = row.get("ownSpeedKt")
     g = np.array(
@@ -167,8 +212,35 @@ def featurize_row(row: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, i
         ],
         dtype=np.float32,
     )
+    if ver == 2:
+        # All v2 global features arrive pre-normalized from the Rust export
+        # (bounded fractions; -1 = stream unavailable; 0 = known inactive).
+        g = np.concatenate(
+            [
+                g,
+                np.array(
+                    [
+                        row.get("ownDamconFrac", -1.0),
+                        row.get("ownRepairFrac", -1.0),
+                        row.get("ownOtherConsumableFrac", -1.0),
+                        row.get("ownEnginePower", -1.0),
+                        row.get("ownEngineDir", 0.0),
+                        1.0 if row.get("ownInSmoke") else 0.0,
+                        row.get("activeSmokeCountFrac", 0.0),
+                        row.get("activeSmokeAreaFeat", 0.0),
+                        row.get("visionCapFrac", 1.0),
+                        row.get("weatherIncomingFrac", 0.0),
+                        row.get("allyRadarCountFrac", -1.0),
+                        row.get("allyHydroCountFrac", -1.0),
+                        1.0 if row.get("e11EventsKnown") else 0.0,
+                    ],
+                    dtype=np.float32,
+                ),
+            ]
+        )
     label_a = int(row["labelACanFire"])
-    label_b = None if row.get("labelBFired") is None else int(row["labelBFired"])
+    fired = row.get("labelBFired")
+    label_b = None if fired is None else float(fired)
     return entity, g, mask, label_a, label_b
 
 
@@ -188,7 +260,12 @@ def load_datasets(paths: list[Path]) -> dict:
     """Merge JSONL datasets from every path (E12: multi-replay). Adds:
     `group` (replay identity per row), `nearest_enemy_dist_m`,
     `observed_enemy_count`; `rows_meta` keeps the raw rows in the same order.
-    Duplicate paths are de-duplicated preserving order."""
+    E14: the schema version (row `featureVersion`, absent -> 1) is detected
+    per FILE and must agree across files — v1/v2 featurizations cannot mix
+    (dims differ). The returned dict carries `feature_version`,
+    `entity_dim`, `global_dim`, plus the E15 target columns `label_b_hit`
+    (NaN where censored/absent) and `label_b_soft` alongside the plain
+    `label_b`. Duplicate paths are de-duplicated preserving order."""
     seen: set[Path] = set()
     unique: list[Path] = []
     for p in paths:
@@ -198,20 +275,32 @@ def load_datasets(paths: list[Path]) -> dict:
             unique.append(p)
     rows: list[dict] = []
     stems: list[str] = []
+    file_versions: list[int] = []
     for path in unique:
         stem = path.stem
         with open(path, encoding="utf-8") as f:
             file_rows = 0
+            ver: int | None = None
             for n, line in enumerate(f, 1):
                 line = line.strip()
                 if line:
                     try:
-                        rows.append(json.loads(line))
-                        stems.append(stem)
-                        file_rows += 1
+                        row = json.loads(line)
                     except json.JSONDecodeError as e:  # pragma: no cover
                         raise SystemExit(f"[e12] malformed JSONL at {path}:{n}: {e}") from e
-        print(f"[e12] loaded {file_rows:6d} rows from {path}")
+                    row_ver = int(row.get("featureVersion", 1) or 1)
+                    if ver is None:
+                        ver = row_ver
+                    elif row_ver != ver:
+                        raise SystemExit(
+                            f"[e14] {path} mixes featureVersions {ver} and {row_ver} — "
+                            "one file must come from one export schema"
+                        )
+                    rows.append(row)
+                    stems.append(stem)
+                    file_rows += 1
+            file_versions.append(ver or 1)
+            print(f"[e12] loaded {file_rows:6d} rows (featureVersion {ver or 1}) from {path}")
     if not rows:
         if not unique:
             raise SystemExit(
@@ -222,25 +311,47 @@ def load_datasets(paths: list[Path]) -> dict:
             + ", ".join(str(p) for p in unique)
             + " — rerun the Rust export first"
         )
+    if len(set(file_versions)) != 1:
+        raise SystemExit(
+            f"[e14] mixed featureVersions across files ({file_versions}) — "
+            "v1 and v2 datasets cannot train together"
+        )
+    version = file_versions[0]
+    entity_dim = ENTITY_DIM_V1 if version == 1 else ENTITY_DIM_V2
+    global_dim = GLOBAL_DIM_V1 if version == 1 else GLOBAL_DIM_V2
     n = len(rows)
     data = {
-        "entity": np.zeros((n, SLOTS, ENTITY_DIM), dtype=np.float32),
-        "global": np.zeros((n, GLOBAL_DIM), dtype=np.float32),
+        "feature_version": version,
+        "entity_dim": entity_dim,
+        "global_dim": global_dim,
+        "entity": np.zeros((n, SLOTS, entity_dim), dtype=np.float32),
+        "global": np.zeros((n, global_dim), dtype=np.float32),
         "mask": np.zeros((n, SLOTS), dtype=np.float32),
         "label_a": np.zeros((n,), dtype=np.float32),
         # labelB ground truth where defined; head-B loss is masked to
         # labelA==1 rows (a hold during reload is physics, not a decision).
+        # `label_b` stays the PLAIN fire label for every consumer
+        # (outcome_lift's expert baseline included); the E15 variants ride
+        # their own columns and the train side picks via --label.
         "label_b": np.full((n,), np.nan, dtype=np.float32),
+        "label_b_hit": np.full((n,), np.nan, dtype=np.float32),
+        "label_b_soft": np.full((n,), np.nan, dtype=np.float32),
         "group": np.empty((n,), dtype=object),
         "nearest_enemy_dist_m": np.full((n,), np.nan, dtype=np.float32),
         "observed_enemy_count": np.zeros((n,), dtype=np.int32),
     }
     for i, row in enumerate(rows):
-        e, g, m, la, lb = featurize_row(row)
+        e, g, m, la, lb = featurize_row(row, version)
         data["entity"][i], data["global"][i], data["mask"][i] = e, g, m
         data["label_a"][i] = la
         if lb is not None:
             data["label_b"][i] = lb
+        hit = row.get("labelBHit")
+        if hit is not None:
+            data["label_b_hit"][i] = float(hit)
+        soft = row.get("labelBSoft")
+        if soft is not None:
+            data["label_b_soft"][i] = float(soft)
         grp, dist, cnt = row_strat(row, stems[i])
         data["group"][i] = grp
         data["nearest_enemy_dist_m"][i] = dist if dist is not None else np.nan
@@ -311,25 +422,41 @@ def row_version_prefix(version: str | None) -> str | None:
         return None
 
 
+def version_matches(version: str | None, prefix: str) -> bool:
+    """Segment-wise version match: every prefix segment must equal the
+    version's segment at the same position (extra version segments allowed).
+
+    A plain `startswith` would make "14.1" swallow "14.11.x" (WoWS ships
+    two-digit minors), so compare segments, not strings."""
+    if not version:
+        return False
+    got = str(version).split(".")
+    want = prefix.split(".")
+    return len(got) >= len(want) and all(g == w for g, w in zip(got, want))
+
+
 # ── model (research note C first choice) ─────────────────────────────────────
 
 
-def build_model(hidden: int = 320) -> "torch.nn.Module":
+def build_model(hidden: int = 320, entity_dim: int = ENTITY_DIM_V1, global_dim: int = GLOBAL_DIM_V1) -> "torch.nn.Module":
     import torch
     import torch.nn as nn
 
-    # default 320 -> ~0.32 M params, inside the 0.3–1 M budget of note C
+    # default 320 -> ~0.32 M params, inside the 0.3–1 M budget of note C.
+    # E14: the input widths follow the dataset's feature schema (v1 10/14,
+    # v2 15/27) — the HIDDEN structure is untouched, only the first/ctx
+    # layers widen.
 
     class TwoHeadDeepSets(nn.Module):
         def __init__(self) -> None:
             super().__init__()
             self.phi = nn.Sequential(  # per-entity shared encoder
-                nn.Linear(ENTITY_DIM, hidden),
+                nn.Linear(entity_dim, hidden),
                 nn.ReLU(),
                 nn.Linear(hidden, hidden),
                 nn.ReLU(),
             )
-            self.ctx1 = nn.Linear(hidden + GLOBAL_DIM, hidden)  # broadcast-concat
+            self.ctx1 = nn.Linear(hidden + global_dim, hidden)  # broadcast-concat
             self.ctx2 = nn.Linear(hidden, hidden)  # 2nd narrow interaction layer
             self.head_a = nn.Linear(hidden, 1)  # "physically can fire"
             self.head_b = nn.Linear(hidden, 1)  # "expert fired"
@@ -348,6 +475,56 @@ def build_model(hidden: int = 320) -> "torch.nn.Module":
             return self.head_a(agg).squeeze(-1), self.head_b(agg).squeeze(-1)
 
     return TwoHeadDeepSets()
+
+
+def apply_ablation(data: dict, group: str) -> dict:
+    """E14 analysis knob: zero one feature family's columns BEFORE training
+    (train-time masking only — the export schema is untouched). Used for the
+    feature-group ablations (e.g. train v2 without the E11 streams).
+    Returns a NEW data dict; the input stays intact."""
+    if group == "none":
+        return data
+    if data["feature_version"] != 2:
+        raise SystemExit("[e14] --ablate needs a featureVersion 2 dataset")
+    out = {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in data.items()}
+    ent_cols = {
+        "e11": V2_ENT_E11,
+        "smoke": V2_ENT_SMOKE,
+        "builds": V2_ENT_BUILDS,
+    }.get(group, [])
+    glb_cols = {
+        "e11": V2_GLB_E11,
+        "smoke": V2_GLB_SMOKE,
+        "builds": V2_GLB_BUILDS,
+        "weather": V2_GLB_WEATHER,
+    }.get(group, [])
+    if not ent_cols and not glb_cols:
+        raise SystemExit(f"[e14] unknown --ablate group {group!r}")
+    for c in ent_cols:
+        out["entity"][:, :, c] = 0.0
+    for c in glb_cols:
+        out["global"][:, c] = 0.0
+    print(
+        f"[e14] ablation {group}: zeroed entity cols {ent_cols}, global cols {glb_cols}"
+    )
+    return out
+
+
+def select_label_target(data: dict, label: str) -> np.ndarray:
+    """E15: the head-B training/eval target column for --label
+    (plain | hit | soft). Falls back to plain with a loud note when the
+    dataset predates the E15 exporter."""
+    if label == "hit":
+        col = data.get("label_b_hit")
+        if col is not None and np.isfinite(col).any():
+            return col
+        print("[e15] dataset lacks labelBHit — falling back to the plain label")
+    elif label == "soft":
+        col = data.get("label_b_soft")
+        if col is not None and np.isfinite(col).any():
+            return col
+        print("[e15] dataset lacks labelBSoft — falling back to the plain label")
+    return data["label_b"]
 
 
 # ── metrics (numpy-only; no sklearn dependency) ──────────────────────────────
@@ -660,6 +837,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--label",
+        default="plain",
+        choices=["plain", "hit", "soft"],
+        help=(
+            "E15 head-B target: plain = expert fired (the E9-E13 default, "
+            "backward-comparable); hit = fired AND the outcome window landed "
+            "a server-confirmed hit; soft = 0.3 + 0.7*hit on fired rows. "
+            "Loss stays BCE — only the target column changes."
+        ),
+    )
+    p.add_argument(
+        "--ablate",
+        default="none",
+        choices=["none", "e11", "smoke", "weather", "builds"],
+        help=(
+            "E14 feature-group ablation: zero one family's feature columns "
+            "before training (analysis knob — the export schema is untouched). "
+            "v2 datasets only."
+        ),
+    )
+    p.add_argument(
         "--selftest",
         action="store_true",
         help=(
@@ -843,16 +1041,164 @@ def run_selftest() -> int:
     assert row_version_prefix(None) is None
     assert row_version_prefix("") is None
     assert row_version_prefix("unknown-build") is None
-    # Prefix semantics of the split masks: '15.8' holds out 15.8.x only.
+    # Prefix semantics of the split masks: '15.8' holds out 15.8.x only,
+    # segment-wise — '14.1' must NOT match '14.11.x' (two-digit minors exist).
     vers = np.array(["14.5.0", "15.8.0", "15.8.1", "15.9.0", None], dtype=object)
     normed = np.array([row_version_prefix(v) for v in vers], dtype=object)
     ho = "15.8"
-    is_ho = np.array([v is not None and str(v).startswith(ho) for v in normed])
+    is_ho = np.array([version_matches(v, ho) for v in normed])
     assert is_ho.tolist() == [False, True, True, False, False]
-    is_tr = np.array(
-        [v is not None and not str(v).startswith(ho) for v in normed]
-    )
+    is_tr = np.array([v is not None and not version_matches(v, ho) for v in normed])
     assert is_tr.tolist() == [True, False, False, True, False]
+    assert version_matches("14.11.0", "14.1") is False
+    assert version_matches("14.1.2", "14.1") is True
+    # ── E14/E15: schema-v2 routing, label variants, ablation masking ────
+    with tempfile.TemporaryDirectory() as td:
+        tdp = Path(td)
+        # v2 file: every new field present with hand-checkable values.
+        p2 = tdp / "replayV2.jsonl"
+        with open(p2, "w", encoding="utf-8") as f:
+            for i in range(30):
+                enemies = [
+                    {
+                        "entityId": 100,
+                        "entityType": 2,
+                        "shipId": None,
+                        "distM": 4000.0,
+                        "bearingRelRad": 0.0,
+                        "speedKt": 20.0,
+                        "hpFrac": 0.8,
+                        "obsAgeS": 1.0,
+                        "observedNow": True,
+                        "terrainBlocked": False,
+                        "spottedNow": True,
+                        "insideSmoke": i % 2 == 0,
+                        "radarLit": True,
+                        "isEnemy": True,
+                        "enginePowerFrac": 0.8,
+                    }
+                ]
+                row = {
+                    "replayId": "replayV2",
+                    "replayVersion": "15,8,0,0",
+                    "featureVersion": 2,
+                    "ownerEntityId": 9,
+                    "teamId": 0,
+                    "t": float(10 + 2 * i),
+                    "ownSpeedKt": 15.0,
+                    "ownHpFrac": 0.9,
+                    "ownReloadFrac": 1.0,
+                    "ownRangeM": 15000.0,
+                    "zonesOwned0": 1,
+                    "zonesOwned1": 2,
+                    "zonesOwned2": 0,
+                    "zonesOwnedOther": 0,
+                    "zonesActiveProgress": 1,
+                    "eventsShells30s": 5,
+                    "eventsTorps30s": 0,
+                    "eventsExplosions30s": 2,
+                    "eventsExplosionsNear30s": 1,
+                    "enemies": enemies,
+                    "friends": [],
+                    "labelACanFire": i % 2 == 0,
+                    # Among can-fire rows (i even): i%8 in {0} fired+hit,
+                    # {2} fired+missed, {4,6} held — all three E15 lattices.
+                    "labelBFired": (i % 8 in (0, 2)) if i % 2 == 0 else None,
+                    "ownDamconFrac": 0.5,
+                    "ownRepairFrac": -1.0,
+                    "ownOtherConsumableFrac": 0.25,
+                    "ownEnginePower": 0.6,
+                    "ownEngineDir": -1.0,
+                    "ownInSmoke": False,
+                    "activeSmokeCountFrac": 0.125,
+                    "activeSmokeAreaFeat": 0.199,
+                    "visionCapFrac": 0.5,
+                    "weatherIncomingFrac": 0.25,
+                    "allyRadarCountFrac": 0.25,
+                    "allyHydroCountFrac": -1.0,
+                    "e11EventsKnown": True,
+                    "labelBHit": (i % 8 == 0) if i % 2 == 0 else None,
+                    "labelBSoft": (
+                        (1.0 if i % 8 == 0 else (0.3 if i % 8 == 2 else 0.0))
+                        if i % 2 == 0
+                        else None
+                    ),
+                }
+                f.write(json.dumps(row) + "\n")
+        data2 = load_datasets([p2])
+        assert data2["feature_version"] == 2
+        assert data2["entity_dim"] == ENTITY_DIM_V2 == 15
+        assert data2["global_dim"] == GLOBAL_DIM_V2 == 27
+        assert data2["entity"].shape == (30, SLOTS, 15)
+        # Featurizer exact values: the v2 entity block (cols 10..14) and the
+        # global block (cols 14..26) carry the Rust-side normalization.
+        slot_vec = featurize_slot(enemies[0], 2)
+        inside = 1.0 if enemies[0]["insideSmoke"] else 0.0
+        assert slot_vec[10:15] == [1.0, inside, 1.0, 1.0, 0.8]
+        row0 = featurize_row(json.loads(json.dumps(row)), 2)
+        assert row0[1][14] == 0.5 and row0[1][15] == -1.0 and row0[1][16] == 0.25
+        assert row0[1][17] == 0.6 and row0[1][18] == -1.0 and row0[1][19] == 0.0
+        assert row0[1][20] == 0.125 and row0[1][21] == 0.199
+        assert row0[1][22] == 0.5 and row0[1][23] == 0.25
+        assert row0[1][24] == 0.25 and row0[1][25] == -1.0 and row0[1][26] == 1.0
+        # v1 padding + v1 slot: 10 dims, zeros for None.
+        assert len(featurize_slot(None, 1)) == 10
+        assert len(featurize_slot(None, 2)) == 15
+        # E15 targets: hit/soft censor exactly with the plain label; soft
+        # values land on the 0 / 0.3 / 1 lattice.
+        assert np.isnan(data2["label_b_hit"][1]) and np.isnan(data2["label_b_soft"][1])
+        hit_vals = data2["label_b_hit"][np.isfinite(data2["label_b_hit"])]
+        soft_vals = data2["label_b_soft"][np.isfinite(data2["label_b_soft"])]
+        assert sorted(set(hit_vals.tolist())) == [0.0, 1.0]
+        assert sorted(set(soft_vals) - {0.0, 1.0}) and all(
+            abs(v - 0.3) < 1e-6 for v in set(soft_vals) - {0.0, 1.0}
+        )
+        assert select_label_target(data2, "plain") is data2["label_b"]
+        assert select_label_target(data2, "hit") is data2["label_b_hit"]
+        assert select_label_target(data2, "soft") is data2["label_b_soft"]
+        # v1 data has no hit column values -> hit falls back to plain.
+        p1 = tdp / "replayV1.jsonl"
+        v1_row = {k: v for k, v in row.items() if k not in (
+            "featureVersion", "labelBHit", "labelBSoft", "ownDamconFrac",
+            "ownRepairFrac", "ownOtherConsumableFrac", "ownEnginePower",
+            "ownEngineDir", "ownInSmoke", "activeSmokeCountFrac",
+            "activeSmokeAreaFeat", "visionCapFrac", "weatherIncomingFrac",
+            "allyRadarCountFrac", "allyHydroCountFrac", "e11EventsKnown")}
+        v1_row["enemies"] = [{k: v for k, v in enemies[0].items() if k not in (
+            "spottedNow", "insideSmoke", "radarLit", "isEnemy", "enginePowerFrac")}]
+        with open(p1, "w", encoding="utf-8") as f:
+            f.write(json.dumps(v1_row) + "\n")
+        data1 = load_datasets([p1])
+        assert data1["feature_version"] == 1 and data1["entity_dim"] == 10
+        assert select_label_target(data1, "hit") is data1["label_b"]
+        assert select_label_target(data1, "soft") is data1["label_b"]
+        # Ablation masking: e11 zeroes vision/engine/consumable columns but
+        # leaves the side marker and the smoke block intact.
+        ab = apply_ablation(data2, "e11")
+        assert (ab["entity"][:, :, 10] == 0).all() and (ab["entity"][:, :, 14] == 0).all()
+        # isEnemy untouched where the slot is real (fixture: one enemy slot).
+        assert (ab["entity"][np.asarray(ab["mask"])[:, 0] == 1, 0, 13] == 1).all()
+        for c in V2_GLB_E11:
+            assert (ab["global"][:, c] == 0).all()
+        assert (ab["global"][:, 20] == 0.125).all()  # smoke block untouched
+        assert (data2["entity"][:, 0, 10] == 1).all()  # input dict untouched
+        # Mixed schemas across files refuse to load.
+        try:
+            load_datasets([p2, p1])
+            raise AssertionError("mixed v1/v2 files must exit")
+        except SystemExit:
+            pass
+        # Mixed schemas inside one file refuse too.
+        p3 = tdp / "mixed.jsonl"
+        with open(p3, "w", encoding="utf-8") as f:
+            f.write(json.dumps({**row, "featureVersion": 2}) + "\n")
+            f.write(json.dumps({**row, "featureVersion": 1}) + "\n")
+        try:
+            load_datasets([p3])
+            raise AssertionError("in-file mixed featureVersion must exit")
+        except SystemExit:
+            pass
+
     print("[selftest] E12 scale-up logic OK (load/group/split/metrics)")
     return 0
 
@@ -893,11 +1239,26 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[e12] loading {len(data_paths)} dataset file(s)")
     data = load_datasets(data_paths)
+    data = apply_ablation(data, args.ablate)
+    y_b_sel = select_label_target(data, args.label)
     n = len(data["label_a"])
     can = data["label_a"] == 1
     fired = data["label_b"] == 1
     groups, group_counts = np.unique(data["group"], return_counts=True)
     n_groups = len(groups)
+    print(
+        f"[e14] featureVersion {data['feature_version']} "
+        f"(entity {data['entity_dim']} / global {data['global_dim']} dims); "
+        f"label={args.label}; ablate={args.ablate}"
+    )
+    if args.label != "plain":
+        sel_defined = np.isfinite(y_b_sel)
+        sel_pos = float(np.nanmean(y_b_sel[sel_defined])) if sel_defined.any() else float("nan")
+        print(
+            f"[e15] {args.label} target: {int(sel_defined.sum())} defined rows, "
+            f"mean target {sel_pos:.3f} (plain rate among can-fire "
+            f"{fired.sum() / max(can.sum(), 1):.3f})"
+        )
     print(
         f"[e12] {n} rows over {n_groups} replay group(s): labelA+ {int(can.sum())} "
         f"({can.mean():.3f}), labelB+ {int(fired.sum())} "
@@ -922,14 +1283,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.holdout_version is not None:
         ho_ver = normalize_version_prefix(args.holdout_version)
         tr_ver = normalize_version_prefix(args.train_version) if args.train_version else None
-        # Prefix semantics: '15.8' holds out every row of 15.8.x; the
-        # normalized row version ('15.8.0') must start with the prefix.
-        is_ho = np.array([v is not None and str(v).startswith(ho_ver) for v in version_of])
+        # Segment-wise prefix semantics: '15.8' holds out every row of
+        # 15.8.x but not 15.80.x ('14.1' must not swallow '14.11.x').
+        is_ho = np.array([version_matches(v, ho_ver) for v in version_of])
         is_tr = np.array(
             [
                 v is not None
-                and not str(v).startswith(ho_ver)
-                and (tr_ver is None or str(v).startswith(tr_ver))
+                and not version_matches(v, ho_ver)
+                and (tr_ver is None or version_matches(v, tr_ver))
                 for v in version_of
             ]
         )
@@ -980,14 +1341,17 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     y_a = torch.from_numpy(data["label_a"]).to(device)
-    y_b = torch.from_numpy(np.nan_to_num(data["label_b"], nan=0.0)).to(device)
-    b_mask = torch.from_numpy(np.isfinite(data["label_b"]).astype(np.float32)).to(device)
+    # E15: head B trains on the SELECTED target (--label); the loss mask is
+    # its own censoring (defined == can-fire, identical across variants).
+    y_b = torch.from_numpy(np.nan_to_num(y_b_sel, nan=0.0)).to(device)
+    b_mask = torch.from_numpy(np.isfinite(y_b_sel).astype(np.float32)).to(device)
 
     def train_model(hidden: int, tr_idx: np.ndarray | None = None) -> tuple["torch.nn.Module", list[float]]:
         """Train one model on `tr_idx` (defaults to the main split's train
-        set; the CV folds pass their own). Training loop: E9, unchanged."""
+        set; the CV folds pass their own). Training loop: E9, unchanged
+        apart from the E14 input widths and the E15 target column."""
         tr = train_idx if tr_idx is None else tr_idx
-        model = build_model(hidden).to(device)
+        model = build_model(hidden, data["entity_dim"], data["global_dim"]).to(device)
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
         # BCEWithLogitsLoss has no label_smoothing kwarg (only CrossEntropyLoss
         # does) — smooth the targets by hand: y' = y(1-eps) + eps/2 (note B).
@@ -1043,7 +1407,10 @@ def main(argv: list[str] | None = None) -> int:
     pt_pa, pt_pb = sigmoid(pt_la.cpu().numpy()), sigmoid(pt_lb.cpu().numpy())
 
     # ── held-out note-B battery ──────────────────────────────────────────
-    finite_b = np.isfinite(data["label_b"])
+    # Head B evaluates against the SELECTED target (--label); the plain
+    # comparison block next to it keeps every config comparable with the
+    # E13 baseline regardless of which target trained the head.
+    finite_b = np.isfinite(y_b_sel)
     va_a = val_idx
     va_b = val_idx[finite_b[val_idx]]
     heldout_a = classification_report_head(
@@ -1058,14 +1425,42 @@ def main(argv: list[str] | None = None) -> int:
     cannot = va_a[data["label_a"][va_a] == 0]
     heldout_a["false_positives_on_cannot_fire"] = int((pt_pa[cannot] >= 0.5).sum())
     heldout_a["cannot_fire_rows"] = int(len(cannot))
+    head_b_name = {
+        "plain": "B/expert-fired (held-out can-fire rows)",
+        "hit": "B/fired-and-hit (held-out can-fire rows)",
+        "soft": "B/soft-outcome (held-out can-fire rows)",
+    }[args.label]
     heldout_b = classification_report_head(
-        "B/expert-fired (held-out can-fire rows)",
-        data["label_b"][va_b],
+        head_b_name,
+        y_b_sel[va_b],
         pt_pb[va_b],
         data["nearest_enemy_dist_m"][va_b],
         data["observed_enemy_count"][va_b],
     )
-    heldout_b["decile_lift"] = decile_lift(data["label_b"][va_b], pt_pb[va_b])
+    heldout_b["decile_lift"] = decile_lift(y_b_sel[va_b], pt_pb[va_b])
+    # Comparability anchor: the same head scored against the PLAIN label —
+    # the metric the E13 table reports — so a hit/soft-trained model is
+    # directly comparable to the baseline row.
+    heldout_b_plain: dict | None = None
+    if args.label != "plain":
+        finite_plain = np.isfinite(data["label_b"])
+        va_p = val_idx[finite_plain[val_idx]]
+        heldout_b_plain = classification_report_head(
+            "B/expert-fired-PLAIN (comparability anchor)",
+            data["label_b"][va_p],
+            pt_pb[va_p],
+            data["nearest_enemy_dist_m"][va_p],
+            data["observed_enemy_count"][va_p],
+        )
+        heldout_b_plain["decile_lift"] = decile_lift(
+            data["label_b"][va_p], pt_pb[va_p]
+        )
+        print(
+            f"[e15] held-out PLAIN-label anchor: auprc "
+            f"{heldout_b_plain['auprc']:.4f} auc {heldout_b_plain['roc_auc']:.4f} "
+            f"ece {heldout_b_plain['ece_15bin']:.4f} "
+            f"top-decile lift {heldout_b_plain['decile_lift']['deciles'][0].get('lift')}"
+        )
     # E13: post-hoc OUTCOME lift on the held-out rows — the expert
     # fired-vs-held baseline plus the model's decile curves over window hit
     # rate / enemy HP lost (research note B's strongest offline evidence).
@@ -1107,6 +1502,7 @@ def main(argv: list[str] | None = None) -> int:
         "rows_heldout": int(len(val_idx)),
         "head_a": heldout_a,
         "head_b": heldout_b,
+        "head_b_plain_anchor": heldout_b_plain,
         "outcome_lift": outcome_report,
         "evidence_note": (
             "Single-replay numbers are PIPELINE evidence only (E9 "
@@ -1155,7 +1551,7 @@ def main(argv: list[str] | None = None) -> int:
             pa, pb = sigmoid(fl_a.cpu().numpy()), sigmoid(fl_b.cpu().numpy())
             fb_mask = finite_b[te]
             fold_auprc_a.append(average_precision(data["label_a"][te], pa))
-            fold_auprc_b.append(average_precision(data["label_b"][te][fb_mask], pb[fb_mask]))
+            fold_auprc_b.append(average_precision(y_b_sel[te][fb_mask], pb[fb_mask]))
             print(
                 f"[e12] fold {f + 1}/{k}: AUPRC-A {fold_auprc_a[-1]:.4f} "
                 f"AUPRC-B {fold_auprc_b[-1]:.4f} ({len(te)} rows)"
@@ -1187,9 +1583,18 @@ def main(argv: list[str] | None = None) -> int:
         "cv": cv_report,
         "auprc_a_train": average_precision(data["label_a"][train_idx], pt_pa[train_idx]),
         "auprc_b_train": average_precision(
-            data["label_b"][train_idx][finite_b[train_idx]], pt_pb[train_idx][finite_b[train_idx]]
+            y_b_sel[train_idx][finite_b[train_idx]], pt_pb[train_idx][finite_b[train_idx]]
         ),
     }
+    metrics.update(
+        {
+            "feature_version": int(data["feature_version"]),
+            "entity_dim": int(data["entity_dim"]),
+            "global_dim": int(data["global_dim"]),
+            "label": args.label,
+            "ablate": args.ablate,
+        }
+    )
 
     # ── ONNX export (static shapes, batch 1) ─────────────────────────────
     model = model.cpu()  # export and all ORT validation run on CPU
@@ -1334,9 +1739,9 @@ def main(argv: list[str] | None = None) -> int:
         m[:ENEMY_SLOTS] = 0.0
         la, lb = run_ort(sess_fp32, e[None], data["global"][i][None], m[None])
         worst_nan = worst_nan or not (np.isfinite(la).all() and np.isfinite(lb).all())
-    e0 = np.zeros((1, SLOTS, ENTITY_DIM), dtype=np.float32)
+    e0 = np.zeros((1, SLOTS, data["entity_dim"]), dtype=np.float32)
     m0 = np.zeros((1, SLOTS), dtype=np.float32)
-    g0 = np.zeros((1, GLOBAL_DIM), dtype=np.float32)
+    g0 = np.zeros((1, data["global_dim"]), dtype=np.float32)
     la0, lb0 = run_ort(sess_fp32, e0, g0, m0)
     empty_finite = bool(np.isfinite(la0).all() and np.isfinite(lb0).all())
     la0i, lb0i = run_ort(sess_int8, e0, g0, m0)
@@ -1354,8 +1759,8 @@ def main(argv: list[str] | None = None) -> int:
         "global": data["global"][0].tolist(),
         "mask": data["mask"][0].tolist(),
         "slots": SLOTS,
-        "entityDim": ENTITY_DIM,
-        "globalDim": GLOBAL_DIM,
+        "entityDim": int(data["entity_dim"]),
+        "globalDim": int(data["global_dim"]),
     }
     (out_dir / "sample_input.json").write_text(json.dumps(sample), encoding="utf-8")
 
