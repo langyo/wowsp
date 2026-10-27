@@ -33,6 +33,7 @@ mod context;
 mod flow;
 mod lang;
 mod live;
+pub(crate) mod outgoing;
 mod prompt;
 mod translate;
 

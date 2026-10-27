@@ -416,7 +416,7 @@ mod tests {
         assert_eq!(config.context.recent_lines, 8);
         assert!(!config.context.nicknames);
         assert_eq!(config.display.max_lines, 8);
-        assert_eq!(config.send.mode, "clipboard");
+        assert_eq!(config.send.mode, "off");
         assert!(config.send.suffix_enabled);
         assert_eq!(config.send.suffix_format, "per-segment");
         assert_eq!(config.send.split_chars, 120);

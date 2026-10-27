@@ -456,6 +456,10 @@
     "trySourceModel": "모델",
     "trySourcePassthrough": "이미 해당 언어",
     "trySourceUntranslatable": "번역 불가",
-    "tryNeedKey": "먼저 채팅 번역을 켜고 API 키를 저장하세요."
+    "tryNeedKey": "먼저 채팅 번역을 켜고 API 키를 저장하세요.",
+    "sendMode": "클립보드로 보내기",
+    "sendModeDesc": "메시지를 보내면 번역이 클립보드에 복사되어 Ctrl+V로 바로 붙여넣을 수 있습니다.",
+    "sendModeOff": "끔",
+    "sendModeClipboard": "클립보드"
   }
 }

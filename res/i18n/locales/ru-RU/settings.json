@@ -456,6 +456,10 @@
     "trySourceModel": "модель",
     "trySourcePassthrough": "уже на этом языке",
     "trySourceUntranslatable": "не переводится",
-    "tryNeedKey": "Сначала включите перевод чата и сохраните ключ API."
+    "tryNeedKey": "Сначала включите перевод чата и сохраните ключ API.",
+    "sendMode": "Отправлять в буфер обмена",
+    "sendModeDesc": "При отправке сообщения перевод копируется в буфер, и Ctrl+V сразу вставляет его.",
+    "sendModeOff": "Выкл.",
+    "sendModeClipboard": "Буфер обмена"
   }
 }

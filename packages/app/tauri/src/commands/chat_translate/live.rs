@@ -469,12 +469,13 @@ fn tick_once(
     }
 
     let now_ms = unix_ms();
-    let (new_lines, emit) = {
+    let (new_lines, emit, battle_changed, battle_after) = {
         let mut state = match state.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
         state.set_max_lines(max_lines);
+        let battle_before = state.battle_key.clone();
         let new_lines = advance(
             &mut state,
             progress,
@@ -484,6 +485,8 @@ fn tick_once(
             max_lines,
             now_ms,
         );
+        let battle_after = state.battle_key.clone();
+        let battle_changed = battle_after != battle_before;
         let changed = state.revision != *last_emitted || state.battle_key != *last_battle;
         let emit = if enabled && arena_live && changed {
             Some((state.snapshot(), state.revision, state.battle_key.clone()))
@@ -496,8 +499,14 @@ fn tick_once(
             }
             None
         };
-        (new_lines, emit)
+        (new_lines, emit, battle_changed, battle_after)
     };
+
+    // A battle switch (or the gate clearing the state) invalidates the
+    // outgoing paste hint: dismiss it before the new battle's lines flow.
+    if battle_changed {
+        super::outgoing::notify_battle_changed(&battle_after);
+    }
 
     for line in new_lines {
         super::flow::submit(app.clone(), Arc::clone(state), config.clone(), line);

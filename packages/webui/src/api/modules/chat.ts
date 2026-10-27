@@ -114,6 +114,11 @@ export interface ChatTranslateDisplayConfig {
   maxLines: number;
 }
 
+/** How the outgoing translated lines are handed to the player: `clipboard`
+ *  (auto-copied, Ctrl+V pastes the composed message) or `off` (nothing is
+ *  sent or copied — the settings section is the only surface then). */
+export type ChatTranslateSendMode = "off" | "clipboard";
+
 /** `[send]` — how translated chat is offered back to the game. */
 export interface ChatTranslateSendConfig {
   /** "clipboard" | "off" in this version; unknown values heal to "off". */

@@ -460,6 +460,7 @@ mod capture;
 mod diag;
 mod game_window;
 mod manual;
+mod paste;
 mod placement;
 mod reconcile;
 mod watch;
@@ -510,6 +511,10 @@ use manual::{
 };
 #[cfg(test)]
 use manual::{manual_row_centers, validate_manual_selection};
+#[cfg(target_os = "windows")]
+use paste::{PasteEvent, PasteMonitor};
+#[cfg(target_os = "windows")]
+use placement::epoch_ms;
 use placement::{
     hide_aim_card, hide_chat, hide_overlay, place_aim_card, place_and_show, place_chat,
     reassert_topmost, show_aim_card, show_async, show_chat, tab_held_for, tab_key_down,

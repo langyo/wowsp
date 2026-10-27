@@ -6,9 +6,10 @@
  * The card shows the recent battle-chat lines at the bottom-left of the game
  * screen while the player HOLDS Tab. The native window's show/hide is the
  * Rust watcher's job (battle known + the chat card enabled in the overlay
- * settings + Tab down); this page only ever paints what it was last handed,
- * and paints NOTHING when it has no lines (the window is fully transparent
- * then — no card, no border, no empty shell).
+ * settings + Tab down, OR the outgoing paste hint is up — M3); this page only
+ * ever paints what it was last handed, and paints NOTHING when it has no
+ * lines and no hint (the window is fully transparent then — no card, no
+ * border, no empty shell).
  *
  * Each line renders as (up to) TWO rows:
  *   - the ORIGINAL row: channel marker (team channels only) + sender + the
@@ -18,6 +19,18 @@
  *     untranslatable / own-echo / pending line still reads through its
  *     original): the translated body in the card's main color, clamped to
  *     two rows.
+ *
+ * The outgoing paste HINT (M3) stacks UNDER the reading panel in the same
+ * bottom-left column (the hint is the bottom-most, z-order-above element):
+ *   - "translating": the three-dot loader (the Tab table's own face) +
+ *     overlay.chat.loading;
+ *   - "ready": the composed preview (two-line clamp) + overlay.chat.pasteHint
+ *     + overlay.chat.remaining ("{count} left to paste") when more messages
+ *     wait behind the first;
+ *   - "error": the shell's user-facing message (muted red);
+ *   - "dismissed": the hint node is removed (the reading panel stays).
+ * A BATTLE change removes the hint too — a hint for a finished battle must
+ * never survive into the next one.
  *
  * Data intake (the bridge's wire contract):
  *   - `wowsp://chat-translate` — `{ battle, lines, maxLines }`: the most
@@ -30,6 +43,9 @@
  *   - `wowsp://chat-prefs` — `{ maxLines }`: the settings' live line-cap
  *     flip (the watcher re-reads the config every tick; this event keeps the
  *     page in step without waiting for the next line).
+ *   - `wowsp://chat-hint` — the outgoing paste hint state (see above). The
+ *     hint is scoped to its own `battle` id; a hint event for a different
+ *     battle replaces the node, and a dismissed/empty state removes it.
  * A line is `{ id, t, from, ns, lang, text, translated, selfLine }`: `lang`
  * is the BCP-47 tag the engine attached (it rides the row's `lang`
  * attribute — so a CJK/Cyrillic mix renders with the right face — and is
@@ -83,21 +99,39 @@ interface ChatPrefsPayload {
   maxLines?: number;
 }
 
-/** The overlay.json namespace this page reads (nested `chat` object; the
- *  unused hint/status keys are reserved by the card's future paste flow). */
+/** The four states the outgoing paste hint can be in (wire strings). */
+type ChatHintState = "translating" | "ready" | "error" | "dismissed";
+
+/** `wowsp://chat-hint` payload (the outgoing pipeline's paste card). */
+interface ChatHintPayload {
+  /** The battle the hint belongs to; a different id replaces the node. */
+  battle?: string;
+  /** Which face to draw; unknown/absent states remove the hint. */
+  state?: ChatHintState | string;
+  /** "ready": the composed translation preview (two-line clamp). */
+  preview?: string | null;
+  /** "ready": messages still waiting behind the first (paste count). */
+  remaining?: number | null;
+  /** "ready": total messages composed for this own line. */
+  total?: number | null;
+  /** "error": the shell's user-facing failure sentence. */
+  message?: string | null;
+}
+
+/** The overlay.json namespace this page reads (nested `chat` object). */
 interface OverlayChatMessages {
   chat: {
     /** Accessible name for the card + the document title. */
     title: string;
-    /** "Translating…" — reserved for the panel's status hint. */
+    /** "Translating…" — the paste hint's translating face. */
     loading: string;
-    /** "Translation ready" — reserved for the panel's status hint. */
+    /** "Translation ready" — reserved (the ready face is the preview). */
     ready: string;
-    /** "Press Enter to open chat, Ctrl+V to paste" — reserved. */
+    /** "Press Enter to open chat, Ctrl+V to paste and send". */
     pasteHint: string;
-    /** "Translation unavailable" — reserved. */
+    /** "Translation unavailable" — the error face's fallback text. */
     unavailable: string;
-    /** Remaining-paste count pattern carrying `{count}` — reserved. */
+    /** Remaining-paste count pattern carrying `{count}`. */
     remaining: string;
     /** Short team-channel marker ("[Team]" / "[队]" …). */
     teamTag: string;
@@ -133,7 +167,8 @@ function localized(key: OverlayChatKey): string {
 }
 
 /** `localized` with `{placeholder}` substitution (the a11y template's
- *  `{name}`). Unknown placeholders are left verbatim rather than dropped. */
+ *  `{name}`, the hint's `{count}`). Unknown placeholders are left verbatim
+ *  rather than dropped. */
 function localizedWith(key: OverlayChatKey, params: Record<string, string>): string {
   return localized(key).replace(/\{(\w+)\}/g, (match, name: string) => params[name] ?? match);
 }
@@ -160,8 +195,35 @@ let battle = "";
 let buffer: ChatLine[] = [];
 /** The card's per-battle line cap. */
 let maxLines = DEFAULT_MAX_LINES;
-/** The card element; created on the first line and detached when empty. */
+/** The bottom-left column (reading panel + paste hint); created on demand and
+ *  detached again when both children are gone. */
+let root: HTMLDivElement | null = null;
+/** The reading card element; created on the first line and detached when
+ *  empty. */
 let panel: HTMLDivElement | null = null;
+/** The outgoing paste hint card; null when no hint is up. */
+let hint: HTMLDivElement | null = null;
+
+/** The bottom-left stacking column. Children stack top→bottom: the reading
+ *  panel first, the paste hint LAST (the hint is the bottom-most element and
+ *  carries a higher z-index, per the paste-card contract). */
+function ensureRoot(): HTMLDivElement {
+  if (root) return root;
+  root = document.createElement("div");
+  root.className = "chat-overlay";
+  document.body.appendChild(root);
+  return root;
+}
+
+/** Detach the column when it has no children — an empty glass shell at the
+ *  screen corner would read as a glitch. */
+function disposeRootIfEmpty() {
+  if (!root) return;
+  if (root.childElementCount === 0) {
+    root.remove();
+    root = null;
+  }
+}
 
 function clampMaxLines(raw: unknown): number | null {
   const n = typeof raw === "number" ? raw : Number.NaN;
@@ -207,7 +269,12 @@ function ensurePanel(): HTMLDivElement {
   panel.className = "chat-panel";
   panel.setAttribute("role", "log");
   panel.setAttribute("aria-label", localized("title"));
-  document.body.appendChild(panel);
+  const host = ensureRoot();
+  // The reading panel always sits ABOVE the paste hint in the column: when a
+  // hint is already up, the panel inserts before it instead of appending
+  // under it.
+  if (hint && hint.parentNode === host) host.insertBefore(panel, hint);
+  else host.appendChild(panel);
   return panel;
 }
 
@@ -278,13 +345,14 @@ function render() {
     // empty glass slab at the screen corner would read as a glitch).
     panel?.remove();
     panel = null;
+    disposeRootIfEmpty();
     return;
   }
-  const root = ensurePanel();
+  const host = ensurePanel();
   // Chat reads top-to-bottom in arrival order; rebuilding at most a few
   // dozen tiny rows per event is cheaper than diffing stale nodes.
-  root.replaceChildren();
-  for (const line of buffer) root.appendChild(buildLine(line));
+  host.replaceChildren();
+  for (const line of buffer) host.appendChild(buildLine(line));
 }
 
 /** Merge one event's lines into the buffer. The bridge sends a SNAPSHOT of
@@ -316,6 +384,93 @@ function acceptLines(lines: ChatLine[]) {
   render();
 }
 
+// ── Outgoing paste hint ───────────────────────────────────────────────────
+
+/** The chasing three-dot bead row (the Tab table's own face, copied into
+ *  chat.scss). Bead animation delays are phase-locked from one shared clock,
+ *  exactly like the source family. */
+const DOTS_PERIOD_MS = 1200;
+
+function buildDots(): HTMLSpanElement {
+  const dots = document.createElement("span");
+  dots.className = "overlay-dots";
+  dots.setAttribute("aria-hidden", "true");
+  for (let index = 0; index < 3; index += 1) {
+    const bead = document.createElement("i");
+    bead.style.animationDelay = `${-(DOTS_PERIOD_MS * index) / 3}ms`;
+    dots.appendChild(bead);
+  }
+  return dots;
+}
+
+function hintRow(className: string): HTMLDivElement {
+  const row = document.createElement("div");
+  row.className = className;
+  return row;
+}
+
+/** One hint payload → the hint card (or its removal). The node is rebuilt per
+ *  event: the card holds at most four short lines, diffing adds nothing.
+ *  `textContent` only — the preview is translated chat input. */
+function renderHint(payload: ChatHintPayload) {
+  const state = typeof payload.state === "string" ? payload.state : "";
+  if (state === "dismissed" || (state !== "translating" && state !== "ready" && state !== "error")) {
+    clearHint();
+    return;
+  }
+  const card = document.createElement("div");
+  card.className = `chat-hint chat-hint--${state}`;
+  card.setAttribute("role", "status");
+  card.setAttribute("aria-live", "polite");
+
+  if (state === "translating") {
+    const row = hintRow("chat-hint__row");
+    row.appendChild(buildDots());
+    const label = document.createElement("span");
+    label.className = "chat-hint__label";
+    label.textContent = localized("loading");
+    row.appendChild(label);
+    card.appendChild(row);
+  } else if (state === "ready") {
+    const preview = (payload.preview ?? "").trim();
+    if (preview) {
+      const body = document.createElement("div");
+      body.className = "chat-hint__preview";
+      body.textContent = preview;
+      card.appendChild(body);
+    }
+    const foot = hintRow("chat-hint__footer");
+    const paste = document.createElement("span");
+    paste.className = "chat-hint__paste";
+    paste.textContent = localized("pasteHint");
+    foot.appendChild(paste);
+    const remaining = typeof payload.remaining === "number" ? payload.remaining : 0;
+    if (Number.isFinite(remaining) && remaining > 0) {
+      const left = document.createElement("span");
+      left.className = "chat-hint__remaining";
+      left.textContent = localizedWith("remaining", { count: String(Math.round(remaining)) });
+      foot.appendChild(left);
+    }
+    card.appendChild(foot);
+  } else {
+    const message = (payload.message ?? "").trim();
+    const error = document.createElement("div");
+    error.className = "chat-hint__message";
+    error.textContent = message || localized("unavailable");
+    card.appendChild(error);
+  }
+
+  hint?.remove();
+  hint = card;
+  ensureRoot().appendChild(card);
+}
+
+function clearHint() {
+  hint?.remove();
+  hint = null;
+  disposeRootIfEmpty();
+}
+
 // ── Wiring ───────────────────────────────────────────────────────────────
 
 async function main() {
@@ -333,9 +488,11 @@ async function main() {
     // is a coupling: if the source ever grows a battle-less emit, this must
     // become an explicit clear.
     if (nextBattle && nextBattle !== battle) {
-      // A new battle: nothing of the previous one may survive.
+      // A new battle: nothing of the previous one may survive — the lines
+      // AND the outgoing paste hint belong to the battle they were made in.
       battle = nextBattle;
       buffer = [];
+      clearHint();
     }
     const nextMax = clampMaxLines(payload.maxLines);
     if (nextMax != null) maxLines = nextMax;
@@ -348,6 +505,19 @@ async function main() {
     maxLines = nextMax;
     trimBuffer();
     render();
+  });
+  await listen("wowsp://chat-hint", (e: { payload: unknown }) => {
+    const payload = e.payload as ChatHintPayload | null;
+    if (!payload || typeof payload !== "object") return;
+    const nextBattle = typeof payload.battle === "string" ? payload.battle : "";
+    // The hint is battle-scoped: an event from a battle that is not the one
+    // the reading panel is showing is stale (a finished battle's hint must
+    // never paint over the next battle).
+    if (nextBattle && battle && nextBattle !== battle) {
+      clearHint();
+      return;
+    }
+    renderHint(payload);
   });
   // The native window title (invisible, but keeps task switcher / dev tools
   // honest) and the card's accessible name use the same localized copy.

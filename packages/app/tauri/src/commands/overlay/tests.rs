@@ -840,15 +840,17 @@ fn overlay_ctx() -> watch::OverlayContext {
         aim_card_on: true,
         chat_panel_on: true,
         chat_input_focused: false,
+        hint_active: false,
     }
 }
 
 /// The unified window scheduler (watch::schedule_windows) reproduces the
-/// historical table + aim-card wants exactly, and gates the chat panel on a
-/// Tab HOLD plus its own switch. Each gate suppresses only the windows it
-/// owns: the chat panel survives table_off (a table-off player keeps the
-/// translation panel), and the reserved chat-input signal closes only the
-/// chat panel.
+/// historical table + aim-card wants exactly, and gates the chat window on
+/// EITHER a Tab hold with its own switch on OR the outgoing paste hint. Each
+/// gate suppresses only the windows it owns: the chat panel survives
+/// table_off (a table-off player keeps the translation panel), and the
+/// reserved chat-input signal closes only the reading panel (the outgoing
+/// hint is exactly what the player pastes while typing).
 #[test]
 fn window_scheduler_gates_each_window_independently() {
     // Tab held + every switch on: table and chat show, the aim card stands
@@ -892,6 +894,70 @@ fn window_scheduler_gates_each_window_independently() {
         ..overlay_ctx()
     });
     assert!(!wants.chat && wants.table);
+
+    // The OUTGOING HINT alone shows the chat window with Tab UP and the
+    // reading panel switched off — the window becomes the paste card.
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        tab_down: false,
+        chat_panel_on: false,
+        hint_active: true,
+        ..overlay_ctx()
+    });
+    // Table needs Tab; the aim card owns the Tab-up screen as usual and
+    // simply coexists with the hint card (different screen corners).
+    assert!(!wants.table && wants.aim_card && wants.chat);
+
+    // Hint + Tab hold together: both roles, one window — no conflict.
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        tab_down: true,
+        hint_active: true,
+        ..overlay_ctx()
+    });
+    assert!(wants.table && wants.chat);
+
+    // The hint is independent of the table switch (a table-off player still
+    // gets the paste card).
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        table_off: true,
+        hint_active: true,
+        ..overlay_ctx()
+    });
+    assert!(!wants.table && wants.chat);
+
+    // The reserved in-game-chat-input gate closes only the READING panel:
+    // while the player is typing, the outgoing hint must still show.
+    let wants = watch::schedule_windows(watch::OverlayContext {
+        chat_input_focused: true,
+        hint_active: true,
+        ..overlay_ctx()
+    });
+    assert!(wants.chat && wants.table);
+
+    // The hint never overrides focus / battle / picker: no card over
+    // another app, in port, or under the manual-locate picker.
+    for ctx in [
+        watch::OverlayContext {
+            focused_on_game: false,
+            hint_active: true,
+            ..overlay_ctx()
+        },
+        watch::OverlayContext {
+            battle_known: false,
+            hint_active: true,
+            ..overlay_ctx()
+        },
+        watch::OverlayContext {
+            picker_open: true,
+            hint_active: true,
+            ..overlay_ctx()
+        },
+    ] {
+        let wants = watch::schedule_windows(ctx);
+        assert!(
+            !wants.chat,
+            "the hint must stay gated by focus/battle/picker: {ctx:?}"
+        );
+    }
 
     // Focus, battle and the picker layer gate all three windows.
     for ctx in [

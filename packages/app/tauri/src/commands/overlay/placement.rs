@@ -66,8 +66,11 @@ static TAB_HOLD: Mutex<TabHoldTracker> = Mutex::new(TabHoldTracker {
     last_seen_ms: None,
 });
 
+/// Wall clock in unix milliseconds — the Tab hold tracker's stamp AND the
+/// outgoing-hint / paste-monitor clock the watcher feeds both sides each
+/// tick, so one timestamp source keeps them comparable.
 #[cfg(target_os = "windows")]
-fn epoch_ms() -> u64 {
+pub(super) fn epoch_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)

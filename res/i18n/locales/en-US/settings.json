@@ -456,6 +456,10 @@
     "trySourceModel": "model",
     "trySourcePassthrough": "already in that language",
     "trySourceUntranslatable": "not translatable",
-    "tryNeedKey": "Enable chat translation and save an API key first."
+    "tryNeedKey": "Enable chat translation and save an API key first.",
+    "sendMode": "Send to clipboard",
+    "sendModeDesc": "Copy each translated line to the clipboard when you send a message, so Ctrl+V pastes it ready-made.",
+    "sendModeOff": "Off",
+    "sendModeClipboard": "Clipboard"
   }
 }

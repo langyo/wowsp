@@ -249,6 +249,11 @@ pub(super) struct WatchFsm {
     /// the panel's geometry, only its content). `None` forces the next show
     /// to place first.
     pub(super) chat_placed: Option<Rect>,
+    /// Ctrl+V / clipboard watcher for the outgoing chat-translation hint
+    /// (see `paste.rs`). Fed every tick with the hint's armed state and our
+    /// own clipboard sequence; a recognized paste or third-party overwrite is
+    /// forwarded to the outgoing state machine. Never touches window state.
+    pub(super) paste_monitor: PasteMonitor,
     /// Presentation-verify state machine (see `diag.rs`): which shows owe a
     /// marker check and the current broadcast verdict. Reset to default
     /// (Unverified) when the screen configuration changes.
@@ -528,6 +533,12 @@ pub(super) struct OverlayContext {
     /// already honors it so a real source can flip it without touching the
     /// show/hide branches.
     pub(super) chat_input_focused: bool,
+    /// The outgoing chat-translation hint is armed (a prepared message is
+    /// waiting to be pasted — see `chat_translate::outgoing`). True keeps
+    /// the chat window visible with Tab UP and even with the reading panel
+    /// switched off: the role of the window changed to its hint card, and
+    /// that is exactly when the player needs it.
+    pub(super) hint_active: bool,
 }
 
 /// The windows the window manager should keep visible for one tick — the
@@ -545,7 +556,9 @@ pub(super) struct WindowWants {
 /// formulas, unchanged; the chat panel joins them with its own switch and
 /// its own Tab-held (rather than Tab-up) gate — it is INDEPENDENT of
 /// `table_off` (a table-off player keeps the translation panel) and of the
-/// aim card's battle-class gates.
+/// aim card's battle-class gates — and with the OUTGOING HINT: while a
+/// prepared translation waits to be pasted the window must show its hint
+/// card with Tab up (and with the reading panel switched off).
 #[cfg(any(target_os = "windows", test))]
 pub(super) fn schedule_windows(ctx: OverlayContext) -> WindowWants {
     WindowWants {
@@ -563,15 +576,18 @@ pub(super) fn schedule_windows(ctx: OverlayContext) -> WindowWants {
             && ctx.aim_card_on
             && !ctx.picker_open
             && !ctx.tab_down,
-        // The chat-translation panel: Tab HELD (the player is looking at
-        // the table/chat) during a battle, its own switch on, no picker and
-        // no in-game chat input stealing the keyboard.
+        // The chat-translation window: EITHER the reading panel (Tab HELD
+        // during a battle, its own switch on, no picker, no in-game chat
+        // input stealing the keyboard) OR the outgoing hint (a prepared
+        // translation waiting to be pasted — visible with Tab up, and even
+        // with the reading panel switched off, because the hint card is the
+        // content that matters then). The battle / focus / picker gates are
+        // shared: neither role shows over another app, in port, or under the
+        // manual-locate picker.
         chat: ctx.focused_on_game
             && ctx.battle_known
             && !ctx.picker_open
-            && ctx.chat_panel_on
-            && ctx.tab_down
-            && !ctx.chat_input_focused,
+            && ((ctx.chat_panel_on && ctx.tab_down && !ctx.chat_input_focused) || ctx.hint_active),
     }
 }
 
@@ -869,6 +885,30 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         picker_open = false;
     }
 
+    // OUTGOING-HINT PASS — read the paste hint's armed state and feed the
+    // Ctrl+V / clipboard watcher (paste.rs). The hint state machine itself
+    // lives in the chat-translate module; the watcher only supplies the
+    // clock and forwards what the monitor saw: a recognized paste advances
+    // the hint to the next prepared message, a third-party clipboard
+    // overwrite dismisses it. Both callbacks are fire-and-forget (the
+    // outgoing state machine owns the hint event and the next clipboard
+    // write); the hint's armed state then feeds the window scheduler below,
+    // so the chat window turns into the hint card with Tab up.
+    let now_ms = epoch_ms();
+    let hint_active = super::super::chat_translate::outgoing::hint_active(now_ms);
+    match fsm.paste_monitor.tick(
+        now_ms,
+        hint_active,
+        super::super::chat_translate::outgoing::clipboard_seq(),
+        super::super::chat_translate::outgoing::clipboard_writing(),
+    ) {
+        Some(PasteEvent::Pasted) => super::super::chat_translate::outgoing::notify_pasted(),
+        Some(PasteEvent::ThirdParty) => {
+            super::super::chat_translate::outgoing::notify_third_party();
+        },
+        None => {},
+    }
+
     // WINDOW SCHEDULER — the ONE visibility decision for all three
     // transparent windows (pure; see `schedule_windows`). The historical
     // table + aim-card wants and the chat panel's new one are derived here
@@ -889,6 +929,7 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
             && !super::arena_info::last_enemy_all_ai(),
         chat_panel_on,
         chat_input_focused: chat_input_focused(),
+        hint_active,
     });
 
     // AIM-CARD pass — the second transparent window serving the one overlay

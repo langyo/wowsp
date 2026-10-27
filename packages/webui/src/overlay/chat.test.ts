@@ -40,6 +40,16 @@ const translations = (): Array<string | null> =>
 const fromOf = (row: HTMLElement): string | undefined =>
   row.querySelector<HTMLElement>(".chat-panel__from")?.textContent ?? undefined;
 
+const overlayRoot = (): HTMLElement | null => document.querySelector<HTMLElement>(".chat-overlay");
+const hint = (): HTMLElement | null => document.querySelector<HTMLElement>(".chat-hint");
+const hintText = (selector: string): string | null =>
+  document.querySelector<HTMLElement>(selector)?.textContent ?? null;
+
+/** The hint's "translating" face and the plate around it. */
+function emitHint(payload: Record<string, unknown>) {
+  emit("wowsp://chat-hint", { battle: currentBattle, ...payload });
+}
+
 function emit(event: string, payload: unknown) {
   const handler = handlers.get(event);
   if (!handler) throw new Error(`no listener for ${event}`);
@@ -77,6 +87,7 @@ beforeAll(async () => {
   await vi.waitFor(() => {
     expect(handlers.has("wowsp://chat-translate")).toBe(true);
     expect(handlers.has("wowsp://chat-prefs")).toBe(true);
+    expect(handlers.has("wowsp://chat-hint")).toBe(true);
   });
   // The card's accessible name + window title come from overlay.json's
   // overlay.chat.title (the default locale is en-US — no ?locale param).
@@ -295,5 +306,108 @@ describe("chat translation card", () => {
     });
     expect(originals()).toEqual(["一", "二", "三"]);
     expect(translations()).toEqual(["one", "two", "three"]);
+  });
+});
+
+describe("outgoing paste hint", () => {
+  it("draws the translating face with the shared three-dot loader", () => {
+    emitHint({ state: "translating" });
+    const card = hint();
+    expect(card).not.toBeNull();
+    expect(card!.classList.contains("chat-hint--translating")).toBe(true);
+    // The loader is the Tab table's own .overlay-dots face (three beads).
+    const dots = card!.querySelector(".overlay-dots");
+    expect(dots).not.toBeNull();
+    expect(dots!.querySelectorAll("i").length).toBe(3);
+    expect(card!.textContent).toContain("Translating");
+    // The hint alone needs no reading panel.
+    expect(panel()).toBeNull();
+  });
+
+  it("draws the ready face: two-line preview + paste hint + remaining count", () => {
+    emitHint({
+      state: "ready",
+      preview: "你好，请掩护我",
+      remaining: 2,
+      total: 3,
+    });
+    expect(hint()!.classList.contains("chat-hint--ready")).toBe(true);
+    expect(hintText(".chat-hint__preview")).toBe("你好，请掩护我");
+    expect(hintText(".chat-hint__paste")).toContain("Ctrl+V");
+    // overlay.json's remaining pattern carries {count} — the placeholder is
+    // substituted, never shown verbatim.
+    expect(hintText(".chat-hint__remaining")).toBe("2 left to paste");
+    expect(hintText(".chat-hint__remaining")).not.toContain("{count}");
+  });
+
+  it("omits the remaining line when no message waits behind this one", () => {
+    emitHint({ state: "ready", preview: "one message", remaining: 0, total: 1 });
+    expect(hintText(".chat-hint__preview")).toBe("one message");
+    expect(document.querySelector(".chat-hint__remaining")).toBeNull();
+  });
+
+  it("draws the error face with the shell's user-facing sentence", () => {
+    emitHint({ state: "error", message: "clipboard is busy" });
+    expect(hint()!.classList.contains("chat-hint--error")).toBe(true);
+    expect(hintText(".chat-hint__message")).toBe("clipboard is busy");
+    // No message → the localized fallback, never an empty plate.
+    emitHint({ state: "error", message: null });
+    expect(hintText(".chat-hint__message")).toBe("Translation unavailable");
+  });
+
+  it("removes the hint node on the dismissed state (the panel stays)", () => {
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      lines: [{ id: 1, from: "mate", text: "原文", translated: "译文" }],
+    });
+    emitHint({ state: "ready", preview: "line" });
+    expect(hint()).not.toBeNull();
+    emitHint({ state: "dismissed" });
+    expect(hint()).toBeNull();
+    expect(rows().length).toBe(1);
+    expect(overlayRoot()).not.toBeNull();
+  });
+
+  it("stacks the hint UNDER the reading panel in the same bottom column", () => {
+    emit("wowsp://chat-translate", {
+      battle: currentBattle,
+      lines: [{ id: 1, text: "原文", translated: "译文" }],
+    });
+    emitHint({ state: "ready", preview: "preview" });
+    const root = overlayRoot()!;
+    const children = [...root.children];
+    expect(children.length).toBe(2);
+    expect(children[0].classList.contains("chat-panel")).toBe(true);
+    // The hint is the bottom-most child (the column stacks top→bottom, so
+    // last = lowest on screen) and carries the higher z-index in CSS.
+    expect(children[children.length - 1].classList.contains("chat-hint")).toBe(true);
+  });
+
+  it("clears the hint when the battle changes", () => {
+    emitHint({ state: "ready", preview: "old battle" });
+    expect(hint()).not.toBeNull();
+    // The next battle's first snapshot: the old battle's hint must not
+    // survive into the new battle.
+    emit("wowsp://chat-translate", {
+      battle: newBattle(),
+      lines: [],
+      maxLines: 8,
+    });
+    expect(hint()).toBeNull();
+    expect(overlayRoot()).toBeNull();
+  });
+
+  it("ignores a hint event from a different battle", () => {
+    emit("wowsp://chat-hint", { battle: "some-other-battle", state: "ready", preview: "x" });
+    expect(hint()).toBeNull();
+    expect(overlayRoot()).toBeNull();
+  });
+
+  it("renders the preview as TEXT, never as markup", () => {
+    emitHint({ state: "ready", preview: "<b>not bold</b> & <img src=x>" });
+    const preview = document.querySelector<HTMLElement>(".chat-hint__preview")!;
+    expect(preview.textContent).toBe("<b>not bold</b> & <img src=x>");
+    expect(preview.querySelector("b")).toBeNull();
+    expect(preview.querySelector("img")).toBeNull();
   });
 });
