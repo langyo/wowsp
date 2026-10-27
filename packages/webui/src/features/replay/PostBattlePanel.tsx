@@ -72,7 +72,7 @@ import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { shipTierOf } from "@/utils/shipClass";
 import { isScriptedUnitName } from "@/utils/aiNames";
 import { isListedPlayer } from "@/utils/rosterSides";
-import { modeColor, modeKey } from "@/utils/modeColors";
+import { hasSingleTeamRoster, modeColorOfKey } from "@/utils/modeColors";
 import { displayMapName } from "@/utils/mapNames";
 import { useLiveCompositions } from "@/composables/useLiveCompositions";
 import {
@@ -81,6 +81,7 @@ import {
   isAiName,
   type RosterStat,
 } from "@/composables/useRosterStats";
+import { postBattleModeKey } from "./postBattleMode";
 import { parsePostBattle, type PostBattleRibbon } from "./postBattle";
 import { buildSelfStats, type SelfStatsModel, type SelfStatsStream } from "./liveSelfStats";
 import { renderLiveSelfShot, type SelfShotModel } from "./liveSelfShot";
@@ -133,16 +134,12 @@ export interface PostBattleHead {
   durationSec?: number | null;
 }
 
-/** Localize a battle mode from its layered identity (same helper shape the
- *  live panel and ReplayView carry). */
-function modeLabelOf(
-  group?: string | null,
-  scenario?: string | null,
-  eventType?: string | null,
-  botCount = 0,
-  scriptedUnitCount = 0,
-): string {
-  const key = modeKey(group, scenario, eventType, botCount, scriptedUnitCount);
+/** Localize an ALREADY-RESOLVED canonical mode key (the same fallback rule
+ *  the live panel and ReplayView carry). The head resolves its key through
+ *  postBattleMode.ts — the descriptor classifier plus the roster shape and
+ *  the parent's operation verdict — so the label and the share shot can
+ *  never disagree. */
+function modeLabelOfKey(key: string): string {
   if (!key) return t("replay.mode._fallback");
   const i18nKey = `replay.mode.${key}`;
   const lbl = t(i18nKey);
@@ -179,7 +176,11 @@ export default defineComponent({
       default: null,
     },
     /** Operation battle (行动): the roster renders as ONE full-width allies
-     *  column, matching the live panel / fallback panel. */
+     *  column, matching the live panel / fallback panel. The head pill also
+     *  takes it as a one-way label promotion (see postBattleMode.ts): the
+     *  parent resolves this from the descriptor verdict OR the decode-time
+     *  spawn probe, so a probe-promoted battle carries true here while its
+     *  descriptor still reads plain co-op. */
     operation: { type: Boolean, default: false },
     /** The replay's decoded packet stream — the families the 我的战绩 view
      *  runs through the live panel's own model builder (buildSelfStats);
@@ -536,25 +537,26 @@ export default defineComponent({
         dataLang: dataLanguage.value,
       });
     });
+    /** The roster's single-team shape (listed players, NO enemy-side entry)
+     *  — the operation clue inside the pve family (real co-op always fields
+     *  its enemy bot team). Same argument every other mode surface forwards
+     *  into the classifier (hasSingleTeamRoster in utils/modeColors). */
+    const singleTeamRoster = computed(() => hasSingleTeamRoster(props.roster));
+    /** The head pill's resolved canonical mode key — empty when there is no
+     *  battle identity to render. `props.operation` may promote a plain-co-op
+     *  descriptor key to 行动 (the decode-time spawn probe's verdict), see
+     *  postBattleMode.ts. */
+    const headModeKey = computed(() =>
+      props.head?.matchGroup
+        ? postBattleModeKey(props.head, singleTeamRoster.value, props.operation)
+        : "",
+    );
     /** The head's battle-mode pill data, shared by both shot models. */
     const headMode = (): SelfShotModel["mode"] => {
-      const head = props.head;
-      if (!head?.matchGroup) return null;
-      const c = modeColor(
-        head.matchGroup,
-        head.scenario,
-        head.eventType,
-        head.botCount ?? 0,
-        head.scriptedUnitCount ?? 0,
-      );
+      if (!headModeKey.value) return null;
+      const c = modeColorOfKey(headModeKey.value);
       return {
-        label: modeLabelOf(
-          head.matchGroup,
-          head.scenario,
-          head.eventType,
-          head.botCount ?? 0,
-          head.scriptedUnitCount ?? 0,
-        ),
+        label: modeLabelOfKey(headModeKey.value),
         color: c.color,
         background: c.background,
       };
@@ -1250,26 +1252,12 @@ export default defineComponent({
         <div class="replay-view__postbattle" ref={root}>
           {head && (head.matchGroup || head.mapName) ? (
             <div class="replay-view__postbattle-head">
-              {head.matchGroup ? (
+              {headModeKey.value ? (
                 <span
                   class="replay-view__postbattle-head-pill"
-                  style={
-                    modeColor(
-                      head.matchGroup,
-                      head.scenario,
-                      head.eventType,
-                      head.botCount ?? 0,
-                      head.scriptedUnitCount ?? 0,
-                    ) as CSSProperties
-                  }
+                  style={modeColorOfKey(headModeKey.value) as CSSProperties}
                 >
-                  {modeLabelOf(
-                    head.matchGroup,
-                    head.scenario,
-                    head.eventType,
-                    head.botCount ?? 0,
-                    head.scriptedUnitCount ?? 0,
-                  )}
+                  {modeLabelOfKey(headModeKey.value)}
                 </span>
               ) : null}
               {head.mapName ? (
