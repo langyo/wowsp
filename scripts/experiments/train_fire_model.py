@@ -29,8 +29,16 @@ E12 additions over E9:
     PR-AUPRC, ROC-AUC, ECE + reliability-curve data, stratified Cohen's kappa
     (nearest-enemy distance bucket x observed-enemy-count bucket), decile
     lift with Spearman rho, and the "physically cannot fire" false-positive
-    count for head A. Post-hoc OUTCOME lift (hit rate / damage per decile)
-    needs hit attribution and stays PENDING E11 event parsing.
+    count for head A.
+  - E13: post-hoc OUTCOME lift — the Rust exporter now stamps outcome
+    fields on every row (ownerShotsHit / ownerShotsFired /
+    enemyHpLostNearby over (t + labelWindow, t + 45 s] + gameMode), so the
+    held-out report and metrics.json carry the real decile curves over
+    window hit rate and enemy HP lost (outcome_lift.py's logic, imported —
+    datasets exported before E13 degrade to a status note);
+  - E13: `--holdout-version 15,8` holds out every row of one client version
+    (train on the rest, or on `--train-version 14,5` only) — the
+    out-of-distribution stress test across game versions.
 
 SCOPE (important): this validates the PIPELINE, not model quality. The
 training data available today is ONE replay (3584 rows / 1330 can-fire /
@@ -269,6 +277,38 @@ def leave_one_replay_out(groups: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     heldout_group = max(sizes)[1]
     mask = groups == heldout_group
     return np.flatnonzero(~mask), np.flatnonzero(mask)
+
+
+# ── version split (E13: out-of-distribution stress across game versions) ─────
+
+
+def normalize_version_prefix(prefix: str) -> str:
+    """'15,8' / '15.8.0' / ' 15.8 ' / '15,8,0,12345' -> leading numeric
+    segments joined by dots, at most THREE (major.minor.patch — build ids
+    like clientVersionFromExe's 4th segment are dropped); commas tolerated."""
+    parts = [p.strip() for p in prefix.replace(",", ".").split(".")]
+    out: list[str] = []
+    for p in parts:
+        if len(out) >= 3:
+            break
+        if p and p.isdigit():
+            out.append(p)
+        else:
+            break
+    if not out:
+        raise SystemExit(f"[e13] unparsable version prefix: {prefix!r}")
+    return ".".join(out)
+
+
+def row_version_prefix(version: str | None) -> str | None:
+    """One row's replayVersion normalized the same way (leading numeric
+    segments, dots); None when the row carries no version."""
+    if not version:
+        return None
+    try:
+        return normalize_version_prefix(str(version))
+    except SystemExit:
+        return None
 
 
 # ── model (research note C first choice) ─────────────────────────────────────
@@ -599,6 +639,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="min samples for the PyTorch-vs-ORT parity check (note C: >=1000)",
     )
     p.add_argument(
+        "--holdout-version",
+        default=None,
+        metavar="VER",
+        help=(
+            "E13 version stress test: hold out every row whose replayVersion "
+            "matches this prefix ('15,8' == '15.8'). Train on the remaining "
+            "rows (or only --train-version). OOD split — never mixes versions "
+            "across the boundary."
+        ),
+    )
+    p.add_argument(
+        "--train-version",
+        default=None,
+        metavar="VER",
+        help=(
+            "with --holdout-version: restrict TRAINING to rows of this version "
+            "prefix (e.g. '14,5') — rows of every other version are dropped "
+            "from both sides (default: train on all non-holdout versions)"
+        ),
+    )
+    p.add_argument(
         "--selftest",
         action="store_true",
         help=(
@@ -767,6 +828,31 @@ def run_selftest() -> int:
     assert len(reported) == 2, [s for s in sk["strata"] if s["n"] > 0]
     assert all(s["n"] == 50 and s["kappa"] > 0.99 for s in reported)
     assert sum(s["n"] for s in sk["strata"]) == 100
+
+    # Version helpers (E13): comma/dot forms, leading numeric segments, junk.
+    assert normalize_version_prefix("15,8") == "15.8"
+    assert normalize_version_prefix("15.8.0") == "15.8.0"
+    assert normalize_version_prefix(" 14.5 ") == "14.5"
+    assert normalize_version_prefix("15,8,0,1234567") == "15.8.0"
+    try:
+        normalize_version_prefix("abc")
+        raise AssertionError("junk version prefix must exit")
+    except SystemExit:
+        pass
+    assert row_version_prefix("15.8.0") == "15.8.0"
+    assert row_version_prefix(None) is None
+    assert row_version_prefix("") is None
+    assert row_version_prefix("unknown-build") is None
+    # Prefix semantics of the split masks: '15.8' holds out 15.8.x only.
+    vers = np.array(["14.5.0", "15.8.0", "15.8.1", "15.9.0", None], dtype=object)
+    normed = np.array([row_version_prefix(v) for v in vers], dtype=object)
+    ho = "15.8"
+    is_ho = np.array([v is not None and str(v).startswith(ho) for v in normed])
+    assert is_ho.tolist() == [False, True, True, False, False]
+    is_tr = np.array(
+        [v is not None and not str(v).startswith(ho) for v in normed]
+    )
+    assert is_tr.tolist() == [True, False, False, True, False]
     print("[selftest] E12 scale-up logic OK (load/group/split/metrics)")
     return 0
 
@@ -825,8 +911,53 @@ def main(argv: list[str] | None = None) -> int:
     # full note-B battery, plus optional GroupKFold CV for fold-stable
     # AUPRC. ONE replay: the E9 fallback — a random 80/20 split, loudly
     # flagged, because per-replay grouping cannot split a single group.
+    # E13: --holdout-version switches to the version stress test — train and
+    # held-out are separated by CLIENT VERSION (never mixed), the held-out
+    # side being one version's rows and the training side the rest (or a
+    # single --train-version).
     rng = np.random.default_rng(args.seed)
-    if n_groups >= 2:
+    version_of = np.array(
+        [row_version_prefix(r.get("replayVersion")) for r in data["rows_meta"]], dtype=object
+    )
+    if args.holdout_version is not None:
+        ho_ver = normalize_version_prefix(args.holdout_version)
+        tr_ver = normalize_version_prefix(args.train_version) if args.train_version else None
+        # Prefix semantics: '15.8' holds out every row of 15.8.x; the
+        # normalized row version ('15.8.0') must start with the prefix.
+        is_ho = np.array([v is not None and str(v).startswith(ho_ver) for v in version_of])
+        is_tr = np.array(
+            [
+                v is not None
+                and not str(v).startswith(ho_ver)
+                and (tr_ver is None or str(v).startswith(tr_ver))
+                for v in version_of
+            ]
+        )
+        n_dropped = int((~(is_ho | is_tr)).sum())
+        if is_ho.sum() == 0 or is_tr.sum() == 0:
+            vh: dict = {}
+            for v in version_of:
+                vh[v] = vh.get(v, 0) + 1
+            raise SystemExit(
+                f"[e13] --holdout-version {ho_ver}: held-out rows {int(is_ho.sum())}, "
+                f"train rows {int(is_tr.sum())} — version histogram {vh}"
+            )
+        val_idx = np.flatnonzero(is_ho)
+        train_idx = np.flatnonzero(is_tr)
+        split_mode = (
+            f"version-holdout (train = "
+            f"{tr_ver if tr_ver else 'every non-holdout version'}, "
+            f"held-out = version {ho_ver})"
+        )
+        heldout_groups = sorted(set(data["group"][val_idx]))
+        print(
+            f"[e13] version split: held-out v{ho_ver} {len(val_idx)} rows "
+            f"({len(heldout_groups)} replays) vs train "
+            f"{'v' + tr_ver if tr_ver else 'rest'} {len(train_idx)} rows "
+            f"({len(set(data['group'][train_idx]))} replays); "
+            f"{n_dropped} rows of other versions dropped"
+        )
+    elif n_groups >= 2:
         train_idx, val_idx = leave_one_replay_out(data["group"])
         split_mode = "leave-one-replay-out (held-out = largest replay group)"
         heldout_groups = sorted(set(data["group"][val_idx]))
@@ -935,6 +1066,40 @@ def main(argv: list[str] | None = None) -> int:
         data["observed_enemy_count"][va_b],
     )
     heldout_b["decile_lift"] = decile_lift(data["label_b"][va_b], pt_pb[va_b])
+    # E13: post-hoc OUTCOME lift on the held-out rows — the expert
+    # fired-vs-held baseline plus the model's decile curves over window hit
+    # rate / enemy HP lost (research note B's strongest offline evidence).
+    # Datasets exported before E13 carry no outcome fields -> status note.
+    outcome_report: dict = {
+        "status": "dataset lacks outcome fields (re-export with the E13 fire_dataset batch exporter)"
+    }
+    try:
+        import outcome_lift
+
+        oa = outcome_lift.outcome_arrays(data["rows_meta"])
+        if oa["rows_with_outcome_fields"] > 0:
+            eb_h = outcome_lift.expert_baseline(
+                data["label_b"][va_b], oa["hits"][va_b], oa["fired"][va_b], oa["hp_lost"][va_b]
+            )
+            dec_h = outcome_lift.outcome_deciles(
+                pt_pb[va_b],
+                data["label_b"][va_b],
+                oa["hits"][va_b],
+                oa["fired"][va_b],
+                oa["hp_lost"][va_b],
+            )
+            outcome_report = {"expert_baseline": eb_h, "model_deciles": dec_h}
+            r_hit = dec_h["window_hit_rate"]["spearmanRhoMeanPvsMetric"]
+            r_hp = dec_h["hp_lost_mean"]["spearmanRhoMeanPvsMetric"]
+            fmt = lambda r: "None" if r is None else f"{r:+.3f}"  # noqa: E731
+            print(
+                f"[e13] held-out outcome lift: fired vs held pooled hit-rate "
+                f"{eb_h['fired']['pooled_hit_rate'] if eb_h['fired']['pooled_hit_rate'] is None else round(eb_h['fired']['pooled_hit_rate'], 4)}"
+                f"/{eb_h['held']['pooled_hit_rate'] if eb_h['held']['pooled_hit_rate'] is None else round(eb_h['held']['pooled_hit_rate'], 4)}; "
+                f"decile rho hit-rate {fmt(r_hit)}, hp-lost {fmt(r_hp)}"
+            )
+    except ImportError:  # pragma: no cover — outcome_lift.py lives next to this script
+        pass
     heldout_report = {
         "mode": split_mode,
         "heldout_groups": heldout_groups,
@@ -942,12 +1107,7 @@ def main(argv: list[str] | None = None) -> int:
         "rows_heldout": int(len(val_idx)),
         "head_a": heldout_a,
         "head_b": heldout_b,
-        "outcome_lift": {
-            "status": (
-                "PENDING E11/later event parsing — post-hoc hit-rate/damage "
-                "per decile needs shell-hit attribution, not implemented"
-            )
-        },
+        "outcome_lift": outcome_report,
         "evidence_note": (
             "Single-replay numbers are PIPELINE evidence only (E9 "
             "convention): with one replay the held-out split is random, not "
@@ -966,15 +1126,30 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ── GroupKFold CV (>= 2 replays only) ────────────────────────────────
+    # Under --holdout-version the CV rides the TRAIN side only (folds must
+    # never touch the held-out version — the OOD boundary is the experiment).
     cv_report: dict = {"mode": "skipped", "reason": "single replay group"}
-    if n_groups >= 2 and args.cv_folds >= 2:
-        k = min(args.cv_folds, n_groups)
-        folds = group_kfold_assign(data["group"], k)
+    if args.holdout_version is not None:
+        cv_groups = data["group"][train_idx]
+        cv_scope = (
+            f" (train side only: {len(set(cv_groups))} replays, version "
+            f"{normalize_version_prefix(args.train_version) if args.train_version else 'non-holdout'})"
+        )
+    else:
+        cv_groups = data["group"]
+        cv_scope = ""
+    if len(set(cv_groups)) >= 2 and args.cv_folds >= 2:
+        k = min(args.cv_folds, len(set(cv_groups)))
+        folds = group_kfold_assign(cv_groups, k)
+        # Global row indices: under --holdout-version the CV-scoped arrays
+        # are train-subset-relative, so fold indices map back through
+        # train_idx; otherwise the identity.
+        cv_base = train_idx if args.holdout_version is not None else np.arange(n)
         fold_auprc_b: list[float] = []
         fold_auprc_a: list[float] = []
         for f in range(k):
-            te = np.flatnonzero(folds == f)
-            tr = np.flatnonzero(folds != f)
+            te = cv_base[np.flatnonzero(folds == f)]
+            tr = cv_base[np.flatnonzero(folds != f)]
             fold_model, _ = train_model(args.hidden, tr)
             fl_a, fl_b = predict_all(fold_model, te)
             pa, pb = sigmoid(fl_a.cpu().numpy()), sigmoid(fl_b.cpu().numpy())
@@ -986,7 +1161,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"AUPRC-B {fold_auprc_b[-1]:.4f} ({len(te)} rows)"
             )
         cv_report = {
-            "mode": f"GroupKFold k={k} grouped by replayId",
+            "mode": f"GroupKFold k={k} grouped by replayId{cv_scope}",
             "fold_auprc_a": fold_auprc_a,
             "fold_auprc_b": fold_auprc_b,
             "auprc_a_mean": float(np.nanmean(fold_auprc_a)),
