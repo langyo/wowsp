@@ -64,7 +64,16 @@ function nodeMatrix(node) {
       c[3], c[7], c[11], c[15],
     ];
   } else {
-    const { scale = [1, 1, 1], translation = [0, 0, 0] } = node; // rotation unused on maps
+    // TRS path. Every map GLB in the shipped model pack is a single node with
+    // a yaw-free TRS (verified when this extractor was added); a future pack
+    // that rotates map nodes would need quaternion handling here — assert
+    // loudly instead of silently baking wrong coordinates.
+    if (node.rotation && node.rotation.some((v, i) => Math.abs(v - [0, 0, 0, 1][i]) > 1e-6)) {
+      throw new Error(
+        `node ${JSON.stringify(node.name ?? "?")} carries a rotation; this extractor only handles map TRS without rotation — extend it before baking`,
+      );
+    }
+    const { scale = [1, 1, 1], translation = [0, 0, 0] } = node;
     m = [
       scale[0], 0, 0, translation[0],
       0, scale[1], 0, translation[1],

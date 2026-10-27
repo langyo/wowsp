@@ -391,9 +391,11 @@ def main(argv: list[str] | None = None) -> int:
         version_hist[v] = version_hist.get(v, 0) + 1
     if args.min_version:
         pref = base.normalize_version_prefix(args.min_version)
+        # Segment-wise (see base.version_matches): string prefixes would let
+        # "14.1" swallow "14.11.x".
         keep &= np.array(
             [
-                v is not None and str(base.row_version_prefix(str(v)) or "").startswith(pref)
+                base.version_matches(base.row_version_prefix(str(v)) if v is not None else None, pref)
                 for v in oa["version"]
             ]
         )
