@@ -1,12 +1,17 @@
 # WoWSP installer manifest — consumed by the shun CLI (`shun build`).
-# Requires shun >= 0.6.30 (the install-location rule system: the default
+# Requires shun >= 0.6.32 (the install-location rule system: the default
 # drive-root and non-empty refusals, the declarative `dir-rules` table
 # below, and the relocation lane it triggers — fresh installs only for
 # the refusals; v0.6.31 additionally arms the swap-safety guards the
 # pinned SHUN_TAG builds with — dir-rules probe one level below the
 # target (the shared-games-root install shape), the swap refuses a
 # directory holding files shun never delivered, and swapped-out
-# backups are spared unless purely shun-owned; no manifest key of
+# backups are spared unless purely shun-owned; v0.6.32 hands the
+# rule-less shape to the same relocation wizard — an unattended
+# update over foreign content no dir-rule names pauses as the wizard
+# asking for a new folder instead of failing outright, the
+# interactive location step faults the shape pre-extraction, and a
+# refused swap cleans its own staging tree; no manifest key of
 # ours involved, the behavior rides the pin; v0.6.29 minimum for the
 # `[shell] silent-progress`
 # passive window — the visible auto-update — and the shell parking its
@@ -95,7 +100,10 @@ default-dir = '%LOCALAPPDATA%\Programs\WoWSP'
 # delivering beside foreign files is exactly how an install ends up
 # co-located with something its update swap / uninstall sweep would
 # take away. Upgrades never re-answer their location (the never-strand
-# rule), except through the rule below.
+# rule), except through the two relocation lanes: the rule below and
+# (shun >= 0.6.32) content the swap cannot account for — an
+# unattended update over foreign files no rule names pauses as the
+# same wizard instead of failing or deleting.
 # The declarative rule IS the game-folder guard — the same
 # identification set as the app's game_client.rs root stubs
 # (WorldOfWarships.exe / Korabli.exe), replacing the check-dir.dk
