@@ -98,7 +98,7 @@
   "pluginUpdateBadge": "需更新",
   "pluginUpdateStep": "正在更新 {name}({done}/{total})",
   "pluginUpdateDownloading": "下载中 {percent}%",
-  "pluginUpdateInstalling": "安装中…",
+  "pluginUpdateInstalling": "安装中",
   "pluginUpdateFailed": "{count} 个插件更新失败:{names}",
   "pluginUpdateDone": "插件已更新。",
   "pluginUpdateDoneClients": "{count} 个客户端插件更新成功。",

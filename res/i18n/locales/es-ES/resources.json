@@ -98,7 +98,7 @@
   "pluginUpdateBadge": "Actualiz.",
   "pluginUpdateStep": "Actualizando {name} ({done}/{total})",
   "pluginUpdateDownloading": "descargando {percent}%",
-  "pluginUpdateInstalling": "instalando…",
+  "pluginUpdateInstalling": "instalando",
   "pluginUpdateFailed": "{count} actualización(es) fallida(s): {names}",
   "pluginUpdateDone": "Actualización completada.",
   "pluginUpdateDoneClients": "Plugins actualizados en {count} cliente(s).",

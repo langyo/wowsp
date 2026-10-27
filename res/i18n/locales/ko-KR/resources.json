@@ -98,7 +98,7 @@
   "pluginUpdateBadge": "업데이트",
   "pluginUpdateStep": "업데이트 중 {name}({done}/{total})",
   "pluginUpdateDownloading": "다운로드 {percent}%",
-  "pluginUpdateInstalling": "설치 중…",
+  "pluginUpdateInstalling": "설치 중",
   "pluginUpdateFailed": "{count}개 업데이트 실패: {names}",
   "pluginUpdateDone": "업데이트가 완료되었습니다.",
   "pluginUpdateDoneClients": "클라이언트 {count}개의 플러그인이 업데이트되었습니다.",

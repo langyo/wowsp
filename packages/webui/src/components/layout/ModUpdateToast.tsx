@@ -1,4 +1,6 @@
 import { defineComponent, onBeforeUnmount, ref, Teleport, watch } from "vue";
+
+import { HkSpinner } from "@celestia-island/hikari";
 import { PackageCheck } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -26,13 +28,17 @@ const QUIET_BUILD = isMobileApp();
  *
  * The row is split in two on purpose: the step line (item name + count)
  * takes all the ellipsis, while the meta line (live "downloading N% ·
- * X MB/s" — the app-updater parity — or the install verb) never shrinks,
- * so a long mod name can no longer swallow the progress readout.
+ * X MB/s" — the app-updater parity, the speed half only once a real
+ * sample exists — or the install verb) never shrinks, so a long mod name
+ * can no longer swallow the progress readout. The leading icon swaps to
+ * hikari's spinner during the install hand-off, the same work-in-flight
+ * cue the app-updater card carries.
  *
  * The pass ending plays a leave transition instead of snapping away
  * (delayed unmount + frozen snapshot, the UpdateToast pattern; the meta
- * text is frozen too). Renders nothing while the store is idle, so it is
- * safe to keep mounted unconditionally at the shell level.
+ * text AND the icon state are frozen too). Renders nothing while the
+ * store is idle, so it is safe to keep mounted unconditionally at the
+ * shell level.
  */
 export default defineComponent({
   name: "ModUpdateToast",
@@ -42,7 +48,13 @@ export default defineComponent({
     const mounted = ref(false);
     const leaving = ref(false);
     /** Frozen pass state served while the leave transition runs. */
-    const held = ref({ stepText: "", metaText: "", determinate: false, progress: 0 });
+    const held = ref({
+      stepText: "",
+      metaText: "",
+      installing: false,
+      determinate: false,
+      progress: 0,
+    });
     let leaveTimer: number | undefined;
     let mountTimer: number | undefined;
 
@@ -55,17 +67,22 @@ export default defineComponent({
       });
     }
 
-    /** The never-shrinking meta: live download percent + transfer rate
-     *  (formatSpeed is the app updater's formatter, em-dash until the
-     *  mirror produces a sample), the install verb once streaming ends,
-     *  and empty while the item's fraction is unknown (the bar animates
-     *  the indeterminate slide then). */
+    /** The never-shrinking meta: the live download percent with the
+     *  transfer rate appended ONLY once a real sample exists (a bare
+     *  "downloading 2%" before the first sample — never formatSpeed's
+     *  em-dash placeholder), the install verb once streaming ends, and
+     *  empty while the item's fraction is unknown (the bar animates the
+     *  indeterminate slide then). */
     function metaText(): string {
       if (updates.phase === "download" && updates.percent != null) {
         const percent = t("resources.pluginUpdateDownloading", {
           percent: updates.percent,
         });
-        return `${percent} · ${formatSpeed(updates.speedBps)}`;
+        const speed =
+          updates.speedBps != null && updates.speedBps > 0
+            ? formatSpeed(updates.speedBps)
+            : "";
+        return speed ? `${percent} · ${speed}` : percent;
       }
       if (updates.phase === "install") return t("resources.pluginUpdateInstalling");
       return "";
@@ -103,6 +120,7 @@ export default defineComponent({
             held.value = {
               stepText: stepText(),
               metaText: metaText(),
+              installing: updates.phase === "install",
               determinate: updates.overallPercent != null,
               progress: updates.overallPercent ?? 0,
             };
@@ -130,6 +148,9 @@ export default defineComponent({
       const live = updates.running;
       const step = live ? stepText() : held.value.stepText;
       const meta = live ? metaText() : held.value.metaText;
+      // The install hand-off swaps the static mark for the spinner; the
+      // frozen snapshot keeps whichever icon the pass died on.
+      const installing = live ? updates.phase === "install" : held.value.installing;
       const determinate = live ? updates.overallPercent != null : held.value.determinate;
       const progress = live ? (updates.overallPercent ?? 0) : held.value.progress;
       return (
@@ -137,7 +158,7 @@ export default defineComponent({
           <div class={["mod-update-toast", leaving.value ? "mod-update-toast--leave" : ""]} role="status">
             <div class="mod-update-toast__row">
               <span class="mod-update-toast__icon">
-                <PackageCheck size={14} />
+                {installing ? <HkSpinner size="xs" tone="current" /> : <PackageCheck size={14} />}
               </span>
               <p class="mod-update-toast__message" title={step}>
                 {step}
