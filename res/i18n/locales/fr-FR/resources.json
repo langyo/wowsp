@@ -98,7 +98,7 @@
   "pluginUpdateBadge": "MàJ",
   "pluginUpdateStep": "Mise à jour de {name} ({done}/{total})",
   "pluginUpdateDownloading": "téléchargement {percent}%",
-  "pluginUpdateInstalling": "installation…",
+  "pluginUpdateInstalling": "installation",
   "pluginUpdateFailed": "{count} mise(s) à jour échouée(s) : {names}",
   "pluginUpdateDone": "Mise à jour terminée.",
   "pluginUpdateDoneClients": "Plugins mis à jour sur {count} client(s).",

@@ -156,11 +156,36 @@ describe("ModUpdateToast live meta", () => {
     // the progress readout off the card.
     expect(message?.textContent).toContain(LONG_NAME);
     expect(message?.textContent).not.toContain("MB/s");
-    expect(meta?.textContent).toContain("42%");
-    expect(meta?.textContent).toContain("1.5 MB/s");
+    expect(meta?.textContent).toBe(
+      `${t("resources.pluginUpdateDownloading", { percent: 42 })} · 1.5 MB/s`,
+    );
+    // Download/preparing keeps the static package mark.
+    const icon = document.body.querySelector<HTMLElement>(".mod-update-toast__icon");
+    expect(icon?.querySelector("svg")).not.toBeNull();
+    expect(icon?.querySelector(".hk-spinner")).toBeNull();
   });
 
-  it("shows the install verb once streaming hands off", async () => {
+  it("drops the speed suffix before the first sample instead of an em-dash", async () => {
+    const updates = usePluginUpdatesStore();
+    updates.running = true;
+    updates.currentName = LONG_NAME;
+    updates.done = 0;
+    updates.total = 3;
+    updates.phase = "download";
+    updates.percent = 2;
+    updates.speedBps = null; // no transfer sample has landed yet
+    mount(ModUpdateToast);
+    await vi.advanceTimersByTimeAsync(400);
+
+    const meta = document.body.querySelector<HTMLElement>(".mod-update-toast__meta");
+    expect(meta?.textContent).toBe(
+      t("resources.pluginUpdateDownloading", { percent: 2 }),
+    );
+    expect(meta?.textContent).not.toContain("—");
+    expect(meta?.textContent).not.toContain("MB/s");
+  });
+
+  it("swaps to the spinner and the dotless copy while installing", async () => {
     const updates = usePluginUpdatesStore();
     updates.running = true;
     updates.currentName = LONG_NAME;
@@ -172,9 +197,15 @@ describe("ModUpdateToast live meta", () => {
     mount(ModUpdateToast);
     await vi.advanceTimersByTimeAsync(400);
 
+    const icon = document.body.querySelector<HTMLElement>(".mod-update-toast__icon");
     const meta = document.body.querySelector<HTMLElement>(".mod-update-toast__meta");
+    // The work-in-flight cue: hikari's spinner replaces the package mark.
+    expect(icon?.querySelector(".hk-spinner")).not.toBeNull();
+    expect(icon?.querySelector("svg")).toBeNull();
+    // The install copy carries no trailing ellipsis — the spinner already
+    // says "still working".
     expect(meta?.textContent).toBe(t("resources.pluginUpdateInstalling"));
-    expect(meta?.textContent).not.toContain("MB/s");
+    expect(meta?.textContent).not.toMatch(/(…|\.\.\.)$/);
   });
 
   it("freezes the live meta through the leave transition", async () => {
@@ -197,6 +228,37 @@ describe("ModUpdateToast live meta", () => {
     const frozen = document.body.querySelector<HTMLElement>(".mod-update-toast__meta");
     expect(frozen?.textContent).toContain("42%");
     expect(frozen?.textContent).toContain("1.5 MB/s");
+
+    await vi.advanceTimersByTimeAsync(260);
+    expect(card()).toBeNull();
+  });
+
+  it("freezes the spinner icon through the leave transition", async () => {
+    const updates = usePluginUpdatesStore();
+    updates.running = true;
+    updates.currentName = LONG_NAME;
+    updates.done = 0;
+    updates.total = 1;
+    updates.phase = "install";
+    updates.percent = 100;
+    updates.speedBps = null;
+    mount(ModUpdateToast);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(document.body.querySelector(".mod-update-toast__icon .hk-spinner")).not.toBeNull();
+
+    // The store clears its fields in the same sync block that drops
+    // running — the frozen snapshot must keep the install icon too.
+    updates.running = false;
+    updates.phase = null;
+    updates.percent = null;
+    updates.currentName = "";
+    await nextTick();
+
+    expect(card()).not.toBeNull();
+    expect(document.body.querySelector(".mod-update-toast__icon .hk-spinner")).not.toBeNull();
+    expect(document.body.querySelector(".mod-update-toast__meta")?.textContent).toBe(
+      t("resources.pluginUpdateInstalling"),
+    );
 
     await vi.advanceTimersByTimeAsync(260);
     expect(card()).toBeNull();

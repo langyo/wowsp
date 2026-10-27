@@ -98,7 +98,7 @@
   "pluginUpdateBadge": "Обновления",
   "pluginUpdateStep": "Обновление {name} ({done}/{total})",
   "pluginUpdateDownloading": "загрузка {percent}%",
-  "pluginUpdateInstalling": "установка…",
+  "pluginUpdateInstalling": "установка",
   "pluginUpdateFailed": "Не удалось обновить ({count}): {names}",
   "pluginUpdateDone": "Обновление завершено.",
   "pluginUpdateDoneClients": "Плагины обновлены (клиентов: {count}).",
