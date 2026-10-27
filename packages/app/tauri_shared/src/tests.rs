@@ -2694,6 +2694,101 @@ fn playtime_battles_pins_the_exact_wire_key_set() {
     assert_eq!(v["battles"][0]["dateTime"], "20260930_080000");
 }
 
+// ── local battle log (webui api/modules/localBattles.ts) ──────────────────
+
+/// One decoded replay battle row: pin the exact key set so an additive field
+/// fails until the TS mirror learns it (localBattles.ts: LocalBattle).
+#[test]
+fn local_battle_pins_the_exact_wire_key_set() {
+    let v = round_trips(LocalBattle {
+        timestamp: 1_793_000_000,
+        date_time: "20261026_191309".into(),
+        match_group: Some("pvp".into()),
+        scenario: Some("domination_3point".into()),
+        event_type: Some("PCVE027".into()),
+        ship_id: Some(4_182_828_960),
+        team: Some(1),
+        won: Some(true),
+        damage: 101_234,
+        frags: 3,
+        survived: true,
+        exp: Some(1_500),
+    });
+    assert_exact_keys(
+        &v,
+        &[
+            "timestamp",
+            "dateTime",
+            "matchGroup",
+            "scenario",
+            "eventType",
+            "shipId",
+            "team",
+            "won",
+            "damage",
+            "frags",
+            "survived",
+            "exp",
+        ],
+    );
+    assert_eq!(v["timestamp"], 1_793_000_000_i64);
+    assert_eq!(v["dateTime"], "20261026_191309");
+    assert_eq!(v["shipId"], 4_182_828_960_i64);
+    assert_eq!(v["won"], true);
+
+    // A sparse legacy row keeps its keys (nulls, not omissions): the TS side
+    // types every field present.
+    let bare = round_trips(LocalBattle {
+        timestamp: 1_790_000_000,
+        date_time: "20261001".into(),
+        match_group: Some("ranked".into()),
+        scenario: None,
+        event_type: None,
+        ship_id: None,
+        team: None,
+        won: None,
+        damage: 0,
+        frags: 0,
+        survived: false,
+        exp: None,
+    });
+    assert!(bare["won"].is_null());
+    assert!(bare["shipId"].is_null());
+    assert_eq!(bare["damage"], 0);
+}
+
+/// The `read_local_battle_log` reply envelope: the battle list plus the scan
+/// counters that drive the refresh pill's progress.
+#[test]
+fn local_battle_log_pins_the_exact_wire_key_set() {
+    let v = round_trips(LocalBattleLog {
+        battles: vec![LocalBattle {
+            timestamp: 1_793_000_000,
+            date_time: "20261026_191309".into(),
+            match_group: Some("pvp".into()),
+            scenario: None,
+            event_type: None,
+            ship_id: Some(4_182_828_960),
+            team: Some(0),
+            won: Some(false),
+            damage: 42_000,
+            frags: 1,
+            survived: false,
+            exp: Some(900),
+        }],
+        scanned: 132,
+        decoded: 1,
+        cache_hits: 5,
+        pending: 0,
+    });
+    assert_exact_keys(
+        &v,
+        &["battles", "scanned", "decoded", "cacheHits", "pending"],
+    );
+    assert_eq!(v["cacheHits"], 5);
+    assert_eq!(v["battles"][0]["timestamp"], 1_793_000_000_i64);
+}
+
 // ── replay-share contribution (webui api/modules/contribution.ts) ─────────
 
 /// The §2 facts claim serializes FLAT (the flatten of `ReplayFactsCore`

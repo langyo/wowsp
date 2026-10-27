@@ -1180,7 +1180,14 @@ async fn race_prefers_a_fast_healthy_primary_and_signals_abandon() {
     )
     .await
     .unwrap();
-    assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [2, 3]);
+    assert_eq!(
+        out.rows.iter().map(|r| r.ship_id).collect::<Vec<_>>(),
+        [2, 3]
+    );
+    assert!(
+        out.racer_rows.is_none(),
+        "the abandoned racer contributes no rows to merge"
+    );
     // The dropped racer still gets its terminal signal.
     assert!(abandoned.load(std::sync::atomic::Ordering::Acquire));
 }
@@ -1209,7 +1216,16 @@ async fn race_surfaces_racer_rows_and_prefers_late_primary() {
     .await
     .unwrap();
     assert_eq!(*surfaced.lock().unwrap(), [9], "racer rows surfaced once");
-    assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [10]);
+    assert_eq!(out.rows.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [10]);
+    assert_eq!(
+        out.racer_rows
+            .expect("racer rows kept for the stamp merge")
+            .iter()
+            .map(|r| r.ship_id)
+            .collect::<Vec<_>>(),
+        [9],
+        "the late primary's answer rides along with the racer's rows"
+    );
 }
 
 #[tokio::test]
@@ -1230,7 +1246,17 @@ async fn race_falls_back_to_racer_rows_when_primary_fails() {
     )
     .await
     .unwrap();
-    assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [9]);
+    // The rescue answer is the racer's own rows; they still ride along so
+    // the merge is applied uniformly (and is idempotent here).
+    assert_eq!(out.rows.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [9]);
+    assert_eq!(
+        out.racer_rows
+            .expect("racer rows kept for the stamp merge")
+            .iter()
+            .map(|r| r.ship_id)
+            .collect::<Vec<_>>(),
+        [9]
+    );
 }
 
 #[tokio::test]
@@ -1249,7 +1275,15 @@ async fn race_racer_rescues_a_failed_primary() {
     )
     .await
     .unwrap();
-    assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [7]);
+    assert_eq!(out.rows.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [7]);
+    assert_eq!(
+        out.racer_rows
+            .expect("racer rows kept for the stamp merge")
+            .iter()
+            .map(|r| r.ship_id)
+            .collect::<Vec<_>>(),
+        [7]
+    );
 }
 
 #[tokio::test]
@@ -1282,7 +1316,94 @@ async fn race_ignores_a_failed_racer() {
     )
     .await
     .unwrap();
-    assert_eq!(out.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [4]);
+    assert_eq!(out.rows.iter().map(|r| r.ship_id).collect::<Vec<_>>(), [4]);
+    assert!(out.racer_rows.is_none(), "no racer rows on the error path");
+}
+
+/// The official racer serves the per-ship `last_battle_time` the vortex
+/// transport lacks; the merge copies it into the final rows wherever they
+/// carry none — the fix for a ship's first battle (or first battle since a
+/// cache gap) being dropped from every date range. A served stamp wins, an
+/// unknown ship is untouched, an empty racer answer is a no-op, and a
+/// second merge changes nothing.
+#[test]
+fn merge_last_battle_times_stamps_zero_rows_from_the_racer() {
+    let mut final_rows = vec![
+        zeroed_raw(1),
+        RawShipStats {
+            last_battle_time: 42,
+            ..zeroed_raw(2)
+        },
+        zeroed_raw(3),
+    ];
+    let racer_rows = vec![
+        RawShipStats {
+            last_battle_time: 1_700_000_000,
+            ..zeroed_raw(1)
+        },
+        RawShipStats {
+            last_battle_time: 1_800_000_000,
+            ..zeroed_raw(2)
+        },
+    ];
+    merge_last_battle_times(&mut final_rows, &racer_rows);
+    assert_eq!(
+        final_rows[0].last_battle_time, 1_700_000_000,
+        "a stamp-less row takes the racer's stamp"
+    );
+    assert_eq!(
+        final_rows[1].last_battle_time, 42,
+        "an already-served stamp is authoritative"
+    );
+    assert_eq!(
+        final_rows[2].last_battle_time, 0,
+        "a ship the racer never listed stays stamp-less"
+    );
+    // Re-applying the merge (the uniform call site does this when the
+    // racer's rows ARE the answer) is idempotent.
+    merge_last_battle_times(&mut final_rows, &racer_rows);
+    assert_eq!(final_rows[0].last_battle_time, 1_700_000_000);
+    assert_eq!(final_rows[1].last_battle_time, 42);
+    // No racer rows at all (the racer-abandoned path) — a no-op.
+    let before: Vec<i64> = final_rows.iter().map(|r| r.last_battle_time).collect();
+    merge_last_battle_times(&mut final_rows, &[]);
+    let after: Vec<i64> = final_rows.iter().map(|r| r.last_battle_time).collect();
+    assert_eq!(before, after);
+}
+
+/// End-to-end wiring of the fresh-ship fix: the racer answers first with
+/// the stamp, vortex wins with the same ship's stamp-less row, and the
+/// returned outcome carries the racer rows so `fetch_ship_stats` can land
+/// the stamp on the final answer.
+#[tokio::test]
+async fn race_outcome_keeps_racer_rows_for_the_stamp_merge() {
+    let out = race_dual_path(
+        async {
+            Ok(vec![RawShipStats {
+                ship_id: 5,
+                last_battle_time: 1_700_000_000,
+                ..zero_raw()
+            }])
+        },
+        async {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            Ok(vec![RawShipStats {
+                ship_id: 5,
+                ..zero_raw()
+            }])
+        },
+        |_| {},
+        || panic!("the racer settled on its own — no abandonment here"),
+    )
+    .await
+    .unwrap();
+    let mut rows = out.rows;
+    assert_eq!(rows[0].last_battle_time, 0, "vortex serves no stamp");
+    merge_last_battle_times(&mut rows, out.racer_rows.as_deref().unwrap_or_default());
+    assert_eq!(
+        rows[0].last_battle_time, 1_700_000_000,
+        "the racer's stamp reaches the winning answer"
+    );
 }
 
 fn zero_raw() -> RawShipStats {

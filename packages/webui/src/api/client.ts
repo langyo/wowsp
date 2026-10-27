@@ -18,6 +18,7 @@ import { pairingApi } from "./modules/pairing";
 import { contributionApi } from "./modules/contribution";
 import { decisionApi } from "./modules/decision";
 import { chatTranslateApi } from "./modules/chat";
+import { localBattlesApi } from "./modules/localBattles";
 
 export * from "./modules/shell";
 export * from "./modules/markers";
@@ -30,6 +31,7 @@ export * from "./modules/pairing";
 export * from "./modules/contribution";
 export * from "./modules/decision";
 export * from "./modules/chat";
+export * from "./modules/localBattles";
 
 export const api = {
   ...decisionApi,
@@ -43,4 +45,5 @@ export const api = {
   ...pairingApi,
   ...contributionApi,
   ...chatTranslateApi,
+  ...localBattlesApi,
 };

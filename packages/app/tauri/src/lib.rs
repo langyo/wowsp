@@ -548,6 +548,10 @@ pub fn run() {
             commands::playtime::playtime_overview,
             commands::playtime::playtime_battles,
             commands::playtime::playtime_battles_reset,
+            // Local replay battle log (water-table 1d/7d/custom ranges,
+            // commands/local_battles.rs) — decodes the BattleResults (0x22)
+            // payload of the local replay corpus behind a persistent cache.
+            commands::local_battles::read_local_battle_log,
             // Replay-share contribution (录像共享计划, commands/contribution/)
             // — cross-platform: identity/consent/anon credentials, the
             // wanted-ruleset cache, the share planner and the single-flight

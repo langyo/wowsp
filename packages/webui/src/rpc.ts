@@ -34,6 +34,10 @@ export const RPC = {
   // Drop the battle ledger's disk cache and rescan from whatever is on
   // disk right now (the replay-sources manager's rebuild action).
   playtime_battles_reset: "playtime_battles_reset",
+  // One row per LOCAL replay file whose BattleResults decoded, recorded by
+  // the requested account inside [from_sec, to_sec] (commands/
+  // local_battles.rs) — the dashboard range views' replay source.
+  read_local_battle_log: "read_local_battle_log",
   // Rust session hub (commands/session.rs) + the tray panel actions.
   get_session_state: "get_session_state",
   sync_active_account: "sync_active_account",
