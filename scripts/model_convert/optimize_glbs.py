@@ -3,10 +3,14 @@
 
 The bake (batch_bake.py / batch_bake_maps.py / bake_lesta_*.py) emits pure
 geometry — zero textures — as UNCOMPRESSED float32 buffers: ~1.38 GB across
-~4000 .glb files under packages/webui/src/res/models. Running each file
-through `gltf-transform optimize --compress meshopt --simplify false`
-(weld + prune + quantize + EXT_meshopt_compression) measured on the real
-pack:
+~4000 .glb files under packages/webui/src/res/models. Files run through a
+PER-DIRECTORY pipeline (see pipeline_for): ship HULLS take
+`quantize` + `meshopt` WITHOUT the join/prune stages so every named part
+survives (the ship stage anchors weapon chips on mesh names), while armor
+hits, maps, planes and props take the full
+`optimize --compress meshopt --simplify false` (weld + prune + quantize +
+EXT_meshopt_compression — they are single-mesh, so the join loses
+nothing). Measured on the real pack:
 
     maps        → ~20% of the original size
     large ships → ~28%
@@ -92,27 +96,72 @@ def find_pnpm() -> str:
     return shutil.which("pnpm") or "pnpm"
 
 
-def run_transform(pnpm: str, src: Path, dst: Path) -> tuple[bool, str]:
-    """One gltf-transform invocation. Single attempt per file, no retry: the
-    transform is a local CPU step with deterministic output — a failure
-    means the file itself (or the install) is broken, and retrying would
-    just burn the same seconds again across a 4000-file pack."""
+def run_transform(pnpm: str, src: Path, dst: Path,
+                  steps: list[list[str]]) -> tuple[bool, str]:
+    """One gltf-transform invocation per step, chained src → … → dst.
+    Single attempt per file, no retry: the transform is a local CPU step
+    with deterministic output — a failure means the file itself (or the
+    install) is broken, and retrying would just burn the same seconds
+    again across a 4000-file pack. Intermediate hops live beside dst so
+    every hop stays an atomic same-volume rename away."""
+    current = src
+    hop: Path | None = None
     try:
-        proc = subprocess.run(
-            [pnpm, "exec", "gltf-transform", "optimize", str(src), str(dst),
-             "--compress", "meshopt", "--simplify", "false"],
-            cwd=REPO_ROOT,  # pnpm resolves the workspace bin from the root
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except OSError as exc:
-        return False, f"spawn failed: {exc}"
-    if proc.returncode != 0:
-        detail = (proc.stderr or proc.stdout or "").strip()
-        return False, f"exit {proc.returncode}: {detail[:400]}"
-    return True, ""
+        for i, args in enumerate(steps):
+            last = i == len(steps) - 1
+            out = dst if last else dst.with_suffix(f".hop{i}.glb")
+            try:
+                proc = subprocess.run(
+                    [pnpm, "exec", "gltf-transform", *args, str(current), str(out)],
+                    cwd=REPO_ROOT,  # pnpm resolves the workspace bin from the root
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+            except OSError as exc:
+                return False, f"spawn failed: {exc}"
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "").strip()
+                return False, f"exit {proc.returncode}: {detail[:400]}"
+            if not last:
+                hop = out
+            current = out
+        return True, ""
+    finally:
+        if hop is not None:
+            hop.unlink(missing_ok=True)
+
+
+OPTIMIZE_STEP = ["optimize", "--compress", "meshopt", "--simplify", "false"]
+KEEP_STRUCTURE_STEPS = [["quantize"], ["meshopt"]]
+
+
+def pipeline_for(path: Path, root: Path) -> list[list[str]]:
+    """Per-file gltf-transform step list.
+
+    Structure-preserving vs full-optimize is a FUNCTIONAL choice, not just
+    a size tradeoff:
+
+    - ships/ HULLS keep their multi-mesh layout (`quantize` + `meshopt`,
+      no `optimize`): the bake names every part (main_battery_249,
+      hull_bow, ...) and both the ship stage weapon anchors
+      (packages/holo/src/shipStage.ts MESH_PREFIXES) and any future
+      per-part rendering key on those names. Measured on PJSB730: 83
+      meshes preserved at 38% of the original bytes (the join-everything
+      `optimize` reaches 26% but collapses to 1 unnamed mesh).
+    - ships/ ARMOR hits (`*_armor.glb`) are single-mesh hitbox shells —
+      `optimize` loses nothing and quantize eats them alive (~5%).
+    - everything else (maps, planes, props) is single-mesh already;
+      `optimize` applies, and the idempotency check skips whatever a
+      previous pass already compressed.
+    """
+    rel = path.relative_to(root)
+    if len(rel.parts) >= 2 and rel.parts[0] == "ships":
+        if path.stem.endswith("_armor"):
+            return [OPTIMIZE_STEP]
+        return KEEP_STRUCTURE_STEPS
+    return [OPTIMIZE_STEP]
 
 
 def top_dir(path: Path, root: Path) -> str:
@@ -196,7 +245,9 @@ def main() -> int:
         os.close(fd)
         tmp = Path(tmp_name)
         try:
-            ok, detail = run_transform(pnpm, path.resolve(), tmp)
+            ok, detail = run_transform(
+                pnpm, path.resolve(), tmp, pipeline_for(path, root)
+            )
             if not ok:
                 counts["kept-original"] += 1
                 tally(name, before, before)
