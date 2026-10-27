@@ -483,6 +483,34 @@ pub struct WeatherNotification {
     pub param: u32,
 }
 
+/// Serde adapter that makes [`ReplayStream::leaves`] key itself by STRING on
+/// every wire: JSON already stringifies integer map keys, and the webui's
+/// MessagePack decoder (@msgpack/msgpack v3) silently drops entries from
+/// integer-keyed msgpack maps (verified empirically: `decode(encode({42:
+/// 55.5})) === {}`), so the packed IPC wire must carry the same string keys
+/// the JSON wire always did.
+mod leaves_string_keys {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::BTreeMap;
+
+    pub fn serialize<S: Serializer>(map: &BTreeMap<i32, f32>, s: S) -> Result<S::Ok, S::Error> {
+        let keyed: BTreeMap<String, f32> = map.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+        keyed.serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<i32, f32>, D::Error> {
+        let keyed: BTreeMap<String, f32> = BTreeMap::deserialize(d)?;
+        keyed
+            .into_iter()
+            .map(|(k, v)| {
+                k.parse::<i32>()
+                    .map(|id| (id, v))
+                    .map_err(|e| serde::de::Error::custom(format!("leaves key {k}: {e}")))
+            })
+            .collect()
+    }
+}
+
 /// Everything the holographic replay viewer needs from the packet stream:
 /// entity trajectories plus battle-effect events (explosions, torpedo
 /// launches) that are broadcast as entity methods rather than entities.
@@ -527,7 +555,15 @@ pub struct ReplayStream {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub net_stats: Vec<NetStatsSample>,
     /// Entity id → last time it left the observed area (EntityLeave, 0x04).
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    /// Keys ride the wire AS STRINGS on every codec: serde_json already
+    /// emits `{"42": 55.5}` for an integer-keyed map, and @msgpack/msgpack
+    /// (the packed IPC wire) silently DROPS entries from integer-keyed
+    /// msgpack maps — see leaves_string_keys below.
+    #[serde(
+        default,
+        with = "leaves_string_keys",
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
     pub leaves: std::collections::BTreeMap<i32, f32>,
     /// Camera-mode changes (0x27) — spectating view modes over time.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -1764,9 +1764,10 @@ fn strict_decode_keeps_hard_error_for_zero_fill() {
     );
 }
 
-/// Diagnostic: serialize the REAL IPC payload (serde_json over the whole
-/// ReplayStream, exactly what Tauri's IPC codec emits) for a real replay,
-/// asserting the weather timelines survive the wire. Run with
+/// Diagnostic: mirror the decoded stream through serde_json for a real
+/// replay, asserting the weather timelines survive the (now MessagePack)
+/// wire — the JSON here is the SHAPE reference the packed payload must
+/// decode to (see replay_stream_msgpack_wire_round_trip). Run with
 /// `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
 #[tokio::test]
 async fn dump_replay_stream_ipc_json() {

@@ -952,10 +952,11 @@ export interface WeatherNotification {
  *  raw MessagePack bytes (rmp-serde to_vec_named — see the Rust command
  *  docs): same camelCase object shape the JSON wire carried, at roughly
  *  half the size and without materializing a ~10 MB JSON string on the
- *  main thread. One normalization: the decoder turns msgpack maps with
- *  INTEGER keys (the leaves BTreeMap) into Map instances, while the JSON
- *  path always produced a plain record — fold it back so both transports
- *  agree on the shape consumers index with a number. */
+ *  main thread. The leaves fold below is DEFENSIVE: @msgpack/msgpack v3
+ *  already decodes the integer-keyed leaves BTreeMap into a plain record
+ *  (its map state is Record-based), matching the JSON path exactly — the
+ *  fold only guards against a decoder revision (or an alternative
+ *  decoder) handing back a Map, which no consumer indexes with. */
 export function decodeReplayStreamPacked(buf: ArrayBuffer): ReplayStream {
   const stream = msgpackDecode(new Uint8Array(buf)) as ReplayStream & {
     leaves?: unknown;
