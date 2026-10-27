@@ -33,6 +33,15 @@ export interface Transport {
     body: Uint8Array,
     headers: Record<string, string>,
   ): Promise<T>;
+
+  /**
+   * Invoke a command whose RESPONSE is raw bytes (a Rust `tauri::ipc::Response`
+   * built by the command itself). Resolves the decoded response ArrayBuffer;
+   * implemented only by the Tauri transport — browser/mock transports keep
+   * answering JSON objects for the same command, so callers use this as a
+   * capability probe (`if (transport.invokeBin)`) and fall back to `invoke`.
+   */
+  invokeBin?(cmd: string, args?: Record<string, unknown>): Promise<ArrayBuffer>;
 }
 
 export class RpcError extends Error {

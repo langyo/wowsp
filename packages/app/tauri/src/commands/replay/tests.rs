@@ -1552,9 +1552,9 @@ async fn dump_replay_json() {
         return;
     };
     let meta = read_replay_header(path.clone()).await.expect("header");
-    let stream = read_replay_positions(path.clone())
-        .await
-        .expect("positions");
+    // The command now answers a raw MessagePack ipc::Response (its body is
+    // not publicly readable); the decode beneath it is the same call.
+    let stream = decode_replay_stream_sync(&path).expect("positions");
     // Raw per-entity property timelines for offline analysis (score
     // hunting, property-index identification).
     let bytes = std::fs::read(&path).unwrap();
@@ -1773,7 +1773,10 @@ async fn dump_replay_stream_ipc_json() {
     let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
         return;
     };
-    let stream = read_replay_positions(path.clone()).await.expect("stream");
+    // Raw MessagePack ipc::Response body is not publicly readable — decode
+    // the same stream the command packs (see the wire round-trip test below
+    // for the codec itself), then mirror it through JSON like the old wire.
+    let stream = decode_replay_stream_sync(&path).expect("stream");
     let json = serde_json::to_string(&stream).expect("serialize");
     let v: serde_json::Value = serde_json::from_str(&json).expect("reparse");
     let tr = v.get("weatherTransitions").and_then(|x| x.as_array());
@@ -1912,4 +1915,63 @@ fn ally_only_builds_on_the_reference_capture() {
             "enemy builds must be filtered out of IPC"
         );
     }
+}
+
+/// The replay-stream IPC wire is MessagePack (read_replay_positions returns
+/// a raw ipc::Response of rmp-serde `to_vec_named` output — see the command
+/// docs). This pins the codec: packing a representative stream and decoding
+/// it back must land on the exact same JSON shape the old wire produced
+/// (camelCase names, skipped-when-empty families, BTreeMap leaves with
+/// integer keys), so the webui's @msgpack/msgpack decode sees the object
+/// the TS types promise.
+#[test]
+fn replay_stream_msgpack_wire_round_trip() {
+    let stream: wowsp_tauri_shared::ReplayStream = serde_json::from_value(
+        serde_json::json!({
+            "trajectories": [{
+                "entityId": 42,
+                "kind": {
+                    "entityType": 2,
+                    "vehicleId": 7,
+                    "initialX": 123.5,
+                    "initialY": 0.0,
+                    "initialZ": -45.25
+                },
+                "samples": [{
+                    "time": 1.0, "entityId": 42, "vehicleId": 7,
+                    "x": 1.5, "y": 0.0, "z": 2.5, "yaw": 0.25
+                }],
+                "hpSamples": [{ "time": 1.0, "value": 42000 }],
+                "deathTime": 600.0
+            }],
+            "recorderVehicleId": 42,
+            "camera": [{
+                "time": 2.0, "x": 0.0, "y": 10.0, "z": 20.0,
+                "rotX": 0.0, "rotY": 0.0, "rotZ": 0.0, "rotW": 1.0,
+                "fov": 1.2
+            }],
+            "leaves": { "42": 55.5 }
+        }),
+    )
+    .expect("fixture parses (field names mirror the wire)");
+    let packed = rmp_serde::to_vec_named(&stream).expect("pack");
+    let decoded: wowsp_tauri_shared::ReplayStream =
+        rmp_serde::from_slice(&packed).expect("unpack");
+    let round = serde_json::to_value(&decoded).expect("json mirror");
+    let direct = serde_json::to_value(&stream).expect("json direct");
+    assert_eq!(round, direct, "msgpack wire must mirror the JSON shape");
+    // Spot the fields the webui joins on.
+    assert_eq!(
+        round["trajectories"][0]["kind"]["entityType"].as_i64(),
+        Some(2),
+        "camelCase rename must survive the wire"
+    );
+    assert_eq!(
+        round["trajectories"][0]["hpSamples"][0]["value"].as_u64(),
+        Some(42_000),
+        "u32 HP values must stay integers on the wire"
+    );
+    assert_eq!(round["leaves"]["42"].as_f64(), Some(55.5));
+    // The packer's whole point: bytes, not a JSON string.
+    assert!(!packed.is_empty());
 }

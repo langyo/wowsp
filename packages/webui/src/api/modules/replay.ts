@@ -4,6 +4,7 @@
 import { transport } from "@/transport";
 import { RPC } from "@/rpc";
 import type { GameInstallKind, TelemetryPayload } from "./game";
+import { decode as msgpackDecode } from "@msgpack/msgpack";
 
 /** Mirrors `wowsp_tauri_shared::VehicleEntry`. */
 export interface VehicleEntry {
@@ -947,10 +948,39 @@ export interface WeatherNotification {
   param: number;
 }
 
+/** Decode the packed replay-stream IPC response. The Tauri command answers
+ *  raw MessagePack bytes (rmp-serde to_vec_named — see the Rust command
+ *  docs): same camelCase object shape the JSON wire carried, at roughly
+ *  half the size and without materializing a ~10 MB JSON string on the
+ *  main thread. One normalization: the decoder turns msgpack maps with
+ *  INTEGER keys (the leaves BTreeMap) into Map instances, while the JSON
+ *  path always produced a plain record — fold it back so both transports
+ *  agree on the shape consumers index with a number. */
+export function decodeReplayStreamPacked(buf: ArrayBuffer): ReplayStream {
+  const stream = msgpackDecode(new Uint8Array(buf)) as ReplayStream & {
+    leaves?: unknown;
+  };
+  if (stream.leaves instanceof Map) {
+    const flat: Record<string, number> = {};
+    for (const [k, v] of stream.leaves) flat[String(k)] = v as number;
+    stream.leaves = flat;
+  }
+  return stream;
+}
+
 export const replayApi = {
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),
-  readReplayPositions: (path: string) =>
-    transport.invoke<ReplayStream>(RPC.read_replay_positions, { path }),
+  readReplayPositions: (path: string): Promise<ReplayStream> => {
+    // Tauri shell: packed bytes. Browser/mock: the same command answers
+    // JSON objects (see the mock endpoints), so probe the capability.
+    const bin = transport.invokeBin;
+    if (bin) {
+      return bin(RPC.read_replay_positions, { path }).then((buf) =>
+        decodeReplayStreamPacked(buf),
+      );
+    }
+    return transport.invoke<ReplayStream>(RPC.read_replay_positions, { path });
+  },
   /** Live self-stats feed (我的战绩): locate the running client's in-progress
    *  `temp.*replay` container. Null when no battle is being recorded. */
   liveTempReplay: () => transport.invoke<LiveTempReplay | null>(RPC.live_temp_replay),
