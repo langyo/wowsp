@@ -12,7 +12,7 @@
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from "vue";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { createPerfHud, type PerfHud } from "./perfHud";
+import { createPerfHud, perfHudRequested, type PerfHud } from "./perfHud";
 import { useTheme } from "@/theme";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 
@@ -56,8 +56,9 @@ export function useThreeScene(
   const api = shallowRef<ThreeScene | null>(null);
   let rafId = 0;
   let resizeObs: ResizeObserver | null = null;
-  /** ?perf=1 diagnostics overlay (null unless enabled) — owned by the mount
-   *  scope but disposed from the unmount hook, hence the setup-scope slot. */
+  /** Diagnostics overlay (null unless requested via ?perf=1 / the stored
+   *  wowsp.perf preference — see perfHud.perfHudRequested) — owned by the
+   *  mount scope but disposed from the unmount hook, hence this slot. */
   let perfHud: PerfHud | null = null;
   /** The armed devicePixelRatio media query + its disarm handle — cleaned
    *  up on unmount so a later monitor-scale flip cannot touch the disposed
@@ -159,7 +160,7 @@ export function useThreeScene(
       };
     };
     rearmDprListener();
-    perfHud = createPerfHud(new URLSearchParams(location.search).get("perf") === "1");
+    perfHud = createPerfHud(perfHudRequested());
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;

@@ -8,9 +8,15 @@
  *   - canvas backing size, pixel ratio, and the WebGL adapter string
  *
  * Packaged builds ship no DevTools, so this overlay is how "which GPU /
- * how many fps / how many draws" gets answered from a screenshot. Nothing
- * runs unless the URL parameter is present, and it owns no timer: it is
- * fed by the scene's own tick.
+ * how many fps / how many draws" gets answered from a screenshot. It owns
+ * no timer — the scene's own tick feeds it.
+ *
+ * Activation (see {@link perfHudRequested}):
+ *   - `?perf=1` on the page URL forces it on for this load;
+ *   - `?perf=0` forces it off (wins over the stored preference);
+ *   - otherwise localStorage `wowsp.perf = "1"` keeps it on across
+ *     reloads — the support-session form: set it once, leave it up, and
+ *     clear it with `localStorage.removeItem("wowsp.perf")`.
  */
 import * as THREE from "three";
 
@@ -18,6 +24,33 @@ import * as THREE from "three";
 const WINDOW_MS = 2000;
 /** Overlay refresh cadence (text only — never the scene). */
 const REPORT_MS = 500;
+
+/** localStorage key that keeps the overlay up across reloads. */
+export const PERF_HUD_STORAGE_KEY = "wowsp.perf";
+
+/** Decide whether the overlay is requested: the URL parameter is the
+ *  one-shot override (`?perf=0` beats the stored preference, so a support
+ *  session can be silenced without clearing storage), otherwise the stored
+ *  `wowsp.perf = "1"` keeps it on. Storage access is guarded — embedded
+ *  webviews can throw on it in privacy modes.
+ *
+ *  `search` and the storage probe are injectable so the decision is
+ *  unit-testable without touching the real location. */
+export function perfHudRequested(
+  search: string = typeof location !== "undefined" ? location.search : "",
+  readStored: () => string | null = () => {
+    try {
+      return localStorage.getItem(PERF_HUD_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  },
+): boolean {
+  const param = new URLSearchParams(search).get("perf");
+  if (param === "1") return true;
+  if (param === "0") return false;
+  return readStored() === "1";
+}
 
 export interface PerfHud {
   /** Called right after renderer.render(): records one rendered frame. */
@@ -30,6 +63,9 @@ export interface PerfHud {
 export function createPerfHud(enabled: boolean): PerfHud | null {
   if (!enabled) return null;
   const el = document.createElement("div");
+  // Stable hook for diagnostics scripts, screenshots and tests (styles stay
+  // inline so the overlay is self-contained and never enters app CSS).
+  el.className = "holo-perf-hud";
   el.setAttribute("aria-hidden", "true");
   el.style.cssText = [
     "position:fixed",
