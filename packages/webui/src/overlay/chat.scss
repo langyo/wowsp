@@ -124,6 +124,30 @@ body {
   color: rgb(165 175 185);
 }
 
+/* Local player marker (玩家标记) — the same colored dot the Tab table's
+ * rows carry, pressed against the sender's nickname. */
+.chat-panel__mk {
+  flex: 0 0 auto;
+  width: 0.32em;
+  height: 0.32em;
+  margin-left: 0.3em;
+  border-radius: 50%;
+  box-shadow: 0 0 2px rgb(0 0 0 / 85%);
+  align-self: center;
+}
+
+.chat-panel__mk--red {
+  background: #e5484d;
+}
+
+.chat-panel__mk--yellow {
+  background: #ffd400;
+}
+
+.chat-panel__mk--purple {
+  background: #a855f7;
+}
+
 /* The local player's tag on their own line ("me" / 我 / ...), riding right
    after the sender: an accent chip, not a second nickname. */
 .chat-panel__self {

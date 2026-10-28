@@ -1,0 +1,119 @@
+/* ── Marked-name tint (名单标记: 应用内列表) ───────────────────────
+ * Marked players' NAMES recolor in the app's lists: red and yellow
+ * flow through their own shades; purple is the multicolor fluid sweep.
+ * background-clip:text follows the repo's existing gradient-text
+ * convention (theme.scss .rainbow-text uses color:transparent).
+ *
+ * Two robustness rules:
+ *  - -webkit-text-fill-color paints the text fill independently of the
+ *    color property: lazy route chunks (IdentityHead.scss,
+ *    ReplayView.scss) load AFTER this sheet and would otherwise reset
+ *    the name to an opaque color at equal specificity.
+ *  - The palette is theme-aware: the default (light "solar" surfaces)
+ *    uses deep, saturated stops that stay readable on white; the dark
+ *    theme switches to the bright neon stops (same hues as the dots).
+ *
+ * The animation sweeps background-position over a 200% gradient whose
+ * first/last stops match, so the loop is seamless; reduced motion
+ * (OS-level or the app's own class) keeps the static gradient. */
+
+.marker-tint {
+  background-size: 200% 100%;
+  background-repeat: repeat;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: marker-tint-flow 6s linear infinite;
+}
+
+/* Light stop sets (the default surface mode — 我的水表 is light by day). */
+.marker-tint--red {
+  background-image: linear-gradient(
+    100deg,
+    #d94b40,
+    #c0392b 28%,
+    #8f1d16 52%,
+    #c0392b 76%,
+    #d94b40
+  );
+}
+
+.marker-tint--yellow {
+  background-image: linear-gradient(
+    100deg,
+    #a8821a,
+    #8a6d00 28%,
+    #6b5200 52%,
+    #8a6d00 76%,
+    #a8821a
+  );
+}
+
+/* The multicolor fluid: a full-hue sweep that reads as彩色流体 rather
+ * than a single-color shimmer. Deep stops for light surfaces. */
+.marker-tint--purple {
+  background-image: linear-gradient(
+    100deg,
+    #7c3aed,
+    #2563eb 18%,
+    #0e7490 36%,
+    #be185d 54%,
+    #7e22ce 72%,
+    #7c3aed
+  );
+}
+
+/* Dark theme: the bright neon family (the same inks the marker dots use
+ * everywhere else). */
+[data-mode="dark"] .marker-tint--red {
+  background-image: linear-gradient(
+    100deg,
+    #ff8a82,
+    #e5484d 28%,
+    #d94b40 52%,
+    #e5484d 76%,
+    #ff8a82
+  );
+}
+
+[data-mode="dark"] .marker-tint--yellow {
+  background-image: linear-gradient(
+    100deg,
+    #fff1a3,
+    #ffd400 28%,
+    #b59a00 52%,
+    #ffd400 76%,
+    #fff1a3
+  );
+}
+
+[data-mode="dark"] .marker-tint--purple {
+  background-image: linear-gradient(
+    100deg,
+    #a855f7,
+    #6366f1 18%,
+    #22d3ee 36%,
+    #ec4899 54%,
+    #c084fc 72%,
+    #a855f7
+  );
+}
+
+@keyframes marker-tint-flow {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* Same two switches the theme tokens honour (theme.scss): OS-level
+ * reduce motion and the app's own reduce-motion class. */
+@media (prefers-reduced-motion: reduce) {
+  .marker-tint {
+    animation: none;
+  }
+}
+
+html.reduce-motion .marker-tint {
+  animation: none;
+}

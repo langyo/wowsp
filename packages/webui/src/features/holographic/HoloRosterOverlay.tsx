@@ -25,7 +25,7 @@ import { HkScrollContainer } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import MarkerDot from "@/features/markers/MarkerDot";
+import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { RosterStat } from "@/composables/useRosterStats";
@@ -120,20 +120,23 @@ function teamTable(
                 data-player-realm={ctx.stats.get(r.vehicle.name)?.realm ?? undefined}
               >
                 {/* No 「我」 label — the self row is marked by its WHITE
-                    ship icon (alive), the game's own convention. */}
-                {r.vehicle.name}
-                {/* Local player marker (玩家标记), same voice as the live
-                    roster's dot; right-click opens the shared menu (the
-                    overlay is aria-hidden chrome, but pointer events on
-                    the name cell still flow to the app-global binding). */}
+                    ship icon (alive), the game's own convention. The name
+                    itself carries the marker tint (玩家标记); right-click
+                    opens the shared menu (the overlay is aria-hidden
+                    chrome, but pointer events still flow to the binding). */}
                 {(() => {
                   const color = ctx.markers.colorOf(
                     r.vehicle.name,
                     ctx.stats.get(r.vehicle.name)?.accountId ?? null,
                   );
-                  return color ? (
-                    <MarkerDot color={color} label={markerColorLabel(color)} />
-                  ) : null;
+                  return (
+                    <span
+                      class={["holo-roster__nick", markerTintClass(color)]}
+                      title={color ? markerColorLabel(color) : undefined}
+                    >
+                      {r.vehicle.name}
+                    </span>
+                  );
                 })()}
               </td>
               <td class="holo-roster__td">

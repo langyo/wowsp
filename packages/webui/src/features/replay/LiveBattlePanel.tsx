@@ -143,7 +143,8 @@ import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
 import RatingStamp from "@/components/base/RatingStamp";
 import { useMarkersStore } from "@/stores/markers";
-import type { MarkerColor } from "@/api";
+import { markerTintClass } from "@/features/markers/markerTint";
+import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import StampTag from "@/components/base/StampTag";
 import { HkSpinner } from "@celestia-island/hikari";
 import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
@@ -399,16 +400,8 @@ export default defineComponent({
     // so a hidden nick cannot leak into the image). Like the post-battle
     // panels, the state is ephemeral — a share-time privacy choice.
     const masking = useNickMasking();
-  const markerLabel = (color: MarkerColor): string =>
-    t(
-      color === "red"
-        ? "settings.markersColorRed"
-        : color === "yellow"
-          ? "settings.markersColorYellow"
-          : "settings.markersColorPurple",
-    );
     const markers = useMarkersStore();
-  void markers.ensureLoaded();
+    void markers.ensureLoaded();
     const root = ref<HTMLElement | null>(null);
     const shot = useShareShot(buildShotModel, () => root.value);
 
@@ -1388,24 +1381,26 @@ export default defineComponent({
         // — user feedback): the single highest tier, in both densities.
         const nameLine = (
           <span class="live-battle__crow-name">
-            <span class="live-battle__crow-nick">{masking.maskOf(v.name)}</span>
+            {/* Local player marker (玩家标记): the name ITSELF carries the
+                mark — an animated tint (see markerTint), nickname-first,
+                account id sharpens. */}
+            {(() => {
+              const color = ai ? null : markers.colorOf(v.name, st?.accountId);
+              return (
+                <span
+                  class={["live-battle__crow-nick", markerTintClass(color)]}
+                  title={color ? markerColorLabel(color) : undefined}
+                >
+                  {masking.maskOf(v.name)}
+                </span>
+              );
+            })()}
             {crossRealmTagOf(st) ? (
               <span class="live-battle__cross-realm">{crossRealmTagOf(st)}</span>
             ) : null}
             {st?.clanTag ? (
               <span class="live-battle__crow-clan">[{st.clanTag}]</span>
             ) : null}
-            {/* Local player marker (玩家标记): nickname-first, account id
-                sharpens. */}
-            {(() => {
-              const color = markers.colorOf(v.name, st?.accountId);
-              return color ? (
-                <span
-                  class={["live-battle__mk-dot", `live-battle__mk-dot--${color}`].join(" ")}
-                  title={markerLabel(color)}
-                />
-              ) : null;
-            })()}
             {ai ? <em class="live-battle__crow-bot">{t("replay.bot")}</em> : null}
             {highestStampTag(v.name, stamp)}
           </span>

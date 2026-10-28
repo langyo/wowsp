@@ -70,6 +70,30 @@ body {
   font-weight: 600;
 }
 
+/* Local player marker (玩家标记) — the same colored dot the Tab table's
+ * rows carry ("旁边多一个点"), pressed against the nickname. */
+.aim-mk {
+  display: inline-block;
+  width: 0.32em;
+  height: 0.32em;
+  margin-left: 0.3em;
+  border-radius: 50%;
+  box-shadow: 0 0 2px rgb(0 0 0 / 85%);
+  vertical-align: middle;
+}
+
+.aim-mk--red {
+  background: #e5484d;
+}
+
+.aim-mk--yellow {
+  background: #ffd400;
+}
+
+.aim-mk--purple {
+  background: #a855f7;
+}
+
 /* Lines 2 and 3 — the figure rows live in ONE shared column grid
    (winrate → PR → battles → damage, the tab chips' column order, plus the
    optional K/D figure as a fifth track while the user configured a K/D

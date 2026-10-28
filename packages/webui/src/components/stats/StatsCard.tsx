@@ -45,6 +45,9 @@ export default defineComponent({
     /** Clan tag clicked → jump to the clan view. Rendered as a link only
      *  when the stats carry a clan id. */
     onClanClick: Function as PropType<() => void>,
+    /** Extra class on the identity name (the marked-name tint from the
+     *  host view — see features/markers/markerTint). */
+    nameClass: { type: String, default: "" },
   },
   setup(props, { slots }) {
     const prefs = useStatsPrefsStore();
@@ -169,6 +172,7 @@ export default defineComponent({
         <IdentityHead
           name={props.stats.name}
           tag={props.stats.clanTag}
+          nameClass={props.nameClass}
           onTagClick={
             props.onClanClick && props.stats.clanId != null
               ? () => props.onClanClick?.()

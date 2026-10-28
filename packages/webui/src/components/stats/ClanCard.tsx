@@ -20,6 +20,9 @@ import type { ClanInfo, ClanMember } from "@/api";
 import { t } from "@/i18n";
 import { prTier, prTierLabel, winrateColor } from "@/utils/winrate";
 import { useStatsPrefsStore } from "@/stores/statsPrefs";
+import { useMarkersStore } from "@/stores/markers";
+import { markerTintClass } from "@/features/markers/markerTint";
+import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import "./ClanCard.scss";
 
 /** Roster sort keys; null = role-ordered default (officers, battles desc). */
@@ -89,6 +92,9 @@ export default defineComponent({
   },
   setup(props, { slots }) {
     const prefs = useStatsPrefsStore();
+    // Player markers (玩家标记): marked member names carry the tint.
+    const markers = useMarkersStore();
+    void markers.ensureLoaded();
     const sortKey = ref<SortKey | null>(null);
     const sortDir = ref<"desc" | "asc">("desc");
 
@@ -282,7 +288,21 @@ export default defineComponent({
                     : undefined
                 }
               >
-                <span class="clan-card__col clan-card__col--name">{m.name}</span>
+                {(() => {
+                  const tint = markers.colorOf(m.name, m.accountId);
+                  return (
+                    <span
+                      class={[
+                        "clan-card__col",
+                        "clan-card__col--name",
+                        markerTintClass(tint),
+                      ]}
+                      title={tint ? markerColorLabel(tint) : undefined}
+                    >
+                      {m.name}
+                    </span>
+                  );
+                })()}
                 <span class="clan-card__col clan-card__col--role">{roleLabel(m.role)}</span>
                 <span class="clan-card__col clan-card__col--num">
                   {m.stats.battles != null ? m.stats.battles.toLocaleString() : "—"}
