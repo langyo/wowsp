@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
     getChatTranslateConfig: vi.fn(),
     setChatTranslateConfig: vi.fn(),
     testChatTranslateProvider: vi.fn(),
+    getChatProviderRegistry: vi.fn(),
     debugTranslateText: vi.fn(),
   },
   overlay: {
@@ -350,6 +351,11 @@ beforeEach(() => {
     modelEcho: "deepseek-flash",
     error: null,
   });
+  mocks.chatApi.getChatProviderRegistry.mockResolvedValue({
+    fetchedAt: 0,
+    stale: false,
+    providers: [],
+  });
   mocks.chatApi.debugTranslateText.mockResolvedValue({
     detected: "ja",
     translations: [{ lang: "en", text: "hello", source: "model" }],
@@ -488,7 +494,11 @@ describe("chat translation settings staged pane", () => {
     const modal = document.querySelector(".hk-modal-root");
     expect(modal).not.toBeNull();
     expect(modal!.textContent).toContain(t("settings.chatTranslate.providerHint"));
+    expect(modal!.textContent).toContain(t("settings.chatTranslate.providerPreset"));
+    expect(modal!.textContent).toContain(t("settings.chatTranslate.modelPreset"));
     expect(modal!.querySelector("input")).not.toBeNull();
+    // Opening the window refreshes the shared catalog through its cache.
+    expect(mocks.chatApi.getChatProviderRegistry).toHaveBeenCalledWith(false);
     footerButton(t("settings.chatTranslate.save")).click();
     await flushPromises();
     await flushPromises();

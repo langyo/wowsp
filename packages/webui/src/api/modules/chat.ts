@@ -184,10 +184,56 @@ export interface ProviderTestResult {
   error: string | null;
 }
 
+// ── shared provider registry (langyo/provider-registry, via the shell) ────
+
+/** One model in a registry provider's catalog. */
+export interface ChatProviderModel {
+  id: string;
+  /** Display name when the registry has one (a models/<provider>/<id>.toml). */
+  name: string | null;
+}
+
+/** Localized provider names exactly as the registry stores them. */
+export interface ChatProviderNames {
+  en: string;
+  zhs: string;
+  zht: string;
+  ja: string;
+  ko: string;
+  fr: string;
+  es: string;
+  ru: string;
+}
+
+/** One openai_chat_v1 entrypoint (a provider variant) from the registry. */
+export interface ChatProviderEntry {
+  /** Entrypoint id, e.g. deepseek_default. */
+  id: string;
+  /** Provider id, e.g. deepseek. */
+  providerId: string;
+  names: ChatProviderNames;
+  baseUrl: string;
+  /** Environment variable the provider usually reads its key from (hint only). */
+  envVar: string | null;
+  /** The registry's preferred default (normal, then deep, then basic, then the
+   *  first model). */
+  defaultModel: string | null;
+  /** The entrypoint's model catalog, sorted by id. */
+  models: ChatProviderModel[];
+}
+
+/** The whole catalog as the shell caches it (24h TTL; stale means a live fetch
+ *  failed and the cached copy answered instead). */
+export interface ChatProviderRegistry {
+  fetchedAt: number;
+  stale: boolean;
+  providers: ChatProviderEntry[];
+}
+
 /** How one debug-translation line was produced: a real model translation, a
  *  passthrough (the text was already the target language) or an
  *  untranslatable verdict (symbols/numbers only). Matches the shell's
- *  `TranslationSource` projection in debug_translate_text. */
+ *  TranslationSource projection in debug_translate_text. */
 export type DebugTranslationSource = "model" | "passthrough" | "untranslatable";
 
 /** One target language's line in the try-translation result. */
@@ -234,6 +280,13 @@ export const chatTranslateApi = {
     }),
   testChatTranslateProvider: () =>
     transport.invoke<ProviderTestResult>(RPC.test_chat_translate_provider),
+  /** The shared provider registry (langyo/provider-registry). refresh forces a
+   *  live fetch, otherwise the shell's 24h cache answers when fresh; a failed
+   *  live fetch still yields the cached catalog with stale: true. */
+  getChatProviderRegistry: (refresh: boolean = false) =>
+    transport.invoke<ChatProviderRegistry>(RPC.get_chat_provider_registry, {
+      refresh,
+    }),
   /** Run one line through the real translation pipeline (detect → prompt →
    *  provider → repair/validate) with an empty match context. `targets`
    *  empty = the shell resolves the configured `always` list, then "en".
