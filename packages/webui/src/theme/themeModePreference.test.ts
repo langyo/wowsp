@@ -114,3 +114,27 @@ describe("initThemeModePreference", () => {
     expect(localStorage.getItem(LEGACY_KEY)).toBe("dark");
   });
 });
+
+describe("preferenceToTabKey / tabKeyToPreference", () => {
+  it("maps solar onto the auto (system) tab, manual modes verbatim", async () => {
+    const { preferenceToTabKey } = await freshModule();
+    expect(preferenceToTabKey("solar")).toBe("system");
+    expect(preferenceToTabKey("dark")).toBe("dark");
+    expect(preferenceToTabKey("light")).toBe("light");
+  });
+
+  it("maps the tabs back — auto onto solar, unknown onto the solar default", async () => {
+    const { tabKeyToPreference } = await freshModule();
+    expect(tabKeyToPreference("system")).toBe("solar");
+    expect(tabKeyToPreference("light")).toBe("light");
+    expect(tabKeyToPreference("dark")).toBe("dark");
+    expect(tabKeyToPreference("garbage")).toBe("solar");
+  });
+
+  it("round-trips every preference through the tab grammar", async () => {
+    const { preferenceToTabKey, tabKeyToPreference } = await freshModule();
+    for (const p of ["dark", "light", "solar"] as const) {
+      expect(tabKeyToPreference(preferenceToTabKey(p))).toBe(p);
+    }
+  });
+});

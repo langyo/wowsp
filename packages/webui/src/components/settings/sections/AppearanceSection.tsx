@@ -1,7 +1,7 @@
 /** Appearance settings section: theme mode/scheme picker, wallpapers,
  *  opacity, font size, the staged DPI slider and the solar indicator. */
-import { defineComponent, type PropType } from "vue";
-import { Check, ImagePlus, Moon, Palette, SquarePen, Sun, SunMoon, Trash2 } from "@lucide/vue";
+import { computed, defineComponent, onUnmounted, ref, type PropType } from "vue";
+import { Check, ImagePlus, Monitor, MoonStar, Palette, SquarePen, Sun, Trash2 } from "@lucide/vue";
 import {
   HkButton,
   HkDivider,
@@ -14,7 +14,13 @@ import {
   HkTabs,
   useTheme,
 } from "@celestia-island/hikari";
+// The auto-altitude strip chrome (the merged cell rendered below) —
+// hikari's own component stylesheet, imported granularly so this
+// settings group renders the SAME cell as the theme panel does,
+// without pulling the popover around it.
+import "@celestia-island/hikari/components/HkThemeToggle.scss";
 
+import { solarAltitude } from "@/theme";
 import { useWallpaper } from "@/theme/useWallpaper";
 import {
   BUILTIN_WALLPAPER_IDS,
@@ -29,9 +35,10 @@ import {
   uiOpacityPercent,
 } from "@/theme/uiOpacityPreference";
 import {
+  preferenceToTabKey,
   setThemeModePreference,
+  tabKeyToPreference,
   themeModePreference,
-  type ThemeModePreference,
 } from "@/theme/themeModePreference";
 import { DPI_MAX, DPI_MIN, DPI_STEP, isDpiRisky } from "@/theme/dpiPrefs";
 import { t } from "@/i18n";
@@ -55,34 +62,98 @@ export default defineComponent({
     const theme = useTheme();
     const wallpaper = useWallpaper();
     const { appearance, dpi } = props.ctx;
+    const { geo, period } = theme;
+
+    // ── Auto-mode altitude readout (the merged cell) ──────────────────
+    // The shittim-chest pattern (hikari's HkThemePanelContent): while the
+    // solar (auto) preference is active the light/dark cells collapse
+    // (HkTabs mergeKeys) into one strip showing the live sun altitude;
+    // pressing it resolves auto back to manual on the side it currently
+    // renders. The minute tick keeps the readout current only while this
+    // section is mounted — the same policy as the panel's own timer.
+    const altTick = ref(0);
+    const altTimer = setInterval(() => {
+      altTick.value += 1;
+    }, 60_000);
+    onUnmounted(() => {
+      clearInterval(altTimer);
+    });
+    /** Sun altitude formatted like "+49.6°" (the panel's grammar).
+        theme.geo is hikari's own clock location — never null (it boots
+        on the timezone fallback and upgrades to the real fix), so the
+        readout and the engine share one resolution, exactly like the
+        panel's own altitudeText. */
+    const altitudeText = computed(() => {
+      void altTick.value;
+      const alt = solarAltitude(geo.value.lat, geo.value.lng, new Date());
+      return `${alt >= 0 ? "+" : ""}${alt.toFixed(1)}°`;
+    });
+    /** Glyph hints which side a press will land on (sun by day, moon at night). */
+    const altitudeNight = computed(() => {
+      void altTick.value;
+      return theme.effectiveMode.value === "dark";
+    });
+    /** Pressing the altitude strip drops OUT of auto onto the side auto
+        currently resolves to (day → light, night → dark). Debounced:
+        input synthesis may deliver both a pointer sequence and a click
+        for one physical press (hikari's own guard). */
+    let lastManualSwitchAt = 0;
+    function resolveAutoToManual() {
+      const now = Date.now();
+      if (now - lastManualSwitchAt < 700) return;
+      lastManualSwitchAt = now;
+      setThemeModePreference(theme.effectiveMode.value);
+    }
+
     return () => {
       // Staged-or-persisted notch for the DPI slider/readout (null = Auto)
       // and its risk flag — same locals as the reference DpiControl window.
       const pending = dpi.pendingDpi.value;
       const staged = pending ?? dpi.dpiScale.value;
       const warningVisible = pending != null && isDpiRisky(pending, window.innerWidth);
-      const { geo, period } = theme;
       return (
           <>
           {/* appearance — mode, color preset, wallpaper, solar indicator */}
           <HkSettingsGroup title={t("settings.themeMode")}>
-            {/* Three-way mode preference (wowsp's own key — see
-                theme/themeModePreference): dark/light verbatim, solar =
-                daylight-following (hikari "system"). The retired OS-follower
-                mode migrates onto solar. Selection applies immediately. */}
+            {/* Theme-mode group in the shittim-chest pattern (hikari's
+                HkThemePanelContent grammar): 自动 first, then the manual
+                light/dark cells. While the solar (auto) preference is
+                active the two manual cells merge into ONE altitude strip
+                (HkTabs mergeKeys + #merged) showing the live sun
+                altitude; pressing it drops back to manual. Underneath,
+                the wowsp preference layer is unchanged — solar ≡ hikari
+                "system" (see theme/themeModePreference; the retired
+                OS-follower mode migrates onto solar). Selection applies
+                immediately. */}
             <HkTabs
               block
               variant="segmented"
-              modelValue={themeModePreference.value}
-              onUpdate:modelValue={(v: string) =>
-                setThemeModePreference(v as ThemeModePreference)
-              }
+              modelValue={preferenceToTabKey(themeModePreference.value)}
+              onUpdate:modelValue={(v: string) => {
+                setThemeModePreference(tabKeyToPreference(v));
+              }}
+              mergeKeys={themeModePreference.value === "solar" ? ["light", "dark"] : undefined}
               tabs={[
-                { key: "dark", label: t("settings.themeModeDark"), icon: <Moon size={14} /> },
-                { key: "light", label: t("settings.themeModeLight"), icon: <Sun size={14} /> },
-                { key: "solar", label: t("settings.themeModeSolar"), icon: <SunMoon size={14} /> },
+                { key: "system", label: t("settings.themeModeAuto"), icon: <Monitor size={16} /> },
+                { key: "light", label: t("settings.themeModeLight"), icon: <Sun size={16} /> },
+                { key: "dark", label: t("settings.themeModeDark"), icon: <MoonStar size={16} /> },
               ]}
-            />
+            >
+              {{
+                merged: () => (
+                  <button
+                    type="button"
+                    class="s-theme-mode-autoalt"
+                    title={t("settings.themeAutoAltitudeTip")}
+                    aria-label={t("settings.themeAutoAltitudeTip")}
+                    onClick={resolveAutoToManual}
+                  >
+                    {altitudeNight.value ? <MoonStar size={16} /> : <Sun size={16} />}
+                    <span class="s-theme-mode-autoalt-value">{altitudeText.value}</span>
+                  </button>
+                ),
+              }}
+            </HkTabs>
 
             {/* color scheme — the live theme list in hikari's picker
                 grammar (what shittim-chest shows): builtin presets plus the
