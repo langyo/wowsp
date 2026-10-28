@@ -14,7 +14,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import { t } from "@/i18n";
-import { useTheme } from "@/theme";
+import { readStageThemeMode, watchStageThemeMode } from "@wowsp/holo";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import type { ModelPreviewPart } from "@/api";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -34,7 +34,8 @@ export default defineComponent({
     const host = ref<HTMLDivElement | null>(null);
     const busy = ref(true);
     const failed = ref("");
-    const { effectiveMode } = useTheme();
+    /** Stops the shared stage-theme watcher armed in onMounted. */
+    let stopStageTheme: (() => void) | null = null;
     const dpiZoom = useAppliedDpiScale();
 
     // ── Scene bootstrap (bespoke, like ShipStage: the map's useThreeScene
@@ -156,9 +157,7 @@ export default defineComponent({
       const width = el.clientWidth || 640;
       const height = el.clientHeight || 320;
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(
-        effectiveMode.value === "light" ? SCENE_THEMES.light.bg : SCENE_THEMES.dark.bg,
-      );
+      scene.background = new THREE.Color(SCENE_THEMES[readStageThemeMode()].bg);
       camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 2000);
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       // Clamp the DPR×zoom product — see useThreeScene's ratio notes.
@@ -202,6 +201,14 @@ export default defineComponent({
       });
       resizeObs.observe(el);
 
+      // Scene background follows the app theme through the SHARED stage
+      // theme source (@wowsp/holo) — the same data source + refresh logic
+      // every 3D renderer uses, so a settings/solar flip lands everywhere
+      // at once.
+      stopStageTheme = watchStageThemeMode((mode) => {
+        if (scene) scene.background = new THREE.Color(SCENE_THEMES[mode].bg);
+      }, { immediate: false });
+
       void load(props.parts);
     });
 
@@ -215,15 +222,10 @@ export default defineComponent({
     watch(dpiZoom, (zoom) => {
       renderer?.setPixelRatio(Math.min(window.devicePixelRatio * zoom, 2));
     });
-    watch(effectiveMode, (mode) => {
-      if (scene) {
-        scene.background = new THREE.Color(
-          mode === "light" ? SCENE_THEMES.light.bg : SCENE_THEMES.dark.bg,
-        );
-      }
-    });
 
     onBeforeUnmount(() => {
+      stopStageTheme?.();
+      stopStageTheme = null;
       cancelAnimationFrame(rafId);
       resizeObs?.disconnect();
       controls?.dispose();

@@ -13,7 +13,7 @@ import { onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from "vu
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { createPerfHud, perfHudRequested, type PerfHud } from "./perfHud";
-import { useTheme } from "@/theme";
+import { readStageThemeMode, watchStageThemeMode } from "@wowsp/holo";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 
 export interface ThreeScene {
@@ -29,7 +29,9 @@ export interface ThreeScene {
 /** Scene palette per effective theme mode. The 3D viewport follows the app
  *  theme: dark keeps the deep-space hologram look, light switches to a soft
  *  paper-white sea so the replay view doesn't read as a dark island inside
- *  a light UI. Exported for HolographicMap's water planes. */
+ *  a light UI. Exported for HolographicMap's water planes. The MODE comes
+ *  from the shared stageTheme source (@wowsp/holo) — the same data source
+ *  + refresh logic every 3D renderer follows. */
 export const SCENE_THEMES = {
   dark: { bg: 0x0b1220, gridA: 0x00aaff, gridB: 0x004466, gridOpacity: 0.35 },
   light: { bg: 0xe8edf3, gridA: 0x2f7fc2, gridB: 0xaec3d6, gridOpacity: 0.5 },
@@ -37,11 +39,11 @@ export const SCENE_THEMES = {
 
 export type ScenePalette = (typeof SCENE_THEMES)["dark" | "light"];
 
-/** Resolve the scene palette for the CURRENT effective mode ("light" vs
- *  anything else = dark). */
+/** Resolve the scene palette for the CURRENT effective mode (shared
+ *  stageTheme source; object identity is stable per mode — mapTerrain
+ *  compares against SCENE_THEMES.light directly). */
 export function scenePalette(): ScenePalette {
-  const { effectiveMode } = useTheme();
-  return effectiveMode.value === "light" ? SCENE_THEMES.light : SCENE_THEMES.dark;
+  return SCENE_THEMES[readStageThemeMode()];
 }
 
 export function useThreeScene(
@@ -81,7 +83,6 @@ export function useThreeScene(
     const height = el.clientHeight || 600;
 
     const scene = new THREE.Scene();
-    const { effectiveMode } = useTheme();
     scene.background = new THREE.Color(scenePalette().bg);
 
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 20000);
@@ -190,8 +191,10 @@ export function useThreeScene(
     let gridLocal = buildGrid(scenePalette());
     grid = gridLocal;
     scene.add(gridLocal);
-    // Follow live theme switches (settings toggle / solar system mode).
-    stopThemeWatch = watch(effectiveMode, () => {
+    // Follow live theme switches (settings toggle / solar system mode)
+    // through the SHARED stageTheme source — the same watcher every other
+    // 3D stage uses, so a flip lands on every canvas at once.
+    stopThemeWatch = watchStageThemeMode(() => {
       const p = scenePalette();
       scene.background = new THREE.Color(p.bg);
       scene.remove(gridLocal);
@@ -201,7 +204,7 @@ export function useThreeScene(
       grid = gridLocal;
       scene.add(gridLocal);
       needsRender = true;
-    });
+    }, { immediate: false });
 
     api.value = {
       scene,

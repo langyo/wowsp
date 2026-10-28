@@ -17,6 +17,7 @@ import * as THREE from "three";
 import { createPlayhead } from "./playhead";
 import { buildArmorPlates, type ArmorZone } from "./armorPlates";
 import { makeShipHoloDepthMaterial, makeShipHoloMaterial, tickHolo } from "./holoShader";
+import { readStageThemeMode, watchStageThemeMode, type StageThemeMode } from "./stageTheme";
 
 /** Semantic prefixes of the multi-mesh bake (bake_model.py instances keep
  *  names like `main_battery_249`, `secondary_battery_255`). */
@@ -276,12 +277,15 @@ export function createShipStage(
     // plates don't read as a mosaic (tuned against the app's holo lab).
     // Replay ships keep the factory legacy defaults.
     const holo = makeShipHoloMaterial();
-    // The site runs both themes ("system"); the pale light-mode hero
-    // background washes a translucent fill out further, so it keeps a tenth
-    // more opacity there — same split as the desktop stage. Read once at
-    // creation; a mid-session theme flip takes effect on the next page view.
-    holo.uniforms.uBaseAlpha.value =
-      document.documentElement.dataset.mode === "dark" ? 0.45 : 0.55;
+    // The site runs both themes; the pale light-mode hero background washes
+    // a translucent fill out further, so it keeps a tenth more opacity
+    // there — same split as the desktop stage. Applied live: the shared
+    // stageTheme source re-applies on a mid-session flip (the old
+    // read-once snapshot lagged a whole page view behind the toggle).
+    const applyHoloFillAlpha = (mode: StageThemeMode) => {
+      holo.uniforms.uBaseAlpha.value = mode === "dark" ? 0.45 : 0.55;
+    };
+    applyHoloFillAlpha(readStageThemeMode());
     holo.uniforms.uRimAlpha.value = 0.55;
     holo.uniforms.uFresnelPow.value = 5.0;
     holo.uniforms.uFresnelGain.value = 1.0;
@@ -291,6 +295,10 @@ export function createShipStage(
     holo.uniforms.uSweepLo.value = holoBox.min.y - holoYSpan * 0.3;
     holo.uniforms.uSweepHi.value = holoBox.max.y + holoYSpan * 0.3;
     disposables.push(holo);
+    // Unsubscribed with the stage's other disposables in dispose().
+    disposables.push({
+      dispose: watchStageThemeMode(applyHoloFillAlpha, { immediate: false }),
+    });
     // Occlusion anchor: the holo material writes no depth, so a translucent
     // hull would paint its own far side over the near shell. The colorWrite-
     // off twin renders in the opaque queue first (same vertex shader, so the
