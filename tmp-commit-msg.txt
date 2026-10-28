@@ -1,28 +1,13 @@
-✨ Add the crash report section and mod list suspect pinning.
+️ Harden the crash export and fix the source label mapping.
 
-- CrashSection (settings, game group): the record list + per-record deep
-  dive — findings with severity chips and localized exception-code
-  explanations, suspects with evidence badges + in-place quarantine and
-  restore, collapsible game/WoWSP log excerpts with red error highlights,
-  mods inventory meta, and the export/restart actions. Replaces the
-  placeholder shell; lives under components/settings/sections like every
-  other section.
+- The crash-report zip redacts every text payload, not just the log
+  tails: crash-record.json, analysis.json and mods-inventory.json carry
+  filesystem paths that must never leave the machine raw (the feedback
+  bundle contract).
 
-- CrashPins (views/resources): the crash suspects pin ABOVE the installed
-  list — a unit-matching suspect wears the amber crash badge, a suspect
-  no scanned unit claims renders as an UNKNOWN mod on a yellow warning
-  row (product spec), quarantined entries stay pinned with a restore
-  action. Quiet without a watchdog backend.
+- CrashSection maps the kebab wire tags (event-log / wer-report /
+  crash-dump) onto the camelCase message keys explicitly — the string
+  mash rendered the raw key path instead of the label.
 
-- crash store: the analysis cache moves to a version-ref pattern — a
-  plain Map keeps payload identity for cached callers while the version
-  bump drives reactivity (the section pane used to sit on its spinner
-  forever after a pass landed).
-
-- useModHub exports the raw installed list (the unfiltered match set for
-  the unknown check); ResourcesView wires the pins for the installed
-  source and its test gains the crash-store mock.
-
-- Tests: CrashSection (empty/records/findings/suspects/export) and
-  CrashPins (pure matching + pinned rows with badges and restore).
-  Suite: 2303 passing.
+- The CrashPins test double types its hikari button passthrough through
+  defineComponent (the options-object shape tripped tsc).

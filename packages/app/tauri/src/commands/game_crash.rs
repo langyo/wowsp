@@ -1654,14 +1654,21 @@ fn export_sync(app: &tauri::AppHandle, record_id: &str) -> anyhow::Result<String
     zip.write_all(&bom)
         .map_err(|e| anyhow!("bundle readme: {e}"))?;
 
+    // Every text payload is redacted before entering the zip (the feedback
+    // bundle contract): the JSON blobs carry filesystem paths that must
+    // not leave the machine raw.
+    let mut record_json = redactor.redact(&serde_json::to_string_pretty(&record)?);
+    record_json.push('\n');
     zip.start_file("crash-record.json", opts)
         .map_err(|e| anyhow!("bundle record: {e}"))?;
-    zip.write_all(serde_json::to_string_pretty(&record)?.as_bytes())
+    zip.write_all(record_json.as_bytes())
         .map_err(|e| anyhow!("bundle record: {e}"))?;
 
+    let mut analysis_json = redactor.redact(&serde_json::to_string_pretty(&analysis)?);
+    analysis_json.push('\n');
     zip.start_file("analysis.json", opts)
         .map_err(|e| anyhow!("bundle analysis: {e}"))?;
-    zip.write_all(serde_json::to_string_pretty(&analysis)?.as_bytes())
+    zip.write_all(analysis_json.as_bytes())
         .map_err(|e| anyhow!("bundle analysis: {e}"))?;
 
     for log in &analysis.game_logs {
@@ -1700,9 +1707,11 @@ fn export_sync(app: &tauri::AppHandle, record_id: &str) -> anyhow::Result<String
         }
     }
 
+    let mut mods_json = redactor.redact(&serde_json::to_string_pretty(&analysis.mods_inventory)?);
+    mods_json.push('\n');
     zip.start_file("mods-inventory.json", opts)
         .map_err(|e| anyhow!("bundle mods: {e}"))?;
-    zip.write_all(serde_json::to_string_pretty(&analysis.mods_inventory)?.as_bytes())
+    zip.write_all(mods_json.as_bytes())
         .map_err(|e| anyhow!("bundle mods: {e}"))?;
 
     zip.finish()

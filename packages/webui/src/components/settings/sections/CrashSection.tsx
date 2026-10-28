@@ -35,6 +35,15 @@ function findingText(finding: CrashFinding): string {
   }
 }
 
+/** The record source label — the wire tags are kebab ("event-log") while
+ *  the message keys are camel, so the mapping is explicit (a string mash
+ *  would miss the keys and render the raw key path). */
+function sourceLabel(source: string): string {
+  if (source === "event-log") return t("crash.section.source.eventLog");
+  if (source === "wer-report") return t("crash.section.source.werReport");
+  return t("crash.section.source.crashDump");
+}
+
 export default defineComponent({
   name: "SettingsCrashSection",
   setup() {
@@ -200,7 +209,7 @@ export default defineComponent({
                       {r.imageName} (pid {r.pid})
                     </span>
                     <span class="crash-section__record-meta">
-                      {t("crash.section.source." + r.source.replace("-", ""))}
+                      {sourceLabel(r.source)}
                       {r.exceptionCode ? " · " + r.exceptionCode : ""}
                     </span>
                   </button>
