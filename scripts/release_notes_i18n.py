@@ -90,6 +90,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -533,9 +534,12 @@ def release_body_for(tag: str) -> str:
 
 def patch_release_body(tag: str, new_body: str) -> None:
     """PATCH the body, then re-read and verify the write landed (the release
-    page has clobber history — never trust a silent 200)."""
+    page has clobber history — never trust a silent 200). GitHub reads can
+    briefly lag a write (eventual consistency — observed live on every
+    backfill PATCH), so each verify re-reads after a growing settle delay
+    and compares modulo leading/trailing blank lines."""
     release_id = release_id_for(tag)
-    for attempt in (1, 2, 3):
+    for attempt, delay in enumerate((1, 3, 6, 12, 20), 1):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fh:
             json.dump({"body": new_body}, fh)
             payload = fh.name
@@ -544,10 +548,11 @@ def patch_release_body(tag: str, new_body: str) -> None:
                "--input", payload, "--silent")
         finally:
             os.unlink(payload)
-        if release_body_for(tag) == new_body:
+        time.sleep(delay)
+        if release_body_for(tag).strip("\n") == new_body.strip("\n"):
             return
         print("note: body write for %s did not settle (attempt %d)" % (tag, attempt), file=sys.stderr)
-    raise SystemExit("release body for %s never settled after 3 attempts — aborting" % tag)
+    raise SystemExit("release body for %s never settled after 5 attempts — aborting" % tag)
 
 
 def list_app_release_tags() -> List[str]:
