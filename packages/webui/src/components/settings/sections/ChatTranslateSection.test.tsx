@@ -7,10 +7,11 @@
  *     (real hikari HkModal, teleported footer → document.body) instead of
  *     enabling; only "Agree and enable" writes enabled+consentVersion;
  *  3. ON renders the four compact cards; each Configure button opens its
- *     secondary HkModal (provider includes the try-translation probe, the
- *     send window only the detail knobs — the off/clipboard pick stays
- *     inline). Controls keep writing the store immediately; the provider
- *     window stages its drafts and saves only from its footer.
+ *     secondary HkModal (the provider window holds the endpoint, key and
+ *     connectivity test — the translation probe lives in its own first-level
+ *     test window — the send window only the detail knobs; the off/clipboard
+ *     pick stays inline). Controls keep writing the store immediately; the
+ *     provider window stages its drafts and saves only from its footer.
  *
  * hikari is partially stubbed: the real HkModal/窗口 machinery is kept (the
  * teleported footer/body is what these tests assert against), while the form
@@ -40,6 +41,12 @@ const mocks = vi.hoisted(() => ({
   overlay: {
     getOverlayConfig: vi.fn(),
     setOverlayConfig: vi.fn(),
+  },
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
   },
 }));
 
@@ -210,11 +217,31 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
         ]);
     },
   });
+  const HkJsonTree = defineComponent({
+    name: "HkJsonTree",
+    props: {
+      text: { type: String, default: "" },
+      value: { type: null, default: undefined },
+      maxDepth: { type: Number, default: 8 },
+    },
+    setup(props) {
+      return () =>
+        h("div", {
+          class: "stub-HkJsonTree",
+          "data-text": props.text,
+          "data-json":
+            props.value === undefined || props.value === null
+              ? undefined
+              : JSON.stringify(props.value),
+        });
+    },
+  });
   return {
     ...actual,
     HkButton,
     HkCheckbox,
     HkInput,
+    HkJsonTree,
     HkNumberInput,
     HkSelect,
     HkSettingsGroup: passthrough("HkSettingsGroup"),
@@ -223,6 +250,7 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
     HkSwitch,
     HkTag,
     HkTabs,
+    useToast: () => mocks.toast,
   };
 });
 
@@ -244,7 +272,7 @@ function baseConfig(): ChatTranslateConfigPublic {
     consentVersion: 0,
     provider: {
       baseUrl: "https://api.deepseek.com",
-      model: "deepseek-chat",
+      model: "deepseek-flash",
       apiKey: "",
       timeoutMs: 10000,
       temperature: 0,
@@ -319,7 +347,7 @@ beforeEach(() => {
   mocks.chatApi.testChatTranslateProvider.mockResolvedValue({
     ok: true,
     latencyMs: 12,
-    modelEcho: "deepseek-chat",
+    modelEcho: "deepseek-flash",
     error: null,
   });
   mocks.chatApi.debugTranslateText.mockResolvedValue({
@@ -439,7 +467,7 @@ describe("chat translation settings staged pane", () => {
           provider: {
             ...baseConfig().provider,
             baseUrl: "https://api.deepseek.com/v1",
-            model: "deepseek-chat",
+            model: "deepseek-flash",
           },
         }),
       ),
@@ -447,7 +475,7 @@ describe("chat translation settings staged pane", () => {
     const wrapper = mountSection();
     await flushPromises();
     const text = wrapper.text();
-    expect(text).toContain("deepseek-chat");
+    expect(text).toContain("deepseek-flash");
     expect(text).toContain("api.deepseek.com");
     expect(text).toContain(t("settings.chatTranslate.apiKeyMissing"));
     for (const key of ["providerConfigure", "languagesConfigure", "sendConfigure"]) {
@@ -507,7 +535,7 @@ describe("chat translation settings staged pane", () => {
     );
   });
 
-  it("tests connectivity and the try-translation probe inside the provider window", async () => {
+  it("puts the connectivity test in the provider footer before Save, with toasts", async () => {
     mocks.chatApi.getChatTranslateConfig.mockResolvedValue(
       responseOf(enabledConfig(), { apiKeySet: true }),
     );
@@ -515,20 +543,93 @@ describe("chat translation settings staged pane", () => {
     await flushPromises();
     bodyButton(t("settings.chatTranslate.providerConfigure"))!.click();
     await flushPromises();
-    bodyButton(t("settings.chatTranslate.testBtn"))!.click();
+    // Footer order: Close -> Test connection -> Save (Save rightmost/primary).
+    const labels = footerButtons().map((button) => button.textContent ?? "");
+    expect(labels).toHaveLength(3);
+    expect(labels[0]).toContain(t("settings.chatTranslate.close"));
+    expect(labels[1]).toContain(t("settings.chatTranslate.testBtn"));
+    expect(labels[2]).toContain(t("settings.chatTranslate.save"));
+    // The probe block left this window entirely.
+    expect(bodyText()).not.toContain(t("settings.chatTranslate.tryTitle"));
+    expect(
+      document.querySelector<HTMLInputElement>(
+        `input[placeholder="${t("settings.chatTranslate.tryLabel")}"]`,
+      ),
+    ).toBeNull();
+    // Success toast carries the latency + echoed model.
+    footerButton(t("settings.chatTranslate.testBtn")).click();
+    await flushPromises();
     await flushPromises();
     expect(mocks.chatApi.testChatTranslateProvider).toHaveBeenCalledTimes(1);
-    // Try the probe: type into the draft input, press its button.
-    const input = document.querySelector<HTMLInputElement>(
-      `input[placeholder="${t("settings.chatTranslate.tryLabel")}"]`,
+    expect(mocks.toast.success).toHaveBeenLastCalledWith(
+      t("settings.chatTranslate.testOkModel", {
+        model: "deepseek-flash",
+        ms: 12,
+      }),
     );
-    expect(input).not.toBeNull();
-    input!.value = "こんにちは";
-    input!.dispatchEvent(new Event("input"));
+    // Failure toast wraps the shell's raw sentence in the localized template.
+    mocks.chatApi.testChatTranslateProvider.mockResolvedValueOnce({
+      ok: false,
+      latencyMs: 0,
+      modelEcho: null,
+      error: "synthetic timeout",
+    });
+    footerButton(t("settings.chatTranslate.testBtn")).click();
     await flushPromises();
-    bodyButton(t("settings.chatTranslate.tryBtn"))!.click();
     await flushPromises();
-    expect(mocks.chatApi.debugTranslateText).toHaveBeenCalledWith("こんにちは", []);
+    expect(mocks.toast.error).toHaveBeenLastCalledWith(
+      t("settings.chatTranslate.testFail", { msg: "synthetic timeout" }),
+    );
+  });
+
+  it("disables the footer test button while a connectivity test is in flight", async () => {
+    mocks.chatApi.getChatTranslateConfig.mockResolvedValue(
+      responseOf(enabledConfig(), { apiKeySet: true }),
+    );
+    let release: (value: unknown) => void = () => undefined;
+    mocks.chatApi.testChatTranslateProvider.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    mountSection();
+    await flushPromises();
+    bodyButton(t("settings.chatTranslate.providerConfigure"))!.click();
+    await flushPromises();
+    const testButton = footerButton(t("settings.chatTranslate.testBtn"));
+    testButton.click();
+    await flushPromises();
+    // The in-flight window: the same footer button is disabled (no double
+    // requests) while the footer keeps its order.
+    expect(
+      footerButton(t("settings.chatTranslate.testBtn")).disabled,
+    ).toBe(true);
+    release({ ok: true, latencyMs: 7, modelEcho: null, error: null });
+    await flushPromises();
+    await flushPromises();
+    expect(
+      footerButton(t("settings.chatTranslate.testBtn")).disabled,
+    ).toBe(false);
+  });
+
+  it("opens the translation-test window from the first level", async () => {
+    mocks.chatApi.getChatTranslateConfig.mockResolvedValue(
+      responseOf(enabledConfig(), { apiKeySet: true }),
+    );
+    mountSection();
+    await flushPromises();
+    expect(document.querySelector(".hk-modal-root")).toBeNull();
+    bodyButton(t("settings.chatTranslate.translateTestOpen"))!.click();
+    await flushPromises();
+    const modal = document.querySelector(".hk-modal-root");
+    expect(modal).not.toBeNull();
+    expect(modal!.textContent).toContain(t("settings.chatTranslate.translateTestTitle"));
+    expect(modal!.textContent).toContain(t("settings.chatTranslate.testGroupLabel"));
+    expect(modal!.textContent).toContain(t("settings.chatTranslate.testCaseLabel"));
+    // The new window is reachable only from the ON layout (button hidden on OFF
+    // is covered by the off-state test's "no Configure buttons" assertion plus
+    // the four-card gate).
   });
 
   it("opens the languages window and writes an immediate change", async () => {

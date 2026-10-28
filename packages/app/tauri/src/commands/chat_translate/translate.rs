@@ -15,6 +15,12 @@
 //! module is unit-tested against canned responses with zero real network.
 //! Production entry points are [translate_line] (caller-owned reqwest client)
 //! and [translate_line_configured] (settings + the shared proxy-aware client).
+//! [translate_line_traced] runs the exact same pipeline and additionally
+//! returns a [LineTrace] of the FINAL attempt (system prompt, user payload,
+//! POST body, parsed/raw answer) for the settings page's translation-test
+//! window; the production paths pass no trace and pay nothing for it. The
+//! trace body NEVER carries the API key — the key only rides the
+//! Authorization header — so a trace is safe to show in the UI.
 //! Nothing here logs a request or response body.
 
 use anyhow::{Result, anyhow, bail};
@@ -104,6 +110,28 @@ pub(crate) struct LineTranslation {
     pub translations: Vec<(String, String, TranslationSource)>,
 }
 
+/// One debug snapshot of the FINAL provider attempt (see
+/// [translate_line_traced]): exactly what the pipeline sent and what the model
+/// answered on its last try, for the settings page's JSON-tree view.
+///
+/// The request body is the real POST body (prompt + knobs) and deliberately
+/// carries NO credential — the API key travels in the Authorization header
+/// only, so this struct is safe to hand to the webui.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LineTrace {
+    /// The stable system prompt of that attempt.
+    pub system_prompt: String,
+    /// The user message content (request JSON line + newline + context blob).
+    pub user_payload: String,
+    /// The complete POST body (model/messages/knobs), key-free.
+    pub request_body: Value,
+    /// The model answer parsed into its JSON object (fence/junk repaired).
+    /// None when the answer was not a JSON object (or no answer arrived).
+    pub response: Option<Value>,
+    /// The model answer's raw content text (unparsed), for the fallback view.
+    pub response_raw: Option<String>,
+}
+
 /// One raw request to the provider's chat-completions endpoint.
 #[derive(Debug, Clone)]
 struct CompletionRequest {
@@ -187,13 +215,14 @@ pub(crate) async fn translate_line(
         targets,
         self_lang,
         context,
+        None,
     )
     .await
 }
 
-/// Convenience for callers that only hold the settings document (the debug
-/// command): resolve the view, build the shared proxy-aware client and run
-/// the same pipeline.
+/// Convenience for callers that only hold the settings document (the live
+/// pipeline and the debug command): resolve the view, build the shared
+/// proxy-aware client and run the same pipeline.
 pub(crate) async fn translate_line_configured(
     config: &ChatTranslateConfig,
     text: &str,
@@ -201,9 +230,59 @@ pub(crate) async fn translate_line_configured(
     self_lang: &str,
     context: &MatchContext,
 ) -> Result<LineTranslation> {
+    translate_configured(config, text, targets, self_lang, context, None).await
+}
+
+/// Same pipeline as [translate_line_configured], plus the final attempt's
+/// [LineTrace] for the settings page's translation-test window. The trace is
+/// filled from the pipeline's LAST attempt: the successful retry when one
+/// happened, else the failed request/answer.
+/// Unlike the translation itself, the trace is ALSO returned when the pipeline
+/// fails: the settings window renders the request and the provider's raw answer
+/// next to the error, which is exactly the debugging case the window exists
+/// for (a malformed answer must not hide what was sent and received).
+pub(crate) async fn translate_line_traced(
+    config: &ChatTranslateConfig,
+    text: &str,
+    targets: &[String],
+    self_lang: &str,
+    context: &MatchContext,
+) -> (LineTrace, Result<LineTranslation>) {
+    let mut trace = LineTrace::default();
+    let line =
+        translate_configured(config, text, targets, self_lang, context, Some(&mut trace)).await;
+    (trace, line)
+}
+
+/// Shared client/view resolution for the two configured entry points; the
+/// optional trace flows straight into the pipeline core.
+async fn translate_configured(
+    config: &ChatTranslateConfig,
+    text: &str,
+    targets: &[String],
+    self_lang: &str,
+    context: &MatchContext,
+    trace: Option<&mut LineTrace>,
+) -> Result<LineTranslation> {
     let client = build_http_client()?;
     let cfg = ConfigView::from_config(config);
-    translate_line(&client, &cfg, text, targets, self_lang, context).await
+    match trace {
+        // Production path: exactly the caller-owned-client pipeline, no trace
+        // bookkeeping (the pipeline core sees None and compiles it away).
+        None => translate_line(&client, &cfg, text, targets, self_lang, context).await,
+        Some(trace) => {
+            translate_line_with(
+                &ReqwestTransport { client: &client },
+                &cfg,
+                text,
+                targets,
+                self_lang,
+                context,
+                Some(trace),
+            )
+            .await
+        },
+    }
 }
 
 /// The pipeline core, generic over the injected transport (unit-test seam).
@@ -214,6 +293,7 @@ async fn translate_line_with<T: CompletionTransport + ?Sized>(
     targets: &[String],
     self_lang: &str,
     context: &MatchContext,
+    mut trace: Option<&mut LineTrace>,
 ) -> Result<LineTranslation> {
     let Some(api_key) = cfg
         .api_key
@@ -232,12 +312,30 @@ async fn translate_line_with<T: CompletionTransport + ?Sized>(
     let mut retry_hint = false;
     let mut retried = false;
     loop {
+        let body = request_body(
+            cfg, text, &targets, self_lang, context, max_tokens, retry_hint,
+        );
+        // Record the attempt BEFORE sending: a transport failure still leaves
+        // the request visible, and a later retry overwrites this snapshot so
+        // the trace always describes the FINAL attempt.
+        if let Some(trace) = trace.as_mut() {
+            trace.system_prompt = SYSTEM_PROMPT.to_string();
+            trace.user_payload = body
+                .get("messages")
+                .and_then(Value::as_array)
+                .and_then(|messages| messages.get(1))
+                .and_then(|message| message.get("content"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            trace.request_body = body.clone();
+            trace.response = None;
+            trace.response_raw = None;
+        }
         let request = CompletionRequest {
             url: url.clone(),
             api_key: api_key.to_string(),
-            body: request_body(
-                cfg, text, &targets, self_lang, context, max_tokens, retry_hint,
-            ),
+            body,
             timeout: cfg.timeout(),
         };
         let response = transport.send(&request).await?;
@@ -259,7 +357,12 @@ async fn translate_line_with<T: CompletionTransport + ?Sized>(
             retry_hint = true;
             continue;
         }
-        match parse_answer_object(&content) {
+        let parsed = parse_answer_object(&content);
+        if let Some(trace) = trace.as_mut() {
+            trace.response_raw = Some(content.clone());
+            trace.response = parsed.clone();
+        }
+        match parsed {
             Some(value) => return validate_answer(value, &targets, text),
             None if !retried && completion.looks_truncated(&content) => {
                 // One truncation retry with double the token budget.
@@ -612,7 +715,7 @@ mod tests {
     fn cfg() -> ConfigView {
         ConfigView {
             base_url: "https://api.test".into(),
-            model: "deepseek-chat".into(),
+            model: "deepseek-flash".into(),
             api_key: Some("sk-test".into()),
             timeout_ms: 10_000,
             temperature: 0.0,
@@ -642,7 +745,16 @@ mod tests {
         text: &str,
         target_tags: &[&str],
     ) -> Result<LineTranslation> {
-        translate_line_with(transport, &cfg(), text, &targets(target_tags), "en", &ctx()).await
+        translate_line_with(
+            transport,
+            &cfg(),
+            text,
+            &targets(target_tags),
+            "en",
+            &ctx(),
+            None,
+        )
+        .await
     }
 
     #[tokio::test]
@@ -668,7 +780,7 @@ mod tests {
         assert_eq!(request.url, "https://api.test/chat/completions");
         assert_eq!(request.api_key, "sk-test");
         assert_eq!(request.timeout, Duration::from_millis(10_000));
-        assert_eq!(request.body["model"], "deepseek-chat");
+        assert_eq!(request.body["model"], "deepseek-flash");
         assert_eq!(request.body["temperature"], 0.0);
         assert_eq!(request.body["max_tokens"], 512);
         assert_eq!(request.body["response_format"]["type"], "json_object");
@@ -842,6 +954,7 @@ mod tests {
             &targets(&["JA", "ja", " "]),
             "en",
             &ctx(),
+            None,
         )
         .await
         .unwrap();
@@ -887,6 +1000,7 @@ mod tests {
             &targets(&["ja"]),
             "en",
             &ctx(),
+            None,
         )
         .await
         .unwrap_err();
@@ -935,5 +1049,111 @@ mod tests {
         assert_eq!(translation_char_cap("ab"), 72);
         assert_eq!(translation_char_cap("a b c d"), 80);
         assert_eq!(translation_char_cap(&"x".repeat(1_000)), 400);
+    }
+
+    /// Recursively assert a traced request body carries no credential field or
+    /// value: the API key only ever rides the Authorization header.
+    fn assert_key_free(value: &Value) {
+        match value {
+            Value::Object(map) => {
+                for (name, child) in map {
+                    let lowered = name.to_ascii_lowercase();
+                    assert!(!lowered.contains("key"), "trace field name leaks: {name}");
+                    assert!(
+                        !lowered.contains("secret"),
+                        "trace field name leaks: {name}"
+                    );
+                    assert_key_free(child);
+                }
+            },
+            Value::Array(items) => {
+                for child in items {
+                    assert_key_free(child);
+                }
+            },
+            Value::String(text) => {
+                assert!(!text.contains("sk-"), "trace body leaks key material");
+            },
+            _ => {},
+        }
+    }
+
+    #[tokio::test]
+    async fn trace_records_the_final_attempt_and_the_parsed_answer() {
+        let transport = MockTransport::ok(&[
+            completion(r#"{"ja":"x"#, "length"),
+            completion(&json!({ "detected": "en", "ja": "ok" }).to_string(), "stop"),
+        ]);
+        let mut trace = LineTrace::default();
+        let result = translate_line_with(
+            &transport,
+            &cfg(),
+            "hello",
+            &targets(&["ja"]),
+            "en",
+            &ctx(),
+            Some(&mut trace),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.translations[0].1, "ok");
+        assert_eq!(transport.calls().len(), 2);
+
+        // The FINAL attempt is the retry: doubled budget, same stable prompt.
+        assert_eq!(trace.request_body["max_tokens"], 1024);
+        assert_eq!(trace.system_prompt, SYSTEM_PROMPT);
+        assert_eq!(trace.request_body["messages"][0]["content"], SYSTEM_PROMPT);
+        assert_eq!(
+            trace.request_body["messages"][1]["content"],
+            trace.user_payload
+        );
+        // The user payload starts with the request JSON (text line) then the
+        // context blob — both parseable/visible, neither key-bearing.
+        let request_line = trace.user_payload.lines().next().unwrap();
+        let request: Value = serde_json::from_str(request_line).unwrap();
+        assert_eq!(request["text"], "hello");
+        assert_eq!(request["targets"], json!(["ja"]));
+        assert!(trace.user_payload.contains("context: "));
+        assert!(!trace.user_payload.contains("sk-test"));
+        assert_key_free(&trace.request_body);
+
+        // The parsed answer + its raw text are both in the trace.
+        assert_eq!(
+            trace.response,
+            Some(json!({ "detected": "en", "ja": "ok" }))
+        );
+        assert!(
+            trace
+                .response_raw
+                .as_deref()
+                .unwrap()
+                .contains(r#""ja":"ok""#)
+        );
+    }
+
+    #[tokio::test]
+    async fn trace_keeps_the_last_request_and_raw_answer_on_failure() {
+        let transport = MockTransport::ok(&[completion("I cannot help with that.", "stop")]);
+        let mut trace = LineTrace::default();
+        let error = translate_line_with(
+            &transport,
+            &cfg(),
+            "hello",
+            &targets(&["ja"]),
+            "en",
+            &ctx(),
+            Some(&mut trace),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("unexpected answer"), "{error}");
+        assert!(trace.response.is_none());
+        assert_eq!(
+            trace.response_raw.as_deref(),
+            Some("I cannot help with that.")
+        );
+        assert_eq!(trace.system_prompt, SYSTEM_PROMPT);
+        assert_eq!(trace.request_body["messages"][0]["content"], SYSTEM_PROMPT);
+        assert_key_free(&trace.request_body);
     }
 }

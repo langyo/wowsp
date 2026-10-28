@@ -1,13 +1,16 @@
 /** Chat-translation provider window: the OpenAI-compatible endpoint, the
- *  API key and its tri-state write semantics, the timeout/temperature knobs,
- *  the connectivity test and the try-translation probe — the end-to-end
- *  check lives here because it validates THIS configuration.
- *
- *  Drafts are component-local: the window opens by syncing them from the
+ *  API key and its tri-state write semantics, and the timeout/temperature
+ *  knobs. The window is a STAGED form: opening syncs the drafts from the
  *  store, edits stay drafts until the footer's Save, and closing discards
- *  what was not saved (the touched flags reset on every open). That is the
- *  same conservative contract the old inline card had, minus the inline
- *  card: nothing writes the provider while the window is merely open.
+ *  what was not saved (the touched flags reset on every open) — nothing
+ *  writes the provider while the window is merely open.
+ *
+ *  The connectivity test lives in the footer (right before Save) and reports
+ *  through hikari toasts (success carries the round-trip latency + echoed
+ *  model; failure carries the shell's user-facing sentence wrapped in the
+ *  localized template) — no inline verdict lines anymore. The translation
+ *  probe moved OUT of this window into its own TranslateTestModal: testing a
+ *  translation is a different job from configuring the provider.
  */
 import { defineComponent, ref, watch } from "vue";
 import {
@@ -17,10 +20,11 @@ import {
   HkNumberInput,
   HkSettingsHint,
   HkTag,
+  useToast,
 } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
-import type { ChatTranslateConfigPublic, DebugTranslationSource } from "@/api/modules/chat";
+import type { ChatTranslateConfigPublic } from "@/api/modules/chat";
 import { useChatTranslateStore } from "@/stores/chatTranslate";
 
 import "./chat-settings.scss";
@@ -33,6 +37,7 @@ export default defineComponent({
   emits: ["update:modelValue"],
   setup(props, { emit }) {
     const store = useChatTranslateStore();
+    const toast = useToast();
     const close = () => emit("update:modelValue", false);
 
     // ── drafts (the tri-state key: untouched = null, typed = value, clear = "") ──
@@ -85,7 +90,10 @@ export default defineComponent({
     );
 
     async function save(): Promise<void> {
-      if (saving.value) return;
+      // A connectivity probe in flight answers for the STORED config: an edit
+      // landing mid-probe (footer Save, or an input's Enter) would mislabel
+      // the result. The footer button is disabled too; this covers Enter.
+      if (saving.value || store.testing) return;
       const apiKey = apiKeyTouched.value ? apiKeyDraft.value : null;
       saving.value = true;
       try {
@@ -124,44 +132,27 @@ export default defineComponent({
       void store.setProvider({}, "");
     }
 
-    /** The one-line connectivity verdict (resolved in the render pass so a
-     *  locale switch re-renders it with the rest of the window). */
-    function testLine(): string | null {
+    /** Footer connectivity test: run the shell probe, then toast the verdict.
+     *  Success carries the latency (and the provider-echoed model when it
+     *  reported one); failure wraps the shell's raw sentence in the localized
+     *  testFail template. Never leaves a stale inline verdict behind. */
+    async function runTest(): Promise<void> {
+      await store.testProvider();
       const result = store.testResult;
-      if (!result) return null;
-      if (!result.ok) {
-        return t("settings.chatTranslate.testFail", { msg: result.error ?? "" });
+      if (!result) return;
+      if (result.ok) {
+        const message = result.modelEcho
+          ? t("settings.chatTranslate.testOkModel", {
+              model: result.modelEcho,
+              ms: result.latencyMs,
+            })
+          : t("settings.chatTranslate.testOk", { ms: result.latencyMs });
+        toast.success(message);
+        return;
       }
-      return result.modelEcho
-        ? t("settings.chatTranslate.testOkModel", {
-            model: result.modelEcho,
-            ms: result.latencyMs,
-          })
-        : t("settings.chatTranslate.testOk", { ms: result.latencyMs });
-    }
-
-    // ── try-translation probe (a local probe input, not settings) ──────────
-    const debugDraft = ref("");
-
-    function runDebugTranslate() {
-      void store.debugTranslate(debugDraft.value);
-    }
-
-    function debugSourceLabel(source: DebugTranslationSource): string {
-      switch (source) {
-        case "passthrough":
-          return t("settings.chatTranslate.trySourcePassthrough");
-        case "untranslatable":
-          return t("settings.chatTranslate.trySourceUntranslatable");
-        default:
-          return t("settings.chatTranslate.trySourceModel");
-      }
-    }
-
-    function debugResultTitle(): string | null {
-      const result = store.debugResult;
-      if (!result) return null;
-      return t("settings.chatTranslate.tryResult", { lang: result.detected ?? "—" });
+      toast.error(
+        t("settings.chatTranslate.testFail", { msg: result.error ?? "" }),
+      );
     }
 
     return () => (
@@ -179,15 +170,33 @@ export default defineComponent({
             onClick: close,
           },
           {
+            label: t("settings.chatTranslate.testBtn"),
+            variant: "secondary",
+            loading: store.testing,
+            disabled: store.testing,
+            onClick: () => void runTest(),
+          },
+          {
             label: t("settings.chatTranslate.save"),
             variant: "primary",
             loading: saving.value,
+            // A test in flight probes the STORED provider: letting a save
+            // (or a clear) land mid-probe would answer for a config nobody
+            // sees anymore.
+            disabled: store.testing,
             onClick: () => void save(),
           },
         ]}
       >
         <div class="chat-settings__section">
-          <HkSettingsHint>{t("settings.chatTranslate.providerHint")}</HkSettingsHint>
+          <div class="chat-settings__hint-row">
+            <HkSettingsHint>{t("settings.chatTranslate.providerHint")}</HkSettingsHint>
+            {store.envKeyOverride ? (
+              <HkTag variant="info" size="sm">
+                {t("settings.chatTranslate.envOverrideBadge")}
+              </HkTag>
+            ) : null}
+          </div>
           <div class="settings-modal__langs">
             <div class="settings-modal__lang">
               <span class="settings-modal__lang-label">
@@ -214,7 +223,7 @@ export default defineComponent({
                   providerTouched.value = true;
                   modelDraft.value = value;
                 }}
-                placeholder="deepseek-chat"
+                placeholder="deepseek-flash"
                 submitOnEnter={save}
               />
             </div>
@@ -245,7 +254,7 @@ export default defineComponent({
                   <HkButton
                     size="sm"
                     variant="ghost"
-                    disabled={saving.value}
+                    disabled={saving.value || store.testing}
                     onClick={clearApiKey}
                   >
                     {t("settings.chatTranslate.apiKeyClear")}
@@ -284,81 +293,8 @@ export default defineComponent({
               />
             </div>
           </div>
-          <div class="chat-settings__hint-row">
-            <HkButton
-              size="sm"
-              variant="ghost"
-              disabled={store.testing}
-              onClick={() => void store.testProvider()}
-            >
-              {store.testing
-                ? t("settings.chatTranslate.testing")
-                : t("settings.chatTranslate.testBtn")}
-            </HkButton>
-            {store.envKeyOverride ? (
-              <HkTag variant="info" size="sm">
-                {t("settings.chatTranslate.envOverrideBadge")}
-              </HkTag>
-            ) : null}
-          </div>
-          {testLine() ? <HkSettingsHint>{testLine()}</HkSettingsHint> : null}
           {saveFailed.value ? (
             <HkSettingsHint>{t("settings.chatTranslate.saveFailed")}</HkSettingsHint>
-          ) : null}
-        </div>
-
-        {/* Try-translation probe — one line through the real pipeline with an
-            empty match context; one result row per target language plus the
-            source badge. Disabled (with the reason spelled out) while the
-            feature is off or no key is stored. */}
-        <div class="chat-settings__section">
-          <HkSettingsHint>{t("settings.chatTranslate.tryTitle")}</HkSettingsHint>
-          <div class="settings-modal__netmanual">
-            <div class="settings-modal__netinput">
-              <HkInput
-                modelValue={debugDraft.value}
-                onUpdate:modelValue={(value: string) => (debugDraft.value = value)}
-                placeholder={t("settings.chatTranslate.tryLabel")}
-                submitOnEnter={runDebugTranslate}
-              />
-            </div>
-            <HkButton
-              size="sm"
-              variant="ghost"
-              disabled={store.debugging || !store.config.enabled || !store.apiKeySet}
-              onClick={runDebugTranslate}
-            >
-              {store.debugging
-                ? t("settings.chatTranslate.tryRunning")
-                : t("settings.chatTranslate.tryBtn")}
-            </HkButton>
-          </div>
-          {!store.config.enabled || !store.apiKeySet ? (
-            <HkSettingsHint>{t("settings.chatTranslate.tryNeedKey")}</HkSettingsHint>
-          ) : null}
-          {debugResultTitle() ? (
-            <HkSettingsHint>{debugResultTitle()}</HkSettingsHint>
-          ) : null}
-          {store.debugResult && store.debugResult.translations.length === 0 ? (
-            <HkSettingsHint>{t("settings.chatTranslate.tryEmpty")}</HkSettingsHint>
-          ) : null}
-          {store.debugResult && store.debugResult.translations.length > 0 ? (
-            <div class="settings-modal__langs">
-              {store.debugResult.translations.map((row) => (
-                <div class="settings-modal__lang" key={row.lang} lang={row.lang}>
-                  <span class="settings-modal__netmanual">
-                    <span class="settings-modal__lang-label">{row.lang}</span>
-                    <HkTag variant="info" size="sm">
-                      {debugSourceLabel(row.source)}
-                    </HkTag>
-                  </span>
-                  <span>{row.text || "—"}</span>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {store.debugError ? (
-            <HkSettingsHint>{store.debugError}</HkSettingsHint>
           ) : null}
         </div>
       </HkModal>

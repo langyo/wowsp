@@ -26,7 +26,7 @@ function baseConfig(): ChatTranslateConfigPublic {
     consentVersion: 0,
     provider: {
       baseUrl: "https://api.deepseek.com",
-      model: "deepseek-chat",
+      model: "deepseek-flash",
       apiKey: "",
       timeoutMs: 10000,
       temperature: 0,
@@ -201,7 +201,7 @@ describe("chat translation settings", () => {
     chatMock.testChatTranslateProvider.mockResolvedValueOnce({
       ok: true,
       latencyMs: 87,
-      modelEcho: "deepseek-chat",
+      modelEcho: "deepseek-flash",
       error: null,
     });
     await store.testProvider();
@@ -209,7 +209,7 @@ describe("chat translation settings", () => {
     expect(store.testResult).toEqual({
       ok: true,
       latencyMs: 87,
-      modelEcho: "deepseek-chat",
+      modelEcho: "deepseek-flash",
       error: null,
     });
     chatMock.testChatTranslateProvider.mockRejectedValueOnce(
@@ -231,6 +231,12 @@ describe("chat translation settings", () => {
         { text: "no lang, dropped" },
       ],
       elapsedMs: 812,
+      // The trace half: the translation-test window renders these.
+      systemPrompt: "SYS PROMPT",
+      userPayload: '{"text":"プロテクトして","targets":["zh-CN","en"]}',
+      requestBody: { model: "deepseek-flash", messages: [] },
+      response: { detected: "ja", "zh-CN": "请保护我" },
+      responseRaw: null,
     });
     const store = useChatTranslateStore();
     await store.load();
@@ -247,7 +253,61 @@ describe("chat translation settings", () => {
         { lang: "ko", text: "", source: "untranslatable" },
       ],
       elapsedMs: 812,
+      systemPrompt: "SYS PROMPT",
+      userPayload: '{"text":"プロテクトして","targets":["zh-CN","en"]}',
+      requestBody: { model: "deepseek-flash", messages: [] },
+      response: { detected: "ja", "zh-CN": "请保护我" },
+      responseRaw: null,
+      error: null,
     });
+  });
+
+  it("tolerates an older shell without the debug-trace fields", async () => {
+    chatMock.debugTranslateText.mockResolvedValueOnce({
+      detected: null,
+      translations: [],
+      elapsedMs: 0,
+    });
+    const store = useChatTranslateStore();
+    await store.load();
+    await store.debugTranslate("hello");
+    expect(store.debugError).toBeNull();
+    expect(store.debugResult).toEqual({
+      detected: null,
+      translations: [],
+      elapsedMs: 0,
+      systemPrompt: "",
+      userPayload: "",
+      requestBody: null,
+      response: null,
+      responseRaw: null,
+      error: null,
+    });
+  });
+
+  it("keeps the provider-side failure sentence and trace apart from guard failures", async () => {
+    // The shell reports a provider failure as an OK result: trace + error
+    // together (guard failures reject instead).
+    chatMock.debugTranslateText.mockResolvedValueOnce({
+      detected: null,
+      translations: [],
+      elapsedMs: 640,
+      systemPrompt: "SYS PROMPT",
+      userPayload: '{"text":"wp","targets":["en"]}',
+      requestBody: { model: "deepseek-flash", messages: [] },
+      response: null,
+      responseRaw: "not json, just text",
+      error: "translation service returned an unexpected answer",
+    });
+    const store = useChatTranslateStore();
+    await store.load();
+    await store.debugTranslate("wp");
+    expect(store.debugError).toBeNull();
+    expect(store.debugResult?.error).toBe(
+      "translation service returned an unexpected answer",
+    );
+    expect(store.debugResult?.responseRaw).toBe("not json, just text");
+    expect(store.debugResult?.systemPrompt).toBe("SYS PROMPT");
   });
 
   it("surfaces try-translation failures and ignores blank input", async () => {

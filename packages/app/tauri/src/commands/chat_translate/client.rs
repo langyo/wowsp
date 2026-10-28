@@ -212,11 +212,11 @@ mod tests {
     fn models_echo_reads_the_first_data_id() {
         let payload = json!({
             "object": "list",
-            "data": [{ "id": "deepseek-chat" }, { "id": "deepseek-reasoner" }],
+            "data": [{ "id": "deepseek-flash" }, { "id": "deepseek-v4-pro" }],
         });
         assert_eq!(
             models_model_echo(&payload).as_deref(),
-            Some("deepseek-chat")
+            Some("deepseek-flash")
         );
         assert_eq!(models_model_echo(&json!({ "data": [] })), None);
         assert_eq!(models_model_echo(&json!({ "data": "nope" })), None);

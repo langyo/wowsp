@@ -40,6 +40,7 @@ import ConsentModal from "@/components/settings/chat/ConsentModal";
 import LanguagesModal from "@/components/settings/chat/LanguagesModal";
 import ProviderModal from "@/components/settings/chat/ProviderModal";
 import SendModal from "@/components/settings/chat/SendModal";
+import TranslateTestModal from "@/components/settings/chat/TranslateTestModal";
 import { endpointHost, languageLabel } from "@/components/settings/chat/shared";
 import "../chat/chat-settings.scss";
 
@@ -69,6 +70,7 @@ export default defineComponent({
     const providerOpen = ref(false);
     const languagesOpen = ref(false);
     const sendOpen = ref(false);
+    const translateTestOpen = ref(false);
 
     // ── master switch + first-enable consent ─────────────────────────────
     // Enabling without a recorded consent must not persist: the switch opens
@@ -273,6 +275,20 @@ export default defineComponent({
                   </div>
                 </div>
               </HkSettingsSub>
+
+              {/* ── translation test: the end-to-end probe in its own window
+                     (the provider window configures, this one validates) ── */}
+              <div class="chat-settings__hint-row">
+                <HkButton
+                  size="sm"
+                  onClick={() => (translateTestOpen.value = true)}
+                >
+                  {t("settings.chatTranslate.translateTestOpen")}
+                </HkButton>
+                <HkSettingsHint>
+                  {t("settings.chatTranslate.translateTestHint")}
+                </HkSettingsHint>
+              </div>
             </>
           )}
         </HkSettingsGroup>
@@ -292,6 +308,10 @@ export default defineComponent({
         <SendModal
           modelValue={sendOpen.value}
           onUpdate:modelValue={(value: boolean) => (sendOpen.value = value)}
+        />
+        <TranslateTestModal
+          modelValue={translateTestOpen.value}
+          onUpdate:modelValue={(value: boolean) => (translateTestOpen.value = value)}
         />
       </>
     );

@@ -200,12 +200,29 @@ export interface DebugTranslation {
 }
 
 /** `debug_translate_text` result: the detected source language (when the
- *  model reported one), one entry per target language, and the round-trip
- *  latency. */
+ *  model reported one), one entry per target language, the round-trip
+ *  latency, and the debug-trace payload the translation-test window renders
+ *  (the system prompt, the user content, the key-free POST body and the
+ *  model's raw/parsed answer). */
 export interface DebugTranslateResult {
   detected: string | null;
   translations: DebugTranslation[];
   elapsedMs: number;
+  /** System prompt the pipeline sent (verbatim). */
+  systemPrompt: string;
+  /** The USER message content, JSON text (the structured input payload). */
+  userPayload: string;
+  /** The complete POST body — already key-free (the key rides a header). */
+  requestBody: unknown;
+  /** The model's final content parsed as JSON, when it parsed as an object. */
+  response: unknown | null;
+  /** Raw final content text when JSON parsing failed (display fallback). */
+  responseRaw: string | null;
+  /** The pipeline's failure sentence when the request reached the provider
+   *  but its answer was unusable — the trace above stays populated so the
+   *  window can show WHAT failed. Guard failures (feature off / no key /
+   *  empty input) still REJECT instead of filling this. */
+  error: string | null;
 }
 
 export const chatTranslateApi = {

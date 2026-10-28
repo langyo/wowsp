@@ -144,8 +144,8 @@ export const RPC = {
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
   // Chat translation (commands/chat_translate/): provider config storage,
-  // the OpenAI-compatible endpoint's connectivity test, and the settings
-  // card's end-to-end try-translation probe.
+  // the OpenAI-compatible endpoint's connectivity test, and the dedicated
+  // translation-test window's end-to-end probe (trace included).
   get_chat_translate_config: "get_chat_translate_config",
   set_chat_translate_config: "set_chat_translate_config",
   test_chat_translate_provider: "test_chat_translate_provider",
