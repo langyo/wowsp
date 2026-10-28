@@ -1,0 +1,87 @@
+{
+  "toast": {
+    "title": "遊戲用戶端已當機",
+    "body": "{image}（pid {pid}）已停止運作。",
+    "code": "例外代碼：{code}",
+    "safeRestart": "安全模式重新啟動",
+    "restart": "重新啟動遊戲",
+    "analysis": "檢視分析",
+    "dismiss": "忽略",
+    "safeRestartFallback": "未能定位遊戲資料夾，將直接重新啟動。"
+  },
+  "section": {
+    "title": "當機分析",
+    "empty": "尚無當機記錄。遊戲用戶端當機時，WoWSP 會在此擷取並產生分析。",
+    "recordTime": "偵測於 {time}",
+    "source": {
+      "eventLog": "Windows 事件記錄檔",
+      "werReport": "WER 報告",
+      "crashDump": "當機傾印"
+    },
+    "gameLogs": "遊戲記錄檔",
+    "appLogs": "WoWSP 記錄檔",
+    "modsInventory": "已安裝插件",
+    "currentBuild": "目前遊戲版本",
+    "findings": "診斷結論",
+    "suspects": "可疑插件",
+    "export": "匯出報告",
+    "exportDone": "報告已匯出",
+    "restart": "重新啟動遊戲",
+    "safeModeOn": "安全模式已開啟",
+    "analysisFor": "{id} 的分析結果",
+    "refresh": "重新整理"
+  },
+  "findings": {
+    "exceptionAccessViolation": "存取違例 —— 用戶端讀寫了無權存取的記憶體",
+    "exceptionStackBufferOverrun": "堆疊緩衝區溢出 —— 區域緩衝區被越界改寫",
+    "exceptionStackOverflow": "堆疊溢位 —— 呼叫堆疊超過上限（常見於插件的遞迴邏輯）",
+    "exceptionHeapCorruption": "堆積損毀 —— 處理序的堆積在當機前已受損",
+    "exceptionIllegalInstruction": "不合法指令 —— CPU 收到無法執行的指令序列",
+    "exceptionDivideByZero": "除以零",
+    "exceptionPrivilegedInstruction": "特權指令 —— 在使用者模式下執行了僅核心可用的指令",
+    "exceptionBreakpoint": "中斷點異常 —— 觸發了偵錯中斷點",
+    "exceptionCppException": "未處理的 C++ 例外",
+    "exceptionClrException": "未處理的 .NET 例外",
+    "exceptionDllInitFailed": "DLL 初始化失敗 —— 某個程式庫的進入點回傳失敗",
+    "exceptionDllNotFound": "找不到 DLL —— 缺少必要的程式庫",
+    "exceptionUnknown": "未知例外（代碼 {code}）",
+    "faultingModule": "出錯模組：{module}",
+    "evidenceEventLog": "見於 Windows 事件記錄檔",
+    "evidenceWerReport": "見於 WER 報告",
+    "evidenceCrashDump": "見於當機傾印",
+    "gameLogErrors": "遊戲記錄檔中有 {count} 筆錯誤",
+    "recentModChanges": "近期有變動的插件：{mods}",
+    "modsActiveAtCrash": "當機時插件處於啟用狀態",
+    "safeModeOn": "當機時安全模式已開啟 —— 原版用戶端自行當機",
+    "probeWasActive": "WoWSP 遊戲內探針處於作用中狀態",
+    "dumpAvailable": "存在當機傾印，可供深入分析"
+  },
+  "suspects": {
+    "title": "可疑插件",
+    "evidence": {
+      "logMention": "遊戲記錄檔中被提及",
+      "recentChange": "近期有變動"
+    },
+    "unknownBadge": "未知",
+    "quarantine": "隔離",
+    "restore": "還原",
+    "logLines": "記錄檔行"
+  },
+  "actions": {
+    "restarting": "正在重新啟動用戶端…",
+    "quarantining": "正在隔離…",
+    "exporting": "正在匯出報告…",
+    "safeModeOn": "正在開啟安全模式…"
+  },
+  "severity": {
+    "info": "資訊",
+    "warning": "警告",
+    "critical": "嚴重"
+  },
+  "empty": {
+    "none": "沒有發現"
+  },
+  "errors": {
+    "gameRunning": "遊戲用戶端正在執行 —— 請先關閉它，再重新啟動或切換安全模式。"
+  }
+}

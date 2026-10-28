@@ -1,0 +1,87 @@
+{
+  "toast": {
+    "title": "게임 클라이언트가 충돌했습니다",
+    "body": "{image}(pid {pid})이(가) 작동을 멈췄습니다.",
+    "code": "예외 코드: {code}",
+    "safeRestart": "안전 모드로 재시작",
+    "restart": "게임 재시작",
+    "analysis": "분석 보기",
+    "dismiss": "닫기",
+    "safeRestartFallback": "게임 폴더를 찾지 못해 그대로 다시 시작합니다."
+  },
+  "section": {
+    "title": "충돌 분석",
+    "empty": "충돌 기록이 없습니다. 게임 클라이언트가 충돌하면 WoWSP가 이곳에서 감지하여 분석을 준비합니다.",
+    "recordTime": "감지 시각: {time}",
+    "source": {
+      "eventLog": "Windows 이벤트 로그",
+      "werReport": "WER 보고서",
+      "crashDump": "크래시 덤프"
+    },
+    "gameLogs": "게임 로그",
+    "appLogs": "WoWSP 로그",
+    "modsInventory": "설치된 플러그인",
+    "currentBuild": "현재 게임 버전",
+    "findings": "진단 결과",
+    "suspects": "의심되는 플러그인",
+    "export": "보고서 내보내기",
+    "exportDone": "보고서를 내보냈습니다",
+    "restart": "게임 재시작",
+    "safeModeOn": "안전 모드 켜짐",
+    "analysisFor": "{id}의 분석 결과",
+    "refresh": "새로 고침"
+  },
+  "findings": {
+    "exceptionAccessViolation": "액세스 위반 —— 클라이언트가 권한 없는 메모리에 읽기/쓰기를 했습니다",
+    "exceptionStackBufferOverrun": "스택 버퍼 오버런 —— 지역 버퍼가 범위를 넘어 덮어써졌습니다",
+    "exceptionStackOverflow": "스택 오버플로 —— 호출 스택이 한도를 초과했습니다(플러그인의 재귀 로직에서 흔함)",
+    "exceptionHeapCorruption": "힙 손상 —— 충돌 전에 프로세스 힙이 손상되었습니다",
+    "exceptionIllegalInstruction": "잘못된 명령 —— CPU가 실행할 수 없는 명령 시퀀스를 받았습니다",
+    "exceptionDivideByZero": "0으로 나누기",
+    "exceptionPrivilegedInstruction": "특권 명령 —— 사용자 모드에서 커널 전용 명령이 실행되었습니다",
+    "exceptionBreakpoint": "중단점 —— 디버그 중단점이 발동했습니다",
+    "exceptionCppException": "처리되지 않은 C++ 예외",
+    "exceptionClrException": "처리되지 않은 .NET 예외",
+    "exceptionDllInitFailed": "DLL 초기화 실패 —— 라이브러리 진입점이 실패를 반환했습니다",
+    "exceptionDllNotFound": "DLL을 찾을 수 없음 —— 필요한 라이브러리가 없습니다",
+    "exceptionUnknown": "알 수 없는 예외(코드 {code})",
+    "faultingModule": "오류 모듈: {module}",
+    "evidenceEventLog": "Windows 이벤트 로그에서 발견",
+    "evidenceWerReport": "WER 보고서에서 발견",
+    "evidenceCrashDump": "크래시 덤프에서 발견",
+    "gameLogErrors": "게임 로그에 오류 {count}건",
+    "recentModChanges": "최근 변경된 플러그인: {mods}",
+    "modsActiveAtCrash": "충돌 당시 플러그인이 활성화되어 있었습니다",
+    "safeModeOn": "충돌 당시 안전 모드가 켜져 있었습니다 —— 순정 클라이언트 자체의 충돌입니다",
+    "probeWasActive": "WoWSP 인게임 프로브가 활성 상태였습니다",
+    "dumpAvailable": "크래시 덤프가 있어 심층 분석이 가능합니다"
+  },
+  "suspects": {
+    "title": "의심되는 플러그인",
+    "evidence": {
+      "logMention": "게임 로그에서 언급됨",
+      "recentChange": "최근 변경됨"
+    },
+    "unknownBadge": "알 수 없음",
+    "quarantine": "격리",
+    "restore": "복원",
+    "logLines": "로그 줄"
+  },
+  "actions": {
+    "restarting": "클라이언트를 다시 시작하는 중…",
+    "quarantining": "격리하는 중…",
+    "exporting": "보고서를 내보내는 중…",
+    "safeModeOn": "안전 모드를 켜는 중…"
+  },
+  "severity": {
+    "info": "정보",
+    "warning": "경고",
+    "critical": "심각"
+  },
+  "empty": {
+    "none": "발견된 것이 없습니다"
+  },
+  "errors": {
+    "gameRunning": "게임 클라이언트가 실행 중입니다 —— 다시 시작하거나 안전 모드를 변경하기 전에 종료해 주세요."
+  }
+}

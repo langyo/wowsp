@@ -1,0 +1,87 @@
+{
+  "toast": {
+    "title": "游戏客户端已崩溃",
+    "body": "{image}（pid {pid}）已停止工作。",
+    "code": "异常代码：{code}",
+    "safeRestart": "安全模式重启",
+    "restart": "重启游戏",
+    "analysis": "查看分析",
+    "dismiss": "忽略",
+    "safeRestartFallback": "未能定位游戏目录，将直接重启。"
+  },
+  "section": {
+    "title": "崩溃分析",
+    "empty": "暂无崩溃记录。游戏客户端崩溃时，WoWSP 会在此捕获并生成分析。",
+    "recordTime": "检测于 {time}",
+    "source": {
+      "eventLog": "Windows 事件日志",
+      "werReport": "WER 报告",
+      "crashDump": "崩溃转储"
+    },
+    "gameLogs": "游戏日志",
+    "appLogs": "WoWSP 日志",
+    "modsInventory": "已安装插件",
+    "currentBuild": "当前游戏版本",
+    "findings": "诊断结论",
+    "suspects": "可疑插件",
+    "export": "导出报告",
+    "exportDone": "报告已导出",
+    "restart": "重启游戏",
+    "safeModeOn": "安全模式已开启",
+    "analysisFor": "{id} 的分析结果",
+    "refresh": "刷新"
+  },
+  "findings": {
+    "exceptionAccessViolation": "访问违例 —— 客户端读写了自己无权访问的内存",
+    "exceptionStackBufferOverrun": "栈缓冲区溢出 —— 局部缓冲区被越界改写",
+    "exceptionStackOverflow": "栈溢出 —— 调用栈超过上限（常见于插件的递归逻辑）",
+    "exceptionHeapCorruption": "堆损坏 —— 进程堆在崩溃前已遭破坏",
+    "exceptionIllegalInstruction": "非法指令 —— CPU 收到无法执行的指令序列",
+    "exceptionDivideByZero": "除零错误",
+    "exceptionPrivilegedInstruction": "特权指令 —— 用户态执行了仅内核可用的指令",
+    "exceptionBreakpoint": "断点异常 —— 触发了调试断点",
+    "exceptionCppException": "未处理的 C++ 异常",
+    "exceptionClrException": "未处理的 .NET 异常",
+    "exceptionDllInitFailed": "DLL 初始化失败 —— 某个库的入口点返回失败",
+    "exceptionDllNotFound": "找不到 DLL —— 缺少必需的库",
+    "exceptionUnknown": "未知异常（代码 {code}）",
+    "faultingModule": "出错模块：{module}",
+    "evidenceEventLog": "见于 Windows 事件日志",
+    "evidenceWerReport": "见于 WER 报告",
+    "evidenceCrashDump": "见于崩溃转储",
+    "gameLogErrors": "游戏日志中有 {count} 条错误",
+    "recentModChanges": "近期有变动的插件：{mods}",
+    "modsActiveAtCrash": "崩溃时插件处于启用状态",
+    "safeModeOn": "崩溃时安全模式已开启 —— 原版客户端自行崩溃",
+    "probeWasActive": "WoWSP 游戏内探针处于活动状态",
+    "dumpAvailable": "存在崩溃转储，可供深入分析"
+  },
+  "suspects": {
+    "title": "可疑插件",
+    "evidence": {
+      "logMention": "游戏日志中被提及",
+      "recentChange": "近期有变动"
+    },
+    "unknownBadge": "未知",
+    "quarantine": "隔离",
+    "restore": "恢复",
+    "logLines": "日志行"
+  },
+  "actions": {
+    "restarting": "正在重启客户端…",
+    "quarantining": "正在隔离…",
+    "exporting": "正在导出报告…",
+    "safeModeOn": "正在开启安全模式…"
+  },
+  "severity": {
+    "info": "提示",
+    "warning": "警告",
+    "critical": "严重"
+  },
+  "empty": {
+    "none": "没有发现"
+  },
+  "errors": {
+    "gameRunning": "游戏客户端正在运行 —— 请先关闭它，再重启或切换安全模式。"
+  }
+}

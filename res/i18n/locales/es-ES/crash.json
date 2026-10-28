@@ -1,0 +1,87 @@
+{
+  "toast": {
+    "title": "El cliente del juego se ha bloqueado",
+    "body": "{image} (pid {pid}) ha dejado de funcionar.",
+    "code": "Código de excepción: {code}",
+    "safeRestart": "Reiniciar en modo seguro",
+    "restart": "Reiniciar el juego",
+    "analysis": "Ver análisis",
+    "dismiss": "Descartar",
+    "safeRestartFallback": "No se pudo localizar la carpeta del juego; se reiniciará tal cual."
+  },
+  "section": {
+    "title": "Análisis de bloqueos",
+    "empty": "Aún no hay registros de bloqueos. Cuando el cliente del juego se bloquea, WoWSP lo detecta aquí y prepara un análisis.",
+    "recordTime": "Detectado el {time}",
+    "source": {
+      "eventLog": "Registro de eventos de Windows",
+      "werReport": "Informe de WER",
+      "crashDump": "Volcado de memoria"
+    },
+    "gameLogs": "Registros del juego",
+    "appLogs": "Registros de WoWSP",
+    "modsInventory": "Plugins instalados",
+    "currentBuild": "Versión actual del juego",
+    "findings": "Conclusiones",
+    "suspects": "Plugins sospechosos",
+    "export": "Exportar informe",
+    "exportDone": "Informe exportado",
+    "restart": "Reiniciar el juego",
+    "safeModeOn": "El modo seguro está activado",
+    "analysisFor": "Análisis de {id}",
+    "refresh": "Actualizar"
+  },
+  "findings": {
+    "exceptionAccessViolation": "Infracción de acceso — el cliente leyó o escribió memoria que no le pertenece",
+    "exceptionStackBufferOverrun": "Desbordamiento de búfer en la pila — un búfer local fue escrito más allá de su fin",
+    "exceptionStackOverflow": "Desbordamiento de pila — la pila de llamadas superó su límite (a menudo recursión de un plugin)",
+    "exceptionHeapCorruption": "Corrupción del montón — el montón del proceso estaba dañado antes del bloqueo",
+    "exceptionIllegalInstruction": "Instrucción ilegal — la CPU recibió una secuencia que no puede ejecutar",
+    "exceptionDivideByZero": "División por cero",
+    "exceptionPrivilegedInstruction": "Instrucción privilegiada — una instrucción exclusiva del núcleo se ejecutó en modo usuario",
+    "exceptionBreakpoint": "Punto de interrupción — se disparó un breakpoint de depuración",
+    "exceptionCppException": "Excepción de C++ no controlada",
+    "exceptionClrException": "Excepción de .NET no controlada",
+    "exceptionDllInitFailed": "Error de inicialización de DLL — el punto de entrada de una biblioteca devolvió un error",
+    "exceptionDllNotFound": "DLL no encontrada — falta una biblioteca necesaria",
+    "exceptionUnknown": "Excepción desconocida (código {code})",
+    "faultingModule": "Módulo culpable: {module}",
+    "evidenceEventLog": "Detectado en el registro de eventos de Windows",
+    "evidenceWerReport": "Detectado en el informe de WER",
+    "evidenceCrashDump": "Detectado en el volcado de memoria",
+    "gameLogErrors": "{count} línea(s) de error en el registro del juego",
+    "recentModChanges": "Plugins modificados recientemente: {mods}",
+    "modsActiveAtCrash": "Había plugins activos cuando se bloqueó el cliente",
+    "safeModeOn": "El modo seguro estaba activado — el cliente original se bloqueó por sí solo",
+    "probeWasActive": "La sonda en el juego de WoWSP estaba activa",
+    "dumpAvailable": "Hay un volcado de memoria disponible para un análisis profundo"
+  },
+  "suspects": {
+    "title": "Plugins sospechosos",
+    "evidence": {
+      "logMention": "Mencionado en el registro del juego",
+      "recentChange": "Modificado recientemente"
+    },
+    "unknownBadge": "Desconocido",
+    "quarantine": "Poner en cuarentena",
+    "restore": "Restaurar",
+    "logLines": "Líneas de registro"
+  },
+  "actions": {
+    "restarting": "Reiniciando el cliente…",
+    "quarantining": "Poniendo en cuarentena…",
+    "exporting": "Exportando el informe…",
+    "safeModeOn": "Activando el modo seguro…"
+  },
+  "severity": {
+    "info": "Información",
+    "warning": "Advertencia",
+    "critical": "Crítico"
+  },
+  "empty": {
+    "none": "Nada encontrado"
+  },
+  "errors": {
+    "gameRunning": "El cliente del juego está en ejecución — ciérralo antes de reiniciar o cambiar el modo seguro."
+  }
+}
