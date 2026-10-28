@@ -1,12 +1,14 @@
 /** Lazy-load the in-game aircraft-type icons (battle-HUD minimap markers)
  *  for the replay viewer's minimap. Keys mirror the PLANE_TYPES type names. */
-import auxiliaryUrl from "../../res/images/planes/auxiliary_ally.webp";
-import bomberApUrl from "../../res/images/planes/bomber_ap_ally.webp";
-import bomberHeUrl from "../../res/images/planes/bomber_he_ally.webp";
-import fighterUrl from "../../res/images/planes/fighter_ally.webp";
-import scoutUrl from "../../res/images/planes/scout_ally.webp";
-import skipApUrl from "../../res/images/planes/skip_ap_ally.webp";
-import torpedoUrl from "../../res/images/planes/torpedo_regular_ally.webp";
+// PublicDir art served at the root path (see utils/shipImages.ts) — plain
+// URL constants instead of imports (same URLs, no module-graph nodes).
+const auxiliaryUrl = "/images/planes/auxiliary_ally.webp";
+const bomberApUrl = "/images/planes/bomber_ap_ally.webp";
+const bomberHeUrl = "/images/planes/bomber_he_ally.webp";
+const fighterUrl = "/images/planes/fighter_ally.webp";
+const scoutUrl = "/images/planes/scout_ally.webp";
+const skipApUrl = "/images/planes/skip_ap_ally.webp";
+const torpedoUrl = "/images/planes/torpedo_regular_ally.webp";
 
 const ICON_URLS: Record<string, string> = {
   fighter: fighterUrl,

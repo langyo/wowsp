@@ -2,8 +2,8 @@
  * Res-pack insights rail loaders: the FULL map-insights corpus and the
  * contributors list.
  *
- * The webui bundles only the lite companions (`@/res/map-insights.json`
- * and `@/res/contributors.json` — the tracked placeholders the corpus CLI
+ * The webui bundles only the lite companions (`@/data/map-insights.json`
+ * and `@/data/contributors.json` — the tracked placeholders the corpus CLI
  * overwrites per release): the full corpus doc's 96×96 heat grids dwarf
  * everything else and serve no bundled purpose, so they ride the
  * content-addressed resource pack instead (`insights/` — the optional
@@ -24,8 +24,11 @@
  * settings-surface consumers can import the contributors loader without
  * dragging the 3D engine into their chunk.
  */
-import bundledInsightsDoc from "@/res/map-insights.json";
-import bundledContributorsDoc from "@/res/contributors.json";
+// src/data (NOT src/res): these two are JS-bundled content — keeping them
+// under publicDir made every import log Vite's "cannot be imported from
+// JavaScript" warning and shipped a dead same-origin copy into dist.
+import bundledInsightsDoc from "@/data/map-insights.json";
+import bundledContributorsDoc from "@/data/contributors.json";
 
 // ── Pack wiring (set by modelLoader's initModelPack) ─────────────────────
 let _convertFileSrc: ((path: string) => string) | null = null;

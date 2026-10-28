@@ -5,11 +5,23 @@
  *  The Lesta-only spaces whose catalogs only name them in Russian are
  *  hand-curated (scripts/model_convert/map_names_curated.json) precisely
  *  so no UI language ever falls back to a raw space id. */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import mapNamesRaw from "@/data/map_names.json";
-import minimapsRaw from "@/res/models/maps/minimaps.json";
 import { isHarborSpace } from "./mapModes";
+
+// minimaps.json is a runtime FETCH target riding publicDir (modelLoader's
+// `/models/maps/minimaps.json`), so the test reads it from disk instead of
+// importing — a publicDir import logs Vite's "cannot be imported from
+// JavaScript" warning through every vitest run. process.cwd() is the
+// package root under every vitest invocation (import.meta.url is not a
+// file: URL in the happy-dom environment).
+const minimapsRaw = JSON.parse(
+  readFileSync(resolve(process.cwd(), "src/res/models/maps/minimaps.json"), "utf8"),
+) as Record<string, unknown>;
 
 /** The catalog `utils/mapNames` exposes as MAP_NAMES, read directly so this
  *  test stays free of the i18n import that module pulls in. */

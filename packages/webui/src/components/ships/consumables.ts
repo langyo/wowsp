@@ -67,11 +67,19 @@ const DETAILS = detailsRaw as {
   entities: Record<string, ConsumableEntity>;
 };
 
-/** Icon URL per baked webp stem (Vite emits the paths at build time). */
-const ICON_URLS = import.meta.glob<string>(
-  "../../res/images/consumables/*.webp",
-  { eager: true, query: "?url", import: "default" },
+/** Baked webp stems (publicDir art served at the root path — see
+ * utils/shipImages.ts; the keys-only glob enumerates file names without
+ * ever importing the files, so none of them enter Vite's module graph). */
+const ICON_STEMS = new Set(
+  Object.keys(import.meta.glob("../../res/images/consumables/*.webp")).map(
+    (path) => path.split("/").pop()!.replace(/\.webp$/i, ""),
+  ),
 );
+
+/** Icon URL for a baked webp stem, or null when the art is absent. */
+function iconUrlOf(stem: string): string | null {
+  return ICON_STEMS.has(stem) ? `/images/consumables/${stem}.webp` : null;
+}
 
 /** family → icon stem: the first entity of the family that baked one. */
 const FAMILY_ICON = new Map<string, string>();
@@ -85,7 +93,7 @@ for (const rec of Object.values(DETAILS.entities)) {
  *  only know the family (the tactics lineup's baked slot rows). */
 export function familyIconUrl(family: string): string | null {
   const stem = FAMILY_ICON.get(family);
-  return stem ? ICON_URLS[`../../res/images/consumables/${stem}.webp`] ?? null : null;
+  return stem ? iconUrlOf(stem) : null;
 }
 
 /** Consumable family of a baked ENTITY name (a decoded build's mounted
@@ -218,7 +226,7 @@ function resolveEntry(
     distTorpedo: spec.dt ?? null,
     radius: spec.rad ?? null,
     auto: spec.a === 1,
-    iconUrl: iconStem ? ICON_URLS[`../../res/images/consumables/${iconStem}.webp`] ?? null : null,
+    iconUrl: iconStem ? iconUrlOf(iconStem) : null,
   };
 }
 

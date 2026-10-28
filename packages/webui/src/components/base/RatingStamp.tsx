@@ -5,19 +5,25 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { statsPrefsState } from "@/stores/statsPrefs";
 import { stampOverrideUrl } from "@/stores/stampOverrides";
 import type { StampKind } from "@/utils/winrate";
-import stampAir from "../../res/stamps/stamp-air.webp";
-import stampAirApe from "../../res/stamps/stamp-air-ape.webp";
-import stampAirMiracle from "../../res/stamps/stamp-air-miracle.webp";
-import stampAirVeteran from "../../res/stamps/stamp-air-veteran.webp";
-import stampApe from "../../res/stamps/stamp-ape.webp";
-import stampMaggot from "../../res/stamps/stamp-maggot.webp";
-import stampMiracle from "../../res/stamps/stamp-miracle.webp";
-import stampRat from "../../res/stamps/stamp-rat.webp";
-import stampSub from "../../res/stamps/stamp-sub.webp";
-import stampSubApe from "../../res/stamps/stamp-sub-ape.webp";
-import stampSubMiracle from "../../res/stamps/stamp-sub-miracle.webp";
-import stampSubVeteran from "../../res/stamps/stamp-sub-veteran.webp";
 import "./RatingStamp.scss";
+
+// The glyph webp files live under `src/res` (Vite's publicDir) and are
+// served verbatim at the root path in dev and copied as-is into every
+// build, so these are plain URL constants — importing publicDir files
+// pushes each one through Vite's module graph (a per-file dev warning
+// plus a transform/watcher node) only to produce this same URL.
+const stampAir = "/stamps/stamp-air.webp";
+const stampAirApe = "/stamps/stamp-air-ape.webp";
+const stampAirMiracle = "/stamps/stamp-air-miracle.webp";
+const stampAirVeteran = "/stamps/stamp-air-veteran.webp";
+const stampApe = "/stamps/stamp-ape.webp";
+const stampMaggot = "/stamps/stamp-maggot.webp";
+const stampMiracle = "/stamps/stamp-miracle.webp";
+const stampRat = "/stamps/stamp-rat.webp";
+const stampSub = "/stamps/stamp-sub.webp";
+const stampSubApe = "/stamps/stamp-sub-ape.webp";
+const stampSubMiracle = "/stamps/stamp-sub-miracle.webp";
+const stampSubVeteran = "/stamps/stamp-sub-veteran.webp";
 
 let stampSeq = 0;
 

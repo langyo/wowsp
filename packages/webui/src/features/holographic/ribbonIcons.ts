@@ -13,43 +13,45 @@
  */
 import { api } from "@/api";
 
-import ribbonAcid from "../../res/images/ribbons/ribbon_acid.webp";
-import ribbonAcousticHit from "../../res/images/ribbons/ribbon_acoustic_hit.webp";
-import ribbonAssist from "../../res/images/ribbons/ribbon_assist.webp";
-import ribbonBaseCapture from "../../res/images/ribbons/ribbon_base_capture.webp";
-import ribbonBaseCaptureAssist from "../../res/images/ribbons/ribbon_base_capture_assist.webp";
-import ribbonBaseDefense from "../../res/images/ribbons/ribbon_base_defense.webp";
-import ribbonBomb from "../../res/images/ribbons/ribbon_bomb.webp";
-import ribbonBuildingKill from "../../res/images/ribbons/ribbon_building_kill.webp";
-import ribbonBurn from "../../res/images/ribbons/ribbon_burn.webp";
-import ribbonCitadel from "../../res/images/ribbons/ribbon_citadel.webp";
-import ribbonCrit from "../../res/images/ribbons/ribbon_crit.webp";
-import ribbonDbomb from "../../res/images/ribbons/ribbon_dbomb.webp";
-import ribbonDbombMine from "../../res/images/ribbons/ribbon_dbomb_mine.webp";
-import ribbonDemining from "../../res/images/ribbons/ribbon_demining.webp";
-import ribbonDeminingMine from "../../res/images/ribbons/ribbon_demining_mine.webp";
-import ribbonDeminingMinefield from "../../res/images/ribbons/ribbon_demining_minefield.webp";
-import ribbonDetected from "../../res/images/ribbons/ribbon_detected.webp";
-import ribbonDrop from "../../res/images/ribbons/ribbon_drop.webp";
-import ribbonFlood from "../../res/images/ribbons/ribbon_flood.webp";
-import ribbonFrag from "../../res/images/ribbons/ribbon_frag.webp";
-import ribbonMainCaliber from "../../res/images/ribbons/ribbon_main_caliber.webp";
-import ribbonMine from "../../res/images/ribbons/ribbon_mine.webp";
-import ribbonMissile from "../../res/images/ribbons/ribbon_missile.webp";
-import ribbonPhaserLaser from "../../res/images/ribbons/ribbon_phaser_laser.webp";
-import ribbonPlane from "../../res/images/ribbons/ribbon_plane.webp";
-import ribbonRocket from "../../res/images/ribbons/ribbon_rocket.webp";
-import ribbonSecondaryCaliber from "../../res/images/ribbons/ribbon_secondary_caliber.webp";
-import ribbonShield from "../../res/images/ribbons/ribbon_shield.webp";
-import ribbonSplane from "../../res/images/ribbons/ribbon_splane.webp";
-import ribbonSuppressed from "../../res/images/ribbons/ribbon_suppressed.webp";
-import ribbonTorpedo from "../../res/images/ribbons/ribbon_torpedo.webp";
-import ribbonWave from "../../res/images/ribbons/ribbon_wave.webp";
-import subBurn from "../../res/images/ribbons/subribbon_burn.webp";
-import subFlood from "../../res/images/ribbons/subribbon_flood.webp";
-import subFrag from "../../res/images/ribbons/subribbon_frag.webp";
-import subMainCaliber from "../../res/images/ribbons/subribbon_main_caliber.webp";
-import subTorpedo from "../../res/images/ribbons/subribbon_torpedo.webp";
+// PublicDir art served at the root path (see utils/shipImages.ts) — plain
+// URL constants instead of imports (same URLs, no module-graph nodes).
+const ribbonAcid = "/images/ribbons/ribbon_acid.webp";
+const ribbonAcousticHit = "/images/ribbons/ribbon_acoustic_hit.webp";
+const ribbonAssist = "/images/ribbons/ribbon_assist.webp";
+const ribbonBaseCapture = "/images/ribbons/ribbon_base_capture.webp";
+const ribbonBaseCaptureAssist = "/images/ribbons/ribbon_base_capture_assist.webp";
+const ribbonBaseDefense = "/images/ribbons/ribbon_base_defense.webp";
+const ribbonBomb = "/images/ribbons/ribbon_bomb.webp";
+const ribbonBuildingKill = "/images/ribbons/ribbon_building_kill.webp";
+const ribbonBurn = "/images/ribbons/ribbon_burn.webp";
+const ribbonCitadel = "/images/ribbons/ribbon_citadel.webp";
+const ribbonCrit = "/images/ribbons/ribbon_crit.webp";
+const ribbonDbomb = "/images/ribbons/ribbon_dbomb.webp";
+const ribbonDbombMine = "/images/ribbons/ribbon_dbomb_mine.webp";
+const ribbonDemining = "/images/ribbons/ribbon_demining.webp";
+const ribbonDeminingMine = "/images/ribbons/ribbon_demining_mine.webp";
+const ribbonDeminingMinefield = "/images/ribbons/ribbon_demining_minefield.webp";
+const ribbonDetected = "/images/ribbons/ribbon_detected.webp";
+const ribbonDrop = "/images/ribbons/ribbon_drop.webp";
+const ribbonFlood = "/images/ribbons/ribbon_flood.webp";
+const ribbonFrag = "/images/ribbons/ribbon_frag.webp";
+const ribbonMainCaliber = "/images/ribbons/ribbon_main_caliber.webp";
+const ribbonMine = "/images/ribbons/ribbon_mine.webp";
+const ribbonMissile = "/images/ribbons/ribbon_missile.webp";
+const ribbonPhaserLaser = "/images/ribbons/ribbon_phaser_laser.webp";
+const ribbonPlane = "/images/ribbons/ribbon_plane.webp";
+const ribbonRocket = "/images/ribbons/ribbon_rocket.webp";
+const ribbonSecondaryCaliber = "/images/ribbons/ribbon_secondary_caliber.webp";
+const ribbonShield = "/images/ribbons/ribbon_shield.webp";
+const ribbonSplane = "/images/ribbons/ribbon_splane.webp";
+const ribbonSuppressed = "/images/ribbons/ribbon_suppressed.webp";
+const ribbonTorpedo = "/images/ribbons/ribbon_torpedo.webp";
+const ribbonWave = "/images/ribbons/ribbon_wave.webp";
+const subBurn = "/images/ribbons/subribbon_burn.webp";
+const subFlood = "/images/ribbons/subribbon_flood.webp";
+const subFrag = "/images/ribbons/subribbon_frag.webp";
+const subMainCaliber = "/images/ribbons/subribbon_main_caliber.webp";
+const subTorpedo = "/images/ribbons/subribbon_torpedo.webp";
 
 /** Bundled art keyed by the logical ribbon name. */
 const BUNDLED: Record<string, string> = {
