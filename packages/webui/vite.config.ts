@@ -6,6 +6,8 @@ import { defineConfig, type Plugin } from "vite";
 
 import UnoCSS from "unocss/vite";
 
+import { wowspBootChrome } from "./src/bootChrome";
+
 function readPkgVersion(pkgDir: string): string {
   try {
     const raw = readFileSync(resolve(pkgDir, 'package.json'), 'utf-8');
@@ -257,6 +259,13 @@ export default defineConfig({
       : [pruneBakedGlb(resolve(pkgDir, '../../dist/webui')), pruneGameparams(resolve(pkgDir, '../../dist/webui'))]),
     vueSfc(),
     vueJsx(),
+    // hikari's pre-boot window chrome bar (res/boot-chrome.js): draws the
+    // caption buttons from the first frame — before this bundle exists — so a
+    // frameless window stays closable even when the app hangs; it removes
+    // itself when AppTitleBar (hikari HkTitleBar) mounts and claims the window.
+    // `bootChrome.ts` owns the entry list: ONLY index.html is an app window —
+    // the four overlay pages are transparent windows over the game.
+    wowspBootChrome(),
     // @vitejs/plugin-vue-jsx (rolldown-vite mode) injects
     // optimizeDeps.rolldownOptions.transform.jsx = "preserve" so the
     // dep-scanner keeps JSX in its transform output. The scanner's
