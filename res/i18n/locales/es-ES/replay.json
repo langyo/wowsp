@@ -586,5 +586,26 @@
       "vis": "Visibilidad climática"
     },
     "visValue": "varía con el clima"
+  },
+  "moveAdvice": {
+    "toggle": "Consejos de movimiento IA",
+    "portableUnavailable": "La inferencia IA no está disponible en esta compilación. Instala la versión completa para usar los consejos de movimiento.",
+    "loading": "Calculando…",
+    "holdMark": "Mantener posición: el modelo no ve un rumbo mejor",
+    "second": "Flecha corta tenue: segundo rumbo probable",
+    "debugModel": "Modelo experimental"
+  },
+  "scores": {
+    "title": "Acuerdo del modelo IA",
+    "close": "Cerrar el panel de puntuaciones",
+    "disclaimer": "Acuerdo del modelo ≠ nivel ni resultado del combate: la generación actual del modelo no superó la validación preregistrada de correlación con el daño real (ρ≈0).",
+    "whole": "Partida",
+    "instant": "Instante",
+    "confidence": "confianza",
+    "fire": "Componente de disparo",
+    "move": "Componente de movimiento",
+    "noFire": "Sin ocasiones de tiro registradas",
+    "noData": "Sin datos de puntuación",
+    "samples": "{ships} barcos · {rows} puntos de decisión"
   }
 }

@@ -586,5 +586,26 @@
       "vis": "天候による視界"
     },
     "visValue": "天候に追随して変動"
+  },
+  "moveAdvice": {
+    "toggle": "AI 移動提案",
+    "portableUnavailable": "このビルドには AI 推論が含まれていません。完全版をインストールすると移動提案を利用できます。",
+    "loading": "計算中…",
+    "holdMark": "停泊：移動すべきでないとモデルが判断",
+    "second": "薄い短い矢印：第二候補の進路",
+    "debugModel": "実験モデル"
+  },
+  "scores": {
+    "title": "AI モデル一致度",
+    "close": "スコアパネルを閉じる",
+    "disclaimer": "モデル一致度 ≠ 戦績/実力：現行のモデル世代は実際のダメージとの相関検証（ρ≈0）を通過していません。",
+    "whole": "全体",
+    "instant": "瞬間",
+    "confidence": "信頼度",
+    "fire": "砲撃要素",
+    "move": "移動要素",
+    "noFire": "発射可能な場面なし",
+    "noData": "スコアデータなし",
+    "samples": "{ships} 隻 · {rows} 決定点"
   }
 }

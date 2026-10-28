@@ -586,5 +586,26 @@
       "vis": "天气能见度"
     },
     "visValue": "随天气实时变化"
+  },
+  "moveAdvice": {
+    "toggle": "AI 走位建议",
+    "portableUnavailable": "此版本不包含 AI 推理。安装完整版后即可使用走位建议。",
+    "loading": "计算中…",
+    "holdMark": "停驻：模型认为不该移动",
+    "second": "浅色短箭头：次选走向",
+    "debugModel": "实验模型"
+  },
+  "scores": {
+    "title": "AI 模型认同度",
+    "close": "关闭评分面板",
+    "disclaimer": "模型认同度 ≠ 战绩/水平：当前模型代际未通过与实际伤害的相关性验证（ρ≈0）。",
+    "whole": "整局",
+    "instant": "瞬时",
+    "confidence": "置信度",
+    "fire": "开火分量",
+    "move": "走位分量",
+    "noFire": "无可打时刻",
+    "noData": "暂无评分数据",
+    "samples": "{ships} 艘船 · {rows} 个决策点"
   }
 }

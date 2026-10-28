@@ -31,6 +31,11 @@ import {
 import type { MapBounds } from "./modelLoader";
 import type { SquadronPlane } from "@/api";
 import {
+  SECOND_SECTOR_DRAW_MIN,
+  adviceCssColor,
+  secondBearingRad,
+} from "./moveAdvisories";
+import {
   computeFullMapBounds,
   computeViewBounds,
   resolveRoleQuick,
@@ -236,6 +241,110 @@ function drawTorpedoes(
  *  recorder row always draws (it is the flagship "what should I do"
  *  readout), even at a low probability. */
 const DECISION_TEAM_PROB_MIN = 0.5;
+
+/** One advice arrow on the 2D canvas: `rot` is the canvas rotation for the
+ *  arrow's +x rest direction, `len` the pixel length, both set by the
+ *  caller from the advice's confidence. Starts ~8 px off the glyph center
+ *  so it never buries the ship icon. */
+function drawAdviceArrow(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rot: number,
+  len: number,
+  color: string,
+  lineW: number,
+): void {
+  g.save();
+  g.translate(x, y);
+  g.rotate(rot);
+  const head = Math.max(6, len * 0.3);
+  g.strokeStyle = color;
+  g.lineWidth = lineW;
+  g.lineCap = "round";
+  g.beginPath();
+  g.moveTo(9, 0);
+  g.lineTo(len - head, 0);
+  g.stroke();
+  g.beginPath();
+  g.moveTo(len, 0);
+  g.lineTo(len - head, -head * 0.55);
+  g.lineTo(len - head, head * 0.55);
+  g.closePath();
+  g.fillStyle = color;
+  g.fill();
+  g.restore();
+}
+
+/** AI movement advice (E18): per ship an arrow pointing at the model's
+ *  top sector (absolute bearing served by the RPC), length + colour ramped
+ *  by confidence; the no-move class draws a small hold marker (hollow ring
+ *  + dot) instead; a pale short second arrow rides the runner-up when it is
+ *  significant. Same projection + gap semantics as the fire layer
+ *  (sampleAt through trajById) so an unspotted ship renders at its
+ *  last-known pose exactly like its ghost marker. Paints on the ENLARGED
+ *  map only, inside the rotated world frame (arrows track the map's
+ *  orientation; the frame rotation is baked into each arrow's angle). */
+function drawMovementAdvice(
+  g: CanvasRenderingContext2D,
+  ctx: MapInternals,
+  t: number,
+  projX: (x: number) => number,
+  projZ: (zScene: number) => number,
+): void {
+  if (!ctx.moveAdviceOn.value || !ctx.debugReport.value) return;
+  const report = ctx.debugReport.value;
+  const posOf = (entityId: number) => {
+    const tr = ctx.trajById.get(entityId);
+    return tr ? (sampleAt(tr, t) ?? null) : null;
+  };
+  for (const adv of report.movement) {
+    const from = posOf(adv.entityId);
+    if (!from) continue;
+    const fx = projX(from.x);
+    const fz = projZ(-from.z);
+    const mainColor = adviceCssColor(adv.isRecorder, adv.teamId, adv.topProb);
+    if (adv.topSector === 16) {
+      // Hold marker: "the model says stay" — hollow ring + center dot.
+      g.strokeStyle = mainColor;
+      g.lineWidth = 1.8;
+      g.beginPath();
+      g.arc(fx, fz, 8, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = mainColor;
+      g.beginPath();
+      g.arc(fx, fz, 2.4, 0, Math.PI * 2);
+      g.fill();
+      continue;
+    }
+    const b = adv.mapBearingRad;
+    if (b == null) continue;
+    // Canvas rotation for the math-frame bearing b: the canvas x axis maps
+    // world +x and the canvas y axis grows south (-worldZ), so the world
+    // direction (cos b, sin b) lands at canvas angle -b.
+    drawAdviceArrow(
+      g,
+      fx,
+      fz,
+      -b,
+      28 + 30 * Math.min(1, Math.max(0, adv.topProb)),
+      mainColor,
+      2.2 + 1.4 * Math.min(1, Math.max(0, adv.topProb)),
+    );
+    const b2 = secondBearingRad(adv);
+    if (b2 != null && adv.secondSector !== 16 && adv.secondProb >= SECOND_SECTOR_DRAW_MIN) {
+      drawAdviceArrow(
+        g,
+        fx,
+        fz,
+        -b2,
+        (28 + 30 * adv.secondProb) * 0.55,
+        adviceCssColor(adv.isRecorder, adv.teamId, adv.secondProb, 0.5),
+        1.4,
+      );
+    }
+  }
+}
 
 /** AI fire-decision suggestions (G4-b): for every visible suggestion —
  *  the recorder row always, team-0 rows at/above the painter's probability
@@ -870,6 +979,9 @@ export function drawMinimap(ctx: MapInternals) {
       // AI fire-suggestion overlay (G4-b) — rings / dashed fire lines /
       // target reticles over the glyphs, through the same projection.
       drawDecisionSuggestions(zctx, ctx, t, zwx, zwz, rotRad, DECISION_TEAM_PROB_MIN);
+      // AI movement-advice overlay (E18) — confidence arrows + hold marks,
+      // same projection, inside the same rotated world frame.
+      drawMovementAdvice(zctx, ctx, t, zwx, zwz);
       zctx.restore(); // world frame (rotation)
       // Grid coordinate labels live in the SCREEN frame: pinned to the
       // top / left edges, upright at any rotation — which strip a family

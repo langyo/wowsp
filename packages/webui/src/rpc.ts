@@ -240,6 +240,8 @@ export const RPC = {
   // ── Decision-AI experiment commands (G4; the webui surface starts with
   //    the fire-suggestion layer — the rest serve scripts/tests for now). ──
   decision_fire_suggestions: "decision_fire_suggestions",
+  // E18 · G6 step 3: movement advice + the E17 score timeline in one call.
+  decision_debug_report: "decision_debug_report",
   decision_ai_status: "decision_ai_status",
   decision_ai_suggest: "decision_ai_suggest",
   // Decisions model-pack inventory + clear (settings → resources page).

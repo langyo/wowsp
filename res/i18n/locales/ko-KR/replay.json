@@ -586,5 +586,26 @@
       "vis": "날씨 가시거리"
     },
     "visValue": "날씨에 따라 실시간 변동"
+  },
+  "moveAdvice": {
+    "toggle": "AI 기동 조언",
+    "portableUnavailable": "이 빌드에는 AI 추론이 포함되어 있지 않습니다. 전체 버전을 설치하면 기동 조언을 사용할 수 있습니다.",
+    "loading": "계산 중…",
+    "holdMark": "정지: 이동하지 않는 것이 낫다고 판단",
+    "second": "연한 짧은 화살표: 차선 항로",
+    "debugModel": "실험 모델"
+  },
+  "scores": {
+    "title": "AI 모델 일치도",
+    "close": "점수 패널 닫기",
+    "disclaimer": "모델 일치도 ≠ 전적/실력: 현재 모델 세대는 실제 피해량과의 상관 검증(ρ≈0)을 통과하지 못했습니다.",
+    "whole": "전체",
+    "instant": "순간",
+    "confidence": "신뢰도",
+    "fire": "포격 요소",
+    "move": "기동 요소",
+    "noFire": "발포 가능 순간 없음",
+    "noData": "점수 데이터 없음",
+    "samples": "{ships}척 · {rows}개 결정 지점"
   }
 }

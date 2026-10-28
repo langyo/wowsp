@@ -20,6 +20,7 @@ import type {
   AchievementEvent,
   CameraSample,
   ChatEvent,
+  DecisionDebugReport,
   DecisionSuggestionReport,
   EntityTrajectory,
   ExplosionEvent,
@@ -46,6 +47,7 @@ import type { ShipStatusIndex } from "./shipStatusModel";
 import type { ThreeScene } from "./useThreeScene";
 import { disposeMarker } from "./shipMarker";
 import { disposeAny } from "./sceneUtils";
+import { disposeMoveAdviceArrows } from "./moveAdvisories";
 import { roleFromRelation } from "./teamColors";
 import type { ArenaIdentity } from "./rosterRoles";
 import { loadMapMinimapImage, loadMapBounds, type MapBounds } from "./modelLoader";
@@ -58,6 +60,7 @@ import type { ShipLabel } from "./shipLabel";
 import type { FeedEntry } from "./HoloEventFeed";
 import type { TacticalView } from "./tactical/render";
 import type { OsdContrast } from "./osdContrast";
+import type { MoveAdviceArrowSlot } from "./moveAdvisories";
 
 /** The subset of HolographicMap's props the extracted map modules read.
  *  Structurally satisfied by the component's reactive props object. */
@@ -266,6 +269,12 @@ export interface MapInternalsDeps {
   /** Latest decision-suggestion report (null = off / nothing fetched /
    *  last fetch failed); owned by HolographicMap's setup. */
   decisionReport: Ref<DecisionSuggestionReport | null>;
+  /** AI movement-advice overlay toggle (E18) — 2D arrows + 3D floating
+   *  arrows + the score panel ride this switch. */
+  moveAdviceOn: Ref<boolean>;
+  /** Latest debug report (movement advice + score timeline); null when off,
+   *  unfetched or failed. */
+  debugReport: Ref<DecisionDebugReport | null>;
   /** Alt held → show in-game point timers on the cap letters. */
   showCapEta: Ref<boolean>;
   /** Cap zone status (A=0, B=1, C=2) — 0=neutral, 1=ally, 2=enemy. */
@@ -370,6 +379,9 @@ export interface MapInternals extends MapInternalsDeps {
   /** 3D storm mask — the cyclone's drifting dark core on the sea surface
    *  (see weatherScene.ts). Created lazily, repositioned per playhead tick. */
   stormZone: THREE.Mesh | null;
+  /** 3D movement-advice arrow pool (E18, see moveAdvisories.ts) — grown
+   *  lazily per report, reused across refreshes, disposed in clearActors. */
+  moveAdviceArrows: MoveAdviceArrowSlot[];
 
   // ── World geometry & roster join state ───────────────────────────────
   /** Fitted battle bounds in scene coordinates (z mirrored). */
@@ -491,6 +503,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     waterFloor: null,
     seaSurface: null,
     stormZone: null,
+    moveAdviceArrows: [],
 
     bounds: null,
     trajById: new Map(),
@@ -634,6 +647,8 @@ export function clearActors(ctx: MapInternals) {
   }
   ctx.planeMeshes.clear();
   ctx.planeFormations.clear();
+  // 3D movement-advice arrows (E18): pool + GPU resources.
+  disposeMoveAdviceArrows(ctx);
   if (ctx.lockLine) {
     scene.remove(ctx.lockLine);
     ctx.lockLine.geometry.dispose();

@@ -23,6 +23,7 @@ import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
 import { formationOffsets } from "./planeFormation";
 import { updateStormZone } from "./weatherScene";
+import { syncMoveAdvisories } from "./moveAdvisories";
 import { PLANE_DOT_PARKED_Y } from "./planeWarfare";
 import type { OsdTone } from "./osdContrast";
 import { captureSecondsRemaining, formatEta } from "@wowsp/holo";
@@ -820,6 +821,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   // The cyclone's dark core drifts across the sea (3D twin of the minimap
   // weather overlay — same geometry, same per-match drift seed).
   updateStormZone(ctx, t);
+  // 3D movement-advice arrows (E18): re-synced on every marker refresh so
+  // they follow the ships through playback and seeks alike; when a fresh
+  // report lands between playhead steps, HolographicMap calls this directly.
+  syncMoveAdvisories(ctx);
   // The render loop may be idle-gated (paused + still camera): a playhead
   // step or an async model install changed the scene, so make sure the
   // next uncapped tick repaints.

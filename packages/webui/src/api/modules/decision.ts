@@ -55,6 +55,111 @@ export interface DecisionsPackStatus {
   losMaps: string[];
 }
 
+// ── E18 · G6 step 3: the AI analysis debug report ───────────────────────────
+
+/** One ship's movement advice at one instant (the E16 17-class move model
+ *  over that ship's latest decision row at or before `timeSec`). */
+export interface MovementAdvice {
+  entityId: number;
+  shipId: number | null;
+  /** Recorder-relative team: 0 = recorder's side, 1 = enemy. */
+  teamId: 0 | 1;
+  isRecorder: boolean;
+  /** Decision time of the underlying row (≤ timeSec, ≤ 8 s stale). */
+  rowT: number;
+  /** Argmax sector: 0..15 directional (22.5° each, 0 = dead ahead of the
+   *  ship's heading), 16 = no-move. */
+  topSector: number;
+  topProb: number;
+  /** The full 17-class softmax (sums to 1). */
+  probDist: number[];
+  /** Absolute map bearing of the top sector (radians, atan2(dz, dx) frame),
+   *  `null` for the no-move class. */
+  mapBearingRad: number | null;
+  secondSector: number;
+  secondProb: number;
+}
+
+/** One instant's decomposed score (E17). `fire` is null on non-can-fire
+ *  rows (no fire decision was on the table). */
+export interface ShipScoreSample {
+  t: number;
+  inst: number;
+  fire: number | null;
+  move: number;
+  /** Independent output: the models' own certainty (NOT the score). */
+  confidence: number;
+}
+
+/** Post-battle ground truth joined from BattleResults by shipId. */
+export type ShipOutcome =
+  | {
+      status: "ok";
+      damage: number;
+      baseExp: number | null;
+      frags: number;
+      survived: boolean;
+    }
+  | { status: "ambiguous" }
+  | { status: "missing" }
+  | { status: "noShipId" };
+
+/** One ship's whole-game score entry (E17). */
+export interface ShipScoreEntry {
+  entityId: number;
+  shipId: number | null;
+  /** Recorder-relative team: 0 = recorder's side, 1 = enemy. */
+  teamId: 0 | 1;
+  isRecorder: boolean;
+  /** Row (== time) mean of the instant score — MODEL AGREEMENT, not skill
+   *  (E17: ρ=+0.011 vs damage; the UI must carry the disclaimer). */
+  wholeGame: number;
+  /** Mean fire agreement over can-fire samples; null when none. */
+  wholeFire: number | null;
+  wholeMove: number;
+  samples: ShipScoreSample[];
+  outcome: ShipOutcome;
+}
+
+/** The full-timeline E17 score report embedded in the debug report. */
+export interface ShipScoreReport {
+  replayId: string;
+  mapName: string | null;
+  gameMode: string | null;
+  replayVersion: string | null;
+  /** Ordered by entity id. */
+  perShip: ShipScoreEntry[];
+  modelSources: { fire: string; moveModel: string };
+  stats: {
+    shipsScored: number;
+    rowsScored: number;
+    rowsCanFire: number;
+    rowsFired: number;
+    rowsNoMove: number;
+  };
+}
+
+/** The `decision_debug_report` payload: movement advice for the instant +
+ *  the embedded full-timeline score report. A cold call costs a replay
+ *  export + decode + two full model passes (seconds); the artifacts are
+ *  cached in-process, so later calls only re-run the movement forwards. */
+export interface DecisionDebugReport {
+  timeSec: number;
+  mapName: string | null;
+  /** Provenance of the two models (path or label). */
+  fireModel: string;
+  moveModel: string;
+  /** "env" (debug override) | "pack" (decisions pack) | "experiments"
+   *  (local out/ default). */
+  fireModelOrigin: "env" | "pack" | "experiments" | "unknown";
+  moveModelOrigin: "env" | "pack" | "experiments" | "unknown";
+  losGridLoaded: boolean;
+  cached: boolean;
+  elapsedMs: number;
+  movement: MovementAdvice[];
+  scores: ShipScoreReport;
+}
+
 export const decisionApi = {
   /** Fire-decision suggestions for one replay instant. `losGridDir` is
    *  optional (defaults to the installed `decisions` pack's raster layout);
@@ -62,6 +167,15 @@ export const decisionApi = {
    *  silently. */
   decisionFireSuggestions: (replayPath: string, timeSec: number, losGridDir?: string) =>
     transport.invoke<DecisionSuggestionReport>(RPC.decision_fire_suggestions, {
+      replayPath,
+      timeSec,
+      losGridDir: losGridDir ?? null,
+    }),
+  /** The E18 AI analysis debug report: movement advice at `timeSec` + the
+   *  full-timeline E17 score report. Heavy on the first call (cached
+   *  afterwards); `losGridDir` defaults to the decisions pack layout. */
+  decisionDebugReport: (replayPath: string, timeSec: number, losGridDir?: string) =>
+    transport.invoke<DecisionDebugReport>(RPC.decision_debug_report, {
       replayPath,
       timeSec,
       losGridDir: losGridDir ?? null,
