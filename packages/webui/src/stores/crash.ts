@@ -81,9 +81,10 @@ export const useCrashStore = defineStore("crash", () => {
    *  record on reconnect), pin it as the active prompt while undismissed,
    *  and clear the prompt the moment ITS record is dismissed elsewhere. */
   function ingest(record: GameCrashRecord) {
-    const existing = history.value.findIndex((r) => r.id === record.id);
-    if (existing >= 0) history.value.splice(existing, 1);
-    history.value.unshift(record);
+    // Replaces the array (no in-place mutation): watchers without deep
+    // fire on the identity change — the mod-hub pins re-resolve the
+    // moment a push lands.
+    history.value = [record, ...history.value.filter((r) => r.id !== record.id)];
     if (record.status === "new") {
       activeRecord.value = record;
     } else if (activeRecord.value?.id === record.id) {
@@ -109,23 +110,29 @@ export const useCrashStore = defineStore("crash", () => {
 
   /** Start the event subscription + the initial history load (idempotent;
    *  called on window mount, next to gameStatus/session). */
+  /** Subscription epoch: a stop()→start() race must orphan the FIRST
+   *  handshake (the started flag alone cannot — start() resets it before
+   *  the first listener resolves, leaking a duplicate ingest forever). */
+  let epoch = 0;
+
   function start() {
     if (started) return;
     started = true;
+    const mine = ++epoch;
     void (async () => {
       try {
         const off =
           (await api.listenGameCrash?.((record) => {
             ingest(record);
           })) ?? null;
-        // stop() raced the subscription handshake — release immediately.
-        if (!started) {
+        // stop() (or a newer start()) raced the handshake — release now.
+        if (mine !== epoch) {
           off?.();
           return;
         }
         unlisten = off;
       } catch {
-        unlisten = null;
+        if (mine === epoch) unlisten = null;
       }
     })();
     void refreshHistory();
@@ -133,6 +140,7 @@ export const useCrashStore = defineStore("crash", () => {
 
   /** Stop the subscription (window unmount); state stays for a remount. */
   function stop() {
+    epoch += 1;
     unlisten?.();
     unlisten = null;
     started = false;
@@ -238,7 +246,13 @@ export const useCrashStore = defineStore("crash", () => {
     } finally {
       restarting.value = false;
     }
-    return restart(gameRoot);
+    const info = await restart(gameRoot);
+    if (!info) {
+      // The install now sits in safe mode with mods quarantined — the
+      // restart refusal toast alone would hide that state change.
+      toast.warning(t("crash.section.safeModeOn"));
+    }
+    return info;
   }
 
   // ── quarantine ────────────────────────────────────────────────────────
@@ -263,8 +277,14 @@ export const useCrashStore = defineStore("crash", () => {
   /** Move one res_mods entry into quarantine (attributed to the given
    *  crash record when known) and pin the refreshed manifest. Single-
    *  flight per entry; throws on refusal — the section owns the toast. */
-  async function quarantine(entryName: string, crashId?: string): Promise<QuarantineEntry[]> {
-    const root = quarantineRoot();
+  async function quarantine(
+    entryName: string,
+    crashId?: string,
+    gameRoot?: string | null,
+  ): Promise<QuarantineEntry[]> {
+    // The acting surface decides the install (the record being worked on);
+    // only its absence falls back to the active-record/active-install guess.
+    const root = gameRoot ?? quarantineRoot();
     if (!root) throw new Error("crash: no game root for quarantine");
     if (quarantineBusy.value.has(entryName)) return quarantined.value;
     quarantineBusy.value.add(entryName);
@@ -278,8 +298,11 @@ export const useCrashStore = defineStore("crash", () => {
 
   /** Bring one quarantined entry back into res_mods and pin the refreshed
    *  manifest. Same contract as quarantine. */
-  async function restore(entryName: string): Promise<QuarantineEntry[]> {
-    const root = quarantineRoot();
+  async function restore(
+    entryName: string,
+    gameRoot?: string | null,
+  ): Promise<QuarantineEntry[]> {
+    const root = gameRoot ?? quarantineRoot();
     if (!root) throw new Error("crash: no game root for restore");
     if (quarantineBusy.value.has(entryName)) return quarantined.value;
     quarantineBusy.value.add(entryName);

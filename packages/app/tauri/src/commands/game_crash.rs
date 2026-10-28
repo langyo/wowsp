@@ -904,7 +904,10 @@ fn local_dump_evidence(image: &str, pid: u32, window: (i64, i64)) -> Option<Cras
         let Ok(meta) = entry.metadata() else {
             continue;
         };
-        let mtime = unix_secs(meta.modified().ok()?);
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        let mtime = unix_secs(modified);
         if mtime < window.0 || mtime > window.1 {
             continue;
         }
@@ -968,8 +971,18 @@ fn parse_wevtutil_xml(text: &str) -> Vec<ParsedEvent> {
 /// Data element.
 #[cfg(windows)]
 fn parse_event_block(block: &str) -> ParsedEvent {
-    let event_id =
-        between(block, "<EventID>", "</EventID>").and_then(|v| v.trim().parse::<u32>().ok());
+    // The Application Error / WER providers emit <EventID Qualifiers='...'>N</EventID>
+    // — the attribute must not defeat the parse, so scan past the tag's own
+    // closing bracket before reading the number.
+    let event_id = block
+        .find("<EventID")
+        .and_then(|start| block[start..].find('>'))
+        .and_then(|rel| {
+            let tag_start = block.find("<EventID")?;
+            let after = &block[tag_start + rel + 1..];
+            between(after, "", "</EventID>").or(Some(after))
+        })
+        .and_then(|v| v.trim().parse::<u32>().ok());
     let provider = between(block, "<Provider Name='", "'")
         .or_else(|| between(block, "<Provider Name=\"", "\""))
         .unwrap_or_default()
@@ -1068,7 +1081,11 @@ fn event_matches_client(
         }
     }
     if let (Some(app_path), Some(exe)) = (value("apppath"), exe_path) {
-        if app_path.eq_ignore_ascii_case(exe) {
+        // Exact image match, or the same FOLDER: on multi-install
+        // machines two same-family clients share the image name, so
+        // the folder is the only discriminator (a crash of install B
+        // must not attach to install A's disappearance).
+        if app_path.eq_ignore_ascii_case(exe) || super::game_context::same_folder(&app_path, exe) {
             return true;
         }
     }
@@ -1233,15 +1250,29 @@ fn game_log_candidates(root: &Path) -> Vec<PathBuf> {
     candidates
 }
 
+/// Read at most the cap bytes from the END of one file (its mtime rides
+/// along), seek-based: a multi-hundred-MB python.log must never be
+/// slurped whole just to hand the analysis a 2 MiB window. Returns
+/// (window, total size, modified).
+fn read_tail(path: &Path, cap: u64) -> anyhow::Result<(Vec<u8>, u64, Option<SystemTime>)> {
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let mut file = fs::File::open(path).map_err(|e| anyhow!("open {}: {e}", path.display()))?;
+    let meta = file.metadata()?;
+    let modified = meta.modified().ok();
+    let len = meta.len();
+    let start = len.saturating_sub(cap);
+    file.seek(SeekFrom::Start(start))
+        .map_err(|e| anyhow!("seek {}: {e}", path.display()))?;
+    let mut buf = Vec::with_capacity((len - start) as usize);
+    file.read_to_end(&mut buf)
+        .map_err(|e| anyhow!("read {}: {e}", path.display()))?;
+    Ok((buf, len, modified))
+}
+
 /// Read one file's tail into a redacted excerpt.
 fn excerpt_of(path: &Path, tail_lines: usize) -> anyhow::Result<LogExcerpt> {
-    let meta = fs::metadata(path)?;
-    let bytes = fs::read(path)?;
-    let window: &[u8] = if bytes.len() as u64 > EXCERPT_FILE_CAP {
-        &bytes[bytes.len() - EXCERPT_FILE_CAP as usize..]
-    } else {
-        &bytes
-    };
+    let (bytes, size, modified) = read_tail(path, EXCERPT_FILE_CAP)?;
+    let window: &[u8] = &bytes;
     let text = String::from_utf8_lossy(window);
     let lines: Vec<&str> = text.lines().collect();
     let mut picked: Vec<&str> = lines.iter().copied().rev().take(tail_lines).collect();
@@ -1265,8 +1296,8 @@ fn excerpt_of(path: &Path, tail_lines: usize) -> anyhow::Result<LogExcerpt> {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default(),
         path: path.to_string_lossy().into_owned(),
-        size_bytes: meta.len(),
-        modified: rfc3339(meta.modified().ok()),
+        size_bytes: size,
+        modified: rfc3339(modified),
         tail,
         highlights,
     })
@@ -1478,7 +1509,19 @@ fn detect_suspect_mods(
             if !HIGHLIGHT_KEYWORDS.iter().any(|kw| lower.contains(kw)) {
                 continue;
             }
-            if let Some(name) = res_mods_path_entry(line) {
+            if let Some((first, second)) = res_mods_path_candidates(line) {
+                // Whichever segment the inventory claims wins (the current
+                // layout carries no version segment, older lines do); with
+                // no claim either way the first segment is the best guess.
+                let name = if mods.iter().any(|m| m.name.eq_ignore_ascii_case(&first)) {
+                    first
+                } else if let Some(second) =
+                    second.filter(|s| mods.iter().any(|m| m.name.eq_ignore_ascii_case(s)))
+                {
+                    second
+                } else {
+                    first
+                };
                 let redacted = Redactor::from_env().redact(line);
                 let line = if redacted.chars().count() > 240 {
                     format!("{}…", redacted.chars().take(240).collect::<String>())
@@ -1512,21 +1555,26 @@ fn detect_suspect_mods(
     suspects
 }
 
-/// The res_mods entry a game-log line names: the path segment right after
-/// res_mods/<anything>/ (the version dir), matched case-insensitively
-/// against the inventory. Both separator spellings appear in the wild.
-fn res_mods_path_entry(line: &str) -> Option<String> {
+/// The res_mods entries a game-log line may name: the FIRST path segment
+/// after res_mods/ and (when present) the SECOND. The current layout has
+/// NO version segment (bin/<build>/res_mods/<entry>) while older log
+/// lines may carry one — the caller resolves the ambiguity against the
+/// mods inventory. Both separator spellings appear in the wild.
+fn res_mods_path_candidates(line: &str) -> Option<(String, Option<String>)> {
     let normalized = line.replace('\\', "/");
     let lower = normalized.to_ascii_lowercase();
     let pos = lower.find("res_mods/")?;
-    let after_version = &normalized[pos + "res_mods/".len()..];
-    let mut segments = after_version.split('/');
-    let _version = segments.next()?;
-    let entry = segments.next()?.trim();
-    if entry.is_empty() {
+    let after = &normalized[pos + "res_mods/".len()..];
+    let mut segments = after.split('/');
+    let first = segments.next()?.trim();
+    if first.is_empty() {
         return None;
     }
-    Some(entry.to_string())
+    let second = segments
+        .next()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    Some((first.to_string(), second))
 }
 
 /// The full analysis pass for one already-loaded record.
@@ -1543,13 +1591,8 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         // Keep the raw (redacted) text of the same tail window the excerpt
         // saw: the suspect scan needs the res_mods lines the highlight
         // keywords alone might miss.
-        if let Ok(bytes) = fs::read(&path) {
-            let window: &[u8] = if bytes.len() as u64 > EXCERPT_FILE_CAP {
-                &bytes[bytes.len() - EXCERPT_FILE_CAP as usize..]
-            } else {
-                &bytes
-            };
-            let text = String::from_utf8_lossy(window).into_owned();
+        if let Ok((bytes, _, _)) = read_tail(&path, EXCERPT_FILE_CAP) {
+            let text = String::from_utf8_lossy(&bytes).into_owned();
             let name = path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())

@@ -324,15 +324,29 @@ fn suspects_rank_log_mentions_above_recent_changes() {
 }
 
 #[test]
-fn res_mods_path_entry_accepts_both_separators() {
-    let unix_style = "ERROR: res_mods/123/MyMod/file.py missing";
-    let win_style = "ERROR: res_mods\\123\\OtherMod\\f.xml bad";
-    assert_eq!(res_mods_path_entry(unix_style).as_deref(), Some("MyMod"));
-    assert_eq!(res_mods_path_entry(win_style).as_deref(), Some("OtherMod"));
-    assert_eq!(res_mods_path_entry("no path here"), None);
-    assert_eq!(res_mods_path_entry("res_mods/123/"), None);
+fn res_mods_path_candidates_carry_both_segments_and_separators() {
+    // Current layout: no version segment — the entry IS the first segment.
+    let unix_style = "ERROR: res_mods/MyMod/file.py missing";
+    assert_eq!(
+        res_mods_path_candidates(unix_style),
+        Some(("MyMod".to_string(), Some("file.py missing".to_string())))
+    );
+    // Older spelling with a version segment: first may be the version,
+    // the caller resolves against the inventory.
+    let versioned = "ERROR: res_mods/123/MyMod/file.py bad";
+    assert_eq!(
+        res_mods_path_candidates(versioned),
+        Some(("123".to_string(), Some("MyMod".to_string())))
+    );
+    // Backslash separators normalize; no path at all answers None.
+    let win_style = format!("ERROR: res_mods{0}Gui{0}x.xml bad", '\\');
+    assert_eq!(
+        res_mods_path_candidates(&win_style),
+        Some(("Gui".to_string(), Some("x.xml bad".to_string())))
+    );
+    assert_eq!(res_mods_path_candidates("no path here"), None);
+    assert_eq!(res_mods_path_candidates("res_mods/"), None);
 }
-
 // ── quarantine mutation ──────────────────────────────────────────────────────
 
 #[test]
@@ -433,7 +447,7 @@ mod evidence_parsers {
 
     const EVENT_1000: &str = concat!(
         "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>",
-        "<System><Provider Name='Application Error'/><EventID>1000</EventID>",
+        "<System><Provider Name='Application Error'/><EventID Qualifiers='0'>1000</EventID>",
         "<TimeCreated SystemTime='2026-10-27T18:52:13.0000000Z'/>",
         "<Channel>Application</Channel></System><EventData>",
         "<Data Name='AppName'>WorldOfWarships64.exe</Data>",

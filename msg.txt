@@ -1,0 +1,25 @@
+🐛 Fix the cross-review findings across detection and quarantine.
+
+Rust:
+- Bounded tail reads: analysis and export seek to the last 2 MiB of each
+  log instead of slurping whole multi-hundred-MB files.
+- res_mods suspect parsing returns BOTH candidate segments and resolves
+  against the mods inventory — the current layout carries no version
+  segment, older log lines do (the fixed second-segment guess broke
+  quarantine on real-path lines).
+- EventID parse tolerates the Qualifiers attribute the Application Error
+  provider emits (the fixture now carries it).
+- The event-log match prefers the AppPath folder when the exe path is
+  known — two same-family clients on one machine no longer cross-attach.
+- One unreadable dump mtime skips the entry instead of dropping the
+  whole LocalDumps source.
+
+Webui:
+- Quarantine and restore thread the ACTING install root (the selected
+  record / the pinned hub root); the settings section loads the
+  quarantined manifest per surface root, not whatever the hub last
+  loaded.
+- ingest replaces the history array (non-deep watchers fire on pushes).
+- start/stop/start races orphan the first subscription via an epoch.
+- safeModeAndRestart surfaces the safe-mode-on state when the restart
+  half refuses.

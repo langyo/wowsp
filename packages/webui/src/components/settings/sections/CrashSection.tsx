@@ -106,6 +106,7 @@ export default defineComponent({
       await crash.refreshHistory();
       void refreshSafeMode();
       void ensureAnalysis();
+      void refreshQuarantined();
     });
 
     // Selection changes drive the lazy analysis + safe-mode read.
@@ -113,7 +114,20 @@ export default defineComponent({
       if (record?.id === previous?.id) return;
       void ensureAnalysis();
       void refreshSafeMode();
+      void refreshQuarantined();
     });
+
+    /** The quarantined manifest is PER INSTALL — this surface loads the
+     *  selected record's root, never whatever the mod hub last loaded. */
+    async function refreshQuarantined() {
+      const root = gameRoot.value;
+      if (!root) return;
+      try {
+        await crash.loadQuarantined(root);
+      } catch {
+        // No manifest yet — the quarantined list stays as-is.
+      }
+    }
 
     function select(id: string) {
       selectedId.value = id;
@@ -149,7 +163,7 @@ export default defineComponent({
     async function quarantine(name: string) {
       const record = selectedRecord.value;
       try {
-        await crash.quarantine(name, record?.id);
+        await crash.quarantine(name, record?.id, record?.gameRoot);
         toast.success(name + " — " + t("crash.modlist.quarantinedBadge"));
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
@@ -157,8 +171,9 @@ export default defineComponent({
     }
 
     async function restore(name: string) {
+      const record = selectedRecord.value;
       try {
-        await crash.restore(name);
+        await crash.restore(name, record?.gameRoot);
         toast.success(name + " — " + t("crash.suspects.restore"));
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));

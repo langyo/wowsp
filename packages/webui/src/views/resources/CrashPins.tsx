@@ -90,7 +90,7 @@ export function useCrashPins(gameRoot: Ref<string | null>) {
 
   async function quarantine(name: string, crashId: string | undefined) {
     try {
-      await crash.quarantine(name, crashId);
+      await crash.quarantine(name, crashId, gameRoot.value);
       toast.success(name + " — " + t("crash.modlist.quarantinedBadge"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -99,7 +99,7 @@ export function useCrashPins(gameRoot: Ref<string | null>) {
 
   async function restore(name: string) {
     try {
-      await crash.restore(name);
+      await crash.restore(name, gameRoot.value);
       toast.success(name + " — " + t("crash.suspects.restore"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
