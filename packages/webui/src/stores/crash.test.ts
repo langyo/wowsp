@@ -23,6 +23,9 @@ vi.mock("@/api", () => ({
     restoreMod: vi.fn(),
     restartGame: vi.fn(),
     modHubSetSafeMode: vi.fn(),
+    safeguardEnabled: vi.fn(),
+    setSafeguard: vi.fn(),
+    scanRecentCrashes: vi.fn(),
   },
 }));
 
@@ -45,6 +48,9 @@ const mocked = {
   restore: vi.mocked(api.restoreMod),
   restart: vi.mocked(api.restartGame),
   safeMode: vi.mocked(api.modHubSetSafeMode),
+  safeguardEnabled: vi.mocked(api.safeguardEnabled),
+  setSafeguard: vi.mocked(api.setSafeguard),
+  scanRecent: vi.mocked(api.scanRecentCrashes),
 };
 
 function record(overrides: Partial<GameCrashRecord> = {}): GameCrashRecord {
@@ -396,5 +402,37 @@ describe("useCrashStore.quarantine", () => {
     expect(mocked.quarantined).toHaveBeenCalledWith(GAME);
     expect(crash.quarantined).toEqual(manifest);
     expect(crash.quarantineLoading).toBe(false);
+  });
+});
+
+
+describe("useCrashStore.safeguard", () => {
+  it("mirrors the switch from the backend and reloads history after a flip", async () => {
+    mocked.list.mockResolvedValue([]);
+    mocked.safeguardEnabled.mockResolvedValue(false);
+    const crash = useCrashStore();
+    await crash.start();
+    await vi.waitFor(() => {
+      expect(crash.safeguard).toBe(false);
+    });
+
+    mocked.setSafeguard.mockResolvedValue(true);
+    mocked.list.mockResolvedValue([record()]);
+    await crash.setSafeguard(true);
+    expect(mocked.setSafeguard).toHaveBeenCalledWith(true);
+    expect(crash.safeguard).toBe(true);
+    // history reloaded after the flip
+    expect(crash.history.length).toBe(1);
+  });
+
+  it("scanRecent ingests imported records and answers the count", async () => {
+    mocked.list.mockResolvedValue([]);
+    const crash = useCrashStore();
+    const backfilled = record({ id: "crash-bf-1", detectedAt: "2026-10-20T10:00:00Z" });
+    mocked.scanRecent.mockResolvedValue([backfilled]);
+    const count = await crash.scanRecent();
+    expect(count).toBe(1);
+    expect(crash.history.some((r) => r.id === "crash-bf-1")).toBe(true);
+    expect(mocked.scanRecent).toHaveBeenCalledTimes(1);
   });
 });

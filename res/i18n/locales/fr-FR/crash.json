@@ -87,5 +87,12 @@
   "modlist": {
     "pinnedBadge": "Suspect de plantage",
     "quarantinedBadge": "Mis en quarantaine"
+  },
+  "safeguard": {
+    "title": "Détection des plantages et filet de sécurité",
+    "hint": "Tant que c'est activé, WoWSP surveille les plantages du jeu et analyse les preuves récentes, même survenues hors de WoWSP.",
+    "scan": "Analyser les plantages récents",
+    "scanDone": "{count} enregistrement(s) de plantage importé(s)",
+    "scanNone": "Aucun nouvel enregistrement trouvé"
   }
 }

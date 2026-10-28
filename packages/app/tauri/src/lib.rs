@@ -591,6 +591,9 @@ pub fn run() {
             // analysis, redacted report export, single-mod quarantine and
             // the user-invoked client restart. Registered on every target —
             // mobile answers empty lists / errors like is_game_running.
+            commands::game_crash::game_crash_safeguard_enabled,
+            commands::game_crash::game_crash_set_safeguard,
+            commands::game_crash::game_crash_scan_recent,
             commands::game_crash::game_crash_list,
             commands::game_crash::game_crash_dismiss,
             commands::game_crash::game_crash_analyze,

@@ -36,6 +36,9 @@ export interface GameCrashRecord {
   /** Whether res_mods carried entries at detection time. */
   modsActive: boolean;
   status: "new" | "dismissed";
+  /** Stable evidence identity (the backfill dedupe key); live detections
+   *  carry none. */
+  evidenceId?: string | null;
 }
 
 /** Mirrors commands::game_crash::CrashFinding — one diagnosis row the
@@ -152,4 +155,14 @@ export const gameCrashApi = {
     transport.invoke<GameRestartInfo>(RPC.game_crash_restart, {
       gameRoot: gameRoot ?? null,
     }),
+  /** The safeguard switch state (crash detection + recent-crash catch-up). */
+  safeguardEnabled: () => transport.invoke<boolean>(RPC.game_crash_safeguard_enabled),
+  /** Flip the safeguard; on the enabling edge the backend runs one
+   *  catch-up pass. */
+  setSafeguard: (enabled: boolean) =>
+    transport.invoke<boolean>(RPC.game_crash_set_safeguard, { enabled }),
+  /** Parse the recent crash records the history does not know yet and
+   *  import them; resolves the newly imported records. */
+  scanRecentCrashes: () =>
+    transport.invoke<GameCrashRecord[]>(RPC.game_crash_scan_recent),
 };

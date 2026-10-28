@@ -87,5 +87,12 @@
   "modlist": {
     "pinnedBadge": "크래시 의심",
     "quarantinedBadge": "격리됨"
+  },
+  "safeguard": {
+    "title": "크래시 감지 및 세이프티 넷",
+    "hint": "켜져 있는 동안 WoWSP는 게임 크래시를 감시하고 WoWSP가 꺼져 있던 시간의 크래시까지 최근 증거를 분석합니다.",
+    "scan": "최근 크래시 분석",
+    "scanDone": "크래시 기록 {count}건을 가져왔습니다",
+    "scanNone": "새 크래시 기록이 없습니다"
   }
 }

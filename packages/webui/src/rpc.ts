@@ -163,6 +163,9 @@ export const RPC = {
   // (the wowsp://game-crash push), the analysis pass, the redacted report
   // export, per-install res_mods quarantine and the guarded client
   // relaunch — see api/modules/gamecrash.ts.
+  game_crash_safeguard_enabled: "game_crash_safeguard_enabled",
+  game_crash_scan_recent: "game_crash_scan_recent",
+  game_crash_set_safeguard: "game_crash_set_safeguard",
   game_crash_list: "game_crash_list",
   game_crash_dismiss: "game_crash_dismiss",
   game_crash_analyze: "game_crash_analyze",

@@ -241,3 +241,32 @@
   display: flex;
   gap: 8px;
 }
+// ── the safeguard switch row ────────────────────────────────────────────────
+
+.crash-section__safeguard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hi-color-border, #d0d7de);
+  border-radius: var(--hi-radius-sm, 4px);
+  background: var(--hi-color-bg-muted, #f6f8fa);
+}
+
+.crash-section__safeguard-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.crash-section__safeguard-title {
+  font-size: var(--hi-text-sm, 0.8125rem);
+  font-weight: 600;
+}
+
+.crash-section__safeguard-hint {
+  font-size: var(--hi-text-xs, 0.75rem);
+  color: var(--hi-color-text-secondary, #57606a);
+}

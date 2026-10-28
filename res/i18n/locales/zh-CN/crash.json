@@ -87,5 +87,12 @@
   "modlist": {
     "pinnedBadge": "崩溃嫌疑",
     "quarantinedBadge": "已隔离"
+  },
+  "safeguard": {
+    "title": "崩溃检测与兜底",
+    "hint": "开启期间持续检测游戏崩溃,并解析最近的崩溃证据——包括 WoWSP 未运行时发生的崩溃。",
+    "scan": "解析最近崩溃",
+    "scanDone": "已导入 {count} 条崩溃记录",
+    "scanNone": "没有发现新的崩溃记录"
   }
 }

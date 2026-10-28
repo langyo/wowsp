@@ -134,6 +134,12 @@ pub struct GameCrashRecord {
     pub mods_active: bool,
     /// new | dismissed.
     pub status: String,
+    /// Stable evidence identity (evt:<record-id> / wer:<dir-name> /
+    /// dmp:<file-name>) — the recent-crash backfill dedupes on it so the
+    /// same historical crash never imports twice. Live detections leave
+    /// it empty (their time window dedupes them).
+    #[serde(default)]
+    pub evidence_id: Option<String>,
 }
 
 /// One analysis finding: a stable i18n code the webui translates, a
@@ -238,6 +244,10 @@ pub struct GameRestartInfo {
 #[derive(Debug, Default)]
 struct CrashEvidence {
     source: &'static str,
+    /// EventRecordID when the event log backed this evidence — rides onto
+    /// the record's evidence_id so live detections dedupe against future
+    /// backfills even after history truncation.
+    record_id: Option<u64>,
     exception_code: Option<String>,
     faulting_module: Option<String>,
     report_path: Option<String>,
@@ -288,6 +298,44 @@ fn normalize_exception_code(raw: &str) -> Option<String> {
 
 /// Serialize-history lock: appends and dismissals are read-modify-write on
 /// one small file, and the watchdog thread + IPC commands race on it.
+///
+/// The backfill tombstones: evidence ids every import has EVER recorded.
+/// The 20-record history cap evicts old records (with their evidence ids),
+/// so without this list the backfill would re-import an old crash after it
+/// scrolled out — resetting its dismissed state and re-raising the prompt.
+const BACKFILL_SEEN_FILE: &str = "crash-backfill-seen.json";
+/// Tombstone retention: generous against the 14-day harvest horizon.
+const BACKFILL_SEEN_CAP: usize = 200;
+
+/// One backfill at a time: the harvest-dedupe-import sequence must be
+/// atomic against itself (startup thread vs scan command vs toggle edge).
+static BACKFILL_LOCK: Mutex<()> = Mutex::new(());
+
+/// Serializes every tombstone read-modify-write: the live detection path
+/// appends ids while a backfill may be saving its own batch — an unlocked
+/// save would clobber the fresh live id (lost update → re-import later).
+static SEEN_LOCK: Mutex<()> = Mutex::new(());
+
+/// Load the tombstones; a damaged file resets to empty (the time-window
+/// dedupe still holds the line).
+fn load_seen_in(dir: &Path) -> Vec<String> {
+    super::appdata::read_json_in(dir, BACKFILL_SEEN_FILE)
+        .ok()
+        .flatten()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// Persist the tombstones (newest first, capped).
+fn save_seen_in(dir: &Path, seen: &[String]) {
+    let mut owned: Vec<String> = seen.to_vec();
+    owned.truncate(BACKFILL_SEEN_CAP);
+    if let Ok(text) = serde_json::to_string(&owned) {
+        if let Err(e) = super::appdata::write_json_in(dir, BACKFILL_SEEN_FILE, &text) {
+            tracing::warn!(error = %e, "persist backfill tombstones failed");
+        }
+    }
+}
 static HISTORY_LOCK: Mutex<()> = Mutex::new(());
 
 /// Load the crash history from one dir; None when the file is absent.
@@ -305,6 +353,9 @@ fn append_record_in(dir: &Path, record: &GameCrashRecord) -> anyhow::Result<()> 
     let _guard = HISTORY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut records = load_history_in(dir)?.unwrap_or_default();
     records.insert(0, record.clone());
+    // Backfill batches import chronologically; a live push can land between
+    // them — the contract the webui renders is newest-first by detected_at.
+    records.sort_by(|a, b| b.detected_at.cmp(&a.detected_at));
     records.truncate(MAX_HISTORY);
     super::appdata::write_json_in(dir, HISTORY_FILE, &serde_json::to_string(&records)?)
 }
@@ -443,6 +494,89 @@ fn mutate_quarantine(
     Ok(entries)
 }
 
+// ── the safeguard switch ─────────────────────────────────────────────────────
+
+/// The safeguard setting file (flat TOML, see settings_store).
+const SAFEGUARD_FILE: &str = "crash-safeguard.toml";
+const LEGACY_SAFEGUARD_FILE: &str = "crash-safeguard.json";
+
+/// The live flag the watchdog consults every tick. Initialized from the
+/// persisted setting at startup; the settings command flips it without
+/// any thread lifecycle (the tick simply goes quiet while off).
+static SAFEGUARD_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// The persisted shape — one field, default ON (the product promise: the
+/// safety net is armed unless the user explicitly opts out).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+struct SafeguardConfig {
+    #[serde(default = "default_safeguard_enabled")]
+    enabled: bool,
+}
+
+fn default_safeguard_enabled() -> bool {
+    true
+}
+
+fn canonical_safeguard_toml(config: &SafeguardConfig) -> anyhow::Result<String> {
+    Ok(toml::to_string_pretty(config)?)
+}
+
+/// Load the setting (tolerant heal-on-read) and answer its enabled flag.
+fn load_safeguard_in(dir: &Path) -> bool {
+    let loaded = crate::settings_store::load_raw(dir, SAFEGUARD_FILE, LEGACY_SAFEGUARD_FILE);
+    let Some(raw) = loaded.raw else {
+        return true;
+    };
+    let parsed = match loaded.source {
+        crate::settings_store::SettingsSource::Toml => toml::from_str::<SafeguardConfig>(&raw).ok(),
+        _ => serde_json::from_str::<SafeguardConfig>(&raw).ok(),
+    };
+    // unwrap_or_default would land on std Default (false) — the product
+    // promise is that a damaged setting heals to the ARMED state.
+    let config = parsed.unwrap_or(SafeguardConfig {
+        enabled: default_safeguard_enabled(),
+    });
+    if let Ok(canonical) = canonical_safeguard_toml(&config) {
+        crate::settings_store::heal(
+            dir,
+            SAFEGUARD_FILE,
+            LEGACY_SAFEGUARD_FILE,
+            loaded.source,
+            Some(&raw),
+            &canonical,
+        );
+    }
+    config.enabled
+}
+
+/// Persist the setting (canonical TOML, legacy twin retired).
+fn store_safeguard_in(dir: &Path, enabled: bool) -> anyhow::Result<()> {
+    let canonical = canonical_safeguard_toml(&SafeguardConfig { enabled })?;
+    crate::settings_store::store(dir, SAFEGUARD_FILE, &canonical)?;
+    crate::settings_store::retire_legacy_json(dir, LEGACY_SAFEGUARD_FILE);
+    Ok(())
+}
+
+/// The live switch state (tick gate + commands).
+pub(crate) fn safeguard_enabled() -> bool {
+    SAFEGUARD_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Publish the switch: persist, flip the atomic, and on the enabling edge
+/// run one recent-crash backfill so the net catches up immediately.
+fn set_safeguard(app: &tauri::AppHandle, enabled: bool) -> anyhow::Result<()> {
+    let dir = super::appdata::appdata_dir_path()?;
+    store_safeguard_in(&dir, enabled)?;
+    let was = SAFEGUARD_ENABLED.swap(enabled, std::sync::atomic::Ordering::Relaxed);
+    tracing::info!(enabled, "crash safeguard switched");
+    if enabled && !was {
+        if let Err(e) = backfill_recent(app) {
+            tracing::warn!(error = %e, "safeguard-enable backfill failed");
+        }
+    }
+    Ok(())
+}
+
 // ── the watchdog (Windows) ───────────────────────────────────────────────────
 
 /// What the watchdog remembers per tracked client pid.
@@ -480,6 +614,13 @@ pub(crate) fn spawn_crash_watchdog(app: tauri::AppHandle) -> anyhow::Result<()> 
     if WATCHDOG_SPAWNED.set(()).is_err() {
         return Ok(());
     }
+    // Arm (or disarm) from the persisted setting before the first tick.
+    let enabled = match super::appdata::appdata_dir_path() {
+        Ok(dir) => load_safeguard_in(&dir),
+        Err(_) => true,
+    };
+    SAFEGUARD_ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    let backfill_app = app.clone();
     std::thread::Builder::new()
         .name("wowsp-game-crash".into())
         .spawn(move || {
@@ -488,7 +629,23 @@ pub(crate) fn spawn_crash_watchdog(app: tauri::AppHandle) -> anyhow::Result<()> 
                 std::thread::sleep(POLL_INTERVAL);
             }
         })?;
-    tracing::info!("game-crash watchdog started");
+    // The safety net's catch-up pass: crashes that landed while the app was
+    // closed (or before this feature existed) are harvested once per boot.
+    if enabled {
+        if let Err(e) = std::thread::Builder::new()
+            .name("wowsp-game-crash-backfill".into())
+            .spawn(move || {
+                if let Err(e) = backfill_recent(&backfill_app) {
+                    tracing::warn!(error = %e, "startup crash backfill failed");
+                }
+            })
+        {
+            // Detection itself is running — this failure only delays the
+            // catch-up to the next manual scan / toggle cycle.
+            tracing::warn!(error = %e, "startup crash backfill thread did not spawn");
+        }
+    }
+    tracing::info!(enabled, "game-crash watchdog started");
     Ok(())
 }
 
@@ -499,10 +656,20 @@ pub(crate) fn spawn_crash_watchdog(_app: tauri::AppHandle) -> anyhow::Result<()>
     Ok(())
 }
 
+/// Non-Windows targets have nothing to harvest — the safeguard toggle and
+/// the scan command resolve to no-ops (the mobile shell keeps compiling).
+#[cfg(not(windows))]
+fn backfill_recent(_app: &tauri::AppHandle) -> anyhow::Result<Vec<GameCrashRecord>> {
+    Ok(Vec::new())
+}
+
 /// One poll: reconcile the seen-map against the live process list, and for
 /// every confirmed disappearance classify the exit.
 #[cfg(windows)]
 fn watchdog_tick(app: &tauri::AppHandle) {
+    if !safeguard_enabled() {
+        return;
+    }
     let procs = super::game_context::running_processes();
     let now = unix_now();
     let mut gone: Vec<(u32, SeenProcess)> = Vec::new();
@@ -609,6 +776,14 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
     if let Err(e) = append_record_in(&dir, &record) {
         tracing::warn!(error = %e, "persist crash record failed");
     }
+    if let Some(evidence_id) = &record.evidence_id {
+        let _guard = SEEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut seen = load_seen_in(&dir);
+        if !seen.iter().any(|s| s == evidence_id) {
+            seen.insert(0, evidence_id.clone());
+            save_seen_in(&dir, &seen);
+        }
+    }
     use tauri::Emitter;
     if let Err(e) = app.emit(GAME_CRASH_EVENT, &record) {
         tracing::warn!(error = %e, "emit game-crash event failed");
@@ -657,6 +832,7 @@ fn build_crash_record(pid: u32, seen: &SeenProcess, evidence: &CrashEvidence) ->
         summary: (!evidence.summary.is_empty()).then_some(evidence.summary.clone()),
         mods_active,
         status: STATUS_NEW.to_string(),
+        evidence_id: evidence.record_id.map(|id| format!("evt:{id}")),
     }
 }
 
@@ -740,15 +916,22 @@ fn event_log_evidence(
 /// query only runs at a confirmed disappearance, never per tick.
 #[cfg(windows)]
 fn recent_crash_events() -> Option<Vec<ParsedEvent>> {
-    const LOOKBACK_MS: i64 = 15 * 60 * 1000;
+    // The live-classification lookback: generous around the disappearance
+    // moment, nothing like the backfill horizon.
+    crash_events_since(15 * 60 * 1000, 60)
+}
+
+/// The parameterized query behind the live pass and the backfill harvest.
+#[cfg(windows)]
+fn crash_events_since(lookback_ms: i64, cap: usize) -> Option<Vec<ParsedEvent>> {
     let output = std::process::Command::new("wevtutil")
         .args([
             "qe",
             "Application",
             &format!(
-                "/q:*[System[(EventID=1000 or EventID=1001) and TimeCreated[timediff(@SystemTime) <= {LOOKBACK_MS}]]]"
+                "/q:*[System[(EventID=1000 or EventID=1001) and TimeCreated[timediff(@SystemTime) <= {lookback_ms}]]]"
             ),
-            "/c:60",
+            &format!("/c:{cap}"),
             "/rd:true",
             "/f:xml",
         ])
@@ -805,12 +988,27 @@ fn wer_dir_evidence(image: &str, window: (i64, i64)) -> Option<CrashEvidence> {
     let values = wer_report_values(&dir)?;
     Some(CrashEvidence {
         source: SOURCE_WER_REPORT,
+        record_id: None,
         exception_code: values.exception_code,
         faulting_module: values.faulting_module,
         report_path: Some(dir.to_string_lossy().into_owned()),
         dump_path: None,
         summary: format!("WER report folder {}", dir.display()),
     })
+}
+
+/// Does a WER folder/file name mention the stem as a whole token? A bare
+/// substring contains would let the 32-bit stem "worldofwarships" claim
+/// every 64-bit report ("AppCrash_WorldOfWarships64.exe_..." contains it),
+/// splitting one crash into phantom candidates.
+#[cfg(windows)]
+fn wer_name_mentions(lower_name: &str, stem: &str) -> bool {
+    if stem.is_empty() {
+        return true;
+    }
+    [".", "_", "-"]
+        .iter()
+        .any(|sep| lower_name.contains(&format!("{stem}{sep}")))
 }
 
 /// Every WER report folder (AppCrash-style names mentioning this client's
@@ -841,7 +1039,7 @@ fn scan_wer_report_dirs(image: &str, window: (i64, i64)) -> Option<Vec<PathBuf>>
             if !lower.contains("appcrash") {
                 continue;
             }
-            if !stem.is_empty() && !lower.contains(&stem) {
+            if !stem.is_empty() && !wer_name_mentions(&lower, &stem) {
                 continue;
             }
             let Ok(meta) = entry.metadata() else {
@@ -921,6 +1119,7 @@ fn local_dump_evidence(image: &str, pid: u32, window: (i64, i64)) -> Option<Cras
     let (_, mtime, path) = hits.into_iter().next_back()?;
     Some(CrashEvidence {
         source: SOURCE_CRASH_DUMP,
+        record_id: None,
         exception_code: None,
         faulting_module: None,
         report_path: None,
@@ -936,6 +1135,317 @@ fn local_dump_evidence(image: &str, pid: u32, window: (i64, i64)) -> Option<Cras
     })
 }
 
+// ── recent-crash backfill (the safety net catch-up) ─────────────────────────
+
+/// How far back the backfill harvests: two weeks of event log, WER
+/// folders and dumps — long enough to cover a bad modding weekend, short
+/// enough to stay cheap and relevant.
+#[cfg(windows)]
+const BACKFILL_LOOKBACK_SECS: i64 = 14 * 24 * 3600;
+/// Same-crash clustering: an event-log entry, its WER folder and its dump
+/// land within minutes of each other — one imported record per cluster.
+#[cfg(windows)]
+const BACKFILL_CLUSTER_SECS: i64 = 300;
+
+/// One historical crash candidate harvested from OS evidence.
+#[cfg(windows)]
+#[derive(Debug, Clone)]
+struct BackfillCandidate {
+    /// Stable identity: evt:<record-id|slug> / wer:<dir-name> /
+    /// dmp:<file-name> — the import dedupe keys on it.
+    evidence_id: String,
+    at_unix: i64,
+    image: String,
+    priority: u8,
+    exception_code: Option<String>,
+    faulting_module: Option<String>,
+    report_path: Option<String>,
+    dump_path: Option<String>,
+    summary: String,
+}
+
+/// The distinct client image names (both families, 32/64) the harvest
+/// matches against — straight off the client registry.
+#[cfg(windows)]
+fn all_game_images() -> Vec<String> {
+    super::game_client::CLIENTS
+        .iter()
+        .flat_map(|client| client.process_names().iter().copied())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The pure merge: sort newest-first with the event-log source outranking
+/// WER outranking dumps, then keep ONE candidate per (image ± cluster
+/// window) — the same crash never imports twice from three sources.
+#[cfg(windows)]
+fn merge_backfill_candidates(mut candidates: Vec<BackfillCandidate>) -> Vec<BackfillCandidate> {
+    // Priority FIRST: the event-log entry claims its cluster before the
+    // WER folder and the dump of the same crash are even considered — a
+    // dump written two minutes later must not evict the richer record.
+    // Time orders everything within a priority band.
+    candidates.sort_by(|a, b| a.priority.cmp(&b.priority).then(b.at_unix.cmp(&a.at_unix)));
+    let mut kept: Vec<BackfillCandidate> = Vec::new();
+    for candidate in candidates {
+        let clustered = kept.iter().any(|k| {
+            k.image == candidate.image
+                && (k.at_unix - candidate.at_unix).abs() <= BACKFILL_CLUSTER_SECS
+        });
+        if !clustered {
+            kept.push(candidate);
+        }
+    }
+    // Chronological (oldest first): the import loop prepends each record,
+    // so a chronological batch lands newest-first in the history.
+    kept.sort_by_key(|c| c.at_unix);
+    kept
+}
+
+/// Which known client image one harvested event belongs to. EXACT name
+/// match first — the registry lists the 32-bit name before the 64-bit one
+/// and the fuzzy stem-contains pass would otherwise attribute every 64-bit
+/// crash to the 32-bit image (the substring "worldofwarships" matches
+/// "WorldOfWarships64.exe" too). The fuzzy pass only rescues events whose
+/// app name no image states verbatim.
+#[cfg(windows)]
+fn attributed_image(event: &ParsedEvent, images: &[String], window: (i64, i64)) -> Option<String> {
+    let app = event
+        .data
+        .iter()
+        .find(|(key, _)| key == "appname")
+        .or_else(|| event.data.iter().find(|(key, _)| key == "p1"))
+        .map(|(_, value)| value.to_ascii_lowercase());
+    let app = app?;
+    if let Some(image) = images.iter().find(|image| app == **image) {
+        return Some(image.clone());
+    }
+    images
+        .iter()
+        .find(|image| event_matches_client(event, image, None, window))
+        .cloned()
+}
+
+/// Harvest every historical crash candidate inside the lookback window.
+#[cfg(windows)]
+fn harvest_backfill_candidates() -> Vec<BackfillCandidate> {
+    let now = unix_now();
+    let window = (now - BACKFILL_LOOKBACK_SECS, now + 60);
+    let images = all_game_images();
+    let mut candidates: Vec<BackfillCandidate> = Vec::new();
+
+    // Event log — the richest source (codes + modules + report folders).
+    if let Some(events) = crash_events_since(BACKFILL_LOOKBACK_SECS * 1000, 400) {
+        for event in &events {
+            let at = match event.time_unix {
+                Some(t) => t,
+                None => continue,
+            };
+            let image = attributed_image(event, &images, window);
+            let Some(image) = image else {
+                continue;
+            };
+            let evidence = evidence_from_event(event);
+            let slug = event.record_id.map(|id| id.to_string()).unwrap_or_else(|| {
+                format!(
+                    "{at}-{}",
+                    evidence.exception_code.clone().unwrap_or_default()
+                )
+            });
+            candidates.push(BackfillCandidate {
+                evidence_id: format!("evt:{slug}"),
+                at_unix: at,
+                image,
+                priority: 0,
+                exception_code: evidence.exception_code,
+                faulting_module: evidence.faulting_module,
+                report_path: evidence.report_path,
+                dump_path: None,
+                summary: evidence.summary,
+            });
+        }
+    }
+
+    // WER report folders — one candidate per AppCrash dir, newest facts
+    // from its Report.wer when present.
+    let stems: Vec<String> = images.iter().map(|i| image_stem(i)).collect();
+    for stem in &stems {
+        let Some(dirs) = scan_wer_report_dirs(stem, window) else {
+            continue;
+        };
+        for dir in dirs {
+            let Ok(meta) = fs::metadata(&dir) else {
+                continue;
+            };
+            let Some(at) = meta.modified().ok().map(unix_secs) else {
+                continue;
+            };
+            let (code, module) = match wer_report_values(&dir) {
+                Some(values) => (values.exception_code, values.faulting_module),
+                None => (None, None),
+            };
+            let name = dir
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            candidates.push(BackfillCandidate {
+                evidence_id: format!("wer:{name}"),
+                at_unix: at,
+                image: format!("{stem}.exe"),
+                priority: 1,
+                exception_code: code,
+                faulting_module: module,
+                report_path: Some(dir.to_string_lossy().into_owned()),
+                dump_path: None,
+                summary: format!("WER report folder {}", dir.display()),
+            });
+        }
+    }
+
+    // LocalDumps — bare dump files (no pid context worth trusting at this
+    // distance, so every in-window dump of a game stem counts).
+    if let Some(dumps) = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .map(|la| la.join("CrashDumps"))
+    {
+        if let Ok(entries) = fs::read_dir(&dumps) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let lower = name.to_ascii_lowercase();
+                if !lower.ends_with(".dmp") {
+                    continue;
+                }
+                let Some(stem) = stems
+                    .iter()
+                    .find(|s| lower.starts_with(&format!("{}.", s.to_ascii_lowercase())))
+                else {
+                    continue;
+                };
+                let Ok(meta) = entry.metadata() else {
+                    continue;
+                };
+                let Some(at) = meta.modified().ok().map(unix_secs) else {
+                    continue;
+                };
+                if at < window.0 || at > window.1 {
+                    continue;
+                }
+                candidates.push(BackfillCandidate {
+                    evidence_id: format!("dmp:{name}"),
+                    at_unix: at,
+                    image: format!("{stem}.exe"),
+                    priority: 2,
+                    exception_code: None,
+                    faulting_module: None,
+                    report_path: None,
+                    dump_path: Some(entry.path().to_string_lossy().into_owned()),
+                    summary: format!("LocalDumps dump {}", name),
+                });
+            }
+        }
+    }
+    candidates
+}
+
+/// The catch-up pass: harvest, merge, drop everything the history already
+/// knows (by evidence id or by a same-image record inside the cluster
+/// window — live detections carry no evidence id), and import the rest.
+/// Every imported record is persisted and broadcast. Returns the imports.
+#[cfg(windows)]
+fn backfill_recent(app: &tauri::AppHandle) -> anyhow::Result<Vec<GameCrashRecord>> {
+    let _guard = BACKFILL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let candidates = merge_backfill_candidates(harvest_backfill_candidates());
+    let dir = super::appdata::appdata_dir_path()?;
+    let history = load_history_in(&dir)?.unwrap_or_default();
+    let mut seen = {
+        let _guard = SEEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        load_seen_in(&dir)
+    };
+
+    // Single-install machines (the overwhelming majority) can attribute
+    // the historical crash to that install; multi-install stays unrooted
+    // rather than guessing.
+    let installs = super::game_context::cached_scan();
+    let single = if installs.len() == 1 {
+        installs.first().cloned()
+    } else {
+        None
+    };
+
+    use tauri::Emitter;
+    let mut imported = Vec::new();
+    for candidate in candidates {
+        let already = seen.iter().any(|s| s == &candidate.evidence_id)
+            || history.iter().any(|r| {
+                r.evidence_id.as_deref() == Some(candidate.evidence_id.as_str())
+                    || (r.image_name == candidate.image
+                        && r.detected_at
+                            .parse::<chrono::DateTime<chrono::Utc>>()
+                            .ok()
+                            .map(|t| t.timestamp())
+                            .is_some_and(|t| {
+                                (t - candidate.at_unix).abs() <= BACKFILL_CLUSTER_SECS
+                            }))
+            })
+            || imported.iter().any(|r: &GameCrashRecord| {
+                r.evidence_id.as_deref() == Some(candidate.evidence_id.as_str())
+            });
+        if already {
+            continue;
+        }
+        let root = single.as_ref().map(|i| i.path.clone());
+        let mods_active = root.as_deref().is_some_and(res_mods_has_entries);
+        let record = GameCrashRecord {
+            id: format!("gc-bf-{}", candidate.evidence_id),
+            detected_at: chrono::DateTime::<chrono::Utc>::from(
+                UNIX_EPOCH + Duration::from_secs(candidate.at_unix.max(0) as u64),
+            )
+            .to_rfc3339(),
+            pid: 0,
+            image_name: candidate.image.clone(),
+            game_root: root,
+            install_kind: single.as_ref().map(|i| i.kind),
+            game_build: single
+                .as_ref()
+                .and_then(|i| super::mod_hub::latest_bin_version(&i.path))
+                .map(|(build, _)| build),
+            source: match candidate.evidence_id.split(':').next() {
+                Some("evt") => SOURCE_EVENT_LOG.to_string(),
+                Some("wer") => SOURCE_WER_REPORT.to_string(),
+                _ => SOURCE_CRASH_DUMP.to_string(),
+            },
+            exception_code: candidate.exception_code.clone(),
+            faulting_module: candidate.faulting_module.clone(),
+            wer_report_path: candidate.report_path.clone(),
+            crash_dump_path: candidate.dump_path.clone(),
+            summary: (!candidate.summary.is_empty()).then_some(candidate.summary.clone()),
+            mods_active,
+            status: STATUS_NEW.to_string(),
+            evidence_id: Some(candidate.evidence_id.clone()),
+        };
+        append_record_in(&dir, &record)?;
+        seen.insert(0, candidate.evidence_id.clone());
+        let _ = app.emit(GAME_CRASH_EVENT, &record);
+        imported.push(record);
+    }
+    if !imported.is_empty() {
+        let _guard = SEEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Merge, never overwrite: a live detection may have appended its
+        // own id while the harvest ran.
+        let mut merged = load_seen_in(&dir);
+        for id in &seen {
+            if !merged.iter().any(|m| m == id) {
+                merged.insert(0, id.clone());
+            }
+        }
+        save_seen_in(&dir, &merged);
+        tracing::info!(
+            count = imported.len(),
+            "recent-crash backfill imported records"
+        );
+    }
+    Ok(imported)
+}
+
 // ── evidence parsing (pure, Windows-shaped input) ────────────────────────────
 
 /// One event extracted from wevtutil XML output.
@@ -943,6 +1453,9 @@ fn local_dump_evidence(image: &str, pid: u32, window: (i64, i64)) -> Option<Cras
 #[derive(Debug, Clone)]
 struct ParsedEvent {
     event_id: Option<u32>,
+    /// EventRecordID — the log's stable per-entry identity; the backfill
+    /// dedupes harvested crashes on it.
+    record_id: Option<u64>,
     provider: String,
     /// Unix seconds of TimeCreated, when parseable.
     time_unix: Option<i64>,
@@ -983,6 +1496,8 @@ fn parse_event_block(block: &str) -> ParsedEvent {
             between(after, "", "</EventID>").or(Some(after))
         })
         .and_then(|v| v.trim().parse::<u32>().ok());
+    let record_id = between(block, "<EventRecordID>", "</EventRecordID>")
+        .and_then(|v| v.trim().parse::<u64>().ok());
     let provider = between(block, "<Provider Name='", "'")
         .or_else(|| between(block, "<Provider Name=\"", "\""))
         .unwrap_or_default()
@@ -1018,6 +1533,7 @@ fn parse_event_block(block: &str) -> ParsedEvent {
     }
     ParsedEvent {
         event_id,
+        record_id,
         provider,
         time_unix,
         data,
@@ -1132,6 +1648,7 @@ fn evidence_from_event(event: &ParsedEvent) -> CrashEvidence {
     }
     CrashEvidence {
         source: SOURCE_EVENT_LOG,
+        record_id: event.record_id,
         exception_code,
         faulting_module,
         report_path,
@@ -1847,6 +2364,59 @@ fn restart_sync(game_root: Option<&str>) -> anyhow::Result<GameRestartInfo> {
 }
 
 // ── commands ─────────────────────────────────────────────────────────────────
+
+/// The safeguard switch state (the settings toggle reads it).
+#[cfg(windows)]
+#[tauri::command]
+pub fn game_crash_safeguard_enabled() -> CommandResult<bool> {
+    Ok(safeguard_enabled())
+}
+
+/// The mobile stand-in: no watchdog exists, the toggle reads off.
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn game_crash_safeguard_enabled() -> CommandResult<bool> {
+    Ok(false)
+}
+
+/// Flip the safeguard: persist the setting, arm/disarm the watchdog tick,
+/// and on the enabling edge run one recent-crash catch-up. Main-window
+/// gated (a state change).
+#[tauri::command]
+pub async fn game_crash_set_safeguard(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> CommandResult<bool> {
+    crate::commands::ensure_main_window_label(window.label())?;
+    Ok(tauri::async_runtime::spawn_blocking(move || {
+        set_safeguard(&app, enabled)?;
+        Ok::<bool, anyhow::Error>(enabled)
+    })
+    .await
+    .map_err(|e| anyhow!("safeguard task failed: {e}"))??)
+}
+
+/// Parse the recent crash records: harvest OS evidence the history has
+/// not recorded yet (crashes that landed while the app was closed) and
+/// import them. Returns the newly imported records. Heavy IO on the
+/// blocking pool; the settings section toasts the count.
+#[cfg(windows)]
+#[tauri::command]
+pub async fn game_crash_scan_recent(app: tauri::AppHandle) -> CommandResult<Vec<GameCrashRecord>> {
+    Ok(
+        tauri::async_runtime::spawn_blocking(move || backfill_recent(&app))
+            .await
+            .map_err(|e| anyhow!("scan task failed: {e}"))??,
+    )
+}
+
+/// The mobile stand-in: nothing to harvest.
+#[cfg(not(windows))]
+#[tauri::command]
+pub async fn game_crash_scan_recent(_app: tauri::AppHandle) -> CommandResult<Vec<GameCrashRecord>> {
+    Ok(Vec::new())
+}
 
 /// List every retained crash record, newest first.
 #[tauri::command]

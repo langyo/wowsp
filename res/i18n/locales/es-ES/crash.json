@@ -87,5 +87,12 @@
   "modlist": {
     "pinnedBadge": "Sospechoso del fallo",
     "quarantinedBadge": "En cuarentena"
+  },
+  "safeguard": {
+    "title": "Detección de fallos y red de seguridad",
+    "hint": "Mientras esté activado, WoWSP vigila los fallos del juego y analiza la evidencia reciente, incluso la ocurrida con WoWSP cerrado.",
+    "scan": "Analizar fallos recientes",
+    "scanDone": "Se importaron {count} registro(s) de fallo",
+    "scanNone": "No se encontraron registros nuevos"
   }
 }
