@@ -750,6 +750,7 @@ mod tests {
             radius: None,
             control_point_index: None,
             initial_team: None,
+            team_id: None,
         })
     }
 

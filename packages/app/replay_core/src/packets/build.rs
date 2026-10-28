@@ -397,6 +397,54 @@ pub(crate) fn decode_vehicle_build(
     })
 }
 
+/// Walk the EntityCreate state ONLY as far as the Vehicle `teamId`
+/// property and return its byte (0/1). The per-version property table
+/// supplies the index and every width — nothing is scanned blindly, so an
+/// unpinned or drifted version answers `None` instead of a guessed byte.
+///
+/// Why this exists: the arena's initial-state broadcast lists only the ships
+/// that existed at match start, so a scripted operation's enemy/escort waves
+/// (spawned wave-by-wave mid-battle) carry no roster entry and no arena row
+/// — the 2026-10-26 WW2 operation replay painted its whole hostile fleet
+/// ally-green for exactly that reason. The create state itself carries the
+/// authoritative side, and this walk reads it without a full build decode
+/// (it stops long before the variable-width tail).
+pub(crate) fn scan_state_for_team_id(state: &[u8], version: (u32, u32, u32)) -> Option<i8> {
+    let table = vehicle_property_table_for_version(version)?;
+    // Frame: u32 total_len (payload after the length field) | u8 count — the
+    // same framing decode_vehicle_build verifies; a mismatched count means a
+    // different entity shape, not a team.
+    let declared_len = u32::from_le_bytes(state.get(0..4)?.try_into().ok()?) as usize;
+    if declared_len != state.len().checked_sub(4)? {
+        return None;
+    }
+    if usize::from(*state.get(4)?) != usize::from(table.count) {
+        return None;
+    }
+    // Every property before `teamId` must be fixed-width for this shortcut
+    // walk; a variable-width entry earlier in the table would need the full
+    // build walk, which is not worth it for one byte.
+    let team_index = table.properties.iter().position(|e| e.name == "teamId")?;
+    if table.properties[..team_index]
+        .iter()
+        .any(|e| e.fixed_width.is_none())
+    {
+        return None;
+    }
+    let mut cursor = Cursor::new(state);
+    cursor.skip(5)?;
+    for (index, entry) in table.properties.iter().enumerate() {
+        if usize::from(cursor.u8()?) != index {
+            return None;
+        }
+        if index == team_index {
+            return Some(cursor.u8()? as i8);
+        }
+        cursor.skip(usize::from(entry.fixed_width?))?;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,6 +485,88 @@ mod tests {
             table.properties[43..]
                 .iter()
                 .all(|entry| entry.fixed_width.is_none())
+        );
+    }
+
+    /// The team shortcut's table assumption holds: every property before
+    /// `teamId` is fixed-width 1 byte, so the walk reads a stable prefix.
+    /// An entity-def regeneration that inserts a variable-width property
+    /// before it (or moves `teamId`) trips this instead of mis-reading a
+    /// different byte as the team.
+    #[test]
+    fn property_table_team_prefix_is_fixed_single_bytes() {
+        let table = super::super::property_tables::vehicle_property_table_for_version((15, 9, 0))
+            .expect("15.9 Vehicle property table is pinned");
+        let team_index = table
+            .properties
+            .iter()
+            .position(|entry| entry.name == "teamId")
+            .expect("the 15.9 Vehicle table exposes teamId");
+        assert_eq!(team_index, 5, "teamId exposed index");
+        assert!(
+            table.properties[..team_index]
+                .iter()
+                .all(|entry| entry.fixed_width == Some(1)),
+            "every property before teamId is 1 fixed byte"
+        );
+    }
+
+    /// A synthetic 15.9 create state: frame + count + the six (index, value)
+    /// pairs through teamId — the shortcut reads index 5's byte. The full
+    /// 54-property body is NOT needed; the walk stops at teamId.
+    #[test]
+    fn scan_state_for_team_id_reads_the_pinned_index() {
+        let mut state = Vec::new();
+        let payload_len = 1 + 6 * 2; // count byte + six (index, value) pairs
+        state.extend_from_slice(&(payload_len as u32).to_le_bytes());
+        state.push(54); // property count, must equal the table's
+        for index in 0u8..5 {
+            state.push(index); // property index
+            state.push(0xA0 + index); // filler value
+        }
+        state.push(5); // teamId index
+        state.push(1); // THE TEAM
+        assert_eq!(scan_state_for_team_id(&state, (15, 9, 0)), Some(1));
+        state.pop();
+        state.push(0);
+        assert_eq!(scan_state_for_team_id(&state, (15, 9, 0)), Some(0));
+    }
+
+    /// Refusals: an unpinned version (no property table), a count that
+    /// disagrees with the table, a mis-numbered index (drifted layout), and
+    /// a truncated stream each answer None instead of a guessed byte.
+    #[test]
+    fn scan_state_for_team_id_refuses_untrusted_shapes() {
+        let make = |count: u8, indices: &[u8]| -> Vec<u8> {
+            let mut state = Vec::new();
+            state.extend_from_slice(&((1 + indices.len() * 2) as u32).to_le_bytes());
+            state.push(count);
+            for (i, index) in indices.iter().enumerate() {
+                state.push(*index);
+                state.push(i as u8);
+            }
+            state
+        };
+        // Wrong count for the pinned table.
+        assert_eq!(
+            scan_state_for_team_id(&make(53, &[0, 1, 2, 3, 4, 5]), (15, 9, 0)),
+            None
+        );
+        // Drifted indices.
+        assert_eq!(
+            scan_state_for_team_id(&make(54, &[0, 1, 2, 3, 4, 6]), (15, 9, 0)),
+            None
+        );
+        // Truncated (missing the teamId value byte).
+        let mut cut = make(54, &[0, 1, 2, 3, 4, 5]);
+        cut.pop();
+        let declared = (cut.len() as u32) - 4;
+        cut[..4].copy_from_slice(&declared.to_le_bytes());
+        assert_eq!(scan_state_for_team_id(&cut, (15, 9, 0)), None);
+        // Unpinned era: no 15.8 Vehicle table — always None.
+        assert_eq!(
+            scan_state_for_team_id(&make(54, &[0, 1, 2, 3, 4, 5]), (15, 8, 0)),
+            None
         );
     }
 

@@ -100,11 +100,23 @@ export function resolveRosterAssignments(
     z: t.kind?.initialZ ?? t.samples[0]?.z ?? 0,
   });
   const ambiguous: { traj: EntityTrajectory; entries: VehicleEntry[] }[] = [];
+  const selfTeam = selfTeamOf(identities);
   for (const traj of remaining) {
     const sid = traj.kind?.shipId;
     const entries = sid != null ? byShipId.get(sid) : undefined;
     if (entries && entries.length === 1) {
-      assignments.set(traj.entityId, entries[0]);
+      // The create-state teamId is authoritative for the versions that pin
+      // it: a ship whose state says "other team" must never absorb a roster
+      // entry just because the shipId matches — an operation enemy sailing a
+      // teammate's ship would paint ally-green and read the teammate's name
+      // (the roster itself only ever covers the ships that existed at match
+      // start). Reject the join; the entity falls through to the teamId
+      // branch of resolveMarkerContext.
+      const kindTeam = traj.kind?.teamId;
+      const contradicts =
+        kindTeam != null &&
+        (kindTeam === selfTeam) !== (roleFromRelation(entries[0].relation) !== "enemy");
+      assignments.set(traj.entityId, contradicts ? null : entries[0]);
     } else if (entries && entries.length > 1) {
       ambiguous.push({ traj, entries });
     } else {
@@ -182,6 +194,19 @@ export function resolveMarkerContext(
     shipInfo =
       identity.shipParamsId != null
         ? encyclopedia.get(identity.shipParamsId) ?? null
+        : null;
+  } else if (traj.kind?.teamId != null) {
+    // Authoritative create-state team — the one side signal that covers
+    // ships the arena broadcast never lists: scripted operation (行动)
+    // waves spawn mid-battle, after the broadcast, and carry no roster
+    // entry either (the WW2 operation roster lists the player team only).
+    // Their EntityCreate state carries the real side, so the map tints
+    // enemy-red / escort-green without any spawn-order guess. Never
+    // "self" — the recorder always has its own arena/identity row.
+    role = traj.kind.teamId === selfTeamOf(identities) ? "ally" : "enemy";
+    shipInfo =
+      traj.kind.shipId != null
+        ? encyclopedia.get(traj.kind.shipId) ?? null
         : null;
   } else {
     // Fallback: entity-id spawn order (team A spawns before team B).

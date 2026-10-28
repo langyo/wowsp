@@ -712,6 +712,7 @@ mod tests {
             control_point_index: None,
             initial_team: None,
             radius: None,
+            team_id: None,
         }
     }
 
