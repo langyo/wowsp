@@ -1023,21 +1023,21 @@ pub struct DecisionDebugReport {
 /// row's heading (the E16 relative-frame reference).
 fn movement_advice_row(row: &MoveDatasetRow, probs: &[f32], is_recorder: bool) -> MovementAdvice {
     let mut top = 0usize;
-    let mut second = 0usize;
     for (i, p) in probs.iter().enumerate() {
         if *p > probs[top] {
-            second = top;
             top = i;
-        } else if i != top && *p > probs[second] {
-            second = i;
         }
     }
-    // Second starts at 0; when top IS 0 the first iteration's `else` branch
-    // never fires for i==0, so second may still equal top on a 1-class
-    // distribution — degrade honestly (prob 0 distinction is meaningless
-    // there, but keep the invariant second != top).
-    if second == top {
-        second = (top + 1) % MOVE_SECTOR_COUNT;
+    // True runner-up: best index strictly EXCLUDING `top`, via a sentinel
+    // scan. The old in-loop `second` track broke when the argmax sat at 0 —
+    // `probs[second]` was then the max itself, unbeatable, and every
+    // distribution with top==0 reported second=(top+1) instead of the real
+    // runner-up (a wrong pale arrow on the map).
+    let mut second = usize::MAX;
+    for (i, p) in probs.iter().enumerate() {
+        if i != top && (second == usize::MAX || *p > probs[second]) {
+            second = i;
+        }
     }
     let top_sector = top as u8;
     MovementAdvice {
@@ -1170,7 +1170,9 @@ static DEBUG_FIRE_MODEL: OnceLock<anyhow::Result<Mutex<ScoreModel>>> = OnceLock:
 static DEBUG_MOVE_MODEL: OnceLock<anyhow::Result<Mutex<ScoreModel>>> = OnceLock::new();
 
 /// The process-global debug fire model (sticky load result, the
-/// `decision_ai::shared_model` precedent).
+/// `decision_ai::shared_model` precedent — errors included: a ladder that
+/// resolves to nothing stays failed for the whole process, and a model file
+/// replaced under the same path is NOT re-read; both need an app restart).
 fn debug_fire_model() -> anyhow::Result<&'static Mutex<ScoreModel>> {
     DEBUG_FIRE_MODEL
         .get_or_init(|| {
@@ -1601,6 +1603,21 @@ mod tests {
         assert_eq!(adv.top_sector, 0);
         assert_ne!(adv.second_sector, 0);
         assert!((adv.second_prob - adv.top_prob).abs() < 1e-6);
+
+        // Regression (review P1): argmax AT index 0 must report the true
+        // runner-up, not (top+1)%17 — the old in-loop track could never beat
+        // probs[second] == probs[top] == max.
+        let mut z = [0.01f32; MOVE_SECTOR_COUNT];
+        z[0] = 0.5;
+        z[2] = 0.3;
+        z[1] = 0.2;
+        let adv = movement_advice_row(&synth_move_row(7, 300.0, 0.0), &z, false);
+        assert_eq!(adv.top_sector, 0);
+        assert_eq!(
+            adv.second_sector, 2,
+            "runner-up must be the true second argmax"
+        );
+        assert!((adv.second_prob - 0.3).abs() < 1e-6);
     }
 
     /// E18 against real replay bytes — run with
