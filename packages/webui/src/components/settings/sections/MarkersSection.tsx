@@ -1,6 +1,6 @@
 /** Player markers settings section (玩家标记): add/remove local colored
- *  markers (red = 有问题的玩家, yellow = 疑似作弊, purple = 疑似隐藏水表的大佬)
- *  and review the list. Strictly local data — no login, no sync, no upload. */
+ *  markers (red = 消极作战, yellow = 疑似作弊, purple = 隐藏高手) and review
+ *  the list. Strictly local data — no login, no sync, no upload. */
 import { computed, defineComponent, ref } from "vue";
 import type { PropType } from "vue";
 import {

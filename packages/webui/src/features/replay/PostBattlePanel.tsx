@@ -109,6 +109,9 @@ import {
 } from "@/utils/statView";
 import { scopedRosterView } from "@/utils/shipStatsScope";
 import type { OverlayColumnScope } from "@/stores/statsPrefs";
+import MarkerDot from "@/features/markers/MarkerDot";
+import { markerColorLabel } from "@/features/markers/playerContextMenu";
+import { useMarkersStore } from "@/stores/markers";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
 import "./PostBattlePanel.scss";
 
@@ -523,6 +526,11 @@ export default defineComponent({
 
     // ── Share-time privacy + share shot ─────────────────────────────────
     const masking = useNickMasking();
+    // Local player markers (玩家标记): the dot beside the nick and the
+    // right-click menu both read this store (the menu itself is the
+    // app-global binding — rows only carry the identity attrs).
+    const markers = useMarkersStore();
+    void markers.ensureLoaded();
     /** The active view: the roster matrix (default) or the self report —
      *  the toolbar's segmented 全员/我的 switch. Ephemeral per open (a
      *  share-time choice, not a preference). */
@@ -1022,6 +1030,9 @@ export default defineComponent({
             <button
               class="replay-view__postbattle-cell-btn"
               type="button"
+              data-player-name={ai ? undefined : p.name}
+              data-player-account={p.accountId != null ? String(p.accountId) : undefined}
+              data-player-realm={p.realm ?? undefined}
               onClick={() => openDetail(p)}
             >
               <span class="replay-view__postbattle-cell-ico">
@@ -1049,6 +1060,14 @@ export default defineComponent({
                   {stat?.clanTag ? (
                     <span class="replay-view__postbattle-cell-clan">[{stat.clanTag}]</span>
                   ) : null}
+                  {/* Local player marker (玩家标记): nickname-first, account id
+                      sharpens — same voice as the live roster's dot. */}
+                  {(() => {
+                    const color = ai ? null : markers.colorOf(p.name, p.accountId);
+                    return color ? (
+                      <MarkerDot color={color} label={markerColorLabel(color)} />
+                    ) : null;
+                  })()}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
                   {/* The secondary seal (成分章) presses BESIDE the nickname —
                       the four-char wording reads as part of the identity
@@ -1139,6 +1158,9 @@ export default defineComponent({
             <button
               class="replay-view__postbattle-fcell-btn"
               type="button"
+              data-player-name={ai ? undefined : p.name}
+              data-player-account={p.accountId != null ? String(p.accountId) : undefined}
+              data-player-realm={p.realm ?? undefined}
               onClick={() => openDetail(p)}
             >
               <span class="replay-view__postbattle-fcell-main">
@@ -1149,6 +1171,14 @@ export default defineComponent({
                   {stat?.clanTag ? (
                     <span class="replay-view__postbattle-fcell-clan">[{stat.clanTag}]</span>
                   ) : null}
+                  {/* Local player marker (玩家标记): nickname-first, account id
+                      sharpens — same voice as the live roster's dot. */}
+                  {(() => {
+                    const color = ai ? null : markers.colorOf(p.name, p.accountId);
+                    return color ? (
+                      <MarkerDot color={color} label={markerColorLabel(color)} />
+                    ) : null;
+                  })()}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
                   {/* The secondary seals (成分章) press BESIDE the nickname —
                       the four-char wording reads as part of the identity

@@ -25,6 +25,9 @@ import { HkScrollContainer } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import MarkerDot from "@/features/markers/MarkerDot";
+import { markerColorLabel } from "@/features/markers/playerContextMenu";
+import { useMarkersStore } from "@/stores/markers";
 import type { RosterStat } from "@/composables/useRosterStats";
 import { gameTabRowCompare, type TabRowCompareOptions } from "@/utils/shipClass";
 import { isListedPlayer } from "@/utils/rosterSides";
@@ -51,7 +54,12 @@ interface RosterRow {
   kills: number;
 }
 
-function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean) {
+function teamTable(
+  rows: RosterRow[],
+  enemy: boolean,
+  showKills: boolean,
+  ctx: { markers: ReturnType<typeof useMarkersStore>; stats: Map<string, RosterStat> },
+) {
   const alive = rows.filter((r) => r.alive).length;
   return (
     <div class="holo-roster__team">
@@ -101,10 +109,32 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean) {
                   size={14}
                 />
               </td>
-              <td class="holo-roster__td holo-roster__td--name">
+              <td
+                class="holo-roster__td holo-roster__td--name"
+                data-player-name={r.vehicle.name}
+                data-player-account={
+                  ctx.stats.get(r.vehicle.name)?.accountId != null
+                    ? String(ctx.stats.get(r.vehicle.name)?.accountId)
+                    : undefined
+                }
+                data-player-realm={ctx.stats.get(r.vehicle.name)?.realm ?? undefined}
+              >
                 {/* No 「我」 label — the self row is marked by its WHITE
                     ship icon (alive), the game's own convention. */}
                 {r.vehicle.name}
+                {/* Local player marker (玩家标记), same voice as the live
+                    roster's dot; right-click opens the shared menu (the
+                    overlay is aria-hidden chrome, but pointer events on
+                    the name cell still flow to the app-global binding). */}
+                {(() => {
+                  const color = ctx.markers.colorOf(
+                    r.vehicle.name,
+                    ctx.stats.get(r.vehicle.name)?.accountId ?? null,
+                  );
+                  return color ? (
+                    <MarkerDot color={color} label={markerColorLabel(color)} />
+                  ) : null;
+                })()}
               </td>
               <td class="holo-roster__td">
                 {r.tier ? <b class="holo-roster__tier">{r.tier}</b> : null}
@@ -165,6 +195,10 @@ export default defineComponent({
   setup(props) {
     const { dataLanguage } = useLanguage();
     const encStore = useEncyclopediaStore();
+    // Local player markers (玩家标记) for the rows' dots; the right-click
+    // menu itself is the app-global binding (data-player-name attrs).
+    const markers = useMarkersStore();
+    void markers.ensureLoaded();
 
     /** Ship identity (name / tier / type): WG encyclopedia → offline DB →
      *  model DB → the descriptor's raw index name. */
@@ -249,8 +283,10 @@ export default defineComponent({
       <HkScrollContainer class="holo-map__roster-overlay" aria-hidden="true">
         <div class="holo-map__roster-inner">
           <div class="holo-map__roster-board">
-            {teamTable(allies.value, false, props.showKills)}
-            {enemies.value.length ? teamTable(enemies.value, true, props.showKills) : null}
+            {teamTable(allies.value, false, props.showKills, { markers, stats: props.stats })}
+            {enemies.value.length
+              ? teamTable(enemies.value, true, props.showKills, { markers, stats: props.stats })
+              : null}
           </div>
         </div>
       </HkScrollContainer>

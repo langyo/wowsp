@@ -262,6 +262,8 @@ export default defineComponent({
           </div>
           {members.value.map((m) => {
             const memberPrTier = prTier(m.stats.pr);
+            // A player surface: right-click opens the shared marker/context
+            // menu (the app-global binding resolves the data-player-* attrs).
             return (
               <button
                 key={m.accountId}
@@ -271,6 +273,9 @@ export default defineComponent({
                   m.stats.hidden ? "clan-card__member--hidden" : "",
                 ]}
                 onClick={() => props.onMemberClick?.(m)}
+                data-player-name={m.name}
+                data-player-account={String(m.accountId)}
+                data-player-realm={props.clan.realm}
                 data-hint={
                   props.onMemberClick
                     ? `${t("account.nickname")}: ${m.name}`

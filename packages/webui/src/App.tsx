@@ -7,6 +7,7 @@ import AppTitleBar from "@/components/layout/AppTitleBar";
 import AppShell from "@/components/layout/AppShell";
 import { useOverlayLifecycle } from "@/features/overlay/useOverlayLifecycle";
 import { useLiveSessionGuard } from "@/features/replay/useLiveSessionGuard";
+import { PlayerContextMenuHost } from "@/features/markers/playerContextMenu";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { RPC } from "@/rpc";
 import { transport } from "@/transport";
@@ -75,6 +76,11 @@ export default defineComponent({
           ]}
           onAction={() => ui.show()}
         />
+        {/* The app-global player right-click menu (marker tag strip +
+            copy / water-table actions) — mounted INSIDE the provider so
+            its inject reaches the real context-menu API; surfaces opt in
+            by carrying data-player-name attrs on their rows. */}
+        <PlayerContextMenuHost />
         <AppShell />
       </HkContextMenuProvider>
     );

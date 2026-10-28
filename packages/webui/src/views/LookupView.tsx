@@ -491,7 +491,16 @@ export default defineComponent({
       const p = item as PlayerSuggestion;
       return (
         <span class="lookup-view__combo-row">
-          <span class="lookup-view__combo-name">{p.nickname}</span>
+          {/* A player surface: right-click opens the shared marker/context
+              menu (the app-global binding resolves these attrs). */}
+          <span
+            class="lookup-view__combo-name"
+            data-player-name={p.nickname}
+            data-player-account={String(p.accountId)}
+            data-player-realm={realm.value}
+          >
+            {p.nickname}
+          </span>
           <span class="lookup-view__combo-meta">{p.accountId}</span>
         </span>
       );
@@ -823,7 +832,13 @@ export default defineComponent({
                     >
                       {h.kind === "clan" ? <Users size={11} /> : <User size={11} />}
                     </span>
-                    <span class="lookup-view__history-name">{h.name}</span>
+                    <span
+                      class="lookup-view__history-name"
+                      data-player-name={h.kind === "player" ? h.name : undefined}
+                      data-player-realm={h.realm}
+                    >
+                      {h.name}
+                    </span>
                     <span class="lookup-view__history-realm">{h.realm.toUpperCase()}</span>
                   </button>
                 ))
@@ -877,7 +892,13 @@ export default defineComponent({
                 />
               </div>
             ) : mode.value === "player" && result.value ? (
-              <div class="lookup-view__result" key="result">
+              <div
+                class="lookup-view__result"
+                key="result"
+                data-player-name={result.value.name}
+                data-player-account={String(result.value.accountId)}
+                data-player-realm={result.value.realm}
+              >
                 <StatsCard
                   stats={result.value}
                   rankedWr={ranked.winrate}

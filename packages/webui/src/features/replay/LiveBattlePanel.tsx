@@ -1483,6 +1483,9 @@ export default defineComponent({
             key={v.id}
             type="button"
             data-hint={t("replay.live.viewProfile")}
+            data-player-name={v.name}
+            data-player-account={st?.accountId != null ? String(st.accountId) : undefined}
+            data-player-realm={st?.realm ?? undefined}
             onClick={() => openLookup(v.name, st?.realm)}
           >
             {content}
