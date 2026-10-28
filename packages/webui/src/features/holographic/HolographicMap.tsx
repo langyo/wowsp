@@ -5,7 +5,7 @@ import { extractActions } from "./tactical/actions";
 import { useBreakpoint } from "@celestia-island/hikari";
 
 import { useThreeScene } from "./useThreeScene";
-import { useTheme } from "@/theme";
+import { watchStageThemeMode } from "@wowsp/holo";
 import { useCapabilitiesStore } from "@/stores/capabilities";
 import {
   shipModelStem,
@@ -1211,9 +1211,13 @@ export default defineComponent({
     };
 
     // Live theme switch: recolour the water planes already in the scene
-    // (scene background + grid are handled inside useThreeScene).
-    const { effectiveMode: sceneMode } = useTheme();
-    watch(sceneMode, () => reapplyWaterTheme(ctx));
+    // (scene background + grid are handled inside useThreeScene) — through
+    // the SHARED stageTheme source like every other 3D stage. Disposed in
+    // the teardown below (this handle is not a Vue watcher).
+    const stopWaterThemeWatch = watchStageThemeMode(
+      () => reapplyWaterTheme(ctx),
+      { immediate: false },
+    );
 
     /** Recompute the match duration + auto-fit the camera to the data bounds. */
     function recomputeBoundsAndCamera() {
@@ -1703,6 +1707,7 @@ export default defineComponent({
     onBeforeUnmount(() => {
       mapTornDown = true;
       endFreeLook();
+      stopWaterThemeWatch();
       if (tipHideTimer != null) {
         window.clearTimeout(tipHideTimer);
         tipHideTimer = null;

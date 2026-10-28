@@ -11,6 +11,13 @@ export * from "./holoShader";
 export * from "./armorPlates";
 export * from "./shipStage";
 export * from "./shipScale";
+export {
+  readStageThemeMode,
+  watchStageThemeMode,
+  type StageThemeMode,
+  type StageThemeWatcher,
+  type WatchStageThemeModeOptions,
+} from "./stageTheme";
 export * from "./tierRoman";
 export { drawHoloMinimap, setMinimapArtImage } from "./minimap";
 export { drawShipGlyph, SHIP_GLYPH_POLYS, glyphClassOf } from "./shipGlyph";

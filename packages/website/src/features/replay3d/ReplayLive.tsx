@@ -5,6 +5,7 @@ import {
   HoloScorebar, HoloLabel, HoloShipCard, drawHoloMinimap, drawShipGlyph, registerHoloShipIcons,
   setMinimapArtImage, holoShipIconUrl, captureSpeedPerSec, captureSecondsRemaining, formatEta,
   makeShipHoloMaterial, makeTerrainHoloMaterial, tickHolo, useImage, shipClassTargetLen,
+  readStageThemeMode, watchStageThemeMode,
   type HoloBounds, type HoloCap, type HoloCapZone, type HoloHudState, type HoloShip,
   type HoloLabelData,
 } from "@wowsp/holo";
@@ -198,11 +199,13 @@ export default defineComponent({
     let minimapCtx: CanvasRenderingContext2D | null = null;
     let seaMat: THREE.MeshBasicMaterial | null = null;
     let gridMat: THREE.LineBasicMaterial | null = null;
-    /** Light/dark follows the site theme (hikari's root data-mode attr),
-     *  not the OS preference — watch the attribute, not a media query. */
-    let themeObs: MutationObserver | null = null;
+    /** Light/dark follows the site theme through the SHARED stageTheme
+     *  source (@wowsp/holo) — the same data source + refresh logic every
+     *  3D renderer uses (it watches hikari's root data-mode attribute, not
+     *  the OS preference). One subscription, disposed on unmount. */
+    let stopStageTheme: (() => void) | null = null;
     function siteModeIsLight(): boolean {
-      return document.documentElement.dataset.mode === "light";
+      return readStageThemeMode() === "light";
     }
 
     interface ShipNode {
@@ -605,8 +608,7 @@ export default defineComponent({
     async function boot() {
       if (!host.value) return;
       reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      themeObs = new MutationObserver(applyTheme);
-      themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode"] });
+      stopStageTheme = watchStageThemeMode(() => applyTheme(), { immediate: false });
 
       let bundle: BattleBundle;
       try {
@@ -822,8 +824,8 @@ export default defineComponent({
       ro?.disconnect();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      themeObs?.disconnect();
-      themeObs = null;
+      stopStageTheme?.();
+      stopStageTheme = null;
       for (const m of materials) m.dispose();
       for (const g of geometries) g.dispose();
       for (const tx of textures) tx.dispose();

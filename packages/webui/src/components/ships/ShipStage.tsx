@@ -17,7 +17,7 @@ import { deinterleaveGeometry } from "@/features/holographic/deinterleave";
 import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
 import { HkScrollContainer, HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
-import { useImage } from "@wowsp/holo";
+import { readStageThemeMode, useImage, watchStageThemeMode, type StageThemeMode } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
@@ -652,6 +652,9 @@ export default defineComponent({
      *  constant no matter how far the camera zooms — same treatment as the
      *  holographic map's point labels. */
     let waterlineLabel: HTMLElement | null = null;
+    /** The gauge line's material — recolored in place on a live theme flip
+     *  (the material itself dies with its group's deep dispose). */
+    let waterlineGaugeMat: THREE.LineBasicMaterial | null = null;
     /** World-space point the label tracks (gauge line midpoint). */
     const _wlAnchor = new THREE.Vector3();
     const _wlScreen = new THREE.Vector3();
@@ -665,6 +668,7 @@ export default defineComponent({
         waterlineGroup.value = null;
       }
       if (waterlineLabel) waterlineLabel.style.display = "none";
+      waterlineGaugeMat = null;
     }
 
     /** (Re)build the waterline group after the visual model normalizes: one
@@ -698,19 +702,21 @@ export default defineComponent({
       g.add(plane);
       // Midship gauge: waterline → keel, depthTest off so it stays readable
       // straight through the hull. Lavender on the dark scene, deep purple on
-      // the light one (same dataset.mode check the holo opacity uses).
+      // the light one (same mode split the holo opacity uses — shared
+      // stageTheme source, recolored live on flips via waterlineGaugeMat).
       const gauge = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([
           new THREE.Vector3(0, 0, 0),
           new THREE.Vector3(0, keelY, 0),
         ]),
         new THREE.LineBasicMaterial({
-          color: document.documentElement.dataset.mode === "dark" ? 0xd8b4fe : 0x7e22ce,
+          color: WL_GAUGE[readStageThemeMode()],
           transparent: true,
           opacity: 0.9,
           depthTest: false,
         }),
       );
+      waterlineGaugeMat = gauge.material as THREE.LineBasicMaterial;
       gauge.renderOrder = 10;
       g.add(gauge);
       _wlAnchor.set(0, keelY / 2, 0);
@@ -1145,6 +1151,9 @@ export default defineComponent({
     let resizeObs: ResizeObserver | null = null;
     /** Stops the applied-DPI watcher armed by initScene (null before). */
     let stopDpiWatch: (() => void) | null = null;
+    /** Stops the shared stage-theme watcher armed in onMounted (null
+     *  before / after) — one subscription per component lifetime. */
+    let stopStageTheme: (() => void) | null = null;
     /** Active focus tween; cancelled if a new focus starts mid-flight. */
     let focusTween: (() => void) | null = null;
     const _allHoloUniforms: HoloUniforms[] = [];
@@ -1278,11 +1287,10 @@ export default defineComponent({
           // climbing sweep band, a faint flicker — keep the surface reading
           // as a transmitted projection rather than moulded plastic. The
           // pale light-theme background washes a translucent fill out
-          // further, so it keeps a tenth more opacity there (same
-          // dataset.mode check the scene background uses; a mid-session
-          // theme flip takes effect on the next model load).
-          mat.uniforms.uBaseAlpha.value =
-            document.documentElement.dataset.mode === "dark" ? 0.45 : 0.55;
+          // further, so it keeps a tenth more opacity there (same mode
+          // split the scene background uses — HOLO_BASE_ALPHA below, and a
+          // live theme flip re-applies it across the cache).
+          mat.uniforms.uBaseAlpha.value = HOLO_BASE_ALPHA[readStageThemeMode()];
           mat.uniforms.uRimAlpha.value = 0.55;
           mat.uniforms.uScanGain.value = 0.50;
           mat.uniforms.uSweepGain.value = 0.40;
@@ -1320,6 +1328,80 @@ export default defineComponent({
       }
     }
 
+    // ── Stage scene palette (shared stageTheme source) ────────────────────
+    /** Per-mode scene look. The 3D viewport follows the app theme: dark
+     *  keeps the deep-space hologram look, light switches to a soft paper
+     *  panel so the stage doesn't read as a dark island inside a light UI.
+     *  The mode comes from the shared stageTheme module (@wowsp/holo) —
+     *  the one data source + refresh logic every 3D renderer follows — and
+     *  applyStageTheme re-applies it live on flips. */
+    const STAGE_SCENES = {
+      dark: { bg: 0x0c121e, gridA: 0x1a3a55, gridB: 0x0e1f30, gridOpacity: 0.4 },
+      light: { bg: 0xf5f8fc, gridA: 0x2f7fc2, gridB: 0xaec3d6, gridOpacity: 0.5 },
+    } as const;
+    /** Holographic fill alpha per mode: the pale light-theme background
+     *  washes a translucent fill out further, so it keeps a tenth more
+     *  opacity there (the material factory and applyStageTheme share it). */
+    const HOLO_BASE_ALPHA = { dark: 0.45, light: 0.55 } as const;
+    /** Waterline gauge hue per mode: lavender reads on the dark scene,
+     *  deep purple on the light one (rebuildWaterline + applyStageTheme). */
+    const WL_GAUGE = { dark: 0xd8b4fe, light: 0x7e22ce } as const;
+
+    /** Build the ground grid for a mode (defaults to the live one for the
+     *  scene-creation path; the theme flip passes its own mode so every
+     *  piece of one applyStageTheme call dresses from the same value). */
+    function buildStageGrid(mode: StageThemeMode = readStageThemeMode()): THREE.GridHelper {
+      const p = STAGE_SCENES[mode];
+      const g = new THREE.GridHelper(1200, 40, p.gridA, p.gridB);
+      (g.material as THREE.Material).transparent = true;
+      (g.material as THREE.Material).opacity = p.gridOpacity;
+      return g;
+    }
+
+    /** Live theme follow: re-apply the mode-dependent scene pieces in
+     *  place — background + fog tint, ground grid (rebuilt: GridHelper
+     *  bakes its colors into vertex attributes), waterline gauge hue, and
+     *  the holographic fill alpha across every cached material. Armed once
+     *  per component in onMounted and kept across scene rebuilds (2D↔3D,
+     *  re-show): initScene re-reads the shared source itself, so a flip
+     *  while no scene exists is a no-op until the scene returns. */
+    function applyStageTheme(mode: StageThemeMode): void {
+      const palette = STAGE_SCENES[mode];
+      const sc = scene.value;
+      if (!sc) return;
+      (sc.background as THREE.Color | null)?.setHex(palette.bg);
+      (sc.fog as THREE.Fog | null)?.color.setHex(palette.bg);
+      if (gridRef) {
+        // Carry the keel-follow position the loaded model fixed (initScene
+        // parks the fresh grid at -25 until then).
+        const y = gridRef.position.y;
+        sc.remove(gridRef);
+        gridRef.geometry.dispose();
+        (gridRef.material as THREE.Material).dispose();
+        gridRef = buildStageGrid(mode);
+        gridRef.position.y = y;
+        sc.add(gridRef);
+      }
+      waterlineGaugeMat?.color.setHex(WL_GAUGE[mode]);
+      // Holographic fill alpha across every staged model — walk the live
+      // scene instead of a material cache (prepareHoloModel's cache is
+      // per-load): every holo material carries uBaseAlpha, every non-holo
+      // material (wire, waterline, armor, depth anchors) lacks it, so the
+      // uniform's presence is the discriminator. Covers the hidden
+      // airframes too — they sit in the scene with visible=false.
+      sc.traverse((o) => {
+        const mat = (o as THREE.Mesh).material as
+          | THREE.Material
+          | THREE.Material[]
+          | undefined;
+        const list = Array.isArray(mat) ? mat : mat ? [mat] : [];
+        for (const m of list) {
+          const uniforms = (m as THREE.ShaderMaterial).uniforms;
+          if (uniforms?.uBaseAlpha) uniforms.uBaseAlpha.value = HOLO_BASE_ALPHA[mode];
+        }
+      });
+    }
+
     // ── Scene lifecycle ───────────────────────────────────────────────────
     function initScene() {
       const el = containerRef.value;
@@ -1328,11 +1410,10 @@ export default defineComponent({
       const h = el.clientHeight || 320;
 
       const sc = new THREE.Scene();
-      const isDark = document.documentElement.dataset.mode === "dark";
-      const bg = isDark ? 0x0c121e : 0xf5f8fc;
-      sc.background = new THREE.Color(bg);
+      const palette = STAGE_SCENES[readStageThemeMode()];
+      sc.background = new THREE.Color(palette.bg);
       // Subtle radial fog for depth.
-      sc.fog = new THREE.Fog(bg, 400, 1400);
+      sc.fog = new THREE.Fog(palette.bg, 400, 1400);
 
       const cam = new THREE.PerspectiveCamera(45, w / h, 0.1, 5000);
       // Initial view before a model loads — matches the `default` focus-zone
@@ -1368,9 +1449,7 @@ export default defineComponent({
       sc.add(key);
 
       // A faint ground grid at the ship's keel (placed after model loads).
-      const grid = new THREE.GridHelper(1200, 40, 0x1a3a55, 0x0e1f30);
-      (grid.material as THREE.Material).transparent = true;
-      (grid.material as THREE.Material).opacity = 0.4;
+      const grid = buildStageGrid();
       grid.position.y = -25; // default below ship; fixed after model loads
       sc.add(grid);
       gridRef = grid;
@@ -1743,6 +1822,7 @@ export default defineComponent({
       // The scene traverse above already disposed the waterline group's
       // geometries/materials; just drop the refs and the label element.
       waterlineGroup.value = null;
+      waterlineGaugeMat = null;
       waterlineLabel?.remove();
       waterlineLabel = null;
       // Staged airframes die with the scene too (same traverse); sessions
@@ -1761,6 +1841,11 @@ export default defineComponent({
         initScene();
         void loadModel();
       }
+      // One shared stageTheme subscription for the component's lifetime —
+      // a mid-session theme flip re-dresses the live scene in place
+      // (bg + fog + grid + waterline + holo fill) instead of waiting for
+      // the next model load.
+      stopStageTheme = watchStageThemeMode(applyStageTheme);
     });
 
     // Re-show initialization frame handle — cancelled on unmount/re-hide so a
@@ -1770,6 +1855,8 @@ export default defineComponent({
 
     onBeforeUnmount(() => {
       cancelAnimationFrame(showRafId);
+      stopStageTheme?.();
+      stopStageTheme = null;
       document.removeEventListener("pointerdown", onModelPickDocPointerDown);
       document.removeEventListener("keydown", onModelPickDocKeyDown);
       disposeScene();
