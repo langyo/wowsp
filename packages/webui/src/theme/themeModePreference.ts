@@ -111,3 +111,20 @@ export function setThemeModePreference(mode: ThemeModePreference) {
 export function initThemeModePreference() {
   applyPreference(themeModePreference.value);
 }
+
+/** The settings mode tabs speak hikari's theme-panel grammar (the
+ *  shittim-chest pattern — HkThemePanelContent): solar renders as the
+ *  "system" (auto) tab, whose light/dark cells merge into the live
+ *  sun-altitude strip. These two map the preference onto that grammar
+ *  and back — the single place allowed to know the equivalence. */
+export function preferenceToTabKey(
+  preference: ThemeModePreference,
+): "dark" | "light" | "system" {
+  return preference === "solar" ? "system" : preference;
+}
+
+/** Inverse of preferenceToTabKey. Anything unknown (only possible from a
+ *  stray storage value) falls back to solar — the shipped default. */
+export function tabKeyToPreference(key: string): ThemeModePreference {
+  return key === "dark" || key === "light" ? key : "solar";
+}
