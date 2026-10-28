@@ -28,6 +28,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { useCareerStamp } from "@/composables/useCareerStamp";
 import { useCompositionStamps } from "@/composables/useCompositionStamps";
 import ShareShotButton from "@/features/share/ShareShotButton";
+import RefreshStatsButton from "@/components/stats/RefreshStatsButton";
 import { renderStatsShot, type StatsShotModel } from "@/features/share/statsShot";
 import { renderClanShot, type ClanShotModel } from "@/features/share/clanShot";
 import { useShareImage } from "@/features/share/useShareImage";
@@ -523,9 +524,21 @@ export default defineComponent({
     // pages by route.path, so /lookup?name=A → /lookup?name=B keeps this
     // instance mounted and a mount-time-only jump would silently drop the
     // second hop (the contributor chips' dead click).
+    //
+    // Fires on the query's VALUES, not on the query object's identity: a
+    // popstate that re-emits the same URL (every hikari popup pushes a
+    // back-guard history entry and rewinds it on close — so a click that
+    // dismisses a popup, or a context menu opening/closing, churns the
+    // route object) must NOT re-run the current lookup. Re-searching here
+    // was what made the water-table page "refresh on every click"; the
+    // explicit refresh lives on the result card's action strip instead.
+    let lastJumpKey = "";
     function jumpFromQuery() {
       if (route.path !== "/lookup") return;
       const q = route.query;
+      const key = `${q.name ?? ""}|${q.clan ?? ""}|${q.realm ?? ""}`;
+      if (key === lastJumpKey) return;
+      lastJumpKey = key;
       const r = typeof q.realm === "string" && realms.includes(q.realm) ? q.realm : "asia";
       const clan = typeof q.clan === "string" ? Number(q.clan) : NaN;
       if (Number.isFinite(clan) && clan > 0) {
@@ -537,7 +550,10 @@ export default defineComponent({
       void doSearch(name, r);
     }
     onMounted(jumpFromQuery);
-    watch(() => route.query, jumpFromQuery);
+    watch(
+      () => [route.query.name, route.query.clan, route.query.realm].join("|"),
+      jumpFromQuery,
+    );
 
     // ── Share shots ───────────────────────────────────────────────────
     // One per lookup mode, mirroring the result the user currently sees.
@@ -899,10 +915,23 @@ export default defineComponent({
                   onMemberClick={(m) => void doSearch(String(m.accountId), clanResult.value!.realm)}
                   v-slots={{
                     actions: () => (
-                      <ShareShotButton
-                        busy={clanShot.busy.value}
-                        onShot={() => void clanShot.copyShot()}
-                      />
+                      <>
+                        {/* Explicit re-query — the page no longer refreshes
+                            on stray clicks (see jumpFromQuery). */}
+                        <RefreshStatsButton
+                          busy={pendingQuery.value !== ""}
+                          onRefresh={() => {
+                            const clan = clanResult.value;
+                            if (clan) {
+                              void doClanLookup(clan.clanId, clan.realm, `[${clan.tag}]`);
+                            }
+                          }}
+                        />
+                        <ShareShotButton
+                          busy={clanShot.busy.value}
+                          onShot={() => void clanShot.copyShot()}
+                        />
+                      </>
                     ),
                   }}
                 />
@@ -939,10 +968,23 @@ export default defineComponent({
                   }
                   v-slots={{
                     actions: () => (
-                      <ShareShotButton
-                        busy={playerShot.busy.value}
-                        onShot={() => void playerShot.copyShot()}
-                      />
+                      <>
+                        {/* Explicit re-query — the page no longer refreshes
+                            on stray clicks (see jumpFromQuery). */}
+                        <RefreshStatsButton
+                          busy={pendingQuery.value !== ""}
+                          onRefresh={() => {
+                            const acc = result.value;
+                            if (acc) {
+                              void doSearch(String(acc.accountId), acc.realm);
+                            }
+                          }}
+                        />
+                        <ShareShotButton
+                          busy={playerShot.busy.value}
+                          onShot={() => void playerShot.copyShot()}
+                        />
+                      </>
                     ),
                   }}
                 />
