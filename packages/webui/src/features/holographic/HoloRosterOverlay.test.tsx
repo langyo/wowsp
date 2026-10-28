@@ -23,7 +23,7 @@ import { initLocaleMessages } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }));
 
-// Partial mock: the real module's isTauri (and friends) must survive —
+// Partial mock: the real module's isNative (and friends) must survive —
 // useLanguage calls it on load; only the transport channel is stubbed.
 vi.mock("@/transport", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/transport")>();
