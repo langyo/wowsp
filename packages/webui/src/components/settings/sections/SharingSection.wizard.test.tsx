@@ -74,7 +74,7 @@ beforeEach(() => {
     }
     return Promise.resolve(undefined);
   });
-  // happy-dom has no Tauri shell: stub the internals isTauri() probes so
+  // happy-dom has no Tauri shell: stub the internals isNative() probes so
   // the lazy transport singleton becomes a TauriTransport whose every
   // invoke lands on mocks.invoke. Without this the browser fetch shim
   // would ECONNREFUSED against the dev-only mock backend and leave the

@@ -11,7 +11,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import { api, type RuntimeCapabilities } from "@/api";
-import { isTauri } from "@/utils/platform";
+import { isNative } from "@/utils/platform";
 
 export const useCapabilitiesStore = defineStore("capabilities", () => {
   const aiInference = ref(false);
@@ -44,7 +44,7 @@ export const useCapabilitiesStore = defineStore("capabilities", () => {
           // Browser dev / mock backend: preserve the pre-split behaviour.
           // A REAL shell failure stays fail-closed — a portable binary must
           // never enable AI surfaces because the probe hiccuped.
-          if (!isTauri()) aiInference.value = true;
+          if (!isNative()) aiInference.value = true;
           portable.value = false;
           directmlRequired.value = false;
           directmlPresent.value = false;

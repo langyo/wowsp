@@ -1,7 +1,7 @@
 /** Platform classification gates: the phone-app build flag must require the
  *  Tauri shell (a phone UA in a plain browser is still a browser), the
  *  ?mobileApp=1 dev override must force the gates WITHOUT faking the shell
- *  (it must never leak into isTauri/mock-mode detection), and the phone
+ *  (it must never leak into isNative/mock-mode detection), and the phone
  *  LAYOUT check keys off the viewport media query, not the UA. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,17 +38,17 @@ function setUa(ua: string) {
   Object.defineProperty(navigator, "userAgent", { value: ua, configurable: true });
 }
 
-describe("isTauri", () => {
+describe("isNative", () => {
   it("is false in a plain browser and true once the shell injects internals", async () => {
     delete w().__TAURI_INTERNALS__;
     const p = await importPlatform();
-    expect(p.isTauri()).toBe(false);
+    expect(p.isNative()).toBe(false);
   });
 
   it("flips on with __TAURI_INTERNALS__", async () => {
     w().__TAURI_INTERNALS__ = { invoke: () => {} };
     const p = await importPlatform();
-    expect(p.isTauri()).toBe(true);
+    expect(p.isNative()).toBe(true);
   });
 });
 
@@ -59,7 +59,7 @@ describe("isMobileApp", () => {
       "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Mobile Safari/537.36",
     );
     const p = await importPlatform();
-    expect(p.isTauri()).toBe(false);
+    expect(p.isNative()).toBe(false);
     expect(p.isMobileApp()).toBe(false);
   });
 
@@ -88,7 +88,7 @@ describe("isMobileApp", () => {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36 Edg/130.0",
     );
     const p = await importPlatform();
-    expect(p.isTauri()).toBe(true);
+    expect(p.isNative()).toBe(true);
     expect(p.isMobileApp()).toBe(false);
   });
 });
@@ -101,7 +101,7 @@ describe("?mobileApp=1 dev override", () => {
     expect(p.isMobileApp()).toBe(true);
     // The override is a FEATURE gate, not a shell fake — transport selection
     // (mock vs tauri) must keep seeing a plain browser.
-    expect(p.isTauri()).toBe(false);
+    expect(p.isNative()).toBe(false);
   });
 
   it("does not trip on unrelated or absent values", async () => {

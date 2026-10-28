@@ -25,7 +25,7 @@ vi.mock("@/utils/platform", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/utils/platform")>();
   return {
     ...real,
-    isTauri: () => true,
+    isNative: () => true,
     isMobileApp: () => false,
     isPhoneLayout: () => false,
   };

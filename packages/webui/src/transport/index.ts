@@ -9,14 +9,14 @@
 import { TauriTransport } from "./tauri";
 import { WebTransport } from "./web";
 import type { Transport } from "./types";
-import { isTauri } from "@/utils/platform";
+import { isNative } from "@/utils/platform";
 
 /** Single source of truth lives in utils/platform (phone/desktop gating
  *  siblings live there); re-exported here for the many existing callers. */
-export { isTauri };
+export { isNative };
 
 export function createTransport(): Transport {
-  return isTauri() ? new TauriTransport() : new WebTransport();
+  return isNative() ? new TauriTransport() : new WebTransport();
 }
 
 let _transport: Transport | null = null;

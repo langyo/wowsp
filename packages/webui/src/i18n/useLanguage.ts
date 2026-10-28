@@ -37,7 +37,7 @@ import { computed, ref } from "vue";
 
 import { RPC } from "@/rpc";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
-import { isTauri, transport } from "@/transport";
+import { isNative, transport } from "@/transport";
 
 import { i18n, setLocale, SUPPORTED_LOCALES, type Locale } from "./index";
 
@@ -198,7 +198,7 @@ export function installerLocaleToUi(locale: string): Locale | null {
  */
 export async function seedUiLocaleFromInstaller(): Promise<void> {
   if (localStorage.getItem(UI_KEY)) return;
-  if (!isTauri()) return;
+  if (!isNative()) return;
   try {
     const raw = await transport.invoke<string | null>(RPC.installer_language);
     if (localStorage.getItem(UI_KEY)) return;

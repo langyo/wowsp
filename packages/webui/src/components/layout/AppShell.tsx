@@ -32,7 +32,7 @@ import { initDogtagPack } from "@/utils/dogtagAssets";
 import { peekLastRunVersion } from "@/utils/lastRunVersion";
 import { setRuntimeKit } from "@/overlay/teamIntel";
 import { api } from "@/api";
-import { isMobileApp, isTauri } from "@/utils/platform";
+import { isMobileApp, isNative } from "@/utils/platform";
 import OnboardingWizard from "./OnboardingWizard";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import PluginInstallPromptModal from "@/features/replay/PluginInstallPromptModal";
@@ -240,7 +240,7 @@ export default defineComponent({
       // Portable-mode probe runs on EVERY surface — desktop (normal and
       // portable), the phone build and browser dev: the ship-detail aircraft
       // hint and the titlebar both read the flag, and the phone / browser
-      // boots never reach init() below (mobile early-return, DEV / isTauri
+      // boots never reach init() below (mobile early-return, DEV / isNative
       // gates). The updater PASSES themselves stay desktop-only as documented
       // in UpdateToast.tsx; this probe merely resolves the build flavor.
       void updater.probePortable();
@@ -379,7 +379,7 @@ export default defineComponent({
       watch(
         () => config.activeInstall?.path ?? "",
         (root) => {
-          if (root && isTauri() && !mobileApp) {
+          if (root && isNative() && !mobileApp) {
             void api.warmShipGameparamsCache(root).catch(() => {});
           }
         },
@@ -417,7 +417,7 @@ export default defineComponent({
       // prompt from the store. Browser dev mode has no updater, and the
       // phone app build has no desktop updater at all (updates ship through
       // the store pipeline there — keep it quiet).
-      if (isTauri() && !mobileApp) {
+      if (isNative() && !mobileApp) {
         void updater.init().then(() => updater.scheduleAutoCheck());
       }
 
@@ -426,14 +426,14 @@ export default defineComponent({
       // delayed past the updater's own prompt so the two never collide,
       // and the ask itself only rises when a leftover is actually live
       // (see stores/duplicateInstall.ts).
-      if (isTauri() && !mobileApp) {
+      if (isNative() && !mobileApp) {
         dupInstall.scheduleCheck();
       }
 
       // The close-requested event only exists inside the Tauri shell; in a
       // plain browser tab listen() would throw at mount, so guard it (the
       // close dialog is desktop-app-only anyway).
-      if (isTauri()) {
+      if (isNative()) {
         unlistenClose = await listen("close-requested", () => {
           // The remembered action (AppShell's dialog checkbox / the settings'
           // closeBehavior radio — one store, one slot). "ask" is the stored

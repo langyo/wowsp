@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
 
-vi.mock("@/transport", () => ({ transport: { invoke: mocks.invoke }, isTauri: () => false }));
+vi.mock("@/transport", () => ({ transport: { invoke: mocks.invoke }, isNative: () => false }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: () => Promise.resolve("0.6.0") }));
 
 import FeedbackSection from "./FeedbackSection";

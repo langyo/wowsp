@@ -3,7 +3,7 @@
  *  (composed into `api` by client.ts). */
 import { transport } from "@/transport";
 import { RPC } from "@/rpc";
-import { isTauri } from "@/utils/platform";
+import { isNative } from "@/utils/platform";
 import type { ReplayMetaLite } from "./replay";
 
 /** State of the DESKTOP pairing server (`pairing_get_status` /
@@ -120,7 +120,7 @@ export const pairingApi = {
    *  shape it understands. Backend sanitizes + dedupes; the frontend just
    *  displays the returned final path. */
   importReplayFile: (name: string, bytes: Uint8Array) =>
-    isTauri()
+    isNative()
       ? transport.invokeRaw?.<{ path: string }>(RPC.import_replay_file, bytes, {
           "x-replay-name": encodeURIComponent(name),
         }) ?? Promise.reject(new Error("raw IPC unavailable in this host"))

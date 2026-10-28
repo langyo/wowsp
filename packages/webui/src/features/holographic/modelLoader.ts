@@ -35,7 +35,7 @@ import shipDescriptionsDbRaw from "../../data/ship_descriptions.json";
 import nationNamesDbRaw from "../../data/nation_names.json";
 import { ref } from "vue";
 import { runtimeShipEntry } from "@/utils/runtimeShipDb";
-import { isTauri } from "@/utils/platform";
+import { isNative } from "@/utils/platform";
 import { wireInsightsPack } from "./insightsLoader";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -54,7 +54,7 @@ export async function initModelPack(fetch: () => Promise<string>): Promise<void>
   // is exactly what `?mobileApp=1` browser emulation wants.
   try {
     const mod = await import("@tauri-apps/api/core");
-    _convertFileSrc = isTauri() ? mod.convertFileSrc : null;
+    _convertFileSrc = isNative() ? mod.convertFileSrc : null;
   } catch {
     _convertFileSrc = null;
   }

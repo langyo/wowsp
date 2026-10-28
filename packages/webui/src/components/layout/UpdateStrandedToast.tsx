@@ -2,7 +2,7 @@ import { defineComponent, onBeforeUnmount, onMounted, ref, watch, Teleport } fro
 import { TriangleAlert, X } from "@lucide/vue";
 
 import { useUpdaterStore } from "@/stores/updater";
-import { isMobileApp, isTauri } from "@/utils/platform";
+import { isMobileApp, isNative } from "@/utils/platform";
 import { t } from "@/i18n";
 import "./UpdateStrandedToast.scss";
 
@@ -54,7 +54,7 @@ export default defineComponent({
     }
 
     onMounted(() => {
-      if (!isTauri() || isMobileApp()) return;
+      if (!isNative() || isMobileApp()) return;
       // The store's init() reads the reconciliation verdict; the card
       // rises whenever a stranded handoff shows up (and again never —
       // the marker is one-shot).

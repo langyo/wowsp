@@ -74,7 +74,7 @@ export default defineComponent({
     let win: ReturnType<typeof getCurrentWindow> | null = null;
     let unlistenResize: (() => void) | null = null;
 
-    const isTauri =
+    const isNative =
       typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
     // Section view switches live dead-center in the bar, each only while
@@ -92,7 +92,7 @@ export default defineComponent({
     });
 
     onMounted(async () => {
-      if (!isTauri) return;
+      if (!isNative) return;
       win = getCurrentWindow();
       const refresh = async () => {
         try {

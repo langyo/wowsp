@@ -12,7 +12,7 @@ import {
 } from "@/theme/themeModePreference";
 import { useWallpaper } from "@/theme/useWallpaper";
 import { imageSourceUrl, wallpaperNameKey } from "@/theme/wallpaper";
-import { isTauri } from "@/transport";
+import { isNative } from "@/transport";
 import {
   seedStatsPrefs,
   STATS_PREFS_STORAGE_KEY,
@@ -606,7 +606,7 @@ export default defineComponent({
                     <h3 class="onboarding__subtitle">{t("onboarding.wallpaperSection")}</h3>
                     <div class="onboarding__options onboarding__options--auto">
                       {wallpaperCards.value}
-                      {isTauri() ? (
+                      {isNative() ? (
                         <button
                           key="import"
                           type="button"

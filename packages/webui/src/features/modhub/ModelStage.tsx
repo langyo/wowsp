@@ -19,7 +19,7 @@ import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import type { ModelPreviewPart } from "@/api";
 import ErrorCard from "@/components/base/ErrorCard";
 import LoadingNote from "@/components/base/LoadingNote";
-import { isTauri } from "@/utils/platform";
+import { isNative } from "@/utils/platform";
 import { makeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
 import { loadGlbModel } from "@/features/holographic/modelLoader";
 import { SCENE_THEMES } from "@/features/holographic/useThreeScene";
@@ -254,7 +254,7 @@ export default defineComponent({
             <ErrorCard error={failed.value} />
           </div>
         ) : null}
-        {!isTauri() && (
+        {!isNative() && (
           <div class="model-stage__note">{t("resources.modelShellOnly")}</div>
         )}
         <div class="model-stage__hint">{t("resources.modelNote")}</div>
