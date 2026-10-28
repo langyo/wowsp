@@ -1,0 +1,30 @@
+/* Local player-marker dot (玩家标记) — the shared hex language of the
+ * markers system: red #e5484d / yellow #ffd400 / purple #a855f7, the
+ * same inks the settings list, the live roster dots and the holo beads
+ * paint. 6px, inline beside the nickname (mirrors the live roster's
+ * own dot metrics). */
+
+.marker-dot {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-inline-start: 0.3rem;
+  vertical-align: middle;
+  /* The live roster dot's dark ink halo — these rows sit on the same
+   * saturated surfaces (battle scrims, holo HUD). */
+  box-shadow: 0 0 2px rgb(0 0 0 / 85%);
+}
+
+.marker-dot--red {
+  background: #e5484d;
+}
+
+.marker-dot--yellow {
+  background: #ffd400;
+}
+
+.marker-dot--purple {
+  background: #a855f7;
+}

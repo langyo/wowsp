@@ -9,6 +9,10 @@
   "clickToCopy": "Click to copy",
   "reload": "Reload",
   "copyFailed": "Failed to copy",
+  "playerMenu": {
+    "copyName": "Copy nickname",
+    "lookup": "Lookup stats"
+  },
   "saved": "Saved",
   "imageUnavailable": "Image unavailable",
   "detect": {

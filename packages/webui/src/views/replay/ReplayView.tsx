@@ -107,6 +107,9 @@ import { prAlgoForRequest, statsPrefsState, type OverlayColumnScope } from "@/st
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
+import MarkerDot from "@/features/markers/MarkerDot";
+import { markerColorLabel } from "@/features/markers/playerContextMenu";
+import { useMarkersStore } from "@/stores/markers";
 import type { PlayerStats } from "@/api";
 import "./ReplayView.scss";
 
@@ -221,6 +224,9 @@ const PostBattleFallbackPanel = defineComponent({
     // Share-time privacy + share shot (same controls as the results panel —
     // the fallback matrix leaks nicknames just the same).
     const masking = useNickMasking();
+    // Local player markers (玩家标记) for the fallback roster rows.
+    const markers = useMarkersStore();
+    void markers.ensureLoaded();
     const shot = useShareShot(buildShotModel, () => root.value);
     /** One row's numbers for ONE column scope — the account careers for
      *  "global" and "solo" (the career carries the solo split), the
@@ -535,6 +541,13 @@ const PostBattleFallbackPanel = defineComponent({
           <button
             class="replay-view__postbattle-cell-btn"
             type="button"
+            data-player-name={isBot(r) ? undefined : r.vehicle.name}
+            data-player-account={
+              nameStats.value.get(r.vehicle.name)?.accountId != null
+                ? String(nameStats.value.get(r.vehicle.name)?.accountId)
+                : undefined
+            }
+            data-player-realm={realm.value}
             onClick={() => openPlayer(r)}
           >
             <span class="replay-view__postbattle-cell-ico">
@@ -562,6 +575,13 @@ const PostBattleFallbackPanel = defineComponent({
                     [{nameStats.value.get(r.vehicle.name)?.clanTag}]
                   </span>
                 ) : null}
+                {(() => {
+                  // Local player marker (玩家标记), same voice as the live roster.
+                  const color = isBot(r) ? null : markers.colorOf(r.vehicle.name);
+                  return color ? (
+                    <MarkerDot color={color} label={markerColorLabel(color)} />
+                  ) : null;
+                })()}
                 {isBot(r) ? (
                   <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
                 ) : null}
@@ -2004,7 +2024,16 @@ export default defineComponent({
             }}
           >
             <div class="replay-card__top">
-              <span class="replay-card__ship">{r.playerName ?? t("replay.list.unknownPlayer")}</span>
+              {/* The recording player's nickname is a player surface too —
+                  right-click opens the shared marker/context menu (the
+                  app-global binding resolves the attrs; unknown stays inert). */}
+              <span
+                class="replay-card__ship"
+                data-player-name={r.playerName ?? undefined}
+                data-player-realm={r.installRealm ?? undefined}
+              >
+                {r.playerName ?? t("replay.list.unknownPlayer")}
+              </span>
               <span class="replay-card__pills">
                 {external ? (
                   <span class="replay-card__pill replay-card__pill--external">

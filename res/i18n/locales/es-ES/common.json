@@ -9,6 +9,10 @@
   "clickToCopy": "Haz clic para copiar",
   "reload": "Recargar",
   "copyFailed": "No se pudo copiar",
+  "playerMenu": {
+    "copyName": "Copiar apodo",
+    "lookup": "Consultar estadísticas"
+  },
   "saved": "Guardado",
   "imageUnavailable": "No se pudo cargar la imagen",
   "detect": {

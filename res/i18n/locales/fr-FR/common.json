@@ -9,6 +9,10 @@
   "clickToCopy": "Cliquer pour copier",
   "reload": "Recharger",
   "copyFailed": "Échec de la copie",
+  "playerMenu": {
+    "copyName": "Copier le pseudonyme",
+    "lookup": "Rechercher les stats"
+  },
   "saved": "Enregistré",
   "imageUnavailable": "Impossible de charger l'image",
   "detect": {

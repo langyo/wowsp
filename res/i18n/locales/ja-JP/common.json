@@ -9,6 +9,10 @@
   "clickToCopy": "クリックでコピー",
   "reload": "再読み込み",
   "copyFailed": "コピーに失敗しました",
+  "playerMenu": {
+    "copyName": "ニックネームをコピー",
+    "lookup": "戦績を検索"
+  },
   "saved": "保存しました",
   "imageUnavailable": "画像を読み込めません",
   "detect": {
