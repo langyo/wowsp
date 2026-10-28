@@ -352,4 +352,22 @@ describe("pruneModelDebris", () => {
     expect(pointTriangleDistance2(2.5, 1, 0, collapsed, 0)).toBeCloseTo(1, 9);
     expect(pointTriangleDistance2(0, 3, 4, collapsed, 0)).toBeCloseTo(25, 9);
   });
+
+  it("keeps detached propeller meshes (semantic placements) and drops detached junk", () => {
+    // A screw hangs behind the stern with no shaft geometry at the baked LOD,
+    // so the contact rule reads it as detached — the fragment rule's exact
+    // prey, yet a semantic game placement (Izumo lost three of four this way).
+    // An equally detached unnamed fitting still goes.
+    const model = modelWith([
+      ["hull", box(10, [0, 0, 0])],
+      ["propeller_485", box(0.2, [0, -1, 7])],
+      ["junk", box(0.2, [3, -1, -7])],
+    ]);
+    const stats = pruneModelDebris(model);
+    expect(stats.detachedGroups).toBe(1);
+    expect(stats.detachedTriangles).toBe(12);
+    const tris = (mesh: THREE.Mesh) => (mesh.geometry.getIndex()?.count ?? 0) / 3;
+    expect(tris(model.children[1] as THREE.Mesh)).toBe(12);
+    expect(tris(model.children[2] as THREE.Mesh)).toBe(0);
+  });
 });
