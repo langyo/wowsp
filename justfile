@@ -126,10 +126,11 @@ test target='unit' *FLAGS='':
 
 # ── lint ──────────────────────────────────────────────────────────────
 #   just lint           → full: fmt-check + clippy + anyhow policy +
-#                         pnpm lint + i18n
+#                         pnpm lint + i18n + release-notes grammar
 #   just lint rust      → fmt-check + clippy
 #   just lint webui     → pnpm lint
 #   just lint i18n      → i18n parity check
+#   just lint notes     → release-notes i18n grammar self-test (offline)
 #   just check          → cargo check (fast compile check)
 
 # Both recipes mirror the CI rust gate (ci.yml "Rustfmt"/"Clippy") exactly:
@@ -142,6 +143,7 @@ _lint-full:
     @python scripts/check_anyhow.py
     {{PM}} -r lint
     @python scripts/check_i18n.py
+    @python scripts/release_notes_i18n.py self-test
 
 _lint-rust:
     cargo fmt -p wowsp_tauri -p wowsp_tauri_shared -- --check
@@ -153,8 +155,19 @@ _lint-webui:
 _lint-i18n *FLAGS='':
     @python scripts/check_i18n.py {{FLAGS}}
 
+_lint-notes:
+    @python scripts/release_notes_i18n.py self-test
+
 lint target='full' *FLAGS='':
     @just _lint-{{target}} {{FLAGS}}
+
+# Live gate over the PUBLISHED GitHub Releases bodies (needs gh auth; the
+# same lint ci.yml runs — AGENTS.md §10). Run after every
+# release_notes_i18n.py set/wrap:
+#   just notes-lint                → hard-validate every v* release body
+#   just notes-lint --tag v0.6.7   → scope to one release
+notes-lint *FLAGS='':
+    @python scripts/release_notes_i18n.py lint {{FLAGS}}
 
 # Standalone i18n parity check (same script as `just lint i18n`).
 #   just i18n-check          → i18n parity check

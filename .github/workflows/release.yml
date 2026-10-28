@@ -468,6 +468,31 @@ jobs:
       # manual reminder nobody ran left the relay pinned at v0.6.0 and
       # the updater's dual-channel cross-check refused every update.
 
+  notes-i18n:
+    # Wraps the freshly published body into the i18n scaffold (en-US
+    # verbatim + one collapsed <details> per supported locale, canonical
+    # placeholders for untranslated ones) and upserts the rolling
+    # pending-translations issue. Runs AFTER publish on purpose: this job
+    # only ever edits the release body — the fragile draft/tag machinery
+    # the publish job guards is never touched (AGENTS.md §10).
+    name: Scaffold i18n release notes
+    needs: [preflight, publish]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_OPS_TOKEN || github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: Wrap the published body into the i18n scaffold
+        run: python scripts/release_notes_i18n.py wrap --tag "${{ github.ref_name }}" --apply
+      - name: Sync the pending-translations issue
+        run: python scripts/release_notes_i18n.py issue-sync
+
   # Publishes the app-channel digest doc for the tag being released —
   # the updater's SECOND official channel must re-point within minutes
   # of every v* release, or every client with both channels reachable

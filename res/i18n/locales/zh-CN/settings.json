@@ -256,6 +256,7 @@
   "changelogFailed": "更新日志加载失败。",
   "changelogRefresh": "刷新",
   "changelogCurrent": "当前版本",
+  "changelogI18nFallback": "该版本还没有你所用语言的更新说明，已显示英文原文。",
   "feedback": "问题反馈",
   "feedbackHint": "应用会滚动记录诊断日志（UTF-8 编码），反馈问题时可一键附带。",
   "feedbackRefresh": "刷新",

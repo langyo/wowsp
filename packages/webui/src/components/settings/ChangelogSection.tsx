@@ -7,6 +7,7 @@ import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useChangelogStore } from "@/stores/changelog";
 import ErrorCard from "@/components/base/ErrorCard";
+import { selectReleaseBody } from "@/utils/releaseI18n";
 import ReleaseMarkdown from "./ReleaseMarkdown";
 import "./ChangelogSection.scss";
 
@@ -89,20 +90,30 @@ export default defineComponent({
             {changelog.error ? (
               <ErrorCard error={changelog.error} description={t("settings.changelogFailed")} />
             ) : null}
-            {changelog.releases.map((release) => (
-              <article key={release.version} class="changelog__release">
-                <header class="changelog__release-head">
-                  <span class="changelog__release-version">v{release.version}</span>
-                  {release.version === version.value ? (
-                    <span class="changelog__current">{t("settings.changelogCurrent")}</span>
+            {changelog.releases.map((release) => {
+              // The i18n scaffold (AGENTS.md §10): render ONLY the running
+              // locale's section, falling back to the en-US original with a
+              // hint when the locale's section is missing or still the
+              // pending placeholder. Legacy bodies render whole.
+              const selected = selectReleaseBody(release.body, lang.uiLocale.value);
+              return (
+                <article key={release.version} class="changelog__release">
+                  <header class="changelog__release-head">
+                    <span class="changelog__release-version">v{release.version}</span>
+                    {release.version === version.value ? (
+                      <span class="changelog__current">{t("settings.changelogCurrent")}</span>
+                    ) : null}
+                    <span class="changelog__release-date">
+                      {formatDate(lang.uiLocale.value, release.published_at)}
+                    </span>
+                  </header>
+                  {selected.fallback ? (
+                    <p class="changelog__i18n-fallback">{t("settings.changelogI18nFallback")}</p>
                   ) : null}
-                  <span class="changelog__release-date">
-                    {formatDate(lang.uiLocale.value, release.published_at)}
-                  </span>
-                </header>
-                {release.body ? <ReleaseMarkdown source={release.body} /> : null}
-              </article>
-            ))}
+                  {selected.source ? <ReleaseMarkdown source={selected.source} /> : null}
+                </article>
+              );
+            })}
           </div>
         )}
       </HkSettingsGroup>
