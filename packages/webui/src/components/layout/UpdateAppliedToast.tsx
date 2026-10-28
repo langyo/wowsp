@@ -5,7 +5,7 @@ import { CircleCheck, X } from "@lucide/vue";
 import { t } from "@/i18n";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { peekLastRunVersion, recordRunVersion } from "@/utils/lastRunVersion";
-import { isMobileApp, isTauri } from "@/utils/platform";
+import { isMobileApp, isNative } from "@/utils/platform";
 import "./UpdateAppliedToast.scss";
 
 /** Leave transition length — matches the --leave duration in the scss
@@ -60,7 +60,7 @@ export default defineComponent({
     }
 
     onMounted(async () => {
-      if (!isTauri() || isMobileApp()) return;
+      if (!isNative() || isMobileApp()) return;
       let current: string;
       try {
         current = await getVersion();

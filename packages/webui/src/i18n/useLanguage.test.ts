@@ -25,7 +25,7 @@ import { nationNameFromDb } from "@/features/holographic/modelLoader";
 // The seed's only external dependency is the transport's invoke; mock the
 // whole module so `installer_language` answers are scriptable per test.
 vi.mock("@/transport", () => ({
-  isTauri: () => true,
+  isNative: () => true,
   transport: { invoke: vi.fn() },
 }));
 

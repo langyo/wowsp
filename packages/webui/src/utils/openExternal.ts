@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import { isTauri } from "@/utils/platform";
+import { isNative } from "@/utils/platform";
 
 /**
  * Opens a URL in the system default handler through the Tauri backend's
@@ -12,7 +12,7 @@ import { isTauri } from "@/utils/platform";
  * browser/dev mode. The http(s)-only guard lives in the command itself.
  */
 export async function openExternal(url: string): Promise<void> {
-  if (isTauri()) {
+  if (isNative()) {
     await invoke("open_external", { url });
   } else {
     window.open(url, "_blank", "noopener");

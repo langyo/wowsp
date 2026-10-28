@@ -25,7 +25,7 @@
  */
 import { ref } from "vue";
 import mapRaw from "@/data/dogtags_map.json";
-import { isTauri } from "@/utils/platform";
+import { isNative } from "@/utils/platform";
 
 export type DogtagMapEntry = [string, string] | [string, string, string];
 
@@ -48,7 +48,7 @@ export function initDogtagPack(fetchPack: () => Promise<string>): Promise<void> 
     // bundled snapshot (what `?mobileApp=1` browser emulation wants).
     try {
       const mod = await import("@tauri-apps/api/core");
-      if (!isTauri()) return;
+      if (!isNative()) return;
       convertFileSrc = mod.convertFileSrc;
     } catch {
       return;

@@ -43,7 +43,7 @@ import {
 import { DPI_MAX, DPI_MIN, DPI_STEP, isDpiRisky } from "@/theme/dpiPrefs";
 import { t } from "@/i18n";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
-import { isTauri } from "@/utils/platform";
+import { isNative } from "@/utils/platform";
 import FontSizeControl from "@/components/layout/FontSizeControl";
 import ThemeSchemeDialog from "@/components/settings/ThemeSchemeDialog";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
@@ -345,7 +345,7 @@ export default defineComponent({
                 {/* dashed add tile — the row's last item; opens the native
                     import picker (Tauri only). Matches the dashed add-row
                     pattern used by the account / game-path sections. */}
-                {isTauri() ? (
+                {isNative() ? (
                   <button
                     type="button"
                     class={["settings-modal__wallpaper-add", appearance.importingWallpaper.value ? "settings-modal__wallpaper-add--busy" : ""]}

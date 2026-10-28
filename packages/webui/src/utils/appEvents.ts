@@ -6,13 +6,13 @@
  * itself here (see stores/statsPrefs.ts and stores/stampOverrides.ts for
  * the senders, overlay/main.ts for the receiver).
  */
-import { isTauri } from "./platform";
+import { isNative } from "./platform";
 
 /** Broadcast an app event to every window. No-op outside the Tauri shell
  *  (plain browser tab, tests); a failed emit degrades silently — senders
  *  pair this with a documented fallback contract, never a crash. */
 export function emitTauriEvent(event: string): void {
-  if (!isTauri()) return;
+  if (!isNative()) return;
   void import("@tauri-apps/api/event")
     .then(({ emit }) => emit(event))
     .catch(() => {

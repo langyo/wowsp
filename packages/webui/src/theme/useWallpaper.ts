@@ -31,7 +31,7 @@ import {
   wallpaperSidebarBlurPx,
 } from "./wallpaperBlur";
 import { api } from "@/api";
-import { isTauri } from "@/transport";
+import { isNative } from "@/transport";
 
 const activeWallpaperId = ref(loadActiveWallpaperId());
 
@@ -63,7 +63,7 @@ function setActiveWallpaper(id: string) {
 }
 
 async function refreshCustom(): Promise<void> {
-  if (!isTauri()) return;
+  if (!isNative()) return;
   try {
     const files = await api.wallpaperList();
     customWallpapers.value = await Promise.all(
@@ -177,6 +177,6 @@ export function useWallpaper() {
 
 // Boot: pick up the wallpapers folder once per session (the composable's
 // first use — WallpaperRenderer mounts at startup).
-if (isTauri()) {
+if (isNative()) {
   void refreshCustom();
 }

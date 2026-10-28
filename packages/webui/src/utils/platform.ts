@@ -1,7 +1,7 @@
 /**
  * Platform classification for feature gating — THREE separate concerns:
  *
- * - `isTauri()` — "packaged app shell (desktop OR phone WebView), not a
+ * - `isNative()` — "packaged app shell (desktop OR phone WebView), not a
  *   plain browser tab". Existing mock-mode detection, unchanged semantics.
  * - `isMobileApp()` — "the ANDROID/iOS app build". Gates FEATURES that make
  *   no sense on a phone (local game-process watch, in-game overlay window,
@@ -27,7 +27,7 @@ function hasTauriInternals(): boolean {
 }
 
 /** True inside any Tauri webview (desktop app or phone app). */
-export function isTauri(): boolean {
+export function isNative(): boolean {
   return hasTauriInternals();
 }
 

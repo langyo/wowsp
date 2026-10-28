@@ -15,7 +15,7 @@ import { ref } from "vue";
 import type { StampKind } from "@/utils/winrate";
 import { emitTauriEvent } from "@/utils/appEvents";
 import { api } from "@/api";
-import { isTauri } from "@/transport";
+import { isNative } from "@/transport";
 
 /** Announced after every successful stamps-folder write so the overlay
  *  window re-runs its own `stamp_list` read (it cannot see this module's
@@ -45,7 +45,7 @@ async function toAssetUrl(path: string): Promise<string> {
 
 /** Re-read the stamps folder (boot + after every import/reset). */
 export async function refreshStampOverrides(): Promise<void> {
-  if (!isTauri()) return;
+  if (!isNative()) return;
   const sequence = ++refreshSequence;
   try {
     const files = await api.stampList();
@@ -93,6 +93,6 @@ export async function resetStampImage(kind: StampKind): Promise<void> {
 
 // Boot: pick up the stamps folder once per session (RatingStamp is mounted
 // on every stats surface, so the first mount covers the app).
-if (isTauri()) {
+if (isNative()) {
   void refreshStampOverrides();
 }

@@ -4,7 +4,7 @@ import { PiggyBank, X } from "@lucide/vue";
 import { t } from "@/i18n";
 import { usePiggyReminderStore } from "@/stores/piggyReminder";
 import { useSettingsUiStore } from "@/stores/settingsUi";
-import { isMobileApp, isTauri } from "@/utils/platform";
+import { isMobileApp, isNative } from "@/utils/platform";
 import "./PiggyReminderToast.scss";
 
 /** Leave transition length — matches the --leave duration in the scss
@@ -78,7 +78,7 @@ export default defineComponent({
     }
 
     onMounted(() => {
-      if (!isTauri() || isMobileApp()) return;
+      if (!isNative() || isMobileApp()) return;
       bootTimer = window.setTimeout(check, BOOT_DELAY_MS);
       recheckTimer = window.setInterval(check, RECHECK_MS);
     });
