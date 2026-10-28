@@ -232,6 +232,25 @@ describe("lookup result ownership", () => {
     expect(view.findComponent({ name: "LookupErrorNotice" }).props("raw")).toBe("this query failed");
   });
 
+  it("does not re-run the query when the route object churns with identical values", async () => {
+    // A hikari popup pushes a back-guard history entry and rewinds it on
+    // close, so dismissing one re-emits the SAME url through a NEW route
+    // object. That churn must not re-query — the water-table page used to
+    // "refresh on every click" this way after a jump-in.
+    mocks.player.mockResolvedValue(player(101));
+    mountLookup({ name: "101", realm: "asia" });
+    await flushPromises();
+    expect(mocks.player).toHaveBeenCalledTimes(1);
+    // Same values, new query object identity: no refire.
+    mocks.route.query = { name: "101", realm: "asia" };
+    await flushPromises();
+    expect(mocks.player).toHaveBeenCalledTimes(1);
+    // A real hop with different values still runs.
+    mocks.route.query = { name: "202", realm: "asia" };
+    await flushPromises();
+    expect(mocks.player).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores a previous query's failure after the latest query succeeds", async () => {
     const old = deferred<ClanInfo>();
     mocks.clan.mockReturnValueOnce(old.promise).mockResolvedValueOnce(clan(2));
