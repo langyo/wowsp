@@ -272,6 +272,12 @@ export const RPC = {
   markers_list: "markers_list",
   markers_add: "markers_add",
   markers_remove: "markers_remove",
+  markers_import: "markers_import",
+  // ApeRadar (海猴雷达) watch-list migration — the import wizard's
+  // source: default-location scan, explicit-file read, native picker.
+  aperadar_watchlist_scan: "aperadar_watchlist_scan",
+  aperadar_watchlist_read: "aperadar_watchlist_read",
+  aperadar_watchlist_pick: "aperadar_watchlist_pick",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

@@ -667,6 +667,12 @@ pub fn run() {
             commands::markers::markers_list,
             commands::markers::markers_add,
             commands::markers::markers_remove,
+            commands::markers::markers_import,
+            // ApeRadar (海猴雷达) watch-list migration: default-location
+            // scan, manual-file read/pick (the wizard's source picker).
+            commands::markers::aperadar_watchlist_scan,
+            commands::markers::aperadar_watchlist_read,
+            commands::markers::aperadar_watchlist_pick,
             // Mobile replay acquisition + desktop pairing (all targets — the
             // start/stop server commands answer with the mobile marker, the
             // client commands run anywhere, a desktop can pull from another
