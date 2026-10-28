@@ -109,7 +109,7 @@ import {
 } from "@/utils/statView";
 import { scopedRosterView } from "@/utils/shipStatsScope";
 import type { OverlayColumnScope } from "@/stores/statsPrefs";
-import MarkerDot from "@/features/markers/MarkerDot";
+import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
@@ -1054,20 +1054,22 @@ export default defineComponent({
               </span>
               <span class="replay-view__postbattle-cell-main">
                 <span class="replay-view__postbattle-cell-name">
-                  <span class="replay-view__postbattle-cell-nick">
-                    {masking.maskOf(p.name)}
-                  </span>
+                  {/* Local player marker (玩家标记): the name itself carries
+                      the animated tint — nickname-first, account id sharpens. */}
+                  {(() => {
+                    const color = ai ? null : markers.colorOf(p.name, p.accountId);
+                    return (
+                      <span
+                        class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
+                        title={color ? markerColorLabel(color) : undefined}
+                      >
+                        {masking.maskOf(p.name)}
+                      </span>
+                    );
+                  })()}
                   {stat?.clanTag ? (
                     <span class="replay-view__postbattle-cell-clan">[{stat.clanTag}]</span>
                   ) : null}
-                  {/* Local player marker (玩家标记): nickname-first, account id
-                      sharpens — same voice as the live roster's dot. */}
-                  {(() => {
-                    const color = ai ? null : markers.colorOf(p.name, p.accountId);
-                    return color ? (
-                      <MarkerDot color={color} label={markerColorLabel(color)} />
-                    ) : null;
-                  })()}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
                   {/* The secondary seal (成分章) presses BESIDE the nickname —
                       the four-char wording reads as part of the identity
@@ -1165,20 +1167,22 @@ export default defineComponent({
             >
               <span class="replay-view__postbattle-fcell-main">
                 <span class="replay-view__postbattle-fcell-name">
-                  <span class="replay-view__postbattle-fcell-nick">
-                    {masking.maskOf(p.name)}
-                  </span>
+                  {/* Local player marker (玩家标记): the name itself carries
+                      the animated tint — nickname-first, account id sharpens. */}
+                  {(() => {
+                    const color = ai ? null : markers.colorOf(p.name, p.accountId);
+                    return (
+                      <span
+                        class={["replay-view__postbattle-fcell-nick", markerTintClass(color)]}
+                        title={color ? markerColorLabel(color) : undefined}
+                      >
+                        {masking.maskOf(p.name)}
+                      </span>
+                    );
+                  })()}
                   {stat?.clanTag ? (
                     <span class="replay-view__postbattle-fcell-clan">[{stat.clanTag}]</span>
                   ) : null}
-                  {/* Local player marker (玩家标记): nickname-first, account id
-                      sharpens — same voice as the live roster's dot. */}
-                  {(() => {
-                    const color = ai ? null : markers.colorOf(p.name, p.accountId);
-                    return color ? (
-                      <MarkerDot color={color} label={markerColorLabel(color)} />
-                    ) : null;
-                  })()}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
                   {/* The secondary seals (成分章) press BESIDE the nickname —
                       the four-char wording reads as part of the identity

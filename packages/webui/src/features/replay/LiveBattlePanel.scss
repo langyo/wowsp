@@ -659,26 +659,6 @@
   }
 }
 
-/* Player-marker bead (玩家标记) — the same colored dot the ship labels
-   carry, inline beside the nickname on the live roster rows. */
-.live-battle__mk-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 0.3rem;
-  border-radius: 50%;
-  box-shadow: 0 0 2px rgb(0 0 0 / 85%);
-  flex: none;
-
-  &--red {
-    background: #e5484d;
-  }
-
-  &--yellow {
-    background: #ffd400;
-  }
-
-  &--purple {
-    background: #a855f7;
-  }
-}
+/* Player markers (玩家标记) on the live roster now ride the NAME itself
+   as an animated tint (features/markers/markerTint) — the former
+   .live-battle__mk-dot bead was retired. */

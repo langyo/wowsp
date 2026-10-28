@@ -25,6 +25,9 @@ export default defineComponent({
     tag: { type: String as PropType<string | null>, default: null },
     /** Tag click → jump to the clan view; absent renders a plain span. */
     onTagClick: Function as PropType<() => void>,
+    /** Extra class on the name heading (the marked-name tint rides
+     *  here; clan cards omit it). */
+    nameClass: { type: String, default: "" },
   },
   setup(props, { slots }) {
     return () => (
@@ -45,7 +48,7 @@ export default defineComponent({
               <span class="id-head__tag">[{props.tag}]</span>
             )
           ) : null}
-          <h3 class="id-head__name">{props.name}</h3>
+          <h3 class={["id-head__name", props.nameClass]}>{props.name}</h3>
         </div>
         <div class="id-head__badges">
           {slots.badges?.()}

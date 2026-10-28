@@ -59,7 +59,11 @@
  * DOM safety: chat text is arbitrary player input, so this page NEVER builds
  * markup — one element per line, `textContent` only, no innerHTML anywhere.
  */
+import { installNativeMenuBlock } from "@/utils/nativeMenu";
 import "./chat.scss";
+
+// Desktop surface: never show the WebView's own context menu.
+installNativeMenuBlock();
 
 /** One translated chat line from the bridge (the fields this page reads). */
 interface ChatLine {
@@ -174,11 +178,72 @@ function localizedWith(key: OverlayChatKey, params: Record<string, string>): str
 }
 
 interface OverlayTauriApi {
+  core: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
   event: {
     listen: (ev: string, h: (e: { payload: unknown }) => void) => Promise<() => void>;
   };
 }
 const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
+
+// ── Player markers (玩家标记) ── the sender's nickname gains the same colored
+// dot the Tab table's rows carry. Chat lines carry a nickname only (no
+// account id), so the match is nickname-first. Fetched lazily through the
+// bare invoke; wowsp://markers-changed re-fetches mid-session.
+type OverlayMarkerColor = "red" | "yellow" | "purple";
+const markersByNickname = new Map<string, OverlayMarkerColor>();
+let markersLoaded = false;
+let markersLoading = false;
+let markersFailedAt = 0;
+/** An edit arrived while the initial fetch was in flight — refetch when
+ *  it settles (see the changed listener). */
+let markersDirty = false;
+const MARKERS_RETRY_MS = 60_000;
+
+function normNick(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function ensureMarkers(): void {
+  if (markersLoaded || markersLoading) return;
+  if (markersFailedAt !== 0 && Date.now() - markersFailedAt < MARKERS_RETRY_MS) return;
+  if (!tauri) {
+    markersLoaded = true; // browser dev: no markers, no fetches
+    return;
+  }
+  markersLoading = true;
+  void (async () => {
+    try {
+      const list = (await tauri.core.invoke("markers_list")) as Array<{
+        nickname: string;
+        color: OverlayMarkerColor;
+        accountId?: number | null;
+      }>;
+      markersByNickname.clear();
+      for (const entry of list ?? []) {
+        markersByNickname.set(normNick(entry.nickname), entry.color);
+      }
+      markersLoaded = true;
+      render();
+    } catch {
+      // Cooldown: a dead backend must not be retried on every chat event.
+      markersFailedAt = Date.now();
+    } finally {
+      markersLoading = false;
+      if (markersDirty) {
+        markersDirty = false;
+        markersLoaded = false;
+        ensureMarkers();
+      }
+    }
+  })();
+}
+
+/** The marker color for a chat nickname ("[TAG]Name" tolerated — the name
+ *  is matched with the roster's [tag] prefix stripped). */
+function markerColorOf(from: string): OverlayMarkerColor | null {
+  const bare = from.replace(/^\[[^\]]*\]\s*/, "");
+  return markersByNickname.get(normNick(bare)) ?? markersByNickname.get(normNick(from)) ?? null;
+}
 
 // ── State ────────────────────────────────────────────────────────────────
 
@@ -308,6 +373,14 @@ function buildLine(line: ChatLine): HTMLDivElement {
     who.className = "chat-panel__from";
     who.textContent = from;
     original.appendChild(who);
+    // Player marker (玩家标记): the same dot the Tab rows/aim card carry,
+    // built with createElement only (this page never builds markup).
+    const color = markerColorOf(from);
+    if (color) {
+      const mk = document.createElement("span");
+      mk.className = `chat-panel__mk chat-panel__mk--${color}`;
+      original.appendChild(mk);
+    }
   }
   if (isSelf) {
     const me = document.createElement("span");
@@ -340,6 +413,7 @@ function buildLine(line: ChatLine): HTMLDivElement {
 }
 
 function render() {
+  ensureMarkers();
   if (buffer.length === 0) {
     // Empty buffer = NOTHING rendered (the window is fully transparent; an
     // empty glass slab at the screen corner would read as a glitch).
@@ -505,6 +579,14 @@ async function main() {
     maxLines = nextMax;
     trimBuffer();
     render();
+  });
+  // The marker list changed (main-window add/remove): re-fetch and repaint —
+  // the sender dots must track the list mid-session.
+  await listen("wowsp://markers-changed", () => {
+    markersLoaded = false;
+    markersFailedAt = 0;
+    markersDirty = true;
+    ensureMarkers();
   });
   await listen("wowsp://chat-hint", (e: { payload: unknown }) => {
     const payload = e.payload as ChatHintPayload | null;

@@ -107,7 +107,12 @@ import { splitLiveRosterSides, type RosterSides } from "@/utils/rosterSides";
 // Bots (`:Name:`) and operation scenario units (`IDS_*`) have no WG
 // account — the shared store-free regex (utils/aiNames.ts) covers both.
 import { AI_NAME } from "@/utils/aiNames";
+import { installNativeMenuBlock } from "@/utils/nativeMenu";
 import "./overlay.scss";
+
+// Desktop surface: the WebView's own right-click menu must never appear
+// (it is the casual devtools door) — see utils/nativeMenu.
+installNativeMenuBlock();
 
 // Same locale files the Vue app consumes — one source of truth for the hint
 // copy, bundled eagerly into this tiny page (a few KB across 8 locales).
@@ -968,6 +973,9 @@ const markersByAccountId = new Map<number, OverlayMarkerColor>();
 let markersLoaded = false;
 let markersLoading = false;
 let markersFailedAt = 0;
+/** An edit arrived while the initial fetch was in flight — refetch when
+ *  it settles (see the changed listener). */
+let markersDirty = false;
 const MARKERS_RETRY_MS = 60_000;
 
 function normNick(name: string): string {
@@ -990,6 +998,10 @@ function ensureMarkers(): void {
         color: OverlayMarkerColor;
         accountId?: number | null;
       }>;
+      // Refetch path (markers-changed): clear before filling so a
+      // removed marker cannot survive in the maps.
+      markersByNickname.clear();
+      markersByAccountId.clear();
       for (const entry of list ?? []) {
         markersByNickname.set(normNick(entry.nickname), entry.color);
         if (entry.accountId != null) {
@@ -1002,6 +1014,11 @@ function ensureMarkers(): void {
       markersFailedAt = Date.now();
     } finally {
       markersLoading = false;
+      if (markersDirty) {
+        markersDirty = false;
+        markersLoaded = false;
+        ensureMarkers();
+      }
     }
   })();
 }
@@ -2387,6 +2404,15 @@ async function start() {
     // CUSTOM_STAMPS at render time, so a re-render as the read lands swaps
     // the pictures in (and a reset falls back to the plain text seal).
     void loadCustomStamps(invoke).then(() => render());
+  });
+  await listen("wowsp://markers-changed", () => {
+    // The main window edited the local marker list (Rust store broadcasts
+    // after every successful write) — drop the one-shot copy and re-fetch
+    // so the row dots track the list mid-session.
+    markersLoaded = false;
+    markersFailedAt = 0;
+    markersDirty = true;
+    ensureMarkers();
   });
   await listen("wowsp://sink-attrib", (e: { payload: unknown }) => {
     // One sink transition, solved Rust-side: row indices into each side's

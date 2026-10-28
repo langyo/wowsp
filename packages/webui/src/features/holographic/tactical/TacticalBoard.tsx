@@ -2208,6 +2208,18 @@ export default defineComponent({
     // right-click / long-press / menu-key all funnel through the same
     // hikari menu machinery the rest of the app will adopt.
     let unbindCtx: (() => void) | null = null;
+    /** The platform menu must never appear on the canvas: when the board's
+     *  builder declines (no lineup under the pointer) hikari lets the event
+     *  through, and the template's contextmenu handler stopPropagation()s
+     *  it so the app-wide bubble blocker never sees it. This listener is
+     *  registered AFTER bindContextMenu (same-element listeners run in
+     *  registration order), so the board's menu still opens when it has
+     *  one; otherwise it prevents the native menu and stops the event from
+     *  reaching the player-menu binding on document.body. */
+    const onCanvasContextMenu = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
     onMounted(() => {
       raf = requestAnimationFrame(frame);
       window.addEventListener("keydown", onKeydown, true);
@@ -2216,11 +2228,13 @@ export default defineComponent({
         unbindCtx = bindContextMenu(canvasRef.value, ctxMenu, (point) =>
           buildContextMenu(point.x, point.y),
         );
+        canvasRef.value.addEventListener("contextmenu", onCanvasContextMenu);
       }
     });
     onBeforeUnmount(() => {
       cancelAnimationFrame(raf);
       unbindCtx?.();
+      canvasRef.value?.removeEventListener("contextmenu", onCanvasContextMenu);
       window.removeEventListener("keydown", onKeydown, true);
       window.removeEventListener("keyup", onKeyUp, true);
       exitPresentMode();

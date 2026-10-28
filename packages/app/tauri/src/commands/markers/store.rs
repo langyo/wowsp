@@ -6,6 +6,7 @@
 //! judgments, built by hand and kept on this machine only.
 
 use anyhow::{Result, anyhow};
+use tauri::{Emitter, Manager};
 
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,6 +18,11 @@ use crate::paths;
 use crate::settings_store;
 
 pub(crate) const MARKERS_FILE: &str = "markers.json";
+
+/// Broadcast after every successful marker write: the overlay windows (Tab
+/// table, aim card, chat) each hold their own one-shot copy of the list and
+/// re-fetch on this event instead of going stale mid-session.
+pub(crate) const MARKERS_CHANGED_EVENT: &str = "wowsp://markers-changed";
 
 fn unix_now() -> i64 {
     SystemTime::now()
@@ -103,6 +109,7 @@ pub fn markers_add(
         }),
     }
     store_markers(&dir, &markers).map_err(|e| anyhow!("store markers: {e:#}"))?;
+    let _ = window.app_handle().emit(MARKERS_CHANGED_EVENT, ());
     Ok(markers)
 }
 
@@ -115,5 +122,6 @@ pub fn markers_remove(window: tauri::Window, nickname: String) -> CommandResult<
     let mut markers = load_markers_from(&dir);
     markers.retain(|m| !same_nickname(&m.nickname, &nickname));
     store_markers(&dir, &markers).map_err(|e| anyhow!("store markers: {e:#}"))?;
+    let _ = window.app_handle().emit(MARKERS_CHANGED_EVENT, ());
     Ok(markers)
 }

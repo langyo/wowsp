@@ -107,7 +107,7 @@ import { prAlgoForRequest, statsPrefsState, type OverlayColumnScope } from "@/st
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
-import MarkerDot from "@/features/markers/MarkerDot";
+import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { PlayerStats } from "@/api";
@@ -567,21 +567,30 @@ const PostBattleFallbackPanel = defineComponent({
             </span>
             <span class="replay-view__postbattle-cell-main">
               <span class="replay-view__postbattle-cell-name">
-                <span class="replay-view__postbattle-cell-nick">
-                  {masking.maskOf(r.vehicle.name)}
-                </span>
+                {/* Local player marker (玩家标记): the name itself carries the
+                    animated tint (nickname-first; account id sharpens when
+                    the row has stats for it). */}
+                {(() => {
+                  const color = isBot(r)
+                    ? null
+                    : markers.colorOf(
+                        r.vehicle.name,
+                        nameStats.value.get(r.vehicle.name)?.accountId ?? null,
+                      );
+                  return (
+                    <span
+                      class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
+                      title={color ? markerColorLabel(color) : undefined}
+                    >
+                      {masking.maskOf(r.vehicle.name)}
+                    </span>
+                  );
+                })()}
                 {nameStats.value.get(r.vehicle.name)?.clanTag ? (
                   <span class="replay-view__postbattle-cell-clan">
                     [{nameStats.value.get(r.vehicle.name)?.clanTag}]
                   </span>
                 ) : null}
-                {(() => {
-                  // Local player marker (玩家标记), same voice as the live roster.
-                  const color = isBot(r) ? null : markers.colorOf(r.vehicle.name);
-                  return color ? (
-                    <MarkerDot color={color} label={markerColorLabel(color)} />
-                  ) : null;
-                })()}
                 {isBot(r) ? (
                   <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
                 ) : null}
@@ -1492,6 +1501,10 @@ export default defineComponent({
     const parser = useReplayParser();
     const gd = useGameDetect();
     const accounts = useAccountStore();
+    // Player markers (玩家标记) for the rail cards' recording-player tint;
+    // the list panel keeps its own instance for the roster rows.
+    const markers = useMarkersStore();
+    void markers.ensureLoaded();
     const encyclopedia = useEncyclopediaStore();
     const toast = useToast();
     const loadingTasks = useLoadingTasksStore();
@@ -2027,13 +2040,19 @@ export default defineComponent({
               {/* The recording player's nickname is a player surface too —
                   right-click opens the shared marker/context menu (the
                   app-global binding resolves the attrs; unknown stays inert). */}
-              <span
-                class="replay-card__ship"
-                data-player-name={r.playerName ?? undefined}
-                data-player-realm={r.installRealm ?? undefined}
-              >
-                {r.playerName ?? t("replay.list.unknownPlayer")}
-              </span>
+              {(() => {
+                const color = r.playerName ? markers.colorOf(r.playerName) : null;
+                return (
+                  <span
+                    class={["replay-card__ship", markerTintClass(color)]}
+                    data-player-name={r.playerName ?? undefined}
+                    data-player-realm={r.installRealm ?? undefined}
+                    title={color ? markerColorLabel(color) : undefined}
+                  >
+                    {r.playerName ?? t("replay.list.unknownPlayer")}
+                  </span>
+                );
+              })()}
               <span class="replay-card__pills">
                 {external ? (
                   <span class="replay-card__pill replay-card__pill--external">

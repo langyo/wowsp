@@ -16,6 +16,9 @@ import { useShipDetail } from "@/composables/useShipDetail";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import BattleIcon from "@/components/base/BattleIcon";
 import { useStatsStore } from "@/stores/stats";
+import { useMarkersStore } from "@/stores/markers";
+import { markerTintClass } from "@/features/markers/markerTint";
+import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useClanStatsStore, clanCacheKey } from "@/stores/clanStats";
 import { useRankedStore } from "@/stores/ranked";
@@ -132,6 +135,9 @@ export default defineComponent({
   name: "LookupView",
   setup() {
     const stats = useStatsStore();
+    // Player markers (玩家标记): list rows tint marked names.
+    const markers = useMarkersStore();
+    void markers.ensureLoaded();
     const clanStats = useClanStatsStore();
     const shipStats = useShipStatsStore();
     const ranked = useRankedStore();
@@ -489,15 +495,18 @@ export default defineComponent({
         );
       }
       const p = item as PlayerSuggestion;
+      const tint = markers.colorOf(p.nickname, p.accountId);
       return (
         <span class="lookup-view__combo-row">
           {/* A player surface: right-click opens the shared marker/context
-              menu (the app-global binding resolves these attrs). */}
+              menu (the app-global binding resolves these attrs); a marked
+              player's name carries the animated tint. */}
           <span
-            class="lookup-view__combo-name"
+            class={["lookup-view__combo-name", markerTintClass(tint)]}
             data-player-name={p.nickname}
             data-player-account={String(p.accountId)}
             data-player-realm={realm.value}
+            title={tint ? markerColorLabel(tint) : undefined}
           >
             {p.nickname}
           </span>
@@ -832,13 +841,20 @@ export default defineComponent({
                     >
                       {h.kind === "clan" ? <Users size={11} /> : <User size={11} />}
                     </span>
-                    <span
-                      class="lookup-view__history-name"
-                      data-player-name={h.kind === "player" ? h.name : undefined}
-                      data-player-realm={h.realm}
-                    >
-                      {h.name}
-                    </span>
+                    {(() => {
+                      const tint =
+                        h.kind === "player" ? markers.colorOf(h.name) : null;
+                      return (
+                        <span
+                          class={["lookup-view__history-name", markerTintClass(tint)]}
+                          data-player-name={h.kind === "player" ? h.name : undefined}
+                          data-player-realm={h.realm}
+                          title={tint ? markerColorLabel(tint) : undefined}
+                        >
+                          {h.name}
+                        </span>
+                      );
+                    })()}
                     <span class="lookup-view__history-realm">{h.realm.toUpperCase()}</span>
                   </button>
                 ))
@@ -903,6 +919,9 @@ export default defineComponent({
                   stats={result.value}
                   rankedWr={ranked.winrate}
                   rankedBattles={ranked.battles}
+                  nameClass={markerTintClass(
+                    markers.colorOf(result.value.name, result.value.accountId),
+                  )}
                   onRankedClick={() => (rankedModal.value = true)}
                   onClanClick={
                     result.value.clanId != null

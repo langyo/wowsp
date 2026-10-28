@@ -244,18 +244,9 @@ export default defineComponent({
       // gates). The updater PASSES themselves stay desktop-only as documented
       // in UpdateToast.tsx; this probe merely resolves the build flavor.
       void updater.probePortable();
-      // Production builds feel like a desktop app: no WebView2 context menu
-      // on right-click. Editable elements keep the native menu (paste etc.),
-      // and dev mode keeps everything for debugging.
-      if (!import.meta.env.DEV) {
-        document.addEventListener("contextmenu", (event) => {
-          const target = event.target as HTMLElement | null;
-          const editable = target?.closest(
-            "input, textarea, select, [contenteditable]",
-          );
-          if (!editable) event.preventDefault();
-        });
-      }
+      // The WebView's own context menu is suppressed app-wide by
+      // utils/nativeMenu (installed in bootstrap, every build — the old
+      // production-gated block lived here).
       // Resource pack (production only; dev uses publicDir). APP UPDATES
       // GO FIRST: this pass waits for the updater's delayed probe, so a
       // pending app update (whose installer restarts the app) always

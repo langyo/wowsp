@@ -19,6 +19,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { removeBuiltinShadowingCustomThemes, startModeTokenBridge } from "./theme";
+import { installNativeMenuBlock } from "./utils/nativeMenu";
 import { applyDefaultSchemeBrand } from "./theme/defaultSchemeBrand";
 import { installGlobalTooltip } from "./composables/globalTooltip";
 import { api } from "./api";
@@ -57,6 +58,11 @@ export interface BootstrapOptions {
 
 export function bootstrap(options: BootstrapOptions = {}): void {
   const isMain = (options.surface ?? "main") === "main";
+  // Desktop surface: the WebView's own context menu (Reload / Inspect /
+  // Save as) must never appear — see utils/nativeMenu. The app's own
+  // context menus still work (they preventDefault the same event and
+  // render through hikari's provider).
+  installNativeMenuBlock();
   // Mobile UX contract (hikari #325): normalize the viewport meta before
   // first paint. No-op for the desktop webview's standard meta, but keeps
   // the browser window honest on phones.

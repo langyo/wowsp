@@ -21,6 +21,19 @@ vi.mock("@/stores/ranked", () => ({ useRankedStore: () => mocks.stores.ranked })
 vi.mock("@/stores/loadingTasks", () => ({ useLoadingTasksStore: () => ({ begin: vi.fn(), end: vi.fn() }) }));
 vi.mock("@/stores/encyclopedia", () => ({ useEncyclopediaStore: () => ({ byId: new Map() }) }));
 vi.mock("@/stores/statsPrefs", () => ({ useStatsPrefsStore: () => ({ prefs: {} }) }));
+// Player markers (玩家标记) — the view tints marked names; the tests run
+// without a pinia instance, so the store is stubbed like the others.
+vi.mock("@/stores/markers", () => ({
+  MARKER_COLORS: ["red", "yellow", "purple"],
+  useMarkersStore: () => ({
+    entries: [],
+    loaded: true,
+    ensureLoaded: () => Promise.resolve(),
+    colorOf: () => null,
+    add: vi.fn(),
+    remove: vi.fn(),
+  }),
+}));
 vi.mock("@/composables/useShipDetail", () => ({ useShipDetail: () => ({ selectedShip: { value: null }, gameRoot: { value: "" }, closeShip: vi.fn(), openShip: vi.fn() }) }));
 vi.mock("@/composables/useCareerStamp", () => ({ useCareerStamp: () => ({ value: null }) }));
 vi.mock("@/composables/useCompositionStamps", () => ({ useCompositionStamps: () => ({ value: null }) }));

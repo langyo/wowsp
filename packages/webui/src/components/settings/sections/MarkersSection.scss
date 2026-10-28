@@ -1,46 +1,62 @@
-// Player markers section (玩家标记) — the add row, the color tabs and the
-// marked-player list. The three dot colors are the feature's whole visual
-// language and repeat on the battle surfaces (same hex values there).
+/* ── Player markers settings section (玩家标记) ─────────────────────
+ * ONE list: a compact toolbar (search icon + funnel + count + add "+")
+ * over a scrolled roster. The three dot colors are the feature's whole
+ * visual language and repeat on the battle surfaces (same hex values
+ * there). The rows carry the live roster's configured stat columns, so
+ * their cells reuse the post-battle stat span classes (the shared
+ * rosterStatCols helper) — layout basics for when that chunk's styles
+ * aren't loaded (the settings pane is a separate lazy chunk). */
+
 $marker-red: #e5484d;
 $marker-yellow: #ffd400;
 $marker-purple: #a855f7;
 
 .markers-section {
-  &__add {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    margin: 0.5rem 0;
-  }
-
-  &__add-row {
+  &__toolbar {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.4rem 0 0.2rem;
   }
 
-  &__add-input {
-    flex: 1 1 10rem;
-    min-width: 0;
-  }
-
-  &__row {
-    display: flex;
+  /* The collapsed search trigger (mirror of the lookup combo button). */
+  &__icon-btn {
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin: 0.4rem 0;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    flex: none;
+    border: 1px solid rgb(var(--color-border) / 25%);
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-surface));
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+
+    &--on {
+      color: rgb(var(--color-primary));
+      border-color: rgb(var(--color-primary) / 25%);
+      background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
+    }
   }
 
-  &__search {
-    flex: 1 1 auto;
-    min-width: 0;
+  &__pop {
+    width: min(22rem, 70vw);
   }
 
   &__muted {
     opacity: 0.72;
     font-size: 0.92em;
+    margin-inline-start: auto;
+  }
+
+  &__add-btn {
+    flex: none;
   }
 
   &__list {
@@ -93,6 +109,7 @@ $marker-purple: #a855f7;
 
   &__entry-note {
     flex: 0 1 auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -106,5 +123,54 @@ $marker-purple: #a855f7;
     opacity: 0.55;
     font-size: 0.85em;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* The configured stat columns (rosterStatCols spans): one compact
+   * numeric run on the row's right, sourced from the live roster's
+   * column prefs. The post-battle chunk may not be loaded in the
+   * settings pane — these rules make the cells stand on their own. */
+  &__stats {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: none;
+
+    .replay-view__postbattle-cell-stat {
+      display: inline-block;
+      min-width: 5.5ch;
+      text-align: end;
+      font-size: 0.85em;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+  }
+
+  &__remove-btn {
+    flex: none;
+  }
+
+  /* Add dialog body. */
+  &__add {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0.25rem 0;
+  }
+
+  &__add-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  &__add-input {
+    flex: 1 1 10rem;
+    min-width: 0;
+  }
+
+  &__add-actions {
+    display: flex;
+    justify-content: flex-end;
   }
 }

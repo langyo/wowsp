@@ -74,7 +74,11 @@ import {
   type SealLineOptions,
   STAMP_TEXT,
 } from "./aimcardLines";
+import { installNativeMenuBlock } from "@/utils/nativeMenu";
 import "./aimcard.scss";
+
+// Desktop surface: never show the WebView's own context menu.
+installNativeMenuBlock();
 
 // The one locale string the card needs: the battle-count unit pattern
 // ("{n} 场" / "{n} battles") — same files, same {n} placeholder contract
@@ -108,6 +112,77 @@ interface OverlayTauriApi {
   };
 }
 const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
+
+// ── Player markers (玩家标记) ── the aim head carries the same colored dot
+// the Tab table's rows do ("旁边多一个点"). Fetched lazily through the same
+// bare invoke the table page uses; wowsp://markers-changed re-fetches when
+// the main window edits the list mid-session.
+type OverlayMarkerColor = "red" | "yellow" | "purple";
+const markersByNickname = new Map<string, OverlayMarkerColor>();
+const markersByAccountId = new Map<number, OverlayMarkerColor>();
+let markersLoaded = false;
+let markersLoading = false;
+let markersFailedAt = 0;
+/** An edit arrived while the initial fetch was in flight — refetch when
+ *  it settles (see the changed listener). */
+let markersDirty = false;
+const MARKERS_RETRY_MS = 60_000;
+
+function normNick(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function ensureMarkers(): void {
+  if (markersLoaded || markersLoading) return;
+  if (markersFailedAt !== 0 && Date.now() - markersFailedAt < MARKERS_RETRY_MS) return;
+  if (!tauri) {
+    markersLoaded = true; // browser dev: no markers, no fetches
+    return;
+  }
+  markersLoading = true;
+  void (async () => {
+    try {
+      const list = (await tauri.core.invoke("markers_list")) as Array<{
+        nickname: string;
+        color: OverlayMarkerColor;
+        accountId?: number | null;
+      }>;
+      markersByNickname.clear();
+      markersByAccountId.clear();
+      for (const entry of list ?? []) {
+        markersByNickname.set(normNick(entry.nickname), entry.color);
+        if (entry.accountId != null) {
+          markersByAccountId.set(entry.accountId, entry.color);
+        }
+      }
+      markersLoaded = true;
+      render();
+    } catch {
+      // Cooldown like the Tab table's loader: a dead backend must not be
+      // retried on every render frame.
+      markersFailedAt = Date.now();
+    } finally {
+      markersLoading = false;
+      if (markersDirty) {
+        markersDirty = false;
+        markersLoaded = false;
+        ensureMarkers();
+      }
+    }
+  })();
+}
+
+/** The marker color for the aim target — nickname first, account id second. */
+function markerColorOf(
+  name: string,
+  accountId: number | null | undefined,
+): OverlayMarkerColor | null {
+  if (AI_NAME.test(name)) return null;
+  return (
+    markersByNickname.get(normNick(name)) ??
+    (accountId != null ? (markersByAccountId.get(accountId) ?? null) : null)
+  );
+}
 
 /** Telemetry payload (the fields the card reads — see Main.py's
  *  write_telemetry for the full body). */
@@ -496,7 +571,9 @@ function render() {
     return;
   }
   const prefs = readOverlayDisplayPrefs();
+  ensureMarkers();
   const s = stats.get(aimName);
+  const markerColor = markerColorOf(aimName, s?.accountId);
   // The optional K/D figure rides exactly when the user configured a K/D
   // column — the same prefs the tab table's chips read, so the two faces
   // never disagree about which figures exist. The check runs over the
@@ -508,7 +585,10 @@ function render() {
     (c) => c.metric === "kd",
   );
   const tag = aimClanTag ? `<span class="aim-tag">[${escapeHtml(aimClanTag)}]</span>` : "";
-  const head = `<div class="aim-head"><span class="aim-name">${tag}${escapeHtml(aimName)}</span></div>`;
+  const mk = markerColor
+    ? `<span class="aim-mk aim-mk--${markerColor}"></span>`
+    : "";
+  const head = `<div class="aim-head"><span class="aim-name">${tag}${escapeHtml(aimName)}${mk}</span></div>`;
   const pattern = localized("battlesCount");
   // Line 3 needs the stats row (account id) and the battle ship id; the
   // readable label prefers the per-ship row's own name (the encyclopedia
@@ -682,6 +762,14 @@ async function main() {
   });
   await listen("wowsp://stats-prefs-changed", () => {
     render();
+  });
+  // The marker list changed (main-window add/remove): re-fetch and repaint —
+  // the aim dot must track the list mid-session.
+  await listen("wowsp://markers-changed", () => {
+    markersLoaded = false;
+    markersFailedAt = 0;
+    markersDirty = true;
+    ensureMarkers();
   });
   // Freshness watchdog: a dead probe (or Tab held past the poller's stale
   // window) must not leave a stale card hanging under the crosshair —
