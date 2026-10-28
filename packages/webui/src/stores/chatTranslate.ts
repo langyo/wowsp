@@ -15,10 +15,12 @@
  * language filtering), so the store applies the RESPONSE as the truth and
  * treats its own draft as disposable.
  *
- * The try-translation probe (`debugTranslate`) is the section's one
- * end-to-end check: it runs a typed line through the shell's real pipeline
- * and keeps the last result/error so the card can render them. The text
- * itself stays in the component (a draft input, not settings state).
+ * The translation-test probe (`debugTranslate`) is the section's one
+ * end-to-end check: the dedicated test window runs a PRESET battle-chat line
+ * through the shell's real pipeline and keeps the last result/error (plus the
+ * pipeline trace: system prompt, user payload and raw model answer) so that
+ * window can render them. The line itself stays in the window (a preset, not
+ * settings state).
  */
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -48,7 +50,7 @@ function defaultConfig(): ChatTranslateConfigPublic {
     consentVersion: 0,
     provider: {
       baseUrl: "https://api.deepseek.com",
-      model: "deepseek-chat",
+      model: "deepseek-flash",
       apiKey: "",
       timeoutMs: 10000,
       temperature: 0,
@@ -154,12 +156,28 @@ function normalizeDebugSource(raw: unknown): DebugTranslationSource {
  *  can only ever drop rows, never crash the card. */
 function normalizeDebugResult(raw: unknown): DebugTranslateResult {
   if (raw === null || typeof raw !== "object") {
-    return { detected: null, translations: [], elapsedMs: 0 };
+    return {
+      detected: null,
+      translations: [],
+      elapsedMs: 0,
+      systemPrompt: "",
+      userPayload: "",
+      requestBody: null,
+      response: null,
+      responseRaw: null,
+      error: null,
+    };
   }
   const r = raw as {
     detected?: unknown;
     translations?: unknown;
     elapsedMs?: unknown;
+    systemPrompt?: unknown;
+    userPayload?: unknown;
+    requestBody?: unknown;
+    response?: unknown;
+    responseRaw?: unknown;
+    error?: unknown;
   };
   const translations: DebugTranslation[] = Array.isArray(r.translations)
     ? r.translations
@@ -180,6 +198,14 @@ function normalizeDebugResult(raw: unknown): DebugTranslateResult {
     translations,
     elapsedMs:
       typeof r.elapsedMs === "number" && Number.isFinite(r.elapsedMs) ? r.elapsedMs : 0,
+    // Trace fields degrade to "not captured" for an older shell; the window
+    // shows its no-result placeholder instead of crashing on undefined.
+    systemPrompt: typeof r.systemPrompt === "string" ? r.systemPrompt : "",
+    userPayload: typeof r.userPayload === "string" ? r.userPayload : "",
+    requestBody: r.requestBody ?? null,
+    response: r.response ?? null,
+    responseRaw: typeof r.responseRaw === "string" ? r.responseRaw : null,
+    error: typeof r.error === "string" ? r.error : null,
   };
 }
 
@@ -254,6 +280,11 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
         if (sequence !== saveSequence) return;
         applyResponse(saved);
         testResult.value = null;
+        // The old trace explained the OLD configuration: a config write
+        // invalidates it (the test window would otherwise show a trace that
+        // no longer matches the provider/key on disk).
+        debugResult.value = null;
+        debugError.value = null;
         notifySettingsSaved();
       } catch {
         // Best-effort persistence keeps the in-memory draft; only a STALE
@@ -328,10 +359,14 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
    *  tests what the card shows). A rejected command lands as a failed
    *  result — the card renders one path for both. */
   async function testProvider(): Promise<void> {
-    await load();
-    await pendingSave;
+    // Re-entry guard, armed SYNCHRONOUSLY before the first await: two rapid
+    // footer presses (or Enter + click) must not fan out two probes whose
+    // results race each other.
+    if (testing.value) return;
     testing.value = true;
     testResult.value = null;
+    await load();
+    await pendingSave;
     try {
       const result = await chatTranslateApi.testChatTranslateProvider();
       testResult.value = {
@@ -357,8 +392,9 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
 
   /** Run one line through the shell's real translation pipeline. The
    *  pending save is flushed first, so the probe uses exactly the provider
-   *  settings the card shows. Any failure (feature disabled, no key,
-   *  provider error) lands in `debugError` as user-facing text. */
+   *  settings the card shows. Guard failures (feature disabled, no key) land
+   *  in `debugError`; a PROVIDER-side failure comes back through the result's
+   *  own `error` field with the trace attached (the window shows both). */
   async function debugTranslate(text: string, targets: string[] = []): Promise<void> {
     const trimmed = text.trim();
     if (trimmed === "") return;

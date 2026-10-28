@@ -43,8 +43,9 @@ pub const SUPPORTED_LANGS: &[&str] = &[
 /// the stored URL always keeps its http(s) scheme.
 pub const DEFAULT_BASE_URL: &str = "https://api.deepseek.com";
 
-/// Default model id — DeepSeek's current OpenAI-compatible chat model.
-pub const DEFAULT_MODEL: &str = "deepseek-chat";
+/// Default model id — DeepSeek's current OpenAI-compatible chat model
+/// (V4.1-Flash; the higher-tier sibling is `deepseek-v4-pro`).
+pub const DEFAULT_MODEL: &str = "deepseek-flash";
 
 /// Default translation request timeout, milliseconds. Clamped to
 /// 3 000..=60 000 on load/save.

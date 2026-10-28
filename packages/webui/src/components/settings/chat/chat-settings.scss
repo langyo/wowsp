@@ -72,3 +72,96 @@
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+
+/* ── translation-test window ──────────────────────────────────────────── */
+
+.chat-settings__test-case {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm, 6px);
+  background: rgb(var(--color-border) / 10%);
+}
+
+.chat-settings__test-case-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.chat-settings__test-case-label {
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+}
+
+.chat-settings__test-case-text {
+  color: rgb(var(--color-text));
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.chat-settings__test-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-sm);
+}
+
+.chat-settings__test-elapsed {
+  color: rgb(var(--color-muted));
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-settings__test-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.chat-settings__test-box-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgb(var(--color-text));
+}
+
+.chat-settings__test-json {
+  max-height: 14rem;
+  overflow: auto;
+  border-radius: var(--radius-sm, 6px);
+  background: rgb(var(--color-border) / 10%);
+  padding: 0.4rem 0.55rem;
+}
+
+/* The system prompt / raw answer block: verbatim text, wrapped, capped. */
+.chat-settings__test-prompt {
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-sm, 6px);
+  background: rgb(var(--color-border) / 10%);
+  color: rgb(var(--color-muted));
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The test window's failure sentence (the shell's display text wrapped in the
+   localized translateTestFailed template) — reads as a warning, not a stack
+   trace. */
+.chat-settings__test-error {
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm, 6px);
+  background: rgb(var(--color-danger, 220 60 60) / 12%);
+  color: rgb(var(--color-danger-text, 210 70 70));
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}

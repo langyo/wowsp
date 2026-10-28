@@ -401,7 +401,7 @@ mod tests {
         assert!(!config.enabled);
         assert_eq!(config.consent_version, 0);
         assert_eq!(config.provider.base_url, "https://api.deepseek.com");
-        assert_eq!(config.provider.model, "deepseek-chat");
+        assert_eq!(config.provider.model, "deepseek-flash");
         assert_eq!(config.provider.api_key, "");
         assert_eq!(config.provider.timeout_ms, 10_000);
         assert_eq!(config.provider.temperature, 0.0);
@@ -438,7 +438,7 @@ mod tests {
         assert!(text.contains("consentVersion = 0"));
         assert!(text.contains("[provider]"));
         assert!(text.contains(r#"baseUrl = "https://api.deepseek.com""#));
-        assert!(text.contains(r#"model = "deepseek-chat""#));
+        assert!(text.contains(r#"model = "deepseek-flash""#));
         assert!(text.contains(r#"apiKey = """#));
         assert!(text.contains("timeoutMs = 10000"));
         assert!(text.contains("temperature = 0.0"));
@@ -488,7 +488,7 @@ mod tests {
 
         assert_eq!(healed.consent_version, 0);
         assert_eq!(healed.provider.base_url, "https://api.deepseek.com");
-        assert_eq!(healed.provider.model, "deepseek-chat");
+        assert_eq!(healed.provider.model, "deepseek-flash");
         assert_eq!(healed.provider.api_key, "sk-test");
         assert_eq!(healed.provider.timeout_ms, 3_000);
         assert_eq!(healed.provider.temperature, 0.0);
@@ -616,7 +616,7 @@ mod tests {
             consent_version: 1,
             provider: ChatTranslateProviderUpdate {
                 base_url: "https://api.deepseek.com".into(),
-                model: "deepseek-chat".into(),
+                model: "deepseek-flash".into(),
                 api_key: None,
                 timeout_ms: 10_000,
                 temperature: 0.0,
@@ -668,7 +668,7 @@ mod tests {
         let merged = apply_update(load_from(&dir), update);
         let stored = save_to(&dir, merged).unwrap();
         assert_eq!(stored.provider.base_url, "https://api.deepseek.com");
-        assert_eq!(stored.provider.model, "deepseek-chat");
+        assert_eq!(stored.provider.model, "deepseek-flash");
         assert_eq!(stored.provider.api_key, "");
         assert_eq!(stored.provider.timeout_ms, 3_000);
         assert_eq!(stored.provider.temperature, 2.0);
