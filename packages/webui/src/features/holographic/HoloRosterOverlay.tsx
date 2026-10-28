@@ -8,7 +8,18 @@
  *   - kills credited so far (post-battle killer attribution joined with
  *     the crossed death times — hidden entirely when the replay carries
  *     no BattleResults packet),
+ *   - the tier badge in its OWN fixed-width centered column, so the
+ *     Roman numeral never shifts the ship name beside it (it used to be
+ *     an inline prefix whose width swung the name with every tier),
  *   - sunk rows dimmed with their sinking time,
+ *   - ALIVE rows carrying the per-ship combat status chips — the same
+ *     below-hull card the 3D chase view floats under each ship (see
+ *     shipStatusModel / HoloShipStatus): firing/reload countdowns, smoke
+ *     and repair windows, fire / flooding dots and the freshest hit
+ *     pills, re-queried on every HUD tick. A ship with nothing showing
+ *     renders a dim dash — the static 存活 text carried no information
+ *     the alive-count header doesn't already give; sunk rows keep their
+ *     red sunk phrasing.
  *   - the game's OWN row order (utils/shipClass's recovered Tab sort —
  *     alive rows first in class/tier/nation order, sunk rows re-sorted to
  *     the bottom; CN replays flip the within-(class, tier) order to the
@@ -34,6 +45,15 @@ import { isListedPlayer } from "@/utils/rosterSides";
 import BattleIcon from "@/components/base/BattleIcon";
 import { shipNameFromModelDb, shipNameFromOfflineDb, shipOfflineEntry } from "./modelLoader";
 import { tierRoman } from "@/features/replay/shipLiveStats";
+import {
+  shipStatusAt,
+  type ShipActionChip,
+  type ShipDotChip,
+  type ShipHitChip,
+  type ShipStatusIndex,
+} from "./shipStatusModel";
+import { actionIconUrl, dotIconUrl, torpedoIconUrl, AMMO_ICON } from "./statusIcons";
+import { fmtSecs } from "./HoloShipStatus";
 import type { ShipInfo, VehicleEntry } from "@/api";
 import type { HoloTipState } from "./HoloShipTooltip";
 
@@ -52,14 +72,21 @@ interface RosterRow {
   /** Battle seconds the ship sank at (null = still afloat at the playhead). */
   deathTime: number | null;
   kills: number;
+  /** The trajectory entity this roster entry joined with (null = no
+   *  stream) — the key into the per-ship status index. */
+  entityId: number | null;
 }
 
-function teamTable(
-  rows: RosterRow[],
-  enemy: boolean,
-  showKills: boolean,
-  ctx: { markers: ReturnType<typeof useMarkersStore>; stats: Map<string, RosterStat> },
-) {
+/** Render-side context: the marker/stats join plus the live status index
+ *  and the playhead the chips describe. */
+interface TableCtx {
+  markers: ReturnType<typeof useMarkersStore>;
+  stats: Map<string, RosterStat>;
+  shipStatus: Map<number, ShipStatusIndex>;
+  time: number;
+}
+
+function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: TableCtx) {
   const alive = rows.filter((r) => r.alive).length;
   return (
     <div class="holo-roster__team">
@@ -78,6 +105,7 @@ function teamTable(
         <colgroup>
           <col class="holo-roster__col--icon" />
           <col class="holo-roster__col--player" />
+          <col class="holo-roster__col--tier" />
           <col class="holo-roster__col--ship" />
           {showKills ? <col class="holo-roster__col--kills" /> : null}
           <col />
@@ -86,6 +114,9 @@ function teamTable(
           <tr>
             <th class="holo-roster__th holo-roster__th--icon" />
             <th class="holo-roster__th">{i18nT("replay.tip.player")}</th>
+            {/* The tier column carries no title — the empty header cell
+                keeps 舰船 sitting over the ship NAME column. */}
+            <th class="holo-roster__th holo-roster__th--tier" />
             <th class="holo-roster__th">{i18nT("replay.roster.ship")}</th>
             {showKills ? <th class="holo-roster__th holo-roster__th--num">{i18nT("replay.roster.kills")}</th> : null}
             <th class="holo-roster__th">{i18nT("replay.tip.status")}</th>
@@ -139,8 +170,10 @@ function teamTable(
                   );
                 })()}
               </td>
-              <td class="holo-roster__td">
+              <td class="holo-roster__td holo-roster__td--tier">
                 {r.tier ? <b class="holo-roster__tier">{r.tier}</b> : null}
+              </td>
+              <td class="holo-roster__td">
                 <span class="holo-roster__ship">{r.shipName}</span>
               </td>
               {showKills ? (
@@ -148,9 +181,9 @@ function teamTable(
                   {r.kills > 0 ? <b>{r.kills}</b> : <span class="holo-roster__zero">0</span>}
                 </td>
               ) : null}
-              <td class="holo-roster__td">
+              <td class="holo-roster__td holo-roster__td--status">
                 {r.alive ? (
-                  <span class="holo-roster__afloat">{i18nT("replay.tip.afloat")}</span>
+                  <StatusCell ctx={ctx} entityId={r.entityId} />
                 ) : (
                   /* Compact for the narrow status column — the full
                      "已击毁 · 沉没于 mm:ss" phrasing lives in the tooltip. */
@@ -166,6 +199,94 @@ function teamTable(
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** One alive row's live combat status: the action / dot / hit chips at the
+ *  playhead, or a dim dash while the ship sits idle (and a dash too when
+ *  the row never joined a trajectory — nothing is knowable). */
+function StatusCell({ ctx, entityId }: { ctx: TableCtx; entityId: number | null }) {
+  const st = entityId != null ? shipStatusAt(ctx.shipStatus.get(entityId), ctx.time) : null;
+  if (!st) return <span class="holo-roster__idle">—</span>;
+  return (
+    <span class="holo-roster__st">
+      {st.actions.map((a) => (
+        <StatusActionChip key={a.key} chip={a} />
+      ))}
+      {st.dots.map((d) => (
+        <StatusDotChip key={d.key} chip={d} />
+      ))}
+      {st.hits.map((h) => (
+        <StatusHitChip key={h.key} chip={h} />
+      ))}
+    </span>
+  );
+}
+
+/* ── Status chips ────────────────────────────────────────────────────────
+   The 3D below-hull card's tiles (HoloShipStatus) re-proportioned for a
+   table cell: same game-art icons, tint and draining bar, but the
+   countdown sits beside the tile instead of below it so every row keeps
+   the table's line height. */
+
+function StatusActionChip({ chip }: { chip: ShipActionChip }) {
+  return (
+    <span class={["holo-roster__st-chip", `is-${chip.key}`, `is-${chip.phase}`]}>
+      <span class="holo-roster__st-icon">
+        <img
+          class="holo-roster__st-img"
+          src={actionIconUrl(chip.key, chip.ammo)}
+          alt=""
+          draggable={false}
+        />
+        <span
+          class="holo-roster__st-bar"
+          style={{ width: `${Math.round(chip.frac * 100)}%` }}
+        />
+      </span>
+      {chip.phase !== "flash" && chip.secs != null ? (
+        <span class="holo-roster__st-secs">{fmtSecs(chip.secs)}</span>
+      ) : null}
+    </span>
+  );
+}
+
+function StatusDotChip({ chip }: { chip: ShipDotChip }) {
+  return (
+    <span class={["holo-roster__st-chip", `is-${chip.key}`]}>
+      <span class="holo-roster__st-icon">
+        <img class="holo-roster__st-img" src={dotIconUrl(chip.key)} alt="" draggable={false} />
+        <span
+          class="holo-roster__st-bar"
+          style={{ width: `${Math.round(chip.frac * 100)}%` }}
+        />
+      </span>
+      <span class="holo-roster__st-secs">{fmtSecs(chip.secs)}</span>
+    </span>
+  );
+}
+
+function StatusHitChip({ chip }: { chip: ShipHitChip }) {
+  // Torpedo hits show the torpedo sprite; shell hits the ammo family's
+  // sprite; unresolvable params ids fall back to the bare damage number.
+  const src =
+    chip.kind === "torpedo"
+      ? torpedoIconUrl
+      : chip.ammo != null
+        ? AMMO_ICON[chip.ammo]
+        : undefined;
+  return (
+    <span
+      class={[
+        "holo-roster__st-hit",
+        chip.kind === "torpedo" ? "is-torpedo" : "",
+      ]}
+    >
+      {src ? (
+        <img class="holo-roster__st-hit-img" src={src} alt="" draggable={false} />
+      ) : null}
+      <span class="holo-roster__st-dmg">-{chip.dmg.toLocaleString()}</span>
+    </span>
   );
 }
 
@@ -190,6 +311,11 @@ export default defineComponent({
      *  DBs (supertest hulls like Sovetskaya) still resolve when the
      *  encyclopedia knows them. */
     encyclopedia: { type: Object as PropType<Map<number, ShipInfo>>, required: true },
+    /** Per-entity combat status index (see shipStatusModel.ts) — the
+     *  chips the alive rows re-query at `time`. Non-reactive by design:
+     *  it rebuilds with the actors, and the rows re-render on every
+     *  `time` tick regardless. */
+    shipStatus: { type: Object as PropType<Map<number, ShipStatusIndex>>, required: true },
     /** CN row order (localized ship name, pinyin-collated) for the open
      *  replay's own realm — the replay scoreboard must mirror the client
      *  the replay was recorded on, not the WG permutation. */
@@ -260,6 +386,7 @@ export default defineComponent({
             alive: deathTime == null || deathTime > props.time,
             deathTime,
             kills: props.kills.get(v.id) ?? 0,
+            entityId: st?.traj?.entityId ?? null,
           };
         });
       return [
@@ -286,12 +413,23 @@ export default defineComponent({
       <HkScrollContainer class="holo-map__roster-overlay" aria-hidden="true">
         <div class="holo-map__roster-inner">
           <div class="holo-map__roster-board">
-            {teamTable(allies.value, false, props.showKills, { markers, stats: props.stats })}
+            {teamTable(allies.value, false, props.showKills, {
+              markers,
+              stats: props.stats,
+              shipStatus: props.shipStatus,
+              time: props.time,
+            })}
             {enemies.value.length
-              ? teamTable(enemies.value, true, props.showKills, { markers, stats: props.stats })
+              ? teamTable(enemies.value, true, props.showKills, {
+                  markers,
+                  stats: props.stats,
+                  shipStatus: props.shipStatus,
+                  time: props.time,
+                })
               : null}
           </div>
         </div>
       </HkScrollContainer>
-    );  },
+    );
+  },
 });
