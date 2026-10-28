@@ -6,7 +6,7 @@
  *  deep-links here via settingsUi.show("crash"). */
 import { computed, defineComponent, onMounted, ref, watch } from "vue";
 
-import { HkButton, HkSettingsGroup, HkSpinner, useToast } from "@celestia-island/hikari";
+import { HkButton, HkSettingsGroup, HkSpinner, HkSwitch, useToast } from "@celestia-island/hikari";
 import { FileDown, RefreshCw, RotateCcw, ShieldAlert, Zap } from "@lucide/vue";
 
 import { api, type CrashFinding, type GameCrashRecord } from "@/api";
@@ -180,6 +180,29 @@ export default defineComponent({
       }
     }
 
+    /** The manual catch-up: parse whatever recent crash evidence the
+     *  history has not recorded yet (crashes from before the app opened). */
+    async function scanRecent() {
+      try {
+        const count = await crash.scanRecent();
+        if (count > 0) {
+          toast.success(t("crash.safeguard.scanDone", { count: String(count) }));
+        } else {
+          toast.info(t("crash.safeguard.scanNone"));
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
+    }
+
+    async function toggleSafeguard(enabled: boolean) {
+      try {
+        await crash.setSafeguard(enabled);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
+    }
+
     return () => {
       const record = selectedRecord.value;
       const analysis = selectedAnalysis.value;
@@ -197,6 +220,31 @@ export default defineComponent({
             >
               <RefreshCw size={14} />
               {t("crash.section.refresh")}
+            </HkButton>
+          </div>
+
+          <div class="crash-section__safeguard">
+            <div class="crash-section__safeguard-text">
+              <span class="crash-section__safeguard-title">
+                {t("crash.safeguard.title")}
+              </span>
+              <span class="crash-section__safeguard-hint">
+                {t("crash.safeguard.hint")}
+              </span>
+            </div>
+            <HkSwitch
+              modelValue={crash.safeguard}
+              disabled={crash.safeguardBusy}
+              onUpdate:modelValue={(v: boolean) => void toggleSafeguard(v)}
+            />
+            <HkButton
+              size="sm"
+              variant="outline"
+              loading={crash.scanning}
+              disabled={crash.scanning || !crash.safeguard}
+              onClick={() => void scanRecent()}
+            >
+              {t("crash.safeguard.scan")}
             </HkButton>
           </div>
 

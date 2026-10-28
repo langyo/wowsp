@@ -24,6 +24,9 @@ vi.mock("@/api", () => ({
     restartGame: vi.fn(),
     modHubSetSafeMode: vi.fn(),
     modHubSafeMode: vi.fn(() => Promise.resolve(false)),
+    safeguardEnabled: vi.fn(() => Promise.resolve(true)),
+    setSafeguard: vi.fn(),
+    scanRecentCrashes: vi.fn(() => Promise.resolve([])),
   },
 }));
 
@@ -131,4 +134,14 @@ describe("CrashSection", () => {
       expect(mocked.exportReport).toHaveBeenCalledWith("crash-1");
     });
   });
+  it("renders the safeguard switch row with the scan action", async () => {
+    mocked.list.mockResolvedValue([]);
+    const wrapper = mount(CrashSection);
+    await vi.waitFor(() => {
+      expect(wrapper.find(".crash-section__safeguard").exists()).toBe(true);
+    });
+    expect(wrapper.text()).toContain(vi.mocked(t)("crash.safeguard.title"));
+    expect(wrapper.text()).toContain(vi.mocked(t)("crash.safeguard.scan"));
+  });
+
 });

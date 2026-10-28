@@ -87,5 +87,12 @@
   "modlist": {
     "pinnedBadge": "Crash suspect",
     "quarantinedBadge": "Quarantined"
+  },
+  "safeguard": {
+    "title": "Crash detection & safety net",
+    "hint": "While enabled, WoWSP watches for game crashes and parses recent crash evidence — including crashes that happened while WoWSP was closed.",
+    "scan": "Parse recent crashes",
+    "scanDone": "Imported {count} recent crash record(s)",
+    "scanNone": "No new crash records found"
   }
 }

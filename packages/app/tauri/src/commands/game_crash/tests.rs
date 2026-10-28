@@ -70,6 +70,7 @@ fn sample_record(id: &str, root: Option<&str>) -> GameCrashRecord {
         summary: Some("Event 1000 (Application Error)".to_string()),
         mods_active: true,
         status: STATUS_NEW.to_string(),
+        evidence_id: None,
     }
 }
 
@@ -445,9 +446,9 @@ fn rfc3339_unix_roundtrip() {
 mod evidence_parsers {
     use super::*;
 
-    const EVENT_1000: &str = concat!(
+    pub(super) const EVENT_1000: &str = concat!(
         "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>",
-        "<System><Provider Name='Application Error'/><EventID Qualifiers='0'>1000</EventID>",
+        "<System><Provider Name='Application Error'/><EventRecordID>460470</EventRecordID><EventID Qualifiers='0'>1000</EventID>",
         "<TimeCreated SystemTime='2026-10-27T18:52:13.0000000Z'/>",
         "<Channel>Application</Channel></System><EventData>",
         "<Data Name='AppName'>WorldOfWarships64.exe</Data>",
@@ -494,6 +495,11 @@ mod evidence_parsers {
         let events = parse_wevtutil_xml(&format!("{EVENT_1000}{EVENT_1001}"));
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].event_id, Some(1000));
+        assert_eq!(
+            events[0].record_id,
+            Some(460470),
+            "the backfill dedupe key parses"
+        );
         assert_eq!(events[0].provider, "Application Error");
         assert_eq!(
             parse_rfc3339_unix("2026-10-27T18:52:13Z"),
@@ -630,4 +636,119 @@ mod evidence_parsers {
             "path \"q\" 'p'"
         );
     }
+}
+
+// ── safeguard switch + backfill merge ────────────────────────────────────────
+
+#[test]
+fn safeguard_config_roundtrips_and_defaults_on() {
+    let dir = TempDir::new("safeguard");
+    // Missing file = enabled (the product default).
+    assert!(load_safeguard_in(dir.path()));
+    store_safeguard_in(dir.path(), false).expect("store off");
+    assert!(!load_safeguard_in(dir.path()));
+    // The heal pass rewrote the canonical TOML; a damaged file falls back
+    // to the default instead of erroring.
+    super::super::appdata::write_json_in(dir.path(), SAFEGUARD_FILE, "garbage")
+        .expect("write damaged");
+    assert!(load_safeguard_in(dir.path()), "damaged setting heals to ON");
+}
+
+#[cfg(windows)]
+fn candidate(evidence_id: &str, at: i64, image: &str, priority: u8) -> BackfillCandidate {
+    BackfillCandidate {
+        evidence_id: evidence_id.to_string(),
+        at_unix: at,
+        image: image.to_string(),
+        priority,
+        exception_code: Some("0xC0000005".to_string()),
+        faulting_module: None,
+        report_path: None,
+        dump_path: None,
+        summary: String::new(),
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn backfill_merge_clusters_one_crash_across_three_sources() {
+    let t = 1_790_000_000;
+    let merged = merge_backfill_candidates(vec![
+        // Same crash: dump + WER folder + event-log entry within 3 minutes.
+        candidate("dmp:a.dmp", t + 120, "worldofwarships64.exe", 2),
+        candidate("wer:AppCrash_dir", t + 60, "worldofwarships64.exe", 1),
+        candidate("evt:460470", t, "worldofwarships64.exe", 0),
+        // A different family never clusters with the WG client.
+        candidate("evt:460471", t + 60, "korabli64.exe", 0),
+        // An older standalone crash survives on its own.
+        candidate("evt:460400", t - 3600, "worldofwarships64.exe", 0),
+    ]);
+    let ids: Vec<&str> = merged.iter().map(|c| c.evidence_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["evt:460400", "evt:460470", "evt:460471"],
+        "the event-log entry wins its cluster; distinct crashes keep their own records"
+    );
+    assert_eq!(
+        merged[0].at_unix,
+        t - 3600,
+        "the import batch is chronological (prepend lands newest-first)"
+    );
+}
+
+#[test]
+fn backfill_tombstones_roundtrip_cap_and_heal() {
+    let dir = TempDir::new("tombstones");
+    assert!(
+        load_seen_in(dir.path()).is_empty(),
+        "no file = no tombstones"
+    );
+    let ids: Vec<String> = (0..250).rev().map(|i| format!("evt:{i}")).collect();
+    save_seen_in(dir.path(), &ids);
+    let loaded = load_seen_in(dir.path());
+    assert_eq!(loaded.len(), 250.min(BACKFILL_SEEN_CAP));
+    assert_eq!(loaded.first().map(String::as_str), Some("evt:249"));
+    assert_eq!(loaded.last().map(String::as_str), Some("evt:50"));
+    // A damaged tombstone file resets to empty — the time-window dedupe
+    // keeps holding the line until the next import rewrites it.
+    super::super::appdata::write_json_in(dir.path(), BACKFILL_SEEN_FILE, "not json")
+        .expect("write damaged");
+    assert!(load_seen_in(dir.path()).is_empty());
+}
+#[cfg(windows)]
+/// The registry lists the 32-bit image FIRST; the exact pass must win
+/// over the fuzzy stem-contains pass or every 64-bit crash splits into
+/// phantom candidates (the first-backfill double-import bug).
+#[test]
+fn attributed_image_prefers_the_exact_name_over_the_substring() {
+    let events = parse_wevtutil_xml(evidence_parsers::EVENT_1000);
+    let t = parse_rfc3339_unix("2026-10-27T18:52:13Z").unwrap();
+    let window = (t - 30, t + 30);
+    // 32-bit name first — the trap order.
+    let images = vec![
+        "worldofwarships.exe".to_string(),
+        "worldofwarships64.exe".to_string(),
+        "korabli.exe".to_string(),
+    ];
+    assert_eq!(
+        attributed_image(&events[0], &images, window).as_deref(),
+        Some("worldofwarships64.exe"),
+        "the exact AppName match claims the event before any substring"
+    );
+}
+
+/// A WER folder of the 64-bit client must not be claimed by the 32-bit
+/// stem: the stem matches only as a delimited token.
+#[test]
+fn wer_name_mentions_requires_a_delimited_token() {
+    let dir_64 = "appcrash_worldofwarships64.exe_deadbeef_1234";
+    let dir_32 = "appcrash_worldofwarships.exe_deadbeef_1234";
+    assert!(
+        !wer_name_mentions(dir_64, "worldofwarships"),
+        "the 32-bit stem must not claim a 64-bit report"
+    );
+    assert!(wer_name_mentions(dir_64, "worldofwarships64"));
+    assert!(wer_name_mentions(dir_32, "worldofwarships"));
+    assert!(wer_name_mentions(dir_32, ""));
+    assert!(!wer_name_mentions("appcrash_qq.exe_1", "worldofwarships"));
 }

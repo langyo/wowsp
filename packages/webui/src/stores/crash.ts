@@ -56,6 +56,12 @@ export const useCrashStore = defineStore("crash", () => {
   const quarantineLoading = ref(false);
   /** Entry names mid quarantine/restore — the manifest rows' busy set. */
   const quarantineBusy = ref(new Set<string>());
+  /** The safeguard switch (crash detection + recent-crash catch-up) —
+   *  mirrored from the backend; on until the user opts out. */
+  const safeguard = ref(true);
+  const safeguardBusy = ref(false);
+  /** A manual recent-crash parse is running (the section's scan button). */
+  const scanning = ref(false);
 
   /** Analysis results cache, per record id (analyze is heavy IO; one pass
    *  per record per session unless the section forces a refresh). A plain
@@ -136,6 +142,17 @@ export const useCrashStore = defineStore("crash", () => {
       }
     })();
     void refreshHistory();
+    void loadSafeguard();
+  }
+
+  /** Mirror the persisted safeguard switch; failures keep the armed
+   *  default (browser dev, older shell). */
+  async function loadSafeguard() {
+    try {
+      safeguard.value = await api.safeguardEnabled();
+    } catch {
+      // No backend answer — the optimistic default stands.
+    }
   }
 
   /** Stop the subscription (window unmount); state stays for a remount. */
@@ -314,7 +331,41 @@ export const useCrashStore = defineStore("crash", () => {
     }
   }
 
+  /** Flip the safeguard switch. The backend runs its own catch-up pass
+   *  on the enabling edge; afterwards the history is reloaded so any
+   *  imported records surface. Throws on backend refusal (caller toasts). */
+  async function setSafeguard(enabled: boolean) {
+    if (safeguardBusy.value) return;
+    safeguardBusy.value = true;
+    try {
+      safeguard.value = await api.setSafeguard(enabled);
+      await refreshHistory();
+    } finally {
+      safeguardBusy.value = false;
+    }
+  }
+
+  /** Parse the recent crash records (the manual scan button): whatever OS
+   *  evidence the history has not recorded yet imports now. Answers the
+   *  number of newly imported records for the toast. */
+  async function scanRecent(): Promise<number> {
+    if (scanning.value) return 0;
+    scanning.value = true;
+    try {
+      const imported = await api.scanRecentCrashes();
+      for (const record of imported) {
+        ingest(record);
+      }
+      return imported.length;
+    } finally {
+      scanning.value = false;
+    }
+  }
+
   return {
+    safeguard,
+    safeguardBusy,
+    scanning,
     activeRecord,
     history,
     quarantined,
@@ -334,6 +385,9 @@ export const useCrashStore = defineStore("crash", () => {
     restart,
     safeModeAndRestart,
     quarantineRoot,
+    loadSafeguard,
+    setSafeguard,
+    scanRecent,
     loadQuarantined,
     quarantine,
     restore,

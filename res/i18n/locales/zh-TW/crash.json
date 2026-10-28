@@ -87,5 +87,12 @@
   "modlist": {
     "pinnedBadge": "崩潰嫌疑",
     "quarantinedBadge": "已隔離"
+  },
+  "safeguard": {
+    "title": "崩潰檢測與兜底",
+    "hint": "開啟期間持續偵測遊戲崩潰,並解析最近的崩潰證據——包括 WoWSP 未執行時發生的崩潰。",
+    "scan": "解析最近崩潰",
+    "scanDone": "已匯入 {count} 筆崩潰記錄",
+    "scanNone": "沒有發現新的崩潰記錄"
   }
 }

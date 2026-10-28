@@ -87,5 +87,12 @@
   "modlist": {
     "pinnedBadge": "クラッシュ容疑",
     "quarantinedBadge": "隔離済み"
+  },
+  "safeguard": {
+    "title": "クラッシュ検出と安全ネット",
+    "hint": "有効な間、WoWSP はゲームのクラッシュを監視し、WoWSP 起動中でなかった時間のクラッシュも含めて最近の証跡を解析します。",
+    "scan": "最近のクラッシュを解析",
+    "scanDone": "{count} 件のクラッシュ記録を取り込みました",
+    "scanNone": "新しいクラッシュ記録はありません"
   }
 }
