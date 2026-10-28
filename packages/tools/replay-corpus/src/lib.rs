@@ -1186,6 +1186,7 @@ mod tests {
             control_point_index: None,
             initial_team: None,
             radius: None,
+            team_id: None,
         }
     }
 
@@ -1261,6 +1262,7 @@ mod tests {
                 control_point_index: None,
                 initial_team: None,
                 radius: None,
+                team_id: None,
             }),
             samples: Vec::new(),
             death_time: Some(612.5),

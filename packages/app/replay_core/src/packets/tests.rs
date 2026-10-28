@@ -1564,6 +1564,40 @@ impl PickleValue for f64 {
     }
 }
 
+/// A nickname riding BINSTRING 'T' (u32 length) — the 15.9 arena blob's
+/// spelling for one player row (the WW2 operation replay, user report
+/// 2026-10-26). The parser historically only knew SHORT_BINSTRING 'U'.
+struct BinStringValue<'a>(&'a str);
+
+impl PickleValue for BinStringValue<'_> {
+    fn push_pickle(&self, out: &mut Vec<u8>) {
+        out.push(0x54); // BINSTRING — u32 LE length + raw bytes
+        out.extend_from_slice(&(self.0.len() as u32).to_le_bytes());
+        out.extend_from_slice(self.0.as_bytes());
+    }
+}
+
+/// An embedded `CamouflageInfo` OBJECT: GLOBAL 'c' (module\nname\n) + a
+/// two-element args tuple + NEWOBJ. The 15.9 player FixedDict fields one of
+/// these per row; the identity join never reads it, but the parser must
+/// keep the stack balanced through it.
+struct CamouflageObject(i64, i64);
+
+impl PickleValue for CamouflageObject {
+    fn push_pickle(&self, out: &mut Vec<u8>) {
+        out.push(0x63); // GLOBAL — "module\nname\n"
+        out.extend_from_slice(b"CamouflageInfo\nCamouflageInfo\n");
+        out.push(0x28); // MARK (args tuple)
+        out.push(0x49); // INT (text decimal + newline)
+        out.extend_from_slice(self.0.to_string().as_bytes());
+        out.push(b'\n');
+        out.push(0x4b); // BININT1
+        out.push(self.1 as u8);
+        out.push(0x74); // TUPLE
+        out.push(0x81); // NEWOBJ — pop args + class, push the object
+    }
+}
+
 /// Hand-assemble one arena player FixedDict the way the client pickles it:
 /// a list of `(index, value)` tuples (proto-2: EMPTY_LIST + APPEND over
 /// TUPLE pairs, nested under the outer roster list's MARK).
@@ -1739,6 +1773,56 @@ fn rounds_fractional_arena_max_health() {
         .find(|p| p.entity_id == 7_561_152)
         .expect("scaled entry");
     assert_eq!(scaled.max_health, 46_437);
+}
+
+/// The 15.9 arena blob shape regression (user report 2026-10-26, the WW2
+/// operation replay): one player row fields its nickname through BINSTRING
+/// 'T' and carries an embedded `CamouflageInfo` OBJECT pair — a GLOBAL +
+/// NEWOBJ value the identity join never reads but the parser must survive.
+/// Without the BINSTRING arm the pickle parse aborted, the arena state was
+/// lost for EVERY 15.9 battle, and the single-team operation map painted
+/// its whole scripted enemy fleet ally-green.
+#[test]
+fn decodes_arena_state_15_9_blob_with_object_and_binstring_fields() {
+    let (f_avatar, f_id, f_object, f_health, f_name, f_ship, f_params, f_team) =
+        (2i64, 11i64, 3i64, 24i64, 25i64, 34i64, 35i64, 37i64);
+    let human = pickle_player(&[
+        (&f_avatar, &7_710_009i64),
+        (&f_id, &601i64),
+        (&f_object, &CamouflageObject(4_291_424_176, 0)),
+        (&f_health, &12_600i64),
+        (&f_name, &BinStringValue("langyo")),
+        (&f_ship, &7_710_010i64),
+        (&f_params, &4_076_255_216i64),
+        (&f_team, &0i64),
+    ]);
+    let filler = pickle_player(&[
+        (&f_avatar, &7_710_019i64),
+        (&f_id, &603i64),
+        (&f_object, &CamouflageObject(4_291_424_176, 0)),
+        (&f_health, &40_100i64),
+        (&f_name, &BinStringValue("other")),
+        (&f_ship, &7_710_020i64),
+        (&f_params, &4_076_255_218i64),
+        (&f_team, &1i64),
+    ]);
+    let args = arena_args(&pickle_list(&[&human, &filler]), &pickle_list(&[]));
+    let players = decode_arena_state(&args, Some((15, 9, 0))).expect("15.9 arena must decode");
+    assert_eq!(players.len(), 2);
+    let self_row = players
+        .iter()
+        .find(|p| p.entity_id == 7_710_010)
+        .expect("entity row");
+    assert_eq!(self_row.name, "langyo");
+    assert_eq!(self_row.team_id, 0);
+    assert_eq!(self_row.ship_params_id, 4_076_255_216);
+    assert_eq!(self_row.avatar_id, Some(7_710_009));
+    let other = players
+        .iter()
+        .find(|p| p.entity_id == 7_710_020)
+        .expect("filler row");
+    assert_eq!(other.name, "other");
+    assert_eq!(other.team_id, 1);
 }
 
 /// Diagnostic: the arena's initial player state vs the descriptor roster.
@@ -2317,6 +2401,7 @@ fn test_entity_kind(entity_type: i16) -> wowsp_tauri_shared::EntityKind {
         control_point_index: None,
         initial_team: None,
         radius: None,
+        team_id: None,
     }
 }
 

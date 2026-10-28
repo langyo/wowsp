@@ -317,6 +317,7 @@ impl ParsedCreate {
             radius: self.radius,
             control_point_index: self.control_point_index,
             initial_team: self.initial_team,
+            team_id: None,
         }
     }
 }

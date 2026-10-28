@@ -175,11 +175,18 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 i += 8;
             },
             0x49 => {
-                // INT 'I' — decimal text + newline ("I3973228240\n").
+                // INT 'I' — decimal text + newline ("I3973228240\n"), or the
+                // CPython boolean spellings ("I01\n" / "I00\n") the arena
+                // blobs carry alongside plain integers.
                 let end = bytes[i..].iter().position(|&b| b == b'\n')? + i;
                 let text = std::str::from_utf8(&bytes[i..end]).ok()?;
                 i = end + 1;
-                stack.push((PyVal::Int(text.trim().parse().ok()?), 0));
+                let value = match text.trim() {
+                    "01" => 1,
+                    "00" | "" => 0,
+                    other => other.parse().ok()?,
+                };
+                stack.push((PyVal::Int(value), 0));
             },
             0x4c => {
                 // LONG 'L' — decimal text + optional 'L' suffix + newline.
@@ -226,6 +233,18 @@ pub(super) fn parse_pickle(bytes: &[u8]) -> Option<PyVal> {
                 // SHORT_BINSTRING 'U' — u8 length + raw UTF-8 bytes (proto ≤2 str).
                 let n = *bytes.get(i)? as usize;
                 i += 1;
+                let raw = bytes.get(i..i + n)?;
+                i += n;
+                stack.push((PyVal::Str(String::from_utf8_lossy(raw).into_owned()), 0));
+            },
+            0x54 => {
+                // BINSTRING 'T' — u32 LE length + raw bytes (proto ≤2 str
+                // twin of BINUNICODE 'X'). The 15.9 arena player blob fields
+                // one name through this opcode; without the arm the whole
+                // FixedDict parse aborts. The range get bounds a claimed
+                // length by the input — no allocation on hostile sizes.
+                let n = u32::from_le_bytes(read_bytes(bytes, i)?) as usize;
+                i += 4;
                 let raw = bytes.get(i..i + n)?;
                 i += n;
                 stack.push((PyVal::Str(String::from_utf8_lossy(raw).into_owned()), 0));
@@ -463,6 +482,50 @@ mod tests {
     fn binput_binget_roundtrip() {
         let bytes = [0x80, 0x04, 0x4b, 0x05, 0x71, 0x00, 0x68, 0x00, 0x2e];
         assert_eq!(parse_pickle(&bytes), Some(PyVal::Int(5)));
+    }
+
+    /// BINSTRING 'T' — the u32-length proto ≤2 string twin of BINUNICODE —
+    /// decodes as a Str. The 15.9 arena player blob fields one nickname
+    /// through this opcode (the WW2 operation replay, user report
+    /// 2026-10-26): without the arm the whole FixedDict parse aborted and
+    /// the arena state was lost for every 15.9 battle.
+    #[test]
+    fn binstring_u32_length_decodes() {
+        let mut bytes = vec![0x80, 0x02, 0x54];
+        bytes.extend_from_slice(&(b"langyo".len() as u32).to_le_bytes());
+        bytes.extend_from_slice(b"langyo");
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), Some(PyVal::Str("langyo".into())));
+    }
+
+    /// A hostile BINSTRING whose claimed length runs past the input must
+    /// degrade to `None` — the range read bounds it by the input, never
+    /// allocating from the claim.
+    #[test]
+    fn binstring_hostile_length_is_rejected() {
+        let mut bytes = vec![0x80, 0x02, 0x54];
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        bytes.extend_from_slice(b"tiny");
+        bytes.push(0x2e);
+        assert_eq!(parse_pickle(&bytes), None);
+    }
+
+    /// INT 'I' — the CPython boolean spellings the arena blobs carry
+    /// alongside plain decimal integers.
+    #[test]
+    fn int_boolean_spellings_decode() {
+        let mut one = vec![0x80, 0x02];
+        one.extend_from_slice(b"I01\n");
+        one.push(0x2e);
+        assert_eq!(parse_pickle(&one), Some(PyVal::Int(1)));
+        let mut zero = vec![0x80, 0x02];
+        zero.extend_from_slice(b"I00\n");
+        zero.push(0x2e);
+        assert_eq!(parse_pickle(&zero), Some(PyVal::Int(0)));
+        let mut plain = vec![0x80, 0x02];
+        plain.extend_from_slice(b"I397\n");
+        plain.push(0x2e);
+        assert_eq!(parse_pickle(&plain), Some(PyVal::Int(397)));
     }
 
     /// Build `proto + BINUNICODE(blob) + LONG_BINPUT idx`.

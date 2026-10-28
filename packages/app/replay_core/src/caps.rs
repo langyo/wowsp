@@ -89,6 +89,7 @@ mod tests {
             control_point_index: Some(index),
             initial_team: Some(-1),
             radius: Some(220.0),
+            team_id: None,
         }
     }
 

@@ -836,6 +836,7 @@ fn entity_kind_skips_unrecovered_fields() {
         radius: None,
         control_point_index: None,
         initial_team: None,
+        team_id: None,
     };
     let v = round_trips(bare);
     for key in [
@@ -915,6 +916,7 @@ fn entity_trajectory_emits_optional_streams_only_when_present() {
             radius: None,
             control_point_index: None,
             initial_team: None,
+            team_id: None,
         }),
         samples: vec![PositionSample {
             time: 8.5,

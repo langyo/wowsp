@@ -138,6 +138,15 @@ pub(super) fn walk_frames(
                     kind.ship_id = scan_state_for_ship_id(&payload[38..], ship_id_candidates);
                     if kind.entity_type == 2 {
                         kind.max_health = scan_state_for_max_health(&payload[38..]);
+                        // The vehicle's own team slot — the one side signal
+                        // that also covers ships the arena broadcast never
+                        // lists (scripted operation waves spawn mid-battle).
+                        // Needs a pinned property table exposing `teamId`;
+                        // other versions stay None (existing joins apply).
+                        if let Some(version_key) = version_key {
+                            kind.team_id =
+                                build::scan_state_for_team_id(&payload[38..], version_key);
+                        }
                         // Build decode (pinned to the 15.9.x era): the trailing
                         // create state carries the vehicle's shipConfig and the
                         // captain's crew modifiers. A state the walk cannot
@@ -153,6 +162,16 @@ pub(super) fn walk_frames(
                                 if let Some(build) =
                                     decode_vehicle_build(eid, &payload[38..], version_key)
                                 {
+                                    // The decoded shipParamsId is the entity's
+                                    // GameParams id whether or not the ship sits
+                                    // in the roster: scripted operation waves
+                                    // carry no roster row, and their labels and
+                                    // models join on this id. The roster-scan
+                                    // candidate match above still wins when it
+                                    // fired (same id, authoritative source).
+                                    if kind.ship_id.is_none() {
+                                        kind.ship_id = Some(i64::from(build.ship_params_id));
+                                    }
                                     vehicle_builds.push(build);
                                     diagnostics.builds_decoded += 1;
                                 } else {

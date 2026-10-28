@@ -436,6 +436,13 @@ export interface EntityKind {
    *  `teamId` property — zones owned from match start emit no capSamples
    *  updates, so the opening colour comes from here. */
   initialTeam?: number | null;
+  /** The VEHICLE's own team slot (0/1) walked off the create state's
+   *  `teamId` property through the per-version property table. Only
+   *  versions whose pinned table exposes it carry it; earlier replays stay
+   *  undefined. Covers ships the arena broadcast never lists (scripted
+   *  operation waves spawn mid-battle) — the map's side fallback reads this
+   *  before any spawn-order guess. */
+  teamId?: number | null;
 }
 
 /** A per-entity trajectory (mirrors `wowsp_tauri_shared::EntityTrajectory`). */

@@ -801,6 +801,16 @@ pub struct EntityKind {
     /// from the create state itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_team: Option<i8>,
+    /// The VEHICLE's own team slot (0/1), walked off the EntityCreate state's
+    /// `teamId` property through the per-version property table (see
+    /// `packets::build::scan_state_for_team_id`). Only versions whose pinned
+    /// table exposes the property carry it — earlier replays stay `None` and
+    /// the consumers fall back to the arena/roster joins. This is the one
+    /// side signal that covers ships the arena broadcast never lists
+    /// (scripted operation waves spawn mid-battle, after the broadcast), so
+    /// the map can tint them without roster or spawn-order guesses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<i8>,
 }
 
 fn default_creation_time() -> f32 {

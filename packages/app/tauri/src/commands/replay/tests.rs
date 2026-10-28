@@ -30,6 +30,7 @@ fn lesta_arena_synthesis_joins_unique_and_pairs_complete_mirrors() {
                 radius: None,
                 control_point_index: None,
                 initial_team: None,
+                team_id: None,
             },
         )
     };
@@ -114,6 +115,7 @@ fn entity_kind_with_ship(ship: i64) -> wowsp_tauri_shared::EntityKind {
         control_point_index: None,
         initial_team: None,
         radius: None,
+        team_id: None,
     }
 }
 
@@ -631,6 +633,7 @@ fn detect_hp_property_scores_by_magnitude() {
             radius: None,
             control_point_index: None,
             initial_team: None,
+            team_id: None,
         },
     );
     let change =

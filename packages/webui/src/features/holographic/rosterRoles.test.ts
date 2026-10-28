@@ -232,6 +232,99 @@ describe("arena identities", () => {
     expect(arenaIdentities([])).toBeNull();
   });
 
+  // ── the create-state teamId fallback ────────────────────────────────────
+  // Scripted operation (行动) waves spawn MID-BATTLE, after the arena
+  // broadcast, and the WW2 operation roster lists the player team only —
+  // so these ships carry neither an arena identity nor a roster entry.
+  // Their EntityCreate state still states the real side (kind.teamId),
+  // which is what the map must tint from instead of the spawn-order guess
+  // that painted the whole enemy fleet ally-green (user report
+  // 2026-10-26, the 巴伦支海 WW2 operation replay).
+
+  /** A ship trajectory whose create state carries an explicit team. */
+  const teamTraj = (entityId: number, shipId: number, teamId: number): EntityTrajectory => ({
+    entityId,
+    kind: {
+      entityType: 2,
+      vehicleId: 0,
+      initialX: 0,
+      initialY: 0,
+      initialZ: 0,
+      creationTime: 60,
+      shipId,
+      teamId,
+    },
+    samples: [{ time: 60, entityId, vehicleId: 0, x: 0, y: 0, z: 0, yaw: 0 }],
+  });
+
+  it("tints roster-absent ships by their create-state team, never by spawn order", () => {
+    // 7 human ships (entities 0..6) then two scripted waves: an escort on
+    // the recorder's slot and a hostile wave — entity ids would sort both
+    // waves PAST the half mark, so the legacy heuristic colors them
+    // identically; only the teamId branch can split them.
+    const shipEntityIds = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const encyclopedia = new Map<number, ShipInfo>([
+      [910, { type: "Cruiser" } as unknown as ShipInfo],
+    ]);
+    const assignments = new Map<number, VehicleEntry | null>([
+      [7, null],
+      [8, null],
+    ]);
+    const escort = resolveMarkerContext(
+      teamTraj(7, 905, 0), shipEntityIds, assignments, encyclopedia, null,
+    );
+    expect(escort.role).toBe("ally");
+    const foe = resolveMarkerContext(
+      teamTraj(8, 910, 1), shipEntityIds, assignments, encyclopedia, null,
+    );
+    expect(foe.role).toBe("enemy");
+    // The GameParams ship id rides the same create state — the ship-name
+    // chain reads it instead of falling back to "#entityId".
+    expect(foe.shipInfo?.type).toBe("Cruiser");
+  });
+
+  it("never resolves a recorder slot from the teamId branch alone", () => {
+    // Only the arena's isSelf row earns the recorder tint; teamId 0 without
+    // identities means "the recorder's team slot", i.e. an ally.
+    const assignments = new Map<number, VehicleEntry | null>([[7, null]]);
+    const role = resolveMarkerContext(
+      teamTraj(7, 905, 0), [6, 7], assignments, new Map(), null,
+    ).role;
+    expect(role).toBe("ally");
+  });
+
+  it("rejects a shipId join contradicted by the create-state team", () => {
+    // An operation enemy sailing a TEAMMATE's ship config: the roster (the
+    // WW2 shape — the player team only) offers exactly one entry for the
+    // shared shipId, and the unique join would absorb it (ally-green, the
+    // teammate's name). The teamId contradiction rejects the join, and the
+    // marker context falls through to the teamId branch (enemy).
+    const vehicles = [veh(1, "langyo", 0, 300)];
+    const shipTrajs = [
+      traj(10, 300, 0, 0), // the teammate itself
+      { ...teamTraj(11, 300, 1), samples: [{ time: 60, entityId: 11, vehicleId: 0, x: 40, y: 0, z: 40, yaw: 0 }] },
+    ];
+    const identities = new Map([
+      [10, { team: 0, playerId: 1, shipParamsId: 300, maxHealth: 0, isSelf: true }],
+    ]);
+    const a = resolveRosterAssignments(shipTrajs, vehicles, false, identities);
+    expect(a.get(10)?.id).toBe(1); // the teammate joins authoritatively
+    expect(a.get(11)).toBeNull(); // the enemy's stolen join is refused
+    const ctx = resolveMarkerContext(
+      shipTrajs[1], shipTrajs.map((t) => t.entityId), a, new Map(), identities,
+    );
+    expect(ctx.role).toBe("enemy");
+  });
+
+  it("keeps the shipId join when the create-state team agrees with it", () => {
+    // An ALLIED escort on the recorder's slot joining its roster entry
+    // (the relation ≤ 1 escort wave) must survive the guard.
+    const vehicles = [veh(1, "Escort", 1, 400)];
+    const shipTrajs = [teamTraj(20, 400, 0)];
+    const a = resolveRosterAssignments(shipTrajs, vehicles, false, null);
+    expect(a.get(20)?.name).toBe("Escort");
+  });
+
   // A real 12v12 random battle (双峰海峡, 2026-09-29) with FIVE shipId
   // mirror groups — including the two Salmon submarines, one per team
   // (names anonymized). This is the match the spawn-side heuristic botched:
