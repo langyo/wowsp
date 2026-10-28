@@ -34,6 +34,11 @@ pub mod decision_ai;
 pub mod decision_pack;
 #[cfg(feature = "ai")]
 pub mod decision_serve;
+// E17 / G6 step 2: per-ship instant + whole-game decision scoring with an
+// independent confidence output; env-gated tests are the entry points until
+// E18 wires the UI command.
+#[cfg(feature = "ai")]
+pub mod decision_score;
 pub mod decision_tick;
 pub mod download_hub;
 pub mod encyclopedia;

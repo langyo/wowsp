@@ -1,6 +1,8 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
-import { Crosshair, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline } from "@lucide/vue";
+import {
+  Crosshair, Eye, EyeOff, Grid3x3, Navigation, Pause, PenLine, Play, RotateCcw, RotateCw, Spline,
+} from "@lucide/vue";
 import { extractActions } from "./tactical/actions";
 import { useBreakpoint } from "@celestia-island/hikari";
 
@@ -50,10 +52,12 @@ import type { ShipLabel } from "./shipLabel";
 import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
 import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
+import HoloScorePanel, { type ScoreRowMeta } from "./HoloScorePanel";
 import HoloSelfCard from "./HoloSelfCard";
 import HoloShipStatus from "./HoloShipStatus";
 import HoloWeatherBadge from "./HoloWeatherBadge";
 import HoloRangeMenu from "./HoloRangeMenu";
+import { syncMoveAdvisories } from "./moveAdvisories";
 import { weatherStateAt, type WeatherView } from "./weather";
 import {
   armRangeRingPrefsPersist,
@@ -69,6 +73,7 @@ import type {
   CameraSample,
   ChatEvent,
   DamageStatSample,
+  DecisionDebugReport,
   DecisionSuggestionReport,
   EntityTrajectory,
   ExplosionEvent,
@@ -606,6 +611,68 @@ export default defineComponent({
      *  the last call — the model reads coarse tactical state, finer refresh
      *  would re-run full replay decode IPC for visually identical output. */
     const DECISION_REFETCH_S = 2;
+
+    // ── AI movement advice + score panel (E18 · G6 step 3) ──────────────
+    /** Toggle for the movement-advice overlay (2D arrows + 3D floating
+     *  arrows + the score sidebar). Default off: the first call per replay
+     *  is a full export + decode + model pass (seconds), cached after.
+     *  Declared BEFORE the capability watcher below — that watcher's
+     *  immediate pass disarms this layer too. */
+    const moveAdviceOn = ref(false);
+    /** Latest debug report (movement advice + the full score timeline);
+     *  null = nothing fetched / last call failed. The 2D painter reads it
+     *  through the shared MapInternals deps, the 3D arrows through
+     *  syncMoveAdvisories. */
+    const debugReport = ref<DecisionDebugReport | null>(null);
+    /** True while a debug report call is in flight (cold calls are slow —
+     *  the panel and the toggle badge say so). */
+    const debugLoading = ref(false);
+    let debugLastFetchT = -Infinity;
+    let debugSeq = 0;
+    let debugInFlight = false;
+    /** Same coarse cadence as the fire layer: the advice reads 4 s-grid
+     *  decision rows, finer refresh buys nothing. */
+    const DEBUG_REFETCH_S = 2;
+
+    /** Fetch the debug report for the current playhead, throttled. One
+     *  call at a time — a cold build takes seconds and queueing a second
+     *  one behind it only stalls the (cached) refresh further. Failures
+     *  stay silent like the fire layer's. */
+    function maybeFetchDebugReport(): void {
+      if (!capabilities.aiInference || !moveAdviceOn.value || !props.replayPath) return;
+      if (debugInFlight) return;
+      const t = current.value;
+      if (Math.abs(t - debugLastFetchT) < DEBUG_REFETCH_S) return;
+      debugLastFetchT = t;
+      const seq = ++debugSeq;
+      debugInFlight = true;
+      debugLoading.value = true;
+      rpcApi
+        .decisionDebugReport(props.replayPath, t)
+        .then((report) => {
+          if (seq !== debugSeq || !moveAdviceOn.value) return;
+          debugReport.value = report;
+        })
+        .catch(() => {
+          // Older shell / mock backend / unreadable replay / missing debug
+          // models — blank layer, never a throw.
+          if (seq === debugSeq) debugReport.value = null;
+        })
+        .finally(() => {
+          debugInFlight = false;
+          debugLoading.value = false;
+        });
+    }
+
+    /** Reset the layer's fetched state (toggle-on, replay switch). */
+    function resetMoveAdviceLayer(): void {
+      debugReport.value = null;
+      debugLastFetchT = -Infinity;
+      debugSeq++;
+      debugInFlight = false;
+      debugLoading.value = false;
+    }
+
     /** Compile-time AI availability (false in the portable flavor, which
      *  links no ONNX Runtime at all). */
     const capabilities = useCapabilitiesStore();
@@ -620,6 +687,8 @@ export default defineComponent({
         decisionReport.value = null;
         decisionsLastFetchT = -Infinity;
         decisionsSeq++;
+        moveAdviceOn.value = false;
+        resetMoveAdviceLayer();
       },
       { immediate: true },
     );
@@ -1397,6 +1466,8 @@ export default defineComponent({
       mmRotationDeg,
       decisionsOn,
       decisionReport,
+      moveAdviceOn,
+      debugReport,
       showCapEta,
       capStatus,
       allyAlive,
@@ -1439,6 +1510,36 @@ export default defineComponent({
     const weatherView = computed<WeatherView | null>(() =>
       weatherStateAt(props.weatherTransitions, props.weatherNotifications, hudCurrent.value),
     );
+
+    // ── score panel data (E18) ───────────────────────────────────────────
+    /** A fresh debug report lands asynchronously (cold calls take seconds):
+     *  while paused no playhead watcher will re-run the marker sync, so the
+     *  3D arrows are re-synced + repainted right here. */
+    watch(debugReport, (r) => {
+      if (!r) return;
+      syncMoveAdvisories(ctx);
+      api.value?.requestRender();
+    });
+    /** Layer off (button, panel close, replay switch, capability disarm):
+     *  collapse the 3D arrow pool in place + repaint once. */
+    watch(moveAdviceOn, (on) => {
+      if (on) return;
+      syncMoveAdvisories(ctx);
+      api.value?.requestRender();
+    });
+    /** The panel's instant column slides on a 1 s clock — the samples sit
+     *  on a 4 s grid, and the parent's 10 Hz hudCurrent would re-render the
+     *  whole list ten times a second for identical numbers. */
+    const scorePanelT = computed(() => Math.floor(hudCurrent.value));
+    /** entity id → HUD icon class + allegiance for the panel rows (joins
+     *  the same shipLabels the markers render). */
+    const scoreMetaOf = (id: number): ScoreRowMeta | null => {
+      const lbl = shipLabels.value.find((l) => l.entityId === id && l.kind !== "plane");
+      if (lbl) {
+        return { type: lbl.type, role: lbl.role === "enemy" ? "enemy" : "ally", dead: lbl.dead };
+      }
+      return { type: null, role: "ally", dead: false };
+    };
 
     /** First-person camera: keep the selected ship centered, camera trailing
      *  behind it along its heading. Called every render frame.
@@ -1652,6 +1753,7 @@ export default defineComponent({
           mmViewTween = null;
           // Suggestions belong to the previous replay's entity stream.
           resetDecisionLayer();
+          resetMoveAdviceLayer();
           clearActors(ctx);
           shipLabels.value = [];
           ctx.bounds = null;
@@ -1728,6 +1830,7 @@ export default defineComponent({
       if (!playing.value) ctx.labelContentAt = -Infinity;
       updateMarkersAt(ctx, t);
       maybeFetchDecisions();
+      maybeFetchDebugReport();
     });
 
     // Keep the range input's DOM value in lockstep with the playback clock.
@@ -1960,6 +2063,19 @@ export default defineComponent({
             onToggle={() => { rangeMenuOpen.value = !rangeMenuOpen.value; }}
           />
         ) : null}
+        {/* E18 AI score sidebar: rides the movement-advice toggle (the
+            panel is the honest-labeling half of that layer — whole-game
+            MODEL AGREEMENT + the instant score at the playhead). */}
+        {props.replayPath && moveAdviceOn.value ? (
+          <HoloScorePanel
+            report={debugReport.value}
+            loading={debugLoading.value}
+            playhead={scorePanelT.value}
+            labelOf={vehicleLabelOf}
+            metaOf={scoreMetaOf}
+            onClose={() => { moveAdviceOn.value = false; }}
+          />
+        ) : null}
         {/* Bottom-left event feed — sink notifications + player chat +
             achievement awards, newest first. Kill cards keep the 3-column
             layout (killer | "击沉了" | victim); chat and achievement cards
@@ -2060,6 +2176,36 @@ export default defineComponent({
                     </HkIconButton>
                   </span>
                 </HkTooltip>
+                <HkTooltip
+                  text={
+                    !capabilities.loaded
+                      ? i18nT("settings.resourcesAiChecking")
+                      : capabilities.aiInference
+                        ? i18nT("replay.moveAdvice.toggle")
+                        : i18nT("replay.moveAdvice.portableUnavailable")
+                  }
+                  placement="bottom"
+                >
+                  <span>
+                    <HkIconButton
+                      size={24}
+                      variant={moveAdviceOn.value ? "primary" : "ghost"}
+                      disabled={!capabilities.aiInference}
+                      onClick={() => {
+                        if (!capabilities.aiInference) return;
+                        moveAdviceOn.value = !moveAdviceOn.value;
+                        if (moveAdviceOn.value) {
+                          resetMoveAdviceLayer();
+                          maybeFetchDebugReport();
+                        }
+                        // Off-cleanup (pool collapse + repaint) rides the
+                        // moveAdviceOn watcher below.
+                      }}
+                    >
+                      <Navigation size={13} />
+                    </HkIconButton>
+                  </span>
+                </HkTooltip>
               </span>
               <HkTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
                 <HkIconButton size={24} variant="ghost" onClick={() => rotateMap(1)}>
@@ -2077,6 +2223,24 @@ export default defineComponent({
               {decisionsOn.value && decisionReport.value?.modelSource === "fixture" ? (
                 <span class="holo-map__mmzoom-badge" title={decisionReport.value.modelDetail}>
                   {i18nT("replay.decisions.demoModel")}
+                </span>
+              ) : null}
+              {/* Movement-advice layer badges: the cold build takes seconds
+                  (say so), and experiment-default models are not the packed
+                  product models (name their provenance). */}
+              {moveAdviceOn.value && debugLoading.value ? (
+                <span class="holo-map__mmzoom-badge">
+                  {i18nT("replay.moveAdvice.loading")}
+                </span>
+              ) : null}
+              {moveAdviceOn.value && debugReport.value &&
+              (debugReport.value.moveModelOrigin === "experiments" ||
+                debugReport.value.fireModelOrigin === "experiments") ? (
+                <span
+                  class="holo-map__mmzoom-badge"
+                  title={`${debugReport.value.fireModel} · ${debugReport.value.moveModel}`}
+                >
+                  {i18nT("replay.moveAdvice.debugModel")}
                 </span>
               ) : null}
             </div>

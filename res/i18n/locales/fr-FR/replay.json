@@ -585,5 +585,26 @@
       "vis": "Visibilité météo"
     },
     "visValue": "évolue avec la météo"
+  },
+  "moveAdvice": {
+    "toggle": "Conseils de déplacement IA",
+    "portableUnavailable": "L'inférence IA n'est pas disponible dans cette version. Installez la version complète pour utiliser les conseils de déplacement.",
+    "loading": "Calcul…",
+    "holdMark": "Tenir position : le modèle ne voit pas de meilleur cap",
+    "second": "Flèche courte pâle : second cap probable",
+    "debugModel": "Modèle expérimental"
+  },
+  "scores": {
+    "title": "Accord du modèle IA",
+    "close": "Fermer le panneau de scores",
+    "disclaimer": "Accord du modèle ≠ niveau ni résultat du combat : la génération actuelle du modèle n'a pas passé la validation par corrélation prédéclarée avec les dégâts réels (ρ≈0).",
+    "whole": "Partie entière",
+    "instant": "Instant",
+    "confidence": "confiance",
+    "fire": "Composante de tir",
+    "move": "Composante de déplacement",
+    "noFire": "Aucune occasion de tir enregistrée",
+    "noData": "Aucune donnée de score",
+    "samples": "{ships} navires · {rows} points de décision"
   }
 }
