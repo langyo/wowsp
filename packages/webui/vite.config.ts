@@ -6,6 +6,14 @@ import { defineConfig, type Plugin } from "vite";
 
 import UnoCSS from "unocss/vite";
 
+// NO file extension on purpose: `vite.config.ts` belongs to the composite
+// `tsconfig.node.json` projection, where a `.ts`-suffixed import needs
+// `allowImportingTsExtensions` (impossible next to `composite`'s emit
+// requirements) and trips TS5097/TS6307. The trade-off is Vite's forward-compat
+// notice about extensionless local imports (its future `configLoader: 'native'`
+// route cannot resolve them) — accepted and recorded in the PR.
+import { bootChromePluginsFor, WEBUI_PAGES } from "./src/bootChrome";
+
 function readPkgVersion(pkgDir: string): string {
   try {
     const raw = readFileSync(resolve(pkgDir, 'package.json'), 'utf-8');
@@ -15,7 +23,11 @@ function readPkgVersion(pkgDir: string): string {
   }
 }
 
-const pkgDir = resolve(__dirname);
+// `import.meta.dirname` resolves to THIS file's directory in every loader Vite
+// supports (the ESM config bundle rewrites it to the original config path, and
+// the native loader has it natively); `__dirname` does not survive the native
+// route Vite is moving to, and warns on every config load today.
+const pkgDir = import.meta.dirname;
 
 const mockTarget = process.env.WOWSP_MOCK_URL || 'http://localhost:8787';
 
@@ -23,6 +35,11 @@ const mockTarget = process.env.WOWSP_MOCK_URL || 'http://localhost:8787';
 // the offline gameparams pack in dist so they embed into the APK's assets;
 // every other build prunes both (see pruneBakedGlb / pruneGameparams).
 const mobileBundle = process.env.WOWSP_MOBILE_BUNDLE === '1';
+
+// Two build routes produce an Android bundle: the justfile recipes above
+// (WOWSP_MOBILE_BUNDLE=1) and Tauri's own `tauri android` pipeline, which
+// exports TAURI_ENV_PLATFORM=android to the frontend build.
+const androidBundle = mobileBundle || process.env.TAURI_ENV_PLATFORM === 'android';
 
 // hikari imports highlight.js through its CJS `lib/` deep paths. With hikari
 // excluded from optimizeDeps those files are served raw in dev, and a raw CJS
@@ -257,6 +274,19 @@ export default defineConfig({
       : [pruneBakedGlb(resolve(pkgDir, '../../dist/webui')), pruneGameparams(resolve(pkgDir, '../../dist/webui'))]),
     vueSfc(),
     vueJsx(),
+    // hikari's pre-boot window chrome bar (res/boot-chrome.js): draws the
+    // caption buttons from the first frame — before this bundle exists — so a
+    // frameless window stays closable even when the app hangs; it removes
+    // itself when AppTitleBar (hikari HkTitleBar) mounts and claims the window.
+    // `bootChrome.ts` owns the page table: ONLY index.html is an app window —
+    // every other page is a shell-managed window (the transparent game overlays
+    // and the fixed tray panel) — and the bar is DESKTOP-ONLY. Android builds
+    // (BOTH routes: WOWSP_MOBILE_BUNDLE=1 and Tauri's TAURI_ENV_PLATFORM=android)
+    // run inside a phone shell that owns its own window (tao's Android
+    // minimize/maximize are no-ops, and AppTitleBar hides the caption buttons
+    // when isMobileApp()), so injecting the three-button bar there would paint
+    // dead chrome.
+    ...bootChromePluginsFor(androidBundle),
     // @vitejs/plugin-vue-jsx (rolldown-vite mode) injects
     // optimizeDeps.rolldownOptions.transform.jsx = "preserve" so the
     // dep-scanner keeps JSX in its transform output. The scanner's
@@ -312,22 +342,20 @@ export default defineConfig({
     emptyOutDir: false,
     target: 'es2020',
     rollupOptions: {
-      // Five entries: the main shell (Vue app), the three pre-rendered
-      // overlay pages (bare DOM) the Rust watcher loads — the Tab-table
-      // window (src/overlay/main.ts), the crosshair aim card
-      // (src/overlay/aimcard.ts) and the battle-chat translation card
-      // (src/overlay/chat.ts) — and the tray panel (mini Vue app) the tray
-      // left click loads — see src/tray/main.ts. (The manual-locate
-      // drag-box picker used to be an extra entry rendered in a dedicated
-      // window; it now lives inside the main app as
-      // features/replay/ManualLocateOverlay.)
-      input: {
-        main: resolve(pkgDir, "index.html"),
-        overlay: resolve(pkgDir, "overlay.html"),
-        aimcard: resolve(pkgDir, "aimcard.html"),
-        chat: resolve(pkgDir, "chat.html"),
-        tray: resolve(pkgDir, "tray.html"),
-      },
+      // Five entries, DERIVED from WEBUI_PAGES (src/bootChrome.ts) — the same
+      // table the pre-boot bar's htmlFiles comes from, so a page cannot be
+      // added to the build without also classifying it as app window/overlay:
+      // the main shell (Vue app), the three pre-rendered overlay pages (bare
+      // DOM) the Rust watcher loads — the Tab-table window
+      // (src/overlay/main.ts), the crosshair aim card (src/overlay/aimcard.ts)
+      // and the battle-chat translation card (src/overlay/chat.ts) — and the
+      // tray panel (mini Vue app) the tray left click loads — see
+      // src/tray/main.ts. (The manual-locate drag-box picker used to be an
+      // extra entry rendered in a dedicated window; it now lives inside the
+      // main app as features/replay/ManualLocateOverlay.)
+      input: Object.fromEntries(
+        WEBUI_PAGES.map((page): [string, string] => [page.entry, resolve(pkgDir, page.html)]),
+      ),
       output: {
         manualChunks: vendorChunks,
       },
