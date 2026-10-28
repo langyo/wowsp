@@ -1673,10 +1673,16 @@ pub struct FireDatasetSlot {
     pub engine_power_frac: Option<f32>,
 }
 
-/// One exported decision point (one JSONL line).
+/// Feature fields shared by every decision-dataset row family (E16): the
+/// metadata, own/global features and entity slots of one decider's
+/// observable tick state at `t` — everything
+/// [`build_decision_row_core`] computes. Flattened into
+/// [`FireDatasetRow`] (fire labels + outcome fields) and [`MoveDatasetRow`]
+/// (movement labels); flatten does not rename keys, so the fire JSON
+/// schema stays byte-compatible with the pre-E16 export.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FireDatasetRow {
+pub struct DecisionRowCore {
     // ── metadata ──
     /// Replay identity for the training side's per-replay grouping
     /// (GroupKFold over replays — entity ids REPEAT across replays, so
@@ -1717,39 +1723,9 @@ pub struct FireDatasetRow {
     // ── entity slots (fixed max length; shorter = padding on the consumer) ──
     pub enemies: Vec<FireDatasetSlot>,
     pub friends: Vec<FireDatasetSlot>,
-    // ── labels ──
-    pub label_a_can_fire: bool,
-    /// `None` (censored) whenever `label_a_can_fire` is false.
-    pub label_b_fired: Option<bool>,
-    // ── outcome fields (E13): post-decision results over
-    //    (t + label_window, t + OUTCOME_WINDOW_S]; serde defaults keep the
-    //    JSON shape additive (older datasets simply lack the keys) ──
-    /// The decider's server-confirmed hits (`shotKills` events owned by the
-    /// decider — any weapon: main, secondary, torpedoes; the hit counter
-    /// semantics, not the salvo semantics).
-    #[serde(default)]
-    pub owner_shots_hit: u32,
-    /// The decider's MAIN-battery ground-shell launches in the window — the
-    /// hit-rate denominator (`ownerShotsHit / ownerShotsFired` is the
-    /// player-accuracy proxy; secondary/AI fire excluded on both sides is
-    /// not possible for `hit`, which is noted here once).
-    #[serde(default)]
-    pub owner_shots_fired: u32,
-    /// Enemy HP drops in the window covered by at least one of the decider's
-    /// impacts within the attribution radius — the FULL window total, NOT
-    /// the #1418 even split among covering impacts: crossfiring attackers
-    /// each get the whole drop in their own row. Deliberate simplification
-    /// (see module docs): these fields rank decision moments against each
-    /// other, they are not a damage ledger, so the shared-drop inflation
-    /// applies uniformly across rows and deciles. vs the #1418 calibration
-    /// (dealt ledger 0.62x of server damage) this over-counts crossfire and
-    /// under-counts nothing else — the real-replay test reports the ratio.
-    #[serde(default)]
-    pub enemy_hp_lost_nearby: f32,
-    /// Descriptor header `matchGroup` (pvp / ranked / brawl / cooperative /
-    /// pve / event / …) — row-level mode metadata next to `replayId` so
-    /// ops / bot modes can be tagged and excluded on the training side
-    /// (`pve`+`event` are the operation/Halloween families).
+    /// Descriptor header `matchGroup` (pvp / ranked / brawl / …) — row-level
+    /// mode metadata next to `replayId` so ops / bot modes can be tagged and
+    /// excluded on the training side.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<String>,
     // ── feature v2 (E14) additions ──
@@ -1811,6 +1787,53 @@ pub struct FireDatasetRow {
     /// inactive").
     #[serde(default)]
     pub e11_events_known: bool,
+}
+
+/// One exported fire-decision point (one JSONL line): the shared feature
+/// core plus the two-head labels from research note B:
+///   labelA "physically can fire" — hard rule: the main-battery reload
+///        completes within the label window AND an observed-now enemy sits
+///        inside the decider's own engagement range (exactly the E7
+///        eligibility test, so labelA rows == E7's eligible count);
+///   labelB "expert fired"        — a MAIN-battery salvo starts in
+///        (t, t+label_window]; censored (None) whenever labelA is false
+///        (a hold during reload is not a decision, it is physics).
+/// Rows with labelA=0 are exported TOO: head A needs negatives, head B's loss
+/// masks them out on the training side.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FireDatasetRow {
+    #[serde(flatten)]
+    pub core: DecisionRowCore,
+    // ── labels ──
+    pub label_a_can_fire: bool,
+    /// `None` (censored) whenever `label_a_can_fire` is false.
+    pub label_b_fired: Option<bool>,
+    // ── outcome fields (E13): post-decision results over
+    //    (t + label_window, t + OUTCOME_WINDOW_S]; serde defaults keep the
+    //    JSON shape additive (older datasets simply lack the keys) ──
+    /// The decider's server-confirmed hits (`shotKills` events owned by the
+    /// decider — any weapon: main, secondary, torpedoes; the hit counter
+    /// semantics, not the salvo semantics).
+    #[serde(default)]
+    pub owner_shots_hit: u32,
+    /// The decider's MAIN-battery ground-shell launches in the window — the
+    /// hit-rate denominator (`ownerShotsHit / ownerShotsFired` is the
+    /// player-accuracy proxy; secondary/AI fire excluded on both sides is
+    /// not possible for `hit`, which is noted here once).
+    #[serde(default)]
+    pub owner_shots_fired: u32,
+    /// Enemy HP drops in the window covered by at least one of the decider's
+    /// impacts within the attribution radius — the FULL window total, NOT
+    /// the #1418 even split among covering impacts: crossfiring attackers
+    /// each get the whole drop in their own row. Deliberate simplification
+    /// (see module docs): these fields rank decision moments against each
+    /// other, they are not a damage ledger, so the shared-drop inflation
+    /// applies uniformly across rows and deciles. vs the #1418 calibration
+    /// (dealt ledger 0.62x of server damage) this over-counts crossfire and
+    /// under-counts nothing else — the real-replay test reports the ratio.
+    #[serde(default)]
+    pub enemy_hp_lost_nearby: f32,
     // ── hit-conditioned labels (E15) ──
     /// "Fired AND the outcome window landed at least one server-confirmed
     /// hit": the plain label sharpened by the post-decision outcome. Censored
@@ -2015,6 +2038,139 @@ fn zone_and_event_summary(
         .filter(|e| in_window(e.time) && (e.x - own.x).hypot(e.z - own.z) <= near_units)
         .count() as u32;
     (z0, z1, z2, zo, zp, shells, torps, explosions, near)
+}
+
+/// Decider-constant ally radar/hydro fractions (E14, extracted for E16):
+/// recorder-side builds only (enemy builds never ride the stream), so
+/// deciders on the recorder's side get counts of their TEAMMATES and
+/// enemy-side deciders get the unknown sentinel. A replay that decoded NO
+/// builds at all (the shipConfig layout is pinned to 15.9.x) is unknown for
+/// EVERYONE — an empty holder set must not masquerade as "no radar".
+fn ally_build_fracs(idx: &FeatureIndex<'_>, ship: &ShipInfo<'_>) -> (f32, f32) {
+    if !idx.builds_decoded {
+        return (-1.0, -1.0);
+    }
+    if ship.team_id == Some(0) {
+        let id = ship.traj.entity_id;
+        let r = idx.radar_holders.iter().filter(|&&aid| aid != id).count();
+        let h = idx.hydro_holders.iter().filter(|&&aid| aid != id).count();
+        ((r.min(4) as f32 / 4.0), (h.min(4) as f32 / 4.0))
+    } else {
+        (-1.0, -1.0)
+    }
+}
+
+/// Build the family-independent feature core of one decision row (E16
+/// extraction): every field of [`DecisionRowCore`] for one decider position
+/// `own` at time `t`. The fire and movement exporters pass their own
+/// `reload_frac` / `range_m` (both fire-context derived but defined for
+/// every ship — never-fired hulls report loaded guns and the fallback range)
+/// and the per-ship ally-build fractions; everything else is computed here
+/// exactly as the pre-E16 inline code did (value-compatible by
+/// construction — `decision_serve`'s parity test guards it).
+#[allow(clippy::too_many_arguments)]
+fn build_decision_row_core(
+    stream: &ReplayStream,
+    ships: &[ShipInfo<'_>],
+    ship: &ShipInfo<'_>,
+    own: &PositionSample,
+    t: f32,
+    los: Option<&LosGrid>,
+    eye_height: f32,
+    reload_frac: f32,
+    range_m: f32,
+    ally_radar: f32,
+    ally_hydro: f32,
+    replay_id: Option<&str>,
+    game_mode: Option<&str>,
+    events: &FeatureEvents<'_>,
+    idx: &FeatureIndex<'_>,
+) -> DecisionRowCore {
+    let (z0, z1, z2, zo, zp, shells, torps, expl, near) = zone_and_event_summary(stream, own, t);
+    let active = active_smokes_at(stream, events.smokes, t);
+    let (own_engine_power, own_engine_dir) = idx.engine_at(ship.traj.entity_id, t);
+    DecisionRowCore {
+        replay_id: replay_id.map(str::to_string),
+        replay_version: stream.version.clone(),
+        map_name: stream.map_name.clone(),
+        owner_entity_id: ship.traj.entity_id,
+        ship_id: ship.traj.kind.as_ref().and_then(|k| k.ship_id),
+        team_id: ship.team_id.unwrap_or(-1),
+        t,
+        own_speed_kt: trailing_speed_kt(ships, ship.traj.entity_id, t),
+        own_hp_frac: hp_frac_at(ship.traj, t),
+        own_reload_frac: reload_frac,
+        own_range_m: range_m,
+        zones_owned_0: z0,
+        zones_owned_1: z1,
+        zones_owned_2: z2,
+        zones_owned_other: zo,
+        zones_active_progress: zp,
+        events_shells_30s: shells,
+        events_torps_30s: torps,
+        events_explosions_30s: expl,
+        events_explosions_near_30s: near,
+        enemies: build_slots(
+            stream,
+            ship,
+            ships,
+            own,
+            t,
+            los,
+            eye_height,
+            true,
+            ENEMY_SLOTS,
+            idx,
+            &active,
+        ),
+        friends: build_slots(
+            stream,
+            ship,
+            ships,
+            own,
+            t,
+            los,
+            eye_height,
+            false,
+            FRIEND_SLOTS,
+            idx,
+            &active,
+        ),
+        game_mode: game_mode.map(str::to_string),
+        feature_version: FEATURE_VERSION,
+        own_damcon_frac: consumable_frac_or_unknown(
+            idx,
+            events.e11_known,
+            ship.traj.entity_id,
+            t,
+            Some(CONSUMABLE_ID_DAMCON),
+        ),
+        own_repair_frac: consumable_frac_or_unknown(
+            idx,
+            events.e11_known,
+            ship.traj.entity_id,
+            t,
+            Some(CONSUMABLE_ID_REPAIR),
+        ),
+        own_other_consumable_frac: consumable_frac_or_unknown(
+            idx,
+            events.e11_known,
+            ship.traj.entity_id,
+            t,
+            None,
+        ),
+        own_engine_power: own_engine_power.unwrap_or(-1.0),
+        own_engine_dir: own_engine_dir.unwrap_or(0.0),
+        own_in_smoke: inside_any_smoke(own.x, own.z, &active),
+        active_smoke_count_frac: (active.len() as f32 / 8.0).min(1.0),
+        active_smoke_area_feat: (active_smoke_area_km2(&active) + 1.0).ln() / 3.0,
+        vision_cap_frac: (idx.vision_cap_m(t) / (WEATHER_DEFAULT_CAP_UNITS * METERS_PER_GP_UNIT))
+            .clamp(0.0, 1.0),
+        weather_incoming_frac: idx.weather_incoming_frac(t),
+        ally_radar_count_frac: ally_radar,
+        ally_hydro_count_frac: ally_hydro,
+        e11_events_known: events.e11_known,
+    }
 }
 
 // ── E13 outcome fields: post-decision hit / damage statistics ────────────────
@@ -2237,21 +2393,9 @@ pub fn export_decision_dataset(
             continue;
         }
         owners += 1;
-        // Ally radar/hydro counts are decider-constant: recorder-side builds
-        // only (enemy builds never ride the stream), so deciders on the
-        // recorder's side get counts of their TEAMMATES and enemy-side
-        // deciders get the unknown sentinel. A replay that decoded NO builds
-        // at all (the shipConfig layout is pinned to 15.9.x) is unknown for
-        // EVERYONE — an empty holder set must not masquerade as "no radar".
-        let (ally_radar, ally_hydro) = if !idx.builds_decoded {
-            (-1.0, -1.0)
-        } else if ship.team_id == Some(0) {
-            let r = idx.radar_holders.iter().filter(|&&aid| aid != id).count();
-            let h = idx.hydro_holders.iter().filter(|&&aid| aid != id).count();
-            ((r.min(4) as f32 / 4.0), (h.min(4) as f32 / 4.0))
-        } else {
-            (-1.0, -1.0)
-        };
+        // Ally radar/hydro counts are decider-constant (E14): recorder-side
+        // builds only, enemy-side deciders get the unknown sentinel.
+        let (ally_radar, ally_hydro) = ally_build_fracs(&idx, ship);
         let (from, to) = alive_window(ship);
         let mut t = from + 5.0;
         while t <= to {
@@ -2290,101 +2434,32 @@ pub fn export_decision_dataset(
                 Some(s) => ((t - s) / ctx.reload_s.max(0.001)).clamp(0.0, 1.0),
                 None => 1.0, // guns spawn loaded
             };
-            let (z0, z1, z2, zo, zp, shells, torps, expl, near) =
-                zone_and_event_summary(stream, own, t);
             let (out_hit, out_fired, out_hp_lost) =
                 outcome_fields(&outcomes, ship, ships, t, params.label_window_s);
-            // ── feature v2 per-row state (E14) ──
-            let active = active_smokes_at(stream, events.smokes, t);
-            let (own_engine_power, own_engine_dir) = idx.engine_at(id, t);
-            let vision_cap_frac = (idx.vision_cap_m(t)
-                / (WEATHER_DEFAULT_CAP_UNITS * METERS_PER_GP_UNIT))
-                .clamp(0.0, 1.0);
-            rows.push(FireDatasetRow {
-                replay_id: replay_id.map(str::to_string),
-                replay_version: stream.version.clone(),
-                map_name: stream.map_name.clone(),
-                owner_entity_id: id,
-                ship_id: ship.traj.kind.as_ref().and_then(|k| k.ship_id),
-                team_id: ship.team_id.unwrap_or(-1),
+            let core = build_decision_row_core(
+                stream,
+                ships,
+                ship,
+                own,
                 t,
-                own_speed_kt: trailing_speed_kt(ships, id, t),
-                own_hp_frac: hp_frac_at(ship.traj, t),
-                own_reload_frac: reload_frac,
-                own_range_m: ctx.range_m,
-                zones_owned_0: z0,
-                zones_owned_1: z1,
-                zones_owned_2: z2,
-                zones_owned_other: zo,
-                zones_active_progress: zp,
-                events_shells_30s: shells,
-                events_torps_30s: torps,
-                events_explosions_30s: expl,
-                events_explosions_near_30s: near,
-                enemies: build_slots(
-                    stream,
-                    ship,
-                    ships,
-                    own,
-                    t,
-                    los,
-                    eye_height,
-                    true,
-                    ENEMY_SLOTS,
-                    &idx,
-                    &active,
-                ),
-                friends: build_slots(
-                    stream,
-                    ship,
-                    ships,
-                    own,
-                    t,
-                    los,
-                    eye_height,
-                    false,
-                    FRIEND_SLOTS,
-                    &idx,
-                    &active,
-                ),
+                los,
+                eye_height,
+                reload_frac,
+                ctx.range_m,
+                ally_radar,
+                ally_hydro,
+                replay_id,
+                game_mode,
+                events,
+                &idx,
+            );
+            rows.push(FireDatasetRow {
+                core,
                 label_a_can_fire: label_a,
                 label_b_fired: label_b,
                 owner_shots_hit: out_hit,
                 owner_shots_fired: out_fired,
                 enemy_hp_lost_nearby: out_hp_lost,
-                game_mode: game_mode.map(str::to_string),
-                feature_version: FEATURE_VERSION,
-                own_damcon_frac: consumable_frac_or_unknown(
-                    &idx,
-                    events.e11_known,
-                    id,
-                    t,
-                    Some(CONSUMABLE_ID_DAMCON),
-                ),
-                own_repair_frac: consumable_frac_or_unknown(
-                    &idx,
-                    events.e11_known,
-                    id,
-                    t,
-                    Some(CONSUMABLE_ID_REPAIR),
-                ),
-                own_other_consumable_frac: consumable_frac_or_unknown(
-                    &idx,
-                    events.e11_known,
-                    id,
-                    t,
-                    None,
-                ),
-                own_engine_power: own_engine_power.unwrap_or(-1.0),
-                own_engine_dir: own_engine_dir.unwrap_or(0.0),
-                own_in_smoke: inside_any_smoke(own.x, own.z, &active),
-                active_smoke_count_frac: (active.len() as f32 / 8.0).min(1.0),
-                active_smoke_area_feat: (active_smoke_area_km2(&active) + 1.0).ln() / 3.0,
-                vision_cap_frac,
-                weather_incoming_frac: idx.weather_incoming_frac(t),
-                ally_radar_count_frac: ally_radar,
-                ally_hydro_count_frac: ally_hydro,
-                e11_events_known: events.e11_known,
                 label_b_hit: label_b.map(|fired| fired && out_hit > 0),
                 label_b_soft: label_b.map(|fired| {
                     if fired {
@@ -2428,28 +2503,46 @@ pub fn export_decision_dataset(
 // so mixed-map folders degrade per file exactly like a single export without
 // a grid.
 
-/// One file's outcome in a batch ingestion.
+/// Row contract of the generic batch ingester (E16): the ingester stamps
+/// every exported row with the file's replay identity (overriding whatever
+/// the per-file export left there) so summary and rows can never disagree.
+pub trait BatchRow {
+    fn set_replay_id(&mut self, replay_id: String);
+}
+
+/// Stats contract of the generic batch ingester: the two aggregates every
+/// family's summary counts over successful files.
+pub trait BatchStats {
+    fn owners(&self) -> usize;
+    fn rows(&self) -> usize;
+}
+
+/// One file's outcome in a batch ingestion (any dataset family).
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum DatasetBatchOutcome<S> {
+    /// Decoded and exported; `stats` is the file's own export summary.
+    Exported { stats: S },
+    /// Skipped after `reason` (read/decode/roster error). The batch went on.
+    Failed { reason: String },
+}
+
+/// One file's record in a batch report (any dataset family).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FireDatasetBatchFile {
+pub struct DatasetBatchFile<S> {
     /// Replay identity = path relative to the batch root with forward
     /// slashes (unique across nested subfolders). This is the GroupKFold
     /// grouping key on the training side.
     pub replay_id: String,
     /// File name without directory components (for human-readable reports).
     pub file_name: String,
-    pub outcome: FireDatasetBatchOutcome,
+    pub outcome: DatasetBatchOutcome<S>,
 }
 
-/// What happened to one replay file in a batch.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
-pub enum FireDatasetBatchOutcome {
-    /// Decoded and exported; `stats` is the file's own export summary.
-    Exported { stats: FireDatasetExportStats },
-    /// Skipped after `reason` (read/decode/roster error). The batch went on.
-    Failed { reason: String },
-}
+/// Fire-flavoured batch records (pre-E16 names kept for the fire tests).
+pub type FireDatasetBatchOutcome = DatasetBatchOutcome<FireDatasetExportStats>;
+pub type FireDatasetBatchFile = DatasetBatchFile<FireDatasetExportStats>;
 
 /// Aggregate summary of one batch ingestion.
 #[derive(Debug, Clone, Serialize)]
@@ -2470,24 +2563,85 @@ pub struct FireDatasetBatchSummary {
     pub per_file: Vec<FireDatasetBatchFile>,
 }
 
-/// Fault-tolerant aggregation core (E12): process each `files` entry with
-/// `process`; success contributes its rows (stamped with the file's
-/// `replay_id` — overriding whatever the closure left there — so summary and
-/// rows can never disagree), failure is recorded and the batch CONTINUES.
-/// Split from the directory walk so the tolerance/aggregation logic is
-/// unit-testable without real replay bytes.
-pub fn ingest_replay_files<I, F>(
+/// Fault-tolerant ingestion core shared by every dataset family (E12 fire →
+/// E16 movement): each `files` entry is processed with `process`; success
+/// contributes its rows (stamped with the file's `replay_id` — overriding
+/// whatever the closure left there — so summary and rows can never
+/// disagree), failure is recorded and the batch CONTINUES. Split from the
+/// family-specific summaries so new label families reuse the tolerance core
+/// unchanged (unit-testable without real replay bytes). Emits one live
+/// progress line per file — hour-long corpora need visible progress under
+/// `--nocapture`.
+pub fn ingest_batch_files<R, S, I, F>(
     root: &std::path::Path,
     files: I,
     mut process: F,
+) -> (Vec<R>, Vec<DatasetBatchFile<S>>)
+where
+    R: BatchRow,
+    S: BatchStats,
+    I: IntoIterator<Item = std::path::PathBuf>,
+    F: FnMut(&std::path::Path) -> anyhow::Result<(Vec<R>, S)>,
+{
+    let mut rows = Vec::new();
+    let mut per_file = Vec::new();
+    for path in files {
+        let replay_id = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .into_owned()
+            .replace('\\', "/");
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| replay_id.clone());
+        let outcome = match process(&path) {
+            Ok((mut file_rows, stats)) => {
+                for r in &mut file_rows {
+                    r.set_replay_id(replay_id.clone());
+                }
+                eprintln!(
+                    "[batch] {} -> {} rows, {} owners",
+                    replay_id,
+                    stats.rows(),
+                    stats.owners()
+                );
+                rows.extend(file_rows);
+                DatasetBatchOutcome::Exported { stats }
+            },
+            Err(e) => {
+                eprintln!("[batch] {} -> FAILED: {}", replay_id, e);
+                DatasetBatchOutcome::Failed {
+                    reason: e.to_string(),
+                }
+            },
+        };
+        per_file.push(DatasetBatchFile {
+            replay_id,
+            file_name,
+            outcome,
+        });
+    }
+    (rows, per_file)
+}
+
+/// Fire-family wrapper (E12): aggregates the generic per-file records into
+/// the fire batch summary (rows_can_fire / rows_fired totals).
+pub fn ingest_replay_files<I, F>(
+    root: &std::path::Path,
+    files: I,
+    process: F,
 ) -> (Vec<FireDatasetRow>, FireDatasetBatchSummary)
 where
     I: IntoIterator<Item = std::path::PathBuf>,
     F: FnMut(&std::path::Path) -> anyhow::Result<(Vec<FireDatasetRow>, FireDatasetExportStats)>,
 {
+    let (rows, per_file) =
+        ingest_batch_files::<FireDatasetRow, FireDatasetExportStats, I, F>(root, files, process);
     let mut summary = FireDatasetBatchSummary {
         root_dir: root.to_string_lossy().into_owned(),
-        files_seen: 0,
+        files_seen: per_file.len(),
         files_exported: 0,
         files_failed: 0,
         deciders: 0,
@@ -2497,39 +2651,27 @@ where
         positive_rate_among_can_fire: 0.0,
         per_file: Vec::new(),
     };
-    let mut rows = Vec::new();
-    for path in files {
-        summary.files_seen += 1;
-        let replay_id = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        let file_name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| replay_id.clone());
-        let outcome = match process(&path) {
-            Ok((mut file_rows, stats)) => {
-                for r in &mut file_rows {
-                    r.replay_id = Some(replay_id.clone());
-                }
+    for f in per_file {
+        let DatasetBatchFile {
+            replay_id,
+            file_name,
+            outcome,
+        } = f;
+        let outcome = match outcome {
+            DatasetBatchOutcome::Exported { stats } => {
                 summary.files_exported += 1;
                 summary.deciders += stats.owners;
                 summary.rows += stats.rows;
                 summary.rows_can_fire += stats.rows_can_fire;
                 summary.rows_fired += stats.rows_fired;
-                rows.extend(file_rows);
-                FireDatasetBatchOutcome::Exported { stats }
+                DatasetBatchOutcome::Exported { stats }
             },
-            Err(e) => {
+            DatasetBatchOutcome::Failed { reason } => {
                 summary.files_failed += 1;
-                FireDatasetBatchOutcome::Failed {
-                    reason: e.to_string(),
-                }
+                DatasetBatchOutcome::Failed { reason }
             },
         };
-        summary.per_file.push(FireDatasetBatchFile {
+        summary.per_file.push(DatasetBatchFile {
             replay_id,
             file_name,
             outcome,
@@ -2632,6 +2774,433 @@ pub fn export_decision_dataset_dir(
     files.sort();
     let (rows, summary) = ingest_replay_files(dir, files, |path| {
         export_replay_file(path, los_dir, eye_height, params)
+    });
+    Ok((rows, summary))
+}
+
+// ── E16: movement-decision dataset (G6 step 1) ──────────────────────────────
+//
+// "Given this tick and this intel, where should each ship go?" — the
+// movement twin of the E9 fire export. Supervision is the REALISED
+// displacement over a 12 s window: 16 directional sectors of 22.5° each,
+// measured in the frame RELATIVE to the decider's heading at the decision
+// time (WoWS rudder semantics — "hard to starboard" is a relative command,
+// and the label is far more learnable relative: the same island-avoidance
+// behaviour is one class instead of sixteen), plus one "no obvious
+// movement" class for displacements under 100 m (100 m / 12 s ≈ 16.2 kt —
+// a straight-cruising slow ship legitimately lands there; the corpus
+// histogram decides whether the threshold is informative, it is not tuned
+// here). The serve side recovers the absolute bearing from the live yaw.
+//
+// Design deltas vs the fire export (why they differ):
+//   * DECIDERS: every team-known alive ship — carriers and never-fired
+//     hulls INCLUDED (positioning is a universal decision; the fire
+//     export's has-fire-history gate exists because reload/range semantics
+//     need shells, which movement does not).
+//   * CADENCE 4 s (half the fire 2 s): ~22 deciders × ~250 points × 162
+//     replays ≈ 0.9 M rows must stay inside the 5 GB JSONL budget.
+//   * NO censoring label: nothing about movement is physics-gated, every
+//     observable point is a legal decision — except rows whose label
+//     WINDOW cannot be observed honestly (decider went dark inside
+//     [t+4, t+16] — no trailing sample at an endpoint; the recorder's
+//     stream simply has no positions there, and interpolating across a
+//     dark gap would fabricate truth). Those are counted as censored and
+//     dropped, never faked.
+//   * Features: the SAME v2 pipeline (same tick state, same slots) — the
+//     E14 lesson applies unchanged, cross-version training must ablate the
+//     version-gated families (`--ablate e11` on the training side).
+//   * Outcome fields are omitted (row budget; the movement-outcome proxy
+//     — does the realised landing point sit near cover / cap / high
+//     fire-probability areas — is E17's job).
+
+/// Movement-decision cadence (seconds) — half the fire 2 s cadence, sized
+/// for the ~0.9 M-row / 5 GB corpus budget.
+pub const MOVE_DECISION_INTERVAL_S: f32 = 4.0;
+/// Movement label window start offset: displacement measured from t+4.
+pub const MOVE_LABEL_START_S: f32 = 4.0;
+/// Movement label window end offset: displacement measured to t+16 (a 12 s
+/// window — long enough for a committed turn to show, short enough that the
+/// decision at t still dominates it).
+pub const MOVE_LABEL_END_S: f32 = 16.0;
+/// Directional sector width (radians): 16 sectors over the full circle,
+/// relative to the decider's heading at t.
+pub const MOVE_SECTOR_RAD: f32 = std::f32::consts::FRAC_PI_8; // 22.5°
+/// Total movement-label classes: 16 directional + 1 "no obvious movement".
+pub const MOVE_SECTOR_COUNT: usize = 17;
+/// The "no obvious movement" class id (displacement below the threshold).
+pub const MOVE_SECTOR_NONE: u8 = 16;
+/// Displacement below this (metres over the 12 s window) is class
+/// [`MOVE_SECTOR_NONE`].
+pub const MOVE_NONE_THRESHOLD_M: f32 = 100.0;
+/// Freshness tolerance for a label-endpoint position sample (seconds): a
+/// window endpoint with no trailing sample at most this old sits inside an
+/// observation gap — no honest ground truth, the row is censored.
+const MOVE_ENDPOINT_TOL_S: f32 = 2.0;
+
+impl BatchRow for FireDatasetRow {
+    fn set_replay_id(&mut self, replay_id: String) {
+        self.core.replay_id = Some(replay_id);
+    }
+}
+
+/// Field-access compatibility for pre-E16 consumers (the decision_serve
+/// parity test and the fire tests read `row.owner_entity_id` & co.
+/// flatly): every feature field lives on the core, and auto-deref keeps
+/// those reads working without touching the read-only consumers. New code
+/// should prefer the explicit `row.core.…` path.
+impl std::ops::Deref for FireDatasetRow {
+    type Target = DecisionRowCore;
+
+    fn deref(&self) -> &DecisionRowCore {
+        &self.core
+    }
+}
+
+impl BatchStats for FireDatasetExportStats {
+    fn owners(&self) -> usize {
+        self.owners
+    }
+
+    fn rows(&self) -> usize {
+        self.rows
+    }
+}
+
+/// The 17-class movement label (E16). Sector k = round(rel / 22.5°) mod 16
+/// — sector 0 dead ahead (±11.25°), 8 dead astern, halves round AWAY FROM
+/// ZERO so a displacement exactly on a 22.5° boundary lands in the boundary
+/// sector (deterministic, tested). Displacement under the no-move threshold
+/// short-circuits to class 16 regardless of bearing.
+pub fn move_sector_label(rel_bearing_rad: f32, moved_dist_m: f32) -> u8 {
+    if moved_dist_m < MOVE_NONE_THRESHOLD_M {
+        return MOVE_SECTOR_NONE;
+    }
+    let k = (rel_bearing_rad / MOVE_SECTOR_RAD).round() as i32;
+    k.rem_euclid((MOVE_SECTOR_COUNT - 1) as i32) as u8
+}
+
+/// Fresh trailing position of one trajectory at `t` (the label-endpoint
+/// rule): the last sample at or before `t` when it is at most
+/// [`MOVE_ENDPOINT_TOL_S`] old. `None` inside an observation gap — the
+/// honest "no ground truth here" verdict (never interpolate across a gap).
+fn trailing_position(traj: &EntityTrajectory, t: f32) -> Option<(f32, f32)> {
+    let idx = traj.samples.partition_point(|s| s.time <= t);
+    if idx == 0 {
+        return None;
+    }
+    let s = &traj.samples[idx - 1];
+    (t - s.time <= MOVE_ENDPOINT_TOL_S).then_some((s.x, s.z))
+}
+
+/// One exported movement-decision point (E16, one JSONL line): the shared
+/// v2 feature core plus the realised-movement labels over
+/// [t + 4, t + 16] s.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveDatasetRow {
+    #[serde(flatten)]
+    pub core: DecisionRowCore,
+    /// Own heading at the decision time (radians) — the relative-frame
+    /// reference, kept on the row so analysis can rebuild absolute bearings.
+    pub own_yaw_rad: f32,
+    /// Realised displacement over the window (metres).
+    pub moved_dist_m: f32,
+    /// Absolute displacement bearing atan2(dz, dx) (radians); 0.0 when the
+    /// displacement is zero.
+    pub move_bearing_rad: f32,
+    /// 17-class label: 0..15 relative sectors, 16 = no obvious movement.
+    pub move_sector: u8,
+}
+
+impl BatchRow for MoveDatasetRow {
+    fn set_replay_id(&mut self, replay_id: String) {
+        self.core.replay_id = Some(replay_id);
+    }
+}
+
+/// Movement-export totals for one replay (E16).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveDatasetExportStats {
+    pub owners: usize,
+    pub rows: usize,
+    /// Rows per moveSector class (17 bins; bin 16 = no movement).
+    pub sector_histogram: Vec<usize>,
+    pub rows_no_move: usize,
+    /// Observable decision points whose label window had no honest ground
+    /// truth (decider dark inside [t+4, t+16]) — the censorship rate,
+    /// reported, not hidden.
+    pub rows_censored_window: usize,
+    pub moved_dist_p50_m: f32,
+    pub moved_dist_p90_m: f32,
+}
+
+impl BatchStats for MoveDatasetExportStats {
+    fn owners(&self) -> usize {
+        self.owners
+    }
+
+    fn rows(&self) -> usize {
+        self.rows
+    }
+}
+
+/// Build every exportable movement-decision row of the replay (E16).
+/// Deciders: every team-known ship (carriers and never-fired hulls
+/// included). Gates: own state observable at t (E7 own-observable
+/// semantics), alive through the full label window, and honest ground truth
+/// at both window endpoints. Everything feature-side is the fire v2
+/// pipeline via [`build_decision_row_core`].
+#[allow(clippy::too_many_arguments)]
+pub fn export_move_dataset(
+    stream: &ReplayStream,
+    ships: &[ShipInfo<'_>],
+    los: Option<&LosGrid>,
+    eye_height: f32,
+    params: &FireSampleParams,
+    replay_id: Option<&str>,
+    game_mode: Option<&str>,
+    events: &FeatureEvents<'_>,
+) -> (Vec<MoveDatasetRow>, MoveDatasetExportStats) {
+    let contexts = fire_contexts(stream, ships, params);
+    let idx = build_feature_index(
+        events,
+        &stream.ally_builds,
+        &stream.weather_transitions,
+        &stream.weather_notifications,
+    );
+    let mut rows = Vec::new();
+    let mut owners = 0usize;
+    let mut censored = 0usize;
+    let mut histogram = vec![0usize; MOVE_SECTOR_COUNT];
+    let mut dists: Vec<f32> = Vec::new();
+    for ship in ships {
+        if ship.team_ambiguous || ship.team_id.is_none() {
+            continue;
+        }
+        owners += 1;
+        let id = ship.traj.entity_id;
+        let Some(ctx) = contexts.get(&id) else {
+            continue;
+        };
+        let (ally_radar, ally_hydro) = ally_build_fracs(&idx, ship);
+        let (from, to) = alive_window(ship);
+        // Rows need the FULL label window inside the alive span: a window
+        // truncated by death or by the stream's end would fabricate a
+        // "stopped" label out of clamped positions.
+        let mut t = from + 5.0;
+        while t + MOVE_LABEL_END_S <= to {
+            // Own state must be observable (recorder view) — the E7 gate.
+            let Some(own) = last_sample_before(&ship.traj.samples, t) else {
+                t += MOVE_DECISION_INTERVAL_S;
+                continue;
+            };
+            if t - own.time > GAP_THRESHOLD {
+                t += MOVE_DECISION_INTERVAL_S;
+                continue;
+            }
+            // Ground truth: displacement between FRESH trailing samples at
+            // the two endpoints (dark-gap rows are censored, see module
+            // docs — never interpolated).
+            let (Some(p0), Some(p1)) = (
+                trailing_position(ship.traj, t + MOVE_LABEL_START_S),
+                trailing_position(ship.traj, t + MOVE_LABEL_END_S),
+            ) else {
+                censored += 1;
+                t += MOVE_DECISION_INTERVAL_S;
+                continue;
+            };
+            let (dx, dz) = (p1.0 - p0.0, p1.1 - p0.1);
+            let moved_dist_m = dx.hypot(dz) * METERS_PER_UNIT;
+            let move_bearing_rad = if moved_dist_m > 0.0 {
+                dz.atan2(dx)
+            } else {
+                0.0
+            };
+            let sector = move_sector_label(wrap_angle(move_bearing_rad - own.yaw), moved_dist_m);
+            histogram[sector as usize] += 1;
+            dists.push(moved_dist_m);
+            // Fire-context features keep their fire semantics for every
+            // decider: never-fired hulls report loaded guns (reload 1.0)
+            // and the fallback engagement range.
+            let reload_frac = ctx
+                .salvos
+                .iter()
+                .rfind(|s| s.main_battery && s.start <= t)
+                .map_or(1.0, |s| {
+                    ((t - s.start) / ctx.reload_s.max(0.001)).clamp(0.0, 1.0)
+                });
+            let core = build_decision_row_core(
+                stream,
+                ships,
+                ship,
+                own,
+                t,
+                los,
+                eye_height,
+                reload_frac,
+                ctx.range_m,
+                ally_radar,
+                ally_hydro,
+                replay_id,
+                game_mode,
+                events,
+                &idx,
+            );
+            rows.push(MoveDatasetRow {
+                core,
+                own_yaw_rad: own.yaw,
+                moved_dist_m,
+                move_bearing_rad,
+                move_sector: sector,
+            });
+            t += MOVE_DECISION_INTERVAL_S;
+        }
+    }
+    let stats = MoveDatasetExportStats {
+        owners,
+        rows: rows.len(),
+        sector_histogram: histogram,
+        rows_no_move: rows
+            .iter()
+            .filter(|r| r.move_sector == MOVE_SECTOR_NONE)
+            .count(),
+        rows_censored_window: censored,
+        moved_dist_p50_m: percentile(dists.clone(), 0.5).unwrap_or(0.0),
+        moved_dist_p90_m: percentile(dists, 0.9).unwrap_or(0.0),
+    };
+    (rows, stats)
+}
+
+/// Movement batch summary (E16, G6): corpus-level totals plus the summed
+/// sector histogram — the inertia-baseline strength read straight off the
+/// export.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveDatasetBatchSummary {
+    pub root_dir: String,
+    pub files_seen: usize,
+    pub files_exported: usize,
+    pub files_failed: usize,
+    pub deciders: usize,
+    pub rows: usize,
+    pub rows_censored_window: usize,
+    pub sector_histogram: Vec<usize>,
+    pub rows_no_move: usize,
+    pub moved_dist_p50_m: f32,
+    pub moved_dist_p90_m: f32,
+    pub per_file: Vec<DatasetBatchFile<MoveDatasetExportStats>>,
+}
+
+/// Movement-family wrapper over [`ingest_batch_files`]: pools per-file
+/// sector histograms and displacement lists for the corpus percentiles.
+pub fn ingest_move_replay_files<I, F>(
+    root: &std::path::Path,
+    files: I,
+    process: F,
+) -> (Vec<MoveDatasetRow>, MoveDatasetBatchSummary)
+where
+    I: IntoIterator<Item = std::path::PathBuf>,
+    F: FnMut(&std::path::Path) -> anyhow::Result<(Vec<MoveDatasetRow>, MoveDatasetExportStats)>,
+{
+    let (rows, per_file) =
+        ingest_batch_files::<MoveDatasetRow, MoveDatasetExportStats, I, F>(root, files, process);
+    let mut summary = MoveDatasetBatchSummary {
+        root_dir: root.to_string_lossy().into_owned(),
+        files_seen: per_file.len(),
+        files_exported: 0,
+        files_failed: 0,
+        deciders: 0,
+        rows: 0,
+        rows_censored_window: 0,
+        sector_histogram: vec![0usize; MOVE_SECTOR_COUNT],
+        rows_no_move: 0,
+        moved_dist_p50_m: 0.0,
+        moved_dist_p90_m: 0.0,
+        per_file: Vec::new(),
+    };
+    let mut all_dists: Vec<f32> = Vec::new();
+    for f in per_file {
+        let DatasetBatchFile {
+            replay_id,
+            file_name,
+            outcome,
+        } = f;
+        let outcome = match outcome {
+            DatasetBatchOutcome::Exported { stats } => {
+                summary.files_exported += 1;
+                summary.deciders += stats.owners;
+                summary.rows += stats.rows;
+                summary.rows_censored_window += stats.rows_censored_window;
+                for (i, n) in stats.sector_histogram.iter().enumerate() {
+                    summary.sector_histogram[i] += n;
+                }
+                summary.rows_no_move += stats.rows_no_move;
+                DatasetBatchOutcome::Exported { stats }
+            },
+            DatasetBatchOutcome::Failed { reason } => {
+                summary.files_failed += 1;
+                DatasetBatchOutcome::Failed { reason }
+            },
+        };
+        summary.per_file.push(DatasetBatchFile {
+            replay_id,
+            file_name,
+            outcome,
+        });
+    }
+    for r in &rows {
+        all_dists.push(r.moved_dist_m);
+    }
+    summary.moved_dist_p50_m = percentile(all_dists.clone(), 0.5).unwrap_or(0.0);
+    summary.moved_dist_p90_m = percentile(all_dists, 0.9).unwrap_or(0.0);
+    (rows, summary)
+}
+
+/// Decode + export ONE replay file's movement rows (the `process` closure
+/// used by [`export_move_dataset_dir`]); failure semantics identical to
+/// [`export_replay_file`].
+pub fn export_move_replay_file(
+    path: &std::path::Path,
+    los_dir: Option<&std::path::Path>,
+    eye_height: f32,
+    params: &FireSampleParams,
+) -> anyhow::Result<(Vec<MoveDatasetRow>, MoveDatasetExportStats)> {
+    let path_str = path.to_string_lossy().into_owned();
+    let (stream, ev) = super::replay::decode_replay_stream_with_events(&path_str)?;
+    let vehicles = super::replay_probe::read_roster(&path_str)?;
+    let ships = ship_infos(&stream, &vehicles);
+    let los = los_for_replay(stream.map_name.as_deref(), los_dir);
+    let game_mode = read_game_mode(path);
+    let events = FeatureEvents::for_version(stream.version.as_deref(), &ev);
+    Ok(export_move_dataset(
+        &stream,
+        &ships,
+        los.as_ref(),
+        eye_height,
+        params,
+        None, // stamped by ingest_move_replay_files from the path
+        game_mode.as_deref(),
+        &events,
+    ))
+}
+
+/// Folder → movement dataset (E16 / G6). Same walk and tolerance as
+/// [`export_decision_dataset_dir`], movement rows out.
+pub fn export_move_dataset_dir(
+    dir: &std::path::Path,
+    los_dir: Option<&std::path::Path>,
+    eye_height: f32,
+    params: &FireSampleParams,
+) -> anyhow::Result<(Vec<MoveDatasetRow>, MoveDatasetBatchSummary)> {
+    if !dir.is_dir() {
+        bail!("batch root {} is not a directory", dir.to_string_lossy());
+    }
+    let mut files = Vec::new();
+    collect_replay_files(dir, &mut files);
+    files.sort();
+    let (rows, summary) = ingest_move_replay_files(dir, files, |path| {
+        export_move_replay_file(path, los_dir, eye_height, params)
     });
     Ok((rows, summary))
 }
@@ -4194,53 +4763,55 @@ mod tests {
         // fails with a reason, one succeeds with zero rows.
         let mk_rows = || -> Vec<FireDatasetRow> {
             let base = FireDatasetRow {
-                replay_id: None,
-                replay_version: None,
-                map_name: None,
-                owner_entity_id: 9,
-                ship_id: None,
-                team_id: 1,
-                t: 10.0,
-                own_speed_kt: None,
-                own_hp_frac: None,
-                own_reload_frac: 1.0,
-                own_range_m: 10_000.0,
-                zones_owned_0: 0,
-                zones_owned_1: 0,
-                zones_owned_2: 0,
-                zones_owned_other: 0,
-                zones_active_progress: 0,
-                events_shells_30s: 0,
-                events_torps_30s: 0,
-                events_explosions_30s: 0,
-                events_explosions_near_30s: 0,
-                enemies: Vec::new(),
-                friends: Vec::new(),
+                core: DecisionRowCore {
+                    replay_id: None,
+                    replay_version: None,
+                    map_name: None,
+                    owner_entity_id: 9,
+                    ship_id: None,
+                    team_id: 1,
+                    t: 10.0,
+                    own_speed_kt: None,
+                    own_hp_frac: None,
+                    own_reload_frac: 1.0,
+                    own_range_m: 10_000.0,
+                    zones_owned_0: 0,
+                    zones_owned_1: 0,
+                    zones_owned_2: 0,
+                    zones_owned_other: 0,
+                    zones_active_progress: 0,
+                    events_shells_30s: 0,
+                    events_torps_30s: 0,
+                    events_explosions_30s: 0,
+                    events_explosions_near_30s: 0,
+                    enemies: Vec::new(),
+                    friends: Vec::new(),
+                    game_mode: None,
+                    feature_version: FEATURE_VERSION,
+                    own_damcon_frac: -1.0,
+                    own_repair_frac: -1.0,
+                    own_other_consumable_frac: -1.0,
+                    own_engine_power: -1.0,
+                    own_engine_dir: 0.0,
+                    own_in_smoke: false,
+                    active_smoke_count_frac: 0.0,
+                    active_smoke_area_feat: 0.0,
+                    vision_cap_frac: 1.0,
+                    weather_incoming_frac: 0.0,
+                    ally_radar_count_frac: -1.0,
+                    ally_hydro_count_frac: -1.0,
+                    e11_events_known: false,
+                },
                 label_a_can_fire: true,
                 label_b_fired: Some(true),
                 owner_shots_hit: 0,
                 owner_shots_fired: 0,
                 enemy_hp_lost_nearby: 0.0,
-                game_mode: None,
-                feature_version: FEATURE_VERSION,
-                own_damcon_frac: -1.0,
-                own_repair_frac: -1.0,
-                own_other_consumable_frac: -1.0,
-                own_engine_power: -1.0,
-                own_engine_dir: 0.0,
-                own_in_smoke: false,
-                active_smoke_count_frac: 0.0,
-                active_smoke_area_feat: 0.0,
-                vision_cap_frac: 1.0,
-                weather_incoming_frac: 0.0,
-                ally_radar_count_frac: -1.0,
-                ally_hydro_count_frac: -1.0,
-                e11_events_known: false,
                 label_b_hit: None,
                 label_b_soft: None,
             };
             let mut negative = base.clone();
-            negative.t = 12.0;
+            negative.core.t = 12.0;
             negative.label_a_can_fire = false;
             negative.label_b_fired = None;
             vec![base, negative]
@@ -4457,6 +5028,476 @@ mod tests {
                 eprintln!("[e12] wrote {} rows to {}", rows.len(), out);
             },
             Err(_) => eprintln!("[e12] WOWSP_DATASET_OUT not set - dataset not written"),
+        }
+    }
+
+    /// E16: the 17-class sector label against hand-computed angles —
+    /// boundary semantics (exactly on ±22.5° lands in the boundary sector;
+    /// the wrap at ±180° agrees), and the no-move threshold (strictly below
+    /// 100 m is class 16, AT 100 m is directional).
+    #[test]
+    fn synthetic_move_sector_label_boundaries() {
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, FRAC_PI_8, PI};
+        assert_eq!(move_sector_label(0.0, 500.0), 0);
+        assert_eq!(move_sector_label(FRAC_PI_8, 500.0), 1); // exactly +22.5°
+        assert_eq!(move_sector_label(-FRAC_PI_8, 500.0), 15); // exactly -22.5°
+        assert_eq!(move_sector_label(FRAC_PI_4, 500.0), 2); // +45°
+        assert_eq!(move_sector_label(-FRAC_PI_2, 500.0), 12); // -90°
+        assert_eq!(move_sector_label(PI, 500.0), 8); // dead astern
+        assert_eq!(move_sector_label(-PI, 500.0), 8); // wrap agreement
+        // Threshold: strict `<`.
+        assert_eq!(move_sector_label(0.0, 99.9), MOVE_SECTOR_NONE);
+        assert_eq!(move_sector_label(0.0, 100.0), 0);
+    }
+
+    /// E16 synthetic: movement export labels, gates and the decider set.
+    /// Ships: 9 = the firing gun ship (fire history, stationary → sector
+    /// 16); 8 = recorder-side cruiser sailing +x under yaw 0 (sector 0,
+    /// movedDistM = 24 units × 5.86); 7 = never-fires ship sailing +x under
+    /// yaw π/2 (relative frame: absolute bearing 0 vs heading π/2 → sector
+    /// 12 — the CV/never-fired inclusion check); 6 = dies at t=150 (rows
+    /// must stop before death − window); 4 = goes dark at t=80 (window
+    /// censorship); 5 = ambiguous team (excluded).
+    #[test]
+    fn synthetic_move_dataset_export_labels_and_gates() {
+        use std::f32::consts::PI;
+        let params = FireSampleParams::default();
+        // Yaw-carrying sample builder (the shared helper pins yaw 0).
+        let ms = |t: f32, eid: i32, x: f32, z: f32, yaw: f32| PositionSample {
+            time: t,
+            entity_id: eid,
+            vehicle_id: 1,
+            x,
+            y: 0.0,
+            z,
+            yaw,
+        };
+        // Stationary gun ship 9 (team 1) with two main salvos.
+        let gun = trajectory(
+            9,
+            Some(222),
+            (0..400)
+                .map(|i| ms(i as f32 * 0.5, 9, 10.0, 0.0, 0.0))
+                .collect(),
+        );
+        // Cruiser 8 (team 0, recorder): +x at 2 u/s, yaw 0.
+        let cruiser = trajectory(
+            8,
+            Some(111),
+            (0..400)
+                .map(|i| ms(i as f32 * 0.5, 8, 100.0 + i as f32, 0.0, 0.0))
+                .collect(),
+        );
+        // Never-fires ship 7 (team 0): +x at 2 u/s, yaw pi/2.
+        let flanker = trajectory(
+            7,
+            Some(110),
+            (0..400)
+                .map(|i| ms(i as f32 * 0.5, 7, 200.0 + i as f32, 20.0, PI / 2.0))
+                .collect(),
+        );
+        // Doomed ship 6 (team 1): alive until t=150.
+        let mut doomed = trajectory(
+            6,
+            Some(109),
+            (0..300)
+                .map(|i| ms(i as f32 * 0.5, 6, 300.0, 300.0, 0.0))
+                .collect(),
+        );
+        doomed.death_time = Some(150.0);
+        // Dark-gap ship 4 (team 1): samples 0..80 then 200..300.
+        let mut dark = trajectory(4, Some(108), Vec::new());
+        dark.samples = (0..=160)
+            .chain(400..600)
+            .map(|i| ms(i as f32 * 0.5, 4, 400.0, -50.0, 0.0))
+            .collect();
+        let mut shells = Vec::new();
+        for k in 0..2u32 {
+            for b in 0..4u16 {
+                shells.push(shell(
+                    100.0 + k as f32 * 24.0,
+                    9,
+                    k as i32,
+                    b,
+                    (10.0, 0.5),
+                    (100.0, 0.0),
+                ));
+            }
+        }
+        let stream = ReplayStream {
+            trajectories: vec![gun, cruiser, flanker, doomed, dark],
+            recorder_vehicle_id: Some(8),
+            shell_launches: shells,
+            ..minimal_stream()
+        };
+        // Roster: shipId 555 on BOTH sides (via ships 5a/5b trajectories)
+        // stays ambiguous — one representative trajectory is enough.
+        let amb = trajectory(5, Some(555), vec![ms(0.0, 5, 0.0, 0.0, 0.0)]);
+        let mut stream = stream;
+        stream.trajectories.push(amb);
+        let vehicles = vec![
+            roster_entry(1, 0, 111),
+            roster_entry(2, 2, 222),
+            roster_entry(3, 0, 110),
+            roster_entry(4, 2, 109),
+            roster_entry(5, 2, 108),
+            roster_entry(6, 0, 555),
+            roster_entry(7, 2, 555),
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+
+        let (rows, stats) = export_move_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            Some("replayM"),
+            Some("pvp"),
+            &FeatureEvents::empty(),
+        );
+        // Decider set: every team-known ship — including the never-fired 7/8
+        // (the fire export on the same stream yields only owner 9).
+        assert_eq!(stats.owners, 5, "owners {}", stats.owners);
+        let (_, fire_stats) = export_decision_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            None,
+            None,
+            &FeatureEvents::empty(),
+        );
+        assert_eq!(fire_stats.owners, 1);
+        let present: BTreeSet<i32> = rows.iter().map(|r| r.core.owner_entity_id).collect();
+        assert!(
+            !present.contains(&5),
+            "ambiguous-team ship must have no rows"
+        );
+        for id in [9, 8, 7, 6, 4] {
+            assert!(present.contains(&id), "ship {id} missing from move rows");
+        }
+        // Histogram consistency.
+        assert_eq!(stats.sector_histogram.len(), MOVE_SECTOR_COUNT);
+        assert_eq!(stats.sector_histogram.iter().sum::<usize>(), stats.rows);
+        assert_eq!(
+            stats.rows_no_move,
+            stats.sector_histogram[MOVE_SECTOR_NONE as usize]
+        );
+        assert_eq!(stats.rows, rows.len());
+
+        // Ship 8 at t=101: displacement from x(105) to x(117) = 24 units
+        // (140.64 m), bearing 0, yaw 0 → sector 0.
+        let r8 = rows
+            .iter()
+            .find(|r| r.core.owner_entity_id == 8 && (r.core.t - 101.0).abs() < 0.1)
+            .expect("ship 8 t=101 row");
+        assert!(
+            (r8.moved_dist_m - 24.0 * METERS_PER_UNIT).abs() < 0.5,
+            "dist {}",
+            r8.moved_dist_m
+        );
+        assert!(r8.move_bearing_rad.abs() < 1e-5);
+        assert_eq!(r8.move_sector, 0);
+        assert!(r8.own_yaw_rad.abs() < 1e-5);
+        // Ship 7 (same displacement, yaw pi/2): relative frame → sector 12.
+        let r7 = rows
+            .iter()
+            .find(|r| r.core.owner_entity_id == 7 && (r.core.t - 101.0).abs() < 0.1)
+            .expect("ship 7 t=101 row");
+        assert!(
+            (r7.moved_dist_m - 24.0 * METERS_PER_UNIT).abs() < 0.5,
+            "dist {}",
+            r7.moved_dist_m
+        );
+        assert!((r7.own_yaw_rad - PI / 2.0).abs() < 1e-5);
+        assert_eq!(r7.move_sector, 12, "relative-frame conversion");
+        // Ship 9: stationary → no-move class; reload features still exported
+        // (t=101 sits right after the t=100 salvo, reload ≈ 24 s → frac ~0).
+        let r9 = rows
+            .iter()
+            .find(|r| r.core.owner_entity_id == 9 && (r.core.t - 101.0).abs() < 0.1)
+            .expect("ship 9 t=101 row");
+        assert_eq!(r9.move_sector, MOVE_SECTOR_NONE);
+        assert_eq!(r9.core.owner_entity_id, 9);
+        assert!(
+            r9.core.own_reload_frac < 0.15,
+            "frac {}",
+            r9.core.own_reload_frac
+        );
+        // Ship 6: no rows at/after death, and none with a truncated window
+        // (last row at most t = death − 16).
+        for r in rows.iter().filter(|r| r.core.owner_entity_id == 6) {
+            assert!(r.core.t < 150.0, "row after death at {}", r.core.t);
+            assert!(
+                r.core.t + MOVE_LABEL_END_S <= 150.0,
+                "truncated window at {}",
+                r.core.t
+            );
+        }
+        // Ship 4: window endpoints inside the dark gap are censored, never
+        // fabricated — its rows all sit before the gap (t ≤ 65: t+16 ≤ 81,
+        // the trailing sample at 80 still fresh) or after it resumes
+        // (t ≥ 205), never inside, and the censored counter saw the
+        // dark-window points (t = 69..81).
+        for r in rows.iter().filter(|r| r.core.owner_entity_id == 4) {
+            assert!(
+                r.core.t <= 65.5 || r.core.t >= 200.5,
+                "dark-gap row at {}",
+                r.core.t
+            );
+        }
+        assert!(
+            stats.rows_censored_window >= 3,
+            "censored {}",
+            stats.rows_censored_window
+        );
+        // Serialization: movement label keys ride the flattened core.
+        let line = serde_json::to_string(r7).expect("serialize move row");
+        assert!(line.contains("\"moveSector\":12"));
+        assert!(line.contains("\"movedDistM\":"));
+        assert!(line.contains("\"ownYawRad\":1.5707"));
+        assert!(line.contains("\"featureVersion\":2"));
+        assert!(line.contains("\"replayId\":\"replayM\""));
+        assert!(line.contains("\"gameMode\":\"pvp\""));
+        // No fire-label keys leak into the movement schema.
+        assert!(!line.contains("labelACanFire"));
+        assert!(!line.contains("ownerShotsHit"));
+    }
+
+    /// E16 against a real replay — run with
+    /// `WOWSP_TEST_REPLAY=<path> [WOWSP_TEST_LOS_GRID=<path>]
+    /// [WOWSP_MOVE_DATASET_OUT=<file>] cargo test -p wowsp_tauri
+    /// e16_move_export -- --nocapture`. Prints the sector histogram (the
+    /// inertia-baseline strength) and the censorship rate; asserts the
+    /// label invariant (sector == f(bearing − yaw, dist)) over every row.
+    /// Skips when the env var is unset.
+    #[test]
+    fn e16_move_export_on_real_replay() {
+        let Ok(path) = std::env::var("WOWSP_TEST_REPLAY") else {
+            eprintln!("[e16] WOWSP_TEST_REPLAY not set - skipping");
+            return;
+        };
+        let params = FireSampleParams::default();
+        let (stream, ev) = super::super::replay::decode_replay_stream_with_events(&path)
+            .expect("decode real replay");
+        let events = FeatureEvents::for_version(stream.version.as_deref(), &ev);
+        let vehicles = read_roster(&path).expect("roster");
+        let ships = ship_infos(&stream, &vehicles);
+        let grid_path = match std::env::var("WOWSP_TEST_LOS_GRID") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out/50_Gold_harbor/terrain_los.npz");
+                default.exists().then_some(default)
+            },
+        };
+        let grid = grid_path
+            .map(|p| LosGrid::load_npz(&p))
+            .transpose()
+            .expect("load LOS raster when present");
+        let (rows, stats) = export_move_dataset(
+            &stream,
+            &ships,
+            grid.as_ref(),
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            std::path::Path::new(&path)
+                .file_stem()
+                .and_then(|s| s.to_str()),
+            read_game_mode(std::path::Path::new(&path)).as_deref(),
+            &events,
+        );
+        eprintln!(
+            "[e16] export: {} deciders, {} rows, {} censored windows; movedDist p50 {:.0} m / p90 {:.0} m; no-move share {:.3}",
+            stats.owners,
+            stats.rows,
+            stats.rows_censored_window,
+            stats.moved_dist_p50_m,
+            stats.moved_dist_p90_m,
+            stats.rows_no_move as f32 / stats.rows.max(1) as f32
+        );
+        let total: usize = stats.sector_histogram.iter().sum();
+        for (k, n) in stats.sector_histogram.iter().enumerate() {
+            if *n > 0 {
+                eprintln!(
+                    "[e16] sector {:2}: {} rows ({:.3})",
+                    k,
+                    n,
+                    *n as f32 / total as f32
+                );
+            }
+        }
+        // Scale: mode-dependent (a 5v5 brawl carries ~10 deciders / ~270
+        // rows, a 12v12 random ~22 / ~5000) — assert per-decoder yield, not
+        // absolute row counts.
+        assert!(stats.owners >= 10, "owners {}", stats.owners);
+        assert!(stats.rows > stats.owners * 25, "rows {}", stats.rows);
+        assert_eq!(stats.sector_histogram.len(), MOVE_SECTOR_COUNT);
+        assert_eq!(total, stats.rows);
+        // Label invariant over every row: the exported sector is exactly
+        // the label function of the exported bearing/dist/yaw triple.
+        for r in &rows {
+            assert!(r.move_sector < MOVE_SECTOR_COUNT as u8);
+            assert_eq!(
+                r.move_sector,
+                move_sector_label(
+                    wrap_angle(r.move_bearing_rad - r.own_yaw_rad),
+                    r.moved_dist_m
+                ),
+                "sector invariant at t={}",
+                r.core.t
+            );
+            assert!(r.moved_dist_m.is_finite() && r.moved_dist_m >= 0.0);
+        }
+        // Plausible movement physics: p50 displacement under 500 m (12 s at
+        // 40 kt = 247 m; allow margin for interpolation noise) and a
+        // non-degenerate directional distribution.
+        assert!(
+            stats.moved_dist_p50_m < 500.0,
+            "p50 {}",
+            stats.moved_dist_p50_m
+        );
+        assert!(stats.moved_dist_p50_m > 0.0);
+        let directional: usize = stats.sector_histogram[..16].iter().sum();
+        assert!(
+            directional > stats.rows / 10,
+            "directional rows {directional}"
+        );
+        let no_move_share = stats.rows_no_move as f32 / stats.rows as f32;
+        assert!(
+            (0.02..=0.80).contains(&no_move_share),
+            "no-move {no_move_share}"
+        );
+        match std::env::var("WOWSP_MOVE_DATASET_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create dataset parent dir");
+                }
+                use std::io::Write;
+                let mut f = std::fs::File::create(&out_path).expect("create dataset file");
+                for r in &rows {
+                    writeln!(f, "{}", serde_json::to_string(r).expect("serialize row"))
+                        .expect("write row");
+                }
+                eprintln!("[e16] wrote {} rows to {}", rows.len(), out);
+            },
+            Err(_) => eprintln!("[e16] WOWSP_MOVE_DATASET_OUT not set - dataset not written"),
+        }
+    }
+
+    /// E16 / G6 against real replay bytes — run with
+    /// `WOWSP_TEST_REPLAY_DIR=<dir>` (or `WOWSP_TEST_REPLAY=<file>`, copied
+    /// into a temp folder next to planted corrupt/empty files proving the
+    /// tolerance on real bytes); `WOWSP_MOVE_DATASET_OUT=<file>` writes the
+    /// aggregated movement JSONL (the training input for train_move_model).
+    /// Skips when neither env var is set.
+    #[test]
+    fn e16_move_batch_on_real_replays() {
+        let replay_dir = match std::env::var("WOWSP_TEST_REPLAY_DIR") {
+            Ok(dir) => std::path::PathBuf::from(dir),
+            Err(_) => match std::env::var("WOWSP_TEST_REPLAY") {
+                Ok(file) => {
+                    let root = std::env::temp_dir().join(format!(
+                        "wowsp_move_batch_real_{}_{}",
+                        std::process::id(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_nanos())
+                            .unwrap_or(0)
+                    ));
+                    std::fs::create_dir_all(&root).expect("mkdir");
+                    let name = std::path::Path::new(&file)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "real.wowsreplay".into());
+                    std::fs::copy(&file, root.join(&name)).expect("copy real replay");
+                    std::fs::write(
+                        root.join("zz_corrupt.wowsreplay"),
+                        [0x5Au8, 0x01, 0xFF, 0x00, 0x33, 0x77, 0x11, 0x42, 0x00, 0x99],
+                    )
+                    .expect("write corrupt");
+                    std::fs::write(root.join("zz_empty.wowsreplay"), b"").expect("write empty");
+                    root
+                },
+                Err(_) => {
+                    eprintln!("[e16] WOWSP_TEST_REPLAY_DIR / WOWSP_TEST_REPLAY not set - skipping");
+                    return;
+                },
+            },
+        };
+        let params = FireSampleParams::default();
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out");
+                default.exists().then_some(default)
+            },
+        };
+        let (rows, summary) =
+            export_move_dataset_dir(&replay_dir, los_dir.as_deref(), DEFAULT_EYE_HEIGHT, &params)
+                .expect("batch runs");
+        eprintln!(
+            "[e16] batch {}: {} seen / {} exported / {} failed -> {} rows, {} deciders, {} censored; no-move share {:.3}; movedDist p50 {:.0} m / p90 {:.0} m",
+            summary.root_dir,
+            summary.files_seen,
+            summary.files_exported,
+            summary.files_failed,
+            summary.rows,
+            summary.deciders,
+            summary.rows_censored_window,
+            summary.rows_no_move as f32 / summary.rows.max(1) as f32,
+            summary.moved_dist_p50_m,
+            summary.moved_dist_p90_m
+        );
+        for (k, n) in summary.sector_histogram.iter().enumerate() {
+            if *n > 0 {
+                eprintln!(
+                    "[e16] corpus sector {:2}: {} rows ({:.3})",
+                    k,
+                    n,
+                    *n as f32 / summary.rows.max(1) as f32
+                );
+            }
+        }
+        assert!(summary.files_exported >= 1, "nothing exported");
+        assert!(summary.rows > 0);
+        let ids: BTreeSet<&str> = summary
+            .per_file
+            .iter()
+            .filter(|f| matches!(f.outcome, DatasetBatchOutcome::Exported { .. }))
+            .map(|f| f.replay_id.as_str())
+            .collect();
+        assert!(rows.iter().all(|r| {
+            r.core
+                .replay_id
+                .as_deref()
+                .is_some_and(|id| ids.contains(id))
+        }));
+        assert_eq!(summary.sector_histogram.iter().sum::<usize>(), summary.rows);
+        for f in &summary.per_file {
+            if let DatasetBatchOutcome::Failed { reason } = &f.outcome {
+                assert!(!reason.is_empty());
+            }
+        }
+        match std::env::var("WOWSP_MOVE_DATASET_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create dataset parent dir");
+                }
+                use std::io::Write;
+                let mut f = std::fs::File::create(&out_path).expect("create dataset file");
+                for r in &rows {
+                    writeln!(f, "{}", serde_json::to_string(r).expect("serialize row"))
+                        .expect("write row");
+                }
+                eprintln!("[e16] wrote {} rows to {}", rows.len(), out);
+            },
+            Err(_) => eprintln!("[e16] WOWSP_MOVE_DATASET_OUT not set - dataset not written"),
         }
     }
 }
