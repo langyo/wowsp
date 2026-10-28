@@ -80,10 +80,12 @@
 //! module's, which needs the raw stream for fire actions, the recorder id
 //! and the battle results).
 
-// Experiment/E18-surface module: no Tauri command consumes it yet — the
-// entry points are `compute_ship_scores` (E18 UI) and the env-gated tests.
-// Silence dead_code for the non-test build (the clippy gate runs --lib
-// --bins without --tests), same as fire_dataset.rs.
+// Experiment/E18-surface module: the Tauri command lives in
+// decision_serve.rs (`decision_debug_report`), which consumes
+// `build_ship_scores` / the featurizers / `softmax` below; `compute_ship_scores`
+// itself serves the env-gated tests (and stays the E17 export entry point).
+// Silence dead_code for the non-test build of the parts only tests call (the
+// clippy gate runs --lib --bins without --tests), same as fire_dataset.rs.
 #![allow(dead_code)]
 
 use anyhow::{anyhow, bail};
@@ -129,7 +131,7 @@ fn sigmoid(x: f32) -> f32 {
 }
 
 /// Softmax over logits (numerically stabilized; empty input → empty output).
-fn softmax(logits: &[f32]) -> Vec<f32> {
+pub fn softmax(logits: &[f32]) -> Vec<f32> {
     if logits.is_empty() {
         return Vec::new();
     }

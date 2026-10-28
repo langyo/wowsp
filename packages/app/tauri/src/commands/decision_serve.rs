@@ -31,7 +31,9 @@
 
 use anyhow::anyhow;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use serde::Serialize;
 use wowsp_tauri_shared::{
@@ -39,8 +41,15 @@ use wowsp_tauri_shared::{
 };
 
 use super::decision_ai::{DecisionModel, DecisionModelKind, shared_model};
+use super::decision_score::{
+    ENTITY_DIM_V2, GLOBAL_DIM_V2, ScoreModel, ScoreModelKind, ScoreModelSources, ShipScoreReport,
+    ablate_e11_tensors, build_ship_scores, feature_tensors_v2, softmax,
+};
 use super::decision_tick::{DEFAULT_EYE_HEIGHT, KT_MS, METERS_PER_UNIT};
-use super::fire_dataset::{ENEMY_SLOTS, FRIEND_SLOTS, FireDatasetSlot, FireSampleParams};
+use super::fire_dataset::{
+    ENEMY_SLOTS, FRIEND_SLOTS, FireDatasetSlot, FireSampleParams, MOVE_SECTOR_COUNT,
+    MOVE_SECTOR_NONE, MOVE_SECTOR_RAD, MoveDatasetRow, export_move_replay_file,
+};
 use super::replay_probe::{GAP_THRESHOLD, battle_results_conflicts, resolve_team, roster_sides};
 use super::terrain_los::{LosGrid, los_blocked};
 
@@ -913,6 +922,551 @@ fn los_for_map(map_name: Option<&str>, los_dir: &Path) -> Option<LosGrid> {
     LosGrid::load_npz(&los_dir.join(short).join("terrain_los.npz")).ok()
 }
 
+// ── E18 · G6 step 3: the AI analysis debug report ───────────────────────────
+//
+// The tactical-debug surface the E17 negative result shaped: "given THIS time
+// and THIS intel, where should each ship go" (movement advice, the E16 move
+// model) next to the full per-ship score timeline (E17's
+// `compute_ship_scores` core). The E17 validation FAILED the preregistered
+// ρ≥0.30 line (wholeGame vs damage ρ=+0.011), so the UI copy must present the
+// scores as MODEL AGREEMENT ("模型认同度") with an explicit ≠skill/≠result
+// disclaimer — the webui carries that banner; the wire contract just carries
+// the numbers.
+//
+// # Feature reuse (why the advice rides the E16 rows, not a rebuild)
+//
+// The movement advice deliberately consumes the rows of ONE
+// `export_move_replay_file` pass — the exact E16 decision-point construction
+// (v2 features, own-observable gate, censorship) the move model was trained
+// on. Re-implementing the featurizer at an arbitrary `t` would risk the very
+// train/inference drift the E14 lesson warns about; snapping to each ship's
+// latest row at or before `t` (rows sit on a 4 s grid, staleness capped at
+// [`MOVE_ADVICE_MAX_STALE_S`]) never reads a sample after `t`, so the
+// incomplete-information discipline holds. The same rows also feed the score
+// timeline, so ONE export + ONE extra decode serves the whole report.
+//
+// # Cost & cache
+//
+// A cold call = one movement export (decode + features), one raw-stream
+// decode (fire actions / battle results / death times) and two model passes
+// over every row (~4–8 s per replay on a desktop CPU, E17 measured). The
+// expensive artifacts — the full-timeline score report and the per-ship row
+// lists — are cached in-process (single slot keyed by replay path + LOS dir +
+// both model sources, the `OnceLock<Mutex<…>>` precedent of the model
+// ladders); per-call work after a hit is only the ~14 movement forwards
+// (milliseconds). The DTO says which happened via `cached` / `elapsedMs`.
+
+/// Movement-advice staleness cap: a ship's latest E16 row must be at most
+/// this old (two decision intervals) for its advice to be served — older
+/// intel than that (dark ship / pre-first-row) yields no row, honestly.
+pub const MOVE_ADVICE_MAX_STALE_S: f32 = 8.0;
+
+/// One ship's movement advice at one instant (E16 move model over that
+/// ship's latest decision row at or before `time_sec`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MovementAdvice {
+    pub entity_id: i32,
+    pub ship_id: Option<i64>,
+    /// Recorder-relative team: 0 = recorder's side, 1 = enemy.
+    pub team_id: i8,
+    pub is_recorder: bool,
+    /// Decision time of the underlying E16 row (≤ `time_sec`).
+    pub row_t: f32,
+    /// Argmax sector: 0..=15 directional (22.5° each, sector 0 = dead ahead),
+    /// 16 = no-move.
+    pub top_sector: u8,
+    pub top_prob: f32,
+    /// The full 17-class softmax (sums to 1).
+    pub prob_dist: Vec<f32>,
+    /// Absolute map bearing of the top sector, reconstructed serve-side as
+    /// `own_yaw + topSector × 22.5°` in the E16 labels' atan2(dz, dx) frame;
+    /// `null` for the no-move class (no direction to draw).
+    pub map_bearing_rad: Option<f32>,
+    /// Runner-up sector (never the no-move mixing rule — plain second argmax).
+    /// The webui draws its pale short arrow when `second_prob` clears 0.15.
+    pub second_sector: u8,
+    pub second_prob: f32,
+}
+
+/// The `decision_debug_report` payload: movement advice for the instant plus
+/// the EMBEDDED full-timeline score report (per-ship samples slide on the
+/// client without further calls).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecisionDebugReport {
+    pub time_sec: f32,
+    pub map_name: Option<String>,
+    /// Provenance of the two scoring/advice models (path or label).
+    pub fire_model: String,
+    pub move_model: String,
+    /// Where each model came from: `"env"` (debug override) | `"pack"`
+    /// (decisions pack) | `"experiments"` (local out/ default).
+    pub fire_model_origin: String,
+    pub move_model_origin: String,
+    /// Whether a terrain-LOS raster fed the feature pass for this map.
+    pub los_grid_loaded: bool,
+    /// Whether the expensive artifacts came from the in-process cache.
+    pub cached: bool,
+    /// Wall time of this call (ms) — a cold build is seconds, a cached hit
+    /// is the ~14 movement forwards.
+    pub elapsed_ms: u64,
+    /// One row per alive team-known ship with a fresh-enough row, ordered by
+    /// entity id.
+    pub movement: Vec<MovementAdvice>,
+    /// The E17 score report over the SAME export (full timeline).
+    pub scores: ShipScoreReport,
+}
+
+/// Pure top-2 extraction + bearing reconstruction (unit-tested without a
+/// session): `probs` is the 17-class softmax of one row, `own_yaw_rad` that
+/// row's heading (the E16 relative-frame reference).
+fn movement_advice_row(row: &MoveDatasetRow, probs: &[f32], is_recorder: bool) -> MovementAdvice {
+    let mut top = 0usize;
+    let mut second = 0usize;
+    for (i, p) in probs.iter().enumerate() {
+        if *p > probs[top] {
+            second = top;
+            top = i;
+        } else if i != top && *p > probs[second] {
+            second = i;
+        }
+    }
+    // Second starts at 0; when top IS 0 the first iteration's `else` branch
+    // never fires for i==0, so second may still equal top on a 1-class
+    // distribution — degrade honestly (prob 0 distinction is meaningless
+    // there, but keep the invariant second != top).
+    if second == top {
+        second = (top + 1) % MOVE_SECTOR_COUNT;
+    }
+    let top_sector = top as u8;
+    MovementAdvice {
+        entity_id: row.core.owner_entity_id,
+        ship_id: row.core.ship_id,
+        team_id: row.core.team_id,
+        is_recorder,
+        row_t: row.core.t,
+        top_sector,
+        top_prob: probs[top],
+        map_bearing_rad: (top_sector != MOVE_SECTOR_NONE)
+            .then(|| wrap_angle(row.own_yaw_rad + top_sector as f32 * MOVE_SECTOR_RAD)),
+        prob_dist: probs.to_vec(),
+        second_sector: second as u8,
+        second_prob: probs[second],
+    }
+}
+
+// ── the debug model ladder (env → pack → experiments out/) ──────────────────
+
+/// The experiments outputs root (compile-time path; same root the E17
+/// scoring ladder defaults to).
+fn experiments_out() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/experiments/out")
+}
+
+/// Default debug models (fp32 deliberate — E16 measured int8 hurting the
+/// 17-class head; see `decision_score`'s module docs).
+pub const DEBUG_FIRE_MODEL_REL: &str = "fire_model/v2plain_std/fp32.onnx";
+pub const DEBUG_MOVE_MODEL_REL: &str = "move_model/node3/main/fp32.onnx";
+
+/// One ladder step: where a candidate file lives + how to label its origin.
+struct DebugModelCandidate {
+    path: PathBuf,
+    origin: &'static str,
+}
+
+/// env override → decisions-pack slot → the experiments default, in order;
+/// missing files simply drop out of the ladder.
+fn debug_model_candidates(
+    env_key: &str,
+    pack_file: &str,
+    default_rel: &str,
+) -> Vec<DebugModelCandidate> {
+    let mut out = Vec::new();
+    if let Ok(p) = std::env::var(env_key) {
+        if !p.trim().is_empty() {
+            out.push(DebugModelCandidate {
+                path: PathBuf::from(p),
+                origin: "env",
+            });
+        }
+    }
+    if let Ok(cache) = crate::paths::cache_dir() {
+        out.push(DebugModelCandidate {
+            path: cache.join("decisions").join(pack_file),
+            origin: "pack",
+        });
+    }
+    out.push(DebugModelCandidate {
+        path: experiments_out().join(default_rel),
+        origin: "experiments",
+    });
+    out
+}
+
+/// Try each candidate in order; the FIRST that reads, classifies to
+/// `want_fire` and declares the v2 widths the fixed featurizers build wins.
+/// Candidates that exist but cannot serve the v2 schema (e.g. a v1 fire
+/// model inside an installed pack) are skipped, not errors — the report
+/// publishes the winner's path so the fallback is visible.
+fn load_debug_model(
+    env_key: &str,
+    pack_file: &str,
+    default_rel: &str,
+    want_fire: bool,
+) -> anyhow::Result<(ScoreModel, &'static str)> {
+    let candidates = debug_model_candidates(env_key, pack_file, default_rel);
+    let mut errors = Vec::new();
+    for c in &candidates {
+        let bytes = match std::fs::read(&c.path) {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                errors.push(format!("{}: {e}", c.path.display()));
+                continue;
+            },
+        };
+        match ScoreModel::from_bytes(c.path.to_string_lossy().into_owned(), &bytes) {
+            Ok(model) => {
+                let kind_ok = if want_fire {
+                    model.kind() == &ScoreModelKind::FireTwoHead
+                } else {
+                    model.kind()
+                        == &ScoreModelKind::MoveSectors {
+                            sectors: MOVE_SECTOR_COUNT,
+                        }
+                };
+                if kind_ok && model.widths() == (24, ENTITY_DIM_V2, GLOBAL_DIM_V2) {
+                    return Ok((model, c.origin));
+                }
+                errors.push(format!(
+                    "{} is not a usable {} debug model ({:?}, widths {:?})",
+                    c.path.display(),
+                    if want_fire { "fire" } else { "movement" },
+                    model.kind(),
+                    model.widths()
+                ));
+            },
+            Err(e) => errors.push(format!("{}: {e}", c.path.display())),
+        }
+    }
+    anyhow::bail!(
+        "no usable debug model for {env_key} (tried {}; failures: {}) — set {env_key} to an \
+         existing ONNX or train the experiment defaults",
+        candidates
+            .iter()
+            .map(|c| c.path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(" | "),
+        if errors.is_empty() {
+            "all absent".into()
+        } else {
+            errors.join("; ")
+        }
+    )
+}
+
+static DEBUG_FIRE_MODEL: OnceLock<anyhow::Result<Mutex<ScoreModel>>> = OnceLock::new();
+static DEBUG_MOVE_MODEL: OnceLock<anyhow::Result<Mutex<ScoreModel>>> = OnceLock::new();
+
+/// The process-global debug fire model (sticky load result, the
+/// `decision_ai::shared_model` precedent).
+fn debug_fire_model() -> anyhow::Result<&'static Mutex<ScoreModel>> {
+    DEBUG_FIRE_MODEL
+        .get_or_init(|| {
+            load_debug_model(
+                "WOWSP_DEBUG_FIRE_MODEL",
+                "fire_model.onnx",
+                DEBUG_FIRE_MODEL_REL,
+                true,
+            )
+            .map(|(m, _)| Mutex::new(m))
+        })
+        .as_ref()
+        .map_err(|e| anyhow!("{e}"))
+}
+
+/// The process-global debug movement model (same cache semantics).
+fn debug_move_model() -> anyhow::Result<&'static Mutex<ScoreModel>> {
+    DEBUG_MOVE_MODEL
+        .get_or_init(|| {
+            load_debug_model(
+                "WOWSP_DEBUG_MOVE_MODEL",
+                "move_model.onnx",
+                DEBUG_MOVE_MODEL_REL,
+                false,
+            )
+            .map(|(m, _)| Mutex::new(m))
+        })
+        .as_ref()
+        .map_err(|e| anyhow!("{e}"))
+}
+
+// ── the in-process artifact cache (single slot) ──────────────────────────────
+
+/// Cache identity: the replay bytes' path + the LOS directory the features
+/// read + both model sources (any change rebuilds).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DebugCacheKey {
+    replay_path: String,
+    los_dir: Option<String>,
+    fire_detail: String,
+    move_detail: String,
+}
+
+/// The expensive artifacts of one replay: the E17 score report (full
+/// timeline) plus the per-ship row lists the movement advice snaps to, and
+/// the death-time table for the alive gate.
+struct DebugCacheEntry {
+    scores: ShipScoreReport,
+    /// entity id → rows sorted by `t` (team-known ships only — the E16
+    /// export drops mirror-ambiguous hulls, the recorder included when its
+    /// shipId collides; those ships get neither advice nor scores).
+    rows: BTreeMap<i32, Vec<MoveDatasetRow>>,
+    death: BTreeMap<i32, Option<f32>>,
+    los_loaded: bool,
+    map_name: Option<String>,
+}
+
+static DEBUG_REPORT_CACHE: OnceLock<Mutex<Option<(DebugCacheKey, DebugCacheEntry)>>> =
+    OnceLock::new();
+
+fn debug_report_cache() -> &'static Mutex<Option<(DebugCacheKey, DebugCacheEntry)>> {
+    DEBUG_REPORT_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// The cold build: one movement export + one raw-stream decode + both models
+/// over every row. Runs with the model guards held fire→move (the only
+/// double-lock site; the advice pass locks move alone).
+fn build_debug_cache_entry(
+    path: &Path,
+    los_dir: Option<&Path>,
+    fire_detail: &str,
+    move_detail: &str,
+) -> anyhow::Result<DebugCacheEntry> {
+    let (rows, _stats) = export_move_replay_file(
+        path,
+        los_dir,
+        DEFAULT_EYE_HEIGHT,
+        &FireSampleParams::default(),
+    )
+    .map_err(|e| anyhow!("movement export for {}: {e}", path.display()))?;
+    let (stream, _events) =
+        super::replay::decode_replay_stream_with_events(&path.to_string_lossy())
+            .map_err(|e| anyhow!("decode {}: {e}", path.display()))?;
+    let los_loaded = los_dir.is_some_and(|d| los_for_map(stream.map_name.as_deref(), d).is_some());
+    let replay_id = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let death: BTreeMap<i32, Option<f32>> = stream
+        .trajectories
+        .iter()
+        .filter(|t| t.kind.as_ref().is_some_and(|k| k.entity_type == 2))
+        .map(|t| (t.entity_id, t.death_time))
+        .collect();
+    let fire = debug_fire_model()?;
+    let mv = debug_move_model()?;
+    let mut fire = fire
+        .lock()
+        .map_err(|_| anyhow!("debug fire model mutex poisoned"))?;
+    let mut mv = mv
+        .lock()
+        .map_err(|_| anyhow!("debug move model mutex poisoned"))?;
+    let sources = ScoreModelSources {
+        fire: fire_detail.to_string(),
+        move_model: move_detail.to_string(),
+    };
+    let scores = build_ship_scores(&stream, &rows, &replay_id, None, None, sources, |row| {
+        let (entity, global, mask) = feature_tensors_v2(row);
+        // Same train-time split as `compute_ship_scores`: the fire model
+        // (v2plain_std) eats the untouched row, the move model (main,
+        // --ablate e11) the e11-zeroed copy (E14's distribution-parity rule).
+        let (_logit_a, logit_b) = fire.infer_fire(&entity, &global, &mask)?;
+        let (mv_entity, mv_global) = ablate_e11_tensors(&entity, &global, mv.widths().0);
+        let logits = mv.infer_move(&mv_entity, &mv_global, &mask)?;
+        Ok((sigmoid(logit_b), softmax(&logits)))
+    })?;
+    // Group rows per ship, t-sorted (the exporter already emits per-ship in
+    // t order; sort anyway — the advice binary-searches on it).
+    let mut by_ship: BTreeMap<i32, Vec<MoveDatasetRow>> = BTreeMap::new();
+    for row in rows {
+        by_ship
+            .entry(row.core.owner_entity_id)
+            .or_default()
+            .push(row);
+    }
+    for ship_rows in by_ship.values_mut() {
+        ship_rows.sort_by(|a, b| {
+            a.core
+                .t
+                .partial_cmp(&b.core.t)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    Ok(DebugCacheEntry {
+        scores,
+        rows: by_ship,
+        death,
+        los_loaded,
+        map_name: stream.map_name.clone(),
+    })
+}
+
+/// The movement-advice half at one instant: every alive team-known ship's
+/// latest row at or before `t` within the staleness cap → one move forward.
+fn movement_advice_at(
+    entry: &DebugCacheEntry,
+    t: f32,
+    mv: &mut ScoreModel,
+) -> anyhow::Result<Vec<MovementAdvice>> {
+    let mut out = Vec::new();
+    for (entity_id, rows) in &entry.rows {
+        if entry
+            .death
+            .get(entity_id)
+            .is_some_and(|d| d.is_some_and(|d| d <= t))
+        {
+            continue; // sunk at or before t
+        }
+        let Some(idx) = rows.partition_point(|r| r.core.t <= t).checked_sub(1) else {
+            continue; // no row yet at this battle time
+        };
+        let row = &rows[idx];
+        if t - row.core.t > MOVE_ADVICE_MAX_STALE_S {
+            continue; // intel too stale (dark ship / pre-spawn gap)
+        }
+        let (entity, global, mask) = feature_tensors_v2(row);
+        let (mv_entity, mv_global) = ablate_e11_tensors(&entity, &global, mv.widths().0);
+        let logits = mv.infer_move(&mv_entity, &mv_global, &mask)?;
+        out.push(movement_advice_row(
+            row,
+            &softmax(&logits),
+            entry
+                .scores
+                .per_ship
+                .iter()
+                .any(|s| s.entity_id == *entity_id && s.is_recorder),
+        ));
+    }
+    Ok(out)
+}
+
+/// The report builder (pure sync core — the command wraps it in
+/// `spawn_blocking`, tests call it directly).
+pub fn build_debug_report(
+    path: &Path,
+    time_sec: f32,
+    los_dir: Option<&Path>,
+) -> anyhow::Result<DecisionDebugReport> {
+    let started = Instant::now();
+    let fire = debug_fire_model()?;
+    let mv = debug_move_model()?;
+    let (fire_detail, move_detail) = {
+        let f = fire
+            .lock()
+            .map_err(|_| anyhow!("debug fire model mutex poisoned"))?;
+        let m = mv
+            .lock()
+            .map_err(|_| anyhow!("debug move model mutex poisoned"))?;
+        (f.detail().to_string(), m.detail().to_string())
+    };
+    let key = DebugCacheKey {
+        replay_path: path.to_string_lossy().into_owned(),
+        los_dir: los_dir.map(|d| d.to_string_lossy().into_owned()),
+        fire_detail: fire_detail.clone(),
+        move_detail: move_detail.clone(),
+    };
+    // Single-slot cache; the build runs UNDER the cache lock so concurrent
+    // callers for the same replay pay once (the lock is the dedupe).
+    let cache = debug_report_cache();
+    let mut guard = cache
+        .lock()
+        .map_err(|_| anyhow!("decision debug cache mutex poisoned"))?;
+    let cached = guard.as_ref().is_some_and(|(k, _)| *k == key);
+    if !cached {
+        let entry = build_debug_cache_entry(path, los_dir, &fire_detail, &move_detail)?;
+        *guard = Some((key, entry));
+    }
+    let (entry_fire_origin, entry_move_origin) = {
+        // Origins: recompute cheaply from the ladder (the sticky session
+        // already won; find which step its detail matches).
+        let origin_of =
+            |detail: &str, env_key: &str, pack_file: &str, default_rel: &str| -> String {
+                debug_model_candidates(env_key, pack_file, default_rel)
+                    .iter()
+                    .find(|c| c.path.to_string_lossy() == detail)
+                    .map(|c| c.origin.to_string())
+                    .unwrap_or_else(|| "unknown".to_string())
+            };
+        (
+            origin_of(
+                &fire_detail,
+                "WOWSP_DEBUG_FIRE_MODEL",
+                "fire_model.onnx",
+                DEBUG_FIRE_MODEL_REL,
+            ),
+            origin_of(
+                &move_detail,
+                "WOWSP_DEBUG_MOVE_MODEL",
+                "move_model.onnx",
+                DEBUG_MOVE_MODEL_REL,
+            ),
+        )
+    };
+    let (_, entry) = guard
+        .as_ref()
+        .ok_or_else(|| anyhow!("debug cache unexpectedly empty"))?;
+    let movement = {
+        let mut mv = mv
+            .lock()
+            .map_err(|_| anyhow!("debug move model mutex poisoned"))?;
+        movement_advice_at(entry, time_sec, &mut mv)?
+    };
+    Ok(DecisionDebugReport {
+        time_sec,
+        map_name: entry.map_name.clone(),
+        fire_model: fire_detail,
+        move_model: move_detail,
+        fire_model_origin: entry_fire_origin,
+        move_model_origin: entry_move_origin,
+        los_grid_loaded: entry.los_loaded,
+        cached,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        movement,
+        scores: entry.scores.clone(),
+    })
+}
+
+/// The E18 debug surface: movement advice for one instant + the embedded
+/// full-timeline E17 score report, in one call. `los_grid_dir` optionally
+/// points at a directory of E4 rasters laid out as
+/// `<dir>/<map short name>/terrain_los.npz` (the `decisions` pack ships
+/// exactly that layout and is the default when the argument is omitted).
+///
+/// A cold call costs one replay export + one decode + two full model passes
+/// (~4–8 s per replay); the artifacts are cached in-process, so subsequent
+/// calls only re-run the per-instant movement forwards (milliseconds — see
+/// the `cached` / `elapsedMs` fields). Runs on the blocking pool: the IPC
+/// thread must not stall for seconds.
+#[tauri::command]
+pub async fn decision_debug_report(
+    replay_path: String,
+    time_sec: f32,
+    los_grid_dir: Option<String>,
+) -> CommandResult<DecisionDebugReport> {
+    Ok(tokio::task::spawn_blocking(move || {
+        build_debug_report(
+            &std::path::PathBuf::from(replay_path),
+            time_sec,
+            los_grid_dir.as_deref().map(Path::new),
+        )
+    })
+    .await
+    .map_err(|e| anyhow!("decision debug report task: {e}"))??)
+}
+
 /// End-to-end fire suggestions for one replay at one instant — the tactical
 /// board's flagship call: decode → tick features → per-decider model
 /// inference → [`DecisionSuggestionReport`]. `los_grid_dir` optionally
@@ -955,8 +1509,297 @@ pub fn decision_fire_suggestions(
 #[cfg(test)]
 mod tests {
     use super::super::decision_ai::{DecisionModelSource, FIXTURE_MODEL};
-    use super::super::fire_dataset::export_replay_file;
+    use super::super::decision_score::compute_ship_scores;
+    use super::super::fire_dataset::{DecisionRowCore, export_replay_file};
     use super::*;
+
+    fn synth_move_row(owner: i32, t: f32, own_yaw: f32) -> MoveDatasetRow {
+        MoveDatasetRow {
+            core: DecisionRowCore {
+                replay_id: None,
+                replay_version: Some("15,8,0,0".into()),
+                map_name: Some("spaces/50_Gold_harbor".into()),
+                owner_entity_id: owner,
+                ship_id: Some(1000 + owner as i64),
+                team_id: 1,
+                t,
+                own_speed_kt: Some(20.0),
+                own_hp_frac: Some(1.0),
+                own_reload_frac: 1.0,
+                own_range_m: 25_000.0,
+                zones_owned_0: 0,
+                zones_owned_1: 0,
+                zones_owned_2: 0,
+                zones_owned_other: 0,
+                zones_active_progress: 0,
+                events_shells_30s: 0,
+                events_torps_30s: 0,
+                events_explosions_30s: 0,
+                events_explosions_near_30s: 0,
+                enemies: vec![],
+                friends: vec![],
+                game_mode: Some("pvp".into()),
+                feature_version: 2,
+                own_damcon_frac: -1.0,
+                own_repair_frac: -1.0,
+                own_other_consumable_frac: -1.0,
+                own_engine_power: -1.0,
+                own_engine_dir: 0.0,
+                own_in_smoke: false,
+                active_smoke_count_frac: 0.0,
+                active_smoke_area_feat: 0.0,
+                vision_cap_frac: 1.0,
+                weather_incoming_frac: 0.0,
+                ally_radar_count_frac: -1.0,
+                ally_hydro_count_frac: -1.0,
+                e11_events_known: false,
+            },
+            own_yaw_rad: own_yaw,
+            moved_dist_m: 150.0,
+            move_bearing_rad: 0.0,
+            move_sector: 3,
+        }
+    }
+
+    /// Top-2 extraction + bearing reconstruction: clear winner, tie handling,
+    /// the no-move null bearing and the absolute-angle wrap.
+    #[test]
+    fn movement_advice_row_top2_and_bearing() {
+        let mut probs = [0.01f32; MOVE_SECTOR_COUNT];
+        probs[3] = 0.6;
+        probs[9] = 0.23;
+        let adv = movement_advice_row(&synth_move_row(9, 300.0, 1.0), &probs, true);
+        assert_eq!(adv.entity_id, 9);
+        assert!(adv.is_recorder);
+        assert_eq!(adv.top_sector, 3);
+        assert!((adv.top_prob - 0.6).abs() < 1e-6);
+        assert_eq!(adv.second_sector, 9);
+        assert!((adv.second_prob - 0.23).abs() < 1e-6);
+        // Absolute bearing = own yaw + sector × 22.5°, wrapped to [-pi, pi].
+        let want = 1.0f32 + 3.0 * MOVE_SECTOR_RAD;
+        let got = adv.map_bearing_rad.expect("directional bearing");
+        assert!((got - want).abs() < 1e-6, "{got} vs {want}");
+
+        // A yaw near the wrap seam stays in [-pi, pi].
+        let adv = movement_advice_row(&synth_move_row(9, 300.0, 3.0), &probs, false);
+        let got = adv.map_bearing_rad.expect("directional bearing");
+        assert!(got.abs() <= std::f32::consts::PI + 1e-5, "{got}");
+        assert!((got - (3.0f32 + 3.0 * MOVE_SECTOR_RAD - std::f32::consts::TAU)).abs() < 1e-6);
+
+        // No-move top class: no bearing to draw.
+        let mut nm = [0.05f32; MOVE_SECTOR_COUNT];
+        nm[MOVE_SECTOR_NONE as usize] = 0.2;
+        let adv = movement_advice_row(&synth_move_row(7, 300.0, 0.5), &nm, false);
+        assert_eq!(adv.top_sector, MOVE_SECTOR_NONE);
+        assert!(adv.map_bearing_rad.is_none());
+        assert_ne!(adv.second_sector, adv.top_sector);
+
+        // Uniform distribution: top is index 0 (first on ties) and second
+        // NEVER equals top.
+        let uni = [1.0f32 / MOVE_SECTOR_COUNT as f32; MOVE_SECTOR_COUNT];
+        let adv = movement_advice_row(&synth_move_row(7, 300.0, 0.0), &uni, false);
+        assert_eq!(adv.top_sector, 0);
+        assert_ne!(adv.second_sector, 0);
+        assert!((adv.second_prob - adv.top_prob).abs() < 1e-6);
+    }
+
+    /// E18 against real replay bytes — run with
+    /// `WOWSP_TEST_REPLAY=<path> [WOWSP_TEST_LOS_DIR=<dir>]
+    /// [WOWSP_DEBUG_FIRE_MODEL=<onnx>] [WOWSP_DEBUG_MOVE_MODEL=<onnx>]
+    /// cargo test -p wowsp_tauri e18_debug -- --nocapture`. Asserts the wire
+    /// shape (probDist sums to 1, bearings finite, staleness honored), the
+    /// score-timeline parity with the E17 export over the same models, and
+    /// the in-process cache. Skips when the env vars or the debug models are
+    /// absent.
+    #[test]
+    fn e18_debug_report_on_real_replay() {
+        let Ok(path) = std::env::var("WOWSP_TEST_REPLAY") else {
+            eprintln!("[e18] WOWSP_TEST_REPLAY not set - skipping");
+            return;
+        };
+        if let Err(e) = debug_fire_model().and_then(|_| debug_move_model()) {
+            eprintln!("[e18] debug models unavailable ({e}) - skipping");
+            return;
+        }
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = experiments_out();
+                default.is_dir().then_some(default)
+            },
+        };
+        let t = 300.0f32;
+        let report =
+            build_debug_report(Path::new(&path), t, los_dir.as_deref()).expect("debug report");
+        assert_eq!(report.time_sec, t);
+        assert!(!report.cached, "first call in this process is cold");
+        // ── movement advice shape ──
+        assert!(!report.movement.is_empty(), "no movement advice at t=300");
+        for adv in &report.movement {
+            assert_eq!(adv.prob_dist.len(), MOVE_SECTOR_COUNT);
+            let sum: f32 = adv.prob_dist.iter().sum();
+            assert!((sum - 1.0).abs() < 1e-4, "probDist sum {sum}");
+            assert!((0.0..=1.0).contains(&adv.top_prob), "{}", adv.top_prob);
+            assert!((0.0..=1.0).contains(&adv.second_prob));
+            assert!(adv.top_prob >= adv.second_prob);
+            assert_eq!(adv.top_prob, adv.prob_dist[adv.top_sector as usize]);
+            assert_eq!(adv.second_prob, adv.prob_dist[adv.second_sector as usize]);
+            assert_ne!(adv.top_sector, adv.second_sector);
+            match adv.map_bearing_rad {
+                Some(b) => {
+                    assert_ne!(adv.top_sector, MOVE_SECTOR_NONE);
+                    assert!(b.is_finite() && b.abs() <= std::f32::consts::PI, "{b}");
+                },
+                None => assert_eq!(adv.top_sector, MOVE_SECTOR_NONE),
+            }
+            assert!(
+                adv.row_t <= t && t - adv.row_t <= MOVE_ADVICE_MAX_STALE_S + 1e-4,
+                "row {} vs t {t}",
+                adv.row_t
+            );
+            // Every advised ship must also be in the embedded score timeline
+            // (the same row set feeds both).
+            assert!(
+                report
+                    .scores
+                    .per_ship
+                    .iter()
+                    .any(|s| s.entity_id == adv.entity_id),
+                "advised ship {} missing from scores",
+                adv.entity_id
+            );
+        }
+        // The recorder carries advice at t=300 WHENEVER it has score rows at
+        // all — mirror-ambiguous hulls are excluded by the E16 export on
+        // some replays (the recorder included when its shipId collides).
+        match report.scores.per_ship.iter().find(|s| s.is_recorder) {
+            Some(rec) => assert!(
+                report.movement.iter().any(|a| a.entity_id == rec.entity_id),
+                "recorder {} scored but carries no advice at t={}",
+                rec.entity_id,
+                t
+            ),
+            None => eprintln!(
+                "[e18] recorder has no score rows (mirror-ambiguous hull) - recorder assert skipped"
+            ),
+        }
+        // Ordered by entity id, teams sane.
+        let ids: Vec<i32> = report.movement.iter().map(|a| a.entity_id).collect();
+        assert!(ids.windows(2).all(|w| w[0] < w[1]), "advice ordered");
+        assert!(
+            report
+                .movement
+                .iter()
+                .all(|a| a.team_id == 0 || a.team_id == 1)
+        );
+        // ── score timeline shape ──
+        assert!(!report.scores.per_ship.is_empty());
+        assert!(report.scores.stats.rows_scored > 0);
+        for s in &report.scores.per_ship {
+            assert!((0.0..=1.0).contains(&s.whole_game));
+            assert!((0.0..=1.0).contains(&s.whole_move));
+            if let Some(f) = s.whole_fire {
+                assert!((0.0..=1.0).contains(&f));
+            }
+            assert!(!s.samples.is_empty());
+        }
+        // ── parity with the E17 export (same replay, same model files) ──
+        let e17 = compute_ship_scores(Path::new(&path), None, None, los_dir.as_deref());
+        match e17 {
+            Ok(e17)
+                if e17.model_sources.fire == report.fire_model
+                    && e17.model_sources.move_model == report.move_model =>
+            {
+                assert_eq!(e17.per_ship.len(), report.scores.per_ship.len());
+                for theirs in e17.per_ship.iter().take(3) {
+                    let mine = report
+                        .scores
+                        .per_ship
+                        .iter()
+                        .find(|s| s.entity_id == theirs.entity_id)
+                        .expect("same ship set");
+                    assert_eq!(mine.whole_game, theirs.whole_game, "wholeGame parity");
+                    assert_eq!(mine.whole_fire, theirs.whole_fire);
+                    assert_eq!(mine.whole_move, theirs.whole_move);
+                    assert_eq!(mine.samples.len(), theirs.samples.len());
+                    assert_eq!(
+                        mine.samples.first().map(|s| s.t),
+                        theirs.samples.first().map(|s| s.t)
+                    );
+                }
+                eprintln!(
+                    "[e18] score parity with compute_ship_scores: {} ships identical",
+                    e17.per_ship.len()
+                );
+            },
+            Ok(e17) => eprintln!(
+                "[e18] score parity skipped (debug ladder differs: {} vs {} / {} vs {})",
+                report.fire_model,
+                e17.model_sources.fire,
+                report.move_model,
+                e17.model_sources.move_model
+            ),
+            Err(e) => eprintln!("[e18] compute_ship_scores unavailable ({e}) - parity skipped"),
+        }
+        // ── cache: second call hits, costs only the movement forwards ──
+        let again = build_debug_report(Path::new(&path), t + 1.0, los_dir.as_deref())
+            .expect("cached debug report");
+        assert!(again.cached, "second call must hit the cache");
+        assert!(
+            again.elapsed_ms < 2_000,
+            "cached call took {}ms",
+            again.elapsed_ms
+        );
+        eprintln!(
+            "[e18] cache hit: elapsed={}ms for {} movement rows",
+            again.elapsed_ms,
+            again.movement.len()
+        );
+        // ── report excerpt ──
+        eprintln!(
+            "[e18] t={} map={:?} fire={} ({}) move={} ({}) LOS={} cold={}ms movement={} ships scores={} ships/{} rows",
+            t,
+            report.map_name,
+            report.fire_model,
+            report.fire_model_origin,
+            report.move_model,
+            report.move_model_origin,
+            report.los_grid_loaded,
+            report.elapsed_ms,
+            report.movement.len(),
+            report.scores.per_ship.len(),
+            report.scores.stats.rows_scored
+        );
+        for adv in report.movement.iter().take(6) {
+            eprintln!(
+                "[e18]   ship {} (team {}, recorder {}) top sector {} p={:.3} second {} p={:.3} bearing {:?}",
+                adv.entity_id,
+                adv.team_id,
+                adv.is_recorder,
+                adv.top_sector,
+                adv.top_prob,
+                adv.second_sector,
+                adv.second_prob,
+                adv.map_bearing_rad
+            );
+        }
+        for s in report.scores.per_ship.iter().take(3) {
+            eprintln!(
+                "[e18]   score ship {} whole={:.3} fire={:?} move={:.3} samples={}",
+                s.entity_id,
+                s.whole_game,
+                s.whole_fire,
+                s.whole_move,
+                s.samples.len()
+            );
+        }
+        let js = serde_json::to_value(&report).expect("serialize report");
+        assert!(js.get("probDist").is_none() && js.get("movement").is_some());
+        assert!(js.get("cached").is_some() && js.get("elapsedMs").is_some());
+        assert!(js.get("scores").is_some());
+        assert!(js["movement"][0].get("mapBearingRad").is_some());
+        assert!(js["movement"][0].get("rowT").is_some());
+    }
 
     // ── synthetic stream helpers (fire_dataset test pattern) ──────────────
 
