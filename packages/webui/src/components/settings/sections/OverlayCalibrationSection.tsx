@@ -244,7 +244,7 @@ export default defineComponent({
               <span class="calib-sec__badges">
                 {e.certified ? (
                   <HkTag variant="success" size="sm">
-                    {t("settings.overlayCalibrationCertified")}
+                    {t("settings.overlayCalibrationCalibrated")}
                   </HkTag>
                 ) : null}
                 {e.manual ? (
