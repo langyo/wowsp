@@ -1,4 +1,4 @@
-import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type CSSProperties } from "vue";
+import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type CSSProperties, type VNode } from "vue";
 import { Copy, Eye, EyeOff, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
@@ -54,13 +54,17 @@ import {
 import { scopedRosterView } from "@/utils/shipStatsScope";
 import {
   PostBattleShareBar,
+  rosterColumns,
   rosterShotCells,
   rosterShotDashes,
   rosterStatCols,
   useNickMasking,
   useShareShot,
+  type RosterColumnSpec,
 } from "@/features/replay/postBattleShare";
-import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "@/features/replay/postBattleShot";
+import type { ShotAgg, ShotColumn, ShotModel, ShotRow, ShotStat } from "@/features/replay/postBattleShot";
+import { battlesColor, damageColor, prTier, winrateColor } from "@/utils/winrate";
+import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
@@ -74,7 +78,7 @@ import {
   shipNameFromOfflineDb,
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
-import { gameTabRowCompare } from "@/utils/shipClass";
+import { gameTabRowCompare, shipTierOf } from "@/utils/shipClass";
 import { realmUsesShipNameOrder } from "@/utils/realms";
 import { isListedPlayer, splitRosterSides } from "@/utils/rosterSides";
 import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
@@ -245,34 +249,108 @@ const PostBattleFallbackPanel = defineComponent({
         prAlgoForRequest() ?? "winrate",
       );
     function buildShotModel(): ShotModel {
-      const mkCol = (list: typeof rows.value, enemy: boolean): ShotColumn => ({
-        title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
-        rows: list.map((r): ShotRow => {
-          const ai = AI_NAME.test(r.vehicle.name);
-          const st = ai ? undefined : nameStats.value.get(r.vehicle.name);
-          // The configured columns of the per-scope views the DOM matrix
-          // below renders — dashes for bots / misses.
-          const stats: ShotStat[] = !st
-            ? rosterShotDashes()
-            : rosterShotCells((scope) => colViewOf(scope, st, r.vehicle.shipId));
+      const mkCol = (list: typeof rows.value, enemy: boolean): ShotColumn => {
+        // The shot's column-title aggregates mirror the DOM header the
+        // matrix renders: one labeled team mean PER CONFIGURED COLUMN (each
+        // in its own scope's view), right-aligned onto its stat column —
+        // the same wording the live panel's and the results panel's shots
+        // caption their columns with. The fallback carries no XP column, so
+        // unlike the results panel's shot there is no trailing label-only
+        // caption.
+        const agg: ShotAgg[] = rosterColumns().map((col, idx) => {
+          const a = teamAggFor(col.scope, list);
+          const label =
+            col.scope !== "global"
+              ? col.head
+              : col.metric === "winrate"
+                ? t(
+                    statsPrefsState.value.weightedTeamWr
+                      ? "replay.roster.teamWrWeighted"
+                      : "replay.roster.teamWrPlain",
+                  )
+                : col.metric === "pr"
+                  ? t("replay.roster.teamAvgPr")
+                  : col.metric === "battles"
+                    ? t("replay.roster.battles")
+                    : col.metric === "kd"
+                      ? t("replay.roster.metricKd")
+                      : t("replay.postbattle.avgDamage");
+          if (col.metric === "winrate") {
+            return {
+              col: idx,
+              label,
+              value: a.winrate != null ? `${a.winrate.toFixed(1)}%` : "—",
+              valueColor: a.winrate != null ? winrateColor(a.winrate) : undefined,
+            };
+          }
+          if (col.metric === "pr") {
+            return {
+              col: idx,
+              label,
+              value: a.avgPr != null ? `${Math.round(a.avgPr)}` : "—",
+              valueColor: a.avgPr != null ? prTier(a.avgPr).color : undefined,
+            };
+          }
+          if (col.metric === "battles") {
+            return {
+              col: idx,
+              label,
+              value:
+                a.avgBattles != null ? Math.round(a.avgBattles).toLocaleString() : "—",
+              // Thin-sample red rides the ACCOUNT column only — a scoped
+              // count under 200 is the norm, not a warning (same gate the
+              // cells and the sibling shots keep).
+              valueColor:
+                col.scope === "global" && a.avgBattles != null
+                  ? battlesColor(a.avgBattles)
+                  : undefined,
+            };
+          }
+          if (col.metric === "kd") {
+            return {
+              col: idx,
+              label,
+              value: a.avgKd != null ? a.avgKd.toFixed(2) : "—",
+            };
+          }
           return {
-            nick: masking.maskOf(r.vehicle.name),
-            clanTag: st?.clanTag ?? null,
-            shipName: r.shipName,
-            bot: ai,
-            dim: !r.alive,
-            shipType: r.vehicle.shipId != null ? shipOfflineEntry(r.vehicle.shipId)?.type ?? null : null,
-            iconVariant: !r.alive
-              ? "sunk"
-              : r.vehicle.relation === 0
-                ? "white"
-                : r.vehicle.relation <= 1
-                  ? "ally"
-                  : "enemy",
-            stats,
+            col: idx,
+            label,
+            value:
+              a.avgDamage != null ? Math.round(a.avgDamage).toLocaleString() : "—",
+            valueColor: a.avgDamage != null ? damageColor(a.avgDamage) : undefined,
           };
-        }),
-      });
+        });
+        return {
+          title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
+          agg: agg.length > 0 ? agg : undefined,
+          rows: list.map((r): ShotRow => {
+            const ai = AI_NAME.test(r.vehicle.name);
+            const st = ai ? undefined : nameStats.value.get(r.vehicle.name);
+            // The configured columns of the per-scope views the DOM matrix
+            // below renders — dashes for bots / misses.
+            const stats: ShotStat[] = !st
+              ? rosterShotDashes()
+              : rosterShotCells((scope) => colViewOf(scope, st, r.vehicle.shipId));
+            return {
+              nick: masking.maskOf(r.vehicle.name),
+              clanTag: st?.clanTag ?? null,
+              shipName: r.shipName,
+              bot: ai,
+              dim: !r.alive,
+              shipType: r.vehicle.shipId != null ? shipOfflineEntry(r.vehicle.shipId)?.type ?? null : null,
+              iconVariant: !r.alive
+                ? "sunk"
+                : r.vehicle.relation === 0
+                  ? "white"
+                  : r.vehicle.relation <= 1
+                    ? "ally"
+                    : "enemy",
+              stats,
+            };
+          }),
+        };
+      };
       return {
         title: t("replay.results"),
         botLabel: t("replay.bot"),
@@ -486,6 +564,46 @@ const PostBattleFallbackPanel = defineComponent({
         : tabOrdered(rows.value.filter((r) => r.vehicle.relation > 1)),
     );
 
+    /** One side's header aggregate FOR ONE COLUMN SCOPE — the same
+     *  tier-weighted (per the stats prefs) mean winrate plus plain mean PR /
+     *  battles / avg damage / K/D the live panel and the results panel
+     *  caption their columns with, each in that scope's resolved view. AI
+     *  names, hidden profiles and stat misses sit out. */
+    const teamAggFor = (scope: OverlayColumnScope, list: typeof rows.value) =>
+      aggregateTeamStats(
+        list.map((r) => {
+          const st = !AI_NAME.test(r.vehicle.name)
+            ? nameStats.value.get(r.vehicle.name)
+            : undefined;
+          if (
+            !st ||
+            st.hidden ||
+            // Only the per-ship scopes wait on the per-ship lists — the
+            // plain solo scope reads the career split (utils/shipStatsScope).
+            (scope !== "global" && scope !== "solo" && st.shipsLoading)
+          ) {
+            return {
+              winrate: null,
+              pr: null,
+              battles: null,
+              damage: null,
+              kd: null,
+              tier: r.vehicle.shipId != null ? shipTierOf(r.vehicle.shipId) : null,
+            };
+          }
+          const view = colViewOf(scope, st, r.vehicle.shipId);
+          return {
+            winrate: view.winrate,
+            pr: view.pr,
+            battles: view.battles,
+            damage: view.avgDamage,
+            kd: view.kd,
+            tier: r.vehicle.shipId != null ? shipTierOf(r.vehicle.shipId) : null,
+          };
+        }),
+        statsPrefsState.value.weightedTeamWr,
+      );
+
     const selected = ref<null | (typeof rows.value)[number]>(null);
     const detailOpen = ref(false);
     const globalStats = ref<PlayerStats | null>(null);
@@ -531,6 +649,117 @@ const PostBattleFallbackPanel = defineComponent({
 
     return () => {
       const isBot = (r: (typeof rows.value)[number]) => AI_NAME.test(r.vehicle.name);
+      /** The column caption over one side's rows — the two-line mini table
+       *  header the live panel and the results panel share (a tiny label
+       *  over the team mean, both right-aligned onto a grid mirroring the
+       *  row cells), so the fallback matrix reads the same header its
+       *  siblings do. The fallback rows carry no XP cell, so the grid has
+       *  no XP track; with every configured column removed the caption
+       *  falls back to the bare title (nothing left to align). The header
+       *  keeps the compact rows' --pad-eye right-edge compensation — the
+       *  fallback rows are those same compact rows (mask eye at the end,
+       *  no seal slot). */
+      const colTitle = (label: string, list: typeof rows.value) => {
+        const title = <span class="replay-view__postbattle-col-name">{label}</span>;
+        const cols = rosterColumns();
+        if (cols.length === 0) {
+          return <div class="replay-view__postbattle-col-title">{title}</div>;
+        }
+        // Aggregate labels: the aggregate flavor wording on the global
+        // columns (weighted/plain team WR etc.), the column's own head
+        // (scope tag + metric) on scoped ones — the same wording the
+        // sibling panels caption their columns with.
+        const labelOf = (col: RosterColumnSpec): string => {
+          if (col.scope !== "global") return col.head;
+          if (col.metric === "winrate") {
+            return t(
+              statsPrefsState.value.weightedTeamWr
+                ? "replay.roster.teamWrWeighted"
+                : "replay.roster.teamWrPlain",
+            );
+          }
+          if (col.metric === "pr") return t("replay.roster.teamAvgPr");
+          if (col.metric === "battles") return t("replay.roster.battles");
+          if (col.metric === "kd") return t("replay.roster.metricKd");
+          return t("replay.postbattle.avgDamage");
+        };
+        const valueOf = (col: RosterColumnSpec): VNode => {
+          const agg = teamAggFor(col.scope, list);
+          if (col.metric === "winrate") {
+            return (
+              <b
+                class="replay-view__postbattle-col-hval"
+                style={agg.winrate != null ? { color: winrateColor(agg.winrate) } : undefined}
+              >
+                {agg.winrate != null ? `${agg.winrate.toFixed(1)}%` : "—"}
+              </b>
+            );
+          }
+          if (col.metric === "pr") {
+            // The unicum band keeps its rainbow (彩表) face like every
+            // other PR rendering.
+            const band = prTier(agg.avgPr);
+            return (
+              <b
+                class={[
+                  "replay-view__postbattle-col-hval",
+                  band.rainbow ? "rainbow-text" : undefined,
+                ]}
+                style={band.rainbow ? undefined : { color: band.color }}
+              >
+                {agg.avgPr != null ? Math.round(agg.avgPr) : "—"}
+              </b>
+            );
+          }
+          if (col.metric === "battles") {
+            return (
+              <b
+                class="replay-view__postbattle-col-hval"
+                style={
+                  col.scope === "global" && agg.avgBattles != null
+                    ? { color: battlesColor(agg.avgBattles) }
+                    : undefined
+                }
+              >
+                {agg.avgBattles != null ? Math.round(agg.avgBattles).toLocaleString() : "—"}
+              </b>
+            );
+          }
+          if (col.metric === "kd") {
+            return (
+              <b class="replay-view__postbattle-col-hval">
+                {agg.avgKd != null ? agg.avgKd.toFixed(2) : "—"}
+              </b>
+            );
+          }
+          return (
+            <b
+              class="replay-view__postbattle-col-hval"
+              style={agg.avgDamage != null ? { color: damageColor(agg.avgDamage) } : undefined}
+            >
+              {agg.avgDamage != null ? Math.round(agg.avgDamage).toLocaleString() : "—"}
+            </b>
+          );
+        };
+        return (
+          <div
+            class={[
+              "replay-view__postbattle-col-title",
+              "replay-view__postbattle-col-title--agg",
+              "replay-view__postbattle-col-title--pad-eye",
+            ]}
+            style={{
+              gridTemplateColumns: `minmax(0, 1fr) ${cols.map((c) => c.width).join(" ")}`,
+            }}
+          >
+            {title}
+            {cols.map((c) => (
+              <span class="replay-view__postbattle-col-hlbl">{labelOf(c)}</span>
+            ))}
+            {cols.map((c) => valueOf(c))}
+          </div>
+        );
+      };
       const cell = (r: (typeof rows.value)[number]) => (
         <div
           class={[
@@ -603,9 +832,12 @@ const PostBattleFallbackPanel = defineComponent({
               nameStatsLoading.value,
               (st, scope) => colViewOf(scope, st, r.vehicle.shipId),
             )}
-            <span class="replay-view__postbattle-cell-status">
-              {!r.alive ? t("replay.legend.dead") : ""}
-            </span>
+            {/* No dead-state text cell after the stat columns: a sunk row
+                already reads as sunk through its icon variant + the row's
+                dead dimming, and a text slot there would act as one more
+                column — pushing the row's numbers off the header's aligned
+                tracks (user feedback: the standalone 已击毁 marker is gone
+                from every post-battle roster). */}
           </button>
           {isBot(r) ? null : (
             <button
@@ -653,18 +885,14 @@ const PostBattleFallbackPanel = defineComponent({
                 inner wrapper so the column-title scrolls with them. */}
             <HkScrollContainer class="replay-view__postbattle-col">
               <div class="replay-view__postbattle-col__inner">
-                <div class="replay-view__postbattle-col-title">
-                  {t("replay.roster.allies")}
-                </div>
+                {colTitle(t("replay.roster.allies"), allies.value)}
                 {allies.value.map(cell)}
               </div>
             </HkScrollContainer>
             {enemies.value.length > 0 ? (
               <HkScrollContainer class="replay-view__postbattle-col">
                 <div class="replay-view__postbattle-col__inner">
-                  <div class="replay-view__postbattle-col-title">
-                    {t("replay.roster.enemies")}
-                  </div>
+                  {colTitle(t("replay.roster.enemies"), enemies.value)}
                   {enemies.value.map(cell)}
                 </div>
               </HkScrollContainer>
