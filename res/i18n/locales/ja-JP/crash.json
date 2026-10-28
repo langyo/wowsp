@@ -1,0 +1,91 @@
+{
+  "toast": {
+    "title": "ゲームクライアントがクラッシュしました",
+    "body": "{image}（pid {pid}）が動作を停止しました。",
+    "code": "例外コード: {code}",
+    "safeRestart": "セーフモードで再起動",
+    "restart": "ゲームを再起動",
+    "analysis": "分析を見る",
+    "dismiss": "閉じる",
+    "safeRestartFallback": "ゲームフォルダーを特定できなかったため、そのまま再起動します。"
+  },
+  "section": {
+    "title": "クラッシュ分析",
+    "empty": "クラッシュ記録はありません。ゲームクライアントがクラッシュすると、WoWSP がここで検知して分析を準備します。",
+    "recordTime": "検出時刻: {time}",
+    "source": {
+      "eventLog": "Windows イベントログ",
+      "werReport": "WER レポート",
+      "crashDump": "クラッシュダンプ"
+    },
+    "gameLogs": "ゲームログ",
+    "appLogs": "WoWSP ログ",
+    "modsInventory": "インストール済みプラグイン",
+    "currentBuild": "現在のゲームバージョン",
+    "findings": "診断結果",
+    "suspects": "疑わしいプラグイン",
+    "export": "レポートをエクスポート",
+    "exportDone": "レポートをエクスポートしました",
+    "restart": "ゲームを再起動",
+    "safeModeOn": "セーフモードが有効",
+    "analysisFor": "{id} の分析結果",
+    "refresh": "更新"
+  },
+  "findings": {
+    "exceptionAccessViolation": "アクセス違反 —— クライアントが権限のないメモリーに読み書きしました",
+    "exceptionStackBufferOverrun": "スタックバッファーオーバーラン —— ローカルバッファーの境界を超えて書き込まれました",
+    "exceptionStackOverflow": "スタックオーバーフロー —— 呼び出しスタックが上限を超えました（プラグインの再帰処理でよく発生）",
+    "exceptionHeapCorruption": "ヒープ破損 —— クラッシュ前にプロセスのヒープが破損しています",
+    "exceptionIllegalInstruction": "不正な命令 —— CPU が実行できない命令列を受け取りました",
+    "exceptionDivideByZero": "ゼロ除算",
+    "exceptionPrivilegedInstruction": "特権命令 —— ユーザーモードでカーネル専用命令が実行されました",
+    "exceptionBreakpoint": "ブレークポイント —— デバッグ用のブレークポイントが発火しました",
+    "exceptionCppException": "未処理の C++ 例外",
+    "exceptionClrException": "未処理の .NET 例外",
+    "exceptionDllInitFailed": "DLL 初期化失敗 —— ライブラリーのエントリーポイントが失敗を返しました",
+    "exceptionDllNotFound": "DLL が見つかりません —— 必要なライブラリーが不足しています",
+    "exceptionUnknown": "未知の例外（コード {code}）",
+    "faultingModule": "障害モジュール: {module}",
+    "evidenceEventLog": "Windows イベントログで検出",
+    "evidenceWerReport": "WER レポートで検出",
+    "evidenceCrashDump": "クラッシュダンプで検出",
+    "gameLogErrors": "ゲームログに {count} 件のエラー",
+    "recentModChanges": "最近変更されたプラグイン: {mods}",
+    "modsActiveAtCrash": "クラッシュ時にプラグインが有効でした",
+    "safeModeOn": "クラッシュ時にセーフモードが有効 —— 純正クライアント単体のクラッシュです",
+    "probeWasActive": "WoWSP のゲーム内プローブが動作していました",
+    "dumpAvailable": "クラッシュダンプがあり、詳細分析が可能です"
+  },
+  "suspects": {
+    "title": "疑わしいプラグイン",
+    "evidence": {
+      "logMention": "ゲームログで言及",
+      "recentChange": "最近変更された"
+    },
+    "unknownBadge": "不明",
+    "quarantine": "隔離",
+    "restore": "復元",
+    "logLines": "ログ行"
+  },
+  "actions": {
+    "restarting": "クライアントを再起動中…",
+    "quarantining": "隔離中…",
+    "exporting": "レポートをエクスポート中…",
+    "safeModeOn": "セーフモードを有効化中…"
+  },
+  "severity": {
+    "info": "情報",
+    "warning": "警告",
+    "critical": "重大"
+  },
+  "empty": {
+    "none": "何も見つかりませんでした"
+  },
+  "errors": {
+    "gameRunning": "ゲームクライアントが実行中です —— 再起動やセーフモードの切り替えの前に終了してください。"
+  },
+  "modlist": {
+    "pinnedBadge": "クラッシュ容疑",
+    "quarantinedBadge": "隔離済み"
+  }
+}

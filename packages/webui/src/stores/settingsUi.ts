@@ -12,6 +12,7 @@ export type SettingsSection =
   | "closeBehavior"
   | "stats"
   | "gamePath"
+  | "crash"
   | "account"
   | "network"
   | "markers"
@@ -46,7 +47,7 @@ export interface SettingsGroupSpec {
 
 export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "general", sections: ["language", "appearance", "closeBehavior"] },
-  { id: "game", sections: ["stats", "markers", "overlayCalibration", "chatTranslate", "gamePath"] },
+  { id: "game", sections: ["stats", "markers", "overlayCalibration", "chatTranslate", "gamePath", "crash"] },
   { id: "connection", sections: ["account", "network", "pairing"] },
   { id: "app", sections: ["updates", "resources", "installCleanup", "changelog"] },
   { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
@@ -100,6 +101,10 @@ const MOBILE_HIDDEN_SECTIONS: readonly SettingsSection[] = [
   // Desktop-Windows only: the duplicate-install detection reads the
   // desktop install's ARP registration, which the phone build has none of.
   "installCleanup",
+  // Desktop-only: the crash watchdog reads Windows event logs / WER
+  // reports / crash dumps of a LOCAL game install — the phone build has
+  // neither the sources nor an install to restart.
+  "crash",
 ];
 
 /** Clamp a section request to what the current build can show. */

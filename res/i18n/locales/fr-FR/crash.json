@@ -1,0 +1,91 @@
+{
+  "toast": {
+    "title": "Le client du jeu a planté",
+    "body": "{image} (pid {pid}) a cessé de fonctionner.",
+    "code": "Code d'exception : {code}",
+    "safeRestart": "Redémarrer en mode sans échec",
+    "restart": "Redémarrer le jeu",
+    "analysis": "Voir l'analyse",
+    "dismiss": "Ignorer",
+    "safeRestartFallback": "Dossier du jeu introuvable — redémarrage tel quel."
+  },
+  "section": {
+    "title": "Analyse des plantages",
+    "empty": "Aucun relevé de plantage pour l'instant. Quand le client du jeu plante, WoWSP l'intercepte ici et prépare une analyse.",
+    "recordTime": "Détecté le {time}",
+    "source": {
+      "eventLog": "Journal d'événements Windows",
+      "werReport": "Rapport WER",
+      "crashDump": "Dump mémoire"
+    },
+    "gameLogs": "Journaux du jeu",
+    "appLogs": "Journaux de WoWSP",
+    "modsInventory": "Plugins installés",
+    "currentBuild": "Version actuelle du jeu",
+    "findings": "Constats",
+    "suspects": "Plugins suspects",
+    "export": "Exporter le rapport",
+    "exportDone": "Rapport exporté",
+    "restart": "Redémarrer le jeu",
+    "safeModeOn": "Le mode sans échec est activé",
+    "analysisFor": "Analyse de {id}",
+    "refresh": "Actualiser"
+  },
+  "findings": {
+    "exceptionAccessViolation": "Violation d'accès — le client a lu ou écrit une mémoire qui ne lui appartient pas",
+    "exceptionStackBufferOverrun": "Dépassement de tampon de pile — un tampon local a été écrit au-delà de sa fin",
+    "exceptionStackOverflow": "Débordement de pile — la pile d'appels a dépassé sa limite (souvent une récursion de plugin)",
+    "exceptionHeapCorruption": "Corruption du tas — le tas du processus était endommagé avant le plantage",
+    "exceptionIllegalInstruction": "Instruction illégale — le processeur a reçu une séquence qu'il ne peut pas exécuter",
+    "exceptionDivideByZero": "Division par zéro",
+    "exceptionPrivilegedInstruction": "Instruction privilégiée — instruction réservée au noyau exécutée en mode utilisateur",
+    "exceptionBreakpoint": "Point d'arrêt — un breakpoint de débogage s'est déclenché",
+    "exceptionCppException": "Exception C++ non gérée",
+    "exceptionClrException": "Exception .NET non gérée",
+    "exceptionDllInitFailed": "Échec d'initialisation de DLL — le point d'entrée d'une bibliothèque a renvoyé un échec",
+    "exceptionDllNotFound": "DLL introuvable — une bibliothèque requise manque",
+    "exceptionUnknown": "Exception inconnue (code {code})",
+    "faultingModule": "Module en cause : {module}",
+    "evidenceEventLog": "Trouvé dans le journal d'événements Windows",
+    "evidenceWerReport": "Trouvé dans le rapport WER",
+    "evidenceCrashDump": "Trouvé dans le dump mémoire",
+    "gameLogErrors": "{count} ligne(s) d'erreur dans le journal du jeu",
+    "recentModChanges": "Plugins modifiés récemment : {mods}",
+    "modsActiveAtCrash": "Des plugins étaient actifs au moment du plantage",
+    "safeModeOn": "Le mode sans échec était actif — le client d'origine a planté seul",
+    "probeWasActive": "La sonde en jeu de WoWSP était active",
+    "dumpAvailable": "Un dump mémoire est disponible pour une analyse approfondie"
+  },
+  "suspects": {
+    "title": "Plugins suspects",
+    "evidence": {
+      "logMention": "Mentionné dans le journal du jeu",
+      "recentChange": "Modifié récemment"
+    },
+    "unknownBadge": "Inconnu",
+    "quarantine": "Mettre en quarantaine",
+    "restore": "Restaurer",
+    "logLines": "Lignes de journal"
+  },
+  "actions": {
+    "restarting": "Redémarrage du client…",
+    "quarantining": "Mise en quarantaine…",
+    "exporting": "Export du rapport…",
+    "safeModeOn": "Activation du mode sans échec…"
+  },
+  "severity": {
+    "info": "Info",
+    "warning": "Avertissement",
+    "critical": "Critique"
+  },
+  "empty": {
+    "none": "Rien trouvé"
+  },
+  "errors": {
+    "gameRunning": "Le client du jeu est en cours d'exécution — fermez-le avant de redémarrer ou de changer de mode sans échec."
+  },
+  "modlist": {
+    "pinnedBadge": "Suspect de plantage",
+    "quarantinedBadge": "Mis en quarantaine"
+  }
+}

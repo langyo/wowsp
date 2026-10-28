@@ -40,8 +40,12 @@ pub mod encyclopedia;
 pub mod exports;
 pub mod fire_dataset;
 pub mod game_client;
+// Game-crash detection + analysis + the user-invoked client restart
+// (commands/game_crash.rs). The command surface registers on every target;
+// the watchdog and evidence layer are Windows-only internals.
 pub mod game_config;
 pub mod game_context;
+pub mod game_crash;
 pub mod game_detect;
 pub mod game_maps;
 pub mod gameparams;

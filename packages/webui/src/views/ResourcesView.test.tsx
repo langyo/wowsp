@@ -26,6 +26,19 @@ vi.mock("@/stores/gameStatus", () => ({
   useGameStatusStore: () => ({ process: { running: false }, processes: [] }),
 }));
 vi.mock("@/stores/pluginUpdates", () => ({ usePluginUpdatesStore: () => ({ itemBusy: new Map(), syncFreshness: vi.fn() }) }));
+/* The crash-suspect pins ride the crash store; the inventory tests drive
+ * scan flows, so the store answers empty (no suspects, nothing pinned). */
+vi.mock("@/stores/crash", () => ({
+  useCrashStore: () => ({
+    history: [],
+    quarantined: [],
+    quarantineBusy: new Set(),
+    analyze: vi.fn(async () => { throw new Error("no analysis in this suite"); }),
+    loadQuarantined: vi.fn(async () => []),
+    quarantine: vi.fn(),
+    restore: vi.fn(),
+  }),
+}));
 vi.mock("@/stores/staleBins", () => ({ useStaleBinsStore: () => ({ adopt: mocks.adopt }) }));
 vi.mock("@/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: "en" }, dataLanguage: { value: "en" } }) }));

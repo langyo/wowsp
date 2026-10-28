@@ -19,6 +19,7 @@ import { contributionApi } from "./modules/contribution";
 import { decisionApi } from "./modules/decision";
 import { chatTranslateApi } from "./modules/chat";
 import { localBattlesApi } from "./modules/localBattles";
+import { gameCrashApi } from "./modules/gamecrash";
 
 export * from "./modules/shell";
 export * from "./modules/markers";
@@ -32,6 +33,7 @@ export * from "./modules/contribution";
 export * from "./modules/decision";
 export * from "./modules/chat";
 export * from "./modules/localBattles";
+export * from "./modules/gamecrash";
 
 export const api = {
   ...decisionApi,
@@ -46,4 +48,5 @@ export const api = {
   ...contributionApi,
   ...chatTranslateApi,
   ...localBattlesApi,
+  ...gameCrashApi,
 };

@@ -23,6 +23,7 @@ import {
   Upload,
   UserRound,
   Tag,
+  Zap,
 } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -174,6 +175,7 @@ export function useSettingsBody(props: { active: boolean }) {
     closeBehavior: Power,
     stats: BarChart3,
     gamePath: FolderCog,
+    crash: Zap,
     account: UserRound,
     network: Globe,
     markers: Tag,
@@ -195,6 +197,7 @@ export function useSettingsBody(props: { active: boolean }) {
     closeBehavior: t("settings.closeBehavior"),
     stats: t("settings.statsSection"),
     gamePath: t("settings.gamePath"),
+    crash: t("crash.section.title"),
     account: t("settings.account"),
     network: t("settings.network"),
     markers: t("settings.markersTitle"),

@@ -172,4 +172,12 @@ export type {
   QueueSnapshot,
   QueueStage,
   ContributionState,
+  GameCrashRecord,
+  CrashFinding,
+  LogExcerpt,
+  ModEntry,
+  SuspectMod,
+  CrashAnalysis,
+  QuarantineEntry,
+  GameRestartInfo,
 } from "./client";

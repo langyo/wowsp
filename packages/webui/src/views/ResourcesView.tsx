@@ -40,6 +40,7 @@ import { formatLocalStamp } from "@/utils/format";
 import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
 import { useModHub } from "./resources/useModHub";
+import { renderCrashPins, useCrashPins } from "./resources/CrashPins";
 import { useMigrateWizard } from "./resources/useMigrateWizard";
 import { useFileListWindow } from "./resources/useFileListWindow";
 import type { ResourcesCtx } from "./resources/context";
@@ -79,6 +80,8 @@ export default defineComponent({
   name: "ResourcesView",
   setup() {
     const hub = useModHub();
+  // Crash-suspect pinning (崩溃嫌疑置顶): rides the crash store quietly.
+  const crashPins = useCrashPins(hub.gameRoot);
     const wizard = useMigrateWizard(hub);
     hub.bindMigrateWizard(wizard.openMigrateWizard);
     const fileWindow = useFileListWindow(hub);
@@ -437,6 +440,9 @@ export default defineComponent({
                 the rows scroll inside its viewport ── */}
             <HkScrollContainer class="resources-view__side-scroll">
               <div class="resources-view__side-inner">
+                {hub.source.value !== "online"
+                  ? renderCrashPins(crashPins, hub.installed.value)
+                  : null}
                 {hub.source.value === "online"
                   ? hub.catalogShown.value.length === 0
                     ? catalogEmptyNote()

@@ -278,6 +278,19 @@ pub fn run() {
                     "session process poller did not start; live session state stays offline",
                 );
             }
+            // The game-crash watchdog (commands/game_crash): tracks every
+            // client pid and, when one vanishes with Windows crash evidence
+            // (Event Log / WER / LocalDumps), persists a record and
+            // broadcasts wowsp://game-crash for the safe-mode + restart
+            // prompt. Detection only — it never launches or kills the
+            // client; restart is an explicit user-invoked command.
+            #[cfg(windows)]
+            if let Err(err) = commands::game_crash::spawn_crash_watchdog(app.handle().clone()) {
+                tracing::error!(
+                    %err,
+                    "game-crash watchdog did not start; crashes stay undetected",
+                );
+            }
             {
                 let (data_dir, cache_dir) = (paths::data_dir(), paths::cache_dir());
                 tracing::debug!(?data_dir, ?cache_dir, "writable roots resolved");
@@ -574,6 +587,18 @@ pub fn run() {
             commands::game_detect::set_game_path,
             commands::game_detect::pick_game_folder,
             commands::game_detect::pick_replay_dir,
+            // Game-crash watchdog (commands/game_crash.rs): crash records,
+            // analysis, redacted report export, single-mod quarantine and
+            // the user-invoked client restart. Registered on every target —
+            // mobile answers empty lists / errors like is_game_running.
+            commands::game_crash::game_crash_list,
+            commands::game_crash::game_crash_dismiss,
+            commands::game_crash::game_crash_analyze,
+            commands::game_crash::game_crash_export,
+            commands::game_crash::game_crash_quarantined_mods,
+            commands::game_crash::game_crash_quarantine_mod,
+            commands::game_crash::game_crash_restore_mod,
+            commands::game_crash::game_crash_restart,
             commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,

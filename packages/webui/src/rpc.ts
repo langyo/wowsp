@@ -159,6 +159,18 @@ export const RPC = {
   ingame_plugin_uninstall: "ingame_plugin_uninstall",
   get_game_config: "get_game_config",
   set_game_config: "set_game_config",
+  // Game-crash watchdog (commands/game_crash.rs): retained crash records
+  // (the wowsp://game-crash push), the analysis pass, the redacted report
+  // export, per-install res_mods quarantine and the guarded client
+  // relaunch — see api/modules/gamecrash.ts.
+  game_crash_list: "game_crash_list",
+  game_crash_dismiss: "game_crash_dismiss",
+  game_crash_analyze: "game_crash_analyze",
+  game_crash_export: "game_crash_export",
+  game_crash_quarantined_mods: "game_crash_quarantined_mods",
+  game_crash_quarantine_mod: "game_crash_quarantine_mod",
+  game_crash_restore_mod: "game_crash_restore_mod",
+  game_crash_restart: "game_crash_restart",
   update_check: "update_check",
   update_download: "update_download",
   update_cancel: "update_cancel",

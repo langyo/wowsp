@@ -1,0 +1,91 @@
+{
+  "toast": {
+    "title": "Game client crashed",
+    "body": "{image} (pid {pid}) has stopped working.",
+    "code": "Exception code: {code}",
+    "safeRestart": "Safe mode & restart",
+    "restart": "Restart game",
+    "analysis": "Analyze",
+    "dismiss": "Dismiss",
+    "safeRestartFallback": "No game folder resolved — restarting as-is."
+  },
+  "section": {
+    "title": "Crash analysis",
+    "empty": "No crash records yet. When the game client crashes, WoWSP catches it here and prepares an analysis.",
+    "recordTime": "Detected {time}",
+    "source": {
+      "eventLog": "Windows event log",
+      "werReport": "WER report",
+      "crashDump": "Crash dump"
+    },
+    "gameLogs": "Game logs",
+    "appLogs": "WoWSP logs",
+    "modsInventory": "Installed plugins",
+    "currentBuild": "Current game build",
+    "findings": "Findings",
+    "suspects": "Suspect plugins",
+    "export": "Export report",
+    "exportDone": "Report exported",
+    "restart": "Restart game",
+    "safeModeOn": "Safe mode is on",
+    "analysisFor": "Analysis for {id}",
+    "refresh": "Refresh"
+  },
+  "findings": {
+    "exceptionAccessViolation": "Access violation — the client read or wrote memory it does not own",
+    "exceptionStackBufferOverrun": "Stack buffer overrun — a local buffer was written past its end",
+    "exceptionStackOverflow": "Stack overflow — the call stack outgrew its limit (often recursive plugin code)",
+    "exceptionHeapCorruption": "Heap corruption — the process heap was already damaged before the crash",
+    "exceptionIllegalInstruction": "Illegal instruction — the CPU received a code sequence it cannot execute",
+    "exceptionDivideByZero": "Division by zero",
+    "exceptionPrivilegedInstruction": "Privileged instruction — a kernel-only CPU instruction ran in user mode",
+    "exceptionBreakpoint": "Breakpoint — a debug breakpoint fired",
+    "exceptionCppException": "Unhandled C++ exception",
+    "exceptionClrException": "Unhandled .NET exception",
+    "exceptionDllInitFailed": "DLL initialization failed — a library's entry point returned failure",
+    "exceptionDllNotFound": "DLL not found — a required library is missing",
+    "exceptionUnknown": "Unknown exception (code {code})",
+    "faultingModule": "Faulting module: {module}",
+    "evidenceEventLog": "Found in the Windows event log",
+    "evidenceWerReport": "Found in the WER report",
+    "evidenceCrashDump": "Found in the crash dump",
+    "gameLogErrors": "{count} error line(s) in the game log",
+    "recentModChanges": "Recently changed plugins: {mods}",
+    "modsActiveAtCrash": "Plugins were active when the client crashed",
+    "safeModeOn": "Safe mode was on — the stock client crashed without plugins",
+    "probeWasActive": "The WoWSP in-game probe was active",
+    "dumpAvailable": "A crash dump is available for deep analysis"
+  },
+  "suspects": {
+    "title": "Suspect plugins",
+    "evidence": {
+      "logMention": "Mentioned in the game log",
+      "recentChange": "Changed recently"
+    },
+    "unknownBadge": "Unknown",
+    "quarantine": "Quarantine",
+    "restore": "Restore",
+    "logLines": "Log lines"
+  },
+  "actions": {
+    "restarting": "Restarting the client…",
+    "quarantining": "Quarantining…",
+    "exporting": "Exporting report…",
+    "safeModeOn": "Turning safe mode on…"
+  },
+  "severity": {
+    "info": "Info",
+    "warning": "Warning",
+    "critical": "Critical"
+  },
+  "empty": {
+    "none": "Nothing found"
+  },
+  "errors": {
+    "gameRunning": "The game client is running — close it before restarting or switching safe mode."
+  },
+  "modlist": {
+    "pinnedBadge": "Crash suspect",
+    "quarantinedBadge": "Quarantined"
+  }
+}
