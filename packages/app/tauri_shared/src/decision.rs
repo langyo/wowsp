@@ -73,6 +73,13 @@ pub struct DecisionsPackStatus {
     pub model_present: bool,
     /// Size of the installed model file (0 when absent).
     pub model_bytes: u64,
+    /// Whether `move_model.onnx` is installed (E16 movement model; packs
+    /// built before it carry only the fire model).
+    #[serde(default)]
+    pub move_model_present: bool,
+    /// Size of the installed movement model file (0 when absent).
+    #[serde(default)]
+    pub move_model_bytes: u64,
     /// Map short names that already have a `terrain_los.npz` raster,
     /// sorted ascending.
     pub los_maps: Vec<String>,

@@ -51,6 +51,9 @@ export interface DecisionsPackStatus {
   sizeBytes: number;
   modelPresent: boolean;
   modelBytes: number;
+  /** Whether `move_model.onnx` is installed (older packs carry only fire). */
+  moveModelPresent: boolean;
+  moveModelBytes: number;
   /** Map short names that carry a `terrain_los.npz` raster. */
   losMaps: string[];
 }
