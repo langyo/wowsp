@@ -83,5 +83,9 @@
   },
   "errors": {
     "gameRunning": "Le client du jeu est en cours d'exécution — fermez-le avant de redémarrer ou de changer de mode sans échec."
+  },
+  "modlist": {
+    "pinnedBadge": "Suspect de plantage",
+    "quarantinedBadge": "Mis en quarantaine"
   }
 }

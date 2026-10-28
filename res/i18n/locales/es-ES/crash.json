@@ -83,5 +83,9 @@
   },
   "errors": {
     "gameRunning": "El cliente del juego está en ejecución — ciérralo antes de reiniciar o cambiar el modo seguro."
+  },
+  "modlist": {
+    "pinnedBadge": "Sospechoso del fallo",
+    "quarantinedBadge": "En cuarentena"
   }
 }

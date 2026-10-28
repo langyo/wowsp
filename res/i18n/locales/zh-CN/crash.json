@@ -83,5 +83,9 @@
   },
   "errors": {
     "gameRunning": "游戏客户端正在运行 —— 请先关闭它，再重启或切换安全模式。"
+  },
+  "modlist": {
+    "pinnedBadge": "崩溃嫌疑",
+    "quarantinedBadge": "已隔离"
   }
 }

@@ -83,5 +83,9 @@
   },
   "errors": {
     "gameRunning": "ゲームクライアントが実行中です —— 再起動やセーフモードの切り替えの前に終了してください。"
+  },
+  "modlist": {
+    "pinnedBadge": "クラッシュ容疑",
+    "quarantinedBadge": "隔離済み"
   }
 }

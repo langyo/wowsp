@@ -83,5 +83,9 @@
   },
   "errors": {
     "gameRunning": "The game client is running — close it before restarting or switching safe mode."
+  },
+  "modlist": {
+    "pinnedBadge": "Crash suspect",
+    "quarantinedBadge": "Quarantined"
   }
 }
