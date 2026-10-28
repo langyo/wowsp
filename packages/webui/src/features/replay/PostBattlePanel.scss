@@ -6,12 +6,11 @@
 
 /* Post-battle: two-column team matrix + drill-down panel. The stats
    content runs ONE step up the --text-* scale (2xs→xs, sm→base) so the
-   result sheet reads slightly larger than the replay list around it. */
-.replay-view__postbattle-cell-status {
-  flex: 0 0 auto;
-  font-size: var(--text-xs);
-  color: rgb(var(--color-text) / 0.45);
-}
+   result sheet reads slightly larger than the replay list around it. (The
+   rows carry NO dead-state text cell — a sunk row reads through its icon
+   variant + dead dimming alone; a text slot after the stat columns acted
+   as one more column and broke the header alignment, so the rule and the
+   markup are gone together.) */
 .replay-view__postbattle-bot {
   display: inline-flex;
   align-items: center;
