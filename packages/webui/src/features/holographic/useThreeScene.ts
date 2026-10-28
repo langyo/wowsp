@@ -16,6 +16,13 @@ import { createPerfHud, perfHudRequested, type PerfHud } from "./perfHud";
 import { readStageThemeMode, watchStageThemeMode } from "@wowsp/holo";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 
+/** Orbit radius clamps as mounted, before fitCamera sizes them to the map.
+ *  Named so the init numbers have a single home — the follow mode's chase
+ *  clamp (see followCamera.ts) and its restore of the captured map bounds
+ *  never hardcode against these. */
+export const ORBIT_MIN_DISTANCE = 200;
+export const ORBIT_MAX_DISTANCE = 6000;
+
 export interface ThreeScene {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
@@ -169,8 +176,8 @@ export function useThreeScene(
     controls.target.set(0, 0, 0);
     controls.minPolarAngle = 0.1;           // nearly top-down
     controls.maxPolarAngle = Math.PI / 2.1; // ~85°, prevent going below horizon
-    controls.minDistance = 200;
-    controls.maxDistance = 6000;
+    controls.minDistance = ORBIT_MIN_DISTANCE;
+    controls.maxDistance = ORBIT_MAX_DISTANCE;
     controls.mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE,
       MIDDLE: THREE.MOUSE.PAN,

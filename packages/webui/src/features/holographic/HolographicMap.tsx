@@ -33,6 +33,13 @@ import {
 import { rebuildActors } from "./actorBuild";
 import { updateMarkersAt } from "./markerUpdate";
 import { updateLabelPositions, updateOverlayScale } from "./labelOverlay";
+import {
+  applyFollowPose,
+  clampFollowDist,
+  FOLLOW_DIST_DEFAULT,
+  FOLLOW_DIST_MAX,
+  FOLLOW_DIST_MIN,
+} from "./followCamera";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
 import { disposeStormZone } from "./weatherScene";
@@ -393,6 +400,42 @@ export default defineComponent({
     // dispatch (`applyOriginalCamera` vs `followSelected`) stays untouched.
     const cameraMenuOpen = ref(false);
     const cameraMode = ref<"free" | "original" | "follow">("free");
+    // ── Follow-mode dolly distance ─────────────────────────────────────
+    // The chase camera used to hard-stamp a fixed pose every frame, which
+    // also ate the wheel: OrbitControls' dolly moved the camera, and the
+    // next tick stamped the old pose back. The tick CANNOT simply read the
+    // camera↔ship radius back either — a moving ship changes that radius
+    // every frame all by itself, and the zoom would ride the ship's wake
+    // out to the max clamp. So the dolly is detected at its SOURCE: wheel
+    // / two-finger events on the canvas set dollySeen, and the next stamped
+    // frame adopts the radius once (clamped, see followCamera.ts); every
+    // other frame re-stamps the remembered distance from scratch, exactly
+    // like the old hard stamp — drift-free by construction, and the zoom
+    // PERSISTS across re-selections instead of snapping back to stock.
+    let followDist = FOLLOW_DIST_DEFAULT;
+    /** A wheel/pinch landed since the last adoption. */
+    let dollySeen = false;
+    // The orbit radius bounds in force when follow began (fitCamera's
+    // map-sized clamp); restored when follow ends so the free camera keeps
+    // its zoom range. followSelected captures it lazily — the mode can flip
+    // before the scene is ready, and only a stamped frame touches bounds.
+    let followStockDist: { min: number; max: number } | null = null;
+    // Mark the dolly source on the canvas OrbitControls listens on; the
+    // events still reach OrbitControls untouched (this only raises a flag).
+    watch(api, (a, _prev, onCleanup) => {
+      if (!a) return;
+      const canvas = a.renderer.domElement;
+      const markDolly = (): void => { dollySeen = true; };
+      const markPinch = (e: TouchEvent): void => {
+        if (e.touches.length >= 2) dollySeen = true;
+      };
+      canvas.addEventListener("wheel", markDolly, { passive: true, capture: true });
+      canvas.addEventListener("touchmove", markPinch, { passive: true });
+      onCleanup(() => {
+        canvas.removeEventListener("wheel", markDolly, { capture: true });
+        canvas.removeEventListener("touchmove", markPinch);
+      });
+    });
     // Either HUD pop-up open → the phone sheet scrim shows (computed reads
     // both refs lazily, so declaring it here after the second ref is fine).
     const hudSheetOpen = computed(() => speedMenuOpen.value || cameraMenuOpen.value);
@@ -402,10 +445,23 @@ export default defineComponent({
         endFreeLook();
         // Free/original modes keep the stock right-drag pan; only following
         // an actual ship repurposes RMB as the free-look orbit (selectShip
-        // flips the mapping once a target exists).
+        // flips the mapping once a target exists). The chase zoom clamp
+        // gives way to the map's own orbit bounds again.
         const ctrl = api.value?.controls;
-        if (ctrl) ctrl.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+        if (ctrl) {
+          ctrl.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+          if (followStockDist) {
+            ctrl.minDistance = followStockDist.min;
+            ctrl.maxDistance = followStockDist.max;
+            followStockDist = null;
+          }
+        }
         selectedEntityId.value = null;
+      } else {
+        // Entering the chase: forget wheel events that belonged to the free
+        // camera — the first follow frame stamps the remembered follow
+        // distance, never the radius the free camera happened to sit at.
+        dollySeen = false;
       }
     });
     /** Player stats shown in the follow menu (entityId → "WR% · battles").
@@ -1106,6 +1162,10 @@ export default defineComponent({
       const clamped = Math.max(0, Math.min(duration.value || t, t));
       current.value = clamped;
       hudCurrent.value = clamped;
+      // A seek teleports the followed ship many units in one step — drop any
+      // pending dolly flag so the next stamped frame can't adopt the radius
+      // against the teleported position as if it were wheel zoom.
+      dollySeen = false;
       updateMarkersAt(ctx, clamped);
       drawMinimap(ctx);
     }
@@ -1399,7 +1459,30 @@ export default defineComponent({
       // watcher restores the stock pan mapping when follow is left. Applied
       // per-frame so a mode flip before scene readiness still lands.
       ctrl.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+      // Swap the map's orbit radius clamp for the chase range so the wheel
+      // (and pinch) dolly stays live while following; the map bounds come
+      // back when the mode watcher leaves follow. Re-capture when anything
+      // else clobbered them meanwhile (a replay switch re-fits the camera —
+      // restoring the old map's range would mis-size the new one's).
+      if (
+        !followStockDist ||
+        ctrl.minDistance !== FOLLOW_DIST_MIN ||
+        ctrl.maxDistance !== FOLLOW_DIST_MAX
+      ) {
+        followStockDist = { min: ctrl.minDistance, max: ctrl.maxDistance };
+      }
+      ctrl.minDistance = FOLLOW_DIST_MIN;
+      ctrl.maxDistance = FOLLOW_DIST_MAX;
       const pos = marker.position;
+      // Adopt wheel/pinch dolly once per flag: the radius right after a
+      // dolly carries at most one frame of the ship's own motion (a few
+      // units even at 8× playback — invisible against a ≥5% wheel notch).
+      // Every other frame keeps the remembered distance, so the chase zoom
+      // can never ride the ship's wake.
+      if (dollySeen) {
+        dollySeen = false;
+        followDist = clampFollowDist(cam.position.distanceTo(pos));
+      }
       // Held-RMB free look: keep the orbit pivot glued to the (moving) ship
       // and hand the camera pose to OrbitControls until the button releases.
       // No extra controls.update() here — the tick loop already runs one per
@@ -1408,16 +1491,10 @@ export default defineComponent({
         ctrl.target.copy(pos);
         return;
       }
-      const yaw = marker.rotation.y;
-      // Framing tracks the true hull scale (≈1.1 ship lengths behind, half a
-      // length up) so a followed BB fills the view about like in-game.
-      const dist = 55;
-      const behind = new THREE.Vector3(
-        pos.x - Math.sin(yaw) * dist,
-        22,
-        pos.z + Math.cos(yaw) * dist,
-      );
-      cam.position.copy(behind);
+      // Chase pose at the current distance (the solver bakes the stock
+      // 22-up-per-55-back pitch into the axis, so zooming never flattens
+      // onto the horizon); the pivot stays glued to the ship.
+      applyFollowPose(cam, pos, marker.rotation.y, followDist);
       ctrl.target.copy(pos);
     }
 
@@ -1578,6 +1655,11 @@ export default defineComponent({
           clearActors(ctx);
           shipLabels.value = [];
           ctx.bounds = null;
+          // The follow camera's captured orbit bounds belong to the previous
+          // replay's map too: drop them so exiting follow (possibly without a
+          // single stamped frame on the new map) keeps the fresh fitCamera
+          // clamp instead of restoring the old capture.
+          followStockDist = null;
         }
       },
     );
