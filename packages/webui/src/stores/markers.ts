@@ -10,7 +10,12 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 
 import { api } from "@/api";
-import type { MarkerColor, MarkerEntry } from "@/api";
+import type {
+  MarkerColor,
+  MarkerEntry,
+  MarkerImportItem,
+  MarkerImportResult,
+} from "@/api";
 
 /** The three colors, in list order. */
 export const MARKER_COLORS = ["red", "yellow", "purple"] as const;
@@ -71,5 +76,16 @@ export const useMarkersStore = defineStore("markers", () => {
     entries.value = await api.markersRemove(nickname);
   }
 
-  return { entries, loaded, ensureLoaded, colorOf, add, remove };
+  /** Batch import (the ApeRadar wizard, 海猴雷达导入): markers_add's
+   *  upsert semantics per item, ONE atomic write + ONE change event for
+   *  the whole batch. The backend returns the refreshed list plus
+   *  add/update/skip counters; the list becomes the store's truth (disk
+   *  is authoritative) and the counters ride back to the caller's toast. */
+  async function importBatch(items: MarkerImportItem[]): Promise<MarkerImportResult> {
+    const result = await api.markersImport(items);
+    entries.value = result.list;
+    return result;
+  }
+
+  return { entries, loaded, ensureLoaded, colorOf, add, remove, importBatch };
 });

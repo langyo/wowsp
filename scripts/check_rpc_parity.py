@@ -139,6 +139,7 @@ GATED_COMMANDS: list[str] = [
     "appdata_write",
     "capture_main_window",
     "import_replay_file",
+    "markers_import",
     "mod_catalog_install",
     "mod_catalog_uninstall",
     "mod_hub_classify_path",

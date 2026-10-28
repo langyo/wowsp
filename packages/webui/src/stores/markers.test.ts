@@ -108,3 +108,40 @@ describe("add / remove", () => {
     expect(store.colorOf("Laneigedc")).toBeNull();
   });
 });
+
+describe("importBatch", () => {
+  it("invokes markers_import once with the built items and adopts the returned list", async () => {
+    const items = [
+      { nickname: "AFKer", color: "red" as const, note: null, accountId: 111 },
+      { nickname: "Scripter", color: "yellow" as const, note: null, accountId: null },
+    ];
+    const refreshed = [
+      { nickname: "AFKer", color: "red", note: null, accountId: 111, createdAt: 5 },
+      { nickname: "Scripter", color: "yellow", note: null, accountId: null, createdAt: 5 },
+      redEntry,
+    ];
+    routeTransport({
+      [RPC.markers_list]: [redEntry],
+      [RPC.markers_import]: { list: refreshed, added: 2, updated: 0, skipped: 1 },
+    });
+    const store = useMarkersStore();
+    await store.ensureLoaded();
+
+    const result = await store.importBatch(items);
+
+    // Exactly ONE batch RPC (ensureLoaded's markers_list aside) carrying
+    // the built items — the wizard's whole point is one atomic write.
+    const importCalls = mocks.invoke.mock.calls.filter(
+      ([cmd]) => cmd === RPC.markers_import,
+    );
+    expect(importCalls).toHaveLength(1);
+    expect(mocks.invoke).toHaveBeenCalledWith(RPC.markers_import, { entries: items });
+
+    // The refreshed list replaces the store's entries (disk truth) and
+    // the wizard counters ride back for the done toast.
+    expect(result).toEqual({ list: refreshed, added: 2, updated: 0, skipped: 1 });
+    expect(store.entries).toEqual(refreshed);
+    expect(store.colorOf("Scripter")).toBe("yellow");
+    expect(store.colorOf("Laneigedc")).toBe("red");
+  });
+});

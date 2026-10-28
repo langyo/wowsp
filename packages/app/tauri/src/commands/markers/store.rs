@@ -11,7 +11,9 @@ use tauri::{Emitter, Manager};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use wowsp_tauri_shared::{CommandResult, MarkerColor, MarkerEntry};
+use wowsp_tauri_shared::{
+    CommandResult, MarkerColor, MarkerEntry, MarkerImportItem, MarkerImportResult,
+};
 
 use crate::commands::ensure_main_window_label;
 use crate::paths;
@@ -124,4 +126,77 @@ pub fn markers_remove(window: tauri::Window, nickname: String) -> CommandResult<
     store_markers(&dir, &markers).map_err(|e| anyhow!("store markers: {e:#}"))?;
     let _ = window.app_handle().emit(MARKERS_CHANGED_EVENT, ());
     Ok(markers)
+}
+
+/// Batch import (the settings wizard's 从海猴雷达导入 tab): upsert every
+/// item with exactly markers_add's semantics (same nickname
+/// case-insensitively updates in place; an arriving account id replaces,
+/// a None keeps the stored one), but with ONE atomic write and ONE change
+/// event for the whole
+/// batch. Empty nicknames are skipped and counted, not an error — a
+/// hand-edited source file can carry junk rows. Returns the refreshed full
+/// list plus per-item counters for the wizard's summary toast. Main window
+/// only.
+#[tauri::command]
+pub fn markers_import(
+    window: tauri::Window,
+    entries: Vec<MarkerImportItem>,
+) -> CommandResult<MarkerImportResult> {
+    ensure_main_window_label(window.label())?;
+    let dir = paths::ensure_data_dir().map_err(|e| anyhow!("data dir: {e:#}"))?;
+    let mut markers = load_markers_from(&dir);
+    let (added, updated, skipped) = upsert_import(&mut markers, entries);
+    store_markers(&dir, &markers).map_err(|e| anyhow!("store markers: {e:#}"))?;
+    let _ = window.app_handle().emit(MARKERS_CHANGED_EVENT, ());
+    Ok(MarkerImportResult {
+        list: markers,
+        added,
+        updated,
+        skipped,
+    })
+}
+
+/// The batch upsert behind markers_import (pure, unit-tested): per item
+/// the exact markers_add semantics — trim; empty nickname skips and
+/// counts; a same-nickname row (case-insensitive) updates color/note in
+/// place (an arriving account id replaces, a None keeps); a new nickname
+/// appends. Returns the (added, updated, skipped) counters.
+pub(crate) fn upsert_import(
+    markers: &mut Vec<MarkerEntry>,
+    items: Vec<MarkerImportItem>,
+) -> (usize, usize, usize) {
+    let mut added = 0;
+    let mut updated = 0;
+    let mut skipped = 0;
+    for item in items {
+        let trimmed = item.nickname.trim();
+        if trimmed.is_empty() {
+            skipped += 1;
+            continue;
+        }
+        match markers
+            .iter_mut()
+            .find(|m| same_nickname(&m.nickname, trimmed))
+        {
+            Some(existing) => {
+                existing.color = item.color;
+                existing.note = item.note;
+                if item.account_id.is_some() {
+                    existing.account_id = item.account_id;
+                }
+                updated += 1;
+            },
+            None => {
+                markers.push(MarkerEntry {
+                    nickname: trimmed.to_string(),
+                    color: item.color,
+                    note: item.note,
+                    account_id: item.account_id,
+                    created_at: unix_now(),
+                });
+                added += 1;
+            },
+        }
+    }
+    (added, updated, skipped)
 }

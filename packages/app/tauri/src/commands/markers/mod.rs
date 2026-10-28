@@ -15,13 +15,21 @@
 //! EVERY realm (including CN, whose stats route through the vortex
 //! endpoints) with no login anywhere.
 
+mod aperadar;
 mod store;
 
 #[cfg(test)]
 mod tests;
 
+pub use aperadar::{
+    __cmd__aperadar_watchlist_pick, __cmd__aperadar_watchlist_read, __cmd__aperadar_watchlist_scan,
+    __tauri_command_name_aperadar_watchlist_pick, __tauri_command_name_aperadar_watchlist_read,
+    __tauri_command_name_aperadar_watchlist_scan, aperadar_watchlist_pick, aperadar_watchlist_read,
+    aperadar_watchlist_scan,
+};
 pub use store::{
-    __cmd__markers_add, __cmd__markers_list, __cmd__markers_remove,
-    __tauri_command_name_markers_add, __tauri_command_name_markers_list,
-    __tauri_command_name_markers_remove, markers_add, markers_list, markers_remove,
+    __cmd__markers_add, __cmd__markers_import, __cmd__markers_list, __cmd__markers_remove,
+    __tauri_command_name_markers_add, __tauri_command_name_markers_import,
+    __tauri_command_name_markers_list, __tauri_command_name_markers_remove, markers_add,
+    markers_import, markers_list, markers_remove,
 };
