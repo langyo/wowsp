@@ -495,7 +495,7 @@ Storage layout:
 per-identity lifetime counts (`GET /api/replays/admin/credits`) as the
 webui's `contributors.json` envelope (auto-incrementing `version`,
 RFC3339 `generatedAt`) — copy it to
-`packages/webui/src/res/contributors.json` before building a release.
+`packages/webui/src/data/contributors.json` before building a release.
 
 `replay-drain rename --anon <id> --name <corrected>` fixes a credited
 name in place (`POST /api/replays/admin/rename`): the identity is

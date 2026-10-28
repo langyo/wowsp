@@ -34,7 +34,7 @@ Options (env fallbacks in parentheses):
   --key <secret>   the worker's REPLAY_ADMIN_KEY (WOWSP_REPLAY_ADMIN_KEY)
   --out <path>     pull: archive dir (default ./replay-archive); credits:
                    output file (default ./contributors.json — copy it to
-                   packages/webui/src/res/contributors.json before building)
+                   packages/webui/src/data/contributors.json before building)
   --only <anon>    pull only this contributor (repeatable)
   --min-staged <n> pull only contributors with ≥ n staged members (default 1)
   --dry-run        verify + archive, never call drain; backfill: print the
@@ -229,8 +229,8 @@ async fn credits(args: CreditsArgs) -> anyhow::Result<()> {
         version,
         doc.contributors.len()
     );
-    if args.out != std::path::Path::new("packages/webui/src/res/contributors.json") {
-        println!("copy it to packages/webui/src/res/contributors.json before building the webui");
+    if args.out != std::path::Path::new("packages/webui/src/data/contributors.json") {
+        println!("copy it to packages/webui/src/data/contributors.json before building the webui");
     }
     Ok(())
 }

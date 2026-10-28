@@ -6,14 +6,16 @@
  * special/`). Extracted from gui_0001.pkg by scripts/extract/
  * extract_game_assets.py into `src/res/images/hud/` (lossless WebP).
  */
-import ammoHe from "../../res/images/hud/ammo_he.webp";
-import ammoAp from "../../res/images/hud/ammo_ap.webp";
-import ammoSap from "../../res/images/hud/ammo_sap.webp";
-import ammoTorpedo from "../../res/images/hud/ammo_torpedo.webp";
-import consumableSmoke from "../../res/images/hud/consumable_smoke.webp";
-import consumableRegen from "../../res/images/hud/consumable_regen.webp";
-import stateFire from "../../res/images/hud/state_fire.webp";
-import stateFlood from "../../res/images/hud/state_flood.webp";
+// PublicDir art served at the root path (see utils/shipImages.ts) — plain
+// URL constants instead of imports (same URLs, no module-graph nodes).
+const ammoHe = "/images/hud/ammo_he.webp";
+const ammoAp = "/images/hud/ammo_ap.webp";
+const ammoSap = "/images/hud/ammo_sap.webp";
+const ammoTorpedo = "/images/hud/ammo_torpedo.webp";
+const consumableSmoke = "/images/hud/consumable_smoke.webp";
+const consumableRegen = "/images/hud/consumable_regen.webp";
+const stateFire = "/images/hud/state_fire.webp";
+const stateFlood = "/images/hud/state_flood.webp";
 import type { ShipActionKey } from "./shipStatusModel";
 
 /** Shell ammo family (HE/AP/SAP/CS) → the game's ammo-selector sprite. */

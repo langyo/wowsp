@@ -90,15 +90,17 @@ const COMMANDER_PERSON = new Map(
   (commandersData as { name: string; person: string }[]).map((c) => [c.name, c.person]),
 );
 
-/** Nation code → flag webp URL (the hint card's subtitle pennant). */
-const NATION_FLAGS = import.meta.glob<string>("../../../res/images/nations/*.webp", {
-  eager: true,
-  query: "?url",
-  import: "default",
-});
+/** Nation codes with a bundled flag webp (publicDir art served at the
+ * root path — keys-only glob, the files never enter Vite's module graph;
+ * see utils/shipImages.ts). */
+const NATION_STEMS = new Set(
+  Object.keys(import.meta.glob("../../../res/images/nations/*.webp")).map(
+    (path) => path.split("/").pop()!.replace(/\.webp$/i, ""),
+  ),
+);
 
 function nationFlagUrl(nation: string): string | undefined {
-  return NATION_FLAGS[`../../../res/images/nations/${nation}.webp`];
+  return NATION_STEMS.has(nation) ? `/images/nations/${nation}.webp` : undefined;
 }
 
 /** Loadout editor section the kebab menu can deep-link into. */

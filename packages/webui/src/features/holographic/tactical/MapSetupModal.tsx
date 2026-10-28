@@ -12,7 +12,7 @@
  *     dataset filling in modes the local history doesn't already cover
  *     with stronger sample evidence — the res-pack insights rail's FULL
  *     doc when the downloaded pack carries it, else the bundled lite res
- *     doc (src/res/map-insights.json, the replay-corpus CLI's lite
+ *     doc (src/data/map-insights.json, the replay-corpus CLI's lite
  *     output; both share this envelope shape, the full one adding the
  *     heat grids nothing here reads);
  *   - CUSTOM: one entry opening the second-level editor, where the author

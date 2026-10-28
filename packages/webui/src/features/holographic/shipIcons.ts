@@ -5,38 +5,41 @@
  * by the hologram labels
  * (BattleIcon component) and the minimap canvas (drawImage).
  */
-import allyBattleship from "../../res/images/ships/icon_ally_battleship.webp";
-import allyCruiser from "../../res/images/ships/icon_ally_cruiser.webp";
-import allyDestroyer from "../../res/images/ships/icon_ally_destroyer.webp";
-import allyAircarrier from "../../res/images/ships/icon_ally_aircarrier.webp";
-import allySubmarine from "../../res/images/ships/icon_ally_submarine.webp";
-import allyAuxiliary from "../../res/images/ships/icon_ally_auxiliary.webp";
-import enemyBattleship from "../../res/images/ships/icon_enemy_battleship.webp";
-import enemyCruiser from "../../res/images/ships/icon_enemy_cruiser.webp";
-import enemyDestroyer from "../../res/images/ships/icon_enemy_destroyer.webp";
-import enemyAircarrier from "../../res/images/ships/icon_enemy_aircarrier.webp";
-import enemySubmarine from "../../res/images/ships/icon_enemy_submarine.webp";
-import enemyAuxiliary from "../../res/images/ships/icon_enemy_auxiliary.webp";
-import sunkBattleship from "../../res/images/ships/icon_sunk_battleship.webp";
-import sunkCruiser from "../../res/images/ships/icon_sunk_cruiser.webp";
-import sunkDestroyer from "../../res/images/ships/icon_sunk_destroyer.webp";
-import sunkAircarrier from "../../res/images/ships/icon_sunk_aircarrier.webp";
-import sunkSubmarine from "../../res/images/ships/icon_sunk_submarine.webp";
-import sunkEnemyBattleship from "../../res/images/ships/icon_sunk_enemy_battleship.webp";
-import sunkEnemyCruiser from "../../res/images/ships/icon_sunk_enemy_cruiser.webp";
-import sunkEnemyDestroyer from "../../res/images/ships/icon_sunk_enemy_destroyer.webp";
-import sunkEnemyAircarrier from "../../res/images/ships/icon_sunk_enemy_aircarrier.webp";
-import sunkEnemySubmarine from "../../res/images/ships/icon_sunk_enemy_submarine.webp";
-import whiteBattleship from "../../res/images/ships/icon_white_battleship.webp";
-import whiteCruiser from "../../res/images/ships/icon_white_cruiser.webp";
-import whiteDestroyer from "../../res/images/ships/icon_white_destroyer.webp";
-import whiteAircarrier from "../../res/images/ships/icon_white_aircarrier.webp";
-import whiteSubmarine from "../../res/images/ships/icon_white_submarine.webp";
-import plainBattleship from "../../res/images/ships/icon_battleship.webp";
-import plainCruiser from "../../res/images/ships/icon_cruiser.webp";
-import plainDestroyer from "../../res/images/ships/icon_destroyer.webp";
-import plainAircarrier from "../../res/images/ships/icon_aircarrier.webp";
-import plainSubmarine from "../../res/images/ships/icon_submarine.webp";
+// PublicDir art served at the root path (see utils/shipImages.ts) — URL
+// constants, not imports, keep the 32 HUD icons out of Vite's module
+// graph; the URLs are byte-identical to what the imports resolved to.
+const allyBattleship = "/images/ships/icon_ally_battleship.webp";
+const allyCruiser = "/images/ships/icon_ally_cruiser.webp";
+const allyDestroyer = "/images/ships/icon_ally_destroyer.webp";
+const allyAircarrier = "/images/ships/icon_ally_aircarrier.webp";
+const allySubmarine = "/images/ships/icon_ally_submarine.webp";
+const allyAuxiliary = "/images/ships/icon_ally_auxiliary.webp";
+const enemyBattleship = "/images/ships/icon_enemy_battleship.webp";
+const enemyCruiser = "/images/ships/icon_enemy_cruiser.webp";
+const enemyDestroyer = "/images/ships/icon_enemy_destroyer.webp";
+const enemyAircarrier = "/images/ships/icon_enemy_aircarrier.webp";
+const enemySubmarine = "/images/ships/icon_enemy_submarine.webp";
+const enemyAuxiliary = "/images/ships/icon_enemy_auxiliary.webp";
+const sunkBattleship = "/images/ships/icon_sunk_battleship.webp";
+const sunkCruiser = "/images/ships/icon_sunk_cruiser.webp";
+const sunkDestroyer = "/images/ships/icon_sunk_destroyer.webp";
+const sunkAircarrier = "/images/ships/icon_sunk_aircarrier.webp";
+const sunkSubmarine = "/images/ships/icon_sunk_submarine.webp";
+const sunkEnemyBattleship = "/images/ships/icon_sunk_enemy_battleship.webp";
+const sunkEnemyCruiser = "/images/ships/icon_sunk_enemy_cruiser.webp";
+const sunkEnemyDestroyer = "/images/ships/icon_sunk_enemy_destroyer.webp";
+const sunkEnemyAircarrier = "/images/ships/icon_sunk_enemy_aircarrier.webp";
+const sunkEnemySubmarine = "/images/ships/icon_sunk_enemy_submarine.webp";
+const whiteBattleship = "/images/ships/icon_white_battleship.webp";
+const whiteCruiser = "/images/ships/icon_white_cruiser.webp";
+const whiteDestroyer = "/images/ships/icon_white_destroyer.webp";
+const whiteAircarrier = "/images/ships/icon_white_aircarrier.webp";
+const whiteSubmarine = "/images/ships/icon_white_submarine.webp";
+const plainBattleship = "/images/ships/icon_battleship.webp";
+const plainCruiser = "/images/ships/icon_cruiser.webp";
+const plainDestroyer = "/images/ships/icon_destroyer.webp";
+const plainAircarrier = "/images/ships/icon_aircarrier.webp";
+const plainSubmarine = "/images/ships/icon_submarine.webp";
 
 const SHIP_ICONS: Record<string, Record<string, string>> = {
   ally: {

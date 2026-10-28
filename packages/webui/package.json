@@ -30,11 +30,13 @@
     "vue-router": "^5"
   },
   "devDependencies": {
+    "@types/node": "^26.4.0",
     "@vitejs/plugin-vue": "^6",
     "@vitejs/plugin-vue-jsx": "^5",
     "@vue/test-utils": "^2",
     "esbuild": "^0.28",
     "happy-dom": "^21",
+    "highlight.js": "11.12.0",
     "sass": "^1",
     "typescript": "^7",
     "vite": "^8",
