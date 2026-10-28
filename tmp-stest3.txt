@@ -1,0 +1,773 @@
+$ vitest run "--" "--run" "src/components/settings/sections/CrashSection.test.tsx" "src/stores/crash.test.ts" "src/components/layout/GameCrashToast.test.tsx"
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - import "./src/bootChrome" without a file extension (vite.config.ts:15:51). Add the file extension
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.4 D:/源代码/工程项目/个人站点/wowsp-wt-crash/packages/webui
+
+ ✓ src/i18n/sourceFilterKeys.test.ts (8 tests) 740ms
+ ✓ src/overlay/renderCn.test.ts (1 test) 1624ms
+ ✓ src/overlay/renderWaiting.test.ts (4 tests) 2680ms
+ ✓ src/overlay/stamps.test.ts (3 tests) 2879ms
+ ✓ src/overlay/renderLoading.test.ts (4 tests) 2721ms
+   ✓ overlay page loading faces (4)
+     ✓ swaps the dots for the honest dashes once the batch answers not-found 303ms
+     ✓ lights the dots back up for a re-query and then lands the numbers 374ms
+     ✓ renders per-column faces: career figures land with the batch, ship cells keep their dots, mirrored solo splits dash 379ms
+ ✓ src/overlay/render.cn.test.ts (1 test) 489ms
+stdout | src/overlay/renderSample.test.ts > overlay sample frame > renders a settled battle and writes the reviewable sample HTML
+overlay sample written: D:\源代码\工程项目\个人站点\wowsp-wt-crash\packages\webui\dist\overlay-sample.html
+
+ ✓ src/overlay/renderSample.test.ts (1 test) 925ms
+   ✓ overlay sample frame (1)
+     ✓ renders a settled battle and writes the reviewable sample HTML 598ms
+ ✓ src/features/modhub/taxonomy.test.ts (7 tests) 424ms
+stderr | src/features/replay/ReplayListFilter.test.tsx > collectModeOptions > derives only present modes, canonical order first, unknown keys after
+[intlify] Not found 'replay.mode.space' key in 'en' locale messages.
+
+stderr | src/features/replay/ReplayListFilter.test.tsx > collectModeOptions > labels unknown keys through the generic fallback and empty input yields none
+[intlify] Not found 'replay.mode.space' key in 'en' locale messages.
+
+stderr | src/features/replay/ReplayListFilter.test.tsx > collectModeOptions > keeps stale persisted picks listed (visible + droppable), known order first
+[intlify] Not found 'replay.mode.space' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/CrashSection.test.tsx > CrashSection > lists records and renders findings with severity chips
+[intlify] Not found 'crash.section.source.eventlog' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/CrashSection.test.tsx > CrashSection > lists records and renders findings with severity chips
+[intlify] Not found 'crash.section.source.eventlog' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/CrashSection.test.tsx > CrashSection > renders suspects with the quarantine action
+[intlify] Not found 'crash.section.source.eventlog' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/CrashSection.test.tsx > CrashSection > renders suspects with the quarantine action
+[intlify] Not found 'crash.section.source.eventlog' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/CrashSection.test.tsx > CrashSection > exports the selected record through the store
+[intlify] Not found 'crash.section.source.eventlog' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/CrashSection.test.tsx > CrashSection > exports the selected record through the store
+[intlify] Not found 'crash.section.source.eventlog' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/CrashSection.test.tsx > CrashSection > exports the selected record through the store
+[intlify] Not found 'crash.section.source.eventlog' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/CrashSection.test.tsx > CrashSection > exports the selected record through the store
+[intlify] Not found 'crash.section.source.eventlog' key in 'en' locale messages.
+
+ ✓ src/components/settings/sections/CrashSection.test.tsx (4 tests) 527ms
+ ❯ src/stores/crash.test.ts (23 tests | 1 failed) 642ms
+   ✓ useCrashStore start / ingestion (6)
+     ✓ loads the retained list on start and pins the newest undismissed record 66ms
+     ✓ keeps everything null when the backend has no records (browser dev) 97ms
+     ✓ pins a pushed record as the active prompt and prepends history 71ms
+     ✓ a pushed record re-upserts instead of duplicating history rows 64ms
+     ✓ a pushed dismissed record never pins a prompt and clears its own 62ms
+     ✓ start/stop is race-safe: a stop racing the handshake releases the listener 58ms
+   ✓ useCrashStore.dismiss (2)
+     ✓ dismisses backend-side, clears the prompt and marks history 46ms
+     ✓ only clears the prompt when the dismissed record IS the prompt 10ms
+   ❯ useCrashStore.analyze / exportReport (3)
+     × analyzes once per id and serves later calls from the cache 26ms
+     ✓ clears the analyzing flag even when the pass fails 16ms
+     ✓ exportReport resolves the revealed path and clears its busy flag 1ms
+   ✓ useCrashStore.restart guards (5)
+     ✓ refuses while the target client is running: no RPC, one error toast 20ms
+     ✓ refuses conservatively when a running client's folder is unknown 2ms
+     ✓ lets a restart through when only an UNRELATED client is running 1ms
+     ✓ passes an absent root through as the backend's last-crashed resolution 1ms
+     ✓ restart toasts a backend failure and stays usable 1ms
+   ✓ useCrashStore.safeModeAndRestart (4)
+     ✓ flips safe mode on, then restarts the same install 1ms
+     ✓ refuses while the game is running — safe mode never fires either 2ms
+     ✓ degrades to a plain restart when no game root is known 1ms
+     ✓ stops after a safe-mode failure without restarting 1ms
+   ✓ useCrashStore.quarantine (3)
+     ✓ resolves the root from the active record and pins the manifest 1ms
+     ✓ falls back to the active install when no record carries a root 0ms
+     ✓ loadQuarantined pins the manifest for an explicit root 0ms
+ ✓ src/components/settings/sections/ChatTranslateSection.test.tsx (12 tests) 766ms
+ ✓ src/migrations/index.test.ts (3 tests) 1008ms
+   ✓ runStartupMigrations (3)
+     ✓ runs due bodies, reports each completion, and returns the ids 315ms
+     ✓ skips unknown ids without reporting them (the shell retries) 335ms
+     ✓ resolves to an empty run when the shell is unreachable 356ms
+ ✓ src/features/replay/ReplayListFilter.test.tsx (40 tests) 745ms
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > holds the busy ring past the lookup so a fast search still reads as busy
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.noAccounts' key in 'en' locale messages.
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > holds the busy ring past the lookup so a fast search still reads as busy
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.noAccounts' key in 'en' locale messages.
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > holds the busy ring past the lookup so a fast search still reads as busy
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > holds the busy ring past the lookup so a fast search still reads as busy
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > holds the busy ring past the lookup so a fast search still reads as busy
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > holds the busy ring past the lookup so a fast search still reads as busy
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+[intlify] Not found 'stats.battles' key in 'en' locale messages.
+[intlify] Not found 'stats.winrate' key in 'en' locale messages.
+[intlify] Not found 'account.bind' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > holds the busy ring past the lookup so a fast search still reads as busy
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+[intlify] Not found 'stats.battles' key in 'en' locale messages.
+[intlify] Not found 'stats.winrate' key in 'en' locale messages.
+[intlify] Not found 'account.bind' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/SharingSection.wizard.test.tsx > SharingSection wizard > opens the wizard modal from the enroll CTA (with bound accounts)
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <SettingsSharingSection ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.noAccounts' key in 'en' locale messages.
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.noAccounts' key in 'en' locale messages.
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+[intlify] Not found 'stats.battles' key in 'en' locale messages.
+[intlify] Not found 'stats.winrate' key in 'en' locale messages.
+[intlify] Not found 'account.bind' key in 'en' locale messages.
+
+stderr | src/components/settings/sections/SharingSection.wizard.test.tsx > SharingSection wizard > shows the enrolled card tag-only and opens the wizard at the settings width
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <SettingsSharingSection ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+ ✓ src/migrations/definitions.test.ts (9 tests) 3498ms
+   ✓ ui_opacity_95_on_default_theme (5)
+     ✓ leaves an unset dial alone — the raised default carries the profile 364ms
+     ✓ skips profiles on a custom scheme 1618ms
+   ✓ live_roster_compact_default_on (4)
+     ✓ flips a profile on the old full-card default to compact rows 321ms
+stderr | src/components/settings/sections/SharingSection.wizard.test.tsx > SharingSection wizard > warns when the credited name matches none of the scanned recorders
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <SettingsSharingSection ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+ ✓ src/components/settings/chat/ProviderModal.test.tsx (13 tests) 1279ms
+stderr | src/components/settings/sections/SharingSection.wizard.test.tsx > SharingSection wizard > stays silent when the credited name matches a scanned recorder
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <SettingsSharingSection ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/components/settings/sections/SharingSection.wizard.test.tsx > SharingSection wizard > picks the credited identity from the account picker window
+[Vue warn]: injection "Symbol(router)" not found. 
+  at <SettingsSharingSection ref="VTU_COMPONENT" > 
+  at <VTUROOT>
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+[intlify] Not found 'stats.battles' key in 'en' locale messages.
+[intlify] Not found 'stats.winrate' key in 'en' locale messages.
+[intlify] Not found 'account.bind' key in 'en' locale messages.
+
+ ✓ src/theme/shipTypeTokenGroup.test.ts (9 tests) 3874ms
+   ✓ syncShipTypeTokenGroup (3)
+     ✓ registers one color slot per ship class, keyed and labeled 340ms
+     ✓ seeds the per-mode slot defaults from the CURRENT store 375ms
+   ✓ shipGroupOverrides (1)
+     ✓ projects the store's palette for one mode as editor prefill values 1594ms
+   ✓ applyShipGroupDraft (3)
+     ✓ writes the draft's ship slots back into the per-mode store 314ms
+     ✓ ignores drafts without the ship group 314ms
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+[intlify] Not found 'stats.battles' key in 'en' locale messages.
+[intlify] Not found 'stats.winrate' key in 'en' locale messages.
+[intlify] Not found 'account.bind' key in 'en' locale messages.
+
+ ✓ src/components/settings/sections/SharingSection.wizard.test.tsx (6 tests) 1302ms
+   ✓ SharingSection wizard (6)
+     ✓ opens the wizard modal from the enroll CTA (with bound accounts) 469ms
+     ✓ picks the credited identity from the account picker window 456ms
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > reaches the API on a repeat search instead of serving the cached stats
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+[intlify] Not found 'stats.battles' key in 'en' locale messages.
+[intlify] Not found 'stats.winrate' key in 'en' locale messages.
+[intlify] Not found 'account.bind' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > drops an attempt in flight when the dialog is reopened
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.noAccounts' key in 'en' locale messages.
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > drops an attempt in flight when the dialog is reopened
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.noAccounts' key in 'en' locale messages.
+[intlify] Not found 'account.addPlayer' key in 'en' locale messages.
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > drops an attempt in flight when the dialog is reopened
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > drops an attempt in flight when the dialog is reopened
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > drops an attempt in flight when the dialog is reopened
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > drops an attempt in flight when the dialog is reopened
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+ ✓ src/theme/themeModePreference.test.ts (14 tests) 5159ms
+   ✓ readStoredThemeModePreference (6)
+     ✓ defaults to solar (daylight-following) with no stored value 328ms
+     ✓ migrates hikari's legacy dark/light verbatim and writes the new key 414ms
+     ✓ migrates the retired wowsp-side 'system' value onto solar 1663ms
+     ✓ keeps the new key authoritative once written and ignores the legacy one 408ms
+   ✓ setThemeModePreference (4)
+     ✓ persists the preference and drives hikari's mode 303ms
+     ✓ maps solar onto hikari's sun-following 'system' mode 359ms
+     ✓ maps light verbatim 308ms
+stderr | src/components/account/AccountManagerContent.test.tsx > add-player dialog search > drops an attempt in flight when the dialog is reopened
+[intlify] Not found 'account.nickname' key in 'en' locale messages.
+[intlify] Not found 'account.search' key in 'en' locale messages.
+
+ ✓ src/components/account/AccountManagerContent.test.tsx (3 tests) 2979ms
+   ✓ add-player dialog search (3)
+     ✓ holds the busy ring past the lookup so a fast search still reads as busy 836ms
+     ✓ reaches the API on a repeat search instead of serving the cached stats 1479ms
+     ✓ drops an attempt in flight when the dialog is reopened 662ms
+ ✓ src/overlay/renderCnTwoTeam.test.ts (1 test) 897ms
+ ✓ src/overlay/render.test.ts (4 tests) 634ms
+ ✓ src/components/ships/ShipFilterBar.test.tsx (24 tests) 1305ms
+ ✓ src/views/ResourcesView.test.tsx (13 tests) 650ms
+ ✓ src/utils/analytics.test.ts (20 tests) 287ms
+ ✓ src/theme/shipTypeColors.test.ts (21 tests) 6813ms
+   ✓ stored value (11)
+     ✓ defaults both modes to the WG palette with no stored value (nothing written) 412ms
+     ✓ migrates the legacy flat palette onto BOTH modes 1509ms
+     ✓ heals non-object blobs (array / string / number) to the defaults 827ms
+     ✓ heals a blob missing a whole mode to the defaults for that mode 358ms
+   ✓ setShipTypePalette (2)
+     ✓ writes several slots in one store update and persists 420ms
+ ✓ src/components/layout/TitlebarUpstreamFault.test.tsx (5 tests) 699ms
+   ✓ TitlebarUpstreamFault (5)
+     ✓ the hover card discloses the failing domain, purpose and last error 572ms
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > updates the probe first, then stale mods, sequentially
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > updates the probe first, then stale mods, sequentially
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > collects failures, keeps going, and reports one error toast
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > collects failures, keeps going, and reports one error toast
+[intlify] Not found 'resources.pluginUpdateFailed' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > raises a STICKY error toast when the whole pass was refused
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > raises a STICKY error toast when the whole pass was refused
+[intlify] Not found 'resources.pluginUpdateFailed' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > retires a live 30 s error slot before raising the sticky verdict
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > retires a live 30 s error slot before raising the sticky verdict
+[intlify] Not found 'resources.pluginUpdateFailed' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > toasts the light success when a fast pass beats the card grace
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > toasts the light success when a fast pass beats the card grace
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > folds per-item progress events into overallPercent
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > folds per-item progress events into overallPercent
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > captures the per-item download speed and drops it on a zero-rate tick
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > captures the per-item download speed and drops it on a zero-rate tick
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > resets the captured speed at every task start
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > resets the captured speed at every task start
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > a throwing progress listener never strands the pass
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > a throwing progress listener never strands the pass
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > is re-entrant safe: a second call while running does nothing
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > is re-entrant safe: a second call while running does nothing
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > updateAll quietly skips an id grabbed mid-pass instead of failing it
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > updateAll quietly skips an id grabbed mid-pass instead of failing it
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > updateAll skips items another surface is already updating
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > updateAll skips items another surface is already updating
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore.updateAll > updateAll is a quiet sync when every item is busy elsewhere
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginUpdateBusyElsewhere' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore all-installs batch > updateAll covers every pending install, active install first
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore all-installs batch > updateAll covers every pending install, active install first
+[intlify] Not found 'resources.pluginUpdateDoneClients' key in 'en' locale messages.
+
+ ✓ src/components/stats/RankedShipTable.test.tsx (7 tests) 391ms
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore all-installs batch > updateAll skips the running client's install and warns instead
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore all-installs batch > updateAll skips the running client's install and warns instead
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginUpdateSkipped' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore all-installs batch > updateAll reports the skip even when the running client is the only one pending
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginUpdateSkipped' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > folds each landed item into the local snapshot, so the badge is clear the moment the pass ends
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > folds each landed item into the local snapshot, so the badge is clear the moment the pass ends
+[intlify] Not found 'resources.pluginUpdateDoneClients' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > a multi-client full success toasts the client count, not the bare done line
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > a multi-client full success toasts the client count, not the bare done line
+[intlify] Not found 'resources.pluginUpdateDoneClients' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > a mixed run warns with the failed clients instead of erroring the whole pass
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > a mixed run warns with the failed clients instead of erroring the whole pass
+[intlify] Not found 'resources.pluginUpdatePartialClientsDetail' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > a total multi-client refusal raises the sticky all-clients error
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > a total multi-client refusal raises the sticky all-clients error
+[intlify] Not found 'resources.pluginUpdateAllFailedClientsDetail' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > a client whose every item is busy elsewhere stays out of the summary rollup
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+[intlify] Not found 'resources.pluginProbeName' key in 'en' locale messages.
+[intlify] Not found 'common.game.kind.manual' key in 'en' locale messages.
+
+stderr | src/stores/pluginUpdates.test.ts > usePluginUpdatesStore per-client summary > a client whose every item is busy elsewhere stays out of the summary rollup
+[intlify] Not found 'resources.pluginUpdateDone' key in 'en' locale messages.
+
+ ✓ src/stores/pluginUpdates.test.ts (39 tests) 634ms
+ ✓ src/components/settings/chat/TranslateTestModal.test.tsx (12 tests) 825ms
+ ✓ src/views/LookupView.test.tsx (16 tests) 374ms
+ ✓ src/utils/dogtagAssets.test.ts (7 tests) 396ms
+   ✓ dogtagAssets (7)
+     ✓ resolves lookups from the bundled map before the pack lands 305ms
+ ✓ src/features/holographic/debrisPrune.test.ts (17 tests) 294ms
+ ✓ src/components/layout/PluginUpdateHint.test.tsx (14 tests) 372ms
+ ✓ src/utils/shipsLesta.test.ts (15 tests) 235ms
+ ✓ src/components/stats/RankedSeasonModal.test.tsx (9 tests) 344ms
+ ✓ src/components/settings/FeedbackSection.test.tsx (4 tests) 299ms
+ ✓ src/components/layout/TitlebarStreamSlow.test.tsx (4 tests) 442ms
+ ✓ src/utils/shipImageFailures.test.ts (3 tests) 193ms
+ ✓ src/features/replay/PluginInstallPromptModal.test.tsx (8 tests) 341ms
+ ✓ src/features/holographic/tactical/model.test.ts (32 tests) 346ms
+ ✓ src/components/playtime/PrTrendSection.test.tsx (12 tests) 255ms
+ ✓ src/theme/stageTheme.test.ts (8 tests) 176ms
+stdout | src/features/holographic/modelLoader.test.ts
+[modelLoader] using cache: C:/cache-root
+
+stderr | src/features/holographic/modelLoader.test.ts > fetchModelResource payload validation > rejects instead of serving the index.html SPA fallback (the 0.3.0 bug)
+[modelLoader] HTTP 404 fetching http://asset.localhost/C%3A%2Fcache-root%2Fmodels%2Fships%2FPRSS999.glb, trying next source
+
+stderr | src/features/holographic/modelLoader.test.ts > fetchModelResource payload validation > rejects instead of serving the index.html SPA fallback (the 0.3.0 bug)
+[modelLoader] /models/ships/PRSS999.glb: missing file answered by the index.html SPA fallback, trying next source
+
+stderr | src/features/holographic/modelLoader.test.ts > fetchModelResource payload validation > falls back to the embedded copy when the cache fetch dies in transport
+[modelLoader] http://asset.localhost/C%3A%2Fcache-root%2Fmodels%2Fships%2FPRSS999.glb: Failed to fetch, trying next source
+
+stderr | src/features/holographic/modelLoader.test.ts > fetchModelResource payload validation > rejects a plain origin URL answered by the SPA fallback (pack unwired)
+[modelLoader] /models/ships/PRSS999.glb: missing file answered by the index.html SPA fallback, trying next source
+
+stderr | src/features/holographic/modelLoader.test.ts > fetchModelResource payload validation > validates JSON resources and still prefers the pack cache
+[modelLoader] http://asset.localhost/C%3A%2Fcache-root%2Fmodels%2Fmaps%2Fminimaps.json: missing file answered by the index.html SPA fallback, trying next source
+
+stdout | src/features/holographic/modelLoader.test.ts > meshopt-compressed GLB round-trip > decodes an EXT_meshopt_compression GLB through loadGlbModel
+[modelLoader] loading: /models/ships/meshopt-cube.glb
+
+stdout | src/features/holographic/modelLoader.test.ts > meshopt-compressed GLB round-trip > decodes an EXT_meshopt_compression GLB through loadGlbModel
+[modelLoader] loaded: /models/ships/meshopt-cube.glb
+
+ ✓ src/features/holographic/modelLoader.test.ts (25 tests) 80ms
+ ✓ src/components/ships/shipPlaneSpecs.test.ts (13 tests) 195ms
+ ✓ src/features/replay/shipLiveStats.test.ts (13 tests) 139ms
+ ✓ src/stores/config.test.ts (22 tests) 261ms
+ ✓ src/stores/stats.test.ts (14 tests) 235ms
+ ✓ src/components/layout/GameCrashToast.test.tsx (9 tests) 311ms
+ ✓ src/bootChromeHandoff.test.ts (1 test) 374ms
+ ✓ src/components/stats/ShipDistCharts.test.ts (30 tests) 242ms
+ ✓ src/i18n/useLanguage.test.ts (18 tests) 204ms
+ ✓ src/features/replay/playerBuild.test.ts (17 tests) 87ms
+ ✓ src/components/layout/FullscreenModeHint.test.tsx (3 tests) 174ms
+ ✓ src/components/settings/ChangelogSection.test.tsx (3 tests) 146ms
+ ✓ src/stores/encyclopedia.test.ts (9 tests) 170ms
+stderr | src/i18n/tError.test.ts > tError > echoes an unknown space-free string like t() would
+[intlify] Not found 'not.a.real.key' key in 'en' locale messages.
+[intlify] Not found 'not.a.real.key' key in 'en' locale messages.
+
+ ✓ src/i18n/tError.test.ts (3 tests) 157ms
+ ✓ src/stores/statsQuery.test.ts (5 tests) 99ms
+ ✓ src/features/replay/PlayerBuildGrid.test.tsx (3 tests) 73ms
+ ✓ src/features/holographic/HoloRosterOverlay.test.tsx (5 tests) 188ms
+ ✓ src/components/base/RangeSlider.test.tsx (11 tests) 171ms
+ ✓ src/components/stats/shipTypeHint.test.ts (7 tests) 239ms
+ ✓ src/components/layout/ModUpdateToast.test.tsx (9 tests) 188ms
+ ✓ src/overlay/chat.test.ts (19 tests) 93ms
+ ✓ src/components/stats/StatsCard.ranked-tile.test.tsx (3 tests) 110ms
+ ✓ src/components/ships/consumables.test.ts (12 tests) 102ms
+ ✓ src/features/replay/selfReportView.test.ts (5 tests) 97ms
+ ✓ src/utils/winrate.test.ts (39 tests) 164ms
+ ✓ src/components/layout/UpdateAppliedToast.test.tsx (3 tests) 163ms
+stderr | src/features/markers/playerContextMenu.test.tsx > buildPlayerContextMenuRequest > builds the standard menu with the tag strip pinned above
+[intlify] Not found 'common.playerMenu.lookup' key in 'en' locale messages.
+[intlify] Not found 'common.playerMenu.copyName' key in 'en' locale messages.
+[intlify] Not found 'settings.markersTitle' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorRed' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorYellow' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorPurple' key in 'en' locale messages.
+
+stderr | src/features/markers/playerContextMenu.test.tsx > buildPlayerContextMenuRequest > builds the standard menu with the tag strip pinned above
+[intlify] Not found 'settings.markersTitle' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorRed' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorYellow' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorPurple' key in 'en' locale messages.
+
+stderr | src/features/markers/playerContextMenu.test.tsx > buildPlayerContextMenuRequest > unmarks when the ACTIVE color's dot is toggled
+[intlify] Not found 'common.playerMenu.lookup' key in 'en' locale messages.
+[intlify] Not found 'common.playerMenu.copyName' key in 'en' locale messages.
+[intlify] Not found 'settings.markersTitle' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorRed' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorYellow' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorPurple' key in 'en' locale messages.
+
+stderr | src/features/markers/playerContextMenu.test.tsx > buildPlayerContextMenuRequest > unmarks when the ACTIVE color's dot is toggled
+[intlify] Not found 'settings.markersTitle' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorRed' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorYellow' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorPurple' key in 'en' locale messages.
+
+stderr | src/features/markers/playerContextMenu.test.tsx > PlayerContextMenuHost — mounted through a real provider > opens the menu on a right-click over a player row
+[intlify] Not found 'common.playerMenu.lookup' key in 'en' locale messages.
+[intlify] Not found 'common.playerMenu.copyName' key in 'en' locale messages.
+[intlify] Not found 'settings.markersTitle' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorRed' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorYellow' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorPurple' key in 'en' locale messages.
+
+stderr | src/features/markers/playerContextMenu.test.tsx > PlayerContextMenuHost — mounted through a real provider > opens the menu on a right-click over a player row
+[intlify] Not found 'settings.markersTitle' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorRed' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorYellow' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorPurple' key in 'en' locale messages.
+
+ ✓ src/features/markers/playerContextMenu.test.tsx (8 tests) 156ms
+ ✓ src/components/ships/PlaneModelMenu.test.tsx (11 tests) 85ms
+ ✓ src/features/replay/LiveShipMeta.test.tsx (2 tests) 204ms
+ ✓ src/utils/installLabel.test.ts (8 tests) 233ms
+ ✓ src/stores/pairing.test.ts (33 tests) 59ms
+ ✓ src/stores/stampOverrides.test.ts (6 tests) 56ms
+ ✓ src/composables/useRosterStats.test.ts (5 tests) 99ms
+stderr | src/features/markers/playerContextMenu.block.test.tsx > native menu blocker + player context menu > still opens the player menu and suppresses the platform menu
+[intlify] Not found 'common.playerMenu.lookup' key in 'en' locale messages.
+[intlify] Not found 'common.playerMenu.copyName' key in 'en' locale messages.
+[intlify] Not found 'settings.markersTitle' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorRed' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorYellow' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorPurple' key in 'en' locale messages.
+
+stderr | src/features/markers/playerContextMenu.block.test.tsx > native menu blocker + player context menu > still opens the player menu and suppresses the platform menu
+[intlify] Not found 'settings.markersTitle' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorRed' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorYellow' key in 'en' locale messages.
+[intlify] Not found 'settings.markersColorPurple' key in 'en' locale messages.
+
+ ✓ src/features/markers/playerContextMenu.block.test.tsx (1 test) 84ms
+ ✓ src/bootChrome.test.ts (12 tests) 70ms
+ ✓ src/components/settings/SettingsShell.test.tsx (3 tests) 140ms
+ ✓ src/theme/fontScalePreference.test.ts (8 tests) 52ms
+ ✓ src/utils/techTreeData.test.ts (23 tests) 101ms
+ ✓ src/components/playtime/PlaytimeBreakdownPie.test.ts (5 tests) 76ms
+ ✓ src/components/ships/shipSquadrons.test.ts (26 tests) 31ms
+ ✓ src/composables/globalTooltip.card.test.ts (4 tests) 27ms
+ ✓ src/theme/dpiPrefs.test.ts (36 tests) 50ms
+ ✓ src/components/playtime/playtimeAgg.test.ts (18 tests) 61ms
+ ✓ src/stores/playtime.test.ts (12 tests) 31ms
+ ✓ src/features/share/statsShot.test.ts (2 tests) 76ms
+ ✓ src/stores/chatTranslate.test.ts (17 tests) 37ms
+ ✓ src/theme/uiOpacityPreference.test.ts (10 tests) 18ms
+ ✓ src/components/base/StampTag.test.tsx (4 tests) 54ms
+ ✓ src/stores/ranked.test.ts (11 tests) 25ms
+ ✓ src/stores/localBattles.test.ts (10 tests) 14ms
+ ✓ src/stores/statsPrefs.test.ts (23 tests) 53ms
+ ✓ src/stores/ingamePlugin.test.ts (9 tests) 18ms
+ ✓ src/features/replay/useLiveSessionGuard.test.ts (11 tests) 18ms
+ ✓ src/features/holographic/perfHud.test.ts (11 tests) 17ms
+ ✓ src/composables/useSelectionEdgeHint.test.ts (8 tests) 36ms
+ ✓ src/stores/shipStats.test.ts (5 tests) 12ms
+ ✓ src/composables/globalTooltip.overflow.test.ts (5 tests) 35ms
+ ✓ src/features/holographic/tactical/freehand.test.ts (8 tests) 26ms
+ ✓ src/stores/overlay.test.ts (6 tests) 25ms
+ ✓ src/features/holographic/tactical/useTactical.test.ts (9 tests) 41ms
+ ✓ src/theme/wallpaper.test.ts (8 tests) 28ms
+ ✓ src/stores/liveSelf.test.ts (11 tests) 40ms
+ ✓ src/components/ships/shipParts.test.ts (19 tests) 20ms
+ ✓ src/components/ships/antiAir.test.ts (10 tests) 21ms
+ ✓ src/overlay/chipFit.test.ts (23 tests) 26ms
+ ✓ src/components/ships/skillTree.test.ts (23 tests) 44ms
+stderr | src/stores/audioPlayer.test.ts > useAudioPlayerStore > a failed load raises an error toast and resets
+[intlify] Not found 'resources.audioLoadFailed' key in 'en' locale messages.
+
+stderr | src/stores/audioPlayer.test.ts > useAudioPlayerStore > a decode error during playback raises a toast and stops
+[intlify] Not found 'resources.audioLoadFailed' key in 'en' locale messages.
+
+ ✓ src/stores/audioPlayer.test.ts (13 tests) 20ms
+ ✓ src/views/resources/fileTree.test.ts (9 tests) 13ms
+ ✓ src/features/replay/runtimeShipIdentity.test.ts (12 tests) 9ms
+ ✓ src/utils/shipStatsScope.test.ts (31 tests) 10ms
+ ✓ src/components/playtime/prTrend.test.ts (19 tests) 13ms
+ ✓ src/stores/overlayConfig.test.ts (12 tests) 76ms
+ ✓ src/features/holographic/tactical/heatLayer.test.ts (13 tests) 13ms
+ ✓ src/features/holographic/shipStatusModel.test.ts (21 tests) 25ms
+ ✓ src/utils/shipClass.test.ts (8 tests) 13ms
+ ✓ src/stores/liveBuilds.test.ts (15 tests) 24ms
+ ✓ src/utils/shipAggregation.test.ts (34 tests) 15ms
+ ✓ src/composables/popupChrome.test.ts (7 tests) 19ms
+ ✓ src/features/holographic/tactical/lineup.test.ts (18 tests) 8ms
+ ✓ src/overlay/teamAvgTone.test.ts (2 tests) 3ms
+ ✓ src/stores/replay.test.ts (7 tests) 11ms
+ ✓ src/stores/upstreamHealth.test.ts (11 tests) 73ms
+ ✓ src/features/holographic/rosterRoles.test.ts (18 tests) 25ms
+ ✓ src/components/ships/shipSpecs.test.ts (3 tests) 18ms
+ ✓ src/components/playtime/battleBreakdown.test.ts (28 tests) 20ms
+ ✓ src/stores/account.test.ts (8 tests) 26ms
+ ✓ src/theme/wallpaperBlur.test.ts (10 tests) 57ms
+ ✓ src/utils/platform.test.ts (9 tests) 22ms
+ ✓ src/features/holographic/tactical/planSlots.test.ts (12 tests) 17ms
+ ✓ src/features/replay/liveSelfStats.test.ts (24 tests) 18ms
+ ✓ src/stores/trends.test.ts (8 tests) 10ms
+ ✓ src/utils/clanWinrate.test.ts (5 tests) 23ms
+ ✓ src/components/ships/buildDefaults.test.ts (16 tests) 15ms
+ ✓ src/features/holographic/tactical/mapGrid.test.ts (9 tests) 9ms
+ ✓ src/features/holographic/tactical/plan.test.ts (23 tests) 16ms
+ ✓ src/features/replay/liveTabOrder.test.ts (11 tests) 20ms
+ ✓ src/stores/shipStats.progress.test.ts (5 tests) 22ms
+ ✓ src/stores/gameStatus.test.ts (5 tests) 10ms
+ ✓ src/stores/piggyReminder.test.ts (8 tests) 16ms
+ ✓ src/features/replay/spawnSymmetry.test.ts (12 tests) 11ms
+ ✓ src/features/holographic/tactical/actions.test.ts (8 tests) 11ms
+ ✓ src/features/holographic/shipHp.test.ts (14 tests) 7ms
+ ✓ src/utils/shipSources.test.ts (7 tests) 18ms
+ ✓ src/features/holographic/tactical/timelineModel.test.ts (27 tests) 14ms
+ ✓ src/utils/mapNames.test.ts (1 test) 10ms
+ ✓ src/composables/useImage.test.ts (6 tests) 9ms
+ ✓ src/features/replay/damageComp.test.ts (10 tests) 38ms
+ ✓ src/composables/globalTooltip.test.ts (17 tests) 9ms
+ ✓ src/features/holographic/shipMarker.test.ts (7 tests) 10ms
+ ✓ src/features/overlay/useOverlayLifecycle.test.ts (9 tests) 23ms
+ ✓ src/features/holographic/smoothNormals.test.ts (5 tests) 9ms
+ ✓ src/stores/loadingTasks.test.ts (3 tests) 12ms
+ ✓ src/features/holographic/tactical/exporters.test.ts (4 tests) 10ms
+ ✓ src/stores/closeBehavior.test.ts (5 tests) 12ms
+ ✓ src/stores/markers.test.ts (5 tests) 27ms
+ ✓ src/utils/imageCrop.test.ts (11 tests) 6ms
+ ✓ src/utils/rosterSides.test.ts (13 tests) 12ms
+ ✓ src/features/holographic/weather.test.ts (13 tests) 7ms
+ ✓ src/features/replay/postBattle.test.ts (11 tests) 11ms
+ ✓ src/features/holographic/tactical/lineupSlots.test.ts (7 tests) 11ms
+ ✓ src/features/replay/useReplayPositions.test.ts (7 tests) 13ms
+ ✓ src/components/ships/modifierPipeline.test.ts (10 tests) 6ms
+ ✓ src/features/modhub/migrateIdentity.test.ts (8 tests) 5ms
+ ✓ src/overlay/aimcardLines.test.ts (23 tests) 9ms
+ ✓ src/utils/appEvents.test.ts (2 tests) 12ms
+ ✓ src/features/holographic/holoShader.test.ts (4 tests) 10ms
+ ✓ src/utils/localBattleSummary.test.ts (7 tests) 13ms
+ ✓ src/features/replay/streamSanitize.test.ts (7 tests) 6ms
+ ✓ src/features/holographic/tactical/geometry.test.ts (23 tests) 13ms
+ ✓ src/features/holographic/tabKeyGate.test.ts (7 tests) 9ms
+ ✓ src/features/holographic/trajectoryMath.test.ts (19 tests) 8ms
+ ✓ src/composables/useLiveCompositions.test.ts (3 tests) 11ms
+ ✓ src/overlay/overlayPrefs.test.ts (15 tests) 14ms
+ ✓ src/features/share/shotKit.test.ts (3 tests) 10ms
+ ✓ src/utils/titlebarSubtitle.test.ts (8 tests) 4ms
+ ✓ src/api/modules/replayPacked.test.ts (2 tests) 9ms
+ ✓ src/stores/settingsSavedFlash.test.ts (3 tests) 8ms
+ ✓ src/utils/shipEvents.test.ts (6 tests) 8ms
+ ✓ src/components/ships/optionStrip.test.ts (4 tests) 8ms
+ ✓ src/features/holographic/rangeRings.test.ts (13 tests) 9ms
+ ✓ src/features/holographic/deinterleave.test.ts (3 tests) 6ms
+ ✓ src/utils/ranked.test.ts (13 tests) 8ms
+ ✓ src/features/holographic/tactical/kinematics.test.ts (9 tests) 12ms
+ ✓ src/features/holographic/planeFormation.test.ts (12 tests) 11ms
+ ✓ src/utils/modeColors.test.ts (33 tests) 14ms
+ ✓ src/utils/format.test.ts (8 tests) 6ms
+ ✓ src/theme/modeTokens.test.ts (3 tests) 13ms
+ ✓ src/utils/sunkTracker.test.ts (8 tests) 8ms
+stderr | src/features/replay/liveSelfCalibrationCorpus.test.ts > live calibration corpus bench vs the drained archive > estimates every battle within the single-battle tolerances
+calibration corpus absent — regenerate with `replay-corpus calib`
+
+ ✓ src/features/replay/liveSelfCalibrationCorpus.test.ts (1 test) 4ms
+ ✓ src/theme/defaultSchemeBrand.test.ts (4 tests) 4ms
+ ✓ src/features/modhub/migrationDecide.test.ts (9 tests) 6ms
+ ✓ src/features/holographic/osdContrast.test.ts (8 tests) 5ms
+ ✓ src/api/foldDamageStats.test.ts (9 tests) 9ms
+ ✓ src/views/resources/display.test.ts (4 tests) 6ms
+ ✓ src/utils/mapModes.test.ts (14 tests) 8ms
+ ✓ src/overlay/teamIntel.test.ts (10 tests) 9ms
+ ✓ src/features/holographic/capSimulator.test.ts (5 tests) 4ms
+ ✓ src/features/replay/postBattleMode.test.ts (4 tests) 8ms
+ ✓ src/theme/index.test.ts (5 tests) 4ms
+ ✓ src/features/holographic/tactical/zones.test.ts (10 tests) 13ms
+ ✓ src/features/holographic/selfShotLedger.test.ts (6 tests) 8ms
+ ✓ src/features/modhub/voiceScenes.test.ts (7 tests) 5ms
+ ✓ src/features/holographic/tactical/session.test.ts (4 tests) 10ms
+ ✓ src/components/ships/costs.test.ts (6 tests) 4ms
+ ✓ src/features/holographic/tactical/modes.test.ts (5 tests) 8ms
+ ✓ src/utils/legacyMaps.test.ts (5 tests) 6ms
+ ✓ src/utils/aiNames.test.ts (5 tests) 7ms
+ ✓ src/features/holographic/tactical/replayPath.test.ts (5 tests) 6ms
+ ✓ src/utils/teamAggregate.test.ts (11 tests) 6ms
+ ✓ src/features/holographic/capZones.test.ts (11 tests) 4ms
+ ✓ src/features/holographic/shellWarfare.test.ts (5 tests) 6ms
+ ✓ src/utils/nationFlags.test.ts (5 tests) 4ms
+ ✓ src/overlay/rowList.test.ts (5 tests) 5ms
+ ✓ src/features/replay/liveCardPlacement.test.ts (5 tests) 6ms
+ ✓ src/features/replay/manualLocateZoom.test.ts (6 tests) 6ms
+stderr | src/features/replay/liveSelfCalibration.test.ts > live calibration vs a real Lesta battle > matches the results screen within the estimate tolerances
+calibration fixture absent — regenerate from the local replay
+
+ ✓ src/features/replay/liveSelfCalibration.test.ts (1 test) 3ms
+ ✓ src/features/replay/telemetryGrade.test.ts (4 tests) 3ms
+ ✓ src/features/modhub/catalogListed.test.ts (2 tests) 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/stores/crash.test.ts > useCrashStore.analyze / exportReport > analyzes once per id and serves later calls from the cache
+AssertionError: expected { …(8) } to be { …(8) } // Object.is equality
+
+If it should pass with deep equality, replace "toBe" with "toStrictEqual"
+
+Expected: { …(8) }
+Received: serializes to the same string
+
+
+Compared values have no visual difference.
+
+ ❯ src/stores/crash.test.ts:225:20
+    223|
+    224|     expect(mocked.analyze).toHaveBeenCalledTimes(1);
+    225|     expect(second).toBe(first);
+       |                    ^
+    226|     expect(crash.analysisFor("crash-1")).toBe(first);
+    227|     expect(crash.analyzingId).toBeNull();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 219 passed (220)
+      Tests  1 failed | 2297 passed (2298)
+   Start at  19:42:45
+   Duration  82.57s (environment 63%, import 16%, transform 13%, tests 7%, worker 2%)
+
+Environment  happy-dom was created 220 times · 563.59s total, 63% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+
+D:\源代码\工程项目\个人站点\wowsp-wt-crash\packages\webui:
+[ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL] @wowsp/webui@0.6.7 test: `vitest run "--" "--run" "src/components/settings/sections/CrashSection.test.tsx" "src/stores/crash.test.ts" "src/components/layout/GameCrashToast.test.tsx"`
+Exit status 1

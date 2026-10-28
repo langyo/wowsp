@@ -58,13 +58,18 @@ export const useCrashStore = defineStore("crash", () => {
   const quarantineBusy = ref(new Set<string>());
 
   /** Analysis results cache, per record id (analyze is heavy IO; one pass
-   *  per record per session unless the section forces a refresh). Plain
-   *  Map on purpose — never rendered directly. */
+   *  per record per session unless the section forces a refresh). A plain
+   *  Map on purpose — the cached payloads are plain IPC data whose
+   *  identity callers rely on; reactivity rides the version ref instead. */
   const analyses = new Map<string, CrashAnalysis>();
+  /** Bumped on every cache fill so analysisFor-based computeds re-run —
+   *  without it the section's pane would sit on its spinner forever. */
+  const analysesVersion = ref(0);
 
   /** Cached analysis for one record, or undefined (the section renders
    *  its own empty/pass state then). */
   function analysisFor(id: string): CrashAnalysis | undefined {
+    void analysesVersion.value;
     return analyses.get(id);
   }
 
@@ -153,6 +158,7 @@ export const useCrashStore = defineStore("crash", () => {
     try {
       const analysis = await api.analyzeGameCrash(id);
       analyses.set(id, analysis);
+      analysesVersion.value += 1;
       return analysis;
     } finally {
       analyzingId.value = null;

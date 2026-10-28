@@ -10,7 +10,7 @@ import AppearanceSection from "@/components/settings/sections/AppearanceSection"
 import CloseBehaviorSection from "@/components/settings/sections/CloseBehaviorSection";
 import StatsSection from "@/components/settings/sections/StatsSection";
 import GamePathSection from "@/components/settings/sections/GamePathSection";
-import CrashSection from "@/components/settings/CrashSection";
+import CrashSection from "@/components/settings/sections/CrashSection";
 import AccountSection from "@/components/settings/sections/AccountSection";
 import NetworkSection from "@/components/settings/sections/NetworkSection";
 import MarkersSection from "@/components/settings/sections/MarkersSection";
