@@ -53,6 +53,12 @@ function css(rgb: { r: number; g: number; b: number }): string {
   return `rgb(${rgb.r} ${rgb.g} ${rgb.b})`;
 }
 
+/** The auto-mode merged run, hoisted (the panel's own AUTO_MERGE_KEYS
+ *  rationale): a fresh array literal per render would re-fire HkTabs'
+ *  mergeKeys watcher — one redundant geometry refresh per altitude
+ *  tick — on every render in solar mode. */
+const AUTO_MERGE_KEYS = ["light", "dark"];
+
 export default defineComponent({
   name: "SettingsAppearanceSection",
   props: {
@@ -132,7 +138,7 @@ export default defineComponent({
               onUpdate:modelValue={(v: string) => {
                 setThemeModePreference(tabKeyToPreference(v));
               }}
-              mergeKeys={themeModePreference.value === "solar" ? ["light", "dark"] : undefined}
+              mergeKeys={themeModePreference.value === "solar" ? AUTO_MERGE_KEYS : undefined}
               tabs={[
                 { key: "system", label: t("settings.themeModeAuto"), icon: <Monitor size={16} /> },
                 { key: "light", label: t("settings.themeModeLight"), icon: <Sun size={16} /> },
