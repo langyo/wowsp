@@ -178,13 +178,12 @@ def featurize_slot(slot: dict | None, ver: int = 1) -> list[float]:
     ]
 
 
-def featurize_row(row: dict, ver: int = 1) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, float | None]:
-    """One exported JSON row -> (entity[SLOTS, ENTITY_DIM], global[GLOBAL_DIM],
-    mask[SLOTS], labelA, labelB). `labelB` is the PLAIN fire label (float for
-    E15 soft rows); the hit/soft variants are pulled off the raw row by
-    `load_datasets`."""
+def entity_matrix_and_mask(row: dict, ver: int = 1) -> tuple[np.ndarray, np.ndarray]:
+    """One exported JSON row's entity block: `[SLOTS, ENTITY_DIM]` slot
+    features + the `[SLOTS]` padding mask (E16 extraction — shared with
+    train_move_model's loader; enemies then friends, truncated to their
+    slot budgets)."""
     entity_dim = ENTITY_DIM_V1 if ver == 1 else ENTITY_DIM_V2
-    global_dim = GLOBAL_DIM_V1 if ver == 1 else GLOBAL_DIM_V2
     entities: list[dict | None] = list(row["enemies"])[:ENEMY_SLOTS]
     entities += list(row["friends"])[:FRIEND_SLOTS]
     entity = np.zeros((SLOTS, entity_dim), dtype=np.float32)
@@ -192,6 +191,13 @@ def featurize_row(row: dict, ver: int = 1) -> tuple[np.ndarray, np.ndarray, np.n
     for i, slot in enumerate(entities):
         entity[i] = featurize_slot(slot, ver)
         mask[i] = 1.0
+    return entity, mask
+
+
+def global_vector(row: dict, ver: int = 1) -> np.ndarray:
+    """One exported JSON row's global feature block (`[GLOBAL_DIM]` — v1 14
+    dims, v2 +13 pre-normalized E14 dims; E16 extraction shared with
+    train_move_model's loader)."""
     own_speed = row.get("ownSpeedKt")
     g = np.array(
         [
@@ -238,6 +244,16 @@ def featurize_row(row: dict, ver: int = 1) -> tuple[np.ndarray, np.ndarray, np.n
                 ),
             ]
         )
+    return g
+
+
+def featurize_row(row: dict, ver: int = 1) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, float | None]:
+    """One exported JSON row -> (entity[SLOTS, ENTITY_DIM], global[GLOBAL_DIM],
+    mask[SLOTS], labelA, labelB). `labelB` is the PLAIN fire label (float for
+    E15 soft rows); the hit/soft variants are pulled off the raw row by
+    `load_datasets`."""
+    entity, mask = entity_matrix_and_mask(row, ver)
+    g = global_vector(row, ver)
     label_a = int(row["labelACanFire"])
     fired = row.get("labelBFired")
     label_b = None if fired is None else float(fired)
