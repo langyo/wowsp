@@ -6,10 +6,13 @@ import { defineConfig, type Plugin } from "vite";
 
 import UnoCSS from "unocss/vite";
 
-// Explicit `.ts` extension: Vite's config loader warns about extensionless
-// imports of local modules (the planned `configLoader: 'native'` route cannot
-// resolve them, and CI logs the warning on every build).
-import { bootChromePluginsFor, WEBUI_PAGES } from "./src/bootChrome.ts";
+// NO file extension on purpose: `vite.config.ts` belongs to the composite
+// `tsconfig.node.json` projection, where a `.ts`-suffixed import needs
+// `allowImportingTsExtensions` (impossible next to `composite`'s emit
+// requirements) and trips TS5097/TS6307. The trade-off is Vite's forward-compat
+// notice about extensionless local imports (its future `configLoader: 'native'`
+// route cannot resolve them) — accepted and recorded in the PR.
+import { bootChromePluginsFor, WEBUI_PAGES } from "./src/bootChrome";
 
 function readPkgVersion(pkgDir: string): string {
   try {
@@ -32,6 +35,11 @@ const mockTarget = process.env.WOWSP_MOCK_URL || 'http://localhost:8787';
 // the offline gameparams pack in dist so they embed into the APK's assets;
 // every other build prunes both (see pruneBakedGlb / pruneGameparams).
 const mobileBundle = process.env.WOWSP_MOBILE_BUNDLE === '1';
+
+// Two build routes produce an Android bundle: the justfile recipes above
+// (WOWSP_MOBILE_BUNDLE=1) and Tauri's own `tauri android` pipeline, which
+// exports TAURI_ENV_PLATFORM=android to the frontend build.
+const androidBundle = mobileBundle || process.env.TAURI_ENV_PLATFORM === 'android';
 
 // hikari imports highlight.js through its CJS `lib/` deep paths. With hikari
 // excluded from optimizeDeps those files are served raw in dev, and a raw CJS
@@ -271,12 +279,14 @@ export default defineConfig({
     // frameless window stays closable even when the app hangs; it removes
     // itself when AppTitleBar (hikari HkTitleBar) mounts and claims the window.
     // `bootChrome.ts` owns the page table: ONLY index.html is an app window —
-    // the four overlay pages are transparent windows over the game — and the
-    // bar is DESKTOP-ONLY. WOWSP_MOBILE_BUNDLE=1 builds the APK inside a phone
-    // shell that owns its own window (tao's Android minimize/maximize are
-    // no-ops, and AppTitleBar hides the caption buttons when isMobileApp()),
-    // so injecting the three-button bar there would paint dead chrome.
-    ...bootChromePluginsFor(mobileBundle),
+    // every other page is a shell-managed window (the transparent game overlays
+    // and the fixed tray panel) — and the bar is DESKTOP-ONLY. Android builds
+    // (BOTH routes: WOWSP_MOBILE_BUNDLE=1 and Tauri's TAURI_ENV_PLATFORM=android)
+    // run inside a phone shell that owns its own window (tao's Android
+    // minimize/maximize are no-ops, and AppTitleBar hides the caption buttons
+    // when isMobileApp()), so injecting the three-button bar there would paint
+    // dead chrome.
+    ...bootChromePluginsFor(androidBundle),
     // @vitejs/plugin-vue-jsx (rolldown-vite mode) injects
     // optimizeDeps.rolldownOptions.transform.jsx = "preserve" so the
     // dep-scanner keeps JSX in its transform output. The scanner's

@@ -9,10 +9,10 @@ import type { Plugin } from "vite";
  * and `vite.config.ts` derives BOTH `build.rollupOptions.input` and the
  * boot-chrome plugin list from it. Keeping the table here lets
  * `src/bootChrome.test.ts` (a) catch a new page that was added to the package
- * but never classified as app window / overlay, (b) exercise the bar against
- * the really-installed hikari plugin, and (c) assert — with a source-level
- * guard — that `vite.config.ts` actually consumes this list instead of a stale
- * copy.
+ * but never classified as app window / shell-managed window, (b) exercise the
+ * bar against the really-installed hikari plugin, and (c) assert — with a
+ * source-level guard — that `vite.config.ts` actually consumes this list
+ * instead of a stale copy.
  *
  * The bar itself is hikari's `res/boot-chrome.js`: it draws minimize /
  * maximize / close before this bundle exists, then removes itself as soon as
@@ -20,7 +20,8 @@ import type { Plugin } from "vite";
  * window with `hk:chrome-claim` — no WoWSP component change needed.
  *
  * The plugin deliberately warns once per skipped entry; on this repository that
- * is EXPECTED output (four pages are skipped on purpose), not a misconfig.
+ * is EXPECTED output (the four shell-managed windows are skipped on purpose),
+ * not a misconfig.
  */
 
 /** One HTML entry this package builds. */
@@ -31,9 +32,10 @@ export interface WebuiPage {
   html: string;
   /**
    * Is this a real app window — the only kind the pre-boot bar may be
-   * injected into? `false` = a transparent, click-through window the Rust side
-   * positions over the game: a caption bar painted inside one of those is a
-   * 32 px strip floating over the game.
+   * injected into? `false` = a shell-managed window: one of the transparent,
+   * click-through pages the Rust side positions over the game, or the fixed
+   * tray panel. The app does not paint a caption bar in those (a 32 px strip
+   * floating over the game, or a bar on a window the shell itself owns).
    */
   bootChrome: boolean;
 }
@@ -66,9 +68,9 @@ export const BOOT_CHROME_HTML_FILES: string[] = WEBUI_PAGES.filter(
 export function wowspBootChrome(): Plugin {
   return bootChromePlugin({
     title: "WoWSP",
-    // Only the app windows from the table above. Listing a transparent overlay
-    // here puts a caption bar inside that window, so a new page must be a
-    // conscious decision.
+    // Only the app windows from the table above. Listing a shell-managed window
+    // (transparent overlay or tray panel) here puts a caption bar inside it, so
+    // a new page must be a conscious decision.
     htmlFiles: [...BOOT_CHROME_HTML_FILES],
   });
 }

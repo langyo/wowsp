@@ -16,17 +16,19 @@ import {
  * The pre-boot window bar is a MULTI-WINDOW contract in this repository.
  *
  * `rollupOptions.input` builds five pages. Only `index.html` is an app window;
- * `overlay.html` / `aimcard.html` / `chat.html` / `tray.html` are transparent,
- * click-through windows the Rust side positions over the game. hikari's
+ * the other four are shell-managed windows — `overlay.html` / `aimcard.html` /
+ * `chat.html` are transparent, click-through pages the Rust side positions over
+ * the game, and `tray.html` is the fixed tray panel. hikari's
  * `bootChromePlugin` therefore has to be told exactly which entries are app
- * windows — a caption bar injected into one of the four overlays is a 32 px
- * strip floating over the game — and the Android bundle (`WOWSP_MOBILE_BUNDLE=1`)
- * must get NONE of them, because that shell owns its own window.
+ * windows — a caption bar injected into one of those is a 32 px strip floating
+ * over the game or a bar on a window the shell owns — and every Android bundle
+ * (`WOWSP_MOBILE_BUNDLE=1` or Tauri's `TAURI_ENV_PLATFORM=android`) must get
+ * NONE of them, because that shell owns its own window.
  *
  * These tests exercise the REAL installed hikari plugin through the same
  * factory `vite.config.ts` uses, and they read `vite.config.ts` to prove the
  * factory is actually wired in: deleting the registration line or dropping the
- * mobile gate must fail here, not only in a manual build-diff review.
+ * Android gate must fail here, not only in a manual build-diff review.
  */
 
 const PKG_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -126,9 +128,11 @@ describe("platform gate (desktop vs Android bundle)", () => {
   });
 
   it("registers NOTHING on the Android bundle", () => {
-    // WOWSP_MOBILE_BUNDLE=1: the phone shell owns the window (tao's Android
-    // minimize/maximize are no-ops and AppTitleBar hides the caption buttons),
-    // so the desktop three-button bar would be dead chrome over the app.
+    // Both Android routes collapse into the same gate: WOWSP_MOBILE_BUNDLE=1
+    // (justfile) and TAURI_ENV_PLATFORM=android (tauri android). The shell owns
+    // the window there (tao's Android minimize/maximize are no-ops and
+    // AppTitleBar hides the caption buttons), so the desktop three-button bar
+    // would be dead chrome over the app.
     expect(bootChromePluginsFor(true)).toEqual([]);
   });
 });
@@ -140,7 +144,7 @@ describe("the registered bar", () => {
       if (page.bootChrome) {
         expect(tags, `${page.html} is the app window`).toHaveLength(1);
       } else {
-        expect(tags, `${page.html} is a transparent window — no caption bar`).toHaveLength(0);
+        expect(tags, `${page.html} is shell-managed — no caption bar`).toHaveLength(0);
       }
     }
   });
@@ -203,26 +207,30 @@ describe("vite.config.ts wiring (source-level guard)", () => {
     throw new Error("unbalanced plugins array in vite.config.ts");
   }
 
-  it("registers the bar through the mobile-gated factory, exactly once", () => {
+  it("registers the bar through the Android-gated factory, exactly once", () => {
     const region = pluginsRegion();
     const registration = region
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.startsWith("...bootChromePluginsFor("));
 
-    // Deleting this spread, or dropping the `mobileBundle` argument, fails
+    // Deleting this spread, or dropping the `androidBundle` argument, fails
     // here — the false-green hole this test exists to close.
-    expect(registration).toEqual(["...bootChromePluginsFor(mobileBundle),"]);
+    expect(registration).toEqual(["...bootChromePluginsFor(androidBundle),"]);
 
     // Registering the bar directly (the old unconditional `wowspBootChrome()`
     // line) would bypass the Android gate; the factory is the only entry point.
     expect(region).not.toMatch(/\bwowspBootChrome\s*\(/);
   });
 
-  it("imports the factory from the page-table module, extension included", () => {
-    // `.ts` is explicit: Vite warns about extensionless local imports (its
-    // future native config loader cannot resolve them).
-    expect(source).toContain('from "./src/bootChrome.ts"');
+  it("imports the factory from the page-table module, without an extension", () => {
+    // Extensionless ON PURPOSE: the `.ts` suffix needs
+    // `allowImportingTsExtensions` (incompatible with the composite
+    // `tsconfig.node.json` projection — TS5097/TS6307), so that spelling would
+    // break the tsconfig projection to silence a forward-compat notice. The
+    // notice is accepted instead; this assertion pins the decision (it fails
+    // for the `.ts` spelling, which would not match the exact line).
+    expect(source).toContain('from "./src/bootChrome";');
     expect(source).toContain("bootChromePluginsFor");
     expect(source).toContain("WEBUI_PAGES");
   });
@@ -237,9 +245,15 @@ describe("vite.config.ts wiring (source-level guard)", () => {
     );
   });
 
-  it("feeds the gate from the Android-bundle environment flag", () => {
+  it("feeds the gate from BOTH Android build signals", () => {
+    // The APK bundle (justfile) ...
     expect(source).toMatch(
       /const mobileBundle = process\.env\.WOWSP_MOBILE_BUNDLE === ['"]1['"]/,
+    );
+    // ... and Tauri's own `tauri android` pipeline, which exports
+    // TAURI_ENV_PLATFORM=android to the frontend build.
+    expect(source).toMatch(
+      /const androidBundle = mobileBundle \|\| process\.env\.TAURI_ENV_PLATFORM === ['"]android['"]/,
     );
   });
 });
