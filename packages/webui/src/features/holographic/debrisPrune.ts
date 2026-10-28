@@ -20,6 +20,7 @@
  * reason `isPropellerMesh` does here: at the baked LOD a screw hangs behind
  * the stern with no shaft geometry left to connect it, so the contact test
  * reads every screw as detached (the rule ate three of Izumo's four props).
+ * The two classifiers must agree name-for-name.
  *
  * Call it on the WELDED geometry, before `computeSmoothNormals`: the prune
  * rewrites index buffers, and the normals must be built from what renders.
@@ -74,8 +75,8 @@ export const DEBRIS_PRUNE_LIMITS: DebrisPruneLimits = {
   microExtentTriangleCap: 200,
 };
 
-/** Propeller meshes are semantic placements — the game's own `MP_*Propeller*`
- *  skeleton nodes, named `propeller[_<digits>]` by the bake — never debris.
+/** Propeller meshes are semantic placements — the game's propeller-labeled
+ *  nodes, baked as `propeller[_<digits>]` parts — never debris.
  *  The needle rule still applies to them; only the detached-fragment rule
  *  skips them. Keep in sync with `_is_propeller_part` in bake_model.py. */
 function isPropellerMesh(name: string): boolean {

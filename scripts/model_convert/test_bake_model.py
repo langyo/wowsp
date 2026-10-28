@@ -322,6 +322,14 @@ def test_is_propeller_part_matches_the_bake_naming() -> None:
     assert not _is_propeller_part("hull_body")
     assert not _is_propeller_part("propellers_extra")
     assert not _is_propeller_part("propeller_shaft")
+    # The prefix guard must be real: these would slice to "_<digits>" if the
+    # predicate only tested the suffix, silently desyncing the viewer's
+    # isPropellerMesh (which does check the prefix) from the bake.
+    assert not _is_propeller_part("hull_body_0")
+    assert not _is_propeller_part("Propeller_5")
+    # The instance suffix is ASCII digits — the viewer's \d agrees on nothing else.
+    assert not _is_propeller_part("propeller_\u00b2")
+    assert not _is_propeller_part("propeller_\u0661\u0662")
 
 
 def test_cull_keeps_detached_propeller_placements_but_culls_detached_misc() -> None:
@@ -351,3 +359,17 @@ def test_cull_does_not_count_a_protected_only_group() -> None:
     assert {name for name, _, _ in out} == {"hull_body", "propeller_7"}
     assert stats["fragments"] == 0
     assert stats["fragment_tris"] == 0
+
+
+def test_cull_still_needle_culls_a_propeller_part() -> None:
+    # The exemption covers the detached-fragment rule only: a collapsed sliver
+    # named like a propeller is junk like any other and goes as a needle.
+    hull = _box_part("hull_body", (0.0, 0.0, 0.0), size=10.0)
+    needle = (
+        "propeller_9",
+        [0.0, 0.0, 0.0, 2.0, 0.02, 0.3, 1.9, 0.019, 0.31],
+        [0, 1, 2],
+    )
+    out, stats = cull_floating_artifacts([hull, needle])
+    assert {name for name, _, _ in out} == {"hull_body"}
+    assert stats["needles"] == 1 and stats["needle_tris"] == 1

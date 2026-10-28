@@ -886,12 +886,19 @@ def _is_propeller_part(name: str) -> bool:
     """Whether a baked part name is a semantic propeller placement.
 
     Instance parts are named `<category>_<instance>`; a propeller's category
-    comes from the game's own `MP_*Propeller*` skeleton-node names, so the
-    prefix is an authoritative semantic label, not a shape heuristic. The
-    instance suffix is always digits (a mount-slot number or a node index),
-    so `propeller_shaft`-style names stay outside the exemption."""
+    comes from `_classify_node`, which reads the game's propeller-labeled
+    skeleton nodes (`MP_*Propeller*` mounts and any node whose name mentions
+    "propeller"/"prop_"), so the prefix is semantic naming from the game,
+    not a shape heuristic. The
+    instance suffix is always ASCII digits (a mount-slot number or a node
+    index), so `propeller_shaft`-style names stay outside the exemption.
+    Must stay character-for-character in sync with `isPropellerMesh` in the
+    viewer's `debrisPrune.ts` — the whole point is that the bake and the
+    viewer classify identically."""
+    if not name.startswith("propeller"):
+        return False
     stem = name[len("propeller"):]
-    return name == "propeller" or (stem.startswith("_") and stem[1:].isdigit())
+    return stem == "" or (stem.startswith("_") and stem[1:].isascii() and stem[1:].isdigit())
 
 
 def cull_floating_artifacts(
@@ -902,8 +909,9 @@ def cull_floating_artifacts(
     `parts` is [(name, flat_vertices_xyz, indices)] as handled by `main()`.
     Returns the filtered parts plus a stats dict for the bake log.
 
-    Propeller placements (`propeller[_<instance>]` parts, the game's own
-    `MP_*Propeller*` skeleton nodes) are exempt from the fragment rule: at
+    Propeller placements (`propeller[_<instance>]` parts, classified by
+    `_classify_node` from the game's propeller-labeled skeleton nodes) are
+    exempt from the fragment rule: at
     the baked LOD a screw hangs behind the stern with no shaft geometry left
     to connect it, so the contact test reads every screw as detached — the
     rule dropped three of Izumo's four propellers. The needle rule still
