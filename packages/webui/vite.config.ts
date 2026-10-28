@@ -6,7 +6,10 @@ import { defineConfig, type Plugin } from "vite";
 
 import UnoCSS from "unocss/vite";
 
-import { wowspBootChrome } from "./src/bootChrome";
+// Explicit `.ts` extension: Vite's config loader warns about extensionless
+// imports of local modules (the planned `configLoader: 'native'` route cannot
+// resolve them, and CI logs the warning on every build).
+import { bootChromePluginsFor, WEBUI_PAGES } from "./src/bootChrome.ts";
 
 function readPkgVersion(pkgDir: string): string {
   try {
@@ -17,7 +20,11 @@ function readPkgVersion(pkgDir: string): string {
   }
 }
 
-const pkgDir = resolve(__dirname);
+// `import.meta.dirname` resolves to THIS file's directory in every loader Vite
+// supports (the ESM config bundle rewrites it to the original config path, and
+// the native loader has it natively); `__dirname` does not survive the native
+// route Vite is moving to, and warns on every config load today.
+const pkgDir = import.meta.dirname;
 
 const mockTarget = process.env.WOWSP_MOCK_URL || 'http://localhost:8787';
 
@@ -263,9 +270,13 @@ export default defineConfig({
     // caption buttons from the first frame — before this bundle exists — so a
     // frameless window stays closable even when the app hangs; it removes
     // itself when AppTitleBar (hikari HkTitleBar) mounts and claims the window.
-    // `bootChrome.ts` owns the entry list: ONLY index.html is an app window —
-    // the four overlay pages are transparent windows over the game.
-    wowspBootChrome(),
+    // `bootChrome.ts` owns the page table: ONLY index.html is an app window —
+    // the four overlay pages are transparent windows over the game — and the
+    // bar is DESKTOP-ONLY. WOWSP_MOBILE_BUNDLE=1 builds the APK inside a phone
+    // shell that owns its own window (tao's Android minimize/maximize are
+    // no-ops, and AppTitleBar hides the caption buttons when isMobileApp()),
+    // so injecting the three-button bar there would paint dead chrome.
+    ...bootChromePluginsFor(mobileBundle),
     // @vitejs/plugin-vue-jsx (rolldown-vite mode) injects
     // optimizeDeps.rolldownOptions.transform.jsx = "preserve" so the
     // dep-scanner keeps JSX in its transform output. The scanner's
@@ -321,22 +332,20 @@ export default defineConfig({
     emptyOutDir: false,
     target: 'es2020',
     rollupOptions: {
-      // Five entries: the main shell (Vue app), the three pre-rendered
-      // overlay pages (bare DOM) the Rust watcher loads — the Tab-table
-      // window (src/overlay/main.ts), the crosshair aim card
-      // (src/overlay/aimcard.ts) and the battle-chat translation card
-      // (src/overlay/chat.ts) — and the tray panel (mini Vue app) the tray
-      // left click loads — see src/tray/main.ts. (The manual-locate
-      // drag-box picker used to be an extra entry rendered in a dedicated
-      // window; it now lives inside the main app as
-      // features/replay/ManualLocateOverlay.)
-      input: {
-        main: resolve(pkgDir, "index.html"),
-        overlay: resolve(pkgDir, "overlay.html"),
-        aimcard: resolve(pkgDir, "aimcard.html"),
-        chat: resolve(pkgDir, "chat.html"),
-        tray: resolve(pkgDir, "tray.html"),
-      },
+      // Five entries, DERIVED from WEBUI_PAGES (src/bootChrome.ts) — the same
+      // table the pre-boot bar's htmlFiles comes from, so a page cannot be
+      // added to the build without also classifying it as app window/overlay:
+      // the main shell (Vue app), the three pre-rendered overlay pages (bare
+      // DOM) the Rust watcher loads — the Tab-table window
+      // (src/overlay/main.ts), the crosshair aim card (src/overlay/aimcard.ts)
+      // and the battle-chat translation card (src/overlay/chat.ts) — and the
+      // tray panel (mini Vue app) the tray left click loads — see
+      // src/tray/main.ts. (The manual-locate drag-box picker used to be an
+      // extra entry rendered in a dedicated window; it now lives inside the
+      // main app as features/replay/ManualLocateOverlay.)
+      input: Object.fromEntries(
+        WEBUI_PAGES.map((page): [string, string] => [page.entry, resolve(pkgDir, page.html)]),
+      ),
       output: {
         manualChunks: vendorChunks,
       },
