@@ -256,6 +256,7 @@
   "changelogFailed": "Échec du chargement des notes de mise à jour.",
   "changelogRefresh": "Actualiser",
   "changelogCurrent": "Actuelle",
+  "changelogI18nFallback": "Les notes de cette version ne sont pas encore disponibles dans votre langue — la version anglaise est affichée.",
   "feedback": "Retours",
   "feedbackHint": "L'application conserve un journal de diagnostic tournant (UTF-8) à joindre lors d'un signalement.",
   "feedbackRefresh": "Actualiser",

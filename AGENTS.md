@@ -84,7 +84,9 @@ of improvising a launch.
   (gitmoji + one-line summary) plus the PR description form the complete
   change history; filter `git log` at any granularity.
 - Release notes are written on **git tags + the GitHub Releases page** (one
-  entry per release), never in tracked files.
+  entry per release), never in tracked files. This includes their i18n
+  scaffold and translations (§10): those live as sections of the release
+  body itself, never as tracked files.
 - No CHANGELOG file exists in the repo; do not create one. If a changelog
   reference reappears in the PR template / workflows, remove it in the PR
   that touches it.
@@ -345,7 +347,8 @@ Before submitting, the relevant subset of `just lint` (or scoped
    dedup).
 4. CI structure (`.github/workflows/`):
    - `ci.yml` — web (ubuntu: typecheck / unit tests / lint / website,
-     console and webui builds / rpc parity / i18n / docs check / in-game
+     console and webui builds / rpc parity / i18n / release-notes i18n
+     self-test + live lint / docs check / in-game
      probe / npm audit), rust (windows: fmt / clippy / anyhow policy /
      check / portable check / workspace tests), deny (cargo-deny native
      binary: advisories / licenses / sources), relay (wasm32 check +
@@ -370,3 +373,48 @@ Before submitting, the relevant subset of `just lint` (or scoped
 3. Download scripts should support resumable transfers / content-addressed
    caching to avoid repeated full fetches. (In this repo this mainly
    concerns `scripts/fetch_models.py` for model downloads.)
+
+## 10. Release Notes i18n (mandatory)
+
+Every `v*` app release body carries the i18n scaffold: a `<!-- wowsp:i18n
+v1 -->` header, the en-US section expanded (`<details open>`), and one
+collapsed `<details>` per remaining supported UI locale. GitHub web shows
+English first with the other languages collapsed; the app's changelog
+parses the same grammar and renders exactly the user's locale, falling
+back to the en-US original with a hint while a section is still the 🚧
+placeholder. The FORMAT AUTHORITY is `scripts/release_notes_i18n.py` (its
+module docstring defines the grammar; `self-test` carries the fixtures) —
+the webui parser (`packages/webui/src/utils/releaseI18n.ts`) mirrors it,
+and both fixture suites must stay in agreement. The scaffold is written
+by the Release workflow's `notes-i18n` job right after publish; that job
+edits ONLY the release body.
+
+- **Notes still live only on the GitHub Releases page (§2)**: translations
+  travel as files OUTSIDE the git tree and land in the release body
+  through the script — never as tracked repository files.
+- **Post-release duty (every agent, after every `v*` release)**: run
+  `python scripts/release_notes_i18n.py show`; fill every pending locale —
+  user-supplied translations land verbatim first, the rest are translated
+  from the en-US section (translate headings and prose; PR titles, PR
+  links, URLs and the `**Full Changelog**` URL stay verbatim; use
+  `glossary` for consistent category headings). Apply each with
+  `python scripts/release_notes_i18n.py set --tag <tag> --lang <locale>
+  --file <file> --apply`; `just notes-lint` must pass afterwards, and
+  `python scripts/release_notes_i18n.py issue-sync` refreshes (or closes)
+  the rolling tracking issue.
+- **Format constraints are CI-enforced (hard)**: ci.yml runs the grammar
+  self-test and the live `lint` over the published bodies. Structural
+  violations — broken delimiters/markers, raw HTML in the seven
+  translations (legacy en-US markup is a warning only), markdown
+  outside the renderer's subset, dropped en-US URLs — FAIL CI and must be
+  fixed before merge. Untranslated sections are NOT failures (canonical
+  placeholders are allowed and tracked); legacy unscaffolded releases
+  warn until backfilled.
+- **Backfill**: legacy releases without the scaffold are backfilled with
+  the same tooling (`wrap --apply`, then `set` per locale) until `lint`
+  reports no legacy body.
+- **Authorization boundary**: agents may edit ONLY the release `body`,
+  and only through this script. Title, tag, assets, draft/published state
+  and deletion stay reserved to the maintainer; tag pushes remain
+  user-only (§4). Patch serially — one writer at a time (the script
+  verifies every write by re-read).

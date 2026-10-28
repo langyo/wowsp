@@ -256,6 +256,7 @@
   "changelogFailed": "No se pudo cargar el historial de cambios.",
   "changelogRefresh": "Actualizar",
   "changelogCurrent": "Actual",
+  "changelogI18nFallback": "Las notas de esta versión aún no están disponibles en tu idioma; se muestra la versión en inglés.",
   "feedback": "Comentarios",
   "feedbackHint": "La aplicación mantiene un registro de diagnóstico rotativo (UTF-8) para adjuntar al informar de problemas.",
   "feedbackRefresh": "Actualizar",

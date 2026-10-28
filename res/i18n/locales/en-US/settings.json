@@ -256,6 +256,7 @@
   "changelogFailed": "Failed to load the changelog.",
   "changelogRefresh": "Refresh",
   "changelogCurrent": "Current",
+  "changelogI18nFallback": "Release notes for your language aren't available yet — showing the English original.",
   "feedback": "Feedback",
   "feedbackHint": "The app keeps a rolling diagnostics log (UTF-8) to attach when reporting issues.",
   "feedbackRefresh": "Refresh",
