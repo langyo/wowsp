@@ -503,6 +503,16 @@
     "testInputPayload": "結構化輸入（使用者內容）",
     "testResponsePayload": "結構化回傳",
     "testNoResult": "還沒有結果——先點擊「翻譯」。",
-    "translateTestFailed": "翻譯測試失敗：{msg}"
+    "translateTestFailed": "翻譯測試失敗：{msg}",
+    "providerPreset": "服務商",
+    "providerPresetCustom": "自訂",
+    "modelPreset": "模型",
+    "modelPresetCustom": "自訂模型",
+    "advancedParams": "進階參數",
+    "advancedHint": "除非服務商要求，否則無需調整。",
+    "registryLoading": "正在載入服務商目錄…",
+    "registryFailed": "服務商目錄載入失敗；仍可手動填寫下方欄位。",
+    "registryRefresh": "重新整理服務商目錄",
+    "registryStale": "重新整理失敗——目前顯示快取的服務商清單。請檢查網路後重試。"
   }
 }

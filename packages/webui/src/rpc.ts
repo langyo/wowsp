@@ -149,6 +149,7 @@ export const RPC = {
   get_chat_translate_config: "get_chat_translate_config",
   set_chat_translate_config: "set_chat_translate_config",
   test_chat_translate_provider: "test_chat_translate_provider",
+  get_chat_provider_registry: "get_chat_provider_registry",
   debug_translate_text: "debug_translate_text",
   ingame_plugin_status: "ingame_plugin_status",
   // Probe-sourced ally ship builds (commands/ingame_plugin.rs): the cross-root

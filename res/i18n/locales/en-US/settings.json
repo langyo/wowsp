@@ -503,6 +503,16 @@
     "testInputPayload": "Structured input (user payload)",
     "testResponsePayload": "Structured response",
     "testNoResult": "No result yet — press Translate.",
-    "translateTestFailed": "Translation test failed: {msg}"
+    "translateTestFailed": "Translation test failed: {msg}",
+    "providerPreset": "Service provider",
+    "providerPresetCustom": "Custom",
+    "modelPreset": "Model",
+    "modelPresetCustom": "Custom model",
+    "advancedParams": "Advanced parameters",
+    "advancedHint": "Only adjust these if your provider asks for a specific value.",
+    "registryLoading": "Loading the provider catalog…",
+    "registryFailed": "Could not load the provider catalog; the fields below still work.",
+    "registryRefresh": "Refresh provider catalog",
+    "registryStale": "Could not refresh — showing the cached provider list. Check your network and try again."
   }
 }

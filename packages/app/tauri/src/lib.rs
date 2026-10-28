@@ -627,6 +627,9 @@ pub fn run() {
             commands::chat_translate::set_chat_translate_config,
             commands::chat_translate::test_chat_translate_provider,
             commands::chat_translate::debug_translate_text,
+            // Shared provider/model catalog from the companion
+            // langyo/provider-registry repo (cached tarball; settings presets).
+            commands::chat_translate::registry::get_chat_provider_registry,
             commands::game_config::get_game_config,
             commands::game_config::set_game_config,
             commands::game_config::add_replay_dir,
