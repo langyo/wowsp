@@ -19,6 +19,11 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    /* Never shrink below the full content: the status block hangs in a 0×0
+       label slot (see HolographicMap.scss), so shrink-to-fit sizes it to
+       min-content — without this floor a flex child could be squeezed below
+       what it actually renders and spill out of the row. */
+    min-width: max-content;
     padding: 2px 4px;
     background: var(--holo-hud-bg);
     border: 1px solid var(--holo-hud-border);
@@ -119,10 +124,17 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    padding: 1px 5px;
-    border-radius: 4px;
+    /* The damage capsule never participates in flex shrinking: its number
+       is the one horizontally-reading element here, and a squeezed pill
+       used to let "-2,173" walk out of its own box (the 0×0 slot sizes the
+       block to min-content — see the row note above). */
+    flex: none;
+    padding: 1px 7px;
+    /* Capsule silhouette: separates the damage readout from the square
+       status tiles around it. */
+    border-radius: var(--radius-full);
     border: 1px solid var(--holo-hud-border);
-    background: rgba(0, 0, 0, 0.35);
+    background: rgba(0, 0, 0, 0.45);
   }
 
   &__hit-img {
@@ -133,9 +145,16 @@
   }
 
   &__dmg {
-    font-size: 9px;
+    font-size: 10px;
     line-height: 1;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
+    /* The whole number is one unbreakable token: without nowrap the
+       intrinsic measurement splits after the hyphen and min-content sizing
+       fits the capsule to "2,173" only — the rendered "-2,173" then spills
+       out of it. The seconds line carries the same guard for the same
+       reason. */
+    white-space: nowrap;
     color: #ff8f8f;
   }
 
