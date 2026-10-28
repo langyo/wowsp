@@ -98,6 +98,12 @@ $marker-purple: #a855f7;
     &--purple {
       background: $marker-purple;
     }
+
+    /* The import wizard's never-importable category (正面) — muted ink,
+     * none of the three mark colors. */
+    &--off {
+      background: rgb(var(--color-muted) / 55%);
+    }
   }
 
   &__entry-name {
@@ -149,19 +155,12 @@ $marker-purple: #a855f7;
     flex: none;
   }
 
-  /* Add dialog body. */
+  /* Add dialog body — hosts the tab strip plus one of the two faces. */
   &__add {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
     margin: 0.25rem 0;
-  }
-
-  &__add-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
   }
 
   &__add-input {
@@ -172,5 +171,216 @@ $marker-purple: #a855f7;
   &__add-actions {
     display: flex;
     justify-content: flex-end;
+  }
+
+  /* ── 精准搜索 face: realm select + name + lookup over the form ──── */
+  &__search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__search-realm {
+    flex: none;
+    width: 5.25rem;
+  }
+
+  &__search-btn {
+    flex: none;
+  }
+
+  /* The staged lookup result — exactly what the add button will store. */
+  &__staged {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, rgb(var(--color-primary)) 8%, rgb(var(--color-surface)));
+    font-size: 0.92em;
+  }
+
+  &__staged-label {
+    flex: none;
+    opacity: 0.7;
+  }
+
+  &__staged-name {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  &__staged-id {
+    flex: none;
+    margin-left: auto;
+    opacity: 0.55;
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: 0.85em;
+    opacity: 0.65;
+  }
+
+  &__miss {
+    margin: 0;
+    font-size: 0.88em;
+    color: rgb(var(--color-warning, 238 214 119));
+  }
+
+  /* ── 从海猴雷达导入 face: the migration wizard ────────────────────── */
+  &__wizard {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0.25rem 0;
+  }
+
+  &__wizard-intro {
+    margin: 0;
+    font-size: 0.9em;
+    opacity: 0.75;
+  }
+
+  &__wizard-status {
+    margin: 0;
+    font-size: 0.9em;
+    opacity: 0.8;
+  }
+
+  &__wizard-notfound {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+
+    > p {
+      flex: 1 1 auto;
+      margin: 0;
+    }
+  }
+
+  &__wizard-browse {
+    flex: none;
+  }
+
+  &__wizard-error {
+    margin: 0;
+    font-size: 0.88em;
+    color: $marker-red;
+    overflow-wrap: anywhere;
+  }
+
+  &__wizard-path {
+    margin: 0;
+    font-size: 0.85em;
+    opacity: 0.65;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__wizard-cats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  &__wizard-cats-title {
+    font-size: 0.9em;
+    opacity: 0.75;
+  }
+
+  &__wizard-cat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+
+    &--disabled {
+      opacity: 0.55;
+    }
+  }
+
+  &__wizard-cat-name {
+    flex: none;
+  }
+
+  &__wizard-cat-hint {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.85em;
+    opacity: 0.75;
+  }
+
+  &__wizard-preview-title {
+    margin: 0;
+    font-size: 0.9em;
+    opacity: 0.8;
+  }
+
+  &__wizard-list {
+    height: 11rem;
+    border: 1px solid rgb(var(--color-border) / 25%);
+    border-radius: var(--radius-sm);
+  }
+
+  &__wizard-list-inner {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__wizard-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.28rem 0.5rem;
+
+    & + & {
+      border-top: 1px solid rgb(128 128 128 / 18%);
+    }
+  }
+
+  &__wizard-row-server {
+    flex: none;
+    min-width: 4ch;
+    font-size: 0.78em;
+    opacity: 0.6;
+  }
+
+  &__wizard-row-name {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__wizard-row-status {
+    flex: none;
+    margin-left: auto;
+    font-size: 0.82em;
+    opacity: 0.7;
+  }
+
+  &__wizard-row-badge {
+    flex: none;
+    padding: 0.02rem 0.4rem;
+    border: 1px solid rgb(var(--color-primary) / 30%);
+    border-radius: 999px;
+    color: rgb(var(--color-primary));
+    font-size: 0.78em;
+  }
+
+  &__wizard-empty {
+    margin: 0;
+    font-size: 0.9em;
+    opacity: 0.7;
   }
 }

@@ -1,7 +1,11 @@
 /** Player markers settings section (玩家标记): ONE list — add/remove local
  *  colored markers (red = 消极作战, yellow = 疑似作弊, purple = 隐藏高手)
  *  and review them. The add form collapses into a top-right "+" button
- *  opening a dialog; the search box collapses into a search icon with a
+ *  opening a tabbed dialog — 精准搜索 (the classic form plus a realm
+ *  select + lookup that resolves the account id, rename-proof) and
+ *  从海猴雷达导入 (migrate ApeRadar's watch list into markers,
+ *  desktop only — the phone build hides the tab and keeps the search
+ *  face). The search box collapses into a search icon with a
  *  popover; a filter icon hosts the multi-select color group (all players
  *  + the three marks; nothing picked falls back to all). Rows carry the
  *  same configured stat columns as the live roster (the stats prefs own
@@ -17,9 +21,12 @@ import {
   HkModal,
   HkPopover,
   HkScrollContainer,
+  HkSelect,
   HkSettingsGroup,
   HkSettingsHint,
+  HkSwitch,
   HkTabs,
+  HkTag,
   useToast,
 } from "@celestia-island/hikari";
 import { Filter, Plus, Search, X } from "@lucide/vue";
@@ -27,8 +34,10 @@ import { Filter, Plus, Search, X } from "@lucide/vue";
 import { t } from "@/i18n";
 import { MARKER_COLORS, useMarkersStore } from "@/stores/markers";
 import { useAccountStore } from "@/stores/account";
+import { useStatsStore } from "@/stores/stats";
 import { prAlgoForRequest, useStatsPrefsStore, type OverlayColumnMetric } from "@/stores/statsPrefs";
-import type { MarkerColor, MarkerEntry } from "@/api";
+import { api } from "@/api";
+import type { ApeRadarWatchList, MarkerColor, MarkerEntry } from "@/api";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
 import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
 import {
@@ -45,7 +54,9 @@ import {
 import { scopedRosterView } from "@/utils/shipStatsScope";
 import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
+import { buildApeRadarPreview, rowsToImportItems } from "@/features/markers/aperadarImport";
 import { isAiName } from "@/utils/aiNames";
+import { isMobileApp } from "@/utils/platform";
 import "./MarkersSection.scss";
 
 /** The color tabs, in the store's list order. */
@@ -108,10 +119,18 @@ export default defineComponent({
     void store.ensureLoaded();
     const prefs = useStatsPrefsStore();
     const account = useAccountStore();
+    const stats = useStatsStore();
     const toast = useToast();
 
-    // ── add dialog ────────────────────────────────────────────────────
+    // The import wizard is desktop-only: 海猴雷达 is a Windows tool, and
+    // the phone build has neither the default-location scan nor the
+    // native file picker. On the phone the dialog renders the
+    // exact-search body alone (no tab strip at all).
+    const mobileApp = isMobileApp();
+
+    // ── add dialog (tabbed: 精准搜索 / 从海猴雷达导入) ──────────────────
     const addOpen = ref(false);
+    const addTab = ref<"search" | "import">("search");
     const nameInput = ref("");
     const noteInput = ref("");
     const color = ref<MarkerColor>("red");
@@ -121,18 +140,194 @@ export default defineComponent({
       return MARKER_COLORS.map((key) => ({ key, label: colorLabel(key) }));
     }
 
+    /** The dialog's top tab group — desktop shows both faces, the phone
+     *  hides the strip entirely (see mobileApp above). */
+    function addTabs() {
+      if (mobileApp) return [];
+      return [
+        { key: "search", label: t("settings.markersAddTabSearch") },
+        { key: "import", label: t("settings.markersAddTabImport") },
+      ];
+    }
+
+    // ── exact search (精准搜索): realm + lookup resolve the account id ──
+    const SEARCH_REALMS = ["ru", "eu", "na", "asia", "cn"];
+    const searchRealm = ref(account.activeRealm || "asia");
+    const searching = ref(false);
+    /** Player resolved by the lookup, staged for the add button (the
+     *  preview row below the inputs shows exactly what it will store). */
+    const staged = ref<{ nickname: string; accountId: number; realm: string } | null>(null);
+    /** The last lookup found nothing — the add still works by typed name. */
+    const searchMiss = ref(false);
+
+    /** Bumped by every event that invalidates a lookup in flight: a new
+     *  query, a realm switch, the dialog being reopened. doSearch stamps
+     *  its attempt with the value it took at launch and drops the result
+     *  when the counter has moved on (mirrors the account binder's
+     *  seq-guard in AccountManagerContent). */
+    let searchSeq = 0;
+
+    function invalidateStaged(): void {
+      searchSeq++;
+      staged.value = null;
+      searchMiss.value = false;
+    }
+
+    /** Floor under the search button's busy state (ms) — a lookup the
+     *  stats cache answers in a couple of frames would flip the ring off
+     *  in the same frame that painted it, reading as no reaction (see
+     *  AccountManagerContent's SEARCH_BUSY_FLOOR_MS for the report). */
+    const SEARCH_BUSY_FLOOR_MS = 400;
+
+    /** Lookup-only step: resolve the nickname on the selected realm and
+     *  stage it (the account binder's search without the bind). */
+    async function doSearch(): Promise<void> {
+      const name = nameInput.value.trim();
+      if (!name || searching.value) return;
+      const realm = searchRealm.value;
+      const seq = ++searchSeq;
+      const startedAt = Date.now();
+      searching.value = true;
+      searchMiss.value = false;
+      // Any new query invalidates the previously staged preview (a failed
+      // re-search must not leave the old player staged).
+      staged.value = null;
+      try {
+        // force: an explicit query must re-pull from the WG API — the
+        // documented rule for user-driven lookups (same as the binder).
+        const result = await stats.lookup(name, realm, { force: true });
+        if (seq !== searchSeq) return;
+        staged.value = { nickname: result.name, accountId: result.accountId, realm };
+      } catch {
+        if (seq !== searchSeq) return;
+        // Miss or lookup failure — markersSearchMiss covers both; the
+        // add button still works by the typed nickname (accountId null).
+        searchMiss.value = true;
+      } finally {
+        // Hold the ring to the floor before clearing the busy state (see
+        // SEARCH_BUSY_FLOOR_MS). Clearing unconditionally is safe because
+        // doSearch refuses to start while searching is set.
+        const remaining = SEARCH_BUSY_FLOOR_MS - (Date.now() - startedAt);
+        if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+        searching.value = false;
+      }
+    }
+
     async function addMarker(): Promise<void> {
-      const nickname = nameInput.value.trim();
-      if (!nickname || adding.value) return;
+      const typed = nameInput.value.trim();
+      if (!typed || adding.value) return;
       adding.value = true;
       try {
-        await store.add(nickname, color.value, noteInput.value.trim() || null);
+        // Staged → the resolved canonical nickname + account id
+        // (rename-proof); miss / no search → the typed nickname exactly
+        // as before, accountId null.
+        const stagedPlayer = staged.value;
+        await store.add(
+          stagedPlayer?.nickname ?? typed,
+          color.value,
+          noteInput.value.trim() || null,
+          stagedPlayer?.accountId ?? null,
+        );
         nameInput.value = "";
         noteInput.value = "";
+        invalidateStaged();
         addOpen.value = false;
       } finally {
         adding.value = false;
       }
+    }
+
+    // ── import wizard (从海猴雷达导入) — desktop only ──────────────────
+    type ImportState = "idle" | "scanning" | "notfound" | "found";
+    const importState = ref<ImportState>("idle");
+    const importList = ref<ApeRadarWatchList | null>(null);
+    /** Inline read/scan failure — the raw anyhow message from the IPC. */
+    const importError = ref<string | null>(null);
+    const importNegtive = ref(true);
+    const importCheater = ref(true);
+    const importing = ref(false);
+
+    /** The default-location scan fires on the FIRST activation of the
+     *  import tab (a tab-switch watch, never the modal's open of the
+     *  search tab); later visits reuse what it found. */
+    watch(addTab, (tab) => {
+      if (tab === "import" && importState.value === "idle") void scanImport();
+    });
+
+    async function scanImport(): Promise<void> {
+      importState.value = "scanning";
+      importError.value = null;
+      try {
+        const found = await api.aperadarScan();
+        if (found == null) {
+          importState.value = "notfound";
+          return;
+        }
+        importList.value = found;
+        importState.value = "found";
+      } catch (e) {
+        // The scan itself failed — surface the message on the read-error
+        // line and offer the manual picker (the notfound face).
+        importError.value = (e as Error).message;
+        importState.value = "notfound";
+      }
+    }
+
+    /** Manual browse: native picker → parse the picked file. A cancelled
+     *  pick (null) leaves the wizard exactly where it was. */
+    async function browseImport(): Promise<void> {
+      try {
+        const path = await api.aperadarPick();
+        if (path == null) return;
+        importError.value = null;
+        importList.value = await api.aperadarRead(path);
+        importState.value = "found";
+      } catch (e) {
+        importError.value = (e as Error).message;
+      }
+    }
+
+    /** The wizard's preview, rebuilt whenever a category toggles or the
+     *  markers store changes (a concurrent add flips the exists badge). */
+    const importPreview = computed(() => {
+      const list = importList.value;
+      if (!list) return null;
+      return buildApeRadarPreview(
+        list,
+        { negtive: importNegtive.value, cheater: importCheater.value },
+        store.entries.map((entry) => entry.nickname),
+      );
+    });
+
+    async function runImport(): Promise<void> {
+      const preview = importPreview.value;
+      if (!preview || preview.rows.length === 0 || importing.value) return;
+      importing.value = true;
+      try {
+        const result = await store.importBatch(rowsToImportItems(preview.rows));
+        toast.show(
+          t("settings.markersImportDone", {
+            added: result.added,
+            updated: result.updated,
+            skipped: result.skipped,
+          }),
+          { type: "success" },
+        );
+        addOpen.value = false;
+      } catch (e) {
+        toast.show((e as Error).message, { type: "error" });
+      } finally {
+        importing.value = false;
+      }
+    }
+
+    /** Open the add dialog from the toolbar's "+" — start from the search
+     *  face with a clean slate (no stale preview / miss from a previous
+     *  visit; the wizard's scanned list survives across visits). */
+    function openAdd(): void {
+      invalidateStaged();
+      addTab.value = "search";
+      addOpen.value = true;
     }
 
     // ── search (icon + popover) ───────────────────────────────────────
@@ -287,6 +482,221 @@ export default defineComponent({
         (st, scope) => viewOf(st, scope),
       ) as unknown as VNode[];
 
+    /** The 精准搜索 face: realm select + name + lookup row over the
+     *  classic note input, staged preview and color tabs. */
+    function renderSearchTab(): VNode {
+      const stagedPlayer = staged.value;
+      return (
+        <>
+          <div class="markers-section__search-row">
+            <HkSelect
+              class="markers-section__search-realm"
+              modelValue={searchRealm.value}
+              onUpdate:modelValue={(v: string) => {
+                searchRealm.value = v;
+                // The staged preview belongs to the realm it was found
+                // on — drop it (and any attempt in flight) rather than
+                // pair one realm's id with another realm's label.
+                invalidateStaged();
+              }}
+              options={SEARCH_REALMS.map((r) => ({ value: r, label: r.toUpperCase() }))}
+            />
+            <div class="markers-section__add-input">
+              <HkInput
+                modelValue={nameInput.value}
+                onUpdate:modelValue={(v: string) => {
+                  nameInput.value = v;
+                  // Editing the name invalidates the staged preview.
+                  invalidateStaged();
+                }}
+                placeholder={t("settings.markersNamePlaceholder")}
+                submitOnEnter={() => void doSearch()}
+              />
+            </div>
+            <HkButton
+              class="markers-section__search-btn"
+              size="sm"
+              loading={searching.value}
+              disabled={!nameInput.value.trim()}
+              onClick={() => void doSearch()}
+            >
+              {t("settings.markersSearchBtn")}
+            </HkButton>
+          </div>
+          <div class="markers-section__add-input">
+            <HkInput
+              modelValue={noteInput.value}
+              onUpdate:modelValue={(v: string) => (noteInput.value = v)}
+              placeholder={t("settings.markersNotePlaceholder")}
+              submitOnEnter={() => void addMarker()}
+            />
+          </div>
+          {stagedPlayer ? (
+            /* The resolved player — exactly what the add button will
+             *  store: canonical nickname + account id + realm tag. */
+            <div class="markers-section__staged">
+              <span class="markers-section__staged-label">{t("settings.markersSearchFound")}</span>
+              <span class={["markers-section__staged-name", markerTintClass(color.value)]}>
+                {stagedPlayer.nickname}
+              </span>
+              <span class="markers-section__staged-id">{stagedPlayer.accountId}</span>
+              <HkTag variant="default" size="sm">
+                {stagedPlayer.realm.toUpperCase()}
+              </HkTag>
+            </div>
+          ) : searchMiss.value ? (
+            <p class="markers-section__miss">{t("settings.markersSearchMiss")}</p>
+          ) : (
+            <p class="markers-section__hint">{t("settings.markersSearchHint")}</p>
+          )}
+          <HkTabs
+            block
+            variant="segmented"
+            modelValue={color.value}
+            onUpdate:modelValue={(v: string) => (color.value = v as MarkerColor)}
+            tabs={colorTabs()}
+          />
+          <div class="markers-section__add-actions">
+            <HkButton
+              size="sm"
+              disabled={!nameInput.value.trim() || adding.value}
+              onClick={() => void addMarker()}
+            >
+              {t("settings.markersAdd")}
+            </HkButton>
+          </div>
+        </>
+      );
+    }
+
+    /** The 从海猴雷达导入 face: scan/browse → the parsed list, category
+     *  switches (Positive always disabled) and the scrollable preview. */
+    function renderImportTab(): VNode {
+      const preview = importPreview.value;
+      return (
+        <div class="markers-section__wizard">
+          <p class="markers-section__wizard-intro">{t("settings.markersImportIntro")}</p>
+          {importState.value === "scanning" ? (
+            <p class="markers-section__wizard-status">{t("settings.markersImportScanning")}</p>
+          ) : null}
+          {importState.value === "notfound" ? (
+            <div class="markers-section__wizard-notfound">
+              <p class="markers-section__wizard-status">{t("settings.markersImportNotFound")}</p>
+              <HkButton
+                class="markers-section__wizard-browse"
+                size="sm"
+                onClick={() => void browseImport()}
+              >
+                {t("settings.markersImportBrowse")}
+              </HkButton>
+            </div>
+          ) : null}
+          {importError.value ? (
+            <p class="markers-section__wizard-error">
+              {t("settings.markersImportReadError")}: {importError.value}
+            </p>
+          ) : null}
+          {importList.value ? (
+            <>
+              <p class="markers-section__wizard-path" title={importList.value.path}>
+                {t("settings.markersImportFoundAt", { path: importList.value.path })}
+              </p>
+              <div class="markers-section__wizard-cats">
+                <span class="markers-section__wizard-cats-title">
+                  {t("settings.markersImportStatusTitle")}
+                </span>
+                <div class="markers-section__wizard-cat">
+                  <span class="markers-section__dot markers-section__dot--red" />
+                  <span class="markers-section__wizard-cat-name">
+                    {t("settings.markersImportStatusNegtive")}
+                  </span>
+                  <HkSwitch
+                    size="sm"
+                    color="danger"
+                    modelValue={importNegtive.value}
+                    onUpdate:modelValue={(v: boolean) => (importNegtive.value = v)}
+                  />
+                </div>
+                <div class="markers-section__wizard-cat">
+                  <span class="markers-section__dot markers-section__dot--yellow" />
+                  <span class="markers-section__wizard-cat-name">
+                    {t("settings.markersImportStatusCheater")}
+                  </span>
+                  <HkSwitch
+                    size="sm"
+                    color="warning"
+                    modelValue={importCheater.value}
+                    onUpdate:modelValue={(v: boolean) => (importCheater.value = v)}
+                  />
+                </div>
+                {/* Positive: WoWSP has no positive mark — the row shows
+                 *  why and never switches on. */}
+                <div class="markers-section__wizard-cat markers-section__wizard-cat--disabled">
+                  <span class="markers-section__dot markers-section__dot--off" />
+                  <span class="markers-section__wizard-cat-name">
+                    {t("settings.markersImportStatusPositive")}
+                  </span>
+                  <span
+                    class="markers-section__wizard-cat-hint"
+                    title={t("settings.markersImportPositiveHint")}
+                  >
+                    {t("settings.markersImportPositiveHint")}
+                  </span>
+                  <HkSwitch size="sm" disabled modelValue={false} onUpdate:modelValue={() => {}} />
+                </div>
+              </div>
+              {preview && preview.rows.length > 0 ? (
+                <>
+                  <p class="markers-section__wizard-preview-title">
+                    {t("settings.markersImportPreviewTitle", { n: preview.counts.total })}
+                  </p>
+                  <HkScrollContainer class="markers-section__wizard-list">
+                    <div class="markers-section__wizard-list-inner">
+                      {preview.rows.map((row) => (
+                        <div
+                          class="markers-section__wizard-row"
+                          key={`${row.server}:${row.nickname}`}
+                        >
+                          <span class="markers-section__wizard-row-server">{row.server}</span>
+                          <span
+                            class={["markers-section__wizard-row-name", markerTintClass(row.color)]}
+                          >
+                            {row.nickname}
+                          </span>
+                          {row.exists ? (
+                            <span class="markers-section__wizard-row-badge">
+                              {t("settings.markersImportExists")}
+                            </span>
+                          ) : null}
+                          <span class="markers-section__wizard-row-status">
+                            {row.color === "red"
+                              ? t("settings.markersImportStatusNegtive")
+                              : t("settings.markersImportStatusCheater")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </HkScrollContainer>
+                </>
+              ) : (
+                <p class="markers-section__wizard-empty">{t("settings.markersImportEmpty")}</p>
+              )}
+              <div class="markers-section__add-actions">
+                <HkButton
+                  size="sm"
+                  loading={importing.value}
+                  disabled={!preview || preview.rows.length === 0 || importing.value}
+                  onClick={() => void runImport()}
+                >
+                  {t("settings.markersImportBtn")}
+                </HkButton>
+              </div>
+            </>
+          ) : null}
+        </div>
+      );
+    }
+
     return () => (
       <HkSettingsGroup title={t("settings.markersTitle")}>
         <HkSettingsHint>{t("settings.markersHint")}</HkSettingsHint>
@@ -350,7 +760,7 @@ export default defineComponent({
             variant="ghost"
             aria-label={t("settings.markersAddTitle")}
             data-hint={t("settings.markersAddTitle")}
-            onClick={() => (addOpen.value = true)}
+            onClick={openAdd}
           >
             <Plus size={15} />
           </HkIconButton>
@@ -404,43 +814,21 @@ export default defineComponent({
           modelValue={addOpen.value}
           onUpdate:modelValue={(v: boolean) => (addOpen.value = v)}
           title={t("settings.markersAddTitle")}
-          width="28rem"
+          width="30rem"
         >
           <div class="markers-section__add">
-            <div class="markers-section__add-row">
-              <div class="markers-section__add-input">
-                <HkInput
-                  modelValue={nameInput.value}
-                  onUpdate:modelValue={(v: string) => (nameInput.value = v)}
-                  placeholder={t("settings.markersNamePlaceholder")}
-                  submitOnEnter={() => void addMarker()}
-                />
-              </div>
-              <div class="markers-section__add-input">
-                <HkInput
-                  modelValue={noteInput.value}
-                  onUpdate:modelValue={(v: string) => (noteInput.value = v)}
-                  placeholder={t("settings.markersNotePlaceholder")}
-                  submitOnEnter={() => void addMarker()}
-                />
-              </div>
-            </div>
-            <HkTabs
-              block
-              variant="segmented"
-              modelValue={color.value}
-              onUpdate:modelValue={(v: string) => (color.value = v as MarkerColor)}
-              tabs={colorTabs()}
-            />
-            <div class="markers-section__add-actions">
-              <HkButton
-                size="sm"
-                disabled={!nameInput.value.trim() || adding.value}
-                onClick={() => void addMarker()}
-              >
-                {t("settings.markersAdd")}
-              </HkButton>
-            </div>
+            {/* Desktop: the two faces behind a segmented tab strip; the
+             *  phone hides the strip and keeps the search face alone. */}
+            {mobileApp ? null : (
+              <HkTabs
+                block
+                variant="segmented"
+                modelValue={addTab.value}
+                onUpdate:modelValue={(v: string) => (addTab.value = v as "search" | "import")}
+                tabs={addTabs()}
+              />
+            )}
+            {addTab.value === "import" && !mobileApp ? renderImportTab() : renderSearchTab()}
           </div>
         </HkModal>
       </HkSettingsGroup>
