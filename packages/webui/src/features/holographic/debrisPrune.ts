@@ -15,7 +15,12 @@
  * Both are measured against the model's own extent: the bake works in per-ship
  * units and the stage only normalizes afterwards. The same thresholds live in
  * `scripts/model_convert/bake_model.py` (`cull_floating_artifacts`) so future
- * bakes never emit the artifacts — keep the two in sync.
+ * bakes never emit the artifacts — keep the two in sync. The bake exempts
+ * semantic propeller placements from the fragment rule there, for the same
+ * reason `isPropellerMesh` does here: at the baked LOD a screw hangs behind
+ * the stern with no shaft geometry left to connect it, so the contact test
+ * reads every screw as detached (the rule ate three of Izumo's four props).
+ * The two classifiers must agree name-for-name.
  *
  * Call it on the WELDED geometry, before `computeSmoothNormals`: the prune
  * rewrites index buffers, and the normals must be built from what renders.
@@ -69,6 +74,16 @@ export const DEBRIS_PRUNE_LIMITS: DebrisPruneLimits = {
   microMaxExtentPct: 0.03,
   microExtentTriangleCap: 200,
 };
+
+/** Propeller meshes are semantic placements — the game's propeller-labeled
+ *  nodes, baked as `propeller[_<digits>]` parts — never debris.
+ *  The needle rule still applies to them; only the detached-fragment rule
+ *  skips them. Keep in sync with `_is_propeller_part` in bake_model.py. */
+function isPropellerMesh(name: string): boolean {
+  if (!name.startsWith("propeller")) return false;
+  const stem = name.slice("propeller".length);
+  return stem === "" || (stem.startsWith("_") && /^\d+$/.test(stem.slice(1)));
+}
 
 export interface DebrisPruneStats {
   /** Triangles dropped as degenerate needles. */
@@ -600,16 +615,26 @@ export function pruneModelDebris(
       group.triangles <= limits.microMaxTriangles ||
       (longest <= limits.microMaxExtentPct * extent && group.triangles <= limits.microExtentTriangleCap);
     if (!micro) continue;
+    // Propeller placements ride along in `members` but are never dropped:
+    // their detachment is a LOD artifact (no shaft geometry at the baked
+    // detail level), not junk. Groups holding nothing else are skipped
+    // entirely so the stats never count a protected-only group.
+    const droppable = group.members.filter(
+      (ci) => !isPropellerMesh(parts[components[ci].part].mesh.name),
+    );
+    if (droppable.length === 0) continue;
     stats.detachedGroups += 1;
-    for (const ci of group.members) {
+    let droppedInGroup = 0;
+    for (const ci of droppable) {
       const comp = components[ci];
       for (const t of comp.triangles) {
         if (drop[comp.part][t]) continue;
         drop[comp.part][t] = 1;
         stats.detachedTriangles += 1;
+        droppedInGroup += 1;
       }
     }
-    recordDropped(parts[components[group.members[0]].part].mesh.name, group.triangles, longest);
+    recordDropped(parts[components[droppable[0]].part].mesh.name, droppedInGroup, longest);
   }
 
   if (stats.needleTriangles + stats.detachedTriangles === 0) return stats;

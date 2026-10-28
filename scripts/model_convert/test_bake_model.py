@@ -22,7 +22,9 @@ import numpy as np
 
 from bake_model import (
     LOD_BBOX_TOL_PCT,
+    _is_propeller_part,
     _lod_structure_scale,
+    cull_floating_artifacts,
     dedup_lod_primitives,
     extract_by_instance,
     _pad4,
@@ -289,3 +291,85 @@ def test_extract_by_instance_dedup_lods_end_to_end() -> None:
     # section — its own bbox) survives beside it.
     assert len(idx) // 3 == 12 + 2
     assert len(verts) // 3 == 8 + 4
+
+
+# ── Detached-fragment cull: the propeller exemption ──────────────────────
+
+
+def _box_part(name: str, center: tuple[float, float, float], size: float = 1.0):
+    """An axis-aligned box as a baked part: 8 verts / 12 tris."""
+    cx, cy, cz = center
+    h = size / 2
+    corners = [
+        (cx - h, cy - h, cz - h), (cx + h, cy - h, cz - h),
+        (cx + h, cy + h, cz - h), (cx - h, cy + h, cz - h),
+        (cx - h, cy - h, cz + h), (cx + h, cy - h, cz + h),
+        (cx + h, cy + h, cz + h), (cx - h, cy + h, cz + h),
+    ]
+    verts = [c for v in corners for c in v]
+    quads = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (2, 3, 7, 6), (1, 2, 6, 5), (0, 4, 7, 3)]
+    faces = []
+    for a, b, c, d in quads:
+        faces += [a, b, c, a, c, d]
+    return name, verts, faces
+
+
+def test_is_propeller_part_matches_the_bake_naming() -> None:
+    assert _is_propeller_part("propeller")
+    assert _is_propeller_part("propeller_485")
+    # A part merely containing the word is not a propeller placement.
+    assert not _is_propeller_part("misc")
+    assert not _is_propeller_part("hull_body")
+    assert not _is_propeller_part("propellers_extra")
+    assert not _is_propeller_part("propeller_shaft")
+    # The prefix guard must be real: these would slice to "_<digits>" if the
+    # predicate only tested the suffix, silently desyncing the viewer's
+    # isPropellerMesh (which does check the prefix) from the bake.
+    assert not _is_propeller_part("hull_body_0")
+    assert not _is_propeller_part("Propeller_5")
+    # The instance suffix is ASCII digits — the viewer's \d agrees on nothing else.
+    assert not _is_propeller_part("propeller_\u00b2")
+    assert not _is_propeller_part("propeller_\u0661\u0662")
+
+
+def test_cull_keeps_detached_propeller_placements_but_culls_detached_misc() -> None:
+    hull = _box_part("hull_body", (0.0, 0.0, 0.0), size=10.0)
+    # A screw hanging 2 units behind the stern — detached from the hull by a
+    # wide margin (contact is 0.5% of the ~14-unit extent), micro by shape
+    # (0.2-unit bbox, 12 tris): the fragment rule's exact prey, yet a
+    # semantic placement the game always renders.
+    prop = _box_part("propeller_485", (0.0, -1.0, 7.0), size=0.2)
+    # An equally detached unnamed fitting goes.
+    junk = _box_part("misc", (3.0, -1.0, -7.0), size=0.2)
+    out, stats = cull_floating_artifacts([hull, prop, junk])
+    names = {name for name, _, _ in out}
+    assert "propeller_485" in names
+    assert "misc" not in names
+    assert stats["fragments"] == 1
+    assert stats["fragment_tris"] == 12
+    # The propeller part passes through with every triangle intact.
+    prop_out = next(part for part in out if part[0] == "propeller_485")
+    assert len(prop_out[2]) == 36
+
+
+def test_cull_does_not_count_a_protected_only_group() -> None:
+    hull = _box_part("hull_body", (0.0, 0.0, 0.0), size=10.0)
+    prop = _box_part("propeller_7", (0.0, -1.0, 7.0), size=0.2)
+    out, stats = cull_floating_artifacts([hull, prop])
+    assert {name for name, _, _ in out} == {"hull_body", "propeller_7"}
+    assert stats["fragments"] == 0
+    assert stats["fragment_tris"] == 0
+
+
+def test_cull_still_needle_culls_a_propeller_part() -> None:
+    # The exemption covers the detached-fragment rule only: a collapsed sliver
+    # named like a propeller is junk like any other and goes as a needle.
+    hull = _box_part("hull_body", (0.0, 0.0, 0.0), size=10.0)
+    needle = (
+        "propeller_9",
+        [0.0, 0.0, 0.0, 2.0, 0.02, 0.3, 1.9, 0.019, 0.31],
+        [0, 1, 2],
+    )
+    out, stats = cull_floating_artifacts([hull, needle])
+    assert {name for name, _, _ in out} == {"hull_body"}
+    assert stats["needles"] == 1 and stats["needle_tris"] == 1

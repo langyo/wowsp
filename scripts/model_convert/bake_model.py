@@ -882,6 +882,25 @@ def _point_triangle_distance2(points: np.ndarray, tri: np.ndarray) -> np.ndarray
     return out
 
 
+def _is_propeller_part(name: str) -> bool:
+    """Whether a baked part name is a semantic propeller placement.
+
+    Instance parts are named `<category>_<instance>`; a propeller's category
+    comes from `_classify_node`, which reads the game's propeller-labeled
+    skeleton nodes (`MP_*Propeller*` mounts and any node whose name mentions
+    "propeller"/"prop_"), so the prefix is semantic naming from the game,
+    not a shape heuristic. The
+    instance suffix is always ASCII digits (a mount-slot number or a node
+    index), so `propeller_shaft`-style names stay outside the exemption.
+    Must stay character-for-character in sync with `isPropellerMesh` in the
+    viewer's `debrisPrune.ts` — the whole point is that the bake and the
+    viewer classify identically."""
+    if not name.startswith("propeller"):
+        return False
+    stem = name[len("propeller"):]
+    return stem == "" or (stem.startswith("_") and stem[1:].isascii() and stem[1:].isdigit())
+
+
 def cull_floating_artifacts(
     parts: list[tuple[str, list[float], list[int]]],
 ) -> tuple[list[tuple[str, list[float], list[int]]], dict]:
@@ -889,6 +908,15 @@ def cull_floating_artifacts(
 
     `parts` is [(name, flat_vertices_xyz, indices)] as handled by `main()`.
     Returns the filtered parts plus a stats dict for the bake log.
+
+    Propeller placements (`propeller[_<instance>]` parts, classified by
+    `_classify_node` from the game's propeller-labeled skeleton nodes) are
+    exempt from the fragment rule: at
+    the baked LOD a screw hangs behind the stern with no shaft geometry left
+    to connect it, so the contact test reads every screw as detached — the
+    rule dropped three of Izumo's four propellers. The needle rule still
+    applies to them (a collapsed prop is junk like any other). Keep the
+    exemption in sync with the viewer's `debrisPrune.ts`.
     """
     if not parts:
         return parts, {"needles": 0, "needle_tris": 0, "fragments": 0, "fragment_tris": 0}
@@ -945,6 +973,10 @@ def cull_floating_artifacts(
                 "max": pts.max(axis=0) if len(pts) else np.zeros(3),
                 "area": area,
             })
+
+    # Semantic propeller placements (see _is_propeller_part) are exempt from
+    # the fragment rule; the needle rule still applies to them.
+    propeller_part = [_is_propeller_part(name) for name, _, _ in parts]
 
     # ── Rule 1 — needle triangles: a long bounding box with no surface left.
     stats = {"needles": 0, "needle_tris": 0, "fragments": 0, "fragment_tris": 0}
@@ -1114,8 +1146,15 @@ def cull_floating_artifacts(
         )
         if not micro:
             continue
+        # Propeller placements ride along in `members` but are never dropped:
+        # their detachment is a LOD artifact (no shaft geometry at the baked
+        # detail level), not junk. Groups holding nothing else are skipped
+        # entirely so the stats never count a protected-only group.
+        droppable = [ci for ci in g["members"] if not propeller_part[comps[ci]["part"]]]
+        if not droppable:
+            continue
         stats["fragments"] += 1
-        for ci in g["members"]:
+        for ci in droppable:
             comp = comps[ci]
             fresh = ~drop[comp["part"]][comp["faces"]]
             stats["fragment_tris"] += int(fresh.sum())
