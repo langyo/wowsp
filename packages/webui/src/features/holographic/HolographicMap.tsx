@@ -2136,6 +2136,7 @@ export default defineComponent({
             showKills={killerRosterIdOf.value != null}
             stats={nameStats.value}
             encyclopedia={props.encyclopedia}
+            shipStatus={ctx.shipStatus}
             shipNameOrder={props.shipNameOrder}
           />
         ) : null}

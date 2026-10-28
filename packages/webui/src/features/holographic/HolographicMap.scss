@@ -1023,11 +1023,16 @@
 }
 
 .holo-roster__col--icon { width: 1.7rem; }
-.holo-roster__col--player { width: 32%; }
-.holo-roster__col--ship { width: 28%; }
+.holo-roster__col--player { width: 28%; }
+/* Tier badge lives in its own fixed-width column (a plain ch share is
+   wide enough for the longest Roman numeral, VIII) — centering the
+   numerals there keeps every ship name starting at the same x, no
+   matter its tier. */
+.holo-roster__col--tier { width: 3ch; }
+.holo-roster__col--ship { width: 24%; }
 .holo-roster__col--kills { width: 3.5ch; }
-/* Status column takes the remainder — sized to hold 沉没于 mm:ss even in
-   the 425px-per-table side-by-side layout. */
+/* Status column takes the remainder — the live chips and 沉没于 mm:ss
+   share it, even in the 425px-per-table side-by-side layout. */
 
 .holo-roster__th {
   text-align: left;
@@ -1039,6 +1044,7 @@
   white-space: nowrap;
 
   &--icon { padding-right: 0; }
+  &--tier { padding-left: 0; padding-right: 0; text-align: center; }
   &--num { text-align: center; }
 }
 
@@ -1050,6 +1056,7 @@
   text-overflow: ellipsis;
 
   &--icon { padding-right: 0; }
+  &--tier { padding-left: 0; padding-right: 0; text-align: center; }
   &--num { text-align: center; font-variant-numeric: tabular-nums; }
 }
 
@@ -1067,9 +1074,9 @@
 }
 
 .holo-roster__tier {
-  margin-right: 0.35rem;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--holo-hud-strong);
+  font-variant-numeric: tabular-nums;
 }
 
 .holo-roster__ship {
@@ -1078,7 +1085,129 @@
 
 .holo-roster__zero { color: var(--holo-hud-dim); opacity: 0.7; }
 
-.holo-roster__afloat { color: var(--holo-hud-dim); }
+/* Alive with nothing happening: a dim dash (the old static 存活 text
+   repeated what the header's alive-count already said). */
+.holo-roster__idle {
+  color: var(--holo-hud-dim);
+  opacity: 0.55;
+}
+
+/* ── Live status chips (the 3D below-hull card, table-sized) ─────────
+   Same game-art icons, tints and draining bars as HoloShipStatus, with
+   the countdown beside the tile instead of below it so every row keeps
+   the table's line height. */
+.holo-roster__st {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.holo-roster__st-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.holo-roster__st-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  overflow: hidden;
+  border-radius: 3px;
+  border: 1px solid var(--holo-hud-border);
+  background: rgba(0, 0, 0, 0.35);
+  /* Tints the draining bar (the game art carries its own colors). */
+  color: rgb(var(--color-primary));
+}
+
+/* Progress bar hugs the tile's bottom edge (flash = full, cooldown =
+   draining, active = effect time left) — same placement as the 3D tiles. */
+.holo-roster__st-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: currentcolor;
+  opacity: 0.9;
+}
+
+.holo-roster__st-img {
+  width: 12px;
+  height: 12px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.holo-roster__st-secs {
+  font-size: var(--text-2xs);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.holo-roster__st-chip.is-cooldown .holo-roster__st-icon {
+  opacity: 0.65;
+}
+
+/* Chip tints — kept in step with HoloShipStatus.scss. */
+.holo-roster__st-chip.is-gun .holo-roster__st-icon {
+  color: #ffcc33;
+}
+
+.holo-roster__st-chip.is-torp .holo-roster__st-icon {
+  color: #7dd3fc;
+}
+
+.holo-roster__st-chip.is-smoke .holo-roster__st-icon {
+  color: #e2e8f0;
+}
+
+.holo-roster__st-chip.is-repair .holo-roster__st-icon {
+  color: #4ade80;
+}
+
+.holo-roster__st-chip.is-fire .holo-roster__st-icon {
+  color: #ff9f43;
+  border-color: rgba(255, 159, 67, 0.45);
+}
+
+.holo-roster__st-chip.is-flood .holo-roster__st-icon {
+  color: #74c0fc;
+  border-color: rgba(116, 192, 252, 0.45);
+}
+
+/* Hit pills: ammo sprite + the damage the impact took. */
+.holo-roster__st-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid var(--holo-hud-border);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.holo-roster__st-hit-img {
+  width: 11px;
+  height: 11px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.holo-roster__st-dmg {
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: #ff8f8f;
+}
+
+.holo-roster__st-hit.is-torpedo .holo-roster__st-dmg {
+  color: #a5d8ff;
+}
 
 .holo-roster__sunk {
   color: #f87171;
