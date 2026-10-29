@@ -23,20 +23,26 @@ export default defineComponent({
       // Keep propagating to the app-level handler as well.
       return true;
     });
-    return () =>
-      error.value ? (
-        <ErrorCard
-          error={error.value}
-          description={t("settings.sectionCrashed")}
-          retry={() => {
-            error.value = "";
-            epoch.value += 1;
-          }}
-        />
-      ) : (
-        <div key={epoch.value} class="settings-section-host">
-          {slots.default?.()}
-        </div>
-      );
+    return () => {
+      if (error.value) {
+        return (
+          <ErrorCard
+            error={error.value}
+            description={t("settings.sectionCrashed")}
+            retry={() => {
+              error.value = "";
+              epoch.value += 1;
+            }}
+          />
+        );
+      }
+      // No wrapper element: the settings pane's scroll and layout chain
+      // expects the section's own root (an extra <div> made the whole
+      // settings body scroll instead of only the pane). Retry needs no
+      // key: the previous vnode was the ErrorCard component, so returning
+      // the slot mounts the section afresh.
+      void epoch.value;
+      return slots.default?.();
+    };
   },
 });
