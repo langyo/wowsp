@@ -46,7 +46,7 @@ Usage:
     Meshopt-compressed packs (the optimize_glbs.py output, extensions
     EXT_meshopt_compression + KHR_mesh_quantization) cannot be parsed here —
     extract world-space positions first and hand them over instead:
-    node scripts/experiments/extract_glb_positions.mjs \
+    node --experimental-strip-types scripts/experiments/extract_glb_positions.ts \
         --glb <map.glb> --out scripts/experiments/out/<map>.positions.npy
     python scripts/experiments/bake_terrain_los.py \
         --glb <map.glb> --positions scripts/experiments/out/<map>.positions.npy \
@@ -576,7 +576,7 @@ def run_bake(
     t0 = time.perf_counter()
 
     if positions is not None:
-        # Pre-extracted world-space vertices (extract_glb_positions.mjs) —
+        # Pre-extracted world-space vertices (extract_glb_positions.ts) —
         # for the meshopt-compressed packs the model pipeline now ships,
         # which the stdlib GLB reader above cannot parse.
         verts = positions
@@ -876,7 +876,7 @@ def main() -> int:
         default=None,
         help=(
             "pre-extracted world-space vertex array (.npy, float32 Nx3) from "
-            "extract_glb_positions.mjs — use INSTEAD of parsing the GLB's "
+            "extract_glb_positions.ts — use INSTEAD of parsing the GLB's "
             "geometry (needed for the meshopt-compressed packs); --glb still "
             "names the map (its stem is the map id for the bounds lookup)"
         ),
