@@ -239,6 +239,26 @@ fn quarantined_twins(game_root: &str) -> Vec<(String, PathBuf)> {
         .collect()
 }
 
+/// Does the tree carry any regular files? A recreated husk (empty, or
+/// empty directories only) answers false; an unreadable tree answers true
+/// (conservative — never delete what we cannot inspect).
+fn tree_has_files(dir: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return true;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if tree_has_files(&path) {
+                return true;
+            }
+        } else {
+            return true;
+        }
+    }
+    false
+}
+
 /// Safe-mode core (split from the command so tests drive it directly).
 /// Returns the new active state.
 pub(crate) fn set_safe_mode_core(game_root: &str, enabled: bool) -> anyhow::Result<bool> {
@@ -263,10 +283,24 @@ pub(crate) fn set_safe_mode_core(game_root: &str, enabled: bool) -> anyhow::Resu
         })?;
     } else {
         if live.exists() && off.exists() {
-            return Err(anyhow!(
-                "both {} and its quarantined copy exist — move the newer one aside manually",
-                live.display()
-            ));
+            // The client recreates an EMPTY res_mods on the next launch
+            // after the quarantine (observed 2026-10-28: safe mode flipped
+            // at 16:50:08, the game rebuilt the folder seconds later) —
+            // that husk is not a real conflict. A live tree carrying
+            // actual files still refuses: merging two real trees is the
+            // user's decision.
+            if tree_has_files(&live) {
+                return Err(anyhow!(
+                    "both {} and its quarantined copy exist — move the newer one aside manually",
+                    live.display()
+                ));
+            }
+            fs::remove_dir_all(&live).map_err(|e| {
+                anyhow!(
+                    "remove the game-recreated {}: {e} (is the game holding it?)",
+                    live.display()
+                )
+            })?;
         }
         if off.is_dir() {
             fs::rename(&off, &live).map_err(|e| anyhow!("restore {}: {e}", live.display()))?;
