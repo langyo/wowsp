@@ -2196,6 +2196,7 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
         .into_iter()
         .collect(),
         aliases: vec!["TeamHP".into()],
+        servers: vec!["cn".into()],
         preview: Some("https://user-images.githubusercontent.com/x/1.jpg".into()),
         supersedes: None,
     };
@@ -2218,6 +2219,7 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
             "description",
             "authors",
             "aliases",
+            "servers",
             "preview",
             "packages",
             "i18n",
@@ -2225,6 +2227,7 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
     );
     assert_eq!(v["i18n"]["zh-CN"]["name"], "zh-name");
     assert_eq!(v["aliases"][0], "TeamHP");
+    assert_eq!(v["servers"][0], "cn");
 }
 
 /// Wire-critical payload of a folded style family: per-scheme media on
@@ -2258,6 +2261,7 @@ fn catalog_entry_serializes_folded_family_media_and_supersedes() {
         packages: Vec::new(),
         i18n: std::collections::HashMap::new(),
         aliases: Vec::new(),
+        servers: Vec::new(),
         preview: None,
         supersedes: Some(
             [("battle.panel.ttaro".to_string(), "ttaro".to_string())]

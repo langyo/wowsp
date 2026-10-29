@@ -291,5 +291,34 @@
   "purgeReinstallChoiceAdopt": "Adoptar también los mods de terceros: sus archivos se conservan y se registran como instalaciones de WoWSP.",
   "purgeReinstallBackupNote": "El árbol anterior se conserva como copia de seguridad en ambos casos.",
   "purgeReinstallOurOnly": "Solo mods de WoWSP",
-  "purgeReinstallAdopt": "Reinstalar y adoptar mods de terceros"
+  "purgeReinstallAdopt": "Reinstalar y adoptar mods de terceros",
+  "servers": {
+    "universal": "Universal",
+    "partial": "Algunos servidores",
+    "exclusive": "Exclusivo",
+    "scopeHint": "Se aplica a: {servers}",
+    "realm": {
+      "ru": "Servidor RU",
+      "eu": "Servidor EU",
+      "na": "Servidor NA",
+      "asia": "Servidor ASIA",
+      "cn": "Servidor CN"
+    }
+  },
+  "sync": {
+    "banner": "Gestión individual: {client}",
+    "toggleLabel": "Sincronización multicliente",
+    "toggleHint": "Con varios clientes detectados: activado, cada instalación/desinstalación del catálogo se aplica a todos (filtrada por servidor aplicable); desactivado, solo se modifica el cliente seleccionado.",
+    "action": "Sincronizar todos los clientes",
+    "confirmTitle": "Sincronizar todos los clientes",
+    "confirmBody": "Los demás clientes detectados adoptarán el conjunto de mods del catálogo de WoWSP de este cliente: se instalarán {installs} mod(s) faltante(s) y se eliminarán {uninstalls} mod(s) extra. Cierra antes todos los clientes del juego en ejecución.",
+    "done": "{count} cliente(s) sincronizado(s).",
+    "partial": "{ok} de {count} clientes sincronizados: {details}",
+    "failed": "Error de sincronización en los {count} clientes: {details}",
+    "skippedByRule": "«{mod}» no se aplica a {client}; se omitió",
+    "skippedRunning": "«{names}» está en ejecución; se omitió. Cierra el juego y vuelve a intentarlo.",
+    "nothingToDo": "Los demás clientes ya coinciden con el conjunto de mods de este cliente.",
+    "noCatalog": "El catálogo en línea no está cargado; actualízalo antes de sincronizar los clientes.",
+    "noLedger": "No se pudo leer el registro de instalaciones; inténtalo de nuevo en un momento."
+  }
 }

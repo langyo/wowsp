@@ -160,6 +160,16 @@ export function kindLabel(kind: ModKind): string {
   return t(`resources.kind.${kind}`);
 }
 
+/** Localized SERVER name for a realm code (俄服 / RU server …) — the
+ *  server-applicability surfaces' label vocabulary; falls back to the
+ *  uppercased code when the locale has no entry (the same sentinel
+ *  contract as texLabel, for a future realm the locales predate). */
+export function realmLabel(realm: string): string {
+  const key = `resources.servers.realm.${realm}`;
+  const label = t(key);
+  return label === key ? realm.toUpperCase() : label;
+}
+
 /** Localized label for a texture-analysis code; falls back to the raw
  *  code when the locale has no entry (unknown nations, exotic dirs). */
 export function texLabel(group: "cat" | "nation" | "species", code: string): string {

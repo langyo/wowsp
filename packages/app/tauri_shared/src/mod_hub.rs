@@ -290,6 +290,15 @@ pub struct CatalogEntry {
     /// pairs. Empty for entries without declared aliases.
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// Server realms this entry applies to, as canonical realm codes
+    /// (`ru` / `eu` / `na` / `asia` / `cn` — `contribution::REALMS`),
+    /// from the discussion's `servers:` front-matter. Empty — like all
+    /// five codes — means universal: the mod applies on every server.
+    /// Consumed for per-client filtering of the mod list (the entry
+    /// never appears under a client whose realm it excludes) and for
+    /// the compressed scope badge on scoped entries.
+    #[serde(default)]
+    pub servers: Vec<String>,
     /// First preview screenshot of the entry (a GitHub user-attachment
     /// URL harvested from the discussion body); `None` when the thread
     /// carries no image.

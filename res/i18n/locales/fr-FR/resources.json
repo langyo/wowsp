@@ -291,5 +291,34 @@
   "purgeReinstallChoiceAdopt": "Adopter aussi les mods tiers — leurs fichiers sont conservés et réenregistrés comme installations WoWSP.",
   "purgeReinstallBackupNote": "L'ancienne arborescence est conservée en sauvegarde dans les deux cas.",
   "purgeReinstallOurOnly": "Mods WoWSP uniquement",
-  "purgeReinstallAdopt": "Réinstaller et adopter les mods tiers"
+  "purgeReinstallAdopt": "Réinstaller et adopter les mods tiers",
+  "servers": {
+    "universal": "Universel",
+    "partial": "Certains serveurs",
+    "exclusive": "Exclusif",
+    "scopeHint": "S'applique à : {servers}",
+    "realm": {
+      "ru": "Serveur RU",
+      "eu": "Serveur EU",
+      "na": "Serveur NA",
+      "asia": "Serveur ASIA",
+      "cn": "Serveur CN"
+    }
+  },
+  "sync": {
+    "banner": "Gestion individuelle : {client}",
+    "toggleLabel": "Synchro multi-clients",
+    "toggleHint": "Quand plusieurs clients sont détectés : activé, chaque installation/suppression du catalogue s'applique à tous (filtrée par serveur applicable) ; désactivé, seul le client sélectionné est modifié.",
+    "action": "Synchroniser tous les clients",
+    "confirmTitle": "Synchroniser tous les clients",
+    "confirmBody": "Les autres clients détectés adopteront l'ensemble de mods du catalogue WoWSP de ce client : {installs} mod(s) manquant(s) installé(s), {uninstalls} mod(s) en trop retiré(s). Fermez d'abord tous les clients de jeu en cours d'exécution.",
+    "done": "{count} client(s) synchronisé(s).",
+    "partial": "{ok} client(s) sur {count} synchronisé(s) : {details}",
+    "failed": "Échec de la synchronisation sur les {count} clients : {details}",
+    "skippedByRule": "« {mod} » ne s'applique pas à {client} — ignoré",
+    "skippedRunning": "« {names} » est en cours d'exécution — ignoré. Fermez le jeu puis réessayez.",
+    "nothingToDo": "Les autres clients correspondent déjà à l'ensemble de mods de ce client.",
+    "noCatalog": "Le catalogue en ligne n'est pas chargé — actualisez-le avant de synchroniser les clients.",
+    "noLedger": "Impossible de lire le registre des installations — réessayez dans un instant."
+  }
 }

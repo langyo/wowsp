@@ -900,6 +900,7 @@ mod tests {
                     "latest": "15.7.0.10",
                     "game": ">=15.7 <15.8",
                     "aliases": ["ShotTimer", "ShotTimerPy"],
+                    "servers": ["ru", "eu", "na", "asia"],
                     "versions": {
                         "15.7.0.10": {
                             "game": ">=15.7 <15.8",
@@ -932,6 +933,7 @@ mod tests {
         assert_eq!(m.i18n.len(), 2, "both locales survive the round-trip");
         assert_eq!(m.i18n["ja-JP"].name, "射撃後タイマー");
         assert_eq!(m.aliases, vec!["ShotTimer", "ShotTimerPy"]);
+        assert_eq!(m.servers, vec!["ru", "eu", "na", "asia"]);
         assert_eq!(
             m.preview.as_deref(),
             Some("https://user-images.githubusercontent.com/x/shot-timer.jpg")

@@ -130,6 +130,18 @@ app's pairing treats them as exact identity, so a raw directory name that
 shares no words with the display name (`TeamHP` vs "Team HP by TTaro")
 still resolves to the right entry.
 
+`servers` (optional, comma-separated) declares WHICH game servers the mod
+applies to, as canonical realm codes — `ru` / `eu` / `na` / `asia` / `cn`
+(the app's `REALMS`). An absent, empty, or all-five list means universal:
+the mod applies everywhere. The scope is entry-level metadata only — the
+CN-server ship-name restoration declares `servers: cn`, while the
+real/romanized ship-name packs and the East-Asia font supplement (built
+for non-Chinese clients) declare `servers: ru, eu, na, asia`. The app
+filters mod lists by the realm of the client selected in the sidebar —
+inapplicable entries simply never appear — and renders a compressed
+scope badge on scoped entries. The curated mapping for republished mods
+lives in `MOD_SERVERS` (`scripts/mod_hub_publish.py`).
+
 `author` (optional) is the mod author's display name and `author_url`
 (optional) their official page. Both live ONLY here — localized display
 names never carry the attribution ("Team Panels", not "Team Panels by

@@ -291,5 +291,34 @@
   "purgeReinstallChoiceAdopt": "타사 MOD도 함께 채택 — 파일을 유지하고 WoWSP 관리 설치로 다시 등록합니다.",
   "purgeReinstallBackupNote": "두 경우 모두 이전 트리는 백업으로 보관됩니다.",
   "purgeReinstallOurOnly": "WoWSP MOD만 재설치",
-  "purgeReinstallAdopt": "재설치하고 타사 MOD 채택"
+  "purgeReinstallAdopt": "재설치하고 타사 MOD 채택",
+  "servers": {
+    "universal": "전 서버 공통",
+    "partial": "일부 서버 전용",
+    "exclusive": "전용",
+    "scopeHint": "적용 서버: {servers}",
+    "realm": {
+      "ru": "러시아 서버",
+      "eu": "유럽 서버",
+      "na": "북미 서버",
+      "asia": "아시아 서버",
+      "cn": "중국 서버"
+    }
+  },
+  "sync": {
+    "banner": "{client} 개별 관리 중",
+    "toggleLabel": "멀티 클라이언트 동기화",
+    "toggleHint": "여러 클라이언트가 감지된 경우: 켜면 카탈로그 MOD 설치/제거가 모든 클라이언트에 동기 적용됩니다(서버 적용성 필터). 끄면 선택한 클라이언트만 작업합니다.",
+    "action": "모든 클라이언트 동기화",
+    "confirmTitle": "모든 클라이언트 동기화",
+    "confirmBody": "감지된 다른 클라이언트를 이 클라이언트의 WoWSP 카탈로그 MOD 구성에 맞춥니다: 누락된 적용 MOD {installs}개를 설치하고 구성에 없는 불필요한 MOD {uninstalls}개를 제거합니다. 먼저 실행 중인 게임 클라이언트를 모두 종료하세요.",
+    "done": "{count}개 클라이언트를 동기화했습니다.",
+    "partial": "{count}개 중 {ok}개 클라이언트를 동기화했습니다: {details}",
+    "failed": "{count}개 클라이언트 모두 동기화에 실패했습니다: {details}",
+    "skippedByRule": "\"{mod}\"은(는) {client}에 적용되지 않아 건너뛰었습니다",
+    "skippedRunning": "\"{names}\"이(가) 실행 중이라 건너뛰었습니다 — 게임을 종료한 후 다시 시도하세요.",
+    "nothingToDo": "다른 클라이언트가 모두 이 클라이언트의 MOD 구성과 일치합니다.",
+    "noCatalog": "온라인 카탈로그가 아직 로드되지 않았습니다 — 동기화 전에 카탈로그를 새로고침하세요.",
+    "noLedger": "설치 기록을 읽지 못했습니다 — 잠시 후 다시 시도하세요."
+  }
 }

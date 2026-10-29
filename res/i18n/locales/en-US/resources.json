@@ -291,5 +291,34 @@
   "purgeReinstallChoiceAdopt": "Also adopt the third-party mods — their files are kept and re-registered as WoWSP-managed installs.",
   "purgeReinstallBackupNote": "The previous tree is kept as a backup either way; nothing is deleted before you have this path.",
   "purgeReinstallOurOnly": "Reinstall WoWSP mods only",
-  "purgeReinstallAdopt": "Reinstall and adopt third-party mods"
+  "purgeReinstallAdopt": "Reinstall and adopt third-party mods",
+  "servers": {
+    "universal": "Universal",
+    "partial": "Some servers",
+    "exclusive": "Exclusive",
+    "scopeHint": "Applies to: {servers}",
+    "realm": {
+      "ru": "RU server",
+      "eu": "EU server",
+      "na": "NA server",
+      "asia": "ASIA server",
+      "cn": "CN server"
+    }
+  },
+  "sync": {
+    "banner": "Managing {client} individually",
+    "toggleLabel": "Multi-client sync",
+    "toggleHint": "With several clients detected: ON applies every catalog install/uninstall to all of them (filtered by server applicability); OFF manages only the selected client.",
+    "action": "Sync all clients",
+    "confirmTitle": "Sync all clients",
+    "confirmBody": "Every other detected client will adopt this client's WoWSP catalog mod set: {installs} missing mod(s) installed, {uninstalls} extra mod(s) removed. Close every running game client first.",
+    "done": "Synced {count} client(s).",
+    "partial": "Synced {ok} of {count} client(s): {details}",
+    "failed": "Sync failed on all {count} client(s): {details}",
+    "skippedByRule": "\"{mod}\" doesn't apply to {client} — skipped",
+    "skippedRunning": "{names} is running — skipped. Close the game and retry.",
+    "nothingToDo": "Every other client already matches this client's mod set.",
+    "noCatalog": "The online catalog is not loaded — refresh it before syncing clients.",
+    "noLedger": "Could not read the install ledger — try again in a moment."
+  }
 }

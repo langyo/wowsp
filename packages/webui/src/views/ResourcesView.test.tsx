@@ -5,11 +5,17 @@ import type { VNode } from "vue";
 import type { InstalledMod, MigrationPlan } from "@/api";
 
 const mocks = vi.hoisted(() => ({
-  config: {} as { activeInstall: { path: string } | null },
+  config: {} as {
+    activeInstall: { path: string; kind?: string; realm?: string | null } | null;
+    installs?: { path: string; kind?: string; realm?: string | null }[];
+  },
   scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), loader: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
   adopt: vi.fn(), uninstall: vi.fn(), error: vi.fn(),
+  success: vi.fn(), warning: vi.fn(), info: vi.fn(),
   migrationPlan: vi.fn(),
   records: vi.fn(), catalog: vi.fn(), preview: vi.fn(),
+  catalogInstall: vi.fn(), catalogUninstall: vi.fn(),
+  syncOn: true,
 }));
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("@/api", () => ({ api: {
@@ -19,13 +25,36 @@ vi.mock("@/api", () => ({ api: {
   modHubMigrationPlan: mocks.migrationPlan,
   modCatalogRefresh: mocks.catalog,
   modCatalogPreviewFiles: mocks.preview,
+  modCatalogInstall: mocks.catalogInstall,
+  modCatalogUninstall: mocks.catalogUninstall,
   modHubRecords: mocks.records, modTags: async () => ({ tags: [] }),
 } }));
 vi.mock("@/stores/config", () => ({ useConfigStore: () => mocks.config }));
 vi.mock("@/stores/gameStatus", () => ({
   useGameStatusStore: () => ({ process: { running: false }, processes: [] }),
 }));
-vi.mock("@/stores/pluginUpdates", () => ({ usePluginUpdatesStore: () => ({ itemBusy: new Map(), syncFreshness: vi.fn() }) }));
+/* The pluginUpdates mock routes the shared run entry points onto the
+ * mocked api commands, so fan-out assertions observe the per-root RPCs
+ * exactly like production does. */
+vi.mock("@/stores/pluginUpdates", () => ({
+  usePluginUpdatesStore: () => ({
+    itemBusy: new Map(),
+    syncFreshness: vi.fn(),
+    runMod: (id: string, root: string, preset?: string) => mocks.catalogInstall(id, root, preset),
+    runModUninstall: (id: string, root: string) => mocks.catalogUninstall(id, root),
+  }),
+}));
+/* The mod-sync preference: a plain getter box (not a vue ref) seeded per
+ * test BEFORE mount — the computeds read it lazily, which is all the
+ * assertions need. */
+vi.mock("@/stores/modSync", () => ({
+  modSyncState: { get value() { return mocks.syncOn; } },
+  useModSyncStore: () => ({
+    syncEnabled: { get value() { return mocks.syncOn; } },
+    setSyncEnabled: (v: boolean) => { mocks.syncOn = v; },
+    toggleSync: () => { mocks.syncOn = !mocks.syncOn; },
+  }),
+}));
 /* The crash-suspect pins ride the crash store; the inventory tests drive
  * scan flows, so the store answers empty (no suspects, nothing pinned). */
 vi.mock("@/stores/crash", () => ({
@@ -45,7 +74,11 @@ vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: 
 vi.mock("@/features/modhub/AssetPreview", () => ({ default: { name: "AssetPreview", render: () => null } }));
 vi.mock("@/components/search/AsyncSearchCombo", () => ({ default: { name: "AsyncSearchCombo", render: () => null } }));
 vi.mock("@celestia-island/hikari", () => {
-  const component = (name: string) => ({ name, props: ["modelValue", "open", "footerActions", "items", "tabs", "src"], render: () => null });
+  const component = (name: string) => ({
+    name,
+    props: ["modelValue", "open", "footerActions", "items", "tabs", "src", "message", "title", "confirmLabel", "loading"],
+    render: () => null,
+  });
   return {
     HkTabs: component("HkTabs"), HkSpinner: component("HkSpinner"), HkButton: component("HkButton"),
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
@@ -63,7 +96,7 @@ vi.mock("@celestia-island/hikari", () => {
         return () => h("div", slots.default?.() ?? []);
       },
     },
-    useToast: () => ({ error: mocks.error, success: vi.fn(), warning: vi.fn(), info: vi.fn() }),
+    useToast: () => ({ error: mocks.error, success: mocks.success, warning: mocks.warning, info: mocks.info }),
   };
 });
 
@@ -96,7 +129,8 @@ async function mountInstalled() {
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.config = reactive({ activeInstall: { path: "C:/TestGameA" } });
+  mocks.syncOn = true;
+  mocks.config = reactive({ activeInstall: { path: "C:/TestGameA" }, installs: [] });
   mocks.scan.mockResolvedValue([mod("Mod A")]);
   mocks.foreign.mockResolvedValue([]);
   mocks.stale.mockResolvedValue([]);
@@ -463,5 +497,224 @@ describe("catalog detail menu", () => {
       "https://github.com/user-attachments/assets/panel-classic.png",
     );
     expect(view.find(".mod-detail__preset-note").exists()).toBe(false);
+  });
+});
+
+describe("server-applicability filtering (left-sidebar client realm)", () => {
+  const catEntry = (id: string, servers?: string[]) => ({
+    id, version: "1", category: "battle", nameEn: id, game: "*",
+    title: id, nameZh: "", description: "",
+    authors: [], packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+    i18n: {}, aliases: [], servers,
+  });
+  const mountOnline = async (mods: unknown[], active: Record<string, unknown>) => {
+    mocks.catalog.mockResolvedValue({ mods, sourceVersion: "test", fetchedAt: "" });
+    mocks.config.activeInstall = active as typeof mocks.config.activeInstall;
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    return view;
+  };
+
+  it("hides entries inapplicable to the active install's realm", async () => {
+    const view = await mountOnline(
+      [catEntry("mod-any"), catEntry("mod-eu", ["eu"])],
+      { kind: "cn360", realm: "cn", path: "C:/TestGameA" },
+    );
+    const rows = view.findAll(".mod-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text()).toContain("mod-any");
+  });
+
+  it("falls back through the kind when the install carries no realm field", async () => {
+    const view = await mountOnline(
+      [catEntry("mod-any"), catEntry("mod-eu", ["eu"])],
+      { kind: "cn360", path: "C:/TestGameA" },
+    );
+    expect(view.findAll(".mod-row")).toHaveLength(1);
+  });
+
+  it("an unknown realm hides nothing (no over-filtering ambiguous clients)", async () => {
+    const view = await mountOnline(
+      [catEntry("mod-any"), catEntry("mod-eu", ["eu"])],
+      { kind: "steam", path: "C:/TestGameA" },
+    );
+    expect(view.findAll(".mod-row")).toHaveLength(2);
+  });
+
+  it("keeps search scoped to the applicable catalog", async () => {
+    const view = await mountOnline(
+      [catEntry("mod-any"), catEntry("mod-eu", ["eu"])],
+      { kind: "cn360", realm: "cn", path: "C:/TestGameA" },
+    );
+    // comboSearch reaches the view as the AsyncSearchCombo mock's search
+    // attr: the eu-only entry must never surface as a cn candidate.
+    const combo = view.getComponent({ name: "AsyncSearchCombo" });
+    const search = (combo.vm.$attrs as { search: (q: string) => Promise<unknown[]> }).search;
+    const hits = (await search("mod")) as { id: string }[];
+    expect(hits.map((h) => h.id)).toEqual(["mod-any"]);
+  });
+});
+
+describe("multi-client sync", () => {
+  const catEntry = (id: string, servers?: string[]) => ({
+    id, version: "1", category: "battle", nameEn: id, game: "*",
+    title: id, nameZh: "", description: "",
+    authors: [], packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+    i18n: {}, aliases: [], servers,
+  });
+  const multiInstallConfig = () => {
+    // Active = the EU steam client (it can SEE an eu/ru-exclusive entry);
+    // the CN client is skipped by rule, the Lesta build (kind fallback →
+    // ru) receives the install too.
+    mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
+    mocks.config.installs = [
+      { kind: "steam", realm: "eu", path: "C:/EU" },
+      { kind: "cn360", realm: "cn", path: "C:/CN" },
+      { kind: "lesta", path: "C:/RU" },
+    ];
+  };
+  const mountWithEntry = async (servers?: string[]) => {
+    mocks.catalog.mockResolvedValue({
+      mods: [catEntry("mod-x", servers)],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    // The pane's install action is the mocked HkButton carrying onClick
+    // in attrs (the mock renders no DOM).
+    const installBtn = view
+      .findAllComponents({ name: "HkButton" })
+      .find((b) => "onClick" in (b.vm.$attrs as Record<string, unknown>))!;
+    (installBtn.vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+    return view;
+  };
+
+  it("fans an install out to every applicable root and skips rule-inapplicable clients", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    multiInstallConfig();
+    await mountWithEntry(["eu", "ru"]);
+    // Active EU client first, the Lesta build (kind fallback → ru) next;
+    // the CN client is skipped by rule (cn ∉ [eu, ru]).
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(2);
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(1, "mod-x", "C:/EU", undefined);
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(2, "mod-x", "C:/RU", undefined);
+    expect(mocks.info).toHaveBeenCalledWith("resources.sync.skippedByRule");
+    expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
+  });
+
+  it("stays single-root while unified sync is off", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    mocks.syncOn = false;
+    multiInstallConfig();
+    await mountWithEntry();
+    // Only the ACTIVE client's root is touched; the per-op toast stays.
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-x", "C:/EU", undefined);
+    expect(mocks.success).toHaveBeenCalledWith("resources.installedDone");
+  });
+
+  it("shows the managing-individually banner only with several clients and sync off", async () => {
+    const mountBanner = async () => {
+      mocks.catalog.mockResolvedValue({
+        mods: [catEntry("mod-x")],
+        sourceVersion: "test",
+        fetchedAt: "",
+      });
+      const view = await shallowMount(ResourcesView, {
+        global: { stubs: { HkScrollContainer: false } },
+      });
+      await flushPromises();
+      return view;
+    };
+    // The modSync mock's state box is read lazily at render time, so each
+    // scenario mounts its own view (no post-mount toggling).
+    mocks.syncOn = false;
+    multiInstallConfig();
+    const individual = await mountBanner();
+    expect(individual.find(".resources-banner--sync").exists()).toBe(true);
+    expect(individual.find(".resources-banner--sync").text()).toContain("resources.sync.banner");
+
+    mocks.syncOn = true;
+    const unified = await mountBanner();
+    expect(unified.find(".resources-banner--sync").exists()).toBe(false);
+
+    mocks.syncOn = false;
+    mocks.config.installs = [mocks.config.installs![0]];
+    const singleClient = await mountBanner();
+    expect(singleClient.find(".resources-banner--sync").exists()).toBe(false);
+  });
+
+  it("reconciles every other client to the active one's ledger set", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
+    mocks.config.installs = [
+      { kind: "steam", realm: "eu", path: "C:/EU" },
+      { kind: "cn360", realm: "cn", path: "C:/CN" },
+    ];
+    mocks.catalog.mockResolvedValue({
+      mods: [catEntry("mod-a"), catEntry("mod-cn", ["cn"]), catEntry("mod-extra")],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    // Active EU client owns mod-a (universal) + mod-cn (CN-exclusive);
+    // the CN client carries only the extra mod.
+    mocks.records.mockResolvedValue([
+      { id: "mod-a", name: "Mod A", version: "1", source: "mod-hub", gameRoot: "C:/EU" },
+      { id: "mod-cn", name: "Mod CN", version: "1", source: "mod-hub", gameRoot: "C:/EU" },
+      { id: "mod-extra", name: "Mod Extra", version: "1", source: "mod-hub", gameRoot: "C:/CN" },
+    ]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "X", binVersion: "1", wroteFiles: 1, warnings: [],
+    });
+    mocks.catalogUninstall.mockResolvedValue({
+      id: "mod-extra", name: "Mod Extra", removedFiles: 1, restoredFiles: 0,
+    });
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    view.findComponent({ name: "HMenu" }).vm.$emit("select", "sync-all");
+    await flushPromises();
+    // The confirm dialog opens with the reconcile summary before any RPC.
+    const dialog = view
+      .findAllComponents({ name: "HkConfirmDialog" })
+      .find((d) => d.props("open") === true)!;
+    expect(dialog.props("message")).toBe("resources.sync.confirmBody");
+    dialog.vm.$emit("confirm");
+    await flushPromises();
+    // CN receives the two missing mods (mod-cn by its realm rule);
+    // its extra mod leaves (removal is realm-agnostic).
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(2);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-a", "C:/CN", undefined);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-cn", "C:/CN", undefined);
+    expect(mocks.catalogUninstall).toHaveBeenCalledWith("mod-extra", "C:/CN");
+    expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
+  });
+
+  it("exposes the sync-all tools entry disabled below two clients", async () => {
+    mocks.catalog.mockResolvedValue({ mods: [catEntry("mod-x")], sourceVersion: "test", fetchedAt: "" });
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    const tools = view.findComponent({ name: "HMenu" });
+    const items = tools.props("items") as { key: string; disabled?: boolean }[];
+    expect(items.find((i) => i.key === "sync-all")?.disabled).toBe(true);
+
+    multiInstallConfig();
+    await flushPromises();
+    const itemsAfter = tools.props("items") as { key: string; disabled?: boolean }[];
+    expect(itemsAfter.find((i) => i.key === "sync-all")?.disabled).toBeFalsy();
   });
 });
