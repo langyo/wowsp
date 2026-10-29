@@ -289,35 +289,37 @@ def load_datasets(paths: list[Path]) -> dict:
         if rp not in seen:
             seen.add(rp)
             unique.append(p)
-    rows: list[dict] = []
-    stems: list[str] = []
+    # Two-pass streaming load (E19 scale): a multi-million-row corpus must
+    # never hold the raw JSON dicts and the feature arrays at the same time.
+    # Pass 1 validates + counts (no dicts retained); pass 2 featurizes
+    # line-by-line straight into the arrays. Small corpora still keep
+    # `rows_meta` (the self-test parity fixtures rely on it).
     file_versions: list[int] = []
-    for path in unique:
-        stem = path.stem
-        with open(path, encoding="utf-8") as f:
-            file_rows = 0
-            ver: int | None = None
+    total_rows = 0
+    for path_ in unique:
+        ver: int | None = None
+        file_rows = 0
+        with open(path_, encoding="utf-8") as f:
             for n, line in enumerate(f, 1):
                 line = line.strip()
-                if line:
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError as e:  # pragma: no cover
-                        raise SystemExit(f"[e12] malformed JSONL at {path}:{n}: {e}") from e
-                    row_ver = int(row.get("featureVersion", 1) or 1)
-                    if ver is None:
-                        ver = row_ver
-                    elif row_ver != ver:
-                        raise SystemExit(
-                            f"[e14] {path} mixes featureVersions {ver} and {row_ver} — "
-                            "one file must come from one export schema"
-                        )
-                    rows.append(row)
-                    stems.append(stem)
-                    file_rows += 1
-            file_versions.append(ver or 1)
-            print(f"[e12] loaded {file_rows:6d} rows (featureVersion {ver or 1}) from {path}")
-    if not rows:
+                if not line:
+                    continue
+                try:
+                    row_ver = int(json.loads(line).get("featureVersion", 1) or 1)
+                except json.JSONDecodeError as e:  # pragma: no cover
+                    raise SystemExit(f"[e12] malformed JSONL at {path_}:{n}: {e}") from e
+                if ver is None:
+                    ver = row_ver
+                elif row_ver != ver:
+                    raise SystemExit(
+                        f"[e14] {path_} mixes featureVersions {ver} and {row_ver} — "
+                        "one file must come from one export schema"
+                    )
+                file_rows += 1
+        file_versions.append(ver or 1)
+        total_rows += file_rows
+        print(f"[e12] counted {file_rows:7d} rows (featureVersion {ver or 1}) from {path_}")
+    if not total_rows:
         if not unique:
             raise SystemExit(
                 "[e12] no dataset files to load (check --data / --data-dir)"
@@ -335,7 +337,8 @@ def load_datasets(paths: list[Path]) -> dict:
     version = file_versions[0]
     entity_dim = ENTITY_DIM_V1 if version == 1 else ENTITY_DIM_V2
     global_dim = GLOBAL_DIM_V1 if version == 1 else GLOBAL_DIM_V2
-    n = len(rows)
+    n = total_rows
+    keep_meta = n < 2_000_000
     data = {
         "feature_version": version,
         "entity_dim": entity_dim,
@@ -355,24 +358,55 @@ def load_datasets(paths: list[Path]) -> dict:
         "group": np.empty((n,), dtype=object),
         "nearest_enemy_dist_m": np.full((n,), np.nan, dtype=np.float32),
         "observed_enemy_count": np.zeros((n,), dtype=np.int32),
+        # E19 low-memory mode: the outcome scalars outcome_lift needs,
+        # pre-extracted so the raw row dicts can be dropped afterwards.
+        "outcome_hits": np.zeros((n,), dtype=np.float64),
+        "outcome_fired": np.zeros((n,), dtype=np.float64),
+        "outcome_hp_lost": np.zeros((n,), dtype=np.float64),
+        "outcome_mode": np.empty((n,), dtype=object),
+        "outcome_version": np.empty((n,), dtype=object),
+        "outcome_rows": 0,
+        "rows_meta": [] if keep_meta else None,
     }
-    for i, row in enumerate(rows):
-        e, g, m, la, lb = featurize_row(row, version)
-        data["entity"][i], data["global"][i], data["mask"][i] = e, g, m
-        data["label_a"][i] = la
-        if lb is not None:
-            data["label_b"][i] = lb
-        hit = row.get("labelBHit")
-        if hit is not None:
-            data["label_b_hit"][i] = float(hit)
-        soft = row.get("labelBSoft")
-        if soft is not None:
-            data["label_b_soft"][i] = float(soft)
-        grp, dist, cnt = row_strat(row, stems[i])
-        data["group"][i] = grp
-        data["nearest_enemy_dist_m"][i] = dist if dist is not None else np.nan
-        data["observed_enemy_count"][i] = cnt
-    data["rows_meta"] = rows
+    rows = data["rows_meta"]
+    pose = 0
+    for path_ in unique:
+        stem = path_.stem
+        with open(path_, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                e, g, m, la, lb = featurize_row(row, version)
+                data["entity"][pose], data["global"][pose], data["mask"][pose] = e, g, m
+                data["label_a"][pose] = la
+                if lb is not None:
+                    data["label_b"][pose] = lb
+                hit = row.get("labelBHit")
+                if hit is not None:
+                    data["label_b_hit"][pose] = float(hit)
+                soft = row.get("labelBSoft")
+                if soft is not None:
+                    data["label_b_soft"][pose] = float(soft)
+                grp, dist, cnt = row_strat(row, stem)
+                data["group"][pose] = grp
+                data["nearest_enemy_dist_m"][pose] = dist if dist is not None else np.nan
+                data["observed_enemy_count"][pose] = cnt
+                h = row.get("ownerShotsHit")
+                fshots = row.get("ownerShotsFired")
+                hp = row.get("enemyHpLostNearby")
+                if h is not None or fshots is not None or hp is not None:
+                    data["outcome_rows"] += 1
+                    data["outcome_hits"][pose] = float(h or 0.0)
+                    data["outcome_fired"][pose] = float(fshots or 0.0)
+                    data["outcome_hp_lost"][pose] = float(hp or 0.0)
+                data["outcome_mode"][pose] = row.get("gameMode")
+                data["outcome_version"][pose] = row.get("replayVersion")
+                if keep_meta:
+                    rows.append(row)
+                pose += 1
+    assert pose == n, f"row count drifted: {pose} != {n}"
     return data
 
 
@@ -454,7 +488,15 @@ def version_matches(version: str | None, prefix: str) -> bool:
 # ── model (research note C first choice) ─────────────────────────────────────
 
 
-def build_model(hidden: int = 320, entity_dim: int = ENTITY_DIM_V1, global_dim: int = GLOBAL_DIM_V1) -> "torch.nn.Module":
+def build_model(
+    hidden: int = 320,
+    entity_dim: int = ENTITY_DIM_V1,
+    global_dim: int = GLOBAL_DIM_V1,
+    moe: int | None = None,
+    moe_gate_hidden: int = 64,
+) -> "torch.nn.Module":
+    if moe:
+        return build_moe_model(hidden, entity_dim, global_dim, experts=moe, gate_hidden=moe_gate_hidden)
     import torch
     import torch.nn as nn
 
@@ -491,6 +533,93 @@ def build_model(hidden: int = 320, entity_dim: int = ENTITY_DIM_V1, global_dim: 
             return self.head_a(agg).squeeze(-1), self.head_b(agg).squeeze(-1)
 
     return TwoHeadDeepSets()
+
+
+# ── E19: soft mixture-of-experts with a front router ─────────────────────────
+# The router reads the EXISTING input contract only (the global feature block
+# already carries the own-ship attribute proxies — main-battery range, reload,
+# consumables, vision/smoke/radar-hydro — plus the pooled raw entity
+# features); no new input tensor, so the ONNX contract and every downstream
+# metric stay unchanged. Experts own their interaction layers + heads on top
+# of the SHARED per-entity encoder; the gate softmaxes over experts and blends
+# the head LOGITS (pre-sigmoid) — the dual-activation model: attribute
+# similarity pulls every similar expert, and a mixed-role ship activates
+# several experts partially instead of snapping to one.
+MOE_DEFAULT_EXPERTS = 4
+MOE_DEFAULT_AUX = 0.01
+MOE_DEFAULT_GATE_HIDDEN = 64
+
+
+def build_moe_model(
+    hidden: int,
+    entity_dim: int,
+    global_dim: int,
+    experts: int = MOE_DEFAULT_EXPERTS,
+    gate_hidden: int = MOE_DEFAULT_GATE_HIDDEN,
+) -> "torch.nn.Module":
+    import torch
+    import torch.nn as nn
+
+    class MoEDeepSets(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.experts_n = experts
+            self.phi = nn.Sequential(  # SHARED per-entity encoder
+                nn.Linear(entity_dim, hidden),
+                nn.ReLU(),
+                nn.Linear(hidden, hidden),
+                nn.ReLU(),
+            )
+            # Router: global attributes + pooled RAW entity stats + pooled
+            # encoded context -> expert weights.
+            self.gate1 = nn.Linear(global_dim + entity_dim + hidden, gate_hidden)
+            self.gate2 = nn.Linear(gate_hidden, experts)
+            self.ctx1 = nn.ModuleList(
+                nn.Linear(hidden + global_dim, hidden) for _ in range(experts)
+            )
+            self.ctx2 = nn.ModuleList(nn.Linear(hidden, hidden) for _ in range(experts))
+            self.head_a = nn.ModuleList(nn.Linear(hidden, 1) for _ in range(experts))
+            self.head_b = nn.ModuleList(nn.Linear(hidden, 1) for _ in range(experts))
+            self.last_gate = None
+
+        def forward(self, entity, global_feat, mask):
+            m = mask.unsqueeze(-1)
+            denom = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+            pooled_raw = (entity * m).sum(dim=1) / denom  # [B, E]
+            h = self.phi(entity)  # [B, S, H]
+            g = global_feat.unsqueeze(1).expand(-1, h.size(1), -1)
+            pooled_h = (h * m).sum(dim=1) / denom  # [B, H]
+            gate_logits = self.gate2(
+                torch.relu(
+                    self.gate1(torch.cat([global_feat, pooled_raw, pooled_h], dim=-1))
+                )
+            )  # [B, K]
+            w = torch.softmax(gate_logits, dim=-1)
+            self.last_gate = w
+            ctx = torch.cat([h, g], dim=-1)
+            agg_a = []
+            agg_b = []
+            for k in range(self.experts_n):
+                hk = torch.relu(self.ctx1[k](ctx))
+                hk = torch.relu(self.ctx2[k](hk))
+                agg = (hk * m).sum(dim=1) / denom
+                agg_a.append(self.head_a[k](agg))
+                agg_b.append(self.head_b[k](agg))
+            weights = [w[:, k : k + 1] for k in range(self.experts_n)]
+            logit_a = sum(wk * a for wk, a in zip(weights, agg_a)).squeeze(-1)
+            logit_b = sum(wk * b for wk, b in zip(weights, agg_b)).squeeze(-1)
+            return logit_a, logit_b
+
+        def gate_balance_loss(self):
+            w = self.last_gate
+            if w is None:
+                return None
+            # Switch-Transformer style: K * sum_k(mean_gate_k^2). Uniform
+            # gates score 1.0; the term only fights expert collapse.
+            share = w.mean(dim=0)
+            return w.size(1) * (share * share).sum()
+
+    return MoEDeepSets()
 
 
 def apply_ablation(data: dict, group: str) -> dict:
@@ -851,6 +980,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "prefix (e.g. '14,5') — rows of every other version are dropped "
             "from both sides (default: train on all non-holdout versions)"
         ),
+    )
+    p.add_argument(
+        "--moe",
+        type=int,
+        default=0,
+        metavar="K",
+        help=(
+            "E19: train a soft mixture-of-experts with a front router over K "
+            "experts (0 = the E9 two-head DeepSets baseline). Router input is "
+            "the existing global feature block + pooled entity stats; the gate "
+            "blends expert head logits (dual partial activation)."
+        ),
+    )
+    p.add_argument(
+        "--moe-aux",
+        type=float,
+        default=MOE_DEFAULT_AUX,
+        help="E19 gate load-balancing auxiliary loss weight (default 0.01)",
+    )
+    p.add_argument(
+        "--moe-gate-hidden",
+        type=int,
+        default=MOE_DEFAULT_GATE_HIDDEN,
+        help="E19 router MLP hidden width (default 64)",
     )
     p.add_argument(
         "--label",
@@ -1294,7 +1447,11 @@ def main(argv: list[str] | None = None) -> int:
     # single --train-version).
     rng = np.random.default_rng(args.seed)
     version_of = np.array(
-        [row_version_prefix(r.get("replayVersion")) for r in data["rows_meta"]], dtype=object
+        (
+            [row_version_prefix(v) for v in data["outcome_version"]]
+            if data["rows_meta"] is None
+            else [row_version_prefix(r.get("replayVersion")) for r in data["rows_meta"]]
+        ), dtype=object
     )
     if args.holdout_version is not None:
         ho_ver = normalize_version_prefix(args.holdout_version)
@@ -1367,7 +1524,13 @@ def main(argv: list[str] | None = None) -> int:
         set; the CV folds pass their own). Training loop: E9, unchanged
         apart from the E14 input widths and the E15 target column."""
         tr = train_idx if tr_idx is None else tr_idx
-        model = build_model(hidden, data["entity_dim"], data["global_dim"]).to(device)
+        model = build_model(
+            hidden,
+            data["entity_dim"],
+            data["global_dim"],
+            moe=args.moe,
+            moe_gate_hidden=args.moe_gate_hidden,
+        ).to(device)
         opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
         # BCEWithLogitsLoss has no label_smoothing kwarg (only CrossEntropyLoss
         # does) — smooth the targets by hand: y' = y(1-eps) + eps/2 (note B).
@@ -1388,6 +1551,10 @@ def main(argv: list[str] | None = None) -> int:
                 m = b_mask[idx]
                 loss_b = (bce(lb, smooth(y_b[idx])) * m).sum() / m.sum().clamp(min=1.0)
                 loss = loss_a + loss_b
+                if args.moe:
+                    aux = model.gate_balance_loss()
+                    if aux is not None:
+                        loss = loss + args.moe_aux * aux
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
@@ -1403,7 +1570,20 @@ def main(argv: list[str] | None = None) -> int:
 
     model, losses = train_model(args.hidden)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"[e12] model: contextualised DeepSets two-head, {n_params:,} params")
+    kind = (
+        f"soft MoE ({args.moe} experts, gate {args.moe_gate_hidden}, aux {args.moe_aux})"
+        if args.moe
+        else "contextualised DeepSets two-head"
+    )
+    print(f"[e12] model: {kind}, {n_params:,} params")
+    if args.moe:
+        with torch.no_grad():
+            gs = []
+            for s in range(0, len(val_idx), 16384):
+                model(batch(val_idx[s : s + 16384])["entity"], batch(val_idx[s : s + 16384])["global"], batch(val_idx[s : s + 16384])["mask"])
+                gs.append(model.last_gate.mean(dim=0).cpu())
+            gate_mean = torch.stack(gs).mean(dim=0).tolist()
+        print(f"[e19] held-out mean gate share per expert: {[round(x, 4) for x in gate_mean]}")
 
     # Full-dataset predictions, CHUNKED: pushing every row through the GPU at
     # once materialises ~9GB of intermediate activations ([N,24,320] layers),
@@ -1487,7 +1667,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         import outcome_lift
 
-        oa = outcome_lift.outcome_arrays(data["rows_meta"])
+        if data["rows_meta"] is None:
+            oa = {
+                "hits": data["outcome_hits"],
+                "fired": data["outcome_fired"],
+                "hp_lost": data["outcome_hp_lost"],
+                "mode": data["outcome_mode"],
+                "version": data["outcome_version"],
+                "rows_with_outcome_fields": data["outcome_rows"],
+            }
+        else:
+            oa = outcome_lift.outcome_arrays(data["rows_meta"])
         if oa["rows_with_outcome_fields"] > 0:
             eb_h = outcome_lift.expert_baseline(
                 data["label_b"][va_b], oa["hits"][va_b], oa["fired"][va_b], oa["hp_lost"][va_b]
@@ -1690,14 +1880,28 @@ def main(argv: list[str] | None = None) -> int:
     # comparisons below index with full-length masks, and the permutation
     # test samples arbitrary rows (E9 only avoided this mismatch by running
     # with --parity-samples == rows).
-    ort_la, ort_lb = run_ort(sess_fp32, data["entity"], data["global"], data["mask"])
-    q_la, q_lb = run_ort(sess_int8, data["entity"], data["global"], data["mask"])
+    # E19: on a multi-million-row corpus the per-row ORT loop cannot scan
+    # the full dataset (hours of CPU for machinery evidence only) — the
+    # parity/quantization checks run on a deterministic PREFIX subsample.
+    vg = min(n, 50_000)
+    ort_la, ort_lb = run_ort(
+        sess_fp32,
+        data["entity"][:vg],
+        data["global"][:vg],
+        data["mask"][:vg],
+    )
+    q_la, q_lb = run_ort(
+        sess_int8,
+        data["entity"][:vg],
+        data["global"][:vg],
+        data["mask"][:vg],
+    )
 
     # 1. PyTorch vs ORT fp32 parity over the first parity_samples rows
     #    (deterministic prefix). Like-for-like on CPU: pt_* came from the
     #    training device (GPU kernels differ by sub-ulp), so recompute the
     #    compared rows on the already-moved-to-CPU model.
-    check = np.arange(min(args.parity_samples, n))
+    check = np.arange(min(args.parity_samples, vg))
     _dev = device
     device = torch.device("cpu")
     _la, _lb = predict_all(model, check)
@@ -1709,12 +1913,13 @@ def main(argv: list[str] | None = None) -> int:
     # 2. int8 vs fp32 (probabilities + PR-AUPRC / log loss on head B among A+).
     quant_dp_a = float(np.max(np.abs(sigmoid(q_la) - sigmoid(ort_la))))
     quant_dp_b = float(np.max(np.abs(sigmoid(q_lb) - sigmoid(ort_lb))))
-    auprc_fp32 = average_precision(data["label_b"][can], sigmoid(ort_lb)[can])
-    auprc_int8 = average_precision(data["label_b"][can], sigmoid(q_lb)[can])
-    auprc_a_fp32 = average_precision(data["label_a"], sigmoid(ort_la))
-    auprc_a_int8 = average_precision(data["label_a"], sigmoid(q_la))
-    ll_fp32 = log_loss(data["label_b"][can], sigmoid(ort_lb)[can])
-    ll_int8 = log_loss(data["label_b"][can], sigmoid(q_lb)[can])
+    can_v = can[:vg]
+    auprc_fp32 = average_precision(data["label_b"][:vg][can_v], sigmoid(ort_lb)[can_v])
+    auprc_int8 = average_precision(data["label_b"][:vg][can_v], sigmoid(q_lb)[can_v])
+    auprc_a_fp32 = average_precision(data["label_a"][:vg], sigmoid(ort_la))
+    auprc_a_int8 = average_precision(data["label_a"][:vg], sigmoid(q_la))
+    ll_fp32 = log_loss(data["label_b"][:vg][can_v], sigmoid(ort_lb)[can_v])
+    ll_int8 = log_loss(data["label_b"][:vg][can_v], sigmoid(q_lb)[can_v])
     print(
         f"[e12] int8 vs fp32: max|dp| A {quant_dp_a:.2e} B {quant_dp_b:.2e}; "
         f"AUPRC-B fp32 {auprc_fp32:.4f} int8 {auprc_int8:.4f}; "

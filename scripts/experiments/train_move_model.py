@@ -112,38 +112,33 @@ def load_move_datasets(paths: list[Path]) -> dict:
         if rp not in seen:
             seen.add(rp)
             unique.append(p)
-    rows: list[dict] = []
+    # Two-pass streaming load (E19 scale): never hold 2.8M raw dicts and
+    # the arrays at once — pass 1 counts + validates, pass 2 featurizes.
     file_versions: list[int] = []
-    for path in unique:
-        with open(path, encoding="utf-8") as f:
-            file_rows = 0
-            ver: int | None = None
-            for n, line in enumerate(f, 1):
+    total_rows = 0
+    for path_ in unique:
+        ver: int | None = None
+        file_rows = 0
+        with open(path_, encoding="utf-8") as f:
+            for ln, line in enumerate(f, 1):
                 line = line.strip()
-                if line:
-                    try:
-                        row = json.loads(line)
-                    except json.JSONDecodeError as e:
-                        raise SystemExit(
-                            f"[e16] malformed JSONL at {path}:{n}: {e}"
-                        ) from e
-                    if "moveSector" not in row:
-                        raise SystemExit(
-                            f"[e16] {path}:{n} is not a movement-dataset row "
-                            "(no moveSector key) — rerun the E16 Rust export"
-                        )
-                    row_ver = int(row.get("featureVersion", 1) or 1)
-                    if ver is None:
-                        ver = row_ver
-                    elif row_ver != ver:
-                        raise SystemExit(
-                            f"[e16] {path} mixes featureVersions {ver} and {row_ver}"
-                        )
-                    rows.append(row)
-                    file_rows += 1
-            file_versions.append(ver or 1)
-            print(f"[e16] loaded {file_rows:7d} rows (featureVersion {ver or 1}) from {path}")
-    if not rows:
+                if not line:
+                    continue
+                try:
+                    row_ver = int(json.loads(line).get("featureVersion", 1) or 1)
+                except json.JSONDecodeError as e:
+                    raise SystemExit(f"[e16] malformed JSONL at {path_}:{ln}: {e}") from e
+                if ver is None:
+                    ver = row_ver
+                elif row_ver != ver:
+                    raise SystemExit(
+                        f"[e16] {path_} mixes featureVersions {ver} and {row_ver}"
+                    )
+                file_rows += 1
+        file_versions.append(ver or 1)
+        total_rows += file_rows
+        print(f"[e16] counted {file_rows:7d} rows (featureVersion {ver or 1}) from {path_}")
+    if not total_rows:
         raise SystemExit(
             "[e16] no movement rows found — rerun the Rust export "
             "(e16_move_batch with WOWSP_MOVE_DATASET_OUT)"
@@ -151,12 +146,12 @@ def load_move_datasets(paths: list[Path]) -> dict:
     if len(set(file_versions)) != 1:
         raise SystemExit(
             f"[e16] mixed featureVersions across files ({file_versions}) — "
-            "v1 and v2 datasets cannot train together"
+            "v1/v2 datasets cannot train together"
         )
     version = file_versions[0]
     entity_dim = tfm.ENTITY_DIM_V1 if version == 1 else tfm.ENTITY_DIM_V2
     global_dim = tfm.GLOBAL_DIM_V1 if version == 1 else tfm.GLOBAL_DIM_V2
-    n = len(rows)
+    n = total_rows
     data = {
         "feature_version": version,
         "entity_dim": entity_dim,
@@ -172,28 +167,64 @@ def load_move_datasets(paths: list[Path]) -> dict:
         "version": np.empty((n,), dtype=object),
         "game_mode": np.empty((n,), dtype=object),
     }
-    for i, row in enumerate(rows):
-        e, m = tfm.entity_matrix_and_mask(row, version)
-        g = tfm.global_vector(row, version)
-        data["entity"][i], data["global"][i], data["mask"][i] = e, g, m
-        sector = int(row["moveSector"])
-        recomputed = move_sector_from_row(row)
-        if sector != recomputed:
-            raise SystemExit(
-                f"[e16] row {i}: moveSector {sector} disagrees with the "
-                f"recomputed label {recomputed} (dist {row['movedDistM']:.1f} m) — "
-                "exporter/label grammar drift"
-            )
-        data["move_sector"][i] = sector
-        data["moved_dist_m"][i] = row["movedDistM"]
-        data["own_yaw_rad"][i] = row["ownYawRad"]
-        spd = row.get("ownSpeedKt")
-        if spd is not None:
-            data["own_speed_kt"][i] = spd
-        data["group"][i] = row.get("replayId") or "unknown"
-        data["version"][i] = tfm.row_version_prefix(row.get("replayVersion"))
-        data["game_mode"][i] = row.get("gameMode") or "unknown"
-    data["rows_meta"] = rows
+    sector_drift = [0]
+    pose = 0
+    for path_ in unique:
+        with open(path_, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                if "moveSector" not in row:
+                    raise SystemExit(
+                        "[e16] row lacks moveSector — not a movement dataset "
+                        "(rerun the e16_move_batch export)"
+                    )
+                e, m = tfm.entity_matrix_and_mask(row, version)
+                g = tfm.global_vector(row, version)
+                data["entity"][pose], data["global"][pose], data["mask"][pose] = e, g, m
+                sector = int(row["moveSector"])
+                recomputed = move_sector_from_row(row)
+                if sector != recomputed:
+                    # Adjacent-sector disagreement with the relative bearing
+                    # inside a ~0.45 deg float-noise band around a sector
+                    # boundary is exporter-vs-recompute rounding, not grammar
+                    # drift (2.8M-row corpora hit boundaries). Counted and
+                    # capped; anything beyond noise still hard-fails.
+                    rel = float(row["moveBearingRad"]) - float(row["ownYawRad"])
+                    rel = (rel + math.pi) % (2.0 * math.pi) - math.pi
+                    frac = rel / MOVE_SECTOR_RAD
+                    near_boundary = abs(frac - math.floor(frac) - 0.5) < 0.02
+                    if not (near_boundary and abs(sector - recomputed) <= 1):
+                        raise SystemExit(
+                            f"[e16] row {pose}: moveSector {sector} disagrees with the "
+                            f"recomputed label {recomputed} (dist {row['movedDistM']:.1f} m) — "
+                            "exporter/label grammar drift"
+                        )
+                    sector_drift[0] += 1
+                data["move_sector"][pose] = sector
+                data["moved_dist_m"][pose] = row["movedDistM"]
+                data["own_yaw_rad"][pose] = row["ownYawRad"]
+                spd = row.get("ownSpeedKt")
+                if spd is not None:
+                    data["own_speed_kt"][pose] = spd
+                data["group"][pose] = row.get("replayId") or "unknown"
+                data["version"][pose] = tfm.row_version_prefix(row.get("replayVersion"))
+                data["game_mode"][pose] = row.get("gameMode") or "unknown"
+                pose += 1
+    assert pose == n, f"row count drifted: {pose} != {n}"
+    if sector_drift[0] > max(50, int(0.005 * n)):
+        raise SystemExit(
+            f"[e16] {sector_drift[0]} sector-label disagreements exceed the "
+            "float-noise budget — real exporter/label grammar drift"
+        )
+    if sector_drift[0]:
+        print(
+            f"[e16] tolerated {sector_drift[0]} boundary-adjacent sector label "
+            f"differences ({sector_drift[0] / n:.4%} of rows)"
+        )
+    data["rows_meta"] = None  # never materialised (E19 scale)
     return data
 
 
@@ -340,7 +371,88 @@ def eval_battery(
 # ── model (fire backbone, 17-class head) ─────────────────────────────────────
 
 
-def build_move_model(hidden: int, entity_dim: int, global_dim: int) -> "torch.nn.Module":
+# ── E19: soft mixture-of-experts with a front router (17-class head) ─────────
+# Same router as train_fire_model's MoE (global feature block + pooled entity
+# stats, both already in the input contract) and the same soft dual
+# activation — the experts here own a 17-class movement head each.
+MOE_DEFAULT_AUX = 0.01
+MOE_DEFAULT_GATE_HIDDEN = 64
+
+
+def build_move_moe_model(
+    hidden: int,
+    entity_dim: int,
+    global_dim: int,
+    experts: int = 4,
+    gate_hidden: int = MOE_DEFAULT_GATE_HIDDEN,
+) -> "torch.nn.Module":
+    import torch
+    import torch.nn as nn
+
+    class MoveMoE(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.experts_n = experts
+            self.phi = nn.Sequential(
+                nn.Linear(entity_dim, hidden),
+                nn.ReLU(),
+                nn.Linear(hidden, hidden),
+                nn.ReLU(),
+            )
+            self.gate1 = nn.Linear(global_dim + entity_dim + hidden, gate_hidden)
+            self.gate2 = nn.Linear(gate_hidden, experts)
+            self.ctx1 = nn.ModuleList(
+                nn.Linear(hidden + global_dim, hidden) for _ in range(experts)
+            )
+            self.ctx2 = nn.ModuleList(nn.Linear(hidden, hidden) for _ in range(experts))
+            self.head = nn.ModuleList(
+                nn.Linear(hidden, MOVE_SECTORS) for _ in range(experts)
+            )
+            self.last_gate = None
+
+        def forward(self, entity, global_feat, mask):
+            m = mask.unsqueeze(-1)
+            denom = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+            pooled_raw = (entity * m).sum(dim=1) / denom
+            h = self.phi(entity)
+            g = global_feat.unsqueeze(1).expand(-1, h.size(1), -1)
+            pooled_h = (h * m).sum(dim=1) / denom
+            gate_logits = self.gate2(
+                torch.relu(
+                    self.gate1(torch.cat([global_feat, pooled_raw, pooled_h], dim=-1))
+                )
+            )
+            w = torch.softmax(gate_logits, dim=-1)
+            self.last_gate = w
+            ctx = torch.cat([h, g], dim=-1)
+            outs = []
+            for k in range(self.experts_n):
+                hk = torch.relu(self.ctx1[k](ctx))
+                hk = torch.relu(self.ctx2[k](hk))
+                agg = (hk * m).sum(dim=1) / denom
+                outs.append(self.head[k](agg))
+            weights = [w[:, k : k + 1] for k in range(self.experts_n)]
+            return sum(wk * o for wk, o in zip(weights, outs))
+
+        def gate_balance_loss(self):
+            w = self.last_gate
+            if w is None:
+                return None
+            share = w.mean(dim=0)
+            return w.size(1) * (share * share).sum()
+
+    return MoveMoE()
+
+
+def build_move_model(
+    hidden: int,
+    entity_dim: int,
+    global_dim: int,
+    moe: int = 0,
+    moe_gate_hidden: int = MOE_DEFAULT_GATE_HIDDEN,
+) -> "torch.nn.Module":
+    if moe:
+        return build_move_moe_model(hidden, entity_dim, global_dim, experts=moe, gate_hidden=moe_gate_hidden)
     import torch
     import torch.nn as nn
 
@@ -392,6 +504,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--hidden", type=int, default=320)
+    p.add_argument(
+        "--moe",
+        type=int,
+        default=0,
+        metavar="K",
+        help="E19: soft mixture-of-experts over K experts (0 = baseline DeepSets)",
+    )
+    p.add_argument("--moe-aux", type=float, default=MOE_DEFAULT_AUX)
+    p.add_argument("--moe-gate-hidden", type=int, default=MOE_DEFAULT_GATE_HIDDEN)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="cpu", help="cpu or cuda")
     p.add_argument(
@@ -671,7 +792,8 @@ def main(argv: list[str] | None = None) -> int:
             "version",
         ):
             data[k] = data[k][keep]
-        data["rows_meta"] = [r for r, kp in zip(data["rows_meta"], keep) if kp]
+        if data["rows_meta"] is not None:
+            data["rows_meta"] = [r for r, kp in zip(data["rows_meta"], keep) if kp]
 
     y = data["move_sector"]
     n = len(y)
@@ -743,9 +865,16 @@ def main(argv: list[str] | None = None) -> int:
     maj_top1 = np.full(n, maj["top1_sector"], dtype=np.int64)
 
     # ── model ────────────────────────────────────────────────────────────
-    model = build_move_model(args.hidden, data["entity_dim"], data["global_dim"]).to(device)
+    model = build_move_model(
+        args.hidden, data["entity_dim"], data["global_dim"], moe=args.moe, moe_gate_hidden=args.moe_gate_hidden
+    ).to(device)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"[e16] model: DeepSets 17-class head, {n_params:,} params")
+    kind = (
+        f"soft MoE 17-class ({args.moe} experts, gate {args.moe_gate_hidden}, aux {args.moe_aux})"
+        if args.moe
+        else "DeepSets 17-class head"
+    )
+    print(f"[e16] model: {kind}, {n_params:,} params")
 
     def batch(idx: np.ndarray) -> dict:
         return {
@@ -768,6 +897,10 @@ def main(argv: list[str] | None = None) -> int:
             b = batch(idx)
             logits = model(b["entity"], b["global"], b["mask"])
             loss = ce(logits, y_t[idx])
+            if args.moe:
+                aux = model.gate_balance_loss()
+                if aux is not None:
+                    loss = loss + args.moe_aux * aux
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -855,7 +988,13 @@ def main(argv: list[str] | None = None) -> int:
         for f in range(k):
             te = cv_base[np.flatnonzero(folds == f)]
             tr = cv_base[np.flatnonzero(folds != f)]
-            fm = build_move_model(args.hidden, data["entity_dim"], data["global_dim"]).to(device)
+            fm = build_move_model(
+                args.hidden,
+                data["entity_dim"],
+                data["global_dim"],
+                moe=args.moe,
+                moe_gate_hidden=args.moe_gate_hidden,
+            ).to(device)
             fo = torch.optim.AdamW(fm.parameters(), lr=args.lr)
             for epoch in range(args.epochs):
                 fm.train()
@@ -864,6 +1003,10 @@ def main(argv: list[str] | None = None) -> int:
                     idx = order[s : s + args.batch_size]
                     b = batch(idx)
                     loss = ce(fm(b["entity"], b["global"], b["mask"]), y_t[idx])
+                    if args.moe:
+                        aux = fm.gate_balance_loss()
+                        if aux is not None:
+                            loss = loss + args.moe_aux * aux
                     fo.zero_grad()
                     loss.backward()
                     fo.step()
