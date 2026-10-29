@@ -69,7 +69,7 @@
     "dumpAvailable": "クラッシュダンプがあり、詳細分析が可能です",
     "danglingUiReference": "宙ぶらりんの UI 参照 — クラッシュログに \"{url}\" のロード失敗が出ているのに、mod ファイルがまだ要求しています",
     "evidenceGameReport": "WG クラッシュレポートより",
-    "missingModAsset": "MOD ファイルが \"{{asset}}\" を参照していますが、クライアントにも MOD ツリーにも存在しません"
+    "missingModAsset": "MOD ファイルが \"{asset}\" を参照していますが、クライアントにも MOD ツリーにも存在しません"
   },
   "suspects": {
     "title": "疑わしいプラグイン",

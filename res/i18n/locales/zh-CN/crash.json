@@ -69,7 +69,7 @@
     "dumpAvailable": "存在崩溃转储，可供深入分析",
     "danglingUiReference": "UI 引用悬空 —— 崩溃日志显示 \"{url}\" 加载失败，仍有模组文件在引用它",
     "evidenceGameReport": "来自 WG 崩溃报告",
-    "missingModAsset": "模组文件引用了 \"{{asset}}\"，该资源在客户端与模组目录中均不存在"
+    "missingModAsset": "模组文件引用了 \"{asset}\"，该资源在客户端与模组目录中均不存在"
   },
   "suspects": {
     "title": "可疑插件",

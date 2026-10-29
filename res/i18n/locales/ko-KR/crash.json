@@ -69,7 +69,7 @@
     "dumpAvailable": "크래시 덤프가 있어 심층 분석이 가능합니다",
     "danglingUiReference": "댕글링 UI 참조 — 크래시 로그에 \"{url}\" 로드 실패가 있는데 mod 파일이 여전히 요청합니다",
     "evidenceGameReport": "WG 크래시 리포트에서",
-    "missingModAsset": "MOD 파일이 \"{{asset}}\"을(를) 참조하지만 클라이언트와 MOD 트리 어디에도 없습니다"
+    "missingModAsset": "MOD 파일이 \"{asset}\"을(를) 참조하지만 클라이언트와 MOD 트리 어디에도 없습니다"
   },
   "suspects": {
     "title": "의심되는 플러그인",

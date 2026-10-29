@@ -69,7 +69,7 @@
     "dumpAvailable": "Hay un volcado de memoria disponible para un análisis profundo",
     "danglingUiReference": "Referencia de UI colgante — el registro del fallo muestra \"{url}\" sin cargar mientras un archivo de mod la sigue pidiendo",
     "evidenceGameReport": "Del informe de fallo de WG",
-    "missingModAsset": "Un archivo de mod referencia \"{{asset}}\", que no existe ni en el cliente ni en el árbol de mods"
+    "missingModAsset": "Un archivo de mod referencia \"{asset}\", que no existe ni en el cliente ni en el árbol de mods"
   },
   "suspects": {
     "title": "Plugins sospechosos",

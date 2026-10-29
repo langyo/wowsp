@@ -69,7 +69,7 @@
     "dumpAvailable": "A crash dump is available for deep analysis",
     "danglingUiReference": "Dangling UI reference — the crash log shows \"{url}\" failing to load while a mod file still asks for it",
     "evidenceGameReport": "From the WG crash report",
-    "missingModAsset": "A mod file references \"{{asset}}\", which exists in neither the client nor the mods tree"
+    "missingModAsset": "A mod file references \"{asset}\", which exists in neither the client nor the mods tree"
   },
   "suspects": {
     "title": "Suspect plugins",

@@ -1030,3 +1030,26 @@ fn dangling_mod_references_flags_missing_and_ignores_present() {
     assert_eq!(refs[0].asset, "battle_stats.swf");
     assert!(refs[0].files[0].contains("battle_elements.xml"));
 }
+
+#[cfg(windows)]
+#[test]
+fn proactive_scan_skips_toolchain_stubs() {
+    use std::collections::HashSet;
+    let dir = TempDir::new("proactive-noise");
+    // A placeholder stub reference in a normal mod file is ignored by name.
+    dir.touch(
+        "PnFMods/SomeMod/Main.py",
+        "stub = \"__forge_stub.swf\"\nlive = \"battle_stats.swf\"\n",
+    );
+    // A file inside the ModForge toolkit tree is not scanned at all.
+    dir.touch(
+        "PnFMods/ModForge/Validate.py",
+        "x = \"forgedefinitions.swf\"\n",
+    );
+    let client = HashSet::new();
+    let refs = dangling_mod_references(&[dir.path().to_path_buf()], &client);
+    let assets: Vec<&str> = refs.iter().map(|r| r.asset.as_str()).collect();
+    assert!(assets.contains(&"battle_stats.swf"), "{assets:?}");
+    assert!(!assets.contains(&"__forge_stub.swf"), "{assets:?}");
+    assert!(!assets.contains(&"forgedefinitions.swf"), "{assets:?}");
+}

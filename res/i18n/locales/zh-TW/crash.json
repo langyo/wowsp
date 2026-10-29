@@ -69,7 +69,7 @@
     "dumpAvailable": "存在當機傾印，可供深入分析",
     "danglingUiReference": "UI 參照懸空 —— 崩潰日誌顯示 \"{url}\" 載入失敗，仍有模組檔案在參照它",
     "evidenceGameReport": "來自 WG 崩潰報告",
-    "missingModAsset": "模組檔案引用了 \"{{asset}}\"，該資源在客戶端與模組目錄中均不存在"
+    "missingModAsset": "模組檔案引用了 \"{asset}\"，該資源在客戶端與模組目錄中均不存在"
   },
   "suspects": {
     "title": "可疑插件",
