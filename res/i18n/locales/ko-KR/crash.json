@@ -16,7 +16,8 @@
     "source": {
       "eventLog": "Windows 이벤트 로그",
       "werReport": "WER 보고서",
-      "crashDump": "크래시 덤프"
+      "crashDump": "크래시 덤프",
+      "gameReport": "WG 크래시 리포트"
     },
     "gameLogs": "게임 로그",
     "appLogs": "WoWSP 로그",

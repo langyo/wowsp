@@ -16,7 +16,8 @@
     "source": {
       "eventLog": "Windows 事件記錄檔",
       "werReport": "WER 報告",
-      "crashDump": "當機傾印"
+      "crashDump": "當機傾印",
+      "gameReport": "WG 崩潰報告"
     },
     "gameLogs": "遊戲記錄檔",
     "appLogs": "WoWSP 記錄檔",

@@ -16,7 +16,8 @@
     "source": {
       "eventLog": "Registro de eventos de Windows",
       "werReport": "Informe de WER",
-      "crashDump": "Volcado de memoria"
+      "crashDump": "Volcado de memoria",
+      "gameReport": "Informe de fallo de WG"
     },
     "gameLogs": "Registros del juego",
     "appLogs": "Registros de WoWSP",

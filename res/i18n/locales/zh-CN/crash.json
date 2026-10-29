@@ -16,7 +16,8 @@
     "source": {
       "eventLog": "Windows 事件日志",
       "werReport": "WER 报告",
-      "crashDump": "崩溃转储"
+      "crashDump": "崩溃转储",
+      "gameReport": "WG 崩溃报告"
     },
     "gameLogs": "游戏日志",
     "appLogs": "WoWSP 日志",

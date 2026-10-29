@@ -16,7 +16,8 @@
     "source": {
       "eventLog": "Journal d'événements Windows",
       "werReport": "Rapport WER",
-      "crashDump": "Dump mémoire"
+      "crashDump": "Dump mémoire",
+      "gameReport": "Rapport de plantage WG"
     },
     "gameLogs": "Journaux du jeu",
     "appLogs": "Journaux de WoWSP",
