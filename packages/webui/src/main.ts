@@ -11,6 +11,9 @@ import { initAnalytics, trackPageView } from "@/utils/analytics";
 import { reportUiError } from "@/utils/uiError";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
+// Opaque-default surface layer — restates hikari's translucent fills as
+// solidity-interpolated fills; must load AFTER the theme tokens it reads.
+import "@/theme/surfaces.scss";
 import "@/styles/image-asset.scss";
 import "virtual:uno.css";
 

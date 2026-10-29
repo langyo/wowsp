@@ -7,8 +7,8 @@
   gap: 14px;
   padding: 16px;
   border-radius: 12px;
-  background: rgb(var(--color-surface) / 85%);
-  background: rgb(var(--color-surface) / min(100%, calc(85% * var(--ui-opacity, 1))));
+  background: rgb(var(--color-surface));
+  background: rgb(var(--color-surface) / min(100%, calc(85% + 15% * var(--ui-opacity, 1))));
   border: 1px solid rgb(var(--color-border) / 18%);
 }
 
@@ -87,8 +87,8 @@
   gap: 2px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgb(var(--color-surface) / 60%);
-  background: rgb(var(--color-surface) / min(100%, calc(60% * var(--ui-opacity, 1))));
+  background: rgb(var(--color-surface));
+  background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
   border: 1px solid rgb(var(--color-border) / 12%);
 }
 

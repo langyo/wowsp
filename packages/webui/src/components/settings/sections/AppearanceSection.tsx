@@ -437,12 +437,12 @@ export default defineComponent({
             <HkDivider />
 
             {/* UI surface opacity — the chrome-side twin of the wallpaper
-                overlay dial above: one multiplier over every translucent
-                surface in the app (theme/uiOpacityPreference). 95% is the
-                default (a hair clearer than fully solid); below it the
-                glass clears further, above it panels solidify over busy
-                ones (alpha caps at fully opaque). Applies live — the
-                settings window itself responds while dragging. */}
+                overlay dial above: one solidity dial over every
+                translucent surface in the app (theme/uiOpacityPreference).
+                100% is the default (every glass surface fully opaque);
+                lower it to bring hikari's glass back, down to 0% = the
+                surfaces' own glass floor. Applies live — the settings
+                window itself responds while dragging. */}
             <HkSettingsSub title={t("settings.uiOpacity")}>
               <div class="settings-modal__dpi-row">
                 <HkSlider

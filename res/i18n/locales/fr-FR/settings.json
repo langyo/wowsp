@@ -346,7 +346,7 @@
   "wallpaperBlurSidebar": "Flou de l’arrière-plan de la barre latérale",
   "wallpaperBlurMain": "Flou de l’arrière-plan de la zone principale",
   "uiOpacity": "Opacité de l’interface",
-  "uiOpacityHint": "Un seul réglage pour toutes les surfaces vitrées : 95 % est l’apparence par défaut (l’arrière-plan se devine derrière) ; en dessous il transparaît davantage, au-dessus les panneaux se densifient.",
+  "uiOpacityHint": "Un seul réglage pour toutes les surfaces vitrées : par défaut 100 % est totalement opaque ; baissez-le pour laisser l’arrière-plan transparaître derrière l’interface (0 % est le seuil vitré de hikari).",
   "pairingPinCopy": "Copier le code",
   "pairingPinCopied": "Code copié dans le presse-papiers",
   "dataSourceShipData": "Pack de données des navires",

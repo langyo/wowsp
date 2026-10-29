@@ -84,8 +84,9 @@
      opaque body — a bare alpha tint lets the wallpaper bleed through and the
      chip reads as a hole in the strip. The glass track beside it is hikari's
      own segmented chrome (the strip keeps the library's rule untouched;
-     wowsp's dial only rescales its alpha — see DateRangeTabs.scss); this
-     solid facet chip / glass track pair is the library's design language. */
+     wowsp's dial only lerps its base alpha toward solid — see
+     DateRangeTabs.scss); this solid facet chip / glass track pair is the
+     library's design language. */
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
   background: rgb(var(--color-surface));
@@ -211,8 +212,8 @@
   padding: 2px;
   border-radius: var(--radius-sm);
   border: 1px solid rgb(var(--color-border) / 25%);
-  background: rgb(var(--color-surface) / 60%);
-  background: rgb(var(--color-surface) / min(100%, calc(60% * var(--ui-opacity, 1))));
+  background: rgb(var(--color-surface));
+  background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
 }
 
 /* The white battle-HUD ship-type silhouette preceding a type option's

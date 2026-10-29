@@ -20,8 +20,8 @@
   padding: 0.7rem 0.9rem;
   border: 1px solid rgb(var(--color-border) / 55%);
   border-radius: 10px;
-  background: rgb(var(--color-surface) / 45%);
-  background: rgb(var(--color-surface) / min(100%, calc(45% * var(--ui-opacity, 1))));
+  background: rgb(var(--color-surface));
+  background: rgb(var(--color-surface) / min(100%, calc(45% + 55% * var(--ui-opacity, 1))));
 
   &--installed {
     border-color: rgb(var(--color-primary) / 45%);

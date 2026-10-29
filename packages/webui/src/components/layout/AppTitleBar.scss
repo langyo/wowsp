@@ -100,19 +100,20 @@
 }
 
 /* Desktop bar glass joins the UI-opacity dial (uiOpacityPreference.ts).
-   hikari ships the bar as an 80% surface color-mix — equal to plain
-   `rgb(surface / 80%)` — restated here at (0,2,0) with the multiplier so
-   one drag rescales the bar together with the rest of the chrome. Custom
-   properties never fail at parse time, so the scaled spelling sits in an
-   @supports math-in-color probe instead of behind a duplicate line; the
-   phone and no-backdrop-filter OPAQUE overrides further down the file
-   stay later in the cascade and keep winning in their lanes. */
+   hikari ships the bar as an 80% surface color-mix — the glass base at
+   solidity 0 — so the plain token below is the OPAQUE default engines
+   without math-in-color keep, and an @supports probe swaps in the dial's
+   lerp so one drag lifts the bar toward solid with the rest of the
+   chrome. Custom properties never fail at parse time, so the scaled
+   spelling sits in the probe; the phone and no-backdrop-filter OPAQUE
+   overrides further down the file stay later in the cascade and keep
+   winning in their lanes. */
 .app-titlebar .hk-titlebar {
-  --hk-tb-bg: color-mix(in srgb, rgb(var(--color-surface, 240 244 248)) 80%, transparent);
+  --hk-tb-bg: rgb(var(--color-surface, 240 244 248));
 }
-@supports (background: rgb(0 0 0 / min(100%, calc(1% * var(--ui-opacity, 1))))) {
+@supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
   .app-titlebar .hk-titlebar {
-    --hk-tb-bg: rgb(var(--color-surface, 240 244 248) / min(100%, calc(80% * var(--ui-opacity, 1))));
+    --hk-tb-bg: rgb(var(--color-surface, 240 244 248) / min(100%, calc(80% + 20% * var(--ui-opacity, 1))));
   }
 }
 
@@ -157,10 +158,10 @@
 
 /* Same failure without the width signal: an engine without backdrop-filter
    support (desktop WebView2 with the GPU feature disabled, old engines)
-   renders the bar's 80% glass raw — the same @supports fallback pattern
-   OnboardingWizard.scss established for its glass sheet. Falls back to the
-   opaque surface at every width; engines that DO support the filter keep
-   the glass. */
+   renders the bar's translucent fill raw — the same @supports fallback
+   pattern OnboardingWizard.scss established for its glass sheet. Falls
+   back to the opaque surface at every width; engines that DO support the
+   filter keep the glass. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .app-titlebar .hk-titlebar {
     --hk-tb-bg: rgb(var(--color-surface, 240 244 248));

@@ -6,7 +6,8 @@
 //   - the scrim is a light translucent fill + backdrop blur, NOT the
 //     standard dark curtain — the theme/wallpaper steps preview their
 //     changes live through it;
-//   - the panel keeps its translucent glass surface.
+//   - the panel keeps the glass surface: opaque by default, the
+//     UI-opacity dial lerps it down to its 82% base.
 // The `:has` scope keys off the contentClass the wizard passes to HModal,
 // so no other modal in the app picks these up.
 
@@ -16,26 +17,28 @@
 }
 
 .hk-modal-content.onboarding-wizard {
-  --hk-modal-bg: rgb(var(--color-surface) / 82%);
+  --hk-modal-bg: rgb(var(--color-surface));
   --hk-modal-border-color: rgb(var(--color-border) / 20%);
 }
 
-/* The 82% glass also rides the UI-opacity dial (uiOpacityPreference.ts).
-   A custom property never fails at parse time, so the scaled spelling is
-   gated behind an @supports math-in-color probe rather than a duplicate
-   line; the opaque phone / no-blur fallbacks below stay later in this
-   file and keep winning in their lanes. */
-@supports (background: rgb(0 0 0 / min(100%, calc(1% * var(--ui-opacity, 1))))) {
+/* The sheet's glass rides the UI-opacity dial (uiOpacityPreference.ts):
+   82% at solidity 0, solid at the shipped 100%. The plain token above is
+   the OPAQUE default engines without math-in-color keep; a custom
+   property never fails at parse time, so the dial's spelling sits in an
+   @supports math-in-color probe instead of a duplicate declaration. The
+   opaque phone / no-blur fallbacks below stay later in this file and keep
+   winning in their lanes. */
+@supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
   .hk-modal-content.onboarding-wizard {
-    --hk-modal-bg: rgb(var(--color-surface) / min(100%, calc(82% * var(--ui-opacity, 1))));
+    --hk-modal-bg: rgb(var(--color-surface) / min(100%, calc(82% + 18% * var(--ui-opacity, 1))));
   }
 }
 
-/* The 82% glass relies on the overlay's backdrop-filter to stay readable.
+/* The glass base (82%) relies on the overlay's backdrop-filter to stay readable.
    On phones hikari docks every modal as a bottom sheet and drops that
    filter (--hk-modal-overlay-blur-mobile defaults to none — a per-frame
    backdrop re-raster over a resizing sheet lags on phone GPUs), so the
-   translucent sheet goes see-through and the page bleeds between the
+   glass end of the dial goes see-through and the page bleeds between the
    sections (real-device Android WebView report). The sheet's mobile
    background token wins over the desktop glass there; the scrim keeps its
    45% tint, so the appearance steps still preview the wallpaper live
@@ -47,7 +50,7 @@
 }
 
 /* Same failure without the width signal: an engine without backdrop-filter
-   support (disabled WebView GPU feature, old engine) renders the 82% glass
+   support (disabled WebView GPU feature, old engine) renders the 82% base glass
    raw. Fall back to the opaque surface — identical chrome, no bleed. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .hk-modal-content.onboarding-wizard {
@@ -262,8 +265,8 @@
     min-width: 0;
     padding: 0.5rem 0.75rem;
     text-align: left;
-    background: rgb(var(--color-surface) / 45%);
-    background: rgb(var(--color-surface) / min(100%, calc(45% * var(--ui-opacity, 1))));
+    background: rgb(var(--color-surface));
+    background: rgb(var(--color-surface) / min(100%, calc(45% + 55% * var(--ui-opacity, 1))));
     border: 2px solid transparent;
     border-radius: var(--radius-md);
     cursor: pointer;
@@ -271,8 +274,8 @@
       background-color var(--duration-short) var(--ease-standard);
 
     &:hover {
-      background: rgb(var(--color-surface) / 70%);
-      background: rgb(var(--color-surface) / min(100%, calc(70% * var(--ui-opacity, 1))));
+      background: rgb(var(--color-surface));
+      background: rgb(var(--color-surface) / min(100%, calc(70% + 30% * var(--ui-opacity, 1))));
       border-color: rgb(var(--color-border) / 35%);
     }
 

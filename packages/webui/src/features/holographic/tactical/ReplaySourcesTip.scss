@@ -12,7 +12,10 @@
     padding: 1px 7px;
     border-radius: 999px;
     border: 1px solid rgb(var(--color-border) / 25%);
-    background: rgb(var(--color-surface) / 60%);
+    background: rgb(var(--color-surface));
+    @supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
+      background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+    }
     color: rgb(var(--color-muted));
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;

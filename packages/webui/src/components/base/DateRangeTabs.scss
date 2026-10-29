@@ -2,24 +2,17 @@
  * DateRangeTabs — the shared date-range strip (water-meter dashboard, the
  * lookup page, the playtime PR trend section).
  *
- * The strip deliberately keeps hikari's SHIPPED segmented-track chrome: the
- * library paints the track as 60% surface glass (HkTabs.scss), its triggers
- * carry no fill of their own and the sliding indicator is primary/12%. That
- * is the look every other tab strip in the app has, and it is the look the
- * sibling shittim-chest project renders there: that project has no track
- * fill rule at all, and its hikari-chrome.scss states the house rule that
- * host-level tweaks belonging to the shared chrome go upstream instead of
- * into the app's stylesheets. A host-local repaint here made this one strip
- * the odd member of the family and diverged from upstream for no
- * library-API reason, so hosts must not restyle the track: if the track ever
- * needs a different surface, that is a hikari change.
+ * The strip does NOT own its track chrome: hikari paints the segmented track
+ * (its triggers stay naked, the sliding indicator is primary/12%) and the
+ * app's surface layer (theme/surfaces.scss) restates that fill so it ships
+ * OPAQUE and follows the UI-surface-opacity dial. This component only owns
+ * the wrapper geometry and the picker popup's inner layout.
  *
- * The only global tweak wowsp layers on top is the UI-surface-opacity dial
- * in theme.scss, which SCALES the same 60% base (100% dial = upstream's
- * value exactly; the shipped 95% dial renders 57%). The facet chips beside
- * the strip stay hikari's solid HkFilterChip surface — that glass track /
- * solid trigger pair is the library's own design language, not a mismatch
- * to "fix" locally.
+ * Hosts must not repaint the track here: a host-local fill made this one
+ * strip the odd member of the tab-strip family and forked it from the
+ * library for no API reason. The opaque default and the dial belong to the
+ * one surface layer; the facet chips beside the strip keep hikari's solid
+ * HkFilterChip surface.
  */
 .date-range-tabs {
   position: relative;

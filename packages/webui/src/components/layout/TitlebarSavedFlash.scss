@@ -19,7 +19,10 @@
   padding: 2px var(--space-8, 0.5rem);
   border-radius: var(--radius-full, 999px);
   border: 1px solid var(--border-faint, rgb(var(--color-border) / 10%));
-  background: rgb(var(--color-surface) / 60%);
+  background: rgb(var(--color-surface));
+  @supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
   color: rgb(var(--color-text) / 72%);
   font-size: var(--text-2xs, 0.6875rem);
   line-height: 1.4;

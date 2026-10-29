@@ -1,22 +1,18 @@
 /**
  * Contract: DateRangeTabs does not re-paint hikari's segmented-track chrome.
  *
- * hikari ships `.hk-tabs-list` as 60% surface glass with naked triggers and a
- * primary/12% sliding indicator (HkTabs.scss); its facet chips are the solid
- * counterpart (HkFilterChip.scss). wowsp keeps that shipped look — the
- * sibling shittim-chest project has no track fill rule at all (it does keep
- * a few LAYOUT tweaks on hikari chrome, but never re-paints it) — and wowsp's
- * only global layer on top is the UI-surface-opacity dial SCALING the same
- * 60% base in theme.scss.
+ * hikari paints the segmented track, the naked triggers and the primary/12%
+ * indicator (HkTabs.scss); the app restates that one track fill in its
+ * surface layer (theme/surfaces.scss — opaque by default, dial-driven), and
+ * every other tab strip in the app gets the same treatment. A host-local
+ * fill/border here would make this strip the odd member of that family and
+ * fork it from the library for no API reason — exactly the regression this
+ * file guards. The popup panel's INNER content is the component's own
+ * layout and stays fair game.
  *
- * A host-local fill/border on the track silently forks this strip from every
- * other tab strip in the app and from upstream — which is exactly the
- * regression this file guards. The popup panel's INNER content is the
- * component's own layout and stays fair game.
- *
- * Scope: this pins the COMPONENT's stylesheet. The theme-level dial rule in
- * theme.scss is a deliberate, separate decision (it rescales hikari's base
- * alpha rather than substituting a new look), so it is not asserted here.
+ * Scope: this pins the COMPONENT's stylesheet only. The track fill lives in
+ * the single surface layer by design, so its opaque default is asserted
+ * there (theme/surfaces.styles.test.ts), not here.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
