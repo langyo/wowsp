@@ -663,6 +663,21 @@ describe("chat translation settings staged pane", () => {
         languages: expect.objectContaining({ mode: "fixed" }),
       }),
     );
+    // The numeric cap is a compact field (label row, not a full-width bar)
+    // and writes the languages patch directly.
+    const cap = modal!.querySelector<HTMLInputElement>(
+      ".stub-HkNumberInput.chat-settings__number",
+    );
+    expect(cap).not.toBeNull();
+    cap!.value = "5";
+    cap!.dispatchEvent(new Event("input"));
+    await flushPromises();
+    expect(setCalls()).toHaveLength(2);
+    expect(setCalls()[1][0]).toEqual(
+      expect.objectContaining({
+        languages: expect.objectContaining({ maxTargets: 5 }),
+      }),
+    );
   });
 
   it("opens the sending window for the detail knobs only", async () => {
@@ -688,9 +703,13 @@ describe("chat translation settings staged pane", () => {
     await flushPromises();
     const modal = document.querySelector(".hk-modal-root");
     expect(modal).not.toBeNull();
-    // Detail knobs: suffix switch + layout tabs + the two numbers.
+    // Detail knobs: suffix switch + layout tabs + the two numbers, each a
+    // compact field (the review's "rows too long" sweep).
     expect(modal!.querySelector(".stub-HkSwitch")).not.toBeNull();
     expect(modal!.querySelectorAll(".stub-HkNumberInput")).toHaveLength(2);
+    expect(
+      modal!.querySelectorAll(".stub-HkNumberInput.chat-settings__number"),
+    ).toHaveLength(2);
     const unified = modal!.querySelector<HTMLButtonElement>('[data-tab="unified"]');
     expect(unified).not.toBeNull();
     unified!.click();
@@ -699,6 +718,34 @@ describe("chat translation settings staged pane", () => {
     expect(setCalls()[0][0]).toEqual(
       expect.objectContaining({
         send: expect.objectContaining({ suffixFormat: "unified" }),
+      }),
+    );
+    // The two compact numbers bind DIFFERENT keys: split threshold first,
+    // paste-hint timeout second (the old column layout made this easy to
+    // mix up; the row grammar keeps one setting per line).
+    const [splitField, timeoutField] = Array.from(
+      modal!.querySelectorAll<HTMLInputElement>(
+        ".stub-HkNumberInput.chat-settings__number",
+      ),
+    );
+    expect(splitField).toBeDefined();
+    expect(timeoutField).toBeDefined();
+    splitField.value = "100";
+    splitField.dispatchEvent(new Event("input"));
+    await flushPromises();
+    expect(setCalls()).toHaveLength(2);
+    expect(setCalls()[1][0]).toEqual(
+      expect.objectContaining({
+        send: expect.objectContaining({ splitChars: 100 }),
+      }),
+    );
+    timeoutField.value = "90";
+    timeoutField.dispatchEvent(new Event("input"));
+    await flushPromises();
+    expect(setCalls()).toHaveLength(3);
+    expect(setCalls()[2][0]).toEqual(
+      expect.objectContaining({
+        send: expect.objectContaining({ hintTimeoutS: 90 }),
       }),
     );
   });
@@ -712,5 +759,16 @@ describe("chat translation settings staged pane", () => {
     expect(wrapper.text()).toContain(t("settings.chatTranslate.displayTitle"));
     expect(wrapper.text()).toContain(t("settings.chatTranslate.panelEnable"));
     expect(wrapper.text()).toContain(t("settings.chatTranslate.panelMaxLines"));
+    // The line-cap number is a COMPACT field, not a full-width bar: the
+    // hikari number input is block/width:100% by design, so every chat
+    // window pins it with the shared class (regression: the settings review
+    // caught the line stretching across the whole card).
+    expect(
+      document.querySelector(".stub-HkNumberInput.chat-settings__number"),
+    ).not.toBeNull();
+    expect(
+      document.querySelectorAll(".stats-prefs__row > .stub-HkNumberInput.chat-settings__number")
+        .length,
+    ).toBeGreaterThan(0);
   });
 });

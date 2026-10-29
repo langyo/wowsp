@@ -405,6 +405,12 @@ describe("provider window (registry + layout)", () => {
     expect(modalRoot()!.textContent).toContain(
       t("settings.chatTranslate.advancedParams"),
     );
+    // One row, two labelled compact fields (timeout + temperature) — not two
+    // full-width bars stacked (the settings review's stretched-controls fix).
+    expect(modalRoot()!.querySelectorAll(".chat-settings__param")).toHaveLength(2);
+    expect(
+      modalRoot()!.querySelectorAll(".stub-HkNumberInput.chat-settings__number"),
+    ).toHaveLength(2);
   });
 
   it("gives the API key its own full-width row", async () => {
