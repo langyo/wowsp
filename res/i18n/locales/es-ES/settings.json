@@ -409,6 +409,7 @@
   "pluginPromptRecheck": "Comprobar de nuevo",
   "pluginPromptStateInstalled": "El complemento está instalado para el juego activo.",
   "pluginPromptStateAbsent": "El complemento no está instalado para el juego activo.",
+  "pluginPromptStateSafeMode": "El modo seguro está activo: el complemento está en cuarentena junto con todos los demás mods.",
   "pluginPromptStateNoGame": "No hay ruta de juego configurada.",
   "installCleanup": "Limpieza de instalación",
   "dupCheckDesc": "Una actualización silenciosa de una versión antigua podía dejar una segunda instalación de WoWSP en la ruta predeterminada. WoWSP comprueba ese residuo al iniciar y ofrece eliminarlo.",

@@ -3,12 +3,21 @@ import { nextTick, reactive } from "vue";
 import { flushPromises } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/api";
+import { useGameStatusStore } from "./gameStatus";
 import { useIngamePluginStore } from "./ingamePlugin";
 
-const mocks = vi.hoisted(() => ({ config: vi.fn() }));
-vi.mock("@/api", () => ({ api: { ingamePluginStatus: vi.fn() } }));
+const mocks = vi.hoisted(() => ({
+  config: vi.fn(),
+  runProbe: vi.fn(),
+  setSafeMode: vi.fn(),
+}));
+vi.mock("@/api", () => ({
+  api: { ingamePluginStatus: vi.fn(), modHubSetSafeMode: mocks.setSafeMode },
+}));
 vi.mock("@/stores/config", () => ({ useConfigStore: mocks.config }));
-vi.mock("@/stores/pluginUpdates", () => ({ usePluginUpdatesStore: () => ({ probeBusy: null, runProbe: vi.fn() }) }));
+vi.mock("@/stores/pluginUpdates", () => ({
+  usePluginUpdatesStore: () => ({ probeBusy: null, runProbe: mocks.runProbe }),
+}));
 
 type Status = Awaited<ReturnType<typeof api.ingamePluginStatus>>;
 function deferred<T>() {
@@ -19,6 +28,8 @@ function deferred<T>() {
 }
 const INSTALLED: Status = { installed: true, outdated: true, resMods: "test-res-mods", discussion: 1 };
 const ABSENT: Status = { installed: false, outdated: false, resMods: "", discussion: 2 };
+const SAFE: Status = { installed: false, outdated: false, safeMode: true, resMods: "", discussion: 2 };
+const RESTORED: Status = { installed: true, outdated: false, safeMode: false, resMods: "test-res-mods", discussion: 1 };
 let config = reactive({ activeInstall: { path: "C:/GameA" } as { path: string } | null });
 
 beforeEach(() => {
@@ -135,5 +146,96 @@ describe("plugin status request identity", () => {
     vi.advanceTimersByTime(15_000);
     expect(store.liveSelfRealm).toBe("");
     expect(store.playerRealms).toEqual({});
+  });
+});
+
+describe("ingamePlugin safe mode", () => {
+  it("parses safeMode from the status and reads an absent field as off", async () => {
+    // True from the status payload, false when an older shell omits the
+    // optional field on the next probe of the same root.
+    vi.mocked(api.ingamePluginStatus).mockResolvedValueOnce(SAFE).mockResolvedValueOnce(ABSENT);
+    const store = useIngamePluginStore();
+    await flushPromises();
+    expect(store.safeMode).toBe(true);
+    expect(store.state).toBe("absent");
+
+    await store.refresh();
+    expect(store.safeMode).toBe(false);
+  });
+
+  it("clears safeMode with the previous install while the next root is probed", async () => {
+    const pending = deferred<Status>();
+    vi.mocked(api.ingamePluginStatus).mockResolvedValueOnce(SAFE).mockReturnValueOnce(pending.promise);
+    const store = useIngamePluginStore();
+    await flushPromises();
+    expect(store.safeMode).toBe(true);
+
+    config.activeInstall = { path: "C:/GameB" };
+    // The root switch retires the old install's snapshot synchronously —
+    // the quarantine belongs to that install, never to the new one.
+    expect(store.safeMode).toBe(false);
+    pending.resolve(ABSENT);
+    await flushPromises();
+    expect(store.safeMode).toBe(false);
+  });
+
+  it("repairSafeMode refuses the target install's running client without an RPC", async () => {
+    vi.mocked(api.ingamePluginStatus).mockResolvedValue(SAFE);
+    const store = useIngamePluginStore();
+    await flushPromises();
+    useGameStatusStore().processes = [
+      {
+        running: true,
+        pid: 7,
+        kind: "manual",
+        realm: null,
+        exePath: null,
+        matchedInstall: { kind: "manual", path: "C:/GameA" },
+      },
+    ];
+
+    expect(await store.repairSafeMode()).toBe("resources.gameRunningBlock");
+    expect(mocks.setSafeMode).not.toHaveBeenCalled();
+    expect(mocks.runProbe).not.toHaveBeenCalled();
+  });
+
+  it("repairSafeMode turns mods back on first, repairs, then re-probes", async () => {
+    vi.mocked(api.ingamePluginStatus).mockResolvedValue(RESTORED).mockResolvedValueOnce(SAFE);
+    mocks.setSafeMode.mockResolvedValue(false);
+    mocks.runProbe.mockResolvedValue(null);
+    const store = useIngamePluginStore();
+    await flushPromises();
+
+    expect(await store.repairSafeMode()).toBeNull();
+    expect(mocks.setSafeMode).toHaveBeenCalledWith("C:/GameA", false);
+    expect(mocks.runProbe).toHaveBeenCalledWith("C:/GameA", "install");
+    // The awaited post-repair probe publishes the restored health state.
+    expect(store.safeMode).toBe(false);
+    expect(store.installed).toBe(true);
+  });
+
+  it("repairSafeMode surfaces a setter refusal raw and never runs the install", async () => {
+    vi.mocked(api.ingamePluginStatus).mockResolvedValue(SAFE);
+    mocks.setSafeMode.mockRejectedValue(new Error("res_mods is locked by the game"));
+    const store = useIngamePluginStore();
+    await flushPromises();
+
+    expect(await store.repairSafeMode()).toBe("res_mods is locked by the game");
+    expect(mocks.runProbe).not.toHaveBeenCalled();
+  });
+
+  it("repairSafeMode maps the backend's running-client guard sentence", async () => {
+    // Defensive fallback for a stale game-status snapshot: the frontend
+    // pre-check misses, the backend refuses with its English sentence, and
+    // the caller's toast must still render the localized line.
+    vi.mocked(api.ingamePluginStatus).mockResolvedValue(SAFE);
+    mocks.setSafeMode.mockRejectedValue(
+      new Error("World of Warships is running from C:/GameA (pid 7) — close that client first"),
+    );
+    const store = useIngamePluginStore();
+    await flushPromises();
+
+    expect(await store.repairSafeMode()).toBe("resources.gameRunningBlock");
+    expect(mocks.runProbe).not.toHaveBeenCalled();
   });
 });

@@ -409,6 +409,7 @@
   "pluginPromptRecheck": "再確認",
   "pluginPromptStateInstalled": "現在のゲームにはゲーム内プラグインがインストールされています。",
   "pluginPromptStateAbsent": "現在のゲームにはゲーム内プラグインがインストールされていません。",
+  "pluginPromptStateSafeMode": "セーフモードが有効です — ゲーム内プラグインはほかのすべての MOD とともに隔離されています。",
   "pluginPromptStateNoGame": "ゲームパスが未設定です。",
   "installCleanup": "インストールのクリーンアップ",
   "dupCheckDesc": "旧バージョンのサイレント更新が既定のパスに第二の WoWSP インストールを残すことがありました。起動時にその残骸を検査し、見つかれば削除を提案します。",

@@ -409,6 +409,7 @@
   "pluginPromptRecheck": "Check again",
   "pluginPromptStateInstalled": "The in-game plugin is installed for the active game.",
   "pluginPromptStateAbsent": "The in-game plugin is not installed for the active game.",
+  "pluginPromptStateSafeMode": "Safe mode is active — the in-game plugin is quarantined with every other mod.",
   "pluginPromptStateNoGame": "No game path is set.",
   "installCleanup": "Install cleanup",
   "dupCheckDesc": "A silent update from an old version could leave a second WoWSP install on the default path. WoWSP checks for such a leftover at launch and offers to remove it.",

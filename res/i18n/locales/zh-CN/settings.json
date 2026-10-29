@@ -409,6 +409,7 @@
   "pluginPromptRecheck": "重新检查",
   "pluginPromptStateInstalled": "当前游戏已安装游戏内插件。",
   "pluginPromptStateAbsent": "当前游戏未安装游戏内插件。",
+  "pluginPromptStateSafeMode": "当前处于安全模式——游戏内插件已随全部模组一并隔离。",
   "pluginPromptStateNoGame": "尚未设置游戏路径。",
   "installCleanup": "安装清理",
   "dupCheckDesc": "旧版本的静默升级可能在默认路径残留第二份 WoWSP 安装。启动时检查这种残留，发现时询问是否卸载。",

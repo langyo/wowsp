@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   ingamePluginUninstall: vi.fn(),
   modCatalogInstall: vi.fn(),
   modCatalogUninstall: vi.fn(),
+  modHubSafeMode: vi.fn(),
   listenDownloadProgress: vi.fn((_handler: unknown) => () => undefined),
 }));
 
@@ -46,6 +47,7 @@ beforeAll(async () => {
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.useFakeTimers();
+  mocks.modHubSafeMode.mockResolvedValue(false);
 });
 
 afterEach(() => {

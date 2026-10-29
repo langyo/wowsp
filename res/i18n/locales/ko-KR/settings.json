@@ -409,6 +409,7 @@
   "pluginPromptRecheck": "다시 확인",
   "pluginPromptStateInstalled": "현재 게임에 게임 내 플러그인이 설치되어 있습니다.",
   "pluginPromptStateAbsent": "현재 게임에 게임 내 플러그인이 설치되어 있지 않습니다.",
+  "pluginPromptStateSafeMode": "안전 모드가 켜져 있습니다 — 게임 내 플러그인도 다른 모든 모드와 함께 격리되어 있습니다.",
   "pluginPromptStateNoGame": "게임 경로가 설정되지 않았습니다.",
   "installCleanup": "설치 정리",
   "dupCheckDesc": "구버전의 자동 업데이트가 기본 경로에 두 번째 WoWSP 설치를 남겨둘 수 있었습니다. 시작 시 이러한 잔여 설치를 점검하고, 발견하면 제거를 제안합니다.",

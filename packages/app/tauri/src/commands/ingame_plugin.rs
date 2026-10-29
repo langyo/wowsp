@@ -89,6 +89,15 @@ pub struct IngameBuildsFrame {
 pub struct IngamePluginStatus {
     /// Whether the plugin's entry file exists in the install's res_mods.
     pub installed: bool,
+    /// Whether the install's current res_mods is quarantined by the mod hub's
+    /// safe mode: enabled safe mode renames `res_mods` to
+    /// `res_mods.wowsp-disabled` (and a game update while it is on strands
+    /// that twin in an older `bin/` dir). `installed` deliberately keeps
+    /// describing the LIVE res_mods tree — false while quarantined — because
+    /// that is the in-game truth; the UI uses this flag to replace the
+    /// install offer with the "turn mods back on and repair" ask instead of
+    /// offering an install the backend must refuse.
+    pub safe_mode: bool,
     /// Installed but NOT the bytes this app ships (an older build, a
     /// missing unbound view, or a hand-edited file): the UI offers a
     /// one-click update. The in-game version string is pinned at 0.1.0 by
@@ -117,6 +126,7 @@ pub fn ingame_plugin_status(game_root: String) -> CommandResult<IngamePluginStat
         ) && file_fresh(&dir, VIEW_DEST, PLUGIN_VIEW));
     Ok(IngamePluginStatus {
         installed,
+        safe_mode: super::mod_hub::safe_mode_active(&game_root),
         outdated,
         res_mods: dir.to_string_lossy().into_owned(),
         discussion: DISCUSSION_NUMBER,
@@ -1466,6 +1476,44 @@ mod tests {
             PLUGIN_SOURCE.as_bytes()
         );
         std::fs::remove_dir_all(game.parent().unwrap()).ok();
+    }
+
+    /// The status payload must let the UI tell safe-mode quarantine apart
+    /// from a genuinely missing plugin: while safe mode is on, the whole
+    /// res_mods is renamed to `res_mods.wowsp-disabled`, so `installed`
+    /// reads false even though the probe files are all still there. The
+    /// probe entry sits in the live tree first (installed, not
+    /// quarantined), then the quarantine rename flips the report to
+    /// "not installed AND safe mode on" — exactly the pair the recovery
+    /// prompt keys on, instead of an install offer the backend refuses.
+    #[test]
+    fn status_reports_safe_mode_beside_the_live_install() {
+        let game = std::env::temp_dir().join("wowsp-probe-status-safe-mode");
+        let _ = std::fs::remove_dir_all(&game);
+        let ver_dir = game.join("bin").join("42");
+        let res_mods = ver_dir.join("res_mods");
+        let probe_dir = res_mods.join("PnFMods").join(MOD_DIR);
+        std::fs::create_dir_all(&probe_dir).unwrap();
+        std::fs::write(probe_dir.join(MOD_ENTRY), PLUGIN_SOURCE).unwrap();
+
+        let status = ingame_plugin_status(game.to_string_lossy().into_owned()).unwrap();
+        assert!(status.installed, "the live tree carries the probe entry");
+        assert!(!status.safe_mode, "nothing is quarantined yet");
+
+        // Safe mode's one atomic rename (the shape mod_hub applies): the
+        // files survive, the LIVE res_mods path does not.
+        std::fs::rename(&res_mods, ver_dir.join("res_mods.wowsp-disabled")).unwrap();
+        let status = ingame_plugin_status(game.to_string_lossy().into_owned()).unwrap();
+        assert!(
+            !status.installed,
+            "the live res_mods tree is gone — that is the in-game truth"
+        );
+        assert!(
+            status.safe_mode,
+            "the quarantine must be reported, not read as a missing plugin"
+        );
+
+        std::fs::remove_dir_all(&game).ok();
     }
 
     #[test]
