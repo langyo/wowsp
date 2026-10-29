@@ -80,7 +80,10 @@
       "missingAsset": "Referencia a un recurso ausente"
     },
     "unknownBadge": "Desconocido",
+    "empty": "No hay plugins sospechosos que revisar.",
     "quarantine": "Poner en cuarentena",
+    "quarantineAll": "Poner todo en cuarentena",
+    "quarantineAllDone": "{count} entradas puestas en cuarentena",
     "restore": "Restaurar",
     "logLines": "Líneas de registro",
     "delete": "Eliminar",

@@ -9,7 +9,7 @@
   flex-direction: column;
   gap: 4px;
   padding: 6px 0 10px;
-  border-bottom: 1px solid var(--hi-color-border, #d0d7de);
+  border-bottom: 1px solid var(--hi-color-border);
   margin-bottom: 6px;
 }
 
@@ -18,27 +18,27 @@
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border: 1px solid var(--hi-color-warning, #9a6700);
-  border-radius: var(--hi-radius-sm, 4px);
-  background: var(--hi-color-warning-soft, rgba(154, 103, 0, 0.08));
+  border: 1px solid var(--hi-color-warning);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-warning) / 12%);
 
   &.is-unknown {
-    background: var(--hi-color-warning-soft, rgba(154, 103, 0, 0.16));
+    background: rgb(var(--color-warning) / 20%);
   }
 
   &.is-quarantined {
-    border-color: var(--hi-color-border, #d0d7de);
-    background: var(--hi-color-bg-muted, #f6f8fa);
+    border-color: var(--hi-color-border);
+    background: var(--hi-color-bg-subtle);
   }
 }
 
 .crash-pins__icon {
   flex: none;
   display: inline-flex;
-  color: var(--hi-color-warning, #9a6700);
+  color: var(--hi-color-warning);
 
   .is-quarantined & {
-    color: var(--hi-color-text-secondary, #57606a);
+    color: var(--hi-color-text-secondary);
   }
 }
 
@@ -51,7 +51,7 @@
 }
 
 .crash-pins__name {
-  font-size: var(--hi-text-sm, 0.8125rem);
+  font-size: var(--text-sm);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -67,24 +67,24 @@
 .crash-pins__badge {
   padding: 0 6px;
   border-radius: 999px;
-  font-size: var(--hi-text-xs, 0.75rem);
-  background: var(--hi-color-warning-soft, rgba(154, 103, 0, 0.14));
-  color: var(--hi-color-warning, #9a6700);
+  font-size: var(--text-xs);
+  background: rgb(var(--color-warning) / 18%);
+  color: var(--hi-color-warning);
 
   &.is-unknown {
-    background: var(--hi-color-warning, #9a6700);
+    background: var(--hi-color-warning);
     color: #fff;
     font-weight: 600;
   }
 
   &.is-evidence {
     background: transparent;
-    border: 1px solid var(--hi-color-border, #d0d7de);
-    color: var(--hi-color-text-secondary, #57606a);
+    border: 1px solid var(--hi-color-border);
+    color: var(--hi-color-text-secondary);
   }
 
   &.is-quarantined {
-    background: var(--hi-color-bg-muted, #eaeef2);
-    color: var(--hi-color-text-secondary, #57606a);
+    background: rgb(var(--color-text) / 10%);
+    color: var(--hi-color-text-secondary);
   }
 }

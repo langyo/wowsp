@@ -80,7 +80,10 @@
       "missingAsset": "引用缺失資源"
     },
     "unknownBadge": "未知",
+    "empty": "暫無可疑插件。",
     "quarantine": "隔離",
+    "quarantineAll": "一鍵隔離",
+    "quarantineAllDone": "已隔離 {count} 項",
     "restore": "還原",
     "logLines": "記錄檔行",
     "delete": "刪除",

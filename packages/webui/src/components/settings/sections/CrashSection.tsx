@@ -19,7 +19,7 @@ import {
 } from "@celestia-island/hikari";
 import { BellOff, FileDown, RefreshCw, ShieldAlert, Trash2 } from "@lucide/vue";
 
-import { api, type CrashFinding, type GameCrashRecord } from "@/api";
+import { api, type CrashFinding, type GameCrashRecord, type SuspectMod } from "@/api";
 import { t } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
 import { useCrashStore } from "@/stores/crash";
@@ -83,6 +83,16 @@ export default defineComponent({
     const safeMode = ref(false);
     /** The suspect pending a delete confirmation. */
     const deleteTarget = ref<string | null>(null);
+    /** The one-click quarantine pass over the suspect window's rows. */
+    const quarantineAllBusy = ref(false);
+
+    /** Suspects the quarantine manifest does not cover yet — the bulk
+     *  action quarantines exactly these, skipping rows already done. */
+    const pendingSuspects = computed<SuspectMod[]>(() => {
+      const suspects = selectedAnalysis.value?.suspects ?? [];
+      const done = new Set(crash.quarantined.map((q) => q.name.toLowerCase()));
+      return suspects.filter((s) => !done.has(s.name.toLowerCase()));
+    });
 
     const selectedRecord = computed<GameCrashRecord | null>(
       () =>
@@ -211,6 +221,36 @@ export default defineComponent({
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       }
+    }
+
+    /** Quarantine every pending suspect in one pass (the suspect
+     *  window's footer button). Each row rides the guarded single-entry
+     *  command — game-running refusals land per row; the pass reports
+     *  the count and surfaces the first refusal instead of stopping. */
+    async function quarantineAll() {
+      const targets = pendingSuspects.value;
+      const record = selectedRecord.value;
+      if (targets.length === 0 || quarantineAllBusy.value) return;
+      quarantineAllBusy.value = true;
+      let done = 0;
+      let firstError: string | null = null;
+      try {
+        for (const s of targets) {
+          try {
+            await crash.quarantine(s.name, record?.id, record?.gameRoot);
+            done += 1;
+          } catch (e) {
+            firstError ??= e instanceof Error ? e.message : String(e);
+          }
+        }
+      } finally {
+        quarantineAllBusy.value = false;
+      }
+      if (done > 0) {
+        toast.success(t("crash.suspects.quarantineAllDone", { count: done }));
+        await refreshAll();
+      }
+      if (firstError) toast.error(firstError);
     }
 
     function requestDelete(name: string) {
@@ -462,7 +502,7 @@ export default defineComponent({
                     {log.highlights.length > 0 ? (
                       <ul class="crash-section__log-highlights">
                         {log.highlights.map((line) => (
-                          <li key={line}>
+                          <li key={line} data-hint-overflow={line}>
                             <code>{line}</code>
                           </li>
                         ))}
@@ -493,6 +533,20 @@ export default defineComponent({
             onUpdate:modelValue={(v: boolean) => (suspectsOpen.value = v)}
             title={t("crash.section.suspects")}
             width="44rem"
+            footerActions={[
+              {
+                label:
+                  t("crash.suspects.quarantineAll") +
+                  (pendingSuspects.value.length > 0
+                    ? " (" + pendingSuspects.value.length + ")"
+                    : ""),
+                variant: "outline",
+                loading: quarantineAllBusy.value,
+                disabled:
+                  quarantineAllBusy.value || pendingSuspects.value.length === 0,
+                onClick: () => void quarantineAll(),
+              },
+            ]}
           >
             {analysis && analysis.suspects.length > 0 ? (
               <ul class="crash-section__suspects">
@@ -504,7 +558,12 @@ export default defineComponent({
                   return (
                     <li key={s.name} class="crash-section__suspect">
                       <div class="crash-section__suspect-row">
-                        <span class="crash-section__suspect-name">{s.name}</span>
+                        <span
+                          class="crash-section__suspect-name"
+                          data-hint-overflow={s.name}
+                        >
+                          {s.name}
+                        </span>
                         <HkTag variant="default" size="sm">
                           {t("crash.suspects.evidence." + s.evidence)}
                         </HkTag>
@@ -558,7 +617,7 @@ export default defineComponent({
                       {s.logLines.length > 0 ? (
                         <ul class="hk-selectable crash-section__suspect-lines">
                           {s.logLines.map((line) => (
-                            <li key={line}>
+                            <li key={line} data-hint-overflow={line}>
                               <code>{line}</code>
                             </li>
                           ))}
@@ -569,7 +628,7 @@ export default defineComponent({
                 })}
               </ul>
             ) : (
-              <p class="crash-section__empty">{t("crash.section.ignoredEmpty")}</p>
+              <p class="crash-section__empty">{t("crash.suspects.empty")}</p>
             )}
           </HkModal>
 
@@ -586,7 +645,9 @@ export default defineComponent({
               <ul class="crash-section__ignored">
                 {crash.ignored.map((i) => (
                   <li key={i.name} class="crash-section__ignored-row">
-                    <span class="crash-section__ignored-name">{i.name}</span>
+                    <span class="crash-section__ignored-name" data-hint-overflow={i.name}>
+                      {i.name}
+                    </span>
                     <span class="crash-section__ignored-time">
                       {formatTime(i.ignoredAt)}
                     </span>
