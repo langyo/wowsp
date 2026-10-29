@@ -30,7 +30,16 @@
     "restart": "Restart game",
     "safeModeOn": "Safe mode is on",
     "analysisFor": "Analysis for {id}",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "latest": "Latest crash",
+    "noCrashes": "No crashes recorded",
+    "openRecords": "Crash records",
+    "recordsTitle": "Crash records",
+    "rawLogs": "Raw logs",
+    "rawLogsTitle": "Raw logs",
+    "ignored": "Ignored warnings",
+    "ignoredEmpty": "No ignored warnings.",
+    "restoreWarning": "Restore warning"
   },
   "findings": {
     "exceptionAccessViolation": "Access violation — the client read or wrote memory it does not own",
@@ -56,7 +65,8 @@
     "safeModeOn": "Safe mode was on — the stock client crashed without plugins",
     "probeWasActive": "The WoWSP in-game probe was active",
     "dumpAvailable": "A crash dump is available for deep analysis",
-    "danglingUiReference": "Dangling UI reference — the crash log shows \"{url}\" failing to load while a mod file still asks for it"
+    "danglingUiReference": "Dangling UI reference — the crash log shows \"{url}\" failing to load while a mod file still asks for it",
+    "evidenceGameReport": "From the WG crash report"
   },
   "suspects": {
     "title": "Suspect plugins",
@@ -68,7 +78,14 @@
     "unknownBadge": "Unknown",
     "quarantine": "Quarantine",
     "restore": "Restore",
-    "logLines": "Log lines"
+    "logLines": "Log lines",
+    "delete": "Delete",
+    "ignore": "Ignore",
+    "confirmDeleteTitle": "Delete mod file",
+    "confirmDeleteMessage": "Permanently delete {name}? This cannot be undone.",
+    "deleteDone": "Deleted",
+    "ignoreDone": "Warning ignored — restore it under Ignored warnings",
+    "restoreDone": "Warning restored"
   },
   "actions": {
     "restarting": "Restarting the client…",

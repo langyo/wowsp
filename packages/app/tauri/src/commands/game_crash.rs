@@ -2004,7 +2004,6 @@ fn build_findings(
     record: &GameCrashRecord,
     mods: &[ModEntry],
     game_logs: &[LogExcerpt],
-    root: Option<&str>,
     dangling_urls: &[String],
 ) -> Vec<CrashFinding> {
     let mut findings = Vec::new();
@@ -2032,6 +2031,7 @@ fn build_findings(
         code: match record.source.as_str() {
             SOURCE_EVENT_LOG => "evidenceEventLog",
             SOURCE_WER_REPORT => "evidenceWerReport",
+            SOURCE_GAME_REPORT => "evidenceGameReport",
             _ => "evidenceCrashDump",
         }
         .to_string(),
@@ -2070,13 +2070,6 @@ fn build_findings(
         findings.push(CrashFinding {
             code: "modsActiveAtCrash".to_string(),
             severity: "warning".to_string(),
-            detail: None,
-        });
-    }
-    if root.is_some_and(super::mod_hub::safe_mode_active) {
-        findings.push(CrashFinding {
-            code: "safeModeOn".to_string(),
-            severity: "info".to_string(),
             detail: None,
         });
     }
@@ -2172,6 +2165,23 @@ fn dangling_urls_from_text(text: &str) -> Vec<String> {
     urls
 }
 
+/// Every mods tree the analysis may need to read: the active res_mods
+/// (as the game leaves it) AND the safe-mode twin (the set that was loaded
+/// when a crash predates the safe-mode answer), deduped.
+fn res_mods_bases(root: &Path) -> Vec<PathBuf> {
+    let mut bases: Vec<PathBuf> = Vec::new();
+    if let Some(base) = res_mods_base(root) {
+        bases.push(base);
+    }
+    if let Some((_, ver_dir)) = super::mod_hub::latest_bin_version(&root.to_string_lossy()) {
+        let twin = super::mod_hub::disabled_res_mods(&ver_dir);
+        if twin.is_dir() && !bases.iter().any(|b| b == &twin) {
+            bases.push(twin);
+        }
+    }
+    bases
+}
+
 /// The mods tree the analysis reads (active res_mods, or the safe-mode
 /// twin — the crash may already have prompted the quarantine of
 /// everything, and the dangling files live in the twin).
@@ -2232,7 +2242,16 @@ fn dangling_ref_suspects(base: &Path, urls: &[String]) -> Vec<SuspectMod> {
             }
             let Ok(bytes) = fs::read(&path) else { continue };
             let text = String::from_utf8_lossy(&bytes);
-            let hit = urls.iter().any(|url| text.contains(url.as_str()));
+            // A mod file may spell the bare file name while the loader
+            // logged a full path (or vice versa) — match either spelling.
+            let matched: Vec<&String> = urls
+                .iter()
+                .filter(|url| {
+                    let basename = url.rsplit('/').next().unwrap_or(url.as_str());
+                    text.contains(url.as_str()) || (!basename.is_empty() && text.contains(basename))
+                })
+                .collect();
+            let hit = !matched.is_empty();
             if !hit {
                 continue;
             }
@@ -2249,11 +2268,7 @@ fn dangling_ref_suspects(base: &Path, urls: &[String]) -> Vec<SuspectMod> {
             suspects.push(SuspectMod {
                 name: rel,
                 evidence: EVIDENCE_DANGLING_REF.to_string(),
-                log_lines: urls
-                    .iter()
-                    .filter(|url| text.contains(url.as_str()))
-                    .map(String::clone)
-                    .collect(),
+                log_lines: matched.iter().map(|u| (*u).clone()).collect(),
             });
         }
     }
@@ -2426,13 +2441,49 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
             seen_urls.push(url);
         }
     }
-    let findings = build_findings(
-        record,
-        &mods_inventory,
-        &game_logs,
-        root.as_deref(),
-        &seen_urls,
-    );
+    // Attribution FIRST: only a dangling URL some mod file still references
+    // is worth a finding (the game logs plenty of benign loader misses —
+    // icon_default.png and friends — that no mod touched), and same-basename
+    // spellings collapse to the most specific one.
+    let mut attributed: Vec<SuspectMod> = Vec::new();
+    if let Some(root_path) = root.as_deref().map(Path::new) {
+        for base in res_mods_bases(root_path) {
+            for suspect in dangling_ref_suspects(&base, &seen_urls) {
+                if !attributed.iter().any(|s| s.name == suspect.name) {
+                    attributed.push(suspect);
+                }
+            }
+        }
+    }
+    let referenced = |url: &String| {
+        let basename = url.rsplit('/').next().unwrap_or(url.as_str());
+        attributed.iter().any(|s| {
+            s.log_lines
+                .iter()
+                .any(|l| l == url || l.rsplit('/').next().unwrap_or(l.as_str()) == basename)
+        })
+    };
+    let mut display_urls: Vec<String> = Vec::new();
+    for url in &seen_urls {
+        if !referenced(url) {
+            continue;
+        }
+        let basename = url.rsplit('/').next().unwrap_or(url.as_str());
+        // Longer spelling wins; a bare name only fills when no full path
+        // for the same file exists.
+        match display_urls
+            .iter_mut()
+            .find(|u| u.rsplit('/').next().unwrap_or(u.as_str()) == basename)
+        {
+            Some(existing) => {
+                if url.len() > existing.len() {
+                    *existing = url.clone();
+                }
+            },
+            None => display_urls.push(url.clone()),
+        }
+    }
+    let findings = build_findings(record, &mods_inventory, &game_logs, &display_urls);
     let raw_refs: Vec<(&str, &str)> = raw_texts
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
@@ -2442,29 +2493,22 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         &mods_inventory,
         parse_rfc3339_unix(&record.detected_at),
     );
-    // Scan BOTH trees when both exist: the crash may predate the safe-mode
-    // answer (the loaded set lives in the twin) while new files already sit
-    // in the recreated active dir — the reverse lookup must not miss either.
-    if let Some(root_path) = root.as_deref().map(Path::new) {
-        let mut bases: Vec<PathBuf> = Vec::new();
-        if let Some(base) = res_mods_base(root_path) {
-            bases.push(base);
-        }
-        if let Some((_, ver_dir)) = super::mod_hub::latest_bin_version(&root_path.to_string_lossy())
-        {
-            let twin = super::mod_hub::disabled_res_mods(&ver_dir);
-            if twin.is_dir() && !bases.iter().any(|b| b == &twin) {
-                bases.push(twin);
-            }
-        }
-        for base in bases {
-            for suspect in dangling_ref_suspects(&base, &seen_urls) {
-                if !suspects.iter().any(|s| s.name == suspect.name) {
-                    suspects.push(suspect);
-                }
-            }
+    for suspect in attributed {
+        if !suspects.iter().any(|s| s.name == suspect.name) {
+            suspects.push(suspect);
         }
     }
+    // The user's ignored set: a dismissed suspect stays out of the active
+    // list (the managed list surfaces it with a restore action).
+    let ignored = super::appdata::appdata_dir_path()
+        .map(|dir| load_ignored_in(&dir))
+        .unwrap_or_default();
+    suspects.retain(|s| !ignored.iter().any(|i| i.name.eq_ignore_ascii_case(&s.name)));
+    suspects.sort_by_key(|s| match s.evidence.as_str() {
+        EVIDENCE_DANGLING_REF => 0,
+        EVIDENCE_LOG_MENTION => 1,
+        _ => 2,
+    });
     Ok(CrashAnalysis {
         record: record.clone(),
         findings,
@@ -2475,6 +2519,131 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         current_build,
         generated_at: chrono::Utc::now().to_rfc3339(),
     })
+}
+
+// ── suspect management: ignore list + deletion ──────────────────────────────
+
+/// The ignored-suspect store (appdata JSON): a name the user dismissed
+/// stays out of the analysis findings until restored.
+const IGNORED_FILE: &str = "crash-ignored-suspects.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IgnoredSuspect {
+    pub name: String,
+    pub ignored_at: String,
+}
+
+/// Load the ignored list (a damaged file answers empty — worst case the
+/// warnings reappear, which is the safe direction).
+fn load_ignored_in(dir: &Path) -> Vec<IgnoredSuspect> {
+    super::appdata::read_json_in(dir, IGNORED_FILE)
+        .ok()
+        .flatten()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn save_ignored_in(dir: &Path, list: &[IgnoredSuspect]) -> anyhow::Result<()> {
+    super::appdata::write_json_in(dir, IGNORED_FILE, &serde_json::to_string(list)?)
+}
+
+/// The stored ignore list (the section renders it with restore actions).
+#[tauri::command]
+pub fn game_crash_ignored_suspects() -> CommandResult<Vec<IgnoredSuspect>> {
+    let dir = super::appdata::appdata_dir_path()?;
+    Ok(load_ignored_in(&dir))
+}
+
+/// Dismiss one suspect warning by name (the analysis filters it out).
+#[tauri::command]
+pub fn game_crash_ignore_suspect(window: tauri::Window, name: String) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(anyhow!("empty suspect name").into());
+    }
+    let dir = super::appdata::appdata_dir_path()?;
+    let mut list = load_ignored_in(&dir);
+    if !list.iter().any(|i| i.name.eq_ignore_ascii_case(name)) {
+        list.insert(
+            0,
+            IgnoredSuspect {
+                name: name.to_string(),
+                ignored_at: chrono::Utc::now().to_rfc3339(),
+            },
+        );
+    }
+    save_ignored_in(&dir, &list)?;
+    Ok(())
+}
+
+/// Bring one warning back (undo an ignore).
+#[tauri::command]
+pub fn game_crash_restore_suspect(window: tauri::Window, name: String) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
+    let dir = super::appdata::appdata_dir_path()?;
+    let mut list = load_ignored_in(&dir);
+    list.retain(|i| !i.name.eq_ignore_ascii_case(name.trim()));
+    save_ignored_in(&dir, &list)?;
+    Ok(())
+}
+
+/// The tree a quarantined/deletable subject lives in: the active res_mods
+/// first, then the safe-mode twin (same rule as the quarantine source).
+fn subject_tree(root: &str, name: &str) -> anyhow::Result<PathBuf> {
+    let (_, res_mods) = super::game_context::latest_bin_dir(Path::new(root))
+        .map(|(_, ver_dir)| (ver_dir.clone(), ver_dir.join("res_mods")))
+        .ok_or_else(|| anyhow!("no numeric bin/<version> under {root}"))?;
+    if res_mods.join(name).exists() {
+        return Ok(res_mods.join(name));
+    }
+    let (_, quarantine_dir) = quarantine_dir_of(root)?;
+    let twin =
+        super::mod_hub::disabled_res_mods(quarantine_dir.parent().unwrap_or(Path::new(root)));
+    let candidate = twin.join(name);
+    if candidate.exists() {
+        return Ok(candidate);
+    }
+    Err(anyhow!(
+        "{name}: not found in res_mods or the safe-mode twin"
+    ))
+}
+
+/// Permanently delete one pinned entry (file or directory) from the mods
+/// tree — the destructive sibling of quarantine. Gates like every
+/// mutation (main window, known install, game closed) plus: the path is
+/// sanitized, and symlinks/junctions are refused rather than followed.
+#[tauri::command]
+pub async fn game_crash_delete_entry(
+    window: tauri::Window,
+    game_root: String,
+    entry_name: String,
+) -> CommandResult<()> {
+    crate::commands::ensure_main_window_label(window.label())?;
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    Ok(tauri::async_runtime::spawn_blocking(move || {
+        super::mod_hub::ensure_known_game_root(&game_root)?;
+        super::mod_hub::ensure_game_closed(&game_root)?;
+        let name = sanitize_entry_name(&entry_name)?;
+        let target = subject_tree(&game_root, &name)?;
+        let meta = fs::symlink_metadata(&target)?;
+        if meta.file_type().is_symlink() {
+            return Err(anyhow!(
+                "refusing to delete a symlink: {}",
+                target.display()
+            ));
+        }
+        if meta.is_dir() {
+            fs::remove_dir_all(&target).map_err(|e| anyhow!("delete {}: {e}", target.display()))?;
+        } else {
+            fs::remove_file(&target).map_err(|e| anyhow!("delete {}: {e}", target.display()))?;
+        }
+        tracing::warn!(entry = %name, "suspect entry deleted");
+        Ok(())
+    })
+    .await
+    .map_err(|e| anyhow!("delete task failed: {e}"))??)
 }
 
 // ── export ───────────────────────────────────────────────────────────────────

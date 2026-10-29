@@ -94,6 +94,13 @@ export interface CrashAnalysis {
   generatedAt: string;
 }
 
+/** Mirrors commands::game_crash::IgnoredSuspect — one dismissed warning. */
+export interface IgnoredSuspect {
+  name: string;
+  /** RFC 3339 UTC of the dismissal. */
+  ignoredAt: string;
+}
+
 /** Mirrors commands::game_crash::QuarantineEntry — one res_mods entry moved
  *  out of the load path (the per-install quarantine manifest). */
 export interface QuarantineEntry {
@@ -165,4 +172,16 @@ export const gameCrashApi = {
    *  import them; resolves the newly imported records. */
   scanRecentCrashes: () =>
     transport.invoke<GameCrashRecord[]>(RPC.game_crash_scan_recent),
+  /** The stored dismissed-warning list (restorable from the section). */
+  listIgnoredSuspects: () =>
+    transport.invoke<IgnoredSuspect[]>(RPC.game_crash_ignored_suspects),
+  /** Dismiss one suspect warning by name. */
+  ignoreSuspect: (name: string) =>
+    transport.invoke<null>(RPC.game_crash_ignore_suspect, { name }),
+  /** Bring one dismissed warning back. */
+  restoreSuspect: (name: string) =>
+    transport.invoke<null>(RPC.game_crash_restore_suspect, { name }),
+  /** Permanently delete one pinned mod entry (file or directory). */
+  deleteEntry: (gameRoot: string, entryName: string) =>
+    transport.invoke<null>(RPC.game_crash_delete_entry, { gameRoot, entryName }),
 };

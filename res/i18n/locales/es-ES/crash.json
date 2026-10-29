@@ -30,7 +30,16 @@
     "restart": "Reiniciar el juego",
     "safeModeOn": "El modo seguro está activado",
     "analysisFor": "Análisis de {id}",
-    "refresh": "Actualizar"
+    "refresh": "Actualizar",
+    "latest": "Último fallo",
+    "noCrashes": "No hay fallos registrados",
+    "openRecords": "Registros de fallos",
+    "recordsTitle": "Registros de fallos",
+    "rawLogs": "Registros sin procesar",
+    "rawLogsTitle": "Registros sin procesar",
+    "ignored": "Avisos ignorados",
+    "ignoredEmpty": "No hay avisos ignorados.",
+    "restoreWarning": "Restaurar aviso"
   },
   "findings": {
     "exceptionAccessViolation": "Infracción de acceso — el cliente leyó o escribió memoria que no le pertenece",
@@ -56,7 +65,8 @@
     "safeModeOn": "El modo seguro estaba activado — el cliente original se bloqueó por sí solo",
     "probeWasActive": "La sonda en el juego de WoWSP estaba activa",
     "dumpAvailable": "Hay un volcado de memoria disponible para un análisis profundo",
-    "danglingUiReference": "Referencia de UI colgante — el registro del fallo muestra \"{url}\" sin cargar mientras un archivo de mod la sigue pidiendo"
+    "danglingUiReference": "Referencia de UI colgante — el registro del fallo muestra \"{url}\" sin cargar mientras un archivo de mod la sigue pidiendo",
+    "evidenceGameReport": "Del informe de fallo de WG"
   },
   "suspects": {
     "title": "Plugins sospechosos",
@@ -68,7 +78,14 @@
     "unknownBadge": "Desconocido",
     "quarantine": "Poner en cuarentena",
     "restore": "Restaurar",
-    "logLines": "Líneas de registro"
+    "logLines": "Líneas de registro",
+    "delete": "Eliminar",
+    "ignore": "Ignorar",
+    "confirmDeleteTitle": "Eliminar archivo de mod",
+    "confirmDeleteMessage": "¿Eliminar {name} permanentemente? Esta acción no se puede deshacer.",
+    "deleteDone": "Eliminado",
+    "ignoreDone": "Aviso ignorado — restáuralo en Avisos ignorados",
+    "restoreDone": "Aviso restaurado"
   },
   "actions": {
     "restarting": "Reiniciando el cliente…",

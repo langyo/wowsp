@@ -28,6 +28,7 @@ import {
   type GameCrashRecord,
   type GameRestartInfo,
   type QuarantineEntry,
+  type IgnoredSuspect,
 } from "@/api";
 import { t } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
@@ -62,6 +63,9 @@ export const useCrashStore = defineStore("crash", () => {
   const safeguardBusy = ref(false);
   /** A manual recent-crash parse is running (the section's scan button). */
   const scanning = ref(false);
+  /** The dismissed-warning list (the section renders it with restore
+   *  actions; the analysis filters these names out). */
+  const ignored = ref<IgnoredSuspect[]>([]);
 
   /** Analysis results cache, per record id (analyze is heavy IO; one pass
    *  per record per session unless the section forces a refresh). A plain
@@ -362,6 +366,41 @@ export const useCrashStore = defineStore("crash", () => {
     }
   }
 
+  /** Reload the dismissed-warning list. */
+  async function loadIgnored() {
+    try {
+      ignored.value = await api.listIgnoredSuspects();
+    } catch {
+      // No backend — the list stays as-is.
+    }
+  }
+
+  /** Dismiss one suspect warning (persisted; the analysis filters it). */
+  async function ignoreSuspect(name: string) {
+    await api.ignoreSuspect(name);
+    await loadIgnored();
+  }
+
+  /** Undo a dismissal — the warning comes back. */
+  async function restoreSuspect(name: string) {
+    await api.restoreSuspect(name);
+    await loadIgnored();
+  }
+
+  /** Permanently delete one pinned mod entry. */
+  async function deleteEntry(name: string, gameRoot: string | null | undefined) {
+    if (!gameRoot) throw new Error("crash: no game root for deletion");
+    await api.deleteEntry(gameRoot, name);
+  }
+
+  /** Drop the cached analysis and re-run it (after an ignore / delete the
+   *  findings and suspects must reflect the new state). */
+  async function refreshAnalysis(id: string) {
+    analyses.delete(id);
+    analysesVersion.value += 1;
+    return analyze(id);
+  }
+
   return {
     safeguard,
     safeguardBusy,
@@ -385,6 +424,12 @@ export const useCrashStore = defineStore("crash", () => {
     restart,
     safeModeAndRestart,
     quarantineRoot,
+    ignored,
+    loadIgnored,
+    ignoreSuspect,
+    restoreSuspect,
+    deleteEntry,
+    refreshAnalysis,
     loadSafeguard,
     setSafeguard,
     scanRecent,

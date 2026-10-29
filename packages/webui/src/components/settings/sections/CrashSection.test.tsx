@@ -27,6 +27,10 @@ vi.mock("@/api", () => ({
     safeguardEnabled: vi.fn(() => Promise.resolve(true)),
     setSafeguard: vi.fn(),
     scanRecentCrashes: vi.fn(() => Promise.resolve([])),
+    listIgnoredSuspects: vi.fn(() => Promise.resolve([])),
+    ignoreSuspect: vi.fn(),
+    restoreSuspect: vi.fn(),
+    deleteEntry: vi.fn(),
   },
 }));
 
@@ -37,6 +41,9 @@ const mocked = {
   list: vi.mocked(api.listGameCrashes),
   analyze: vi.mocked(api.analyzeGameCrash),
   exportReport: vi.mocked(api.exportGameCrashReport),
+  deleteEntry: vi.mocked(api.deleteEntry),
+  ignore: vi.mocked(api.ignoreSuspect),
+  restore: vi.mocked(api.restoreSuspect),
 };
 
 function record(overrides: Partial<GameCrashRecord> = {}): GameCrashRecord {
@@ -79,6 +86,7 @@ describe("CrashSection", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    mocked.list.mockResolvedValue([]);
   });
 
   it("renders the empty state when no crashes were retained", async () => {
@@ -87,34 +95,92 @@ describe("CrashSection", () => {
     await vi.waitFor(() => {
       expect(wrapper.find(".crash-section__empty").exists()).toBe(true);
     });
-    expect(wrapper.text()).toContain(t("crash.section.empty"));
+    expect(wrapper.text()).toContain(t("crash.section.noCrashes"));
   });
 
-  it("lists records and renders findings with severity chips", async () => {
+  it("shows only the latest crash stamp at the top level", async () => {
     mocked.list.mockResolvedValue([record()]);
     mocked.analyze.mockResolvedValue(analysis);
     const wrapper = mount(CrashSection);
+    // Wait for the history load: the open-records button only renders once
+    // a record exists.
+    let openBtn: ReturnType<typeof wrapper.findAll>[number] | undefined;
     await vi.waitFor(() => {
-      expect(wrapper.find(".crash-section__record").exists()).toBe(true);
+      openBtn = wrapper
+        .findAll("button")
+        .find((b) => b.text().includes(t("crash.section.openRecords")));
+      expect(openBtn).toBeTruthy();
     });
+    // The stamp renders (the exact localized format is locale-dependent):
+    expect(wrapper.find(".crash-section__latest-value").text().length).toBeGreaterThan(0);
+    // The record list itself lives in the secondary window, not inline.
+    expect(wrapper.find(".crash-section__records").exists()).toBe(false);
+    await openBtn!.trigger("click");
+    // The modal teleports to body — query the document, not the wrapper.
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".crash-section__records")).toBeTruthy();
+    });
+  });
+
+  it("renders findings and the suspect actions right-aligned", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    const wrapper = mount(CrashSection);
     await vi.waitFor(() => {
       expect(wrapper.find(".crash-section__finding").exists()).toBe(true);
     });
-    const text = wrapper.text();
-    expect(text).toContain("WorldOfWarships64.exe");
-    expect(text).toContain("nvldum.dll");
-    expect(wrapper.find(".crash-section__chip--critical").exists()).toBe(true);
-  });
-
-  it("renders suspects with the quarantine action", async () => {
-    mocked.list.mockResolvedValue([record()]);
-    mocked.analyze.mockResolvedValue(analysis);
-    const wrapper = mount(CrashSection);
+    expect(wrapper.text()).toContain("nvldum.dll");
+    // Severity tag renders (hikari HkTag inside the finding row).
+    expect(wrapper.find(".crash-section__finding").text()).toContain(t("crash.severity.critical"));
     await vi.waitFor(() => {
       expect(wrapper.find(".crash-section__suspect").exists()).toBe(true);
     });
-    expect(wrapper.text()).toContain("suspect_mod");
-    expect(wrapper.text()).toContain(t("crash.suspects.quarantine"));
+    const actions = wrapper.find(".crash-section__suspect-actions");
+    expect(actions.exists()).toBe(true);
+    const texts = actions.findAll("button").map((b) => b.text());
+    expect(texts).toContain(t("crash.suspects.quarantine"));
+    expect(texts).toContain(t("crash.suspects.delete"));
+    expect(texts).toContain(t("crash.suspects.ignore"));
+  });
+
+  it("asks before deleting and calls the delete command", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    mocked.deleteEntry.mockResolvedValue(null as never);
+    const wrapper = mount(CrashSection);
+    await vi.waitFor(() => {
+      expect(wrapper.find(".crash-section__suspect-actions").exists()).toBe(true);
+    });
+    const del = wrapper
+      .find(".crash-section__suspect-actions")
+      .findAll("button")
+      .find((b) => b.text().includes(t("crash.suspects.delete")));
+    await del!.trigger("click");
+    // The confirmation dialog teleports to body.
+    await vi.waitFor(() => {
+      const buttons = document.body.querySelectorAll("button");
+      expect(
+        [...buttons].some((b) => b.textContent?.includes(t("crash.suspects.delete"))),
+      ).toBe(true);
+    });
+  });
+
+  it("ignores a suspect through the store command", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    mocked.ignore.mockResolvedValue(null as never);
+    const wrapper = mount(CrashSection);
+    await vi.waitFor(() => {
+      expect(wrapper.find(".crash-section__suspect-actions").exists()).toBe(true);
+    });
+    const ignoreBtn = wrapper
+      .find(".crash-section__suspect-actions")
+      .findAll("button")
+      .find((b) => b.text().includes(t("crash.suspects.ignore")));
+    await ignoreBtn!.trigger("click");
+    await vi.waitFor(() => {
+      expect(mocked.ignore).toHaveBeenCalledWith("suspect_mod");
+    });
   });
 
   it("exports the selected record through the store", async () => {
@@ -126,6 +192,7 @@ describe("CrashSection", () => {
       expect(wrapper.find(".crash-section__actions").exists()).toBe(true);
     });
     const exportBtn = wrapper
+      .find(".crash-section__actions")
       .findAll("button")
       .find((b) => b.text().includes(t("crash.section.export")));
     expect(exportBtn).toBeTruthy();
@@ -134,14 +201,14 @@ describe("CrashSection", () => {
       expect(mocked.exportReport).toHaveBeenCalledWith("crash-1");
     });
   });
-  it("renders the safeguard switch row with the scan action", async () => {
-    mocked.list.mockResolvedValue([]);
+
+  it("renders the safeguard switch row", async () => {
     const wrapper = mount(CrashSection);
     await vi.waitFor(() => {
       expect(wrapper.find(".crash-section__safeguard").exists()).toBe(true);
     });
-    expect(wrapper.text()).toContain(vi.mocked(t)("crash.safeguard.title"));
-    expect(wrapper.text()).toContain(vi.mocked(t)("crash.safeguard.scan"));
+    expect(wrapper.text()).toContain(t("crash.safeguard.title"));
+    // Parsing recent crashes is automatic — no manual scan button.
+    expect(wrapper.text()).not.toContain(t("crash.safeguard.scan"));
   });
-
 });

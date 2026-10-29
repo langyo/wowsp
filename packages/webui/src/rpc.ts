@@ -164,8 +164,12 @@ export const RPC = {
   // export, per-install res_mods quarantine and the guarded client
   // relaunch — see api/modules/gamecrash.ts.
   game_crash_safeguard_enabled: "game_crash_safeguard_enabled",
+  game_crash_restore_suspect: "game_crash_restore_suspect",
   game_crash_scan_recent: "game_crash_scan_recent",
   game_crash_set_safeguard: "game_crash_set_safeguard",
+  game_crash_delete_entry: "game_crash_delete_entry",
+  game_crash_ignore_suspect: "game_crash_ignore_suspect",
+  game_crash_ignored_suspects: "game_crash_ignored_suspects",
   game_crash_list: "game_crash_list",
   game_crash_dismiss: "game_crash_dismiss",
   game_crash_analyze: "game_crash_analyze",

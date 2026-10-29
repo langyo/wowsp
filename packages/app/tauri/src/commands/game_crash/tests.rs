@@ -256,7 +256,7 @@ fn findings_flag_recent_mod_changes_and_mods_in_play() {
 
     let record = sample_record("gc-findings", Some(dir.path().to_str().unwrap()));
     let mods = mods_inventory_entries(dir.path());
-    let findings = build_findings(&record, &mods, &[], record.game_root.as_deref(), &[]);
+    let findings = build_findings(&record, &mods, &[], &[]);
 
     let recent = findings
         .iter()
@@ -281,14 +281,17 @@ fn findings_flag_recent_mod_changes_and_mods_in_play() {
 }
 
 #[test]
-fn findings_note_safe_mode_without_reading_the_registry() {
+fn findings_stay_crash_scoped() {
+    // Safe mode is a LIVE state the section shows as its own row — it must
+    // never read as a crash-time claim (the old finding was misleading
+    // whenever the user enabled safe mode after the crash).
     let dir = TempDir::new("findings-safe");
     dir.touch("bin/7/res_mods.wowsp-disabled/mod", "x");
     let record = sample_record("gc-safe", Some(dir.path().to_str().unwrap()));
-    let findings = build_findings(&record, &[], &[], record.game_root.as_deref(), &[]);
+    let findings = build_findings(&record, &[], &[], &[]);
     assert!(
-        findings.iter().any(|f| f.code == "safeModeOn"),
-        "an already-quarantined install is reported as safe mode on"
+        !findings.iter().any(|f| f.code == "safeModeOn"),
+        "safe mode is not a crash finding"
     );
 }
 
@@ -851,7 +854,7 @@ fn quarantine_accepts_nested_files_and_rejects_traversal() {
 fn findings_flag_dangling_ui_references_as_critical() {
     let record = sample_record("gc-dangling", None);
     let urls = vec!["gui/flash/battle_stats.swf".to_string()];
-    let findings = build_findings(&record, &[], &[], None, &urls);
+    let findings = build_findings(&record, &[], &[], &urls);
     let finding = findings
         .iter()
         .find(|f| f.code == "danglingUiReference")
@@ -938,4 +941,56 @@ fn game_root_of_report_extracts_the_install() {
         Some("D:\\SteamLibrary\\steamapps\\common\\World of Warships"),
     );
     assert_eq!(game_root_of_report("D:\\elsewhere\\report.txt"), None);
+}
+
+// ── suspect management (ignore list + deletion target resolution) ───────────
+
+#[test]
+fn ignored_suspects_roundtrip_and_heal() {
+    let dir = TempDir::new("ignored");
+    assert!(
+        load_ignored_in(dir.path()).is_empty(),
+        "no file = empty list"
+    );
+    save_ignored_in(
+        dir.path(),
+        &[
+            IgnoredSuspect {
+                name: "gui/battle_elements.xml".to_string(),
+                ignored_at: "2026-10-29T00:00:00Z".to_string(),
+            },
+            IgnoredSuspect {
+                name: "PnFMods/Skin".to_string(),
+                ignored_at: "2026-10-29T00:00:01Z".to_string(),
+            },
+        ],
+    )
+    .expect("save");
+    let loaded = load_ignored_in(dir.path());
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].name, "gui/battle_elements.xml");
+    // A damaged file answers empty (the safe direction: warnings reappear).
+    super::super::appdata::write_json_in(dir.path(), IGNORED_FILE, "not json")
+        .expect("write damaged");
+    assert!(load_ignored_in(dir.path()).is_empty());
+}
+
+#[test]
+fn subject_tree_resolves_active_then_twin() {
+    let dir = TempDir::new("subject-tree");
+    let root = dir.path().to_str().unwrap().to_string();
+    // Active tree wins.
+    dir.touch("bin/8/res_mods/gui/a.xml", "x");
+    assert_eq!(
+        subject_tree(&root, "gui/a.xml").expect("active"),
+        dir.path().join("bin/8/res_mods/gui/a.xml")
+    );
+    // A subject that only exists in the safe-mode twin resolves there.
+    dir.touch("bin/8/res_mods.wowsp-disabled/gui/b.xml", "x");
+    assert_eq!(
+        subject_tree(&root, "gui/b.xml").expect("twin"),
+        dir.path().join("bin/8/res_mods.wowsp-disabled/gui/b.xml")
+    );
+    // Nowhere = a clear error.
+    assert!(subject_tree(&root, "gui/nope.xml").is_err());
 }
