@@ -2,9 +2,10 @@
  * date-range tabs (the parent supplies the flex row): internally it lays
  * out as two fixed rows — the meta row (summary + search) pinned to the
  * tabs row's right end, the chip row claiming a full line below — so the
- * wrap point no longer drifts with the viewport. The chip styling mirrors
- * the hikari segmented button-group trigger so the strip reads as part of
- * the same control family. */
+ * wrap point no longer drifts with the viewport. The chip chrome is
+ * hikari's own facet-chip grammar (HkFilterChip — box, border, solid
+ * surface), and the date-range strip beside it paints the same surface, so
+ * the controls row reads as one family. */
 .ship-filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -65,19 +66,23 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-6, 6px);
-  /* The exact hikari segmented trigger box (same padding, type and weight):
-     the chips must read as the same size as the date-range buttons beside
-     them, not as the taller track chrome around those buttons. */
-  padding: var(--space-4) var(--space-12);
+  /* hikari's facet-chip box (HkFilterChip): the trigger padding PLUS one
+     track step — a chip sharing a row with a segmented track must match the
+     track's TOTAL height (trigger + the track's 2px-per-side padding +
+     border), not just the trigger's box. A bare var(--space-4) chip stands
+     4px shorter than the track beside it and reads as a different family. */
+  padding: calc(var(--space-4) + var(--space-2)) var(--space-12);
   font-family: inherit;
   font-size: var(--text-sm);
   font-weight: 600;
   color: rgb(var(--color-muted));
   white-space: nowrap;
   cursor: pointer;
-  /* Track-chrome border, but a solid HkButton-style surface fill: a lone
-     chip must carry its own opaque body — the track's 60% glass fill lets
-     the wallpaper bleed through and the chip reads as a hole in the strip. */
+  /* Solid HkFilterChip surface + border: a lone chip must carry its own
+     opaque body — a bare alpha tint lets the wallpaper bleed through and the
+     chip reads as a hole in the strip. The date-range strip beside it paints
+     the same solid surface + border (see DateRangeTabs.scss), so the whole
+     controls row reads as one family. */
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
   background: rgb(var(--color-surface));
@@ -372,9 +377,9 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  /* The exact segmented trigger box, same as the chips: every button in
-     the bar family reads as one size beside the date tabs. */
-  padding: var(--space-4) var(--space-12);
+  /* The facet-chip box, same as the chips: it shares the meta line with the
+     date-range track and must match its total height exactly. */
+  padding: calc(var(--space-4) + var(--space-2)) var(--space-12);
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
   /* Same solid fill as the chips — no wallpaper bleed-through. */

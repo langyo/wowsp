@@ -39,6 +39,11 @@ import type { ShipInfo } from "@/api";
 
 export type DateRange = "1d" | "7d" | "30d" | "90d" | "all";
 
+/** A stats view's date-range mode — the shared presets plus the
+ *  picker-chosen custom window (the 自定义 segment; the window itself comes
+ *  from `isoDayWindowSec`, see DateRangeTabs). */
+export type RangeMode = DateRange | "custom";
+
 export interface ShipTypeSummary {
   type: string;
   battles: number;

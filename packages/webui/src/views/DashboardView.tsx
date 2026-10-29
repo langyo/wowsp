@@ -5,8 +5,9 @@ import StatsCard from "@/components/stats/StatsCard";
 import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
 import RefreshStatsButton from "@/components/stats/RefreshStatsButton";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import { HkTag, HkTabs, HkButton, HkScrollContainer, useToast } from "@celestia-island/hikari";
+import { HkTag, HkButton, HkScrollContainer, useToast } from "@celestia-island/hikari";
 
+import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
@@ -37,9 +38,10 @@ import {
   computeRecentDelta,
   dateRangeCutoff,
   filterByDateRange,
+  filterByDateWindow,
   aggregateByType,
   SHIP_TYPE_SHORT,
-  type DateRange,
+  type RangeMode,
 } from "@/utils/shipAggregation";
 import { shipNameFromModelDb, shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { summarizeLocalBattles } from "@/utils/localBattleSummary";
@@ -66,8 +68,9 @@ const DASHBOARD_STATS_TTL_MS = 5 * 60_000;
  *      never react to the date-range tabs or the filter chips below.
  *   4. Ranked history: NOT listed inline — the StatsCard's ranked split
  *      opens the season-timeline modal (RankedSeasonModal) on click.
- *   5. Date-range segmented control (1D / 7D / 30D / All) — filters the
- *      per-ship list below by lastBattleTime.
+ *   5. Date-range segmented control (1D / 7D / 30D / All / 自定义) — the
+ *      shared DateRangeTabs strip; 自定义 opens the day-pair picker and filters
+ *      the per-ship list to that window (the lookup page's contract).
  *   6. Per-ship-type breakdown: battles / winrate / avgDamage by BB/CA/DD/CV/SS.
  *   7. Per-ship table: every ship played (in the selected range), sortable by
  *      battles / winrate / avgDamage, with color-coded winrate.
@@ -103,7 +106,10 @@ export default defineComponent({
     // Ranked season-timeline modal — opened from the StatsCard's ranked
     // split (the inline season cards are gone from this page).
     const rankedModal = ref(false);
-    const dateRange = ref<DateRange>("all");
+    const dateRange = ref<RangeMode>("all");
+    /** The picker-chosen custom window (Unix seconds, null until both ends
+     *  are picked — see DateRangeTabs). */
+    const customWindow = ref<DateRangeWindow | null>(null);
 
     // Ship detail modal (opened by clicking a row in the per-ship table).
     const shipDetail = useShipDetail();
@@ -130,6 +136,12 @@ export default defineComponent({
       const acc = activeAccount.value;
       if (!acc) return null;
       const hist = shipStats.history.get(`${acc.realm}_${acc.accountId}`) ?? [];
+      // The custom window closes BOTH ends at the latest snapshot at or
+      // before the picked day bounds (the lookup page's contract).
+      if (dateRange.value === "custom") {
+        const w = customWindow.value;
+        return w ? computeRecentDelta(playerShips.value, hist, w.fromSec, w.toSec) : null;
+      }
       return computeRecentDelta(playerShips.value, hist, dateRangeCutoff(dateRange.value));
     });
 
@@ -141,15 +153,40 @@ export default defineComponent({
     // accounts). The cached log's window is validated against the selected
     // range, so the previous range's rows never flash under a newly
     // clicked tab while its load is in flight.
-    /** The store's log when it was loaded for EXACTLY the current range —
-     *  the backend window is [now - days, now], so an equal length ending
-     *  at the load's `to` is the same range. */
+    /** The backend window a LOAD should request right now (null = nothing to
+     *  load: career totals, or a custom mode still missing a picked end). A
+     *  FUNCTION, not a computed: the preset window ends at "now", so every
+     *  load (tab switch, refresh pill, account switch) must read the clock
+     *  again — a cached object would keep serving [T-tab, T-select] and hide
+     *  battles played since. One clock reading closes the window: deriving
+     *  the cutoff from a SECOND Date.now() can slip across a second boundary
+     *  and make [from, to] one second longer than the range, which the source
+     *  validation below would then reject. */
+    function currentWindow(): { fromSec: number; toSec: number } | null {
+      const range = dateRange.value;
+      if (range === "all") return null;
+      if (range === "custom") return customWindow.value;
+      const nowSec = Math.floor(Date.now() / 1000);
+      return { fromSec: dateRangeCutoff(range, nowSec), toSec: nowSec };
+    }
+
+    /** The store's log, only while it was loaded for EXACTLY the current
+     *  range — the previous range's rows never flash under a newly clicked
+     *  tab while its load is in flight. A preset's cutoff is derived from the
+     *  load's own `to` (the backend window is [now - days, now]); the custom
+     *  window is fixed by the pickers and matches exactly. */
     const replayLog = computed(() => {
       const acc = activeAccount.value;
-      if (!acc || dateRange.value === "all") return null;
+      const mode = dateRange.value;
+      if (!acc || mode === "all") return null;
       const win = localBattles.windowFor(acc.accountId, acc.realm);
       if (!win) return null;
-      if (win.fromSec !== dateRangeCutoff(dateRange.value, win.toSec)) return null;
+      if (mode === "custom") {
+        const want = customWindow.value;
+        if (!want || win.fromSec !== want.fromSec || win.toSec !== want.toSec) return null;
+      } else if (win.fromSec !== dateRangeCutoff(mode, win.toSec)) {
+        return null;
+      }
       return localBattles.logFor(acc.accountId, acc.realm);
     });
 
@@ -171,11 +208,16 @@ export default defineComponent({
     // local log covers the window, else true snapshot deltas, else the
     // labeled career fallback (recently-played ships carrying career totals
     // — see the range note below).
-    const dateFiltered = computed(() =>
-      replayActive.value
-        ? replaySummary.value!.ships
-        : (recentDelta.value?.ships ?? filterByDateRange(playerShips.value, dateRange.value)),
-    );
+    const dateFiltered = computed(() => {
+      if (replayActive.value) return replaySummary.value!.ships;
+      if (recentDelta.value) return recentDelta.value.ships;
+      // Labeled career fallback: which ships were played in the window.
+      if (dateRange.value === "custom") {
+        const w = customWindow.value;
+        return w ? filterByDateWindow(playerShips.value, w.fromSec, w.toSec) : playerShips.value;
+      }
+      return filterByDateRange(playerShips.value, dateRange.value);
+    });
 
     /** Filtered + multi-key-sorted ships and search-hit names, from
      *  ShipFilterBar (the fixed canonical chip order defines the sort priority). */
@@ -200,20 +242,10 @@ export default defineComponent({
      *  dashboard. */
     async function loadLocalLog(force = false): Promise<void> {
       const acc = activeAccount.value;
-      if (!acc || dateRange.value === "all") return;
-      // One clock reading closes the window: deriving the cutoff from a
-      // SECOND Date.now() can slip across a second boundary and make
-      // [from, to] one second longer than the range, which the source
-      // validation below would then reject.
-      const nowSec = Math.floor(Date.now() / 1000);
+      const want = currentWindow();
+      if (!acc || !want) return;
       try {
-        await localBattles.load(
-          acc.accountId,
-          acc.realm,
-          dateRangeCutoff(dateRange.value, nowSec),
-          nowSec,
-          { force },
-        );
+        await localBattles.load(acc.accountId, acc.realm, want.fromSec, want.toSec, { force });
       } catch {
         // store.error already carries the reason
       }
@@ -282,10 +314,11 @@ export default defineComponent({
       if (acc) void refresh();
     }, { immediate: true });
 
-    // The replay source follows the range tabs: switching 1D/7D/30D loads
-    // that window's battle log (the account-change path goes through
-    // refresh() above). The store dedupes/caches per window.
-    watch(dateRange, () => void loadLocalLog());
+    // The replay source follows the range tabs: switching 1D/7D/30D — or
+    // completing a custom pick — loads that window's battle log (the
+    // account-change path goes through refresh() above). The store
+    // dedupes/caches per window.
+    watch([dateRange, customWindow], () => void loadLocalLog());
 
     /** Refresh pill: force-refresh the stats and the replay log, then toast
      *  what the replay source picked up — the pill's only visible feedback.
@@ -310,11 +343,15 @@ export default defineComponent({
       return new Date(epochSec * 1000).toLocaleDateString();
     }
 
+    /** The strip's segments: the shared presets plus 自定义 (whose picker
+     *  window the DateRangeTabs popover reports through `customWindow`) —
+     *  the same control the lookup page serves. */
     const rangeOptions = [
-      { value: "1d", label: t("dashboard.range1d") },
-      { value: "7d", label: t("dashboard.range7d") },
-      { value: "30d", label: t("dashboard.range30d") },
-      { value: "all", label: t("dashboard.rangeAll") },
+      { key: "1d", label: t("dashboard.range1d") },
+      { key: "7d", label: t("dashboard.range7d") },
+      { key: "30d", label: t("dashboard.range30d") },
+      { key: "all", label: t("dashboard.rangeAll") },
+      { key: "custom", label: t("dashboard.rangeCustom") },
     ];
 
     // ── Share shot ────────────────────────────────────────────────────
@@ -331,18 +368,25 @@ export default defineComponent({
     function buildShotModel(): StatsShotModel {
       const s = currentStats.value;
       if (!s) throw new Error("no stats loaded for the share shot");
-      const rangeText = {
-        "1d": t("dashboard.range1d"),
-        "7d": t("dashboard.range7d"),
-        "30d": t("dashboard.range30d"),
-        "90d": t("dashboard.range90d"),
-        all: t("dashboard.rangeAll"),
-      }[dateRange.value];
+      const rangeText =
+        dateRange.value === "custom"
+          ? customWindow.value
+            ? `${new Date(customWindow.value.fromSec * 1000).toLocaleDateString()} – ${new Date(customWindow.value.toSec * 1000).toLocaleDateString()}`
+            : t("dashboard.rangeCustom")
+          : {
+              "1d": t("dashboard.range1d"),
+              "7d": t("dashboard.range7d"),
+              "30d": t("dashboard.range30d"),
+              "90d": t("dashboard.range90d"),
+              all: t("dashboard.rangeAll"),
+            }[dateRange.value];
       const rangeSinceTs = replayActive.value
         ? replaySummary.value?.sinceTs
         : recentDelta.value?.sinceTs;
+      // A custom window already reads as its own date pair — appending the
+      // baseline date would just repeat its start.
       const rangeLabel =
-        dateRange.value !== "all" && rangeSinceTs
+        dateRange.value !== "all" && dateRange.value !== "custom" && rangeSinceTs
           ? `${rangeText} · ${new Date(rangeSinceTs * 1000).toLocaleDateString()}`
           : rangeText;
       const pr = prTier(s.pr);
@@ -521,11 +565,11 @@ export default defineComponent({
               {/* ── Ship stats: date range + inline filter chips ── */}
               <section class="dash-section">
                 <div class="dash-section__controls">
-                  <HkTabs
-                    variant="segmented"
+                  <DateRangeTabs
                     modelValue={dateRange.value}
-                    onUpdate:modelValue={(v: string) => (dateRange.value = v as DateRange)}
-                    tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
+                    onUpdate:modelValue={(v: string) => (dateRange.value = v as RangeMode)}
+                    onUpdate:window={(w: DateRangeWindow | null) => (customWindow.value = w)}
+                    options={rangeOptions}
                   />
                   <ShipFilterBar
                     ships={dateFiltered.value}
@@ -534,22 +578,32 @@ export default defineComponent({
                   />
                 </div>
 
-                {/* What the selected range actually covers, and where it
-                    came from: the local replay battle log when it has
+                {/* What the selected range actually covers, and where it came
+                    from — the note follows the SAME precedence as the rows
+                    above: the local replay battle log when it has
                     random/ranked battles in the window, else the local
-                    stat-snapshot delta (which needs an old-enough baseline). */}
-                {dateRange.value !== "all" ? (
+                    stat-snapshot delta (which needs an old-enough baseline),
+                    and for a custom window the snapshot pair closes both
+                    ends. A half-picked custom pair has nothing to describe,
+                    so its note stays hidden. */}
+                {dateRange.value !== "all" &&
+                (dateRange.value !== "custom" || customWindow.value) ? (
                   <p class="dash-range-note">
                     {replayActive.value && replaySummary.value
                       ? t("dashboard.rangeReplay", {
                           date: new Date(replaySummary.value.sinceTs * 1000).toLocaleDateString(),
                           count: replaySummary.value.battles,
                         })
-                      : recentDelta.value
-                        ? t("dashboard.rangeSince", {
-                            date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                      : dateRange.value === "custom" && recentDelta.value
+                        ? t("dashboard.rangeWindow", {
+                            from: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                            to: new Date(recentDelta.value.endTs * 1000).toLocaleDateString(),
                           })
-                        : t("dashboard.rangeNoHistory")}
+                        : recentDelta.value
+                          ? t("dashboard.rangeSince", {
+                              date: new Date(recentDelta.value.sinceTs * 1000).toLocaleDateString(),
+                            })
+                          : t("dashboard.rangeNoHistory")}
                   </p>
                 ) : null}
 
