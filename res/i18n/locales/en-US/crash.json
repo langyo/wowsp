@@ -1,6 +1,6 @@
 {
   "toast": {
-    "title": "Game client crashed",
+    "title": "Game client crash detected",
     "body": "{image} (pid {pid}) has stopped working.",
     "code": "Exception code: {code}",
     "safeRestart": "Safe mode & restart",

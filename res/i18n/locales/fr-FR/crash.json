@@ -1,6 +1,6 @@
 {
   "toast": {
-    "title": "Le client du jeu a planté",
+    "title": "Plantage du client de jeu détecté",
     "body": "{image} (pid {pid}) a cessé de fonctionner.",
     "code": "Code d'exception : {code}",
     "safeRestart": "Redémarrer en mode sans échec",

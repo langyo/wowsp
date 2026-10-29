@@ -101,11 +101,9 @@ export const useCrashStore = defineStore("crash", () => {
    *  section, where every recovery move lives. */
   function raisePrompt(record: GameCrashRecord) {
     if (promptToastId !== null && promptRecordId === record.id) return;
-    const detail = record.exceptionCode
-      ? " · " + record.exceptionCode
-      : "";
-    const id = toast.show(
-      t("crash.toast.title") + " — " + record.imageName + detail,
+    // One sentence, no process name or crash code: players do not read
+    // those, and the analysis section carries the technical detail.
+    const id = toast.show(t("crash.toast.title"),
       {
         type: "error",
         duration: 0,

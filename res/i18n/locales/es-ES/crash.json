@@ -1,6 +1,6 @@
 {
   "toast": {
-    "title": "El cliente del juego se ha bloqueado",
+    "title": "Se ha detectado un fallo del cliente del juego",
     "body": "{image} (pid {pid}) ha dejado de funcionar.",
     "code": "Código de excepción: {code}",
     "safeRestart": "Reiniciar en modo seguro",
