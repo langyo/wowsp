@@ -1,7 +1,9 @@
 /**
  * The in-game plugin status card's look, shared by the live-battle idle
  * guide (with actions) and the panel's waiting state (status-only). The
- * state accents: absent = neutral, installed = primary, outdated = warn.
+ * state accents: absent = neutral, installed = primary, outdated and the
+ * safe-mode recovery shape = warn (both mean "the plugin is present but
+ * not doing its job until you act").
  */
 .plugin-status-card {
   display: flex;
@@ -30,7 +32,11 @@
     }
   }
 
-  &--outdated {
+  /* The safe-mode shape is a quarantine notice with a recovery action:
+     same warning accent as an outdated install — both ask for one click
+     before the plugin works again. */
+  &--outdated,
+  &--safe-mode {
     border-color: rgb(var(--color-warn, 234, 179, 8) / 55%);
 
     .plugin-status-card__icon {

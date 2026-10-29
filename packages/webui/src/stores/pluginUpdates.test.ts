@@ -24,6 +24,7 @@ vi.mock("@/api", () => {
       ingamePluginUninstall: vi.fn(),
       modCatalogInstall: vi.fn(),
       modCatalogUninstall: vi.fn(),
+      modHubSafeMode: vi.fn(),
       listenDownloadProgress: vi.fn((_handler: unknown) => () => undefined),
     },
   };
@@ -76,6 +77,15 @@ function record(id: string, version: string, gameRoot = ""): ModInstallRecord {
   };
 }
 
+/** Hand-resolved promise for tests that must hold an internal RPC open. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((ok) => {
+    resolve = ok;
+  });
+  return { promise, resolve };
+}
+
 const mocked = {
   refresh: vi.mocked(api.modCatalogRefresh),
   records: vi.mocked(api.modHubRecords),
@@ -84,6 +94,7 @@ const mocked = {
   probeUninstall: vi.mocked(api.ingamePluginUninstall),
   install: vi.mocked(api.modCatalogInstall),
   uninstall: vi.mocked(api.modCatalogUninstall),
+  safeMode: vi.mocked(api.modHubSafeMode),
   listen: vi.mocked(api.listenDownloadProgress),
 };
 
@@ -94,6 +105,7 @@ beforeEach(() => {
   mocked.records.mockResolvedValue([]);
   mocked.probe.mockResolvedValue({ installed: false, outdated: false, resMods: "", discussion: 0 } as never);
   mocked.probeInstall.mockResolvedValue("ok" as never);
+  mocked.safeMode.mockResolvedValue(false as never);
   mocked.install.mockResolvedValue({} as never);
   const config = useConfigStore();
   config.activeInstall = { kind: "manual", path: GAME };
@@ -747,10 +759,46 @@ describe("usePluginUpdatesStore shared per-item orchestration", () => {
     expect(mocked.probeInstall).toHaveBeenCalledWith(GAME);
   });
 
+  it("runProbe refuses a safe-mode probe with the localized key and no install RPC", async () => {
+    // The backend's guard sentence is English; the store pre-checks the
+    // quarantine so every caller's tError render shows resources.safeModeBlock
+    // instead of the raw sentence.
+    mocked.safeMode.mockResolvedValue(true as never);
+    const updates = usePluginUpdatesStore();
+
+    expect(await updates.runProbe(GAME, "install")).toBe("resources.safeModeBlock");
+    expect(mocked.probeInstall).not.toHaveBeenCalled();
+    expect(mocked.probeUninstall).not.toHaveBeenCalled();
+  });
+
+  it("runProbe refuses the running client's install with the localized key and no RPC", async () => {
+    const gameStatus = useGameStatusStore();
+    gameStatus.process = {
+      running: true,
+      pid: 7,
+      kind: "manual",
+      realm: null,
+      exePath: `${GAME}\\WorldOfWarships.exe`,
+      matchedInstall: { kind: "manual", path: GAME },
+    };
+    const updates = usePluginUpdatesStore();
+
+    expect(await updates.runProbe(GAME, "install")).toBe("resources.gameRunningBlock");
+    expect(mocked.probeInstall).not.toHaveBeenCalled();
+  });
+
   it("runProbe uninstall goes through the same shared table", async () => {
+    // The localized guard pre-checks run before the busy table is taken,
+    // so hold the RPC open to observe the registration (an instantly
+    // resolving mock could complete the whole op between two polls).
+    let release!: () => void;
+    mocked.probeUninstall.mockImplementationOnce(
+      () => new Promise((resolve) => (release = () => resolve(null as never))) as never,
+    );
     const updates = usePluginUpdatesStore();
     const done = updates.runProbe(GAME, "uninstall");
     await vi.waitFor(() => expect(updates.probeBusy).toBe("uninstall"));
+    release();
     expect(await done).toBeNull();
     expect(mocked.probeUninstall).toHaveBeenCalledWith(GAME);
     expect(updates.probeBusy).toBeNull();
@@ -773,6 +821,50 @@ describe("usePluginUpdatesStore shared per-item orchestration", () => {
     release();
     expect(await first).toBeNull();
     await vi.waitFor(() => expect(updates.probeBusy).toBeNull());
+  });
+
+  it("keeps the probe busy guard atomic across the async pre-checks", async () => {
+    // Both calls pass the early busy check while the safe-mode RPC is
+    // pending; without a synchronous re-check the loser would reach
+    // withItem's single-flight throw — a rejected promise callers never
+    // catch — instead of the documented key contract.
+    const gate = deferred<boolean>();
+    mocked.safeMode.mockReturnValue(gate.promise as never);
+    const updates = usePluginUpdatesStore();
+
+    const first = updates.runProbe(GAME, "install");
+    const second = updates.runProbe(GAME, "install");
+    gate.resolve(false);
+
+    await expect(second).resolves.toBe("common.game.offline");
+    await expect(first).resolves.toBeNull();
+    expect(mocked.probeInstall).toHaveBeenCalledTimes(1);
+    expect(updates.probeBusy).toBeNull();
+  });
+
+  it("runProbe localizes the backend's raw safe-mode guard sentence", async () => {
+    // Defensive fallback: the pre-check normally intercepts the quarantine,
+    // but a stale game-status snapshot can let the real guard through and
+    // the English sentence must not reach a toast raw.
+    mocked.probeInstall.mockRejectedValueOnce(
+      new Error(
+        "safe mode is active — turn mods back on before installing, uninstalling or toggling them",
+      ) as never,
+    );
+    const updates = usePluginUpdatesStore();
+
+    expect(await updates.runProbe(GAME, "install")).toBe("resources.safeModeBlock");
+  });
+
+  it("runProbe localizes the backend's raw running-client guard sentence", async () => {
+    mocked.probeInstall.mockRejectedValueOnce(
+      new Error(
+        "World of Warships is running from D:/Korabli (pid 7) — close that client before installing",
+      ) as never,
+    );
+    const updates = usePluginUpdatesStore();
+
+    expect(await updates.runProbe(GAME, "install")).toBe("resources.gameRunningBlock");
   });
 
   it("runMod is single-flight per mod id and clears its row after", async () => {
@@ -839,6 +931,53 @@ describe("failureDetail", () => {
   it("folds the overflow into a +N tail", () => {
     expect(failureDetail(["a: 1", "b: 2", "c: 3", "d: 4", "e: 5"])).toBe("a: 1; b: 2; c: 3; +2");
     expect(failureDetail(["a", "b", "c", "d"], 2)).toBe("a; b; +2");
+  });
+});
+
+describe("usePluginUpdatesStore localized guard summaries", () => {
+  // Load en-US so the assertions read the RENDERED copy: this pins that a
+  // runProbe key travels through tError before it reaches a summary.
+  beforeAll(async () => {
+    await setLocale("en-US");
+  });
+
+  it("renders a safe-mode probe refusal as the localized line, not the key", async () => {
+    // Seed the pending probe directly: a quarantined install's live status
+    // reads "absent", so only a stale pre-quarantine snapshot puts the
+    // probe into a batch pass — exactly when the refusal must read local.
+    mocked.safeMode.mockResolvedValue(true as never);
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = { [GAME]: { mods: [], probeOutdated: true } };
+
+    await updates.updateAll();
+
+    const summary = updates.failures.join("|");
+    expect(summary).toContain("Safe mode is active");
+    expect(summary).not.toContain("resources.safeModeBlock");
+  });
+
+  it("localizes a catalog mod item's backend safe-mode guard sentence", async () => {
+    // Catalog-mod installs have no frontend guard pre-check, so the raw
+    // backend sentence reaches updateAll's per-item catch — the summary
+    // must render the localized line, never the English sentence.
+    mocked.install.mockRejectedValueOnce(
+      new Error(
+        "safe mode is active — turn mods back on before installing, uninstalling or toggling them",
+      ) as never,
+    );
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: {
+        mods: [{ id: "a", name: "mod-a", preset: null }],
+        probeOutdated: false,
+      },
+    };
+
+    await updates.updateAll();
+
+    const summary = updates.failures.join("|");
+    expect(summary).toContain("mod-a: Safe mode is active");
+    expect(summary).not.toContain("installing, uninstalling or toggling");
   });
 });
 

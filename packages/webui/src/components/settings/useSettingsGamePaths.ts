@@ -42,20 +42,29 @@ export function useSettingsGamePaths() {
   // game install, and the page button below deep-links the mod's
   // Discussions thread. Refreshed whenever the active install changes.
   const ingamePluginInstalled = ref(false);
+  /** The active install's res_mods is quarantined by the mod hub's safe
+   *  mode: the plugin reads as absent BY DESIGN then, so the hint must
+   *  explain the quarantine instead of claiming nothing is installed. */
+  const ingamePluginSafeMode = ref(false);
   const ingamePluginDiscussion = ref<number | null>(null);
   async function refreshIngamePlugin() {
     const root = activePath.value;
     if (!root) {
       ingamePluginInstalled.value = false;
+      ingamePluginSafeMode.value = false;
       return;
     }
     try {
       const status = await api.ingamePluginStatus(root);
       ingamePluginInstalled.value = status.installed;
+      // Older shells omit safeMode — `=== true` keeps them out of the
+      // quarantine copy.
+      ingamePluginSafeMode.value = status.safeMode === true;
       ingamePluginDiscussion.value = status.discussion;
     } catch {
       // older shell / mock backend — the option simply stays greyed
       ingamePluginInstalled.value = false;
+      ingamePluginSafeMode.value = false;
     }
   }
   watch(activePath, () => void refreshIngamePlugin());
@@ -66,9 +75,16 @@ export function useSettingsGamePaths() {
   // "not installed" after an install through the re-check window.
   const ingamePluginStore = useIngamePluginStore();
   watch(
-    () => [ingamePluginStore.probed, ingamePluginStore.installed] as const,
-    ([probed, installed]) => {
-      if (probed) ingamePluginInstalled.value = installed;
+    () =>
+      [
+        ingamePluginStore.probed,
+        ingamePluginStore.installed,
+        ingamePluginStore.safeMode,
+      ] as const,
+    ([probed, installed, safeMode]) => {
+      if (!probed) return;
+      ingamePluginInstalled.value = installed;
+      ingamePluginSafeMode.value = safeMode;
     },
     { immediate: true },
   );
@@ -194,6 +210,7 @@ export function useSettingsGamePaths() {
     activePath,
     detecting,
     ingamePluginInstalled,
+    ingamePluginSafeMode,
     ingamePluginDiscussion,
     refreshIngamePlugin,
     recheckIngamePlugin,

@@ -43,13 +43,18 @@ export default defineComponent({
           {/* In-game plugin install ask — shares the closeBehavior page (a
               "default app behavior" sibling of the close action): status of
               the boot-time ask, and the manual re-check that re-opens the
-              install prompt regardless of the 不再提示 marker. */}
+              install prompt regardless of the dismissal marker. Safe mode
+              reads FIRST: it makes the install probe report "absent" by
+              design, so the quarantine explanation must win over the
+              not-installed line. */}
           <HkSettingsGroup title={t("settings.pluginPromptGroup")}>
             <HkSettingsHint>
               {gamePaths.activePath.value
-                ? gamePaths.ingamePluginInstalled.value
-                  ? t("settings.pluginPromptStateInstalled")
-                  : t("settings.pluginPromptStateAbsent")
+                ? gamePaths.ingamePluginSafeMode.value
+                  ? t("settings.pluginPromptStateSafeMode")
+                  : gamePaths.ingamePluginInstalled.value
+                    ? t("settings.pluginPromptStateInstalled")
+                    : t("settings.pluginPromptStateAbsent")
                 : t("settings.pluginPromptStateNoGame")}
             </HkSettingsHint>
             <HkSettingsHint>{t("settings.pluginPromptHint")}</HkSettingsHint>

@@ -168,9 +168,25 @@ export const shellApi = {
     }),
   /** In-game stats plugin presence in a game install (see
    *  commands/ingame_plugin.rs) — powers the roster "plugin detection"
-   *  option's enabled state and its Discussions page link. */
+   *  option's enabled state and its Discussions page link.
+   *
+   *  `safeMode` means the install's `res_mods` is quarantined by the mod
+   *  hub's safe mode (renamed to `res_mods.wowsp-disabled`), so `installed`
+   *  reads false BY DESIGN — the LIVE tree genuinely carries no plugin. The
+   *  UI must gate on this flag to offer the "turn mods back on and repair"
+   *  recovery instead of an install the backend has to refuse. Optional
+   *  because older shells predate the field: absent means "not in safe
+   *  mode", so every consumer reads `=== true`. */
   ingamePluginStatus: (gameRoot: string) =>
-    transport.invoke<{ installed: boolean; outdated?: boolean; resMods: string; discussion: number }>(RPC.ingame_plugin_status, { gameRoot }),
+    transport.invoke<{
+      installed: boolean;
+      outdated?: boolean;
+      /** True when the mod hub's safe mode has quarantined this install's
+       *  `res_mods`; absent from older shells (treat as false). */
+      safeMode?: boolean;
+      resMods: string;
+      discussion: number;
+    }>(RPC.ingame_plugin_status, { gameRoot }),
   ingamePluginInstall: (gameRoot: string) =>
     transport.invoke<string>(RPC.ingame_plugin_install, { gameRoot }),
   ingamePluginUninstall: (gameRoot: string) =>

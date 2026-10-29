@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   ingamePluginUninstall: vi.fn(),
   modCatalogInstall: vi.fn(),
   modCatalogUninstall: vi.fn(),
+  modHubSafeMode: vi.fn(),
   listenDownloadProgress: vi.fn(),
   routerPush: vi.fn(),
 }));
@@ -135,6 +136,7 @@ beforeEach(() => {
     discussion: 0,
   });
   mocks.ingamePluginInstall.mockResolvedValue("ok");
+  mocks.modHubSafeMode.mockResolvedValue(false);
 });
 
 afterEach(() => {

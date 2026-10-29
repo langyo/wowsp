@@ -409,6 +409,7 @@
   "pluginPromptRecheck": "Revérifier",
   "pluginPromptStateInstalled": "Le plugin en jeu est installé pour le jeu actif.",
   "pluginPromptStateAbsent": "Le plugin en jeu n'est pas installé pour le jeu actif.",
+  "pluginPromptStateSafeMode": "Le mode sans échec est actif — le plugin en jeu est en quarantaine avec tous les autres mods.",
   "pluginPromptStateNoGame": "Aucun chemin de jeu défini.",
   "installCleanup": "Nettoyage d'installation",
   "dupCheckDesc": "Une mise à jour silencieuse d'une ancienne version pouvait laisser une seconde installation de WoWSP sur le chemin par défaut. WoWSP vérifie ce résidu au lancement et propose de le supprimer.",

@@ -12,7 +12,12 @@
  *    wizard's declined offer writes), silencing the boot-time ask;
  *  - the checkbox adopts the marker on open, so the settings-re-opened
  *    window round-trips the boot ask both ways (re-arm by clearing);
- *  - 一键安装 rides the shared ingamePlugin store and closes on success;
+ *  - the install action rides the shared ingamePlugin store and closes on
+ *    success;
+ *  - safe mode flips the SAME window into the recovery question: the
+ *    quarantine copy replaces the desc, the dismissal checkbox disappears
+ *    (closing it is not an install decline) and the repair action turns
+ *    mods back on, repairs the plugin and closes only on success;
  *  - markPluginPromptDismissed (the wizard's direct write) lands in the
  *    same slot the store reads.
  *
@@ -23,17 +28,23 @@ import { describe, expect, it, beforeAll, beforeEach, afterEach, vi } from "vite
 import { createPinia, setActivePinia } from "pinia";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
+import { useToast } from "@celestia-island/hikari";
+
 import { initLocaleMessages, t } from "@/i18n";
 
 const mocks = vi.hoisted(() => ({
   ingamePluginInstall: vi.fn(),
   ingamePluginStatus: vi.fn(),
+  modHubSafeMode: vi.fn(),
+  modHubSetSafeMode: vi.fn(),
 }));
 
 vi.mock("@/api", () => ({
   api: {
     ingamePluginInstall: mocks.ingamePluginInstall,
     ingamePluginStatus: mocks.ingamePluginStatus,
+    modHubSafeMode: mocks.modHubSafeMode,
+    modHubSetSafeMode: mocks.modHubSetSafeMode,
   },
 }));
 
@@ -72,10 +83,16 @@ function mountPrompt() {
   return { wrapper, prompt };
 }
 
-/** Footer action buttons in declared order ([later, install]). The modal
- *  teleports to document.body, so everything is queried there. */
+/** Footer action buttons in declared order ([later, primary action]). The
+ *  modal teleports to document.body, so everything is queried there. */
 const footerButtons = () =>
   Array.from(document.body.querySelectorAll<HTMLButtonElement>(".hk-modal-footer button"));
+
+function footerButton(label: string): HTMLButtonElement {
+  const btn = footerButtons().find((b) => b.textContent === label);
+  if (!btn) throw new Error(`footer button "${label}" not rendered`);
+  return btn;
+}
 
 const checkboxInput = () =>
   document.body.querySelector<HTMLInputElement>("input.hk-checkbox-input");
@@ -83,9 +100,21 @@ const checkboxInput = () =>
 beforeEach(() => {
   mocks.ingamePluginInstall.mockReset();
   mocks.ingamePluginStatus.mockReset();
-  mocks.ingamePluginStatus.mockResolvedValue({ installed: false, outdated: false });
+  mocks.modHubSafeMode.mockReset();
+  mocks.modHubSetSafeMode.mockReset();
+  mocks.ingamePluginStatus.mockResolvedValue({
+    installed: false,
+    outdated: false,
+    safeMode: false,
+  });
+  mocks.modHubSafeMode.mockResolvedValue(false);
+  mocks.modHubSetSafeMode.mockResolvedValue(false);
   localStorage.removeItem(DISMISSED_KEY);
   document.body.innerHTML = "";
+  // The hikari toast context is a module singleton — retire any slots a
+  // previous case left behind so the assertions read only this case's text.
+  const toasts = useToast().toasts;
+  for (const slot of [...toasts]) useToast().remove(slot.id);
 });
 
 describe("PluginInstallPromptModal", () => {
@@ -183,6 +212,142 @@ describe("PluginInstallPromptModal", () => {
     await flushPromises();
 
     expect(prompt.visible).toBe(true);
+  });
+
+  it("shows the safe-mode recovery instead of the install offer", async () => {
+    // The quarantine reports installed=false even though nothing is
+    // broken — the install offer would only hit the backend's refusal.
+    mocks.ingamePluginStatus.mockResolvedValue({
+      installed: false,
+      outdated: false,
+      safeMode: true,
+    });
+    mountPrompt();
+    await flushPromises();
+
+    expect(
+      document.body.querySelector(".hk-modal-title")?.textContent,
+    ).toContain(t("replay.live.pluginSafeModeTitle"));
+    expect(
+      document.body.querySelector(".plugin-install-prompt__desc")?.textContent,
+    ).toContain(t("replay.live.pluginSafeModeDesc"));
+    // No dismissal checkbox: a state-recovery question must not offer to
+    // silence the boot-time install ask.
+    expect(checkboxInput()).toBeNull();
+
+    const labels = footerButtons().map((b) => b.textContent);
+    expect(labels).toContain(t("replay.live.pluginSafeModeLater"));
+    expect(labels).toContain(t("replay.live.pluginSafeModeRepair"));
+    expect(labels).not.toContain(t("replay.live.idlePluginInstall"));
+  });
+
+  it("repairs safe mode through the shared flow and never writes the marker", async () => {
+    mocks.ingamePluginStatus.mockResolvedValue({
+      installed: false,
+      outdated: false,
+      safeMode: true,
+    });
+    mocks.ingamePluginInstall.mockImplementation(async () => {
+      // The backend's post-repair probe sees the quarantine gone and the
+      // plugin back — flip the status the way the real one would.
+      mocks.ingamePluginStatus.mockResolvedValue({
+        installed: true,
+        outdated: false,
+        safeMode: false,
+      });
+    });
+    const { prompt } = mountPrompt();
+    await flushPromises();
+
+    footerButton(t("replay.live.pluginSafeModeRepair")).click();
+    await flushPromises();
+
+    // Turn mods back on FIRST, then the embedded install.
+    expect(mocks.modHubSetSafeMode).toHaveBeenCalledWith("C:/Games/WorldOfWarships", false);
+    expect(mocks.ingamePluginInstall).toHaveBeenCalledWith("C:/Games/WorldOfWarships");
+    expect(prompt.visible).toBe(false);
+    const plugin = useIngamePluginStore();
+    expect(plugin.safeMode).toBe(false);
+    expect(plugin.installed).toBe(true);
+    // A recovery is not an install decline — the boot ask stays armed.
+    expect(localStorage.getItem(DISMISSED_KEY)).toBeNull();
+  });
+
+  it("closes the safe-mode window on later without touching the dismissal marker", async () => {
+    mocks.ingamePluginStatus.mockResolvedValue({
+      installed: false,
+      outdated: false,
+      safeMode: true,
+    });
+    const { prompt } = mountPrompt();
+    await flushPromises();
+
+    footerButton(t("replay.live.pluginSafeModeLater")).click();
+    await flushPromises();
+
+    expect(prompt.visible).toBe(false);
+    // Not a decline: the boot-time ask stays armed for the next start.
+    expect(localStorage.getItem(DISMISSED_KEY)).toBeNull();
+  });
+
+  it("re-renders the normal install offer when mods return but the repair install fails", async () => {
+    mocks.ingamePluginStatus.mockResolvedValue({
+      installed: false,
+      outdated: false,
+      safeMode: true,
+    });
+    mocks.ingamePluginInstall.mockImplementation(async () => {
+      // The restore rename landed (safe mode off), but the reinstall was
+      // refused (e.g. a locked file): the fresh probe reports a genuinely
+      // missing plugin, not a quarantine.
+      mocks.ingamePluginStatus.mockResolvedValue({
+        installed: false,
+        outdated: false,
+        safeMode: false,
+      });
+      throw new Error("the plugin entry file is locked");
+    });
+    const { prompt } = mountPrompt();
+    await flushPromises();
+
+    footerButton(t("replay.live.pluginSafeModeRepair")).click();
+    await flushPromises();
+
+    // Stays open on the NORMAL variant — the quarantine is over, so the
+    // recovery question would be a lie and the install offer is real.
+    expect(prompt.visible).toBe(true);
+    expect(
+      document.body.querySelector(".hk-modal-title")?.textContent,
+    ).toContain(t("replay.live.pluginPromptTitle"));
+    expect(checkboxInput()).toBeTruthy();
+    const labels = footerButtons().map((b) => b.textContent);
+    expect(labels).toContain(t("replay.live.idlePluginInstall"));
+    expect(labels).not.toContain(t("replay.live.pluginSafeModeRepair"));
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    expect(texts).toContain("the plugin entry file is locked");
+  });
+
+  it("stays open on a repair failure and surfaces the raw backend sentence", async () => {
+    mocks.ingamePluginStatus.mockResolvedValue({
+      installed: false,
+      outdated: false,
+      safeMode: true,
+    });
+    mocks.modHubSetSafeMode.mockRejectedValue(
+      new Error("res_mods is locked by the game"),
+    );
+    const { prompt } = mountPrompt();
+    await flushPromises();
+
+    footerButton(t("replay.live.pluginSafeModeRepair")).click();
+    await flushPromises();
+
+    expect(prompt.visible).toBe(true);
+    expect(mocks.ingamePluginInstall).not.toHaveBeenCalled();
+    // The tError contract: a raw backend sentence (spaces, no key path)
+    // surfaces verbatim instead of being looked up as a message key.
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    expect(texts).toContain("res_mods is locked by the game");
   });
 });
 

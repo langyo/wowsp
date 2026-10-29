@@ -20,13 +20,25 @@
  * sidebar's update badge, and the sidebar's batch pass spins this card
  * and flips its status the moment the probe step lands. `busy` reads
  * that shared table instead of tracking its own ops.
+ *
+ * Safe mode (mod hub): quarantining `res_mods` deliberately makes the
+ * probe report installed=false — the live tree really carries no plugin.
+ * `safeMode` carries that context so the surfaces replace the install
+ * offer with the recovery question instead of offering an install the
+ * backend has to refuse as an English sentence. `repairSafeMode` is the
+ * single shared "turn mods back on + repair the plugin" flow behind both
+ * the boot prompt window and the live status card; its pre-checks mirror
+ * the mod hub's localized guard refusals (safe mode, running client).
  */
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 
 import { api } from "@/api";
 import { useConfigStore } from "@/stores/config";
+import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePluginUpdatesStore, type PluginItemOp } from "@/stores/pluginUpdates";
+import { sameGamePath } from "@/utils/gamePath";
+import { guardRefusalKey } from "@/utils/refusalKey";
 import { isKnownRealm } from "@/utils/realms";
 
 export const useIngamePluginStore = defineStore("ingamePlugin", () => {
@@ -37,6 +49,11 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
   /** Null once probed; a failed probe (older shell, no install) stays null
    *  so consumers treat the plugin as absent rather than unknown. */
   const probed = ref(false);
+  /** The install's `res_mods` is quarantined by the mod hub's safe mode —
+   *  `installed` is false BY DESIGN then (the live tree has no plugin), so
+   *  this flag is what tells a quarantine apart from a genuinely missing
+   *  plugin. Older shells omit the field; `=== true` reads them as off. */
+  const safeMode = ref(false);
   /** Discussions thread backing the mod-hub page (for the page link). */
   const discussion = ref<number | null>(null);
 
@@ -57,6 +74,7 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     installed.value = false;
     outdated.value = false;
     probed.value = false;
+    safeMode.value = false;
     discussion.value = null;
   }
 
@@ -76,6 +94,9 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
       if (seq !== refreshSeq || root !== gameRoot.value) return;
       installed.value = status.installed;
       outdated.value = status.outdated === true;
+      // Absent from older shells — `=== true` is the only read that keeps
+      // an undefined payload from flashing the safe-mode variant.
+      safeMode.value = status.safeMode === true;
       discussion.value = status.discussion;
       probed.value = true;
     } catch {
@@ -101,6 +122,54 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
 
   async function uninstall(): Promise<string | null> {
     return pluginUpdates.runProbe(gameRoot.value, "uninstall");
+  }
+
+  /** Whether any running client belongs to `root` — the mod hub's
+   *  multi-instance rule without its toast. A running process whose folder
+   *  the backend could not resolve blocks conservatively (the old blanket
+   *  behavior); a client running from a DIFFERENT install never blocks
+   *  work on the selected one. */
+  function targetClientRunning(root: string): boolean {
+    const roots = useGameStatusStore().processes
+      .filter((p) => p.running)
+      .map((p) => p.matchedInstall?.path ?? null);
+    if (roots.length === 0) return false;
+    return roots.some((r) => r == null || sameGamePath(root, r));
+  }
+
+  /** Safe-mode recovery — the single shared "turn mods back on and repair
+   *  the in-game plugin" flow behind the boot prompt's safe-mode variant
+   *  and the live status card's repair button. Returns null on success,
+   *  else a localized i18n key (or the raw backend sentence for a setter
+   *  rejection) for the caller's toast, the same key-or-raw contract the
+   *  lifecycle ops use. Known guard sentences are mapped through
+   *  guardRefusalKey: a stale game-status snapshot can let the backend's
+   *  "is running from" refusal through the pre-check.
+   *
+   *  The quarantine rename and the repair write both live in the game
+   *  tree, so a running client is refused up front with the localized
+   *  sentence instead of letting the backend's English guard reach a
+   *  toast. The post-repair re-probe is awaited so the caller can rely on
+   *  a refreshed snapshot even when the install half failed: the restore
+   *  rename did happen, and the surfaces must stop offering the safe-mode
+   *  recovery they no longer need. */
+  async function repairSafeMode(): Promise<string | null> {
+    const root = gameRoot.value;
+    if (!root || busy.value) return "common.game.offline";
+    if (targetClientRunning(root)) return "resources.gameRunningBlock";
+    try {
+      await api.modHubSetSafeMode(root, false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Defensive fallback: the pre-check above normally catches a running
+      // client, but a stale snapshot can let the backend's English guard
+      // sentence through — map the two known guards so the caller's toast
+      // still renders localized, and surface everything else verbatim.
+      return guardRefusalKey(msg) ?? msg;
+    }
+    const err = await pluginUpdates.runProbe(root, "install");
+    await refresh();
+    return err;
   }
 
   // ── Ground-truth identity off the probe's telemetry ──────────────────
@@ -195,6 +264,7 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     installed,
     outdated,
     probed,
+    safeMode,
     discussion,
     busy,
     state,
@@ -203,6 +273,7 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     install,
     update,
     uninstall,
+    repairSafeMode,
     applyTelemetryIdentity,
     playerRealms,
     liveSelfRealm,

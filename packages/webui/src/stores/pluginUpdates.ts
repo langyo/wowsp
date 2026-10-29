@@ -37,12 +37,13 @@ import {
   type ModInstallRecord,
   type UninstallReport,
 } from "@/api";
-import { t } from "@/i18n";
+import { t, tError } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { sameGamePath } from "@/utils/gamePath";
 import { installFolderName, installLabel } from "@/utils/installLabel";
+import { guardRefusalKey } from "@/utils/refusalKey";
 
 /** One outdated catalog mod awaiting its update run. */
 export interface OutdatedMod {
@@ -310,22 +311,51 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     await Promise.allSettled([refresh(), useIngamePluginStore().refresh()]);
   }
 
+  /** Whether any running client belongs to `gameRoot` — the mod hub's
+   *  multi-instance rule without its toast (a running process whose folder
+   *  is unknown blocks conservatively; a client on a DIFFERENT install does
+   *  not). */
+  function targetClientRunning(root: string): boolean {
+    const roots = useGameStatusStore().processes
+      .filter((p) => p.running)
+      .map((p) => p.matchedInstall?.path ?? null);
+    if (roots.length === 0) return false;
+    return roots.some((r) => r == null || sameGamePath(root, r));
+  }
+
   /**
    * One probe-plugin lifecycle op — the single entry every surface uses
    * (the live idle card, the onboarding wizard, the boot prompt modal,
    * and the batch pass's probe step). Returns null on success, else the
    * error string/key for the caller's toast; "common.game.offline" also
    * covers a probe already busy elsewhere (same contract as before).
+   *
+   * The backend's guard refusals (safe mode, running client) are English
+   * anyhow sentences; both are pre-checked here so the same key-or-raw
+   * contract every caller's toast already uses resolves them through
+   * tError to the localized line instead of showing the sentence raw. A
+   * stale game-status snapshot can still let the real guard through, so
+   * the catch maps the two known sentences too (guardRefusalKey).
    */
   async function runProbe(gameRoot: string, op: PluginItemOp): Promise<string | null> {
     if (!gameRoot || probeBusy.value) return "common.game.offline";
+    const safeMode = await api.modHubSafeMode(gameRoot).catch(() => false);
+    if (safeMode) return "resources.safeModeBlock";
+    if (targetClientRunning(gameRoot)) return "resources.gameRunningBlock";
+    // The pre-checks above await, so the early busy test is no longer
+    // atomic: two near-simultaneous calls can both pass it and race into
+    // withItem, whose single-flight throw would reject the loser — callers
+    // only understand the key contract. Re-check synchronously with no
+    // await in between, so the loser returns the documented key instead.
+    if (probeBusy.value) return "common.game.offline";
     return withItem(PROBE_ITEM, op, async () => {
       try {
         if (op === "uninstall") await api.ingamePluginUninstall(gameRoot);
         else await api.ingamePluginInstall(gameRoot);
         return null;
       } catch (e) {
-        return e instanceof Error ? e.message : String(e);
+        const msg = e instanceof Error ? e.message : String(e);
+        return guardRefusalKey(msg) ?? msg;
       }
     });
   }
@@ -446,7 +476,10 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
             // instead of recording its refusal as a false failure.
             if (probeBusy.value) return;
             const err = await runProbe(g.path, "update");
-            if (err) throw new Error(err);
+            // runProbe's own refusals are KEYS (safe mode, running client);
+            // the batch failure summary must render the localized line, not
+            // the raw key path. Raw backend sentences pass through unchanged.
+            if (err) throw new Error(tError(err));
           },
         });
       }
@@ -554,7 +587,13 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
           markItemFresh(task.path, task.id);
         } catch (e) {
           const detail = e instanceof Error ? e.message : String(e);
-          failures.value.push(`${task.name}: ${detail}`);
+          // Catalog-mod items have no frontend guard pre-check, so a
+          // backend guard sentence reaches this catch raw — localize the
+          // two known ones before folding the item into the summary.
+          // Probe items already speak the key contract (runProbe), so this
+          // is idempotent for them; unknown errors stay verbatim.
+          const key = guardRefusalKey(detail);
+          failures.value.push(`${task.name}: ${key ? t(key) : detail}`);
           failedPaths.add(task.path);
         }
         done.value += 1;

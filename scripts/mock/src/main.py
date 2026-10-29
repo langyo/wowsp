@@ -625,11 +625,25 @@ async def cmd_mod_hub_records() -> list[dict]:
 
 
 # Probe plugin always "installed but outdated" against the mock: the
-# sidebar marker's second freshness source.
+# sidebar marker's second freshness source. Safe mode stays off so the
+# browser-mode probe flow mirrors a normal (non-quarantined) install.
 @app.post("/api/ingame_plugin_status")
 async def cmd_ingame_plugin_status(request: Request) -> dict:
-    return {"installed": True, "outdated": True, "resMods": "bin/13187581/res_mods",
-            "discussion": 640}
+    return {"installed": True, "outdated": True, "safeMode": False,
+            "resMods": "bin/13187581/res_mods", "discussion": 640}
+
+
+# Mod-hub safe mode: the browser-mode mock never quarantines anything, so
+# the probe-plugin repair flow stays on the normal install path. Request
+# bodies are ignored exactly like the real setters' return value.
+@app.post("/api/mod_hub_safe_mode")
+async def cmd_mod_hub_safe_mode(request: Request) -> bool:
+    return False
+
+
+@app.post("/api/mod_hub_set_safe_mode")
+async def cmd_mod_hub_set_safe_mode(request: Request) -> bool:
+    return False
 
 
 @app.post("/api/ingame_plugin_install")
