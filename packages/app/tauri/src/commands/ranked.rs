@@ -449,6 +449,58 @@ pub(crate) fn flatten_ranked_ship_seasons(
     out
 }
 
+/// Curated league→tier windows for the early seasons of the ranked rework
+/// (ids 1001–1011), whose upstream `seasons/info` metadata is untrustworthy:
+/// WG serves every league of those seasons as the full ship-tier span
+/// (min 1, max 10), which never matched the actual season design — a real
+/// league window spans one or two tiers. The values below are the official
+/// per-season rules from the Wargaming/Lesta season documentation (the EN
+/// `Ship:Ranked_Battles` wiki article's season sections, cross-checked
+/// against the RU wiki's per-season articles and the 0.9.12 / 0.10.10 patch
+/// notes; the two wikis agree on every season). From Season 12 on the
+/// upstream metadata is trustworthy (Season 12's upstream values equal the
+/// wiki's rule exactly), so those seasons stay upstream-fed.
+///
+/// League numbers: 1 = Gold, 2 = Silver, 3 = Bronze; tier 11 = supership
+/// (Seasons 5 and 9 admitted superships alongside the tier-X windows).
+fn curated_league_tiers(season_id: i64) -> Option<Vec<RankedLeagueTiers>> {
+    // (league, min tier, max tier) per season.
+    let rows: &[(i32, i32, i32)] = match season_id {
+        // S1 (rework pilot): Bronze VIII, Silver IX–X, Gold X.
+        1001 => &[(1, 10, 10), (2, 9, 10), (3, 8, 8)],
+        // S2: Bronze VIII–IX, Silver IX–X, Gold X.
+        1002 => &[(1, 10, 10), (2, 9, 10), (3, 8, 9)],
+        // S3: Bronze VI–VII, Silver VIII–IX, Gold X.
+        1003 => &[(1, 10, 10), (2, 8, 9), (3, 6, 7)],
+        // S4: Bronze VI, Silver VIII, Gold X.
+        1004 => &[(1, 10, 10), (2, 8, 8), (3, 6, 6)],
+        // S5: tier X + superships in every league.
+        1005 => &[(1, 10, 11), (2, 10, 11), (3, 10, 11)],
+        // S6: Bronze VI–VII, Silver VIII–IX, Gold X.
+        1006 => &[(1, 10, 10), (2, 8, 9), (3, 6, 7)],
+        // S7: VIII–IX across the board.
+        1007 => &[(1, 8, 9), (2, 8, 9), (3, 8, 9)],
+        // S8: tier X across the board, 6v6.
+        1008 => &[(1, 10, 10), (2, 10, 10), (3, 10, 10)],
+        // S9: Bronze V, Silver VI–VII, Gold X + superships.
+        1009 => &[(1, 10, 11), (2, 6, 7), (3, 5, 5)],
+        // S10: Bronze VI, Silver VIII, Gold IX–X.
+        1010 => &[(1, 9, 10), (2, 8, 8), (3, 6, 6)],
+        // S11: Bronze VIII–IX, Silver VIII–IX, Gold X.
+        1011 => &[(1, 10, 10), (2, 8, 9), (3, 8, 9)],
+        _ => return None,
+    };
+    Some(
+        rows.iter()
+            .map(|(league, min, max)| RankedLeagueTiers {
+                league: *league,
+                min_tier: *min,
+                max_tier: *max,
+            })
+            .collect(),
+    )
+}
+
 /// Parse one `/wows/seasons/info/` data value into the metadata the UI
 /// needs. Tolerates missing fields (older seasons, partial responses) —
 /// everything degrades to None/empty. Pure — unit-tested.
@@ -479,6 +531,16 @@ pub(crate) fn parse_season_meta(v: &serde_json::Value) -> SeasonMeta {
             }
         }
         leagues.sort_by_key(|l| l.league);
+    }
+    // Seasons 1–11's upstream league windows are the bogus full 1–10 span
+    // for every league (see `curated_league_tiers`) — replace them with the
+    // documented season rules wholesale.
+    if let Some(curated) = v
+        .get("season_id")
+        .and_then(|x| x.as_i64())
+        .and_then(curated_league_tiers)
+    {
+        leagues = curated;
     }
     SeasonMeta {
         start_at,
@@ -723,6 +785,95 @@ mod tests {
         let empty = parse_season_meta(&serde_json::json!({}));
         assert_eq!(empty.start_at, None);
         assert!(empty.leagues.is_empty());
+    }
+
+    #[test]
+    fn parse_season_meta_overrides_bogus_league_windows_with_curated_rules() {
+        // What WG actually serves for seasons 1–11: every league claims the
+        // full ship-tier span. The curated season rules must replace that.
+        let meta = parse_season_meta(&serde_json::json!({
+            "season_id": 1008,
+            "start_at": 1_657_762_800,
+            "finish_at": 1_664_946_000,
+            "leagues": {
+                "1": { "min_ship_tier": 1, "max_ship_tier": 10 },
+                "2": { "min_ship_tier": 1, "max_ship_tier": 10 },
+                "3": { "min_ship_tier": 1, "max_ship_tier": 10 }
+            }
+        }));
+        let win = |lg: i32| {
+            meta.leagues
+                .iter()
+                .find(|l| l.league == lg)
+                .map(|l| (l.min_tier, l.max_tier))
+        };
+        // Season 8 ran tier X in every league, 6v6.
+        assert_eq!(win(1), Some((10, 10)));
+        assert_eq!(win(2), Some((10, 10)));
+        assert_eq!(win(3), Some((10, 10)));
+
+        // Season 9's leagues ran wildly different bands (Gold X +
+        // superships, Silver VI–VII, Bronze V) — none of it upstream-served.
+        let meta = parse_season_meta(&serde_json::json!({
+            "season_id": 1009,
+            "leagues": { "1": { "min_ship_tier": 1, "max_ship_tier": 10 } }
+        }));
+        let win = |lg: i32| {
+            meta.leagues
+                .iter()
+                .find(|l| l.league == lg)
+                .map(|l| (l.min_tier, l.max_tier))
+        };
+        assert_eq!(win(1), Some((10, 11))); // superships read as tier 11
+        assert_eq!(win(2), Some((6, 7)));
+        assert_eq!(win(3), Some((5, 5)));
+    }
+
+    #[test]
+    fn parse_season_meta_keeps_upstream_windows_from_season_twelve_on() {
+        // Season 12's upstream metadata matches the historical rule (tier X
+        // everywhere) and later seasons are trustworthy — no curated rows
+        // exist for them, so upstream wins.
+        let meta = parse_season_meta(&serde_json::json!({
+            "season_id": 1030,
+            "leagues": {
+                "1": { "min_ship_tier": 9, "max_ship_tier": 10 },
+                "2": { "min_ship_tier": 7, "max_ship_tier": 8 },
+                "3": { "min_ship_tier": 6, "max_ship_tier": 6 }
+            }
+        }));
+        assert_eq!(meta.leagues.len(), 3);
+        assert_eq!(meta.leagues[1].min_tier, 7);
+
+        // A payload without a season id keeps upstream data too.
+        let meta = parse_season_meta(&serde_json::json!({
+            "leagues": { "1": { "min_ship_tier": 9, "max_ship_tier": 10 } }
+        }));
+        assert_eq!(meta.leagues.len(), 1);
+    }
+
+    #[test]
+    fn curated_league_windows_stay_sane() {
+        // Every curated season carries all three metals with one/two-tier
+        // windows (tier 11 = superships riding along with X). A wider span
+        // than that is the upstream garbage this table exists to replace.
+        for sid in 1001..=1011 {
+            let rows = curated_league_tiers(sid).expect("curated rows");
+            assert_eq!(rows.len(), 3, "season {sid}");
+            for r in rows {
+                assert!((1..=11).contains(&r.min_tier) && (1..=11).contains(&r.max_tier));
+                assert!(r.min_tier <= r.max_tier);
+                assert!(
+                    r.max_tier - r.min_tier <= 2,
+                    "season {sid} league {} spans {}",
+                    r.league,
+                    r.max_tier - r.min_tier
+                );
+            }
+        }
+        // Season 12+ stay upstream-fed.
+        assert!(curated_league_tiers(1012).is_none());
+        assert!(curated_league_tiers(999).is_none());
     }
 
     #[test]
