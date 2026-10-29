@@ -7,7 +7,8 @@
     "restart": "Reiniciar el juego",
     "analysis": "Ver análisis",
     "dismiss": "Descartar",
-    "safeRestartFallback": "No se pudo localizar la carpeta del juego; se reiniciará tal cual."
+    "safeRestartFallback": "No se pudo localizar la carpeta del juego; se reiniciará tal cual.",
+    "open": "Revisar fallo"
   },
   "section": {
     "title": "Análisis de bloqueos",
@@ -39,7 +40,8 @@
     "rawLogsTitle": "Registros sin procesar",
     "ignored": "Avisos ignorados",
     "ignoredEmpty": "No hay avisos ignorados.",
-    "restoreWarning": "Restaurar aviso"
+    "restoreWarning": "Restaurar aviso",
+    "recordDetail": "Informe de fallo"
   },
   "findings": {
     "exceptionAccessViolation": "Infracción de acceso — el cliente leyó o escribió memoria que no le pertenece",

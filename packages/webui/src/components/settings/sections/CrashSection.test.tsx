@@ -122,7 +122,24 @@ describe("CrashSection", () => {
     });
   });
 
-  it("renders findings and the suspect actions right-aligned", async () => {
+  /** Open the suspect window (the actionable rows live there). */
+  async function openSuspects(wrapper: ReturnType<typeof mount>) {
+    await vi.waitFor(() => {
+      expect(
+        wrapper.findAll("button").some((b) => b.text().includes(t("crash.section.suspects"))),
+      ).toBe(true);
+    });
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text().includes(t("crash.section.suspects")))!
+      .trigger("click");
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".crash-section__suspect-actions")).toBeTruthy();
+    });
+    return document.body.querySelector(".crash-section__suspect-actions") as HTMLElement;
+  }
+
+  it("renders findings inline and the suspect actions right-aligned in the window", async () => {
     mocked.list.mockResolvedValue([record()]);
     mocked.analyze.mockResolvedValue(analysis);
     const wrapper = mount(CrashSection);
@@ -130,14 +147,9 @@ describe("CrashSection", () => {
       expect(wrapper.find(".crash-section__finding").exists()).toBe(true);
     });
     expect(wrapper.text()).toContain("nvldum.dll");
-    // Severity tag renders (hikari HkTag inside the finding row).
     expect(wrapper.find(".crash-section__finding").text()).toContain(t("crash.severity.critical"));
-    await vi.waitFor(() => {
-      expect(wrapper.find(".crash-section__suspect").exists()).toBe(true);
-    });
-    const actions = wrapper.find(".crash-section__suspect-actions");
-    expect(actions.exists()).toBe(true);
-    const texts = actions.findAll("button").map((b) => b.text());
+    const actions = await openSuspects(wrapper);
+    const texts = [...actions.querySelectorAll("button")].map((b) => b.textContent ?? "");
     expect(texts).toContain(t("crash.suspects.quarantine"));
     expect(texts).toContain(t("crash.suspects.delete"));
     expect(texts).toContain(t("crash.suspects.ignore"));
@@ -148,14 +160,11 @@ describe("CrashSection", () => {
     mocked.analyze.mockResolvedValue(analysis);
     mocked.deleteEntry.mockResolvedValue(null as never);
     const wrapper = mount(CrashSection);
-    await vi.waitFor(() => {
-      expect(wrapper.find(".crash-section__suspect-actions").exists()).toBe(true);
-    });
-    const del = wrapper
-      .find(".crash-section__suspect-actions")
-      .findAll("button")
-      .find((b) => b.text().includes(t("crash.suspects.delete")));
-    await del!.trigger("click");
+    const actions = await openSuspects(wrapper);
+    const del = [...actions.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").includes(t("crash.suspects.delete")),
+    );
+    del!.click();
     // The confirmation dialog teleports to body.
     await vi.waitFor(() => {
       const buttons = document.body.querySelectorAll("button");
@@ -165,19 +174,38 @@ describe("CrashSection", () => {
     });
   });
 
+  it("opens a record log window from its card", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    const wrapper = mount(CrashSection);
+    await vi.waitFor(() => {
+      expect(
+        wrapper.findAll("button").some((b) => b.text().includes(t("crash.section.openRecords"))),
+      ).toBe(true);
+    });
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text().includes(t("crash.section.openRecords")))!
+      .trigger("click");
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".crash-section__record")).toBeTruthy();
+    });
+    (document.body.querySelector(".crash-section__record") as HTMLElement).click();
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".crash-section__detail-logs")).toBeTruthy();
+    });
+  });
+
   it("ignores a suspect through the store command", async () => {
     mocked.list.mockResolvedValue([record()]);
     mocked.analyze.mockResolvedValue(analysis);
     mocked.ignore.mockResolvedValue(null as never);
     const wrapper = mount(CrashSection);
-    await vi.waitFor(() => {
-      expect(wrapper.find(".crash-section__suspect-actions").exists()).toBe(true);
-    });
-    const ignoreBtn = wrapper
-      .find(".crash-section__suspect-actions")
-      .findAll("button")
-      .find((b) => b.text().includes(t("crash.suspects.ignore")));
-    await ignoreBtn!.trigger("click");
+    const actions = await openSuspects(wrapper);
+    const ignoreBtn = [...actions.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").includes(t("crash.suspects.ignore")),
+    );
+    ignoreBtn!.click();
     await vi.waitFor(() => {
       expect(mocked.ignore).toHaveBeenCalledWith("suspect_mod");
     });

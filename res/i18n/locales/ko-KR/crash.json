@@ -7,7 +7,8 @@
     "restart": "게임 재시작",
     "analysis": "분석 보기",
     "dismiss": "닫기",
-    "safeRestartFallback": "게임 폴더를 찾지 못해 그대로 다시 시작합니다."
+    "safeRestartFallback": "게임 폴더를 찾지 못해 그대로 다시 시작합니다.",
+    "open": "크래시 확인"
   },
   "section": {
     "title": "충돌 분석",
@@ -39,7 +40,8 @@
     "rawLogsTitle": "원본 로그",
     "ignored": "무시한 경고",
     "ignoredEmpty": "무시한 경고가 없습니다.",
-    "restoreWarning": "경고 복원"
+    "restoreWarning": "경고 복원",
+    "recordDetail": "크래시 보고서"
   },
   "findings": {
     "exceptionAccessViolation": "액세스 위반 —— 클라이언트가 권한 없는 메모리에 읽기/쓰기를 했습니다",

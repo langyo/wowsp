@@ -7,7 +7,8 @@
     "restart": "重新啟動遊戲",
     "analysis": "檢視分析",
     "dismiss": "忽略",
-    "safeRestartFallback": "未能定位遊戲資料夾，將直接重新啟動。"
+    "safeRestartFallback": "未能定位遊戲資料夾，將直接重新啟動。",
+    "open": "查看崩潰分析"
   },
   "section": {
     "title": "當機分析",
@@ -39,7 +40,8 @@
     "rawLogsTitle": "原始日誌",
     "ignored": "已忽略的警告",
     "ignoredEmpty": "沒有已忽略的警告。",
-    "restoreWarning": "恢復警告"
+    "restoreWarning": "恢復警告",
+    "recordDetail": "崩潰詳情"
   },
   "findings": {
     "exceptionAccessViolation": "存取違例 —— 用戶端讀寫了無權存取的記憶體",

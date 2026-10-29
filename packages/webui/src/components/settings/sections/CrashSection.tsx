@@ -1,12 +1,10 @@
-/** Crash analysis (游戏崩溃分析) settings section — the watchdog
- *  records and their post-mortem. The section keeps its top level to
- *  the essentials (the safeguard switch and the LATEST crash stamp);
- *  the record history, the raw logs and the dismissed-warning list
- *  live in secondary hikari windows, and every suspect row carries
- *  right-aligned 隔离 / 删除 / 忽略 actions. Parsing recent crashes is
- *  automatic (startup catch-up + the safeguard toggle), so no manual
- *  scan button is offered. The store behind it is stores/crash.ts. */
-import { computed, defineComponent, onMounted, ref, watch } from "vue";
+/** Crash analysis (游戏崩溃分析) settings section. Top level: the
+ *  safeguard switch, the LATEST crash stamp, the diagnostic findings
+ *  and the recovery actions. The record history, the suspect list,
+ *  the ignored-warning list and a record log window all live in
+ *  secondary hikari windows. The crash PROMPT is a standard sticky
+ *  toast from the store (shared stack with every other toast). */
+import { computed, defineComponent, nextTick, onMounted, ref, watch } from "vue";
 
 import {
   HkAlert,
@@ -28,8 +26,6 @@ import { useCrashStore } from "@/stores/crash";
 import ErrorCard from "@/components/base/ErrorCard";
 import "./CrashSection.scss";
 
-/** The findings whose i18n message carries a placeholder the finding
- *  detail fills; everything else renders the plain message. */
 function findingText(finding: CrashFinding): string {
   switch (finding.code) {
     case "exceptionUnknown":
@@ -54,6 +50,15 @@ function sourceLabel(source: string): string {
   return t("crash.section.source.crashDump");
 }
 
+/** The brief direct cause shown as a tag on every record card: the
+ *  exception code when the evidence carried one, else the crash
+ *  report summary line (e.g. "Unhandled exception"). */
+function recordCause(record: GameCrashRecord): string | null {
+  if (record.exceptionCode) return record.exceptionCode;
+  const summary = (record.summary ?? "").trim();
+  return summary.length > 0 ? summary : null;
+}
+
 export default defineComponent({
   name: "SettingsCrashSection",
   setup() {
@@ -63,10 +68,13 @@ export default defineComponent({
 
     /** The selected record id (defaults to the newest). */
     const selectedId = ref<string | null>(null);
-    /** Secondary windows: record history / ignored warnings / raw logs. */
+    /** Secondary windows. */
     const recordsOpen = ref(false);
+    const suspectsOpen = ref(false);
     const ignoredOpen = ref(false);
-    const rawOpen = ref(false);
+    const detailOpen = ref(false);
+    /** The record-log window scroll pane (auto-scrolled to the tail). */
+    const logPane = ref<HTMLElement | null>(null);
     /** The selected record analysis load failure (retryable). */
     const analysisError = ref("");
     /** The active install safe-mode state (live status row). */
@@ -100,8 +108,6 @@ export default defineComponent({
       }
     }
 
-    /** Load (or reuse) the selected record analysis; quiet failures land
-     *  in the retryable error card. */
     async function ensureAnalysis() {
       const record = selectedRecord.value;
       if (!record || crash.analysisFor(record.id)) return;
@@ -113,8 +119,6 @@ export default defineComponent({
       }
     }
 
-    /** The quarantined manifest is PER INSTALL — this surface loads the
-     *  selected record root, never whatever the mod hub last loaded. */
     async function refreshQuarantined() {
       const root = gameRoot.value;
       if (!root) return;
@@ -122,6 +126,25 @@ export default defineComponent({
         await crash.loadQuarantined(root);
       } catch {
         // No manifest yet.
+      }
+    }
+
+    /** Everything refreshes after every recovery action: the records,
+     *  the ignored list, the quarantined manifest, the safe-mode state
+     *  AND a fresh analysis (the cached one describes the pre-action
+     *  world). */
+    async function refreshAll() {
+      await crash.refreshHistory();
+      await crash.loadIgnored();
+      await refreshSafeMode();
+      await refreshQuarantined();
+      const record = selectedRecord.value;
+      if (!record) return;
+      analysisError.value = "";
+      try {
+        await crash.refreshAnalysis(record.id);
+      } catch (e) {
+        analysisError.value = e instanceof Error ? e.message : String(e);
       }
     }
 
@@ -140,22 +163,16 @@ export default defineComponent({
       void refreshQuarantined();
     });
 
-    function select(id: string) {
+    /** Open one record: select it for the findings AND open its log
+     *  window (auto-scrolled to the last line). */
+    async function openRecord(id: string) {
       selectedId.value = id;
       recordsOpen.value = false;
-    }
-
-    /** Forget the cached analysis and reload it (after an ignore /
-     *  delete the findings and suspects must reflect the new state). */
-    async function reloadAnalysis() {
-      const record = selectedRecord.value;
-      if (!record) return;
-      analysisError.value = "";
-      try {
-        await crash.refreshAnalysis(record.id);
-      } catch (e) {
-        analysisError.value = e instanceof Error ? e.message : String(e);
-      }
+      await ensureAnalysis();
+      detailOpen.value = true;
+      await nextTick();
+      const pane = logPane.value;
+      if (pane) pane.scrollTop = pane.scrollHeight;
     }
 
     async function exportReport() {
@@ -170,9 +187,17 @@ export default defineComponent({
     }
 
     async function restart() {
-      const record = selectedRecord.value;
-      const info = await crash.restart(record?.gameRoot);
+      const info = await crash.restart(selectedRecord.value?.gameRoot);
       if (info) toast.success(t("crash.section.restart") + " (pid " + info.pid + ")");
+    }
+
+    async function safeRestart() {
+      const root = selectedRecord.value?.gameRoot;
+      if (!root) {
+        toast.info(t("crash.toast.safeRestartFallback"));
+        return;
+      }
+      await crash.safeModeAndRestart(root);
     }
 
     async function quarantine(name: string) {
@@ -180,7 +205,7 @@ export default defineComponent({
       try {
         await crash.quarantine(name, record?.id, record?.gameRoot);
         toast.success(name + " — " + t("crash.modlist.quarantinedBadge"));
-        await reloadAnalysis();
+        await refreshAll();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       }
@@ -197,7 +222,7 @@ export default defineComponent({
       try {
         await crash.deleteEntry(name, selectedRecord.value?.gameRoot);
         toast.success(name + " — " + t("crash.suspects.deleteDone"));
-        await reloadAnalysis();
+        await refreshAll();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       }
@@ -207,7 +232,7 @@ export default defineComponent({
       try {
         await crash.ignoreSuspect(name);
         toast.success(t("crash.suspects.ignoreDone"));
-        await reloadAnalysis();
+        await refreshAll();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       }
@@ -217,7 +242,7 @@ export default defineComponent({
       try {
         await crash.restoreSuspect(name);
         toast.success(t("crash.suspects.restoreDone"));
-        await reloadAnalysis();
+        await refreshAll();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       }
@@ -249,14 +274,13 @@ export default defineComponent({
               <HkButton
                 size="sm"
                 loading={crash.historyLoading}
-                onClick={() => void crash.refreshHistory()}
+                onClick={() => void refreshAll()}
               >
                 <RefreshCw size={14} />
                 {t("crash.section.refresh")}
               </HkButton>
             </div>
 
-            {/* the safeguard switch row */}
             <div class="crash-section__safeguard">
               <div class="crash-section__safeguard-text">
                 <span class="crash-section__safeguard-title">
@@ -273,16 +297,20 @@ export default defineComponent({
               />
             </div>
 
-            {/* the latest crash row: the section keeps only the stamp */}
             <div class="crash-section__latest">
               <span class="crash-section__latest-label">{t("crash.section.latest")}</span>
               <span class="crash-section__latest-value">
                 {record ? formatTime(record.detectedAt) : t("crash.section.noCrashes")}
               </span>
               <span class="crash-section__spacer" />
-              {crash.history.length > 0 ? (
+              {record ? (
                 <HkButton size="sm" onClick={() => (recordsOpen.value = true)}>
                   {t("crash.section.openRecords")} ({crash.history.length})
+                </HkButton>
+              ) : null}
+              {analysis && analysis.suspects.length > 0 ? (
+                <HkButton size="sm" onClick={() => (suspectsOpen.value = true)}>
+                  {t("crash.section.suspects")} ({analysis.suspects.length})
                 </HkButton>
               ) : null}
               <HkButton size="sm" variant="ghost" onClick={() => (ignoredOpen.value = true)}>
@@ -319,7 +347,6 @@ export default defineComponent({
                   </div>
                 ) : (
                   <>
-                    {/* findings */}
                     <section class="crash-section__block">
                       <h3 class="crash-section__block-title">
                         {t("crash.section.findings")}
@@ -338,92 +365,11 @@ export default defineComponent({
                       </ul>
                     </section>
 
-                    {/* suspects: right-aligned actions */}
-                    {analysis.suspects.length > 0 ? (
-                      <section class="crash-section__block">
-                        <h3 class="crash-section__block-title">
-                          {t("crash.section.suspects")}
-                        </h3>
-                        <ul class="crash-section__suspects">
-                          {analysis.suspects.map((s) => {
-                            const quarantinedNow = crash.quarantined.some(
-                              (q) => q.name.toLowerCase() === s.name.toLowerCase(),
-                            );
-                            const busy = crash.quarantineBusy.has(s.name);
-                            return (
-                              <li key={s.name} class="crash-section__suspect">
-                                <div class="crash-section__suspect-row">
-                                  <span class="crash-section__suspect-name">
-                                    {s.name}
-                                  </span>
-                                  <HkTag variant="default" size="sm">
-                                    {t("crash.suspects.evidence." + s.evidence)}
-                                  </HkTag>
-                                  {quarantinedNow ? (
-                                    <HkTag variant="default" size="sm">
-                                      {t("crash.modlist.quarantinedBadge")}
-                                    </HkTag>
-                                  ) : null}
-                                  <span class="crash-section__spacer" />
-                                  <div class="crash-section__suspect-actions">
-                                    {quarantinedNow ? (
-                                      <HkButton
-                                        size="sm"
-                                        variant="secondary"
-                                        disabled={busy}
-                                        onClick={() => void restoreIgnored(s.name)}
-                                      >
-                                        {t("crash.suspects.restore")}
-                                      </HkButton>
-                                    ) : (
-                                      <HkButton
-                                        size="sm"
-                                        variant="outline"
-                                        disabled={busy}
-                                        onClick={() => void quarantine(s.name)}
-                                      >
-                                        <ShieldAlert size={12} />
-                                        {t("crash.suspects.quarantine")}
-                                      </HkButton>
-                                    )}
-                                    <HkButton
-                                      size="sm"
-                                      variant="danger"
-                                      disabled={busy}
-                                      onClick={() => requestDelete(s.name)}
-                                    >
-                                      <Trash2 size={12} />
-                                      {t("crash.suspects.delete")}
-                                    </HkButton>
-                                    <HkButton
-                                      size="sm"
-                                      variant="ghost"
-                                      disabled={busy}
-                                      onClick={() => void ignore(s.name)}
-                                    >
-                                      <BellOff size={12} />
-                                      {t("crash.suspects.ignore")}
-                                    </HkButton>
-                                  </div>
-                                </div>
-                                {s.logLines.length > 0 ? (
-                                  <ul class="hk-selectable crash-section__suspect-lines">
-                                    {s.logLines.map((line) => (
-                                      <li key={line}>
-                                        <code>{line}</code>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : null}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </section>
-                    ) : null}
-
-                    {/* actions */}
                     <div class="crash-section__actions">
+                      <HkButton size="sm" variant="secondary" onClick={() => void safeRestart()}>
+                        <ShieldAlert size={14} />
+                        {t("crash.toast.safeRestart")}
+                      </HkButton>
                       <HkButton
                         size="sm"
                         loading={crash.exportingId === record.id}
@@ -442,10 +388,6 @@ export default defineComponent({
                       >
                         {t("crash.section.restart")}
                       </HkButton>
-                      <span class="crash-section__spacer" />
-                      <HkButton size="sm" variant="ghost" onClick={() => (rawOpen.value = true)}>
-                        {t("crash.section.rawLogs")}
-                      </HkButton>
                     </div>
                   </>
                 )}
@@ -455,7 +397,7 @@ export default defineComponent({
             )}
           </HkSettingsGroup>
 
-          {/* the record history window */}
+          {/* ── record history window: cards carry the direct cause tag ── */}
           <HkModal
             modelValue={recordsOpen.value}
             onUpdate:modelValue={(v: boolean) => (recordsOpen.value = v)}
@@ -472,24 +414,164 @@ export default defineComponent({
                     "is-selected": r.id === record?.id,
                     "is-dismissed": r.status === "dismissed",
                   }}
-                  onClick={() => select(r.id)}
+                  onClick={() => void openRecord(r.id)}
                 >
-                  <span class="crash-section__record-time">
-                    {formatTime(r.detectedAt)}
-                  </span>
-                  <span class="crash-section__record-name">
-                    {r.imageName} (pid {r.pid})
+                  <span class="crash-section__record-head">
+                    <span class="crash-section__record-time">
+                      {formatTime(r.detectedAt)}
+                    </span>
+                    {recordCause(r) ? (
+                      <HkTag
+                        variant={r.exceptionCode ? "danger" : "default"}
+                        size="sm"
+                      >
+                        {recordCause(r)}
+                      </HkTag>
+                    ) : null}
                   </span>
                   <span class="crash-section__record-meta">
-                    {sourceLabel(r.source)}
-                    {r.exceptionCode ? " · " + r.exceptionCode : ""}
+                    {r.imageName} (pid {r.pid})
+                    {" · " + sourceLabel(r.source)}
                   </span>
                 </button>
               ))}
             </div>
           </HkModal>
 
-          {/* the ignored-warnings window (restore = undo the dismissal) */}
+          {/* ── one record detail window: the logs, tail-first ── */}
+          <HkModal
+            modelValue={detailOpen.value}
+            onUpdate:modelValue={(v: boolean) => (detailOpen.value = v)}
+            title={t("crash.section.recordDetail")}
+            width="46rem"
+          >
+            <div ref={(el: unknown) => (logPane.value = el as HTMLElement | null)} class="crash-section__detail-logs">
+              {record ? (
+                <p class="crash-section__meta">
+                  {formatTime(record.detectedAt)}
+                  {record.gameRoot ? " · " + record.gameRoot : ""}
+                  {" · " + sourceLabel(record.source)}
+                </p>
+              ) : null}
+              {analysis ? (
+                [...analysis.gameLogs, ...analysis.appLogs].map((log) => (
+                  <section key={log.path} class="crash-section__log">
+                    <h4 class="crash-section__log-name">{log.name}</h4>
+                    {log.highlights.length > 0 ? (
+                      <ul class="crash-section__log-highlights">
+                        {log.highlights.map((line) => (
+                          <li key={line}>
+                            <code>{line}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <pre class="crash-section__log-tail">{log.tail}</pre>
+                  </section>
+                ))
+              ) : (
+                <div class="crash-section__loading">
+                  <HkSpinner size={18} />
+                </div>
+              )}
+              {analysis ? (
+                <p class="crash-section__meta">
+                  {t("crash.section.modsInventory")}: {analysis.modsInventory.length}
+                  {analysis.currentBuild
+                    ? " · " + t("crash.section.currentBuild") + ": " + analysis.currentBuild
+                    : ""}
+                </p>
+              ) : null}
+            </div>
+          </HkModal>
+
+          {/* ── suspect list window: the actionable rows ─────────────── */}
+          <HkModal
+            modelValue={suspectsOpen.value}
+            onUpdate:modelValue={(v: boolean) => (suspectsOpen.value = v)}
+            title={t("crash.section.suspects")}
+            width="44rem"
+          >
+            {analysis && analysis.suspects.length > 0 ? (
+              <ul class="crash-section__suspects">
+                {analysis.suspects.map((s) => {
+                  const quarantinedNow = crash.quarantined.some(
+                    (q) => q.name.toLowerCase() === s.name.toLowerCase(),
+                  );
+                  const busy = crash.quarantineBusy.has(s.name);
+                  return (
+                    <li key={s.name} class="crash-section__suspect">
+                      <div class="crash-section__suspect-row">
+                        <span class="crash-section__suspect-name">{s.name}</span>
+                        <HkTag variant="default" size="sm">
+                          {t("crash.suspects.evidence." + s.evidence)}
+                        </HkTag>
+                        {quarantinedNow ? (
+                          <HkTag variant="default" size="sm">
+                            {t("crash.modlist.quarantinedBadge")}
+                          </HkTag>
+                        ) : null}
+                        <span class="crash-section__spacer" />
+                        <div class="crash-section__suspect-actions">
+                          {quarantinedNow ? (
+                            <HkButton
+                              size="sm"
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() => void restoreIgnored(s.name)}
+                            >
+                              {t("crash.suspects.restore")}
+                            </HkButton>
+                          ) : (
+                            <HkButton
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => void quarantine(s.name)}
+                            >
+                              <ShieldAlert size={12} />
+                              {t("crash.suspects.quarantine")}
+                            </HkButton>
+                          )}
+                          <HkButton
+                            size="sm"
+                            variant="danger"
+                            disabled={busy}
+                            onClick={() => requestDelete(s.name)}
+                          >
+                            <Trash2 size={12} />
+                            {t("crash.suspects.delete")}
+                          </HkButton>
+                          <HkButton
+                            size="sm"
+                            variant="ghost"
+                            disabled={busy}
+                            onClick={() => void ignore(s.name)}
+                          >
+                            <BellOff size={12} />
+                            {t("crash.suspects.ignore")}
+                          </HkButton>
+                        </div>
+                      </div>
+                      {s.logLines.length > 0 ? (
+                        <ul class="hk-selectable crash-section__suspect-lines">
+                          {s.logLines.map((line) => (
+                            <li key={line}>
+                              <code>{line}</code>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p class="crash-section__empty">{t("crash.section.ignoredEmpty")}</p>
+            )}
+          </HkModal>
+
+          {/* ── ignored warnings window (restore = undo) ──────────────── */}
           <HkModal
             modelValue={ignoredOpen.value}
             onUpdate:modelValue={(v: boolean) => (ignoredOpen.value = v)}
@@ -514,40 +596,6 @@ export default defineComponent({
                 ))}
               </ul>
             )}
-          </HkModal>
-
-          {/* the raw logs window */}
-          <HkModal
-            modelValue={rawOpen.value}
-            onUpdate:modelValue={(v: boolean) => (rawOpen.value = v)}
-            title={t("crash.section.rawLogsTitle")}
-            width="48rem"
-          >
-            {analysis ? (
-              <div class="hk-selectable crash-section__raw">
-                {[...analysis.gameLogs, ...analysis.appLogs].map((log) => (
-                  <section key={log.path} class="crash-section__log">
-                    <h4 class="crash-section__log-name">{log.name}</h4>
-                    {log.highlights.length > 0 ? (
-                      <ul class="crash-section__log-highlights">
-                        {log.highlights.map((line) => (
-                          <li key={line}>
-                            <code>{line}</code>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    <pre class="crash-section__log-tail">{log.tail}</pre>
-                  </section>
-                ))}
-                <p class="crash-section__meta">
-                  {t("crash.section.modsInventory")}: {analysis.modsInventory.length}
-                  {analysis.currentBuild
-                    ? " · " + t("crash.section.currentBuild") + ": " + analysis.currentBuild
-                    : ""}
-                </p>
-              </div>
-            ) : null}
           </HkModal>
 
           <HkConfirmDialog

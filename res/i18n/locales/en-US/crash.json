@@ -7,7 +7,8 @@
     "restart": "Restart game",
     "analysis": "Analyze",
     "dismiss": "Dismiss",
-    "safeRestartFallback": "No game folder resolved — restarting as-is."
+    "safeRestartFallback": "No game folder resolved — restarting as-is.",
+    "open": "Review crash"
   },
   "section": {
     "title": "Crash analysis",
@@ -39,7 +40,8 @@
     "rawLogsTitle": "Raw logs",
     "ignored": "Ignored warnings",
     "ignoredEmpty": "No ignored warnings.",
-    "restoreWarning": "Restore warning"
+    "restoreWarning": "Restore warning",
+    "recordDetail": "Crash report"
   },
   "findings": {
     "exceptionAccessViolation": "Access violation — the client read or wrote memory it does not own",

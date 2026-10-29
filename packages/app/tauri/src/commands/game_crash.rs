@@ -1275,18 +1275,36 @@ fn crash_report_image(file_name: &str, stems: &[String]) -> Option<String> {
     })
 }
 
-/// The candidate summary: the report first line names the exe and the
-/// crash time — bounded read, one line, no secrets.
+/// The candidate summary for a WG crash report: the report carries the
+/// actual cause in its Message block ("Unhandled exception", an assert,
+/// ...) — fall back to the application line when the block is absent.
+/// Bounded read, one line, no secrets.
 #[cfg(windows)]
 fn crash_report_summary(path: &Path) -> String {
-    match read_tail(path, 512) {
-        Ok((bytes, _, _)) => String::from_utf8_lossy(&bytes)
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .to_string(),
-        Err(_) => String::new(),
+    let Ok((bytes, _, _)) = read_tail(path, 2048) else {
+        return String::new();
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    let mut lines = text.lines();
+    let Some(first) = lines.next() else {
+        return String::new();
+    };
+    let mut after_message = false;
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed == "Message:" || trimmed.starts_with("Message:") {
+            let inline = trimmed.trim_start_matches("Message:").trim();
+            if !inline.is_empty() {
+                return inline.to_string();
+            }
+            after_message = true;
+            continue;
+        }
+        if after_message && !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
     }
+    first.trim().to_string()
 }
 
 /// Harvest every historical crash candidate inside the lookback window.

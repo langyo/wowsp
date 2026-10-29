@@ -87,6 +87,9 @@ beforeAll(async () => {
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.clearAllMocks();
+  // The toast context is module-global — reset its slots between tests.
+  const toast = useToast();
+  toast.toasts.splice(0, toast.toasts.length);
   mocked.listen.mockImplementation((_handler: unknown) => Promise.resolve(() => undefined));
   mocked.list.mockResolvedValue([] as never);
   mocked.dismiss.mockResolvedValue(null as never);
@@ -435,4 +438,23 @@ describe("useCrashStore.safeguard", () => {
     expect(crash.history.some((r) => r.id === "crash-bf-1")).toBe(true);
     expect(mocked.scanRecent).toHaveBeenCalledTimes(1);
   });
+});
+
+it("raises the crash prompt as a standard sticky toast and clears it", async () => {
+  mocked.list.mockResolvedValue([record()]);
+  const store = useCrashStore();
+  await store.start();
+  await vi.waitFor(() => {
+    expect(store.activeRecord?.id).toBe("crash-1");
+  });
+  const toast = useToast();
+  await vi.waitFor(() => {
+    const slot = toast.toasts.find((s) => s.type === "error" && s.action);
+    expect(slot).toBeTruthy();
+    expect(slot!.action!.label).toBe(t("crash.toast.open"));
+    // Sticky: duration 0 survives the severity default.
+    expect(slot!.duration).toBe(0);
+  });
+  store.clearPrompt();
+  expect(toast.toasts.some((s) => s.type === "error" && s.action)).toBe(false);
 });

@@ -7,7 +7,8 @@
     "restart": "ゲームを再起動",
     "analysis": "分析を見る",
     "dismiss": "閉じる",
-    "safeRestartFallback": "ゲームフォルダーを特定できなかったため、そのまま再起動します。"
+    "safeRestartFallback": "ゲームフォルダーを特定できなかったため、そのまま再起動します。",
+    "open": "クラッシュを確認"
   },
   "section": {
     "title": "クラッシュ分析",
@@ -39,7 +40,8 @@
     "rawLogsTitle": "生ログ",
     "ignored": "無視した警告",
     "ignoredEmpty": "無視した警告はありません。",
-    "restoreWarning": "警告を復元"
+    "restoreWarning": "警告を復元",
+    "recordDetail": "クラッシュ詳細"
   },
   "findings": {
     "exceptionAccessViolation": "アクセス違反 —— クライアントが権限のないメモリーに読み書きしました",

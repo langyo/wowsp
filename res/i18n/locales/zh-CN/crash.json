@@ -7,7 +7,8 @@
     "restart": "重启游戏",
     "analysis": "查看分析",
     "dismiss": "忽略",
-    "safeRestartFallback": "未能定位游戏目录，将直接重启。"
+    "safeRestartFallback": "未能定位游戏目录，将直接重启。",
+    "open": "查看崩溃分析"
   },
   "section": {
     "title": "崩溃分析",
@@ -39,7 +40,8 @@
     "rawLogsTitle": "原始日志",
     "ignored": "已忽略的警告",
     "ignoredEmpty": "没有已忽略的警告。",
-    "restoreWarning": "恢复警告"
+    "restoreWarning": "恢复警告",
+    "recordDetail": "崩溃详情"
   },
   "findings": {
     "exceptionAccessViolation": "访问违例 —— 客户端读写了自己无权访问的内存",

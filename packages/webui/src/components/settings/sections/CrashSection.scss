@@ -103,7 +103,7 @@
 
 .crash-section__finding {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   font-size: var(--hi-text-sm, 0.8125rem);
 }
@@ -129,7 +129,6 @@
 }
 
 .crash-section__suspect-name {
-  font-family: var(--hi-font-mono, ui-monospace, monospace);
   font-size: var(--hi-text-sm, 0.8125rem);
   font-weight: 600;
   word-break: break-all;
@@ -181,7 +180,7 @@
 .crash-section__record {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   padding: 6px 10px;
   border: 1px solid var(--hi-color-border, #d0d7de);
   border-radius: var(--hi-radius-sm, 4px);
@@ -269,4 +268,26 @@
   border-radius: var(--hi-radius-sm, 4px);
   white-space: pre-wrap;
   word-break: break-all;
+}
+// ── the record card head: time + direct-cause tag ──────────────────────────
+
+.crash-section__record-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crash-section__record-time {
+  font-weight: 600;
+}
+
+// ── the per-record log window (scrolls to the tail on open) ────────────────
+
+.crash-section__detail-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
 }

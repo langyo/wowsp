@@ -7,7 +7,8 @@
     "restart": "Redémarrer le jeu",
     "analysis": "Voir l'analyse",
     "dismiss": "Ignorer",
-    "safeRestartFallback": "Dossier du jeu introuvable — redémarrage tel quel."
+    "safeRestartFallback": "Dossier du jeu introuvable — redémarrage tel quel.",
+    "open": "Examiner le plantage"
   },
   "section": {
     "title": "Analyse des plantages",
@@ -39,7 +40,8 @@
     "rawLogsTitle": "Journaux bruts",
     "ignored": "Avertissements ignorés",
     "ignoredEmpty": "Aucun avertissement ignoré.",
-    "restoreWarning": "Restaurer l'avertissement"
+    "restoreWarning": "Restaurer l'avertissement",
+    "recordDetail": "Rapport de plantage"
   },
   "findings": {
     "exceptionAccessViolation": "Violation d'accès — le client a lu ou écrit une mémoire qui ne lui appartient pas",

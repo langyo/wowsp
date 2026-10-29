@@ -42,7 +42,6 @@ import SettingsModal from "./SettingsModal";
 import Sidebar from "./Sidebar";
 import AudioPlayerToast from "./AudioPlayerToast";
 import ModUpdateToast from "./ModUpdateToast";
-import GameCrashToast from "./GameCrashToast";
 import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
 import UpdateStrandedToast from "./UpdateStrandedToast";
@@ -539,12 +538,6 @@ export default defineComponent({
             selector): renders nothing while the pluginUpdates store is
             idle, so it mounts unconditionally in the same column. */}
         <ModUpdateToast />
-        {/* Crash-watchdog prompt card (游戏客户端已崩溃): rises with the
-            newest undismissed crash record and NEVER auto-hides — the
-            four actions (safe-mode restart / restart / analysis / dismiss)
-            are the only way out. Renders nothing while no record is
-            pending, so it mounts unconditionally in the same column. */}
-        <GameCrashToast />
         {/* The piggy's periodic visitation card (猪猪找你有点事儿): one
             card per period — first use + 7 days, then monthly — whose
             action lands in the settings' About section and arms the

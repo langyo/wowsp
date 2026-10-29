@@ -32,6 +32,7 @@ import {
 } from "@/api";
 import { t } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
+import { useSettingsUiStore } from "@/stores/settingsUi";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { sameGamePath } from "@/utils/gamePath";
 
@@ -39,6 +40,7 @@ export const useCrashStore = defineStore("crash", () => {
   const toast = useToast();
   const gameStatus = useGameStatusStore();
   const config = useConfigStore();
+  const settingsUi = useSettingsUiStore();
 
   /** The newest status === "new" record — the toast card's subject; null
    *  once everything is dismissed (the card renders nothing then). */
@@ -66,6 +68,12 @@ export const useCrashStore = defineStore("crash", () => {
   /** The dismissed-warning list (the section renders it with restore
    *  actions; the analysis filters these names out). */
   const ignored = ref<IgnoredSuspect[]>([]);
+  /** The id of the STICKY crash-prompt toast raised through the standard
+   *  toast context (null while no prompt is up). */
+  let promptToastId: number | null = null;
+  /** The record the current prompt describes (dedupe for repeated
+   *  refreshes — the same record must not re-toast on every refresh). */
+  let promptRecordId: string | null = null;
 
   /** Analysis results cache, per record id (analyze is heavy IO; one pass
    *  per record per session unless the section forces a refresh). A plain
@@ -87,6 +95,44 @@ export const useCrashStore = defineStore("crash", () => {
   let started = false;
   let unlisten: (() => void) | null = null;
 
+  /** Raise the crash prompt as a STANDARD sticky toast (the shared toast
+   *  context stacks it with every other toast — no separate surface that
+   *  other toasts could cover). One inline action opens the analysis
+   *  section, where every recovery move lives. */
+  function raisePrompt(record: GameCrashRecord) {
+    if (promptToastId !== null && promptRecordId === record.id) return;
+    const detail = record.exceptionCode
+      ? " · " + record.exceptionCode
+      : "";
+    const id = toast.show(
+      t("crash.toast.title") + " — " + record.imageName + detail,
+      {
+        type: "error",
+        duration: 0,
+        copyable: true,
+        action: {
+          label: t("crash.toast.open"),
+          onClick: () => {
+            promptToastId = null;
+            settingsUi.show("crash");
+          },
+        },
+      },
+    );
+    if (promptToastId !== null) toast.remove(promptToastId);
+    promptToastId = id;
+    promptRecordId = record.id;
+  }
+
+  /** Take the prompt down (record dismissed elsewhere, or the app reset). */
+  function clearPrompt() {
+    if (promptToastId !== null) {
+      toast.remove(promptToastId);
+      promptToastId = null;
+    }
+    promptRecordId = null;
+  }
+
   /** Fold one record into the store: upsert history (the push may repeat a
    *  record on reconnect), pin it as the active prompt while undismissed,
    *  and clear the prompt the moment ITS record is dismissed elsewhere. */
@@ -97,8 +143,10 @@ export const useCrashStore = defineStore("crash", () => {
     history.value = [record, ...history.value.filter((r) => r.id !== record.id)];
     if (record.status === "new") {
       activeRecord.value = record;
+      raisePrompt(record);
     } else if (activeRecord.value?.id === record.id) {
       activeRecord.value = null;
+      clearPrompt();
     }
   }
 
@@ -111,6 +159,10 @@ export const useCrashStore = defineStore("crash", () => {
       const records = await api.listGameCrashes();
       history.value = records;
       activeRecord.value = records.find((r) => r.status === "new") ?? null;
+      // A pending crash must re-toast after an app restart too (the
+      // prompt is the notification, not a one-shot event).
+      if (activeRecord.value) raisePrompt(activeRecord.value);
+      else clearPrompt();
     } catch {
       // No watchdog backend — the card simply stays down.
     } finally {
@@ -175,7 +227,10 @@ export const useCrashStore = defineStore("crash", () => {
     await api.dismissGameCrash(id);
     const record = history.value.find((r) => r.id === id);
     if (record) record.status = "dismissed";
-    if (activeRecord.value?.id === id) activeRecord.value = null;
+    if (activeRecord.value?.id === id) {
+      activeRecord.value = null;
+      clearPrompt();
+    }
   }
 
   /** The analysis pass for one record, cached per id. Throws on failure —
@@ -430,6 +485,7 @@ export const useCrashStore = defineStore("crash", () => {
     restoreSuspect,
     deleteEntry,
     refreshAnalysis,
+    clearPrompt,
     loadSafeguard,
     setSafeguard,
     scanRecent,
