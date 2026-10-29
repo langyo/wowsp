@@ -44,7 +44,16 @@ const mocked = {
   deleteEntry: vi.mocked(api.deleteEntry),
   ignore: vi.mocked(api.ignoreSuspect),
   restore: vi.mocked(api.restoreSuspect),
+  quarantineMod: vi.mocked(api.quarantineMod),
+  listQuarantined: vi.mocked(api.listQuarantinedMods),
 };
+
+/** The suspects window's footer bulk action (teleported to body). */
+function bulkButton(): HTMLButtonElement | undefined {
+  return [...document.body.querySelectorAll<HTMLButtonElement>(".hk-modal-footer button")].find(
+    (b) => (b.textContent ?? "").includes(t("crash.suspects.quarantineAll")),
+  );
+}
 
 function record(overrides: Partial<GameCrashRecord> = {}): GameCrashRecord {
   return {
@@ -209,6 +218,40 @@ describe("CrashSection", () => {
     await vi.waitFor(() => {
       expect(mocked.ignore).toHaveBeenCalledWith("suspect_mod");
     });
+  });
+
+  it("quarantines every pending suspect from the footer bulk action", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    mocked.quarantineMod.mockResolvedValue([]);
+    const wrapper = mount(CrashSection);
+    await openSuspects(wrapper);
+    const bulk = bulkButton();
+    expect(bulk).toBeTruthy();
+    expect(bulk!.disabled).toBe(false);
+    bulk!.click();
+    await vi.waitFor(() => {
+      expect(mocked.quarantineMod).toHaveBeenCalledWith(
+        "D:/Games/World of Warships",
+        "suspect_mod",
+        "crash-1",
+      );
+    });
+  });
+
+  it("disables the bulk action once every suspect is quarantined", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    mocked.listQuarantined.mockResolvedValue([
+      { name: "suspect_mod", quarantinedAt: "2026-10-28T10:02:00Z" },
+    ]);
+    mocked.quarantineMod.mockResolvedValue([]);
+    const wrapper = mount(CrashSection);
+    await openSuspects(wrapper);
+    const bulk = bulkButton();
+    expect(bulk).toBeTruthy();
+    expect(bulk!.disabled).toBe(true);
+    expect(mocked.quarantineMod).not.toHaveBeenCalled();
   });
 
   it("exports the selected record through the store", async () => {

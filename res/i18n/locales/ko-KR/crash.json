@@ -80,7 +80,10 @@
       "missingAsset": "없는 리소스 참조"
     },
     "unknownBadge": "알 수 없음",
+    "empty": "검토할 의심 플러그인이 없습니다.",
     "quarantine": "격리",
+    "quarantineAll": "일괄 격리",
+    "quarantineAllDone": "{count}개 항목을 격리했습니다",
     "restore": "복원",
     "logLines": "로그 줄",
     "delete": "삭제",

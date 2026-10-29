@@ -138,7 +138,7 @@ export function renderCrashPins(
               {unit ? <ShieldAlert size={14} /> : <TriangleAlert size={14} />}
             </span>
             <span class="crash-pins__body">
-              <span class="crash-pins__name">
+              <span class="crash-pins__name" data-hint-overflow={unit ? unit.name : s.name}>
                 {unit ? unit.name : s.name}
               </span>
               <span class="crash-pins__badges">
@@ -192,7 +192,7 @@ export function renderCrashPins(
                 <RotateCcw size={14} />
               </span>
               <span class="crash-pins__body">
-                <span class="crash-pins__name">{q.name}</span>
+                <span class="crash-pins__name" data-hint-overflow={q.name}>{q.name}</span>
                 <span class="crash-pins__badges">
                   <span class="crash-pins__badge is-quarantined">
                     {t("crash.modlist.quarantinedBadge")}

@@ -80,7 +80,10 @@
       "missingAsset": "Ссылка на отсутствующий ресурс"
     },
     "unknownBadge": "Неизвестно",
+    "empty": "Подозрительных плагинов нет.",
     "quarantine": "Карантин",
+    "quarantineAll": "Карантин для всех",
+    "quarantineAllDone": "В карантин перемещено: {count}",
     "restore": "Восстановить",
     "logLines": "Строки журнала",
     "delete": "Удалить",

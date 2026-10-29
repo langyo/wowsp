@@ -80,7 +80,10 @@
       "missingAsset": "存在しないリソースへの参照"
     },
     "unknownBadge": "不明",
+    "empty": "疑わしいプラグインはありません。",
     "quarantine": "隔離",
+    "quarantineAll": "一括隔離",
+    "quarantineAllDone": "{count} 件を隔離しました",
     "restore": "復元",
     "logLines": "ログ行",
     "delete": "削除",

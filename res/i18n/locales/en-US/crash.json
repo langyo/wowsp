@@ -80,7 +80,10 @@
       "missingAsset": "Missing asset reference"
     },
     "unknownBadge": "Unknown",
+    "empty": "No suspect plugins to review.",
     "quarantine": "Quarantine",
+    "quarantineAll": "Quarantine all",
+    "quarantineAllDone": "Quarantined {count} entries",
     "restore": "Restore",
     "logLines": "Log lines",
     "delete": "Delete",
