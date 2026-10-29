@@ -68,14 +68,16 @@
     "probeWasActive": "The WoWSP in-game probe was active",
     "dumpAvailable": "A crash dump is available for deep analysis",
     "danglingUiReference": "Dangling UI reference — the crash log shows \"{url}\" failing to load while a mod file still asks for it",
-    "evidenceGameReport": "From the WG crash report"
+    "evidenceGameReport": "From the WG crash report",
+    "missingModAsset": "A mod file references \"{{asset}}\", which exists in neither the client nor the mods tree"
   },
   "suspects": {
     "title": "Suspect plugins",
     "evidence": {
       "logMention": "Mentioned in the game log",
       "recentChange": "Changed recently",
-      "danglingRef": "Dangling reference"
+      "danglingRef": "Dangling reference",
+      "missingAsset": "Missing asset reference"
     },
     "unknownBadge": "Unknown",
     "quarantine": "Quarantine",

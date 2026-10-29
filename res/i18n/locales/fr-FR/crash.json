@@ -68,14 +68,16 @@
     "probeWasActive": "La sonde en jeu de WoWSP était active",
     "dumpAvailable": "Un dump mémoire est disponible pour une analyse approfondie",
     "danglingUiReference": "Référence d'interface orpheline — le journal du plantage montre \"{url}\" en échec de chargement alors qu'un fichier de mod la demande encore",
-    "evidenceGameReport": "D'après le rapport de plantage WG"
+    "evidenceGameReport": "D'après le rapport de plantage WG",
+    "missingModAsset": "Un fichier de mod référence « {{asset}} », absent du client et de l'arborescence des mods"
   },
   "suspects": {
     "title": "Plugins suspects",
     "evidence": {
       "logMention": "Mentionné dans le journal du jeu",
       "recentChange": "Modifié récemment",
-      "danglingRef": "Référence orpheline"
+      "danglingRef": "Référence orpheline",
+      "missingAsset": "Référence à une ressource manquante"
     },
     "unknownBadge": "Inconnu",
     "quarantine": "Mettre en quarantaine",

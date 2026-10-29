@@ -39,11 +39,11 @@
 
 use anyhow::anyhow;
 #[cfg(windows)]
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(windows)]
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -2301,6 +2301,9 @@ const EVIDENCE_RECENT_CHANGE: &str = "recentChange";
 /// failing to load — the battle_stats.swf class of crash: the strongest
 /// localization signal there is (mechanical, not correlational).
 pub const EVIDENCE_DANGLING_REF: &str = "danglingRef";
+/// A mod file references a client asset that exists in neither the mods
+/// tree nor the client index — static evidence, no crash required.
+pub const EVIDENCE_MISSING_ASSET: &str = "missingAsset";
 
 /// Pull the crash-culprit candidates out of the game log texts + the mods
 /// inventory: an error-shaped line naming a path under res_mods/ pins the
@@ -2382,8 +2385,9 @@ fn detect_suspect_mods(
     }
     suspects.sort_by_key(|s| match s.evidence.as_str() {
         EVIDENCE_DANGLING_REF => 0,
-        EVIDENCE_LOG_MENTION => 1,
-        _ => 2,
+        EVIDENCE_MISSING_ASSET => 1,
+        EVIDENCE_LOG_MENTION => 2,
+        _ => 3,
     });
     suspects
 }
@@ -2501,7 +2505,26 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
             None => display_urls.push(url.clone()),
         }
     }
-    let findings = build_findings(record, &mods_inventory, &game_logs, &display_urls);
+    // Proactive static pass: mod files referencing client assets that exist
+    // in neither tree nor the client index. This is the battle_stats.swf
+    // class found WITHOUT waiting for a crash — the log-evidenced pass only
+    // knows what the loader complained about.
+    let mut proactive: Vec<ModReference> = Vec::new();
+    if let Some(root_path) = root.as_deref().map(Path::new) {
+        if let Some(root_str) = root.as_deref() {
+            if let Some(client) = client_asset_basenames(root_str) {
+                proactive = dangling_mod_references(&res_mods_bases(root_path), &client);
+            }
+        }
+    }
+    let mut findings = build_findings(record, &mods_inventory, &game_logs, &display_urls);
+    for reference in proactive.iter().take(6) {
+        findings.push(CrashFinding {
+            code: "missingModAsset".to_string(),
+            severity: "warning".to_string(),
+            detail: Some(reference.asset.clone()),
+        });
+    }
     let raw_refs: Vec<(&str, &str)> = raw_texts
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
@@ -2514,6 +2537,22 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
     for suspect in attributed {
         if !suspects.iter().any(|s| s.name == suspect.name) {
             suspects.push(suspect);
+        }
+    }
+    for reference in &proactive {
+        for file in &reference.files {
+            match suspects.iter_mut().find(|s| s.name == *file) {
+                Some(existing) => {
+                    if !existing.log_lines.iter().any(|l| l == &reference.asset) {
+                        existing.log_lines.push(reference.asset.clone());
+                    }
+                },
+                None => suspects.push(SuspectMod {
+                    name: file.clone(),
+                    evidence: EVIDENCE_MISSING_ASSET.to_string(),
+                    log_lines: vec![reference.asset.clone()],
+                }),
+            }
         }
     }
     // The user's ignored set: a dismissed suspect stays out of the active
@@ -2539,6 +2578,168 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
     })
 }
 
+// ── proactive dangling-reference scan ───────────────────────────────────────
+
+/// One mod file referencing an asset that exists in neither the mods tree
+/// nor the client index — the static sibling of the crash-log heuristic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ModReference {
+    /// The referenced asset basename (lowercase, e.g. `battle_stats.swf`).
+    asset: String,
+    /// The referencing mod files (paths relative to their mods tree).
+    files: Vec<String>,
+}
+
+/// Extract every `.swf` reference token from a text blob: XML/Python mod
+/// glue spells URLs and script paths bare, so the token charset is path-
+/// safe. Placeholder-bearing tokens are ignored — they are format
+/// strings, not real references.
+#[cfg(windows)]
+fn swf_refs_in_text(text: &str) -> Vec<String> {
+    fn is_token_char(c: char) -> bool {
+        c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | '\\' | '~')
+    }
+    let mut refs: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for c in text.chars() {
+        if is_token_char(c) {
+            current.push(c);
+        } else {
+            push_swf_token(&mut refs, &current);
+            current.clear();
+        }
+    }
+    push_swf_token(&mut refs, &current);
+    refs
+}
+
+/// The token as a reference: only `.swf` files count (the Scaleform crash
+/// class), reduced to the basename — idx tables store names only, and a
+/// basename match is the conservative presence test.
+#[cfg(windows)]
+fn push_swf_token(refs: &mut Vec<String>, token: &str) {
+    let lower = token.replace('\\', "/").to_ascii_lowercase();
+    if !lower.ends_with(".swf") || lower.len() <= 4 {
+        return;
+    }
+    let base = lower.rsplit('/').next().unwrap_or(lower.as_str());
+    if !base.is_empty() && !base.contains('%') {
+        refs.push(base.to_string());
+    }
+}
+
+/// Every client asset basename the install index knows (all `bin/<ver>/idx`
+/// tables, lowercased). Cached per game root: the parse is a few MB and the
+/// analysis may run repeatedly.
+#[cfg(windows)]
+fn client_asset_basenames(game_root: &str) -> Option<Arc<HashSet<String>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Arc<HashSet<String>>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(hit) = cache.lock().ok().and_then(|m| m.get(game_root).cloned()) {
+        return Some(hit);
+    }
+    let (_, ver_dir) = super::game_context::latest_bin_dir(Path::new(game_root))?;
+    let idx_dir = ver_dir.join("idx");
+    let entries = fs::read_dir(&idx_dir).ok()?;
+    let mut set: HashSet<String> = HashSet::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_idx = path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("idx"));
+        if !is_idx {
+            continue;
+        }
+        let Ok(data) = fs::read(&path) else { continue };
+        let Ok(parsed) = game_assets::data::idx::parse(&data) else {
+            continue;
+        };
+        for resource in parsed.resources {
+            set.insert(resource.filename.to_ascii_lowercase());
+        }
+    }
+    let set = Arc::new(set);
+    if let Ok(mut map) = cache.lock() {
+        map.insert(game_root.to_string(), set.clone());
+    }
+    Some(set)
+}
+
+/// The mod tree files worth scanning for asset references: small text files
+/// only (mod glue is XML/Python/JSON; binaries are skipped).
+#[cfg(windows)]
+fn is_mod_text_file(name: &str) -> bool {
+    [
+        ".xml", ".py", ".json", ".txt", ".yaml", ".yml", ".cfg", ".ini",
+    ]
+    .iter()
+    .any(|ext| name.to_ascii_lowercase().ends_with(ext))
+}
+
+/// Walk the mods trees, extract every `.swf` reference and answer the ones
+/// that exist in NEITHER tree NOR the client index. Purely static: the
+/// battle_stats.swf class of breakage is found before the first crash.
+#[cfg(windows)]
+fn dangling_mod_references(bases: &[PathBuf], client: &HashSet<String>) -> Vec<ModReference> {
+    // Every file basename present in the mods trees (conservative: a
+    // reference whose basename exists anywhere counts as present).
+    let mut present: HashSet<String> = HashSet::new();
+    let mut scan_files: Vec<(PathBuf, String)> = Vec::new();
+    let mut seen = 0usize;
+    for base in bases {
+        let mut stack = vec![base.clone()];
+        while let Some(dir) = stack.pop() {
+            if seen > 4000 {
+                break;
+            }
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                seen += 1;
+                let path = entry.path();
+                let Ok(meta) = entry.metadata() else { continue };
+                if meta.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+                    continue;
+                };
+                present.insert(name.to_ascii_lowercase());
+                if is_mod_text_file(&name) && meta.len() <= 512 * 1024 && scan_files.len() < 400 {
+                    let rel = path
+                        .strip_prefix(base)
+                        .map(|p| p.to_string_lossy().replace('\\', "/"))
+                        .unwrap_or_else(|_| name.clone());
+                    scan_files.push((path, rel));
+                }
+            }
+        }
+    }
+    let mut by_asset: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (path, rel) in scan_files {
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for asset in swf_refs_in_text(&text) {
+            if present.contains(&asset) || client.contains(&asset) || asset.len() > 200 {
+                continue;
+            }
+            let files = by_asset.entry(asset).or_default();
+            if !files.iter().any(|f| f == &rel) {
+                files.push(rel.clone());
+            }
+        }
+    }
+    by_asset
+        .into_iter()
+        .map(|(asset, mut files)| {
+            files.sort();
+            ModReference { asset, files }
+        })
+        .collect()
+}
 // ── suspect management: ignore list + deletion ──────────────────────────────
 
 /// The ignored-suspect store (appdata JSON): a name the user dismissed

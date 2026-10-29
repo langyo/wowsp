@@ -68,14 +68,16 @@
     "probeWasActive": "Внутриигровой зонд WoWSP был активен",
     "dumpAvailable": "Доступен дамп аварийного завершения для глубокого анализа",
     "danglingUiReference": "Висячая ссылка интерфейса — в логе сбоя \"{url}\" не загружается, а файл мода всё ещё её запрашивает",
-    "evidenceGameReport": "Из отчёта сбоя WG"
+    "evidenceGameReport": "Из отчёта сбоя WG",
+    "missingModAsset": "Файл мода ссылается на \"{{asset}}\", которого нет ни в клиенте, ни в дереве модов"
   },
   "suspects": {
     "title": "Подозрительные плагины",
     "evidence": {
       "logMention": "Упомянут в журнале игры",
       "recentChange": "Изменён недавно",
-      "danglingRef": "Висячая ссылка"
+      "danglingRef": "Висячая ссылка",
+      "missingAsset": "Ссылка на отсутствующий ресурс"
     },
     "unknownBadge": "Неизвестно",
     "quarantine": "Карантин",

@@ -38,6 +38,8 @@ function findingText(finding: CrashFinding): string {
       return t("crash.findings.recentModChanges", { mods: finding.detail ?? "" });
     case "danglingUiReference":
       return t("crash.findings.danglingUiReference", { url: finding.detail ?? "?" });
+    case "missingModAsset":
+      return t("crash.findings.missingModAsset", { asset: finding.detail ?? "?" });
     default:
       return t("crash.findings." + finding.code);
   }
