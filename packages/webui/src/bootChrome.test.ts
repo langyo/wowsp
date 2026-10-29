@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +8,8 @@ import type { Plugin } from "vite";
 
 import {
   BOOT_CHROME_HTML_FILES,
+  BOOT_CHROME_LOGO,
+  BOOT_CHROME_SKIN_CSS,
   WEBUI_PAGES,
   bootChromePluginsFor,
 } from "./bootChrome";
@@ -59,6 +61,8 @@ function htmlFilesOnDisk(dir = PKG_DIR, prefix = ""): string[] {
 interface HtmlTag {
   tag: string;
   attrs?: Record<string, unknown>;
+  /** Inline content, for tags Vite serializes with a closing tag (<style>). */
+  children?: string;
   injectTo?: string;
 }
 
@@ -81,8 +85,21 @@ function transform(
 /** The bar as registered on a desktop build (the only platform that has it). */
 function desktopBar(): Plugin {
   const plugins = bootChromePluginsFor(false);
-  expect(plugins).toHaveLength(1);
+  expect(plugins).toHaveLength(2);
   return plugins[0];
+}
+
+/** The host-side skin riding beside the bar on a desktop build. */
+function desktopSkin(): Plugin {
+  const plugins = bootChromePluginsFor(false);
+  return plugins[1];
+}
+
+/** The skin's inline CSS, taken from the tag actually injected into the shell. */
+function skinCss(): string {
+  const tags = transform(desktopSkin(), join(PKG_DIR, "index.html"));
+  expect(tags).toHaveLength(1);
+  return tags[0].children ?? "";
 }
 
 describe("the page table is the single source of truth", () => {
@@ -119,11 +136,13 @@ describe("the page table is the single source of truth", () => {
 });
 
 describe("platform gate (desktop vs Android bundle)", () => {
-  it("registers hikari's bar on a desktop build", () => {
-    // The plugin identity is checked by NAME, not by instance: the name is
-    // hikari's public contract (the implementation can be swapped).
+  it("registers hikari's bar and the WoWSP skin on a desktop build", () => {
+    // The plugin identity is checked by NAME, not by instance: the bar's name
+    // is hikari's public contract (the implementation can be swapped), and the
+    // skin is the half WoWSP owns.
     expect(bootChromePluginsFor(false).map((plugin) => plugin.name)).toEqual([
       "hikari-boot-chrome",
+      "wowsp-boot-chrome-skin",
     ]);
   });
 
@@ -175,6 +194,88 @@ describe("the registered bar", () => {
     expect(warnings[0]).toContain("overlay.html");
     expect(warnings[0]).toContain("htmlFiles");
     expect(warnings[1]).toContain("tray.html");
+  });
+});
+
+/**
+ * The HOST-SIDE SKIN.
+ *
+ * hikari's bar plugin only knows title/height/hangMs/htmlFiles — no logo, no
+ * way to keep the initial "loading…" status out of the bar — so the WoWSP look
+ * is one inline stylesheet WoWSP injects itself. These tests pin what a silent
+ * regression would take back: the logo (and the asset behind it), the
+ * branding-only loading state, and the actionable failure copy.
+ */
+describe("the host-side skin", () => {
+  it("injects a single inline style into the app shell and nowhere else", () => {
+    for (const page of WEBUI_PAGES) {
+      const tags = transform(desktopSkin(), join(PKG_DIR, page.html));
+      if (page.bootChrome) {
+        expect(tags, `${page.html} is the app window`).toHaveLength(1);
+      } else {
+        expect(tags, `${page.html} is shell-managed — no brand skin`).toHaveLength(0);
+      }
+    }
+  });
+
+  it("injects a head tag carrying the data-wowsp-boot-chrome-skin marker", () => {
+    const tags = transform(desktopSkin(), join(PKG_DIR, "index.html"));
+
+    expect(tags).toHaveLength(1);
+    expect(tags[0].tag).toBe("style");
+    // In the head, so the strip is branded before the body-prepended bar
+    // script runs; and INLINE, so branding needs no second request to race.
+    expect(tags[0].injectTo).toBe("head");
+    expect(tags[0].attrs?.["data-wowsp-boot-chrome-skin"]).toBe("");
+    expect(tags[0].attrs?.src).toBeUndefined();
+    expect(tags[0].children).toBe(BOOT_CHROME_SKIN_CSS);
+  });
+
+  it("treats an absent filename as the app entry, matching hikari's plugin", () => {
+    // hikari counts a missing filename as the main entry; the skin must agree,
+    // or a non-standard caller would get an unbranded strip.
+    expect(transform(desktopSkin(), "")).toHaveLength(1);
+  });
+
+  it("draws the same logo the real title bar uses", () => {
+    expect(BOOT_CHROME_LOGO).toBe("/logo.webp");
+    const css = skinCss();
+    expect(css).toContain(`url("${BOOT_CHROME_LOGO}")`);
+    // Root-absolute URL → the publicDir copy the build ships (src/res is
+    // vite.config.ts' publicDir); the file must exist or the ::before box
+    // paints nothing.
+    const asset = resolve(PKG_DIR, "src/res", BOOT_CHROME_LOGO.replace(/^\/+/, ""));
+    expect(existsSync(asset), `${asset} must exist`).toBe(true);
+  });
+
+  it("keeps the strip branding-only while loading and mirrors the titlebar metrics", () => {
+    const css = skinCss();
+    // Hidden by default: the centred #loading-screen owns the loading copy.
+    expect(css).toMatch(/#hk-boot-chrome-status\s*\{[^}]*display:\s*none/);
+    // .hk-titlebar-title / .hk-titlebar-title-text geometry: 16 px icon box,
+    // 8 px gap, 0.04em tracking (size and weight are inherited from the bar).
+    expect(css).toMatch(/#hk-boot-chrome-app\s*\{[^}]*gap:\s*8px/);
+    expect(css).toMatch(/#hk-boot-chrome-app\s*\{[^}]*letter-spacing:\s*0\.04em/);
+    expect(css).toMatch(/#hk-boot-chrome-app::before\s*\{[^}]*width:\s*16px/);
+    expect(css).toMatch(/#hk-boot-chrome-app::before\s*\{[^}]*height:\s*16px/);
+  });
+
+  it("gives the name and the status one shared 16 px line box", () => {
+    // Both spans are centred by the flex row one at a time, and the CJK
+    // fallback font's line box differs from the Latin one — the line-box
+    // report behind the "vertically off-centre" screenshot.
+    const css = skinCss();
+    expect(css).toMatch(/#hk-boot-chrome-app\s*\{[^}]*line-height:\s*16px/);
+    expect(css).toMatch(/#hk-boot-chrome-status\s*\{[^}]*line-height:\s*16px/);
+  });
+
+  it("re-shows the status for both failure states the bar can report", () => {
+    const css = skinCss();
+    // degraded: no usable shell API, or a window command was refused (usually
+    // a missing ACL grant) — the copy says WHY the buttons are dead.
+    expect(css).toContain('#hk-boot-chrome[data-hk-degraded="1"] #hk-boot-chrome-status');
+    // hung: the boot watchdog fired; the bar also grows its reload button.
+    expect(css).toContain('html[data-hk-boot-chrome="hung"] #hk-boot-chrome-status');
   });
 });
 
