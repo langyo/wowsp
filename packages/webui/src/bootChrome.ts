@@ -23,11 +23,11 @@ import type { Plugin } from "vite";
  * window with `hk:chrome-claim` — no WoWSP component change needed.
  *
  * hikari's plugin surface is `title` / `height` / `hangMs` / `htmlFiles` and
- * nothing else: the installed 0.55.215 has no logo option and no way to keep
- * the initial "loading…" status out of the bar, and the newest published
- * release (0.55.224) still exposes the same four options. Dependencies are
- * consumed as published (AGENTS.md §6), so the WoWSP look is layered on from
- * THIS side as one inline `<style>` — see `wowspBootChromeSkin` below.
+ * nothing else (checked against 0.55.224, the version this workspace pins): no
+ * logo option, and no way to keep the initial "loading…" status out of the bar.
+ * Dependencies are consumed as published (AGENTS.md §6), so the WoWSP look is
+ * layered on from THIS side as one inline `<style>` — see
+ * `wowspBootChromeSkin` below.
  *
  * The plugin deliberately warns once per skipped entry; on this repository that
  * is EXPECTED output (the four shell-managed windows are skipped on purpose),
