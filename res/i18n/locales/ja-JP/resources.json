@@ -96,6 +96,7 @@
   "pluginUpdateStaleWarning": "実行中のクライアントのプラグインが最新ではないため、Tab キーを押している間に表示される戦績が正確でない場合があります。",
   "pluginUpdateSkipped": "「{names}」が実行中のため、{count} 件の更新をスキップしました。ゲームを終了してから、もう一度一括更新してください。",
   "pluginUpdateBadge": "更新あり",
+  "pluginUpdateMinimize": "一時的に隠す",
   "pluginUpdateStep": "更新中 {name}({done}/{total})",
   "pluginUpdateDownloading": "ダウンロード {percent}%",
   "pluginUpdateInstalling": "インストール中",

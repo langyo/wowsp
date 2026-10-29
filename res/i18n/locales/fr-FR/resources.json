@@ -96,6 +96,7 @@
   "pluginUpdateStaleWarning": "Le plugin du client en cours d'exécution n'est pas à jour — les statistiques affichées en maintenant Tab peuvent être inexactes.",
   "pluginUpdateSkipped": "« {names} » est en cours d'exécution — {count} mise(s) à jour ignorée(s). Fermez le jeu, puis relancez la mise à jour.",
   "pluginUpdateBadge": "MàJ",
+  "pluginUpdateMinimize": "Masquer pour l'instant",
   "pluginUpdateStep": "Mise à jour de {name} ({done}/{total})",
   "pluginUpdateDownloading": "téléchargement {percent}%",
   "pluginUpdateInstalling": "installation",

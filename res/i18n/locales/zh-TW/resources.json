@@ -96,6 +96,7 @@
   "pluginUpdateStaleWarning": "正在執行的用戶端插件不是最新版本，按住 Tab 時顯示的戰績可能不準確。",
   "pluginUpdateSkipped": "「{names}」正在執行，已略過 {count} 項更新——關閉遊戲後再次一鍵更新即可。",
   "pluginUpdateBadge": "需更新",
+  "pluginUpdateMinimize": "暫時收起",
   "pluginUpdateStep": "正在更新 {name}({done}/{total})",
   "pluginUpdateDownloading": "下載中 {percent}%",
   "pluginUpdateInstalling": "安裝中",
