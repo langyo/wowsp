@@ -1,5 +1,5 @@
 /* The water-table column editor (OverlayColumnsEditor): draggable cards
-   in one auto-splitting row + the plus-connector's add menu. Visual voice
+   in ONE never-wrapping line + the plus-connector's add menu. Visual voice
    follows the stats settings' row pattern (StatsPrefsControls.scss) and
    hikari's surface tokens; the drag states mirror HkDraggableList.scss —
    source dims to a dashed placeholder, the drop target wears a 2px inset
@@ -36,22 +36,32 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The cards row — the cards share the row's free space while they fit
-   (1 to 5 of them) and WRAP once five natural-width cards don't: a card
-   never shrinks under its own label (min-width: max-content), so the
-   metric / scope lines stay readable at any popup width. The empty hint
-   stretches across the same row. */
+/* The cards row — ALWAYS one line of 1–5 cards (user spec: five cards
+   must never fold onto a second row). The row never wraps; the popover it
+   rides in sizes to this row's max-content width (HkPopover's max-content
+   panel), so all five cards get their natural widths wherever the viewport
+   allows. When the viewport cap squeezes the panel, the cards share that
+   deficit proportionally (flex-shrink, content basis) and the labels
+   ellipsize — the row still holds one line. The empty hint stretches
+   across the same row. */
 .overlay-columns__row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
   min-height: 56px;
   align-items: stretch;
 }
 
 .overlay-columns__card {
+  /* Content basis (auto, not 0): each card's natural width feeds the
+     popover's max-content sizing, which is what widens the popup until all
+     five fit — the #1256 wrap was the symptom of a FIXED-width popup
+     squeezing five zero-basis cards into "胜.." stubs. min-width: 0 keeps
+     the cards shrinkable for the one case where the viewport caps the
+     panel; only then does a label ellipsize, and the row still never
+     wraps. */
   flex: 1 1 auto;
-  min-width: max-content;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -115,8 +125,9 @@
   flex-direction: column;
   gap: 1px;
   /* Basis auto (not 0): the label's natural width must count toward the
-     card's max-content, or the card's own max-content floor would ignore
-     it and squeeze the label out anyway. */
+     card's max-content — the width the popover itself is sized from — or
+     the panel would measure the card too narrow and paint the label out
+     as an ellipsis even with room to spare. */
   flex: 1 1 auto;
 }
 
@@ -236,6 +247,27 @@
   .overlay-columns__menu {
     min-width: 0;
     width: min(88vw, 340px);
+  }
+}
+
+/* Phones: five card labels cannot physically share one handset width —
+   the chip popup docks as a full-width bottom sheet there, and a forced
+   one-line row would squeeze every label to a single ellipsis glyph (the
+   exact #1256 symptom). Below the app's mobile breakpoint the row falls
+   back to wrapping with the cards' natural widths; the forced one-line
+   rule is a desktop popover rule. */
+@media (max-width: 767px) {
+  .overlay-columns__row {
+    flex-wrap: wrap;
+  }
+
+  /* Natural-width cards that never grow: a wrapped line keeps its cards at
+     the label's width (a lone tail card must not stretch across the whole
+     row), and the flex-shrink stays for the one long label a narrow phone
+     cannot fit. */
+  .overlay-columns__card {
+    flex: 0 1 auto;
+    min-width: max-content;
   }
 }
 

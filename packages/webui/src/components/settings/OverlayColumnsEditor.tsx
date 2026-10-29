@@ -1,7 +1,7 @@
 /**
  * The water-table column editor: the configured roster columns as
- * DRAGGABLE CARDS in one wrapping row (1–5 cards; one shared row while
- * they fit, wrapped once they don't),
+ * DRAGGABLE CARDS in one never-wrapping row (1–5 cards; the popover
+ * widens to the row's natural width before any label has to shrink),
  * plus the add-connector — a plus icon button on the cluster header's
  * right end opening a tooltip-style popover with two segmented button
  * groups (数据范围: 全局/仅单排/仅单船/仅单船单排/仅当前舰种; 指标: 场均/PR/胜率/
@@ -215,9 +215,10 @@ export default defineComponent({
      *  the first card whose midpoint the pointer has not yet passed, the
      *  last card past every midpoint, with the same fallback wrinkle
      *  (resting between cards resolves to the last candidate, never back
-     *  onto the source). The line scoping matters because the row wraps —
-     *  a same-x card on the other line must never light up. The line is
-     *  the band of cards whose top-edge row contains clientY; between
+     *  onto the source). The line scoping matters for the phone fallback,
+     *  where the row wraps below the mobile breakpoint — a same-x card on
+     *  the other line must never light up. The line is the band of cards
+     *  whose top-edge row contains clientY; between
      *  lines the nearest band center wins; a one-line row reduces to the
      *  plain rule over every card. */
     function recomputePlaceholder(s: DragState, clientX: number, clientY: number) {
@@ -533,9 +534,10 @@ export default defineComponent({
               </div>
             </HkPopover>
           </div>
-          {/* The cards row — 1 to 5 cards sharing the width while they
-              fit, wrapping once they don't (a card never shrinks under
-              its label). */}
+          {/* The cards row — one line, always: 1 to 5 cards. The popover
+              sizes to the row's natural width first (that is what widens
+              the popup); only a viewport-capped panel lets the cards
+              shrink and ellipsize — the row itself never wraps. */}
           <div
             class="overlay-columns__row"
             data-dragging={s ? "" : undefined}

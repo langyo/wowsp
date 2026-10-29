@@ -39,18 +39,21 @@
 }
 
 /* The popup teleports to body level (HkPopover), so these rules stay
-   top-level on purpose — the flat classes reach it there. The popup
-   hosts the columns editor alone (the dimension filter rows are gone —
-   the battle scope keeps its settings row only), so the width serves
-   the editor's card row and nothing else: a comfortable bound for it —
-   24rem squeezed the labels into "胜.." / "全.."; the cards themselves
-   wrap rather than shrink under their labels, so nothing truncates at
-   any width. */
+   top-level on purpose — the flat classes reach it there. The popup hosts
+   the columns editor alone (the dimension filter rows are gone — the
+   battle scope keeps its settings row only), so NO fixed width belongs
+   here: HkPopover sizes its panel to max-content, and the editor's card
+   row is one never-wrapping line with natural-basis cards
+   (OverlayColumnsEditor.scss), so the popover widens itself until all
+   five cards fit. The old 30rem bound forced the five cards onto two
+   rows (user: "强制一行五个，不够时给 tooltip 宽度加宽"); the panel's own
+   viewport cap (100vw − 2 × gutter) still bounds the popup, and only
+   then do the cards shrink, labels ellipsizing rather than the row
+   wrapping. */
 .live-battle__mode-pop {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  width: min(30rem, calc(100vw - 2.5rem));
   /* Content inset rides the popover's own `padding` prop (hikari
      --hk-pad) since 0.55.176 — no hand-padded slot anymore. */
 

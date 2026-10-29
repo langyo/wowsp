@@ -84,6 +84,7 @@ import { isListedPlayer, splitRosterSides } from "@/utils/rosterSides";
 import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
 import { shipIconUrl, shipTypeClass } from "@/features/holographic/shipIcons";
 import { tierToRoman } from "@wowsp/holo";
+import { tierRoman } from "@/features/replay/shipLiveStats";
 import { useClipboard } from "@/composables/useClipboard";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -336,6 +337,9 @@ const PostBattleFallbackPanel = defineComponent({
               nick: masking.maskOf(r.vehicle.name),
               clanTag: st?.clanTag ?? null,
               shipName: r.shipName,
+              // Same tier track the DOM's second line prints (the fallback
+              // matrix has no seal tags — it carries no career/comp data).
+              tier: tierRoman(r.vehicle.shipId != null ? shipTierOf(r.vehicle.shipId) : null) ?? "",
               bot: ai,
               dim: !r.alive,
               shipType: r.vehicle.shipId != null ? shipOfflineEntry(r.vehicle.shipId)?.type ?? null : null,
@@ -824,7 +828,16 @@ const PostBattleFallbackPanel = defineComponent({
                   <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
                 ) : null}
               </span>
-              <span class="replay-view__postbattle-cell-sub">{r.shipName}</span>
+              {/* Second line: the ship tier's Roman marker on the same
+                  fixed-width track as the results matrix (the tier spans
+                  reserve the track even when absent so every ship name
+                  starts at the same x), then the ship name itself. */}
+              <span class="replay-view__postbattle-cell-sub">
+                <span class="replay-view__postbattle-cell-tier">
+                  {tierRoman(r.vehicle.shipId != null ? shipTierOf(r.vehicle.shipId) : null) ?? ""}
+                </span>
+                <span class="replay-view__postbattle-cell-ship">{r.shipName}</span>
+              </span>
             </span>
             {rosterStatCols(
               r.vehicle.name,
