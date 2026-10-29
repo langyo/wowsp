@@ -54,13 +54,15 @@
     "modsActiveAtCrash": "Plugins were active when the client crashed",
     "safeModeOn": "Safe mode was on — the stock client crashed without plugins",
     "probeWasActive": "The WoWSP in-game probe was active",
-    "dumpAvailable": "A crash dump is available for deep analysis"
+    "dumpAvailable": "A crash dump is available for deep analysis",
+    "danglingUiReference": "Dangling UI reference — the crash log shows \"{url}\" failing to load while a mod file still asks for it"
   },
   "suspects": {
     "title": "Suspect plugins",
     "evidence": {
       "logMention": "Mentioned in the game log",
-      "recentChange": "Changed recently"
+      "recentChange": "Changed recently",
+      "danglingRef": "Dangling reference"
     },
     "unknownBadge": "Unknown",
     "quarantine": "Quarantine",

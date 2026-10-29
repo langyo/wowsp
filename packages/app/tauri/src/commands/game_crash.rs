@@ -400,17 +400,29 @@ fn quarantine_dir_of(root: &str) -> anyhow::Result<(PathBuf, PathBuf)> {
 
 /// Reject anything that is not a plain top-level entry name — the commands
 /// take a webview-supplied name, so path plumbing is refused outright.
+/// Normalize a webview-supplied quarantine subject into a SAFE relative
+/// path under res_mods: forward slashes only, every component a plain
+/// name (no dot-dot, no dot-prefix, no drive colon, no separators), so
+/// the move can never escape the tree. Top-level entries and nested
+/// files (the dangling-reference fix quarantines single files) both pass.
 fn sanitize_entry_name(entry_name: &str) -> anyhow::Result<String> {
-    let name = entry_name.trim();
-    if name.is_empty()
-        || name.contains('/')
-        || name.contains('\\')
-        || name.contains("..")
-        || name.starts_with('.')
-    {
+    let backslash = "\\".chars().next().unwrap();
+    let normalized = entry_name.trim().replace(backslash, "/");
+    if normalized.starts_with("/") || normalized.is_empty() {
         return Err(anyhow!("invalid res_mods entry name: {entry_name:?}"));
     }
-    Ok(name.to_string())
+    let mut parts: Vec<&str> = Vec::new();
+    for component in normalized.split("/") {
+        if component.is_empty()
+            || component == ".."
+            || component.starts_with(".")
+            || component.contains(":")
+        {
+            return Err(anyhow!("invalid res_mods entry name: {entry_name:?}"));
+        }
+        parts.push(component);
+    }
+    Ok(parts.join("/"))
 }
 
 /// Load the quarantine manifest; empty vec when absent, damaged errors
@@ -472,6 +484,11 @@ fn mutate_quarantine(
                 "restored"
             }
         ));
+    }
+    // Nested subjects (the dangling-reference fix quarantines single
+    // files like gui/battle_elements.xml) need their target parent created.
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent)?;
     }
     // The atomic single rename — the same move class safe mode uses.
     fs::rename(&source, &target)
@@ -1868,6 +1885,7 @@ fn build_findings(
     mods: &[ModEntry],
     game_logs: &[LogExcerpt],
     root: Option<&str>,
+    dangling_urls: &[String],
 ) -> Vec<CrashFinding> {
     let mut findings = Vec::new();
     if let Some(code) = &record.exception_code {
@@ -1878,6 +1896,16 @@ fn build_findings(
             code: "faultingModule".to_string(),
             severity: "warning".to_string(),
             detail: Some(module.clone()),
+        });
+    }
+    // The mechanical crash link: an asset the death window shows FAILING
+    // to load while a mod file still references it — critical, named by
+    // the dangling URL itself.
+    for url in dangling_urls {
+        findings.push(CrashFinding {
+            code: "danglingUiReference".to_string(),
+            severity: "critical".to_string(),
+            detail: Some(url.clone()),
         });
     }
     findings.push(CrashFinding {
@@ -1983,9 +2011,143 @@ fn parse_rfc3339_unix(text: &str) -> Option<i64> {
         .map(|t| t.timestamp())
 }
 
+// ── dangling-reference detection (the death-window heuristics) ──────────────
+
+/// The loader failure signatures whose URL names an asset some mod file
+/// references. The battle_stats.swf crash class: a legacy unbound-v1 mod
+/// hosts its UI inside an SWF the current client no longer ships; the
+/// load fails and the native layer dies. The URL is the mechanical link
+/// between the crash and the mod file that asks for it.
+const DANGLING_URL_MARKERS: [&str; 2] = ["Unknown file format at URL ", "[ERROR][SWF]: url:"];
+
+/// Every dangling asset URL the death-window text names, in first-seen
+/// order. Pure; both marker spellings carry the URL up to the closing
+/// quote of their own kind.
+fn dangling_urls_from_text(text: &str) -> Vec<String> {
+    let mut urls: Vec<String> = Vec::new();
+    for line in text.lines() {
+        for marker in DANGLING_URL_MARKERS {
+            let Some(rest) = line.split_once(marker) else {
+                continue;
+            };
+            let rest = rest.1.trim_start();
+            // Consume the OPENING quote (either spelling) so the close
+            // search starts inside the URL, not on its own opener.
+            let (body, close): (&str, &str) = if let Some(stripped) = rest.strip_prefix("\"") {
+                (stripped, "\"")
+            } else if let Some(stripped) = rest.strip_prefix("'") {
+                (stripped, "'")
+            } else {
+                continue;
+            };
+            let Some(end) = body.find(close) else {
+                continue;
+            };
+            let url = body[..end].trim().to_string();
+            if !url.is_empty() && !urls.iter().any(|u| u == &url) {
+                urls.push(url);
+            }
+        }
+    }
+    urls
+}
+
+/// The mods tree the analysis reads (active res_mods, or the safe-mode
+/// twin — the crash may already have prompted the quarantine of
+/// everything, and the dangling files live in the twin).
+fn res_mods_base(root: &Path) -> Option<PathBuf> {
+    let (_, ver_dir) = super::mod_hub::latest_bin_version(&root.to_string_lossy())?;
+    let active = ver_dir.join("res_mods");
+    if active.is_dir() {
+        return Some(active);
+    }
+    let twin = super::mod_hub::disabled_res_mods(&ver_dir);
+    twin.is_dir().then_some(twin)
+}
+
+/// Bounded text-file walk caps: the reference scan stays cheap even on
+/// heavy mod trees.
+const REF_SCAN_MAX_FILES: usize = 4000;
+const REF_SCAN_MAX_BYTES: u64 = 256 * 1024;
+const REF_SCAN_EXTENSIONS: [&str; 7] = ["xml", "py", "json", "unbound", "txt", "toml", "cfg"];
+
+/// Which mod files REFERENCE a dangling URL — the reverse lookup that
+/// pins the crash to its mod. Every text file under the mods tree is
+/// scanned (bounded); a hit becomes a suspect named by its res_mods-
+/// relative path, so the existing quarantine action can move exactly
+/// that file out of the load path.
+fn dangling_ref_suspects(base: &Path, urls: &[String]) -> Vec<SuspectMod> {
+    if urls.is_empty() {
+        return Vec::new();
+    }
+    let mut suspects = Vec::new();
+    let mut scanned = 0usize;
+    let mut stack = vec![base.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if scanned >= REF_SCAN_MAX_FILES {
+                return suspects;
+            }
+            scanned += 1;
+            let is_text = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|ext| {
+                    REF_SCAN_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str())
+                });
+            if !is_text {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.len() > REF_SCAN_MAX_BYTES {
+                continue;
+            }
+            let Ok(bytes) = fs::read(&path) else { continue };
+            let text = String::from_utf8_lossy(&bytes);
+            let hit = urls.iter().any(|url| text.contains(url.as_str()));
+            if !hit {
+                continue;
+            }
+            let rel = path
+                .strip_prefix(base)
+                .map(|p| {
+                    p.to_string_lossy()
+                        .replace("\\".chars().next().unwrap(), "/")
+                })
+                .unwrap_or_default();
+            if rel.is_empty() {
+                continue;
+            }
+            suspects.push(SuspectMod {
+                name: rel,
+                evidence: EVIDENCE_DANGLING_REF.to_string(),
+                log_lines: urls
+                    .iter()
+                    .filter(|url| text.contains(url.as_str()))
+                    .map(String::clone)
+                    .collect(),
+            });
+        }
+    }
+    suspects.sort_by(|a, b| a.name.cmp(&b.name));
+    suspects
+}
+
 /// Evidence tags for the suspect ranking.
 const EVIDENCE_LOG_MENTION: &str = "logMention";
 const EVIDENCE_RECENT_CHANGE: &str = "recentChange";
+/// A mod file on disk REFERENCES an asset the crash's death window shows
+/// failing to load — the battle_stats.swf class of crash: the strongest
+/// localization signal there is (mechanical, not correlational).
+pub const EVIDENCE_DANGLING_REF: &str = "danglingRef";
 
 /// Pull the crash-culprit candidates out of the game log texts + the mods
 /// inventory: an error-shaped line naming a path under res_mods/ pins the
@@ -2066,8 +2228,9 @@ fn detect_suspect_mods(
         }
     }
     suspects.sort_by_key(|s| match s.evidence.as_str() {
-        EVIDENCE_LOG_MENTION => 0,
-        _ => 1,
+        EVIDENCE_DANGLING_REF => 0,
+        EVIDENCE_LOG_MENTION => 1,
+        _ => 2,
     });
     suspects
 }
@@ -2130,16 +2293,42 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         .as_deref()
         .and_then(super::mod_hub::latest_bin_version)
         .map(|(build, _)| build);
-    let findings = build_findings(record, &mods_inventory, &game_logs, root.as_deref());
+    // The death-window dangling references (Scaleform loader failures):
+    // each URL becomes a critical finding, and the reverse lookup pins the
+    // mod files that still ask for it — the fast auto-fix path.
+    let dangling_urls: Vec<String> = raw_texts
+        .iter()
+        .flat_map(|(_, text)| dangling_urls_from_text(text))
+        .collect();
+    let mut seen_urls: Vec<String> = Vec::new();
+    for url in dangling_urls {
+        if !seen_urls.iter().any(|u| u == &url) {
+            seen_urls.push(url);
+        }
+    }
+    let findings = build_findings(
+        record,
+        &mods_inventory,
+        &game_logs,
+        root.as_deref(),
+        &seen_urls,
+    );
     let raw_refs: Vec<(&str, &str)> = raw_texts
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect();
-    let suspects = detect_suspect_mods(
+    let mut suspects = detect_suspect_mods(
         &raw_refs,
         &mods_inventory,
         parse_rfc3339_unix(&record.detected_at),
     );
+    if let Some(base) = root.as_deref().map(Path::new).and_then(res_mods_base) {
+        for suspect in dangling_ref_suspects(&base, &seen_urls) {
+            if !suspects.iter().any(|s| s.name == suspect.name) {
+                suspects.push(suspect);
+            }
+        }
+    }
     Ok(CrashAnalysis {
         record: record.clone(),
         findings,

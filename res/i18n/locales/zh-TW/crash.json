@@ -54,13 +54,15 @@
     "modsActiveAtCrash": "當機時插件處於啟用狀態",
     "safeModeOn": "當機時安全模式已開啟 —— 原版用戶端自行當機",
     "probeWasActive": "WoWSP 遊戲內探針處於作用中狀態",
-    "dumpAvailable": "存在當機傾印，可供深入分析"
+    "dumpAvailable": "存在當機傾印，可供深入分析",
+    "danglingUiReference": "UI 參照懸空 —— 崩潰日誌顯示 \"{url}\" 載入失敗，仍有模組檔案在參照它"
   },
   "suspects": {
     "title": "可疑插件",
     "evidence": {
       "logMention": "遊戲記錄檔中被提及",
-      "recentChange": "近期有變動"
+      "recentChange": "近期有變動",
+      "danglingRef": "懸空參照"
     },
     "unknownBadge": "未知",
     "quarantine": "隔離",

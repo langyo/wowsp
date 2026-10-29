@@ -54,13 +54,15 @@
     "modsActiveAtCrash": "崩溃时插件处于启用状态",
     "safeModeOn": "崩溃时安全模式已开启 —— 原版客户端自行崩溃",
     "probeWasActive": "WoWSP 游戏内探针处于活动状态",
-    "dumpAvailable": "存在崩溃转储，可供深入分析"
+    "dumpAvailable": "存在崩溃转储，可供深入分析",
+    "danglingUiReference": "UI 引用悬空 —— 崩溃日志显示 \"{url}\" 加载失败，仍有模组文件在引用它"
   },
   "suspects": {
     "title": "可疑插件",
     "evidence": {
       "logMention": "游戏日志中被提及",
-      "recentChange": "近期有变动"
+      "recentChange": "近期有变动",
+      "danglingRef": "悬空引用"
     },
     "unknownBadge": "未知",
     "quarantine": "隔离",
