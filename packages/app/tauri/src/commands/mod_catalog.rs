@@ -160,8 +160,8 @@ fn data_file(rel: &str) -> anyhow::Result<PathBuf> {
 
 mod extract;
 mod index;
-mod install;
-mod ledger;
+pub(crate) mod install;
+pub(crate) mod ledger;
 mod pkg_cache;
 mod reconcile;
 mod uninstall;

@@ -3274,3 +3274,62 @@ fn safe_mode_restore_sweeps_a_game_recreated_empty_res_mods() {
 
     fs::remove_dir_all(&tmp).ok();
 }
+
+#[test]
+fn purge_moves_res_mods_aside_and_recreates_it() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_core");
+    let _ = fs::remove_dir_all(&tmp);
+    touch(&tmp.join("bin/1/res_mods/gui/a.xml"));
+    touch(&tmp.join("bin/1/res_mods/PnFMods/B/Main.py"));
+    let root = tmp.to_string_lossy().into_owned();
+
+    let (backup, live, removed) = purge::purge_res_mods_core(&root).expect("purge");
+    assert_eq!(removed, 2, "both files are counted before the move");
+    assert!(backup.is_dir(), "the old tree survives as the backup");
+    assert!(backup.join("gui/a.xml").is_file());
+    assert!(live.is_dir(), "a fresh empty res_mods takes its place");
+    assert_eq!(
+        fs::read_dir(&live).unwrap().count(),
+        0,
+        "the new tree starts empty"
+    );
+
+    // A second purge never collides with the first backup name.
+    touch(&tmp.join("bin/1/res_mods/gui/a.xml"));
+    let (backup2, _, removed2) = purge::purge_res_mods_core(&root).expect("second purge");
+    assert_ne!(backup, backup2);
+    assert_eq!(removed2, 1);
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn adopt_units_respects_the_scope() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_adopt");
+    let _ = fs::remove_dir_all(&tmp);
+    let backup = tmp.join("res_mods.wowsp-purge-1");
+    let live = tmp.join("res_mods");
+    // One recognizable PnF unit and one plain top-level file.
+    touch(&backup.join("PnFMods/SomeSkin/Main.py"));
+    fs::write(backup.join("PnFMods/SomeSkin/Main.py"), "print(1)").unwrap();
+
+    // Without adoption, a unit nobody recorded is left in the backup.
+    let adopted = purge::adopt_units(&backup, &live, &[], &[], false).unwrap();
+    assert!(
+        adopted.is_empty(),
+        "{:?}",
+        adopted.iter().map(|a| &a.name).collect::<Vec<_>>()
+    );
+    assert!(!live.join("PnFMods/SomeSkin/Main.py").exists());
+
+    // With adoption, the unit is copied back and reported.
+    let adopted = purge::adopt_units(&backup, &live, &[], &[], true).unwrap();
+    assert_eq!(adopted.len(), 1);
+    assert_eq!(adopted[0].name, "SomeSkin");
+    assert!(live.join("PnFMods/SomeSkin/Main.py").is_file());
+    assert!(!adopted[0].files.is_empty());
+
+    // A unit the catalog reinstall already replaced is never copied over.
+    let adopted = purge::adopt_units(&backup, &live, &[], &["SomeSkin".to_string()], true).unwrap();
+    assert!(adopted.is_empty(), "catalog names win over adoption");
+    fs::remove_dir_all(&tmp).ok();
+}

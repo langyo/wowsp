@@ -772,6 +772,7 @@ pub fn run() {
             commands::mod_hub::mod_hub_restore_pnf_loader_marker,
             commands::mod_hub::mod_hub_migration_plan,
             commands::mod_hub::mod_hub_migration_execute,
+            commands::mod_hub::purge::mod_hub_purge_reinstall,
             commands::mod_hub::mod_hub_safe_mode,
             commands::mod_hub::mod_hub_set_safe_mode,
             commands::mod_catalog::mod_hub_reconcile,

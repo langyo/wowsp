@@ -55,6 +55,26 @@ export interface InstalledMod {
   identity?: string | null;
 }
 
+/** One unit the purge could not reinstall. */
+export interface PurgeSkip {
+  name: string;
+  reason: string;
+}
+
+/** Result of the "purge every mod, then reinstall only WoWSP-managed ones"
+ *  reset (`mod_hub_purge_reinstall`). */
+export interface PurgeReinstallReport {
+  removedFiles: number;
+  reinstalled: string[];
+  /** Units copied back from the old tree and registered as WoWSP local
+   *  installs (the adoption scope). */
+  adopted: string[];
+  skipped: PurgeSkip[];
+  /** Where the previous tree now lives (nothing deleted before the caller
+   *  holds this path). */
+  backupPath?: string | null;
+}
+
 /** Result of toggling one installed plugin's `.bak` state. */
 export interface UnitToggleReport {
   relPath: string;
@@ -459,6 +479,16 @@ export const modHubApi = {
   /** Quarantine (or restore) the current res_mods in one atomic rename. */
   modHubSetSafeMode: (gameRoot: string, enabled: boolean) =>
     transport.invoke<boolean>(RPC.mod_hub_set_safe_mode, { gameRoot, enabled }),
+  /** Move EVERY mod out of the load path, then reinstall only the units
+   *  WoWSP's own ledger records (the "all mods must come from WoWSP" reset). */
+  modHubPurgeReinstall: (
+    gameRoot: string,
+    mode: "wowsp-only" | "adopt-foreign",
+  ) =>
+    transport.invoke<PurgeReinstallReport>(RPC.mod_hub_purge_reinstall, {
+      gameRoot,
+      mode,
+    }),
   /** Drop ghost ledger records and collect orphaned snapshot dirs. */
   modHubReconcile: (gameRoot: string) =>
     transport.invoke<ReconcileReport>(RPC.mod_hub_reconcile, { gameRoot }),

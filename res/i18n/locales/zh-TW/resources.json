@@ -281,5 +281,15 @@
     "cancel": "取消",
     "ack": "確認並繼續",
     "ackCountdown": "我已閱讀並知悉（{n} 秒）"
-  }
+  },
+  "purgeReinstall": "清理全部插件並重新安裝",
+  "confirmPurgeReinstall": "將把 res_mods 中的全部檔案(包括並非 WoWSP 安裝的插件)移出載入路徑,然後僅重新安裝 WoWSP 記錄在案的插件——以此保證所有插件都來自 WoWSP。請先完全退出遊戲。原目錄會保留為備份,確認無誤後可手動刪除。",
+  "purgeReinstallDone": "已移出 {removed} 個檔案,重新安裝 {count} 個插件,接管 {adopted} 個原有插件",
+  "purgeReinstallSkipped": "{count} 個插件無法自動重裝(本機安裝的插件來源包未被保留),請稍後手動重新安裝",
+  "purgeReinstallChoiceIntro": "偵測到第三方安裝器(如 Aslain)的插件。本次清理重裝請選擇保留範圍:",
+  "purgeReinstallChoiceOur": "僅重新安裝 WoWSP 管理的插件(第三方插件隨備份一起移出載入路徑)。",
+  "purgeReinstallChoiceAdopt": "同時接管第三方插件——保留其檔案,並按 WoWSP 的口徑重新登記為受管插件。",
+  "purgeReinstallBackupNote": "兩種方式都會把原目錄保留為備份,確認無誤後可手動刪除。",
+  "purgeReinstallOurOnly": "僅重新安裝 WoWSP 管理的插件(第三方插件隨備份一起移出載入路徑)。",
+  "purgeReinstallAdopt": "同時接管第三方插件——保留其檔案,並按 WoWSP 的口徑重新登記為受管插件。"
 }

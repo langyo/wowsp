@@ -209,6 +209,7 @@ export const RPC = {
   mod_hub_migrate_stale_bin: "mod_hub_migrate_stale_bin",
   mod_hub_migration_plan: "mod_hub_migration_plan",
   mod_hub_migration_execute: "mod_hub_migration_execute",
+  mod_hub_purge_reinstall: "mod_hub_purge_reinstall",
   mod_hub_safe_mode: "mod_hub_safe_mode",
   mod_hub_set_safe_mode: "mod_hub_set_safe_mode",
   mod_hub_reconcile: "mod_hub_reconcile",

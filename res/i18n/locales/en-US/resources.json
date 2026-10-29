@@ -281,5 +281,15 @@
     "cancel": "Cancel",
     "ack": "Continue",
     "ackCountdown": "I have read and understood ({n}s)"
-  }
+  },
+  "purgeReinstall": "Purge all mods and reinstall",
+  "confirmPurgeReinstall": "Move EVERY file out of res_mods (including mods not installed by WoWSP), then reinstall only the units WoWSP records — this guarantees every mod comes from WoWSP. Close the game completely first. The previous tree is kept as a backup you can delete once satisfied.",
+  "purgeReinstallDone": "Moved {removed} files aside; reinstalled {count} mods and adopted {adopted}",
+  "purgeReinstallSkipped": "{count} mod(s) could not be reinstalled automatically (local installs) — reinstall them manually",
+  "purgeReinstallChoiceIntro": "A third-party installer's mods were detected. Choose what the reset should keep:",
+  "purgeReinstallChoiceOur": "Reinstall only the mods WoWSP manages (all third-party mods go away with the backup).",
+  "purgeReinstallChoiceAdopt": "Also adopt the third-party mods — their files are kept and re-registered as WoWSP-managed installs.",
+  "purgeReinstallBackupNote": "The previous tree is kept as a backup either way; nothing is deleted before you have this path.",
+  "purgeReinstallOurOnly": "Reinstall only the mods WoWSP manages (all third-party mods go away with the backup).",
+  "purgeReinstallAdopt": "Also adopt the third-party mods — their files are kept and re-registered as WoWSP-managed installs."
 }
