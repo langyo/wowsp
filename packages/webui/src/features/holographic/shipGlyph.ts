@@ -35,6 +35,13 @@ const SHIP_GLYPH_POLYS: Record<string, number[][][]> = {
   ],
 };
 
+/** Center of the 28×28 HUD atlas cell — the anchor the game itself
+ *  rotates its icon around. The traced polygons keep their raw atlas
+ *  coordinates (see scripts/trace_icons.ts), so the painter has to
+ *  subtract this center or every glyph draws its body one half-cell
+ *  off the anchor — the "trail meets the icon's corner" minimap bug. */
+const GLYPH_ATLAS_CENTER = 14;
+
 /** Draw a WoWS class glyph on a canvas context, centered at (x, y),
  *  `size` px tall, in the given color. Solid mode fills the traced
  *  polygons (vector — anti-aliased at any scale/rotation, where the
@@ -66,9 +73,9 @@ export function drawShipGlyph(
   const hex = `#${color.toString(16).padStart(6, "0")}`;
   for (const poly of polys) {
     ctx.beginPath();
-    ctx.moveTo(x + poly[0][0] * s, y + poly[0][1] * s);
+    ctx.moveTo(x + (poly[0][0] - GLYPH_ATLAS_CENTER) * s, y + (poly[0][1] - GLYPH_ATLAS_CENTER) * s);
     for (let i = 1; i < poly.length; i++) {
-      ctx.lineTo(x + poly[i][0] * s, y + poly[i][1] * s);
+      ctx.lineTo(x + (poly[i][0] - GLYPH_ATLAS_CENTER) * s, y + (poly[i][1] - GLYPH_ATLAS_CENTER) * s);
     }
     ctx.closePath();
     if (opts?.outline) {
