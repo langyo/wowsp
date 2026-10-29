@@ -2813,6 +2813,7 @@ fn contribution_replay_facts_flatten_pins_the_wire_shape() {
             bot_count: 0,
             client_version: "14.5.0".into(),
             battle_time: "2026-10-14T09:00:00Z".into(),
+            team_avg_win_rates: vec![52, 48],
         },
     });
     assert_exact_keys(
@@ -2832,10 +2833,12 @@ fn contribution_replay_facts_flatten_pins_the_wire_shape() {
             "botCount",
             "clientVersion",
             "battleTime",
+            "teamAvgWinRates",
         ],
     );
     assert_eq!(v["ownShipId"], 4_183_301_234u64);
     assert_eq!(v["battleTime"], "2026-10-14T09:00:00Z");
+    assert_eq!(v["teamAvgWinRates"], serde_json::json!([52, 48]));
 }
 
 /// The wanted document parses its own (sparse) wire shape — absent rule
@@ -2851,6 +2854,7 @@ fn contribution_wanted_doc_roundtrips_with_sparse_rules() {
             "maps": ["008_SOLOMONS"], "modes": ["standard"], "realms": ["asia"],
             "shipClasses": ["Battleship"], "tiers": [10],
             "playerCountMin": 12, "playerCountMax": 12, "botMax": 0,
+            "teamWinRateMin": 48,
             "clientVersionMin": "14.0" } ]
     });
     let doc: WantedDoc = serde_json::from_value(raw).unwrap();
@@ -2860,6 +2864,7 @@ fn contribution_wanted_doc_roundtrips_with_sparse_rules() {
     assert!(rule.ship_ids.is_empty());
     assert!(rule.note.is_none());
     assert_eq!(rule.max_count, Some(200));
+    assert_eq!(rule.team_win_rate_min, Some(48));
     // The whole-doc app floor rides along — and heals to None when the
     // ruleset omits it (the sparse-parse half of the same wire shape).
     assert_eq!(doc.client_version_min.as_deref(), Some("0.6.1"));
@@ -2872,6 +2877,7 @@ fn contribution_wanted_doc_roundtrips_with_sparse_rules() {
     .unwrap();
     assert_eq!(sparse.client_version_min, None);
     assert_eq!(v["rules"][0]["playerCountMin"], 12);
+    assert_eq!(v["rules"][0]["teamWinRateMin"], 48);
     assert_eq!(v["watermark"]["limitBytes"], 8_589_934_592u64);
 }
 

@@ -433,6 +433,8 @@ fn facts_plausible(facts: &ReplayFacts) -> bool {
             .ship_class
             .as_deref()
             .is_none_or(|c| SHIP_CLASSES.contains(&c))
+        && facts.core.team_avg_win_rates.len() <= 2
+        && facts.core.team_avg_win_rates.iter().all(|r| *r <= 100)
 }
 
 /// The filename stamp (`YYYYMMDD[_HHMMSS]`) is the only timestamp source;
@@ -549,6 +551,9 @@ fn plan_items_blocking(
                 client_version: client_version.unwrap_or_default(),
                 // The lite projection's date_time IS the filename stamp.
                 battle_time: battle_time_of(lite.date_time.as_deref()).unwrap_or_default(),
+                // Claimed later by `enrich_team_win_rates`, only when an
+                // open rule actually bounds it (see its doc comment).
+                team_avg_win_rates: Vec::new(),
             };
             let facts = ReplayFacts {
                 sha256: sha256.clone(),
@@ -596,6 +601,10 @@ fn facts_for_extracted(path: &Path, file_name: &str, realm: &str) -> ReplayFacts
             super::replay::parse_datetime_from_filename(file_name).as_deref(),
         )
         .unwrap_or_default(),
+        // Re-derived bytes only: the stats lookup that computes the claim
+        // is a plan-time concern, so a re-sent staged member keeps
+        // whatever verdict the server already recorded for it.
+        team_avg_win_rates: Vec::new(),
     }
 }
 
@@ -611,6 +620,155 @@ fn closed_wanted() -> WantedDoc {
             accepting: false,
         },
         rules: Vec::new(),
+    }
+}
+
+// ── team-winrate claims (the `teamWinRateMin` dimension) ───────────────────
+
+/// Cap on distinct nicknames one enrichment sweep resolves per realm: the
+/// roster lookup's session cache makes repeat names free, but an
+/// all-distinct 500-replay plan must not become a 12k-request storm —
+/// items past the cap stay unclaimed, which their win-rate-gated rules
+/// read as the honest no-testimony verdict (unwanted).
+const ENRICH_NAME_CAP: usize = 512;
+
+/// One replay's humans split by side (`relation < 2` = ally, per the
+/// roster convention): bots/scripted units and empty nicknames excluded.
+fn roster_human_sides(roster: &[wowsp_tauri_shared::VehicleEntry]) -> (Vec<String>, Vec<String>) {
+    let mut sides = (Vec::new(), Vec::new());
+    for v in roster {
+        if super::replay::meta::is_bot_nickname(&v.name) || v.name.trim().is_empty() {
+            continue;
+        }
+        if v.relation < 2 {
+            sides.0.push(v.name.clone());
+        } else {
+            sides.1.push(v.name.clone());
+        }
+    }
+    sides
+}
+
+/// Per-side floored average winrate over the RESOLVED humans, ally first.
+/// `None` unless BOTH sides resolved at least one human — a side nobody
+/// vouched for cannot testify for 「双方」.
+fn team_win_rate_claim(
+    sides: &(Vec<String>, Vec<String>),
+    stats_of: impl Fn(&str) -> Option<f32>,
+) -> Option<Vec<u32>> {
+    let avg = |names: &[String]| -> Option<u32> {
+        let resolved: Vec<f32> = names.iter().filter_map(|n| stats_of(n)).collect();
+        (!resolved.is_empty())
+            .then(|| (resolved.iter().sum::<f32>() / resolved.len() as f32).floor() as u32)
+    };
+    Some(vec![avg(&sides.0)?, avg(&sides.1)?])
+}
+
+/// One replay's roster via the same bounded block-0 read the header path
+/// uses (empty on any failure — that replay simply stays unclaimed).
+fn read_roster(path: &Path) -> Vec<wowsp_tauri_shared::VehicleEntry> {
+    use super::replay::meta::{extract_descriptor_json, read_block, roster_from_raw};
+    read_block(path, 0)
+        .ok()
+        .and_then(|bytes| extract_descriptor_json(&bytes))
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .map(|raw| roster_from_raw(path, &raw))
+        .unwrap_or_default()
+}
+
+/// Claim `teamAvgWinRates` on every plausible plan item — but only when an
+/// OPEN rule actually bounds `teamWinRateMin` (plans under any other
+/// ruleset pay nothing). One blocking sweep reads every roster; the
+/// distinct-name union per realm resolves in a single batched stats
+/// lookup (memoized by the roster cache, so repeat teammates are free);
+/// each side's floored average then rides the facts into `/check` and the
+/// upload manifest. Any lookup failure (offline, rate-limited, hidden
+/// profiles) leaves the item unclaimed — never a fabricated claim — and
+/// the local verdicts are re-merged so the plan preview reflects what the
+/// server will decide.
+async fn enrich_team_win_rates(
+    planned: &mut [PlanItem],
+    wanted: &WantedDoc,
+    known_hashes: &HashSet<String>,
+    mine_hashes: &HashSet<String>,
+) {
+    let bounded = wanted
+        .rules
+        .iter()
+        .any(|r| wanted::rule_open(r, &wanted.watermark) && r.team_win_rate_min.is_some());
+    if !bounded {
+        return;
+    }
+    // Rosters for the items that need a claim (blocking file reads).
+    let candidates: Vec<usize> = planned
+        .iter()
+        .enumerate()
+        .filter(|(_, item)| {
+            facts_plausible(&item.facts)
+                && item.facts.core.team_avg_win_rates.is_empty()
+                && REALMS.contains(&item.facts.core.realm.as_str())
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let paths: Vec<PathBuf> = candidates
+        .iter()
+        .map(|&i| PathBuf::from(&planned[i].path))
+        .collect();
+    let rosters = tokio::task::spawn_blocking(move || {
+        paths.iter().map(|p| read_roster(p)).collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
+    // Sides per candidate + the distinct-name union per realm.
+    let mut sides_by_item: HashMap<usize, (Vec<String>, Vec<String>)> = HashMap::new();
+    let mut union_by_realm: HashMap<String, Vec<String>> = HashMap::new();
+    for (slot, &i) in candidates.iter().enumerate() {
+        let sides = roster_human_sides(rosters.get(slot).map(Vec::as_slice).unwrap_or(&[]));
+        if sides.0.is_empty() || sides.1.is_empty() {
+            continue;
+        }
+        let realm = planned[i].facts.core.realm.clone();
+        for name in sides.0.iter().chain(&sides.1) {
+            let union = union_by_realm.entry(realm.clone()).or_default();
+            if !union.iter().any(|n| n == name) && union.len() < ENRICH_NAME_CAP {
+                union.push(name.clone());
+            }
+        }
+        sides_by_item.insert(i, sides);
+    }
+    // One batched lookup per realm; failures skip the realm (its items
+    // stay unclaimed).
+    let mut stats_by_realm: HashMap<String, HashMap<String, f32>> = HashMap::new();
+    for (realm, names) in &union_by_realm {
+        match super::wg_api::lookup_players_stats_batch(names.clone(), realm.clone(), None, None)
+            .await
+        {
+            Ok(rows) => {
+                let map: HashMap<String, f32> = names
+                    .iter()
+                    .zip(rows)
+                    .filter_map(|(n, st)| st.and_then(|s| s.winrate).map(|w| (n.clone(), w)))
+                    .collect();
+                stats_by_realm.insert(realm.clone(), map);
+            },
+            Err(e) => {
+                tracing::warn!(error = %e, realm = %realm, "team-winrate lookup failed; leaving claims unset")
+            },
+        }
+    }
+    // Claim + re-merge the verdicts.
+    for (i, sides) in sides_by_item {
+        let realm = planned[i].facts.core.realm.clone();
+        let stats = stats_by_realm.get(&realm);
+        let Some(claim) = team_win_rate_claim(&sides, |n| stats.and_then(|m| m.get(n)).copied())
+        else {
+            continue;
+        };
+        let item = &mut planned[i];
+        item.facts.core.team_avg_win_rates = claim;
+        let (verdict, rule_id) = merge_verdict(&item.facts, known_hashes, mine_hashes, wanted);
+        item.verdict = verdict;
+        item.rule_id = rule_id;
     }
 }
 
@@ -814,7 +972,8 @@ pub async fn contribution_plan(items: Vec<PlanCandidate>) -> CommandResult<Vec<P
         )
     })?;
     let roots = super::game_context::replay_roots();
-    let planned = tokio::task::spawn_blocking(move || {
+    let (wanted_enrich, known_enrich, mine_enrich) = (wanted.clone(), known.clone(), mine.clone());
+    let mut planned = tokio::task::spawn_blocking(move || {
         plan_items_blocking(
             &items,
             &roots,
@@ -826,6 +985,7 @@ pub async fn contribution_plan(items: Vec<PlanCandidate>) -> CommandResult<Vec<P
     })
     .await
     .map_err(|e| anyhow!("share plan task failed: {e}"))?;
+    enrich_team_win_rates(&mut planned, &wanted_enrich, &known_enrich, &mine_enrich).await;
     Ok(planned)
 }
 
@@ -991,7 +1151,8 @@ async fn pipeline_inner(ctx: &RunContext, items: &[PlanCandidate], scratch: &Pat
         let min = wanted.client_version_min.clone().unwrap_or_default();
         bail!("collection rules require a newer app version ({min})");
     }
-    let planned = tokio::task::spawn_blocking({
+    let (wanted_enrich, known_enrich, mine_enrich) = (wanted.clone(), known.clone(), mine.clone());
+    let mut planned = tokio::task::spawn_blocking({
         let items = items.to_vec();
         let roots = ctx.roots.clone();
         move || {
@@ -1007,6 +1168,10 @@ async fn pipeline_inner(ctx: &RunContext, items: &[PlanCandidate], scratch: &Pat
     })
     .await
     .map_err(|e| anyhow!("share plan task failed: {e}"))?;
+    // Claim team winrates BEFORE /check: the server's verdicts (and the
+    // upload manifest's facts) must see the same claims the plan preview
+    // merged.
+    enrich_team_win_rates(&mut planned, &wanted_enrich, &known_enrich, &mine_enrich).await;
     pass.check_cancelled()?;
 
     // ── check ── the server's verdicts are the authoritative ones.
@@ -1755,6 +1920,7 @@ mod tests {
                 bot_count: 0,
                 client_version: "14.5.0".into(),
                 battle_time: "2026-10-14T09:00:00Z".into(),
+                team_avg_win_rates: Vec::new(),
             },
         }
     }
@@ -1774,6 +1940,8 @@ mod tests {
             |f: &mut ReplayFacts| f.core.realm = "sea".into(),
             |f: &mut ReplayFacts| f.file_name = "a/b.wowsreplay".into(),
             |f: &mut ReplayFacts| f.file_name = "x".repeat(129),
+            |f: &mut ReplayFacts| f.core.team_avg_win_rates = vec![52, 101],
+            |f: &mut ReplayFacts| f.core.team_avg_win_rates = vec![1; 3],
         ] {
             let mut f = facts_fixture();
             mutate(&mut f);
@@ -1907,6 +2075,7 @@ mod tests {
                 player_count_min: Some(1),
                 player_count_max: None,
                 bot_max: None,
+                team_win_rate_min: None,
                 client_version_min: Some("14.0".into()),
             }],
         };
@@ -2031,5 +2200,51 @@ mod tests {
         assert!(!state.has_upload_token);
         assert_eq!(state.uploaders.len(), 1);
         assert_eq!(state.uploaders[0].realm, "eu");
+    }
+
+    #[test]
+    fn roster_human_sides_splits_allies_and_enemies_and_skips_bots() {
+        let entry = |name: &str, relation: i64| wowsp_tauri_shared::VehicleEntry {
+            id: 1,
+            name: name.into(),
+            relation,
+            ship_id: 1,
+            ship_name: None,
+        };
+        let roster = vec![
+            entry("ally-human", 0),
+            entry(":Bot:", 1),
+            entry("IDS_scenario", 1),
+            entry("enemy-human", 2),
+            entry("  ", 2),
+        ];
+        let (ally, enemy) = roster_human_sides(&roster);
+        assert_eq!(ally, vec!["ally-human".to_string()]);
+        assert_eq!(enemy, vec!["enemy-human".to_string()]);
+    }
+
+    #[test]
+    fn team_win_rate_claim_floors_and_requires_both_sides() {
+        let sides = (vec!["a".into(), "b".into()], vec!["c".into(), "d".into()]);
+        // 53.0 -> 53, 47.15 -> 47: floored, never rounded up.
+        let wr = |name: &str| match name {
+            "a" => Some(51.0),
+            "b" => Some(55.0),
+            "c" => Some(46.0),
+            "d" => Some(48.3),
+            _ => None,
+        };
+        assert_eq!(team_win_rate_claim(&sides, wr), Some(vec![53, 47]));
+        // Hidden profiles drop out of the average…
+        assert_eq!(
+            team_win_rate_claim(&sides, |n| (n == "a").then_some(50.0)),
+            None,
+            "an unresolved side cannot testify"
+        );
+        // …but one resolved player per side is still a claim.
+        assert_eq!(
+            team_win_rate_claim(&sides, |n| (n == "a" || n == "c").then_some(50.0)),
+            Some(vec![50, 50])
+        );
     }
 }

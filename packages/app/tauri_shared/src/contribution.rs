@@ -95,6 +95,13 @@ pub struct WantedRule {
     pub player_count_max: Option<u32>,
     #[serde(default)]
     pub bot_max: Option<u32>,
+    /// Minimum BOTH teams' average account winrates must clear, integer
+    /// percent (0..=100). The facts claim carries one floored average per
+    /// listed team (`teamAvgWinRates`); a rule with this bound requires a
+    /// two-team claim with BOTH entries ≥ it (an absent or one-sided claim
+    /// cannot satisfy the bound — the same doctrine as tiers/shipIds).
+    #[serde(default)]
+    pub team_win_rate_min: Option<u32>,
     /// Dot-numeric lower bound (`14.5.0` ≥ `14.0` — component-wise
     /// numeric compare, missing components counting as 0).
     #[serde(default)]
@@ -168,6 +175,12 @@ pub struct ReplayFactsCore {
     pub client_version: String,
     /// RFC3339 UTC; empty = undatable file name.
     pub battle_time: String,
+    /// Per-team average account winrate, integer percent FLOORED, one entry
+    /// per listed team (ally first). Computed at plan time over the humans
+    /// the stats lookup resolved (bots and hidden profiles excluded); empty
+    /// = not claimed, so a `teamWinRateMin` rule cannot match the replay.
+    #[serde(default)]
+    pub team_avg_win_rates: Vec<u32>,
 }
 
 /// Client-claimed per-replay facts (contract §2). `#[serde(flatten)]`

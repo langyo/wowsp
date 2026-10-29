@@ -34,6 +34,7 @@ export function dimsOf(rule: WantedRule): string {
     parts.push(`人数 ${rule.playerCountMin || 1}-${rule.playerCountMax ?? "∞"}`);
   }
   if (rule.botMax != null) parts.push(`机器人≤${rule.botMax}`);
+  if (rule.teamWinRateMin != null) parts.push(`双方胜率≥${rule.teamWinRateMin}%`);
   if (rule.clientVersionMin) parts.push(`版本≥${rule.clientVersionMin}`);
   return parts.join(" · ") || "不限";
 }
