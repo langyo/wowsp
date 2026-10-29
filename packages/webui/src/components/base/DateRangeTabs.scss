@@ -1,14 +1,26 @@
-/* DateRangeTabs — the shared date-range strip (water-meter dashboard, the
-   lookup page, the playtime PR trend section). The track is CONTENT CHROME,
-   not wallpaper glass: it selects which stats data the page shows and lives
-   in the same controls row family as the filter chips and the fuzzy-search
-   trigger, both of which are solid-surface facet-chip boxes (hikari's
-   HkFilterChip grammar). hikari ships
-   the segmented track as 60% surface glass (the theme dial's shipped value),
-   which over the wallpaper read as a different control family right beside
-   those opaque chips; every host of this strip therefore paints the solid
-   surface + the chips' border instead, and hikari's primary-tinted sliding
-   indicator rides on top of it unchanged. */
+/*
+ * DateRangeTabs — the shared date-range strip (water-meter dashboard, the
+ * lookup page, the playtime PR trend section).
+ *
+ * The strip deliberately keeps hikari's SHIPPED segmented-track chrome: the
+ * library paints the track as 60% surface glass (HkTabs.scss), its triggers
+ * carry no fill of their own and the sliding indicator is primary/12%. That
+ * is the look every other tab strip in the app has, and it is the look the
+ * sibling shittim-chest project renders there: that project has no track
+ * fill rule at all, and its hikari-chrome.scss states the house rule that
+ * host-level tweaks belonging to the shared chrome go upstream instead of
+ * into the app's stylesheets. A host-local repaint here made this one strip
+ * the odd member of the family and diverged from upstream for no
+ * library-API reason, so hosts must not restyle the track: if the track ever
+ * needs a different surface, that is a hikari change.
+ *
+ * The only global tweak wowsp layers on top is the UI-surface-opacity dial
+ * in theme.scss, which SCALES the same 60% base (100% dial = upstream's
+ * value exactly; the shipped 95% dial renders 57%). The facet chips beside
+ * the strip stay hikari's solid HkFilterChip surface — that glass track /
+ * solid trigger pair is the library's own design language, not a mismatch
+ * to "fix" locally.
+ */
 .date-range-tabs {
   position: relative;
   /* A plain flex child of the host's controls row: it never grows (the filter
@@ -16,13 +28,6 @@
      hikari's own scroller bounds the strip on narrow viewports instead of the
      row overflowing. */
   min-width: 0;
-}
-
-.date-range-tabs .hk-tabs-list {
-  background: rgb(var(--color-surface));
-  /* Same chrome as the filter chips / search trigger (ShipFilterBar.scss):
-     one border recipe across the whole row. */
-  border-color: rgb(var(--color-border) / 25%);
 }
 
 /* ── Custom-range popover (the 自定义 segment) ──

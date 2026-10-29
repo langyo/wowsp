@@ -4,8 +4,10 @@
  * tabs row's right end, the chip row claiming a full line below — so the
  * wrap point no longer drifts with the viewport. The chip chrome is
  * hikari's own facet-chip grammar (HkFilterChip — box, border, solid
- * surface), and the date-range strip beside it paints the same surface, so
- * the controls row reads as one family. */
+ * surface); the date-range strip beside it renders hikari's segmented track
+ * untouched. It is the chip's track-step BOX (not its fill) that keeps both
+ * on one height, so the controls row reads as one family without either
+ * side re-painting library chrome. */
 .ship-filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -80,9 +82,10 @@
   cursor: pointer;
   /* Solid HkFilterChip surface + border: a lone chip must carry its own
      opaque body — a bare alpha tint lets the wallpaper bleed through and the
-     chip reads as a hole in the strip. The date-range strip beside it paints
-     the same solid surface + border (see DateRangeTabs.scss), so the whole
-     controls row reads as one family. */
+     chip reads as a hole in the strip. The glass track beside it is hikari's
+     own segmented chrome (the strip keeps the library's rule untouched;
+     wowsp's dial only rescales its alpha — see DateRangeTabs.scss); this
+     solid facet chip / glass track pair is the library's design language. */
   border: 1px solid rgb(var(--color-border) / 25%);
   border-radius: var(--radius-sm);
   background: rgb(var(--color-surface));
