@@ -54,13 +54,15 @@
     "modsActiveAtCrash": "Des plugins étaient actifs au moment du plantage",
     "safeModeOn": "Le mode sans échec était actif — le client d'origine a planté seul",
     "probeWasActive": "La sonde en jeu de WoWSP était active",
-    "dumpAvailable": "Un dump mémoire est disponible pour une analyse approfondie"
+    "dumpAvailable": "Un dump mémoire est disponible pour une analyse approfondie",
+    "danglingUiReference": "Référence d'interface orpheline — le journal du plantage montre \"{url}\" en échec de chargement alors qu'un fichier de mod la demande encore"
   },
   "suspects": {
     "title": "Plugins suspects",
     "evidence": {
       "logMention": "Mentionné dans le journal du jeu",
-      "recentChange": "Modifié récemment"
+      "recentChange": "Modifié récemment",
+      "danglingRef": "Référence orpheline"
     },
     "unknownBadge": "Inconnu",
     "quarantine": "Mettre en quarantaine",

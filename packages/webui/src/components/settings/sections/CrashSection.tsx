@@ -28,6 +28,8 @@ function findingText(finding: CrashFinding): string {
       return t("crash.findings.faultingModule", { module: finding.detail ?? "?" });
     case "gameLogErrors":
       return t("crash.findings.gameLogErrors", { count: finding.detail ?? "0" });
+    case "danglingUiReference":
+      return t("crash.findings.danglingUiReference", { url: finding.detail ?? "?" });
     case "recentModChanges":
       return t("crash.findings.recentModChanges", { mods: finding.detail ?? "" });
     default:

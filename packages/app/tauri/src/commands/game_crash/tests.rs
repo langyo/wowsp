@@ -256,7 +256,7 @@ fn findings_flag_recent_mod_changes_and_mods_in_play() {
 
     let record = sample_record("gc-findings", Some(dir.path().to_str().unwrap()));
     let mods = mods_inventory_entries(dir.path());
-    let findings = build_findings(&record, &mods, &[], record.game_root.as_deref());
+    let findings = build_findings(&record, &mods, &[], record.game_root.as_deref(), &[]);
 
     let recent = findings
         .iter()
@@ -285,7 +285,7 @@ fn findings_note_safe_mode_without_reading_the_registry() {
     let dir = TempDir::new("findings-safe");
     dir.touch("bin/7/res_mods.wowsp-disabled/mod", "x");
     let record = sample_record("gc-safe", Some(dir.path().to_str().unwrap()));
-    let findings = build_findings(&record, &[], &[], record.game_root.as_deref());
+    let findings = build_findings(&record, &[], &[], record.game_root.as_deref(), &[]);
     assert!(
         findings.iter().any(|f| f.code == "safeModeOn"),
         "an already-quarantined install is reported as safe mode on"
@@ -751,4 +751,114 @@ fn wer_name_mentions_requires_a_delimited_token() {
     assert!(wer_name_mentions(dir_32, "worldofwarships"));
     assert!(wer_name_mentions(dir_32, ""));
     assert!(!wer_name_mentions("appcrash_qq.exe_1", "worldofwarships"));
+}
+
+// ── dangling-reference heuristics ─────────────────────────────────────────────
+
+#[test]
+fn dangling_urls_extract_from_both_loader_spellings() {
+    let text = [
+        "2026-10-28 16:49:56.021: ERROR: [Scaleform] Error: Unknown file format at URL \"gui/flash/battle_stats.swf\"",
+        "2026-10-28 16:49:56.043: ERROR: [Scaleform Trace] [ERROR][SWF]: url:'battle_stats.swf'",
+        "2026-10-28 16:49:55.293: ERROR: [Other] Removing unused block that seems to be added by mistake.",
+        "2026-10-28 16:50:01.000: ERROR: [Scaleform] Error: Unknown file format at URL \"gui/flash/battle_stats.swf\"",
+    ]
+    .join("\n");
+    let urls = dangling_urls_from_text(&text);
+    assert_eq!(
+        urls,
+        vec![
+            "gui/flash/battle_stats.swf".to_string(),
+            "battle_stats.swf".to_string(),
+        ],
+        "both spellings extract, duplicates collapse in first-seen order"
+    );
+    assert!(dangling_urls_from_text("no urls here").is_empty());
+}
+
+#[test]
+fn dangling_ref_suspects_pin_the_referencing_files() {
+    let dir = TempDir::new("dangling");
+    // The Aslain v1 shape: a battle_elements.xml override declaring the
+    // unbound element hosted at the missing SWF.
+    dir.touch(
+        "bin/7/res_mods/gui/battle_elements.xml",
+        "<element class=\"lesta.libs.unbound.UnboundElement\" url=\"battle_stats.swf\">",
+    );
+    // An unrelated text file never matches.
+    dir.touch("bin/7/res_mods/gui/other.xml", "<nothing relevant>");
+    // A second reference in another tree (the installer cache).
+    dir.touch(
+        "bin/7/res_mods/PnFMods/ModsInstaller_4_3_1/mods/SecondaryArmament.xml",
+        "<element name=\"unboundSecondaryArmament\" url=\"battle_stats.swf\">",
+    );
+    // Binary-ish extensions are skipped entirely.
+    dir.touch("bin/7/res_mods/gui/skip.swf", "battle_stats.swf");
+    let base = dir.path().join("bin/7/res_mods");
+    let urls = vec!["battle_stats.swf".to_string()];
+    let suspects = dangling_ref_suspects(&base, &urls);
+    let names: Vec<&str> = suspects.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec![
+            "PnFMods/ModsInstaller_4_3_1/mods/SecondaryArmament.xml",
+            "gui/battle_elements.xml",
+        ],
+        "sorted by path; only text files referencing the URL match"
+    );
+    assert_eq!(suspects[0].evidence, "danglingRef");
+    assert_eq!(suspects[0].log_lines, urls);
+}
+
+#[test]
+fn quarantine_accepts_nested_files_and_rejects_traversal() {
+    let dir = TempDir::new("quarantine-nested");
+    let root = dir.path().to_str().unwrap().to_string();
+    dir.touch("bin/8/res_mods/gui/battle_elements.xml", "x");
+
+    // Traversal and drive spellings are refused outright.
+    assert!(mutate_quarantine(&root, "../escape.xml", None, true).is_err());
+    assert!(mutate_quarantine(&root, "gui/../../escape.xml", None, true).is_err());
+    assert!(mutate_quarantine(&root, "C:/evil.xml", None, true).is_err());
+    assert!(mutate_quarantine(&root, "/abs.xml", None, true).is_err());
+
+    // A nested FILE quarantines preserving its relative path, and restores.
+    super::super::mod_hub::test_allow_game_root(&root);
+    let entries = mutate_quarantine(&root, "gui/battle_elements.xml", Some("gc-9"), true)
+        .expect("quarantine file");
+    assert_eq!(entries[0].name, "gui/battle_elements.xml");
+    assert!(
+        !dir.path()
+            .join("bin/8/res_mods/gui/battle_elements.xml")
+            .exists()
+    );
+    assert!(
+        dir.path()
+            .join("bin/8/res_mods.wowsp-quarantine/gui/battle_elements.xml")
+            .exists()
+    );
+    let entries =
+        mutate_quarantine(&root, "gui/battle_elements.xml", None, false).expect("restore file");
+    assert!(entries.is_empty());
+    assert!(
+        dir.path()
+            .join("bin/8/res_mods/gui/battle_elements.xml")
+            .exists()
+    );
+}
+
+#[test]
+fn findings_flag_dangling_ui_references_as_critical() {
+    let record = sample_record("gc-dangling", None);
+    let urls = vec!["gui/flash/battle_stats.swf".to_string()];
+    let findings = build_findings(&record, &[], &[], None, &urls);
+    let finding = findings
+        .iter()
+        .find(|f| f.code == "danglingUiReference")
+        .expect("dangling reference flagged");
+    assert_eq!(finding.severity, "critical");
+    assert_eq!(
+        finding.detail.as_deref(),
+        Some("gui/flash/battle_stats.swf")
+    );
 }

@@ -54,13 +54,15 @@
     "modsActiveAtCrash": "Había plugins activos cuando se bloqueó el cliente",
     "safeModeOn": "El modo seguro estaba activado — el cliente original se bloqueó por sí solo",
     "probeWasActive": "La sonda en el juego de WoWSP estaba activa",
-    "dumpAvailable": "Hay un volcado de memoria disponible para un análisis profundo"
+    "dumpAvailable": "Hay un volcado de memoria disponible para un análisis profundo",
+    "danglingUiReference": "Referencia de UI colgante — el registro del fallo muestra \"{url}\" sin cargar mientras un archivo de mod la sigue pidiendo"
   },
   "suspects": {
     "title": "Plugins sospechosos",
     "evidence": {
       "logMention": "Mencionado en el registro del juego",
-      "recentChange": "Modificado recientemente"
+      "recentChange": "Modificado recientemente",
+      "danglingRef": "Referencia colgante"
     },
     "unknownBadge": "Desconocido",
     "quarantine": "Poner en cuarentena",
