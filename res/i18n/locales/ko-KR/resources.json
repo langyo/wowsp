@@ -290,6 +290,6 @@
   "purgeReinstallChoiceOur": "WoWSP가 관리하는 MOD만 재설치(타사 MOD는 백업으로 사라집니다).",
   "purgeReinstallChoiceAdopt": "타사 MOD도 함께 채택 — 파일을 유지하고 WoWSP 관리 설치로 다시 등록합니다.",
   "purgeReinstallBackupNote": "두 경우 모두 이전 트리는 백업으로 보관됩니다.",
-  "purgeReinstallOurOnly": "WoWSP가 관리하는 MOD만 재설치(타사 MOD는 백업으로 사라집니다).",
-  "purgeReinstallAdopt": "타사 MOD도 함께 채택 — 파일을 유지하고 WoWSP 관리 설치로 다시 등록합니다."
+  "purgeReinstallOurOnly": "WoWSP MOD만 재설치",
+  "purgeReinstallAdopt": "재설치하고 타사 MOD 채택"
 }

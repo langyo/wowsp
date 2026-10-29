@@ -290,6 +290,6 @@
   "purgeReinstallChoiceOur": "WoWSP 管理の MOD のみ再インストール(サードパーティ製はバックアップ側に残ります)。",
   "purgeReinstallChoiceAdopt": "サードパーティ製 MOD も取り込み、ファイルを保持したまま WoWSP 管理として再登録します。",
   "purgeReinstallBackupNote": "いずれの場合も以前のツリーはバックアップとして保持されます。",
-  "purgeReinstallOurOnly": "WoWSP 管理の MOD のみ再インストール(サードパーティ製はバックアップ側に残ります)。",
-  "purgeReinstallAdopt": "サードパーティ製 MOD も取り込み、ファイルを保持したまま WoWSP 管理として再登録します。"
+  "purgeReinstallOurOnly": "WoWSP の MOD のみ再インストール",
+  "purgeReinstallAdopt": "再インストールしてサードパーティ製 MOD を取り込む"
 }

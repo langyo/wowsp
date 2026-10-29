@@ -290,6 +290,6 @@
   "purgeReinstallChoiceOur": "Reinstalar solo los mods gestionados por WoWSP (los de terceros se van con la copia de seguridad).",
   "purgeReinstallChoiceAdopt": "Adoptar también los mods de terceros: sus archivos se conservan y se registran como instalaciones de WoWSP.",
   "purgeReinstallBackupNote": "El árbol anterior se conserva como copia de seguridad en ambos casos.",
-  "purgeReinstallOurOnly": "Reinstalar solo los mods gestionados por WoWSP (los de terceros se van con la copia de seguridad).",
-  "purgeReinstallAdopt": "Adoptar también los mods de terceros: sus archivos se conservan y se registran como instalaciones de WoWSP."
+  "purgeReinstallOurOnly": "Solo mods de WoWSP",
+  "purgeReinstallAdopt": "Reinstalar y adoptar mods de terceros"
 }

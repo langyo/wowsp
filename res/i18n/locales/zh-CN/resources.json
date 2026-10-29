@@ -290,6 +290,6 @@
   "purgeReinstallChoiceOur": "仅重新安装 WoWSP 管理的插件(第三方插件随备份一起移出加载路径)。",
   "purgeReinstallChoiceAdopt": "同时接管第三方插件——保留其文件,并按 WoWSP 的口径重新登记为受管插件。",
   "purgeReinstallBackupNote": "两种方式都会把原目录保留为备份,确认无误后可手动删除。",
-  "purgeReinstallOurOnly": "仅重新安装 WoWSP 管理的插件(第三方插件随备份一起移出加载路径)。",
-  "purgeReinstallAdopt": "同时接管第三方插件——保留其文件,并按 WoWSP 的口径重新登记为受管插件。"
+  "purgeReinstallOurOnly": "仅重装 WoWSP 插件",
+  "purgeReinstallAdopt": "重装并接管第三方插件"
 }
