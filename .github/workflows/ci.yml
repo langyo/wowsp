@@ -202,7 +202,7 @@ jobs:
       # rejects deny.toml values (see the former "Known CI gaps" note in
       # PLAN.md). cargo-deny only reads cargo metadata, so the windows-only
       # deps resolve fine on Linux.
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177  # v2
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037  # v2
         with:
           tool: cargo-deny@0.20.2  # pinned to the version deny.toml is validated against
       - name: cargo-deny (advisories)
