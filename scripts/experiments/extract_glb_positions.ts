@@ -9,8 +9,11 @@
  * network, no DOM — resolves from the webui workspace install). Output is a
  * float32 .npy (N x 3, world space) the baker consumes via --positions.
  *
+ * Runs on plain node >= 22.6 via --experimental-strip-types (erasable
+ * syntax only — no enums/namespaces; the annotations are documentation).
+ *
  * Usage:
- *   node scripts/experiments/extract_glb_positions.mjs \
+ *   node --experimental-strip-types scripts/experiments/extract_glb_positions.ts \
  *       --glb "$LOCALAPPDATA/WoWSP/models/maps/00_CO_ocean.glb" \
  *       --out scripts/experiments/out/00_CO_ocean.positions.npy
  *   (or --manifest <file> with one "glb<TAB>out" line per map for batches)
@@ -20,7 +23,7 @@ import path from 'node:path';
 import { MeshoptDecoder } from '../../packages/webui/node_modules/three/examples/jsm/libs/meshopt_decoder.module.js';
 
 const args = process.argv.slice(2);
-const get = (flag) => {
+const get = (flag: string): string | null => {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : null;
 };
@@ -35,7 +38,7 @@ const gltfComponent = {
 };
 const gltfNComp = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
 
-function parseGlb(file) {
+function parseGlb(file: string) {
   const data = fs.readFileSync(file);
   if (data.readUInt32LE(0) !== 0x46546c67) throw new Error(`not a GLB: ${file}`);
   let cur = 12;
@@ -52,8 +55,18 @@ function parseGlb(file) {
   return { json, bin };
 }
 
+type GltfNode = {
+  matrix?: number[];
+  rotation?: number[];
+  scale?: number[];
+  translation?: number[];
+  name?: string;
+  mesh?: number;
+  children?: number[];
+};
+
 /** Column-major glTF node matrix -> Float64 (row-major 4x4 for our math). */
-function nodeMatrix(node) {
+function nodeMatrix(node: GltfNode) {
   let m;
   if (node.matrix) {
     const c = node.matrix; // column-major
@@ -84,7 +97,7 @@ function nodeMatrix(node) {
   return m;
 }
 
-function matMul(a, b) {
+function matMul(a: number[], b: number[]): number[] {
   const out = new Array(16);
   for (let r = 0; r < 4; r++) {
     for (let c = 0; c < 4; c++) {
@@ -94,7 +107,7 @@ function matMul(a, b) {
   return out;
 }
 
-async function decodeAccessor(gltf, accIndex) {
+async function decodeAccessor(gltf: ReturnType<typeof parseGlb>, accIndex: number) {
   const { json, bin } = gltf;
   const acc = json.accessors[accIndex];
   const view = json.bufferViews[acc.bufferView];
@@ -125,7 +138,7 @@ async function decodeAccessor(gltf, accIndex) {
   return { bytes, stride, comp, ncomp, count: acc.count, normDiv };
 }
 
-function readVec(decode, vertexIndex) {
+function readVec(decode: Awaited<ReturnType<typeof decodeAccessor>>, vertexIndex: number) {
   const { bytes, stride, comp, ncomp, normDiv } = decode;
   const base = vertexIndex * stride;
   const dv = new DataView(bytes.buffer, bytes.byteOffset + base, stride);
@@ -145,7 +158,7 @@ function readVec(decode, vertexIndex) {
   return out;
 }
 
-async function extractPositions(glbPath) {
+async function extractPositions(glbPath: string) {
   const gltf = parseGlb(glbPath);
   const { json } = gltf;
   // World matrices: walk every root's children chain.
@@ -192,7 +205,7 @@ async function extractPositions(glbPath) {
   return merged;
 }
 
-function writeNpy(file, verts /* Float32Array, length n*3 */) {
+function writeNpy(file: string, verts: Float32Array) {
   const n = verts.length / 3;
   const header = `{'descr': '<f4', 'fortran_order': False, 'shape': (${n}, 3), }`;
   const pad = 64 - ((10 + header.length) % 64);
@@ -206,7 +219,7 @@ function writeNpy(file, verts /* Float32Array, length n*3 */) {
   fs.writeFileSync(file, Buffer.concat([headBuf, Buffer.from(verts.buffer, verts.byteOffset, verts.byteLength)]));
 }
 
-async function one(glb, out) {
+async function one(glb: string, out: string) {
   const verts = await extractPositions(glb);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   writeNpy(out, verts);
@@ -225,7 +238,7 @@ if (manifest) {
   const glb = get('--glb');
   const out = get('--out');
   if (!glb || !out) {
-    console.error('usage: extract_glb_positions.mjs --glb <x.glb> --out <x.npy> | --manifest <file>');
+    console.error('usage: extract_glb_positions.ts --glb <x.glb> --out <x.npy> | --manifest <file>');
     process.exit(2);
   }
   await MeshoptDecoder.ready;

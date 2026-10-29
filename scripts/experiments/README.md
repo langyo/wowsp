@@ -416,7 +416,7 @@ tick 快照可算「敌舰已知位置是否在某活跃烟云内」；视野特
   0.125**；模式分布 pvp 251k / brawl 48k / ranked 21k / event 33.5k / pve
   3.2k（pve 局 0 can-fire 行——ops 打标排除确有必要）。**坑**：模型包 GLB
   已被 `optimize_glbs.py` 换成 meshopt 压缩格式，`bake_terrain_los.py` 的
-  stdlib 解析器读不了——新增 `extract_glb_positions.mjs`（three 内嵌
+  stdlib 解析器读不了——新增 `extract_glb_positions.ts`（three 内嵌
   meshopt WASM 解码，验证与 GLTFLoader 逐坐标一致）+ `--positions` 输入，
   35 图全重烘焙（Gold harbor land 7.0% / 峰高 17.77 m，与 E4 的 6.56% /
   17.83 m 同源）。另发现 `terrain_los.rs` 真实栅格测试断言的是 #490 之前的
