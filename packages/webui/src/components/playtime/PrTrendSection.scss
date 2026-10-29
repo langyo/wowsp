@@ -51,7 +51,9 @@
 }
 
 .pr-trend-rangepop__hint {
-  margin-top: 8px;
+  /* Unified popup-panel convention: feedback under a control sits at
+     --space-12 (same seat as ShipFilterBar's hints). */
+  margin-top: var(--space-12);
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted) / 90%);
 }
