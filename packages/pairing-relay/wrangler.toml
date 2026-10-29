@@ -201,7 +201,7 @@ TURNSTILE_SITEKEY = "0x4AAAAAAFJMAGDRhyraDqpe"
 # build). scripts/sync_versions.py --check enforces this stays equal to
 # the other six derived version slots (root package.json is the source of
 # truth).
-FEEDBACK_LATEST_VERSION = "0.6.7"
+FEEDBACK_LATEST_VERSION = "0.6.8"
 # The digest channels this deployment actually serves (comma separated,
 # subset of app/mod-hub/res/data). Lookups for any other VALID channel
 # answer 404 BEFORE the read budget and the asset fetch — extend only
