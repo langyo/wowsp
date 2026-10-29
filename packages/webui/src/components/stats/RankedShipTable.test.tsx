@@ -110,6 +110,10 @@ const META = [
   { shipId: 1, name: "Yamato", tier: 10, type: "Battleship", nation: "japan" },
   { shipId: 3, name: "Budyonny", tier: 6, type: "Cruiser", nation: "ussr" },
   { shipId: 4, name: "Friedrich", tier: 9, type: "Battleship", nation: "germany" },
+  // Real baked ship ids so the badge test exercises the bake's caliber
+  // split (see shipLiveStats.test.ts for the same vocabulary).
+  { shipId: 4181636944, name: "Charles Martel", tier: 8, type: "Cruiser", nation: "france" },
+  { shipId: 4287543280, name: "Cleveland", tier: 8, type: "Cruiser", nation: "usa" },
 ] as unknown as ShipInfo[];
 
 /** Career rows for the CN fallback — the water-table shape with a ranked
@@ -140,7 +144,12 @@ function careerRow(shipId: number, rankedBattles: number): PlayerShipStats {
 }
 
 async function mountTable(
-  opts: { season?: RankedSeasonStats; realm?: string; cnCache?: PlayerShipStats[] } = {},
+  opts: {
+    season?: RankedSeasonStats;
+    realm?: string;
+    cnCache?: PlayerShipStats[];
+    rows?: RankedShipSeasonStats[];
+  } = {},
 ) {
   const pinia = createPinia();
   setActivePinia(pinia);
@@ -150,7 +159,7 @@ async function mountTable(
   ranked.realm = realm;
   // On CN the store's ship slot stays empty (the backend's protocol) —
   // that emptiness is what arms the career fallback.
-  ranked.shipSeasons = opts.cnCache ? [] : ROWS;
+  ranked.shipSeasons = opts.cnCache ? [] : (opts.rows ?? ROWS);
   const encyclopedia = useEncyclopediaStore(pinia);
   encyclopedia.ships = META;
   // Keep the filter bar's onMounted lazy encyclopedia load off the
@@ -175,6 +184,8 @@ const bracketBtns = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
   wrapper.findAll(".ranked-ships__bracket");
 const chips = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
   Array.from(wrapper.findAll(".ship-filter-bar__chip")).map((c) => c.attributes("data-chip"));
+const badges = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
+  Array.from(wrapper.findAll(".ranked-ships__ship-type")).map((b) => b.text());
 
 /** The filter popups teleport to body (HkPopover) — poll for the machine's
  *  timer-driven enter to settle. */
@@ -256,6 +267,17 @@ describe("RankedShipTable", () => {
     await opts[2]!.trigger("click");
     await flushPromises();
     expect(rows(wrapper)).toEqual(["Yamato"]);
+  });
+
+  it("badges cruisers CA vs CL per ship caliber, keeping CA/CL only unbaked", async () => {
+    // Two baked cruisers (Charles Martel's 203mm reads CA, Cleveland's
+    // 152mm reads CL) plus Budyonny — ship id 3 is in no bake slice, so
+    // its row keeps the combined code.
+    const wrapper = await mountTable({
+      rows: [shipRow(4181636944), shipRow(4287543280), shipRow(3)],
+    });
+    expect(rows(wrapper)).toEqual(["Charles Martel", "Cleveland", "Budyonny"]);
+    expect(badges(wrapper)).toEqual(["CA", "CL", "CA/CL"]);
   });
 
   it("falls back to the career ranked split on CN with a hint line", async () => {

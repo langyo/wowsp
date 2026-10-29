@@ -32,18 +32,10 @@ import { leagueFromNumber, leagueTierWindow } from "@/utils/ranked";
 import { winrateColor } from "@/utils/winrate";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { shipIcon } from "@/features/holographic/shipIcons";
+import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
 import { tierToRoman } from "@wowsp/holo";
 import type { PlayerShipStats, RankedSeasonStats } from "@/api";
 import "./RankedShipTable.scss";
-
-/** Ship-type abbreviations (the water-table row's vocabulary). */
-const TYPE_SHORT: Record<string, string> = {
-  Battleship: "BB",
-  AirCarrier: "CV",
-  Cruiser: "CA/CL",
-  Destroyer: "DD",
-  Submarine: "SS",
-};
 
 export default defineComponent({
   name: "RankedShipTable",
@@ -235,11 +227,13 @@ export default defineComponent({
                 {filteredShips.value.map((s) => {
                   const meta = metaOf(s.shipId);
                   const icon = shipIcon(meta?.type ?? "", "plain");
-                  const typeKey =
-                    Object.keys(TYPE_SHORT).find((k) => (meta?.type ?? "").startsWith(k)) ?? "";
-                  // Same badge vocabulary as the row text, so the hover card
-                  // explains exactly the code the pointer is over.
-                  const code = TYPE_SHORT[typeKey] ?? "?";
+                  // Per-ship badge, not the class-level code: cruisers split
+                  // CA vs CL off the baked main-gun caliber of THIS row's
+                  // ship (unbaked oddities keep the combined CA/CL code —
+                  // see shipTypeBadgeShort). Same badge vocabulary as the
+                  // hover card, so the hint explains exactly the code the
+                  // pointer is over.
+                  const code = shipTypeBadgeShort(meta?.type, s.shipId);
                   return (
                     <div class="ranked-ships__ship" key={s.shipId}>
                       <span class="ranked-ships__ship-ico">
