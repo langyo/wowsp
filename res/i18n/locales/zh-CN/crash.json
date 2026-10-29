@@ -68,14 +68,16 @@
     "probeWasActive": "WoWSP 游戏内探针处于活动状态",
     "dumpAvailable": "存在崩溃转储，可供深入分析",
     "danglingUiReference": "UI 引用悬空 —— 崩溃日志显示 \"{url}\" 加载失败，仍有模组文件在引用它",
-    "evidenceGameReport": "来自 WG 崩溃报告"
+    "evidenceGameReport": "来自 WG 崩溃报告",
+    "missingModAsset": "模组文件引用了 \"{{asset}}\"，该资源在客户端与模组目录中均不存在"
   },
   "suspects": {
     "title": "可疑插件",
     "evidence": {
       "logMention": "游戏日志中被提及",
       "recentChange": "近期有变动",
-      "danglingRef": "悬空引用"
+      "danglingRef": "悬空引用",
+      "missingAsset": "引用缺失资源"
     },
     "unknownBadge": "未知",
     "quarantine": "隔离",

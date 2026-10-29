@@ -68,14 +68,16 @@
     "probeWasActive": "La sonda en el juego de WoWSP estaba activa",
     "dumpAvailable": "Hay un volcado de memoria disponible para un análisis profundo",
     "danglingUiReference": "Referencia de UI colgante — el registro del fallo muestra \"{url}\" sin cargar mientras un archivo de mod la sigue pidiendo",
-    "evidenceGameReport": "Del informe de fallo de WG"
+    "evidenceGameReport": "Del informe de fallo de WG",
+    "missingModAsset": "Un archivo de mod referencia \"{{asset}}\", que no existe ni en el cliente ni en el árbol de mods"
   },
   "suspects": {
     "title": "Plugins sospechosos",
     "evidence": {
       "logMention": "Mencionado en el registro del juego",
       "recentChange": "Modificado recientemente",
-      "danglingRef": "Referencia colgante"
+      "danglingRef": "Referencia colgante",
+      "missingAsset": "Referencia a un recurso ausente"
     },
     "unknownBadge": "Desconocido",
     "quarantine": "Poner en cuarentena",

@@ -994,3 +994,39 @@ fn subject_tree_resolves_active_then_twin() {
     // Nowhere = a clear error.
     assert!(subject_tree(&root, "gui/nope.xml").is_err());
 }
+
+// ── proactive dangling-reference scan ───────────────────────────────────────
+
+#[cfg(windows)]
+#[test]
+fn swf_references_extract_from_mod_glue() {
+    let text = r#"<element url="battle_stats.swf">
+        <swffile>../unbound/mods/SecondaryArmament.swf</swffile>
+        <path> gui/fonts/WoWsSymbol.ttf </path>
+        <format>%s.swf</format>
+        <notaref>icon_default.png</notaref>
+    "#;
+    let refs = swf_refs_in_text(text);
+    assert!(refs.contains(&"battle_stats.swf".to_string()), "{refs:?}");
+    assert!(
+        refs.contains(&"secondaryarmament.swf".to_string()),
+        "{refs:?}"
+    );
+    assert!(!refs.iter().any(|r| r.contains('%')), "{refs:?}");
+    assert!(!refs.iter().any(|r| r.ends_with(".png")), "{refs:?}");
+}
+
+#[cfg(windows)]
+#[test]
+fn dangling_mod_references_flags_missing_and_ignores_present() {
+    use std::collections::HashSet;
+    let dir = TempDir::new("proactive-scan");
+    dir.touch("gui/battle_elements.xml", "<element url=battle_stats.swf>");
+    dir.touch("gui/other.xml", "<element url=main_hud.swf>");
+    let mut client = HashSet::new();
+    client.insert("main_hud.swf".to_string());
+    let refs = dangling_mod_references(&[dir.path().to_path_buf()], &client);
+    assert_eq!(refs.len(), 1, "{refs:?}");
+    assert_eq!(refs[0].asset, "battle_stats.swf");
+    assert!(refs[0].files[0].contains("battle_elements.xml"));
+}
