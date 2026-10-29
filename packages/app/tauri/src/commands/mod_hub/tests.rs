@@ -3242,3 +3242,35 @@ fn classify_refuses_a_junction_source_entry() {
     let _ = fs::remove_dir_all(&pkg);
     let _ = fs::remove_dir_all(&outside);
 }
+
+#[test]
+fn safe_mode_restore_sweeps_a_game_recreated_empty_res_mods() {
+    // The client rebuilds an EMPTY res_mods on the first launch after the
+    // quarantine (observed 2026-10-28). Turning safe mode off must clear
+    // that husk and restore the real tree instead of refusing; a live tree
+    // carrying files still refuses (merging real trees is the user's call).
+    let tmp = std::env::temp_dir().join("wowsp_safemode_husk");
+    let _ = fs::remove_dir_all(&tmp);
+    let rm = tmp.join("bin/1/res_mods");
+    touch(&rm.join("gui/battle_elements.xml"));
+    let root = tmp.to_string_lossy().into_owned();
+
+    assert!(set_safe_mode_core(&root, true).unwrap());
+    // The game relaunches and recreates the folder — empty.
+    fs::create_dir_all(rm.join("gui")).unwrap();
+    // Turning safe mode off sweeps the husk and restores the real tree.
+    assert!(!set_safe_mode_core(&root, false).unwrap());
+    assert!(rm.join("gui/battle_elements.xml").is_file());
+    assert!(!tmp.join("bin/1/res_mods.wowsp-disabled").exists());
+
+    // A live tree with actual files is still a hard conflict.
+    assert!(set_safe_mode_core(&root, true).unwrap());
+    touch(&rm.join("newfile.txt"));
+    let err = set_safe_mode_core(&root, false).unwrap_err();
+    assert!(
+        err.to_string().contains("move the newer one aside"),
+        "{err}"
+    );
+
+    fs::remove_dir_all(&tmp).ok();
+}
