@@ -367,8 +367,21 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"[e13] dataset not found: {q}")
 
     data = base.load_datasets(paths)
-    rows: list[dict] = data["rows_meta"]
-    oa = outcome_arrays(rows)
+    if data["rows_meta"] is not None:
+        oa = outcome_arrays(data["rows_meta"])
+    else:
+        # E19 streaming loader (>=2M rows) drops the raw dicts and
+        # pre-extracts the same outcome scalars — same semantics as
+        # outcome_arrays over the kept rows.
+        oa = {
+            "hits": data["outcome_hits"],
+            "fired": data["outcome_fired"],
+            "hp_lost": data["outcome_hp_lost"],
+            "mode": data["outcome_mode"],
+            "version": data["outcome_version"],
+            "rows_with_outcome_fields": data["outcome_rows"],
+        }
+    n_rows = int(len(data["label_b"]))
     if oa["rows_with_outcome_fields"] == 0:
         raise SystemExit(
             "[e13] no row carries outcome fields — re-export the dataset with the "
@@ -377,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Mode / version filters (ops and other non-randoms modes pollute the
     # decision distribution — Halloween ops in particular).
-    keep = np.ones(len(rows), dtype=bool)
+    keep = np.ones(n_rows, dtype=bool)
     mode_hist: dict[str | None, int] = {}
     for i, m in enumerate(oa["mode"]):
         mode_hist[m] = mode_hist.get(m, 0) + 1
@@ -404,7 +417,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(idx) == 0:
         raise SystemExit("[e13] every row filtered away (check --exclude-mode / --min-version)")
     print(
-        f"[e13] {len(rows)} rows ({oa['rows_with_outcome_fields']} with outcome fields) "
+        f"[e13] {n_rows} rows ({oa['rows_with_outcome_fields']} with outcome fields) "
         f"over {len(set(data['group']))} replays; kept {len(idx)}"
         + (f" (dropped {dropped_mode} by --exclude-mode)" if args.exclude_mode else "")
     )
@@ -416,7 +429,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report: dict = {
         "dataset": [str(q) for q in paths],
-        "rows_total": int(len(rows)),
+        "rows_total": n_rows,
         "rows_analyzed": int(len(idx)),
         "rows_with_outcome_fields": int(oa["rows_with_outcome_fields"]),
         "game_mode_histogram": {str(k): v for k, v in mode_hist.items()},
