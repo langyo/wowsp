@@ -990,3 +990,10 @@
 }
 
 /* ── Install cards (HkDraggableList rows) ─────────────────────────── */
+
+/* SectionBoundary's keyed remount host: display:contents keeps the section
+   root a direct layout child of the settings pane (no box, no scroll-chain
+   change), while still letting the boundary force a fresh mount. */
+.settings-section-host {
+  display: contents;
+}
