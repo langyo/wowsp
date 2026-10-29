@@ -69,7 +69,7 @@
     "dumpAvailable": "Un dump mémoire est disponible pour une analyse approfondie",
     "danglingUiReference": "Référence d'interface orpheline — le journal du plantage montre \"{url}\" en échec de chargement alors qu'un fichier de mod la demande encore",
     "evidenceGameReport": "D'après le rapport de plantage WG",
-    "missingModAsset": "Un fichier de mod référence « {{asset}} », absent du client et de l'arborescence des mods"
+    "missingModAsset": "Un fichier de mod référence « {asset} », absent du client et de l'arborescence des mods"
   },
   "suspects": {
     "title": "Plugins suspects",

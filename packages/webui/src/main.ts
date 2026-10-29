@@ -8,6 +8,7 @@ import { uiLocaleReady } from "@/i18n/useLanguage";
 import { bootstrap } from "./bootstrap";
 import { runStartupMigrations } from "./migrations";
 import { initAnalytics, trackPageView } from "@/utils/analytics";
+import { reportUiError } from "@/utils/uiError";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
 import "@/styles/image-asset.scss";

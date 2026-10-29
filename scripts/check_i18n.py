@@ -146,6 +146,59 @@ def table_value_paths(lang: str) -> list[str]:
     return out
 
 
+def check_message_syntax(key: str, text: str) -> list[str]:
+    """Reject message shapes the vue-i18n compiler throws on (a thrown
+    message compile crashes the rendering component — observed 2026-10:
+    a double-brace placeholder blanked the whole crash-analysis pane).
+
+    The project grammar is single-brace placeholders ({name}). Nested
+    braces ("{{name}}") are a compile error, as is any unmatched brace.
+    """
+    problems: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch == "{":
+            depth += 1
+            if depth > 1:
+                problems.append(f"{key}: nested placeholder in {text!r}")
+                return problems
+        elif ch == "}":
+            depth -= 1
+            if depth < 0:
+                problems.append(f"{key}: unmatched '}}' in {text!r}")
+                return problems
+    if depth != 0:
+        problems.append(f"{key}: unterminated placeholder in {text!r}")
+    return problems
+
+
+def walk_messages(node, prefix, problems):  # type: ignore[no-untyped-def]
+    if isinstance(node, dict):
+        for key, value in node.items():
+            walk_messages(value, f"{prefix}{key}.", problems)
+    elif isinstance(node, str):
+        problems.extend(check_message_syntax(prefix.rstrip("."), node))
+
+
+def message_syntax_paths(lang: str) -> list[str]:
+    """`<namespace>.json: <key>` for every message the vue-i18n compiler
+    would throw on (see check_message_syntax)."""
+    out: list[str] = []
+    lang_dir = LOCALES_DIR / lang
+    if not lang_dir.is_dir():
+        return out
+    for p in sorted(lang_dir.glob("*.json")):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        ns = p.stem
+        found: list[str] = []
+        walk_messages(data, "", found)
+        out.extend(f"{ns}.json: {item}" for item in found)
+    return out
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate WoWSP i18n key parity")
     parser.add_argument("--quiet", action="store_true")
@@ -175,6 +228,12 @@ def main() -> int:
         tbl = table_value_paths(lang)
         if tbl:
             tables[lang] = tbl
+
+    syntax: dict[str, list[str]] = {}
+    for lang in langs:
+        paths = message_syntax_paths(lang)
+        if paths:
+            syntax[lang] = paths
 
     problems: dict[str, list[str]] = {}
     for lang in langs:
@@ -214,16 +273,21 @@ def main() -> int:
                     # translation tables count as failures here even though
                     # --no-fail softens the parity exit (see the exit-code
                     # contract above).
-                    "parity": not problems and not dotted and not tables,
+                    "parity": not problems and not dotted and not tables and not syntax,
                     "problems": problems,
                     "dottedKeys": dotted,
                     "tableValues": tables,
+                    "messageSyntax": syntax,
                 },
                 indent=2,
                 ensure_ascii=False,
             )
         )
-    elif dotted or tables or problems:
+    elif dotted or tables or syntax or problems:
+        for lang, paths in syntax.items():
+            print(f"[{lang}] {len(paths)} message(s) the i18n compiler rejects:")
+            for it in paths:
+                print(f"  {it}")
         for lang, paths in dotted.items():
             print(f"[{lang}] {len(paths)} dotted key(s) — unresolvable without flatJson:")
             for it in paths:
@@ -239,7 +303,7 @@ def main() -> int:
     elif not args.quiet:
         print(f"i18n OK: {len(baseline_keys)} keys across {tuple(langs)}")
 
-    ok = not dotted and not tables and (not problems or args.no_fail)
+    ok = not dotted and not tables and not syntax and (not problems or args.no_fail)
     return 0 if ok else 1
 
 

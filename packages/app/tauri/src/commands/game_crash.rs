@@ -2623,7 +2623,9 @@ fn push_swf_token(refs: &mut Vec<String>, token: &str) {
         return;
     }
     let base = lower.rsplit('/').next().unwrap_or(lower.as_str());
-    if !base.is_empty() && !base.contains('%') {
+    // Toolchain placeholders spell their stubs with a leading "__"
+    // (ModForge's __forge_stub.swf) — never a real load target.
+    if !base.is_empty() && !base.contains('%') && !base.starts_with("__") {
         refs.push(base.to_string());
     }
 }
@@ -2686,6 +2688,12 @@ fn dangling_mod_references(bases: &[PathBuf], client: &HashSet<String>) -> Vec<M
     let mut present: HashSet<String> = HashSet::new();
     let mut scan_files: Vec<(PathBuf, String)> = Vec::new();
     let mut seen = 0usize;
+    // The ModForge toolkit builds packages; its templates reference stub
+    // SWFs that never load at runtime. Scanning them is pure noise.
+    let is_toolchain = |rel: &str| {
+        let lower = rel.to_ascii_lowercase();
+        lower.starts_with("pnfmods/modforge/")
+    };
     for base in bases {
         let mut stack = vec![base.clone()];
         while let Some(dir) = stack.pop() {
@@ -2712,7 +2720,9 @@ fn dangling_mod_references(bases: &[PathBuf], client: &HashSet<String>) -> Vec<M
                         .strip_prefix(base)
                         .map(|p| p.to_string_lossy().replace('\\', "/"))
                         .unwrap_or_else(|_| name.clone());
-                    scan_files.push((path, rel));
+                    if !is_toolchain(&rel) {
+                        scan_files.push((path, rel));
+                    }
                 }
             }
         }
