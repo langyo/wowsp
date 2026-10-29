@@ -188,11 +188,43 @@
   min-width: 0;
 }
 
-.chat-settings__advanced {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  padding: 0.35rem 0 0.15rem;
+/* Numeric fields: hikari's HkNumberInput is a BLOCK field (width: 100%)
+   because it is designed as a form row of its own. Dropped into a
+   label-left/control-right row it eats the whole line and squeezes the
+   label into a two-glyph column ("面板行\n数"), and a number never needs
+   more than a few characters — every numeric field in the chat windows is
+   therefore pinned to this compact width (the ManualLocate calibration
+   control's .ml-count precedent). */
+/* The single source of the compact numeric width: a 7rem basis that may
+   shrink down to 4.5rem on a cramped row (never below the stepper's own
+   footprint), matching the ManualLocate calibration control's precedent. */
+.hk-number-input.chat-settings__number {
+  flex: 0 1 7rem;
+  width: 7rem;
+  min-width: 4.5rem;
+}
+
+/* The advanced-parameters row (timeout + temperature) stays ONE line: two
+   labelled compact fields. It carries the expansion panel's body inset so
+   the row lines up with the panel title (the MD3 header's 12px padding)
+   instead of hugging the panel frame. */
+.chat-settings__param-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  padding: 0.35rem 0.75rem 0.35rem;
+}
+
+.chat-settings__param {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.chat-settings__param > .settings-modal__lang-label {
+  white-space: nowrap;
 }
 
 .chat-settings__advanced-panel {

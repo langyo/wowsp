@@ -495,12 +495,17 @@ export default defineComponent({
             title={t("settings.chatTranslate.advancedParams")}
             subtitle={t("settings.chatTranslate.advancedHint")}
           >
-            <div class="chat-settings__advanced">
-              <div class="chat-settings__field">
+            {/* Both knobs on ONE line (the review asked for "timeout and
+                temperature as parameters in a row"): each is a label + a
+                compact field; the row wraps only on genuinely narrow
+                windows. */}
+            <div class="chat-settings__param-row">
+              <label class="chat-settings__param">
                 <span class="settings-modal__lang-label">
                   {t("settings.chatTranslate.timeoutMs")}
                 </span>
                 <HkNumberInput
+                  class="chat-settings__number"
                   modelValue={timeoutDraft.value}
                   onUpdate:modelValue={(value: number) => {
                     providerTouched.value = true;
@@ -510,12 +515,13 @@ export default defineComponent({
                   max={60000}
                   step={500}
                 />
-              </div>
-              <div class="chat-settings__field">
+              </label>
+              <label class="chat-settings__param">
                 <span class="settings-modal__lang-label">
                   {t("settings.chatTranslate.temperature")}
                 </span>
                 <HkNumberInput
+                  class="chat-settings__number"
                   modelValue={temperatureDraft.value}
                   onUpdate:modelValue={(value: number) => {
                     providerTouched.value = true;
@@ -525,7 +531,7 @@ export default defineComponent({
                   max={2}
                   step={0.1}
                 />
-              </div>
+              </label>
             </div>
           </HkExpansionPanel>
 

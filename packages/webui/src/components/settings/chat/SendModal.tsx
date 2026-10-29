@@ -52,11 +52,11 @@ export default defineComponent({
                 }
               />
             </div>
-          </div>
-          <div class="settings-modal__langs">
-            <div class="settings-modal__lang">
-              <span class="settings-modal__lang-label">
-                {t("settings.chatTranslate.suffixFormat")}
+            <div class="stats-prefs__row">
+              <span class="stats-prefs__row-text">
+                <span class="stats-prefs__row-label">
+                  {t("settings.chatTranslate.suffixFormat")}
+                </span>
               </span>
               <HkTabs
                 block
@@ -77,11 +77,14 @@ export default defineComponent({
                 ]}
               />
             </div>
-            <div class="settings-modal__lang">
-              <span class="settings-modal__lang-label">
-                {t("settings.chatTranslate.splitChars")}
+            <div class="stats-prefs__row">
+              <span class="stats-prefs__row-text">
+                <span class="stats-prefs__row-label">
+                  {t("settings.chatTranslate.splitChars")}
+                </span>
               </span>
               <HkNumberInput
+                class="chat-settings__number"
                 modelValue={store.config.send.splitChars}
                 onUpdate:modelValue={(value: number) =>
                   void store.setSend({ splitChars: value })
@@ -90,11 +93,14 @@ export default defineComponent({
                 max={138}
               />
             </div>
-            <div class="settings-modal__lang">
-              <span class="settings-modal__lang-label">
-                {t("settings.chatTranslate.hintTimeout")}
+            <div class="stats-prefs__row">
+              <span class="stats-prefs__row-text">
+                <span class="stats-prefs__row-label">
+                  {t("settings.chatTranslate.hintTimeout")}
+                </span>
               </span>
               <HkNumberInput
+                class="chat-settings__number"
                 modelValue={store.config.send.hintTimeoutS}
                 onUpdate:modelValue={(value: number) =>
                   void store.setSend({ hintTimeoutS: value })

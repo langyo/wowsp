@@ -265,6 +265,7 @@ export default defineComponent({
                       </span>
                     </span>
                     <HkNumberInput
+                      class="chat-settings__number"
                       modelValue={overlayCfg.chatPanelMaxLines}
                       onUpdate:modelValue={(value: number) =>
                         void overlayCfg.setChatPanelMaxLines(value)

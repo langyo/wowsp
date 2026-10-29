@@ -126,11 +126,19 @@ export default defineComponent({
                 ]}
               />
             </div>
-            <div class="settings-modal__lang">
-              <span class="settings-modal__lang-label">
-                {t("settings.chatTranslate.maxTargets")}
+          </div>
+          {/* The numeric cap follows the settings row grammar (label left,
+              compact control right) instead of sitting in a grid column as
+              a full-width bar. */}
+          <div class="stats-prefs">
+            <div class="stats-prefs__row">
+              <span class="stats-prefs__row-text">
+                <span class="stats-prefs__row-label">
+                  {t("settings.chatTranslate.maxTargets")}
+                </span>
               </span>
               <HkNumberInput
+                class="chat-settings__number"
                 modelValue={store.config.languages.maxTargets}
                 onUpdate:modelValue={(value: number) =>
                   void store.setLanguages({ maxTargets: value })
