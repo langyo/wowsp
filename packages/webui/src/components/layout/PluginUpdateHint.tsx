@@ -1,8 +1,15 @@
 import { computed, defineComponent, nextTick, onBeforeUnmount, ref, Teleport, watch } from "vue";
 import type { PropType, Ref } from "vue";
 import { useRouter } from "vue-router";
-import { AlertTriangle, ArrowUpCircle, ChevronRight, Crosshair, Puzzle } from "@lucide/vue";
-import { HkMenuActionItem, HkMenuPanel, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
+import { AlertTriangle, ArrowUpCircle, ChevronRight, Crosshair, Minus, Puzzle } from "@lucide/vue";
+import {
+  HkMenuActionItem,
+  HkMenuPanel,
+  HkScrollContainer,
+  HkSpinner,
+  scheduleCronAfter,
+  type CronHandle,
+} from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { INGAME_PLUGIN_MOD_ID } from "@/components/settings/useSettingsGamePaths";
@@ -17,6 +24,11 @@ import "./PluginUpdateHint.scss";
 const OPEN_DELAY_MS = 250;
 /** Grace between leaving the trigger/popup and actually closing. */
 const CLOSE_GRACE_MS = 180;
+/** A parked (minimized) card returns only on a SETTLED hover on the
+ *  trigger — deliberately much longer than the tooltip rhythm, so a
+ *  drive-by pass across the selector does not yank the card the user
+ *  just put away straight back up. Exported for the tests. */
+export const REOPEN_DELAY_MS = 600;
 /** Gap between the anchor card's right edge and the popup. */
 const ANCHOR_GAP_PX = 10;
 /** Viewport breathing room kept above/below the popup. */
@@ -57,6 +69,14 @@ interface HintEntry {
  * warning line; the pin lifts when the game closes or the probe catches
  * up, and hover behavior takes over again.
  *
+ * A minimize button in the card's top-right corner PARKS it: the card
+ * drops — even when pinned, a deliberate dismissal wins — until a
+ * settled hover (REOPEN_DELAY_MS debounce, hikari's cron bus) on the
+ * client-version selector brings it back; the count badge stays on the
+ * selector as the cue that pulls the pointer there. The parked state is
+ * per-mount and cleared when a fresh stale episode begins from an empty
+ * card, so a brand-new reminder is never silently pre-dismissed.
+ *
  * Renders just the slot when nothing is outdated — the plain path
  * tooltip stays whatever the slot's parent wraps it in.
  */
@@ -85,8 +105,20 @@ export default defineComponent({
      *  follow-up is "close the game, then update"). */
     const hoverSpan = ref(false);
     const hoverPop = ref(false);
-    let openTimer: number | undefined;
-    let closeTimer: number | undefined;
+    // Hover/debounce timers ride hikari's cron bus (a setTimeout
+    // passthrough with a disconnect handle) instead of bare window
+    // timers — same rhythm, inspectable handle, one cleanup path.
+    let openTimer: CronHandle | undefined;
+    let closeTimer: CronHandle | undefined;
+    /** The parked card's settled-hover reopen debounce. */
+    let reopenTimer: CronHandle | undefined;
+    /** Parked by the minimize button: the card stays down — the pin's
+     *  auto-open included (a deliberate dismissal wins over the
+     *  reminder) — until a settled hover on the trigger unparks it.
+     *  Per-mount state, deliberately not persisted: a stale episode
+     *  that begins after the card fully emptied must announce itself
+     *  again (watch below clears the park when the count returns). */
+    const minimized = ref(false);
     /** Anchor snapshot behind the current popStyle: the popup's left
      *  edge and the vertical center its translateY(-50%) hangs on. */
     let anchorLeft = 0;
@@ -121,9 +153,10 @@ export default defineComponent({
     });
 
     function clearTimers(): void {
-      if (openTimer !== undefined) window.clearTimeout(openTimer);
-      if (closeTimer !== undefined) window.clearTimeout(closeTimer);
-      openTimer = closeTimer = undefined;
+      openTimer?.disconnect();
+      closeTimer?.disconnect();
+      reopenTimer?.disconnect();
+      openTimer = closeTimer = reopenTimer = undefined;
     }
 
     /** Rewrite the popup style off the anchor snapshot, clamping the
@@ -154,6 +187,9 @@ export default defineComponent({
     }
 
     async function show(): Promise<void> {
+      // Parked: every auto-open yields to the dismissal — only the
+      // trigger's settled hover (onEnter's reopen branch) unparks.
+      if (minimized.value) return;
       if (!place()) {
         // An immediate pin at setup can fire before the anchor sibling's
         // ref is wired (or before this component's own wrapper mounts)
@@ -173,20 +209,49 @@ export default defineComponent({
       popStyle.value = null;
     }
 
+    /** The corner button: park the card for now. Clears any pending
+     *  open/close/reopen timer with it — a half-elapsed open debounce
+     *  must not resurrect the card the user just dismissed. */
+    function minimize(): void {
+      minimized.value = true;
+      clearTimers();
+      close();
+    }
+
+    // A stale episode that begins after the card fully emptied must
+    // not inherit an old park — the badge counts up again and the card
+    // has to be able to answer it (pinned or hover-open alike).
+    watch(() => updates.totalCount, (n, was) => {
+      if (n > 0 && (was ?? 0) === 0) minimized.value = false;
+    });
+
     function onEnter(): void {
       hoverSpan.value = true;
       if (updates.totalCount === 0) return;
       clearTimers();
-      openTimer = window.setTimeout(() => void show(), OPEN_DELAY_MS);
+      if (minimized.value) {
+        // Parked card: a settled hover on the trigger unparks it —
+        // REOPEN_DELAY_MS is the debounce that keeps a fleeting pass
+        // across the selector from undoing the dismissal.
+        reopenTimer = scheduleCronAfter(() => {
+          minimized.value = false;
+          // The episode can fully empty during the debounce — reopening
+          // would only strand the hidden popup on open=true.
+          if (updates.totalCount > 0) void show();
+        }, REOPEN_DELAY_MS);
+        return;
+      }
+      openTimer = scheduleCronAfter(() => void show(), OPEN_DELAY_MS);
     }
 
     function onLeave(): void {
       hoverSpan.value = false;
-      if (openTimer !== undefined) {
-        window.clearTimeout(openTimer);
-        openTimer = undefined;
-      }
-      closeTimer = window.setTimeout(() => {
+      openTimer?.disconnect();
+      openTimer = undefined;
+      reopenTimer?.disconnect();
+      reopenTimer = undefined;
+      closeTimer?.disconnect();
+      closeTimer = scheduleCronAfter(() => {
         // A pinned card outlives the pointer — the reminder stays.
         if (!pinned.value) close();
       }, CLOSE_GRACE_MS);
@@ -298,6 +363,17 @@ export default defineComponent({
                   onLeave();
                 }}
               >
+                {/* Park-for-now: drops the card; a settled hover on the
+                    selector brings it back (the badge stays as the cue). */}
+                <button
+                  type="button"
+                  class="plugin-update-hint__min"
+                  aria-label={t("resources.pluginUpdateMinimize")}
+                  title={t("resources.pluginUpdateMinimize")}
+                  onClick={minimize}
+                >
+                  <Minus size={12} />
+                </button>
                 <p class="plugin-update-hint__title">
                   {multi
                     ? t("resources.pluginUpdateCountMulti", { count, clients: groups.length })

@@ -5,7 +5,9 @@
  * pinned, the anchor geometry (right of the game-status card, vertically
  * centered on it), the clickable rows deep-linking each stale plugin's
  * mod-hub page, the busy action's spinner + updating label, and the
- * one-click action driving the all-installs pass.
+ * one-click action driving the all-installs pass, and the minimize
+ * button parking the card (the settled-hover reopen debounce, and the
+ * park winning over the pin's auto-open until the hover unparks it).
  *
  * The api module is mocked; the pinia stores are real (their refs are
  * set directly). happy-dom measures every box as 0×0, so the anchor
@@ -41,7 +43,7 @@ import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { installLabel } from "@/utils/installLabel";
-import PluginUpdateHint from "./PluginUpdateHint";
+import PluginUpdateHint, { REOPEN_DELAY_MS } from "./PluginUpdateHint";
 
 enableAutoUnmount(afterEach);
 
@@ -412,5 +414,123 @@ describe("PluginUpdateHint", () => {
     expect(btn?.disabled).toBe(true);
     expect(btn?.querySelector(".hk-spinner")).not.toBeNull();
     expect(btn?.textContent).toContain(t("resources.pluginUpdateRunning"));
+  });
+
+  describe("minimize (parked card)", () => {
+    const RUNNING_PROC = {
+      running: true,
+      pid: 42,
+      kind: "steam" as const,
+      realm: "asia" as const,
+      exePath: `${GAME}\\WorldOfWarships.exe`,
+      matchedInstall: { kind: "steam" as const, path: GAME, realm: "asia" },
+    };
+    const OFFLINE_PROC = {
+      running: false,
+      pid: null,
+      kind: null,
+      realm: null,
+      exePath: null,
+      matchedInstall: null,
+    };
+
+    it("the minimize button parks the card until a settled trigger hover", async () => {
+      // Pinned card (running client, stale probe): the dismissal must
+      // win over the pin, too.
+      const { wrapper } = await mountHint({ probeOutdated: true, running: true }, anchorCard());
+      expect(pop()).not.toBeNull();
+
+      const min = pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__min");
+      expect(min).toBeTruthy();
+      expect(min?.getAttribute("aria-label")).toBe(t("resources.pluginUpdateMinimize"));
+      min?.click();
+      await flushPromises();
+      expect(pop()).toBeNull();
+
+      // A drive-by pass (hover shorter than the reopen debounce) must
+      // not bring the card straight back up.
+      await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+      vi.advanceTimersByTime(REOPEN_DELAY_MS - 1);
+      await flushPromises();
+      expect(pop()).toBeNull();
+
+      // A settled hover does.
+      vi.advanceTimersByTime(1);
+      await flushPromises();
+      expect(pop()).not.toBeNull();
+    });
+
+    it("leaving the trigger before the reopen debounce cancels it", async () => {
+      const { wrapper } = await mountHint({ probeOutdated: true, running: false }, anchorCard());
+      await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+      vi.advanceTimersByTime(250);
+      await flushPromises();
+      pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__min")?.click();
+      await flushPromises();
+      expect(pop()).toBeNull();
+
+      await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+      vi.advanceTimersByTime(100);
+      await wrapper.find(".plugin-update-hint").trigger("mouseleave");
+      vi.advanceTimersByTime(REOPEN_DELAY_MS + 500);
+      await flushPromises();
+      expect(pop()).toBeNull();
+
+      // The card stays parked — the next settled hover still unparks it.
+      await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+      vi.advanceTimersByTime(REOPEN_DELAY_MS);
+      await flushPromises();
+      expect(pop()).not.toBeNull();
+    });
+
+    it("a parked card stays down even when the pin re-arms", async () => {
+      const { wrapper, gameStatus } = await mountHint(
+        { probeOutdated: true, running: true },
+        anchorCard(),
+      );
+      pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__min")?.click();
+      await flushPromises();
+      expect(pop()).toBeNull();
+
+      // Pin lifts (game closes) and re-arms (client running, probe
+      // stale again) — neither flip may auto-open the parked card.
+      gameStatus.process = OFFLINE_PROC;
+      await flushPromises();
+      gameStatus.process = RUNNING_PROC;
+      await flushPromises();
+      expect(pop()).toBeNull();
+
+      // The settled hover is still the way back.
+      await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+      vi.advanceTimersByTime(REOPEN_DELAY_MS);
+      await flushPromises();
+      expect(pop()).not.toBeNull();
+    });
+
+    it("a stale episode starting from an emptied card never inherits the park", async () => {
+      const { wrapper, updates } = await mountHint(
+        { probeOutdated: false, running: false, mods: [{ id: "a", name: "mod-a" }] },
+        anchorCard(),
+      );
+      await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+      vi.advanceTimersByTime(250);
+      await flushPromises();
+      pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__min")?.click();
+      await flushPromises();
+
+      // Everything updates elsewhere → the badge empties; a NEW stale
+      // episode then begins. The park must not pre-dismiss it.
+      updates.perInstall = {};
+      await flushPromises();
+      updates.perInstall = {
+        [GAME]: { mods: [{ id: "b", name: "mod-b" }], probeOutdated: true },
+      };
+      await flushPromises();
+
+      await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+      vi.advanceTimersByTime(250); // the NORMAL tooltip rhythm — not the reopen debounce
+      await flushPromises();
+      expect(pop()).not.toBeNull();
+    });
   });
 });

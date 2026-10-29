@@ -51,6 +51,43 @@
     font-size: var(--text-xs, 0.75rem);
     font-weight: 600;
     color: var(--hi-color-warning, #d29922);
+    // The corner minimize button (absolute, top-right) — a long title
+    // must wrap short of it, never run underneath.
+    padding-right: 28px;
+  }
+
+  // The minimize button — parks the card (the trigger's settled hover
+  // brings it back). A quiet corner ghost at rest, hover face like the
+  // menu rows' wash.
+  &__min {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: rgb(var(--color-muted));
+    cursor: pointer;
+    transition:
+      background-color var(--duration-short, 0.15s) ease,
+      color var(--duration-short, 0.15s) ease;
+
+    &:hover {
+      // the menu rows' own wash token
+      background: var(--c-primary-subtle, rgb(var(--color-primary) / 8%));
+      color: rgb(var(--color-text));
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary) / 70%);
+      outline-offset: -2px;
+    }
   }
 
   // The standing reminder shown while the running client's probe plugin
@@ -88,6 +125,24 @@
         opacity: 1;
         pointer-events: auto;
       }
+    }
+  }
+
+  // The menu rows' label optical shift, tuned for this card. The
+  // menu-item grammar nudges the label DOWN 0.5px (--hk-menu-item-
+  // optical, "tunable per host") because small CJK rasterization biases
+  // glyph ink HIGH against box-centered icons; on zh UI fonts the CJK
+  // ink instead settles low in the line box, so the rows read
+  // icon-high/text-low — measured off a user screenshot (2026-10-29):
+  // label ink center ~1.4 CSS px below the icon cell's center while the
+  // suffix chevron sits on the flex centerline. -1px (net 1.5px up
+  // from the stock nudge) re-centers the perceived mass. The (0,2,0)
+  // descendant rule beats the row's own (0,1,0) token declaration —
+  // the same mechanism the grammar's sheet contexts use. Scoped to
+  // this card; other menu surfaces retune only if they read the same.
+  &__menu {
+    .hk-menu-action-item {
+      --hk-menu-item-optical: -1px;
     }
   }
 

@@ -96,6 +96,7 @@
   "pluginUpdateStaleWarning": "The running client's plugin is out of date — stats shown while holding Tab may be inaccurate.",
   "pluginUpdateSkipped": "\"{names}\" is running — skipped {count} update(s). Close the game, then run Update all again.",
   "pluginUpdateBadge": "Updates",
+  "pluginUpdateMinimize": "Hide for now",
   "pluginUpdateStep": "Updating {name} ({done}/{total})",
   "pluginUpdateDownloading": "downloading {percent}%",
   "pluginUpdateInstalling": "installing",

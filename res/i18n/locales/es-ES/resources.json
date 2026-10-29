@@ -96,6 +96,7 @@
   "pluginUpdateStaleWarning": "El complemento del cliente en ejecución no está actualizado: las estadísticas mostradas al mantener Tab pueden ser imprecisas.",
   "pluginUpdateSkipped": "«{names}» está en ejecución: se omitieron {count} actualización(es). Cierra el juego y vuelve a ejecutar Actualizar todo.",
   "pluginUpdateBadge": "Actualiz.",
+  "pluginUpdateMinimize": "Ocultar por ahora",
   "pluginUpdateStep": "Actualizando {name} ({done}/{total})",
   "pluginUpdateDownloading": "descargando {percent}%",
   "pluginUpdateInstalling": "instalando",

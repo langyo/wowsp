@@ -96,6 +96,7 @@
   "pluginUpdateStaleWarning": "Плагин запущенного клиента устарел — показываемая при удержании Tab статистика может быть неточной.",
   "pluginUpdateSkipped": "«{names}» запущен — пропущено обновлений: {count}. Закройте игру и запустите «Обновить всё» снова.",
   "pluginUpdateBadge": "Обновления",
+  "pluginUpdateMinimize": "Временно скрыть",
   "pluginUpdateStep": "Обновление {name} ({done}/{total})",
   "pluginUpdateDownloading": "загрузка {percent}%",
   "pluginUpdateInstalling": "установка",
