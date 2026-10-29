@@ -346,7 +346,7 @@
   "wallpaperBlurSidebar": "Desenfoque del fondo de la barra lateral",
   "wallpaperBlurMain": "Desenfoque del fondo del área principal",
   "uiOpacity": "Opacidad de la interfaz",
-  "uiOpacityHint": "Un único control para todas las superficies de cristal: el 95 % es el aspecto por defecto (el fondo se intuye detrás); por debajo deja ver más el fondo, por encima los paneles se vuelven más sólidos.",
+  "uiOpacityHint": "Un único control para todas las superficies de cristal: por defecto el 100 % es totalmente opaco; bájalo para que el fondo se vea a través de la interfaz (el 0 % es el mínimo de cristal de hikari).",
   "pairingPinCopy": "Copiar código",
   "pairingPinCopied": "Código copiado al portapapeles",
   "dataSourceShipData": "Paquete de datos de buques",

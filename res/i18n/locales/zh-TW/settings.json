@@ -346,7 +346,7 @@
   "wallpaperBlurSidebar": "側邊欄背景模糊度",
   "wallpaperBlurMain": "主內容背景模糊度",
   "uiOpacity": "介面不透明度",
-  "uiOpacityHint": "統一調整所有玻璃面板：95% 為預設觀感（微微透出背景），調低更透，調高讓面板在花俏背景下更紮實。",
+  "uiOpacityHint": "統一調節所有玻璃表面：預設 100% 完全不透明；調低可透出背景（0% 為 hikari 的玻璃基準）。",
   "pairingPinCopy": "複製配對碼",
   "pairingPinCopied": "配對碼已複製到剪貼簿",
   "dataSourceShipData": "艦艇資料包",

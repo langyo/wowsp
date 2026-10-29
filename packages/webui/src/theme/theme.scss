@@ -72,12 +72,11 @@ html.s-theme-transitioning .hk-input-box textarea {
   --blur-md: 16px;
   --blur-lg: 24px;
   /* UI surface opacity dial (uiOpacityPreference.ts writes the inline
-     override on <html>): one multiplier over every translucent surface in
-     the app. 0.95 = the shipped default — a hair clearer than the
-     fully-solid paint, so the wallpaper still ghosts under every UI
-     element; the glass family rescales together around it. See the bridge
-     section below the scrim rule. */
-  --ui-opacity: 0.95;
+     override on <html>): SOLIDITY of the whole surface family.
+     1.00 = fully opaque — the shipped default; lowering it moves every
+     glass surface toward hikari's shipped glass alpha (0.00). The fills
+     that read it live in theme/surfaces.scss. */
+  --ui-opacity: 1;
 
   /* Z-index hierarchy */
   --z-base: 0;
@@ -363,77 +362,14 @@ html[data-wallpaper-art="true"] body::after {
   }
 }
 
-/* === UI surface opacity dial — hikari bridge ==============================
-   The chrome-side twin of the wallpaper overlay scrim above: every
-   translucent surface multiplies its shipped alpha by --ui-opacity
-   (default 0.95 — the shipped glass sits a hair clearer than fully
-   solid; min-capped at fully opaque), restated here for the hikari-owned
-   surfaces wowsp has no SCSS of its own for. Hikari's aggregate loads
-   BEFORE theme.scss (main.ts import order), so an equal-specificity
-   rule in this file wins the cascade. Fully opaque surfaces (stats
-   tables, inputs, phone bottom sheets) are deliberately outside the
-   dial: they are content chrome, not wallpaper-adaptive glass.
-
-   Every scaled spelling is guarded: a plain declaration keeps today's
-   value on engines without math-in-color support (invalid declarations
-   drop at parse time and the earlier line wins), while custom-property
-   spellings fail at the USAGE site instead — those are gated behind an
-   @supports probe rather than a duplicate line. */
-
-/* Settings "cards" (hikari ships 55% glass) and the shared tab-strip
-   track (60%) — the latter hosts the font-size segmented control right
-   under the dial itself, so it must follow it. */
-.hk-settings-group {
-  background: rgb(var(--color-surface) / 55%);
-  background: rgb(var(--color-surface) / min(100%, calc(55% * var(--ui-opacity, 1))));
-}
-.hk-tabs-list {
-  background: rgb(var(--color-surface) / 60%);
-  background: rgb(var(--color-surface) / min(100%, calc(60% * var(--ui-opacity, 1))));
-}
-/* The tab-strip track is hikari's own 60% glass (HkTabs.scss) and keeps that
-   surface — the same shipped look the sibling shittim-chest project renders
-   there (it has no track fill rule at all). That dial only rescales the
-   library's base alpha rather than substituting a new look: at 100% the
-   track is identical to upstream (the 95% shipped dial renders it at 57%),
-   and wowsp's UI-surface-opacity preference still reaches the strip that
-   hosts the font-size control underneath the dial. */
-
-/* Desktop modals: hikari's default is the OPAQUE --hi-color-surface with
-   no backdrop blur. Restated at base 100% so the dial rescales them like
-   every other glass surface — at the 95% default the panel rests as
-   95%-alpha glass (no blur); dragging below the default turns it clearer,
-   and the blur token (a no-op behind an opaque fill) kicks in there to
-   keep that glass readable. The blur is keyed to the [data-ui-glass]
-   marker uiOpacityPreference.ts sets only below the default percent, so
-   the shipped look never allocates a backdrop layer. Scoped to ≥768px;
-   below that hikari docks modals as opaque phone bottom sheets and
-   deliberately drops mobile backdrop blur (see OnboardingWizard.scss). */
-@media (min-width: 768px) {
-  :root {
-    --hk-modal-bg: var(--hi-color-surface);
-    /* HkModal paints fixed 1.5rem "gutter covers" over the body's top and
-       bottom padding (HkScrollPin's mask, defaulting to --hk-modal-bg) so
-       scrolled content never slides through the whitespace. That default
-       assumes an OPAQUE frame: over this glass the cover re-paints the
-       same translucent fill ON TOP of the already-painted body, and the
-       stacked alpha (0.95 over 0.95 ≈ 0.998) surfaces as two visibly
-       denser 24px bands above and below the settings shell. The settings
-       body never scrolls anyway (the host contract keeps the shell
-       fitting), and no wowsp modal relies on the mask — let the padding
-       read as the plain glass it is. Scoped beside the bg re-theme; phone
-       sheets stay opaque, so their covers are invisible either way. */
-    --hk-scroll-pin-cover-bg: transparent;
-  }
-  :root[data-ui-glass] {
-    --hk-modal-blur: blur(var(--blur-md));
-  }
-  @supports (background: rgb(0 0 0 / min(100%, calc(1% * var(--ui-opacity, 1))))) {
-    :root {
-      --hk-modal-bg: rgb(var(--color-surface) / min(100%, calc(100% * var(--ui-opacity, 1))));
-    }
-  }
-}
+/* === UI surface opacity dial — see theme/surfaces.scss ====================
+   The dial lives in the surface layer now: --ui-opacity is SOLIDITY
+   (1 = fully opaque, the shipped default; 0 = hikari's glass floor) and
+   theme/surfaces.scss owns every fill that interpolates it, including the
+   hikari-owned surfaces restated there (the settings cards, the shared
+   tab-track, the floating layers, and the component rules that hardcode a
+   translucent fill). This file only keeps the theme tokens and the
+   per-surface overrides wowsp genuinely owns. */
 
 /* Solid PRIMARY icon buttons follow the fill's luminance (user direction
    2026-10-17, retracting the uniform white-on-solid rule): hikari's

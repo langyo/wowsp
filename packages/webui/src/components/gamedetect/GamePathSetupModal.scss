@@ -1,5 +1,5 @@
 // Game-path setup modal. Shares the settings-modal card conventions
-// (translucent group cards, muted hints) so the two surfaces feel alike.
+// (glass group cards, muted hints) so the two surfaces feel alike.
 
 .game-path-modal {
   display: flex;
@@ -20,8 +20,8 @@
     flex-direction: column;
     gap: 0.25rem;
     padding: 0.6rem 0.85rem;
-    background: rgb(var(--color-surface) / 55%);
-    background: rgb(var(--color-surface) / min(100%, calc(55% * var(--ui-opacity, 1))));
+    background: rgb(var(--color-surface));
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
     border: 1px solid rgb(var(--color-border) / 15%);
     border-radius: var(--radius-md);
   }
@@ -67,16 +67,16 @@
     gap: 0.15rem;
     padding: 0.5rem 0.75rem;
     text-align: left;
-    background: rgb(var(--color-surface) / 45%);
-    background: rgb(var(--color-surface) / min(100%, calc(45% * var(--ui-opacity, 1))));
+    background: rgb(var(--color-surface));
+    background: rgb(var(--color-surface) / min(100%, calc(45% + 55% * var(--ui-opacity, 1))));
     border: 1px solid rgb(var(--color-border) / 15%);
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: border-color 0.15s ease, background-color 0.15s ease;
 
     &:hover {
-      background: rgb(var(--color-surface) / 70%);
-      background: rgb(var(--color-surface) / min(100%, calc(70% * var(--ui-opacity, 1))));
+      background: rgb(var(--color-surface));
+      background: rgb(var(--color-surface) / min(100%, calc(70% + 30% * var(--ui-opacity, 1))));
       border-color: rgb(var(--color-border) / 35%);
     }
 

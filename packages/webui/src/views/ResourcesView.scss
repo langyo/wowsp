@@ -21,8 +21,8 @@
     flex-direction: column;
     min-height: 0;
     border-right: 1px solid rgb(var(--color-border) / 20%);
-    background: rgb(var(--color-surface) / 50%);
-    background: rgb(var(--color-surface) / min(100%, calc(50% * var(--ui-opacity, 1))));
+    background: rgb(var(--color-surface));
+    background: rgb(var(--color-surface) / min(100%, calc(50% + 50% * var(--ui-opacity, 1))));
     overflow: hidden;
   }
 

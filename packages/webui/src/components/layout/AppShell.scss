@@ -29,16 +29,23 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* Readability stage for the content side ("加白/加黑"): the shell's
-       right column carries a theme-background wash so text-dense pages
-       keep their contrast over the artwork, while the sidebar stays the
-       clearer glass rail (Sidebar.scss). Stacks on the body-level scrim
-       (theme.scss, --wallpaper-overlay-opacity); invisible over the solid
-       fallback, where body already paints this exact color. Dial-scaled
-       like every glass surface — the plain declaration keeps engines
-       without math-in-color at the flat 35%. */
-    background: rgb(var(--color-background) / 35%);
-    background: rgb(var(--color-background) / min(100%, calc(35% * var(--ui-opacity, 1))));
+    /* Readability stage for the content side ("加白/加黑"): with an image
+       wallpaper the shell's right column carries a 35% theme-background wash
+       so text-dense pages keep their contrast over the artwork, while the
+       sidebar keeps its own base alpha (Sidebar.scss). This band is the
+       PAGE CANVAS, not a UI surface: it is deliberately OUTSIDE the
+       opaque-default surface layer and the UI-opacity dial (theme/
+       surfaces.scss) — the wallpaper feature is what it exists for. With no
+       wallpaper it paints the plain theme background (opaque; the solid
+       fallback that body would paint anyway), so the shipped default is
+       fully opaque while the wallpaper still reads when the user enables
+       one. Stacks on the body-level scrim (theme.scss,
+       --wallpaper-overlay-opacity). */
+    background: rgb(var(--color-background));
+
+    html[data-wallpaper-art="true"] & {
+      background: rgb(var(--color-background) / 35%);
+    }
   }
 
   /* Fills the main column; its viewport is the page scroll element. */
@@ -111,7 +118,7 @@
   }
 
   /* Uniform full-screen scrim: the overlay itself spans inset:0, but the
-     fixed title bar (z 100001) paints its translucent glass ABOVE it, so
+     fixed title bar (z 100001) paints its own fill ABOVE it, so
      the top 32px band stayed bright against the dimmed rest. Paint the
      same curtain over the bar while the drawer is open — :has() keys off
      the drawer layers hikari teleports to <body> (the nav drawer is the

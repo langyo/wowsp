@@ -94,11 +94,12 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   // writes inline :root overrides after the stylesheets load — same
   // authoritative-key-wins contract as the mode preference above.
   initFontScalePreference();
-  // WoWSP's UI-opacity preference writes the inline `--ui-opacity`
-  // multiplier over every translucent surface (glass panels, modals, the
-  // title bar) — same authoritative-key-wins contract as above. The
-  // game-overlay window never calls bootstrap() (see initDpiPrefs), so its
-  // transparent roster cannot pick up a dial meant for the main shell.
+  // WoWSP's UI-surface-opacity preference writes the inline `--ui-opacity`
+  // SOLIDITY value the surface layer interpolates every fill with (theme/
+  // surfaces.scss: 1 = fully opaque, the shipped default) — same
+  // authoritative-key-wins contract as above. The game-overlay window never
+  // calls bootstrap() (see initDpiPrefs), so its transparent roster cannot
+  // pick up a dial meant for the main shell.
   initUiOpacityPreference();
   // WoWSP's wallpaper blur preference writes the inline
   // `--wallpaper-blur-sidebar` / `--wallpaper-blur-main` values consumed

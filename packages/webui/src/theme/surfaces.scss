@@ -1,0 +1,315 @@
+/* === Opaque-default surface layer ======================================
+ *
+ * The app ships OPAQUE surfaces (user direction 2026-10-29): at rest every
+ * glass surface paints its solid colour, and the UI-surface-opacity slider
+ * (settings → appearance, theme/uiOpacityPreference) is the ONLY way to let
+ * the wallpaper through again.
+ *
+ * Mechanics — one dial, every surface keeps its relative weight:
+ *   theme/uiOpacityPreference writes `--ui-opacity` on <html> as SOLIDITY,
+ *   1.00 = fully opaque (the shipped default) … 0.00 = the surface's glass
+ *   floor. Each rule below interpolates its own hikari base alpha B toward
+ *   solid:
+ *
+ *       alpha(B) = B + (100 - B) * var(--ui-opacity, 1)
+ *
+ *   so 100% reads fully opaque everywhere, dragging down moves the whole
+ *   family toward the glass alphas hikari ships (the segmented track stays
+ *   clearer than a settings card, a toast stays denser than a minimap), and
+ *   the dial's 0% end equals hikari's own alpha for every RESTATED component
+ *   fill. The token-driven floating layers are the one exception: hikari ships
+ *   those opaque, so their 0% end is wowsp's own readable 55% glass floor
+ *   (see the token block below).
+ *
+ * Why overrides at all: hikari hardcodes those alphas inside its component
+ * rules (`.hk-tabs-list` 60%, `.hk-input-box` 55%, …) and exposes no token
+ * for them, so an app-wide opaque default can only be stated by restating
+ * the fill. This file is the SINGLE place that does so — hosts must not
+ * repaint individual hikari components elsewhere (see
+ * components/base/DateRangeTabs.scss), and when hikari grows a token for one
+ * of these surfaces the rule should switch to it.
+ *
+ * Cascade: every selector is `:root`-prefixed so it beats hikari's own
+ * same-specificity rule regardless of which stylesheet chunk lands last
+ * (component styles travel with lazy chunks). Variants whose LOWER-specificity
+ * rule deliberately paints `transparent` are excluded explicitly
+ * (`.hk-icon-group-plain/-slider`), because the `:root` prefix would
+ * otherwise outrank them.
+ *
+ * Alpha TINTS (hover washes, the primary/12% indicator, border alphas, and the
+ * --hi-color-bg-subtle 50% tile tone used by tables/grids/HkDraggableList) are
+ * not glass and stay untouched: they sit ON an opaque surface and composite to
+ * a stable colour there. Interaction STATES of the converted controls
+ * (focus/open faces hikari paints opaque, hover washes) are restated too, so
+ * the dial cannot be bypassed by a state change.
+ */
+
+/* ── Floating layers: themed through hikari's colour tokens ─────────────
+   Hikari ships those layers opaque; the dial makes them progressively
+   translucent down to a readable 55% floor (their glass anchor). Phone
+   sheets stay fully opaque — hikari's ≤767px stand-down (see
+   OnboardingWizard.scss for the mobile-blur reasoning) wins there. */
+:root {
+  --hk-drawer-bg: rgb(var(--color-surface));
+  --hk-popover-bg: rgb(var(--color-surface));
+  --hk-sidebar-bg: rgb(var(--color-surface));
+  --hk-empty-bg: rgb(var(--color-surface));
+}
+
+@supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
+  /* Page-level panels follow the dial at every width. */
+  :root {
+    --hk-empty-bg: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+
+  /* Desktop FLOATING layers join the same family. The ≥768px scope mirrors
+     hikari's own split: below it modals/popovers/drawers dock as bottom
+     sheets, and hikari deliberately keeps those opaque (a translucent fixed
+     sheet re-rasters its blurred region every frame on phone GPUs — see
+     OnboardingWizard.scss). */
+  @media (min-width: 768px) {
+    :root {
+      --hk-modal-bg: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+      --hk-drawer-bg: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+      --hk-popover-bg: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+      --hk-sidebar-bg: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+    }
+  }
+}
+
+@media (min-width: 768px) {
+  /* HkModal paints fixed 1.5rem "gutter covers" over the body's top and
+     bottom padding (HkScrollPin's mask, defaulting to --hk-modal-bg) so
+     scrolled content never slides through the whitespace. That default
+     assumes an OPAQUE frame: over a translucent frame the cover re-paints
+     the same fill ON TOP of the already-painted body, and the stacked alpha
+     surfaces as two visibly denser 24px bands above and below the settings
+     shell. The settings body never scrolls anyway (the host contract keeps
+     the shell fitting), and no wowsp modal relies on the mask — let the
+     padding read as the plain surface it is. Phone sheets stay opaque, so
+     their covers are invisible either way. */
+  :root {
+    --hk-scroll-pin-cover-bg: transparent;
+  }
+  /* Below the shipped default the glass comes back, so the floating layers
+     get a readable blur. The tokens are no-ops behind the opaque at-rest
+     fill and are never allocated there. */
+  :root[data-ui-glass] {
+    --hk-modal-blur: blur(var(--blur-md));
+    --hk-popover-blur: blur(var(--blur-md));
+    --hk-drawer-blur: blur(var(--blur-md));
+  }
+}
+
+/* ── Hikari components that hardcode a translucent surface fill ─────────
+   Fallback pass first: engines without math-in-colour keep the opaque
+   default. The @supports block below then wires the dial in.
+   The list is grouped: LIVE surfaces (wowsp mounts these components) first,
+   then the upstream admin/legacy classes whose fills are restated for
+   completeness — a component that joins the app later must not bring a sheet
+   of glass with it. */
+
+/* Live surfaces — controls, chips and the shared chrome. */
+:root .hk-tabs-list,
+:root .hk-settings-group,
+:root .hk-pill-group,
+:root .hk-tag-default,
+:root .hk-input-box,
+:root .hk-select-trigger,
+:root .hk-select-popout,
+:root .hk-popup-select-trigger,
+:root .hk-dp-trigger,
+:root .hk-dp-native,
+:root .hk-scroll-container-autotag,
+:root .hk-fab[data-variant="glass"] .hk-fab-button,
+:root .hk-fab-mini,
+:root .hk-markdown-overlay,
+:root .hk-icon-group:not(.hk-icon-group-plain):not(.hk-icon-group-slider),
+:root .hk-minimap,
+:root .hk-minimap--collapsed,
+:root .hk-minimap--collapsed:hover,
+:root .hk-minimap--collapsed:focus-visible,
+:root .hk-persistent-toast,
+:root button.hk-persistent-toast:hover,
+:root .hk-loading-veil,
+:root .hk-loading-veil-body,
+/* Upstream admin / legacy classes (kept so a future host cannot inherit glass). */
+:root .hk-affix-tag,
+:root .s-auth-methods-tile,
+:root .hk-board3d-fallback,
+:root .s-tool-json-tree,
+:root .s-jt-badge,
+:root .s-log-viewer-scroll,
+:root .hk-media-controls,
+:root .hk-minimap3d-canvas,
+:root .s-secret-modal-value,
+:root .hk-status-pill,
+:root .hk-status-row,
+:root .hk-treemap-stage__back-float,
+:root .hk-zoom-toolbar,
+:root img.hk-img-broken,
+:root .s-glass-header {
+  background: rgb(var(--color-surface));
+}
+
+/* The `--color-background` surfaces keep their page-canvas flavour instead of
+   the card surface. */
+:root .hk-loading-veil,
+:root .s-log-viewer-scroll,
+:root .hk-minimap3d-canvas {
+  background: rgb(var(--color-background));
+}
+
+/* hikari paints these control FOCUS / OPEN faces opaque — restate them at the
+   layer's specificity so a lazy chunk's equal-specificity rule can never make
+   the dial leak through a focused field. */
+:root .hk-input-box:focus-within,
+:root .hk-select-trigger:focus-visible,
+:root .hk-select-trigger[data-state="open"],
+:root .hk-popup-select-trigger:focus-visible,
+:root .hk-popup-select-trigger[data-state="open"],
+:root .hk-dp-trigger:focus-visible,
+:root .hk-dp-native:focus-visible {
+  background: rgb(var(--color-surface));
+}
+
+/* HkBadge's default variant feeds --hk-badge-bg from --opacity-half (= 92%);
+   route it through the same solidity interpolation. */
+:root .hk-badge-default {
+  --hk-badge-bg: rgb(var(--color-surface));
+}
+
+/* At the solid default there is no glass to blur, so the floating chips'
+   backdrop filters would be pure GPU cost — drop them until the dial lowers. */
+:root:not([data-ui-glass]) .hk-select-popout,
+:root:not([data-ui-glass]) .hk-fab[data-variant="glass"] .hk-fab-button,
+:root:not([data-ui-glass]) .hk-fab-mini,
+:root:not([data-ui-glass]) .hk-scroll-container-autotag,
+:root:not([data-ui-glass]) .hk-markdown-overlay {
+  backdrop-filter: none;
+}
+
+@supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
+  /* Each entry carries its hikari-shipped base alpha (B) in the declaration. */
+  :root .hk-tabs-list {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
+  :root .hk-settings-group {
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-pill-group {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
+  :root .hk-tag-default {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
+  :root .hk-input-box {
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-select-trigger {
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-select-popout {
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-popup-select-trigger {
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-dp-trigger,
+  :root .hk-dp-native {
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-scroll-container-autotag {
+    background: rgb(var(--color-surface) / min(100%, calc(78% + 22% * var(--ui-opacity, 1))));
+  }
+  :root .hk-fab[data-variant="glass"] .hk-fab-button {
+    background: rgb(var(--color-surface) / min(100%, calc(78% + 22% * var(--ui-opacity, 1))));
+  }
+  :root .hk-fab[data-variant="glass"] .hk-fab-button:hover:not(:disabled) {
+    background: rgb(var(--color-surface) / min(100%, calc(92% + 8% * var(--ui-opacity, 1))));
+  }
+  :root .hk-fab-mini {
+    background: rgb(var(--color-surface) / min(100%, calc(82% + 18% * var(--ui-opacity, 1))));
+  }
+  :root .hk-fab-mini:hover:not(:disabled) {
+    background: rgb(var(--color-surface) / min(100%, calc(94% + 6% * var(--ui-opacity, 1))));
+  }
+  :root .hk-markdown-overlay {
+    background: rgb(var(--color-surface) / min(100%, calc(70% + 30% * var(--ui-opacity, 1))));
+  }
+  :root .hk-icon-group:not(.hk-icon-group-plain):not(.hk-icon-group-slider) {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
+  :root .hk-minimap {
+    background: rgb(var(--color-surface) / min(100%, calc(82% + 18% * var(--ui-opacity, 1))));
+  }
+  :root .hk-minimap--collapsed {
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-minimap--collapsed:hover,
+  :root .hk-minimap--collapsed:focus-visible {
+    background: rgb(var(--color-surface) / min(100%, calc(90% + 10% * var(--ui-opacity, 1))));
+  }
+  :root .hk-persistent-toast {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
+  :root button.hk-persistent-toast:hover {
+    background: rgb(var(--color-surface) / min(100%, calc(85% + 15% * var(--ui-opacity, 1))));
+  }
+  :root .hk-loading-veil {
+    background: rgb(var(--color-background) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-loading-veil-body {
+    background: rgb(var(--color-surface) / min(100%, calc(85% + 15% * var(--ui-opacity, 1))));
+  }
+
+  /* Upstream admin / legacy classes. */
+  :root .hk-affix-tag {
+    background: rgb(var(--color-surface) / min(100%, calc(92% + 8% * var(--ui-opacity, 1))));
+  }
+  :root .s-auth-methods-tile {
+    background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .hk-board3d-fallback {
+    background: rgb(var(--color-surface) / min(100%, calc(90% + 10% * var(--ui-opacity, 1))));
+  }
+  :root .s-tool-json-tree {
+    background: rgb(var(--color-surface) / min(100%, calc(50% + 50% * var(--ui-opacity, 1))));
+  }
+  :root .s-jt-badge {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
+  :root .s-log-viewer-scroll {
+    background: rgb(var(--color-background) / min(100%, calc(50% + 50% * var(--ui-opacity, 1))));
+  }
+  :root .hk-media-controls {
+    background: rgb(var(--color-surface) / min(100%, calc(85% + 15% * var(--ui-opacity, 1))));
+  }
+  :root .hk-minimap3d-canvas {
+    background: rgb(var(--color-background) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  }
+  :root .s-secret-modal-value {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
+  :root .hk-status-pill {
+    background: rgb(var(--color-surface) / min(100%, calc(60% + 40% * var(--ui-opacity, 1))));
+  }
+  :root .hk-status-row {
+    background: rgb(var(--color-surface) / min(100%, calc(70% + 30% * var(--ui-opacity, 1))));
+  }
+  :root .hk-treemap-stage__back-float {
+    background: rgb(var(--color-surface) / min(100%, calc(82% + 18% * var(--ui-opacity, 1))));
+  }
+  :root .hk-zoom-toolbar {
+    background: rgb(var(--color-surface) / min(100%, calc(85% + 15% * var(--ui-opacity, 1))));
+  }
+  :root img.hk-img-broken {
+    background: rgb(var(--color-surface) / min(100%, calc(30% + 70% * var(--ui-opacity, 1))));
+  }
+  :root .s-glass-header {
+    background: rgb(var(--color-surface) / min(100%, calc(92% + 8% * var(--ui-opacity, 1))));
+  }
+  :root .hk-badge-default {
+    --hk-badge-bg: rgb(var(--color-surface) / min(100%, calc(92% + 8% * var(--ui-opacity, 1))));
+  }
+}

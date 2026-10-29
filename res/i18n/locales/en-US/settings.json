@@ -346,7 +346,7 @@
   "wallpaperBlurSidebar": "Sidebar background blur",
   "wallpaperBlurMain": "Main background blur",
   "uiOpacity": "UI opacity",
-  "uiOpacityHint": "One dial for every glass surface: 95% is the default look (the background reads faintly through); lower it to let more show through, raise it to keep panels readable over busy backgrounds.",
+  "uiOpacityHint": "One dial for every glass surface: 100% ships fully opaque; lower it to let the background show through the chrome (0% is hikari's glass floor).",
   "pairingPinCopy": "Copy code",
   "pairingPinCopied": "Code copied to clipboard",
   "dataSourceShipData": "Ship data pack",

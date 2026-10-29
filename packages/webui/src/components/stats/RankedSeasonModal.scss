@@ -246,7 +246,10 @@ $dot-y: calc(#{$node-pad-t} + 1.25rem + 0.3rem + #{$dot * 0.5});
   }
 
   &__kpi {
-    background: rgb(var(--color-surface) / 55%);
+    background: rgb(var(--color-surface));
+    @supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
+      background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+    }
     border: 1px solid rgb(var(--color-border) / 30%);
     border-radius: var(--radius-sm);
     padding: 0.4rem 0.25rem;

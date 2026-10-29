@@ -346,7 +346,7 @@
   "wallpaperBlurSidebar": "サイドバー背景のぼかし",
   "wallpaperBlurMain": "メイン背景のぼかし",
   "uiOpacity": "UIの不透明度",
-  "uiOpacityHint": "すべてのガラス面を一括で調整します。95%が既定の見た目（背景がかすかに透けます）で、下げるとさらに透け、上げるとパネルが濃くなります。",
+  "uiOpacityHint": "すべてのガラス面を一括で調整します。既定の100%は完全に不透明で、下げると背景がクロームから透けてきます（0%がhikariのガラス基準です）。",
   "pairingPinCopy": "コードをコピー",
   "pairingPinCopied": "コードをクリップボードにコピーしました",
   "dataSourceShipData": "艦艇データパック",
