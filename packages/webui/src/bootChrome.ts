@@ -23,11 +23,11 @@ import type { Plugin } from "vite";
  * window with `hk:chrome-claim` — no WoWSP component change needed.
  *
  * hikari's plugin surface is `title` / `height` / `hangMs` / `htmlFiles` and
- * nothing else (checked against 0.55.224, the newest published release): no
- * logo option, and no way to keep the initial "loading…" status out of the
- * bar. Dependencies are consumed as published (AGENTS.md §6), so the WoWSP
- * look is layered on from THIS side as one inline `<style>` — see
- * `wowspBootChromeSkin` below.
+ * nothing else: the installed 0.55.215 has no logo option and no way to keep
+ * the initial "loading…" status out of the bar, and the newest published
+ * release (0.55.224) still exposes the same four options. Dependencies are
+ * consumed as published (AGENTS.md §6), so the WoWSP look is layered on from
+ * THIS side as one inline `<style>` — see `wowspBootChromeSkin` below.
  *
  * The plugin deliberately warns once per skipped entry; on this repository that
  * is EXPECTED output (the four shell-managed windows are skipped on purpose),
@@ -80,9 +80,11 @@ export const BOOT_CHROME_HTML_FILES: string[] = WEBUI_PAGES.filter(
  *
  * The SAME url `App.tsx` hands `AppTitleBar` (`icon="/logo.webp"`): the strip
  * is a stand-in for the real title bar, so it must paint the asset the bar it
- * hands off to renders — anything else makes the handoff flash. `src/res` is
- * this package's `publicDir` (vite.config.ts), so the root-absolute URL
- * resolves in dev and the build copies it to `dist/webui/logo.webp`.
+ * hands off to renders — anything else makes the handoff flash. Root-absolute
+ * ON PURPOSE, exactly like App.tsx's prop: `vite.config.ts` sets `base: "/"`,
+ * so "/…" is the app-root URL the Tauri webview resolves, and `src/res` is
+ * this package's `publicDir`, so the build copies the asset to
+ * `dist/webui/logo.webp` and the URL needs no rewriting.
  */
 export const BOOT_CHROME_LOGO = "/logo.webp";
 
@@ -111,7 +113,8 @@ export const BOOT_CHROME_LOGO = "/logo.webp";
  *      "window controls unavailable" (data-hk-degraded="1" on #hk-boot-chrome),
  *      and the 20 s boot watchdog marks the document
  *      data-hk-boot-chrome="hung" with "still loading…" plus a reload button.
- *      Hiding those would hide the only explanation of why the buttons are dead.
+ *      Hiding those would hide the only explanation of why the buttons are dead,
+ *      so both states restore the span to normal flow (see ACCESSIBILITY).
  *
  *   3. One shared line box for mixed CJK/Latin copy — the bar is a flex row
  *      with align-items: center, which centres each item's OWN line box, and
@@ -119,21 +122,28 @@ export const BOOT_CHROME_LOGO = "/logo.webp";
  *      that is why "WoWSP 正在加载…" sat vertically off-centre in the reported
  *      screenshot. Pinning the name and the status to the same 16 px
  *      line-height gives them one shared line-box height, so a CJK status next
- *      to the Latin name can no longer skew the visual centre. (A no-op while
- *      the status is hidden, the fix for the states where it is shown.)
+ *      to the Latin name can no longer skew the visual centre. (Invisible while
+ *      the status is visually clipped; the fix for the states where it is
+ *      restored to flow.)
  *
- * ACCESSIBILITY: the status span is role="status", so hiding it with
- * display: none (the only hide used here — no opacity/visibility tricks) also
- * takes it out of the a11y tree while it would only repeat "loading…" (the
- * loading screen owns that state). The two re-show rules put it back exactly
- * when the copy becomes actionable, which is when a screen reader SHOULD
- * announce it.
+ * ACCESSIBILITY: the status span is role="status" — a live region. It must
+ * stay IN the accessibility tree while the strip loads: a plain display: none
+ * would drop the element (and its announcements) entirely, which is why this
+ * skin uses the standard visually-hidden clip pattern instead — clipped to a
+ * 1 px box and out of layout, yet still exposed to assistive technology. The
+ * two failure-state rules restore it to normal flow, so the bar's failure copy
+ * becomes visible; because hikari mutates the text of that live region when a
+ * failure is reported, the mutation announces through role="status" as usual.
+ * (No over-claim: this keeps the mechanism available — screen-reader support
+ * for live regions still depends on the platform's own behaviour.)
  *
- * CASCADE: every declaration below sets a property hikari's own runtime
- * stylesheet does not (that sheet covers overflow, colour, weight, and the
- * status' 0 letter-spacing). hikari appends its <style> when its script runs —
- * i.e. after this head tag — but since the property sets are disjoint, the two
- * stylesheets never fight over order.
+ * CASCADE: hikari appends its own <style> when its script runs — i.e. after
+ * this head tag — and that sheet does own a few of the status' properties
+ * (overflow/ellipsis, colour, weight, letter-spacing). The rules below either
+ * set properties it does not touch or, where they overlap (the visually-hidden
+ * `overflow: hidden`, undone by the restore), outrank it by specificity: the
+ * failure selectors are two ids + an attribute against its single id, so the
+ * cascade order hikari imposes cannot re-clip the restored span.
  */
 export const BOOT_CHROME_SKIN_CSS = `/* --- branding: logo + name, mirroring .hk-titlebar-title --------------- */
 #hk-boot-chrome-app {
@@ -152,23 +162,46 @@ export const BOOT_CHROME_SKIN_CSS = `/* --- branding: logo + name, mirroring .hk
   background: url("${BOOT_CHROME_LOGO}") center / contain no-repeat;
 }
 
-/* --- loading state: branding only --------------------------------------
+/* --- loading state: branding only, status visually hidden --------------
    #loading-screen already says "WoWSP loading…", so the caption label would
-   only repeat it. display: none (not visibility) keeps it out of the a11y
-   tree as well — see ACCESSIBILITY above. */
+   only repeat it — visually. The span is role="status" (a live region): a
+   plain display: none would ALSO drop it and its failure announcements out of
+   the accessibility tree, so use the standard visually-hidden clip pattern —
+   out of layout and invisible, still exposed to assistive technology. Never
+   set display here (and never display: none: it is the a11y regression this
+   pattern exists to avoid). */
 #hk-boot-chrome-status {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  /* Shared line box with the name — see WHY item 3. */
   line-height: 16px;
 }
 
-/* --- failure states: put the actionable copy back ----------------------
+/* --- failure states: restore the actionable copy to normal flow --------
    degraded = no usable shell API, or a window command was refused (usually a
    missing ACL grant); hung = the boot watchdog fired (the bar also grows its
-   reload button). Both must stay readable, and both share the 16 px line box
-   above so CJK copy lines up with the Latin name. */
+   reload button). Both must stay VISIBLE and readable: undo every clip
+   declaration above and put the span back in the flex row (no display
+   override), keeping the shared 16 px line box so CJK copy lines up with the
+   Latin name. The selector list outranks hikari's single-id runtime rule, so
+   its overflow/ellipsis cannot re-clip the restored span — see CASCADE. */
 #hk-boot-chrome[data-hk-degraded="1"] #hk-boot-chrome-status,
 html[data-hk-boot-chrome="hung"] #hk-boot-chrome-status {
-  display: inline;
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
 }
 `;
 

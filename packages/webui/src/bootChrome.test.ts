@@ -102,6 +102,28 @@ function skinCss(): string {
   return tags[0].children ?? "";
 }
 
+/**
+ * The declaration block of the rule whose selector list starts with
+ * `selectorStart` — the skin stylesheet is small, so a brace scan is enough
+ * (and it avoids asserting against declarations of neighbouring rules).
+ */
+function ruleFor(css: string, selectorStart: string): string {
+  const start = css.indexOf(selectorStart);
+  expect(start, `${selectorStart} rule must exist`).toBeGreaterThanOrEqual(0);
+  const open = css.indexOf("{", start);
+  const close = css.indexOf("}", open);
+  return css.slice(open + 1, close);
+}
+
+/**
+ * The skin's CSS with comments stripped — positive/negative assertions about
+ * DECLARATIONS must run on this view, because the comments legitimately name
+ * the patterns they explain (e.g. the display: none regression).
+ */
+function cssDeclarations(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
 describe("the page table is the single source of truth", () => {
   it("builds exactly the pages on disk, including pages nested in subdirectories", () => {
     // A sixth page (in the package root OR a subdirectory) must be a conscious
@@ -248,10 +270,31 @@ describe("the host-side skin", () => {
     expect(existsSync(asset), `${asset} must exist`).toBe(true);
   });
 
-  it("keeps the strip branding-only while loading and mirrors the titlebar metrics", () => {
+  it("keeps the status visually hidden with the sr-only pattern, staying in the a11y tree", () => {
     const css = skinCss();
-    // Hidden by default: the centred #loading-screen owns the loading copy.
-    expect(css).toMatch(/#hk-boot-chrome-status\s*\{[^}]*display:\s*none/);
+    // role="status" must stay exposed to assistive technology: display: none
+    // would drop the live region (and its failure announcements) entirely —
+    // that is the regression this pattern exists to prevent.
+    expect(cssDeclarations(css)).not.toMatch(/display:\s*none/);
+    const base = ruleFor(css, "#hk-boot-chrome-status");
+    // The standard visually-hidden clip: out of layout and invisible, but
+    // still present in the accessibility tree.
+    expect(base).toMatch(/position:\s*absolute/);
+    expect(base).toMatch(/width:\s*1px/);
+    expect(base).toMatch(/height:\s*1px/);
+    expect(base).toMatch(/margin:\s*-1px/);
+    expect(base).toMatch(/padding:\s*0/);
+    expect(base).toMatch(/overflow:\s*hidden/);
+    expect(base).toMatch(/clip:\s*rect\(0 0 0 0\)/);
+    expect(base).toMatch(/clip-path:\s*inset\(50%\)/);
+    expect(base).toMatch(/white-space:\s*nowrap/);
+    expect(base).toMatch(/border:\s*0/);
+    // ... and it must not smuggle display back in.
+    expect(base).not.toMatch(/display\s*:/);
+  });
+
+  it("mirrors the titlebar metrics while loading", () => {
+    const css = skinCss();
     // .hk-titlebar-title / .hk-titlebar-title-text geometry: 16 px icon box,
     // 8 px gap, 0.04em tracking (size and weight are inherited from the bar).
     expect(css).toMatch(/#hk-boot-chrome-app\s*\{[^}]*gap:\s*8px/);
@@ -269,13 +312,28 @@ describe("the host-side skin", () => {
     expect(css).toMatch(/#hk-boot-chrome-status\s*\{[^}]*line-height:\s*16px/);
   });
 
-  it("re-shows the status for both failure states the bar can report", () => {
+  it("restores the status to normal flow for both failure states", () => {
     const css = skinCss();
     // degraded: no usable shell API, or a window command was refused (usually
     // a missing ACL grant) — the copy says WHY the buttons are dead.
-    expect(css).toContain('#hk-boot-chrome[data-hk-degraded="1"] #hk-boot-chrome-status');
+    const degraded = '#hk-boot-chrome[data-hk-degraded="1"] #hk-boot-chrome-status';
     // hung: the boot watchdog fired; the bar also grows its reload button.
-    expect(css).toContain('html[data-hk-boot-chrome="hung"] #hk-boot-chrome-status');
+    const hung = 'html[data-hk-boot-chrome="hung"] #hk-boot-chrome-status';
+    expect(css).toContain(degraded);
+    expect(css).toContain(hung);
+
+    // Both states share one restore rule; every clip declaration must be
+    // undone, and NO display override may reappear (the span returns to its
+    // default inline box in the flex row).
+    const restore = ruleFor(css, degraded);
+    expect(restore).toMatch(/position:\s*static/);
+    expect(restore).toMatch(/width:\s*auto/);
+    expect(restore).toMatch(/height:\s*auto/);
+    expect(restore).toMatch(/margin:\s*0/);
+    expect(restore).toMatch(/overflow:\s*visible/);
+    expect(restore).toMatch(/clip:\s*auto/);
+    expect(restore).toMatch(/clip-path:\s*none/);
+    expect(restore).not.toMatch(/display\s*:/);
   });
 });
 
