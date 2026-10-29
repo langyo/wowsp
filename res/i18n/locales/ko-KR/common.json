@@ -80,5 +80,6 @@
     "confirm": "이 이미지 사용",
     "cancel": "취소",
     "exportFailed": "잘라낸 이미지 내보내기 실패"
-  }
+  },
+  "uiError": "문제가 발생했습니다: {message}"
 }

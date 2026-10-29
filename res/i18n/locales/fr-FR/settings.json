@@ -540,5 +540,6 @@
     "registryFailed": "Impossible de charger le catalogue des fournisseurs ; les champs ci-dessous restent utilisables.",
     "registryRefresh": "Actualiser le catalogue des fournisseurs",
     "registryStale": "Actualisation impossible : la liste des fournisseurs en cache est affichée. Vérifiez le réseau et réessayez."
-  }
+  },
+  "sectionCrashed": "Cette section des réglages a échoué ; le reste des réglages fonctionne toujours."
 }

@@ -188,6 +188,7 @@ export const RPC = {
   get_duplicate_install_config: "get_duplicate_install_config",
   set_duplicate_install_config: "set_duplicate_install_config",
   changelog_list: "changelog_list",
+  log_ui_error: "log_ui_error",
   logs_overview: "logs_overview",
   logs_reveal_latest: "logs_reveal_latest",
   logs_read_tail: "logs_read_tail",

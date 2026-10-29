@@ -80,5 +80,6 @@
     "confirm": "この画像を使う",
     "cancel": "キャンセル",
     "exportFailed": "切り抜き画像の書き出しに失敗しました"
-  }
+  },
+  "uiError": "エラーが発生しました: {message}"
 }

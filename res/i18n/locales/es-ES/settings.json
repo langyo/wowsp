@@ -540,5 +540,6 @@
     "registryFailed": "No se pudo cargar el catálogo de proveedores; los campos de abajo siguen funcionando.",
     "registryRefresh": "Actualizar catálogo de proveedores",
     "registryStale": "No se pudo actualizar: se muestra la lista de proveedores en caché. Comprueba la red e inténtalo de nuevo."
-  }
+  },
+  "sectionCrashed": "Esta sección de ajustes ha fallado; el resto de ajustes sigue funcionando."
 }

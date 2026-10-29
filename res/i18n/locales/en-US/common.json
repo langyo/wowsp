@@ -80,5 +80,6 @@
     "confirm": "Use this image",
     "cancel": "Cancel",
     "exportFailed": "Failed to export the cropped image"
-  }
+  },
+  "uiError": "Something went wrong: {message}"
 }

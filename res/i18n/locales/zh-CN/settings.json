@@ -540,5 +540,6 @@
     "registryFailed": "服务商目录加载失败；仍可手动填写下方字段。",
     "registryRefresh": "刷新服务商目录",
     "registryStale": "刷新失败——当前显示缓存的服务商列表。请检查网络后重试。"
-  }
+  },
+  "sectionCrashed": "此设置区域出现错误——其余设置仍然可用，可点击重试。"
 }
