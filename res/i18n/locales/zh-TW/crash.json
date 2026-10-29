@@ -1,6 +1,6 @@
 {
   "toast": {
-    "title": "遊戲用戶端已當機",
+    "title": "偵測到遊戲客戶端崩潰",
     "body": "{image}（pid {pid}）已停止運作。",
     "code": "例外代碼：{code}",
     "safeRestart": "安全模式重新啟動",

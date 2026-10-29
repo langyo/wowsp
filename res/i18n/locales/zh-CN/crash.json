@@ -1,6 +1,6 @@
 {
   "toast": {
-    "title": "游戏客户端已崩溃",
+    "title": "检测到游戏客户端崩溃",
     "body": "{image}（pid {pid}）已停止工作。",
     "code": "异常代码：{code}",
     "safeRestart": "安全模式重启",
