@@ -327,7 +327,9 @@
 }
 
 .ship-filter-bar__pop-hint {
-  margin-top: 8px;
+  /* Feedback seat stacked under a control breathes at --space-12 — the
+     unified popup-panel convention (8px read flush against the pills). */
+  margin-top: var(--space-12);
   /* Hints run long; a max-content panel would size itself to the WIDEST
      hint line (the tier popup's body is a fixed-width slider — the panel
      read lopsided). Wrapping keeps every popup governed by its control. */
@@ -347,7 +349,8 @@
 }
 
 .ship-filter-bar__tier-actions {
-  margin-top: 8px;
+  /* Same unified --space-12 seat (see __pop-hint). */
+  margin-top: var(--space-12);
 }
 
 .ship-filter-bar__tier-flip {
@@ -408,7 +411,9 @@
    HkScrollContainer (overlay bar); the column layout moved to
    __candidates-inner so it scrolls with the rows. */
 .ship-filter-bar__candidates {
-  margin-top: 8px;
+  /* Same unified --space-12 seat as AsyncSearchCombo's candidate list —
+     the two search panels share one rhythm. */
+  margin-top: var(--space-12);
   max-height: 280px;
 }
 
@@ -454,7 +459,8 @@
 }
 
 .ship-filter-bar__search-hint {
-  margin-top: 8px;
+  /* Same unified --space-12 seat under the search input (see __pop-hint). */
+  margin-top: var(--space-12);
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted) / 90%);
 }
