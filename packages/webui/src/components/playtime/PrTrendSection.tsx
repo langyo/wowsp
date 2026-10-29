@@ -9,11 +9,11 @@ import {
   type VNode,
 } from "vue";
 
-import { HkCheckbox, HkDatePicker, HkPopover, HkScrollContainer, HkTabs, useBreakpoint } from "@celestia-island/hikari";
+import { HkCheckbox, HkPopover, HkScrollContainer, useBreakpoint } from "@celestia-island/hikari";
 
 import { api, type ExpectedPrEntry, type ShipStatsHistoryPoint } from "@/api";
 import { shipIconUrl } from "@/features/holographic/shipIcons";
-import { isoDayWindowSec } from "@/utils/shipAggregation";
+import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
 import { tierLabel } from "@/utils/shipCompare";
 import { useAccountStore } from "@/stores/account";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -94,10 +94,11 @@ export default defineComponent({
     const tierRange = ref<TierRange>([TIER_MIN, TIER_MAX]);
     const shipSel = ref<string[]>([]);
 
-    // The two popovers' open flags live above the account watch: its body
-    // force-closes them on a switch (the section renders null mid-switch;
-    // closed popups cannot leave their outside-close listeners hanging).
-    const customOpen = ref(false);
+    // The ship popup's open flag lives above the account watch: its body
+    // force-closes it on a switch (the section renders null mid-switch;
+    // a closed popup cannot leave its outside-close listener hanging). The
+    // date-range strip remounts per account (its `key` below), so its own
+    // popover state resets with it.
     const shipPopOpen = ref(false);
 
     const activeAccount = computed(() => account.activeAccount);
@@ -115,9 +116,8 @@ export default defineComponent({
           typeSel.value = [];
           tierRange.value = [TIER_MIN, TIER_MAX];
           shipSel.value = [];
-          // The section renders null mid-switch; closed popovers cannot
-          // leave their outside-close listeners hanging.
-          customOpen.value = false;
+          // The section renders null mid-switch; a closed popup cannot
+          // leave its outside-close listener hanging.
           shipPopOpen.value = false;
         }
         if (!acc) return;
@@ -150,13 +150,8 @@ export default defineComponent({
 
     // ── Time range (7d / 30d / 90d / full career / custom) ──────────────
     const rangeKey = ref<PrTrendRangeKey>("30d");
-    const customFrom = ref<string | null>(null);
-    const customTo = ref<string | null>(null);
-    const customWindow = computed(() =>
-      customFrom.value && customTo.value
-        ? isoDayWindowSec(customFrom.value, customTo.value)
-        : null,
-    );
+    /** The shared strip's picker window (null until both ends are picked). */
+    const customWindow = ref<DateRangeWindow | null>(null);
     const rangeOptions = [
       { key: "7d", label: t("playtime.prTrendRange7d") },
       { key: "30d", label: t("playtime.prTrendRange30d") },
@@ -164,47 +159,6 @@ export default defineComponent({
       { key: "all", label: t("playtime.prTrendRangeAll") },
       { key: "custom", label: t("dashboard.rangeCustom") },
     ];
-
-    // The custom segment's popover — the LookupView pattern: HkTabs
-    // suppresses the emit for the already-active segment, so the reopen
-    // gesture rides a wrapper click on the checked radio; outside-close
-    // lets the pickers' body-level calendar panels through.
-    const rangeTabsRef = ref<HTMLElement | null>(null);
-    const rangePanelRef = ref<HTMLElement | null>(null);
-
-    function onRangeTabUpdate(v: string | number) {
-      rangeKey.value = v as PrTrendRangeKey;
-      customOpen.value = v === "custom";
-    }
-
-    function onRangeTabsClick(e: MouseEvent) {
-      if (rangeKey.value !== "custom") return;
-      const seg = (e.target as HTMLElement).closest?.("[role='radio']");
-      if (seg instanceof HTMLElement && seg.getAttribute("aria-checked") === "true") {
-        customOpen.value = true;
-      }
-    }
-
-    function onRangeDocPointerDown(e: PointerEvent) {
-      const target = e.target as Node;
-      if (rangeTabsRef.value?.contains(target)) return;
-      if (rangePanelRef.value?.contains(target)) return;
-      for (const panel of document.querySelectorAll<HTMLElement>(".hk-popover-panel")) {
-        if (panel.contains(target)) return;
-      }
-      customOpen.value = false;
-    }
-
-    watch(customOpen, (open) => {
-      if (open) {
-        document.addEventListener("pointerdown", onRangeDocPointerDown, true);
-      } else {
-        document.removeEventListener("pointerdown", onRangeDocPointerDown, true);
-      }
-    });
-    onBeforeUnmount(() => {
-      document.removeEventListener("pointerdown", onRangeDocPointerDown, true);
-    });
 
     // ── The window-scoped data: intervals inside the range drive the line,
     //    the popup catalog AND the PR aggregation alike. ──
@@ -452,51 +406,18 @@ export default defineComponent({
           <div class="play-section__head">
             <h3>{t("playtime.prTrendTitle")}</h3>
             <div class="play-section__controls">
-              {/* Time range — the wrapper anchors the custom popover and
-                  carries the reopen click test (the LookupView pattern). */}
-              <div class="pr-trend-range" ref={rangeTabsRef} onClick={onRangeTabsClick}>
-                <HkTabs
-                  variant="segmented"
-                  modelValue={rangeKey.value}
-                  onUpdate:modelValue={onRangeTabUpdate}
-                  tabs={rangeOptions.map((o) => ({ key: o.key, label: o.label }))}
-                />
-              </div>
-              <HkPopover
-                modelValue={customOpen.value}
-                onUpdate:modelValue={(v: boolean) => {
-                  if (!v) customOpen.value = false;
-                }}
-                anchorRef={rangeTabsRef.value}
-                placement="bottom-end"
-                closeOnBackdrop={isMobile.value}
-                sheetOnMobile
-                padding="lg"
-                title={t("dashboard.rangeCustom")}
-              >
-                <div ref={rangePanelRef} class="pr-trend-rangepop">
-                  <div class="pr-trend-rangepop__head">
-                    <span>{t("dashboard.rangeCustom")}</span>
-                  </div>
-                  <div class="pr-trend-rangepop__dates">
-                    <HkDatePicker
-                      size="sm"
-                      modelValue={customFrom.value}
-                      onUpdate:modelValue={(v: string | null) => (customFrom.value = v)}
-                      placeholder={t("dashboard.rangeFrom")}
-                      max={customTo.value ?? undefined}
-                    />
-                    <HkDatePicker
-                      size="sm"
-                      modelValue={customTo.value}
-                      onUpdate:modelValue={(v: string | null) => (customTo.value = v)}
-                      placeholder={t("dashboard.rangeTo")}
-                      min={customFrom.value ?? undefined}
-                    />
-                  </div>
-                  <div class="pr-trend-rangepop__hint">{t("playtime.prTrendRangeHint")}</div>
-                </div>
-              </HkPopover>
+              {/* Time range — the shared strip (it owns the custom picker
+                  popover and its reopen gesture). `key` remounts it per
+                  account so a previous account's picked window never leaks
+                  into the new one. */}
+              <DateRangeTabs
+                key={acc ? `${acc.realm}_${acc.accountId}` : "none"}
+                modelValue={rangeKey.value}
+                onUpdate:modelValue={(v: string) => (rangeKey.value = v as PrTrendRangeKey)}
+                onUpdate:window={(w: DateRangeWindow | null) => (customWindow.value = w)}
+                options={rangeOptions}
+                hint={t("playtime.prTrendRangeHint")}
+              />
               {/* The ONE ship-filter chip (types + tiers + ship list). */}
               <button
                 type="button"

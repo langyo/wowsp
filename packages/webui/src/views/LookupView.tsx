@@ -7,9 +7,10 @@ import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/Clan
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HkDatePicker, HkPopover, HkScrollContainer, HkSpinner, HkTabs, useBreakpoint } from "@celestia-island/hikari";
+import { HkScrollContainer, HkSpinner, HkTabs } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
+import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import { useShipDetail } from "@/composables/useShipDetail";
@@ -42,8 +43,7 @@ import {
   dateRangeCutoff,
   filterByDateRange,
   filterByDateWindow,
-  isoDayWindowSec,
-  type DateRange,
+  type RangeMode,
 } from "@/utils/shipAggregation";
 import { api, type ClanInfo, type ClanSuggestion, type PlayerShipStats, type PlayerSuggestion, type PlayerStats } from "@/api";
 import { LookupError, type LookupErrorPayload } from "@/transport/types";
@@ -52,11 +52,6 @@ import "./LookupView.scss";
 
 /** Lookup target — the second sidebar row's segmented group. */
 type LookupKind = "player" | "clan";
-
-/** This view's date-range mode — the shared presets plus the picker-chosen
- *  custom window (the 自定义 segment; see `customWindow`). DashboardView
- *  keeps the plain preset-only DateRange. */
-type RangeMode = DateRange | "custom";
 
 interface HistoryEntry {
   kind: LookupKind;
@@ -257,19 +252,10 @@ export default defineComponent({
      *  a picker-chosen [from, to] day window whose end bound also closes at
      *  a local snapshot (see `computeRecentDelta`). */
     const dateRange = ref<RangeMode>("all");
-    /** Custom window picker state (ISO YYYY-MM-DD, session-only like the
-     *  replay filter's pair). The pickers cross-link min/max so an
-     *  inverted pair can never form. */
-    const customFrom = ref<string | null>(null);
-    const customTo = ref<string | null>(null);
-    const customOpen = ref(false);
-    /** Armed once both ends are picked — while the pair is incomplete the
-     *  view stays unfiltered (the "all" semantics) instead of thrashing. */
-    const customWindow = computed(() =>
-      customFrom.value && customTo.value
-        ? isoDayWindowSec(customFrom.value, customTo.value)
-        : null,
-    );
+    /** The DateRangeTabs picker window — armed only once both ends are
+     *  picked, so while the pair is incomplete the view stays unfiltered
+     *  (the "all" semantics) instead of thrashing. */
+    const customWindow = ref<DateRangeWindow | null>(null);
     const recentDelta = computed(() => {
       if (dateRange.value === "all") return null;
       const acc = result.value;
@@ -290,71 +276,13 @@ export default defineComponent({
       return recentDelta.value?.ships ?? filterByDateRange(shipRows.value, dateRange.value);
     });
     const rangeOptions = [
-      { value: "1d", label: t("dashboard.range1d") },
-      { value: "7d", label: t("dashboard.range7d") },
-      { value: "30d", label: t("dashboard.range30d") },
-      { value: "90d", label: t("dashboard.range90d") },
-      { value: "all", label: t("dashboard.rangeAll") },
-      { value: "custom", label: t("dashboard.rangeCustom") },
+      { key: "1d", label: t("dashboard.range1d") },
+      { key: "7d", label: t("dashboard.range7d") },
+      { key: "30d", label: t("dashboard.range30d") },
+      { key: "90d", label: t("dashboard.range90d") },
+      { key: "all", label: t("dashboard.rangeAll") },
+      { key: "custom", label: t("dashboard.rangeCustom") },
     ];
-
-    // ── Custom range popover ──────────────────────────────────────────
-    // Selecting the 自定义 segment opens a small HkPopover anchored under
-    // the tabs; two hikari date pickers (the replay filter's cross-linked
-    // pair pattern) choose the window. Outside-close mirrors
-    // FilterCategoryChip's: the teleported panel and the pickers' own
-    // body-level calendar popups count as inside presses.
-    const { isMobile } = useBreakpoint();
-    const rangeTabsRef = ref<HTMLElement | null>(null);
-    const rangePanelRef = ref<HTMLElement | null>(null);
-
-    function closeCustomPop() {
-      customOpen.value = false;
-    }
-
-    function onRangeTabUpdate(v: string) {
-      dateRange.value = v as RangeMode;
-      customOpen.value = v === "custom";
-    }
-
-    /** HkTabs suppresses the update emit when the clicked segment is
-     *  already active, so after the popover closed while 自定义 stayed
-     *  selected, re-clicking that segment would be a dead press — yet it's
-     *  the natural "reopen" gesture. Catch it on the wrapper: while custom
-     *  is the active radio, a click on the checked segment is exactly that
-     *  re-click (a differing segment first flips the mode via the emit, so
-     *  the early return skips it). */
-    function onRangeTabsClick(e: MouseEvent) {
-      if (dateRange.value !== "custom") return;
-      const seg = (e.target as HTMLElement).closest?.("[role='radio']");
-      if (seg instanceof HTMLElement && seg.getAttribute("aria-checked") === "true") {
-        customOpen.value = true;
-      }
-    }
-
-    function onRangeDocPointerDown(e: PointerEvent) {
-      const target = e.target as Node;
-      if (rangeTabsRef.value?.contains(target)) return;
-      if (rangePanelRef.value?.contains(target)) return;
-      // The date pickers' calendars teleport to body level as
-      // .hk-popover-panel — presses there belong to this popover's own
-      // nested content (same reasoning as FilterCategoryChip's test).
-      for (const panel of document.querySelectorAll<HTMLElement>(".hk-popover-panel")) {
-        if (panel.contains(target)) return;
-      }
-      closeCustomPop();
-    }
-
-    watch(customOpen, (open) => {
-      if (open) {
-        document.addEventListener("pointerdown", onRangeDocPointerDown, true);
-      } else {
-        document.removeEventListener("pointerdown", onRangeDocPointerDown, true);
-      }
-    });
-    onBeforeUnmount(() => {
-      document.removeEventListener("pointerdown", onRangeDocPointerDown, true);
-    });
 
     /** Per-ship rows enriched with offline tier/type for grouping. */
     const shipRows = computed<PlayerShipStats[]>(() => {
@@ -1007,59 +935,15 @@ export default defineComponent({
                   </div>
                 ) : null}
                 <div class="lookup-view__controls">
-                  {/* The wrapper anchors the custom-range popover and
-                      carries the reopen click test; the tabs inside remain
-                      a plain flex child of the row. */}
-                  <div class="lookup-view__range-tabs" ref={rangeTabsRef} onClick={onRangeTabsClick}>
-                    <HkTabs
-                      variant="segmented"
-                      modelValue={dateRange.value}
-                      onUpdate:modelValue={onRangeTabUpdate}
-                      tabs={rangeOptions.map((o) => ({ key: o.value, label: o.label }))}
-                    />
-                  </div>
-                  {/* Desktop keeps closeOnBackdrop off — the document-level
-                      pointerdown test above is the outside-close and Escape
-                      rides closeOnEscape; phones dock as a bottom sheet
-                      whose scrim then closes (same contract as the filter
-                      chips' popups one row over). */}
-                  <HkPopover
-                    modelValue={customOpen.value}
-                    onUpdate:modelValue={(v: boolean) => {
-                      if (!v) closeCustomPop();
-                    }}
-                    anchorRef={rangeTabsRef.value}
-                    placement="bottom-end"
-                    closeOnBackdrop={isMobile.value}
-                    sheetOnMobile
-                    padding="lg"
-                    title={t("dashboard.rangeCustom")}
-                  >
-                    <div ref={rangePanelRef} class="lookup-view__range-pop">
-                      <div class="lookup-view__range-pop-head">
-                        <span>{t("dashboard.rangeCustom")}</span>
-                      </div>
-                      <div class="lookup-view__range-pop-dates">
-                        <HkDatePicker
-                          size="sm"
-                          modelValue={customFrom.value}
-                          onUpdate:modelValue={(v: string | null) => (customFrom.value = v)}
-                          placeholder={t("dashboard.rangeFrom")}
-                          max={customTo.value ?? undefined}
-                        />
-                        <HkDatePicker
-                          size="sm"
-                          modelValue={customTo.value}
-                          onUpdate:modelValue={(v: string | null) => (customTo.value = v)}
-                          placeholder={t("dashboard.rangeTo")}
-                          min={customFrom.value ?? undefined}
-                        />
-                      </div>
-                      <div class="lookup-view__range-pop-hint">
-                        {t("dashboard.rangeCustomHint")}
-                      </div>
-                    </div>
-                  </HkPopover>
+                  {/* The shared strip owns the custom-range picker popover and
+                      its reopen gesture; here it is just a flex child of the
+                      row. */}
+                  <DateRangeTabs
+                    modelValue={dateRange.value}
+                    onUpdate:modelValue={(v: string) => (dateRange.value = v as RangeMode)}
+                    onUpdate:window={(w: DateRangeWindow | null) => (customWindow.value = w)}
+                    options={rangeOptions}
+                  />
                   {/* Filter chips share the date-range row's height */}
                   <ShipFilterBar
                     ships={dateFiltered.value}

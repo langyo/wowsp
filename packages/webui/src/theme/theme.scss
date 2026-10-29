@@ -391,6 +391,11 @@ html[data-wallpaper-art="true"] body::after {
   background: rgb(var(--color-surface) / 60%);
   background: rgb(var(--color-surface) / min(100%, calc(60% * var(--ui-opacity, 1))));
 }
+/* One strip family opts back OUT of the glass dial: the date-range strip
+   (DateRangeTabs) selects which stats data the page shows and shares its
+   controls row with the opaque filter chips and the fuzzy-search trigger, so
+   it paints the same solid content-chrome surface instead (see
+   DateRangeTabs.scss). */
 
 /* Desktop modals: hikari's default is the OPAQUE --hi-color-surface with
    no backdrop blur. Restated at base 100% so the dial rescales them like
