@@ -465,7 +465,7 @@ mod evidence_parsers {
         "<Data Name='P1'>worldofwarships64.exe</Data>",
         "<Data Name='P4'>QQNT.dll_unloaded</Data>",
         "<Data Name='P8'>c0000005</Data>",
-        "<Data Name='StorePath'>\\\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\ReportArchive\\AppCrash_WorldOfWarships64.exe_deadbeef_1234abcd</Data>",
+        "<Data Name='StorePath'>\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\ReportArchive\\AppCrash_WorldOfWarships64.exe_deadbeef_1234abcd</Data>",
         "</EventData></Event>"
     );
 
@@ -925,4 +925,17 @@ fn quarantine_reaches_into_the_safe_mode_twin() {
             .join("bin/8/res_mods/gui/battle_elements.xml")
             .exists()
     );
+}
+
+#[cfg(windows)]
+#[test]
+fn game_root_of_report_extracts_the_install() {
+    let root = game_root_of_report(
+        "D:\\SteamLibrary\\steamapps\\common\\World of Warships\\crashes\\WorldOfWarships64-2026-10-28_16-49-56.crash",
+    );
+    assert_eq!(
+        root.as_deref(),
+        Some("D:\\SteamLibrary\\steamapps\\common\\World of Warships"),
+    );
+    assert_eq!(game_root_of_report("D:\\elsewhere\\report.txt"), None);
 }

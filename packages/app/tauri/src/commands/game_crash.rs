@@ -1458,6 +1458,25 @@ fn harvest_backfill_candidates() -> Vec<BackfillCandidate> {
     candidates
 }
 
+/// The game root a WG crash report lives under: the file sits in
+/// <root>/crashes/, so the root is the segment above that folder — a
+/// deterministic attribution that never depends on the install scan
+/// having warmed up.
+#[cfg(windows)]
+fn game_root_of_report(report_path: &str) -> Option<String> {
+    let path = Path::new(report_path);
+    let mut ancestors = path.ancestors();
+    let _file = ancestors.next()?;
+    let crashes_dir = ancestors.next()?;
+    if crashes_dir.file_name()?.to_string_lossy() != "crashes" {
+        return None;
+    }
+    crashes_dir
+        .parent()
+        .map(|root| root.to_string_lossy().into_owned())
+        .filter(|root| !root.is_empty())
+}
+
 /// The catch-up pass: harvest, merge, drop everything the history already
 /// knows (by evidence id or by a same-image record inside the cluster
 /// window — live detections carry no evidence id), and import the rest.
@@ -1504,7 +1523,12 @@ fn backfill_recent(app: &tauri::AppHandle) -> anyhow::Result<Vec<GameCrashRecord
         if already {
             continue;
         }
-        let root = single.as_ref().map(|i| i.path.clone());
+        let root = single.as_ref().map(|i| i.path.clone()).or_else(|| {
+            candidate
+                .report_path
+                .as_deref()
+                .and_then(game_root_of_report)
+        });
         let mods_active = root.as_deref().is_some_and(res_mods_has_entries);
         let record = GameCrashRecord {
             id: format!("gc-bf-{}", candidate.evidence_id),
@@ -2426,7 +2450,8 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         if let Some(base) = res_mods_base(root_path) {
             bases.push(base);
         }
-        if let Some((_, ver_dir)) = super::mod_hub::latest_bin_version(&root_path.to_string_lossy()) {
+        if let Some((_, ver_dir)) = super::mod_hub::latest_bin_version(&root_path.to_string_lossy())
+        {
             let twin = super::mod_hub::disabled_res_mods(&ver_dir);
             if twin.is_dir() && !bases.iter().any(|b| b == &twin) {
                 bases.push(twin);
