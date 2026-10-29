@@ -7,7 +7,8 @@
     "restart": "ゲームを再起動",
     "analysis": "分析を見る",
     "dismiss": "閉じる",
-    "safeRestartFallback": "ゲームフォルダーを特定できなかったため、そのまま再起動します。"
+    "safeRestartFallback": "ゲームフォルダーを特定できなかったため、そのまま再起動します。",
+    "open": "クラッシュを確認"
   },
   "section": {
     "title": "クラッシュ分析",
@@ -30,7 +31,17 @@
     "restart": "ゲームを再起動",
     "safeModeOn": "セーフモードが有効",
     "analysisFor": "{id} の分析結果",
-    "refresh": "更新"
+    "refresh": "更新",
+    "latest": "最新のクラッシュ",
+    "noCrashes": "クラッシュ記録なし",
+    "openRecords": "クラッシュ履歴",
+    "recordsTitle": "クラッシュ履歴",
+    "rawLogs": "生ログ",
+    "rawLogsTitle": "生ログ",
+    "ignored": "無視した警告",
+    "ignoredEmpty": "無視した警告はありません。",
+    "restoreWarning": "警告を復元",
+    "recordDetail": "クラッシュ詳細"
   },
   "findings": {
     "exceptionAccessViolation": "アクセス違反 —— クライアントが権限のないメモリーに読み書きしました",
@@ -56,7 +67,8 @@
     "safeModeOn": "クラッシュ時にセーフモードが有効 —— 純正クライアント単体のクラッシュです",
     "probeWasActive": "WoWSP のゲーム内プローブが動作していました",
     "dumpAvailable": "クラッシュダンプがあり、詳細分析が可能です",
-    "danglingUiReference": "宙ぶらりんの UI 参照 — クラッシュログに \"{url}\" のロード失敗が出ているのに、mod ファイルがまだ要求しています"
+    "danglingUiReference": "宙ぶらりんの UI 参照 — クラッシュログに \"{url}\" のロード失敗が出ているのに、mod ファイルがまだ要求しています",
+    "evidenceGameReport": "WG クラッシュレポートより"
   },
   "suspects": {
     "title": "疑わしいプラグイン",
@@ -68,7 +80,14 @@
     "unknownBadge": "不明",
     "quarantine": "隔離",
     "restore": "復元",
-    "logLines": "ログ行"
+    "logLines": "ログ行",
+    "delete": "削除",
+    "ignore": "無視",
+    "confirmDeleteTitle": "MOD ファイルの削除",
+    "confirmDeleteMessage": "{name} を完全に削除しますか？この操作は取り消せません。",
+    "deleteDone": "削除しました",
+    "ignoreDone": "警告を無視しました — 「無視した警告」から復元できます",
+    "restoreDone": "警告を復元しました"
   },
   "actions": {
     "restarting": "クライアントを再起動中…",

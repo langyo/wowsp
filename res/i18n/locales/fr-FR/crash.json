@@ -7,7 +7,8 @@
     "restart": "Redémarrer le jeu",
     "analysis": "Voir l'analyse",
     "dismiss": "Ignorer",
-    "safeRestartFallback": "Dossier du jeu introuvable — redémarrage tel quel."
+    "safeRestartFallback": "Dossier du jeu introuvable — redémarrage tel quel.",
+    "open": "Examiner le plantage"
   },
   "section": {
     "title": "Analyse des plantages",
@@ -30,7 +31,17 @@
     "restart": "Redémarrer le jeu",
     "safeModeOn": "Le mode sans échec est activé",
     "analysisFor": "Analyse de {id}",
-    "refresh": "Actualiser"
+    "refresh": "Actualiser",
+    "latest": "Dernier plantage",
+    "noCrashes": "Aucun plantage enregistré",
+    "openRecords": "Historique des plantages",
+    "recordsTitle": "Historique des plantages",
+    "rawLogs": "Journaux bruts",
+    "rawLogsTitle": "Journaux bruts",
+    "ignored": "Avertissements ignorés",
+    "ignoredEmpty": "Aucun avertissement ignoré.",
+    "restoreWarning": "Restaurer l'avertissement",
+    "recordDetail": "Rapport de plantage"
   },
   "findings": {
     "exceptionAccessViolation": "Violation d'accès — le client a lu ou écrit une mémoire qui ne lui appartient pas",
@@ -56,7 +67,8 @@
     "safeModeOn": "Le mode sans échec était actif — le client d'origine a planté seul",
     "probeWasActive": "La sonde en jeu de WoWSP était active",
     "dumpAvailable": "Un dump mémoire est disponible pour une analyse approfondie",
-    "danglingUiReference": "Référence d'interface orpheline — le journal du plantage montre \"{url}\" en échec de chargement alors qu'un fichier de mod la demande encore"
+    "danglingUiReference": "Référence d'interface orpheline — le journal du plantage montre \"{url}\" en échec de chargement alors qu'un fichier de mod la demande encore",
+    "evidenceGameReport": "D'après le rapport de plantage WG"
   },
   "suspects": {
     "title": "Plugins suspects",
@@ -68,7 +80,14 @@
     "unknownBadge": "Inconnu",
     "quarantine": "Mettre en quarantaine",
     "restore": "Restaurer",
-    "logLines": "Lignes de journal"
+    "logLines": "Lignes de journal",
+    "delete": "Supprimer",
+    "ignore": "Ignorer",
+    "confirmDeleteTitle": "Supprimer le fichier du mod",
+    "confirmDeleteMessage": "Supprimer définitivement {name} ? Cette action est irréversible.",
+    "deleteDone": "Supprimé",
+    "ignoreDone": "Avertissement ignoré — restaurez-le dans Avertissements ignorés",
+    "restoreDone": "Avertissement restauré"
   },
   "actions": {
     "restarting": "Redémarrage du client…",

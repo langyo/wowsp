@@ -190,5 +190,6 @@ export type {
   SuspectMod,
   CrashAnalysis,
   QuarantineEntry,
+  IgnoredSuspect,
   GameRestartInfo,
 } from "./client";

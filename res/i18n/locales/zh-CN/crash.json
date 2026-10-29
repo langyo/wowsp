@@ -7,7 +7,8 @@
     "restart": "重启游戏",
     "analysis": "查看分析",
     "dismiss": "忽略",
-    "safeRestartFallback": "未能定位游戏目录，将直接重启。"
+    "safeRestartFallback": "未能定位游戏目录，将直接重启。",
+    "open": "查看崩溃分析"
   },
   "section": {
     "title": "崩溃分析",
@@ -30,7 +31,17 @@
     "restart": "重启游戏",
     "safeModeOn": "安全模式已开启",
     "analysisFor": "{id} 的分析结果",
-    "refresh": "刷新"
+    "refresh": "刷新",
+    "latest": "最近崩溃",
+    "noCrashes": "暂无崩溃记录",
+    "openRecords": "查看崩溃记录",
+    "recordsTitle": "崩溃记录",
+    "rawLogs": "查看原始日志",
+    "rawLogsTitle": "原始日志",
+    "ignored": "已忽略的警告",
+    "ignoredEmpty": "没有已忽略的警告。",
+    "restoreWarning": "恢复警告",
+    "recordDetail": "崩溃详情"
   },
   "findings": {
     "exceptionAccessViolation": "访问违例 —— 客户端读写了自己无权访问的内存",
@@ -56,7 +67,8 @@
     "safeModeOn": "崩溃时安全模式已开启 —— 原版客户端自行崩溃",
     "probeWasActive": "WoWSP 游戏内探针处于活动状态",
     "dumpAvailable": "存在崩溃转储，可供深入分析",
-    "danglingUiReference": "UI 引用悬空 —— 崩溃日志显示 \"{url}\" 加载失败，仍有模组文件在引用它"
+    "danglingUiReference": "UI 引用悬空 —— 崩溃日志显示 \"{url}\" 加载失败，仍有模组文件在引用它",
+    "evidenceGameReport": "来自 WG 崩溃报告"
   },
   "suspects": {
     "title": "可疑插件",
@@ -68,7 +80,14 @@
     "unknownBadge": "未知",
     "quarantine": "隔离",
     "restore": "恢复",
-    "logLines": "日志行"
+    "logLines": "日志行",
+    "delete": "删除",
+    "ignore": "忽略",
+    "confirmDeleteTitle": "删除模组文件",
+    "confirmDeleteMessage": "确定永久删除 {name}？此操作无法撤销。",
+    "deleteDone": "已删除",
+    "ignoreDone": "已忽略该警告，可在「已忽略的警告」中恢复",
+    "restoreDone": "警告已恢复"
   },
   "actions": {
     "restarting": "正在重启客户端…",

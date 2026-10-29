@@ -1,12 +1,56 @@
-// CrashSection — the crash-report settings pane. The section reads like
-// a diagnostic report: record list on the left, findings + suspects +
-// log excerpts on the right, everything quiet grays with severity chips
-// carrying the only color (info gray, warning amber, critical red).
+// CrashSection — the crash-report settings pane. Top level stays quiet:
+// the safeguard switch row and the LATEST crash stamp; the history, the
+// ignored-warning list and the raw logs live in secondary hikari
+// windows. List rows put their actions on the RIGHT (the app-wide rule),
+// separators are hairlines, and severity rides hikari tags.
 
-.crash-section {
+.crash-section__safeguard {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--hi-color-border, #d0d7de);
+  border-radius: var(--hi-radius-sm, 4px);
+  background: var(--hi-color-bg-muted, #f6f8fa);
+}
+
+.crash-section__safeguard-text {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.crash-section__safeguard-title {
+  font-size: var(--hi-text-sm, 0.8125rem);
+  font-weight: 600;
+}
+
+.crash-section__safeguard-hint {
+  font-size: var(--hi-text-xs, 0.75rem);
+  color: var(--hi-color-text-secondary, #57606a);
+}
+
+.crash-section__latest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid var(--hi-color-border, #d0d7de);
+  font-size: var(--hi-text-sm, 0.8125rem);
+}
+
+.crash-section__latest-label {
+  color: var(--hi-color-text-secondary, #57606a);
+}
+
+.crash-section__latest-value {
+  font-weight: 600;
+}
+
+.crash-section__spacer {
+  flex: 1;
 }
 
 .crash-section__empty {
@@ -15,71 +59,18 @@
   padding: 8px 0;
 }
 
-.crash-section__records {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 14rem;
-  overflow-y: auto;
-}
-
-.crash-section__record {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 10px;
-  border: 1px solid var(--hi-color-border, #d0d7de);
-  border-radius: var(--hi-radius-sm, 4px);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  font-size: var(--hi-text-sm, 0.8125rem);
-  color: inherit;
-
-  &.is-selected {
-    border-color: var(--hi-color-primary, #0969da);
-    background: var(--hi-color-primary-soft, rgba(9, 105, 218, 0.06));
-  }
-
-  &.is-dismissed {
-    opacity: 0.55;
-  }
-}
-
-.crash-section__record-time {
-  font-weight: 600;
-}
-
-.crash-section__record-name {
-  font-family: var(--hi-font-mono, ui-monospace, monospace);
-  font-size: var(--hi-text-xs, 0.75rem);
-}
-
-.crash-section__record-meta {
-  color: var(--hi-color-text-secondary, #57606a);
-  font-size: var(--hi-text-xs, 0.75rem);
-}
-
 .crash-section__detail {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border-top: 1px solid var(--hi-color-border, #d0d7de);
   padding-top: 10px;
 }
 
-.crash-section__detail-head {
+.crash-section__meta {
   font-size: var(--hi-text-xs, 0.75rem);
   color: var(--hi-color-text-secondary, #57606a);
   word-break: break-all;
-}
-
-.crash-section__safemode {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--hi-color-warning, #9a6700);
-  font-size: var(--hi-text-sm, 0.8125rem);
+  margin: 0;
 }
 
 .crash-section__loading {
@@ -112,43 +103,13 @@
 
 .crash-section__finding {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   font-size: var(--hi-text-sm, 0.8125rem);
-
-  &.is-critical .crash-section__finding-text {
-    font-weight: 600;
-  }
-}
-
-.crash-section__chip {
-  flex: none;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: var(--hi-text-xs, 0.75rem);
-  color: #fff;
-
-  &.is-info,
-  &--info {
-    background: var(--hi-color-text-secondary, #57606a);
-  }
-
-  &--warning {
-    background: var(--hi-color-warning, #9a6700);
-  }
-
-  &--critical {
-    background: var(--hi-color-danger, #cf222e);
-  }
 }
 
 .crash-section__finding-text {
   word-break: break-word;
-}
-
-.crash-section__raw {
-  font-size: var(--hi-text-xs, 0.75rem);
-  word-break: break-all;
 }
 
 .crash-section__suspect {
@@ -168,21 +129,16 @@
 }
 
 .crash-section__suspect-name {
-  font-family: var(--hi-font-mono, ui-monospace, monospace);
+  font-size: var(--hi-text-sm, 0.8125rem);
   font-weight: 600;
+  word-break: break-all;
 }
 
-.crash-section__badge {
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: var(--hi-text-xs, 0.75rem);
-  background: var(--hi-color-primary-soft, rgba(9, 105, 218, 0.1));
-  color: var(--hi-color-primary, #0969da);
-
-  &.is-quarantined {
-    background: var(--hi-color-warning-soft, rgba(154, 103, 0, 0.12));
-    color: var(--hi-color-warning, #9a6700);
-  }
+.crash-section__suspect-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 
 .crash-section__suspect-lines,
@@ -204,20 +160,102 @@
   color: var(--hi-color-danger, #cf222e);
 }
 
-.crash-section__log-toggle {
+.crash-section__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+// ── the records window ─────────────────────────────────────────────────────
+
+.crash-section__records {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.crash-section__record {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--hi-color-border, #d0d7de);
+  border-radius: var(--hi-radius-sm, 4px);
   background: transparent;
-  border: none;
-  padding: 0;
   text-align: left;
   cursor: pointer;
   font-size: var(--hi-text-sm, 0.8125rem);
-  font-weight: 600;
   color: inherit;
+
+  &.is-selected {
+    border-color: var(--hi-color-primary, #0969da);
+    background: var(--hi-color-primary-soft, rgba(9, 105, 218, 0.06));
+  }
+
+  &.is-dismissed {
+    opacity: 0.55;
+  }
 }
 
-.crash-section__log-meta {
+.crash-section__record-name {
+  font-family: var(--hi-font-mono, ui-monospace, monospace);
+  font-size: var(--hi-text-xs, 0.75rem);
+}
+
+.crash-section__record-meta {
   color: var(--hi-color-text-secondary, #57606a);
-  font-weight: 400;
+  font-size: var(--hi-text-xs, 0.75rem);
+}
+
+// ── the ignored-warnings window ────────────────────────────────────────────
+
+.crash-section__ignored {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crash-section__ignored-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--hi-color-border, #d0d7de);
+  border-radius: var(--hi-radius-sm, 4px);
+  font-size: var(--hi-text-sm, 0.8125rem);
+}
+
+.crash-section__ignored-name {
+  font-family: var(--hi-font-mono, ui-monospace, monospace);
+  word-break: break-all;
+}
+
+.crash-section__ignored-time {
+  color: var(--hi-color-text-secondary, #57606a);
+  font-size: var(--hi-text-xs, 0.75rem);
+}
+
+// ── the raw-logs window ────────────────────────────────────────────────────
+
+.crash-section__raw {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.crash-section__log-name {
+  margin: 0 0 4px;
+  font-size: var(--hi-text-sm, 0.8125rem);
+  font-weight: 600;
+  font-family: var(--hi-font-mono, ui-monospace, monospace);
 }
 
 .crash-section__log-tail {
@@ -231,42 +269,25 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+// ── the record card head: time + direct-cause tag ──────────────────────────
 
-.crash-section__meta {
-  font-size: var(--hi-text-xs, 0.75rem);
-  color: var(--hi-color-text-secondary, #57606a);
-}
-
-.crash-section__actions {
-  display: flex;
-  gap: 8px;
-}
-// ── the safeguard switch row ────────────────────────────────────────────────
-
-.crash-section__safeguard {
+.crash-section__record-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--hi-color-border, #d0d7de);
-  border-radius: var(--hi-radius-sm, 4px);
-  background: var(--hi-color-bg-muted, #f6f8fa);
+  gap: 8px;
 }
 
-.crash-section__safeguard-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.crash-section__safeguard-title {
-  font-size: var(--hi-text-sm, 0.8125rem);
+.crash-section__record-time {
   font-weight: 600;
 }
 
-.crash-section__safeguard-hint {
-  font-size: var(--hi-text-xs, 0.75rem);
-  color: var(--hi-color-text-secondary, #57606a);
+// ── the per-record log window (scrolls to the tail on open) ────────────────
+
+.crash-section__detail-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
 }

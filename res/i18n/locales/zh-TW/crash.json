@@ -7,7 +7,8 @@
     "restart": "重新啟動遊戲",
     "analysis": "檢視分析",
     "dismiss": "忽略",
-    "safeRestartFallback": "未能定位遊戲資料夾，將直接重新啟動。"
+    "safeRestartFallback": "未能定位遊戲資料夾，將直接重新啟動。",
+    "open": "查看崩潰分析"
   },
   "section": {
     "title": "當機分析",
@@ -30,7 +31,17 @@
     "restart": "重新啟動遊戲",
     "safeModeOn": "安全模式已開啟",
     "analysisFor": "{id} 的分析結果",
-    "refresh": "重新整理"
+    "refresh": "重新整理",
+    "latest": "最近崩潰",
+    "noCrashes": "暫無崩潰記錄",
+    "openRecords": "查看崩潰記錄",
+    "recordsTitle": "崩潰記錄",
+    "rawLogs": "查看原始日誌",
+    "rawLogsTitle": "原始日誌",
+    "ignored": "已忽略的警告",
+    "ignoredEmpty": "沒有已忽略的警告。",
+    "restoreWarning": "恢復警告",
+    "recordDetail": "崩潰詳情"
   },
   "findings": {
     "exceptionAccessViolation": "存取違例 —— 用戶端讀寫了無權存取的記憶體",
@@ -56,7 +67,8 @@
     "safeModeOn": "當機時安全模式已開啟 —— 原版用戶端自行當機",
     "probeWasActive": "WoWSP 遊戲內探針處於作用中狀態",
     "dumpAvailable": "存在當機傾印，可供深入分析",
-    "danglingUiReference": "UI 參照懸空 —— 崩潰日誌顯示 \"{url}\" 載入失敗，仍有模組檔案在參照它"
+    "danglingUiReference": "UI 參照懸空 —— 崩潰日誌顯示 \"{url}\" 載入失敗，仍有模組檔案在參照它",
+    "evidenceGameReport": "來自 WG 崩潰報告"
   },
   "suspects": {
     "title": "可疑插件",
@@ -68,7 +80,14 @@
     "unknownBadge": "未知",
     "quarantine": "隔離",
     "restore": "還原",
-    "logLines": "記錄檔行"
+    "logLines": "記錄檔行",
+    "delete": "刪除",
+    "ignore": "忽略",
+    "confirmDeleteTitle": "刪除模組檔案",
+    "confirmDeleteMessage": "確定永久刪除 {name}？此操作無法復原。",
+    "deleteDone": "已刪除",
+    "ignoreDone": "已忽略該警告，可在「已忽略的警告」中恢復",
+    "restoreDone": "警告已恢復"
   },
   "actions": {
     "restarting": "正在重新啟動用戶端…",
