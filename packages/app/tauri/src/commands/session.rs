@@ -257,6 +257,26 @@ fn broadcast_if_changed(app: &AppHandle) {
 
 // ── observation hooks (arena watcher) ───────────────────────────────────────
 
+/// The hub's current playing identity (realm + account id of the account
+/// actually in battle) — the gateway publisher's channel resolution reads
+/// it when a battle frame is built (commands/gateway/publish.rs).
+pub(crate) fn playing_identity() -> Option<PlayingAccount> {
+    with_state(|state| state.playing.clone())
+}
+
+/// Realm of the RUNNING install per the session hub's process layer — the
+/// gateway publisher's realm fallback when the playing account carries no
+/// usable realm (unregistered alt, route id only).
+pub(crate) fn running_process_realm() -> Option<String> {
+    with_state(|state| state.process.realm.clone().filter(|r| !r.is_empty()))
+}
+
+/// Whether a game client is currently running — the gateway publisher's
+/// game-exit teardown signal (bye + close when the battle window ends).
+pub(crate) fn process_running() -> bool {
+    with_state(|state| state.process.running)
+}
+
 /// The local player's name in a battle roster: the `relation == 0` entry,
 /// skipping the game's bot/scripted markers (a real player's slot is what
 /// identifies the logged-in account — bots share the id space in ops).

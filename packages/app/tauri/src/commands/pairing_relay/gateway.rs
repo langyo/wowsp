@@ -67,7 +67,7 @@ pub(super) fn is_gateway_manifest(m: &GatewayManifest) -> bool {
 /// Numeric `x.y.z` comparison of dotted versions (any trailing non-numeric
 /// suffix on a part is ignored; missing parts count as 0). Returns true
 /// when `client` >= `minimum`.
-pub(super) fn client_meets_minimum(client: &str, minimum: &str) -> bool {
+pub(crate) fn client_meets_minimum(client: &str, minimum: &str) -> bool {
     let nums = |v: &str| {
         v.split('.')
             .map(|p| {

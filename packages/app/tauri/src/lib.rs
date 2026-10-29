@@ -704,6 +704,25 @@ pub fn run() {
             commands::pairing_relay::pairing_get_relay_config,
             commands::pairing_relay::pairing_set_relay,
             commands::pairing_relay::pairing_reallocate_code,
+            // Gateway push (docs/en/designs/gateway-push.md): route-entry
+            // config + health/session handshake run everywhere (the phone
+            // settings carry the route entry too); the publisher and the
+            // self-host wizard are desktop-only (the phone is a
+            // subscriber, never a host).
+            commands::gateway::gateway_get_config,
+            commands::gateway::gateway_set_config,
+            commands::gateway::gateway_get_health,
+            commands::gateway::gateway_open_session,
+            commands::gateway::gateway_subscribe_start,
+            commands::gateway::gateway_subscribe_stop,
+            #[cfg(desktop)]
+            commands::gateway::gateway_publish_start,
+            #[cfg(desktop)]
+            commands::gateway::gateway_publish_stop,
+            #[cfg(desktop)]
+            commands::gateway::gateway_selfhost_probe,
+            #[cfg(desktop)]
+            commands::gateway::gateway_selfhost_step,
             commands::wg_api::lookup_player_stats,
             commands::wg_api::lookup_players_stats_batch,
             commands::wg_api::clear_roster_stats_cache,

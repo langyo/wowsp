@@ -1,35 +1,35 @@
-import { computed, defineComponent, ref, watch } from "vue";
+import { computed, defineComponent, ref } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
-import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle } from "@lucide/vue";
+import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle, Smartphone } from "@lucide/vue";
 
 import { HkTag, HkTooltip } from "@celestia-island/hikari";
 
 import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import FullscreenModeHint from "@/components/layout/FullscreenModeHint";
+import GatewayCaptchaHint from "@/components/layout/GatewayCaptchaHint";
 import PluginUpdateHint from "@/components/layout/PluginUpdateHint";
 import PlatformIcon from "@/components/base/PlatformIcon";
-import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { useSessionStore } from "@/stores/session";
+import { useGatewayStore } from "@/stores/gateway";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { useStaleBinsStore } from "@/stores/staleBins";
-import { useStatsStore } from "@/stores/stats";
+import { useShownPlayer } from "@/composables/useShownPlayer";
 import { useClipboard } from "@/composables/useClipboard";
 import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { kindLabel } from "@/utils/installLabel";
-import type { GameProcessInfo, PlayerStats, SessionPlayer } from "@/api";
+import type { GameProcessInfo } from "@/api";
 import "./Sidebar.scss";
 
 /**
  * Left sidebar: nav links + spacer + footer.
  *
  * Nav links (top): Dashboard / Lookup / Ships / Live / Replay / Tactics /
- * Resources. Live watch the local game install, so they hide on
- * the phone app build (no local game / install there).
+ * Resources. Live keeps a phone presence too — the desktop watches the
+ * local game install while the phone build renders the gateway live view.
  * Footer (bottom): game-status indicator, a conditional game-upgrade
  * prompt (stranded-mod migration, deep-links into the mod hub's wizard),
  * then two full-width key/value buttons in the same style — the active
@@ -56,11 +56,9 @@ export default defineComponent({
     },
   },
   setup(props) {
-    const accounts = useAccountStore();
     const config = useConfigStore();
     const gameStatus = useGameStatusStore();
-    const session = useSessionStore();
-    const stats = useStatsStore();
+    const gateway = useGatewayStore();
     const ui = useSettingsUiStore();
     const pluginUpdates = usePluginUpdatesStore();
     const staleBins = useStaleBinsStore();
@@ -71,61 +69,52 @@ export default defineComponent({
     // presents the two as one section, the sidebar agrees.
     const route = useRoute();
 
-    // The account row's player: the session hub's RESOLVED identity when
-    // the hub is reachable — it carries the actually-playing account (the
-    // battle roster's local player, matched against the bound profiles, so
-    // same-realm alts are told apart) and even unregistered alts the store
-    // cannot represent. Falls back to the store's active selection (browser
-    // dev / older shell, where the hub snapshot stays null).
-    const shownPlayer = computed<SessionPlayer | null>(() => {
-      if (session.display) return session.display;
-      const a = accounts.activeAccount;
-      return a
-        ? {
-            accountId: a.accountId,
-            nickname: a.nickname,
-            realm: a.realm,
-            registered: true,
-            playing: false,
-          }
-        : null;
-    });
-
-    // Cached stats for the displayed account — only the emblem (dog tag /
-    // service-record tier) feeds the sidebar avatar. READ THROUGH the
-    // shared stats store's cache — the same reactive snapshot the
-    // dashboard header renders — so a dashboard refresh (or any other
-    // lookup) updates the sidebar live instead of diverging into a stale
-    // local copy. Hydration below stays cache-only (loadCached), never
-    // the API (same policy as the account cards).
-    const activeStats = computed<PlayerStats | null>(() => {
-      const a = shownPlayer.value;
-      return a?.accountId != null
-        ? stats.cache.get(`${a.realm}_${a.accountId}`) ?? null
-        : null;
-    });
-    watch(
-      () => shownPlayer.value,
-      async (a) => {
-        // Warm the shared cache from disk so the emblem is there on cold
-        // start; the computed above reacts when the map fills.
-        if (a?.accountId != null) await stats.loadCached(a.realm, a.accountId);
-      },
-      { immediate: true },
-    );
+    // The account row's identity + emblem — the SHOWN player, shared with
+    // the phone-layout title-bar avatar through one composable (single
+    // source of truth; see composables/useShownPlayer.ts for the
+    // resolution chain and the cache-only hydration policy).
+    const { shownPlayer, dogTag } = useShownPlayer();
 
     // The account row's avatar: the real dog-tag emblem when the cached
     // stats carry one, else the neutral AccountAvatar disc. The old
     // service-record-tier fallback (a numbered ring) is gone — its number
     // read like a permission rank, and the 3px metallic ring shrank the
     // visible disc below the platform badge beside it.
-    const accountAvatar = computed(() => {
-      const s = activeStats.value;
-      return s?.dogTag ? (
-        <PlayerBadge dogTag={s.dogTag} size={22} />
-      ) : (
-        <AccountAvatar size={22} />
-      );
+    const accountAvatar = computed(() =>
+      dogTag.value ? <PlayerBadge dogTag={dogTag.value} size={22} /> : <AccountAvatar size={22} />,
+    );
+
+    // Gateway push (desktop): the phone-status icon joins the footer while
+    // the mobile service is enabled — its face reads the publish phase
+    // (pending-captcha warning / online success / error), and while the
+    // node demands an unsolved Turnstile the GatewayCaptchaHint card pins
+    // open right of the game-status card.
+    void gateway.loadConfig();
+    const gatewayTone = computed(() => {
+      switch (gateway.pubPhase) {
+        case "captcha":
+        case "resolving":
+        case "connecting":
+          return "pending";
+        case "online":
+          return "online";
+        case "error":
+          return "error";
+        default:
+          return "idle";
+      }
+    });
+    const gatewayTip = computed(() => {
+      switch (gatewayTone.value) {
+        case "pending":
+          return t("gateway.tipPending");
+        case "online":
+          return t("gateway.tipOnline");
+        case "error":
+          return t("gateway.tipError");
+        default:
+          return t("gateway.tipIdle");
+      }
     });
 
     const proc = computed(() => gameStatus.process);
@@ -179,16 +168,15 @@ export default defineComponent({
             <Ship size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.ships")}</span>
           </RouterLink>
-          {/* Live battle watches the LOCAL game install — desktop app
-              territory (same guard as the footer client button; one branch
-              covers the drawer variant too). Tactics analysis works from the
-              bundled map catalog with touch gestures, so phones get it too. */}
-          {!isMobileApp() ? (
-            <RouterLink to="/live" class="sidebar__link" activeClass="is-active">
-              <Video size={16} class="sidebar__link-icon" />
-              <span class="sidebar__link-text">{t("nav.live")}</span>
-            </RouterLink>
-          ) : null}
+          {/* Live battle: the DESKTOP watches the local game install;
+              the PHONE build renders the gateway live view instead (the
+              pushed, same-account battle — see views/replay/LiveView's
+              mobile branch). Tactics analysis works from the bundled map
+              catalog with touch gestures, so phones get it too. */}
+          <RouterLink to="/live" class="sidebar__link" activeClass="is-active">
+            <Video size={16} class="sidebar__link-icon" />
+            <span class="sidebar__link-text">{t("nav.live")}</span>
+          </RouterLink>
           <RouterLink to="/replay" class="sidebar__link" activeClass="is-active">
             <Film size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.replay")}</span>
@@ -265,6 +253,24 @@ export default defineComponent({
               display mode). Only ever active on the desktop app — the
               process report is offline everywhere else. */}
           <FullscreenModeHint anchor={statusCardEl} />
+
+          {/* Gateway push (desktop): the phone icon joins the footer
+              beside the status card while the mobile service is enabled.
+              Its hover surface is the GatewayCaptchaHint card — pinned
+              while the node demands an unsolved Turnstile — anchored
+              right of the status card like the plugin-update hint above.
+              The phone build never mounts it (publish is desktop-only). */}
+          {!isMobileApp() && gateway.config.enabled ? (
+            <GatewayCaptchaHint class="sidebar__footer-slot" anchor={statusCardEl}>
+              <span
+                class={["sidebar__gateway-icon", "is-" + gatewayTone.value]}
+                data-hint={gatewayTip.value}
+                data-hint-pos="right"
+              >
+                <Smartphone size={22} />
+              </span>
+            </GatewayCaptchaHint>
+          ) : null}
 
           {/* game upgrade — the ACTIVE install still holds mods (and
               possibly the in-game probe) stranded in an old bin/. The

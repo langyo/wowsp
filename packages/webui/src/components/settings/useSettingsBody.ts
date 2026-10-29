@@ -44,6 +44,7 @@ import { useSettingsNetworkState } from "@/components/settings/useSettingsNetwor
 import { useSettingsUpdatesState } from "@/components/settings/useSettingsUpdatesState";
 import { useSettingsResourcesState } from "@/components/settings/useSettingsResourcesState";
 import { useSettingsPairingState } from "@/components/settings/useSettingsPairingState";
+import { useSettingsGatewayState } from "@/components/settings/useSettingsGatewayState";
 import { useSettingsDpiState } from "@/components/settings/useSettingsDpiState";
 import { isMobileApp } from "@/utils/platform";
 
@@ -62,6 +63,7 @@ export function useSettingsBody(props: { active: boolean }) {
   const updates = useSettingsUpdatesState();
   const resources = useSettingsResourcesState();
   const pairing = useSettingsPairingState();
+  const gateway = useSettingsGatewayState();
   const dpi = useSettingsDpiState(
     () => props.active,
     () => ui.section,
@@ -201,7 +203,7 @@ export function useSettingsBody(props: { active: boolean }) {
     account: t("settings.account"),
     network: t("settings.network"),
     markers: t("settings.markersTitle"),
-    pairing: mobileApp ? t("settings.pairingMobile") : t("settings.pairing"),
+    pairing: mobileApp ? t("settings.pairingMobile") : t("gateway.sectionTitle"),
     updates: t("settings.updates"),
     resources: t("settings.resourcesPage"),
     installCleanup: t("settings.installCleanup"),
@@ -248,6 +250,7 @@ export function useSettingsBody(props: { active: boolean }) {
     updates,
     resources,
     pairing,
+    gateway,
     dpi,
     railGroups,
   };

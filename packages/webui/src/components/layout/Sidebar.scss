@@ -97,6 +97,29 @@
         width: 100%;
       }
     }
+
+    /* Gateway phone-status icon: a 22px mark beside the status card while
+       the mobile service runs. Its color reads the publish phase —
+       pending-captcha warning / online success / error danger / idle
+       muted — mirroring the status pip's tone vocabulary. */
+    .sidebar__gateway-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      color: rgb(var(--color-muted));
+
+      &.is-pending {
+        color: var(--hi-color-warning, #d29922);
+      }
+      &.is-online {
+        color: rgb(var(--color-success));
+      }
+      &.is-error {
+        color: rgb(var(--color-error, 220 80 80));
+      }
+    }
   }
 
   /* Footer: status indicator + two same-style full-width buttons (active

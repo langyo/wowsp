@@ -84,7 +84,10 @@ not_found_handling = "single-page-application"
 # handler. A channel's FIRST publish must add its two negation entries
 # here (the build guard enforces it) and extend
 # DIGEST_PUBLISHED_CHANNELS for its own miss fallback.
-run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*"]
+# "/gateway*" — the account-routed battle-push namespace
+# (crates/relay-worker/src/gateway.rs; mobile-gateway wave). Nothing
+# static ever lives under /gateway, so no per-path negation is needed.
+run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*", "/gateway*"]
 # The ASSETS binding lets the worker fetch its own asset files by path
 # (crates/relay-worker/src/digests.rs — serves the doc-less channels'
 # gated 404; the doc-carrying channels' hits are answered statically
@@ -103,6 +106,19 @@ command = "worker-build --release crates/relay-worker"
 # crates/relay-core/src/replay.rs).
 [[kv_namespaces]]
 binding = "FEEDBACK_KV"
+id = "a523e16e116b4f9fa5878c721c133028"
+
+# Battle-push KV mirror (the GatewayChannel DO writes battle:<route>
+# rows here, TTL 1 h — see crates/relay-worker/src/gateway.rs). A
+# SECOND binding over the EXISTING FEEDBACK_KV namespace: two bindings
+# may legally point at one namespace, and the gateway's tiny mirror
+# rows share the same (per-namespace) free quota. If the push namespace
+# ever needs its own traffic profile, split it —
+#   npx wrangler kv namespace create GATEWAY_KV
+# — and repoint ONLY this id; the code keys everything off the binding
+# name, so nothing else changes.
+[[kv_namespaces]]
+binding = "GATEWAY_KV"
 id = "a523e16e116b4f9fa5878c721c133028"
 
 # Release-digest store: RETIRED from KV on 2026-10-22 — the docs ride
@@ -136,6 +152,13 @@ bucket_name = "wowsp-replay-shards"
 #                 meta + token hashes, per-rule counters and the staged-
 #                 bytes watermark. Alarm-free (drained rows stay forever;
 #                 see crates/relay-worker/src/replay_index.rs).
+#   GatewayAuth   — the singleton ("auth", idFromName) push-session
+#                 registry (v4): single-use /gateway/session tickets +
+#                 per-IP password failure counters, TTL alarm sweep.
+#   GatewayChannel — one per push route id ("r:<realm>:<accountId>",
+#                 v4): publisher presence, subscriber fan-out (cap 32),
+#                 last-battle snapshot retention alarm, battle:<route>
+#                 KV mirror writes.
 #
 # Migrations v1/v2 are the SAME class declarations the TypeScript worker
 # deployed (names and SQLite backing unchanged) — the Rust rewrite needed
@@ -155,6 +178,14 @@ class_name = "Directory"
 name = "REPLAY_INDEX"
 class_name = "ReplayIndex"
 
+[[durable_objects.bindings]]
+name = "GATEWAY_AUTH"
+class_name = "GatewayAuth"
+
+[[durable_objects.bindings]]
+name = "GATEWAY_CHANNEL"
+class_name = "GatewayChannel"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
@@ -166,6 +197,12 @@ new_sqlite_classes = ["Directory"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["ReplayIndex"]
+
+# v4 adds the battle-push namespace's two classes (mobile-gateway wave;
+# see crates/relay-worker/src/gateway.rs).
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["GatewayAuth", "GatewayChannel"]
 
 # Optional operator switches (dashboard ▶ Settings ▶ Variables, or here
 # under [vars]); neither is required:
@@ -181,6 +218,23 @@ new_sqlite_classes = ["ReplayIndex"]
 #   npx wrangler secret put REPLAY_ADMIN_KEY   (high-entropy random)
 # Unset = the admin routes answer to a logged-in erp session only.
 # Widget "wowsp-feedback" (managed mode, wowsp.langyo.xyz + localhost).
+#
+# ── /gateway/* battle push (crates/relay-worker/src/gateway.rs) ──────
+# No NEW vars on the official node: the gateway health doc reads
+# GATEWAY_TURNSTILE_SITEKEY first and falls back to TURNSTILE_SITEKEY
+# above (same for the siteverify secrets GATEWAY_TURNSTILE_SECRET →
+# TURNSTILE_SECRET), so push sessions are gated by the SAME widget as
+# the feedback form. Self-hosts that want their own widget set
+# GATEWAY_TURNSTILE_SITEKEY here instead (see
+# wrangler.selfhost.toml.example). The widget's hostname allowlist must
+# cover tauri.localhost (desktop webview), asset.localhost (Android)
+# and localhost (wrangler dev) for the apps to pass challenges.
+# GATEWAY_PASSWORD (secret, OPTIONAL) — when set, /gateway/session also
+# demands it (constant-time compare; 5 failures per minute locks the
+# source IP for 5 minutes):
+#   npx wrangler secret put GATEWAY_PASSWORD
+# Absent ⇒ password off. The official node stays Turnstile-only;
+# private/self-hosted nodes may prefer password-only (no widget).
 # Console access gate (two tiers, no open mode):
 #   ADMINS  — ERP_ALLOWED_OPEN_IDS (comma-separated, secret or var;
 #            `wrangler secret put` recommended) ∪ FEEDBACK_ADMIN_OPEN_ID.

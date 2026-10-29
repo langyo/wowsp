@@ -1,0 +1,162 @@
+// SelfhostWizard — the private-gateway deployment wizard's body inside a
+// settings HkModal: hikari's HkStepFlow timeline over the step bodies,
+// then the shared mono log pane carrying the wizard's streamed output
+// (wowsp://gateway-selfhost lines buffered in the gateway store).
+
+.selfhost-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+
+  &__step {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-10);
+    min-height: 9rem;
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    color: rgb(var(--color-muted));
+  }
+
+  &__busy {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    color: rgb(var(--color-muted));
+  }
+
+  // Env-probe rows: label | found/missing glyph | value.
+  &__env {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  &__env-row {
+    display: grid;
+    grid-template-columns: minmax(7rem, auto) 16px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-8);
+  }
+
+  &__env-label {
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-muted));
+  }
+
+  &__env-value {
+    font-family: var(--font-mono);
+    font-size: var(--text-3xs, 0.625rem);
+    color: rgb(var(--color-text));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__ok {
+    color: rgb(var(--color-success));
+  }
+
+  &__miss {
+    color: rgb(var(--color-muted));
+  }
+
+  // Target-domain field row.
+  &__field {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+
+    .hk-input {
+      flex: 1;
+    }
+  }
+
+  // Verified success: QR beside the URL + copy + phone hint.
+  &__done {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-10);
+  }
+
+  &__url {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-12);
+    flex-wrap: wrap;
+  }
+
+  &__url-body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-8);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  &__phone-hint {
+    margin: 0;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+  }
+
+  // The streamed-output pane.
+  &__log {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  &__log-title {
+    margin: 0;
+    font-size: var(--text-3xs, 0.625rem);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgb(var(--color-muted) / 75%);
+  }
+
+  &__log-body {
+    max-height: 10rem;
+    overflow-y: auto;
+    padding: var(--space-8);
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid rgb(var(--color-border) / 20%);
+    background: rgb(var(--color-background) / 60%);
+    font-family: var(--font-mono);
+    font-size: var(--text-3xs, 0.625rem);
+    line-height: 1.6;
+  }
+
+  &__log-line {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: rgb(var(--color-muted));
+
+    &.is-err {
+      color: rgb(var(--color-error, 220 80 80));
+    }
+
+    &.is-done {
+      color: rgb(var(--color-success));
+      font-weight: 600;
+    }
+  }
+
+  &__log-empty {
+    margin: 0;
+    color: rgb(var(--color-muted) / 70%);
+    font-style: italic;
+  }
+}

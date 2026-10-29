@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { HkTabs, HkTitleBar } from "@celestia-island/hikari";
+import { HkTabs, HkTitleBar, useBreakpoint } from "@celestia-island/hikari";
 import {
   ArrowLeftRight,
   BarChart3,
@@ -20,6 +20,9 @@ import TitlebarLoading from "@/components/layout/TitlebarLoading";
 import TitlebarUpstreamFault from "@/components/layout/TitlebarUpstreamFault";
 import TitlebarStreamSlow from "@/components/layout/TitlebarStreamSlow";
 import TitlebarSavedFlash from "@/components/layout/TitlebarSavedFlash";
+import AccountAvatar from "@/components/base/AccountAvatar";
+import PlayerBadge from "@/components/base/PlayerBadge";
+import { useShownPlayer } from "@/composables/useShownPlayer";
 import { watchChromeInsets } from "@/composables/popupChrome";
 import { isMobileApp } from "@/utils/platform";
 import { t } from "@/i18n";
@@ -39,9 +42,12 @@ import "./AppTitleBar.scss";
  * `action` emit with the button's id.
  *
  * The title block is provided through HkTitleBar's `left` slot so a nav
- * hamburger can ride ahead of it — hidden above 767px (desktop is
- * pixel-identical to the upstream default) and toggling the phone-layout
- * nav drawer below. On the phone app build the window caption buttons
+ * opener can ride ahead of it — hidden above 767px (desktop is
+ * pixel-identical to the upstream default, a plain hamburger) while the
+ * PHONE LAYOUT swaps the hamburger for the CURRENT-ACCOUNT avatar button
+ * (dog-tag emblem / initial / neutral disc; the shittim-chest HeaderLeft
+ * pattern) toggling the same nav drawer below. On the phone app build the
+ * window caption buttons
  * (minimize/maximize/close) are dropped: the Android shell manages its
  * own window, and dead caption buttons would only mislead.
  *
@@ -71,8 +77,27 @@ export default defineComponent({
     const mobileApp = isMobileApp();
     const route = useRoute();
     const router = useRouter();
+    // Phone LAYOUT (viewport, not the app-build gate): the hamburger
+    // becomes the CURRENT-ACCOUNT avatar button — the shittim-chest
+    // HeaderLeft pattern (phone opens the drawer from the account mark,
+    // desktop keeps the plain menu glyph).
+    const { isMobile } = useBreakpoint();
+    const { shownPlayer, dogTag } = useShownPlayer();
     let win: ReturnType<typeof getCurrentWindow> | null = null;
     let unlistenResize: (() => void) | null = null;
+
+    // The avatar face: the dog-tag emblem when the shared stats cache
+    // carries one, the nickname's initial as a letter disc while the
+    // player is known but has no emblem, and the neutral account disc
+    // when no account is shown at all (browser dev / nothing bound).
+    const accountFace = computed(() => {
+      if (dogTag.value) return <PlayerBadge dogTag={dogTag.value} size={24} />;
+      const nick = shownPlayer.value?.nickname?.trim();
+      if (nick) {
+        return <span class="app-titlebar__account-letter">{nick.charAt(0).toUpperCase()}</span>;
+      }
+      return <AccountAvatar size={24} />;
+    });
 
     const isNative =
       typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -169,19 +194,38 @@ export default defineComponent({
             // hikari's caption-button chrome; CSS hides it ≥768px.
             left: () => (
               <>
-                <button
-                  type="button"
-                  class="hk-titlebar-btn app-titlebar__menu"
-                  title={t("nav.openMenu")}
-                  aria-label={t("nav.openMenu")}
-                  aria-expanded={navUi.open}
-                  onClick={(e: MouseEvent) => {
-                    e.stopPropagation();
-                    navUi.toggle();
-                  }}
-                >
-                  <Menu size={15} />
-                </button>
+                {isMobile.value ? (
+                  /* Phone layout: the drawer opens from the CURRENT-ACCOUNT
+                     avatar (top-left) — emblem / letter / neutral disc per
+                     the accountFace computed above. */
+                  <button
+                    type="button"
+                    class="hk-titlebar-btn app-titlebar__menu app-titlebar__account"
+                    title={t("nav.accountMenu")}
+                    aria-label={t("nav.accountMenu")}
+                    aria-expanded={navUi.open}
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      navUi.toggle();
+                    }}
+                  >
+                    {accountFace.value}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    class="hk-titlebar-btn app-titlebar__menu"
+                    title={t("nav.openMenu")}
+                    aria-label={t("nav.openMenu")}
+                    aria-expanded={navUi.open}
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      navUi.toggle();
+                    }}
+                  >
+                    <Menu size={15} />
+                  </button>
+                )}
                 <span class="hk-titlebar-title">
                   {props.icon && <img class="hk-titlebar-icon" src={props.icon} alt="" />}
                   <span class="hk-titlebar-title-text">{props.title}</span>

@@ -422,6 +422,15 @@ fn deliver_arena(
         LAST_DELIVERED_EMPTY.store(prev_delivered_empty, std::sync::atomic::Ordering::Relaxed);
         tracing::warn!(error = %e, "emit arena-info event failed");
     }
+    // Gateway push (desktop): a NEW battle — or the roster heal that
+    // fills an empty first read, which must republish the FULLER frame —
+    // enqueues one battle frame on the live publisher. Non-blocking by
+    // design (an unbounded try-send under the enabled+online gates; see
+    // commands/gateway/publish.rs). Runs regardless of the webview emit
+    // outcome above: the delivery decision was made, so the phone's
+    // channel deserves the battle even while the local pages retry.
+    #[cfg(desktop)]
+    super::gateway::publish::on_arena_delivery(info);
     decision
 }
 

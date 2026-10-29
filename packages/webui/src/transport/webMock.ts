@@ -28,6 +28,22 @@
  *   ~0.9 s after the listener starts (LAN auto-discovery demo);
  * - pairing_get/set_relay_config keep the hidden gateway toggle in memory
  *   (enabled by default — the endpoint is built into the apps).
+ *
+ * Gateway push (docs/en/designs/gateway-push.md §9; browser dev ?mobileApp=1):
+ * - gateway_get/set_config keep the route entry in memory (official root
+ *   default, service off);
+ * - gateway_get_health answers a v1 doc: turnstile+password OFF for the
+ *   official root, turnstile ON (with Cloudflare's always-passes TEST
+ *   sitekey) for any custom root containing "captcha" so the sheet flow
+ *   is devable;
+ * - gateway_open_session mints a fixed ticket (rejecting with the contract
+ *   markers when the doc demanded a credential and none came);
+ * - publish/subscribe simulate wowsp://gateway-state (resolving→
+ *   connecting→online) and a subscribe emits a mock battle frame + host
+ *   presence ~0.8 s after going online (bye/host-offline on stop);
+ * - the selfhost probe reports a plausible partial env; each step streams
+ *   a few wowsp://gateway-selfhost lines then a done result (deploy/verify
+ *   carry the RFC 2606 example URL https://gateway.example.com/gateway/).
  */
 
 /** ReplayMetaLite-shaped remote listing served by pairing_list_remote.
@@ -111,6 +127,80 @@ let discoveryTimer: number | null = null;
 /** Persisted relay settings for the desktop-side settings mock (hidden
  *  toggle; enabled by default, endpoint built into the apps). */
 let mockRelayConfig: { enabled: boolean } = { enabled: true };
+
+/** Gateway-push mock state (route entry + socket liveness). */
+const MOCK_GATEWAY_ROOT = "https://wowsp.langyo.xyz/gateway/";
+let mockGatewayRoot = MOCK_GATEWAY_ROOT;
+let mockGatewayEnabled = false;
+/** Pending subscribe-simulation timers (battle frame + presence). */
+let mockSubTimers: number[] = [];
+
+/** Cloudflare Turnstile's documented always-passes TEST sitekey (public
+ *  fixture from the Turnstile docs, not a secret). */
+const MOCK_TURNSTILE_SITEKEY = "1x00000000000000000000AA";
+/** The mock gateway's single-use ticket. */
+const MOCK_GATEWAY_TICKET = "mock-gateway-ticket";
+
+function mockGatewayHealth(root: string): Record<string, unknown> {
+  const captchaNode = /captcha/i.test(root);
+  return {
+    gateway: "v1",
+    minClientVersion: "0.6.8",
+    auth: {
+      turnstile: {
+        required: captchaNode,
+        sitekey: captchaNode ? MOCK_TURNSTILE_SITEKEY : null,
+      },
+      password: { required: false },
+    },
+    notice: null,
+  };
+}
+
+function gatewayCaptchaRequired(root: string): boolean {
+  const auth = mockGatewayHealth(root).auth as {
+    turnstile: { required: boolean };
+  };
+  return auth.turnstile.required;
+}
+
+/** The mock's subscribe-side battle frame: a small real-ship roster whose
+ *  dateTime is NOW (game-local "DD.MM.YYYY HH:MM:SS") so the live view's
+ *  battle clock ticks from the moment the mock "connected". */
+function mockBattleFrame(route: string): Record<string, unknown> {
+  const now = new Date();
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const dateTime =
+    p2(now.getDate()) + "." + p2(now.getMonth() + 1) + "." + now.getFullYear() +
+    " " + p2(now.getHours()) + ":" + p2(now.getMinutes()) + ":" + p2(now.getSeconds());
+  return {
+    type: "battle",
+    realm: "asia",
+    route,
+    self: { name: "MockCaptain", accountId: 123456 },
+    battle: {
+      dateTime,
+      matchGroup: "pvp",
+      mapName: "17_NA_fault_line",
+      scenario: "domination_3point",
+      eventType: "",
+      botCount: 0,
+      scriptedUnitCount: 0,
+      vehicles: [
+        { id: 123456, name: "MockCaptain", relation: 0, shipId: 4276041424, shipName: "Yamato" },
+        { id: 222001, name: "MockAlly", relation: 1, shipId: 4281219056, shipName: "Gearing" },
+        { id: 222002, name: "MockAlly2", relation: 1, shipId: 4282267344, shipName: "Shimakaze" },
+        { id: 333001, name: "MockEnemy", relation: 2, shipId: 3760109008, shipName: "Stalingrad" },
+        { id: 333002, name: "MockEnemy2", relation: 2, shipId: 4276041424, shipName: "Yamato" },
+      ],
+    },
+  };
+}
+
+function clearMockSubTimers(): void {
+  for (const t of mockSubTimers) window.clearTimeout(t);
+  mockSubTimers = [];
+}
 
 /** The mock's running-status payload (relay mode: the gateway "answered").
  *  The v2 manifest fields echo their defaults (no upstream hop, no notice). */
@@ -456,6 +546,176 @@ export const MOCK_COMMANDS: Record<string, MockHandler> = {
     const config = args.config as { enabled?: boolean } | undefined;
     mockRelayConfig = { enabled: Boolean(config?.enabled) };
     return null;
+  },
+
+  // ── Gateway push (§9). Health/session simulate the exchange; the
+  //    socket commands drive the mock state-event bus; the selfhost
+  //    surface streams a short scripted pass.
+  async gateway_get_config() {
+    return { root: mockGatewayRoot, enabled: mockGatewayEnabled };
+  },
+
+  async gateway_set_config(args) {
+    if (typeof args.root === "string" && args.root.trim() !== "") {
+      // Same normalization class as the Rust URL policy: fold trailing
+      // slashes onto ONE; reject non-https except loopback dev roots.
+      const root = args.root.trim().replace(/\/+$/, "");
+      if (!/^https:\//.test(root) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(root)) {
+        throw rpcError("gateway_set_config", "gateway root must be an https URL");
+      }
+      mockGatewayRoot = root + "/";
+    }
+    if (typeof args.enabled === "boolean") mockGatewayEnabled = args.enabled;
+    return { root: mockGatewayRoot, enabled: mockGatewayEnabled };
+  },
+
+  async gateway_get_health(args) {
+    const root = String(args.root ?? "");
+    if (/unreachable/.test(root)) {
+      throw rpcError(
+        "gateway_get_health",
+        "gateway unreachable or health document invalid",
+      );
+    }
+    await delay(150);
+    return mockGatewayHealth(root);
+  },
+
+  async gateway_open_session(args) {
+    const root = String(args.root ?? "");
+    const password = typeof args.password === "string" ? args.password : "";
+    if (gatewayCaptchaRequired(root) && !args.turnstileToken) {
+      throw rpcError("gateway_open_session", "gateway captcha verification failed");
+    }
+    if (password === "wrong") {
+      throw rpcError("gateway_open_session", "gateway password rejected");
+    }
+    if (password === "ratelimit") {
+      throw rpcError("gateway_open_session", "gateway rate limited, retry after 42s");
+    }
+    return { ticket: MOCK_GATEWAY_TICKET, ttl: 120 };
+  },
+
+  async gateway_publish_start(args) {
+    const route = String(args.route ?? "");
+    if (!/^r:[a-z]{2,5}:[0-9]+$/.test(route)) {
+      throw rpcError("gateway_publish_start", "invalid gateway route");
+    }
+    const emit = (phase: string, detail?: string) =>
+      emitMockEvent("wowsp://gateway-state", { role: "pub", route, phase, detail: detail ?? null });
+    emit("resolving");
+    await delay(200);
+    if (gatewayCaptchaRequired(mockGatewayRoot) && !args.turnstileToken) {
+      emit("captcha");
+      throw rpcError("gateway_publish_start", "gateway captcha verification failed");
+    }
+    emit("connecting");
+    await delay(250);
+    emit("online");
+    return null;
+  },
+
+  async gateway_publish_stop() {
+    emitMockEvent("wowsp://gateway-state", {
+      role: "pub",
+      route: null,
+      phase: "stopped",
+      detail: null,
+    });
+    return null;
+  },
+
+  async gateway_subscribe_start(args) {
+    const root = String(args.root ?? "");
+    const route = String(args.route ?? "");
+    if (!/^r:[a-z]{2,5}:[0-9]+$/.test(route)) {
+      throw rpcError("gateway_subscribe_start", "invalid gateway route");
+    }
+    const emit = (phase: string, detail?: string) =>
+      emitMockEvent("wowsp://gateway-state", { role: "sub", route, phase, detail: detail ?? null });
+    emit("resolving");
+    await delay(200);
+    if (gatewayCaptchaRequired(root) && !args.turnstileToken) {
+      emit("captcha");
+      throw rpcError("gateway_subscribe_start", "gateway captcha verification failed");
+    }
+    emit("connecting");
+    await delay(300);
+    emit("online");
+    // Mid-battle catch-up: the channel's retained snapshot + presence.
+    mockSubTimers.push(
+      window.setTimeout(() => {
+        emitMockEvent("wowsp://gateway-battle", mockBattleFrame(route));
+        emitMockEvent("wowsp://gateway-battle", { type: "host", online: true });
+      }, 500),
+    );
+    return null;
+  },
+
+  async gateway_subscribe_stop() {
+    clearMockSubTimers();
+    emitMockEvent("wowsp://gateway-battle", { type: "host", online: false });
+    emitMockEvent("wowsp://gateway-state", {
+      role: "sub",
+      route: null,
+      phase: "stopped",
+      detail: null,
+    });
+    return null;
+  },
+
+  async gateway_selfhost_probe() {
+    await delay(200);
+    return {
+      nodePath: "C:\\MockTools\\node.exe",
+      nodeVersion: "v22.14.0",
+      npxPath: "C:\\MockTools\\npx.cmd",
+      rustc: "rustc 1.86.0",
+      wasmTarget: "wasm32-unknown-unknown",
+      workerBuild: "worker-build 0.0.14",
+      wranglerAuthed: false,
+      account: null,
+    };
+  },
+
+  async gateway_selfhost_step(args) {
+    const step = String(args.step ?? "");
+    const stream = (stream: "stdout" | "stderr", line: string) =>
+      emitMockEvent("wowsp://gateway-selfhost", { step, stream, line });
+    let result: Record<string, unknown> = {};
+    if (step === "wrangler-login") {
+      stream("stdout", "Opening browser for wrangler login…");
+      await delay(400);
+      stream("stdout", "Successfully logged in.");
+      result = { step, account: "mock-account@example.com" };
+    } else if (step === "list-zones") {
+      stream("stdout", "Listing account zones…");
+      await delay(350);
+      result = { step, account: "mock-account@example.com" };
+    } else if (step === "kv-ensure") {
+      stream("stdout", "Ensuring GATEWAY_KV namespace…");
+      await delay(350);
+      result = { step, kvId: "mock-kv-namespace-id" };
+    } else if (step === "deploy") {
+      stream("stdout", "Generating wrangler.selfhost.toml…");
+      await delay(250);
+      stream("stdout", "Running npx wrangler deploy…");
+      await delay(600);
+      stream("stdout", "Deployed gateway worker.");
+      result = { step, url: "https://gateway.example.com/gateway/" };
+    } else if (step === "verify") {
+      stream("stdout", "Verifying /gateway/health…");
+      await delay(400);
+      result = {
+        step,
+        url: "https://gateway.example.com/gateway/",
+        health: mockGatewayHealth("https://gateway.example.com/gateway/"),
+      };
+    } else {
+      throw rpcError("gateway_selfhost_step", "unknown selfhost step: " + step);
+    }
+    emitMockEvent("wowsp://gateway-selfhost", { step, stream: "done", result });
+    return result;
   },
 
   // ── 游玩时间 view's replay-derived battles (static fixture; the ledger

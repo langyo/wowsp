@@ -1,0 +1,81 @@
+// Gateway settings — the pairing section's gateway-push cards (route
+// entry, mobile-service toggle + status, legacy LAN disclosure body).
+
+.gateway-settings {
+  &__root-edit {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+
+    .hk-input {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  &__error {
+    margin: 0;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.45;
+    color: rgb(var(--color-error, 220 80 80));
+  }
+
+  // The publish channel row: realm tag + account name.
+  &__channel {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+  }
+
+  &__channel-name {
+    font-size: var(--text-sm);
+    color: rgb(var(--color-text));
+  }
+
+  // Publish status: phase pill (+ detail sentence).
+  &__status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  &__pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px var(--space-8);
+    border-radius: 999px;
+    font-size: var(--text-3xs, 0.625rem);
+    font-weight: 600;
+    background: rgb(var(--color-border) / 20%);
+    color: rgb(var(--color-muted));
+
+    &.is-pending {
+      color: var(--hi-color-warning, #d29922);
+    }
+    &.is-online {
+      color: rgb(var(--color-success));
+    }
+    &.is-error {
+      color: rgb(var(--color-error, 220 80 80));
+    }
+  }
+
+  &__status-detail {
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-muted));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  // The legacy LAN disclosure's body.
+  &__lan {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-10);
+    padding: var(--space-8) 0 var(--space-4);
+  }
+}

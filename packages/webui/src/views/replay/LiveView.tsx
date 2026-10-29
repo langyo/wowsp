@@ -9,14 +9,18 @@
  *
  * While the game is off (and no roster lingers) the body shows the
  * LiveIdleGuide two-step onboarding instead of the panel. The phone app
- * build has no local game install to watch, so it renders a static
- * placeholder and mounts none of the watchers (the nav link is hidden there
- * too — this is belt-and-braces for direct URLs).
+ * build has no local game install to watch — its body is the GATEWAY live
+ * view instead (the pushed, same-account battle: auto-waiting state, the
+ * 开始连接 handshake, captcha/password bottom sheets and the pushed frames
+ * rendered through the same LiveBattlePanel; see
+ * features/replay/gateway/GatewayLiveView). None of the local watchers
+ * mount there.
  */
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { api } from "@/api";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
+import GatewayLiveView from "@/features/replay/gateway/GatewayLiveView";
 import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
 import LiveIdleGuide from "@/features/replay/LiveIdleGuide";
 import LiveSelfPanel from "@/features/replay/LiveSelfPanel";
@@ -26,7 +30,6 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { useLiveUiStore } from "@/stores/liveUi";
 import { useOverlayStore } from "@/stores/overlay";
-import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { hasSingleTeamRoster, modeKey } from "@/utils/modeColors";
 import { replaysDir } from "@/utils/mapNames";
@@ -43,9 +46,11 @@ export default defineComponent({
   name: "LiveView",
   setup() {
     if (isMobileApp()) {
+      // Phone app build: the gateway receive side (account chip + route
+      // entry + waiting hint; the connect button owns the socket).
       return () => (
         <main class="live-view">
-          <div class="live-view__placeholder">{t("replay.live.notStarted")}</div>
+          <GatewayLiveView />
         </main>
       );
     }

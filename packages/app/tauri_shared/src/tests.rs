@@ -3097,3 +3097,180 @@ fn player_build_serializes_camel_case_and_hides_empty_sections() {
     // The empty ensign section stays absent, like every other empty Vec.
     assert!(!rich.as_object().unwrap().contains_key("ensigns"));
 }
+
+// ── gateway push (gateway-push.md §3/§9; webui api client mirrors) ──────
+
+/// The battle frame is THE wire-critical gateway payload: the phone maps
+/// it into its roster store without translation, so its exact key set
+/// (including the reserved-word renames `type` and `self`) is pinned
+/// hard.
+#[test]
+fn gateway_battle_frame_pins_the_contract_shape() {
+    let frame = GatewayBattleFrame {
+        frame_type: "battle".into(),
+        realm: "asia".into(),
+        route: "r:asia:123456".into(),
+        self_player: GatewayBattleSelf {
+            name: "langyo".into(),
+            account_id: Some(123),
+        },
+        battle: GatewayBattleHead {
+            date_time: Some("2026-10-29 22:00:00".into()),
+            match_group: Some("pvp".into()),
+            map_name: Some("14_ATL_NavalBase".into()),
+            scenario: None,
+            event_type: None,
+            bot_count: 0,
+            scripted_unit_count: 0,
+            vehicles: vec![GatewayBattleVehicle {
+                id: 123,
+                name: "langyo".into(),
+                relation: 0,
+                ship_id: 4_189_570_000,
+                ship_name: Some("Yamato".into()),
+            }],
+        },
+    };
+    let v = round_trips(frame);
+    assert_exact_keys(&v, &["type", "realm", "route", "self", "battle"]);
+    assert_eq!(v["type"], "battle");
+    let battle = &v["battle"];
+    for key in [
+        "dateTime",
+        "matchGroup",
+        "mapName",
+        "botCount",
+        "scriptedUnitCount",
+        "vehicles",
+    ] {
+        assert!(
+            battle.as_object().unwrap().contains_key(key),
+            "missing {key}"
+        );
+    }
+    // Absent optional head fields stay ABSENT (not null) and the vehicle
+    // speaks camelCase with the raw id space preserved.
+    assert!(!battle.as_object().unwrap().contains_key("scenario"));
+    let vehicle = &battle["vehicles"][0];
+    assert_exact_keys(vehicle, &["id", "name", "relation", "shipId", "shipName"]);
+    assert_eq!(vehicle["shipId"], 4_189_570_000_i64);
+    // The reserved-word field really lands under "self".
+    assert_eq!(v["self"]["accountId"], 123);
+    assert_eq!(v["self"]["name"], "langyo");
+}
+
+/// An unknown account id stays ABSENT on the wire (the phone's
+/// same-account confirmation reads `self.accountId` when present).
+#[test]
+fn gateway_battle_frame_omits_unknown_account() {
+    let frame = GatewayBattleFrame {
+        frame_type: "battle".into(),
+        realm: "eu".into(),
+        route: "r:eu:42".into(),
+        self_player: GatewayBattleSelf {
+            name: String::new(),
+            account_id: None,
+        },
+        battle: GatewayBattleHead::default(),
+    };
+    let v = round_trips(frame);
+    assert!(!v["self"].as_object().unwrap().contains_key("accountId"));
+    assert_eq!(v["battle"]["vehicles"].as_array().unwrap().len(), 0);
+}
+
+/// The health document parses LENIENTLY: a Turnstile-off deployment
+/// omits the sitekey entirely (never null), and a body missing whole
+/// blocks still parses (the client-side validator, not serde, separates
+/// a foreign 200 from a real gateway document).
+#[test]
+fn gateway_health_doc_parses_leniently() {
+    let doc: GatewayHealthDoc = serde_json::from_str(
+        r#"{"gateway":"v1","minClientVersion":"0.6.8",
+            "auth":{"turnstile":{"required":false},"password":{"required":false}},
+            "notice":null}"#,
+    )
+    .unwrap();
+    let v = round_trips(doc.clone());
+    assert_eq!(doc.gateway, "v1");
+    assert!(doc.auth.turnstile.sitekey.is_none());
+    assert!(!doc.auth.password.required);
+    assert!(v["notice"].is_null(), "an explicit null round-trips");
+
+    let turnstile_on: GatewayHealthDoc = serde_json::from_str(
+        r#"{"gateway":"v1",
+            "auth":{"turnstile":{"required":true,"sitekey":"0x4AAAA"},"password":{"required":true}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        turnstile_on.auth.turnstile.sitekey.as_deref(),
+        Some("0x4AAAA")
+    );
+    assert!(turnstile_on.auth.password.required);
+    assert!(turnstile_on.min_client_version.is_none());
+
+    // A foreign body (captive portal) still parses via defaults — the
+    // empty `gateway` field is what marks it "not a gateway document".
+    let foreign: GatewayHealthDoc = serde_json::from_str("{\"html\":\"login\"}").unwrap();
+    assert_eq!(foreign.gateway, "");
+}
+
+/// The client config persists camelCase and defaults to the official
+/// route entry with the service OFF.
+#[test]
+fn gateway_client_config_defaults_official_root() {
+    let v = round_trips(GatewayClientConfig::default());
+    assert_exact_keys(&v, &["root", "enabled"]);
+    assert_eq!(v["root"], "https://wowsp.langyo.xyz/gateway/");
+    assert_eq!(v["enabled"], false);
+}
+
+/// State/ticket/wizard DTOs: camelCase keys, optional fields absent when
+/// unset.
+#[test]
+fn gateway_event_and_step_dtos_speak_camel_case() {
+    let state = round_trips(GatewayStateEvent {
+        role: "pub".into(),
+        route: Some("r:asia:1".into()),
+        phase: "online".into(),
+        detail: None,
+    });
+    assert_exact_keys(&state, &["role", "route", "phase"]);
+    assert_eq!(state["role"], "pub");
+
+    let ticket = round_trips(GatewaySessionTicket {
+        ticket: "a".repeat(32),
+        ttl: 120,
+    });
+    assert_exact_keys(&ticket, &["ticket", "ttl"]);
+
+    let env = round_trips(SelfhostEnv {
+        node_path: Some("node".into()),
+        node_version: Some("v22.0.0".into()),
+        npx_path: None,
+        rustc: None,
+        wasm_target: None,
+        worker_build: None,
+        wrangler_authed: true,
+        account: Some("My Account".into()),
+    });
+    assert_eq!(env["nodePath"], "node");
+    assert_eq!(env["wranglerAuthed"], true);
+    assert!(!env.as_object().unwrap().contains_key("npxPath"));
+
+    let ev = round_trips(GatewaySelfhostEvent {
+        step: "deploy".into(),
+        stream: "stdout".into(),
+        line: Some("Uploaded.".into()),
+        result: None,
+    });
+    assert_exact_keys(&ev, &["step", "stream", "line"]);
+
+    let res = round_trips(SelfhostStepResult {
+        step: "kv-ensure".into(),
+        kv_id: Some("e29b263ab50e42e9a1de5653fda70c31".into()),
+        url: None,
+        health: None,
+        account: None,
+    });
+    assert_exact_keys(&res, &["step", "kvId"]);
+}

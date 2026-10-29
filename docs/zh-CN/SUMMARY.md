@@ -9,6 +9,7 @@
 - [架构](./guides/architecture.md)
 - [基本概念](./guides/fundamentals.md)
 - [构建](./guides/building.md)
+- [自建网关](./guides/self-host-gateway.md)
 - [贡献指南](./guides/CONTRIBUTING.md)
 - [WoWSP README](./guides/README-wowsp.md)
 
@@ -16,6 +17,7 @@
 
 - [架构设计](./designs/architecture.md)
 - [Mod Hub 插件管理](./designs/mod-hub.md)
+- [网关推送](./designs/gateway-push.md)
 - [游戏内战绩插件](./designs/ingame-stats-plugin.md)
 
 # License
