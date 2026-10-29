@@ -2418,10 +2418,25 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         &mods_inventory,
         parse_rfc3339_unix(&record.detected_at),
     );
-    if let Some(base) = root.as_deref().map(Path::new).and_then(res_mods_base) {
-        for suspect in dangling_ref_suspects(&base, &seen_urls) {
-            if !suspects.iter().any(|s| s.name == suspect.name) {
-                suspects.push(suspect);
+    // Scan BOTH trees when both exist: the crash may predate the safe-mode
+    // answer (the loaded set lives in the twin) while new files already sit
+    // in the recreated active dir — the reverse lookup must not miss either.
+    if let Some(root_path) = root.as_deref().map(Path::new) {
+        let mut bases: Vec<PathBuf> = Vec::new();
+        if let Some(base) = res_mods_base(root_path) {
+            bases.push(base);
+        }
+        if let Some((_, ver_dir)) = super::mod_hub::latest_bin_version(&root_path.to_string_lossy()) {
+            let twin = super::mod_hub::disabled_res_mods(&ver_dir);
+            if twin.is_dir() && !bases.iter().any(|b| b == &twin) {
+                bases.push(twin);
+            }
+        }
+        for base in bases {
+            for suspect in dangling_ref_suspects(&base, &seen_urls) {
+                if !suspects.iter().any(|s| s.name == suspect.name) {
+                    suspects.push(suspect);
+                }
             }
         }
     }
