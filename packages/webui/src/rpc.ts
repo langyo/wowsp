@@ -173,6 +173,7 @@ export const RPC = {
   game_crash_ignored_suspects: "game_crash_ignored_suspects",
   game_crash_list: "game_crash_list",
   game_crash_dismiss: "game_crash_dismiss",
+  game_crash_dismiss_all: "game_crash_dismiss_all",
   game_crash_analyze: "game_crash_analyze",
   game_crash_export: "game_crash_export",
   game_crash_quarantined_mods: "game_crash_quarantined_mods",

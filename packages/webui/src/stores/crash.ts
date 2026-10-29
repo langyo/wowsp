@@ -62,6 +62,8 @@ export const useCrashStore = defineStore("crash", () => {
   /** The safeguard switch (crash detection + recent-crash catch-up) —
    *  mirrored from the backend; on until the user opts out. */
   const safeguard = ref(true);
+  /** A reset-all pass is running (the records window's reset button). */
+  const resetting = ref(false);
   const safeguardBusy = ref(false);
   /** A manual recent-crash parse is running (the section's scan button). */
   const scanning = ref(false);
@@ -228,6 +230,22 @@ export const useCrashStore = defineStore("crash", () => {
     if (activeRecord.value?.id === id) {
       activeRecord.value = null;
       clearPrompt();
+    }
+  }
+
+  /** Reset every record in one pass (new -> dismissed backend-side) and
+   *  reload — the per-boot re-toast state is cleared while the history
+   *  stays. Returns the flipped count for the caller's toast. Throws on
+   *  backend refusal — the calling surface owns the error toast. */
+  async function dismissAll(): Promise<number> {
+    if (resetting.value) return 0;
+    resetting.value = true;
+    try {
+      const count = await api.dismissAllGameCrashes();
+      await refreshHistory();
+      return count;
+    } finally {
+      resetting.value = false;
     }
   }
 
@@ -457,6 +475,7 @@ export const useCrashStore = defineStore("crash", () => {
   return {
     safeguard,
     safeguardBusy,
+    resetting,
     scanning,
     activeRecord,
     history,
@@ -472,6 +491,7 @@ export const useCrashStore = defineStore("crash", () => {
     stop,
     refreshHistory,
     dismiss,
+    dismissAll,
     analyze,
     exportReport,
     restart,

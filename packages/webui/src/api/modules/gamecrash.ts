@@ -131,6 +131,9 @@ export const gameCrashApi = {
   /** Mark one record dismissed (its prompt stops re-surfacing). */
   dismissGameCrash: (recordId: string) =>
     transport.invoke<null>(RPC.game_crash_dismiss, { recordId }),
+  /** Reset every record in one pass (new -> dismissed, history kept);
+   *  resolves the flipped count. The per-boot re-toast goes away. */
+  dismissAllGameCrashes: () => transport.invoke<number>(RPC.game_crash_dismiss_all),
   /** The analysis pass for one record (heavy IO backend-side). */
   analyzeGameCrash: (recordId: string) =>
     transport.invoke<CrashAnalysis>(RPC.game_crash_analyze, { recordId }),

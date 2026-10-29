@@ -16,6 +16,7 @@ vi.mock("@/api", () => ({
     listenGameCrash: vi.fn(() => Promise.resolve(() => undefined)),
     listGameCrashes: vi.fn(),
     dismissGameCrash: vi.fn(),
+    dismissAllGameCrashes: vi.fn(),
     analyzeGameCrash: vi.fn(),
     exportGameCrashReport: vi.fn(),
     listQuarantinedMods: vi.fn(() => Promise.resolve([])),
@@ -39,6 +40,7 @@ import CrashSection from "./CrashSection";
 
 const mocked = {
   list: vi.mocked(api.listGameCrashes),
+  dismissAll: vi.mocked(api.dismissAllGameCrashes),
   analyze: vi.mocked(api.analyzeGameCrash),
   exportReport: vi.mocked(api.exportGameCrashReport),
   deleteEntry: vi.mocked(api.deleteEntry),
@@ -52,6 +54,13 @@ const mocked = {
 function bulkButton(): HTMLButtonElement | undefined {
   return [...document.body.querySelectorAll<HTMLButtonElement>(".hk-modal-footer button")].find(
     (b) => (b.textContent ?? "").includes(t("crash.suspects.quarantineAll")),
+  );
+}
+
+/** The records window's footer reset action (teleported to body). */
+function resetButton(): HTMLButtonElement | undefined {
+  return [...document.body.querySelectorAll<HTMLButtonElement>(".hk-modal-footer button")].find(
+    (b) => (b.textContent ?? "").includes(t("crash.section.resetAll")),
   );
 }
 
@@ -271,6 +280,47 @@ describe("CrashSection", () => {
     await vi.waitFor(() => {
       expect(mocked.exportReport).toHaveBeenCalledWith("crash-1");
     });
+  });
+
+  /** Open the records window (the reset action lives in its footer). */
+  async function openRecords(wrapper: ReturnType<typeof mount>) {
+    await vi.waitFor(() => {
+      expect(
+        wrapper.findAll("button").some((b) => b.text().includes(t("crash.section.openRecords"))),
+      ).toBe(true);
+    });
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text().includes(t("crash.section.openRecords")))!
+      .trigger("click");
+    await vi.waitFor(() => {
+      expect(document.body.querySelector(".crash-section__records")).toBeTruthy();
+    });
+  }
+
+  it("resets every pending record from the records window footer", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.dismissAll.mockResolvedValue(1 as never);
+    const wrapper = mount(CrashSection);
+    await openRecords(wrapper);
+    const reset = resetButton();
+    expect(reset).toBeTruthy();
+    // A pending (new) record exists — the reset is armed.
+    expect(reset!.disabled).toBe(false);
+    reset!.click();
+    await vi.waitFor(() => {
+      expect(mocked.dismissAll).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("disables the reset once no pending record remains", async () => {
+    mocked.list.mockResolvedValue([record({ status: "dismissed" })]);
+    const wrapper = mount(CrashSection);
+    await openRecords(wrapper);
+    const reset = resetButton();
+    expect(reset).toBeTruthy();
+    expect(reset!.disabled).toBe(true);
+    expect(mocked.dismissAll).not.toHaveBeenCalled();
   });
 
   it("renders the safeguard switch row", async () => {

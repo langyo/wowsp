@@ -41,7 +41,9 @@
     "ignored": "Avisos ignorados",
     "ignoredEmpty": "No hay avisos ignorados.",
     "restoreWarning": "Restaurar aviso",
-    "recordDetail": "Informe de fallo"
+    "recordDetail": "Informe de fallo",
+    "resetAll": "Restablecer todos los registros",
+    "resetDone": "Se restablecieron {count} registros de fallos."
   },
   "findings": {
     "exceptionAccessViolation": "Infracción de acceso — el cliente leyó o escribió memoria que no le pertenece",

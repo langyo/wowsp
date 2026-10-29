@@ -298,6 +298,18 @@ export default defineComponent({
       }
     }
 
+    /** Reset every record in one pass (new -> dismissed): the per-boot
+     *  re-toast stops, the history list stays. The success toast answers
+     *  the flipped count; refusals toast here like every other action. */
+    async function resetAll() {
+      try {
+        const count = await crash.dismissAll();
+        if (count > 0) toast.success(t("crash.section.resetDone", { count }));
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
+    }
+
     function formatTime(iso: string): string {
       const d = new Date(iso);
       return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
@@ -445,6 +457,15 @@ export default defineComponent({
             onUpdate:modelValue={(v: boolean) => (recordsOpen.value = v)}
             title={t("crash.section.recordsTitle")}
             width="34rem"
+            footerActions={[
+              {
+                label: t("crash.section.resetAll"),
+                variant: "outline",
+                loading: crash.resetting,
+                disabled: crash.resetting || !crash.history.some((r) => r.status === "new"),
+                onClick: () => void resetAll(),
+              },
+            ]}
           >
             <div class="crash-section__records">
               {crash.history.map((r) => (

@@ -41,7 +41,9 @@
     "ignored": "無視した警告",
     "ignoredEmpty": "無視した警告はありません。",
     "restoreWarning": "警告を復元",
-    "recordDetail": "クラッシュ詳細"
+    "recordDetail": "クラッシュ詳細",
+    "resetAll": "すべての記録をリセット",
+    "resetDone": "{count} 件のクラッシュ記録をリセットしました"
   },
   "findings": {
     "exceptionAccessViolation": "アクセス違反 —— クライアントが権限のないメモリーに読み書きしました",
