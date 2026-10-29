@@ -142,7 +142,7 @@ zip = { version = "^9", default-features = false, features = ["deflate"] }
 # Service supervision — graceful shutdown / signal handling (same usage as
 # shittim-chest: DrainController + SignalExitSource for canonical Ctrl-C /
 # window-close lifecycle). Published to crates.io.
-malkuth = { version = "^0.3", default-features = false, features = ["signals"] }
+malkuth = { version = "^0.5", default-features = false, features = ["signals"] }
 
 # App-version one-time action scaffold (#[app_migrations] + the hifumi::app
 # ledger/engine) — see commands/app_migrations.rs. Published to crates.io.
