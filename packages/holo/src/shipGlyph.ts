@@ -54,6 +54,14 @@ export function glyphClassOf(type: string | null | undefined): keyof typeof SHIP
  * the class engraving reads as a proper cut-out (thick strokes would
  * bridge the 1-2px seams between the traced bands).
  */
+
+/** Center of the 28×28 HUD atlas cell — the anchor the game itself
+ *  rotates its icon around. The traced polygons keep their raw atlas
+ *  coordinates (see scripts/trace_icons.ts), so the painter has to
+ *  subtract this center or every glyph draws its body one half-cell
+ *  off the anchor — the "trail meets the icon's corner" minimap bug. */
+const GLYPH_ATLAS_CENTER = 14;
+
 export function drawShipGlyph(
   ctx: CanvasRenderingContext2D,
   type: string | null | undefined,
@@ -70,9 +78,9 @@ export function drawShipGlyph(
     : color;
   for (const poly of polys) {
     ctx.beginPath();
-    ctx.moveTo(x + poly[0][0] * s, y + poly[0][1] * s);
+    ctx.moveTo(x + (poly[0][0] - GLYPH_ATLAS_CENTER) * s, y + (poly[0][1] - GLYPH_ATLAS_CENTER) * s);
     for (let i = 1; i < poly.length; i++) {
-      ctx.lineTo(x + poly[i][0] * s, y + poly[i][1] * s);
+      ctx.lineTo(x + (poly[i][0] - GLYPH_ATLAS_CENTER) * s, y + (poly[i][1] - GLYPH_ATLAS_CENTER) * s);
     }
     ctx.closePath();
     if (opts?.outline) {
