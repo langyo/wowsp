@@ -418,6 +418,7 @@ mod tests {
             .into_iter()
             .collect(),
             aliases,
+            servers: Vec::new(),
             preview: None,
             supersedes: None,
             packages: vec![CatalogPackage {

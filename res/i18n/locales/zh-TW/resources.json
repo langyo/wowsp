@@ -291,5 +291,34 @@
   "purgeReinstallChoiceAdopt": "同時接管第三方插件——保留其檔案,並按 WoWSP 的口徑重新登記為受管插件。",
   "purgeReinstallBackupNote": "兩種方式都會把原目錄保留為備份,確認無誤後可手動刪除。",
   "purgeReinstallOurOnly": "僅重裝 WoWSP 插件",
-  "purgeReinstallAdopt": "重裝並接管第三方插件"
+  "purgeReinstallAdopt": "重裝並接管第三方插件",
+  "servers": {
+    "universal": "通用",
+    "partial": "部分伺服器適用",
+    "exclusive": "專屬",
+    "scopeHint": "適用於：{servers}",
+    "realm": {
+      "ru": "俄服",
+      "eu": "歐服",
+      "na": "美服",
+      "asia": "亞服",
+      "cn": "國服"
+    }
+  },
+  "sync": {
+    "banner": "正在個別管理 {client}",
+    "toggleLabel": "多用戶端同步",
+    "toggleHint": "偵測到多個用戶端時：開啟後目錄模組的安裝/解除安裝會同步套用到全部用戶端（按伺服器適用性過濾）；關閉後僅操作目前選取的用戶端。",
+    "action": "同步所有用戶端",
+    "confirmTitle": "同步所有用戶端",
+    "confirmBody": "將使其他已偵測的用戶端與本用戶端的 WoWSP 目錄模組清單保持一致：安裝缺少的適用模組（{installs} 項），移除清單之外的多餘模組（{uninstalls} 項）。請先完全關閉所有執行中的遊戲用戶端。",
+    "done": "已同步 {count} 個用戶端。",
+    "partial": "已同步 {ok}/{count} 個用戶端：{details}",
+    "failed": "{count} 個用戶端全部同步失敗：{details}",
+    "skippedByRule": "「{mod}」不適用於 {client}，已略過",
+    "skippedRunning": "「{names}」執行中，已略過——關閉遊戲後再試一次。",
+    "nothingToDo": "其他用戶端均已與本用戶端的模組清單一致。",
+    "noCatalog": "線上目錄尚未載入——請先重新整理目錄再同步用戶端。",
+    "noLedger": "安裝記錄讀取失敗——請稍後再試一次。"
+  }
 }

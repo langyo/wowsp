@@ -241,6 +241,13 @@ def version_sort_key(v: str) -> tuple:
     return tuple(key)
 
 
+# Canonical game-server realm codes (REALMS in
+# packages/app/tauri_shared/src/contribution.rs): a `servers:`
+# front-matter value must be one of these; anything else drops at
+# parse time so a typo can never scope a mod to a nonexistent realm.
+SERVER_CODES = ("ru", "eu", "na", "asia", "cn")
+
+
 def index_discussions(nodes: list[dict]) -> dict:
     """Aggregate raw discussion nodes into the mod-index.json shape."""
     mods: dict[str, dict] = {}
@@ -265,6 +272,14 @@ def index_discussions(nodes: list[dict]) -> dict:
             for a in (meta.get("aliases") or "").split(",")
             if a.strip()
         ))
+        # Server scope (comma-separated `servers:`) — the realms the mod
+        # applies to, as canonical realm codes. Invalid codes drop;
+        # absent or empty means universal (no key on the entry).
+        server_ids = list(dict.fromkeys(
+            s.strip()
+            for s in (meta.get("servers") or "").split(",")
+            if s.strip() and s.strip() in SERVER_CODES
+        ))
         entry = mods.setdefault(
             mod_id,
             {
@@ -276,6 +291,7 @@ def index_discussions(nodes: list[dict]) -> dict:
                 "discussion": d.get("number"),
                 **({"tags": tag_ids} if tag_ids else {}),
                 **({"aliases": alias_ids} if alias_ids else {}),
+                **({"servers": server_ids} if server_ids else {}),
             },
         )
         version = meta.get("version", "0")
@@ -462,6 +478,18 @@ def main(argv: list[str] | None = None) -> int:
              "comments": {"nodes": []}},
         ])
         assert tagged["mods"]["m"]["tags"] == ["ai-generated", "ip-blue-archive", "ok-id"]
+        assert "servers" not in tagged["mods"]["m"], "absent servers stays universal"
+
+        # Front-matter `servers:` — valid realm codes ride the entry in
+        # order, invalid ones (typos, other locale codes) drop, and an
+        # absent line keeps the entry universal (no key at all).
+        scoped = index_discussions([
+            {"number": 4, "title": "t", "author": {"login": "a"}, "closed": False,
+             "body": "---\nwowsp-mod: shipname\nversion: 1\ncategory: texts\n"
+                     "servers: cn, zh, cn\n---\nx",
+             "comments": {"nodes": []}},
+        ])
+        assert scoped["mods"]["shipname"]["servers"] == ["cn"], scoped["mods"]["shipname"]
 
         # Presets: tagged download lines ride entry.presets in label order,
         # never leak into the plain package list, and a fully preset-driven

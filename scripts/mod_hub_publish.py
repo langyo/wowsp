@@ -193,6 +193,54 @@ MOD_AUTHORS: dict = (
     else {}
 )
 
+# Canonical game-server realm codes — the five realms themselves, as in
+# REALMS (packages/app/tauri_shared/src/contribution.rs).
+SERVER_CODES = ("ru", "eu", "na", "asia", "cn")
+
+# Hand-curated server scope: WHICH game servers a mod applies to
+# (slug → realm codes). Entry-level metadata, like aliases. Curation
+# rules — add an entry ONLY when the mod's scope is narrower than
+# universal:
+#   * a server-specific rework lists just that realm — the CN-server
+#     ship-name restoration 船名反和谐 is `cn` only;
+#   * a mod that is meaningless on a realm's locked client language
+#     lists every OTHER realm — the real/romanized ship-name packs say
+#     "all client languages except Chinese" and the East-Asia font
+#     supplement is an EN-client one, so on the zh-only CN client they
+#     cannot apply and exclude `cn`.
+# An absent entry, an empty list, or all five codes means UNIVERSAL
+# (applies everywhere; no `servers:` line is written at all, keeping
+# unscoped thread bodies byte-stable). `enrich`/`discussions` write the
+# list as the thread's `servers:` front-matter, the crawler harvests
+# it, and the app filters mod lists by the active client's realm.
+MOD_SERVERS: dict[str, list[str]] = {
+    "text.shipname.fanhexie": ["cn"],
+    "text.shipname.real": ["ru", "eu", "na", "asia"],
+    "text.shipname.romanized": ["ru", "eu", "na", "asia"],
+    "text.font.east-asia": ["ru", "eu", "na", "asia"],
+}
+
+
+def validate_servers_table(table: dict[str, list[str]]) -> None:
+    """Fail fast on realm-code typos: every curated value must be one of
+    the canonical five. Runs at import on MOD_SERVERS so a slipped code
+    (e.g. `zh` or `jp`) never reaches a thread body."""
+    for slug, codes in table.items():
+        bad = [c for c in codes if c not in SERVER_CODES]
+        if bad:
+            raise ValueError(
+                f"servers table entry {slug!r}: unknown realm code(s) {bad}; "
+                f"valid codes: {list(SERVER_CODES)}"
+            )
+
+
+validate_servers_table(MOD_SERVERS)
+
+
+def servers_of(slug: str) -> list[str]:
+    """The curated realm list for one slug ([] = universal)."""
+    return list(MOD_SERVERS.get(slug, []))
+
 
 def author_record(slug: str) -> list[tuple[str, str]]:
     """(name, official page) for every author of one catalog slug, from the
@@ -752,6 +800,13 @@ def aliases_line(mod: dict) -> str:
     return f"aliases: {', '.join(names)}" if names else ""
 
 
+def servers_line(slug: str) -> str:
+    """The `servers: ru, eu` front-matter line ('' when the entry is
+    universal — unscoped thread bodies stay byte-stable)."""
+    codes = servers_of(slug)
+    return f"servers: {', '.join(codes)}" if codes else ""
+
+
 def preview_gallery(mod: dict) -> list[str]:
     """Markdown image lines for every uploaded screenshot (gallery first,
     the legacy single attachment respected)."""
@@ -774,6 +829,9 @@ def discussion_body(mod: dict) -> str:
     alias = aliases_line(mod)
     if alias:
         front.append(alias)
+    servers = servers_line(mod["id"])
+    if servers:
+        front.append(servers)
     front += ["license: Unspecified (upstream)", "---", ""]
     lines = front
     if mod.get("i18n"):
@@ -1025,6 +1083,9 @@ def enrich_body(curated: dict | None, thread: dict, gallery_urls: list[str]) -> 
     alias = aliases_line(pseudo)
     if alias:
         lines.append(alias)
+    servers = servers_line(slug)
+    if servers:
+        lines.append(servers)
     lines += ["license: Unspecified (upstream)", "---", ""]
     if i18n:
         lines.append(build_i18n_block(i18n))
@@ -1200,6 +1261,7 @@ def build_index(state: dict) -> dict:
                 "signals": {},
                 "discussion": mod.get("discussion_number"),
                 **({"aliases": aliases_of(mod)} if aliases_of(mod) else {}),
+                **({"servers": servers_of(mod["id"])} if servers_of(mod["id"]) else {}),
             },
         )
         rec_authors = author_record(mod["id"])
@@ -1449,6 +1511,51 @@ def selftest() -> None:
     assert should_refuse_upload(100, 26, 74), "past the threshold refuses"
     assert should_refuse_upload(10, 10, 0), "no mods left refuses"
     assert should_refuse_upload(0, 0, 0), "empty state refuses"
+
+    # Server scope: a typo'd realm code fails validation (the live
+    # table already proved itself at import), thread bodies carry the
+    # `servers:` front-matter line ONLY for scoped mods (universal
+    # ones stay byte-stable), and build_index copies the curated list
+    # onto the entry — absent key = universal.
+    try:
+        validate_servers_table({"x.typo": ["cn", "zh"]})
+        raise AssertionError("invalid realm code must fail validation")
+    except ValueError:
+        pass
+    assert servers_of("text.shipname.fanhexie") == ["cn"]
+    assert servers_of("battle.panel") == []
+    assert servers_line("text.shipname.real") == "servers: ru, eu, na, asia"
+    assert servers_line("battle.panel") == ""
+
+    def srv_mod(mid, **over):
+        base = {
+            "id": mid, "category": "text", "version": "1", "game": ">=15.7 <15.8",
+            "name_en": mid, "name_zh": "", "description": "", "i18n": {},
+            "preview_attachment": "", "author_url": "", "discussion_number": 8,
+            "packages": [{
+                "download_url": f"https://github.com/{REPO}/releases/download/{RELEASE_TAG}/{mid}.zip",
+                "sha256": "a" * 64, "size_bytes": 1, "asset": f"{mid}.zip",
+            }],
+        }
+        base.update(over)
+        return base
+
+    assert "\nservers: cn\n" in discussion_body(srv_mod("text.shipname.fanhexie"))
+    universal = discussion_body(srv_mod("text.shipname.plain"))
+    assert "servers:" not in universal
+    enriched = enrich_body(
+        None,
+        {"slug": "text.shipname.fanhexie",
+         "body": "---\nwowsp-mod: text.shipname.fanhexie\nversion: 1\ngame: \"*\"\ncategory: text\n---\nx"},
+        [],
+    )
+    assert "\nservers: cn\n" in enriched
+    srv_index = build_index({
+        "content_version": "v.15.7.0 #1", "game_version": "15.7",
+        "mods": [srv_mod("text.shipname.fanhexie"), srv_mod("text.shipname.plain")],
+    })
+    assert srv_index["mods"]["text.shipname.fanhexie"]["servers"] == ["cn"]
+    assert "servers" not in srv_index["mods"]["text.shipname.plain"]
 
     # Style families fold at index time: sibling one-entry-per-variant
     # mods (two traffic-light versions here) merge into one

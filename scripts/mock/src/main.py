@@ -497,6 +497,44 @@ _MOCK_CATALOG = {
                           "size": 3450880, "name": "voice.ba.hoshino.zip"}],
         },
         {
+            # Server-scoped samples: the CN-only ship-name restoration
+            # (fanhexie stand-in) and a non-CN pack — exercise the
+            # per-client realm filter + scope badge. Every other mock
+            # entry stays universal.
+            "id": "text.shipname.fanhexie", "category": "text",
+            "servers": ["cn"],
+            "discussion": 96, "version": "1",
+            "game": ">=13.0",
+            "title": "Ship Name Restoration (CN) / 船名反和谐",
+            "nameZh": "船名反和谐（360服专用）", "nameEn": "Ship Name Restoration (CN)",
+            "description": "Restores the real Chinese ship names on the CN server.",
+            "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Ship Name Restoration (CN)",
+                          "description": "Restores the real Chinese ship names on the CN server."},
+                "zh-CN": {"name": "船名反和谐（360服专用）", "description": "恢复国服真实舰名。"},
+            },
+            "packages": [{"url": "https://example.com/fanhexie.zip", "sha256": "",
+                          "size": 4096, "name": "text.shipname.fanhexie.zip"}],
+        },
+        {
+            "id": "text.shipname.real", "category": "text",
+            "servers": ["ru", "eu", "na", "asia"],
+            "discussion": 97, "version": "1",
+            "game": ">=13.0",
+            "title": "Real Ship Names",
+            "nameZh": "真实舰名", "nameEn": "Real Ship Names",
+            "description": "Restores historical ship names on non-Chinese clients.",
+            "authorUrl": "",
+            "i18n": {
+                "en-US": {"name": "Real Ship Names",
+                          "description": "Restores historical ship names on non-Chinese clients."},
+                "zh-CN": {"name": "真实舰名", "description": "为非中文端恢复历史舰名。"},
+            },
+            "packages": [{"url": "https://example.com/shipname-real.zip", "sha256": "",
+                          "size": 2048, "name": "text.shipname.real.zip"}],
+        },
+        {
             # Folded style family (scripts/mod_hub_families.py): the six
             # team-panel variants as ONE entry with a scheme button
             # group — per-scheme preview + note, legacy ids in

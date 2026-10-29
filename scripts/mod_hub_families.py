@@ -145,8 +145,9 @@ def fold_families(mods: dict) -> dict:
     `mods` is the built index shape: `{id: {versions: {v: rec}, latest,
     …}}` where each version rec carries packages/preview/authors. The
     merged entry keeps one version (the newest member version —
-    families track the same Aslain pack), unions aliases/tags/authors,
-    and lands `supersedes` at the entry level.
+    families track the same Aslain pack), unions aliases/tags/authors
+    (and server scope — unless any member is universal, which keeps the
+    fold universal), and lands `supersedes` at the entry level.
     """
     table = _desc_table()
     for fam in FAMILIES:
@@ -159,11 +160,19 @@ def fold_families(mods: dict) -> dict:
     return mods
 
 
+# Canonical realm codes, mirrored from SERVER_CODES (mod_hub_publish.py)
+# / REALMS (the app's contribution.rs) — a member scope listing all five
+# codes is universal, same as carrying no scope at all.
+_REALM_CODES = ("ru", "eu", "na", "asia", "cn")
+
+
 def _plan_family(fam: dict, mods: dict, table: dict) -> dict | None:
     presets: list[dict] = []
     supersedes: dict[str, str] = {}
     aliases: list[str] = []
     tags: list[str] = []
+    servers: list[str] = []
+    universal_member = False
     authors: list[dict] = []
     discussion = None
     license_value = None
@@ -199,6 +208,16 @@ def _plan_family(fam: dict, mods: dict, table: dict) -> dict | None:
         for t in entry.get("tags") or []:
             if t not in tags:
                 tags.append(t)
+        # Server scope: scoped members union (the folded entry applies
+        # wherever ANY member applies), and ANY universal member — no
+        # list, an empty one, or all five codes — keeps the fold
+        # universal, so a scoped sibling can never narrow it.
+        member_servers = entry.get("servers") or []
+        if not member_servers or set(_REALM_CODES) <= set(member_servers):
+            universal_member = True
+        for s in member_servers:
+            if s not in servers:
+                servers.append(s)
         for a in rec.get("authors") or []:
             if a not in authors:
                 authors.append(a)
@@ -252,6 +271,8 @@ def _plan_family(fam: dict, mods: dict, table: dict) -> dict | None:
         merged["aliases"] = aliases
     if tags:
         merged["tags"] = tags
+    if servers and not universal_member:
+        merged["servers"] = servers
     if delisted_all:
         merged["delisted"] = True
     return {"drop": drop, "entry": merged}
@@ -299,6 +320,33 @@ def selftest() -> None:
         "battle.panel.ttaro-alias",
         "battle.panel.hakabase-alias",
     ]
+    assert "servers" not in panel, "all-universal family folded without a scope"
+    # Server scope: scoped members union in order; ANY universal member
+    # (no list / empty / all five codes) keeps the fold universal.
+    def member(mid):
+        return {
+            "id": mid, "category": "battle",
+            "versions": {"1.0": {"game": "*", "packages": [pkg(mid + ".zip")]}},
+            "latest": "1.0",
+        }
+
+    scoped_mods = {
+        "battle.panel.autospy": dict(member("battle.panel.autospy"), servers=["ru"]),
+        "battle.panel.hakabase": dict(member("battle.panel.hakabase"), servers=["eu"]),
+        "battle.marker.traffic": member("battle.marker.traffic"),
+        "battle.marker.traffic-v2": dict(member("battle.marker.traffic-v2"), servers=["na"]),
+    }
+    fold_families(scoped_mods)
+    assert scoped_mods["battle.panel"]["servers"] == ["ru", "eu"], "scoped members union in order"
+    assert "servers" not in scoped_mods["battle.marker.traffic"], "universal member keeps the fold universal"
+
+    allfive_mods = {
+        "battle.panel.autospy": dict(
+            member("battle.panel.autospy"), servers=["ru", "eu", "na", "asia", "cn"]),
+        "battle.panel.hakabase": dict(member("battle.panel.hakabase"), servers=["cn"]),
+    }
+    fold_families(allfive_mods)
+    assert "servers" not in allfive_mods["battle.panel"], "an all-five member counts as universal"
     # Default scheme mirrors the plain list; each preset keeps its own
     # payload and preview so the app can swap them per button.
     rec = panel["versions"]["1.0"]

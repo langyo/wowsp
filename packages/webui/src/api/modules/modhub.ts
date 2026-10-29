@@ -175,6 +175,12 @@ export interface CatalogEntry {
   presets?: CatalogPreset[];
   /** Registry tag ids (licensed, AI-generated, IP origins…). */
   tags?: string[];
+  /** Server-applicability realm codes — a subset of the five canonical
+   *  codes (`ru`/`eu`/`na`/`asia`/`cn`, see features/modhub/servers.ts).
+   *  Absent/empty, or all five at once, means the entry is universal;
+   *  otherwise it applies only on the listed servers. Absent on older
+   *  indexes. */
+  servers?: string[];
   title: string;
   nameZh: string;
   nameEn: string;

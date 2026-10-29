@@ -4,6 +4,7 @@ import {
   AudioLines,
   Ellipsis,
   FolderSearch,
+  FolderSync,
   ImageIcon,
   Puzzle,
   RefreshCw,
@@ -18,6 +19,7 @@ import {
   HkIconButton,
   HkModal,
   HkScrollContainer,
+  HkSwitch,
   HkTabs,
   HMenu,
 } from "@celestia-island/hikari";
@@ -39,6 +41,7 @@ import { listedEntries } from "@/features/modhub/catalogListed";
 import ModOpDisclaimer from "@/features/modhub/ModOpDisclaimer";
 import { t } from "@/i18n";
 import { formatLocalStamp } from "@/utils/format";
+import { installLabelOf } from "@/utils/installLabel";
 import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
 import { useModHub } from "./resources/useModHub";
@@ -165,7 +168,10 @@ export default defineComponent({
     const catalogEmptyNote = () => {
       if (hub.catalogLoading.value) return loadingNote(t("resources.refreshing"));
       if (hub.catalogError.value) return null;
-      const listed = listedEntries(hub.catalog.value);
+      // Applicability-filtered like every list pipeline: a catalog whose
+      // entries are all inapplicable to the active client reads as
+      // "nothing matched", not as a missing catalog.
+      const listed = listedEntries(hub.applicableCatalog.value);
       return emptyNote(
         listed.length === 0 ? t("resources.catalogEmpty") : t("resources.empty"),
       );
@@ -246,6 +252,17 @@ export default defineComponent({
                           disabled:
                             !hub.gameRoot.value || hub.staleBins.value.length === 0 || wizard.migrating.value,
                         },
+                        {
+                          key: "sync-all",
+                          label: t("resources.sync.action"),
+                          icon: FolderSync,
+                          disabled:
+                            !hub.gameRoot.value ||
+                            hub.clientCount.value < 2 ||
+                            hub.catalogLoading.value ||
+                            hub.recordsLoading.value ||
+                            hub.syncAllBusy.value,
+                        },
                       ]}
                       // HMenu select emits the item key itself as the first argument.
                       onSelect={(key: string | number) => {
@@ -254,6 +271,7 @@ export default defineComponent({
                         else if (key === "safe-exit") hub.safeModeAsk.value = "off";
                         else if (key === "purge-reinstall") hub.purgeAsk.value = hub.foreignUnits.value.length > 0 ? "choice" : "simple";
                         else if (key === "migrate") wizard.openMigrateWizard();
+                        else if (key === "sync-all") void hub.openSyncAll();
                       }}
                       onUpdate:open={(v: boolean) => (hub.toolsOpen.value = v)}
                     />
@@ -327,6 +345,20 @@ export default defineComponent({
                 </div>
               )}
 
+              {/* Individual-management notice: multi-client machine, unified
+                  sync OFF — installs and removals hit ONLY the selected
+                  client while the mode stays off. Quiet strip (no action):
+                  the switch on the source row below IS the way out. */}
+              {hub.syncIndividual.value && hub.activeInstall.value && (
+                <div class="resources-banner resources-banner--sync">
+                  <span class="resources-banner__text">
+                    {t("resources.sync.banner", {
+                      client: installLabelOf(hub.activeInstall.value),
+                    })}
+                  </span>
+                </div>
+              )}
+
               {/* The count pill mirrors the replay list's count — scoped to
                   the ACTIVE source AND big category, i.e. exactly what the
                   "all" chip below counts; narrower chip/filter states show
@@ -362,6 +394,25 @@ export default defineComponent({
                     tabs={sourceTabs}
                     renderPanels={false}
                   />
+                  {/* Unified multi-client sync (only meaningful with several
+                      installs): ON fans catalog installs/uninstalls out to
+                      every client realm-filtered; OFF manages the selected
+                      client alone and raises the banner above. Bare switch —
+                      the data-hint tooltip carries the explanation, the ⋯
+                      menu's "Sync all clients" does the one-shot reconcile. */}
+                  {hub.clientCount.value > 1 && (
+                    <span
+                      class="resources-view__sync-toggle"
+                      data-hint={t("resources.sync.toggleHint")}
+                    >
+                      <HkSwitch
+                        size="sm"
+                        modelValue={hub.syncEnabled.value}
+                        aria-label={t("resources.sync.toggleLabel")}
+                        onUpdate:modelValue={() => hub.toggleSync()}
+                      />
+                    </span>
+                  )}
                 </div>
                 <AsyncSearchCombo
                   key={hub.source.value}
@@ -557,6 +608,24 @@ export default defineComponent({
             onConfirm={hub.doSafeMode}
             onUpdate:open={(v: boolean) => {
               if (!v) hub.safeModeAsk.value = null;
+            }}
+          />
+
+          {/* Multi-client reconcile confirm: per-client install/uninstall
+              totals before anything touches another client's res_mods. */}
+          <HkConfirmDialog
+            open={!!hub.syncAllAsk.value}
+            title={t("resources.sync.confirmTitle")}
+            message={t("resources.sync.confirmBody", {
+              installs: hub.syncAllAsk.value?.totalInstalls ?? 0,
+              uninstalls: hub.syncAllAsk.value?.totalUninstalls ?? 0,
+            })}
+            confirmLabel={t("resources.sync.action")}
+            confirmVariant="primary"
+            loading={hub.syncAllBusy.value}
+            onConfirm={() => void hub.doSyncAll()}
+            onUpdate:open={(v: boolean) => {
+              if (!v) hub.syncAllAsk.value = null;
             }}
           />
 

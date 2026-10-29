@@ -291,5 +291,34 @@
   "purgeReinstallChoiceAdopt": "サードパーティ製 MOD も取り込み、ファイルを保持したまま WoWSP 管理として再登録します。",
   "purgeReinstallBackupNote": "いずれの場合も以前のツリーはバックアップとして保持されます。",
   "purgeReinstallOurOnly": "WoWSP の MOD のみ再インストール",
-  "purgeReinstallAdopt": "再インストールしてサードパーティ製 MOD を取り込む"
+  "purgeReinstallAdopt": "再インストールしてサードパーティ製 MOD を取り込む",
+  "servers": {
+    "universal": "全サーバー共通",
+    "partial": "一部サーバーのみ",
+    "exclusive": "専用",
+    "scopeHint": "対応サーバー：{servers}",
+    "realm": {
+      "ru": "RUサーバー",
+      "eu": "EUサーバー",
+      "na": "NAサーバー",
+      "asia": "アジアサーバー",
+      "cn": "中国サーバー"
+    }
+  },
+  "sync": {
+    "banner": "{client} を個別管理中",
+    "toggleLabel": "マルチクライアント同期",
+    "toggleHint": "複数のクライアントを検出している場合：オンにするとカタログ MOD のインストール/アンインストールが全クライアントに同期適用されます（サーバー適用性でフィルター）。オフの場合は選択中のクライアントのみ操作します。",
+    "action": "全クライアントを同期",
+    "confirmTitle": "全クライアントを同期",
+    "confirmBody": "他の検出済みクライアントを、このクライアントの WoWSP カタログ MOD 構成に合わせます：不足している適用 MOD を {installs} 件インストールし、構成にない余分な MOD を {uninstalls} 件削除します。先に実行中のゲームクライアントをすべて終了してください。",
+    "done": "{count} 個のクライアントを同期しました。",
+    "partial": "{count} 個中 {ok} 個のクライアントを同期しました：{details}",
+    "failed": "{count} 個のクライアントすべてで同期に失敗しました：{details}",
+    "skippedByRule": "「{mod}」は {client} には適用されないためスキップしました",
+    "skippedRunning": "「{names}」が実行中のためスキップしました——ゲームを終了してから再試行してください。",
+    "nothingToDo": "他のクライアントはすべてこのクライアントの MOD 構成と一致しています。",
+    "noCatalog": "オンラインカタログが未読み込みです——先にカタログを更新してから同期してください。",
+    "noLedger": "インストール記録の読み取りに失敗しました——しばらくしてから再試行してください。"
+  }
 }

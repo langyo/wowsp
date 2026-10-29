@@ -2245,6 +2245,7 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
         authors: Vec::new(),
         i18n: std::collections::HashMap::new(),
         aliases: Vec::new(),
+        servers: Vec::new(),
         preview: None,
         supersedes: None,
         packages: vec![CatalogPackage {
@@ -2736,6 +2737,7 @@ fn register_over_foreign_cuts_only_paired_manifest_rows() {
         authors: Vec::new(),
         i18n: std::collections::HashMap::new(),
         aliases: Vec::new(),
+        servers: Vec::new(),
         preview: None,
         supersedes: None,
         packages: vec![CatalogPackage {
@@ -2940,6 +2942,7 @@ fn scan_pairs_units_with_catalog_identities() {
         description: String::new(),
         authors: Vec::new(),
         aliases: aliases.into_iter().map(Into::into).collect(),
+        servers: Vec::new(),
         preview: None,
         supersedes: None,
         i18n: std::collections::HashMap::new(),

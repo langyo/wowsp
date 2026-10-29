@@ -178,6 +178,11 @@ struct RawMod {
     /// row ids and on-disk directory names this entry answers to exactly.
     #[serde(default)]
     aliases: Vec<String>,
+    /// Server realms this entry applies to (front-matter `servers:`),
+    /// canonical realm codes — `ru`/`eu`/`na`/`asia`/`cn`. Empty
+    /// means universal (applies on every server).
+    #[serde(default)]
+    servers: Vec<String>,
     /// Folded style family: legacy one-entry-per-variant ids → preset
     /// ids (see `CatalogEntry::supersedes`).
     #[serde(default)]
@@ -385,6 +390,7 @@ pub(crate) fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogInde
                     }
                 }),
             aliases: m.aliases.clone(),
+            servers: m.servers.clone(),
             preview: ver.preview.clone(),
             supersedes: m.supersedes.clone(),
             i18n: ver

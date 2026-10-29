@@ -117,6 +117,17 @@
     min-width: 0;
     display: flex;
     align-items: center;
+    gap: 0.375rem;
+  }
+
+  /* The unified-sync switch (multi-client machines only): a bare small
+     switch hugging the source tabs — its data-hint tooltip carries the
+     explanation, so no label crowds the row. */
+  &__sync-toggle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.125rem;
   }
 
   /* The list is the sidebar's scroller: the filter stack above stays put
@@ -948,6 +959,16 @@
     background: rgba(16, 185, 129, 0.12);
     border: 1px solid rgba(16, 185, 129, 0.35);
   }
+
+  /* Individual-management notice (multi-client machine, unified sync
+     OFF): informational, not a warning — nothing is wrong, the user
+     simply opted out — so a quiet info tint, no border shout. */
+  &--sync {
+    color: rgb(var(--color-info));
+    background: rgb(var(--color-info) / 8%);
+    border: 1px solid rgb(var(--color-info) / 25%);
+    font-size: var(--text-xs);
+  }
 }
 
 // ── Detail pane (the right half, inside __main's padding) ───────────────────
@@ -1201,6 +1222,15 @@
       border-color: rgb(168 85 247 / 40%);
     }
 
+    /* Server-applicability scope (通用 / 部分服务器 / 专属): the info
+       voice — a WHERE tag, not a provenance or ownership one. The
+       tooltip enumerates the applicable servers. */
+    &--servers {
+      color: rgb(var(--color-info));
+      background: rgb(var(--color-info) / 10%);
+      border-color: rgb(var(--color-info) / 30%);
+    }
+
     /* The clickable author tag — a button reset to the pill look, with an
        inline icon row and the same hover voice as the footer link. */
     &--link {
@@ -1260,9 +1290,29 @@
   &__meta {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.375rem 0.625rem;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
+  }
+
+  /* The meta row's server half (元信息): one tiny tag per applicable
+     realm — quieter than the badges row's scope pill, this is metadata
+     spelling the badge out, not a second headline. */
+  &__meta-servers {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  &__meta-server {
+    padding: 0 0.375rem;
+    font-size: var(--text-2xs);
+    line-height: 1.45;
+    color: rgb(var(--color-muted));
+    background: rgb(var(--color-border) / 12%);
+    border-radius: 999px;
+    white-space: nowrap;
   }
 
   /* The head's ⋯ cluster (open path / online page / file list): pinned

@@ -13,6 +13,7 @@ import {
   type CatalogProgress,
   type CatalogTag,
   type ForeignModUnit,
+  type GameInstall,
   type InstalledMod,
   type ModInstallRecord,
   type ModKind,
@@ -28,13 +29,20 @@ import {
   type CatalogCat,
 } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
+import { appliesToRealm, realmOfInstall } from "@/features/modhub/servers";
 import { requestModOpDisclaimer } from "@/features/modhub/ModOpDisclaimer";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
+import {
+  failureDetail,
+  usePluginUpdatesStore,
+  type PluginItemOp,
+} from "@/stores/pluginUpdates";
+import { modSyncState, useModSyncStore } from "@/stores/modSync";
 import { useStaleBinsStore } from "@/stores/staleBins";
 import { t } from "@/i18n";
 import { sameGamePath } from "@/utils/gamePath";
+import { installFolderName, installLabelOf } from "@/utils/installLabel";
 import {
   entryMatches,
   installedPresetOf,
@@ -42,6 +50,33 @@ import {
   localized,
 } from "./display";
 import type { Selection, TextureComponent } from "./types";
+
+/** One OTHER client's share of a "Sync all clients" reconcile plan:
+ *  which applicable catalog mods it is missing (with the preset the
+ *  active client's ledger record carries — a folded family's legacy
+ *  record maps onto its scheme), and which of its catalog mods the
+ *  active set does not carry (uninstall candidates by ledger-record id,
+ *  realm-agnostic). */
+export interface SyncAllClientPlan {
+  install: GameInstall;
+  label: string;
+  installs: { entry: CatalogEntry; preset: string | null }[];
+  uninstalls: { id: string; name: string }[];
+}
+
+/** The whole reconcile: per-other-client diffs plus the confirm
+ *  dialog's totals. */
+export interface SyncAllPlan {
+  clients: SyncAllClientPlan[];
+  totalInstalls: number;
+  totalUninstalls: number;
+}
+
+/** Short label of a fan-out target client (kind · realm, falling back
+ *  to the folder name when neither resolves). */
+function syncLabelOf(install: GameInstall): string {
+  return installLabelOf(install) || installFolderName(install.path);
+}
 
 export function useModHub() {
   const config = useConfigStore();
@@ -91,6 +126,9 @@ export function useModHub() {
   const catalogLoading = ref(false);
   const catalogError = ref("");
   const records = ref<ModInstallRecord[]>([]);
+  // Ledger fetch in flight — gates the "Sync all clients" menu entry,
+  // which needs a fresh records read to plan per-client work.
+  const recordsLoading = ref(false);
   // Per-mod download-progress map (Vue instruments collection mutations,
   // so `.set`/`.delete` re-render). Only the mods currently being
   // processed appear here — every other row stays fully clickable while
@@ -139,6 +177,17 @@ export function useModHub() {
   // res_mods mod bypassed (the fastest crash bisect), one click to bring
   // everything back.
   const safeMode = ref(false);
+  // ── Multi-client sync (统一多客户端管理) ────────────────────────────
+  // The mode preference lives in stores/modSync (default ON). While ON
+  // and more than one install is detected, catalog install/uninstall fan
+  // out to EVERY client (the active one first, realm-filtered); while
+  // OFF everything behaves single-client and the page shows the
+  // "managing individually" banner.
+  const modSync = useModSyncStore();
+  /** The "Sync all clients" reconcile: the plan awaiting its confirm
+   *  dialog (null = closed), and its execute-in-flight flag. */
+  const syncAllAsk = ref<SyncAllPlan | null>(null);
+  const syncAllBusy = ref(false);
   const safeModeAsk = ref<"on" | "off" | null>(null);
   const safeModeBusy = ref(false);
   // The nuclear reset: purge EVERY mod, then reinstall only the units our
@@ -159,8 +208,24 @@ export function useModHub() {
   // per-item table (probe + mod ids → op in flight). One map across
   // every update surface: a sidebar batch pass or a live-page probe op
   // disables its item here, and these rows' own installs register in
-  // the same table so the other surfaces disable too.
-  const busy = computed(() => pluginUpdates.itemBusy);
+  // the same table so the other surfaces disable too. The multi-client
+  // fan-outs / reconcile hold their mod ids here TOO (fanOutBusy): the
+  // shared table has gaps between per-target RPCs, and a row must stay
+  // disabled for the whole fan-out, not flicker clickable between
+  // clients. Markers are ADD/DELETE per mod id (never a wholesale
+  // replacement): a row fan-out running while the reconcile holds its
+  // own markers must not clobber them, or that run's rows would flicker
+  // clickable mid-flight (the shared table's single-flight still blocks
+  // the duplicate RPC — the merge only keeps the UI honest).
+  const fanOutBusy = ref(new Map<string, PluginItemOp>());
+  const busy = computed<Map<string, PluginItemOp>>(() => {
+    if (fanOutBusy.value.size === 0) return pluginUpdates.itemBusy;
+    const merged = new Map(pluginUpdates.itemBusy);
+    for (const [id, op] of fanOutBusy.value) {
+      if (!merged.has(id)) merged.set(id, op);
+    }
+    return merged;
+  });
   // The install every mod operation targets: the user's selection, with
   // the RUNNING client's folder as the fallback (same order the ship
   // detail uses) so the page keeps working when no selection is present.
@@ -195,6 +260,20 @@ export function useModHub() {
       return true;
     }
     return false;
+  }
+
+  /** Whether ANY running game process belongs to `root` — the same
+   *  multi-instance rule as gameRunning, parameterized for the
+   *  multi-client surfaces (the reconcile targets roots the active
+   *  client's own check never covers) and SILENT: the reconcile records
+   *  a skip warning naming the client instead of the block toast. A
+   *  running process whose folder is unknown counts conservatively. */
+  function clientRunning(root: string): boolean {
+    const roots = gameStatus.processes
+      .filter((p) => p.running)
+      .map((p) => p.matchedInstall?.path ?? null);
+    if (roots.length === 0) return false;
+    return roots.some((r) => r == null || sameGamePath(root, r));
   }
 
   let detach: (() => void) | undefined;
@@ -237,10 +316,14 @@ export function useModHub() {
   }
 
   async function loadRecords() {
+    if (recordsLoading.value) return;
+    recordsLoading.value = true;
     try {
       records.value = await api.modHubRecords();
     } catch {
       records.value = [];
+    } finally {
+      recordsLoading.value = false;
     }
   }
 
@@ -344,19 +427,174 @@ export function useModHub() {
       (r) => r.id === id && (!r.gameRoot || r.gameRoot === gameRoot.value),
     );
 
-  /** The ledger record backing a catalog entry: its exact id, or — for a
-   *  folded style family — a superseded one-entry-per-variant id (the
-   *  record installed under `battle.panel.ttaro` backs `battle.panel`).
-   *  Same-install rule as `recordOf`. */
-  const recordOfEntry = (entry: CatalogEntry) =>
+  /** The ledger record backing a catalog entry ON ONE ROOT: its exact
+   *  id, or — for a folded style family — a superseded one-entry-per-
+   *  variant id (the record installed under `battle.panel.ttaro` backs
+   *  `battle.panel`). Legacy unstamped records count for every root
+   * (same rule as `recordOf`). Root-parametrized because the multi-
+   * client sync ops resolve records per TARGET client, not just the
+   * active one. */
+  const recordOfEntryOn = (entry: CatalogEntry, root: string) =>
     records.value.find(
       (r) =>
         (r.id === entry.id || entry.supersedes?.[r.id] !== undefined) &&
-        (!r.gameRoot || r.gameRoot === gameRoot.value),
+        (!r.gameRoot || sameGamePath(r.gameRoot, root)),
     );
+
+  /** The active root's record backing a catalog entry (see
+   *  recordOfEntryOn). */
+  const recordOfEntry = (entry: CatalogEntry) =>
+    recordOfEntryOn(entry, gameRoot.value);
 
   /** Installed units are keyed by their primary path (unique per unit). */
   const unitKey = (m: InstalledMod) => m.relPath;
+
+  // ── Multi-client fan-out targets (统一多客户端管理的目标集) ─────────
+  // SCOPE: only catalog INSTALL/UNINSTALL ops fan out. The installed-
+  // scan unit ops (toggle / on-disk uninstall), purge-reinstall, safe
+  // mode and stale-bin migration operate on ONE client's disk by nature
+  // (they walk that client's res_mods tree and manifest) and stay
+  // per-client — syncing them would mean reimplementing each as a batch
+  // RPC for no user-facing gain.
+
+  /** Fan-out targets while unified sync is on: every detected install,
+   *  the ACTIVE client first, deduped by path. Fewer than two entries
+   *  (single-client machines, or sync off) collapse to [] — callers
+   *  then keep today's single-root behavior, so the fan-out only ever
+   *  WIDENS an op, never changes it. */
+  const syncTargets = computed<GameInstall[]>(() => {
+    if (!modSyncState.value) return [];
+    const ordered = [
+      ...(config.activeInstall ? [config.activeInstall] : []),
+      ...(config.installs ?? []),
+    ];
+    const out: GameInstall[] = [];
+    for (const i of ordered) {
+      if (i && !out.some((o) => sameGamePath(o.path, i.path))) out.push(i);
+    }
+    return out;
+  });
+
+  /** The ACTIVE client install (the left-sidebar selection) — exposed
+   *  for the banner's "Managing {client} individually" label. */
+  const activeInstall = computed(() => config.activeInstall);
+
+  /** How many distinct game clients the machine has — the sync toggle's
+   *  and the banner's visibility (a single-client machine has nothing
+   *  to fan out to, so neither surface exists). */
+  const clientCount = computed(() => {
+    const seen: GameInstall[] = [];
+    for (const i of [
+      ...(config.activeInstall ? [config.activeInstall] : []),
+      ...(config.installs ?? []),
+    ]) {
+      if (i && !seen.some((o) => sameGamePath(o.path, i.path))) seen.push(i);
+    }
+    return seen.length;
+  });
+
+  /** The "managing individually" banner's condition: more than one
+   *  client detected, unified sync OFF. */
+  const syncIndividual = computed(
+    () => !modSyncState.value && clientCount.value > 1,
+  );
+
+  /** One target client's fan-out outcome — the per-client rollup behind
+   *  the ONE summary toast (the pluginUpdates batch-pass pattern). */
+  interface SyncClientOutcome {
+    label: string;
+    ok: boolean;
+    error?: string;
+  }
+
+  /** One catalog op fanned out across every target, SEQUENTIALLY (the
+   *  shared busy table is single-flight per mod id). Realm rule: an
+   *  INSTALL skips target clients the entry does not apply to
+   *  (server-exclusive mods); an UNINSTALL never filters — removal is
+   *  realm-agnostic cleanup of whatever copy sits on that client. The
+   *  per-mod progress UX keeps working (progress events key by mod id
+   * across roots), and ONE summary toast lands at the end: all good →
+   *  success with the client count, mixed → warning with the capped
+   *  failure fold, nothing landed → error. */
+  async function fanOutMod(
+    entry: CatalogEntry,
+    op: "install" | "uninstall",
+    preset?: string,
+  ): Promise<void> {
+    const targets = syncTargets.value;
+    const outcomes: SyncClientOutcome[] = [];
+    const failures: string[] = [];
+    for (const target of targets) {
+      const label = syncLabelOf(target);
+      if (op === "install" && !appliesToRealm(entry, realmOfInstall(target))) {
+        // Server-exclusive on this client — skip by rule, say so quietly.
+        toast.info(
+          t("resources.sync.skippedByRule", {
+            mod: localized(entry).name || entry.nameEn,
+            client: label,
+          }),
+        );
+        continue;
+      }
+      // A running target client can't take writes (the backend refuses
+      // them root-scoped) — skip it up front with the reconcile's quiet
+      // warning instead of a per-target failure line in the summary.
+      // (The active root was already blocked wholesale by gameRunning()
+      // before the fan-out started, so this only fires for other
+      // clients.)
+      if (clientRunning(target.path)) {
+        toast.warning(t("resources.sync.skippedRunning", { names: label }));
+        continue;
+      }
+      try {
+        if (op === "install") {
+          const r = await pluginUpdates.runMod(entry.id, target.path, preset);
+          for (const v of r.mirroredBins ?? []) {
+            toast.info(t("resources.mirroredBins", { version: v }));
+          }
+          for (const c of r.conflicts ?? []) toast.info(c);
+        } else {
+          // Uninstall only where a record actually pairs — a target that
+          // never installed the entry has nothing to remove, and a raw
+          // uninstall RPC there would only surface backend "not
+          // installed" noise as a false per-client failure. A folded
+          // family's record may sit under a legacy variant id on this
+          // particular client — uninstall THAT record, per target root.
+          const record = recordOfEntryOn(entry, target.path);
+          if (!record) continue;
+          await pluginUpdates.runModUninstall(record.id, target.path);
+        }
+        outcomes.push({ label, ok: true });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        outcomes.push({ label, ok: false, error: msg });
+        failures.push(`${label}: ${msg}`);
+      }
+    }
+    const attempted = outcomes.length;
+    const okCount = outcomes.filter((o) => o.ok).length;
+    // Every target skipped by rule already spoke through its own toast —
+    // no empty summary on top.
+    if (attempted === 0) return;
+    if (okCount === attempted) {
+      toast.success(t("resources.sync.done", { count: okCount }));
+    } else if (okCount > 0) {
+      toast.warning(
+        t("resources.sync.partial", {
+          ok: okCount,
+          count: attempted,
+          details: failureDetail(failures),
+        }),
+      );
+    } else {
+      toast.error(
+        t("resources.sync.failed", {
+          count: attempted,
+          details: failureDetail(failures),
+        }),
+      );
+    }
+  }
 
   async function installMod(entry: CatalogEntry, preset?: string) {
     if (!gameRoot.value || busy.value.has(entry.id) || gameRunning() || safeModeBlocked()) {
@@ -367,23 +605,40 @@ export function useModHub() {
     // is a REGISTRATION — the backend cuts the foreign installer's
     // manifest rows, the follow-up toast says ownership moved.
     const tookOverForeign = !!foreignCopyOf(entry);
+    // Multi-client fan-out (unified sync on, several installs): every
+    // target client realm-filtered, ONE summary toast. Single-client
+    // machines and individual-management mode keep today's per-op toast.
+    const fanOut = syncTargets.value.length > 1;
+    if (fanOut) fanOutBusy.value.set(entry.id, "install");
     try {
-      // The shared run registers the row in the store-wide busy table
-      // and fans out the freshness sync (sidebar badge + live probe)
-      // when it lands.
-      const r = await pluginUpdates.runMod(entry.id, gameRoot.value, preset);
-      toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
-      if (tookOverForeign) {
-        toast.info(t("resources.registeredOverForeign", { name: r.name }));
+      if (fanOut) {
+        await fanOutMod(entry, "install", preset);
+        if (tookOverForeign) {
+          toast.info(
+            t("resources.registeredOverForeign", {
+              name: localized(entry).name || entry.nameEn,
+            }),
+          );
+        }
+      } else {
+        // The shared run registers the row in the store-wide busy table
+        // and fans out the freshness sync (sidebar badge + live probe)
+        // when it lands.
+        const r = await pluginUpdates.runMod(entry.id, gameRoot.value, preset);
+        toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
+        if (tookOverForeign) {
+          toast.info(t("resources.registeredOverForeign", { name: r.name }));
+        }
+        for (const v of r.mirroredBins ?? []) {
+          toast.info(t("resources.mirroredBins", { version: v }));
+        }
+        for (const c of r.conflicts ?? []) toast.info(c);
       }
-      for (const v of r.mirroredBins ?? []) {
-        toast.info(t("resources.mirroredBins", { version: v }));
-      }
-      for (const c of r.conflicts ?? []) toast.info(c);
       await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
+      fanOutBusy.value.delete(entry.id);
       progresses.value.delete(entry.id);
     }
   }
@@ -401,19 +656,28 @@ export function useModHub() {
     // under a legacy one-entry-per-variant id — uninstall THAT record,
     // not the merged catalog id it now pairs with.
     const targetId = recordOfEntry(entry)?.id ?? entry.id;
+    // Uninstall fans out too (unified sync on) — removal is realm-
+    // agnostic, so no per-target skip rule applies here.
+    const fanOut = syncTargets.value.length > 1;
+    if (fanOut) fanOutBusy.value.set(entry.id, "uninstall");
     try {
-      const r = await pluginUpdates.runModUninstall(targetId, gameRoot.value);
-      toast.success(
-        t("resources.uninstalledDone", {
-          name: r.name,
-          removed: r.removedFiles,
-          restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
-        }),
-      );
+      if (fanOut) {
+        await fanOutMod(entry, "uninstall");
+      } else {
+        const r = await pluginUpdates.runModUninstall(targetId, gameRoot.value);
+        toast.success(
+          t("resources.uninstalledDone", {
+            name: r.name,
+            removed: r.removedFiles,
+            restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
+          }),
+        );
+      }
       await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
+      fanOutBusy.value.delete(entry.id);
       progresses.value.delete(entry.id);
     }
   }
@@ -618,6 +882,202 @@ export function useModHub() {
     }
   }
 
+  // ── "Sync all clients" reconcile ───────────────────────────────────
+  // One-click convergence: every OTHER detected client adopts the
+  // ACTIVE client's WoWSP-ledger catalog mod set — missing applicable
+  // mods get installed (realm-filtered per target), extras the active
+  // set does not carry get uninstalled (realm-agnostic removal). The
+  // active client itself is the reference and is never touched.
+
+  /** Fold a ledger record onto its catalog entry: exact id, else the
+   *  folded family a superseded legacy id belongs to (pluginUpdates'
+   *  entryOfRecord rule). Null when the record predates the index. */
+  function entryOfRecord(r: ModInstallRecord): CatalogEntry | null {
+    return (
+      catalog.value.find((m) => m.id === r.id) ??
+      catalog.value.find((m) => m.supersedes?.[r.id] !== undefined) ??
+      null
+    );
+  }
+
+  /** The WoWSP-ledger catalog records of one root (source "mod-hub";
+   *  legacy unstamped records count for every root, the pairing rule
+   * pluginUpdates uses). */
+  const catalogRecordsOn = (root: string) =>
+    records.value.filter(
+      (r) => r.source === "mod-hub" && (!r.gameRoot || sameGamePath(r.gameRoot, root)),
+    );
+
+  /** Build the reconcile plan off the in-memory catalog + a FRESH
+   *  ledger read, then raise the confirm dialog. An empty catalog is a
+   * hard stop: without entries every target record would read as
+   * "extra" and the plan would offer to uninstall the world. */
+  async function openSyncAll(): Promise<void> {
+    if (syncAllBusy.value || clientCount.value < 2) return;
+    const active = config.activeInstall;
+    if (!active) return;
+    if (catalog.value.length === 0) {
+      toast.error(t("resources.sync.noCatalog"));
+      return;
+    }
+    // A read FAILURE must not masquerade as an empty ledger (loadRecords
+    // swallows failures into []): with no records every target record
+    // would read as "extra" and the plan would offer to uninstall the
+    // world — read directly so the failure can bail out here.
+    try {
+      records.value = await api.modHubRecords();
+    } catch {
+      toast.error(t("resources.sync.noLedger"));
+      return;
+    }
+    // The active client's set: entry → backing record (preset source).
+    const activeEntries = new Map<CatalogEntry, ModInstallRecord>();
+    const activeEntryIds = new Set<string>();
+    const activeRecordIds = new Set<string>();
+    for (const r of catalogRecordsOn(active.path)) {
+      activeRecordIds.add(r.id);
+      const e = entryOfRecord(r);
+      if (e) {
+        activeEntryIds.add(e.id);
+        if (!activeEntries.has(e)) activeEntries.set(e, r);
+      }
+    }
+    const clients: SyncAllClientPlan[] = [];
+    for (const install of config.installs ?? []) {
+      if (sameGamePath(install.path, active.path)) continue;
+      const label = syncLabelOf(install);
+      const realm = realmOfInstall(install);
+      const theirs = catalogRecordsOn(install.path);
+      const theirEntryIds = new Set<string>();
+      for (const r of theirs) {
+        const e = entryOfRecord(r);
+        if (e) theirEntryIds.add(e.id);
+      }
+      // Missing applicable mods (presence-level match: a folded
+      // family's other scheme counts as present — the reconcile never
+      // re-picks schemes). Preset carried over from the active record,
+      // legacy folded ids mapped onto their scheme.
+      const installs = [...activeEntries.entries()]
+        .filter(([e]) => appliesToRealm(e, realm) && !theirEntryIds.has(e.id))
+        .map(([e, r]) => ({
+          entry: e,
+          preset: r.preset ?? e.supersedes?.[r.id] ?? null,
+        }));
+      // Extra catalog mods the active set does not carry — by record id
+      // (a record whose entry left the index uninstalls by id too).
+      const uninstalls = theirs
+        .filter((r) => {
+          const e = entryOfRecord(r);
+          return e ? !activeEntryIds.has(e.id) : !activeRecordIds.has(r.id);
+        })
+        .map((r) => ({ id: r.id, name: r.name }));
+      clients.push({ install, label, installs, uninstalls });
+    }
+    if (clients.every((c) => c.installs.length === 0 && c.uninstalls.length === 0)) {
+      toast.info(t("resources.sync.nothingToDo"));
+      return;
+    }
+    syncAllAsk.value = {
+      clients,
+      totalInstalls: clients.reduce((n, c) => n + c.installs.length, 0),
+      totalUninstalls: clients.reduce((n, c) => n + c.uninstalls.length, 0),
+    };
+  }
+
+  /** Execute a confirmed plan: per client install-then-uninstall,
+   *  sequentially (single-flight busy table), running clients skipped
+   *  with a warning (Rust refuses writes into a live game tree), ONE
+   *  end-of-run summary toast, then the full refresh pass. */
+  async function doSyncAll(): Promise<void> {
+    const plan = syncAllAsk.value;
+    syncAllAsk.value = null;
+    if (!plan || syncAllBusy.value) return;
+    syncAllBusy.value = true;
+    // Rows of every planned mod stay disabled for the whole run — the
+    // shared busy table alone has gaps between per-mod RPCs. Markers are
+    // added per id (not replacing the map) so a row fan-out concurrent
+    // with this run keeps its own marker; only the planned ids are
+    // dropped again in the finally below.
+    for (const p of plan.clients) {
+      for (const i of p.installs) fanOutBusy.value.set(i.entry.id, "install");
+    }
+    const failures: string[] = [];
+    let okClients = 0;
+    let attempted = 0;
+    const skippedRunning: string[] = [];
+    try {
+      for (const p of plan.clients) {
+        if (clientRunning(p.install.path)) {
+          skippedRunning.push(p.label);
+          continue;
+        }
+        attempted += 1;
+        let ok = true;
+        for (const item of p.installs) {
+          // An op busy on another surface owns the item — that op's own
+          // fan-out keeps the ledger honest; skip silently.
+          if (pluginUpdates.itemBusy.has(item.entry.id)) continue;
+          try {
+            await pluginUpdates.runMod(
+              item.entry.id,
+              p.install.path,
+              item.preset ?? undefined,
+            );
+          } catch (e) {
+            ok = false;
+            failures.push(
+              `${p.label} · ${localized(item.entry).name || item.entry.nameEn}: ${
+                e instanceof Error ? e.message : String(e)
+              }`,
+            );
+          }
+        }
+        for (const u of p.uninstalls) {
+          try {
+            await pluginUpdates.runModUninstall(u.id, p.install.path);
+          } catch (e) {
+            ok = false;
+            failures.push(
+              `${p.label} · ${u.name}: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+        }
+        if (ok) okClients += 1;
+      }
+    } finally {
+      syncAllBusy.value = false;
+      for (const p of plan.clients) {
+        for (const i of p.installs) fanOutBusy.value.delete(i.entry.id);
+      }
+      if (attempted > 0) {
+        if (failures.length === 0) {
+          toast.success(t("resources.sync.done", { count: okClients }));
+        } else if (okClients > 0) {
+          toast.warning(
+            t("resources.sync.partial", {
+              ok: okClients,
+              count: attempted,
+              details: failureDetail(failures),
+            }),
+          );
+        } else {
+          toast.error(
+            t("resources.sync.failed", {
+              count: attempted,
+              details: failureDetail(failures),
+            }),
+          );
+        }
+      }
+      if (skippedRunning.length > 0) {
+        toast.warning(
+          t("resources.sync.skippedRunning", { names: skippedRunning.join(", ") }),
+        );
+      }
+      await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
+    }
+  }
+
   // Native folder picker (audit H-3): the picked path is the only
   // install source the backend accepts — a typed path never carries a
   // grant. Pick → fill the display field → run the same analyze flow.
@@ -687,10 +1147,27 @@ export function useModHub() {
     }
   }
 
-  // ── Marketplace filtering: big category → chips → shared query ──
+  // ── Marketplace filtering: realm → big category → chips → query ──
+
+  /** The ACTIVE client's realm (left-sidebar selection): the install's
+   *  resolved realm, else its kind's home server, else null when the
+   *  launcher says nothing about the region — a null realm never
+   *  filters (an ambiguous client sees everything). */
+  const activeRealm = computed(() => realmOfInstall(config.activeInstall));
+
+  /** The online catalog filtered to entries applicable to the active
+   *  client — the ONE source every list pipeline reads (rows, chip
+   *  counts, search, big-category strips), composed with the delisted
+   * filter at each consumer. Deep links tolerate inapplicable entries
+   * (same as delisted): they open the pane, they just never list. */
+  const applicableCatalog = computed(() =>
+    catalog.value.filter((m) => appliesToRealm(m, activeRealm.value)),
+  );
 
   const catalogInCat = computed(() =>
-    listedEntries(catalog.value).filter((m) => catBig(m.category) === bigCat.value),
+    listedEntries(applicableCatalog.value).filter(
+      (m) => catBig(m.category) === bigCat.value,
+    ),
   );
   const installedInCat = computed(() =>
     installed.value.filter((m) => KIND_BIG[m.kind] === bigCat.value),
@@ -981,7 +1458,9 @@ export function useModHub() {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     return source.value === "online"
-      ? listedEntries(catalog.value).filter((m) => entryMatches(m, q)).slice(0, 12)
+      ? listedEntries(applicableCatalog.value)
+          .filter((m) => entryMatches(m, q))
+          .slice(0, 12)
       : installed.value.filter((m) => modMatches(m, q)).slice(0, 12);
   }
 
@@ -1061,6 +1540,7 @@ export function useModHub() {
     catalogLoading,
     catalogError,
     records,
+    recordsLoading,
     progresses,
     confirmTarget,
     unitBusy,
@@ -1075,6 +1555,18 @@ export function useModHub() {
     purgeAsk,
     purgeBusy,
     doPurgeReinstall,
+    // ── multi-client sync ──
+    /** The unified-sync preference (default on) + its toggle — the
+     *  filter row's switch and the ⋯ menu entry both land here. */
+    syncEnabled: modSyncState,
+    toggleSync: modSync.toggleSync,
+    syncIndividual,
+    clientCount,
+    activeInstall,
+    syncAllAsk,
+    syncAllBusy,
+    openSyncAll,
+    doSyncAll,
     toolsOpen,
     toolsAnchor,
     delistedHit,
@@ -1083,6 +1575,7 @@ export function useModHub() {
     pluginUpdates,
     // catalog / installed projections
     catalogInCat,
+    applicableCatalog,
     installedInCat,
     aslainNames,
     modstationUnits,

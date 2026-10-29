@@ -31,6 +31,7 @@ import type { CatalogEntry, InstalledMod, ForeignModUnit, ModInstallRecord, Text
 import ErrorCard from "@/components/base/ErrorCard";
 import { KIND_META, catIcon, isCatalogCat } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
+import { applicableRealms, serverScopeOf } from "@/features/modhub/servers";
 import AssetPreview from "@/features/modhub/AssetPreview";
 import { openExternal } from "@/utils/openExternal";
 import { mediaImageUrl } from "@/utils/media";
@@ -45,6 +46,7 @@ import {
   presetDesc,
   presetLabel,
   presetSwitched,
+  realmLabel,
   tagLabel,
   texLabel,
 } from "./display";
@@ -197,6 +199,10 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
     null;
   const schemeNote = activeScheme ? presetDesc(activeScheme) : "";
   const previewSrc = activeScheme?.preview ?? entry.preview;
+  // Server-applicability: the compressed scope badge + the realm list its
+  // tooltip and the meta row enumerate (universal folds to all five).
+  const scope = serverScopeOf(entry.servers);
+  const realms = applicableRealms(entry.servers);
   return (
     <div class="mod-detail">
       <div class="mod-detail__head">
@@ -232,6 +238,17 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           {isCatalogCat(entry.category) && (
             <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
           )}
+          {/* ONE compressed server-scope badge: 通用 / 部分服务器 / 专属.
+              The tooltip enumerates the applicable servers' localized
+              names; the meta row below spells them out. */}
+          <span
+            class="mod-detail__tag mod-detail__tag--servers"
+            data-hint={t("resources.servers.scopeHint", {
+              servers: realms.map(realmLabel).join(", "),
+            })}
+          >
+            {t(`resources.servers.${scope}`)}
+          </span>
           {(entry.authors ?? []).map((a) =>
             a.url ? (
               <button
@@ -319,6 +336,15 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           {kb > 0 && (
             <span>{t("resources.pkgCount", { count: entry.packages.length, kb })}</span>
           )}
+          {/* The meta row's server half (元信息): one small tag per
+              applicable realm — universal entries show all five. */}
+          <span class="mod-detail__meta-servers">
+            {realms.map((r) => (
+              <span key={r} class="mod-detail__meta-server">
+                {realmLabel(r)}
+              </span>
+            ))}
+          </span>
         </div>
         {/* The package-by-package file listing moved into the ⋯ menu's
             file-list window; the meta row above keeps the summary. */}
