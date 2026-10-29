@@ -80,5 +80,6 @@
     "confirm": "Usar esta imagen",
     "cancel": "Cancelar",
     "exportFailed": "Error al exportar la imagen recortada"
-  }
+  },
+  "uiError": "Algo salió mal: {message}"
 }

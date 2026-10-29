@@ -588,3 +588,19 @@ mod tests {
         assert_eq!(entry, &bytes[200..]);
     }
 }
+
+/// Forward one webui-side failure into the app log. The webview console is
+/// invisible in release builds, so errors the toast surfaces (render errors,
+/// unhandled rejections) would otherwise vanish after the session — they land
+/// in the same rolling log the 问题反馈 section reads and exports.
+///
+/// Best-effort by contract: logging must never throw back into the UI error
+/// path (that would recurse into the very handler raising it).
+#[tauri::command]
+pub fn log_ui_error(message: String, stack: Option<String>) -> CommandResult<()> {
+    const MAX_CHARS: usize = 4000;
+    let message: String = message.chars().take(MAX_CHARS).collect();
+    let stack: String = stack.unwrap_or_default().chars().take(MAX_CHARS).collect();
+    tracing::error!(ui = true, stack = %stack, "{message}");
+    Ok(())
+}

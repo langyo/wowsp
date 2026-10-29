@@ -80,5 +80,6 @@
     "confirm": "使用這張",
     "cancel": "取消",
     "exportFailed": "匯出裁剪圖片失敗"
-  }
+  },
+  "uiError": "出錯了:{message}"
 }

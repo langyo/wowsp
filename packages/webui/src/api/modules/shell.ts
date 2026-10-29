@@ -281,6 +281,11 @@ export const shellApi = {
    *  overview is cheap (one read_dir); the reveal opens the system file
    *  manager with the newest log selected. */
   logsOverview: () => transport.invoke<LogsOverview>(RPC.logs_overview),
+  /** Forward one webui failure into the app log (never throws). */
+  logUiError: (message: string, stack?: string) =>
+    transport
+      .invoke<null>(RPC.log_ui_error, { message, stack })
+      .catch(() => undefined),
   logsRevealLatest: () => transport.invoke<null>(RPC.logs_reveal_latest),
   /** Last `lines` lines (default 120) of the newest log, UTF-8 text for
    *  clipboard sharing (redacted backend-side, like the bundle). */

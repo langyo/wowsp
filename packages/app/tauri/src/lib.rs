@@ -800,6 +800,7 @@ pub fn run() {
             // read, and the feedback zip bundle. Platform-neutral commands
             // (on mobile the file sink never attaches, so they answer
             // empty/`no log files yet` and the section hides anyway).
+            commands::logs::log_ui_error,
             commands::logs::logs_overview,
             commands::logs::logs_reveal_latest,
             commands::logs::logs_read_tail,

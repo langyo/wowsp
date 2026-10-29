@@ -80,5 +80,6 @@
     "confirm": "Utiliser cette image",
     "cancel": "Annuler",
     "exportFailed": "Échec de l'export de l'image rognée"
-  }
+  },
+  "uiError": "Une erreur est survenue : {message}"
 }

@@ -540,5 +540,6 @@
     "registryFailed": "Could not load the provider catalog; the fields below still work.",
     "registryRefresh": "Refresh provider catalog",
     "registryStale": "Could not refresh — showing the cached provider list. Check your network and try again."
-  }
+  },
+  "sectionCrashed": "This settings section hit an error — the rest of settings still works."
 }

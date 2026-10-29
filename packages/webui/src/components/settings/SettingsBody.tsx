@@ -11,6 +11,7 @@ import CloseBehaviorSection from "@/components/settings/sections/CloseBehaviorSe
 import StatsSection from "@/components/settings/sections/StatsSection";
 import GamePathSection from "@/components/settings/sections/GamePathSection";
 import CrashSection from "@/components/settings/sections/CrashSection";
+import SectionBoundary from "@/components/settings/SectionBoundary";
 import AccountSection from "@/components/settings/sections/AccountSection";
 import NetworkSection from "@/components/settings/sections/NetworkSection";
 import MarkersSection from "@/components/settings/sections/MarkersSection";
@@ -81,7 +82,11 @@ export default defineComponent({
           closeBehavior: () => <CloseBehaviorSection ctx={ctx} />,
           stats: () => <StatsSection />,
           gamePath: () => <GamePathSection ctx={ctx} />,
-          crash: () => <CrashSection />,
+          crash: () => (
+            <SectionBoundary>
+              <CrashSection />
+            </SectionBoundary>
+          ),
           account: () => <AccountSection />,
           network: () => <NetworkSection ctx={ctx} />,
           markers: () => <MarkersSection ctx={ctx} />,
