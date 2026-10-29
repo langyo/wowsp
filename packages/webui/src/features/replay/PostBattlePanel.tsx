@@ -9,15 +9,28 @@
  * whichever view is showing. The matrix rows sort by
  * settlement base exp (裸经验 — bots report 0, legacy short arrays fall back
  * to an estimate) and carry the same roster dressing as the live-battle
- * panel: clan tags, PR column, career seals, team aggregates in the column
- * titles and the battle mode/map head. Rows default to the compact one-line
- * look; the share bar's mode toggle expands them to full cards in the live
- * roster's richer-density spirit (name/ship/stat stack + the LiveShipMeta
- * ship strip; the live roster adds the same strip to its shared aligned row
- * instead), a persisted stats pref. The share bar also leads with the
- * stats-source chip — the
- * identical selector the live panel's head mounts (one shared statsPrefs
- * store; a flip re-resolves these rows immediately).
+ * panel: clan tags, PR column, identity-line seal tags, team aggregates in
+ * the column titles and the battle mode/map head. Rows default to the
+ * compact one-line look; the share bar's mode toggle expands them to full
+ * cards in the live roster's richer-density spirit (name/ship/stat stack +
+ * the LiveShipMeta ship strip; the live roster adds the same strip to its
+ * shared aligned row instead), a persisted stats pref. The share bar also
+ * leads with the stats-source chip — the identical selector the live
+ * panel's head mounts (one shared statsPrefs store; a flip re-resolves
+ * these rows immediately).
+ *
+ * Identity-line seals: the career verdict (神了 / 猴 / 蛆 / 过街老鼠) and the
+ * composition tags (空中小人 / 水下小人 plus the 奶龙 / 奶蛙 veteran tiers)
+ * press as the SMALL-TAG StampTag face BEFORE the nickname — career first,
+ * composition after (user feedback: the roster should carry the small-tag
+ * version of the 猴 seal, on the identity line where it reads as part of who
+ * the player is). A compact row keeps only its highest composition kind, a
+ * full card carries both classes. The old right-edge career-seal column and
+ * its reserved track are retired: at the row end the square face read as one
+ * more score column and stole width from the stat cells. The second identity
+ * line leads with the ship tier's Roman numeral on a fixed-width track (see
+ * the SCSS), so every row's ship name starts at the same x whether the tier
+ * is "I" / "VIII" / "★" or absent.
  *
  * Share-time privacy: nicknames can be masked wholesale or per player (the
  * row-end eye), and "复制截图" paints the combined sheet into a watermarked
@@ -28,8 +41,8 @@
  *
  * Clicking a player opens a second-level modal with the match result +
  * on-demand global stats (title bar chip while loading) and a jump link
- * into the lookup screen. The whole row — career seal included — is the
- * click target; only the per-row mask eye sits outside it.
+ * into the lookup screen. The whole row — identity-line seals included — is
+ * the click target; only the per-row mask eye sits outside it.
  */
 import {
   computed,
@@ -52,7 +65,6 @@ import { useLanguage } from "@/i18n/useLanguage";
 import ErrorCard from "@/components/base/ErrorCard";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
-import RatingStamp from "@/components/base/RatingStamp";
 import StampTag from "@/components/base/StampTag";
 import StatsCard from "@/components/stats/StatsCard";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -66,7 +78,15 @@ import ribbonNamesRaw from "@/data/ribbon_names.json";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useStatsStore } from "@/stores/stats";
 import { prAlgoForRequest, statsPrefsState, useStatsPrefsStore } from "@/stores/statsPrefs";
-import { battlesColor, careerStamp, damageColor, prTier, winrateColor, type CareerStamp } from "@/utils/winrate";
+import {
+  battlesColor,
+  careerStamp,
+  damageColor,
+  prTier,
+  winrateColor,
+  type CareerStamp,
+  type StampKind,
+} from "@/utils/winrate";
 import { formatEta } from "@/utils/format";
 import { aggregateTeamStats } from "@/utils/teamAggregate";
 import { shipTierOf } from "@/utils/shipClass";
@@ -86,6 +106,7 @@ import { parsePostBattle, type PostBattleRibbon } from "./postBattle";
 import { buildSelfStats, type SelfStatsModel, type SelfStatsStream } from "./liveSelfStats";
 import { renderLiveSelfShot, type SelfShotModel } from "./liveSelfShot";
 import { buildSelfShotModel, selfShotBannerOf } from "./selfReportView";
+import { tierRoman } from "./shipLiveStats";
 import { shareFooterStrings } from "@/features/share/shotKit";
 import { useShareImage } from "@/features/share/useShareImage";
 import LiveShipMeta from "./LiveShipMeta";
@@ -351,8 +372,8 @@ export default defineComponent({
 
     const prefs = computed(() => statsPrefsState.value);
     /** Seals ride the PR cluster in the settings (the master toggle nests
-     *  under it) and need PR data to grade — one gate for the DOM slot,
-     *  the header pad and the share shot alike. */
+     *  under it) and need PR data to grade — one gate for the identity-line
+     *  tags, the header pad and the share shot alike. */
     const sealsShown = computed(() => prefs.value.prEnabled && prefs.value.sealsEnabled);
 
     // ── Secondary seals (成分章 → the horizontal StampTag face) ──────────
@@ -593,10 +614,17 @@ export default defineComponent({
         { el: root.value, ...shareFooterStrings() },
       ),
     );
-    /** The career seal a row carries into the share shot — the exact gate
-     *  chain the DOM cells render (settings master switch, zh-only bitmaps,
-     *  verdict-pending holds, per-kind kill switch), so a seal switched off
-     *  in the settings never leaks into the copied image. */
+    /** The ship tier's Roman marker ("I" / "VIII", "★" for superships) or an
+     *  empty string — the identity line's second row leads with it on a
+     *  fixed-width track (PostBattlePanel.scss), so every row's ship name
+     *  starts at the same x. Shared by the DOM rows and the share model. */
+    const tierLabelOf = (p: (typeof rows.value)[number]): string =>
+      tierRoman(p.shipId != null ? shipTierOf(p.shipId) : null) ?? "";
+    /** The career seal kind a row carries into the share shot — the exact
+     *  career gate chain the DOM's identity line applies (settings master
+     *  switch, zh-only bitmaps, verdict-pending holds, per-kind kill
+     *  switch), so a seal switched off in the settings never leaks into the
+     *  copied image. */
     const shotStampOf = (name: string): CareerStamp | null => {
       if (!sealsShown.value || !uiLocale.value.startsWith("zh")) return null;
       const st = isAiName(name) ? undefined : nameStats.value.get(name);
@@ -698,6 +726,14 @@ export default defineComponent({
           title: enemy ? t("replay.roster.enemies") : t("replay.roster.allies"),
           agg,
           rows: list.map((p): ShotRow => {
+            // The share shot's identity faces and tier marker mirror the DOM
+            // row exactly: the career verdict arrives through shotStampOf's
+            // own gate chain, the tier through the same tierLabelOf the
+            // second line prints. The renderer presses the sealTags as
+            // small-tag faces BEFORE the nick (career first, the DOM order)
+            // and draws the tier ahead of the ship name, so the copied sheet
+            // and the panel agree.
+            const seal = shotStampOf(p.name);
             return {
               nick: masking.maskOf(p.name),
               clanTag: nameStats.value.get(p.name)?.clanTag ?? null,
@@ -712,7 +748,8 @@ export default defineComponent({
                   : p.accountId === pb?.selfId
                     ? "white"
                     : "ally",
-              stamp: shotStampOf(p.name),
+              sealTags: seal ? [seal] : [],
+              tier: tierLabelOf(p),
               stats: statTexts(p),
             };
           }),
@@ -872,11 +909,11 @@ export default defineComponent({
               "replay-view__postbattle-col-title",
               "replay-view__postbattle-col-title--agg",
               // Right-edge compensation so the header grid sits over the
-              // columns below: rows spend width on the mask eye (+ the
-              // career seal slot when seals are enabled).
-              sealsShown.value
-                ? "replay-view__postbattle-col-title--pad-seal"
-                : "replay-view__postbattle-col-title--pad-eye",
+              // columns below: rows spend width on the mask eye alone (22px
+              // + gaps + the button's right padding). The career-seal column
+              // is retired — the faces ride the identity line now — so one
+              // pad covers both densities.
+              "replay-view__postbattle-col-title--pad-eye",
             ]}
             style={{ gridTemplateColumns: template }}
           >
@@ -903,91 +940,84 @@ export default defineComponent({
           ? careerStamp(stat.pr, stat.battles, stat.winrate, stat.hidden, stat.clanWinrate)
           : null;
       };
-      /** Career seal for one row — the same guard chain the live panel uses
-       *  (verdict-pending hidden profiles hold their stamp). */
-      const sealOf = (p: (typeof rows.value)[number]) => {
-        const stamp = stampOf(p);
-        return stamp && sealsShown.value ? (
-          <RatingStamp
-            kind={stamp}
-            size={34}
-            variant="mini"
-            class="replay-view__postbattle-cell-stamp"
-          />
-        ) : null;
-      };
-      /** The row's secondary seals (成分章) — 空中小人 / 水下小人 (with the
-       *  >50% 奶龙 / 奶蛙 veteran tier) as horizontal StampTag faces pressed
-       *  BESIDE the row's nickname (the rows are far too short for a square
-       *  2x2 face, and the four-char wording reads as part of the identity
-       *  line — user feedback). No merge exists on the rosters: a 神了 / 猴
-       *  verdict keeps its own primary RatingStamp in the row-end slot while
-       *  the comp tags press beside the nick (the merged 空中神人-family
-       *  faces belong to the water meter alone, as before); the 蛆 / 过街老鼠
-       *  floors suppress the composition entirely. A career verdict still
-       *  in flight (or failed / hidden → null) leaves the row-end stamp
-       *  empty but does not hold the tags — only the composition lookup
-       *  gates them (hidden profiles have no composition on file, so their
-       *  rows render neither face). */
-      const stampTagNodes = (
+      /** The identity-line seal kinds for one row — the career verdict FIRST,
+       *  the composition tags after, all pressed as the SMALL-TAG StampTag
+       *  face BEFORE the nickname (user feedback: the roster wants the
+       *  small-tag version of the 猴 seal, and the identity line is where it
+       *  belongs — the retired row-end column read as one more score column
+       *  and stole a track from the stat cells). The gates are the ones the
+       *  faces always carried: zh UI only, the seals master switch (career),
+       *  the verdict holds in stampOf, the 蛆 / 过街老鼠 floors suppressing the
+       *  composition, and the per-kind kill switch. The share model reads the
+       *  same helper, so the copied sheet and the DOM never disagree.
+       *
+       *  `full` picks the density's composition count: a full card shows BOTH
+       *  classes (air then sub) while a compact row keeps only the highest
+       *  one — a 奶龙 / 奶蛙 (veteran) tag outranks a minor one, and air wins a
+       *  same-tier tie (the old highestStampTag rule, kept verbatim). */
+      const sealTagKindsOf = (
         p: (typeof rows.value)[number],
-        career: CareerStamp | null,
-      ): VNode[] => {
-        if (!compSealsOn.value || career === "maggot" || career === "rat") return [];
-        const comp = compositions.value.get(p.name);
-        if (!comp) return [];
-        const nodes: VNode[] = [];
-        if (comp.air) {
-          nodes.push(
-            <StampTag key="air" kind={comp.airVeteran ? "airVeteran" : "air"} />,
-          );
+        full: boolean,
+      ): StampKind[] => {
+        if (!uiLocale.value.startsWith("zh")) return [];
+        const kinds: StampKind[] = [];
+        const career = sealsShown.value ? stampOf(p) : null;
+        if (career) kinds.push(career);
+        if (compSealsOn.value && career !== "maggot" && career !== "rat") {
+          const comp = compositions.value.get(p.name);
+          if (comp) {
+            if (full) {
+              if (comp.air) kinds.push(comp.airVeteran ? "airVeteran" : "air");
+              if (comp.sub) kinds.push(comp.subVeteran ? "subVeteran" : "sub");
+            } else if (comp.air && comp.sub) {
+              // Both classes: air wins the same-tier tie, but a sub-veteran
+              // (奶蛙) outranks a minor air tag — the veteran face survives.
+              kinds.push(
+                comp.subVeteran && !comp.airVeteran
+                  ? "subVeteran"
+                  : comp.airVeteran
+                    ? "airVeteran"
+                    : "air",
+              );
+            } else if (comp.air) {
+              kinds.push(comp.airVeteran ? "airVeteran" : "air");
+            } else if (comp.sub) {
+              kinds.push(comp.subVeteran ? "subVeteran" : "sub");
+            }
+          }
         }
-        if (comp.sub) {
-          nodes.push(
-            <StampTag key="sub" kind={comp.subVeteran ? "subVeteran" : "sub"} />,
-          );
-        }
-        return nodes;
+        // Per-kind kill switch: StampTag would skip a disabled face itself,
+        // but the share model reads this helper too — filter here so the
+        // copied image mirrors the DOM exactly.
+        return kinds.filter((kind) => !prefs.value.sealDisabled[kind]);
       };
-      /** The COMPACT row's secondary seal — the highest tier the player
-       *  carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor one, and air
-       *  wins a same-tier tie (resolveStamps' canonical order). Pressed
-       *  beside the nickname, so it no longer competes with the row-end
-       *  verdict slot: a 神了 / 猴 row carries BOTH faces now (the tag here,
-       *  the stamp at the row end). Null when nothing qualifies. */
-      const highestStampTag = (
+      /** Those kinds rendered as the small-tag faces the name line leads
+       *  with (career verdict, then composition) — the head of both the
+       *  compact row's and the full card's nickname line. The tags ride a
+       *  cluster span that is the line's SHRINKABLE item (see the seals rule
+       *  in PostBattlePanel.scss): when a fixed name track runs out, the
+       *  cluster clips a trailing tag before the nickname loses its slot —
+       *  the identity must survive its decorations. */
+      const identitySealsOf = (
         p: (typeof rows.value)[number],
-        career: CareerStamp | null,
+        full: boolean,
       ): VNode | null => {
-        if (!compSealsOn.value || career === "maggot" || career === "rat") return null;
-        const comp = compositions.value.get(p.name);
-        if (!comp) return null;
-        if (comp.air && comp.sub) {
-          // Both classes: air wins the same-tier tie, but a sub-veteran
-          // (奶蛙) outranks a minor air tag — the veteran face survives.
-          if (comp.subVeteran && !comp.airVeteran) return <StampTag kind="subVeteran" />;
-          return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
-        }
-        if (comp.air) return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
-        if (comp.sub) return <StampTag kind={comp.subVeteran ? "subVeteran" : "sub"} />;
-        return null;
+        const tags = sealTagKindsOf(p, full).map((kind) => (
+          <StampTag key={kind} kind={kind} />
+        ));
+        if (tags.length === 0) return null;
+        return (
+          <span
+            class={
+              full
+                ? "replay-view__postbattle-fcell-seals"
+                : "replay-view__postbattle-cell-seals"
+            }
+          >
+            {tags}
+          </span>
+        );
       };
-      /** The full card's seal column — ONLY the primary seal (一级章, the
-       *  single-character verdict picture). The secondary tier (成分章)
-       *  presses beside the nickname instead: the card's right edge is too
-       *  short for a stack of square faces. Null when the row carries
-       *  none. */
-      const sealStackOf = (p: (typeof rows.value)[number]) => {
-        const seal = sealOf(p);
-        return seal ? (
-          <span class="replay-view__postbattle-cell-stampstack">{seal}</span>
-        ) : null;
-      };
-      /** The full card's secondary seals (成分章) beside the nickname — the
-       *  horizontal StampTag faces (stampTagNodes, the merge rule
-       *  included). */
-      const fcellStampTagsOf = (p: (typeof rows.value)[number]): VNode[] =>
-        stampTagNodes(p, stampOf(p));
       /** Per-row nickname-mask eye — a sibling AFTER the row button so it
        *  stays a real button (no nested buttons). */
       const eyeBtn = (name: string) => (
@@ -1026,7 +1056,7 @@ export default defineComponent({
             key={p.accountId}
           >
             {/* The whole row minus the eye is the drill-down button: hover
-                and clicks cover the career seal too. */}
+                and clicks cover the identity-line seals on the name line too. */}
             <button
               class="replay-view__postbattle-cell-btn"
               type="button"
@@ -1054,6 +1084,13 @@ export default defineComponent({
               </span>
               <span class="replay-view__postbattle-cell-main">
                 <span class="replay-view__postbattle-cell-name">
+                  {/* The identity-line seals lead the name BEFORE the nick —
+                      career verdict first, then the compact row's single
+                      highest composition tag (small-tag faces; user feedback
+                      retired the row-end square column). The tag cluster
+                      clips first when the line runs out; the nick keeps a
+                      minimum slot. */}
+                  {identitySealsOf(p, false)}
                   {/* Local player marker (玩家标记): the name itself carries
                       the animated tint — nickname-first, account id sharpens. */}
                   {(() => {
@@ -1071,13 +1108,11 @@ export default defineComponent({
                     <span class="replay-view__postbattle-cell-clan">[{stat.clanTag}]</span>
                   ) : null}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
-                  {/* The secondary seal (成分章) presses BESIDE the nickname —
-                      the four-char wording reads as part of the identity
-                      line, not as a score-column ornament (user feedback);
-                      the nick ellipsizes first when the line runs out. */}
-                  {highestStampTag(p, stampOf(p))}
                 </span>
-                <span class="replay-view__postbattle-cell-sub">{p.shipName}</span>
+                <span class="replay-view__postbattle-cell-sub">
+                  <span class="replay-view__postbattle-cell-tier">{tierLabelOf(p)}</span>
+                  <span class="replay-view__postbattle-cell-ship">{p.shipName}</span>
+                </span>
               </span>
               {rosterStatCols(
                 p.name,
@@ -1094,35 +1129,20 @@ export default defineComponent({
               >
                 {p.xp.toLocaleString()}
               </span>
-              {/* Seal slot: reserved whenever seals show at all (PR +
-                  settings master), so the mask eyes align across rows
-                  whether or not a given player earned a stamp. Living
-                  INSIDE the button keeps the hover highlight and the click
-                  target on the row's full width — the seal is part of the
-                  row, not an ornament bolted past its hit area. The slot
-                  carries ONLY the primary square stamp now — the secondary
-                  StampTag presses beside the nickname instead, so a row
-                  can carry both faces at once. */}
-              {sealsShown.value ? (
-                <span class="replay-view__postbattle-cell-stampslot">
-                  {sealOf(p)}
-                </span>
-              ) : null}
             </button>
             {ai ? null : eyeBtn(p.name)}
           </div>
         );
       };
       /** Full-card row (the live roster's richer density, carried as a
-       *  card here): name/ship/stat-strip stack (the strip carries EVERY
-       *  configured column now, damage included — one text line per scope),
-       *  the LiveShipMeta strip, then the XP column ahead of the career seal.
+       *  card here): identity-line seals + name, the tier-marked ship line,
+       *  the stat strip (EVERY configured column now, damage included — one
+       *  text line per scope), the LiveShipMeta strip, then the XP column.
        *  Like the compact row, the whole card minus the eye is one button. */
       const fullCell = (p: (typeof allies.value)[number]) => {
         const enemy = !props.operation && isEnemy(p);
         const ai = isAiName(p.name);
         const stat = ai ? undefined : nameStats.value.get(p.name);
-        const stampTags = fcellStampTagsOf(p);
         const statLine = () => {
           if (ai) return "—";
           // Absent = still querying (progressive arrival: the row spins
@@ -1167,6 +1187,14 @@ export default defineComponent({
             >
               <span class="replay-view__postbattle-fcell-main">
                 <span class="replay-view__postbattle-fcell-name">
+                  {/* The identity-line seals lead the name BEFORE the nick —
+                      the career verdict first, then BOTH composition classes
+                      (the full card keeps air + sub, where a compact row
+                      keeps only its highest); the small-tag StampTag face
+                      the user asked for. The card's name track is fixed at
+                      10rem, so the tag cluster is the item that clips: the
+                      nickname keeps its slot even on a three-seal row. */}
+                  {identitySealsOf(p, true)}
                   {/* Local player marker (玩家标记): the name itself carries
                       the animated tint — nickname-first, account id sharpens. */}
                   {(() => {
@@ -1184,13 +1212,11 @@ export default defineComponent({
                     <span class="replay-view__postbattle-fcell-clan">[{stat.clanTag}]</span>
                   ) : null}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
-                  {/* The secondary seals (成分章) press BESIDE the nickname —
-                      the four-char wording reads as part of the identity
-                      line (user feedback); the nick ellipsizes first when
-                      the line runs out. */}
-                  {stampTags.length > 0 ? stampTags : null}
                 </span>
-                <span class="replay-view__postbattle-fcell-ship">{p.shipName}</span>
+                <span class="replay-view__postbattle-fcell-ship">
+                  <span class="replay-view__postbattle-fcell-tier">{tierLabelOf(p)}</span>
+                  <span class="replay-view__postbattle-fcell-shipname">{p.shipName}</span>
+                </span>
                 <span class="replay-view__postbattle-fcell-stat">{statLine()}</span>
               </span>
               {/* Ship identity + parameters ride the card's middle ground
@@ -1206,9 +1232,9 @@ export default defineComponent({
                   />
                 ) : null}
               </span>
-              {/* The score track carries the XP cell alone now — the
-                  secondary seals (成分章) press beside the nickname in the
-                  main track (see the name line above). */}
+              {/* The score track closes the card: the XP cell alone — the
+                  identity-line seals ride the main track's name line (the
+                  retired seal track no longer takes a column). */}
               <span class="replay-view__postbattle-fcell-score">
                 <span
                   class="replay-view__postbattle-fcell-xp"
@@ -1217,11 +1243,6 @@ export default defineComponent({
                   {p.xp.toLocaleString()}
                 </span>
               </span>
-              {sealsShown.value ? (
-                <span class="replay-view__postbattle-cell-stampslot">
-                  {sealStackOf(p)}
-                </span>
-              ) : null}
             </button>
             {ai ? null : eyeBtn(p.name)}
           </div>

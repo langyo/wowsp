@@ -175,7 +175,7 @@
   display: grid;
   /* minmax(0, 1fr), not bare 1fr — bare 1fr is minmax(auto, 1fr), and the
      auto minimum lets a roster row's min-content (the fixed-width stat
-     columns + the icon + the seal slot) EXPAND the track past the free
+     columns + the icon) EXPAND the track past the free
      space; the blown-out columns then overflow the sheet's right edge
      where the vertical-only scroller can neither show nor scroll them,
      clipping the last mirrored stat cells. With min 0 the tracks always
@@ -218,11 +218,11 @@
   border-bottom: 1px solid rgb(var(--color-text) / 0.1);
 
   /* Right-edge compensation so the header grid sits over the stat columns
-     below: rows spend width on the mask eye (22px + gaps + the button's
-     right padding), plus the widened career-seal slot when seals are
-     enabled. */
+     below: rows spend width on the mask eye alone (22px + gaps + the
+     button's right padding). The career-seal column this pad used to
+     compensate for is retired (the faces ride the identity line now), so
+     one pad covers both densities. */
   &--pad-eye { padding-right: 34px; }
-  &--pad-seal { padding-right: 86px; }
 }
 /* Full-card mode's aggregate: no aligned columns sit under the title, so
    the numbers ride its right end as inline text (its own treatment — the
@@ -282,8 +282,9 @@
 
 /* Row wrapper (background + dead/self states) holding the drill-down
    button and the per-row mask toggle; the wrapper is a div so the eye
-   stays a real button (no nested buttons). The career seal rides INSIDE
-   the button (see the stampslot rule below). */
+   stays a real button (no nested buttons). The identity-line seals ride
+   INSIDE the button, on the name line BEFORE the nick, so they sit inside
+   the row's hover/click surface. */
 .replay-view__postbattle-cell {
   display: flex;
   align-items: center;
@@ -335,8 +336,25 @@
   min-width: 0;
   overflow: hidden;
 }
-.replay-view__postbattle-cell-nick {
+/* Identity-line seal tags (career verdict + 成分章, StampTag) lead the name
+   line as ONE SHRINKABLE cluster: when a fixed name track (the full card's
+   10rem) runs out, the cluster is the item that gives way — its trailing tag
+   clips first, while the nickname keeps the readable minimum below. The
+   identity must survive its decorations. */
+.replay-view__postbattle-cell-seals,
+.replay-view__postbattle-fcell-seals {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
+}
+.replay-view__postbattle-cell-nick {
+  flex: 0 1 auto;
+  /* Never let the tags eat the whole line: below ~2.5em the nick would read
+     as a bare ellipsis and the row would lose who it belongs to. */
+  min-width: 2.5em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -351,47 +369,48 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
+/* Second identity line: the ship tier's Roman marker + the ship name. The
+   tier takes a FIXED track (see the tier rule below) so every row's ship
+   name starts at the same x — "I" / "VIII" / "★" / no marker all reserve
+   the same width (the user asked for consistent Roman-numeral widths). */
 .replay-view__postbattle-cell-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  min-width: 0;
   color: rgb(var(--color-text) / 0.45);
+  /* Every consumer (this panel's rows, the full cards' ship line and the
+     replay list's fallback matrix) renders the tier + ship-name spans, so
+     the line box only needs to clip stray overflow; the ship-name spans
+     below own the ellipsis. */
+  overflow: hidden;
+  white-space: nowrap;
+}
+.replay-view__postbattle-cell-tier,
+.replay-view__postbattle-fcell-tier {
+  flex: 0 0 4.2ch;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-style: normal;
+  color: rgb(var(--color-text) / 0.55);
+}
+.replay-view__postbattle-cell-ship,
+.replay-view__postbattle-fcell-shipname {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Career seal pressed onto the card's right edge (live panel look). The
-   slot rides INSIDE the drill-down button — after the XP cell — so the
-   hover highlight and the click target cover the seal too; it is reserved
-   whenever seals are enabled at all, so the mask eyes align across rows
-   whether or not a given player earned a stamp. Wider than the 34px stamp
-   on purpose: the extra air keeps the seal clear of the XP digits on the
-   left and the eye on the right. */
-.replay-view__postbattle-cell-stampslot {
-  flex: 0 0 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: stretch;
-}
-.replay-view__postbattle-cell-stamp {
-  flex: 0 0 auto;
-}
-/* The secondary tags (成分章, StampTag) press BESIDE THE NICKNAME — the
+/* The identity-line seals (career verdict + 成分章 tags, StampTag) LEAD the
+   name line BEFORE the nickname — career first, composition after: the
    four-char wording reads as part of the identity line, not as a
-   score-column ornament (user feedback). A step smaller so the tag sings
-   in the clan tag's register instead of shouting over the nick; the name
-   line's own flex gap separates it from the clan tag. */
+   score-column ornament (user feedback retired the row-end square column;
+   the small-tag face is the one the user asked for). A step smaller so the
+   tag sings in the clan tag's register instead of shouting over the nick;
+   the name line's own flex gap separates it from the nick. */
 .replay-view__postbattle-cell-name .stamp-tag,
 .replay-view__postbattle-fcell-name .stamp-tag {
   font-size: 0.78em;
-}
-/* The full card's seal column — ONLY the primary seal (一级章, the
-   single-character verdict picture) in the live card's right-edge slot.
-   The secondary tier (成分章) presses beside the nickname instead (see the
-   name-line tag rule above). */
-.replay-view__postbattle-cell-stampstack {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
 }
 /* Per-row nickname mask toggle. Muted until hovered — the share flow's
    discoverability lives in the toolbar hint. */
@@ -428,9 +447,9 @@
    ONE shared row in both densities (full only inserts the LiveShipMeta strip
    in the middle), while this card keeps its own fixed name/ship/stat text
    stack, an elastic-but-clipping middle for the LiveShipMeta strip, then
-   its own avg-damage / XP numbers and a fixed seal track. The two share the
-   idea, not the exact geometry. The whole card is the drill-down button
-   (hover and clicks cover the seal); the mask eye rides outside it. */
+   its own XP number. The two share the idea, not the exact geometry. The
+   whole card is the drill-down button (hover and clicks cover the
+   identity-line seals on its name line); the mask eye rides outside it. */
 .replay-view__postbattle-fcell {
   display: flex;
   align-items: stretch;
@@ -462,7 +481,7 @@
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
-  grid-template-columns: 10rem minmax(0, 1fr) minmax(6ch, max-content) 2.5rem;
+  grid-template-columns: 10rem minmax(0, 1fr) minmax(6ch, max-content);
   column-gap: 10px;
   align-items: center;
   padding: 7px 9px;
@@ -490,11 +509,18 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
+  /* The card's name track is a fixed 10rem (the LiveShipMeta strip owns the
+     elastic middle): a career verdict + BOTH composition tags can exceed it.
+     The seal cluster below is the shrinkable item (it clips a trailing tag
+     at this track edge before painting over the ship-meta strip next door),
+     and the nick keeps a readable minimum instead of collapsing to zero. */
+  overflow: hidden;
   font-size: var(--text-sm);
 }
 .replay-view__postbattle-fcell-nick {
   flex: 0 1 auto;
-  min-width: 0;
+  /* Same identity floor as the compact row's nick. */
+  min-width: 3em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -508,12 +534,16 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
+/* Second identity line (inside the main track): tier marker + ship name —
+   the same flex line as the compact row, so the fixed tier track keeps the
+   ship name's start x consistent across cards. */
 .replay-view__postbattle-fcell-ship {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  min-width: 0;
   color: rgb(var(--color-text) / 0.45);
   font-size: var(--text-xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .replay-view__postbattle-fcell-stat {
   display: flex;
@@ -545,11 +575,10 @@
   display: block;
   min-width: 0;
 }
-/* This panel's score track: the XP cell alone, pinned onto track 3 — the
-   secondary seals (成分章, StampTag) press beside the nickname in the main
-   track now (see the name-line tag rule above). The configured stat
-   columns ride the stat text strip inside the main track — damage
-   included, so no dedicated dmg track remains. */
+/* This panel's score track: the XP cell alone, pinned onto track 3 (the
+   retired seal track no longer follows it). The configured stat columns
+   ride the stat text strip inside the main track — damage included, so no
+   dedicated dmg track remains. */
 .replay-view__postbattle-fcell-score {
   grid-column: 3;
   justify-self: end;
@@ -561,11 +590,6 @@
 .replay-view__postbattle-fcell-xp {
   text-align: right;
   font-family: var(--font-mono);
-}
-.replay-view__postbattle-fcell-btn .replay-view__postbattle-cell-stampslot {
-  grid-column: 4;
-  flex-basis: auto;
-  justify-self: center;
 }
 .replay-view__postbattle-detail-head {
   display: flex;
@@ -811,12 +835,12 @@
     min-height: 44px;
   }
   .replay-view__postbattle-fcell-btn {
-    /* FOUR tracks on phones (the desktop template's shape, narrower name
+    /* THREE tracks on phones (the desktop template's shape, narrower name
        + meta): the score track stays ELASTIC so the widest XP count the
-       columns resolve never pins short. main → 1, meta → 2, score → 3,
-       seal → 4, same pins as desktop. */
+       columns resolve never pins short. main → 1, meta → 2, score → 3 —
+       same pins as desktop (the retired seal track was the 4th). */
     grid-template-columns:
-      minmax(0, 42%) minmax(0, 1fr) minmax(6ch, max-content) 2.5rem;
+      minmax(0, 42%) minmax(0, 1fr) minmax(6ch, max-content);
     padding: 0.4rem 0.5rem;
   }
   .replay-view__postbattle-jump {

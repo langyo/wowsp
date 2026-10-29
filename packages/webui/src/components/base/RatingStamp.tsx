@@ -59,15 +59,17 @@ let stampSeq = 0;
  *  Hovering a seal shows its award criteria (stats.json `stats.seal*Desc`
  *  keys) as the native tooltip — the same copy the seal customizer rows use.
  *
- *  Every surface outside the in-game Tab overlay shows the square 2x2
- *  faces; the Tab overlay chips press the verdict wording as PLAIN TEXT
- *  instead — their rows are far too short for a 2x2 face and the calligraphy
- *  is wasted at that size — see overlay/main.ts. (The seal-tier system,
- *  utils/winrate stampTier: this square face IS the PRIMARY tier — the
- *  single-character verdicts plus 过街老鼠. The secondary tier — the
- *  four-char composition tags and the merged 空中神人 family — presses as
- *  the horizontal StampTag beside the roster nicknames on the live /
- *  post-battle rosters; the water-table surfaces render both tiers.)
+ *  The water meter, the stat cards / shot banners and the live roster's
+ *  row-end slot keep the square 2x2 faces. The in-game Tab overlay chips
+ *  press the verdict wording as PLAIN TEXT instead — their rows are far too
+ *  short for a 2x2 face and the calligraphy is wasted at that size — see
+ *  overlay/main.ts. (The seal-tier system, utils/winrate stampTier: this
+ *  square face IS the PRIMARY tier — the single-character verdicts plus
+ *  过街老鼠. The live roster presses its secondary tier — the four-char
+ *  composition tags and the merged 空中神人 family — as the horizontal
+ *  StampTag beside the nickname. The post-battle results matrix retired this
+ *  square face altogether: its career verdicts and composition tags both
+ *  lead the nickname line as StampTag small tags — see PostBattlePanel.)
  *
  * The seals are a Chinese-community artifact — they render nothing under any
  * other UI language, and a seal switched off individually (statsPrefs

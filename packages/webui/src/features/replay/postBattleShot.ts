@@ -27,11 +27,9 @@ import {
   FOOT_H,
   LOGO_URL,
   PAD,
-  STAMP_URL,
   canvasToPngBytes,
   drawFooter,
   drawSealTag,
-  drawStampSeal,
   ellipsize,
   font,
   footerMinWidth,
@@ -44,19 +42,26 @@ import {
   type ShotFooterStrings,
   type ShotPalette,
 } from "@/features/share/shotKit";
-import { stampTier, type CareerStamp } from "@/utils/winrate";
+import type { StampKind } from "@/utils/winrate";
 
-/** The career verdicts' wording — drawn when a stamp presses as the
- *  horizontal tag face. The shot only ever carries the career verdicts,
- *  ALL of which are primary seals today (utils/winrate stampTier), so the
- *  tag branch below is the tier system's future-proofing, not a live
- *  path; the map stays total over StampKind's career half so a kind can
- *  never arrive unlabelled. */
-const STAMP_LABEL: Record<CareerStamp, string> = {
+/** The seal verdicts' wording — the exact map the DOM StampTag face
+ *  carries (components/base/StampTag.tsx, its TAG_TEXT is the wording
+ *  source of truth), so the matrix's horizontal sealTags paint the same
+ *  strings the roster's identity line shows. Total over StampKind: any
+ *  kind a caller passes arrives labelled. */
+const STAMP_LABEL: Record<StampKind, string> = {
   miracle: "神了",
   ape: "猴",
   maggot: "蛆",
   rat: "过街老鼠",
+  air: "空中小人",
+  sub: "水下小人",
+  airVeteran: "空中奶龙",
+  subVeteran: "水下奶蛙",
+  airMiracle: "空中神人",
+  subMiracle: "水下神人",
+  airApe: "空中小猴",
+  subApe: "水下小猴",
 };
 
 /** One right-aligned stat cell of a row (WR / PR / battles / avg damage
@@ -73,20 +78,25 @@ export interface ShotRow {
   nick: string;
   clanTag?: string | null;
   shipName: string;
+  /** Ship tier label, PRE-FORMATTED by the caller ("I".."X"; "★" for
+   *  superships, which sit above X). Drawn in a FIXED-WIDTH track at the
+   *  head of the ship-name line — rows with no label still reserve the
+   *  track, so every row's ship name starts at the same x. */
+  tier?: string | null;
   bot?: boolean;
   /** Sunk / dead: the whole row renders dimmed, like the panel's dead cells. */
   dim?: boolean;
   /** Ship-class HUD icon (bundled PNG url) + its variant. */
   shipType?: string | null;
   iconVariant?: ShipIconVariant;
-  /** Career seal (神了/猴/蛆/过街老鼠) pressed onto the row-end slot the
-   *  renderer reserves whenever ANY row carries one — the caller applies
-   *  the settings gates, so a disabled seal never arrives here. All four
-   *  career kinds are PRIMARY seals (utils/winrate stampTier): the square
-   *  stamp picture at the row end. A secondary kind (composition/merged,
-   *  never produced by the current shot models) would press as the
-   *  horizontal StampTag face instead. */
-  stamp?: CareerStamp | null;
+  /** Small horizontal seal tags — the DOM StampTag face's wording
+   *  (components/base/StampTag.tsx) — pressed on the identity line BEFORE
+   *  the nickname, in the order given. The caller applies the settings
+   *  gates, so a disabled seal never arrives here. This is the ONLY seal
+   *  face a copied roster sheet carries now: the old row-end square stamp
+   *  column was retired with the DOM column (user feedback), so the
+   *  renderer draws every seal on the identity line instead. */
+  sealTags?: StampKind[];
   stats: ShotStat[];
 }
 
@@ -168,18 +178,15 @@ export interface ShotModel {
 }
 
 /** Canvas logical width of one roster column (the image renders 2× for
- *  crispness, so these are pre-scale units). */
-const COL_WIDTH = 620;
+ *  crispness, so these are pre-scale units). Exported for the layout tests,
+ *  which assert the stat block's right-edge math. */
+export const COL_WIDTH = 620;
 const COL_GAP = 16;
 /** Visual gap between adjacent stat cells of a row. At 26 the widest mono
  *  neighbors (PR digits against the damage figure, e.g. "1880 104,751")
  *  read as one merged number in the pasted image — the columns need this
  *  much air before the eye separates them. */
 const STAT_GAP = 36;
-/** Career-seal column: a fixed slot after the last stat cell, reserved
- *  whenever any row carries a stamp so the stat columns stay put. */
-const STAMP_SIZE = 34;
-const STAMP_SLOT = STAMP_SIZE + 4;
 const ROW_H = 44;
 const HEAD_H = 66;
 const COL_TITLE_H = 34;
@@ -428,24 +435,24 @@ export async function renderPostBattleShot(
   // same origins anchor the column-title aggregate values.
   ctx.font = font(13.5, 600, true);
   const origins = statOrigins(ctx, cols);
-  // The seal column rides the right edge: reserve its slot only when some
-  // row actually carries a stamp, so seal-less shots keep today's metrics.
-  // The slot fits the WIDEST face on any row — a secondary-tier stamp
-  // (a horizontal tag, e.g. the 空中小人 family) is wider than the square
-  // 34px stamp, so its measured tag width takes the slot when present
-  // (no secondary kind is reachable through the current career-only shot
-  // models — the branch keeps the renderer tier-honest anyway).
-  const hasStamps = cols.some((c) => c.rows.some((r) => r.stamp));
-  let tagSlot = 0;
+  // The stat block hugs the row's right edge: the old career-seal column
+  // that used to reserve a slot after it is retired (the seals press as
+  // identity-line tags before the nick now), so this is the plain block
+  // width + its trailing air.
+  const statsW = (origins[origins.length - 1] ?? 0) + 24;
+
+  // Tier track: the ship-name line's preformatted tier label (I..X, ★ for
+  // superships) leads in a FIXED-WIDTH gutter measured once across every
+  // row, so rows without a label still start their ship name at the same x.
+  // Measured in the same mono face the label paints with.
+  ctx.font = font(11.5, 400, true);
+  let tierMaxW = 0;
   for (const c of cols) {
     for (const r of c.rows) {
-      if (r.stamp && stampTier(r.stamp) === "secondary") {
-        tagSlot = Math.max(tagSlot, sealTagWidth(ctx, STAMP_LABEL[r.stamp]));
-      }
+      if (r.tier) tierMaxW = Math.max(tierMaxW, ctx.measureText(r.tier).width);
     }
   }
-  const statsW =
-    (origins[origins.length - 1] ?? 0) + 24 + (hasStamps ? Math.max(STAMP_SLOT, tagSlot + 8) : 0);
+  const tierTrackW = tierMaxW > 0 ? tierMaxW + 8 : 0;
 
   // Column titles (+ aggregate) and rows. The footer's logo loads alongside
   // the class icons so the paint never waits twice on the network.
@@ -464,21 +471,6 @@ export async function renderPostBattleShot(
   const ribbonIcons = self
     ? await Promise.all(self.ribbons.map((r) => loadImage(bundledRibbonUrl(r.key))))
     : [];
-  // Seal faces load in a second wave (bundled same-origin PNGs, so this
-  // settles near-instantly and only when seals are on at all).
-  const stampImages = new Map<CareerStamp, HTMLImageElement | null>();
-  if (hasStamps) {
-    const kinds = [
-      ...new Set(
-        cols
-          .flatMap((c) => c.rows.map((r) => r.stamp))
-          .filter((k): k is CareerStamp => !!k),
-      ),
-    ];
-    await Promise.all(
-      kinds.map(async (k) => stampImages.set(k, await loadImage(STAMP_URL[k]))),
-    );
-  }
   if (self) {
     drawSelfBanner(ctx, palette, width, self, HEAD_H + SELF_TOP_GAP, bannerIcon, ribbonIcons);
   }
@@ -545,19 +537,50 @@ export async function renderPostBattleShot(
       // ellipsizes instead of painting over the WR column.
       const statLeft = cx + COL_WIDTH - 14 - statsW;
       const textW = Math.max(statLeft - 8 - tx, 60);
+      // Identity line: the small horizontal seal tags (StampTag's face)
+      // press BEFORE the nick, in the caller's order — 6px between adjacent
+      // tags, then 2px more before the nick starts. The cluster shrinks the
+      // nick's maxWidth so a tagged long nick still ellipsizes before the
+      // stat cells; the floor keeps at least a sliver of text.
+      const sealTags = row.sealTags ?? [];
+      let nickX = tx;
+      for (let i = 0; i < sealTags.length; i++) {
+        // The kinds arrive as StampKind ids; the seal-tag helpers take the
+        // face WORDING — always map through STAMP_LABEL (a raw "ape" would
+        // paint the latin id AND measure the wrong width for the nick).
+        const label = STAMP_LABEL[sealTags[i]];
+        const tagW = sealTagWidth(ctx, label);
+        drawSealTag(ctx, nickX + tagW / 2, cy - 8, label);
+        nickX += tagW + (i < sealTags.length - 1 ? 6 : 0);
+      }
+      if (sealTags.length > 0) nickX += 2;
+      const nickW = Math.max(textW - (nickX - tx), 20);
       ctx.textAlign = "left";
       ctx.font = font(14.5, 600);
       ctx.fillStyle = rgba(palette.text, 1);
       let nick = row.nick;
       if (row.clanTag) nick += `  [${row.clanTag}]`;
       if (row.bot) nick += `  · ${model.botLabel ?? "AI"}`;
-      ctx.fillText(nick, tx, cy - 8, textW);
+      ctx.fillText(nick, nickX, cy - 8, nickW);
+      // Ship line: the tier label leads in the fixed track, centered and
+      // muted; the ship name then starts after the track, so every ship
+      // name begins at the same x whether or not the row carries a label.
+      let shipX = tx;
+      if (tierTrackW > 0) {
+        ctx.font = font(11.5, 400, true);
+        ctx.textAlign = "center";
+        ctx.fillStyle = rgba(palette.muted, 1);
+        ctx.fillText(row.tier ?? "", tx + tierTrackW / 2, cy + 10);
+        ctx.textAlign = "left";
+        shipX = tx + tierTrackW;
+      }
       ctx.font = font(12, 400);
       ctx.fillStyle = rgba(palette.text, 0.5);
-      ctx.fillText(row.shipName, tx, cy + 10, textW);
+      ctx.fillText(row.shipName, shipX, cy + 10, Math.max(textW - tierTrackW, 20));
 
-      // Right-aligned stat cells, then nothing else — ship parameters are
-      // never part of the share model by construction.
+      // Right-aligned stat cells close the row: the retired career-seal
+      // column left nothing after them, and ship parameters are never part
+      // of the share model by construction.
       ctx.font = font(13.5, 600, true);
       ctx.textAlign = "right";
       row.stats.forEach((s, i) => {
@@ -565,31 +588,6 @@ export async function renderPostBattleShot(
         ctx.fillStyle = s.color ?? rgba(palette.text, 0.85);
         ctx.fillText(s.text, x, cy);
       });
-      // The career seal, pressed onto the row-end slot reserved above, in
-      // the seal-tier faces: a primary kind (the four career verdicts) as
-      // RatingStamp's square face redrawn in canvas (mini variant, see
-      // drawStampSeal); a secondary kind as the horizontal StampTag face
-      // (drawSealTag) — the exact faces the DOM row beside the copy button
-      // renders.
-      if (row.stamp) {
-        if (stampTier(row.stamp) === "secondary") {
-          drawSealTag(
-            ctx,
-            cx + COL_WIDTH - 14 - Math.max(STAMP_SLOT, tagSlot + 8) / 2,
-            cy,
-            STAMP_LABEL[row.stamp],
-          );
-        } else {
-          drawStampSeal(
-            ctx,
-            cx + COL_WIDTH - 14 - STAMP_SIZE / 2,
-            cy,
-            STAMP_SIZE,
-            stampImages.get(row.stamp) ?? null,
-            "mini",
-          );
-        }
-      }
       ctx.globalAlpha = 1;
       y += ROW_H + 6;
     }

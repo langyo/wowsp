@@ -43,17 +43,20 @@ const TAG_DESC_KEYS: Record<StampKind, string> = {
 };
 
 /**
- * The SECONDARY seal face (二级章, 印章样式的小标签): a horizontal
- * transparent tag with cinnabar ink and a rounded cinnabar border — like a
- * rubber-stamp impression, but in the small tag mode. The four-character
- * composition tags (空中小人 / 水下小人 / 空中奶龙 / 水下奶蛙) and the merged
+ * The SMALL-TAG seal face (印章样式的小标签): a horizontal transparent tag
+ * with cinnabar ink and a rounded cinnabar border — like a rubber-stamp
+ * impression, but in the small tag mode. The four-character composition
+ * tags (空中小人 / 水下小人 / 空中奶龙 / 水下奶蛙) and the merged
  * 空中神人-family seals render through this face beside the roster
- * nicknames on the live and post-battle rosters (their rows are far too
- * short for a square 2x2 face, and the four-char wording reads as part of
- * the identity line); the single-character verdicts keep the square
- * RatingStamp picture (一级章). The wording/desc maps stay total over
- * StampKind so any kind passed by a future caller renders labelled —
- * callers route primary kinds to RatingStamp (utils/winrate stampTier).
+ * nicknames on the live roster (its rows are far too short for a square 2x2
+ * face, and the four-char wording reads as part of the identity line). On
+ * the post-battle results matrix the same tag face also carries the career
+ * VERDICTS (神了 / 猴 / 蛆 / 过街老鼠): its right-hand stamp column was retired
+ * and every seal now leads the nickname line as a small tag (user feedback).
+ * The water meter and the remaining square surfaces still press the
+ * primary tier through RatingStamp (一级章, utils/winrate stampTier) — the
+ * wording/desc maps stay total over StampKind so either face renders any
+ * kind labelled.
  *
  * A user-imported custom picture (settings' seal customizer →
  * commands::stamps) replaces the text with the picture, pressed at the

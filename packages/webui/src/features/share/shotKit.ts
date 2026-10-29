@@ -302,11 +302,11 @@ export function drawStampSeal(
   ctx.restore();
 }
 
-/** The secondary seal face (StampTag, 二级章) redrawn in canvas — the
- *  verdict wording as a horizontal transparent tag with a rounded cinnabar
- *  border (the DOM face is StampTag.scss). `cx`/`cy` center the tag; the
- *  caller measures the text at the shared tag font first when it needs the
- *  extent (see postBattleShot's slot reservation). */
+/** The small-tag seal face (StampTag) redrawn in canvas — the verdict
+ *  wording as a horizontal transparent tag with a rounded cinnabar border
+ *  (the DOM face is StampTag.scss). `cx`/`cy` center the tag; the caller
+ *  measures the text at the shared tag font first when it needs the extent
+ *  (see postBattleShot's identity-line tag cluster). */
 export const SEAL_TAG_FONT_PX = 11;
 export const sealTagFont = (): string => font(SEAL_TAG_FONT_PX, 700);
 /** The tag's outer extent for `label` at the shared tag font: text width
