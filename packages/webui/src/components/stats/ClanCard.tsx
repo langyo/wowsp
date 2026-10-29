@@ -193,7 +193,11 @@ export default defineComponent({
     );
 
     return () => (
-      <div class="clan-card">
+      // hk-selectable: the whole clan panel is copy-worthy content —
+      // description, hero winrate/battles, KPI grid — mirroring the
+      // player card (StatsCard) in the sibling lookup branch. Review
+      // S2, 2026-10-29. Badges/tags keep their own deny (HkTag).
+      <div class="clan-card hk-selectable">
         {/* identity header — same shared strip as the player card */}
         <IdentityHead
           name={props.clan.name}
