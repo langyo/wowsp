@@ -840,11 +840,19 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // the standing want; each rate-limit window retries acquisition
     // until it succeeds.
     let mut battle_known = super::arena_info::arena_seen_within(ARENA_FRESHNESS_SECS);
-    // A recorded battle with an EMPTY roster (the Lesta shape until the
-    // in-game probe's roster file warms up) is not done acquiring either:
-    // keep the same refresh cadence re-reading until the synthesis fills
-    // the roster (refresh_battle_state re-emits the event when it does).
-    let roster_pending = battle_known && super::arena_info::last_known_team_sizes() == (0, 0);
+    // A recorded battle the PAGES have not received a complete roster for is
+    // not done acquiring either: either its roster never arrived (the Lesta
+    // shape until the in-game probe's roster file warms up) or a read path
+    // recorded it without ever emitting. Keep the same refresh cadence
+    // re-reading (refresh_battle_state re-emits the event when it fills).
+    //
+    // The trigger reads the DELIVERY state, NOT `last_known_team_sizes()`:
+    // the /live page's 3 s poll records the roster without emitting, and
+    // keying on the seen state let that poll close this heal gate about a
+    // second after a Lesta battle announced itself with no roster — the page
+    // then kept the empty roster for the whole battle (feedback 2026-10-29:
+    // the Tab panel showed only the verify marker from the second battle on).
+    let roster_pending = battle_known && super::arena_info::battle_payload_pending();
     if focused_on_game
         && tab_down
         && (!battle_known || roster_pending)

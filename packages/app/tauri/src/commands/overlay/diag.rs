@@ -86,9 +86,24 @@ static LAST_DIAG: Mutex<Option<OverlayDiag>> = Mutex::new(None);
 
 /// Record one paint report from the overlay page (see the page's
 /// `reportPaint` — called after every VISIBLE render).
+///
+/// The report is LOGGED on every CHANGE: the 2026-10-29 feedback had the app's
+/// signals all green (shows posted, verify marker found, verdict Certified)
+/// while the page painted an EMPTY body for a whole battle, and the only
+/// place that fact existed was this mailbox — never a log line. A
+/// `paint=chips rows=None` entry directly after an arena-info event is that
+/// exact failure's fingerprint.
 fn note_paint(kind: OverlayPaintKind, rows: Option<u32>) {
-    if let Ok(mut slot) = PAINT_REPORT.lock() {
-        *slot = Some(PaintReport { kind, rows });
+    let Ok(mut slot) = PAINT_REPORT.lock() else {
+        return;
+    };
+    let changed = slot
+        .as_ref()
+        .is_none_or(|report| report.kind != kind || report.rows != rows);
+    *slot = Some(PaintReport { kind, rows });
+    drop(slot);
+    if changed {
+        tracing::info!(paint = ?kind, rows, "overlay page paint report changed");
     }
 }
 
@@ -108,6 +123,52 @@ fn last_paint() -> Option<(OverlayPaintKind, Option<u32>)> {
 pub async fn report_overlay_paint(kind: OverlayPaintKind, rows: Option<u32>) -> CommandResult<()> {
     note_paint(kind, rows);
     Ok(())
+}
+
+/// The overlay page's uncaught-error channel. An exception thrown inside the
+/// page's `render()` leaves an EMPTY body — the window, the marker channel and
+/// every Rust-side signal stay green, and the player sees a blank overlay
+/// (exactly the 2026-10-29 shape). The page reports the message here so the
+/// field log carries the reason instead of only the symptom.
+///
+/// Rate-limited and sanitized on purpose: an exception inside a render LOOP
+/// could otherwise write a line per frame (and roster-controlled text could
+/// smuggle newlines into the log), so one line per
+/// [`PAGE_ERROR_MIN_INTERVAL`] survives, truncated to
+/// [`PAGE_ERROR_MAX_CHARS`] with control characters stripped.
+#[tauri::command]
+pub async fn report_overlay_page_error(message: String) -> CommandResult<()> {
+    note_page_error(&message);
+    Ok(())
+}
+
+/// At most one page-error line per this window (dropped ones are silent: the
+/// first line already names the failure).
+const PAGE_ERROR_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+/// Longest page-error message kept (the rest is truncation marker).
+const PAGE_ERROR_MAX_CHARS: usize = 400;
+
+/// Record one page error into the log (see `report_overlay_page_error`).
+fn note_page_error(message: &str) {
+    static LAST_PAGE_ERROR: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    let Ok(mut slot) = LAST_PAGE_ERROR.lock() else {
+        return;
+    };
+    let now = std::time::Instant::now();
+    if slot.is_some_and(|at| now.duration_since(at) < PAGE_ERROR_MIN_INTERVAL) {
+        return;
+    }
+    *slot = Some(now);
+    drop(slot);
+    let mut sanitized: String = message
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(PAGE_ERROR_MAX_CHARS)
+        .collect();
+    if message.chars().count() > PAGE_ERROR_MAX_CHARS {
+        sanitized.push('…');
+    }
+    tracing::warn!(error = %sanitized, "overlay page reported an uncaught error");
 }
 
 /// Pull the last broadcast diag payload (`None` before any verdict). The
