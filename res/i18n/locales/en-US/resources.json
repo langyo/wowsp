@@ -290,6 +290,6 @@
   "purgeReinstallChoiceOur": "Reinstall only the mods WoWSP manages (all third-party mods go away with the backup).",
   "purgeReinstallChoiceAdopt": "Also adopt the third-party mods — their files are kept and re-registered as WoWSP-managed installs.",
   "purgeReinstallBackupNote": "The previous tree is kept as a backup either way; nothing is deleted before you have this path.",
-  "purgeReinstallOurOnly": "Reinstall only the mods WoWSP manages (all third-party mods go away with the backup).",
-  "purgeReinstallAdopt": "Also adopt the third-party mods — their files are kept and re-registered as WoWSP-managed installs."
+  "purgeReinstallOurOnly": "Reinstall WoWSP mods only",
+  "purgeReinstallAdopt": "Reinstall and adopt third-party mods"
 }

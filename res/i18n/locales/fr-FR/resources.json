@@ -290,6 +290,6 @@
   "purgeReinstallChoiceOur": "Réinstaller uniquement les mods gérés par WoWSP (les mods tiers partent avec la sauvegarde).",
   "purgeReinstallChoiceAdopt": "Adopter aussi les mods tiers — leurs fichiers sont conservés et réenregistrés comme installations WoWSP.",
   "purgeReinstallBackupNote": "L'ancienne arborescence est conservée en sauvegarde dans les deux cas.",
-  "purgeReinstallOurOnly": "Réinstaller uniquement les mods gérés par WoWSP (les mods tiers partent avec la sauvegarde).",
-  "purgeReinstallAdopt": "Adopter aussi les mods tiers — leurs fichiers sont conservés et réenregistrés comme installations WoWSP."
+  "purgeReinstallOurOnly": "Mods WoWSP uniquement",
+  "purgeReinstallAdopt": "Réinstaller et adopter les mods tiers"
 }
