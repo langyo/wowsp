@@ -750,6 +750,7 @@ pub(crate) mod manifest;
 mod model_preview;
 pub(crate) mod pick_source;
 pub(crate) mod preload_mirror;
+pub(crate) mod purge;
 mod safe_mode;
 mod scan_installed;
 mod stale_migration;

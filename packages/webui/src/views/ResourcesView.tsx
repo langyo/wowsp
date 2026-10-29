@@ -8,6 +8,7 @@ import {
   Puzzle,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   Undo2,
 } from "@lucide/vue";
 
@@ -15,6 +16,7 @@ import {
   HkButton,
   HkConfirmDialog,
   HkIconButton,
+  HkModal,
   HkScrollContainer,
   HkTabs,
   HMenu,
@@ -229,6 +231,15 @@ export default defineComponent({
                           disabled: !hub.safeMode.value || hub.safeModeBusy.value,
                         },
                         {
+                          key: "purge-reinstall",
+                          label: t("resources.purgeReinstall"),
+                          icon: Trash2,
+                          disabled:
+                            !hub.gameRoot.value ||
+                            hub.safeMode.value ||
+                            hub.purgeBusy.value,
+                        },
+                        {
                           key: "migrate",
                           label: t("resources.staleMigrate"),
                           icon: RefreshCw,
@@ -241,6 +252,7 @@ export default defineComponent({
                         hub.toolsOpen.value = false;
                         if (key === "safe-enter") hub.safeModeAsk.value = "on";
                         else if (key === "safe-exit") hub.safeModeAsk.value = "off";
+                        else if (key === "purge-reinstall") hub.purgeAsk.value = hub.foreignUnits.value.length > 0 ? "choice" : "simple";
                         else if (key === "migrate") wizard.openMigrateWizard();
                       }}
                       onUpdate:open={(v: boolean) => (hub.toolsOpen.value = v)}
@@ -486,6 +498,50 @@ export default defineComponent({
               if (!v) hub.confirmTarget.value = null;
             }}
           />
+
+          <HkConfirmDialog
+            open={hub.purgeAsk.value === "simple"}
+            title={t("resources.purgeReinstall")}
+            message={t("resources.confirmPurgeReinstall")}
+            confirmLabel={t("resources.purgeReinstall")}
+            onConfirm={() => void hub.doPurgeReinstall("wowsp-only")}
+            onUpdate:open={(open: boolean) => {
+              if (!open) hub.purgeAsk.value = null;
+            }}
+          />
+
+          {/* Two-scope dialog: only offered when a third-party installer's
+              units are actually on disk (the adopt scope is meaningless
+              otherwise). */}
+          <HkModal
+            modelValue={hub.purgeAsk.value === "choice"}
+            onUpdate:modelValue={(open: boolean) => {
+              if (!open) hub.purgeAsk.value = null;
+            }}
+            title={t("resources.purgeReinstall")}
+            width="34rem"
+            footerActions={[
+              {
+                label: t("resources.purgeReinstallOurOnly"),
+                variant: "secondary",
+                loading: hub.purgeBusy.value,
+                onClick: () => void hub.doPurgeReinstall("wowsp-only"),
+              },
+              {
+                label: t("resources.purgeReinstallAdopt"),
+                variant: "primary",
+                loading: hub.purgeBusy.value,
+                onClick: () => void hub.doPurgeReinstall("adopt-foreign"),
+              },
+            ]}
+          >
+            <p class="resources-view__purge-note">{t("resources.purgeReinstallChoiceIntro")}</p>
+            <ul class="resources-view__purge-scopes">
+              <li>{t("resources.purgeReinstallChoiceOur")}</li>
+              <li>{t("resources.purgeReinstallChoiceAdopt")}</li>
+            </ul>
+            <p class="resources-view__purge-note">{t("resources.purgeReinstallBackupNote")}</p>
+          </HkModal>
 
           <HkConfirmDialog
             open={!!hub.safeModeAsk.value}

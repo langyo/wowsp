@@ -207,7 +207,21 @@ describe("mod inventory root ownership", () => {
     const view = await mountInstalled();
     view.findComponent({ name: "HMenu" }).vm.$emit("select", "migrate");
     await flushPromises();
-    const wizard = () => view.findComponent({ name: "HkModal" });
+    // Multiple modals share the view now (safe mode / purge / migration):
+    // the wizard is the one whose footer carries the migrate actions.
+    const wizard = () =>
+      view
+        .findAllComponents({ name: "HkModal" })
+        .find((m) => {
+          const actions = m.props("footerActions") as
+            | { label?: string }[]
+            | undefined;
+          return (
+            !!actions &&
+            actions.length > 0 &&
+            String(actions[0]?.label ?? "").startsWith("resources.migrate")
+          );
+        })!;
     wizard().props("footerActions")[1].onClick();
     await flushPromises();
     expect(mocks.migrationPlan).toHaveBeenCalledExactlyOnceWith("C:/TestGameA", "1");

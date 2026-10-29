@@ -281,5 +281,15 @@
     "cancel": "Annuler",
     "ack": "Confirmer et continuer",
     "ackCountdown": "J'ai lu et compris ({n} s)"
-  }
+  },
+  "purgeReinstall": "Purger tous les mods et réinstaller",
+  "confirmPurgeReinstall": "Déplacera TOUT le contenu de res_mods (y compris les mods non installés par WoWSP), puis réinstallera uniquement les unités enregistrées par WoWSP. Fermez complètement le jeu avant. L'ancienne arborescence est conservée en sauvegarde.",
+  "purgeReinstallDone": "{removed} fichiers déplacés ; {count} mods réinstallés et {adopted} adoptés",
+  "purgeReinstallSkipped": "{count} mod(s) n'ont pas pu être réinstallés automatiquement (installation locale) — réinstallez-les manuellement",
+  "purgeReinstallChoiceIntro": "Des mods d'un installeur tiers ont été détectés. Choisissez ce que la remise à zéro conserve :",
+  "purgeReinstallChoiceOur": "Réinstaller uniquement les mods gérés par WoWSP (les mods tiers partent avec la sauvegarde).",
+  "purgeReinstallChoiceAdopt": "Adopter aussi les mods tiers — leurs fichiers sont conservés et réenregistrés comme installations WoWSP.",
+  "purgeReinstallBackupNote": "L'ancienne arborescence est conservée en sauvegarde dans les deux cas.",
+  "purgeReinstallOurOnly": "Réinstaller uniquement les mods gérés par WoWSP (les mods tiers partent avec la sauvegarde).",
+  "purgeReinstallAdopt": "Adopter aussi les mods tiers — leurs fichiers sont conservés et réenregistrés comme installations WoWSP."
 }

@@ -281,5 +281,15 @@
     "cancel": "취소",
     "ack": "확인하고 계속",
     "ackCountdown": "읽고 이해했습니다({n}초)"
-  }
+  },
+  "purgeReinstall": "모든 MOD 삭제 후 재설치",
+  "confirmPurgeReinstall": "res_mods의 모든 파일(WoWSP가 설치하지 않은 MOD 포함)을 옮긴 뒤 WoWSP가 기록한 유닛만 재설치합니다. 게임을 완전히 종료한 후 실행하세요. 이전 트리는 백업으로 보관됩니다.",
+  "purgeReinstallDone": "{removed}개 파일을 옮기고 {count}개 MOD 재설치, {adopted}개 채택",
+  "purgeReinstallSkipped": "{count}개 MOD를 자동 재설치하지 못했습니다(로컬 설치) — 수동으로 재설치하세요",
+  "purgeReinstallChoiceIntro": "타사 설치 프로그램의 MOD가 감지되었습니다. 초기화에서 유지할 범위를 선택하세요.",
+  "purgeReinstallChoiceOur": "WoWSP가 관리하는 MOD만 재설치(타사 MOD는 백업으로 사라집니다).",
+  "purgeReinstallChoiceAdopt": "타사 MOD도 함께 채택 — 파일을 유지하고 WoWSP 관리 설치로 다시 등록합니다.",
+  "purgeReinstallBackupNote": "두 경우 모두 이전 트리는 백업으로 보관됩니다.",
+  "purgeReinstallOurOnly": "WoWSP가 관리하는 MOD만 재설치(타사 MOD는 백업으로 사라집니다).",
+  "purgeReinstallAdopt": "타사 MOD도 함께 채택 — 파일을 유지하고 WoWSP 관리 설치로 다시 등록합니다."
 }

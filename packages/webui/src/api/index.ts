@@ -191,5 +191,7 @@ export type {
   CrashAnalysis,
   QuarantineEntry,
   IgnoredSuspect,
+  PurgeReinstallReport,
+  PurgeSkip,
   GameRestartInfo,
 } from "./client";

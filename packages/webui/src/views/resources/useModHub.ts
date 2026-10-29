@@ -141,6 +141,12 @@ export function useModHub() {
   const safeMode = ref(false);
   const safeModeAsk = ref<"on" | "off" | null>(null);
   const safeModeBusy = ref(false);
+  // The nuclear reset: purge EVERY mod, then reinstall only the units our
+  // own ledger records. Two-step like safe mode (confirm dialog first).
+  // "simple" = ours-only confirm, "choice" = two-scope dialog (only when a
+  // third-party installer's units are on disk).
+  const purgeAsk = ref<"simple" | "choice" | null>(null);
+  const purgeBusy = ref(false);
 
   // Header overflow menu (the ⋯ button): tool entries that used to be
   // free-floating banners — safe mode both ways, the migration wizard.
@@ -580,6 +586,35 @@ export function useModHub() {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       safeModeBusy.value = false;
+    }
+  }
+
+  async function doPurgeReinstall(mode: "wowsp-only" | "adopt-foreign") {
+    purgeAsk.value = null;
+    if (!gameRoot.value || purgeBusy.value || gameRunning()) return;
+    purgeBusy.value = true;
+    try {
+      const report = await api.modHubPurgeReinstall(gameRoot.value, mode);
+      toast.success(
+        t("resources.purgeReinstallDone", {
+          removed: report.removedFiles,
+          count: report.reinstalled.length,
+          adopted: report.adopted.length,
+        }),
+      );
+      if (report.skipped.length > 0) {
+        toast.warning(
+          t("resources.purgeReinstallSkipped", {
+            count: report.skipped.length,
+          }),
+        );
+      }
+      await scan();
+      await loadRecords();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      purgeBusy.value = false;
     }
   }
 
@@ -1037,6 +1072,9 @@ export function useModHub() {
     safeMode,
     safeModeAsk,
     safeModeBusy,
+    purgeAsk,
+    purgeBusy,
+    doPurgeReinstall,
     toolsOpen,
     toolsAnchor,
     delistedHit,

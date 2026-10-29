@@ -511,3 +511,31 @@ pub struct MigrationPlan {
     pub superseded: Vec<PlanFile>,
     pub decide: Vec<PlanFile>,
 }
+
+/// One unit the purge could not put back (its payload is not reconstructible
+/// from the local ledger).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeSkip {
+    pub name: String,
+    pub reason: String,
+}
+
+/// Result of the "purge every mod, then reinstall only WoWSP-managed ones"
+/// reset (`mod_hub_purge_reinstall`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeReinstallReport {
+    /// Files that were moved out of the load path.
+    pub removed_files: usize,
+    /// Display names of the units reinstalled from the catalog.
+    pub reinstalled: Vec<String>,
+    /// Display names of the units copied back from the old tree and
+    /// registered as WoWSP local installs (the adoption scope).
+    pub adopted: Vec<String>,
+    /// Units that could not be reinstalled.
+    pub skipped: Vec<PurgeSkip>,
+    /// Where the previous tree now lives (nothing is deleted before the
+    /// caller holds this path — the user cleans it up once satisfied).
+    pub backup_path: Option<String>,
+}

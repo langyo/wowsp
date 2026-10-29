@@ -103,7 +103,7 @@ pub async fn mod_catalog_install(
     }
 }
 
-async fn mod_catalog_install_inner(
+pub(crate) async fn mod_catalog_install_inner(
     mod_id: String,
     game_root: String,
     app: AppHandle,
