@@ -94,6 +94,16 @@ pub(super) fn rule_matches(rule: &WantedRule, facts: &ReplayFacts) -> bool {
             return false;
         }
     }
+    if let Some(min) = rule.team_win_rate_min {
+        // "双方" needs both sides' testimony: a two-team claim with every
+        // entry at or above the floor — a one-sided or absent claim cannot
+        // satisfy the bound.
+        if facts.core.team_avg_win_rates.len() < 2
+            || facts.core.team_avg_win_rates.iter().any(|r| *r < min)
+        {
+            return false;
+        }
+    }
     if let Some(min) = rule.client_version_min.as_deref() {
         // An empty (unparsed) version cannot satisfy a bound.
         if facts.core.client_version.is_empty() || !version_ge(&facts.core.client_version, min) {
@@ -184,6 +194,7 @@ mod tests {
             player_count_min: None,
             player_count_max: None,
             bot_max: None,
+            team_win_rate_min: None,
             client_version_min: None,
         }
     }
@@ -219,6 +230,7 @@ mod tests {
                 bot_count: 0,
                 client_version: "14.5.0".into(),
                 battle_time: "2026-10-14T09:00:00Z".into(),
+                team_avg_win_rates: Vec::new(),
             },
         }
     }
@@ -287,6 +299,26 @@ mod tests {
         let mut f = facts();
         f.core.own_ship_id = 0;
         assert!(!rule_matches(&r, &f));
+    }
+
+    #[test]
+    fn team_win_rate_bound_requires_both_sides() {
+        let mut r = rule("quality-48");
+        r.team_win_rate_min = Some(48);
+        // No claim and a one-sided claim cannot testify for "双方".
+        assert!(!rule_matches(&r, &facts()));
+        let mut one_sided = facts();
+        one_sided.core.team_avg_win_rates = vec![52];
+        assert!(!rule_matches(&r, &one_sided));
+        // Both sides at/above the floor match; either side below refuses.
+        let mut both = facts();
+        both.core.team_avg_win_rates = vec![52, 48];
+        assert!(rule_matches(&r, &both));
+        for rates in [[52, 47], [47, 52]] {
+            let mut f = both.clone();
+            f.core.team_avg_win_rates = rates.to_vec();
+            assert!(!rule_matches(&r, &f), "{rates:?} must not match");
+        }
     }
 
     #[test]

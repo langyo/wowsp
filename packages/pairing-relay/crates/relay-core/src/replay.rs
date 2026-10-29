@@ -210,6 +210,14 @@ pub struct WantedRule {
     pub player_count_max: Option<u32>,
     #[serde(default)]
     pub bot_max: Option<u32>,
+    /// Minimum BOTH teams' average account winrates must clear, integer
+    /// percent (0..=100). The facts side claims one floored average per
+    /// listed team (`teamAvgWinRates`); a rule with this bound requires a
+    /// TWO-team claim with BOTH entries ≥ it — a one-sided claim cannot
+    /// testify for the missing side, the same "an absent claim cannot
+    /// satisfy a bound" doctrine as tiers/shipIds.
+    #[serde(default)]
+    pub team_win_rate_min: Option<u32>,
     /// Dot-numeric minimum client version (14.5.0 ≥ 14.0).
     #[serde(default)]
     pub client_version_min: Option<String>,
@@ -393,6 +401,13 @@ pub fn validate_wanted_save(raw: &str, now_ms: u64) -> Result<WantedDoc, String>
                 ));
             }
         }
+        if let Some(min) = rule.team_win_rate_min {
+            if min > 100 {
+                return Err(format!(
+                    "rules[{i}]: teamWinRateMin {min} is a percent (max 100)"
+                ));
+            }
+        }
         if let Some(min) = rule.client_version_min.as_deref() {
             if !valid_version_min(min) {
                 return Err(format!(
@@ -462,6 +477,9 @@ pub fn rule_matches(rule: &WantedRule, f: &ReplayFacts) -> bool {
         && rule.player_count_min.is_none_or(|m| f.player_count >= m)
         && rule.player_count_max.is_none_or(|m| f.player_count <= m)
         && rule.bot_max.is_none_or(|m| f.bot_count <= m)
+        && rule.team_win_rate_min.is_none_or(|m| {
+            f.team_avg_win_rates.len() >= 2 && f.team_avg_win_rates.iter().all(|r| *r >= m)
+        })
         && rule
             .client_version_min
             .as_deref()
@@ -488,6 +506,12 @@ pub struct ReplayFacts {
     pub bot_count: u32,
     pub client_version: String,
     pub battle_time: String,
+    /// Per-team average account winrate, integer percent FLOORED, one entry
+    /// per listed team (ally first). Computed by the client over the humans
+    /// its stats lookup resolved (bots and hidden profiles excluded); an
+    /// empty vec = not claimed — a `teamWinRateMin` rule then cannot match.
+    #[serde(default)]
+    pub team_avg_win_rates: Vec<u32>,
 }
 
 /// The facts a manifest member carries (the sha256/fileName/sizeBytes
@@ -506,6 +530,8 @@ pub struct MemberFacts {
     pub bot_count: u32,
     pub client_version: String,
     pub battle_time: String,
+    #[serde(default)]
+    pub team_avg_win_rates: Vec<u32>,
 }
 
 impl MemberFacts {
@@ -526,6 +552,7 @@ impl MemberFacts {
             bot_count: self.bot_count,
             client_version: self.client_version.clone(),
             battle_time: self.battle_time.clone(),
+            team_avg_win_rates: self.team_avg_win_rates.clone(),
         }
     }
 }
@@ -617,6 +644,11 @@ pub fn validate_facts(f: &ReplayFacts) -> Result<(), &'static str> {
     }
     if f.battle_time.chars().count() > 40 {
         return Err("bad_battle_time");
+    }
+    // 0..=2 teams, each a floored percent (a >100 claim is junk, and a
+    // 3-team "roster" is not a claim any battle can back).
+    if f.team_avg_win_rates.len() > 2 || f.team_avg_win_rates.iter().any(|r| *r > 100) {
+        return Err("bad_team_win_rates");
     }
     Ok(())
 }
@@ -1739,6 +1771,7 @@ mod tests {
             bot_count: 0,
             client_version: "14.5.0".into(),
             battle_time: "2026-10-14T09:00:00Z".into(),
+            team_avg_win_rates: Vec::new(),
         }
     }
 
@@ -1760,6 +1793,7 @@ mod tests {
                 bot_count: f.bot_count,
                 client_version: f.client_version,
                 battle_time: f.battle_time,
+                team_avg_win_rates: f.team_avg_win_rates,
             },
             rule_id: None,
         }
@@ -2074,6 +2108,31 @@ mod tests {
         assert!(!rule_open(&r), "at the cap the rule closes");
     }
 
+    #[test]
+    fn team_win_rate_bound_requires_both_teams_above_it() {
+        let mut r = rule("quality-48");
+        r.team_win_rate_min = Some(48);
+        // No claim — the bound cannot be satisfied.
+        assert!(!rule_matches(&r, &facts(&"a".repeat(64))));
+        // Both sides clear the bar.
+        let mut f = facts(&"a".repeat(64));
+        f.team_avg_win_rates = vec![52, 48];
+        assert!(rule_matches(&r, &f));
+        // Either side under the bar refuses the facts.
+        for rates in [[52, 47], [47, 52], [48, 47]] {
+            let mut f = f.clone();
+            f.team_avg_win_rates = rates.to_vec();
+            assert!(!rule_matches(&r, &f), "{rates:?} must not match");
+        }
+        // A single claimed side still cannot testify for the other.
+        let mut f = f.clone();
+        f.team_avg_win_rates = vec![52];
+        assert!(!rule_matches(&r, &f));
+        // Without the bound the claim is irrelevant.
+        let unbounded = rule("any");
+        assert!(rule_matches(&unbounded, &f));
+    }
+
     // ── facts plausibility ────────────────────────────────────────────
 
     #[test]
@@ -2155,6 +2214,28 @@ mod tests {
         });
         bad(facts(&"a".repeat(64)), "bad_scenario", |f| {
             f.scenario = Some("x".repeat(65))
+        });
+        // Team winrate claims: 0..=2 floored percent entries.
+        assert!(
+            validate_facts(&ReplayFacts {
+                team_avg_win_rates: vec![52, 48],
+                ..facts(&"a".repeat(64))
+            })
+            .is_ok()
+        );
+        assert!(
+            validate_facts(&ReplayFacts {
+                team_avg_win_rates: vec![52],
+                ..facts(&"a".repeat(64))
+            })
+            .is_ok(),
+            "a single-team claim is plausible, just not both-teams evidence"
+        );
+        bad(facts(&"a".repeat(64)), "bad_team_win_rates", |f| {
+            f.team_avg_win_rates = vec![52, 48, 51]
+        });
+        bad(facts(&"a".repeat(64)), "bad_team_win_rates", |f| {
+            f.team_avg_win_rates = vec![52, 101]
         });
     }
 
@@ -3069,6 +3150,21 @@ mod tests {
         let e = validate_wanted_save(r#"{ "rules": [ { "id": "Bad Id", "maps": [] } ] }"#, 0)
             .unwrap_err();
         assert!(e.contains("rules[0]"), "{e}");
+        // A winrate floor above 100 is a percent typo, not a ruleset.
+        assert!(
+            validate_wanted_save(
+                r#"{ "rules": [ { "id": "r1", "teamWinRateMin": 101 } ] }"#,
+                0
+            )
+            .unwrap_err()
+            .contains("teamWinRateMin")
+        );
+        let floored = validate_wanted_save(
+            r#"{ "rules": [ { "id": "r1", "teamWinRateMin": 48 } ] }"#,
+            0,
+        )
+        .unwrap();
+        assert_eq!(floored.rules[0].team_win_rate_min, Some(48));
         // A malformed whole-doc floor (or per-rule floor) refuses too.
         assert!(
             validate_wanted_save(

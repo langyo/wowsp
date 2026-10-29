@@ -87,6 +87,7 @@ export interface WantedRule {
   playerCountMin?: number | null;
   playerCountMax?: number | null;
   botMax?: number | null;
+  teamWinRateMin?: number | null;
   clientVersionMin?: string;
   maxCount?: number | null;
 }

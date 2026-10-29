@@ -431,8 +431,8 @@ What the server accepts is **server-authoritative**: the maintainer
 writes ONE KV value — `FEEDBACK_KV` key `replays:wanted` — holding the
 ruleset (`{rulesetVersion, updatedAt, clientVersionMin, rules:[{id,
 maxCount, maps, modes, realms, shipClasses, shipIds, tiers,
-playerCountMin/Max, botMax, clientVersionMin}]}`; absent or empty rules =
-collection CLOSED. Rules are matched against client-claimed,
+playerCountMin/Max, botMax, teamWinRateMin, clientVersionMin}]}`; absent or
+empty rules = collection CLOSED. Rules are matched against client-claimed,
 plausibility-checked facts. The top-level `clientVersionMin` (dot-numeric,
 e.g. `0.6.1`) floors the APP build itself: uploads from older builds are
 refused with 426 `client_too_old` (an empty/malformed manifest version
@@ -456,6 +456,15 @@ one contributor's staged blob at 0.5 GiB (413
 `archive_per_anon_too_large` — the explicit policy bound; today the
 tighter per-upload 256 MiB cap dominates because re-uploads REPLACE the
 contributor's blob).
+
+`teamWinRateMin` (integer percent, 0..=100) gates on game quality: the
+facts row claims `teamAvgWinRates` — one floored average account winrate
+per listed team, computed client-side over the humans its stats lookup
+resolved (bots/hidden profiles excluded) — and the bound requires a
+two-team claim with BOTH entries at/above it. A replay without the claim
+(older app builds, offline lookups, single-team rosters) simply cannot
+satisfy the bound, the same "no testimony, no match" doctrine as
+tiers/shipIds.
 
 Storage layout:
 

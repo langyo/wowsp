@@ -72,6 +72,10 @@ export interface WantedRule {
   playerCountMin?: number | null;
   playerCountMax?: number | null;
   botMax?: number | null;
+  /** Minimum BOTH teams' average account winrates must clear, integer
+   *  percent (0..=100) — requires a two-team `teamAvgWinRates` claim with
+   *  both entries at/above it. */
+  teamWinRateMin?: number | null;
   clientVersionMin?: string | null;
 }
 
@@ -119,6 +123,10 @@ export interface ReplayFacts {
   clientVersion: string;
   /** RFC3339 UTC; empty = undatable file name. */
   battleTime: string;
+  /** Per-team average account winrate, floored integer percent, ally
+   *  first. Empty = not claimed (a teamWinRateMin rule then cannot match
+   *  the replay). */
+  teamAvgWinRates: number[];
 }
 
 /** Share-plan verdict (contract §4 precedence: duplicate > own_staged >
