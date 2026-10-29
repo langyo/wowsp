@@ -8,43 +8,43 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--hi-space-12, 12px);
-    padding: var(--hi-space-24, 24px) 0;
+    gap: var(--space-12);
+    padding: var(--space-24) 0;
     color: var(--hi-color-text-secondary);
   }
 
   &__state-text {
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__empty {
     margin: 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__list {
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-12, 12px);
-    margin-top: var(--hi-space-12, 12px);
+    gap: var(--space-12);
+    margin-top: var(--space-12);
   }
 
   &__release {
-    padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+    padding: var(--space-12) var(--space-16);
     border: 1px solid var(--hi-color-border);
-    border-radius: var(--hi-radius-sm, 4px);
+    border-radius: var(--radius-sm);
   }
 
   &__release-head {
     display: flex;
     align-items: baseline;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
   }
 
   &__release-version {
     font-weight: 600;
-    font-size: var(--hi-text-md, 1rem);
+    font-size: var(--text-md);
     color: var(--hi-color-text-primary);
   }
 
@@ -53,7 +53,7 @@
     border-radius: 999px;
     background: rgb(var(--hi-color-primary-rgb, 64 156 255) / 16%);
     color: var(--hi-color-primary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
     line-height: 1.5;
     white-space: nowrap;
   }
@@ -61,16 +61,16 @@
   &__release-date {
     margin-left: auto;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
     white-space: nowrap;
   }
 
   // The i18n fallback notice: this release's sections exist, but not in
   // the user's locale — the en-US original is shown instead.
   &__i18n-fallback {
-    margin: var(--hi-space-8, 8px) 0 0;
+    margin: var(--space-8) 0 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
   }
 }
 
@@ -78,23 +78,23 @@
 // What's Changed headers read as quiet section titles, bullets as a
 // tight list; links are plain text buttons routed through openExternal.
 .release-md {
-  margin-top: var(--hi-space-8, 8px);
+  margin-top: var(--space-8);
   color: var(--hi-color-text-primary);
-  font-size: var(--hi-text-sm, 0.8125rem);
+  font-size: var(--text-sm);
   line-height: 1.6;
 
   &__heading {
-    margin: var(--hi-space-12, 12px) 0 var(--hi-space-4, 4px);
+    margin: var(--space-12) 0 var(--space-4);
     color: var(--hi-color-text-primary);
     font-weight: 600;
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
 
     &:first-child {
       margin-top: 0;
     }
 
     &--major {
-      font-size: var(--hi-text-md, 1rem);
+      font-size: var(--text-md);
     }
   }
 
@@ -102,7 +102,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    margin: var(--hi-space-4, 4px) 0;
+    margin: var(--space-4) 0;
     padding-left: 1.25em;
   }
 
@@ -112,7 +112,7 @@
   }
 
   &__para {
-    margin: var(--hi-space-4, 4px) 0;
+    margin: var(--space-4) 0;
   }
 
   &__link {

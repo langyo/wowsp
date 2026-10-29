@@ -1814,7 +1814,7 @@
 // Purge-and-reinstall scope dialog: the two scopes + the backup note.
 .resources-view__purge-note {
   margin: 0 0 8px;
-  font-size: var(--hi-text-sm, 0.8125rem);
+  font-size: var(--text-sm);
   color: var(--hi-color-text-secondary, #57606a);
 }
 
@@ -1824,5 +1824,5 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: var(--hi-text-sm, 0.8125rem);
+  font-size: var(--text-sm);
 }

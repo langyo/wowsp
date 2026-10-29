@@ -37,20 +37,20 @@
      before the plugin works again. */
   &--outdated,
   &--safe-mode {
-    border-color: rgb(var(--color-warn, 234, 179, 8) / 55%);
+    border-color: rgb(var(--color-warning) / 55%);
 
     .plugin-status-card__icon {
-      background: rgb(var(--color-warn, 234, 179, 8) / 14%);
-      color: rgb(var(--color-warn, 234, 179, 8));
+      background: rgb(var(--color-warning) / 14%);
+      color: rgb(var(--color-warning));
     }
 
     .plugin-status-card__btn {
-      color: rgb(var(--color-warn, 234, 179, 8));
-      background: rgb(var(--color-warn, 234, 179, 8) / 12%);
-      border-color: rgb(var(--color-warn, 234, 179, 8) / 40%);
+      color: rgb(var(--color-warning));
+      background: rgb(var(--color-warning) / 12%);
+      border-color: rgb(var(--color-warning) / 40%);
 
       &:hover:not(:disabled) {
-        background: rgb(var(--color-warn, 234, 179, 8) / 20%);
+        background: rgb(var(--color-warning) / 20%);
       }
     }
   }

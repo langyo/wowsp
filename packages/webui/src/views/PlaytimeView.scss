@@ -433,7 +433,7 @@
     color var(--duration-short) var(--ease-standard);
 
   &:hover {
-    color: rgb(var(--color-danger, 240 80 80));
+    color: rgb(var(--color-error));
     background: rgb(var(--color-text) / 8%);
   }
 }
@@ -472,7 +472,7 @@
   transition: color var(--duration-short) var(--ease-standard);
 
   &:hover:not(:disabled) {
-    color: rgb(var(--color-danger, 240 80 80));
+    color: rgb(var(--color-error));
   }
 
   &:disabled {

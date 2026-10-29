@@ -10,19 +10,19 @@
   z-index: var(--hk-z-toast, 4000);
   display: flex;
   flex-direction: column;
-  gap: var(--hi-space-8, 8px);
+  gap: var(--space-8);
   width: 22rem;
   max-width: calc(100vw - 2rem);
-  padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
-  border-radius: var(--hi-radius-sm, 4px);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-sm);
   background: var(--hi-color-info, #58a6ff);
   color: #fff;
-  font-size: var(--hi-text-base, 0.875rem);
+  font-size: var(--text-base);
   line-height: 1.4;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(12px);
   pointer-events: auto;
-  animation: update-toast-in var(--hi-duration-normal, 0.3s)
+  animation: update-toast-in var(--duration-normal)
     cubic-bezier(0.22, 0.61, 0.36, 1);
   // Leave counterpart of the enter keyframe: the card fades and slides
   // out instead of snapping away when the pass ends (the component holds
@@ -58,7 +58,7 @@
 .update-toast__row {
   display: flex;
   align-items: center;
-  gap: var(--hi-space-8, 8px);
+  gap: var(--space-8);
 }
 
 .update-toast__icon {
@@ -83,10 +83,10 @@
   flex-shrink: 0;
   padding: 0.15rem 0.7rem;
   border: 1px solid rgb(255 255 255 / 45%);
-  border-radius: var(--hi-radius-sm, 4px);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: #fff;
-  font-size: var(--hi-text-base, 0.8125rem);
+  font-size: var(--text-base);
   line-height: 1.4;
   cursor: pointer;
   transition: background-color var(--hi-duration-fast, 0.15s) ease;

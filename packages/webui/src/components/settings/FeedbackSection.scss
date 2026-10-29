@@ -9,25 +9,25 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--hi-space-12, 12px);
-    padding: var(--hi-space-24, 24px) 0;
+    gap: var(--space-12);
+    padding: var(--space-24) 0;
     color: var(--hi-color-text-secondary);
   }
 
   &__state-text {
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__error {
     margin: 0;
     color: var(--hi-color-danger);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__empty {
     margin: 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   /* Key-value rows on the SAME shared grammar as the settings slider rows
@@ -43,10 +43,10 @@
     grid-template-columns:
       var(--settings-row-label-w, 7.5rem) minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
-    padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
+    gap: var(--space-8);
+    padding: var(--space-12) var(--space-16);
     border: 1px solid var(--hi-color-border);
-    border-radius: var(--hi-radius-sm, 4px);
+    border-radius: var(--radius-sm);
   }
 
   &__row {
@@ -61,13 +61,13 @@
 
   &__label {
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__file {
     min-width: 0;
     color: var(--hi-color-text-primary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
     font-family: var(--font-mono, ui-monospace, monospace);
     white-space: nowrap;
     overflow: hidden;
@@ -76,14 +76,14 @@
 
   &__meta {
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
 
   &__dir {
     min-width: 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
     font-family: var(--font-mono, ui-monospace, monospace);
     white-space: nowrap;
     overflow: hidden;
@@ -94,15 +94,15 @@
     grid-column: 1 / -1;
     margin: 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
   }
 
   &__actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
-    margin-top: var(--hi-space-12, 12px);
+    gap: var(--space-8);
+    margin-top: var(--space-12);
   }
 }
 
@@ -113,7 +113,7 @@
   &__lead {
     display: flex;
     align-items: flex-start;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
   }
 
   &__icon {
@@ -131,33 +131,33 @@
   &__desc {
     margin: 0;
     color: var(--hi-color-text-primary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
     line-height: 1.6;
   }
 
   &__items {
-    margin: var(--hi-space-12, 12px) 0 0;
-    padding: 0 0 0 var(--hi-space-16, 16px);
+    margin: var(--space-12) 0 0;
+    padding: 0 0 0 var(--space-16);
     color: var(--hi-color-text-primary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
     line-height: 1.6;
 
     li + li {
-      margin-top: var(--hi-space-4, 4px);
+      margin-top: var(--space-4);
     }
   }
 
   &__note,
   &__uac {
-    margin: var(--hi-space-12, 12px) 0 0;
+    margin: var(--space-12) 0 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
     line-height: 1.6;
   }
 
   &__uac {
-    padding: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
+    padding: var(--space-8) var(--space-12);
     border: 1px solid var(--hi-color-border);
-    border-radius: var(--hi-radius-sm, 4px);
+    border-radius: var(--radius-sm);
   }
 }

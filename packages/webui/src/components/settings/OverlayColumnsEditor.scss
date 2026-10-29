@@ -178,7 +178,7 @@
     0 8px 24px rgb(0 0 0 / 28%),
     0 2px 6px rgb(0 0 0 / 18%);
   border-radius: 8px;
-  background: var(--color-bg-elevated, #161b22);
+  background: rgb(var(--color-surface));
   backdrop-filter: blur(2px);
   pointer-events: none;
   z-index: var(--hk-z-drag, 950);

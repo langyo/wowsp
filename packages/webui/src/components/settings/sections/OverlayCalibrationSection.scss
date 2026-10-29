@@ -9,26 +9,26 @@
   &__toolbar {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: var(--hi-space-8, 8px);
+    margin-bottom: var(--space-8);
   }
 
   &__state {
     display: flex;
     justify-content: center;
-    padding: var(--hi-space-12, 12px) 0;
+    padding: var(--space-12) 0;
   }
 
   &__clients {
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-12, 12px);
+    gap: var(--space-12);
   }
 
   &__client {
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-8, 8px);
-    padding: var(--hi-space-12, 12px);
+    gap: var(--space-8);
+    padding: var(--space-12);
     border: 1px solid var(--hi-color-border, rgb(0 0 0 / 10%));
     border-radius: 8px;
   }
@@ -36,7 +36,7 @@
   &__head {
     display: flex;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     min-width: 0;
   }
 
@@ -48,7 +48,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
 
@@ -56,7 +56,7 @@
     flex: 0 0 auto;
     margin-left: auto;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
     white-space: nowrap;
   }
 
@@ -64,7 +64,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--hi-space-8, 8px) var(--hi-space-8, 8px);
+    gap: var(--space-8) var(--space-8);
   }
 
   &__badges {

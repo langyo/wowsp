@@ -364,8 +364,8 @@
     }
 
     &.is-danger {
-      color: rgb(var(--color-danger));
-      background: rgb(var(--color-danger) / 10%);
+      color: rgb(var(--color-error));
+      background: rgb(var(--color-error) / 10%);
     }
 
     &.is-info {

@@ -50,7 +50,7 @@
     border: 1px solid rgb(var(--color-border) / 35%);
     border-radius: 10px;
     overflow: hidden;
-    background: rgb(var(--color-surface-variant, var(--color-surface)) / 40%);
+    background: rgb(var(--color-surface) / 40%);
 
     /* main row is one big tap target; remove rides outside it (no nested
        buttons) */
@@ -121,7 +121,7 @@
     color: rgb(var(--color-text-tertiary) / 90%);
     cursor: pointer;
 
-    &:hover { color: rgb(var(--color-danger, 240 84 84)); }
+    &:hover { color: rgb(var(--color-error)); }
   }
 
   /* ── add form ── */
@@ -198,7 +198,7 @@
     padding: 0.5rem 0.6rem;
     border: 1px solid rgb(var(--color-border) / 30%);
     border-radius: 10px;
-    background: rgb(var(--color-surface-variant, var(--color-surface)) / 35%);
+    background: rgb(var(--color-surface) / 35%);
   }
 
   &__gamedata-body {
@@ -239,7 +239,7 @@
 
     &--ok { color: rgb(var(--color-success)); }
     &--bad {
-      color: rgb(var(--color-danger, 240 84 84));
+      color: rgb(var(--color-error));
       white-space: normal;
       word-break: break-word;
     }
@@ -283,7 +283,7 @@
     gap: 0.35rem;
     border: 1px solid rgb(var(--color-border) / 30%);
     border-radius: 10px;
-    background: rgb(var(--color-surface-variant, var(--color-surface)) / 35%);
+    background: rgb(var(--color-surface) / 35%);
     overflow: hidden;
   }
 
@@ -391,10 +391,10 @@
   }
 
   &__entry-retry {
-    border: 1px solid rgb(var(--color-danger, 240 84 84) / 50%);
+    border: 1px solid rgb(var(--color-error) / 50%);
     border-radius: 8px;
     background: none;
-    color: rgb(var(--color-danger, 240 84 84));
+    color: rgb(var(--color-error));
     font-size: var(--text-xs, 0.75rem);
     padding: 0.3rem 0.6rem;
     cursor: pointer;
