@@ -3,6 +3,15 @@
   flex-direction: column;
   min-height: 100vh;
 
+  /* The site is a document: prose, download steps and mod descriptions are
+     content users copy. hikari 0.55.224 denies selection on html by
+     default, so a content-first host re-enables on its root — the
+     sanctioned route per hikari's selection.scss. Chrome stays denied:
+     HkButton / HkSwitch / HkMenu / HkTag sheets speak on their own
+     elements and win over this root-level value. */
+  user-select: text;
+  -webkit-user-select: text;
+
   &__nav-spacer {
     height: 4rem;
     flex-shrink: 0;

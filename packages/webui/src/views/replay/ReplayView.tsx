@@ -897,14 +897,18 @@ const PostBattleFallbackPanel = defineComponent({
                 (auto-hiding overlay track); the rows stack inside the
                 inner wrapper so the column-title scrolls with them. */}
             <HkScrollContainer class="replay-view__postbattle-col">
-              <div class="replay-view__postbattle-col__inner">
+              {/* hk-selectable: the roster IS the battle report — names,
+                  clans, ship names and the stat numbers are exactly what
+                  users copy out of it (hikari 0.55.224 selection policy:
+                  content opts back in via this hook). */}
+              <div class="hk-selectable replay-view__postbattle-col__inner">
                 {colTitle(t("replay.roster.allies"), allies.value)}
                 {allies.value.map(cell)}
               </div>
             </HkScrollContainer>
             {enemies.value.length > 0 ? (
               <HkScrollContainer class="replay-view__postbattle-col">
-                <div class="replay-view__postbattle-col__inner">
+                <div class="hk-selectable replay-view__postbattle-col__inner">
                   {colTitle(t("replay.roster.enemies"), enemies.value)}
                   {enemies.value.map(cell)}
                 </div>
@@ -918,7 +922,7 @@ const PostBattleFallbackPanel = defineComponent({
               onClick={() => (detailOpen.value = false)}
             >
               <div
-                class="replay-view__postbattle-modal-panel"
+                class="hk-selectable replay-view__postbattle-modal-panel"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div class="replay-view__postbattle-modal-head">
@@ -1579,7 +1583,7 @@ const ChatLogPanel = defineComponent({
           {sel ? (
             <div class="replay-view__postbattle-modal" onClick={() => (selected.value = null)}>
               <div
-                class="replay-view__postbattle-modal-panel"
+                class="hk-selectable replay-view__postbattle-modal-panel"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div class="replay-view__postbattle-modal-head">

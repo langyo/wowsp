@@ -98,8 +98,9 @@ export default defineComponent({
           </button>
         </div>
         {/* The E17 honesty banner — this panel shows MODEL AGREEMENT, never
-            a player rating (see the component doc). */}
-        <div class="holo-score-panel__disclaimer">{i18nT("replay.scores.disclaimer")}</div>
+            a player rating (see the component doc). hk-selectable: the
+            banner prose is content (hikari 0.55.224 selection policy). */}
+        <div class="hk-selectable holo-score-panel__disclaimer">{i18nT("replay.scores.disclaimer")}</div>
         {/* Layer glyph legend: the 2D/3D hold marker + the pale second arrow. */}
         <div class="holo-score-panel__legend">
           <span>{i18nT("replay.moveAdvice.holdMark")}</span>
@@ -109,7 +110,9 @@ export default defineComponent({
           <span>{i18nT("replay.scores.whole")}</span>
           <span>{i18nT("replay.scores.instant")}</span>
         </div>
-        <div class="holo-score-panel__rows">
+        {/* hk-selectable: ship names + model-agreement scores are the
+            values users copy (hikari 0.55.224 selection policy). */}
+        <div class="hk-selectable holo-score-panel__rows">
           {rows.value.length === 0 ? (
             <div class="holo-score-panel__empty">{i18nT("replay.scores.noData")}</div>
           ) : (

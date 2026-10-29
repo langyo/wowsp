@@ -1706,12 +1706,15 @@ export default defineComponent({
             ]}
           >
             <div class="live-battle__matrix__inner">
-              <div class="live-battle__col">
+              {/* hk-selectable: live mirror of the post-battle report —
+                  roster names and stat numbers are content users copy
+                  (hikari 0.55.224 selection policy opt-in). */}
+              <div class="hk-selectable live-battle__col">
                 {colTitle(t("replay.roster.allies"), allies.value)}
                 {allies.value.map((e) => rosterRow(e, !compact.value))}
               </div>
               {enemies.value.length > 0 ? (
-                <div class="live-battle__col">
+                <div class="hk-selectable live-battle__col">
                   {colTitle(t("replay.roster.enemies"), enemies.value)}
                   {enemies.value.map((e) => rosterRow(e, !compact.value))}
                 </div>
