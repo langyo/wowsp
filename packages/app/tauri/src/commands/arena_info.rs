@@ -80,6 +80,22 @@ static LAST_BATTLE_PVE: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 /// per-aim bot gate (telemetry `bots`) filters their AI targets by name.
 static LAST_ENEMY_ALL_AI: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Delivery state (see [`deliver_arena`]): the battle stamp the WEBVIEWS
+/// were last delivered and whether that delivery carried an EMPTY roster.
+///
+/// Deliberately separate from [`LAST_ARENA_MTIME`] / [`LAST_TEAM_SIZES`]:
+/// those record what the BACKEND has seen, and every read path updates them —
+/// including the /live page's 3 s poll, which used to update them WITHOUT ever
+/// telling the pages (that is precisely how the heal gate below got closed
+/// early). Keying the Tab
+/// watcher's roster heal on the seen state let that poll close the heal gate
+/// ~1 s after a Lesta battle announced itself with no roster, so the pages
+/// kept the empty roster for the whole battle (feedback 2026-10-29: from the
+/// second battle on the Tab panel showed nothing but the verify marker).
+static LAST_DELIVERED_STAMP: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+static LAST_DELIVERED_EMPTY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
 /// mtime (unix secs) of the freshest roster `read_temp_arena_info` ever
 /// SERVED, per replays dir (normalized install-path key) — the read gate's
 /// regression rule. Per-DIR, not the global [`LAST_ARENA_MTIME`]: the /live
@@ -252,6 +268,163 @@ pub(crate) fn last_known_team_sizes() -> (usize, usize) {
     (packed >> 16, packed & 0xFFFF)
 }
 
+/// What one parsed payload owes the webviews (see [`deliver_arena`]) — pure
+/// so every edge case is unit-tested without an `AppHandle`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArenaDelivery {
+    /// Nothing owed: the pages already hold this battle's roster.
+    Nothing,
+    /// A new battle — emit AND void the Tab watcher's stale anchor pin.
+    Battle,
+    /// The SAME battle whose delivered roster was empty and this payload
+    /// fills it — emit only; the geometry pin still belongs to this battle.
+    RosterHeal,
+}
+
+/// Decide one delivery from the recorded/delivered state and the payload.
+///
+/// `recorded_stamp`/`delivered_stamp` are the atomics' values, the two
+/// `*_empty` flags are the roster emptiness of the delivered state and of
+/// this payload.
+pub(crate) fn arena_delivery(
+    recorded_stamp: i64,
+    delivered_stamp: i64,
+    delivered_empty: bool,
+    payload_stamp: i64,
+    payload_empty: bool,
+) -> ArenaDelivery {
+    // Only the RECORDED battle's payload may be delivered: a stale file read
+    // (an older battle still on disk) must never overwrite the live roster.
+    if recorded_stamp <= 0 || payload_stamp != recorded_stamp {
+        return ArenaDelivery::Nothing;
+    }
+    if delivered_stamp != recorded_stamp {
+        return ArenaDelivery::Battle;
+    }
+    if delivered_empty && !payload_empty {
+        return ArenaDelivery::RosterHeal;
+    }
+    ArenaDelivery::Nothing
+}
+
+/// Whether this delivery must VOID the Tab watcher's pinned anchor: a new
+/// battle always does, and a roster heal does whenever the pin may have been
+/// acquired while the team sizes were unknown.
+///
+/// The second half is load-bearing: during the empty-roster window the
+/// detector has no roster hint and guesses a FIXED 5-row grid
+/// (the detector's `rows_wanted(0)` fallback), while the pinned anchor's
+/// identity check compares only the first row, the table edges and the split
+/// kind — not the team sizes. Keeping such a pin past the heal would slice
+/// the real rows against a 5+5 guess for the whole battle, so the heal voids
+/// it exactly like the pre-fix code did (the 2026-10-29 fix briefly dropped
+/// this guarantee).
+pub(crate) fn delivery_voids_pin(
+    decision: ArenaDelivery,
+    pre_delivery_team_sizes: (usize, usize),
+) -> bool {
+    decision == ArenaDelivery::Battle
+        || (decision == ArenaDelivery::RosterHeal && pre_delivery_team_sizes == (0, 0))
+}
+
+/// Whether the recorded battle still owes the pages a payload: it was never
+/// delivered (a read path recorded it without delivering — today the
+/// explicit-dir /live read of a foreign install, which deliberately stays
+/// caller-only) or its delivered roster was empty (Lesta's vehicles-less
+/// file read before the probe's roster landed).
+pub(crate) fn payload_pending(
+    recorded_stamp: i64,
+    delivered_stamp: i64,
+    delivered_empty: bool,
+) -> bool {
+    recorded_stamp > 0 && (delivered_stamp != recorded_stamp || delivered_empty)
+}
+
+/// `payload_pending` over the live atomics — the Tab watcher's heal trigger.
+pub(crate) fn battle_payload_pending() -> bool {
+    payload_pending(
+        LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed),
+        LAST_DELIVERED_STAMP.load(std::sync::atomic::Ordering::Relaxed),
+        LAST_DELIVERED_EMPTY.load(std::sync::atomic::Ordering::Relaxed),
+    )
+}
+
+/// Deliver one parsed battle payload to every webview — the ONE owner of the
+/// delivery side effects (record, session attribution, the watcher's
+/// BattleChanged, the `arena-info` event), so a roster that arrives AFTER
+/// the first (empty) read of a battle still reaches the pages.
+///
+/// Callers: the notify callback (a fresh file), [`refresh_battle_state`] (the
+/// Tab watcher's heal), [`read_temp_arena_info`] (the /live 3 s poll, which
+/// normally only answers its caller) and [`serve_probe_battle`]. Exactly-once
+/// per battle/roster is guaranteed by the stored delivery state under one
+/// lock: two paths racing on the same file cannot double-emit.
+fn deliver_arena(
+    app: &AppHandle,
+    info: &ArenaInfo,
+    mtime: SystemTime,
+    dir: Option<&Path>,
+) -> ArenaDelivery {
+    static DELIVER_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = DELIVER_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let stamp = unix_secs(mtime);
+    // The team sizes BEFORE this payload records over them: a pin acquired in
+    // the meantime was built on the detector's no-roster guess (see
+    // `delivery_voids_pin`).
+    let pre_delivery_team_sizes = last_known_team_sizes();
+    // Record first (forward-only) — the READ state may legitimately move
+    // without a delivery; the delivery decision is made below, separately.
+    note_arena_seen(info, mtime);
+    let recorded = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
+    let decision = arena_delivery(
+        recorded,
+        LAST_DELIVERED_STAMP.load(std::sync::atomic::Ordering::Relaxed),
+        LAST_DELIVERED_EMPTY.load(std::sync::atomic::Ordering::Relaxed),
+        stamp,
+        info.vehicles.is_empty(),
+    );
+    if decision == ArenaDelivery::Nothing {
+        return decision;
+    }
+    // Store BEFORE the emit: a delivery must never be counted twice. The
+    // PREVIOUS values are kept for the failure rollback below.
+    let prev_delivered = LAST_DELIVERED_STAMP.load(std::sync::atomic::Ordering::Relaxed);
+    let prev_delivered_empty = LAST_DELIVERED_EMPTY.load(std::sync::atomic::Ordering::Relaxed);
+    LAST_DELIVERED_STAMP.store(recorded, std::sync::atomic::Ordering::Relaxed);
+    LAST_DELIVERED_EMPTY.store(
+        info.vehicles.is_empty(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    if let Some(name) = super::session::local_player_of(&info.vehicles) {
+        super::session::note_playing_from_arena(app, name, Some(stamp), dir);
+    }
+    if delivery_voids_pin(decision, pre_delivery_team_sizes) {
+        #[cfg(desktop)]
+        super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
+    }
+    if decision == ArenaDelivery::RosterHeal {
+        // The one line that proves a delivered-empty battle was healed in the
+        // next field log (feedback 2026-10-29's blank Tab panel).
+        tracing::info!(
+            players = info.vehicles.len(),
+            stamp,
+            "arena roster healed after an empty first read"
+        );
+    }
+    if let Err(e) = app.emit(ARENA_INFO_EVENT, info) {
+        // A failed emit must NOT consume the delivery: roll the state back so
+        // the next read path (the 3 s poll, the next Tab hold, a file event)
+        // retries instead of leaving the pages without this battle forever.
+        // Safe under DELIVER_LOCK: no other path can observe the interim value.
+        LAST_DELIVERED_STAMP.store(prev_delivered, std::sync::atomic::Ordering::Relaxed);
+        LAST_DELIVERED_EMPTY.store(prev_delivered_empty, std::sync::atomic::Ordering::Relaxed);
+        tracing::warn!(error = %e, "emit arena-info event failed");
+    }
+    decision
+}
+
 /// True when the most recent battle roster is no older than `max_age_secs`.
 /// The overlay Tab watcher refuses to capture outside this window — Tab in
 /// port or long after a battle must stay a no-op.
@@ -345,11 +518,14 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
         return probe_fallback(app, &dir).is_some();
     }
     let at = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
-    // A recorded battle whose roster never arrived (Lesta's empty
-    // vehicles, or a synthesized roster the probe had not written yet):
-    // the mtime gate must not pin that empty state — keep re-reading.
-    let roster_pending = at > 0 && last_known_team_sizes() == (0, 0);
-    if at > 0 && unix_secs(mtime) <= at && !roster_pending {
+    // A recorded battle that still owes the PAGES a payload is not "nothing
+    // newer": its roster never arrived (Lesta's empty vehicles, or a
+    // synthesized roster the probe had not written yet) OR a read path
+    // recorded it without ever delivering it (the /live 3 s poll only
+    // answers its caller). Both keep re-reading — keyed on the DELIVERED
+    // state, never on `last_known_team_sizes()`, which any read path moves.
+    let pending = battle_payload_pending();
+    if at > 0 && unix_secs(mtime) <= at && !pending {
         // Nothing newer than what we already recorded.
         tracing::debug!(
             file = %path.display(),
@@ -361,25 +537,10 @@ pub(crate) fn refresh_battle_state(app: &AppHandle) -> bool {
     }
     match read_arena_file(&path) {
         Ok(info) => {
-            note_arena_seen(&info, mtime);
-            let after = LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
-            if after > at || (roster_pending && !info.vehicles.is_empty()) {
-                // A stamp or roster THIS path discovered: heal the page
-                // (same emit + BattleChanged the watcher's Ok branch does).
-                if let Some(name) = super::session::local_player_of(&info.vehicles) {
-                    super::session::note_playing_from_arena(
-                        app,
-                        name,
-                        Some(unix_secs(mtime)),
-                        Some(&dir),
-                    );
-                }
-                #[cfg(desktop)]
-                super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
-                if let Err(e) = app.emit(ARENA_INFO_EVENT, &info) {
-                    tracing::warn!(error = %e, "emit arena-info event failed");
-                }
-            }
+            // Delivery owns the record/emit split: a fresh battle voids the
+            // Tab pin through the FIFO command, a roster-only heal leaves the
+            // pin alone (the table did not move).
+            deliver_arena(app, &info, mtime, Some(&dir));
             true
         },
         Err(e) => {
@@ -441,18 +602,11 @@ pub(crate) fn serve_probe_battle(
         dir = %replays_dir.display(),
         "arena file never appeared — serving the roster synthesized from the in-game probe"
     );
-    note_arena_seen(
-        info,
-        SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(stamp_unix.max(0) as u64),
-    );
-    if let Some(name) = super::session::local_player_of(&info.vehicles) {
-        super::session::note_playing_from_arena(app, name, Some(stamp_unix), Some(replays_dir));
-    }
-    #[cfg(desktop)]
-    super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
-    if let Err(e) = app.emit(ARENA_INFO_EVENT, info) {
-        tracing::warn!(error = %e, "emit arena-info event failed");
-    }
+    // The battle stamp IS this path's file stamp (see `note_arena_seen`): the
+    // delivery state machine then emits exactly once per battle even when the
+    // probe's claim is re-served by a later read path.
+    let mtime = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(stamp_unix.max(0) as u64);
+    deliver_arena(app, info, mtime, Some(replays_dir));
 }
 
 /// The file-read paths' probe fallback (see `probe_arena`): when the
@@ -488,6 +642,10 @@ pub async fn read_temp_arena_info(
     app: AppHandle,
     dir: Option<String>,
 ) -> CommandResult<Option<ArenaInfo>> {
+    // An EXPLICIT dir is the /live page watching a sidebar-selected
+    // instance, which by design can differ from the running client the
+    // overlay follows: its reads answer the caller only (see delivery below).
+    let explicit_dir = dir.is_some();
     // Follow the running client: resolve once, re-point the background
     // watcher when the dir drifted (the user launched a different install
     // than the one being watched), then read from that same dir.
@@ -523,15 +681,36 @@ pub async fn read_temp_arena_info(
         }
     }
     let info = read_arena_file(&path)?;
+    let mut delivered = false;
     if let Some(mtime) = mtime {
-        note_arena_seen(&info, mtime);
         note_arena_served(&dir, unix_secs(mtime));
+        // The poll normally just answers its caller, but when IT is the first
+        // path to see a battle — or the path that finally reads the roster of
+        // one delivered empty — the pages still owe an event: delivery is
+        // keyed on what the PAGES hold, not on who read first. This runs
+        // every 3 s, so a Lesta battle's roster reaches the pages within one
+        // poll even when the Tab watcher never refreshes (feedback
+        // 2026-10-29: the Tab panel stayed blank all battle exactly because
+        // this path recorded the roster without emitting it).
+        //
+        // Only the install the OVERLAY itself follows may deliver, though: an
+        // explicit dir can be a different client (multi-install /live), and
+        // repainting the overlay page with a foreign battle's roster — or
+        // voiding its pin through BattleChanged — would be a wrong-battle
+        // surface. Such reads keep the pre-existing caller-only semantics
+        // (record, no event).
+        if !explicit_dir || dir_is_overlay_target(&dir) {
+            delivered = deliver_arena(&app, &info, mtime, Some(&dir)) != ArenaDelivery::Nothing;
+        } else {
+            note_arena_seen(&info, mtime);
+        }
     }
-    // Same identity feed as the watcher path above — the poll covers the
-    // window where the notify watcher is not yet (re)targeted. The mtime
-    // feeds the session hub's freshness gate (crash leftovers must not
-    // re-identify the player under a relaunched client).
-    if let Some(name) = super::session::local_player_of(&info.vehicles) {
+    // Same identity feed as the watcher path above when delivery did not
+    // already perform it — the poll covers the window where the notify
+    // watcher is not yet (re)targeted. The mtime feeds the session hub's
+    // freshness gate (crash leftovers must not re-identify the player under
+    // a relaunched client).
+    if !delivered && let Some(name) = super::session::local_player_of(&info.vehicles) {
         super::session::note_playing_from_arena(&app, name, mtime.map(unix_secs), Some(&dir));
     }
     Ok(Some(info))
@@ -825,44 +1004,21 @@ fn handle_watch_event(
 
     match read_arena_file(&path) {
         Ok(info) => {
-            // The heal path in `refresh_battle_state` may have recorded (and
-            // emitted) THIS battle already — a Tab press that raced the write
-            // completion parses the same file first. The atomic then carries
-            // this file's own stamp: skip the duplicate emit + pin-void, the
-            // page already has the roster.
-            let already_recorded =
-                unix_secs(mtime) <= LAST_ARENA_MTIME.load(std::sync::atomic::Ordering::Relaxed);
-            if already_recorded {
-                tracing::debug!("arena file already recorded — another path delivered the roster");
-                return;
-            }
-            tracing::info!(
-                players = info.vehicles.len(),
-                "fresh tempArenaInfo.json — emitting arena-info event"
-            );
-            note_arena_seen(&info, mtime);
-            // The local player (relation 0) is the one observable moment the
-            // logged-in ACCOUNT becomes identifiable — the session hub
-            // matches it against the bound profiles so multi-account
-            // machines follow the alt actually playing (commands/session.rs).
-            if let Some(name) = super::session::local_player_of(&info.vehicles) {
-                super::session::note_playing_from_arena(
-                    app,
-                    name,
-                    Some(unix_secs(mtime)),
-                    Some(target_dir),
+            // ONE owner for the delivery decision (see `deliver_arena`). The
+            // old shortcut here ASSUMED "recorded by another path" meant
+            // "delivered by another path" — the /live 3 s poll records
+            // WITHOUT emitting, so that assumption could swallow a battle's
+            // only event (it did: that poll is the 2026-10-29 culprit).
+            // Now a battle the pages never got is delivered here, a roster
+            // that fills an empty delivery is healed, and a battle the pages
+            // already hold is a true no-op.
+            if deliver_arena(app, &info, mtime, Some(target_dir)) == ArenaDelivery::Battle {
+                // Kept verbatim: this line is the field-log marker for "a
+                // fresh battle's event went out".
+                tracing::info!(
+                    players = info.vehicles.len(),
+                    "fresh tempArenaInfo.json — emitting arena-info event"
                 );
-            }
-            // A NEW battle voids the Tab watcher's pinned anchor for the
-            // PREVIOUS one. Pushed as a FIFO command (not applied here) so
-            // the watcher applies it in-order with the manual-anchor
-            // commands — the loop is the single owner of that state, and the
-            // atomics above stay as-is for the other consumers. Desktop
-            // only: the Tab watcher is part of the overlay stack.
-            #[cfg(desktop)]
-            super::overlay::push_watch_command(super::overlay::WatchCommand::BattleChanged);
-            if let Err(e) = app.emit(ARENA_INFO_EVENT, &info) {
-                tracing::warn!(error = %e, "emit arena-info event failed");
             }
         },
         Err(e) => {
@@ -880,6 +1036,16 @@ fn handle_watch_event(
             tracing::warn!(error = %e, "re-read tempArenaInfo.json after change failed");
         },
     }
+}
+
+/// Whether `dir` is the replay dir the OVERLAY itself follows (the running
+/// client's, `RootPreference::PreferRunning`) — the only dir whose reads may
+/// deliver an `arena-info` event to the pages. False when no client resolves
+/// (nothing to compare against, and nothing to follow).
+fn dir_is_overlay_target(dir: &Path) -> bool {
+    resolve_arena_dir(None).ok().is_some_and(|live| {
+        super::game_context::same_folder(&dir.to_string_lossy(), &live.to_string_lossy())
+    })
 }
 
 fn resolve_arena_dir(dir: Option<String>) -> anyhow::Result<PathBuf> {
@@ -1505,5 +1671,100 @@ mod tests {
         // Restore the process-globals the sink solver keys on.
         LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
         LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The 2026-10-29 blank Tab panel: a Lesta battle is recorded EMPTY (the
+    /// vehicles-less file lands before the probe's roster), then a later read
+    /// fills it. The delivery decision is what turns that second read into
+    /// the page's roster instead of a silent backend-only update.
+    #[test]
+    fn arena_delivery_heals_an_empty_delivered_battle() {
+        // A brand-new battle.
+        assert_eq!(
+            arena_delivery(100, 50, false, 100, false),
+            ArenaDelivery::Battle
+        );
+        // The Lesta shape: same stamp, delivered roster was empty, this
+        // payload fills it -> emit, but do NOT void the geometry pin.
+        assert_eq!(
+            arena_delivery(100, 100, true, 100, false),
+            ArenaDelivery::RosterHeal
+        );
+        // Same battle, roster already delivered complete: nothing owed.
+        assert_eq!(
+            arena_delivery(100, 100, false, 100, false),
+            ArenaDelivery::Nothing
+        );
+        // Still empty (probe not answering yet): nothing to deliver.
+        assert_eq!(
+            arena_delivery(100, 100, true, 100, true),
+            ArenaDelivery::Nothing
+        );
+        // A stale file (an older battle still on disk) must never overwrite
+        // the live battle's roster.
+        assert_eq!(
+            arena_delivery(100, 0, false, 50, false),
+            ArenaDelivery::Nothing
+        );
+        // No battle recorded yet.
+        assert_eq!(arena_delivery(0, 0, true, 0, true), ArenaDelivery::Nothing);
+    }
+
+    /// A full battle lifecycle in one sequence: a new battle is delivered, its
+    /// empty roster is healed once, a repeat payload is a no-op, and the next
+    /// battle is a new delivery again — the four decisions the runtime makes
+    /// around `deliver_arena`.
+    #[test]
+    fn arena_delivery_sequence_battle_heal_noop_battle() {
+        // The delivery atomics as the runtime advances them; `recorded` comes
+        // from the caller because it belongs to the read side, not this state.
+        let mut delivered = 0;
+        let mut delivered_empty = true;
+        let mut deliver = |recorded: i64, payload_empty: bool| {
+            let decision = arena_delivery(
+                recorded,
+                delivered,
+                delivered_empty,
+                recorded,
+                payload_empty,
+            );
+            if decision != ArenaDelivery::Nothing {
+                delivered = recorded;
+                delivered_empty = payload_empty;
+            }
+            decision
+        };
+        assert_eq!(deliver(100, true), ArenaDelivery::Battle);
+        assert_eq!(deliver(100, false), ArenaDelivery::RosterHeal);
+        assert_eq!(deliver(100, false), ArenaDelivery::Nothing);
+        assert_eq!(deliver(200, false), ArenaDelivery::Battle);
+    }
+
+    /// The heal must still void a pin that was acquired with only the
+    /// detector's fixed 5-row guess behind it (empty-roster window), while a
+    /// heal on an already-known-roster pin leaves the geometry alone.
+    #[test]
+    fn roster_heal_voids_only_a_blindly_acquired_pin() {
+        assert!(delivery_voids_pin(ArenaDelivery::Battle, (7, 7)));
+        assert!(delivery_voids_pin(ArenaDelivery::Battle, (0, 0)));
+        assert!(delivery_voids_pin(ArenaDelivery::RosterHeal, (0, 0)));
+        assert!(!delivery_voids_pin(ArenaDelivery::RosterHeal, (7, 7)));
+        assert!(!delivery_voids_pin(ArenaDelivery::Nothing, (0, 0)));
+    }
+
+    /// The /live 3 s poll used to record a battle without emitting; the
+    /// delivery state must keep that battle PENDING so the watcher/poll can
+    /// deliver it (the old gate keyed on `last_known_team_sizes()`, which
+    /// that poll moved — closing the heal before it ever ran).
+    #[test]
+    fn payload_pending_keys_on_delivery_not_on_reads() {
+        assert!(!payload_pending(0, 0, true), "no battle yet");
+        assert!(payload_pending(100, 0, true), "recorded, never delivered");
+        assert!(payload_pending(100, 100, true), "delivered empty");
+        assert!(!payload_pending(100, 100, false), "delivered with a roster");
+        assert!(payload_pending(200, 100, false), "the next battle arrived");
+        // A foreign /live dir read records without delivering: pending stays
+        // true so the overlay's own paths deliver it.
+        assert!(payload_pending(200, 100, true));
     }
 }

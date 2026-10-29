@@ -485,8 +485,10 @@ pub use capture::{
 };
 use capture::{compute_anchor, encode_png};
 pub use diag::{
-    __cmd__get_overlay_diag, __cmd__report_overlay_paint, __tauri_command_name_get_overlay_diag,
-    __tauri_command_name_report_overlay_paint, get_overlay_diag, report_overlay_paint,
+    __cmd__get_overlay_diag, __cmd__report_overlay_page_error, __cmd__report_overlay_paint,
+    __tauri_command_name_get_overlay_diag, __tauri_command_name_report_overlay_page_error,
+    __tauri_command_name_report_overlay_paint, get_overlay_diag, report_overlay_page_error,
+    report_overlay_paint,
 };
 use diag::{VerifyMachine, apply_verify_verdict, maybe_arm_verify, verify_marker_on_screen};
 use game_window::{

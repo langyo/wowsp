@@ -1414,6 +1414,18 @@ function reportPaint(
   void tauri.core.invoke("report_overlay_paint", { kind, rows }).catch(() => undefined);
 }
 
+/** Report an uncaught page error to the Rust log. An exception thrown inside
+ *  render() leaves an EMPTY body — a blank overlay — while the window, the
+ *  verify marker and every Rust-side signal stay green; that is exactly the
+ *  2026-10-29 shape ("only the pink dot shows"), and nothing but the page
+ *  itself can name the reason. */
+function reportPageError(origin: string, message: string): void {
+  if (!tauri) return;
+  void tauri.core
+    .invoke("report_overlay_page_error", { message: `${origin}: ${message}` })
+    .catch(() => undefined);
+}
+
 /** The verify marker node — attached to documentElement, NOT body:
  * render() wipes body on every event and the marker must survive the
  * verify window intact. */
@@ -1469,7 +1481,15 @@ function render() {
   // the honest waiting card, never the old EMPTY body — an empty body on a
   // transparent window read on screen as "nothing happened at all"
   // (feedback 2026-10-23).
-  if (!arena) {
+  //
+  // An arena whose roster is EMPTY is the same state: Lesta announces every
+  // battle with a vehicles-less tempArenaInfo.json and the probe's roster
+  // lands a beat later, so the first event can carry zero players. Without
+  // this guard that case fell through every later branch (no chips to loop
+  // over, no side cards, no "querying" badge) and painted a completely empty
+  // body for the whole battle — the 2026-10-29 report, where the Tab panel
+  // showed nothing but the verify marker from the second battle on.
+  if (!arena || arena.vehicles.length === 0) {
     root.appendChild(statusCard(localized("rosterHint")));
     reportPaint("waitingRoster", null);
     return;
@@ -2339,6 +2359,9 @@ async function start() {
   });
   await listen("wowsp://arena-info", (e: { payload: unknown }) => {
     const next = e.payload as ArenaInfo;
+    // Whether the page held a roster BEFORE this delivery — the repaint at the
+    // end of this handler only fires on the empty↔filled TRANSITION.
+    const hadRoster = (arena?.vehicles.length ?? 0) > 0;
     // A different battle's roster: drop the remembered sets (they belong
     // to the old battle) and reset the retry cadence — the new battle's
     // lookups start fresh.
@@ -2376,6 +2399,15 @@ async function start() {
       }
     }
     arena = next;
+    // Repaint ONLY when the roster's presence flipped: a payload that lands
+    // after the first (possibly empty) one must replace the waiting card with
+    // chips, while every other delivery stays render-free on purpose — the
+    // sink-attrib handler relies on no interim render (a render between a sink
+    // transition and the anchor of the same Rust pass reconciles the new set
+    // against the PRE-sink alive vector and degrades the side for the whole
+    // battle).
+    const hasRoster = (next?.vehicles.length ?? 0) > 0;
+    if (hadRoster !== hasRoster) render();
     scheduleBatch();
   });
   await listen("wowsp://overlay-status", (e: { payload: unknown }) => {
@@ -2526,7 +2558,10 @@ async function start() {
     // An anchor always precedes a show — reveal even if the visibility
     // event raced the listener registration above.
     document.documentElement.classList.remove("overlay-hidden");
-    if (!arena) {
+    // Also re-read while the roster itself is still EMPTY: a battle whose
+    // first event delivered zero players (the Lesta shape) heals on the next
+    // Tab press even if the backend's own re-delivery never ran.
+    if (!arena || arena.vehicles.length === 0) {
       try {
         const info = await invoke("read_temp_arena_info", { dir: null });
         if (info) arena = info as ArenaInfo;
@@ -2600,6 +2635,19 @@ function armDprWatch() {
   mq.addEventListener("change", onChange);
 }
 armDprWatch();
+
+// Uncaught page errors must reach the field log: the diagnostics channels
+// (paint report, verify marker) cannot see a thrown render(), and a blank
+// overlay with all app-side signals green was undiagnosable in the
+// 2026-10-29 bundle. Fire-and-forget — a dead page must not throw again
+// while reporting its own death.
+window.addEventListener("error", (e) => {
+  reportPageError("error", e.message || String(e.error ?? "unknown error"));
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e.reason as { message?: string } | undefined;
+  reportPageError("unhandledrejection", reason?.message ?? String(e.reason ?? "unknown"));
+});
 
 // Start hidden: the native window is created invisible, but a dev reload or
 // a late event could otherwise leave stale content painted over the game.

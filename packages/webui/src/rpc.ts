@@ -75,6 +75,7 @@ export const RPC = {
   copy_image_to_clipboard: "copy_image_to_clipboard",
   read_temp_arena_info: "read_temp_arena_info",
   report_overlay_paint: "report_overlay_paint",
+  report_overlay_page_error: "report_overlay_page_error",
   get_overlay_diag: "get_overlay_diag",
   start_arena_watcher: "start_arena_watcher",
   stop_arena_watcher: "stop_arena_watcher",
