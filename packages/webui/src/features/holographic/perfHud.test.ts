@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createPerfHud,
+  PERF_HUD_HOVER_OPACITY,
   PERF_HUD_STORAGE_KEY,
   perfHudRequested,
 } from "./perfHud";
@@ -114,6 +115,69 @@ describe("createPerfHud", () => {
     expect(() => hud!.dispose()).not.toThrow();
     expect(() => hud!.tickIdle()).not.toThrow();
     expect(() => hud!.tickRendered(fakeRenderer(), 5000)).not.toThrow();
+    expect(document.querySelector(".holo-perf-hud")).toBeNull();
+  });
+});
+
+describe("hover dim", () => {
+  /** Pin the overlay box — happy-dom performs no layout, so the real
+   *  getBoundingClientRect would report a zero-area rect at the origin. */
+  function mockRect(
+    el: HTMLElement,
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+  ): void {
+    vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
+      left,
+      top,
+      right: left + width,
+      bottom: top + height,
+      width,
+      height,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    } as DOMRect);
+  }
+
+  function move(x: number, y: number): void {
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y }));
+  }
+
+  it("dims while the pointer rests on it and restores when it leaves", () => {
+    const hud = createPerfHud(true);
+    const el = document.querySelector(".holo-perf-hud") as HTMLElement;
+    mockRect(el, 12, 48, 220, 64);
+    move(100, 70); // inside
+    expect(el.style.opacity).toBe(String(PERF_HUD_HOVER_OPACITY));
+    move(400, 400); // outside
+    expect(el.style.opacity).toBe("");
+    hud!.dispose();
+  });
+
+  it("a zero-area box never dims (no layout yet)", () => {
+    const hud = createPerfHud(true);
+    const el = document.querySelector(".holo-perf-hud") as HTMLElement;
+    mockRect(el, 12, 48, 0, 0);
+    // Exactly the collapsed origin — the exclusive right/bottom edges must
+    // keep this from counting as a hover hit.
+    move(12, 48);
+    expect(el.style.opacity).toBe("");
+    hud!.dispose();
+  });
+
+  it("stops reacting after dispose", () => {
+    const hud = createPerfHud(true);
+    const el = document.querySelector(".holo-perf-hud") as HTMLElement;
+    mockRect(el, 0, 0, 220, 64);
+    move(50, 20); // inside — dimmed
+    expect(el.style.opacity).toBe(String(PERF_HUD_HOVER_OPACITY));
+    hud!.dispose();
+    expect(() => move(400, 400)).not.toThrow(); // outside — listener must be gone
+    // Frozen at the dim: the leave-move above must not have restored it.
+    expect(el.style.opacity).toBe(String(PERF_HUD_HOVER_OPACITY));
     expect(document.querySelector(".holo-perf-hud")).toBeNull();
   });
 });

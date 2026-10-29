@@ -11,6 +11,10 @@
  * how many fps / how many draws" gets answered from a screenshot. It owns
  * no timer — the scene's own tick feeds it.
  *
+ * The overlay never intercepts the pointer (clicks pass straight through);
+ * when the cursor rests on it, it dims itself far down so it never hides
+ * the UI underneath.
+ *
  * Activation (see {@link perfHudRequested}):
  *   - `?perf=1` on the page URL forces it on for this load;
  *   - `?perf=0` forces it off (wins over the stored preference);
@@ -24,6 +28,10 @@ import * as THREE from "three";
 const WINDOW_MS = 2000;
 /** Overlay refresh cadence (text only — never the scene). */
 const REPORT_MS = 500;
+/** Opacity while the pointer rests on the overlay — a big dim, not a hide. */
+export const PERF_HUD_HOVER_OPACITY = 0.15;
+/** Hover fade duration, ms. */
+const HOVER_FADE_MS = 150;
 
 /** localStorage key that keeps the overlay up across reloads. */
 export const PERF_HUD_STORAGE_KEY = "wowsp.perf";
@@ -52,6 +60,17 @@ export function perfHudRequested(
   return readStored() === "1";
 }
 
+/** Whether a client-space point sits inside a box. The right/bottom edges
+ *  compare exclusively, so a zero-area box (no layout yet — fresh test DOM,
+ *  hidden element) never reports a hit at its own collapsed origin. */
+function pointerInRect(
+  rect: { left: number; right: number; top: number; bottom: number },
+  x: number,
+  y: number,
+): boolean {
+  return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
+}
+
 export interface PerfHud {
   /** Called right after renderer.render(): records one rendered frame. */
   tickRendered(renderer: THREE.WebGLRenderer, now: number): void;
@@ -78,7 +97,12 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
     "color:#8fe3ff",
     "font:11px/1.6 ui-monospace,Consolas,monospace",
     "white-space:pre",
+    // Fully click-through: everything under the overlay stays interactive.
     "pointer-events:none",
+    // The hover dim is coordinate-driven (see the pointer tracker below)
+    // because :hover can never fire on a pointer-events:none element.
+    "opacity:1",
+    "transition:opacity " + HOVER_FADE_MS + "ms ease",
   ].join(";");
   document.body.appendChild(el);
 
@@ -90,6 +114,24 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
   let gpu = "";
   let lastReport = 0;
   let disposed = false;
+
+  // Dim while the pointer rests on the overlay. pointer-events:none already
+  // lets every click reach the UI underneath; since :hover can never fire on
+  // such an element, the dim watches window-level mouse coordinates and
+  // compares them against the overlay's box instead.
+  const setHover = (on: boolean): void => {
+    el.style.opacity = on ? String(PERF_HUD_HOVER_OPACITY) : "";
+  };
+  const onPointerMove = (ev: MouseEvent): void => {
+    if (disposed) return;
+    setHover(pointerInRect(el.getBoundingClientRect(), ev.clientX, ev.clientY));
+  };
+  const onPointerGone = (): void => {
+    if (!disposed) setHover(false);
+  };
+  window.addEventListener("mousemove", onPointerMove, { passive: true });
+  window.addEventListener("blur", onPointerGone);
+  document.documentElement.addEventListener("mouseleave", onPointerGone);
 
   const percentile = (sorted: number[], p: number): number =>
     sorted.length === 0
@@ -168,6 +210,9 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
     },
     dispose() {
       disposed = true;
+      window.removeEventListener("mousemove", onPointerMove);
+      window.removeEventListener("blur", onPointerGone);
+      document.documentElement.removeEventListener("mouseleave", onPointerGone);
       el.remove();
     },
   };
