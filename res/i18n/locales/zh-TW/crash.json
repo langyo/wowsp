@@ -41,7 +41,9 @@
     "ignored": "已忽略的警告",
     "ignoredEmpty": "沒有已忽略的警告。",
     "restoreWarning": "恢復警告",
-    "recordDetail": "崩潰詳情"
+    "recordDetail": "崩潰詳情",
+    "resetAll": "重設全部記錄",
+    "resetDone": "已重設 {count} 筆崩潰記錄"
   },
   "findings": {
     "exceptionAccessViolation": "存取違例 —— 用戶端讀寫了無權存取的記憶體",

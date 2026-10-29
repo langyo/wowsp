@@ -41,7 +41,9 @@
     "ignored": "무시한 경고",
     "ignoredEmpty": "무시한 경고가 없습니다.",
     "restoreWarning": "경고 복원",
-    "recordDetail": "크래시 보고서"
+    "recordDetail": "크래시 보고서",
+    "resetAll": "전체 기록 초기화",
+    "resetDone": "크래시 기록 {count}건을 초기화했습니다"
   },
   "findings": {
     "exceptionAccessViolation": "액세스 위반 —— 클라이언트가 권한 없는 메모리에 읽기/쓰기를 했습니다",

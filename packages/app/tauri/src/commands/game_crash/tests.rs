@@ -1053,3 +1053,51 @@ fn proactive_scan_skips_toolchain_stubs() {
     assert!(!assets.contains(&"__forge_stub.swf"), "{assets:?}");
     assert!(!assets.contains(&"forgedefinitions.swf"), "{assets:?}");
 }
+
+// ── the pending-record reset (clean-exit + manual dismiss-all) ───────────────
+
+#[test]
+fn dismiss_all_resets_only_the_new_records() {
+    let dir = TempDir::new("dismiss-all");
+    let root = dir.path().to_string_lossy().into_owned();
+    append_record_in(dir.path(), &sample_record("gc-keep-new", Some(&root))).unwrap();
+    let mut settled = sample_record("gc-already-dismissed", Some(&root));
+    settled.status = STATUS_DISMISSED.to_string();
+    append_record_in(dir.path(), &settled).unwrap();
+
+    let flipped = dismiss_new_records_in(dir.path()).unwrap();
+    assert_eq!(flipped.len(), 1, "{flipped:?}");
+    assert_eq!(flipped[0].id, "gc-keep-new");
+    assert_eq!(flipped[0].status, STATUS_DISMISSED);
+
+    let records = load_history_in(dir.path()).unwrap().unwrap();
+    let status_of = |id: &str| {
+        records
+            .iter()
+            .find(|r| r.id == id)
+            .unwrap_or_else(|| panic!("{id} missing"))
+            .status
+            .clone()
+    };
+    assert_eq!(status_of("gc-keep-new"), STATUS_DISMISSED);
+    assert_eq!(status_of("gc-already-dismissed"), STATUS_DISMISSED);
+
+    // Idempotent: a second pass over the settled history flips nothing.
+    assert!(dismiss_new_records_in(dir.path()).unwrap().is_empty());
+}
+
+#[test]
+fn dismiss_all_without_history_is_an_empty_ok() {
+    let dir = TempDir::new("dismiss-all-no-file");
+    assert!(dismiss_new_records_in(dir.path()).unwrap().is_empty());
+}
+
+#[test]
+fn dismiss_all_survives_a_backfill_only_tombstone_dir() {
+    // The seen-file alone (no history yet) must not error the reset — the
+    // backfill may have run before any record existed.
+    let dir = TempDir::new("dismiss-all-seen-only");
+    save_seen_in(dir.path(), &["evt:42".to_string()]);
+    assert!(dismiss_new_records_in(dir.path()).unwrap().is_empty());
+    assert_eq!(load_seen_in(dir.path()), vec!["evt:42".to_string()]);
+}

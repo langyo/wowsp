@@ -41,7 +41,9 @@
     "ignored": "Avertissements ignorés",
     "ignoredEmpty": "Aucun avertissement ignoré.",
     "restoreWarning": "Restaurer l'avertissement",
-    "recordDetail": "Rapport de plantage"
+    "recordDetail": "Rapport de plantage",
+    "resetAll": "Réinitialiser toutes les entrées",
+    "resetDone": "{count} entrées de plantage réinitialisées."
   },
   "findings": {
     "exceptionAccessViolation": "Violation d'accès — le client a lu ou écrit une mémoire qui ne lui appartient pas",

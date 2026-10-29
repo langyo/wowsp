@@ -41,7 +41,9 @@
     "ignored": "Ignored warnings",
     "ignoredEmpty": "No ignored warnings.",
     "restoreWarning": "Restore warning",
-    "recordDetail": "Crash report"
+    "recordDetail": "Crash report",
+    "resetAll": "Reset all records",
+    "resetDone": "Reset {count} crash records."
   },
   "findings": {
     "exceptionAccessViolation": "Access violation — the client read or wrote memory it does not own",

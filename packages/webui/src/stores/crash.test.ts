@@ -16,6 +16,7 @@ vi.mock("@/api", () => ({
     listenGameCrash: vi.fn((_handler: unknown) => Promise.resolve(() => undefined)),
     listGameCrashes: vi.fn(),
     dismissGameCrash: vi.fn(),
+    dismissAllGameCrashes: vi.fn(),
     analyzeGameCrash: vi.fn(),
     exportGameCrashReport: vi.fn(),
     listQuarantinedMods: vi.fn(),
@@ -41,6 +42,7 @@ const mocked = {
   listen: vi.mocked(api.listenGameCrash),
   list: vi.mocked(api.listGameCrashes),
   dismiss: vi.mocked(api.dismissGameCrash),
+  dismissAll: vi.mocked(api.dismissAllGameCrashes),
   analyze: vi.mocked(api.analyzeGameCrash),
   export: vi.mocked(api.exportGameCrashReport),
   quarantined: vi.mocked(api.listQuarantinedMods),
@@ -93,6 +95,7 @@ beforeEach(() => {
   mocked.listen.mockImplementation((_handler: unknown) => Promise.resolve(() => undefined));
   mocked.list.mockResolvedValue([] as never);
   mocked.dismiss.mockResolvedValue(null as never);
+  mocked.dismissAll.mockResolvedValue(0 as never);
   mocked.analyze.mockResolvedValue(analysis as never);
   mocked.export.mockResolvedValue("C:\\exports\\crash.zip" as never);
   mocked.quarantined.mockResolvedValue([] as never);
@@ -219,6 +222,35 @@ describe("useCrashStore.dismiss", () => {
     await crash.dismiss("old");
 
     expect(crash.activeRecord?.id).toBe("live");
+  });
+});
+
+describe("useCrashStore.dismissAll", () => {
+  it("resets every record backend-side and reloads, dropping the prompt", async () => {
+    mocked.dismissAll.mockResolvedValue(2 as never);
+    mocked.list.mockResolvedValue([
+      record({ id: "a", status: "dismissed" }),
+      record({ id: "b", status: "dismissed" }),
+    ] as never);
+    const crash = useCrashStore();
+    crash.activeRecord = record({ id: "a" });
+    crash.history = [record({ id: "a" }), record({ id: "b", status: "new" })];
+
+    const count = await crash.dismissAll();
+
+    expect(count).toBe(2);
+    expect(mocked.dismissAll).toHaveBeenCalledOnce();
+    expect(mocked.list).toHaveBeenCalled();
+    expect(crash.activeRecord).toBeNull();
+    expect(crash.history.every((r) => r.status === "dismissed")).toBe(true);
+  });
+
+  it("propagates backend refusals to the calling surface", async () => {
+    mocked.dismissAll.mockRejectedValue(new Error("nope") as never);
+    const crash = useCrashStore();
+
+    await expect(crash.dismissAll()).rejects.toThrow("nope");
+    expect(mocked.list).not.toHaveBeenCalled();
   });
 });
 

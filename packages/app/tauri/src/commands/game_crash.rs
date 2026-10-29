@@ -380,6 +380,31 @@ fn dismiss_record_in(dir: &Path, record_id: &str) -> anyhow::Result<()> {
     super::appdata::write_json_in(dir, HISTORY_FILE, &serde_json::to_string(&records)?)
 }
 
+/// Flip EVERY status=new record to dismissed — the reset behind the
+/// "pending crash re-toasts on every boot" complaint: once the player has
+/// moved past a crash (the client ran again and exited cleanly, or they
+/// reset by hand) the record must stop resurfacing. The history itself is
+/// kept — only the pending state is cleared. Returns the flipped records
+/// so the caller can broadcast them (the store drops its live prompt as
+/// each dismissed status lands).
+fn dismiss_new_records_in(dir: &Path) -> anyhow::Result<Vec<GameCrashRecord>> {
+    let _guard = HISTORY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(mut records) = load_history_in(dir)? else {
+        return Ok(Vec::new());
+    };
+    let mut flipped = Vec::new();
+    for record in records.iter_mut() {
+        if record.status == STATUS_NEW {
+            record.status = STATUS_DISMISSED.to_string();
+            flipped.push(record.clone());
+        }
+    }
+    if !flipped.is_empty() {
+        super::appdata::write_json_in(dir, HISTORY_FILE, &serde_json::to_string(&records)?)?;
+    }
+    Ok(flipped)
+}
+
 /// One record lookup, newest first.
 fn find_record_in(dir: &Path, record_id: &str) -> anyhow::Result<Option<GameCrashRecord>> {
     Ok(load_history_in(dir)?.and_then(|records| records.into_iter().find(|r| r.id == record_id)))
@@ -799,6 +824,7 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
     let Some(evidence) = collect_crash_evidence(&seen.image, seen.exe_path.as_deref(), pid, window)
     else {
         tracing::info!(pid, image = %seen.image, "game client exited cleanly (no crash evidence)");
+        reset_new_records(app);
         return;
     };
     let record = build_crash_record(pid, &seen, &evidence);
@@ -831,6 +857,41 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
         module = ?record.faulting_module,
         source = %record.source,
         "game client crash detected"
+    );
+}
+
+/// The clean-exit auto-reset: a client that ran and left NO crash evidence
+/// is the "things are normal again" signal — every still-pending crash
+/// record stops resurfacing (new -> dismissed), and each flipped record
+/// rides the usual game-crash event so the windows drop the prompt live.
+/// The reset is global rather than per-install on purpose: the pending
+/// state's whole job is "deal with the crash", and any healthy session
+/// answers that. Failures are logged, never fatal — the records stay new
+/// until the next clean exit or a manual reset.
+#[cfg(windows)]
+fn reset_new_records(app: &tauri::AppHandle) {
+    let Ok(dir) = super::appdata::appdata_dir_path() else {
+        return;
+    };
+    let flipped = match dismiss_new_records_in(&dir) {
+        Ok(flipped) => flipped,
+        Err(e) => {
+            tracing::warn!(error = %e, "clean-exit crash-record reset failed");
+            return;
+        },
+    };
+    if flipped.is_empty() {
+        return;
+    }
+    use tauri::Emitter;
+    for record in &flipped {
+        if let Err(e) = app.emit(GAME_CRASH_EVENT, record) {
+            tracing::warn!(error = %e, "emit crash-record reset failed");
+        }
+    }
+    tracing::info!(
+        count = flipped.len(),
+        "clean exit reset the pending crash records"
     );
 }
 
@@ -3153,6 +3214,15 @@ pub fn game_crash_list() -> CommandResult<Vec<GameCrashRecord>> {
 pub fn game_crash_dismiss(record_id: String) -> CommandResult<()> {
     let dir = super::appdata::appdata_dir_path()?;
     Ok(dismiss_record_in(&dir, &record_id)?)
+}
+
+/// Reset every crash record in one pass: new -> dismissed, history kept.
+/// The records window's reset button answers the persistent per-boot
+/// re-toast directly. Returns the flipped count.
+#[tauri::command]
+pub fn game_crash_dismiss_all() -> CommandResult<usize> {
+    let dir = super::appdata::appdata_dir_path()?;
+    Ok(dismiss_new_records_in(&dir)?.len())
 }
 
 /// The analysis pass for one record: findings + log excerpts + mods
