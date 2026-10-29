@@ -18,6 +18,14 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Stray ESM scratch scripts (glbtest.mjs-class one-offs) stay out of the
+# tree: repo sources are .ts/.py by convention. The single sanctioned .mjs
+# is the tracked scripts/experiments/extract_glb_positions.mjs, which node
+# runs directly (meshopt GLB decoding — see its header); it is
+# re-included explicitly so it survives untrack/re-add cycles.
+*.mjs
+!scripts/experiments/extract_glb_positions.mjs
+
 # Environment variables
 .env
 .env.local
