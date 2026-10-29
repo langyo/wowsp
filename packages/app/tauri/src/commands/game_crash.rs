@@ -87,6 +87,10 @@ const EVIDENCE_SLACK_SECS: i64 = 30;
 pub const SOURCE_EVENT_LOG: &str = "event-log";
 pub const SOURCE_WER_REPORT: &str = "wer-report";
 pub const SOURCE_CRASH_DUMP: &str = "crash-dump";
+/// WG's own crash handler reports under <game>/crashes — on installs whose
+/// WER handoff is suppressed (the observed CN/Steam shape) this folder is
+/// the ONLY durable crash evidence.
+pub const SOURCE_GAME_REPORT: &str = "game-report";
 
 /// Record lifecycle: a fresh detection is "new"; the webui's dismiss
 /// action flips it so the prompt does not reappear.
@@ -465,8 +469,23 @@ fn mutate_quarantine(
     let (_, quarantine_dir) = quarantine_dir_of(root)?;
     fs::create_dir_all(&quarantine_dir)?;
 
+    // The quarantine SOURCE follows the same active-or-twin rule the
+    // analysis reads: a crash already answered with safe mode leaves every
+    // mod in the twin, and the pinned file must still be quarantineable
+    // from there. Restore always lands in the ACTIVE res_mods.
+    // The quarantine SOURCE is wherever the subject actually lives: the
+    // active res_mods first, then the safe-mode twin — a crash already
+    // answered with safe mode leaves the whole mod set in the twin and the
+    // pinned file must still be quarantineable from there. Restore always
+    // lands in the ACTIVE res_mods.
     let (source, target) = if quarantining {
-        (res_mods.join(&name), quarantine_dir.join(&name))
+        let subject = if res_mods.join(&name).exists() {
+            res_mods.join(&name)
+        } else {
+            super::mod_hub::disabled_res_mods(quarantine_dir.parent().unwrap_or(Path::new(root)))
+                .join(&name)
+        };
+        (subject, quarantine_dir.join(&name))
     } else {
         (quarantine_dir.join(&name), res_mods.join(&name))
     };
@@ -1242,6 +1261,34 @@ fn attributed_image(event: &ParsedEvent, images: &[String], window: (i64, i64)) 
         .cloned()
 }
 
+/// Which known client image a WG crash-report FILENAME belongs to: the
+/// name spells <image-stem>-YYYY-MM-DD_HH-MM-SS.crash — the stem must
+/// match as a delimited prefix (same token rule as the WER scan, so the
+/// 32-bit stem never claims a 64-bit report).
+#[cfg(windows)]
+fn crash_report_image(file_name: &str, stems: &[String]) -> Option<String> {
+    let lower = file_name.to_ascii_lowercase();
+    stems.iter().find_map(|stem| {
+        lower
+            .strip_prefix(&format!("{}-", stem))
+            .map(|_| format!("{}.exe", stem))
+    })
+}
+
+/// The candidate summary: the report first line names the exe and the
+/// crash time — bounded read, one line, no secrets.
+#[cfg(windows)]
+fn crash_report_summary(path: &Path) -> String {
+    match read_tail(path, 512) {
+        Ok((bytes, _, _)) => String::from_utf8_lossy(&bytes)
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_string(),
+        Err(_) => String::new(),
+    }
+}
+
 /// Harvest every historical crash candidate inside the lookback window.
 #[cfg(windows)]
 fn harvest_backfill_candidates() -> Vec<BackfillCandidate> {
@@ -1360,6 +1407,54 @@ fn harvest_backfill_candidates() -> Vec<BackfillCandidate> {
             }
         }
     }
+    // WG crash-handler reports: <game>/crashes/<image>-<stamp>.crash. On
+    // installs whose WER handoff is suppressed this folder is the ONLY
+    // durable evidence — the observed machine had zero event-log and WER
+    // entries for a crash that left two reports here.
+    let stems: Vec<String> = images.iter().map(|i| image_stem(i)).collect();
+    let mut roots: Vec<String> = super::game_context::cached_scan()
+        .iter()
+        .map(|install| install.path.clone())
+        .collect();
+    if let Some(active) = super::game_context::persisted_active_path() {
+        if !roots.iter().any(|r| r.eq_ignore_ascii_case(&active)) {
+            roots.push(active);
+        }
+    }
+    for root in &roots {
+        let dir = Path::new(root).join("crashes");
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let lower = name.to_ascii_lowercase();
+            if !lower.ends_with(".crash") {
+                continue;
+            }
+            let Some(image) = crash_report_image(&name, &stems) else {
+                continue;
+            };
+            let Ok(meta) = entry.metadata() else { continue };
+            let Some(at) = meta.modified().ok().map(unix_secs) else {
+                continue;
+            };
+            if at < window.0 || at > window.1 {
+                continue;
+            }
+            candidates.push(BackfillCandidate {
+                evidence_id: format!("wgc:{name}"),
+                at_unix: at,
+                image,
+                priority: 1,
+                exception_code: None,
+                faulting_module: None,
+                report_path: Some(entry.path().to_string_lossy().into_owned()),
+                dump_path: None,
+                summary: crash_report_summary(&entry.path()),
+            });
+        }
+    }
     candidates
 }
 
@@ -1428,6 +1523,7 @@ fn backfill_recent(app: &tauri::AppHandle) -> anyhow::Result<Vec<GameCrashRecord
             source: match candidate.evidence_id.split(':').next() {
                 Some("evt") => SOURCE_EVENT_LOG.to_string(),
                 Some("wer") => SOURCE_WER_REPORT.to_string(),
+                Some("wgc") => SOURCE_GAME_REPORT.to_string(),
                 _ => SOURCE_CRASH_DUMP.to_string(),
             },
             exception_code: candidate.exception_code.clone(),

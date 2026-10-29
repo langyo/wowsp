@@ -25,7 +25,7 @@ export interface GameCrashRecord {
   /** Game build string when the install's version could be read. */
   gameBuild?: string | null;
   /** Which evidence source produced the record. */
-  source: "event-log" | "wer-report" | "crash-dump";
+  source: "event-log" | "wer-report" | "crash-dump" | "game-report";
   /** Windows exception code, hex string ("0xC0000005"), when known. */
   exceptionCode?: string | null;
   faultingModule?: string | null;

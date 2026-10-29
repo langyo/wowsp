@@ -16,7 +16,8 @@
     "source": {
       "eventLog": "Windows event log",
       "werReport": "WER report",
-      "crashDump": "Crash dump"
+      "crashDump": "Crash dump",
+      "gameReport": "WG crash report"
     },
     "gameLogs": "Game logs",
     "appLogs": "WoWSP logs",

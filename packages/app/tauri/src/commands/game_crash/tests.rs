@@ -862,3 +862,67 @@ fn findings_flag_dangling_ui_references_as_critical() {
         Some("gui/flash/battle_stats.swf")
     );
 }
+
+// ── WG crash-report harvest ──────────────────────────────────────────────────
+
+#[cfg(windows)]
+#[test]
+fn crash_report_image_discriminates_the_32_64_names() {
+    let stems: Vec<String> = [
+        "worldofwarships",
+        "worldofwarships64",
+        "korabli",
+        "korabli64",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    assert_eq!(
+        crash_report_image("WorldOfWarships64-2026-10-28_16-49-56.crash", &stems,).as_deref(),
+        Some("worldofwarships64.exe"),
+        "the 64-bit report belongs to the 64-bit image"
+    );
+    assert_eq!(
+        crash_report_image("WorldOfWarships-2026-05-27_15-08-11.crash", &stems).as_deref(),
+        Some("worldofwarships.exe"),
+    );
+    assert_eq!(
+        crash_report_image("Korabli64-2026-01-01_00-00-00.crash", &stems).as_deref(),
+        Some("korabli64.exe"),
+    );
+    assert_eq!(crash_report_image("something-else.crash", &stems), None);
+}
+
+#[test]
+fn quarantine_reaches_into_the_safe_mode_twin() {
+    let dir = TempDir::new("quarantine-twin");
+    let root = dir.path().to_str().unwrap().to_string();
+    // Safe mode shape: the active res_mods is EMPTY (game-recreated), the
+    // whole mod set lives in the twin — the crash-pinned file included.
+    dir.touch("bin/8/res_mods/.keep", "");
+    dir.touch(
+        "bin/8/res_mods.wowsp-disabled/gui/battle_elements.xml",
+        "<element url=battle_stats.swf>",
+    );
+    super::super::mod_hub::test_allow_game_root(&root);
+    let entries = mutate_quarantine(&root, "gui/battle_elements.xml", None, true)
+        .expect("quarantine from the twin");
+    assert_eq!(entries[0].name, "gui/battle_elements.xml");
+    assert!(
+        dir.path()
+            .join("bin/8/res_mods.wowsp-quarantine/gui/battle_elements.xml")
+            .exists()
+    );
+    assert!(
+        !dir.path()
+            .join("bin/8/res_mods.wowsp-disabled/gui/battle_elements.xml")
+            .exists()
+    );
+    // Restore lands in the ACTIVE res_mods (mods come back where the game reads them).
+    mutate_quarantine(&root, "gui/battle_elements.xml", None, false).expect("restore");
+    assert!(
+        dir.path()
+            .join("bin/8/res_mods/gui/battle_elements.xml")
+            .exists()
+    );
+}

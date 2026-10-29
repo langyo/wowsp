@@ -16,7 +16,8 @@
     "source": {
       "eventLog": "Журнал событий Windows",
       "werReport": "Отчёт WER",
-      "crashDump": "Дамп аварийного завершения"
+      "crashDump": "Дамп аварийного завершения",
+      "gameReport": "Отчёт сбоя WG"
     },
     "gameLogs": "Журналы игры",
     "appLogs": "Журналы WoWSP",
