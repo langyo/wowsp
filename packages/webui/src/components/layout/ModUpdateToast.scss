@@ -13,19 +13,19 @@
   z-index: var(--hk-z-toast, 4000);
   display: flex;
   flex-direction: column;
-  gap: var(--hi-space-8, 8px);
+  gap: var(--space-8);
   width: 22rem;
   max-width: calc(100vw - 2rem);
-  padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
-  border-radius: var(--hi-radius-sm, 4px);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-sm);
   background: var(--hi-color-info, #58a6ff);
   color: #fff;
-  font-size: var(--hi-text-base, 0.875rem);
+  font-size: var(--text-base);
   line-height: 1.4;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(12px);
   pointer-events: auto;
-  animation: mod-update-toast-in var(--hi-duration-normal, 0.3s)
+  animation: mod-update-toast-in var(--duration-normal)
     cubic-bezier(0.22, 0.61, 0.36, 1);
   // Leave counterpart of the enter keyframe: the card fades and slides
   // out instead of snapping away when the pass ends (the component holds
@@ -61,7 +61,7 @@
 .mod-update-toast__row {
   display: flex;
   align-items: center;
-  gap: var(--hi-space-8, 8px);
+  gap: var(--space-8);
 }
 
 .mod-update-toast__icon {

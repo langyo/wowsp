@@ -10,13 +10,13 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--hi-space-12, 12px);
+    gap: var(--space-12);
   }
 
   &__enroll-copy {
     margin: 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   // Wizard-only row now (the intro step's 署名账户 picker field); the
@@ -25,10 +25,10 @@
     display: flex;
     flex-wrap: wrap;
     align-items: flex-end;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
 
     &--wizard {
-      margin-top: var(--hi-space-12, 12px);
+      margin-top: var(--space-12);
     }
   }
 
@@ -47,13 +47,13 @@
   &__meta {
     display: flex;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     flex-wrap: wrap;
   }
 
   &__meta-label {
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__consent {
@@ -61,14 +61,14 @@
     padding-left: 1.2em;
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-4, 4px);
+    gap: var(--space-4);
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__counts {
     display: flex;
-    gap: var(--hi-space-24, 24px);
+    gap: var(--space-24);
     flex-wrap: wrap;
   }
 
@@ -79,52 +79,52 @@
   }
 
   &__count-num {
-    font-size: var(--hi-text-lg, 1.125rem);
+    font-size: var(--text-lg);
     font-weight: 600;
   }
 
   &__count-label {
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
   }
 
   &__sync-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     flex-wrap: wrap;
   }
 
   &__sync-label {
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
   }
 
   &__sync-actions {
     display: flex;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
   }
 
   // ── wizard (body inside the secondary HkModal) ─────────────────────────
 
   &__modal-hint {
-    margin: 0 0 var(--hi-space-12, 12px);
+    margin: 0 0 var(--space-12);
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__step {
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-12, 12px);
+    gap: var(--space-12);
     min-width: 0;
   }
 
   &__select-head {
     display: flex;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     flex-wrap: wrap;
   }
 
@@ -133,15 +133,15 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--hi-space-12, 12px);
-    padding: var(--hi-space-24, 24px) var(--hi-space-16, 16px);
+    gap: var(--space-12);
+    padding: var(--space-24) var(--space-16);
     min-height: 16rem;
   }
 
   &__hero-actions {
     display: flex;
-    gap: var(--hi-space-8, 8px);
-    padding-top: var(--hi-space-4, 4px);
+    gap: var(--space-8);
+    padding-top: var(--space-4);
   }
 
   &__mode-dot {
@@ -156,17 +156,17 @@
   &__plan-note {
     display: flex;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     margin: 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__empty {
     margin: 0;
-    padding: var(--hi-space-24, 24px) 0;
+    padding: var(--space-24) 0;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
     text-align: center;
   }
 
@@ -185,18 +185,18 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
   }
 
   &__card {
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: var(--hi-space-12, 12px);
-    padding: var(--hi-space-10, 10px) var(--hi-space-14, 14px);
+    gap: var(--space-12);
+    padding: var(--space-10) var(--space-14);
     min-height: 3.5rem;
     border: 1px solid var(--hi-color-border);
-    border-radius: var(--hi-radius-md, 6px);
+    border-radius: var(--radius-md);
     background: var(--hi-color-surface, transparent);
     transition: border-color 0.15s ease, background 0.15s ease;
 
@@ -206,14 +206,14 @@
 
     &--on {
       border-color: var(--hi-color-primary);
-      background: var(--hi-color-primary-bg, color-mix(in srgb, var(--hi-color-primary) 8%, transparent));
+      background: rgb(var(--color-primary) / 8%);
     }
   }
 
   &__card-main {
     display: flex;
     align-items: center;
-    gap: var(--hi-space-12, 12px);
+    gap: var(--space-12);
     min-width: 0;
     cursor: pointer;
   }
@@ -228,14 +228,14 @@
   &__card-head {
     display: flex;
     align-items: baseline;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     min-width: 0;
   }
 
   &__card-class {
     flex: none;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
   }
 
   &__card-spacer {
@@ -249,14 +249,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
   }
 
   &__card-tagrow {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--hi-space-4, 4px);
+    gap: var(--space-4);
     min-width: 0;
     margin-top: 2px;
   }
@@ -266,12 +266,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
   }
 
   &__card-title {
     font-weight: 600;
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -283,25 +283,25 @@
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    gap: var(--hi-space-4, 4px);
+    gap: var(--space-4);
     flex: none;
   }
 
   &__summary {
     display: flex;
     align-items: center;
-    gap: var(--hi-space-16, 16px);
+    gap: var(--space-16);
     flex-wrap: wrap;
-    padding-top: var(--hi-space-4, 4px);
+    padding-top: var(--space-4);
     border-top: 1px solid var(--hi-color-border);
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   &__stages {
     display: flex;
     align-items: center;
-    gap: var(--hi-space-12, 12px);
+    gap: var(--space-12);
     flex-wrap: wrap;
   }
 
@@ -313,11 +313,11 @@
     border-radius: 999px;
     border: 1px solid var(--hi-color-border);
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
 
     &--done {
       color: var(--hi-color-success);
-      border-color: var(--hi-color-success-border, var(--hi-color-success));
+      border-color: var(--hi-color-success);
     }
 
     &--active {
@@ -329,16 +329,16 @@
   &__progress {
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-4, 4px);
+    gap: var(--space-4);
   }
 
   &__progress-note {
     margin: 0;
     display: flex;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   /* Upload outcomes: the capped window — same scroller shape as the
@@ -355,15 +355,15 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-4, 4px);
+    gap: var(--space-4);
   }
 
   &__outcome {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--hi-space-8, 8px);
-    font-size: var(--hi-text-xs, 0.75rem);
+    gap: var(--space-8);
+    font-size: var(--text-xs);
   }
 
   &__outcome-name {
@@ -381,7 +381,7 @@
 
   &__done-line {
     margin: 0;
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
   }
 
   // ── contributors list ──────────────────────────────────────────────────
@@ -389,38 +389,38 @@
   &__contrib-groups {
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-12, 12px);
+    gap: var(--space-12);
   }
 
   &__contrib-group {
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
   }
 
   &__contrib-realm {
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
     font-weight: 600;
     letter-spacing: 0.08em;
-    color: var(--hi-color-text-tertiary, var(--hi-color-text-secondary));
+    color: var(--hi-color-text-secondary);
   }
 
   &__contrib-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
   }
 
   &__contrib-chip {
     display: inline-flex;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     padding: 4px 10px;
     border: 1px solid var(--hi-color-border);
     border-radius: 999px;
-    background: var(--hi-color-fill-secondary, rgba(128, 128, 128, 0.1));
+    background: rgb(var(--color-text) / 10%);
     cursor: pointer;
-    font-size: var(--hi-text-sm, 0.8125rem);
+    font-size: var(--text-sm);
 
     &:hover {
       border-color: var(--hi-color-primary);
@@ -428,7 +428,7 @@
 
     &--self {
       border-color: var(--hi-color-primary);
-      background: var(--hi-color-primary-bg, rgba(64, 128, 255, 0.1));
+      background: rgb(var(--color-primary) / 8%);
     }
   }
 
@@ -441,7 +441,7 @@
 
   &__contrib-self {
     color: var(--hi-color-primary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
   }
 
   &__contrib-count {
@@ -449,9 +449,9 @@
     min-width: 1.4em;
     padding: 0 6px;
     border-radius: 999px;
-    background: var(--hi-color-fill, rgba(128, 128, 128, 0.2));
+    background: rgb(var(--color-text) / 20%);
     color: var(--hi-color-text-secondary);
-    font-size: var(--hi-text-xs, 0.75rem);
+    font-size: var(--text-xs);
     text-align: center;
     line-height: 1.5;
   }

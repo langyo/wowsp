@@ -160,8 +160,8 @@
 .chat-settings__test-error {
   padding: 0.45rem 0.6rem;
   border-radius: var(--radius-sm, 6px);
-  background: rgb(var(--color-danger, 220 60 60) / 12%);
-  color: rgb(var(--color-danger-text, 210 70 70));
+  background: rgb(var(--color-error) / 12%);
+  color: rgb(var(--color-error));
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }

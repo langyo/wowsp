@@ -11,19 +11,19 @@
   z-index: var(--hk-z-toast, 4000);
   display: flex;
   flex-direction: column;
-  gap: var(--hi-space-8, 8px);
+  gap: var(--space-8);
   width: 22rem;
   max-width: calc(100vw - 2rem);
-  padding: var(--hi-space-12, 12px) var(--hi-space-16, 16px);
-  border-radius: var(--hi-radius-sm, 4px);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-sm);
   background: var(--hi-color-success, #3fb950);
   color: #fff;
-  font-size: var(--hi-text-base, 0.875rem);
+  font-size: var(--text-base);
   line-height: 1.4;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(12px);
   pointer-events: auto;
-  animation: update-applied-in var(--hi-duration-normal, 0.3s)
+  animation: update-applied-in var(--duration-normal)
     cubic-bezier(0.22, 0.61, 0.36, 1);
   // Leave counterpart of the enter keyframe (delayed unmount in the
   // component keeps the card alive for the fold-out).
@@ -58,7 +58,7 @@
 .update-applied__row {
   display: flex;
   align-items: center;
-  gap: var(--hi-space-8, 8px);
+  gap: var(--space-8);
 }
 
 .update-applied__icon {
@@ -86,7 +86,7 @@
   height: 1.4rem;
   padding: 0;
   border: 1px solid rgb(255 255 255 / 45%);
-  border-radius: var(--hi-radius-sm, 4px);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: #fff;
   cursor: pointer;
@@ -115,7 +115,7 @@
   border-radius: 999px;
   background: #fff;
   color: var(--hi-color-success, #2da43e);
-  font-size: var(--hi-text-base, 0.8125rem);
+  font-size: var(--text-base);
   font-weight: 600;
   line-height: 1.5;
   cursor: pointer;

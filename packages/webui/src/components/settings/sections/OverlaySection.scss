@@ -10,7 +10,7 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--hi-space-8, 8px) var(--hi-space-12, 12px);
+    gap: var(--space-8) var(--space-12);
     min-width: 0;
 
     > .hk-tabs {
@@ -34,12 +34,12 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: var(--hi-space-4, 4px);
+    gap: var(--space-4);
 
     li {
       display: flex;
       align-items: baseline;
-      gap: var(--hi-space-8, 8px);
+      gap: var(--space-8);
       color: rgb(var(--color-text, 235 240 246) / 78%);
       font-size: 0.85rem;
       line-height: 1.45;
@@ -47,7 +47,7 @@
       > svg {
         flex: none;
         align-self: center;
-        color: rgb(var(--color-danger, 248 113 113) / 90%);
+        color: rgb(var(--color-error) / 90%);
       }
     }
   }
@@ -62,7 +62,7 @@
   &__hang-controls {
     display: flex;
     align-items: center;
-    gap: var(--hi-space-8, 8px);
+    gap: var(--space-8);
     flex: none;
     margin-left: auto;
 

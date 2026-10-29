@@ -293,13 +293,13 @@
      content never reached the screen. The danger red, reserved for exactly
      this verdict; rendered only while the watcher reports failed. */
   &__locate-pill--failed {
-    border-color: rgb(var(--color-danger, 248 113 113) / 55%);
-    background: rgb(var(--color-danger, 248 113 113) / 16%);
-    color: rgb(var(--color-danger, 248 113 113));
+    border-color: rgb(var(--color-error) / 55%);
+    background: rgb(var(--color-error) / 16%);
+    color: rgb(var(--color-error));
 
     &:hover {
-      border-color: rgb(var(--color-danger, 248 113 113) / 80%);
-      background: rgb(var(--color-danger, 248 113 113) / 24%);
+      border-color: rgb(var(--color-error) / 80%);
+      background: rgb(var(--color-error) / 24%);
     }
   }
 
