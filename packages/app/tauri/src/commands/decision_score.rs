@@ -144,11 +144,16 @@ pub fn softmax(logits: &[f32]) -> Vec<f32> {
 // ── DTOs (wire contract; camelCase, E12 local-struct precedent) ─────────────
 
 /// One instant's decomposed score (pre-aggregation). `fire` is `None` on
-/// non-can-fire rows (no fire decision was on the table).
+/// non-can-fire rows (no fire decision was on the table). `fired`/`fire_prob`
+/// are the raw decision ground truth + head-B probability behind the fire
+/// term (E20: the aggregation studies need the (p, fired) pair itself —
+/// `fire` alone folds them irreversibly into `p(actual action)`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InstantComponents {
     pub inst: f32,
     pub fire: Option<f32>,
+    pub fired: Option<bool>,
+    pub fire_prob: Option<f32>,
     pub mv: f32,
     pub confidence: f32,
 }
@@ -161,6 +166,12 @@ pub struct ShipScoreSample {
     pub inst: f32,
     /// `p(actual fire action)` — `null` on non-can-fire rows.
     pub fire: Option<f32>,
+    /// Whether the ship ACTUALLY fired in the label window — `null` on
+    /// non-can-fire rows (E20: opportunity-capture aggregation substrate).
+    pub fired: Option<bool>,
+    /// Head-B raw probability `p(expert fires)` — `null` on non-can-fire
+    /// rows. `fire` is recoverable as `fired ? fireProb : 1 − fireProb`.
+    pub fire_prob: Option<f32>,
     /// Softmax mass on the actual move sector.
     #[serde(rename = "move")]
     pub mv: f32,
@@ -271,6 +282,8 @@ pub fn instant_components(
         InstantComponents {
             inst: CAN_FIRE_ROW_FIRE_WEIGHT * fire_term + CAN_FIRE_ROW_MOVE_WEIGHT * mv,
             fire: Some(fire_term),
+            fired: Some(fired),
+            fire_prob: Some(fire_prob),
             mv,
             confidence: 0.5 * move_max + 0.5 * fire_conf,
         }
@@ -278,6 +291,8 @@ pub fn instant_components(
         InstantComponents {
             inst: mv,
             fire: None,
+            fired: None,
+            fire_prob: None,
             mv,
             confidence: move_max,
         }
@@ -935,6 +950,8 @@ where
             t: row.core.t,
             inst: c.inst,
             fire: c.fire,
+            fired: c.fired,
+            fire_prob: c.fire_prob,
             mv: c.mv,
             confidence: c.confidence,
         });

@@ -89,6 +89,12 @@ export interface ShipScoreSample {
   t: number;
   inst: number;
   fire: number | null;
+  /** Whether the ship actually fired in the label window (null off
+   *  can-fire rows) — E20's opportunity-capture aggregation substrate. */
+  fired: boolean | null;
+  /** Head-B raw p(expert fires) (null off can-fire rows); `fire` is
+   *  `fired ? fireProb : 1 - fireProb`. */
+  fireProb: number | null;
   move: number;
   /** Independent output: the models' own certainty (NOT the score). */
   confidence: number;
