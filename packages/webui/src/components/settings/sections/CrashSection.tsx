@@ -324,9 +324,11 @@ export default defineComponent({
                               <span class={"crash-section__chip crash-section__chip--" + f.severity}>
                                 {t("crash.severity." + f.severity)}
                               </span>
-                              <span class="crash-section__finding-text">{findingText(f)}</span>
+                              {/* hk-selectable: finding prose + the dump path
+                                  are what users copy into issue reports. */}
+                              <span class="hk-selectable crash-section__finding-text">{findingText(f)}</span>
                               {f.code === "dumpAvailable" && f.detail ? (
-                                <code class="crash-section__raw">{f.detail}</code>
+                                <code class="hk-selectable crash-section__raw">{f.detail}</code>
                               ) : null}
                             </li>
                           ))}
@@ -380,7 +382,8 @@ export default defineComponent({
                                     )}
                                   </div>
                                   {s.logLines.length > 0 ? (
-                                    <ul class="crash-section__suspect-lines">
+                                    /* hk-selectable: per-suspect log evidence. */
+                                    <ul class="hk-selectable crash-section__suspect-lines">
                                       {s.logLines.map((line) => (
                                         <li key={line}>
                                           <code>{line}</code>
@@ -413,7 +416,10 @@ export default defineComponent({
                               </span>
                             </button>
                             {open ? (
-                              <div class="crash-section__log-body">
+                              /* hk-selectable: the expanded log pane
+                                 (highlighted lines + raw tail) is the copy
+                                 target for crash reports. */
+                              <div class="hk-selectable crash-section__log-body">
                                 {log.highlights.length > 0 ? (
                                   <ul class="crash-section__log-highlights">
                                     {log.highlights.map((line) => (

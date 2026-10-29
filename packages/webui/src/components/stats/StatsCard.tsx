@@ -167,7 +167,10 @@ export default defineComponent({
     ]);
 
     return () => (
-      <div class={["stats-card", `stats-card--${wrTier.value}`]}>
+      // hk-selectable: the card is the stat report itself (WR/PR/battles/
+      // damage) — the values users copy into chats and tools (hikari
+      // 0.55.224 selection policy opt-in). Its buttons stay chrome.
+      <div class={["hk-selectable", "stats-card", `stats-card--${wrTier.value}`]}>
         {/* identity header */}
         <IdentityHead
           name={props.stats.name}

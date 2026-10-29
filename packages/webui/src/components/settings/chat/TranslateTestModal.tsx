@@ -323,14 +323,14 @@ export default defineComponent({
               <span class="chat-settings__test-case-label">
                 {t("settings.chatTranslate.tryLabel")}
               </span>
-              <div class="chat-settings__test-case-text">{activeCase.value.text}</div>
+              <div class="hk-selectable chat-settings__test-case-text">{activeCase.value.text}</div>
             </div>
             {blocked.value ? (
               <HkSettingsHint>{t("settings.chatTranslate.tryNeedKey")}</HkSettingsHint>
             ) : null}
 
             {error ? (
-              <div class="chat-settings__test-error">
+              <div class="hk-selectable chat-settings__test-error">
                 {t("settings.chatTranslate.translateTestFailed", { msg: error })}
               </div>
             ) : null}
@@ -345,7 +345,7 @@ export default defineComponent({
             ) : null}
 
             {resultBox(t("settings.chatTranslate.testSystemPrompt"), result, () => (
-              <pre class="chat-settings__test-prompt">
+              <pre class="hk-selectable chat-settings__test-prompt">
                 {(result && result.systemPrompt) || t("settings.chatTranslate.testNoResult")}
               </pre>
             ))}
@@ -360,16 +360,16 @@ export default defineComponent({
               );
               if (!isJsonText(jsonLine)) {
                 return (
-                  <pre class="chat-settings__test-prompt">
+                  <pre class="hk-selectable chat-settings__test-prompt">
                     {result?.userPayload ?? ""}
                   </pre>
                 );
               }
               return (
-                <div class="chat-settings__test-json">
+                <div class="hk-selectable chat-settings__test-json">
                   <HkJsonTree text={jsonLine} maxDepth={8} />
                   {rest !== "" ? (
-                    <pre class="chat-settings__test-prompt">{rest}</pre>
+                    <pre class="hk-selectable chat-settings__test-prompt">{rest}</pre>
                   ) : null}
                 </div>
               );
@@ -378,7 +378,7 @@ export default defineComponent({
             {resultBox(t("settings.chatTranslate.testResponsePayload"), result, () => {
               if (result && result.response != null) {
                 return (
-                  <div class="chat-settings__test-json">
+                  <div class="hk-selectable chat-settings__test-json">
                     <HkJsonTree value={result.response} maxDepth={8} />
                   </div>
                 );
@@ -390,11 +390,11 @@ export default defineComponent({
                 // containers only, so a primitive tree would leave the box
                 // blank.
                 return (
-                  <div class="chat-settings__test-json">
+                  <div class="hk-selectable chat-settings__test-json">
                     {isJsonContainerText(raw) ? (
                       <HkJsonTree text={raw} maxDepth={8} />
                     ) : (
-                      <pre class="chat-settings__test-prompt">{raw}</pre>
+                      <pre class="hk-selectable chat-settings__test-prompt">{raw}</pre>
                     )}
                   </div>
                 );
@@ -403,7 +403,9 @@ export default defineComponent({
             })}
 
             {result && result.translations.length > 0 ? (
-              <div class="settings-modal__langs">
+              /* hk-selectable: the rendered translations are the chat text
+                 users compare and copy (hikari 0.55.224 selection policy). */
+              <div class="hk-selectable settings-modal__langs">
                 {result.translations.map((row) => (
                   <div class="settings-modal__lang" key={row.lang} lang={row.lang}>
                     <span class="settings-modal__netmanual">

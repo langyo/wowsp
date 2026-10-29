@@ -223,14 +223,20 @@ body {
    and so is the custom title bar. Descendants resolve their `auto` to
    the ancestor's `none`, so one body-level rule covers the whole tree.
 
+   Since hikari 0.55.224 the same deny-by-default also sits one level up
+   (html, via the canonical styles composition) with hikari's own
+   whitelist: editable controls, `.hk-selectable` (the host opt-in hook
+   used by the templates here), and hikari component content (markdown
+   body, diff code, json-tree rows, log entries, toast message bodies).
+
    Selection is re-enabled explicitly, only where reading stops and
    copying starts; the whitelist below is the single auditable policy —
    add copyable content here, not in per-component sheets. The one
    sanctioned component-level exception is ShipDetailModal's spec values
    (`user-select: all` + click-to-copy — the selection IS the affordance
-   there). Toasts stay unselectable by design (ephemeral — hikari
-   suppresses them, and the same facts always exist in-page in copyable
-   form). */
+   there). Toast message bodies are selectable under hikari's own policy
+   since 0.55.224 (the message is content); wowsp no longer re-denies
+   them. */
 body {
   user-select: none;
   -webkit-user-select: none;
@@ -256,7 +262,9 @@ select,
 .release-md,
 .announce-content__body,
 .about-modal__version,
-.about-modal__subtitle,
+/* __subtitle is deliberately NOT here: AboutModal.scss denies it for the
+   hover easter egg (the crossfade IS the affordance; a drag selection
+   would fight it) and that sheet loads after this one anyway. */
 .about-modal__desc,
 .about-modal__notice,
 .about-modal__qq,
