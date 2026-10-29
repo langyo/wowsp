@@ -15,6 +15,11 @@
 //!   WS   /api/relay/control?room=<64hex>&role=host|client
 //!   WS   /api/relay/resolve?code=NNNNNN
 //!   WS   /api/relay/data/<room>/<connId>[?role=host|client]
+//!   GET  /gateway/health                — push namespace config doc
+//!   POST /gateway/session               — auth exchange → single-use
+//!                                        ticket (Turnstile/password)
+//!   WS   /gateway/pub?route=&ticket=    — desktop publisher (role=host)
+//!   WS   /gateway/sub?route=&ticket=    — phone subscriber (role=client)
 //!   POST /api/feedback/submit            — form target (multipart)
 //!   GET  /api/feedback/list              — records JSON (erp session)
 //!   POST /api/feedback/update            — status/PR-link write (erp session)
@@ -49,6 +54,27 @@ pub enum Route<'a> {
     /// Resolve socket; `code` is the raw query value (may be absent or
     /// malformed — the handler decides).
     Resolve { code: Option<&'a str> },
+    /// GET /gateway/health — the push namespace's deployment config
+    /// document (no auth, CORS-open, edge-cached 60 s).
+    GatewayHealth,
+    /// POST /gateway/session — the auth exchange (Turnstile token
+    /// and/or password) minting a single-use ticket.
+    GatewaySession,
+    /// WS /gateway/pub — the desktop publisher. `route`/`ticket`/`hostId`
+    /// are the raw query values; validation happens in the handler
+    /// (this layer only routes). `hostId` is the persistent host id the
+    /// one-publisher replacement rule keys on.
+    GatewayPub {
+        route: Option<&'a str>,
+        ticket: Option<&'a str>,
+        host_id: Option<&'a str>,
+    },
+    /// WS /gateway/sub — the phone subscriber; raw query values, the
+    /// handler validates.
+    GatewaySub {
+        route: Option<&'a str>,
+        ticket: Option<&'a str>,
+    },
     /// Data socket for `<room>/<connId>` on `side`.
     Data {
         room: &'a str,
@@ -206,6 +232,21 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         "/api/relay/resolve" => {
             return Route::Resolve {
                 code: query_get(query, "code"),
+            };
+        },
+        "/gateway/health" => return Route::GatewayHealth,
+        "/gateway/session" => return Route::GatewaySession,
+        "/gateway/pub" => {
+            return Route::GatewayPub {
+                route: query_get(query, "route"),
+                ticket: query_get(query, "ticket"),
+                host_id: query_get(query, "hostId"),
+            };
+        },
+        "/gateway/sub" => {
+            return Route::GatewaySub {
+                route: query_get(query, "route"),
+                ticket: query_get(query, "ticket"),
             };
         },
         _ => {},
@@ -383,6 +424,54 @@ mod tests {
             classify("/api/relay/resolve", ""),
             Route::Resolve { code: None }
         );
+    }
+
+    #[test]
+    fn gateway_routes_classify() {
+        assert_eq!(classify("/gateway/health", ""), Route::GatewayHealth);
+        assert_eq!(classify("/gateway/health/", ""), Route::GatewayHealth);
+        assert_eq!(classify("/gateway/session", ""), Route::GatewaySession);
+        assert_eq!(
+            classify(
+                "/gateway/pub",
+                "route=r:asia:123&ticket=0f1e&hostId=deadbeef"
+            ),
+            Route::GatewayPub {
+                route: Some("r:asia:123"),
+                ticket: Some("0f1e"),
+                host_id: Some("deadbeef")
+            }
+        );
+        // hostId is optional (anonymous host, last-writer-wins).
+        assert_eq!(
+            classify("/gateway/pub", "route=r:asia:123&ticket=0f1e"),
+            Route::GatewayPub {
+                route: Some("r:asia:123"),
+                ticket: Some("0f1e"),
+                host_id: None
+            }
+        );
+        assert_eq!(
+            classify("/gateway/sub", "route=r:eu:7&ticket=0f1e"),
+            Route::GatewaySub {
+                route: Some("r:eu:7"),
+                ticket: Some("0f1e")
+            }
+        );
+        // Missing params route fine; the handler rejects them.
+        assert_eq!(
+            classify("/gateway/sub", ""),
+            Route::GatewaySub {
+                route: None,
+                ticket: None
+            }
+        );
+        // Unknown gateway subpaths stay NotFound (nothing static lives
+        // under /gateway* — run_worker_first sends the whole prefix in).
+        assert_eq!(classify("/gateway", ""), Route::NotFound);
+        assert_eq!(classify("/gateway/", ""), Route::NotFound);
+        assert_eq!(classify("/gateway/other", ""), Route::NotFound);
+        assert_eq!(classify("/gateway/pub/x", ""), Route::NotFound);
     }
 
     #[test]

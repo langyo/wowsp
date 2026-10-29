@@ -3,7 +3,8 @@
  * each Tauri command to a typed call, so feature code imports
  * `api.detectGameInstall()` instead of touching `transport.invoke(RPC...)`
  * directly. The definitions live in the domain modules under `./modules/`
- * (shell, game, replay, stats, respack, modhub, pairing, contribution);
+ * (shell, game, replay, stats, respack, modhub, pairing, gateway,
+ * contribution);
  * this file composes the `api` object and re-exports every symbol so
  * `@/api/client` importers see the exact same surface as before the split.
  */
@@ -15,6 +16,7 @@ import { statsApi } from "./modules/stats";
 import { resPackApi } from "./modules/respack";
 import { modHubApi } from "./modules/modhub";
 import { pairingApi } from "./modules/pairing";
+import { gatewayApi } from "./modules/gateway";
 import { contributionApi } from "./modules/contribution";
 import { decisionApi } from "./modules/decision";
 import { chatTranslateApi } from "./modules/chat";
@@ -29,6 +31,7 @@ export * from "./modules/stats";
 export * from "./modules/respack";
 export * from "./modules/modhub";
 export * from "./modules/pairing";
+export * from "./modules/gateway";
 export * from "./modules/contribution";
 export * from "./modules/decision";
 export * from "./modules/chat";
@@ -45,6 +48,7 @@ export const api = {
   ...resPackApi,
   ...modHubApi,
   ...pairingApi,
+  ...gatewayApi,
   ...contributionApi,
   ...chatTranslateApi,
   ...localBattlesApi,

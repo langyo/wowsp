@@ -220,8 +220,8 @@ pub use gateway::current_gateway_info;
 pub(super) use gateway::resolve_gateway_cached;
 #[cfg(test)]
 use gateway::{
-    GatewayManifest, clear_resolution_cache_for_test, client_meets_minimum, finish_resolution,
-    is_gateway_manifest, resolve_gateway,
+    GatewayManifest, clear_resolution_cache_for_test, finish_resolution, is_gateway_manifest,
+    resolve_gateway,
 };
 use gateway::{gateway_info_of, store_gateway_info};
 #[cfg(desktop)]
@@ -255,3 +255,9 @@ use ws::{
     ControlMsg, HelloOutcome, KeepaliveTask, Ws, hello_handshake, keepalive_text, next_control,
     park_keepalive, send_binary_chunked, ws_connect,
 };
+
+// The gateway-push client (commands/gateway/) reuses the relay's WS
+// connect plumbing, its text keepalive frame and its minimum-version
+// comparator instead of forking them (one URL/timeout/frame-cap policy).
+pub(crate) use gateway::client_meets_minimum;
+pub(crate) use ws::{keepalive_text as relay_keepalive_text, ws_connect as relay_ws_connect};

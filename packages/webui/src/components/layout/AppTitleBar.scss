@@ -47,6 +47,34 @@
   flex: none;
 }
 
+/* Phone-layout account-avatar variant of the same caption button (the
+   drawer opener): a transparent round 28px target whose face is the
+   24px avatar — dog-tag emblem, nickname-initial disc, or the neutral
+   account disc (shittim-chest's .s-user-avatar-btn geometry). */
+.app-titlebar__account {
+  padding: 0;
+
+  .account-avatar,
+  .player-badge {
+    display: block;
+  }
+}
+
+.app-titlebar__account-letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgb(var(--color-primary) / 14%);
+  color: rgb(var(--color-primary));
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
 /* Dashboard section's view switch (我的水表 ↔ 游玩时间), dead-center on the
    bar — hikari's own segmented HkTabs (the dashboard date-range control),
    so the sliding indicator, tactile press feedback and keyboard handling

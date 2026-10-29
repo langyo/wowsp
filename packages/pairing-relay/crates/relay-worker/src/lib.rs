@@ -18,6 +18,12 @@
 //!     `/api/relay/data/…` — forwarded to the two Durable Objects in
 //!     [`directory`] (the singleton code Directory) and [`room`]
 //!     (per-room rendezvous + byte pipes).
+//!   - `GET /gateway/health`, `POST /gateway/session`, `WS
+//!     /gateway/pub|sub` — the account-routed battle-push namespace
+//!     (mobile-gateway wave; see src/gateway.rs and
+//!     docs/en/designs/gateway-push.md): health/session answered here,
+//!     the sockets forwarded to the GatewayAuth + GatewayChannel
+//!     Durable Objects.
 //!   - `GET /feedback`, `GET /erp` — the two server-rendered pages
 //!     (the erp console logs in via Feishu OAuth — see src/erp.rs)
 //!     (the feedback form and the admin review console).
@@ -26,6 +32,7 @@ pub mod digests;
 pub mod directory;
 pub mod erp;
 pub mod feedback;
+pub mod gateway;
 pub mod qqbot;
 pub mod replay;
 pub mod replay_index;
@@ -33,6 +40,7 @@ pub mod room;
 pub mod sponsors;
 
 pub use directory::Directory;
+pub use gateway::{GatewayAuth, GatewayChannel};
 pub use replay_index::ReplayIndex;
 pub use room::Room;
 
@@ -80,6 +88,16 @@ async fn route(req: Request, env: Env) -> Result<Response> {
             resp.headers_mut().set("cache-control", "no-store")?;
             Ok(resp)
         },
+
+        // ── gateway push namespace (see src/gateway.rs) ──────────────────
+        Route::GatewayHealth => gateway::handle_health(req, &env),
+        Route::GatewaySession => gateway::handle_session(req, env).await,
+        Route::GatewayPub {
+            route,
+            ticket,
+            host_id,
+        } => gateway::handle_pub(req, env, route, ticket, host_id).await,
+        Route::GatewaySub { route, ticket } => gateway::handle_sub(req, env, route, ticket).await,
 
         // ── release digests (see src/digests.rs) ────────────────────────
         Route::Digests { channel, tag } => digests::handle(req, env, channel, tag).await,

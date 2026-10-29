@@ -25,7 +25,7 @@ fn relay_ws_config() -> Option<WebSocketConfig> {
     )
 }
 
-pub(super) async fn ws_connect(url: &str) -> Result<Ws> {
+pub(crate) async fn ws_connect(url: &str) -> Result<Ws> {
     ensure_ring_provider();
     let connect = connect_async_with_config(url, relay_ws_config(), false);
     let (ws, _resp) = tokio::time::timeout(WS_CONNECT_TIMEOUT, connect)
@@ -38,7 +38,7 @@ pub(super) async fn ws_connect(url: &str) -> Result<Ws> {
 /// The keepalive text frame every relay socket pings while idle (a TEXT
 /// frame — WS-level pings never reach the worker's Durable Object; the
 /// v1 flow tolerated them from day one).
-pub(super) fn keepalive_text() -> tokio_tungstenite::tungstenite::Utf8Bytes {
+pub(crate) fn keepalive_text() -> tokio_tungstenite::tungstenite::Utf8Bytes {
     json!({ "type": "keepalive" }).to_string().into()
 }
 

@@ -1,10 +1,26 @@
-/** Pairing settings section — phone build renders the PHONE (client) side,
- *  desktop the SERVER side (same slot, two dressings). */
-import { defineComponent, type PropType } from "vue";
-import { Copy, RefreshCw, Smartphone, Trash2 } from "@lucide/vue";
+/** Pairing settings section — the gateway-push surface (route entry +
+ *  mobile service + self-host wizard) with the LEGACY LAN pairing kept
+ *  usable under a collapsed disclosure. Phone build renders the PHONE
+ *  (client) side: the route entry field (custom domain for self-host) plus
+ *  the existing paired-computers management; the wizard stays
+ *  desktop-only (publishing is a desktop concern).
+ *
+ *  Desktop primary UI (gateway-push §5): the ROUTE ENTRY (readonly
+ *  official default / editable custom root, normalized by Rust), the
+ *  MOBILE SERVICE toggle (enabled → gateway_publish_start on the
+ *  session-hub route; disabled → stop), the gateway status (phase from
+ *  wowsp://gateway-state via the gateway store), and the self-host wizard
+ *  entry. The relay pairing-code display and its regenerate button are
+ *  GONE from the UI (the code allocation stays in Rust for legacy
+ *  phones); LAN pairing survives under the collapsed LAN 配对（旧）
+ *  disclosure with its PIN display. */
+import { computed, defineComponent, type PropType } from "vue";
+import { Copy, Rocket, Smartphone } from "@lucide/vue";
 import {
   HkAlert,
   HkButton,
+  HkExpansionPanel,
+  HkInput,
   HkOtpInput,
   HkSettingsGroup,
   HkSettingsHint,
@@ -14,11 +30,32 @@ import {
   HkTag,
 } from "@celestia-island/hikari";
 
-import { t } from "@/i18n";
+import { t, tError } from "@/i18n";
+import { GATEWAY_OFFICIAL_ROOT } from "@/api";
 import ErrorCard from "@/components/base/ErrorCard";
+import SelfhostWizard from "@/components/settings/SelfhostWizard";
 import { entryKey } from "@/stores/pairing";
 import { isMobileApp } from "@/utils/platform";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
+import "./gatewaySettings.scss";
+
+/** The publish status pill's voice (phase → tone + label). */
+function phaseVoice(phase: string): { tone: string; label: string } {
+  switch (phase) {
+    case "resolving":
+      return { tone: "pending", label: t("gateway.phaseResolving") };
+    case "captcha":
+      return { tone: "pending", label: t("gateway.phaseCaptcha") };
+    case "connecting":
+      return { tone: "pending", label: t("gateway.phaseConnecting") };
+    case "online":
+      return { tone: "online", label: t("gateway.phaseOnline") };
+    case "error":
+      return { tone: "error", label: t("gateway.phaseError") };
+    default:
+      return { tone: "idle", label: t("gateway.phaseStopped") };
+  }
+}
 
 export default defineComponent({
   name: "SettingsPairingSection",
@@ -26,17 +63,72 @@ export default defineComponent({
     ctx: { type: Object as PropType<SettingsBodyCtx>, required: true },
   },
   setup(props) {
-    const { pairing } = props.ctx;
+    const { pairing, gateway: gw } = props.ctx;
     const pairingStore = pairing.pairingStore;
+    const gateway = gw.gateway;
+    const shownPlayer = gw.shownPlayer;
+
+    /** The route-entry block — shared by BOTH builds (desktop: the
+     *  service's entry; phone: the custom-domain field for self-host). */
+    const renderRoot = () => (
+      <>
+        <HkSettingsSub title={t("gateway.rootLabel")} />
+        <HkTabs
+          block
+          variant="segmented"
+          modelValue={gw.usingOfficial.value ? "official" : "custom"}
+          onUpdate:modelValue={(v: string) => {
+            if (v === "official") void gw.useOfficialRoot();
+          }}
+          tabs={[
+            { key: "official", label: t("gateway.rootOfficial") },
+            { key: "custom", label: t("gateway.rootCustom") },
+          ]}
+        />
+        {gw.usingOfficial.value ? (
+          <div class="settings-modal__pairing-row">
+            <code class="settings-modal__pairing-value">{GATEWAY_OFFICIAL_ROOT}</code>
+          </div>
+        ) : (
+          <div class="gateway-settings__root-edit">
+            <HkInput
+              modelValue={gw.rootDraft.value}
+              onUpdate:modelValue={(v: string) => (gw.rootDraft.value = v)}
+              placeholder="https://gateway.example.com/gateway/"
+              spellcheck={false}
+              submitOnEnter={() => void gw.saveCustomRoot(gw.rootDraft.value)}
+            />
+            <HkButton
+              size="sm"
+              variant="primary"
+              loading={gw.rootBusy.value}
+              disabled={gw.rootBusy.value || !gw.rootDraft.value.trim()}
+              onClick={() => void gw.saveCustomRoot(gw.rootDraft.value)}
+            >
+              {t("gateway.rootSave")}
+            </HkButton>
+          </div>
+        )}
+        {gw.rootError.value ? (
+          <p class="gateway-settings__error">{tError(gw.rootError.value)}</p>
+        ) : (
+          <HkSettingsHint>{t("gateway.rootHint")}</HkSettingsHint>
+        )}
+      </>
+    );
+
+    /** The desktop status pill (publish phase + detail). */
+    const status = computed(() => phaseVoice(gateway.pubPhase));
+
     return () =>
-          isMobileApp() ? (
-          <>
-          {/* phone pairing — the PHONE (client) side. Discoverability
-              first: the section the owner could not find. One primary
-              action opens the replay view's pairing wizard (deep-linked
-              via ?pairing=1), plus the paired computers with forget
-              buttons and last-synced info. */}
-          <HkAlert variant="warning" size="sm" message={t("settings.pairingWip")} />
+      isMobileApp() ? (
+        <>
+          {/* phone pairing — the PHONE (client) side. The gateway route
+              entry (custom domain for self-host) rides on top; the
+              paired-computers management below is unchanged. */}
+          <HkSettingsGroup title={t("gateway.phoneSectionTitle")}>
+            {renderRoot()}
+          </HkSettingsGroup>
           <HkSettingsGroup title={t("settings.pairingMobile")}>
             <HkSettingsHint>{t("settings.pairingMobileHint")}</HkSettingsHint>
             <div class="settings-modal__pairing-open">
@@ -67,7 +159,6 @@ export default defineComponent({
                         ariaLabel={t("settings.pairingForget")}
                         onClick={() => pairingStore.removeEntry(h)}
                       >
-                        <Trash2 size={14} />
                         {t("settings.pairingForget")}
                       </HkButton>
                     </li>
@@ -76,123 +167,142 @@ export default defineComponent({
               </>
             ) : null}
           </HkSettingsGroup>
-          </>
-          ) : (
+        </>
+      ) : (
+        <>
+          {/* desktop — the gateway push service (§5). */}
+          <HkSettingsGroup title={t("gateway.sectionTitle")}>
+            <HkSettingsHint>{t("gateway.serviceHint")}</HkSettingsHint>
 
-          <>
-          {/* phone pairing — the DESKTOP side. Runs the pairing server the
-              mobile app connects to: toggle on, then read the code into the
-              phone's replay → "get from PC" wizard. The displayed code is
-              the GATEWAY-ALLOCATED pairing code while the built-in internet
-              gateway is online (relay mode); when it is unreachable the
-              desktop falls back to its LAN PIN and shows a LAN-only hint.
-              There is deliberately NO relay URL field: the gateway endpoint
-              is built into both apps. */}
-          <HkAlert variant="warning" size="sm" message={t("settings.pairingWip")} />
-          <HkSettingsGroup title={t("settings.pairing")}>
-            <HkSettingsHint>{t("settings.pairingHint")}</HkSettingsHint>
+            {renderRoot()}
+
+            <HkSettingsSub title={t("gateway.serviceToggle")} />
+            {/* The channel the service publishes to — the session-resolved
+                identity (falls back to the active account); no account →
+                the toggle explains itself instead of starting nothing. */}
+            {shownPlayer.value && shownPlayer.value.accountId != null ? (
+              <p class="gateway-settings__channel">
+                <HkTag variant="default" size="sm">
+                  {shownPlayer.value.realm.toUpperCase()}
+                </HkTag>
+                <span class="gateway-settings__channel-name">
+                  {shownPlayer.value.nickname}
+                </span>
+              </p>
+            ) : (
+              <HkAlert variant="warning" size="sm" message={t("gateway.noAccount")} />
+            )}
             <HkTabs
               block
               variant="segmented"
-              modelValue={pairingStore.server?.running ? "on" : "off"}
+              modelValue={gateway.config.enabled ? "on" : "off"}
               onUpdate:modelValue={(v: string) =>
-                void (v === "on" ? pairingStore.startServer() : pairingStore.stopServer())
+                void gw.setEnabled(v === "on")
               }
               tabs={[
-                { key: "off", label: t("settings.pairingOff") },
-                { key: "on", label: t("settings.pairingOn") },
+                { key: "off", label: t("gateway.serviceOff") },
+                { key: "on", label: t("gateway.serviceOn") },
               ]}
             />
-            {pairingStore.serverBusy ? (
+            {gw.toggleBusy.value ? (
               <p class="settings-modal__pairing-busy">
                 <HkSpinner size="sm" tone="current" />
               </p>
             ) : null}
-            {pairingStore.serverError ? (
-              <ErrorCard error={pairingStore.serverError} />
+            {/* Gateway status: the publish socket's phase + detail. */}
+            <div class="gateway-settings__status">
+              <span class={["gateway-settings__pill", "is-" + status.value.tone]}>
+                {status.value.label}
+              </span>
+              {gateway.pubDetail ? (
+                <span class="gateway-settings__status-detail">
+                  {tError(gateway.pubDetail)}
+                </span>
+              ) : null}
+            </div>
+            {gateway.config.enabled && gateway.pubPhase === "captcha" ? (
+              <HkSettingsHint>{t("gateway.captchaPendingHint")}</HkSettingsHint>
             ) : null}
-            {pairingStore.server?.running ? (
-              <div class="settings-modal__pairing-live">
-                {/* The code is the whole pairing UX on the phone side — show
-                    it big through the same hikari OTP grid the phone types
-                    into (readonly), with copy + regenerate actions. */}
-                <div class="settings-modal__pairing-pin">
-                  <HkOtpInput
-                    length={6}
-                    separated
-                    size="lg"
-                    readonly
-                    modelValue={pairingStore.server.pin ?? ""}
-                    ariaLabel={t("settings.pairingPin")}
-                    style={{ "--hk-otp-font-size": "1.6rem" } as Record<string, string>}
-                  />
-                  <div class="settings-modal__pairing-pin-actions">
-                    <HkButton
-                      size="sm"
-                      variant="secondary"
-                      ariaLabel={t("settings.pairingPinCopy")}
-                      onClick={() => void pairing.copyPin(pairingStore.server?.pin ?? "")}
-                    >
-                      <Copy size={14} />
-                      {t("settings.pairingPinCopy")}
-                    </HkButton>
-                    <HkButton
-                      size="sm"
-                      variant="secondary"
-                      loading={pairing.reallocBusy.value}
-                      disabled={!pairingStore.server.relayOnline}
-                      ariaLabel={t("settings.pairingRegenerate")}
-                      onClick={() => void pairing.regenerateCode()}
-                    >
-                      <RefreshCw size={14} />
-                      {t("settings.pairingRegenerate")}
-                    </HkButton>
+
+            {/* Self-host wizard entry (desktop-only). */}
+            <div class="settings-modal__pairing-open">
+              <HkButton variant="secondary" onClick={() => (gw.wizardOpen.value = true)}>
+                <Rocket size={15} />
+                {t("gateway.selfhostOpen")}
+              </HkButton>
+            </div>
+          </HkSettingsGroup>
+
+          {/* LEGACY LAN pairing — the pre-gateway route, kept usable under
+              a collapsed disclosure (the Rust code allocation stays for
+              legacy phones; the relay CODE display itself is gone). */}
+          <HkExpansionPanel title={t("gateway.lanLegacyTitle")}>
+            <div class="gateway-settings__lan">
+              <HkSettingsHint>{t("gateway.lanLegacyHint")}</HkSettingsHint>
+              <HkTabs
+                block
+                variant="segmented"
+                modelValue={pairingStore.server?.running ? "on" : "off"}
+                onUpdate:modelValue={(v: string) =>
+                  void (v === "on" ? pairingStore.startServer() : pairingStore.stopServer())
+                }
+                tabs={[
+                  { key: "off", label: t("settings.pairingOff") },
+                  { key: "on", label: t("settings.pairingOn") },
+                ]}
+              />
+              {pairingStore.serverBusy ? (
+                <p class="settings-modal__pairing-busy">
+                  <HkSpinner size="sm" tone="current" />
+                </p>
+              ) : null}
+              {pairingStore.serverError ? (
+                <ErrorCard error={pairingStore.serverError} />
+              ) : null}
+              {pairingStore.server?.running ? (
+                <div class="settings-modal__pairing-live">
+                  <div class="settings-modal__pairing-pin">
+                    <HkOtpInput
+                      length={6}
+                      separated
+                      size="lg"
+                      readonly
+                      modelValue={pairingStore.server.pin ?? ""}
+                      ariaLabel={t("settings.pairingPin")}
+                      style={{ "--hk-otp-font-size": "1.6rem" } as Record<string, string>}
+                    />
+                    <div class="settings-modal__pairing-pin-actions">
+                      <HkButton
+                        size="sm"
+                        variant="secondary"
+                        ariaLabel={t("settings.pairingPinCopy")}
+                        onClick={() => void pairing.copyPin(pairingStore.server?.pin ?? "")}
+                      >
+                        <Copy size={14} />
+                        {t("settings.pairingPinCopy")}
+                      </HkButton>
+                    </div>
+                  </div>
+                  <HkSettingsHint>{t("gateway.lanLegacyPhoneHint")}</HkSettingsHint>
+                  <div class="settings-modal__pairing-row">
+                    <span class="settings-modal__pairing-label">
+                      {t("settings.pairingAddress")}
+                    </span>
+                    <code class="settings-modal__pairing-value">
+                      {pairingStore.server.host}:{pairingStore.server.port}
+                    </code>
                   </div>
                 </div>
-                <HkSettingsHint>
-                  {pairingStore.server.relayOnline
-                    ? t("settings.pairingPhoneHintInternet")
-                    : t("settings.pairingPhoneHint")}
-                </HkSettingsHint>
-                {/* Audit M-1 residual: drop every live bearer token — a
-                    phone that paired earlier must re-pair, while the
-                    server (and discovery) keep running. */}
-                <div class="settings-modal__pairing-row">
-                  <HkButton
-                    size="sm"
-                    variant="secondary"
-                    loading={pairing.forgetBusy.value}
-                    ariaLabel={t("settings.pairingForgetDevices")}
-                    onClick={() => void pairing.forgetDevices()}
-                  >
-                    {t("settings.pairingForgetDevices")}
-                  </HkButton>
-                </div>
-                {/* Gateway status: relay mode vs the LAN-only fallback. */}
-                {pairingStore.server.relayOnline ? (
-                  <p class="settings-modal__pairing-mode">
-                    <HkTag variant="success" size="sm">{t("settings.pairingModeRelay")}</HkTag>
-                  </p>
-                ) : (
-                  <p class="settings-modal__packs-banner">{t("settings.pairingLanOnly")}</p>
-                )}
-                {/* Address: auxiliary small print — discovery makes typing it
-                    unnecessary on a normal LAN; kept for manual fallback. */}
-                <div class="settings-modal__pairing-row">
-                  <span class="settings-modal__pairing-label">
-                    {t("settings.pairingAddress")}
-                  </span>
-                  {/* Selectable text — the manual fallback copies from here. */}
-                  <code class="settings-modal__pairing-value">
-                    {pairingStore.server.host}:{pairingStore.server.port}
-                  </code>
-                </div>
-              </div>
-            ) : (
-              <HkSettingsHint>{t("settings.pairingIdleHint")}</HkSettingsHint>
-            )}
-          </HkSettingsGroup>
-          </>
-          );
+              ) : null}
+            </div>
+          </HkExpansionPanel>
+
+          {/* The wizard window (desktop-only surface). */}
+          <SelfhostWizard
+            modelValue={gw.wizardOpen.value}
+            onUpdate:modelValue={(v: boolean) => (gw.wizardOpen.value = v)}
+          />
+        </>
+      );
   },
 });

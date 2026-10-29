@@ -1,4 +1,11 @@
-export { api, foldDamageStats, isPlaneWeapon, GAMEDATA_SENTINEL } from "./client";
+export {
+  api,
+  foldDamageStats,
+  isPlaneWeapon,
+  GAMEDATA_SENTINEL,
+  GATEWAY_OFFICIAL_ROOT,
+  GATEWAY_ROUTE_RE,
+} from "./client";
 export type {
   LearnedCapPoint,
   LearnedCapLayout,
@@ -84,6 +91,20 @@ export type {
   DiscoveredHost,
   DiscoverySnapshot,
   RelayConfig,
+  GatewayClientConfig,
+  GatewayHealthDoc,
+  GatewaySessionTicket,
+  GatewayPhase,
+  GatewayStateEvent,
+  GatewayVehicleEntry,
+  GatewayBattleFrame,
+  GatewayHostFrame,
+  GatewayByeFrame,
+  GatewayBattleEvent,
+  GatewaySelfhostEnv,
+  GatewaySelfhostStep,
+  GatewaySelfhostStepResult,
+  GatewaySelfhostStream,
   RankedSeasonStats,
   RankedLeagueTiers,
   RankedShipSeasonStats,

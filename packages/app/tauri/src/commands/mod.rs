@@ -54,6 +54,10 @@ pub mod game_crash;
 pub mod game_detect;
 pub mod game_maps;
 pub mod gameparams;
+// Gateway push (mobile live battles over a route entry): client config +
+// health/session handshake + phone subscriber (all targets), desktop
+// publisher + self-host wizard.
+pub mod gateway;
 pub mod github_mirror;
 pub mod tactics_profile;
 // Consent-gated hardware & environment report for the feedback bundle

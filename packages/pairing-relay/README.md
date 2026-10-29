@@ -129,6 +129,10 @@ phone ──wss control/data ──▶ WORKER (this package) ◀──wss── 
 | `WS /api/relay/control?room=<64hex>&role=host\|client` | presence + open-request signaling + code allocation |
 | `WS /api/relay/resolve?code=NNNNNN` | phone: code → room handshake (`{"type":"room",…}` / rate-limited error / 404) |
 | `WS /api/relay/data/<room>/<connId>[?role=host\|client]` | the raw byte pipe |
+| `GET /gateway/health` | battle-push namespace config doc (Turnstile/password demands, `minClientVersion`), CORS-open, `cache-control: public, max-age=60` |
+| `POST /gateway/session` | auth exchange (Turnstile token and/or password) → single-use `{ticket, route, ttl}`; password failures rate-limit 5/min → 5 min IP lock (429 + `retryAfter`) |
+| `WS /gateway/pub?route=&ticket=[&hostId=]` | desktop publisher for `r:<realm>:<accountId>` — one per channel, a different persistent hostId replaces the first |
+| `WS /gateway/sub?route=&ticket=` | phone subscriber — hello → host presence → current battle snapshot; live battle frames fan out verbatim (≤ 64 KiB, over → close 1009) |
 
 The pre-unification spellings (`/v1/*`, `/health`, bare `/control` …) are
 **retired** — the only consumers were the unreleased 0.5.0 apps, updated in
@@ -656,11 +660,12 @@ Smoke checks: `curl https://wowsp.langyo.xyz/api/health` (the JSON
 above) and `curl -I https://wowsp.langyo.xyz/` (the site's shell
 `index.html`, HTTP 200).
 
-**Migrations note** — the Durable Object classes are unchanged from the
-TypeScript deployment (`Room` v1 + `Directory` v2, both SQLite-backed),
-so this rewrite ships **no new migration tag**: the Rust worker deploys
-cleanly over the live one. Storage rows in the old v1 key format are
-garbage-collected lazily on the Directory's first load
+**Migrations note** — `Room` (v1) and `Directory` (v2) are unchanged
+from the TypeScript deployment, so the Rust rewrite itself needed no new
+tag; v3 added `ReplayIndex` (replay-share wave) and v4 adds
+`GatewayAuth` + `GatewayChannel` (battle-push wave) — deploying applies
+the new tags incrementally over the live worker. Storage rows in the old
+v1 key format are garbage-collected lazily on the Directory's first load
 (`crates/relay-worker/src/directory.rs`, `ensure_loaded`).
 
 ## Local development
@@ -680,6 +685,59 @@ cargo test -p relay-core                            # host unit tests
 cargo check --target wasm32-unknown-unknown         # both crates, wasm
 just check-relay                                    # both, from repo root
 ```
+
+## Self-hosting the gateway
+
+The battle-push namespace (`/gateway/*`, mobile-service wave) is
+first-class self-hostable: **the same wasm build** this package ships
+also serves a private instance — a legion commander can offer phone
+battle-push as a member benefit without touching the official node. The
+step-by-step operations guide (prerequisites, dashboard walkthroughs,
+phone-side custom domain entry) lives at
+`docs/en/guides/self-host-gateway.md` (+ `zh-CN` and the other locales);
+this section is the package-side map.
+
+- **Template** — [`wrangler.selfhost.toml.example`](wrangler.selfhost.toml.example)
+  is the tracked template. The desktop app's **self-host wizard**
+  (settings ▸ connection ▸ self-host) substitutes it and deploys;
+  doing it by hand works the same way: copy the file, replace the two
+  loud placeholder tokens and deploy:
+
+  | Token | Replace with |
+  | --- | --- |
+  | `GATEWAY_EXAMPLE_INVALID` (routes pattern) | your custom domain — a hostname in a Cloudflare zone of the logged-in account (wrangler creates the custom domain + DNS record) |
+  | `GATEWAY_KV_ID_EXAMPLE_INVALID` (KV id) | the 32-hex id from `npx wrangler kv namespace create GATEWAY_KV` |
+
+  An unsubstituted deploy fails loudly on purpose. The generated file
+  (`wrangler.selfhost.toml` / the wizard's `wrangler.selfhost.local.toml`)
+  is gitignored — account ids never land in the tree.
+
+- **What a self-host serves** — `/gateway/*` only: `health`,
+  `session`, `pub`, `sub`. No site assets, no R2, no crons, no feedback
+  vars; the DO migration chain is the same v1→v4 the official node runs
+  (a fresh install applies the tags in order). The battle-snapshot KV
+  mirror (`battle:<route>`, TTL 1 h) is fire-and-forget — a missing or
+  capped namespace degrades cold-start snapshots, never the live path.
+
+- **Secrets (all optional)** — an ungated node mints session tickets
+  freely (fine for a private legion node). To gate it:
+  - *Turnstile*: set the `GATEWAY_TURNSTILE_SITEKEY` var +
+    `npx wrangler secret put GATEWAY_TURNSTILE_SECRET`. **The widget's
+    hostname allowlist must cover the origins your CLIENTS run in** —
+    `tauri.localhost` (Windows desktop webview), `asset.localhost`
+    (Android) and `localhost` (wrangler dev) — not your server's
+    hostname. A missing allowlist entry is the #1 "captcha always
+    fails" misconfiguration.
+  - *Password*: `npx wrangler secret put GATEWAY_PASSWORD`
+    (constant-time compare; 5 failures within a minute locks the source
+    IP for 5 minutes). Absent ⇒ off.
+  - *Notice*: the `GATEWAY_NOTICE` var rides `/gateway/health`.
+
+- **Verify** — `curl https://<your-domain>/gateway/health` must answer
+  the gateway document (`{"gateway":"v1",...}`); then enter
+  `https://<your-domain>/gateway/` as the route entry on the phone
+  (and/or desktop). The official deployment's widget already carries
+  the app-webview hostnames; your own widget needs them added by you.
 
 ## Forwarding-station mode (`GATEWAY_UPSTREAM`)
 

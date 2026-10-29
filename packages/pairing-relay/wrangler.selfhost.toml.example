@@ -1,0 +1,97 @@
+# WoWSP self-host gateway — TEMPLATE (tracked example).
+#
+# The desktop app's self-host wizard (settings ▸ connection ▸ self-host)
+# copies this file, substitutes the tokens below and deploys the result
+# as wrangler.selfhost.local.toml (gitignored). Doing it by hand works
+# the same way: copy → substitute → `npx wrangler deploy --config <file>`.
+#
+# TWO loud placeholder tokens (each appears exactly once; deploying the
+# unsubstituted file fails on purpose — that is the guardrail):
+#   GATEWAY_EXAMPLE_INVALID       → your custom domain: a hostname in a
+#                                   Cloudflare zone of the logged-in
+#                                   account. wrangler creates the
+#                                   Workers custom domain + its DNS
+#                                   record on deploy.
+#   GATEWAY_KV_ID_EXAMPLE_INVALID → the 32-hex id of your GATEWAY_KV
+#                                   namespace:
+#                                     npx wrangler kv namespace create GATEWAY_KV
+#                                   (paste the printed id)
+#
+# SAME wasm build as the official deployment — one worker binary, this
+# template just binds less: no [assets], no R2, no crons, no feedback
+# vars. The deployment is reachable on /gateway/* only; the unused
+# handlers are simply never routed to (binding absence is an
+# access-time concern, documented in the README).
+#
+# Full operations guide (prerequisites, screenshots of the dashboards,
+# phone-side custom domain entry):
+#   docs/en/guides/self-host-gateway.md  (+ zh-CN and other locales)
+
+name = "wowsp-gateway-selfhost" # ← one worker name per account; the wizard rewires this
+main = "crates/relay-worker/build/worker/shim.mjs"
+compatibility_date = "2026-01-15"
+
+# Loud placeholder — substituting the pattern is the whole step 3 of
+# the wizard; an unsubstituted deploy fails loudly at the API.
+routes = [{ pattern = "GATEWAY_EXAMPLE_INVALID", custom_domain = true }]
+
+[build]
+command = "worker-build --release crates/relay-worker"
+
+# The battle-snapshot KV mirror (the GatewayChannel DO writes
+# battle:<route> rows here, TTL 1 h — fire-and-forget, errors swallowed).
+[[kv_namespaces]]
+binding = "GATEWAY_KV"
+id = "GATEWAY_KV_ID_EXAMPLE_INVALID"
+
+# The two battle-push Durable Objects. The migration chain is the SAME
+# v1→v4 the official deployment runs (a fresh install applies the tags
+# in order); v1–v3 declare classes this deployment never routes to,
+# which is harmless — deleting rows from the chain would instead
+# mismatch any later re-deploy against upstream history.
+[[durable_objects.bindings]]
+name = "GATEWAY_AUTH"
+class_name = "GatewayAuth"
+
+[[durable_objects.bindings]]
+name = "GATEWAY_CHANNEL"
+class_name = "GatewayChannel"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Directory"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["ReplayIndex"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["GatewayAuth", "GatewayChannel"]
+
+# ── optional gating — both off by default (the health document then
+#    demands nothing and /gateway/session mints tickets freely) ──────
+#
+# Turnstile (Cloudflare challenge widget). Create a Turnstile widget in
+# the dashboard; its hostname allowlist MUST cover the origins YOUR
+# clients run in — the apps' webviews, not your server:
+#   tauri.localhost   (Windows desktop app)
+#   asset.localhost   (Android app)
+#   localhost         (wrangler dev / browser smoke tests)
+# Then uncomment the sitekey and store the secret:
+#   npx wrangler secret put GATEWAY_TURNSTILE_SECRET
+#
+# [vars]
+# GATEWAY_TURNSTILE_SITEKEY = "0x4AAA0000000000000000000000000000000"
+#
+# Password gate (works with or without Turnstile; constant-time compare,
+# 5 failed attempts within a minute locks the source IP for 5 minutes):
+#   npx wrangler secret put GATEWAY_PASSWORD
+# Absent ⇒ password off.
+#
+# Operator notice — free text riding /gateway/health:
+# GATEWAY_NOTICE = "wowsp node of <your legion>"

@@ -16,7 +16,7 @@
     flex-direction: column;
   }
 
-  /* No battle to watch (and the phone build's static placeholder). */
+  /* No battle to watch (desktop idle). */
   &__placeholder {
     flex: 1;
     display: flex;
@@ -24,5 +24,167 @@
     justify-content: center;
     color: rgb(var(--color-muted));
     font-size: var(--text-md);
+  }
+}
+
+/* ── Gateway live view (the /live body on the phone build) ───────────── */
+/* The waiting screen: account chip + route entry up top, the connect
+   action, then either the waiting hint or the pushed battle's panel. */
+.gateway-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-10) var(--space-12) calc(var(--space-10) + env(safe-area-inset-bottom, 0px));
+
+  &__head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+  }
+
+  &__account {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+
+    .player-badge,
+    .account-avatar {
+      flex: none;
+    }
+  }
+
+  &__account-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__account-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__account-realm {
+    font-size: var(--text-3xs, 0.625rem);
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-muted));
+  }
+
+  /* Route entry + connection status pill. */
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    min-width: 0;
+  }
+
+  &__meta-icon {
+    flex: none;
+    color: rgb(var(--color-muted));
+  }
+
+  &__root {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-muted));
+  }
+
+  &__pill {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    padding: 1px var(--space-6);
+    border-radius: 999px;
+    font-size: var(--text-3xs, 0.625rem);
+    font-weight: 600;
+    background: rgb(var(--color-border) / 20%);
+    color: rgb(var(--color-muted));
+
+    &.is-pending {
+      color: var(--hi-color-warning, #d29922);
+    }
+    &.is-online {
+      color: rgb(var(--color-success));
+    }
+    &.is-error {
+      color: rgb(var(--color-error, 220 80 80));
+    }
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-start;
+  }
+
+  &__error {
+    margin: 0;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.45;
+    color: rgb(var(--color-error, 220 80 80));
+  }
+
+  /* Waiting hint holds the body until the first pushed frame. */
+  &__waiting {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-8);
+    padding: var(--space-20) var(--space-12);
+    text-align: center;
+  }
+
+  &__waiting-hint {
+    margin: 0;
+    max-width: 26rem;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    color: rgb(var(--color-muted));
+  }
+
+  &__busy {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-muted));
+
+    .hk-spinner-wrapper {
+      flex: none;
+    }
+  }
+
+  /* The pushed battle renders through the existing panel. */
+  &__body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Bottom-sheet bodies (HkModal docks under 768px). */
+  &__sheet {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-10);
+  }
+
+  &__sheet-hint {
+    margin: 0;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
   }
 }

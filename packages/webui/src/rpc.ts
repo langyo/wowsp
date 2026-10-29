@@ -252,6 +252,21 @@ export const RPC = {
   pairing_get_relay_config: "pairing_get_relay_config",
   pairing_set_relay: "pairing_set_relay",
   pairing_reallocate_code: "pairing_reallocate_code",
+  // ── Gateway push (account-routed live battles — see
+  //    docs/en/designs/gateway-push.md §9, Rust handlers in
+  //    commands/gateway_push/): route-entry config, health/session
+  //    exchange, the desktop publish socket and the phone subscribe
+  //    socket, plus the self-host wizard's probe/step surface. ──
+  gateway_get_config: "gateway_get_config",
+  gateway_set_config: "gateway_set_config",
+  gateway_get_health: "gateway_get_health",
+  gateway_open_session: "gateway_open_session",
+  gateway_publish_start: "gateway_publish_start",
+  gateway_publish_stop: "gateway_publish_stop",
+  gateway_subscribe_start: "gateway_subscribe_start",
+  gateway_subscribe_stop: "gateway_subscribe_stop",
+  gateway_selfhost_probe: "gateway_selfhost_probe",
+  gateway_selfhost_step: "gateway_selfhost_step",
   // ── Replay share (录像共享计划) — commands/contribution/ (see
   //    CONTRACT-replay-share.md §9): local identity/consent state, the
   //    wanted-ruleset cache, the wizard planner and the single-flight

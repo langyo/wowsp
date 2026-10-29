@@ -13,19 +13,20 @@
 //! package's README; the type and enum names here are the executable
 //! version of that document.
 
-pub mod directory;
 pub mod digests;
+pub mod directory;
 pub mod erp;
 pub mod feedback;
+pub mod gateway;
 pub mod headers;
 pub mod manifest;
 pub mod multipart;
 pub mod protocol;
 pub mod qqbot;
 pub mod replay;
-pub mod sponsors;
 pub mod room;
 pub mod route;
+pub mod sponsors;
 
 /// Machine id of this gateway implementation (manifest `provider`).
 pub const PROVIDER_ID: &str = "wowsp-gateway";

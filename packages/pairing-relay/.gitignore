@@ -2,6 +2,10 @@ target/
 crates/relay-worker/build/
 .wrangler/
 .dev.vars
+# Generated self-host configs (from wrangler.selfhost.toml.example —
+# the wizard writes the substituted copy; never commit account ids).
+wrangler.selfhost.toml
+wrangler.selfhost.local.toml
 # The lockfile IS tracked since the credit-backfill wave: the worker
 # compiles to wasm from whatever the resolver picks, and an unpinned
 # tree once shipped a silently-broken hydration build. Same policy as
