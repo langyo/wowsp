@@ -18,12 +18,8 @@ import {
   useTheme,
 } from "@celestia-island/hikari";
 
-import {
-  initSolarLocationPreference,
-  removeBuiltinShadowingCustomThemes,
-  settleSolarLocationPreference,
-  startModeTokenBridge,
-} from "./theme";
+import { removeBuiltinShadowingCustomThemes, startModeTokenBridge } from "./theme";
+import { migrateSolarLocationBasis } from "./theme/solarStrategyMigration";
 import { installNativeMenuBlock } from "./utils/nativeMenu";
 import { applyDefaultSchemeBrand } from "./theme/defaultSchemeBrand";
 import { installGlobalTooltip } from "./composables/globalTooltip";
@@ -66,19 +62,13 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   // (see theme/defaultSchemeBrand — the swatch, the mode-token bridge and
   // every secondary-driven surface read the table live).
   applyDefaultSchemeBrand();
-  // Solar-location basis BEFORE initTheme(): hikari's theme clock resolves
-  // its coordinates the moment initTheme() starts it, and the shipped
-  // default (timezone) must be the answer to that first resolution — no
-  // network request, no location permission prompt, just the OS time zone
-  // the user already configured (theme/solarLocationPreference).
-  initSolarLocationPreference();
+  // Solar-location strategy now lives IN hikari (0.55.241+): the engine
+  // hydrates its storage inside initTheme(), resolves timezone-first and
+  // fully offline by default, and its refreshThemeClock is last-write-wins.
+  // WoWSP only maps the retired local basis key onto the engine's storage
+  // once, BEFORE the clock starts (theme/solarStrategyMigration).
+  migrateSolarLocationBasis();
   initTheme();
-  // initTheme() started hikari's own boot clock resolution OUTSIDE the basis
-  // preference's refresh queue (it exists before any switch can). Queue one
-  // settle refresh behind it so every later basis switch lands after it —
-  // see settleSolarLocationPreference (a slow boot-time coordinates fix must
-  // not overwrite a switch the user already made).
-  settleSolarLocationPreference();
   // One-time repair: drop custom schemes that shadow builtin preset ids
   // (see removeBuiltinShadowingCustomThemes — the dark-mode-shows-light
   // report). Before the mode preference applies, so the re-apply lands on
