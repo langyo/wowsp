@@ -265,13 +265,10 @@ export interface MapInternalsDeps {
   mmRotationDeg: Ref<number>;
   /** AI fire-suggestion overlay toggle (G4-b) — the enlarged 2D map draws
    *  probability rings / dashed fire lines over the ship glyphs while on. */
-  decisionsOn: Ref<boolean>;
+  aiAnalysisOn: Ref<boolean>;
   /** Latest decision-suggestion report (null = off / nothing fetched /
    *  last fetch failed); owned by HolographicMap's setup. */
   decisionReport: Ref<DecisionSuggestionReport | null>;
-  /** AI movement-advice overlay toggle (E18) — 2D arrows + 3D floating
-   *  arrows + the score panel ride this switch. */
-  moveAdviceOn: Ref<boolean>;
   /** Latest debug report (movement advice + score timeline); null when off,
    *  unfetched or failed. */
   debugReport: Ref<DecisionDebugReport | null>;

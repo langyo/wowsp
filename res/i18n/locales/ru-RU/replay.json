@@ -613,5 +613,9 @@
     "samples": "{ships} кораблей · {rows} точек решений",
     "contribution": "Вклад",
     "perShot": "На выстрел {value}"
+  },
+  "aiAnalysis": {
+    "toggle": "AI-анализ",
+    "portableUnavailable": "Портативная сборка без ИИ-рантайма"
   }
 }

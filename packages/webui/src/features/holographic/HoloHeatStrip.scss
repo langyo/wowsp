@@ -1,0 +1,59 @@
+/**
+ * HoloHeatStrip — the AI analysis timeline heatmap's chrome. A narrow
+ * vertical strip on the right edge of the 3D view: one column per ship,
+ * cells coloured by instant score, a playhead cursor line. Fits within
+ * the map viewport (no overflow), aligned with the holo-hud tokens.
+ */
+.holo-heat-strip {
+  position: absolute;
+  top: 64px;
+  right: 4px;
+  bottom: 56px;
+  z-index: 3;
+  display: flex;
+  width: 36px;
+  flex-direction: column;
+  background: var(--holo-hud-bg);
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--holo-hud-shadow);
+  pointer-events: none;
+  overflow: hidden;
+
+  &__grid {
+    display: flex;
+    flex: 1;
+    gap: 1px;
+    padding: 2px;
+    overflow: hidden;
+  }
+
+  &__col {
+    position: relative;
+    flex: 1;
+    min-width: 2px;
+    border-radius: 1px;
+
+    &--self {
+      outline: 1px solid rgb(160 200 240 / 40%);
+    }
+  }
+
+  &__cell {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    border-radius: 1px;
+  }
+
+  &__cursor {
+    position: absolute;
+    right: 0;
+    left: 0;
+    height: 1px;
+    background: rgb(var(--color-primary));
+    box-shadow: 0 0 4px rgb(var(--color-primary) / 60%);
+    z-index: 1;
+  }
+}

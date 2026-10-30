@@ -613,5 +613,9 @@
     "samples": "{ships} ships · {rows} decision points",
     "contribution": "Contrib",
     "perShot": "Per shot {value}"
+  },
+  "aiAnalysis": {
+    "toggle": "AI analysis",
+    "portableUnavailable": "Portable build has no AI inference runtime"
   }
 }

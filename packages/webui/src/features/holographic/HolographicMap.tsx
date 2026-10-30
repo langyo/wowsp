@@ -1,7 +1,7 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
 import {
-  Crosshair, Eye, EyeOff, Grid3x3, Navigation, Pause, PenLine, Play, RotateCcw, RotateCw, Spline,
+  Brain, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline,
 } from "@lucide/vue";
 import { extractActions } from "./tactical/actions";
 import { useBreakpoint } from "@celestia-island/hikari";
@@ -53,6 +53,7 @@ import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
 import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
 import HoloScorePanel, { type ScoreRowMeta } from "./HoloScorePanel";
+import HoloHeatStrip from "./HoloHeatStrip";
 import HoloSelfCard from "./HoloSelfCard";
 import HoloShipStatus from "./HoloShipStatus";
 import HoloWeatherBadge from "./HoloWeatherBadge";
@@ -592,11 +593,11 @@ export default defineComponent({
     /** In-flight camera tween for step flyovers (eased in the scene RAF). */
     let mmViewTween: { from: TacticalView; to: TacticalView; startedAt: number; durMs: number } | null = null;
 
-    // ── Decision suggestions layer (G4-b) ─────────────────────────────────
-    /** Toggle for the AI fire-suggestion overlay on the enlarged 2D map.
-     *  Default off: the layer costs one `decision_fire_suggestions` IPC per
-     *  ~2 s of battle time and is a review aid, not core playback. */
-    const decisionsOn = ref(false);
+    // ── AI analysis layer (G4-b + E18 unified) ───────────────────────────
+    /** Single toggle for the whole AI analysis overlay: fire suggestions on
+     *  the 2D map, movement advice arrows (2D + 3D), entity confidence
+     *  badges, and the hold-Tab score panel. One button, one state. */
+    const aiAnalysisOn = ref(false);
     /** Latest report (null = nothing fetched / last call failed). Rendered
      *  by drawMinimap (minimapPainter.ts) onto the zoom canvas through the
      *  SAME projection as ship glyphs, so suggestions and markers can never
@@ -612,13 +613,6 @@ export default defineComponent({
      *  would re-run full replay decode IPC for visually identical output. */
     const DECISION_REFETCH_S = 2;
 
-    // ── AI movement advice + score panel (E18 · G6 step 3) ──────────────
-    /** Toggle for the movement-advice overlay (2D arrows + 3D floating
-     *  arrows + the score sidebar). Default off: the first call per replay
-     *  is a full export + decode + model pass (seconds), cached after.
-     *  Declared BEFORE the capability watcher below — that watcher's
-     *  immediate pass disarms this layer too. */
-    const moveAdviceOn = ref(false);
     /** Latest debug report (movement advice + the full score timeline);
      *  null = nothing fetched / last call failed. The 2D painter reads it
      *  through the shared MapInternals deps, the 3D arrows through
@@ -627,6 +621,9 @@ export default defineComponent({
     /** True while a debug report call is in flight (cold calls are slow —
      *  the panel and the toggle badge say so). */
     const debugLoading = ref(false);
+    /** Hold-Tab reveals the score panel (the E18 sidebar). The layer must be
+     *  on first — Tab alone does nothing without AI analysis running. */
+    const scorePanelVisible = ref(false);
     let debugLastFetchT = -Infinity;
     let debugSeq = 0;
     let debugInFlight = false;
@@ -639,7 +636,7 @@ export default defineComponent({
      *  one behind it only stalls the (cached) refresh further. Failures
      *  stay silent like the fire layer's. */
     function maybeFetchDebugReport(): void {
-      if (!capabilities.aiInference || !moveAdviceOn.value || !props.replayPath) return;
+      if (!capabilities.aiInference || !aiAnalysisOn.value || !props.replayPath) return;
       if (debugInFlight) return;
       const t = current.value;
       if (Math.abs(t - debugLastFetchT) < DEBUG_REFETCH_S) return;
@@ -650,7 +647,7 @@ export default defineComponent({
       rpcApi
         .decisionDebugReport(props.replayPath, t)
         .then((report) => {
-          if (seq !== debugSeq || !moveAdviceOn.value) return;
+          if (seq !== debugSeq || !aiAnalysisOn.value) return;
           debugReport.value = report;
         })
         .catch(() => {
@@ -683,11 +680,11 @@ export default defineComponent({
         if (available) return;
         // The probe can land after the layer was toggled on: disarm it and
         // drop anything a previous (full-build) session left behind.
-        decisionsOn.value = false;
+        aiAnalysisOn.value = false;
         decisionReport.value = null;
         decisionsLastFetchT = -Infinity;
         decisionsSeq++;
-        moveAdviceOn.value = false;
+        aiAnalysisOn.value = false;
         resetMoveAdviceLayer();
       },
       { immediate: true },
@@ -697,7 +694,7 @@ export default defineComponent({
      *  silent by design: no replay open, older shell without the command or
      *  a decode error simply leaves the layer blank (never a console throw). */
     function maybeFetchDecisions(): void {
-      if (!capabilities.aiInference || !decisionsOn.value || !props.replayPath) return;
+      if (!capabilities.aiInference || !aiAnalysisOn.value || !props.replayPath) return;
       const t = current.value;
       if (Math.abs(t - decisionsLastFetchT) < DECISION_REFETCH_S) return;
       decisionsLastFetchT = t;
@@ -705,7 +702,7 @@ export default defineComponent({
       rpcApi
         .decisionFireSuggestions(props.replayPath, t)
         .then((report) => {
-          if (seq !== decisionsSeq || !decisionsOn.value) return;
+          if (seq !== decisionsSeq || !aiAnalysisOn.value) return;
           decisionReport.value = report;
         })
         .catch(() => {
@@ -1464,9 +1461,8 @@ export default defineComponent({
       minimapShowTrails,
       minimapShowGrid,
       mmRotationDeg,
-      decisionsOn,
       decisionReport,
-      moveAdviceOn,
+      aiAnalysisOn,
       debugReport,
       showCapEta,
       capStatus,
@@ -1522,7 +1518,7 @@ export default defineComponent({
     });
     /** Layer off (button, panel close, replay switch, capability disarm):
      *  collapse the 3D arrow pool in place + repaint once. */
-    watch(moveAdviceOn, (on) => {
+    watch(aiAnalysisOn, (on) => {
       if (on) return;
       syncMoveAdvisories(ctx);
       api.value?.requestRender();
@@ -1889,6 +1885,28 @@ export default defineComponent({
       }
     });
 
+    // ── Hold-Tab score panel (E18→E22) ───────────────────────────────────
+    // Tab reveals the AI score sidebar while held (keydown → show, keyup →
+    // hide). Only fires when the AI analysis layer is on — Tab alone does
+    // nothing. preventDefault stops the browser's own focus-cycle Tab.
+    function onTabDown(e: KeyboardEvent): void {
+      if (e.key !== "Tab" || e.repeat) return;
+      if (aiAnalysisOn.value && props.replayPath) {
+        e.preventDefault();
+        scorePanelVisible.value = true;
+      }
+    }
+    function onTabUp(e: KeyboardEvent): void {
+      if (e.key !== "Tab") return;
+      scorePanelVisible.value = false;
+    }
+    window.addEventListener("keydown", onTabDown);
+    window.addEventListener("keyup", onTabUp);
+    onBeforeUnmount(() => {
+      window.removeEventListener("keydown", onTabDown);
+      window.removeEventListener("keyup", onTabUp);
+    });
+
     onBeforeUnmount(() => {
       mapTornDown = true;
       endFreeLook();
@@ -2055,6 +2073,15 @@ export default defineComponent({
         {props.replayPath && weatherView.value ? (
           <HoloWeatherBadge view={weatherView.value} />
         ) : null}
+        {/* E22 AI heatmap strip: right-edge timeline of every ship's instant
+            score across the whole battle. Only while the AI layer is on. */}
+        {props.replayPath && aiAnalysisOn.value && debugReport.value ? (
+          <HoloHeatStrip
+            report={debugReport.value}
+            playhead={hudCurrent.value}
+            duration={duration.value || 0}
+          />
+        ) : null}
         {/* Top-left combat-range indicator settings (button → modal). */}
         {props.replayPath ? (
           <HoloRangeMenu
@@ -2066,14 +2093,14 @@ export default defineComponent({
         {/* E18 AI score sidebar: rides the movement-advice toggle (the
             panel is the honest-labeling half of that layer — whole-game
             MODEL AGREEMENT + the instant score at the playhead). */}
-        {props.replayPath && moveAdviceOn.value ? (
+        {props.replayPath && aiAnalysisOn.value && scorePanelVisible.value ? (
           <HoloScorePanel
             report={debugReport.value}
             loading={debugLoading.value}
             playhead={scorePanelT.value}
             labelOf={vehicleLabelOf}
             metaOf={scoreMetaOf}
-            onClose={() => { moveAdviceOn.value = false; }}
+            onClose={() => { scorePanelVisible.value = false; }}
           />
         ) : null}
         {/* Bottom-left event feed — sink notifications + player chat +
@@ -2146,66 +2173,8 @@ export default defineComponent({
                     <PenLine size={13} />
                   </HkIconButton>
                 </HkTooltip>
-                <HkTooltip
-                  text={
-                    !capabilities.loaded
-                      ? i18nT("settings.resourcesAiChecking")
-                      : capabilities.aiInference
-                        ? i18nT("replay.decisions.toggle")
-                        : i18nT("replay.decisions.portableUnavailable")
-                  }
-                  placement="bottom"
-                >
-                  {/* The span keeps the tooltip hoverable when the button is
-                      disabled (the portable build has no AI runtime). */}
-                  <span>
-                    <HkIconButton
-                      size={24}
-                      variant={decisionsOn.value ? "primary" : "ghost"}
-                      disabled={!capabilities.aiInference}
-                      onClick={() => {
-                        if (!capabilities.aiInference) return;
-                        decisionsOn.value = !decisionsOn.value;
-                        if (decisionsOn.value) {
-                          resetDecisionLayer();
-                          maybeFetchDecisions();
-                        }
-                      }}
-                    >
-                      <Crosshair size={13} />
-                    </HkIconButton>
-                  </span>
-                </HkTooltip>
-                <HkTooltip
-                  text={
-                    !capabilities.loaded
-                      ? i18nT("settings.resourcesAiChecking")
-                      : capabilities.aiInference
-                        ? i18nT("replay.moveAdvice.toggle")
-                        : i18nT("replay.moveAdvice.portableUnavailable")
-                  }
-                  placement="bottom"
-                >
-                  <span>
-                    <HkIconButton
-                      size={24}
-                      variant={moveAdviceOn.value ? "primary" : "ghost"}
-                      disabled={!capabilities.aiInference}
-                      onClick={() => {
-                        if (!capabilities.aiInference) return;
-                        moveAdviceOn.value = !moveAdviceOn.value;
-                        if (moveAdviceOn.value) {
-                          resetMoveAdviceLayer();
-                          maybeFetchDebugReport();
-                        }
-                        // Off-cleanup (pool collapse + repaint) rides the
-                        // moveAdviceOn watcher below.
-                      }}
-                    >
-                      <Navigation size={13} />
-                    </HkIconButton>
-                  </span>
-                </HkTooltip>
+                
+                
               </span>
               <HkTooltip text={i18nT("replay.minimap.rotateCw")} placement="bottom">
                 <HkIconButton size={24} variant="ghost" onClick={() => rotateMap(1)}>
@@ -2220,29 +2189,12 @@ export default defineComponent({
               {/* Fixture-model badge: the numbers are placeholder demos, not
                   trained-model output — keep it visible while the layer is
                   on and served by the embedded fixture. */}
-              {decisionsOn.value && decisionReport.value?.modelSource === "fixture" ? (
-                <span class="holo-map__mmzoom-badge" title={decisionReport.value.modelDetail}>
-                  {i18nT("replay.decisions.demoModel")}
-                </span>
-              ) : null}
+
               {/* Movement-advice layer badges: the cold build takes seconds
                   (say so), and experiment-default models are not the packed
                   product models (name their provenance). */}
-              {moveAdviceOn.value && debugLoading.value ? (
-                <span class="holo-map__mmzoom-badge">
-                  {i18nT("replay.moveAdvice.loading")}
-                </span>
-              ) : null}
-              {moveAdviceOn.value && debugReport.value &&
-              (debugReport.value.moveModelOrigin === "experiments" ||
-                debugReport.value.fireModelOrigin === "experiments") ? (
-                <span
-                  class="holo-map__mmzoom-badge"
-                  title={`${debugReport.value.fireModel} · ${debugReport.value.moveModel}`}
-                >
-                  {i18nT("replay.moveAdvice.debugModel")}
-                </span>
-              ) : null}
+
+
             </div>
             {/* Stage: base map canvas + tactical annotation layer. The map
                 keeps its full size in tactical mode — the board docks INSIDE
@@ -2316,6 +2268,38 @@ export default defineComponent({
               aria-label={showLabels.value ? i18nT("replay.labels.hide") : i18nT("replay.labels.show")}
             >
               {showLabels.value ? <Eye size={14} /> : <EyeOff size={14} />}
+            </button>
+            {/* AI analysis toggle: one button, one state — fire suggestions
+                on the 2D map + movement advice arrows (2D/3D) + entity
+                confidence badges + hold-Tab score panel + the timeline
+                heatmap strip. Cold build takes seconds (full replay decode
+                + model pass); the loading badge says so. */}
+            <button
+              class={["holo-map__lbltoggle", aiAnalysisOn.value ? "holo-map__lbltoggle--on" : ""].filter(Boolean).join(" ")}
+              onClick={() => {
+                if (!capabilities.aiInference) return;
+                aiAnalysisOn.value = !aiAnalysisOn.value;
+                if (aiAnalysisOn.value) {
+                  resetDecisionLayer();
+                  resetMoveAdviceLayer();
+                  maybeFetchDecisions();
+                  maybeFetchDebugReport();
+                }
+              }}
+              disabled={!capabilities.aiInference}
+              data-hint={
+                !capabilities.loaded
+                  ? i18nT("settings.resourcesAiChecking")
+                  : capabilities.aiInference
+                    ? i18nT("replay.aiAnalysis.toggle")
+                    : i18nT("replay.aiAnalysis.portableUnavailable")
+              }
+              aria-label={i18nT("replay.aiAnalysis.toggle")}
+            >
+              <Brain size={14} />
+              {aiAnalysisOn.value && debugLoading.value ? (
+                <span class="holo-map__ai-loading" />
+              ) : null}
             </button>
             {props.cameraFrames.length > 0 || cameraMode.value !== "free" ? (
               <HoloCameraMenu

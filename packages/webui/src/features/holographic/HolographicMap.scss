@@ -214,7 +214,27 @@
     line-height: 1;
   }
 
+  /* AI analysis toggle button state: active glows, loading shows a
+     *  pulsing dot. Rides the same lbltoggle chrome. */
+  &__lbltoggle--on {
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 15%);
+    box-shadow: 0 0 8px rgb(var(--color-primary) / 30%);
+  }
+
+  &__ai-loading {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgb(var(--color-primary));
+    animation: holo-map-pulse 1.2s ease-in-out infinite;
+  }
+
   &__lbltoggle {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;

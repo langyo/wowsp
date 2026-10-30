@@ -613,5 +613,9 @@
     "samples": "{ships} navires · {rows} points de décision",
     "contribution": "Contrib.",
     "perShot": "Par tir {value}"
+  },
+  "aiAnalysis": {
+    "toggle": "Analyse IA",
+    "portableUnavailable": "La version portable n'a pas de runtime IA"
   }
 }

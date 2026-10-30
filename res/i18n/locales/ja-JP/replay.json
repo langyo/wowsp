@@ -613,5 +613,9 @@
     "samples": "{ships} 隻 · {rows} 決定点",
     "contribution": "貢献",
     "perShot": "1発平均 {value}"
+  },
+  "aiAnalysis": {
+    "toggle": "AI 分析",
+    "portableUnavailable": "ポータブル版に AI 推論ランタイムなし"
   }
 }

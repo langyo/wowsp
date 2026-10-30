@@ -151,7 +151,7 @@ function layoutArrow(
  * absent layers collapse the whole pool to invisible. */
 export function syncMoveAdvisories(ctx: MapInternals): void {
   const report: DecisionDebugReport | null = ctx.debugReport.value;
-  const active = ctx.moveAdviceOn.value && !!report && !!ctx.api.value?.scene;
+  const active = ctx.aiAnalysisOn.value && !!report && !!ctx.api.value?.scene;
   const pool = ctx.moveAdviceArrows;
   if (!active || !report) {
     for (const slot of pool) slot.group.visible = false;
