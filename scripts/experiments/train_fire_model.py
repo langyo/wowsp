@@ -560,6 +560,8 @@ def load_attr_table(path: str) -> None:
     E19-shape gate while the run log claims attribute routing."""
     global ATTR_TABLE
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not raw:
+        raise SystemExit(f"[e24] attr table {path} is empty — refusing to train an E19-shaped gate under an attribute-routing flag")
     for sid, a in raw.items():
         ATTR_TABLE[int(sid)] = [
             float(a.get("vis") or 0) / 20.0,
