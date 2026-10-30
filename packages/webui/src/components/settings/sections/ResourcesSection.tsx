@@ -33,6 +33,38 @@ export default defineComponent({
   setup(props) {
     const { updates, resources } = props.ctx;
     const cacheStore = updates.cacheStore;
+    /** Display name for one registry row — existing per-resource keys
+     *  where the cards below already name them, inventory-only keys
+     *  otherwise (caches reuse the aux-cache titles). */
+    const rowName = (id: string): string => {
+      switch (id) {
+        case "res-pack": return t("settings.resPackName");
+        case "data-kit": return t("settings.dataSourceShipData");
+        case "data-ship-gameparams": return t("settings.dataSourceShipBundle");
+        case "mod-catalog": return t("settings.dataSourceModCatalog");
+        case "cache-image-cache":
+        case "cache-gameparams":
+        case "cache-encyclopedia":
+        case "cache-community": return auxTitle(id.replace(/^cache-/, ""));
+        case "decisions-pack": return t("settings.resRowDecisions");
+        case "app-update": return t("settings.resRowAppUpdate");
+        case "bundled-lesta": return t("settings.resRowBundledLesta");
+        default: return id;
+      }
+    };
+    /** Flat kind labels (locale JSONs are flat per namespace — no dotted
+     *  keys). */
+    const kindLabel = (kind: string): string => {
+      const map: Record<string, string> = {
+        update: t("settings.resKindUpdate"),
+        pack: t("settings.resKindPack"),
+        dataset: t("settings.resKindDataset"),
+        index: t("settings.resKindIndex"),
+        cache: t("settings.resKindCache"),
+        bundled: t("settings.resKindBundled"),
+      };
+      return map[kind] ?? kind;
+    };
     return () => {
       const st = cacheStore.status;
       const upd = cacheStore.update;
@@ -52,8 +84,37 @@ export default defineComponent({
       // The capability probe is async; render "checking" instead of a
       // misleading "portable build" banner during the first frame.
       const aiKnown = caps.loaded;
+      const invRows = updates.resourceRows.value;
       return (
           <>
+          {/* ── Resource inventory (the registry walk, read-only) ───────
+              One line per runtime-managed resource: channel, kind, on-disk
+              state. Management actions stay in the groups below. */}
+          <HkSettingsGroup title={t("settings.resInvTitle")}>
+            <HkSettingsHint>{t("settings.resInvHint")}</HkSettingsHint>
+            {invRows ? (
+              <ul class="settings-modal__res-inv">
+                {invRows.map((row) => (
+                  <li class="settings-modal__res-inv-row" key={row.id}>
+                    <span class="settings-modal__res-inv-name">{rowName(row.id)}</span>
+                    <span class="settings-modal__res-inv-meta">
+                      {[
+                        kindLabel(row.kind),
+                        row.channel || "—",
+                        row.sizeBytes > 0 ? formatBytes(row.sizeBytes) : null,
+                        row.present
+                          ? row.version ?? (row.sha256 ? hash6(row.sha256) : null)
+                          : t("settings.cacheStatusMissing"),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </HkSettingsGroup>
+
           {/* ── Game-client data ─────────────────────────────────────────── */}
           <HkSettingsGroup title={t("settings.resourcesGameTitle")}>
             <HkSettingsHint>{t("settings.resourcesGameHint")}</HkSettingsHint>

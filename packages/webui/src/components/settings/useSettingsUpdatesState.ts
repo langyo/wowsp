@@ -114,6 +114,19 @@ export function useSettingsUpdatesState() {
   const dataPackBusy = ref(false);
   const modCatalogStamp = ref<string | null>(null);
   const modCatalogBusy = ref(false);
+  // The registry walk (Settings → resources inventory): one row per
+  // runtime-managed resource, spec + on-disk state. Loaded alongside the
+  // data-pack row so the inventory appears when the panel opens and stays
+  // fresh after every explicit refresh.
+  const resourceRows = ref<Awaited<ReturnType<typeof api.resourcesStatus>> | null>(null);
+
+  async function loadResourceRows() {
+    try {
+      resourceRows.value = await api.resourcesStatus();
+    } catch {
+      // keep the previous walk (or none) — the inventory is read-only
+    }
+  }
 
   async function refreshDataPackRow(force: boolean) {
     if (dataPackBusy.value) return;
@@ -125,6 +138,7 @@ export function useSettingsUpdatesState() {
       // keep the previous stamp
     } finally {
       dataPackBusy.value = false;
+      void loadResourceRows();
     }
   }
 
@@ -158,6 +172,8 @@ export function useSettingsUpdatesState() {
     dataPackBusy,
     modCatalogStamp,
     modCatalogBusy,
+    resourceRows,
+    loadResourceRows,
     refreshDataPackRow,
     refreshModCatalogRow,
   };
