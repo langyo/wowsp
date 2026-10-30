@@ -17,7 +17,7 @@ use super::shared::{
     AccountListEntry, WgResponse, account_list_one, account_nickname_by_id, encode_query,
     nickname_matches, parse_dog_tag, pick_verified_entry,
 };
-use super::stats_math::{PrAlgo, PvpStats, account_expected_pr_for};
+use super::stats_math::{PrAlgo, PvpStats, account_expected_pr_for, karma_of};
 use crate::commands::network::HttpPair;
 
 /// Concurrency cap for the batch name→account resolution. WG public API
@@ -942,6 +942,9 @@ pub(super) fn player_stats_from_info(
         ships_played: p.ships_played,
         leveling_tier,
         leveling_points,
+        // Karma rides the same account/info answer (statistics.basic on
+        // the WG clusters); hidden profiles simply carry no figure.
+        karma: karma_of(player_node),
         dog_tag: None,
         solo_wr: p.solo_wr,
         div2_wr: p.div2_wr,

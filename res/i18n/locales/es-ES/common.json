@@ -15,6 +15,7 @@
   },
   "saved": "Guardado",
   "imageUnavailable": "No se pudo cargar la imagen",
+  "karma": "Karma",
   "detect": {
     "title": "Instalación del juego",
     "scanning": "Escaneando el registro y las bibliotecas de Steam…",

@@ -33,6 +33,28 @@ pub(crate) struct CareerModeStats {
 /// ratios would not be the mode's true ratio).
 pub(crate) type CareerSplits = [(i64, i64, i64, i64, i64); 3];
 
+/// Player karma (业力) — the account's net like/report count — off one
+/// account/info player node. Two shapes, first hit wins: the WG
+/// `statistics.basic.karma` sub-object, then a top-level `karma` (the CN
+/// arm normalizes the vortex `basic` node onto that top-level slot); the
+/// read stays defensive so either shape lands. None when the answer
+/// carries no figure at all (hidden CN profiles, older payloads).
+/// NOT extra-gated: `statistics.basic` ships in the default account/info
+/// response, and adding an unverified `extra=` token risks the whole
+/// request being rejected — karma must never cost the batch its stats.
+pub(crate) fn karma_of(player_node: Option<&serde_json::Value>) -> Option<i64> {
+    player_node
+        .and_then(|v| v.get("statistics"))
+        .and_then(|s| s.get("basic"))
+        .and_then(|b| b.get("karma"))
+        .and_then(|k| k.as_i64())
+        .or_else(|| {
+            player_node
+                .and_then(|v| v.get("karma"))
+                .and_then(|k| k.as_i64())
+        })
+}
+
 /// Extracts deep PvP stats from the WG account/info `statistics.pvp` node.
 /// All fields are optional — hidden profiles yield null, and casual accounts
 /// may lack division splits. PR is a career rating derived from an

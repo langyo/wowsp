@@ -578,6 +578,13 @@
     flex: 0 0 auto;
   }
 
+  /* Karma (业力) superscript — the nickname's top-right corner register:
+     raised above the line's center (KarmaSup's own sheet carries the
+     base geometry), flex-none so the nick keeps its ellipsis track. */
+  &__crow-karma {
+    margin-top: -0.55em;
+  }
+
   /* The row's secondary tag (成分章) presses BESIDE THE NICKNAME — the
      single highest tier, in both densities — at the same clan-tag register
      the identity line uses. */

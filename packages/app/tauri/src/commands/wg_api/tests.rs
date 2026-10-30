@@ -142,6 +142,7 @@ fn realm_hit(realm: &str, clan_id: Option<i64>, last_battle_time: Option<i64>) -
             ships_played: None,
             leveling_tier: None,
             leveling_points: None,
+            karma: None,
             dog_tag: None,
             solo_wr: None,
             div2_wr: None,
@@ -586,7 +587,8 @@ fn player_stats_from_info_builds_visible_profile() {
         "2024711808": {
             "statistics": {
                 "pvp": { "battles": 1000, "wins": 550, "damage_dealt": 1_500_000 },
-                "pvp_solo": { "battles": 600, "wins": 330 }
+                "pvp_solo": { "battles": 600, "wins": 330 },
+                "basic": { "karma": 17 }
             },
             "leveling_tier": 12,
             "leveling_points": 3400
@@ -610,6 +612,9 @@ fn player_stats_from_info_builds_visible_profile() {
     assert_eq!(s.clan_tag.as_deref(), Some("FOO"));
     assert_eq!(s.clan_id, Some(500123));
     assert_eq!(s.leveling_tier, Some(12));
+    // Karma reads statistics.basic (the default account/info node — the
+    // batch never extra-gates it, see karma_of).
+    assert_eq!(s.karma, Some(17));
     assert_eq!(s.avg_damage, Some(1500.0));
     assert!(s.pr.is_some());
     // Batch path never pays for Vortex dog tags.
@@ -627,8 +632,29 @@ fn player_stats_from_info_marks_missing_stats_hidden() {
     let s = player_stats_from_info(entry, "eu".to_string(), None, &HashMap::new());
     assert!(s.hidden);
     assert_eq!(s.winrate, None);
+    assert_eq!(s.karma, None);
     assert_eq!(s.clan_tag, None);
     assert_eq!(s.clan_id, None);
+}
+
+/// Karma reads the default account/info `statistics.basic` node first,
+/// then a top-level `karma` (the CN arm normalizes the vortex basic node
+/// onto that slot) — either shape must land, and a node carrying no figure
+/// at all (hidden profiles, older payloads) stays None rather than turning
+/// into a misleading 0.
+#[test]
+fn karma_of_reads_basic_node_then_top_level_fallback() {
+    let basic = serde_json::json!({
+        "statistics": { "pvp": { "battles": 10, "wins": 5 }, "basic": { "karma": 17 } }
+    });
+    assert_eq!(karma_of(Some(&basic)), Some(17));
+    // Top-level fallback (the CN-normalized shape).
+    let top = serde_json::json!({ "karma": -3, "statistics": { "pvp": null } });
+    assert_eq!(karma_of(Some(&top)), Some(-3));
+    // No figure anywhere → None, never 0.
+    let bare = serde_json::json!({ "statistics": { "pvp": { "battles": 1 } } });
+    assert_eq!(karma_of(Some(&bare)), None);
+    assert_eq!(karma_of(None), None);
 }
 
 #[test]

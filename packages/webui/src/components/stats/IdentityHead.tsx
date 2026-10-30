@@ -1,5 +1,6 @@
 import { defineComponent, type PropType } from "vue";
 
+import KarmaSup from "@/components/base/KarmaSup";
 import { t } from "@/i18n";
 import "./IdentityHead.scss";
 
@@ -8,6 +9,13 @@ import "./IdentityHead.scss";
  * trailing badges (realm, hidden, …) on the right. StatsCard (player) and
  * ClanCard (clan) render the same strip so both pages read identically;
  * the clan tag becomes a jump button whenever a click handler is given.
+ *
+ * The optional `karma` prop is the player karma (the WG account net
+ * like/report count) rendered as a RAISED SUPERSCRIPT at the nickname's
+ * top-right — the badge is a separate flex item after the <h3>, so a long
+ * nickname still ellipsizes instead of being pushed out of the row. Clan
+ * cards pass nothing (karma is a player-only figure) and hidden profiles /
+ * old cache blobs carry null/undefined → nothing renders.
  *
  * Slots:
  *   avatar — leading visual (PlayerBadge on the player card).
@@ -28,6 +36,11 @@ export default defineComponent({
     /** Extra class on the name heading (the marked-name tint rides
      *  here; clan cards omit it). */
     nameClass: { type: String, default: "" },
+    /** Player karma (业力) for the top-right-of-nickname superscript;
+     *  null/undefined (clan cards, hidden profiles, older caches)
+     *  renders nothing. Gated by the `cardKarmaEnabled` pref at the
+     *  caller, so this stays a dumb display prop. */
+    karma: { type: Number as PropType<number | null>, default: null },
   },
   setup(props, { slots }) {
     return () => (
@@ -49,6 +62,9 @@ export default defineComponent({
             )
           ) : null}
           <h3 class={["id-head__name", props.nameClass]}>{props.name}</h3>
+          {props.karma != null ? (
+            <KarmaSup value={props.karma} class="id-head__karma" />
+          ) : null}
         </div>
         <div class="id-head__badges">
           {slots.badges?.()}

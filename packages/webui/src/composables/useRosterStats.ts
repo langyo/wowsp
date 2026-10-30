@@ -74,6 +74,11 @@ export interface RosterStat {
    *  panel's. Null = not resolved (a landed answer always carries its
    *  realm string, same-realm ones included). */
   realm: string | null;
+  /** Player karma (业力 — the WG net like/report count) off the same
+   *  batch answer; null = hidden profile / older answer / bot. Consumed
+   *  by the nickname-top-right superscript (KarmaSup) on the roster
+   *  surfaces, gated by the `rosterKarmaEnabled` pref. */
+  karma: number | null;
   /** Resolved clan winrate for the rat gate: undefined = not judged yet
    *  (a hidden + clanful entry holds its stamp until this lands) or no
    *  judgment needed; a number passes to careerStamp's gate; null = the
@@ -134,6 +139,7 @@ const emptyStat = (loading: boolean): RosterStat => ({
   clanId: null,
   clanTag: null,
   realm: null,
+  karma: null,
   hidden: false,
   loading,
 });
@@ -173,6 +179,7 @@ function rosterStatOf(r: {
   clanId?: number | null;
   clanTag?: string | null;
   realm?: string | null;
+  karma?: number | null;
   hidden: boolean;
 }): RosterStat {
   return {
@@ -225,6 +232,7 @@ function rosterStatOf(r: {
     clanId: r.clanId ?? null,
     clanTag: r.clanTag ?? null,
     realm: r.realm ?? null,
+    karma: r.karma ?? null,
     hidden: r.hidden,
     loading: false,
   };

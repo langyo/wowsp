@@ -44,6 +44,14 @@
     white-space: nowrap;
   }
 
+  /* Karma (业力) superscript — rides the name line right after the <h3>,
+     nudged to the line's top so it presses to the nickname's top-right
+     corner. flex: none (in KarmaSup's own sheet) keeps it from being
+     squeezed; the name keeps its ellipsis track. */
+  &__karma {
+    margin-top: -0.3em;
+  }
+
   &__badges {
     display: flex;
     align-items: center;

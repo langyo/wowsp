@@ -141,6 +141,7 @@ import { useRosterStats, isAiName, type RosterStat } from "@/composables/useRost
 import { useLiveCompositions } from "@/composables/useLiveCompositions";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
 import { useBattleClock } from "./useBattleClock";
+import KarmaSup from "@/components/base/KarmaSup";
 import RatingStamp from "@/components/base/RatingStamp";
 import { useMarkersStore } from "@/stores/markers";
 import { markerTintClass } from "@/features/markers/markerTint";
@@ -1395,6 +1396,15 @@ export default defineComponent({
                 </span>
               );
             })()}
+            {/* Karma (业力) superscript — pressed to the nickname's
+                TOP-RIGHT corner, straight after the nick and before every
+                identity tag, in BOTH densities (the rows share this one
+                line). The stats prefs' own switch gates it; a player whose
+                answer carries no figure (hidden CN profile, older cache,
+                bot) renders nothing. */}
+            {prefs.prefs.rosterKarmaEnabled ? (
+              <KarmaSup value={st?.karma ?? null} class="live-battle__crow-karma" />
+            ) : null}
             {crossRealmTagOf(st) ? (
               <span class="live-battle__cross-realm">{crossRealmTagOf(st)}</span>
             ) : null}

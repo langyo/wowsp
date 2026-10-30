@@ -15,6 +15,7 @@
   },
   "saved": "Saved",
   "imageUnavailable": "Image unavailable",
+  "karma": "Karma",
   "detect": {
     "title": "Game installation",
     "scanning": "Scanning registry and Steam libraries…",

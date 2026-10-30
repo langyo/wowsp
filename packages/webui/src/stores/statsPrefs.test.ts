@@ -50,7 +50,9 @@ describe("loadStatsPrefs", () => {
     // off (dense already); the consumable-intel line above it has no
     // switch at all. Compact rows on the live panel ship on; compact rows
     // post-battle (the full-card override off) stay the default. The
-    // PR-tier row wash ships on.
+    // PR-tier row wash ships on, and so do both karma (业力) superscripts
+    // — the roster lists' and the stats cards' switches ship ON: the
+    // figures ride answers the surfaces already pay for.
     expect(DEFAULT_STATS_PREFS).toEqual({
       prEnabled: true,
       prAlgo: "winrate",
@@ -59,6 +61,8 @@ describe("loadStatsPrefs", () => {
       weightedTeamWr: true,
       liveRosterCompact: true,
       liveRosterPrTint: true,
+      rosterKarmaEnabled: true,
+      cardKarmaEnabled: true,
       postbattleRosterFull: false,
       teamAvgEnabled: false,
       sealDisabled: {},
@@ -94,6 +98,35 @@ describe("loadStatsPrefs", () => {
     expect(localStorage.getItem(STATS_PREFS_STORAGE_KEY)).toBe(
       JSON.stringify({ ...DEFAULT_STATS_PREFS, sealDisabled: { rat: true } }),
     );
+  });
+
+  it("reads the karma superscript switches, defaulting absent keys on", () => {
+    // A blob written by a pre-karma build carries neither switch — both
+    // default ON (the figures ride answers the surfaces already fetch).
+    localStorage.setItem(STATS_PREFS_STORAGE_KEY, JSON.stringify({ prEnabled: true }));
+    expect(loadStatsPrefs().rosterKarmaEnabled).toBe(true);
+    expect(loadStatsPrefs().cardKarmaEnabled).toBe(true);
+
+    // A stored opt-out sticks for each switch independently.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ rosterKarmaEnabled: false, cardKarmaEnabled: true }),
+    );
+    expect(loadStatsPrefs().rosterKarmaEnabled).toBe(false);
+    expect(loadStatsPrefs().cardKarmaEnabled).toBe(true);
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ rosterKarmaEnabled: true, cardKarmaEnabled: false }),
+    );
+    expect(loadStatsPrefs().rosterKarmaEnabled).toBe(true);
+    expect(loadStatsPrefs().cardKarmaEnabled).toBe(false);
+
+    // Junk values reset to the defaults like every other boolean knob.
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({ rosterKarmaEnabled: "voodoo" }),
+    );
+    expect(loadStatsPrefs().rosterKarmaEnabled).toBe(true);
   });
 
   it("migrates the legacy avg-stats switch into empty columns when off", () => {
@@ -386,6 +419,8 @@ describe("statsPrefs store", () => {
     store.setWeightedTeamWr(false);
     store.setLiveRosterCompact(true);
     store.setLiveRosterPrTint(false);
+    store.setRosterKarmaEnabled(false);
+    store.setCardKarmaEnabled(false);
     store.setPostbattleRosterFull(true);
     store.setTeamAvgEnabled(true);
     store.setOverlayColumns([
@@ -405,6 +440,8 @@ describe("statsPrefs store", () => {
       weightedTeamWr: false,
       liveRosterCompact: true,
       liveRosterPrTint: false,
+      rosterKarmaEnabled: false,
+      cardKarmaEnabled: false,
       postbattleRosterFull: true,
       teamAvgEnabled: true,
       sealDisabled: {},

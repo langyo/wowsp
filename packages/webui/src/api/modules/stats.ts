@@ -38,6 +38,11 @@ export interface PlayerStats {
   // ── Service record (player level/badge) ─────────────────────────────
   levelingTier?: number | null;
   levelingPoints?: number | null;
+  /** WG karma (业力) — the account's net like/report count off the same
+   *  answer (account/info statistics.basic on WG, the vortex basic node on
+   *  CN). Absent on older cache blobs and hidden CN profiles; consumed by
+   *  the nickname-top-right superscript (KarmaSup). */
+  karma?: number | null;
   // ── Dog tag (player emblem from Vortex API) ─────────────────────────
   dogTag?: DogTag | null;
   // ── Per-division winrates ───────────────────────────────────────────

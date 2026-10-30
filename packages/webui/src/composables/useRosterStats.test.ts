@@ -116,6 +116,25 @@ describe("fetchRosterStatsByNames cache isolation", () => {
   });
 });
 
+describe("fetchRosterStatsByNames karma mapping", () => {
+  it("lands the batch answer's karma (业力) on the roster rows, null stays null", async () => {
+    // Global columns only — this test exercises the name phase.
+    statsPrefsState.value.overlayColumns = [{ scope: "global", metric: "winrate" }];
+    vi.mocked(api.lookupPlayersStatsBatch).mockResolvedValue([
+      mockPlayer({ name: "karma_probe", karma: 12 }),
+      mockPlayer({ name: "karma_none", karma: null }),
+    ]);
+
+    const out = await fetchRosterStatsByNames(["karma_probe", "karma_none"], "asia");
+    // The figure rides the same copy handed to the rows — the nickname
+    // superscript (KarmaSup) reads it off RosterStat.
+    expect(out.get("karma_probe")?.karma).toBe(12);
+    // A missing figure (hidden profile / older answer) stays null so the
+    // superscript renders nothing rather than a fake 0.
+    expect(out.get("karma_none")?.karma).toBeNull();
+  });
+});
+
 describe("fetchRosterStatsByNames progressive arrival", () => {
   it("sub-batches the misses and settles each chunk's names through onArrive", async () => {
     // Every column global — this test exercises the name phase only.

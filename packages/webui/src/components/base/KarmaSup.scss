@@ -1,0 +1,32 @@
+/* The player karma (业力) superscript (KarmaSup.tsx) — one shared face for
+   every nickname surface: the live-roster rows, the post-battle rows and the
+   stats cards' identity head. Pressed to the nickname's TOP-RIGHT corner: a
+   flex item nudged toward the line's top edge (the hosts' name lines are
+   flex rows with align-items: center), sized a step below the nick so it
+   reads as a raised index figure. flex: none keeps it from being squeezed —
+   and from pushing the nickname out of its track when the line runs out of
+   room. */
+.karma-sup {
+  flex: none;
+  align-self: flex-start;
+  margin-top: -0.45em;
+  color: rgb(var(--color-text) / 0.55);
+  font-size: 0.62em;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  vertical-align: super;
+  white-space: nowrap;
+
+  &--pos {
+    color: rgb(71 227 165);
+  }
+
+  &--neg {
+    color: rgb(220 80 80);
+  }
+
+  &--zero {
+    color: rgb(var(--color-text) / 0.45);
+  }
+}
