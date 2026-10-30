@@ -1,8 +1,9 @@
 //! Global outbound network proxy configuration.
 //!
 //! Every HTTP request WoWSP makes (WG API stats lookups, ship encyclopedia,
-//! model pack downloads, update checks) is built by build_http_client, so
-//! the Settings -> Network choice applies globally:
+//! model pack downloads, update checks) rides a client built here — the
+//! [`HttpPair`] twins or [`build_direct_http_client`] — so the
+//! Settings -> Network choice applies globally:
 //!
 //!   system  follow the OS proxy settings (env vars, then WinINET)
 //!   none    connect directly, ignore any proxy
@@ -435,8 +436,13 @@ fn http_builder_for(config: &NetworkConfig) -> anyhow::Result<reqwest::ClientBui
             reqwest::Proxy::all(url.clone()).map_err(|e| anyhow!("proxy {url}: {e}"))?;
         // Loopback targets (locally served update artifacts, dev mirrors)
         // must never ride the proxy — several proxies refuse or mangle
-        // requests back to the very machine they run on.
-        proxy = proxy.no_proxy(reqwest::NoProxy::from_string("localhost,127.0.0.1"));
+        // requests back to the very machine they run on — and neither
+        // must the RFC1918/link-local private ranges: they carry LAN
+        // pairing traffic, whose peer is a phone on the same Wi-Fi,
+        // never something the user's outbound proxy could reach.
+        proxy = proxy.no_proxy(reqwest::NoProxy::from_string(
+            "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16",
+        ));
         builder = builder.proxy(proxy);
     } else if config.mode == ProxyMode::None {
         builder = builder.no_proxy();
@@ -444,11 +450,17 @@ fn http_builder_for(config: &NetworkConfig) -> anyhow::Result<reqwest::ClientBui
     Ok(builder)
 }
 
-/// Convenience: build the proxy-aware client right away.
-pub fn build_http_client() -> anyhow::Result<reqwest::Client> {
+/// A deliberately direct client: the persisted proxy policy is bypassed
+/// entirely (no configured proxy, no system detection). LAN pairing is
+/// the canonical caller — a phone on the same Wi-Fi is unreachable
+/// through the user's outbound proxy; the private-range no_proxy entries
+/// in http_builder_for are belt-and-braces on top of this, not the only
+/// guard.
+pub fn build_direct_http_client() -> anyhow::Result<reqwest::Client> {
     http_client_builder()?
+        .no_proxy()
         .build()
-        .map_err(|e| anyhow!("http client: {e}"))
+        .map_err(|e| anyhow!("direct http client: {e}"))
 }
 
 /// A proxy-honoring client plus its always-direct twin — the unit the

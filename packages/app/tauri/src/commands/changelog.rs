@@ -17,7 +17,8 @@ use std::time::Duration;
 use wowsp_tauri_shared::CommandResult;
 
 use crate::commands::github_mirror;
-use crate::commands::network::build_http_client;
+use crate::commands::network::HttpPair;
+use crate::commands::upstream_health;
 
 /// One page of the release list comfortably covers the app's cadence
 /// (several PRs per weekly-ish release; 30 releases ≈ half a year) while
@@ -73,23 +74,30 @@ fn parse_releases(payload: &serde_json::Value) -> Vec<ChangelogRelease> {
 /// webui store verbatim — the section renders its retry state on them.
 #[tauri::command]
 pub async fn changelog_list() -> CommandResult<Vec<ChangelogRelease>> {
-    let client = build_http_client()?;
+    // The pair + fallback chain: a dead/black-holing configured proxy
+    // must not stall the section behind per-mirror timeouts — the
+    // transport failure hands the host to the direct twin at once
+    // (see upstream_health::send_with_fallback).
+    let clients = HttpPair::build(|b| b)?;
     let mut last_err = String::from("no mirror attempted for the changelog");
     for candidate in github_mirror::candidates(RELEASES_URL) {
-        let resp = match client
-            .get(&candidate)
-            .header("User-Agent", "WoWSP-changelog/1.0")
-            .header("Accept", "application/vnd.github+json")
-            .timeout(FETCH_TIMEOUT)
-            .send()
+        let host = upstream_health::host_of_url(&candidate).to_string();
+        let resp =
+            match upstream_health::send_with_fallback(&clients, &host, "changelog", |client| {
+                client
+                    .get(&candidate)
+                    .header("User-Agent", "WoWSP-changelog/1.0")
+                    .header("Accept", "application/vnd.github+json")
+                    .timeout(FETCH_TIMEOUT)
+            })
             .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                last_err = format!("{candidate}: {e}");
-                continue;
-            },
-        };
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    last_err = format!("{candidate}: {e}");
+                    continue;
+                },
+            };
         if !resp.status().is_success() {
             last_err = format!("{candidate}: HTTP {}", resp.status());
             continue;

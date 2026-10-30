@@ -16,8 +16,8 @@
 //! original URL's scheme+host onto it (path/query preserved) and falls back
 //! to the original URL when the mirror fetch fails. Hits are served from a
 //! disk cache under the app cache dir (keyed per fetch URL, so mirror and
-//! original copies coexist), and misses are fetched through
-//! [`crate::commands::network::build_http_client`] so the Settings → Network
+//! original copies coexist), and misses are fetched through the
+//! [`crate::commands::network::HttpPair`] so the Settings → Network
 //! proxy choice applies here too, like every other outbound request.
 //!
 //! Mod-hub catalog previews (`github.com/user-attachments/…` and the legacy

@@ -147,15 +147,24 @@ pub(super) async fn open_gateway_session(
         bail!("gateway route is malformed: {route}");
     }
     let url = format!("{root}/session");
-    let client = super::super::network::build_http_client()?;
-    let resp = client
-        .post(&url)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .timeout(SESSION_TIMEOUT)
-        .body(session_request_body(route, turnstile_token, password))
-        .send()
-        .await
-        .map_err(|e| anyhow!("{} (session POST: {e})", GATEWAY_UNREACHABLE))?;
+    // The exchange is a replayable JSON POST (the body is rebuilt from the
+    // same credentials per attempt), so it rides the proxy→direct chain.
+    let clients = super::super::network::HttpPair::build(|b| b)?;
+    let host = super::super::upstream_health::host_of_url(&url).to_string();
+    let resp = super::super::upstream_health::send_with_fallback(
+        &clients,
+        &host,
+        "gateway-session",
+        |client| {
+            client
+                .post(&url)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .timeout(SESSION_TIMEOUT)
+                .body(session_request_body(route, turnstile_token, password))
+        },
+    )
+    .await
+    .map_err(|e| anyhow!("{} (session POST: {e})", GATEWAY_UNREACHABLE))?;
     let status = resp.status().as_u16();
     if !resp.status().is_success() {
         let headers = resp.headers().clone();

@@ -67,22 +67,33 @@ fn save_cache(cache: &BTreeMap<String, String>) {
 
 /// One uid's avatar: live answer, else cached, else `face: null` (the
 /// frontend falls back to the initial letter). Never errors.
-async fn fetch_one(client: &reqwest::Client, uid: u64, cached: Option<String>) -> SupporterAvatar {
+async fn fetch_one(
+    clients: &super::network::HttpPair,
+    uid: u64,
+    cached: Option<String>,
+) -> SupporterAvatar {
     let fallback = || SupporterAvatar {
         uid,
         face: cached.clone(),
     };
-    let resp = match client
-        .get(format!("{CARD_API}?mid={uid}"))
-        .header("User-Agent", USER_AGENT)
-        .header("Accept", "application/json")
-        .timeout(Duration::from_secs(6))
-        .send()
+    // Bilibili needs no mirror ladder, but the card GET still rides the
+    // proxy→direct chain so a dead configured proxy cannot blank every
+    // card behind the 6 s cap.
+    let url = format!("{CARD_API}?mid={uid}");
+    let host = super::upstream_health::host_of_url(&url).to_string();
+    let resp =
+        match super::upstream_health::send_with_fallback(clients, &host, "supporters", |client| {
+            client
+                .get(&url)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "application/json")
+                .timeout(Duration::from_secs(6))
+        })
         .await
-    {
-        Ok(resp) if resp.status().is_success() => resp,
-        _ => return fallback(),
-    };
+        {
+            Ok(resp) if resp.status().is_success() => resp,
+            _ => return fallback(),
+        };
     let body = match resp.text().await {
         Ok(body) => body,
         Err(_) => return fallback(),
@@ -125,11 +136,11 @@ fn normalize_face(url: &str) -> Option<String> {
 /// `null` face.
 #[tauri::command]
 pub async fn get_supporter_avatars(uids: Vec<u64>) -> CommandResult<Vec<SupporterAvatar>> {
-    let client = super::network::build_http_client()?;
+    let clients = super::network::HttpPair::build(|b| b)?;
     let mut cache = load_cache();
     let results = join_all(
         uids.iter()
-            .map(|uid| fetch_one(&client, *uid, cache.get(&uid.to_string()).cloned())),
+            .map(|uid| fetch_one(&clients, *uid, cache.get(&uid.to_string()).cloned())),
     )
     .await;
     for avatar in &results {
@@ -181,15 +192,19 @@ fn game_id_plausible(id: &str) -> bool {
 /// and shape gates). Any failure answers Err — the command decides the
 /// fallback.
 async fn fetch_sponsor_list() -> Result<SponsorListDoc> {
-    let client = super::network::build_http_client().context("build http client")?;
-    let resp = client
-        .get(format!(
-            "{}{SPONSORS_PATH}",
-            super::pairing_relay::builtin_relay_root()
-        ))
-        .header("User-Agent", USER_AGENT)
-        .timeout(SPONSORS_TIMEOUT)
-        .send()
+    let clients = super::network::HttpPair::build(|b| b).context("build http client")?;
+    let url = format!(
+        "{}{SPONSORS_PATH}",
+        super::pairing_relay::builtin_relay_root()
+    );
+    let host = super::upstream_health::host_of_url(&url).to_string();
+    let resp =
+        super::upstream_health::send_with_fallback(&clients, &host, "supporters", |client| {
+            client
+                .get(&url)
+                .header("User-Agent", USER_AGENT)
+                .timeout(SPONSORS_TIMEOUT)
+        })
         .await
         .context("fetch sponsor list")?;
     if !resp.status().is_success() {

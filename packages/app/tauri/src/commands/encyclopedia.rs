@@ -308,7 +308,12 @@ fn resolve_encyclopedia_language(realm: &str, data_language: Option<String>) -> 
 // ── helpers shared with wg_api.rs (duplicated to avoid cross-module churn) ──
 
 fn wg_clients() -> anyhow::Result<crate::commands::network::HttpPair> {
-    crate::commands::network::HttpPair::build(|b| b)
+    // An overall per-request ceiling on top of the builder's 15 s
+    // connect timeout: a slow proxy (or a crawling upstream) used to
+    // park the encyclopedia fetch indefinitely — the disk cache kept
+    // old data usable, but a cold/expired cache left the view spinning
+    // with nothing to show and nothing to retry against.
+    crate::commands::network::HttpPair::build(|b| b.timeout(std::time::Duration::from_secs(60)))
 }
 
 fn now_ts() -> i64 {

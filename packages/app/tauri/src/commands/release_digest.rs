@@ -40,6 +40,9 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
+use super::network::HttpPair;
+use super::upstream_health;
+
 /// The repository every consumed release lives on.
 const API_REPO: &str = "https://api.github.com/repos/langyo/wowsp";
 
@@ -193,7 +196,7 @@ enum ApiAttempt {
     Retryable(String),
 }
 
-async fn api_attempt(client: &reqwest::Client, url: &str, timeout: Duration) -> Result<ApiAttempt> {
+async fn api_attempt(pair: &HttpPair, url: &str, timeout: Duration) -> Result<ApiAttempt> {
     debug_assert!(
         url.starts_with(API_REPO),
         "official lookups must target {API_REPO}, got {url}"
@@ -202,18 +205,27 @@ async fn api_attempt(client: &reqwest::Client, url: &str, timeout: Duration) -> 
         .lock()
         .ok()
         .and_then(|cache| cache.get(url).cloned());
-    let mut request = client
-        .get(url)
-        .header("User-Agent", concat!("WoWSP/", env!("CARGO_PKG_VERSION")))
-        .header("Accept", "application/vnd.github+json")
-        .timeout(timeout);
-    if let Some((etag, _)) = &cached {
-        request = request.header("If-None-Match", etag.as_str());
-    }
-    let response = match request.send().await {
-        Ok(r) => r,
-        Err(e) => return Ok(ApiAttempt::Retryable(format!("{url}: {e}"))),
-    };
+    // The conditional GET is fully replayable (headers only), so it rides
+    // the proxy→direct chain — a dead configured proxy must not burn the
+    // whole retry budget one timeout at a time.
+    let host = upstream_health::host_of_url(url).to_string();
+    let response =
+        match upstream_health::send_with_fallback(pair, &host, "release-digest", |client| {
+            let mut request = client
+                .get(url)
+                .header("User-Agent", concat!("WoWSP/", env!("CARGO_PKG_VERSION")))
+                .header("Accept", "application/vnd.github+json")
+                .timeout(timeout);
+            if let Some((etag, _)) = &cached {
+                request = request.header("If-None-Match", etag.as_str());
+            }
+            request
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => return Ok(ApiAttempt::Retryable(format!("{url}: {e}"))),
+        };
     let status = response.status();
     if status == reqwest::StatusCode::NOT_MODIFIED {
         if let Some((_, doc)) = &cached {
@@ -251,13 +263,13 @@ async fn api_attempt(client: &reqwest::Client, url: &str, timeout: Duration) -> 
 /// GET one official API document. Transport failures, unparsable bodies
 /// and 5xx are retried with a short back-off; 403/429 end the lookup as
 /// [`ApiLookup::Unavailable`] at once; any other status is an `Err`.
-pub async fn lookup_api_json(client: &reqwest::Client, url: &str) -> Result<ApiLookup> {
+pub async fn lookup_api_json(pair: &HttpPair, url: &str) -> Result<ApiLookup> {
     let mut last_err = String::new();
     for attempt in 0..API_ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(RETRY_DELAY * attempt).await;
         }
-        match api_attempt(client, url, API_TIMEOUT).await? {
+        match api_attempt(pair, url, API_TIMEOUT).await? {
             ApiAttempt::Found(doc) => return Ok(ApiLookup::Found(doc)),
             ApiAttempt::Unavailable(e) => return Ok(ApiLookup::Unavailable(e)),
             ApiAttempt::Retryable(e) => last_err = e,
@@ -270,8 +282,8 @@ pub async fn lookup_api_json(client: &reqwest::Client, url: &str) -> Result<ApiL
 /// budget, so the blocked-GitHub path costs a single timeout, paid in
 /// parallel with the relay leg. Transient shapes read as "GitHub silent
 /// right now"; definitive errors are an `Err`.
-async fn github_doc_quick(client: &reqwest::Client, url: &str) -> Result<serde_json::Value> {
-    match api_attempt(client, url, QUICK_API_TIMEOUT).await? {
+async fn github_doc_quick(pair: &HttpPair, url: &str) -> Result<serde_json::Value> {
+    match api_attempt(pair, url, QUICK_API_TIMEOUT).await? {
         ApiAttempt::Found(doc) => Ok(doc),
         ApiAttempt::Retryable(e) | ApiAttempt::Unavailable(e) => Err(anyhow!(e)),
     }
@@ -450,7 +462,7 @@ pub fn relay_digest_url(channel: &str, tag: Option<&str>) -> String {
 /// an `Err` the dual-channel lookup turns into "the GitHub leg decides"
 /// (a doc that does not verify never yields content).
 async fn fetch_relay_doc_at(
-    client: &reqwest::Client,
+    pair: &HttpPair,
     url: &str,
     channel: &str,
 ) -> Result<Option<RelayDigestDoc>> {
@@ -459,12 +471,15 @@ async fn fetch_relay_doc_at(
         "the relay digest endpoint serves {DIGEST_CHANNELS:?}, got {channel}"
     );
     let mut last_err = String::new();
+    let host = upstream_health::host_of_url(url).to_string();
     for _ in 0..RELAY_DIGEST_ATTEMPTS {
-        let response = client
-            .get(url)
-            .header("User-Agent", concat!("WoWSP/", env!("CARGO_PKG_VERSION")))
-            .timeout(RELAY_DIGEST_TIMEOUT)
-            .send()
+        let response =
+            upstream_health::send_with_fallback(pair, &host, "release-digest", |client| {
+                client
+                    .get(url)
+                    .header("User-Agent", concat!("WoWSP/", env!("CARGO_PKG_VERSION")))
+                    .timeout(RELAY_DIGEST_TIMEOUT)
+            })
             .await;
         let doc: serde_json::Value = match response {
             // A definitive miss: return it as `None` so the caller can
@@ -504,13 +519,13 @@ async fn fetch_relay_doc_at(
 /// [`relay_pinned_sha256`] instead, which owns its own reachability
 /// semantics.
 pub async fn fetch_relay_doc_latest(
-    client: &reqwest::Client,
+    pair: &HttpPair,
     channel: &str,
 ) -> Result<Option<RelayDigestDoc>> {
     if relay_channel_marked_absent(channel).await {
         return Ok(None);
     }
-    let doc = fetch_relay_doc_at(client, &relay_digest_url(channel, None), channel).await?;
+    let doc = fetch_relay_doc_at(pair, &relay_digest_url(channel, None), channel).await?;
     if doc.is_none() {
         remember_relay_channel_absent(channel).await;
     }
@@ -699,15 +714,15 @@ pub enum OfficialDigest {
 /// release that answers but carries no digest for the asset is an `Err`,
 /// never `Unavailable`.
 pub async fn lookup_official_sha256(
-    client: &reqwest::Client,
+    pair: &HttpPair,
     channel: &str,
     tag: &str,
     name: &str,
 ) -> Result<OfficialDigest> {
     let api_url = release_api_url(tag);
     let (relay, github_quick) = tokio::join!(
-        fetch_relay_doc_latest(client, channel),
-        github_doc_quick(client, &api_url),
+        fetch_relay_doc_latest(pair, channel),
+        github_doc_quick(pair, &api_url),
     );
     // `Ok(None)` (the relay publishes no digest for this channel — the
     // absent-mark or a fresh 404) behaves like an unavailable relay
@@ -748,7 +763,7 @@ pub async fn lookup_official_sha256(
         // No relay verdict (absent channel, or transient relay trouble)
         // and no quick GitHub answer: spend GitHub's full retry budget
         // before reporting the digest unavailable.
-        (_, Err(_)) => match lookup_api_json(client, &api_url).await? {
+        (_, Err(_)) => match lookup_api_json(pair, &api_url).await? {
             ApiLookup::Found(release) => Ok(OfficialDigest::Verified(github_digest(release)?)),
             ApiLookup::Unavailable(github_err) => Ok(OfficialDigest::Unavailable(format!(
                 "relay: {relay_note}; GitHub: {github_err}"
@@ -762,12 +777,12 @@ pub async fn lookup_official_sha256(
 /// release, failing closed: a payload that cannot be verified is never
 /// accepted.
 pub async fn fetch_official_sha256(
-    client: &reqwest::Client,
+    pair: &HttpPair,
     channel: &str,
     tag: &str,
     name: &str,
 ) -> Result<String> {
-    match lookup_official_sha256(client, channel, tag, name).await? {
+    match lookup_official_sha256(pair, channel, tag, name).await? {
         OfficialDigest::Verified(sha) => Ok(sha),
         OfficialDigest::Unavailable(e) => bail!("official digest unavailable: {e}"),
     }
@@ -802,19 +817,22 @@ fn pinned_sha_from_doc(
 /// answer but fails its signature or names another tag is a hard `Err`,
 /// never silently downgraded.
 pub async fn relay_pinned_sha256(
-    client: &reqwest::Client,
+    pair: &HttpPair,
     channel: &str,
     tag: &str,
     name: &str,
 ) -> Result<Option<String>> {
     let url = relay_digest_url(channel, Some(tag));
     let mut last_err = String::from("no relay attempt made");
+    let host = upstream_health::host_of_url(&url).to_string();
     for _ in 0..RELAY_DIGEST_ATTEMPTS {
-        let response = client
-            .get(&url)
-            .header("User-Agent", concat!("WoWSP/", env!("CARGO_PKG_VERSION")))
-            .timeout(RELAY_DIGEST_TIMEOUT)
-            .send()
+        let response =
+            upstream_health::send_with_fallback(pair, &host, "release-digest", |client| {
+                client
+                    .get(&url)
+                    .header("User-Agent", concat!("WoWSP/", env!("CARGO_PKG_VERSION")))
+                    .timeout(RELAY_DIGEST_TIMEOUT)
+            })
             .await;
         let doc = match response {
             // A definitive miss (unpublished channel or unknown tag):

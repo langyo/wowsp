@@ -109,6 +109,11 @@ reqwest = { version = "^0.13", default-features = false, features = [
     "stream",
     "charset",
     "http2",
+    # The Settings → Network manual proxy accepts socks5:// URLs (the
+    # scheme check in commands/network.rs keeps them); without this
+    # feature reqwest cannot dial them and every request through such a
+    # client fails.
+    "socks",
 ] }
 
 # File system watching (poll tempArenaInfo.json, replay dir, dev hot-reload)

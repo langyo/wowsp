@@ -161,6 +161,10 @@ reqwest = { version = "^0.13", default-features = false, features = [
     "charset",
     "http2",
     "rustls-no-provider",
+    # keep in sync with the workspace reqwest: the manual-proxy scheme
+    # check accepts socks5:// on every target, so Android needs the
+    # dial support too (see the workspace Cargo.toml note).
+    "socks",
 ] }
 
 # Windows-only runtime deps (registry + screen capture / OCR namespaces).

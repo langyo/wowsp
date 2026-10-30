@@ -88,7 +88,6 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use flate2::read::GzDecoder;
-use reqwest::Client;
 use sha2::{Digest, Sha256};
 use tar::Archive;
 use tauri::{AppHandle, Emitter};
@@ -98,7 +97,9 @@ use wowsp_tauri_shared::{
 };
 
 use crate::commands::download_hub::{self, DownloadRequest};
+use crate::commands::network::HttpPair;
 use crate::commands::release_digest::{ApiLookup, OfficialDigest};
+use crate::commands::upstream_health;
 use crate::paths;
 
 const REPO: &str = "langyo/wowsp";
@@ -348,9 +349,9 @@ fn release_download_url(asset: &str) -> String {
 /// archive's sha256, so a mirror that could rewrite it could also swap
 /// the archive. Only when BOTH official channels are unreachable or
 /// rate-limited does the mirror-served manifest pass unverified.
-async fn fetch_manifest(client: &Client) -> anyhow::Result<ResManifest> {
+async fn fetch_manifest(clients: &HttpPair) -> anyhow::Result<ResManifest> {
     let expected = match super::release_digest::lookup_official_sha256(
-        client,
+        clients,
         RES_CHANNEL,
         RES_TAG,
         RES_MANIFEST,
@@ -370,13 +371,18 @@ async fn fetch_manifest(client: &Client) -> anyhow::Result<ResManifest> {
     let url = release_download_url(RES_MANIFEST);
     let mut last_err = format!("no mirror attempted for {RES_MANIFEST}");
     for candidate in super::github_mirror::candidates(&url) {
-        match client
-            .get(&candidate)
-            .header("User-Agent", "WoWSP-resource-pack/2.0")
-            .header("Cache-Control", "no-cache")
-            .timeout(Duration::from_secs(30))
-            .send()
-            .await
+        // Each ladder step rides the proxy→direct chain (a dead configured
+        // proxy must not stall the pack check behind the 30 s per-mirror
+        // cap); the big archive streams go through download_hub below.
+        let host = upstream_health::host_of_url(&candidate).to_string();
+        match upstream_health::send_with_fallback(clients, &host, "model-pack", |client| {
+            client
+                .get(&candidate)
+                .header("User-Agent", "WoWSP-resource-pack/2.0")
+                .header("Cache-Control", "no-cache")
+                .timeout(Duration::from_secs(30))
+        })
+        .await
         {
             Ok(resp) if resp.status().is_success() => match resp.bytes().await {
                 Ok(body)
@@ -428,18 +434,18 @@ fn delta_tag(from: &str, to: &str) -> String {
 /// that digest instead (see [`harden_edges_against_the_relay`]); the
 /// patched tree must still reproduce the manifest's tree hash before it
 /// is used.
-async fn fetch_delta_edges(client: &Client) -> anyhow::Result<Vec<DeltaEdge>> {
+async fn fetch_delta_edges(clients: &HttpPair) -> anyhow::Result<Vec<DeltaEdge>> {
     let api_url = super::release_digest::releases_api_url();
-    match super::release_digest::lookup_api_json(client, &api_url).await? {
+    match super::release_digest::lookup_api_json(clients, &api_url).await? {
         ApiLookup::Found(releases) => Ok(delta_edges_from_releases(&releases)),
         ApiLookup::Unavailable(reason) => {
             tracing::warn!(
                 %reason,
                 "release API unavailable — reading the delta list through the mirror ladder"
             );
-            let releases = fetch_release_list_via_mirrors(client, &api_url).await?;
+            let releases = fetch_release_list_via_mirrors(clients, &api_url).await?;
             let mut edges = delta_edges_from_releases(&releases);
-            harden_edges_against_the_relay(client, &mut edges).await?;
+            harden_edges_against_the_relay(clients, &mut edges).await?;
             Ok(edges)
         },
     }
@@ -456,7 +462,7 @@ async fn fetch_delta_edges(client: &Client) -> anyhow::Result<Vec<DeltaEdge>> {
 /// answer but fails its signature fails the whole discovery (the full
 /// archive is the fallback), never a silent downgrade.
 async fn harden_edges_against_the_relay(
-    client: &Client,
+    clients: &HttpPair,
     edges: &mut [DeltaEdge],
 ) -> anyhow::Result<()> {
     let lookups = edges
@@ -464,8 +470,13 @@ async fn harden_edges_against_the_relay(
         .map(|edge| {
             let tag = delta_tag(&edge.from, &edge.to);
             async move {
-                super::release_digest::relay_pinned_sha256(client, RES_CHANNEL, &tag, DELTA_ARCHIVE)
-                    .await
+                super::release_digest::relay_pinned_sha256(
+                    clients,
+                    RES_CHANNEL,
+                    &tag,
+                    DELTA_ARCHIVE,
+                )
+                .await
             }
         })
         .collect::<Vec<_>>();
@@ -496,18 +507,20 @@ async fn harden_edges_against_the_relay(
 /// The release list through the mirror ladder (the pre-digest route, kept
 /// as the fallback when api.github.com itself is unavailable).
 async fn fetch_release_list_via_mirrors(
-    client: &Client,
+    clients: &HttpPair,
     api_url: &str,
 ) -> anyhow::Result<serde_json::Value> {
     let mut last_err = String::from("no mirror attempted for release list");
     for candidate in super::github_mirror::candidates(api_url) {
-        match client
-            .get(&candidate)
-            .header("User-Agent", "WoWSP-resource-pack/2.0")
-            .header("Accept", "application/vnd.github+json")
-            .timeout(Duration::from_secs(30))
-            .send()
-            .await
+        let host = upstream_health::host_of_url(&candidate).to_string();
+        match upstream_health::send_with_fallback(clients, &host, "model-pack", |client| {
+            client
+                .get(&candidate)
+                .header("User-Agent", "WoWSP-resource-pack/2.0")
+                .header("Accept", "application/vnd.github+json")
+                .timeout(Duration::from_secs(30))
+        })
+        .await
         {
             Ok(r) if r.status().is_success() => match r.json().await {
                 Ok(v) => return Ok(v),
@@ -1327,12 +1340,12 @@ async fn delta_install(
 /// correct stamp (the exact state the check exists to catch).
 async fn install_latest(
     app: Option<&AppHandle>,
-    client: &Client,
+    clients: &HttpPair,
     prefer_delta: bool,
     force: bool,
 ) -> anyhow::Result<()> {
     let cache = cache_root()?;
-    let manifest = fetch_manifest(client).await?;
+    let manifest = fetch_manifest(clients).await?;
     let local = effective_local_version(&cache);
     if !force {
         if let Some(hash) = local.tree_sha256.as_deref() {
@@ -1355,7 +1368,7 @@ async fn install_latest(
     // archive, never patching on top of them.
     if !force && prefer_delta && local.tree_sha256.is_some() && dir_populated(&cache.join("models"))
     {
-        match fetch_delta_edges(client).await {
+        match fetch_delta_edges(clients).await {
             Ok(edges) => {
                 let chain = delta_chain(
                     &edges,
@@ -1404,7 +1417,7 @@ async fn ensure_pack() -> anyhow::Result<String> {
     #[cfg(not(mobile))]
     {
         let cache = cache_root()?;
-        let client = crate::commands::network::build_http_client()?;
+        let clients = crate::commands::network::HttpPair::build(|b| b)?;
 
         // Decision phase — NO single-flight slot held. These checks are
         // pure reads (local stamp + manifest fetch), yet the network leg
@@ -1418,7 +1431,7 @@ async fn ensure_pack() -> anyhow::Result<String> {
         // slot; only the missing-pack pass below takes it.
         if dir_populated(&cache.join("models")) {
             let local = read_local_version(&cache);
-            let up_to_date = fetch_manifest(&client)
+            let up_to_date = fetch_manifest(&clients)
                 .await
                 .ok()
                 .is_some_and(|m| local.tree_sha256.as_deref() == Some(m.tree_sha256.as_str()));
@@ -1460,7 +1473,7 @@ async fn ensure_pack() -> anyhow::Result<String> {
             if !blocked {
                 // The pack may have landed while we waited for the guard —
                 // one manifest fetch + local hash compare settles it.
-                let manifest = fetch_manifest(&client).await.ok();
+                let manifest = fetch_manifest(&clients).await.ok();
                 let local = read_local_version(&cache);
                 if let (Some(m), Some(h)) = (&manifest, local.tree_sha256.as_deref()) {
                     if h == m.tree_sha256 {
@@ -1482,7 +1495,7 @@ async fn ensure_pack() -> anyhow::Result<String> {
                 // automatic pass must not inherit a cancel aimed at an
                 // earlier, already-finished pass.
                 download_hub::clear_pending(kind::RES_PACK, JOB_ID);
-                break install_latest(None, &client, false, false).await;
+                break install_latest(None, &clients, false, false).await;
             }
             waited += 1;
             if waited >= WAIT_SLOTS {
@@ -1588,8 +1601,8 @@ pub async fn get_res_status() -> CommandResult<ResStatus> {
 #[tauri::command]
 pub async fn check_res_update() -> CommandResult<ResUpdate> {
     let cache = cache_root()?;
-    let client = crate::commands::network::build_http_client()?;
-    let manifest = fetch_manifest(&client).await.ok();
+    let clients = crate::commands::network::HttpPair::build(|b| b)?;
+    let manifest = fetch_manifest(&clients).await.ok();
     let local = read_local_version(&cache);
 
     // The serving identity: plain cache stamp on desktop; on mobile a
@@ -1633,7 +1646,7 @@ pub async fn check_res_update() -> CommandResult<ResUpdate> {
     #[cfg(not(mobile))]
     let delta_steps =
         if update_available && local_hash.is_some() && dir_populated(&cache.join("models")) {
-            match fetch_delta_edges(&client).await {
+            match fetch_delta_edges(&clients).await {
                 Ok(edges) => {
                     let chain = delta_chain(
                         &edges,
@@ -1748,9 +1761,9 @@ pub async fn res_verify_integrity() -> CommandResult<ResIntegrity> {
 /// while an integrity walk is running — see `VERIFY_ACTIVE`.
 #[tauri::command]
 pub async fn res_download(app: AppHandle, force: Option<bool>) -> CommandResult<()> {
-    // Build the client BEFORE taking the guard — an early error here must
+    // Build the clients BEFORE taking the guard — an early error here must
     // not leak the single-flight slot.
-    let client = crate::commands::network::build_http_client()?;
+    let clients = crate::commands::network::HttpPair::build(|b| b)?;
     {
         let mut guard = DOWNLOAD_ACTIVE
             .lock()
@@ -1772,7 +1785,7 @@ pub async fn res_download(app: AppHandle, force: Option<bool>) -> CommandResult<
     // user-initiated and must not inherit it.
     download_hub::clear_pending(kind::RES_PACK, JOB_ID);
     // cfg! keeps one code path; the mobile false is folded at compile time.
-    let result = install_latest(Some(&app), &client, !cfg!(mobile), force.unwrap_or(false)).await;
+    let result = install_latest(Some(&app), &clients, !cfg!(mobile), force.unwrap_or(false)).await;
     if let Err(e) = &result {
         emit_progress(Some(&app), phase::ERROR, 0, 0, 0, 0, Some(e.to_string()));
     }

@@ -48,12 +48,17 @@ fn cached_fresh(path: &std::path::Path) -> Option<CatalogTagIndex> {
 }
 
 async fn fetch_remote() -> Option<CatalogTagIndex> {
-    let client = super::network::build_http_client().ok()?;
+    // Proxy-aware with the direct-twin fallback (upstream_health): a
+    // dead configured proxy must not shadow the whole ladder — the
+    // bundled/cached copies only cover the offline day, not a broken
+    // proxy while the network itself is fine.
+    let clients = super::network::HttpPair::build(|b| b).ok()?;
     for url in tag_urls() {
-        let Ok(resp) = client
-            .get(&url)
-            .header("Accept", "application/json")
-            .send()
+        let host = super::upstream_health::host_of_url(&url).to_string();
+        let Ok(resp) =
+            super::upstream_health::send_with_fallback(&clients, &host, "mod-tags", |client| {
+                client.get(&url).header("Accept", "application/json")
+            })
             .await
         else {
             continue;

@@ -152,7 +152,9 @@ pub async fn pairing_pair(target: PairingTarget, pin: String) -> CommandResult<P
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client()?;
+            // LAN pairing peer — always-direct client; a phone on the same
+            // Wi-Fi is unreachable through the user's outbound proxy.
+            let client = super::network::build_direct_http_client()?;
             let url = format!("http://{host}:{port}/pair");
             let resp = client
                 .post(&url)
@@ -198,7 +200,8 @@ pub async fn pairing_list_remote(
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client()?;
+            // LAN pairing peer — always-direct client (see pairing_pair).
+            let client = super::network::build_direct_http_client()?;
             let resp = client
                 .get(format!("http://{host}:{port}/api/replays"))
                 .bearer_auth(&token)
@@ -257,7 +260,8 @@ pub async fn pairing_pull_replay(
     match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client()?;
+            // LAN pairing peer — always-direct client (see pairing_pair).
+            let client = super::network::build_direct_http_client()?;
             let resp = client
                 .get(format!(
                     "http://{host}:{port}/api/replay/{}",

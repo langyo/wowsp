@@ -20,13 +20,24 @@ const HEALTH_MAX_BYTES: usize = 64 * 1024;
 pub(super) async fn fetch_gateway_health(root_raw: &str) -> Result<(String, GatewayHealthDoc)> {
     let root = normalize_root(root_raw)?;
     let url = format!("{root}/health");
-    let client = super::super::network::build_http_client()?;
-    let resp = match client
-        .get(&url)
-        .header(reqwest::header::CACHE_CONTROL, "no-store")
-        .timeout(HEALTH_TIMEOUT)
-        .send()
-        .await
+    // The probe rides the proxy→direct chain: a transport failure over the
+    // configured proxy must not read as an unreachable gateway when the
+    // direct path can still reach it (the GATEWAY_UNREACHABLE marker is
+    // only for a deployment no path could reach).
+    let clients = super::super::network::HttpPair::build(|b| b)?;
+    let host = super::super::upstream_health::host_of_url(&url).to_string();
+    let resp = match super::super::upstream_health::send_with_fallback(
+        &clients,
+        &host,
+        "gateway-health",
+        |client| {
+            client
+                .get(&url)
+                .header(reqwest::header::CACHE_CONTROL, "no-store")
+                .timeout(HEALTH_TIMEOUT)
+        },
+    )
+    .await
     {
         Ok(resp) => resp,
         Err(e) => {

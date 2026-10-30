@@ -299,14 +299,22 @@ fn relay_url(path: &str) -> String {
     )
 }
 
-async fn fetch_wanted_remote(client: &reqwest::Client) -> Result<WantedDoc> {
-    let resp = client
-        .get(relay_url("/wanted"))
-        .header("User-Agent", USER_AGENT)
-        .timeout(SHORT_HTTP_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| anyhow!("fetch wanted ruleset: {e}"))?;
+async fn fetch_wanted_remote(clients: &crate::commands::network::HttpPair) -> Result<WantedDoc> {
+    let url = relay_url("/wanted");
+    let host = crate::commands::upstream_health::host_of_url(&url).to_string();
+    let resp = crate::commands::upstream_health::send_with_fallback(
+        clients,
+        &host,
+        "contribution",
+        |client| {
+            client
+                .get(&url)
+                .header("User-Agent", USER_AGENT)
+                .timeout(SHORT_HTTP_TIMEOUT)
+        },
+    )
+    .await
+    .map_err(|e| anyhow!("fetch wanted ruleset: {e}"))?;
     if !resp.status().is_success() {
         bail!("fetch wanted ruleset: HTTP {}", resp.status());
     }
@@ -333,22 +341,32 @@ struct CheckResult {
 
 /// POST the facts (batched ≤400) and collect the server's verdict rows.
 async fn post_check(
-    client: &reqwest::Client,
+    clients: &crate::commands::network::HttpPair,
     creds: &Credentials,
     facts: &[ReplayFacts],
 ) -> Result<Vec<CheckResult>> {
     let mut out = Vec::with_capacity(facts.len());
     for batch in facts.chunks(CHECK_BATCH) {
-        let resp = client
-            .post(relay_url("/check"))
-            .header("User-Agent", USER_AGENT)
-            .header("x-anon-id", &creds.anon_id)
-            .header("x-upload-token", &creds.upload_token)
-            .timeout(SHORT_HTTP_TIMEOUT)
-            .json(&serde_json::json!({ "facts": batch }))
-            .send()
-            .await
-            .map_err(|e| anyhow!("share check: {e}"))?;
+        // Replayable JSON POST (the same facts re-serialize per attempt),
+        // so the batch rides the proxy→direct chain.
+        let url = relay_url("/check");
+        let host = crate::commands::upstream_health::host_of_url(&url).to_string();
+        let resp = crate::commands::upstream_health::send_with_fallback(
+            clients,
+            &host,
+            "contribution",
+            |client| {
+                client
+                    .post(&url)
+                    .header("User-Agent", USER_AGENT)
+                    .header("x-anon-id", &creds.anon_id)
+                    .header("x-upload-token", &creds.upload_token)
+                    .timeout(SHORT_HTTP_TIMEOUT)
+                    .json(&serde_json::json!({ "facts": batch }))
+            },
+        )
+        .await
+        .map_err(|e| anyhow!("share check: {e}"))?;
         if !resp.status().is_success() {
             bail!("share check: HTTP {}", resp.status());
         }
@@ -362,16 +380,27 @@ async fn post_check(
 }
 
 /// GET `/mine`; a 404 is the fresh-contributor answer (empty doc).
-async fn get_mine(client: &reqwest::Client, creds: &Credentials) -> Result<MineDoc> {
-    let resp = client
-        .get(relay_url("/mine"))
-        .header("User-Agent", USER_AGENT)
-        .header("x-anon-id", &creds.anon_id)
-        .header("x-upload-token", &creds.upload_token)
-        .timeout(SHORT_HTTP_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| anyhow!("sync staged replays: {e}"))?;
+async fn get_mine(
+    clients: &crate::commands::network::HttpPair,
+    creds: &Credentials,
+) -> Result<MineDoc> {
+    let url = relay_url("/mine");
+    let host = crate::commands::upstream_health::host_of_url(&url).to_string();
+    let resp = crate::commands::upstream_health::send_with_fallback(
+        clients,
+        &host,
+        "contribution",
+        |client| {
+            client
+                .get(&url)
+                .header("User-Agent", USER_AGENT)
+                .header("x-anon-id", &creds.anon_id)
+                .header("x-upload-token", &creds.upload_token)
+                .timeout(SHORT_HTTP_TIMEOUT)
+        },
+    )
+    .await
+    .map_err(|e| anyhow!("sync staged replays: {e}"))?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(MineDoc::default());
     }
@@ -893,8 +922,8 @@ pub async fn contribution_fetch_wanted(force: bool) -> CommandResult<WantedDoc> 
             }
         }
     }
-    let client = crate::commands::network::build_http_client()?;
-    match fetch_wanted_remote(&client).await {
+    let clients = crate::commands::network::HttpPair::build(|b| b)?;
+    match fetch_wanted_remote(&clients).await {
         Ok(doc) => {
             edit_store(|store| {
                 store.wanted_cache = Some(WantedCacheEntry {
@@ -934,8 +963,8 @@ pub async fn contribution_sync_mine() -> CommandResult<MineDoc> {
     let Some(creds) = with_store(credentials_of)? else {
         return Ok(MineDoc::default());
     };
-    let client = crate::commands::network::build_http_client()?;
-    let doc = get_mine(&client, &creds).await?;
+    let clients = crate::commands::network::HttpPair::build(|b| b)?;
+    let doc = get_mine(&clients, &creds).await?;
     cache_mine(doc.clone())?;
     Ok(doc)
 }
@@ -1005,7 +1034,7 @@ pub async fn contribution_start(app: AppHandle, items: Vec<PlanCandidate>) -> Co
         .ok_or_else(|| anyhow!("record the sharing consent first"))?;
     let creds =
         with_store(credentials_of)?.ok_or_else(|| anyhow!("set your sharing identity first"))?;
-    let client = crate::commands::network::build_http_client()?;
+    let clients = crate::commands::network::HttpPair::build(|b| b)?;
     // Take the single-flight slot BEFORE spawning: a second start while
     // one run is live is rejected; a finished pass is replaced.
     let pass = {
@@ -1033,7 +1062,7 @@ pub async fn contribution_start(app: AppHandle, items: Vec<PlanCandidate>) -> Co
             identity,
             consent_version,
             creds,
-            client,
+            client: clients,
             roots,
         },
         items,
@@ -1079,7 +1108,10 @@ struct RunContext {
     identity: ContributionIdentity,
     consent_version: u32,
     creds: Credentials,
-    client: reqwest::Client,
+    /// The proxy→direct pair: the replayable relay calls ride the fallback
+    /// chain; the ONE non-replayable call (the file-stream upload below)
+    /// pins itself to the proxied arm.
+    client: crate::commands::network::HttpPair,
     roots: Vec<(PathBuf, Option<GameInstall>)>,
 }
 
@@ -1513,21 +1545,31 @@ async fn ensure_staged_members(
 async fn download_archive(
     app: &AppHandle,
     pass: &Arc<Pass>,
-    client: &reqwest::Client,
+    clients: &crate::commands::network::HttpPair,
     creds: &Credentials,
     dest: &Path,
 ) -> Result<()> {
     use futures::StreamExt as _;
     use tokio::io::AsyncWriteExt as _;
-    let resp = client
-        .get(relay_url("/archive"))
-        .header("User-Agent", USER_AGENT)
-        .header("x-anon-id", &creds.anon_id)
-        .header("x-upload-token", &creds.upload_token)
-        .timeout(LONG_HTTP_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| anyhow!("fetch share archive: {e}"))?;
+    // Replayable GET (headers only — the capped body stream below reads
+    // off the response once), so the archive fetch rides the chain.
+    let url = relay_url("/archive");
+    let host = crate::commands::upstream_health::host_of_url(&url).to_string();
+    let resp = crate::commands::upstream_health::send_with_fallback(
+        clients,
+        &host,
+        "contribution",
+        |client| {
+            client
+                .get(&url)
+                .header("User-Agent", USER_AGENT)
+                .header("x-anon-id", &creds.anon_id)
+                .header("x-upload-token", &creds.upload_token)
+                .timeout(LONG_HTTP_TIMEOUT)
+        },
+    )
+    .await
+    .map_err(|e| anyhow!("fetch share archive: {e}"))?;
     if resp.status() == reqwest::StatusCode::NOT_FOUND {
         bail!("relay has no archive for these staged replays (staged list is stale — retry)");
     }
@@ -1660,7 +1702,11 @@ async fn upload_package(
         buf: Box::new([0u8; 64 * 1024]),
         since_emit: 0,
     };
+    // NON-REPLAYABLE body (a streamed file): the fallback chain re-runs
+    // the builder, so the upload must NOT ride it — it stays pinned to
+    // the pair's proxied client exactly as the single client behaved.
     client
+        .proxied()
         .post(relay_url("/upload"))
         .header("User-Agent", USER_AGENT)
         .header("x-anon-id", &creds.anon_id)

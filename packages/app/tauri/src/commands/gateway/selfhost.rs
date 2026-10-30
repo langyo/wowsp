@@ -802,14 +802,24 @@ pub async fn gateway_selfhost_step(
 /// validation — a deployment demanding a newer APP than this build still
 /// deployed correctly; only protocol v1 is required here.
 async fn fetch_verify_health(url: &str) -> Result<GatewayHealthDoc> {
-    let client = super::super::network::build_http_client()?;
-    let resp = client
-        .get(url)
-        .header(reqwest::header::CACHE_CONTROL, "no-store")
-        .timeout(VERIFY_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| anyhow!("deployment verify failed: {e}"))?;
+    // NOT a loopback probe: the verify step fetches the DEPLOYED custom
+    // domain over https (a wrangler dev server never serves it), so the
+    // GET rides the proxy→direct chain like every other outbound call.
+    let clients = super::super::network::HttpPair::build(|b| b)?;
+    let host = super::super::upstream_health::host_of_url(url).to_string();
+    let resp = super::super::upstream_health::send_with_fallback(
+        &clients,
+        &host,
+        "gateway-selfhost",
+        |client| {
+            client
+                .get(url)
+                .header(reqwest::header::CACHE_CONTROL, "no-store")
+                .timeout(VERIFY_TIMEOUT)
+        },
+    )
+    .await
+    .map_err(|e| anyhow!("deployment verify failed: {e}"))?;
     if !resp.status().is_success() {
         bail!("deployment verify failed (HTTP {})", resp.status().as_u16());
     }
