@@ -289,6 +289,7 @@
   "resourcesDecisionsDesc": "사격 모델(ONNX)과 맵별 지형 시야 래스터. <cache>/decisions에 별도로 설치됩니다.",
   "resourcesDecisionsModelInstalled": "모델 설치됨({size})",
   "resourcesDecisionsModelMissing": "모델 없음",
+  "resourcesDecisionsAdviceInstalled": "어드바이스 모델 설치됨({size})",
   "resourcesDecisionsAbsent": "설치되지 않음.",
   "resourcesDecisionsUnknown": "모델 팩 상태를 읽을 수 없습니다.",
   "resourcesDecisionsDemoInUse": "내장 데모 모델을 사용 중입니다.",

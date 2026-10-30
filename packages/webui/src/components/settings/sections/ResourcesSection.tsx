@@ -438,6 +438,13 @@ export default defineComponent({
                       {t("settings.resourcesDecisionsDemoInUse")}
                     </span>
                   ) : null}
+                  {d?.present && d.adviceModelPresent ? (
+                    <span class="settings-modal__pack-desc">
+                      {t("settings.resourcesDecisionsAdviceInstalled", {
+                        size: formatBytes(d.adviceModelBytes),
+                      })}
+                    </span>
+                  ) : null}
                   {d?.present ? (
                     <span class="settings-modal__pack-desc">
                       {t("settings.resourcesDecisionsLos", {

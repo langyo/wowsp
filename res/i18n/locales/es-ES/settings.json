@@ -289,6 +289,7 @@
   "resourcesDecisionsDesc": "Modelo de disparo (ONNX) y rásteres de visibilidad del terreno por mapa, instalados aparte en <cache>/decisions.",
   "resourcesDecisionsModelInstalled": "Modelo instalado ({size})",
   "resourcesDecisionsModelMissing": "Modelo ausente",
+  "resourcesDecisionsAdviceInstalled": "Modelo de consejos instalado ({size})",
   "resourcesDecisionsAbsent": "No instalado.",
   "resourcesDecisionsUnknown": "No se pudo leer el estado del paquete.",
   "resourcesDecisionsDemoInUse": "Se usa el modelo de demostración integrado.",

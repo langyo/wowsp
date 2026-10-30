@@ -40,7 +40,7 @@ use wowsp_tauri_shared::{
     CommandResult, EntityTrajectory, PositionSample, ReplayStream, ShellLaunchEvent, VehicleEntry,
 };
 
-use super::decision_ai::{DecisionModel, DecisionModelKind, shared_model};
+use super::decision_ai::{DecisionModel, DecisionModelKind, advice_model, shared_model};
 use super::decision_score::{
     ENTITY_DIM_V2, GLOBAL_DIM_V2, ScoreModel, ScoreModelKind, ScoreModelSources, ShipScoreReport,
     ablate_e11_tensors, build_ship_scores, feature_tensors_v2, softmax,
@@ -822,7 +822,13 @@ fn sigmoid(x: f32) -> f32 {
 
 fn model_kind_str(kind: &DecisionModelKind) -> &'static str {
     match kind {
-        DecisionModelKind::Fire24 { .. } => "fire24",
+        DecisionModelKind::Fire24 { attr_dim, .. } => {
+            if *attr_dim > 0 {
+                "fire24-attrs"
+            } else {
+                "fire24"
+            }
+        },
         DecisionModelKind::Fixture8 => "fixture8",
     }
 }
@@ -1519,10 +1525,19 @@ pub fn decision_fire_suggestions(
     let los = los_dir
         .as_deref()
         .and_then(|d| los_for_map(stream.map_name.as_deref(), d));
-    let shared = shared_model()?;
-    let mut model = shared
-        .lock()
-        .map_err(|_| anyhow!("decision model mutex poisoned"))?;
+    // E24 dual-model split: the advice chain prefers the attribute-routed
+    // fire MoE (`advice_fire_model.onnx`, env WOWSP_DEBUG_ADVICE_FIRE_MODEL,
+    // or the dev-checkout export); without it the tactical board falls back
+    // to the shared scoring fire model — the slot is optional by design.
+    let advice = advice_model()?;
+    let mut model = match advice {
+        Some(m) => m
+            .lock()
+            .map_err(|_| anyhow!("advice model mutex poisoned"))?,
+        None => shared_model()?
+            .lock()
+            .map_err(|_| anyhow!("decision model mutex poisoned"))?,
+    };
     Ok(build_suggestions(
         &stream,
         &vehicles,

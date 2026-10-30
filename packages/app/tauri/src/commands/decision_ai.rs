@@ -20,6 +20,7 @@
 //! sessions or batch requests.
 
 use anyhow::{anyhow, bail};
+use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use ort::{session::Session, value::Tensor};
@@ -123,6 +124,10 @@ pub enum DecisionModelSource {
     Pack,
     /// The ONNX fixture embedded at compile time (experiment E1).
     Fixture,
+    /// An explicit env override (the WOWSP_DEBUG_* model variables).
+    Env,
+    /// A dev-checkout experiments export (scripts/experiments/out/...).
+    Dev,
 }
 
 impl DecisionModelSource {
@@ -131,6 +136,8 @@ impl DecisionModelSource {
         match self {
             Self::Pack => "pack",
             Self::Fixture => "fixture",
+            Self::Env => "env",
+            Self::Dev => "dev",
         }
     }
 }
@@ -412,6 +419,61 @@ pub fn shared_model() -> anyhow::Result<&'static Mutex<DecisionModel>> {
         .map_err(|e| anyhow!("{e}"))
 }
 
+/// The advice chain's model (E24 attribute-routed fire MoE). Ladder:
+/// `WOWSP_DEBUG_ADVICE_FIRE_MODEL` env → the decisions pack's
+/// `advice_fire_model.onnx` → the dev-checkout experiments export
+/// (`scripts/experiments/out/fire_model/e24_attrs/fp32.onnx`) → `None`
+/// (absent is NOT an error — the slot is optional and the tactical board
+/// falls back to the shared model). A load ERROR of a file that exists is
+/// sticky like the shared ladder's: a corrupt advice model surfaces its
+/// error until restart instead of silently degrading.
+static ADVICE_MODEL: OnceLock<anyhow::Result<Option<Mutex<DecisionModel>>>> = OnceLock::new();
+
+fn load_advice_model() -> anyhow::Result<Option<DecisionModel>> {
+    let cache_dir = crate::paths::cache_dir()
+        .map_err(|e| anyhow!("resolve cache dir: {e}"))?
+        .join("decisions");
+    if let Ok(path) = std::env::var("WOWSP_DEBUG_ADVICE_FIRE_MODEL") {
+        let bytes = std::fs::read(&path).map_err(|e| anyhow!("read {path}: {e}"))?;
+        return DecisionModel::from_bytes(DecisionModelSource::Env, path, &bytes).map(Some);
+    }
+    let pack_path = cache_dir.join("advice_fire_model.onnx");
+    match std::fs::read(&pack_path) {
+        Ok(bytes) => DecisionModel::from_bytes(
+            DecisionModelSource::Pack,
+            pack_path.to_string_lossy().into_owned(),
+            &bytes,
+        )
+        .map(Some),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Dev-checkout default: the training export. Absent in an
+            // installed build, which is the normal case → None.
+            let rel = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../scripts/experiments/out/fire_model/e24_attrs/fp32.onnx");
+            match std::fs::read(&rel) {
+                Ok(bytes) => DecisionModel::from_bytes(
+                    DecisionModelSource::Dev,
+                    rel.to_string_lossy().into_owned(),
+                    &bytes,
+                )
+                .map(Some),
+                Err(e2) if e2.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(e2) => Err(anyhow!("read {}: {e2}", rel.to_string_lossy())),
+            }
+        },
+        Err(e) => Err(anyhow!("read {}: {e}", pack_path.to_string_lossy())),
+    }
+}
+
+/// The process-global advice model (None when every rung is absent).
+pub fn advice_model() -> anyhow::Result<Option<&'static Mutex<DecisionModel>>> {
+    ADVICE_MODEL
+        .get_or_init(|| load_advice_model().map(|m| m.map(Mutex::new)))
+        .as_ref()
+        .map_err(|e| anyhow!("{e}"))
+        .map(|opt| opt.as_ref())
+}
+
 /// Index of the largest element (first one on ties — deterministic).
 fn argmax(xs: &[f32]) -> usize {
     let mut best = 0;
@@ -635,6 +697,54 @@ mod tests {
             .expect("infer_fire on real model");
         assert!(la.is_finite() && lb.is_finite());
         eprintln!("[g4] real model logits A {la:.4} B {lb:.4} (zero features)");
+    }
+
+    /// E24 advice chain against the real attribute-routed export — run
+    /// with `WOWSP_TEST_ADVICE_MODEL=<.../e24_attrs/fp32.onnx> cargo test -p
+    /// wowsp_tauri e24_real -- --ignored --nocapture`. Proves the schema
+    /// classifier reads the 4th `attrs` input, the embedded
+    /// ship-attribute table builds the routing vector, and the forward
+    /// answers finite logits — the exact chain `decision_fire_suggestions`
+    /// runs when the advice slot is filled.
+    #[test]
+    #[ignore = "needs the E24 export from scripts/experiments/train_fire_model.py"]
+    fn e24_real_advice_model_with_embedded_attrs() {
+        let default = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../scripts/experiments/out/fire_model/e24_attrs/fp32.onnx");
+        let model_path = match std::env::var("WOWSP_TEST_ADVICE_MODEL") {
+            Ok(p) => PathBuf::from(p),
+            Err(_) => default,
+        };
+        let bytes = match std::fs::read(&model_path) {
+            Ok(b) => b,
+            Err(_) => {
+                eprintln!("[e24] {} not found - skipping", model_path.display());
+                return;
+            },
+        };
+        let mut model = DecisionModel::from_bytes(
+            DecisionModelSource::Dev,
+            model_path.to_string_lossy().into_owned(),
+            &bytes,
+        )
+        .expect("load E24 advice model");
+        let DecisionModelKind::Fire24 { attr_dim, .. } = model.kind() else {
+            panic!("E24 export must classify as Fire24");
+        };
+        assert_eq!(*attr_dim, 10, "the E24 gate input is 10-wide");
+        // Full-width zero features + a real roster row's routing vector
+        // (own + friends/enemies from the embedded table).
+        let table = crate::commands::ship_attrs::embedded_table().expect("embedded table");
+        let gambra = Some(3_249_452_400i64);
+        let routing = table.row_attr_vector(gambra, [gambra], []);
+        let entity = vec![0.0f32; 24 * 15];
+        let global = vec![0.0f32; 27];
+        let mask = vec![1.0f32; 24];
+        let (la, lb) = model
+            .infer_fire(&entity, &global, &mask, Some(&routing))
+            .expect("infer with the embedded routing vector");
+        assert!(la.is_finite() && lb.is_finite());
+        eprintln!("[e24] advice logits A {la:.4} B {lb:.4} (zero features, Gambra routing)");
     }
 
     // ── E9 step 3: load the REAL trained model through ort ──────────────────

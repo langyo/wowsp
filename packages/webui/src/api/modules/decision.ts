@@ -32,7 +32,7 @@ export interface DecisionSuggestionReport {
   mapName: string | null;
   /** "pack" (decisions model pack) | "fixture" (embedded E1 dummy — treat
    *  the numbers as placeholders and show a demo badge). */
-  modelSource: "pack" | "fixture";
+  modelSource: "pack" | "fixture" | "env" | "dev";
   /** Provenance detail: the pack file's path or the fixture label. */
   modelDetail: string;
   /** "fire24" (E9 two-head schema) | "fixture8" (E1 dummy schema). */
@@ -54,6 +54,10 @@ export interface DecisionsPackStatus {
   /** Whether `move_model.onnx` is installed (older packs carry only fire). */
   moveModelPresent: boolean;
   moveModelBytes: number;
+  /** Whether `advice_fire_model.onnx` is installed (E24 advice chain;
+   *  optional — the board falls back to the scoring fire model). */
+  adviceModelPresent: boolean;
+  adviceModelBytes: number;
   /** Map short names that carry a `terrain_los.npz` raster. */
   losMaps: string[];
 }
