@@ -12,7 +12,10 @@
  * module slots as stock -> top `prev` chains (per-ucType brackets, mirroring
  * shipParts.ts' chainsByKind resolution) with the components each module
  * mounts, and the ships the module research unlocks (already resolved from
- * GameParams entry keys to numeric shipIds).
+ * GameParams entry keys to numeric shipIds). Every step also carries its raw
+ * `prev` prerequisite key (null for stock) and its upgrade `depth` inside the
+ * slot — same-level alternatives share a depth, so the panel can lay parallel
+ * variants out side by side.
  *
  * The tech-tree connector tooltip's minimal case reads `next[xpShip]` — the
  * next ship's own costXP. Per-module XP/credits and the "with minimal
@@ -56,6 +59,10 @@ export interface UpgradeStep {
   name: string;
   /** True for the slot's stock module — the first (top-left) step. */
   isStock: boolean;
+  /** GameParams upgrade entry key this module upgrades from; null for stock. */
+  prev: string | null;
+  /** Upgrade level inside the slot: stock = 0; same-level alternatives share it. */
+  depth: number;
   /** Per-module XP: absent from GameParams today, so null. */
   xp: number | null;
   /** Per-module credits: absent from GameParams today, so null. */
@@ -66,7 +73,7 @@ export interface UpgradeStep {
   unlocks?: number[];
 }
 
-/** One module bracket (ucType slot), steps ordered stock -> top. */
+/** One module bracket (ucType slot), steps ordered by upgrade depth (stock -> top). */
 export interface UpgradeSlot {
   /** Raw GameParams ucType ("_Hull", "_Suo", "_Torpedoes", ...). */
   ucType: string;

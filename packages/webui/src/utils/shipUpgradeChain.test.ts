@@ -1,13 +1,17 @@
 /** Tests for the bundled per-ship upgrade chains: ship-level economy, the
  *  per-ship-pair research XP (next.*.xpShip) the tech-tree connector tooltips
- *  read, the stock -> top module chains, and the WG/Lesta realm split.
+ *  read, the stock -> top module chains with their prev/depth topology, and
+ *  the WG/Lesta realm split.
  *
  *  Real ids are pinned from the regenerated bundles (WG build 13357625 /
- *  Lesta build 8867689): Minsk (PRSD207) for the WG chain, PASB310 for a
- *  Lesta-only line the WG snapshot does not carry. Numeric economy values are
- *  asserted RELATIONALLY (xpShip === the target ship's own research xp) so a
- *  future rebalance does not invalidate the accessor contract — only the
- *  extraction's structure is pinned. */
+ *  Lesta build 8867689): Minsk (PRSD207) for a plain vertical chain;
+ *  4266538256 (AKATSUKI_ROMULANS) for three parallel hull variant chains;
+ *  PJSD912 (Shimakaze 1943) for a three-step torpedo chain; 4180555216
+ *  (Kiev) for a hull-locked module whose prev points into the hull bracket;
+ *  PASB310 for a Lesta-only line the WG snapshot does not carry. Numeric
+ *  economy values are asserted RELATIONALLY (xpShip === the target ship's own
+ *  research xp) so a future rebalance does not invalidate the accessor
+ *  contract — only the extraction's structure is pinned. */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,6 +29,12 @@ const MINSK = 4077794768;
 const PR_48 = 3971888592;
 /** Pr.30 (PRSD208) — unlocked by Minsk's top torpedoes. */
 const PR_30 = 4076746192;
+/** Akatsuki (Romulans event hull) — three parallel hull chains. */
+const ROMULANS = 4266538256;
+/** Shimakaze 1943 — a three-step torpedo chain (client-dump-only entry). */
+const SHIMAKAZE_1943 = 3338548944;
+/** Kiev — top torpedoes upgrade FROM a hull module (cross-slot prev). */
+const KIEV = 4180555216;
 /** New Jersey (PASB310) — a Lesta-only line; the WG snapshot lacks the id. */
 const LESTA_ONLY = 3969857520;
 /** Its Lesta successor (PASB211). */
@@ -79,30 +89,41 @@ describe("shipUpgradeChain", () => {
 });
 
 describe("upgrade slots", () => {
-  it("leads with the hull slot and orders every slot stock -> top", () => {
-    const chain = shipUpgradeChain(MINSK)!;
-    expect(chain.slots[0].ucType).toBe("_Hull");
-    const hull = chain.slots[0];
+  it("orders every slot by upgrade depth, stock first", () => {
+    // Minsk hull: one plain vertical chain, depth 0 -> 1.
+    const hull = shipUpgradeChain(MINSK)!.slots[0];
+    expect(hull.ucType).toBe("_Hull");
     expect(hull.steps.map((s) => s.name)).toEqual([
       "PRUH603_D7_HULL_STOCK_2",
       "PRUH604_D7_HULL_TOP_2",
     ]);
+    expect(hull.steps.map((s) => s.depth)).toEqual([0, 1]);
+    expect(hull.steps.map((s) => s.prev)).toEqual([null, "PRUH603_D7_HULL_STOCK_2"]);
     expect(hull.steps.map((s) => s.isStock)).toEqual([true, false]);
-    for (const slot of chain.slots) {
-      expect(slot.steps.length, slot.ucType).toBeGreaterThan(0);
-      expect(slot.steps[0].isStock, slot.ucType).toBe(true);
-      for (const step of slot.steps.slice(1)) {
-        expect(step.isStock, step.name).toBe(false);
-      }
-      // Per-module economy is absent from GameParams — null until extracted.
-      for (const step of slot.steps) {
-        expect(step.xp).toBeNull();
-        expect(step.credits).toBeNull();
+
+    // Global contract: depth-ascending order, one stock head, no economy yet.
+    for (const realm of ["wg", "lesta"] as const) {
+      for (const [shipId, chain] of Object.entries(allUpgradeChains(realm))) {
+        for (const slot of chain.slots) {
+          expect(slot.steps.length, shipId + " " + slot.ucType).toBeGreaterThan(0);
+          expect(slot.steps[0].isStock, shipId + " " + slot.ucType).toBe(true);
+          expect(slot.steps[0].depth, shipId + " " + slot.ucType).toBe(0);
+          let lastDepth = -1;
+          for (const step of slot.steps) {
+            expect(step.depth, shipId + " " + slot.ucType + " " + step.name)
+              .toBeGreaterThanOrEqual(lastDepth);
+            lastDepth = step.depth;
+            expect(step.isStock, step.name).toBe(step === slot.steps[0]);
+            // Per-module economy is absent from GameParams — null until extracted.
+            expect(step.xp, step.name).toBeNull();
+            expect(step.credits, step.name).toBeNull();
+          }
+        }
       }
     }
   });
 
-  it("keeps the hull stock component stock and top components distinct", () => {
+  it("keeps the hull stock components and top components distinct", () => {
     const [stock, top] = shipUpgradeChain(MINSK)!.slots[0].steps;
     expect(stock.components.hull).toEqual(["A_Hull"]);
     expect(top.components.hull).toEqual(["B_Hull"]);
@@ -141,6 +162,96 @@ describe("upgrade slots", () => {
             chain!.next[String(nextId)],
             realm + " " + node.index + " -> " + tree[String(nextId)].index,
           ).toBeDefined();
+        }
+      }
+    }
+  });
+});
+
+describe("upgrade-step topology (prev / depth)", () => {
+  it("walks a three-step torpedo chain (PJSD912 Shimakaze 1943)", () => {
+    // Raw GameParams: PJUT975 prev "" -> PJUT976 prev PJUT975 -> PJUT977
+    // prev PJUT976 — a chain of three upgrade levels, NOT alternative
+    // modules, so the depths must be 0/1/2.
+    const chain = shipUpgradeChain(SHIMAKAZE_1943);
+    expect(chain).not.toBeNull();
+    expect(chain!.index).toBe("PJSD912");
+    const slot = chain!.slots.find((s) => s.ucType === "_Torpedoes")!;
+    expect(slot.steps.map((s) => s.name)).toEqual([
+      "PJUT975_TORP1_SHIM",
+      "PJUT976_TORP2_SHIM",
+      "PJUT977_TORP3_SHIM",
+    ]);
+    expect(slot.steps.map((s) => s.depth)).toEqual([0, 1, 2]);
+    expect(slot.steps.map((s) => s.prev)).toEqual([
+      null,
+      "PJUT975_TORP1_SHIM",
+      "PJUT976_TORP2_SHIM",
+    ]);
+  });
+
+  it("groups parallel hull variants by depth with alternatives adjacent", () => {
+    // 4266538256 (Akatsuki, Romulans event hull) mounts three hull chains:
+    // 021 -> 022 -> 023, 024 -> 025 and 026 -> 027. Depth groups them by
+    // upgrade level (0,0,0 / 1,1,1 / 2) instead of flattening the chains.
+    const slot = shipUpgradeChain(ROMULANS)!.slots.find((s) => s.ucType === "_Hull")!;
+    expect(slot.steps.map((s) => s.name)).toEqual([
+      "PXUH021_HULL_AKATSUKI_ROMULANS",
+      "PXUH024_HULL_AKATSUKI_ROMULANS",
+      "PXUH026_HULL_AKATSUKI_ROMULANS",
+      "PXUH022_HULL_AKATSUKI_ROMULANS",
+      "PXUH025_HULL_AKATSUKI_ROMULANS",
+      "PXUH027_HULL_AKATSUKI_ROMULANS",
+      "PXUH023_HULL_AKATSUKI_ROMULANS",
+    ]);
+    expect(slot.steps.map((s) => s.depth)).toEqual([0, 0, 0, 1, 1, 1, 2]);
+    expect(slot.steps.map((s) => s.prev)).toEqual([
+      null,
+      null,
+      null,
+      "PXUH021_HULL_AKATSUKI_ROMULANS",
+      "PXUH024_HULL_AKATSUKI_ROMULANS",
+      "PXUH026_HULL_AKATSUKI_ROMULANS",
+      "PXUH022_HULL_AKATSUKI_ROMULANS",
+    ]);
+    // Only the first stock variant is the slot's stock step; its siblings are
+    // same-depth alternatives.
+    expect(slot.steps.slice(0, 3).map((s) => s.isStock)).toEqual([true, false, false]);
+  });
+
+  it("lifts a hull-locked module one level above the slot's stock", () => {
+    // Kiev's top torpedoes upgrade FROM hull B (prev points into the hull
+    // bracket), so they sit at depth 1 above the stock torpedo module.
+    const slot = shipUpgradeChain(KIEV)!.slots.find((s) => s.ucType === "_Torpedoes")!;
+    expect(slot.steps.map((s) => s.name)).toEqual([
+      "PRUT601_D7_TORP_STOCK",
+      "PRUT602_D7_TORP_TOP",
+    ]);
+    expect(slot.steps.map((s) => s.depth)).toEqual([0, 1]);
+    expect(slot.steps[0].prev).toBeNull();
+    expect(slot.steps[1].prev).toBe("PRUH802_KIEV_B");
+  });
+
+  it("keeps prev/depth internally consistent in both realms", () => {
+    for (const realm of ["wg", "lesta"] as const) {
+      for (const [shipId, chain] of Object.entries(allUpgradeChains(realm))) {
+        for (const slot of chain.slots) {
+          const byName = new Map(slot.steps.map((s) => [s.name, s]));
+          for (const step of slot.steps) {
+            const where = realm + " " + shipId + " " + slot.ucType + " " + step.name;
+            if (step.prev === null) {
+              expect(step.depth, where).toBe(0);
+              continue;
+            }
+            const parent = byName.get(step.prev);
+            if (parent) {
+              // Same-slot chain: exactly one level below its prerequisite.
+              expect(step.depth, where).toBe(parent.depth + 1);
+            } else {
+              // Cross-slot prerequisite: one level above the slot's stock.
+              expect(step.depth, where).toBe(1);
+            }
+          }
         }
       }
     }
