@@ -65,9 +65,9 @@ describe("adviceColorRgb", () => {
 
 describe("scoreSampleAt", () => {
   const samples: ShipScoreSample[] = [
-    { t: 100, inst: 0.2, fire: null, fired: null, fireProb: null, move: 0.2, confidence: 0.4 },
-    { t: 104, inst: 0.4, fire: 0.9, fired: true, fireProb: 0.9, move: 0.3, confidence: 0.6 },
-    { t: 108, inst: 0.6, fire: 0.7, fired: false, fireProb: 0.3, move: 0.5, confidence: 0.8 },
+    { t: 100, inst: 0.2, fire: null, fired: null, fireProb: null, hpLost: null, move: 0.2, confidence: 0.4 },
+    { t: 104, inst: 0.4, fire: 0.9, fired: true, fireProb: 0.9, hpLost: 1200, move: 0.3, confidence: 0.6 },
+    { t: 108, inst: 0.6, fire: 0.7, fired: false, fireProb: 0.3, hpLost: 0, move: 0.5, confidence: 0.8 },
   ];
 
   it("returns the last sample at or before t", () => {

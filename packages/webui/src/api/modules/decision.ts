@@ -95,6 +95,9 @@ export interface ShipScoreSample {
   /** Head-B raw p(expert fires) (null off can-fire rows); `fire` is
    *  `fired ? fireProb : 1 - fireProb`. */
   fireProb: number | null;
+  /** Enemy HP lost in the (t+2, t+45]s window attributable to this ship's
+   *  covering impacts (E13 semantics) — null off can-fire rows. */
+  hpLost: number | null;
   move: number;
   /** Independent output: the models' own certainty (NOT the score). */
   confidence: number;
