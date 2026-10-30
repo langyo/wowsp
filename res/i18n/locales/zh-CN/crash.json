@@ -43,7 +43,10 @@
     "restoreWarning": "恢复警告",
     "recordDetail": "崩溃详情",
     "resetAll": "复位全部记录",
-    "resetDone": "已复位 {count} 条崩溃记录"
+    "resetDone": "已复位 {count} 条崩溃记录",
+    "markViewed": "标记已查看",
+    "summary": "概要",
+    "highlights": "重点"
   },
   "findings": {
     "exceptionAccessViolation": "访问违例 —— 客户端读写了自己无权访问的内存",

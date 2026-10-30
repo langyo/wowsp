@@ -22,6 +22,13 @@
 //! where the webui offers the safe-mode + restart flow. No evidence means a
 //! clean exit (the player closed the client) and the watchdog stays silent.
 //!
+//! The boot prompt is a read-watermark, not a bell the user must silence:
+//! viewing a crash (opening the analysis section, or the record list's
+//! mark-viewed action — game_crash_mark_viewed) flips that record AND every
+//! OLDER pending one to dismissed, so a seen crash never re-toasts on a
+//! later boot. The recent-crash backfill obeys the same rule on import: a
+//! harvested crash OLDER than an already-known one is born dismissed.
+//!
 //! The follow-up surfaces are explicit user-invoked commands only: an
 //! analysis pass that correlates the crash with the game's own logs
 //! (profile/python.log, profile/clientrunner.log — the layout the repo
@@ -394,6 +401,36 @@ fn dismiss_new_records_in(dir: &Path) -> anyhow::Result<Vec<GameCrashRecord>> {
     };
     let mut flipped = Vec::new();
     for record in records.iter_mut() {
+        if record.status == STATUS_NEW {
+            record.status = STATUS_DISMISSED.to_string();
+            flipped.push(record.clone());
+        }
+    }
+    if !flipped.is_empty() {
+        super::appdata::write_json_in(dir, HISTORY_FILE, &serde_json::to_string(&records)?)?;
+    }
+    Ok(flipped)
+}
+
+/// The read watermark behind "mark viewed": flip the named record to
+/// dismissed AND every OLDER record with it. Having opened a crash, the
+/// crashes before it are strictly less interesting — the whole point is
+/// that viewing the newest crash retires the older pending ones in the
+/// same pass, so none of them re-toast on the next boot. The history is
+/// stored newest-first (append_record_in sorts on detected_at), so the
+/// watermark is a suffix scan from the marked record's position. The
+/// history itself is kept — only the pending state clears. Returns the
+/// flipped records so the caller can broadcast them.
+fn mark_viewed_in(dir: &Path, record_id: &str) -> anyhow::Result<Vec<GameCrashRecord>> {
+    let _guard = HISTORY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(mut records) = load_history_in(dir)? else {
+        return Ok(Vec::new());
+    };
+    let Some(position) = records.iter().position(|r| r.id == record_id) else {
+        return Err(anyhow!("crash record {record_id} not found"));
+    };
+    let mut flipped = Vec::new();
+    for record in records.iter_mut().skip(position) {
         if record.status == STATUS_NEW {
             record.status = STATUS_DISMISSED.to_string();
             flipped.push(record.clone());
@@ -1556,6 +1593,25 @@ fn game_root_of_report(report_path: &str) -> Option<String> {
         .filter(|root| !root.is_empty())
 }
 
+/// The read-watermark rule for backfill imports: a harvested crash OLDER
+/// than a crash the history already carries (or one imported earlier in
+/// the same pass, should the import loop's chronological order ever
+/// change) is born dismissed. The newer crash owns the boot prompt; a
+/// stale harvest surfacing days later must not re-raise it. Only a
+/// harvest newer than EVERYTHING known is genuinely news. Unparseable
+/// timestamps never claim supersession.
+#[cfg(windows)]
+fn import_superseded_by_newer(
+    history: &[GameCrashRecord],
+    imported: &[GameCrashRecord],
+    at_unix: i64,
+) -> bool {
+    history
+        .iter()
+        .chain(imported.iter())
+        .any(|r| parse_rfc3339_unix(&r.detected_at).is_some_and(|t| t > at_unix))
+}
+
 /// The catch-up pass: harvest, merge, drop everything the history already
 /// knows (by evidence id or by a same-image record inside the cluster
 /// window — live detections carry no evidence id), and import the rest.
@@ -1635,7 +1691,15 @@ fn backfill_recent(app: &tauri::AppHandle) -> anyhow::Result<Vec<GameCrashRecord
             crash_dump_path: candidate.dump_path.clone(),
             summary: (!candidate.summary.is_empty()).then_some(candidate.summary.clone()),
             mods_active,
-            status: STATUS_NEW.to_string(),
+            // The read watermark on import: a historical crash older than
+            // one the history (or this pass) already carries is born
+            // dismissed — the player saw (or is being prompted for) the
+            // newer crash; the stale one must not re-toast on next boot.
+            status: if import_superseded_by_newer(&history, &imported, candidate.at_unix) {
+                STATUS_DISMISSED.to_string()
+            } else {
+                STATUS_NEW.to_string()
+            },
             evidence_id: Some(candidate.evidence_id.clone()),
         };
         append_record_in(&dir, &record)?;
@@ -3214,6 +3278,27 @@ pub fn game_crash_list() -> CommandResult<Vec<GameCrashRecord>> {
 pub fn game_crash_dismiss(record_id: String) -> CommandResult<()> {
     let dir = super::appdata::appdata_dir_path()?;
     Ok(dismiss_record_in(&dir, &record_id)?)
+}
+
+/// Mark one crash record VIEWED — and every OLDER record with it (the
+/// read watermark, see mark_viewed_in): the boot prompt stops resurfacing
+/// the viewed crash and everything before it, while the history itself is
+/// kept. Each flipped record rides the usual game-crash event so open
+/// windows drop their prompts live. Returns the flipped records.
+#[tauri::command]
+pub fn game_crash_mark_viewed(
+    app: tauri::AppHandle,
+    record_id: String,
+) -> CommandResult<Vec<GameCrashRecord>> {
+    let dir = super::appdata::appdata_dir_path()?;
+    let flipped = mark_viewed_in(&dir, &record_id)?;
+    if !flipped.is_empty() {
+        use tauri::Emitter;
+        for record in &flipped {
+            let _ = app.emit(GAME_CRASH_EVENT, record);
+        }
+    }
+    Ok(flipped)
 }
 
 /// Reset every crash record in one pass: new -> dismissed, history kept.

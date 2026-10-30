@@ -15,6 +15,8 @@
  */
 import { createI18n } from "vue-i18n";
 
+import { syncHikariLocale } from "./hikariMessages";
+
 const modules = import.meta.glob("../../../../res/i18n/locales/**/*.json");
 
 export const SUPPORTED_LOCALES = [
@@ -148,6 +150,9 @@ export async function setLocale(locale: Locale): Promise<void> {
   if (typeof document !== "undefined") {
     document.documentElement.lang = locale;
   }
+  // Hikari components carry their own chrome strings (its i18n context is
+  // a separate module singleton) — keep them on the app's locale.
+  syncHikariLocale(locale);
 }
 
 export function t(key: string, params?: Record<string, unknown>): string {

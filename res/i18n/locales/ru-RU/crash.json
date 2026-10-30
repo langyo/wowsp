@@ -43,7 +43,10 @@
     "restoreWarning": "Восстановить предупреждение",
     "recordDetail": "Отчёт о сбое",
     "resetAll": "Сбросить все записи",
-    "resetDone": "Сброшено записей: {count}"
+    "resetDone": "Сброшено записей: {count}",
+    "markViewed": "Отметить просмотренной",
+    "summary": "Обзор",
+    "highlights": "Главное"
   },
   "findings": {
     "exceptionAccessViolation": "Нарушение доступа — клиент обратился к памяти, ему не принадлежащей",

@@ -1101,3 +1101,123 @@ fn dismiss_all_survives_a_backfill_only_tombstone_dir() {
     assert!(dismiss_new_records_in(dir.path()).unwrap().is_empty());
     assert_eq!(load_seen_in(dir.path()), vec!["evt:42".to_string()]);
 }
+
+// ── the read watermark (mark viewed) ─────────────────────────────────────────
+
+/// A synthetic crash record pinned to an explicit detection time — the
+/// watermark scans the persisted newest-first order, so tests need
+/// deterministic timestamps (sample_record uses "now" for every row).
+fn record_at(id: &str, at: &str) -> GameCrashRecord {
+    let mut record = sample_record(id, None);
+    record.detected_at = at.to_string();
+    record
+}
+
+#[test]
+fn mark_viewed_flips_the_record_and_every_older_one() {
+    let dir = TempDir::new("mark-viewed");
+    // Append oldest first; append_record_in keeps the file newest-first.
+    append_record_in(dir.path(), &record_at("gc-old", "2026-10-27T08:00:00Z")).unwrap();
+    append_record_in(dir.path(), &record_at("gc-mid", "2026-10-28T08:00:00Z")).unwrap();
+    append_record_in(dir.path(), &record_at("gc-new", "2026-10-29T08:00:00Z")).unwrap();
+
+    // Viewing the NEWEST retires it and everything older in one pass —
+    // the exact complaint the watermark answers (an older unviewed crash
+    // must not re-toast once the newest was seen).
+    let flipped = mark_viewed_in(dir.path(), "gc-new").unwrap();
+    let flipped_ids: Vec<&str> = flipped.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(flipped_ids, vec!["gc-new", "gc-mid", "gc-old"]);
+
+    let records = load_history_in(dir.path()).unwrap().unwrap();
+    assert!(
+        records.iter().all(|r| r.status == STATUS_DISMISSED),
+        "{records:?}"
+    );
+
+    // Settled history: a second pass flips nothing (idempotent).
+    assert!(mark_viewed_in(dir.path(), "gc-new").unwrap().is_empty());
+}
+
+#[test]
+fn mark_viewed_watermarks_from_the_marked_record_down() {
+    let dir = TempDir::new("mark-viewed-mid");
+    append_record_in(dir.path(), &record_at("gc-old", "2026-10-27T08:00:00Z")).unwrap();
+    append_record_in(dir.path(), &record_at("gc-mid", "2026-10-28T08:00:00Z")).unwrap();
+    append_record_in(dir.path(), &record_at("gc-new", "2026-10-29T08:00:00Z")).unwrap();
+
+    // Marking a MIDDLE record retires its own tail (itself + older); the
+    // newer record keeps its pending state.
+    let flipped = mark_viewed_in(dir.path(), "gc-mid").unwrap();
+    let flipped_ids: Vec<&str> = flipped.iter().map(|r| r.id.as_str()).collect();
+    assert_eq!(flipped_ids, vec!["gc-mid", "gc-old"]);
+
+    let records = load_history_in(dir.path()).unwrap().unwrap();
+    let status_of = |id: &str| {
+        records
+            .iter()
+            .find(|r| r.id == id)
+            .unwrap_or_else(|| panic!("{id} missing"))
+            .status
+            .clone()
+    };
+    assert_eq!(
+        status_of("gc-new"),
+        STATUS_NEW,
+        "newer records stay pending"
+    );
+    assert_eq!(status_of("gc-mid"), STATUS_DISMISSED);
+    assert_eq!(status_of("gc-old"), STATUS_DISMISSED);
+}
+
+#[test]
+fn mark_viewed_without_history_is_an_empty_ok_and_missing_id_errors() {
+    let dir = TempDir::new("mark-viewed-missing");
+    // No history file yet — nothing to flip, no error (the command runs
+    // unconditionally on every target, like game_crash_list).
+    assert!(mark_viewed_in(dir.path(), "gc-none").unwrap().is_empty());
+    append_record_in(dir.path(), &record_at("gc-1", "2026-10-29T08:00:00Z")).unwrap();
+    // A stale UI marking a purged record must learn it is gone.
+    assert!(mark_viewed_in(dir.path(), "gc-missing").is_err());
+}
+
+#[cfg(windows)]
+#[test]
+fn backfill_imports_older_than_a_known_crash_are_born_dismissed() {
+    let at = |iso: &str| parse_rfc3339_unix(iso).unwrap();
+    let history = vec![record_at("gc-known", "2026-10-29T08:00:00Z")];
+
+    // A harvest NEWER than everything known is genuinely news: born new.
+    assert!(!import_superseded_by_newer(
+        &history,
+        &[],
+        at("2026-10-30T08:00:00Z")
+    ));
+    // An OLDER harvest is born dismissed — the seen newer crash owns the
+    // prompt; the stale one must not re-toast on boot.
+    assert!(import_superseded_by_newer(
+        &history,
+        &[],
+        at("2026-10-28T08:00:00Z")
+    ));
+    // The helper also honors in-pass imports (a guard the current
+    // oldest-first loop cannot trigger, but the signature promises).
+    let imported = vec![record_at("gc-pass", "2026-10-30T08:00:00Z")];
+    assert!(import_superseded_by_newer(
+        &history,
+        &imported,
+        at("2026-10-29T12:00:00Z")
+    ));
+    // Unparseable timestamps never claim supersession.
+    let broken = vec![record_at("gc-broken", "not a date")];
+    assert!(!import_superseded_by_newer(
+        &broken,
+        &[],
+        at("2026-10-28T08:00:00Z")
+    ));
+    // An empty history imports everything as news (first-ever boot).
+    assert!(!import_superseded_by_newer(
+        &[],
+        &[],
+        at("2026-10-28T08:00:00Z")
+    ));
+}

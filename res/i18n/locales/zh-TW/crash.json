@@ -43,7 +43,10 @@
     "restoreWarning": "恢復警告",
     "recordDetail": "崩潰詳情",
     "resetAll": "重設全部記錄",
-    "resetDone": "已重設 {count} 筆崩潰記錄"
+    "resetDone": "已重設 {count} 筆崩潰記錄",
+    "markViewed": "標記已查看",
+    "summary": "概要",
+    "highlights": "重點"
   },
   "findings": {
     "exceptionAccessViolation": "存取違例 —— 用戶端讀寫了無權存取的記憶體",

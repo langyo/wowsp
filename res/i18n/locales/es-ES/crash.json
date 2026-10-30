@@ -43,7 +43,10 @@
     "restoreWarning": "Restaurar aviso",
     "recordDetail": "Informe de fallo",
     "resetAll": "Restablecer todos los registros",
-    "resetDone": "Se restablecieron {count} registros de fallos."
+    "resetDone": "Se restablecieron {count} registros de fallos.",
+    "markViewed": "Marcar como vista",
+    "summary": "Resumen",
+    "highlights": "Puntos clave"
   },
   "findings": {
     "exceptionAccessViolation": "Infracción de acceso — el cliente leyó o escribió memoria que no le pertenece",

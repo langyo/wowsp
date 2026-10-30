@@ -596,6 +596,7 @@ pub fn run() {
             commands::game_crash::game_crash_scan_recent,
             commands::game_crash::game_crash_list,
             commands::game_crash::game_crash_dismiss,
+            commands::game_crash::game_crash_mark_viewed,
             commands::game_crash::game_crash_dismiss_all,
             commands::game_crash::game_crash_analyze,
             commands::game_crash::game_crash_export,

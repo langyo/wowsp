@@ -131,6 +131,11 @@ export const gameCrashApi = {
   /** Mark one record dismissed (its prompt stops re-surfacing). */
   dismissGameCrash: (recordId: string) =>
     transport.invoke<null>(RPC.game_crash_dismiss, { recordId }),
+  /** Mark one record VIEWED and every OLDER record with it (the read
+   *  watermark): the boot prompt stops resurfacing all of them. Resolves
+   *  the flipped records. */
+  markGameCrashViewed: (recordId: string) =>
+    transport.invoke<GameCrashRecord[]>(RPC.game_crash_mark_viewed, { recordId }),
   /** Reset every record in one pass (new -> dismissed, history kept);
    *  resolves the flipped count. The per-boot re-toast goes away. */
   dismissAllGameCrashes: () => transport.invoke<number>(RPC.game_crash_dismiss_all),

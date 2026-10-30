@@ -4,20 +4,22 @@
  *  the ignored-warning list and a record log window all live in
  *  secondary hikari windows. The crash PROMPT is a standard sticky
  *  toast from the store (shared stack with every other toast). */
-import { computed, defineComponent, nextTick, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, onMounted, ref, watch } from "vue";
 
 import {
   HkAlert,
   HkButton,
   HkConfirmDialog,
+  HkLogWindow,
   HkModal,
   HkSettingsGroup,
   HkSpinner,
   HkSwitch,
   HkTag,
   useToast,
+  type HLogTab,
 } from "@celestia-island/hikari";
-import { BellOff, FileDown, RefreshCw, ShieldAlert, Trash2 } from "@lucide/vue";
+import { BellOff, CheckCheck, FileDown, RefreshCw, ShieldAlert, Trash2 } from "@lucide/vue";
 
 import { api, type CrashFinding, type GameCrashRecord, type SuspectMod } from "@/api";
 import { t } from "@/i18n";
@@ -75,8 +77,9 @@ export default defineComponent({
     const suspectsOpen = ref(false);
     const ignoredOpen = ref(false);
     const detailOpen = ref(false);
-    /** The record-log window scroll pane (auto-scrolled to the tail). */
-    const logPane = ref<HTMLElement | null>(null);
+    /** Log tabs the viewer's eraser cleared — they collapse to empty
+     *  lines until the next analysis refresh rebuilds the tabs. */
+    const clearedTabs = ref(new Set<string>());
     /** The selected record analysis load failure (retryable). */
     const analysisError = ref("");
     /** The active install safe-mode state (live status row). */
@@ -106,6 +109,58 @@ export default defineComponent({
     const gameRoot = computed(
       () => selectedRecord.value?.gameRoot ?? config.activeInstall?.path ?? null,
     );
+
+    /** The detail window's tabs: the record summary first, then the
+     *  error-line highlight reel, then one tab per log tail (game logs,
+     *  app logs). A cleared tab collapses to empty lines until the next
+     *  analysis refresh rebuilds the set. */
+    const detailTabs = computed<HLogTab[]>(() => {
+      const record = selectedRecord.value;
+      if (!record) return [];
+      const cleared = clearedTabs.value;
+      const summary = [
+        `${record.imageName} (pid ${record.pid})`,
+        sourceLabel(record.source),
+        t("crash.section.recordTime", { time: formatTime(record.detectedAt) }),
+        ...(record.gameRoot ? [record.gameRoot] : []),
+        ...(record.exceptionCode ? [record.exceptionCode] : []),
+      ];
+      const analysis = selectedAnalysis.value;
+      if (analysis) {
+        summary.push(`${t("crash.section.modsInventory")}: ${analysis.modsInventory.length}`);
+        if (analysis.currentBuild) {
+          summary.push(`${t("crash.section.currentBuild")}: ${analysis.currentBuild}`);
+        }
+      }
+      const tabs: HLogTab[] = [
+        { key: "summary", title: t("crash.section.summary"), lines: summary },
+      ];
+      if (!analysis) return tabs;
+      const logs = [...analysis.gameLogs, ...analysis.appLogs];
+      const highlights = logs.flatMap((log) =>
+        log.highlights.map((line) => `[${log.name}] ${line}`),
+      );
+      if (highlights.length > 0) {
+        tabs.push({
+          key: "highlights",
+          title: t("crash.section.highlights"),
+          lines: cleared.has("highlights") ? [] : highlights,
+        });
+      }
+      for (const log of logs) {
+        tabs.push({
+          key: log.path,
+          title: log.name,
+          lines: cleared.has(log.path) ? [] : log.tail.split("\n"),
+        });
+      }
+      return tabs;
+    });
+
+    watch(selectedAnalysis, () => {
+      // A fresh analysis rebuilds the world the cleared-tab set described.
+      clearedTabs.value = new Set();
+    });
 
     async function refreshSafeMode() {
       const root = gameRoot.value;
@@ -141,6 +196,18 @@ export default defineComponent({
       }
     }
 
+    /** The read watermark: flip the record — and every OLDER pending one
+     *  with it — to viewed backend-side. Silent by default (the marking
+     *  rides a view the user is already looking at); the records list's
+     *  explicit mark-viewed button reports refusals instead. */
+    async function viewRecord(id: string, reportErrors = false) {
+      try {
+        await crash.markViewed(id);
+      } catch (e) {
+        if (reportErrors) toast.error(e instanceof Error ? e.message : String(e));
+      }
+    }
+
     /** Everything refreshes after every recovery action: the records,
      *  the ignored list, the quarantined manifest, the safe-mode state
      *  AND a fresh analysis (the cached one describes the pre-action
@@ -166,25 +233,34 @@ export default defineComponent({
       void refreshSafeMode();
       void ensureAnalysis();
       void refreshQuarantined();
+      // Viewing the crash section IS viewing the newest crash: the read
+      // watermark retires it (and every older pending record) so a seen
+      // crash never re-toasts on the next boot. Crashes arriving LATER
+      // keep their prompt — only an explicit view marks them.
+      const record = selectedRecord.value;
+      if (record?.status === "new") void viewRecord(record.id);
     });
 
     watch(selectedRecord, (record, previous) => {
       if (record?.id === previous?.id) return;
+      // Reset alongside the analysis watch: two consecutive records can
+      // both lack a cached analysis (undefined -> undefined fires
+      // nothing), and a cleared tab must not leak across records.
+      clearedTabs.value = new Set();
       void ensureAnalysis();
       void refreshSafeMode();
       void refreshQuarantined();
     });
 
-    /** Open one record: select it for the findings AND open its log
-     *  window (auto-scrolled to the last line). */
+    /** Open one record: select it for the findings and open its log
+     *  window. Opening a record IS viewing it — the read watermark
+     *  retires it and every older pending record in one backend pass. */
     async function openRecord(id: string) {
       selectedId.value = id;
       recordsOpen.value = false;
+      void viewRecord(id);
       await ensureAnalysis();
       detailOpen.value = true;
-      await nextTick();
-      const pane = logPane.value;
-      if (pane) pane.scrollTop = pane.scrollHeight;
     }
 
     async function exportReport() {
@@ -469,15 +545,26 @@ export default defineComponent({
           >
             <div class="crash-section__records">
               {crash.history.map((r) => (
-                <button
+                <div
                   key={r.id}
-                  type="button"
+                  role="button"
+                  tabindex={0}
                   class={{
                     "crash-section__record": true,
                     "is-selected": r.id === record?.id,
                     "is-dismissed": r.status === "dismissed",
                   }}
                   onClick={() => void openRecord(r.id)}
+                  onKeydown={(e: KeyboardEvent) => {
+                    // Only the card itself answers Enter/Space — a
+                    // keydown on the nested mark-viewed button must
+                    // activate THAT button, not open the record.
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      void openRecord(r.id);
+                    }
+                  }}
                 >
                   <span class="crash-section__record-head">
                     <span class="crash-section__record-time">
@@ -491,62 +578,46 @@ export default defineComponent({
                         {recordCause(r)}
                       </HkTag>
                     ) : null}
+                    <span class="crash-section__spacer" />
+                    {r.status === "new" ? (
+                      <HkButton
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e: MouseEvent) => {
+                          // Mark viewed WITHOUT opening the detail: the
+                          // row flips to its viewed styling in place.
+                          e.stopPropagation();
+                          void viewRecord(r.id, true);
+                        }}
+                      >
+                        <CheckCheck size={12} />
+                        {t("crash.section.markViewed")}
+                      </HkButton>
+                    ) : null}
                   </span>
                   <span class="crash-section__record-meta">
                     {r.imageName} (pid {r.pid})
                     {" · " + sourceLabel(r.source)}
                   </span>
-                </button>
+                </div>
               ))}
             </div>
           </HkModal>
 
-          {/* ── one record detail window: the logs, tail-first ── */}
-          <HkModal
+          {/* ── one record detail window: hikari's log viewer — tabbed
+                 (summary / highlights / per-log tails), overlay scrollbar,
+                 autoscroll + copy built in, tail-first ── */}
+          <HkLogWindow
             modelValue={detailOpen.value}
             onUpdate:modelValue={(v: boolean) => (detailOpen.value = v)}
             title={t("crash.section.recordDetail")}
-            width="46rem"
-          >
-            <div ref={(el: unknown) => (logPane.value = el as HTMLElement | null)} class="crash-section__detail-logs">
-              {record ? (
-                <p class="crash-section__meta">
-                  {formatTime(record.detectedAt)}
-                  {record.gameRoot ? " · " + record.gameRoot : ""}
-                  {" · " + sourceLabel(record.source)}
-                </p>
-              ) : null}
-              {analysis ? (
-                [...analysis.gameLogs, ...analysis.appLogs].map((log) => (
-                  <section key={log.path} class="crash-section__log">
-                    <h4 class="crash-section__log-name">{log.name}</h4>
-                    {log.highlights.length > 0 ? (
-                      <ul class="crash-section__log-highlights">
-                        {log.highlights.map((line) => (
-                          <li key={line} data-hint-overflow={line}>
-                            <code>{line}</code>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    <pre class="crash-section__log-tail">{log.tail}</pre>
-                  </section>
-                ))
-              ) : (
-                <div class="crash-section__loading">
-                  <HkSpinner size={18} />
-                </div>
-              )}
-              {analysis ? (
-                <p class="crash-section__meta">
-                  {t("crash.section.modsInventory")}: {analysis.modsInventory.length}
-                  {analysis.currentBuild
-                    ? " · " + t("crash.section.currentBuild") + ": " + analysis.currentBuild
-                    : ""}
-                </p>
-              ) : null}
-            </div>
-          </HkModal>
+            tabs={detailTabs.value}
+            // hikari's 60rem default on purpose: game-log lines run
+            // long, and the window floats free of the settings shell.
+            onClearTab={(key: string) => {
+              clearedTabs.value = new Set([...clearedTabs.value, key]);
+            }}
+          />
 
           {/* ── suspect list window: the actionable rows ─────────────── */}
           <HkModal
