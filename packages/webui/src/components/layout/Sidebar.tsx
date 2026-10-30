@@ -1,8 +1,8 @@
-import { computed, defineComponent, ref } from "vue";
+import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle, Smartphone } from "@lucide/vue";
 
-import { HkTag, HkTooltip } from "@celestia-island/hikari";
+import { HkSidebarRailToggle, HkTag, HkTooltip, useSidebarRail } from "@celestia-island/hikari";
 
 import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
@@ -46,6 +46,17 @@ import "./Sidebar.scss";
  * room there.
  * On the phone APP build the client button is hidden (its settings section
  * is unavailable there).
+ *
+ * DESKTOP rail mode (hikari's sidebar-rail kit, session-only): the root
+ * becomes the `.hk-sidebar-rail-host` LAYOUT box — a circular hover-reveal
+ * chevron toggle (HkSidebarRailToggle) rides the panel's content-facing
+ * edge and clicking it collapses the sidebar to a 56px icon rail. While
+ * collapsed, resting the pointer on the rail for the peek delay opens the
+ * FULL sidebar as an overlay drawer (`.hk-sidebar-rail-panel` slides over
+ * the content; the layout box stays at rail width so the content area
+ * never shifts), and leaving closes it after the grace. All timing lives
+ * in hikari's useSidebarRail — the one implementation every host shares.
+ * The drawer variant mounts NONE of this; its markup is unchanged.
  */
 export default defineComponent({
   name: "Sidebar",
@@ -68,6 +79,54 @@ export default defineComponent({
     // view (游玩时间, /playtime) is open — the pill in the title bar
     // presents the two as one section, the sidebar agrees.
     const route = useRoute();
+
+    // ── Desktop rail (hikari sidebar-rail kit) ─────────────────────────
+    // The desktop variant is a BESPOKE host of the kit: useSidebarRail owns
+    // the state machine (hover-dwell peek, leave-grace close, Escape, the
+    // session-only collapsed flag — nothing is ever persisted) and the
+    // hk-sidebar-rail-* geometry classes come from the granular stylesheet
+    // @use'd in Sidebar.scss. The drawer variant never enters rail mode:
+    // every computed below folds to false/undefined there.
+    const isDrawer = computed(() => props.variant === "drawer");
+    const rail = useSidebarRail();
+    // Collapsed for LAYOUT (rail width footprint, also while peeking).
+    const railCollapsed = computed(() => !isDrawer.value && rail.collapsed.value);
+    // RAIL density (icon-only dress): collapsed AND not peeking — the peek
+    // overlay renders the full sidebar unchanged, so the density rules must
+    // not style it (hikari's [data-collapsed] carve-out, mirrored).
+    const railDensity = computed(() => railCollapsed.value && !rail.peeking.value);
+    const peeking = computed(() => !isDrawer.value && rail.peeking.value);
+
+    // The host's inline width IS the layout footprint (the core contract:
+    // the content area must never shift), the panel's inline width is the
+    // slide lever that peeks the full sidebar out over the content.
+    const EXPANDED_WIDTH = "var(--app-sidebar-w, 240px)";
+    const RAIL_WIDTH = "56px";
+
+    // The wallpaper-blur band under the main column (theme.scss body::after)
+    // offsets by the sidebar's LAYOUT footprint; publish the live width so
+    // the band follows the rail — the documentElement-notch precedent every
+    // theme preference module sets (dpiPrefs, wallpaperBlur, …). Left empty
+    // while expanded so the band's var() fallback keeps the theme default,
+    // and removed on unmount so a later drawer-only mount never inherits a
+    // stale rail width.
+    watch(railCollapsed, (v) => {
+      document.documentElement.style.setProperty(
+        "--app-sidebar-live-w",
+        v ? RAIL_WIDTH : "",
+      );
+    });
+    onBeforeUnmount(() => {
+      document.documentElement.style.removeProperty("--app-sidebar-live-w");
+    });
+
+    /** Icon-only rail dress for a nav tile: the label rides along as the
+     *  hover hint (the global data-hint tooltip) and the accessible name
+     *  while the text span is display:none'd by the [data-rail] rules. */
+    const railTile = (label: string) =>
+      railDensity.value
+        ? { "data-hint": label, "data-hint-pos": "right", "aria-label": label }
+        : {};
 
     // The account row's identity + emblem — the SHOWN player, shared with
     // the phone-layout title-bar avatar through one composable (single
@@ -125,6 +184,19 @@ export default defineComponent({
     // running (the number is the total running instances, 2+ here).
     const runningCount = computed(() => gameStatus.processes.length);
 
+    // The status dot's hover hint: the multi-instance count wins whenever
+    // other games also run (the expanded card's badge text); in rail
+    // density the dot is the whole card, so the plain online/offline label
+    // rides the same channel. Expanded single-instance keeps the original
+    // hintless dot (the card's text says it all).
+    const statusDotHint = computed(() => {
+      if (runningCount.value > 1)
+        return t("common.game.multiRunning", { n: runningCount.value });
+      if (railDensity.value)
+        return t(proc.value.running ? "common.game.online" : "common.game.offline");
+      return undefined;
+    });
+
     /** "Steam · ASIA" or just "Steam" when realm is unknown. */
     const clientLabelOf = (p: { kind?: GameProcessInfo["kind"]; realm?: string | null }) => {
       const k = kindLabel(p.kind);
@@ -141,12 +213,25 @@ export default defineComponent({
     const activeInstall = computed(() => config.activeInstall ?? null);
     const activeInstallPath = computed(() => activeInstall.value?.path ?? "");
 
+    // Rail density degrades the account row to its avatar alone; the shown
+    // name rides the row as the hover hint (expanded it IS the visible
+    // text, so no hint is wanted there).
+    const accountHint = computed(() =>
+      railDensity.value
+        ? shownPlayer.value?.nickname ?? t("account.notBound")
+        : undefined,
+    );
+
     // The game-status card element — PluginUpdateHint anchors its popup
     // to the RIGHT of this card, vertically centered on it.
     const statusCardEl = ref<HTMLElement | null>(null);
 
-    return () => (
-      <aside class={["sidebar", props.variant === "drawer" ? "sidebar--drawer" : ""]}>
+    return () => {
+      // The shared nav + footer body: the drawer variant hosts it directly
+      // (its classic self-contained root), the desktop wraps it in the rail
+      // composition below.
+      const body = (
+        <>
         {/* No brand row: the title bar above already carries the WoWSP
             identity — the nav's generous top padding keeps the first link
             off the rail's top edge instead. */}
@@ -156,15 +241,16 @@ export default defineComponent({
             class={["sidebar__link", { "is-active": route.path === "/playtime" }]}
             activeClass="is-active"
             exactActiveClass="is-active"
+            {...railTile(t("nav.dashboard"))}
           >
             <BarChart3 size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.dashboard")}</span>
           </RouterLink>
-          <RouterLink to="/lookup" class="sidebar__link" activeClass="is-active">
+          <RouterLink to="/lookup" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.lookup"))}>
             <Search size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.lookup")}</span>
           </RouterLink>
-          <RouterLink to="/ships" class="sidebar__link" activeClass="is-active">
+          <RouterLink to="/ships" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.ships"))}>
             <Ship size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.ships")}</span>
           </RouterLink>
@@ -173,19 +259,19 @@ export default defineComponent({
               pushed, same-account battle — see views/replay/LiveView's
               mobile branch). Tactics analysis works from the bundled map
               catalog with touch gestures, so phones get it too. */}
-          <RouterLink to="/live" class="sidebar__link" activeClass="is-active">
+          <RouterLink to="/live" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.live"))}>
             <Video size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.live")}</span>
           </RouterLink>
-          <RouterLink to="/replay" class="sidebar__link" activeClass="is-active">
+          <RouterLink to="/replay" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.replay"))}>
             <Film size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.replay")}</span>
           </RouterLink>
-          <RouterLink to="/tactics" class="sidebar__link" activeClass="is-active">
+          <RouterLink to="/tactics" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.tactics"))}>
             <Crosshair size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.tactics")}</span>
           </RouterLink>
-          <RouterLink to="/resources" class="sidebar__link" activeClass="is-active">
+          <RouterLink to="/resources" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.resources"))}>
             <Package size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.resources")}</span>
           </RouterLink>
@@ -203,11 +289,7 @@ export default defineComponent({
               <div class="sidebar__game-status-row">
                 <span
                   class="sidebar__status-dot sidebar__status-dot--on"
-                  data-hint={
-                    runningCount.value > 1
-                      ? t("common.game.multiRunning", { n: runningCount.value })
-                      : undefined
-                  }
+                  data-hint={statusDotHint.value || undefined}
                   data-hint-pos="right"
                 >
                   {runningCount.value > 1 ? (
@@ -240,7 +322,11 @@ export default defineComponent({
           ) : (
             <div ref={statusCardEl} class="sidebar__game-status is-offline">
               <div class="sidebar__game-status-row">
-                <span class="sidebar__status-dot sidebar__status-dot--off" />
+                <span
+                  class="sidebar__status-dot sidebar__status-dot--off"
+                  data-hint={statusDotHint.value || undefined}
+                  data-hint-pos="right"
+                />
                 <span class="sidebar__status-text">{t("common.game.offline")}</span>
               </div>
             </div>
@@ -378,7 +464,13 @@ export default defineComponent({
               session-resolved identity: when a battle identified the
               actually-playing account it is tagged (and unregistered alts
               say so — the settings modal is where they get bound). */}
-          <button type="button" class="sidebar__footer-btn" onClick={() => ui.show("account")}>
+          <button
+            type="button"
+            class="sidebar__footer-btn"
+            data-hint={accountHint.value || undefined}
+            data-hint-pos="right"
+            onClick={() => ui.show("account")}
+          >
             <span class="sidebar__footer-btn-key">{t("settings.account")}</span>
             <span class="sidebar__footer-btn-value">
               {shownPlayer.value ? (
@@ -408,7 +500,45 @@ export default defineComponent({
             </span>
           </button>
         </div>
-      </aside>
-    );
+        </>
+      );
+
+      if (isDrawer.value) {
+        return <aside class="sidebar sidebar--drawer">{body}</aside>;
+      }
+
+      // Desktop rail composition (hikari kit): the root is the LAYOUT box
+      // (.hk-sidebar-rail-host — its inline width is the sidebar's layout
+      // footprint and NEVER moves while a peek is open, so the content
+      // column cannot shift); the full sidebar rides the absolutely
+      // positioned .hk-sidebar-rail-panel overlay, whose inline width is
+      // the slide lever between rail and full. The hover-reveal circular
+      // chevron toggle sits on the panel's content-facing edge, and any
+      // click inside the panel that navigates (nav link, footer button)
+      // also dismisses an open peek — the shell kit's onNavigate
+      // contract, delegated to the panel.
+      return (
+        <aside
+          class="sidebar hk-sidebar-rail-host"
+          data-rail={railDensity.value || undefined}
+          data-peeking={peeking.value || undefined}
+          style={{ width: railCollapsed.value ? RAIL_WIDTH : EXPANDED_WIDTH }}
+          onPointerenter={rail.onPointerEnter}
+          onPointerleave={rail.onPointerLeave}
+          onKeydown={(e: KeyboardEvent) => {
+            if (rail.onKeydown(e)) e.stopPropagation();
+          }}
+        >
+          <div
+            class="sidebar__panel hk-sidebar-rail-panel"
+            style={{ width: railDensity.value ? RAIL_WIDTH : EXPANDED_WIDTH }}
+            onClick={() => rail.closePeek()}
+          >
+            {body}
+            <HkSidebarRailToggle expanded={!railCollapsed.value} onToggle={rail.toggle} />
+          </div>
+        </aside>
+      );
+    };
   },
 });

@@ -1,3 +1,12 @@
+/* hikari's sidebar-rail kit (granular style subpath — the sanctioned
+ * import style; the aggregate styles entry never pulls component sheets):
+ * the rail host / peek panel / toggle geometry the desktop Sidebar composes
+ * with in Sidebar.tsx. The HOST owns these classes through this entry even
+ * though the mounted toggle also imports the same sheet — the belt-and-
+ * braces cost is the rules riding twice in the bundle (~1KB), never a
+ * divergence. No wowsp-side re-implementations of the geometry. */
+@use "@celestia-island/hikari/styles/sidebar-rail.scss";
+
 .sidebar {
   width: var(--app-sidebar-w, 240px);
   flex-shrink: 0;
@@ -318,6 +327,104 @@
   &__status-text {
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+}
+
+/* ── Desktop rail composition (hikari sidebar-rail kit) ────────────────
+   The desktop root is the LAYOUT box only (.hk-sidebar-rail-host: relative,
+   overflow-hidden, width transitioned — hikari's sheet): its inline width is
+   the sidebar's layout footprint and the visual surface moves onto the
+   .sidebar__panel child so the peek overlay can paint its full width OVER
+   the content while the footprint stays at rail width. The drawer variant
+   never mounts the panel, so its root keeps the classic chrome above. */
+.sidebar:not(.sidebar--drawer) {
+  /* The stylesheet width gives way to the host's inline footprint width
+     (expanded var / 56px rail); the surface declarations below move onto
+     the panel — painting both would double the backdrop blur wherever the
+     two boxes overlap. */
+  width: auto;
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-right: none;
+}
+
+.sidebar__panel {
+  /* The visual sidebar surface (moved from the root; the panel is what
+     slides over the content during a peek, so it owns the paint). The
+     companion .hk-sidebar-rail-panel class (hikari's sheet) provides the
+     absolute overlay geometry, the flex column and the width transition. */
+  background: rgb(var(--color-surface));
+  background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
+  backdrop-filter: var(--wallpaper-blur-sidebar, blur(0px));
+  -webkit-backdrop-filter: var(--wallpaper-blur-sidebar, blur(0px));
+  border-right: 1px solid rgb(var(--color-border) / 20%);
+  user-select: none;
+}
+
+/* ── Rail density (icon-only dress) ─────────────────────────────────────
+   Keyed off [data-rail] — true only while COLLAPSED and not peeking (the
+   peek overlay renders the full sidebar unchanged). Nav links become
+   centered icon tiles (labels ride their data-hint/aria-label, set in
+   Sidebar.tsx) and the footer rows degrade to their leading marks: the
+   status dot, the gateway icon, the client row's platform icon, the
+   account row's avatar, the migrate prompt's warning triangle. */
+.sidebar[data-rail] {
+  .sidebar__nav {
+    padding-inline: 0.375rem;
+  }
+
+  .sidebar__link {
+    justify-content: center;
+    padding-inline: 0;
+
+    .sidebar__link-text {
+      display: none;
+    }
+  }
+
+  .sidebar__footer {
+    padding: 0.75rem 0.375rem;
+
+    /* Hint/host wrappers of the icon-sized rows center what remains
+       instead of stretching it across the rail. */
+    .sidebar__footer-slot {
+      justify-content: center;
+    }
+  }
+
+  /* Game status degrades to the dot alone (online/offline rides the dot's
+     data-hint); the client/pid detail rows are peek-only content. */
+  .sidebar__game-status {
+    align-items: center;
+    padding: 0.3rem;
+  }
+
+  .sidebar__game-status-row {
+    justify-content: center;
+  }
+
+  .sidebar__status-text,
+  .sidebar__game-detail {
+    display: none;
+  }
+
+  /* The key/value buttons degrade to their leading mark (platform icon /
+     avatar / warning triangle); key lines, text and tags are peek-only. */
+  .sidebar__footer-btn {
+    align-items: center;
+    padding: 0.45rem;
+
+    .sidebar__footer-btn-key,
+    .sidebar__footer-btn-text,
+    .sidebar__footer-btn-value .hk-tag {
+      display: none;
+    }
+
+    .sidebar__footer-btn-value {
+      justify-content: center;
+      gap: 0;
+    }
   }
 }
 

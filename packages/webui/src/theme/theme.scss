@@ -344,12 +344,19 @@ html[data-wallpaper-art="true"] body::after {
   position: fixed;
   top: var(--app-titlebar-h, 32px);
   bottom: 0;
-  left: var(--app-sidebar-w, 240px);
+  /* The desktop sidebar's rail mode publishes its live footprint into
+     --app-sidebar-live-w (Sidebar.tsx) so the band follows the collapsed
+     rail instead of leaving an unblurred strip beside it; unset while
+     expanded, where the theme's --app-sidebar-w default applies. The
+     transition mirrors the rail host's width ease so the band tracks the
+     animating edge. */
+  left: var(--app-sidebar-live-w, var(--app-sidebar-w, 240px));
   right: 0;
   z-index: -1;
   backdrop-filter: var(--wallpaper-blur-main, none);
   -webkit-backdrop-filter: var(--wallpaper-blur-main, none);
   pointer-events: none;
+  transition: left var(--duration-normal, 0.3s) ease;
 }
 
 @media (max-width: 767px) {
