@@ -170,19 +170,6 @@ def main() -> None:
     print("[extract] done.")
 
 
-def _wg_client_build(game: str) -> str | None:
-    """The WG install's newest numeric bin/<build> directory — the build the
-    GameParams.json dump must have been cut from (the WG client's bin dirs
-    are numeric build ids, same convention as the Lesta side)."""
-    bin_dir = Path(game, "bin")
-    builds = sorted(
-        (p for p in bin_dir.iterdir() if p.is_dir() and p.name.isdigit()),
-        key=lambda p: int(p.name),
-        reverse=True,
-    ) if bin_dir.is_dir() else []
-    return builds[0].name if builds else None
-
-
 def _wg_dump_stamp_backfill() -> str | None:
     """The WG dump build the committed roster vouches for, when it carries a
     dual stamp ("wg-<build>+lesta-<build>"): the roster is baked right after
@@ -201,7 +188,7 @@ def _ensure_gameparams(game: str, refresh: bool) -> None:
     detected client build (a client update changes every number in the
     dump). A dump vouched for by the committed roster's dual stamp backfills
     the sidecar instead of re-cutting. --refresh still forces it."""
-    build = _wg_client_build(game)
+    build = sync_encyclopedia.wg_client_build(game)
     recorded = None
     if GAMEPARAMS_BUILD.exists():
         recorded = GAMEPARAMS_BUILD.read_text(encoding="ascii", errors="ignore").strip() or None
@@ -495,24 +482,9 @@ def _lesta_tree_cmd(gameparams: Path) -> list[str]:
     return cmd
 
 
-def _lesta_client_build(lesta_game: str) -> str | None:
-    """The build the Lesta artifacts must match: the newest numeric
-    bin/<build> carrying res/texts/ru/LC_MESSAGES/global.mo — the same walk
-    _run_lesta_overlay stamps the overlay with."""
-    bin_dir = Path(lesta_game, "bin")
-    builds = sorted(
-        (p for p in bin_dir.iterdir() if p.is_dir() and p.name.isdigit()),
-        key=lambda p: int(p.name),
-        reverse=True,
-    ) if bin_dir.is_dir() else []
-    for build in builds:
-        if (build / "res" / "texts" / "ru" / "LC_MESSAGES" / "global.mo").is_file():
-            return build.name
-    return None
-
-
 def _ensure_lesta_gameparams(lesta_game: str, refresh: bool) -> None:
-    """GameParams_lesta.json, keyed to the client build it was cut from.
+    """GameParams_lesta.json, keyed to the client build it was cut from
+    (build detection shared with sync_encyclopedia).
 
     A dump is only valid for the client it was cut from — a client update
     changes every number in it, so the cache must not silently serve an old
@@ -522,7 +494,7 @@ def _ensure_lesta_gameparams(lesta_game: str, refresh: bool) -> None:
     build. An existing dump whose committed artifacts already stamp the
     detected build backfills the sidecar instead of re-cutting. --refresh
     still forces regeneration."""
-    build = _lesta_client_build(lesta_game)
+    build = sync_encyclopedia.lesta_client_build(lesta_game)
     recorded = None
     if GAMEPARAMS_LESTA_BUILD.exists():
         recorded = GAMEPARAMS_LESTA_BUILD.read_text(
@@ -676,7 +648,7 @@ def _run_encyclopedia(game: str) -> None:
     roster_stamp = str((_load_json(SRC_DATA / "ships_wg_only.json") or {}).get("gameVersion") or "")
     m = re.fullmatch(r"wg-(\d+)\+lesta-(\d+)", roster_stamp)
     roster_wg_build = m.group(1) if m else None
-    wg_build = _wg_client_build(game)
+    wg_build = sync_encyclopedia.wg_client_build(game)
     lesta_drift = committed_build != build
     wg_drift = wg_build is not None and roster_wg_build != wg_build
     if not lesta_drift and not wg_drift:

@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 STEAM_APPID = "552990"
@@ -169,7 +170,7 @@ def _try_int(s: str) -> int:
         return 0
 
 
-def _registry_scan(exe_present=None) -> list[tuple[str, str]]:
+def _registry_scan(exe_present: Callable[[str], bool] | None = None) -> list[tuple[str, str]]:
     """(install dir, lower-cased publisher) pairs for every WoWS-family hit.
 
     Substring patterns (lower-cased), mirroring the app's game_detect.rs:
@@ -210,12 +211,14 @@ def _registry_scan(exe_present=None) -> list[tuple[str, str]]:
                         if not any(p in pub for p in patterns):
                             continue
                         loc = winreg.QueryValueEx(ck, "InstallLocation")[0]
+                        if not loc:
+                            continue
                         ok = (
                             exe_present(loc)
                             if exe_present
                             else Path(loc, "WorldOfWarships.exe").is_file()
                         )
-                        if loc and ok:
+                        if ok:
                             hits.append((loc, pub))
                 except OSError:
                     continue
