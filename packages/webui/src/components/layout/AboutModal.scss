@@ -264,8 +264,10 @@
     color: rgb(var(--color-primary));
   }
 
-  /* Clickable @name inside a trivia line (trivia43 credits BestNaomi):
-     styled as part of the sentence, not as a separate control. */
+  /* Clickable inline trivia links — the @name credit (trivia43) and the
+     [[shipIndex:label]] ship mentions (underlined, opening the tech tree's
+     ship-detail modal) — styled as part of the sentence, not as separate
+     controls. */
   &__trivia-link {
     display: inline;
     margin: 0;

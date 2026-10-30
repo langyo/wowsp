@@ -6,9 +6,13 @@ import { HkButton, HkModal } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { SPECIAL_THANKS } from "@/data/attributions";
+import shipNamesDbRaw from "@/data/ship_names.json";
+import { useAccountStore } from "@/stores/account";
 import { useUpdaterStore } from "@/stores/updater";
 import { usePiggyReminderStore } from "@/stores/piggyReminder";
 import { openExternal } from "@/utils/openExternal";
+import ShipDetailModal from "@/components/ships/ShipDetailModal";
+import { useShipDetail } from "@/composables/useShipDetail";
 import AnnouncementContent from "./AnnouncementContent";
 import "./AboutModal.scss";
 
@@ -29,7 +33,10 @@ import "./AboutModal.scss";
  * clicking the logo pops a localized bubble at a random nearby spot (a
  * "hmph", or a poke invitation) and crossfades the description into a
  * random localized "did you know" trivia (click the trivia to get the
- * plain description back), and clicking the logo very fast repeatedly
+ * plain description back; ship mentions inside a fact carry
+ * [[shipIndex:label]] markers in the locale strings and render as
+ * underlined links that open the tech tree's ship-detail modal), and
+ * clicking the logo very fast repeatedly
  * (VANISH_BURST_CLICKS clicks chained inside VANISH_GAP_MS) swaps the
  * logo icon itself for its dashed vanished-piggy stand-in — the exact
  * same 64px slot, every other row untouched — while the subtitle
@@ -145,16 +152,56 @@ const TRIVIA_LINK_URL = TRIVIA_LINK_ENTRY
   ? `https://space.bilibili.com/${TRIVIA_LINK_ENTRY.uid}`
   : "";
 
-/** Split a trivia line on the credited-helper token and turn the token
- *  into an external-link button. The click stops bubbling so it opens
- *  Bilibili instead of also restoring the plain description. */
-function renderTriviaFact(text: string) {
-  if (!TRIVIA_LINK_TOKEN || !TRIVIA_LINK_URL || !text.includes(TRIVIA_LINK_TOKEN)) {
-    return text;
+/** Trivia ship-link marker syntax: [[<shipIndex>:<label>]] — the label is
+ *  the exact mention text kept visible, the index resolves the ship in the
+ *  offline ship DB (see triviaShipId). The syntax deliberately avoids
+ *  vue-i18n's special characters (@ | { }), so markers ride inside the
+ *  localized trivia strings untouched by the message compiler. */
+const TRIVIA_SHIP_MARKER = /\[\[([A-Za-z0-9]+):([^\][|@{}]+)\]\]/g;
+
+/** One parsed trivia fragment: a plain text run or a ship mention. */
+export type TriviaNode = string | { shipIndex: string; label: string };
+
+/** Split a trivia line into text runs and ship mentions (exported for
+ *  tests). Text without well-formed markers comes back as one plain run. */
+export function parseTriviaNodes(text: string): TriviaNode[] {
+  const nodes: TriviaNode[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(TRIVIA_SHIP_MARKER)) {
+    const at = match.index ?? 0;
+    if (at > cursor) nodes.push(text.slice(cursor, at));
+    nodes.push({ shipIndex: match[1], label: match[2] });
+    cursor = at + match[0].length;
   }
-  return text.split(TRIVIA_LINK_TOKEN).flatMap((part, index) =>
+  if (cursor < text.length || nodes.length === 0) nodes.push(text.slice(cursor));
+  return nodes;
+}
+
+/** Ship index (e.g. "PJSB111") → shipId, from the bundled offline ship DB
+ *  (the same ship_names.json the water-table name resolution reads). Built
+ *  on the first trivia render — importing this module stays cheap. */
+let triviaShipIds: Map<string, number> | null = null;
+function triviaShipId(index: string): number | null {
+  if (!triviaShipIds) {
+    triviaShipIds = new Map();
+    const db = shipNamesDbRaw as Record<string, { index?: string }>;
+    for (const [shipId, entry] of Object.entries(db)) {
+      if (entry?.index) triviaShipIds.set(entry.index, Number(shipId));
+    }
+  }
+  return triviaShipIds.get(index) ?? null;
+}
+
+/** Split a text run on the credited-helper token and turn the token into
+ *  an external-link button. The click stops bubbling so it opens Bilibili
+ *  instead of also restoring the plain description. */
+function renderCreditsRuns(part: string) {
+  if (!TRIVIA_LINK_TOKEN || !TRIVIA_LINK_URL || !part.includes(TRIVIA_LINK_TOKEN)) {
+    return [part];
+  }
+  return part.split(TRIVIA_LINK_TOKEN).flatMap((piece, index) =>
     index === 0
-      ? [part]
+      ? [piece]
       : [
           <button
             type="button"
@@ -166,9 +213,40 @@ function renderTriviaFact(text: string) {
           >
             {TRIVIA_LINK_TOKEN}
           </button>,
-          part,
+          piece,
         ],
   );
+}
+
+/** Render one trivia line: [[shipIndex:label]] ship mentions become
+ *  underlined links calling `onShip` (opening the tech tree's ship-detail
+ *  modal), the credited-helper token stays an external link, and plain
+ *  runs pass through. Link clicks stop bubbling so opening one never also
+ *  restores the plain description. */
+export function renderTriviaFact(
+  text: string,
+  onShip: (shipIndex: string, label: string) => void,
+) {
+  const nodes = parseTriviaNodes(text);
+  const hasShipLinks = nodes.some((node) => typeof node !== "string");
+  if (!hasShipLinks && (!TRIVIA_LINK_TOKEN || !text.includes(TRIVIA_LINK_TOKEN))) {
+    return text;
+  }
+  return nodes.flatMap((node) => {
+    if (typeof node === "string") return renderCreditsRuns(node);
+    return [
+      <button
+        type="button"
+        class="about-modal__trivia-link"
+        onClick={(event: MouseEvent) => {
+          event.stopPropagation();
+          onShip(node.shipIndex, node.label);
+        }}
+      >
+        {node.label}
+      </button>,
+    ];
+  });
 }
 
 /** One floating bubble around the logo — the point it grows from, in px
@@ -218,6 +296,18 @@ export const AboutContent = defineComponent({
     const version = ref("0.1.0");
     const updater = useUpdaterStore();
     const piggyReminder = usePiggyReminderStore();
+    const account = useAccountStore();
+    const shipDetail = useShipDetail();
+
+    /** Open a trivia ship mention with the tech tree's ship-detail modal —
+     *  the same ShipDetailModal + useShipDetail pair ShipsView hosts, so
+     *  the encyclopedia/synthetic upgrade path is identical. Realm: the
+     *  account's active server (the dashboard's stat rows open with the
+     *  same realm). */
+    const openTriviaShip = (shipIndex: string, label: string): void => {
+      const shipId = triviaShipId(shipIndex);
+      if (shipId !== null) shipDetail.openShip(shipId, label, account.activeRealm);
+    };
 
     // --- piggy easter eggs ---
     /** True while the subtitle is hovered — flips the pig label and the
@@ -481,7 +571,10 @@ export const AboutContent = defineComponent({
               }}
             >
               {triviaKey.value
-                ? renderTriviaFact(t("about.triviaLead", { fact: t(triviaKey.value) }))
+                ? renderTriviaFact(
+                    t("about.triviaLead", { fact: t(triviaKey.value) }),
+                    openTriviaShip,
+                  )
                 : ""}
             </p>
           </div>
@@ -558,6 +651,15 @@ export const AboutContent = defineComponent({
             <AnnouncementContent />
           </div>
         </div>
+        {/* Trivia ship mentions open the tech tree's ship-detail modal —
+            hosted inside AboutContent so both About hosts (the standalone
+            About modal and the settings 关于 section) share one open path.
+            It stays closed until a trivia ship link is clicked. */}
+        <ShipDetailModal
+          ship={shipDetail.selectedShip.value}
+          gameRoot={shipDetail.gameRoot.value}
+          onClose={shipDetail.closeShip}
+        />
       </div>
     );
   },
