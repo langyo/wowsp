@@ -27,7 +27,6 @@ import {
 } from "@celestia-island/hikari";
 
 import { t, tError } from "@/i18n";
-import { GATEWAY_OFFICIAL_ROOT } from "@/api";
 import SelfhostWizard from "@/components/settings/SelfhostWizard";
 import { entryKey } from "@/stores/pairing";
 import { isMobileApp } from "@/utils/platform";
@@ -86,11 +85,7 @@ export default defineComponent({
             { key: "custom", label: t("gateway.rootCustom") },
           ]}
         />
-        {gw.rootMode.value === "official" ? (
-          <div class="settings-modal__pairing-row">
-            <code class="settings-modal__pairing-value">{GATEWAY_OFFICIAL_ROOT}</code>
-          </div>
-        ) : (
+        {gw.rootMode.value === "official" ? null : (
           <>
             <div class="gateway-settings__root-edit">
               <HkInput
@@ -110,22 +105,20 @@ export default defineComponent({
                 {t("gateway.rootSave")}
               </HkButton>
             </div>
-            <HkSettingsHint>{t("gateway.rootConnectExistingHint")}</HkSettingsHint>
+            <p class="gateway-settings__hint-sm">{t("gateway.rootConnectExistingHint")}</p>
             {!isMobileApp() ? (
               <div class="settings-modal__pairing-open">
                 <HkButton variant="secondary" onClick={() => (gw.wizardOpen.value = true)}>
                   <Rocket size={15} />
                   {t("gateway.selfhostOpen")}
                 </HkButton>
-                <HkSettingsHint>{t("gateway.rootDeployHint")}</HkSettingsHint>
+                <p class="gateway-settings__hint-sm">{t("gateway.rootDeployHint")}</p>
               </div>
             ) : null}
+            {gw.rootError.value ? (
+              <p class="gateway-settings__error">{tError(gw.rootError.value)}</p>
+            ) : null}
           </>
-        )}
-        {gw.rootError.value ? (
-          <p class="gateway-settings__error">{tError(gw.rootError.value)}</p>
-        ) : (
-          <HkSettingsHint>{t("gateway.rootHint")}</HkSettingsHint>
         )}
       </>
     );
@@ -198,9 +191,21 @@ export default defineComponent({
                 <HkTag variant="default" size="sm">
                   {shownPlayer.value.realm.toUpperCase()}
                 </HkTag>
-                <span class="gateway-settings__channel-name">
+                <HkTag variant="default" size="sm">
                   {shownPlayer.value.nickname}
-                </span>
+                </HkTag>
+                <HkTag
+                  variant="default"
+                  size="sm"
+                  class={["gateway-settings__phase-tag", "is-" + status.value.tone]}
+                >
+                  {status.value.label}
+                </HkTag>
+                {gateway.pubPhase === "error" && gateway.pubDetail ? (
+                  <span class="gateway-settings__status-detail">
+                    {tError(gateway.pubDetail)}
+                  </span>
+                ) : null}
               </p>
             ) : (
               <HkAlert variant="warning" size="sm" message={t("gateway.noAccount")} />
@@ -222,28 +227,9 @@ export default defineComponent({
                 <HkSpinner size="sm" tone="current" />
               </p>
             ) : null}
-            {/* Gateway status: the publish socket's phase + detail. */}
-            <div class="gateway-settings__status">
-              <span class={["gateway-settings__pill", "is-" + status.value.tone]}>
-                {status.value.label}
-              </span>
-              {gateway.pubDetail ? (
-                <span class="gateway-settings__status-detail">
-                  {tError(gateway.pubDetail)}
-                </span>
-              ) : null}
-            </div>
             {gateway.config.enabled && gateway.pubPhase === "captcha" ? (
               <HkSettingsHint>{t("gateway.captchaPendingHint")}</HkSettingsHint>
             ) : null}
-
-            {/* Self-host wizard entry (desktop-only). */}
-            <div class="settings-modal__pairing-open">
-              <HkButton variant="secondary" onClick={() => (gw.wizardOpen.value = true)}>
-                <Rocket size={15} />
-                {t("gateway.selfhostOpen")}
-              </HkButton>
-            </div>
           </HkSettingsGroup>
 
           {/* The wizard window (desktop-only surface). */}

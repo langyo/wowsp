@@ -28,30 +28,9 @@
     gap: var(--space-6);
   }
 
-  &__channel-name {
-    font-size: var(--text-sm);
-    color: rgb(var(--color-text));
-  }
-
-  // Publish status: phase pill (+ detail sentence).
-  &__status {
-    display: flex;
-    align-items: center;
-    gap: var(--space-8);
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-
-  &__pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px var(--space-8);
-    border-radius: 999px;
-    font-size: var(--text-3xs, 0.625rem);
-    font-weight: 600;
-    background: rgb(var(--color-border) / 20%);
-    color: rgb(var(--color-muted));
-
+  // Publish status: a phase TAG riding the identity row (realm / nickname
+  // / phase all read as one tag strip), plus the error detail sentence.
+  &__phase-tag {
     &.is-pending {
       color: var(--hi-color-warning, #d29922);
     }
@@ -64,11 +43,19 @@
   }
 
   &__status-detail {
-    font-size: var(--text-xs, 0.75rem);
+    font-size: var(--text-2xs, 0.6875rem);
     color: rgb(var(--color-muted));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  // The custom-route branch's smaller explainer lines (the official tab
+  // carries no explainer at all — it is the well-known default).
+  &__hint-sm {
+    margin: 0;
+    font-size: var(--text-2xs, 0.6875rem);
+    color: rgb(var(--color-muted));
   }
 
   // The legacy LAN disclosure's body.
