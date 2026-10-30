@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 STEAM_APPID = "552990"
@@ -79,7 +80,7 @@ def find_lesta_game_path(explicit: str | None = None) -> str | None:
     env_or_arg = explicit or os.environ.get("WOWSP_GAME_PATH_LESTA")
     if env_or_arg and _lesta_exe_present(env_or_arg):
         return env_or_arg
-    for path, publisher in _registry_scan():
+    for path, publisher in _registry_scan(_lesta_exe_present):
         if "lesta" in publisher and _lesta_exe_present(path):
             return path
     return None
@@ -169,12 +170,18 @@ def _try_int(s: str) -> int:
         return 0
 
 
-def _registry_scan() -> list[tuple[str, str]]:
+def _registry_scan(exe_present: Callable[[str], bool] | None = None) -> list[tuple[str, str]]:
     """(install dir, lower-cased publisher) pairs for every WoWS-family hit.
 
     Substring patterns (lower-cased), mirroring the app's game_detect.rs:
     publisher strings vary across installer generations — the legacy
     KongZhong (空中网) CN client registers its own name, not 360's.
+
+    exe_present — optional predicate over the candidate install directory,
+    standing in for the plain WorldOfWarships.exe check; the Lesta scan
+    passes _lesta_exe_present so 26.x installs (Korabli.exe, no
+    WorldOfWarships.exe) are discovered too. The default keeps
+    find_game_path's behavior exactly as before.
     """
     try:
         import winreg  # type: ignore
@@ -204,7 +211,14 @@ def _registry_scan() -> list[tuple[str, str]]:
                         if not any(p in pub for p in patterns):
                             continue
                         loc = winreg.QueryValueEx(ck, "InstallLocation")[0]
-                        if loc and Path(loc, "WorldOfWarships.exe").is_file():
+                        if not loc:
+                            continue
+                        ok = (
+                            exe_present(loc)
+                            if exe_present
+                            else Path(loc, "WorldOfWarships.exe").is_file()
+                        )
+                        if ok:
                             hits.append((loc, pub))
                 except OSError:
                     continue

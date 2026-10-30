@@ -1004,6 +1004,29 @@ def main() -> int:
                 ships.update(wg_get(WG_SHIPS_URL + "&page_no=%d" % p)["data"])
             basics = {"gameVersion": version, "ships": ships}
             basics_cache.write_text(json.dumps(basics, ensure_ascii=False), encoding="utf-8")
+        # Curated overrides for the EMITTED bundle — the cache file above
+        # stays raw API data (it is a source cache). ship_basics_curated.json
+        # is { "<shipId>": { "name"?: ..., "description"?: ... } }; JSON
+        # cannot carry comments, so the table is documented here: the WG
+        # encyclopedia API's language=en catalog transliterates CN-exclusive
+        # hulls (the RA3 Corona collab battleship PZSB909 / shipId 3341759696
+        # comes through as the pinyin "Xuan Ming"), and the hanzi the bundle
+        # should show was hand-fixed into it by #1258 — reapplying the table
+        # at emit time keeps that fix alive through wholesale re-fetches.
+        curated_path = HERE / "ship_basics_curated.json"
+        if curated_path.exists():
+            overrides = json.loads(curated_path.read_text(encoding="utf-8"))
+            applied = 0
+            for sid, patch in overrides.items():
+                entry = basics["ships"].get(sid)
+                if entry is None:
+                    print("[planner] ship-basics: curated override for %s skipped (not in the API roster)"
+                          % sid, flush=True)
+                    continue
+                entry.update(patch)
+                applied += 1
+            print("[planner] ship-basics: %d curated override%s applied (ship_basics_curated.json)"
+                  % (applied, "" if applied == 1 else "s"))
         res_data = WEBUI / "res" / "data"
         res_data.mkdir(parents=True, exist_ok=True)
         (res_data / "ships_basics.json").write_text(

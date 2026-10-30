@@ -9,6 +9,7 @@ Modules:
   assets    nation flags (crest + small), crew skill icons, modernization icons
   rarity    ship_id → rarity map (GameParams RarityCategory, via wowsinfo bridge)
   techtree  tech-tree topology (nextShips) + archetype
+  encyclopedia  WG bundle + Lesta snapshot sync with incremental diff reports
   models    shipId → base model name map (skin→base dedup for the 3D viewer)
             + aircraft performance rows (plane_specs.json)
   dogtags   dog-tag id→index/species map + 80x80 part PNGs (player avatars)
@@ -36,7 +37,10 @@ extract_plane_specs.py; their GLBs bake via bake_lesta_planes.py).
 from __future__ import annotations
 
 import argparse
+import gzip
+import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -52,8 +56,9 @@ from _common import (  # noqa: E402
     run_game_params,
     run_metadata,
 )
+import sync_encyclopedia  # noqa: E402
 
-ALL_MODULES = ["assets", "rarity", "techtree", "images", "models", "dogtags"]
+ALL_MODULES = ["assets", "rarity", "techtree", "encyclopedia", "images", "models", "dogtags"]
 
 # Repo root (scripts/extract/ → repo root).
 REPO = HERE.parent.parent
@@ -64,11 +69,21 @@ RES_IMG = REPO / "packages" / "webui" / "src" / "res" / "images"
 # Shared intermediate artifacts cached across runs.
 CACHE_DIR = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~/.local/share"))) / "WoWSP-extract"
 GAMEPARAMS_JSON = CACHE_DIR / "GameParams.json"
+# Build-stamp sidecar for the WG dump above — one line, the bin/<build>
+# digits the dump was cut from (the WG client's bin dirs are numeric build
+# ids too). Same freshness contract as the Lesta sidecar below: a dump is
+# only valid for the client it was cut from.
+GAMEPARAMS_BUILD = CACHE_DIR / "GameParams.json.build"
 # The Lesta client's own GameParams — a separate dump from a separate game.
 # Never reuse GAMEPARAMS_JSON for it: that file comes from the WG client, and
 # WG's research graph is not Lesta's (the lines Lesta added — IJN CV line II,
 # US BB line IV — exist only in its own client files).
 GAMEPARAMS_LESTA_JSON = CACHE_DIR / "GameParams_lesta.json"
+# Build-stamp sidecar for the dump cache above: one line, the bin/<build>
+# digits the dump was cut from. A dump is only valid for the client it was
+# cut from, so the regeneration check is keyed to it (see
+# _ensure_lesta_gameparams) instead of the file's mere existence.
+GAMEPARAMS_LESTA_BUILD = CACHE_DIR / "GameParams_lesta.json.build"
 WOWSINFO_JSON = CACHE_DIR / "wowsinfo.json"
 METADATA_JSON = CACHE_DIR / "wows_meta.json"
 RARITY_JSON = SRC_DATA / "ship_rarity.json"
@@ -142,6 +157,8 @@ def main() -> None:
     if "techtree" in modules:
         _run_techtree()
         _run_techtree_lesta(args.lesta_path, args.lesta_gameparams, args.refresh)
+    if "encyclopedia" in modules:
+        _run_encyclopedia(game)
     if "models" in modules:
         _run_plane_specs()
         _run_shipmodels()
@@ -153,14 +170,56 @@ def main() -> None:
     print("[extract] done.")
 
 
+def _wg_dump_stamp_backfill() -> str | None:
+    """The WG dump build the committed roster vouches for, when it carries a
+    dual stamp ("wg-<build>+lesta-<build>"): the roster is baked right after
+    the dump is pinned, so its wg part is sound backfill evidence that the
+    un-sidecar'd dump matches that build (mirrors the Lesta backfill)."""
+    roster = _load_json(SRC_DATA / "ships_wg_only.json") or {}
+    m = re.fullmatch(r"wg-(\d+)(?:\+lesta-\d+)?", str(roster.get("gameVersion") or ""))
+    return m.group(1) if m else None
+
+
 def _ensure_gameparams(game: str, refresh: bool) -> None:
+    """GameParams.json, keyed to the client build it was cut from.
+
+    Same freshness contract as _ensure_lesta_gameparams: the dump
+    regenerates when its .build sidecar is missing or no longer matches the
+    detected client build (a client update changes every number in the
+    dump). A dump vouched for by the committed roster's dual stamp backfills
+    the sidecar instead of re-cutting. --refresh still forces it."""
+    build = sync_encyclopedia.wg_client_build(game)
+    recorded = None
+    if GAMEPARAMS_BUILD.exists():
+        recorded = GAMEPARAMS_BUILD.read_text(encoding="ascii", errors="ignore").strip() or None
     if GAMEPARAMS_JSON.exists() and not refresh:
-        print(f"[extract] GameParams.json cached ({GAMEPARAMS_JSON.stat().st_size >> 20} MB)")
-        return
-    print("[extract] generating GameParams.json (one-time, ~350 MB) ...")
+        if build is None:
+            print(f"[extract] GameParams.json cached ({GAMEPARAMS_JSON.stat().st_size >> 20} MB; "
+                  "client build undetectable)")
+            return
+        if recorded == build:
+            print(f"[extract] GameParams.json cached ({GAMEPARAMS_JSON.stat().st_size >> 20} MB, "
+                  f"build {build})")
+            return
+        if recorded is None:
+            vouched = _wg_dump_stamp_backfill()
+            if vouched == build:
+                GAMEPARAMS_BUILD.write_text(build + "\n", encoding="ascii")
+                print(f"[extract] WG dump: roster stamp vouches for build "
+                      f"{build} — sidecar backfilled")
+                return
+            print("[extract] WG dump cache has no recorded build — "
+                  "regenerating to pin one ...")
+        else:
+            print(f"[extract] WG client build {build} != dump build "
+                  f"{recorded} — regenerating ...")
+    else:
+        print("[extract] generating GameParams.json (one-time, ~350 MB) ...")
     rc = run_game_params(GAMEPARAMS_JSON, game)
     if rc != 0:
         _die(f"game-assets game-params failed (rc={rc}).")
+    if build is not None:
+        GAMEPARAMS_BUILD.write_text(build + "\n", encoding="ascii")
 
 
 def _ensure_metadata(game: str, refresh: bool) -> None:
@@ -282,18 +341,14 @@ def _run_techtree_lesta(
         )
         return
     print(f"[extract] lesta game: {lesta}")
-    if not GAMEPARAMS_LESTA_JSON.exists() or refresh:
-        print("[extract] generating Lesta GameParams_lesta.json (one-time, ~350 MB) ...")
-        rc = run_game_params(GAMEPARAMS_LESTA_JSON, lesta)
-        if rc != 0:
-            _die(f"game-assets game-params failed for the Lesta client (rc={rc}).")
+    _ensure_lesta_gameparams(lesta, refresh)
     _py(*_lesta_tree_cmd(GAMEPARAMS_LESTA_JSON))
     stamp = _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
     _run_wg_only_roster(GAMEPARAMS_LESTA_JSON)
     _run_lesta_shipdata(GAMEPARAMS_LESTA_JSON, stamp)
 
 
-def _run_wg_only_roster(lesta_gameparams: Path) -> None:
+def _run_wg_only_roster(lesta_gameparams: Path, wg_version: str | None = None) -> None:
     """The WG-only roster artifact (ships_wg_only.json): every WG client
     ship whose index the Lesta client has never carried. The encyclopedia
     list in Lesta mode hides these ids — the tree-derived
@@ -301,7 +356,13 @@ def _run_wg_only_roster(lesta_gameparams: Path) -> None:
     set-difference of the two full dumps also classifies the WG-only
     premiums, collabs and event hulls no tree records. Needs the WG dump
     (a shared cache built earlier in the same run); without it the step
-    skips and the bundled artifact stays untouched."""
+    skips and the bundled artifact stays untouched.
+
+    wg_version stamps the artifact's gameVersion: the techtree flow passes
+    nothing (plain "wg"), while the encyclopedia flow forwards the dual
+    stamp "wg-<wgdumpbuild>+lesta-<lestabuild>" — the roster is a
+    set-difference of the two client dumps, so the stamp records exactly
+    the dump pair it was derived from."""
     if not GAMEPARAMS_JSON.exists():
         print(
             "[techtree] WARNING: no WG GameParams — skipping the "
@@ -314,7 +375,7 @@ def _run_wg_only_roster(lesta_gameparams: Path) -> None:
         "build_wg_only_roster.py",
         "--gameparams", str(GAMEPARAMS_JSON),
         "--lesta-gameparams", str(lesta_gameparams),
-        "--version", "wg",
+        "--version", wg_version or "wg",
         "--out", str(SRC_DATA / "ships_wg_only.json"),
     )
 
@@ -419,6 +480,214 @@ def _lesta_tree_cmd(gameparams: Path) -> list[str]:
     if GAMEPARAMS_JSON.exists():
         cmd[1:1] = ["--archetypes", str(GAMEPARAMS_JSON)]
     return cmd
+
+
+def _ensure_lesta_gameparams(lesta_game: str, refresh: bool) -> None:
+    """GameParams_lesta.json, keyed to the client build it was cut from
+    (build detection shared with sync_encyclopedia).
+
+    A dump is only valid for the client it was cut from — a client update
+    changes every number in it, so the cache must not silently serve an old
+    build to a new one. The build digits live in the
+    GameParams_lesta.json.build sidecar: the dump regenerates when the
+    sidecar is missing or its build no longer matches the detected client
+    build. An existing dump whose committed artifacts already stamp the
+    detected build backfills the sidecar instead of re-cutting. --refresh
+    still forces regeneration."""
+    build = sync_encyclopedia.lesta_client_build(lesta_game)
+    recorded = None
+    if GAMEPARAMS_LESTA_BUILD.exists():
+        recorded = GAMEPARAMS_LESTA_BUILD.read_text(
+            encoding="ascii", errors="ignore").strip() or None
+    if GAMEPARAMS_LESTA_JSON.exists() and not refresh:
+        if build is None:
+            # Client build undetectable (no bin/<build> with the ru
+            # catalog) — keep the dump; the consumers skip on their own.
+            print("[extract] GameParams_lesta.json cached (client build undetectable)")
+            return
+        if recorded == build:
+            print(f"[extract] GameParams_lesta.json cached (build {build})")
+            return
+        if recorded is None:
+            stamp = sync_encyclopedia.lesta_committed_build()
+            if stamp == build:
+                GAMEPARAMS_LESTA_BUILD.write_text(build + "\n", encoding="ascii")
+                print(f"[extract] lesta dump: artifacts already stamp client "
+                      f"build {build} — sidecar backfilled")
+                return
+            print("[extract] lesta dump cache has no recorded build — "
+                  "regenerating to pin one ...")
+        else:
+            print(f"[extract] lesta client build {build} != dump build "
+                  f"{recorded} — regenerating ...")
+    else:
+        print("[extract] generating Lesta GameParams_lesta.json (one-time, ~350 MB) ...")
+    rc = run_game_params(GAMEPARAMS_LESTA_JSON, lesta_game)
+    if rc != 0:
+        _die(f"game-assets game-params failed for the Lesta client (rc={rc}).")
+    if build is not None:
+        GAMEPARAMS_LESTA_BUILD.write_text(build + "\n", encoding="ascii")
+
+
+def _load_json(path: Path) -> dict | None:
+    """Parse a repo JSON artifact, None when absent or malformed."""
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _print_artifact_diff(path: Path, before: bytes | None, after: bytes | None) -> None:
+    """One compact line per re-baked artifact: the stamp delta plus
+    added/removed/changed/re-id counts for the JSON maps (re-id = the same
+    index re-registered under a different shipId); the gunzipped
+    entry-count delta covers the .gz bundle the same way."""
+    def load(blob: bytes | None) -> tuple[dict, str | None]:
+        if not blob:
+            return {}, None
+        data = json.loads(gzip.decompress(blob) if path.suffix == ".gz" else blob)
+        if isinstance(data, dict) and isinstance(data.get("ships"), dict):
+            return data["ships"], data.get("gameVersion")
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if isinstance(v, dict)}, None
+        return {}, None
+
+    def by_index(map_: dict) -> dict[str, str]:
+        return {
+            entry.get("index"): sid
+            for sid, entry in map_.items()
+            if isinstance(entry, dict) and isinstance(entry.get("index"), str)
+        }
+
+    old_map, old_stamp = load(before)
+    new_map, new_stamp = load(after)
+    old_ids, new_ids = set(old_map), set(new_map)
+    added, removed = len(new_ids - old_ids), len(old_ids - new_ids)
+    changed = sum(1 for sid in old_ids & new_ids if old_map[sid] != new_map[sid])
+    old_idx, new_idx = by_index(old_map), by_index(new_map)
+    re_id = sum(1 for idx, sid in new_idx.items() if old_idx.get(idx) not in (None, sid))
+    parts = []
+    if old_stamp != new_stamp:
+        parts.append(f"stamp {old_stamp or '-'} -> {new_stamp or '-'}")
+    parts.append(
+        f"{len(new_map) - len(old_map):+d} entries "
+        f"(+{added} / -{removed} / ~{changed} / re-id {re_id})"
+    )
+    print(f"[encyclopedia] {path.name}: {'; '.join(parts)}")
+
+
+def _run_encyclopedia(game: str) -> None:
+    """The WG encyclopedia bundle + the Lesta snapshot sync, stamp-driven.
+
+    WG: the committed ships_basics.json gameVersion vs the live API's
+    game_version — equal prints up-to-date; different snapshots the old
+    bundle in memory, re-fetches it through build_planner_data.py's
+    --only ship-basics step (the version-stamped cache makes the pass
+    incremental) and prints the structured added/removed/changed diff.
+    The curated overrides (ship_basics_curated.json) ride along inside
+    that step, so every re-bake re-applies them.
+
+    Lesta: the committed ships_lesta.json stamp vs the installed client's
+    build, AND the committed ships_wg_only.json dual stamp's wg part vs the
+    WG client's build — the roster is a set-difference of the two dumps, so
+    a WG client update moves it just like a Lesta one does (the same
+    detection sync_encyclopedia.py and the overlay bake share). Both in
+    step prints in-sync and writes nothing; drift re-bakes the five Lesta
+    artifacts off dump caches that are first re-cut when their recorded
+    build no longer matches their client, with before/after snapshots
+    compactly diffed.
+
+    No Lesta install → the same skip as the techtree module; the WG half
+    runs regardless (it never touches a client)."""
+    committed = _load_json(sync_encyclopedia.WG_BUNDLE)
+    committed_version = (committed or {}).get("gameVersion")
+    try:
+        live_version = sync_encyclopedia.wg_live_version()
+    except RuntimeError as exc:
+        print(f"[encyclopedia] WARNING: {exc} — skipping the WG bundle sync "
+              "(the bundled one stays as-is)", flush=True)
+    else:
+        if live_version is None:
+            print("[encyclopedia] WARNING: WG API returned no game_version — "
+                  "skipping the WG bundle sync", flush=True)
+        elif committed_version == live_version:
+            ships = (committed or {}).get("ships") or {}
+            print(f"[encyclopedia] WG bundle up to date "
+                  f"({live_version}, {len(ships)} ships)")
+        else:
+            print(f"[encyclopedia] WG bundle {committed_version or '(none)'} -> "
+                  f"{live_version} — refreshing ...")
+            old_ships = (committed or {}).get("ships") or {}
+            _py("build_planner_data.py", "--only", "ship-basics", "--no-icons")
+            refreshed = _load_json(sync_encyclopedia.WG_BUNDLE) or {}
+            print(sync_encyclopedia.format_ship_diff(
+                f"ships_basics.json {committed_version or '(none)'} -> {live_version}",
+                old_ships, refreshed.get("ships") or {}))
+
+    lesta = find_lesta_game_path(None)
+    if not lesta:
+        print(
+            "[encyclopedia] WARNING: no Lesta (Мир кораблей) client found — skipping "
+            "the Lesta snapshot sync (the bundled artifacts are left as-is); pass "
+            "--lesta-path or set WOWSP_GAME_PATH_LESTA to check one.",
+            flush=True,
+        )
+        return
+    committed_build = sync_encyclopedia.lesta_committed_build()
+    build = sync_encyclopedia.lesta_client_build(lesta)
+    if build is None:
+        print(
+            "[encyclopedia] WARNING: no Lesta ru catalog found under bin/ — skipping "
+            "the Lesta snapshot sync.",
+            flush=True,
+        )
+        return
+    roster_stamp = str((_load_json(SRC_DATA / "ships_wg_only.json") or {}).get("gameVersion") or "")
+    m = re.fullmatch(r"wg-(\d+)\+lesta-(\d+)", roster_stamp)
+    roster_wg_build = m.group(1) if m else None
+    wg_build = sync_encyclopedia.wg_client_build(game)
+    lesta_drift = committed_build != build
+    wg_drift = wg_build is not None and roster_wg_build != wg_build
+    if not lesta_drift and not wg_drift:
+        overlay = _load_json(SRC_DATA / "ships_lesta.json") or {}
+        tree = _load_json(TECHTREE_LESTA_JSON) or {}
+        print(f"[encyclopedia] Lesta snapshot in sync (build {build}"
+              + (f", WG dump build {wg_build}" if wg_build else "")
+              + f": {len(overlay.get('ships') or {})} overlay entries, "
+              f"{len(tree)} tree nodes)")
+        return
+    reasons = []
+    if lesta_drift:
+        reasons.append(f"Lesta client build {build} != snapshot stamp "
+                       f"{committed_build or '(none)'}")
+    if wg_drift:
+        reasons.append(f"WG client build {wg_build} != roster stamp "
+                       f"{roster_wg_build or '(none)'}")
+    print("[encyclopedia] " + "; ".join(reasons) +
+          " — re-baking the Lesta artifacts ...")
+    artifacts = [
+        SRC_DATA / "ships_lesta.json",
+        SRC_DATA / "ships_wg_only.json",
+        TECHTREE_LESTA_JSON,
+        SRC_DATA / "ship_names.json",
+        REPO / "packages" / "app" / "tauri" / "data" / "lesta_ship_gameparams.json.gz",
+    ]
+    before = {p: p.read_bytes() if p.exists() else None for p in artifacts}
+    _ensure_gameparams(game, refresh=False)
+    _ensure_lesta_gameparams(lesta, refresh=False)
+    _py(*_lesta_tree_cmd(GAMEPARAMS_LESTA_JSON))
+    stamp = _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
+    _run_wg_only_roster(
+        GAMEPARAMS_LESTA_JSON,
+        wg_version=f"wg-{wg_build}+lesta-{build}",
+    )
+    _run_lesta_shipdata(GAMEPARAMS_LESTA_JSON, stamp)
+    after = {p: p.read_bytes() if p.exists() else None for p in artifacts}
+    for artifact in artifacts:
+        _print_artifact_diff(artifact, before[artifact], after[artifact])
 
 
 def _run_plane_specs() -> None:
