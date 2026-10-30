@@ -795,6 +795,17 @@ export default defineComponent({
         note: t("ships.parts.nextLineNote"),
       });
     }
+    function partsPrevLineCard(previousShipId: number, researchXp: number | null): string {
+      return JSON.stringify({
+        title: t("ships.parts.prevShip"),
+        rows: [
+          {
+            label: partsShipName(previousShipId),
+            value: t("ships.parts.prevLineXp", { xp: partsNumber(researchXp) }),
+          },
+        ],
+      });
+    }
     /** Hover card of one module tile: localized role+variant title, the raw
      *  GameParams entry name as subtitle, the component roles it mounts, the
      *  required cross-slot module when the connector had to fall back to this
@@ -1471,9 +1482,7 @@ export default defineComponent({
                 {renderPartsShip(previous.shipId)}
                 <span
                   class="planner-v__parts-link planner-v__parts-link--prev"
-                  data-hint={t("ships.parts.prevLineXp", {
-                    xp: partsNumber(panelModel.researchXp),
-                  })}
+                  data-hint-card={partsPrevLineCard(previous.shipId, panelModel.researchXp)}
                   data-hint-pos="top"
                 />
               </div>

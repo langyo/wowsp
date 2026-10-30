@@ -6,11 +6,13 @@
  *   - Shimakaze_1943 (PJSD012, 4282267344): a three-step torpedo chain whose
  *     predecessor is Yugumo (PJSD209, 4075697872).
  *   - Akatsuki_Romulans (PXSD027, 4266538256): the parallel-variant fixture —
- *     three hull research chains (depths 0/1/2, 0/1, 0/1). The task-10
- *     extraction adds required prev/depth to every step; until that bundle
- *     lands this suite injects the same topology (real GameParams entry
- *     names) so the grouping contract is pinned NOW and keeps asserting once
- *     the regenerated JSONs arrive.
+ *     its hull slot holds THREE research chains (depths 0/1/2, 0/1, 0/1)
+ *     with steps in (depth, table) order.
+ *   - Shimakaze variants (PJSD912, 3338548944): a real three-deep torpedo
+ *     chain (depths 0/1/2).
+ *   - Kiev (PRSD109, 4180555216): a cross-slot prerequisite — the top
+ *     torpedoes upgrade from hull B ("PRUH802_KIEV_B", depth 1), which is not
+ *     a module of the torpedo slot.
  *
  *  Numeric economy values are asserted RELATIONALLY (the next card's xpShip
  *  is the target ship's own research xp) so a future rebalance keeps the
@@ -30,7 +32,6 @@ import {
   slotOrderOf,
   variantLetter,
   variantMarkerOf,
-  type ChainStepInput,
   type UpgradeChainInput,
   type UpgradeRow,
 } from "./upgradeChainRows";
@@ -47,6 +48,10 @@ const SHIMAKAZE_1943 = 4282267344;
 const YUGUMO = 4075697872;
 /** Akatsuki_Romulans (PXSD027) — the 3-parallel-hull-chain fixture. */
 const ALT_HULLS = 4266538256;
+/** Shimakaze (PJSD912) — the three-deep torpedo-chain fixture. */
+const SHIMAKAZE_912 = 3338548944;
+/** Kiev (PRSD109) — the cross-slot torpedo prerequisite fixture. */
+const KIEV = 4180555216;
 /** PISS106 — a WG-tree ship the Lesta tree does not carry. */
 const WG_ONLY = 4183209712;
 /** New Jersey (PASB310) — a Lesta-only ship the WG tree does not carry. */
@@ -63,28 +68,6 @@ function chainOf(shipId: number, realm: "wg" | "lesta" = "wg"): UpgradeChainInpu
   return chain;
 }
 
-/** Inject the task-10 per-step topology into one slot's flat steps. */
-function withTopology(
-  chain: UpgradeChainInput,
-  role: string,
-  topology: ReadonlyArray<{ prev: string | null; depth: number }>,
-): UpgradeChainInput {
-  return {
-    ...chain,
-    slots: chain.slots.map((slot) => {
-      if (chainRole(slot.ucType) !== role) return slot;
-      return {
-        ...slot,
-        steps: slot.steps.map((step, index) => ({
-          ...step,
-          prev: topology[index]?.prev ?? null,
-          depth: topology[index]?.depth ?? index,
-        })),
-      };
-    }),
-  };
-}
-
 function panelOf(chain: UpgradeChainInput, realm: "wg" | "lesta" = "wg") {
   const panel = buildUpgradeChainRows(chain, realm);
   if (!panel) throw new Error("expected a panel model");
@@ -95,6 +78,26 @@ function rowOf(chain: UpgradeChainInput, role: string, realm: "wg" | "lesta" = "
   const row = panelOf(chain, realm).rows.find((candidate) => candidate.role === role);
   if (!row) throw new Error(`missing row for ${role}`);
   return row;
+}
+
+/** Strip the per-step topology of one slot to exercise the defensive
+ *  sequential fallback for a partial snapshot. */
+function withoutTopology(chain: UpgradeChainInput, role: string): UpgradeChainInput {
+  return {
+    ...chain,
+    slots: chain.slots.map((slot) =>
+      chainRole(slot.ucType) !== role
+        ? slot
+        : {
+            ...slot,
+            steps: slot.steps.map((step) => ({
+              ...step,
+              prev: null,
+              depth: undefined as unknown as number,
+            })),
+          },
+    ),
+  };
 }
 
 /** Minimal TechTreeNode fixture for the predecessor tie-break tests. */
@@ -115,7 +118,7 @@ function node(partial: Partial<TechTreeNode> & Pick<TechTreeNode, "shipId">): Te
   };
 }
 
-describe("slot ordering and the stock-first fallback", () => {
+describe("slot ordering and the stock-first layout", () => {
   it("orders slots hull first, then the game's equipment order", () => {
     const panel = panelOf(chainOf(MINSK));
     expect(panel.rows.map((row) => row.role)).toEqual([
@@ -130,18 +133,19 @@ describe("slot ordering and the stock-first fallback", () => {
     expect(slotOrderOf("secondaryweapons")).toBe(100);
   });
 
-  it("renders the pre-topology flat steps as one stock -> top chain", () => {
+  it("renders a plain chain as stock -> top with centred adjacent columns", () => {
     const hull = rowOf(chainOf(MINSK), "hull");
-    // The flat bundle is stock (2 steps) -> top for Minsk's hull slot.
     expect(hull.columns.length).toBe(2);
     expect(hull.laneCount).toBe(1);
     const [stock] = hull.columns[0];
     const [top] = hull.columns[1];
     expect(stock.step.isStock).toBe(true);
+    expect(stock.step.depth).toBe(0);
     expect(stock.column).toBe(0);
     expect(stock.lane).toBe(0);
     expect(stock.parentName).toBeNull();
     expect(stock.variant).toBe("A");
+    expect(top.step.depth).toBe(1);
     expect(top.parentName).toBe(stock.step.name);
     expect(top.column).toBe(1);
     expect(top.variant).toBe("B");
@@ -158,9 +162,7 @@ describe("slot ordering and the stock-first fallback", () => {
     const scrambled: UpgradeChainInput = {
       ...chain,
       slots: chain.slots.map((slot) =>
-        chainRole(slot.ucType) === "hull"
-          ? { ...slot, steps: [top, stock] as ChainStepInput[] }
-          : slot,
+        chainRole(slot.ucType) === "hull" ? { ...slot, steps: [top, stock] } : slot,
       ),
     };
     const hull = rowOf(scrambled, "hull");
@@ -175,23 +177,9 @@ describe("slot ordering and the stock-first fallback", () => {
   });
 });
 
-describe("parallel research options", () => {
-  /** Akatsuki_Romulans hull slot: three research chains that all start at
-   *  depth 0 (head modules 021/024/026), continue at depth 1 and end at
-   *  depth 2 (chain one only). */
-  const HULL_TOPOLOGY = [
-    { prev: null, depth: 0 },
-    { prev: "PXUH021_HULL_AKATSUKI_ROMULANS", depth: 1 },
-    { prev: "PXUH022_HULL_AKATSUKI_ROMULANS", depth: 2 },
-    { prev: null, depth: 0 },
-    { prev: "PXUH024_HULL_AKATSUKI_ROMULANS", depth: 1 },
-    { prev: null, depth: 0 },
-    { prev: "PXUH026_HULL_AKATSUKI_ROMULANS", depth: 1 },
-  ];
-
+describe("parallel research options and per-step topology", () => {
   it("stacks same-depth options in one column and orders the columns by depth", () => {
-    const chain = withTopology(chainOf(ALT_HULLS), "hull", HULL_TOPOLOGY);
-    const hull = rowOf(chain, "hull");
+    const hull = rowOf(chainOf(ALT_HULLS), "hull");
     expect(hull.columns.map((column) => column.map((cell) => cell.lane))).toEqual([
       [0, 1, 2],
       [0, 1, 2],
@@ -208,8 +196,7 @@ describe("parallel research options", () => {
   });
 
   it("follows prev edges inside the column layout", () => {
-    const chain = withTopology(chainOf(ALT_HULLS), "hull", HULL_TOPOLOGY);
-    const hull = rowOf(chain, "hull");
+    const hull = rowOf(chainOf(ALT_HULLS), "hull");
     const byName = new Map(hull.cells.map((cell) => [cell.step.name, cell]));
     expect(byName.get("PXUH022_HULL_AKATSUKI_ROMULANS")!.parentName).toBe(
       "PXUH021_HULL_AKATSUKI_ROMULANS",
@@ -228,26 +215,40 @@ describe("parallel research options", () => {
     expect(byName.get("PXUH026_HULL_AKATSUKI_ROMULANS")!.parentName).toBeNull();
   });
 
-  it("falls back to sequential columns while the bundle has no depth", () => {
-    // Without the task-10 topology the auxiliary chains keep table order
-    // after the canonical chain — documented fallback, one column per step.
-    const hull = rowOf(chainOf(ALT_HULLS), "hull");
-    expect(hull.columns.length).toBe(7);
-    expect(hull.laneCount).toBe(1);
+  it("renders a real three-deep chain as three ordered columns", () => {
+    const torpedoes = rowOf(chainOf(SHIMAKAZE_912), "torpedoes");
+    expect(torpedoes.columns.length).toBe(3);
+    expect(torpedoes.laneCount).toBe(1);
+    expect(torpedoes.columns.map((column) => column[0].step.depth)).toEqual([0, 1, 2]);
+    expect(torpedoes.columns.map((column) => column[0].variant)).toEqual(["A", "B", "C"]);
+    // Each column connects to the previous one through the real prev key.
+    for (let index = 1; index < torpedoes.columns.length; index++) {
+      const cell = torpedoes.columns[index][0];
+      expect(cell.parentName).toBe(torpedoes.columns[index - 1][0].step.name);
+      expect(cell.step.prev).toBe(cell.parentName);
+    }
   });
 
   it("connects a cross-slot prerequisite from its own slot's previous column", () => {
-    // Minsk's top torpedoes would normally require hull B: the GameParams
-    // entry names a module of another slot, so the row keeps the connector
-    // in its own slot (documented fallback; the required module rides the
-    // hover card).
-    const chain = withTopology(chainOf(MINSK), "torpedoes", [
-      { prev: null, depth: 0 },
-      { prev: "PRUH603_D7_HULL_STOCK_2", depth: 1 },
-    ]);
-    const torpedoes = rowOf(chain, "torpedoes");
+    // Kiev's top torpedoes upgrade from hull B ("PRUH802_KIEV_B", depth 1):
+    // the module is not part of the torpedo slot, so the connector stays in
+    // the row (documented fallback) and the hover card names the required
+    // module via cell.step.prev.
+    const torpedoes = rowOf(chainOf(KIEV), "torpedoes");
     expect(torpedoes.columns.length).toBe(2);
-    expect(torpedoes.columns[1][0].parentName).toBe(torpedoes.columns[0][0].step.name);
+    const [stock] = torpedoes.columns[0];
+    const [top] = torpedoes.columns[1];
+    expect(top.step.depth).toBe(1);
+    expect(top.step.prev).toBe("PRUH802_KIEV_B");
+    expect(top.parentName).toBe(stock.step.name);
+  });
+
+  it("falls back to sequential columns when a snapshot lacks the topology", () => {
+    // Defensive default only: never collapse a row because a partial bundle
+    // has no depth/prev values.
+    const hull = rowOf(withoutTopology(chainOf(ALT_HULLS), "hull"), "hull");
+    expect(hull.columns.length).toBe(7);
+    expect(hull.laneCount).toBe(1);
   });
 });
 

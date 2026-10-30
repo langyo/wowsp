@@ -3,22 +3,20 @@
  * progression) panel.
  *
  * The panel renders one ROW per ShipUpgradeInfo ucType slot, left to right
- * from that slot's stock module to its researched modules. The regenerated
- * chain bundle carries per-step topology ('prev' = the GameParams entry the
- * module upgrades from, 'depth' = hops from the slot's stock module), which
- * lets a slot render parallel research options as stacked tiles in ONE
- * column:
+ * from that slot's stock module to its researched modules. Every step
+ * carries its raw GameParams 'prev' prerequisite key (null for stock) and its
+ * upgrade 'depth' inside the slot, so a slot with parallel research options
+ * stacks them as tiles in ONE column:
  *
  *   stock ─┬─ option A ── top A
  *          └─ option B ── top B
  *
- * Both topology fields are typed OPTIONAL: the panel must also keep working
- * against the first (flat) bundle snapshot, where every slot is a single
- * stock -> top chain. Missing depth falls back to the sequential stock-first
- * step order; a step whose 'prev' names no module of its own slot (the
+ * Missing/invalid depth still falls back to the sequential stock-first step
+ * order (a defensive default for partial snapshots; the shipped bundle always
+ * carries it). A step whose 'prev' names no module of its own slot (the
  * hull-locked torpedo/artillery tops, cross-slot prerequisites) connects to
- * the previous column instead and surfaces its required module in the tile
- * tooltip.
+ * the row's previous column instead and surfaces its required module in the
+ * tile tooltip.
  *
  * Everything here is Vue-free and i18n-free (the caller localizes role keys
  * and labels), so the layout model is unit-testable in isolation.
@@ -33,8 +31,7 @@ import {
 /** Component-name map of one module ("torpedoes" -> ["A1_Torpedoes"]). */
 export type ChainComponents = Record<string, string[]>;
 
-/** One module step as the accessor emits it, plus the optional topology
- *  fields the regenerated bundles carry. */
+/** One module step as the accessor emits it (per-step topology included). */
 export interface ChainStepInput {
   name: string;
   isStock: boolean;
@@ -42,10 +39,10 @@ export interface ChainStepInput {
   credits: number | null;
   components: ChainComponents;
   unlocks?: number[];
-  /** GameParams entry name this module upgrades from; null/absent = stock. */
-  prev?: string | null;
-  /** Hops from the slot's stock module; absent on the pre-topology bundle. */
-  depth?: number | null;
+  /** GameParams entry key this module upgrades from; null for stock. */
+  prev: string | null;
+  /** Upgrade level inside the slot: stock = 0; same-level options share it. */
+  depth: number;
 }
 
 /** One module bracket (ucType slot) as the accessor emits it. */
@@ -264,25 +261,19 @@ export function mountedComponents(
   return out;
 }
 
-/** Effective depth of every step: the bundle's own depth when present,
- *  otherwise the sequential stock-first fallback of the pre-topology JSON. */
+/** Effective depth of every step. The shipped bundle always carries it; a
+ *  partial/legacy snapshot without a usable depth falls back to the
+ *  sequential stock-first step order instead of collapsing the column. */
 function effectiveDepths(steps: readonly ChainStepInput[]): number[] {
-  const hasTopology = steps.some(
-    (step) => typeof step.depth === "number" && Number.isFinite(step.depth),
-  );
-  if (hasTopology) {
-    return steps.map((step, index) => {
-      const depth =
-        typeof step.depth === "number" && Number.isFinite(step.depth)
-          ? Math.trunc(step.depth)
-          : null;
-      return depth != null && depth >= 0 ? depth : index;
-    });
-  }
   const stockIndex = Math.max(0, steps.findIndex((step) => step.isStock));
-  return steps.map((_, index) =>
-    index === stockIndex ? 0 : index < stockIndex ? index + 1 : index,
-  );
+  return steps.map((step, index) => {
+    const depth =
+      typeof step.depth === "number" && Number.isFinite(step.depth)
+        ? Math.trunc(step.depth)
+        : NaN;
+    if (Number.isFinite(depth) && depth >= 0) return depth;
+    return index === stockIndex ? 0 : index < stockIndex ? index + 1 : index;
+  });
 }
 
 /** Researchable next-ship links of one module, with the ship-level XP the
