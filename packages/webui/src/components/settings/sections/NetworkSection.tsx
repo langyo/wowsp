@@ -1,11 +1,20 @@
 /** Network settings section: proxy mode + URL, the resource CDN, and the
  *  connectivity diagnostics panel (网络诊断). */
-import { defineComponent, type PropType } from "vue";
+import { defineComponent, onMounted, type PropType } from "vue";
 import { HkButton, HkInput, HkSettingsGroup, HkSettingsHint, HkTabs } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import type { NetworkConfig } from "@/api";
+import { useUpstreamHealthStore } from "@/stores/upstreamHealth";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
+
+/** Whether a proxy URL embeds credentials (a userinfo part before the
+ *  host) — the app's own stack dials them, the WebView2 mirror cannot. */
+function proxyUrlHasCredentials(url: string): boolean {
+  const afterScheme = url.split("://", 2)[1] ?? url;
+  const authority = afterScheme.split(/[/?#]/, 1)[0] ?? afterScheme;
+  return authority.includes("@");
+}
 
 /** Display label for the shell's documented probe endpoints. */
 function endpointLabel(endpoint: string): string {
@@ -45,6 +54,11 @@ export default defineComponent({
   },
   setup(props) {
     const { network } = props.ctx;
+    // The diagnostics panel doubles as a reader for the upstream health
+    // table (the same data the title-bar fault chip rides): recent
+    // per-host latency turns a slow proxy into visible numbers.
+    const health = useUpstreamHealthStore();
+    onMounted(() => void health.refresh());
     return () => {
       const report = network.probe.value;
       // After a probe the report is the truth even when it says "no proxy"
@@ -52,6 +66,7 @@ export default defineComponent({
       // value a probe exists to correct).
       const effective = (report ? report.effectiveProxy : network.netCfg.value.effectiveProxy) ?? null;
       const source = report?.proxySource ?? null;
+      const recordedHosts = health.entries.filter((e) => e.recorded);
       return (
         <>
           {/* network proxy — applies to every outbound request (stats, model
@@ -120,6 +135,11 @@ export default defineComponent({
                     : t("settings.networkDiagDirect")}
                 </span>
               </div>
+              {effective && proxyUrlHasCredentials(effective) ? (
+                <div class="settings-modal__netdiagwarn">
+                  {t("settings.networkDiagCredentialHint")}
+                </div>
+              ) : null}
               {report?.system.pacConfigured ? (
                 <div class="settings-modal__netdiagwarn">{t("settings.networkDiagPac")}</div>
               ) : null}
@@ -152,9 +172,42 @@ export default defineComponent({
                   {t("settings.networkDiagDirectPreferred", { hosts: report.directPreferredHosts.join(", ") })}
                 </div>
               ) : null}
+              {recordedHosts.length > 0 ? (
+                <div class="settings-modal__netdiaglabel">
+                  {t("settings.networkDiagHealthTitle")}
+                </div>
+              ) : null}
+              {recordedHosts.length > 0
+                ? recordedHosts.map((e) => (
+                      <div key={e.id} class="settings-modal__netdiagrow">
+                        <span class="settings-modal__netdiaglabel">{t("upstream.purpose." + e.purpose)}</span>
+                        <span class="settings-modal__netdiagvalue">{e.host}</span>
+                        <span
+                          class={
+                            e.consecutiveFailures > 0
+                              ? "settings-modal__netdiagerr"
+                              : "settings-modal__netdiagok"
+                          }
+                        >
+                          {e.consecutiveFailures > 0
+                            ? t("settings.networkDiagHealthFails", { n: e.consecutiveFailures })
+                            : e.lastElapsedMs != null
+                              ? `${e.lastElapsedMs} ms`
+                              : "—"}
+                        </span>
+                      </div>
+                    ))
+                : null}
             </div>
             <div class="settings-modal__netmanual">
-              <HkButton size="sm" disabled={network.probing.value} onClick={() => void network.runProbe()}>
+              <HkButton
+                size="sm"
+                disabled={network.probing.value}
+                onClick={() => {
+                  void network.runProbe();
+                  void health.refresh();
+                }}
+              >
                 {network.probing.value ? t("settings.networkDiagRunning") : t("settings.networkDiagRun")}
               </HkButton>
             </div>

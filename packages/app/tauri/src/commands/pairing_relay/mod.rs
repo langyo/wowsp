@@ -109,7 +109,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async_with_config};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, client_async_tls_with_config};
 use wowsp_tauri_shared::{
     PairingProgress, PairingStatus, PairingToken, RelayConfig, ReplayMetaLite,
 };
@@ -169,7 +169,8 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 /// here would let a black-holed route hang a pairing command for the
 /// OS-level connect timeout (minutes on some stacks) — this bound turns
 /// that into the same "gateway unreachable" error a refused connection
-/// produces.
+/// produces. The bound covers the WHOLE dial: the proxy tunnel leg
+/// (CONNECT/SOCKS5 handshake) plus the TLS + WebSocket handshake.
 const WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Text-ping interval on EVERY relay socket. Cloudflare drops idle proxied
 /// connections at ~100 s; 30 s keeps even multi-minute gamedata pulls warm.
