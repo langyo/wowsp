@@ -40,7 +40,11 @@ import logger as _log  # noqa: E402
 _log.configure(source="wowsp", module="dev")
 
 MOCK_PORT = int(os.environ.get("WOWSP_MOCK_PORT", "8787"))
-VITE_PORT = 5173
+# WoWSP's DEDICATED dev port. Deliberately not Vite's shared default 5173:
+# neighboring projects claim that one (2026-10-30 incident), and this port is
+# pinned in lockstep with packages/app/tauri/tauri.conf.json's devUrl and
+# packages/webui/vite.config.ts (src/devPort.contract.test.ts enforces it).
+VITE_PORT = 5199
 
 # Files whose changes tauri-cli does NOT watch but should trigger a full dev
 # restart. Source files (Rust + webui) are handled by tauri-cli's own watcher
@@ -124,31 +128,111 @@ def _port_occupied_by(port: int) -> str | None:
         ).stdout
         for line in out.splitlines():
             parts = line.split()
-            if len(parts) >= 5 and parts[1] == f"127.0.0.1:{port}" and parts[3] == "LISTENING":
+            # Match ANY local address on the port (0.0.0.0 / 127.0.0.1 / [::]):
+            # Vite typically binds 0.0.0.0, so an exact 127.0.0.1 comparison
+            # would detect the conflict but lose the pid from the message.
+            if len(parts) >= 5 and parts[1].endswith(f":{port}") and parts[3] == "LISTENING":
                 pid = parts[4]
                 break
     except (OSError, subprocess.SubprocessError):
         pass
-    who = f" (pid {pid})" if pid else ""
+    who = f" (pid {pid}{_describe_pid(pid)})" if pid else ""
     return f"something is already listening on :{port}{who}"
 
 
-def start_vite(procs: list[subprocess.Popen], extra_env: dict | None = None) -> None:
+def _describe_pid(pid: str) -> str:
+    """Best-effort one-line identity for a listener pid (process name / command
+    line), so the port guard can name the FOREIGN project instead of a bare
+    port number — the 2026-10-30 incident had a neighboring site's Vite server
+    on Vite's shared default :5173 and the old message gave the user nothing to
+    act on. Never raises; an unknown pid yields an empty string."""
+    try:
+        if os.name == "nt":
+            out = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=6,
+            ).stdout.strip()
+            if not out:
+                out = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                ).stdout.strip().splitlines()[0]
+            return f", {out[:160]}" if out else ""
+        out = subprocess.run(
+            ["ps", "-p", pid, "-o", "command="],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        ).stdout.strip()
+        return f", {out[:160]}" if out else ""
+    except (OSError, subprocess.SubprocessError, IndexError):
+        return ""
+
+
+def _console_safe(text: str) -> str:
+    """Make a hint printable on the host console.
+
+    The process hint can carry a path from another project; on Windows the
+    console is commonly GBK and the logger prints through it with no encoding
+    fallback, so an unencodable character would turn the guard itself into a
+    UnicodeEncodeError traceback (the 2026-10-30 fix initially did exactly
+    that). Encode/decode against the stream's own encoding, replacing what it
+    cannot represent."""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        return text.encode(encoding, errors="replace").decode(encoding)
+    except (LookupError, UnicodeError):
+        return text.encode("ascii", errors="replace").decode("ascii")
+
+
+def _require_vite_port_free() -> None:
+    """Fail LOUDLY when :5199 is held by another process — the dev-server
+    isolation contract.
+
+    2026-10-30 incident: a neighboring project's Vite server held Vite's shared
+    default :5173, WoWSP's Vite silently fell back to :5174 while
+    tauri.conf.json's devUrl stayed on :5173, so the WoWSP window loaded that
+    foreign app. WoWSP now owns :5199 and this guard runs on EVERY script launch
+    path (all `just dev` modes including the default native one), naming the
+    offending pid/command before Tauri can open; Vite itself is also pinned with
+    host 127.0.0.1 + strictPort so a fallback cannot happen even when the script
+    is bypassed (`cargo tauri dev` directly)."""
     occupied = _port_occupied_by(VITE_PORT)
-    if occupied:
-        _log.error(
-            f"{occupied}. This is NOT WoWSP's dev server — Tauri would load that "
-            "foreign app into the game-overlay window. Kill the other dev server "
-            f"(netstat -ano | findstr :{VITE_PORT}) and rerun `just dev`.",
-            module="vite",
-        )
-        raise SystemExit(1)
+    if not occupied:
+        return
+    _log.error(
+        _console_safe(occupied) + ". This is NOT WoWSP's dev server — Tauri would load that "
+        "foreign app into the WoWSP window. Stop it (netstat -ano | findstr "
+        f":{VITE_PORT}) or move that project to its own dev port, then rerun "
+        "`just dev`.",
+        module="vite",
+    )
+    raise SystemExit(1)
+
+
+def start_vite(procs: list[subprocess.Popen], extra_env: dict | None = None) -> None:
+    _require_vite_port_free()
     pnpm = "pnpm"
     env = extra_env or {}
     p = _run([pnpm, "--filter", "@wowsp/webui", "dev"], env=env)
     procs.append(p)
     if _wait_port(VITE_PORT):
-        _log.ok(f"Vite ready at http://localhost:{VITE_PORT}", module="vite")
+        _log.ok(f"Vite ready at http://127.0.0.1:{VITE_PORT}", module="vite")
     else:
         _log.warn(f"Vite did not bind :{VITE_PORT} in time", module="vite")
 
@@ -306,6 +390,11 @@ def _sync_logo() -> None:
 
 def run_native(args: argparse.Namespace) -> int:
     try:
+        # Port isolation FIRST: a foreign dev server on :5199 makes Tauri load
+        # ITS page into the WoWSP window (2026-10-30 incident). Fail before
+        # touching any process; Vite's strictPort pin is the second defense.
+        _require_vite_port_free()
+
         # Kill any lingering wowsp.exe from a previous dev session.
         _kill_lingering_wowsp()
 

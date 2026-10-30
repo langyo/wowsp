@@ -1,6 +1,6 @@
 """Screenshot the ships page for visual verification.
 
-Launches a headless Chromium against the running dev server (localhost:5173),
+Launches a headless Chromium against the running dev server (127.0.0.1:5199),
 navigates to the ships route, waits for content, and captures screenshots of
 both the tech-tree and list views + the sidebar.
 """
@@ -24,9 +24,9 @@ def main() -> None:
         page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
         page.on("console", lambda m: errors.append(f"console.{m.type}: {m.text}") if m.type in ("error", "warning") else None)
 
-        page.goto("http://localhost:5173/", wait_until="networkidle", timeout=30000)
+        page.goto("http://127.0.0.1:5199/", wait_until="networkidle", timeout=30000)
         # The ships route (createWebHistory — plain path, not hash).
-        page.goto("http://localhost:5173/ships", wait_until="networkidle", timeout=30000)
+        page.goto("http://127.0.0.1:5199/ships", wait_until="networkidle", timeout=30000)
         page.wait_for_timeout(4000)  # let encyclopedia + tree render
 
         # Full-page shot of whatever loaded.

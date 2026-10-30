@@ -5,7 +5,7 @@
   "build": {
     "beforeBuildCommand": "pnpm --filter @wowsp/webui build",
     "beforeDevCommand": "pnpm --filter @wowsp/webui dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://127.0.0.1:5199",
     "frontendDist": "../../../dist/webui"
   },
   "bundle": {
