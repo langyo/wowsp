@@ -753,4 +753,43 @@ export const MOCK_COMMANDS: Record<string, MockHandler> = {
   async playtime_battles() {
     return MOCK_BATTLES;
   },
+
+  // Onboarding's local-player discovery: fold the SAME fixture the battle
+  // ledger serves, mirroring the Rust aggregation (owned roots only, human
+  // recorder names only, battles desc / newest desc / nickname asc) so the
+  // wizard's player list is developable in `just dev mock` — MockCaptain
+  // (asia) and MockAlt (asia) surface, the nameless Lesta row never does.
+  async replay_player_candidates() {
+    const tallies = new Map<
+      string,
+      { realm: string; nickname: string; battles: number; lastDateTime: string | null }
+    >();
+    for (const b of MOCK_BATTLES.battles) {
+      if (!b.kind || !b.realm) continue;
+      const name = (b.playerName ?? "").trim();
+      // The same isAiName rule the replay rail applies (utils/aiNames; the
+      // mock module stays import-free, so the regex is mirrored here).
+      if (!name || /^(?::.*:|IDS_.*|#.+)$/.test(name)) continue;
+      const key = `${b.realm}\u0000${name}`;
+      const hit =
+        tallies.get(key) ?? { realm: b.realm, nickname: name, battles: 0, lastDateTime: null };
+      hit.battles += 1;
+      if (b.dateTime && (!hit.lastDateTime || b.dateTime > hit.lastDateTime)) {
+        hit.lastDateTime = b.dateTime;
+      }
+      tallies.set(key, hit);
+    }
+    // Nickname ties compare by code units (a < b ? -1 : …), NOT
+    // localeCompare — the Rust fold's str::cmp is byte-wise, and a
+    // locale-aware collation could head a different row in dev than the
+    // real backend answers for CJK/Cyrillic nicknames.
+    const byCodeUnits = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+    const candidates = [...tallies.values()].sort(
+      (a, b) =>
+        b.battles - a.battles ||
+        byCodeUnits(b.lastDateTime ?? "", a.lastDateTime ?? "") ||
+        byCodeUnits(a.nickname, b.nickname),
+    );
+    return { candidates };
+  },
 };

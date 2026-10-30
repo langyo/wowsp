@@ -46,5 +46,13 @@
   "pluginInstall": "安装插件",
   "pluginSkip": "暂不安装",
   "pluginSkipCountdown": "暂不安装（{n} 秒）",
-  "pluginDone": "游戏内插件已安装，实时对局将自动启用。"
+  "pluginDone": "游戏内插件已安装，实时对局将自动启用。",
+  "playersScanning": "正在快速扫描本机录像以识别玩家…",
+  "playersSection": "本机登录过的玩家",
+  "playersDesc": "已快速过一遍每个客户端下的录像，识别出在本机登录过的玩家；每个服务器默认勾选最可能是你的那一个，请确认只保留属于你自己的账号。",
+  "playersHint": "仅勾选的玩家会被添加为已绑定账号，未勾选的不会纳入，之后也可在「设置 → 账户」中手动添加。",
+  "playersBound": "已添加 {n} 个本机玩家。",
+  "playersBindFailed": "以下玩家未能自动添加：{names}，可稍后在「设置 → 账户」中手动添加。",
+  "playerMeta": "{n} 场录像 · 最近 {date}",
+  "playerMetaNoDate": "{n} 场录像"
 }

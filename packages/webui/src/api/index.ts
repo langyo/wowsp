@@ -24,6 +24,8 @@ export type {
   PlaytimeOverview,
   PlaytimeBattle,
   PlaytimeBattles,
+  ReplayPlayerCandidate,
+  ReplayPlayerCandidates,
   AccountProfileRef,
   PlayingAccount,
   SessionPlayer,

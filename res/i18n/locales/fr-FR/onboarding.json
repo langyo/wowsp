@@ -46,5 +46,13 @@
   "pluginInstall": "Installer le plugin",
   "pluginSkip": "Plus tard",
   "pluginSkipCountdown": "Plus tard ({n} s)",
-  "pluginDone": "Plugin en jeu installé — les batailles en direct l'utilisent automatiquement."
+  "pluginDone": "Plugin en jeu installé — les batailles en direct l'utilisent automatiquement.",
+  "playersScanning": "Analyse rapide des replays locaux pour identifier les joueurs…",
+  "playersSection": "Joueurs vus sur cette machine",
+  "playersDesc": "Un passage rapide sur les replays de chaque client a identifié les joueurs s'étant connectés sur cette machine. Le plus probable par serveur est présélectionné — ne gardez cochés que vos propres comptes.",
+  "playersHint": "Seuls les joueurs cochés sont ajoutés comme comptes liés ; les autres sont ignorés et peuvent être ajoutés plus tard dans Paramètres → Comptes.",
+  "playersBound": "{n} joueur(s) local(aux) ajouté(s).",
+  "playersBindFailed": "Ajout automatique impossible : {names} — ajoutez-les plus tard dans Paramètres → Comptes.",
+  "playerMeta": "{n} replays · dernier {date}",
+  "playerMetaNoDate": "{n} replays"
 }

@@ -46,5 +46,13 @@
   "pluginInstall": "安裝插件",
   "pluginSkip": "暫不安裝",
   "pluginSkipCountdown": "暫不安裝（{n} 秒）",
-  "pluginDone": "遊戲內插件已安裝，即時對局將自動啟用。"
+  "pluginDone": "遊戲內插件已安裝，即時對局將自動啟用。",
+  "playersScanning": "正在快速掃描本機錄影以識別玩家…",
+  "playersSection": "本機登入過的玩家",
+  "playersDesc": "已快速掃過每個用戶端下的錄影，識別出在本機登入過的玩家；每個伺服器預設勾選最可能是你的那一個，請確認只保留屬於你自己的帳號。",
+  "playersHint": "僅勾選的玩家會被加入為已綁定帳號，未勾選的不會納入，之後也可在「設定 → 帳戶」中手動加入。",
+  "playersBound": "已加入 {n} 個本機玩家。",
+  "playersBindFailed": "以下玩家未能自動加入：{names}，可稍後在「設定 → 帳戶」中手動加入。",
+  "playerMeta": "{n} 場錄影 · 最近 {date}",
+  "playerMetaNoDate": "{n} 場錄影"
 }

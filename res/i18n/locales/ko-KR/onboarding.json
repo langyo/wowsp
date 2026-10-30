@@ -46,5 +46,13 @@
   "pluginInstall": "플러그인 설치",
   "pluginSkip": "나중에",
   "pluginSkipCountdown": "나중에({n}초)",
-  "pluginDone": "게임 내 플러그인이 설치되었습니다. 실시간 전투에서 자동으로 활성화됩니다."
+  "pluginDone": "게임 내 플러그인이 설치되었습니다. 실시간 전투에서 자동으로 활성화됩니다.",
+  "playersScanning": "이 PC의 리플레이를 빠르게 검색하여 플레이어를 식별하는 중…",
+  "playersSection": "이 PC에서 로그인한 플레이어",
+  "playersDesc": "각 클라이언트의 리플레이를 빠르게 훑어 이 PC에서 로그인한 플레이어를 찾았습니다. 서버별로 가장 가능성 높은 플레이어가 미리 선택되어 있으니, 자신의 계정만 남겨 두세요.",
+  "playersHint": "선택한 플레이어만 연동 계정으로 추가됩니다. 선택하지 않은 항목은 제외되며, 나중에 \"설정 → 계정\"에서 수동으로 추가할 수 있습니다.",
+  "playersBound": "플레이어 {n}명을 추가했습니다.",
+  "playersBindFailed": "자동 추가 실패: {names} — 나중에 \"설정 → 계정\"에서 수동으로 추가할 수 있습니다.",
+  "playerMeta": "리플레이 {n}회 · 최근 {date}",
+  "playerMetaNoDate": "리플레이 {n}회"
 }

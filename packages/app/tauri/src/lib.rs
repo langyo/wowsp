@@ -569,6 +569,7 @@ pub fn run() {
             commands::playtime::playtime_overview,
             commands::playtime::playtime_battles,
             commands::playtime::playtime_battles_reset,
+            commands::playtime::replay_player_candidates,
             // Local replay battle log (water-table 1d/7d/custom ranges,
             // commands/local_battles.rs) — decodes the BattleResults (0x22)
             // payload of the local replay corpus behind a persistent cache.
