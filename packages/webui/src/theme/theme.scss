@@ -422,6 +422,67 @@ html[data-wallpaper-art="true"] body::after {
   color: #fff;
 }
 
+/* Solid DANGER surfaces carry white ink in every scheme (user direction
+   2026-10-31, purge-reinstall confirm): hikari feeds .hk-btn-danger the
+   SHARED on-solid slot, which the stock dark scheme pins to near-black
+   Nord ink for its PALE brand primary — the right ink on #88C0D0 (white
+   there is 2.0:1), but a 3.05:1 sliver on the red-family error fill
+   (#BF616A dark / #EF4444 light), where white reads 4.1:1 / 3.8:1. The
+   same slot leaks into the danger icon button and the danger blocking
+   toast through --hi-color-text-on-danger, and into the blocking toast
+   info band through --hi-color-text-on-solid. Those fills stay
+   red-family in every scheme, so their ink pins white here too — the
+   same selector-level restatement the toast family above uses.
+   Brand-primary fills keep the scheme-chosen on-solid ink — that
+   luminance choice is the palette contract (2026-10-17), not a leak. */
+.hk-btn-danger {
+  --color-on-solid: 255 255 255;
+}
+
+.hk-icon-button-danger,
+.hk-blocking-toast-danger {
+  --hi-color-text-on-danger: #fff;
+}
+
+.hk-blocking-toast-info {
+  --hi-color-text-on-solid: #fff;
+}
+
+/* Confirm dialogs hug their action row (user report 2026-10-31, same
+   purge confirm): hikari fixes the frame at a 24rem popover and
+   stretches both buttons equally with min-width: 0, so a long CJK
+   confirm label (清理全部插件并重新安装) gets squeezed below its own
+   text width instead of widening the sheet. Desktop only (≥768px): the
+   ≤767px sheet branch keeps its full-bleed footprint on the bare
+   width: 100% base, and these rules never reach phones — the stock
+   sheet stays untouched. max-width alone carries !important: the width
+   prop lands as an INLINE max-width on the frame (HkModal.tsx), and a
+   stylesheet rule loses to it without the flag. The frame keeps the
+   24rem footprint for short labels (the min-width pins today's
+   geometry) and grows toward a 32rem cap only when the action row
+   needs it; the message keeps wrapping at the stock inner width so
+   copy length alone never widens the frame; buttons hold their own
+   label and the row wraps under the cap as the last resort. */
+@media (min-width: 768px) {
+  .hk-modal-content:has(.hk-confirm-dialog) {
+    width: fit-content;
+    min-width: min(24rem, calc(100% - 2 * var(--viewport-gutter, 16px)));
+    max-width: min(32rem, calc(100% - 2 * var(--viewport-gutter, 16px))) !important;
+  }
+
+  .hk-modal-content:has(.hk-confirm-dialog) .hk-confirm-dialog-message {
+    max-width: 21rem; /* the stock 24rem frame minus 1.5rem body side pads */
+  }
+
+  .hk-modal-content:has(.hk-confirm-dialog) .hk-confirm-dialog-actions {
+    flex-wrap: wrap;
+  }
+
+  .hk-modal-content:has(.hk-confirm-dialog) .hk-confirm-dialog-btn {
+    min-width: fit-content;
+  }
+}
+
 a {
   color: rgb(var(--color-primary));
 }
