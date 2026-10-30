@@ -39,12 +39,16 @@ pub mod decision_serve;
 // E18 wires the UI command.
 #[cfg(feature = "ai")]
 pub mod decision_score;
+// E24: the shipId → weapon-attribute table and the 10-wide routing vector
+// the attribute-routed fire MoE reads. Always compiled (the table is data);
+// only the models that consume it sit behind the ai feature.
 pub mod decision_tick;
 pub mod download_hub;
 pub mod encyclopedia;
 pub mod exports;
 pub mod fire_dataset;
 pub mod game_client;
+pub mod ship_attrs;
 // Game-crash detection + analysis + the user-invoked client restart
 // (commands/game_crash.rs). The command surface registers on every target;
 // the watchdog and evidence layer are Windows-only internals.

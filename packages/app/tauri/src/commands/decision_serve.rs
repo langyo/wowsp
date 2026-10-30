@@ -827,15 +827,27 @@ fn model_kind_str(kind: &DecisionModelKind) -> &'static str {
     }
 }
 
-/// Run the model over one decision point → one suggestion row.
+/// Run the model over one decision point → one suggestion row. An
+/// attribute-routed model (attr_dim > 0) gets its routing vector from the
+/// embedded ship-attribute table — the same bytes training featurized
+/// against — built from the point's own ship and its friend/enemy slots.
 fn infer_one(
     model: &mut DecisionModel,
     point: &DecisionPoint,
 ) -> anyhow::Result<DecisionSuggestion> {
     let (can_fire_logit, fire_logit) = match model.kind() {
-        DecisionModelKind::Fire24 { .. } => {
+        DecisionModelKind::Fire24 { attr_dim, .. } => {
             let (entity, global, mask) = feature_tensors(point);
-            model.infer_fire(&entity, &global, &mask)?
+            let routing = (*attr_dim > 0)
+                .then(|| {
+                    crate::commands::ship_attrs::embedded_row_vector(
+                        point.ship_id,
+                        &point.friends,
+                        &point.enemies,
+                    )
+                })
+                .transpose()?;
+            model.infer_fire(&entity, &global, &mask, routing.as_ref().map(|v| &v[..]))?
         },
         // The fixture has no two-head layout: head A is the E7 hard rule as
         // a saturated dummy, head B is the fixture's fire vote (logit 7).
@@ -1282,10 +1294,23 @@ fn build_debug_cache_entry(
     };
     let scores = build_ship_scores(&stream, &rows, &replay_id, None, None, sources, |row| {
         let (entity, global, mask) = feature_tensors_v2(row);
+        // E24: an attribute-routed fire model gets the routing vector from
+        // the embedded table — the row carries every slot's shipId, so the
+        // composition dims see exactly what training saw.
+        let routing = (fire.attr_dim() > 0)
+            .then(|| {
+                crate::commands::ship_attrs::embedded_row_vector(
+                    row.core.ship_id,
+                    &row.core.friends,
+                    &row.core.enemies,
+                )
+            })
+            .transpose()?;
         // Same train-time split as `compute_ship_scores`: the fire model
         // (v2plain_std) eats the untouched row, the move model (main,
         // --ablate e11) the e11-zeroed copy (E14's distribution-parity rule).
-        let (_logit_a, logit_b) = fire.infer_fire(&entity, &global, &mask)?;
+        let (_logit_a, logit_b) =
+            fire.infer_fire(&entity, &global, &mask, routing.as_ref().map(|v| &v[..]))?;
         let (mv_entity, mv_global) = ablate_e11_tensors(&entity, &global, mv.widths().0);
         let logits = mv.infer_move(&mv_entity, &mv_global, &mask)?;
         Ok((sigmoid(logit_b), softmax(&logits)))
