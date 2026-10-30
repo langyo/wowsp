@@ -87,7 +87,7 @@ not_found_handling = "single-page-application"
 # "/gateway*" — the account-routed battle-push namespace
 # (crates/relay-worker/src/gateway.rs; mobile-gateway wave). Nothing
 # static ever lives under /gateway, so no per-path negation is needed.
-run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*", "/gateway*"]
+run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*", "!/api/digests/data", "!/api/digests/data/*", "/gateway*"]
 # The ASSETS binding lets the worker fetch its own asset files by path
 # (crates/relay-worker/src/digests.rs — serves the doc-less channels'
 # gated 404; the doc-carrying channels' hits are answered statically
@@ -263,7 +263,7 @@ FEEDBACK_LATEST_VERSION = "0.6.8"
 # packages/pairing-relay/digests/ tree (2026-10-22: the app fleet
 # polling never-published channels burned the store's daily read
 # quota; see crates/relay-core/src/digests.rs).
-DIGEST_PUBLISHED_CHANNELS = "app"
+DIGEST_PUBLISHED_CHANNELS = "app,data"
 # ── QQ 通知机器人（FROZEN 2026-10-24，维护者决定）────────────────────
 # 官方通道对群提醒的可达性不可靠、账号风险高——整条链路（出站通知 +
 # 入站回调）由 QQBOT_NOTIFY 变量总闸控制，**本文件不设该变量 = 冻结**：

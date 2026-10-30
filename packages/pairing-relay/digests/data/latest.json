@@ -1,0 +1,10 @@
+{
+  "assets": {
+    "ship-gameparams-d02f7d68.zip": "d02f7d68ecba9fb317a02dc69a67a25b6c66061fcad7b1c029984f0c4095bc12",
+    "wowsp-data.json": "3410bda719b64525b362c1f1938733624a7d45c0df5f51c28fd31c38344d26a0"
+  },
+  "channel": "data",
+  "generated_at": "2026-10-30T10:35:35Z",
+  "seq": 1,
+  "tag": "data-latest"
+}
