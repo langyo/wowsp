@@ -600,16 +600,18 @@
     "debugModel": "실험 모델"
   },
   "scores": {
-    "title": "AI 모델 일치도",
+    "title": "AI 결정 점수",
     "close": "점수 패널 닫기",
-    "disclaimer": "모델 일치도 ≠ 전적/실력: 현재 모델 세대는 실제 피해량과의 상관 검증(ρ≈0)을 통과하지 못했습니다.",
-    "whole": "전체",
+    "disclaimer": "기여＝판단 창에서 귀속된 실제 피해(전적과의 상관 검증됨)；동의도＝모델의 판단 동의(독립 차원, 전적 아님).",
+    "whole": "동의",
     "instant": "순간",
     "confidence": "신뢰도",
     "fire": "포격 요소",
     "move": "기동 요소",
     "noFire": "발포 가능 순간 없음",
     "noData": "점수 데이터 없음",
-    "samples": "{ships}척 · {rows}개 결정 지점"
+    "samples": "{ships}척 · {rows}개 결정 지점",
+    "contribution": "기여",
+    "perShot": "발당 평균 {value}"
   }
 }

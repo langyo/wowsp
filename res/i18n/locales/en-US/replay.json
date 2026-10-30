@@ -600,16 +600,18 @@
     "debugModel": "Experiment model"
   },
   "scores": {
-    "title": "AI model agreement",
+    "title": "AI decision scores",
     "close": "Close the score panel",
-    "disclaimer": "Model agreement ≠ skill or battle result: the current model generation failed the preregistered correlation check against actual damage (ρ≈0).",
-    "whole": "Whole game",
+    "disclaimer": "Contribution = damage attributed in this ship's decision windows (validated against battle results); agreement = the model's endorsement of its decisions (an independent dimension, not a rating).",
+    "whole": "Agrmt",
     "instant": "Instant",
     "confidence": "confidence",
     "fire": "Fire component",
     "move": "Movement component",
     "noFire": "No fire decisions on record",
     "noData": "No score data",
-    "samples": "{ships} ships · {rows} decision points"
+    "samples": "{ships} ships · {rows} decision points",
+    "contribution": "Contrib",
+    "perShot": "Per shot {value}"
   }
 }

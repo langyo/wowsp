@@ -1,7 +1,8 @@
 /**
- * HoloScorePanel — the E18 AI score sidebar (model agreement + instant
- * score). Chrome matches the HUD family (holo-hud tokens, like the ship
- * status rows); docks to the holo-map's right edge under the weather badge.
+ * HoloScorePanel — the AI score sidebar (contribution + model agreement +
+ * instant score). Chrome matches the HUD family (holo-hud tokens, like the
+ * ship status rows); docks to the holo-map's right edge under the weather
+ * badge.
  */
 .holo-score-panel {
   position: absolute;
@@ -91,6 +92,8 @@
     letter-spacing: 0.06em;
     color: var(--holo-hud-dim);
 
+    /* contribution | agreement | instant — right-aligned number columns
+       after the flexing ident column. */
     > span:first-child {
       flex: 1;
       text-align: right;
@@ -163,6 +166,20 @@
     color: var(--holo-hud-text);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  &__contrib {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    width: 52px;
+    flex: none;
+
+    b {
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      color: var(--holo-hud-text);
+    }
   }
 
   &__whole {

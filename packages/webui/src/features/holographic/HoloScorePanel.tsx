@@ -1,16 +1,18 @@
 /**
- * HoloScorePanel — the E18 AI score sidebar of the holographic map. Shown
- * while the movement-advice layer is on: one row per scored ship with the
- * WHOLE-GAME model agreement (0–100), its fire/move component bars and the
- * INSTANT score + confidence at the playhead (binary-searched over the
- * per-ship sample series the `decision_debug_report` RPC embedded — no
- * further IPC while sliding).
+ * HoloScorePanel — the AI score sidebar of the holographic map. Shown
+ * while the movement-advice layer is on: one row per scored ship with two
+ * INDEPENDENT whole-game dimensions — the E21 contribution (enemy HP lost
+ * in the fired decision windows, attributed to that ship's impacts; the
+ * validated outcome-grounded semantic, confirmation ρ=+0.477) and the
+ * E17/E18 model agreement (0–100 with its fire/move component bars) —
+ * plus the INSTANT score + confidence at the playhead (binary-searched
+ * over the per-ship sample series the `decision_debug_report` RPC
+ * embedded — no further IPC while sliding).
  *
- * E17's negative result is a UI contract here: the whole system is MODEL
- * AGREEMENT, not skill or battle result (wholeGame vs damage ρ=+0.011 on
- * the preregistered validation). The disclaimer banner is part of the
- * panel, not an optional tooltip — the numbers must never read as a
- * "player rating".
+ * Rows sort by contribution (never-fired ships fall back to agreement
+ * order at the list tail). The disclaimer banner stays: agreement is
+ * still NOT a player rating, and contribution measures realized damage,
+ * not decision elegance — two different questions, both shown.
  */
 import { computed, defineComponent, type PropType } from "vue";
 import { X } from "@lucide/vue";
@@ -51,6 +53,15 @@ export interface ScoreRowMeta {
   dead: boolean;
 }
 
+/** Compact damage rendering for the contribution column: 84.2k / 1.31M,
+ * raw numbers below 1000 (WoWS whole-game contributions rarely reach M).
+ * Exported for vitest. */
+export function formatContribution(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}k`;
+  return Math.round(v).toString();
+}
+
 const pct = (v: number): string => Math.round(v * 100).toString();
 
 export default defineComponent({
@@ -79,7 +90,12 @@ export default defineComponent({
       const report = props.report;
       if (!report) return [];
       return [...report.scores.perShip]
-        .sort((a, b) => b.wholeGame - a.wholeGame)
+        .sort((a, b) => {
+          const ca = a.contribution ?? -1;
+          const cb = b.contribution ?? -1;
+          if (ca !== cb) return cb - ca;
+          return b.wholeGame - a.wholeGame;
+        })
         .map((entry) => ({ entry, meta: props.metaOf(entry.entityId) }));
     });
     return () => (
@@ -107,6 +123,7 @@ export default defineComponent({
           <span>{i18nT("replay.moveAdvice.second")}</span>
         </div>
         <div class="holo-score-panel__cols">
+          <span>{i18nT("replay.scores.contribution")}</span>
           <span>{i18nT("replay.scores.whole")}</span>
           <span>{i18nT("replay.scores.instant")}</span>
         </div>
@@ -141,6 +158,24 @@ export default defineComponent({
                     <span class="holo-score-panel__name" title={props.labelOf(entry.entityId)}>
                       {props.labelOf(entry.entityId)}
                     </span>
+                  </span>
+                  <span
+                    class="holo-score-panel__contrib"
+                    title={
+                      entry.contribution != null && entry.contributionShots
+                        ? i18nT("replay.scores.perShot", {
+                            value: formatContribution(
+                              entry.contribution / Math.max(1, entry.contributionShots),
+                            ),
+                          })
+                        : undefined
+                    }
+                  >
+                    {entry.contribution != null ? (
+                      <b>{formatContribution(entry.contribution)}</b>
+                    ) : (
+                      <span class="holo-score-panel__conf">—</span>
+                    )}
                   </span>
                   <span class="holo-score-panel__whole">
                     <b>{pct(entry.wholeGame)}</b>

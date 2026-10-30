@@ -129,6 +129,12 @@ export interface ShipScoreEntry {
   /** Mean fire agreement over can-fire samples; null when none. */
   wholeFire: number | null;
   wholeMove: number;
+  /** E21's validated whole-game semantic: enemy HP lost in the fired
+   *  decision windows, attributed to this ship's covering impacts
+   *  (confirmation rho +0.477 vs battle damage). Null when never fired. */
+  contribution: number | null;
+  /** Fired can-fire windows behind `contribution`. */
+  contributionShots: number | null;
   samples: ShipScoreSample[];
   outcome: ShipOutcome;
 }
