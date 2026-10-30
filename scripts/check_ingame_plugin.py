@@ -41,6 +41,13 @@ companion app consumes:
     learnedSkills), the local player's team, and the quit-clear — planted
     records cover the py2-str hex codec, the %-table fallback, both crew
     field names and all three read levels, plus the oversized-dump skip,
+  - price_catalog.json: the one-shot server-synced economy bridge — the
+    four planted dataHub collections (itemPrice / shipCrossResearchInfo /
+    shipTechRestrictions / shipEconomicAttributes) must land as exact
+    entity rows with the decoded component field lists plus the generic
+    fallback; the deferred login-sync shape must land the same file on a
+    later scheduler tick, and the withheld Lesta shape must leave it
+    ABSENT with no swallowed-exception text in the log or soft latch,
   - heartbeat.json written with the roster count,
   - the scheduler survives tick-over-tick (no swallowed exception text).
 
@@ -387,12 +394,32 @@ class StubDataHub(object):
     """The injected dataHub: collections served BY NAME, like the real
     ModAPI hub ('avatar' and 'ship' are both on its SYNCED whitelist;
     anything else comes back empty — unknown kinds were previously fed
-    the avatars, which the real hub never does)."""
+    the avatars, which the real hub never does).
 
-    def __init__(self, avatars=None, ships=None):
+    The price-catalog modes (Main.py's price_catalog.json bridge):
+      None       — the four economy collections are never served (the
+                   Lesta withheld shape; the historical passes keep this);
+      "planted"  — the planted collections answer at load;
+      "deferred" — each price collection answers empty on its first two
+                   calls, then planted (the login-sync window the retry
+                   exists for);
+      "raising"  — getEntityCollections raises for every price name (a
+                   sandbox refusal, not an empty collection)."""
+
+    def __init__(self, avatars=None, ships=None, price_mode=None):
         self.collections = {"avatar": avatars or [], "ship": ships or []}
+        self.price_mode = price_mode
+        self.price_calls = {}
 
     def getEntityCollections(self, kind):
+        if kind in PRICE_COLLECTIONS and self.price_mode is not None:
+            calls = self.price_calls.get(kind, 0) + 1
+            self.price_calls[kind] = calls
+            if self.price_mode == "raising":
+                raise AttributeError("price collection withheld")
+            if self.price_mode == "deferred" and calls <= 2:
+                return []
+            return price_collections().get(kind, [])
         return self.collections.get(kind, [])
 
 
@@ -471,6 +498,186 @@ class FakeShipEntity(object):
             self.components = {"position": FakeComponent(value=(1.0, 2.0, 3.0))}
         else:
             self.components = {"ship": FakeComponent(sortKey=sort_key)}
+
+
+# ── price_catalog.json planting (the server-synced economy bridge) ──────
+# The live bridge dumps four datahub collections served by name; every
+# entry is an entity whose components mapping carries one dhcomponents
+# class. Main.py matches the DECODED classes by name (ItemPrice /
+# ShipCrossResearchInfo / ShipTechRestrictions / ShipEconomicAttributes)
+# and reads their decoded __slots__; the instances below are planted as
+# plain attribute objects (the offline __dict__ contract), with nested
+# price-struct objects inside the fields. ShipEconomicAttributes has an
+# EMPTY decoded __slots__ (its values sync dynamically), so its component
+# carries arbitrary generic fields and only the fallback reader can reach
+# them; one extra unknown component pins the class-name/generic path too.
+PRICE_COLLECTIONS = ("shipCrossResearchInfo", "itemPrice",
+                     "shipTechRestrictions", "shipEconomicAttributes")
+PRICE_CATALOG_FILE = "price_catalog.json"
+# Mirrors Main.py's retry bound (the withheld shape must stand down after
+# exactly this many attempts, then stay silent).
+PRICE_CATALOG_MAX_TRIES = 10
+
+
+class ItemPrice(FakeComponent):
+    """A planted dhcomponents.ItemPrice (decoded __slots__ fields)."""
+
+
+class ShipCrossResearchInfo(FakeComponent):
+    """A planted dhcomponents.ShipCrossResearchInfo (decoded __slots__)."""
+
+
+class ShipTechRestrictions(FakeComponent):
+    """A planted dhcomponents.ShipTechRestrictions (decoded __slots__)."""
+
+
+class ShipEconomicAttributes(FakeComponent):
+    """A planted dhcomponents.ShipEconomicAttributes: the decoded class has
+    an empty __slots__ (it syncs dynamically), so only the generic fallback
+    can read its fields."""
+
+
+class FakePriceEntity(object):
+    """One dataHub price-collection entity: its id (the join key the app
+    reads) plus the components mapping the dump duck-types."""
+
+    def __init__(self, entity_id, components):
+        self.id = entity_id
+        self.components = components
+
+
+def price_collections():
+    """The four planted economy collections (obviously-fake values)."""
+    return {
+        "shipCrossResearchInfo": [
+            FakePriceEntity(9101, {"ShipCrossResearchInfo":
+                ShipCrossResearchInfo(
+                    shipsCrossResearchCostXP=18000,
+                    shipPathList=["PJSD912", "PJSD913"],
+                    researchPriceShipExp=12000,
+                    researchPriceFreeExp=300,
+                    prevShipResearchedExp=5000,
+                    dependenciesResearchPriceInfo={
+                        "PRUH604_D7_HULL_TOP_2": FakeComponent(
+                            basePrice=4000, finalPrice=3800,
+                            currency="credits")},
+                    researchPriceInfo=FakeComponent(
+                        basePrice=12000, finalPrice=9600,
+                        currency="credits"),
+                    researchDeficitPriceInfo={"basePrice": 0},
+                    isFreeExpAvailable=True,
+                    isPrevShipResearched=True,
+                    isResearchPriceVisible=True,
+                    isFreeExpCost=False,
+                    isResearchDeficit=False,
+                    dependenciesResearchPriceVisible=True,
+                    isResearchPreviousShipLockVisible=False,
+                    isResearchAvailable=True,
+                    totalCostXP=60000,
+                    basePrice=12000)}),
+            FakePriceEntity(9102, {"ShipCrossResearchInfo":
+                ShipCrossResearchInfo(
+                    shipsCrossResearchCostXP=0,
+                    researchPriceShipExp=0,
+                    isResearchPriceVisible=False,
+                    isResearchAvailable=False)}),
+        ],
+        "itemPrice": [
+            FakePriceEntity(9201, {"ItemPrice": ItemPrice(
+                id=9201, currencyID="credits", currency="credits",
+                basePrice=21000, finalPrice=18900, discountPercent=10,
+                discountId=0, type="module", till=0, isPrivate=False)}),
+            FakePriceEntity(9202, {
+                "ItemPrice": ItemPrice(
+                    id=9202, currencyID="gold", currency="gold",
+                    basePrice=3200, finalPrice=3200, discountPercent=0,
+                    discountId=0, type="ship", till=0, isPrivate=True),
+                # An unrecognized component class: its class NAME becomes
+                # the key and the generic __dict__ fallback carries it.
+                "priceDeficit": FakeComponent(
+                    deficits={"gold": 5}),
+            }),
+        ],
+        "shipTechRestrictions": [
+            FakePriceEntity(9301, {"ShipTechRestrictions":
+                ShipTechRestrictions(
+                    id=9301,
+                    restrictions=["PRUH604_D7_HULL_TOP_2",
+                                  "PRUH604_D7_ARTILLERY_TOP_1"])}),
+        ],
+        "shipEconomicAttributes": [
+            FakePriceEntity(9401, {"ShipEconomicAttributes":
+                ShipEconomicAttributes(
+                    creditsFactor=125, costCredits=42000,
+                    arbitraryNote="generic fallback")}),
+        ],
+    }
+
+
+def expected_price_rows():
+    """The exact collections payload the planted entities must produce:
+    entity ids as TEXT, the decoded field lists verbatim, nested price
+    structs as maps, booleans preserved, and the ShipEconomicAttributes /
+    unknown-class fields reached through the generic fallback."""
+    return {
+        "shipCrossResearchInfo": [
+            {"id": "9101", "components": {"ShipCrossResearchInfo": {
+                "shipsCrossResearchCostXP": 18000,
+                "shipPathList": ["PJSD912", "PJSD913"],
+                "researchPriceShipExp": 12000,
+                "researchPriceFreeExp": 300,
+                "prevShipResearchedExp": 5000,
+                "dependenciesResearchPriceInfo": {
+                    "PRUH604_D7_HULL_TOP_2": {
+                        "basePrice": 4000, "finalPrice": 3800,
+                        "currency": "credits"}},
+                "researchPriceInfo": {
+                    "basePrice": 12000, "finalPrice": 9600,
+                    "currency": "credits"},
+                "researchDeficitPriceInfo": {"basePrice": 0},
+                "isFreeExpAvailable": True,
+                "isPrevShipResearched": True,
+                "isResearchPriceVisible": True,
+                "isFreeExpCost": False,
+                "isResearchDeficit": False,
+                "dependenciesResearchPriceVisible": True,
+                "isResearchPreviousShipLockVisible": False,
+                "isResearchAvailable": True,
+                "totalCostXP": 60000,
+                "basePrice": 12000}}},
+            {"id": "9102", "components": {"ShipCrossResearchInfo": {
+                "shipsCrossResearchCostXP": 0,
+                "researchPriceShipExp": 0,
+                "isResearchPriceVisible": False,
+                "isResearchAvailable": False}}},
+        ],
+        "itemPrice": [
+            {"id": "9201", "components": {"ItemPrice": {
+                "id": 9201, "currencyID": "credits",
+                "currency": "credits", "basePrice": 21000,
+                "finalPrice": 18900, "discountPercent": 10,
+                "discountId": 0, "type": "module", "till": 0,
+                "isPrivate": False}}},
+            {"id": "9202", "components": {
+                "ItemPrice": {
+                    "id": 9202, "currencyID": "gold", "currency": "gold",
+                    "basePrice": 3200, "finalPrice": 3200,
+                    "discountPercent": 0, "discountId": 0,
+                    "type": "ship", "till": 0, "isPrivate": True},
+                "FakeComponent": {"deficits": {"gold": 5}}}},
+        ],
+        "shipTechRestrictions": [
+            {"id": "9301", "components": {"ShipTechRestrictions": {
+                "id": 9301,
+                "restrictions": ["PRUH604_D7_HULL_TOP_2",
+                                 "PRUH604_D7_ARTILLERY_TOP_1"]}}},
+        ],
+        "shipEconomicAttributes": [
+            {"id": "9401", "components": {"ShipEconomicAttributes": {
+                "creditsFactor": 125, "costCredits": 42000,
+                "arbitraryNote": "generic fallback"}}},
+        ],
+    }
 
 
 class FakeRawAvatarCollection(object):
@@ -700,11 +907,121 @@ def expected_build_players(builds):
     return out
 
 
+def check_price_catalog(prices, label, probe, utils, failures):
+    """Assert the price_catalog.json contract for one pass.
+
+    planted  — the file must exist after the load-phase dump with the
+               EXACT planted rows (entity ids/fields, nested struct maps,
+               booleans, the fallback-read classes), the counts map, the
+               load phase marker, exactly ONE aggregate log line, and the
+               one-shot state (done after a single attempt, never
+               re-written by the later ticks).
+    deferred — same payload, but it may only land on a later scheduler
+               tick (the login-sync retry): done after exactly three
+               attempts, phase 'battle'.
+    raising  — the Lesta sandbox shape: every collection refused while
+               UiComponents also raises. The file must stay ABSENT, the
+               probe must stand down after the retry cap, and NOTHING may
+               reach the probe log or the soft-error latch (no swallowed
+               exception text).
+    """
+    lines = [line for line in utils.lines if "price catalog" in line]
+    if prices in ("planted", "deferred"):
+        try:
+            with open(PRICE_CATALOG_FILE, encoding="utf-8") as fh:
+                catalog = json.load(fh)
+        except Exception as e:
+            failures.append("[%s] price_catalog.json unreadable: %r"
+                            % (label, e))
+            return
+        if catalog.get("v") != 1:
+            failures.append("[%s] price catalog v=%r (expected 1)"
+                            % (label, catalog.get("v")))
+        if type(catalog.get("t")) is not int:
+            failures.append("[%s] price catalog t is %s (must be int)"
+                            % (label,
+                               type(catalog.get("t")).__name__))
+        expected_phase = "load" if prices == "planted" else "battle"
+        if catalog.get("phase") != expected_phase:
+            failures.append("[%s] price catalog phase=%r (expected %r)"
+                            % (label, catalog.get("phase"),
+                               expected_phase))
+        expected = expected_price_rows()
+        got_collections = catalog.get("collections") or {}
+        if set(got_collections) != set(PRICE_COLLECTIONS):
+            failures.append("[%s] price catalog collections=%r (expected %r)"
+                            % (label, sorted(got_collections),
+                               sorted(PRICE_COLLECTIONS)))
+        for name in PRICE_COLLECTIONS:
+            if got_collections.get(name) != expected[name]:
+                failures.append(
+                    "[%s] price catalog %s rows mismatch: %r"
+                    % (label, name, got_collections.get(name)))
+        expected_counts = {}
+        for name in PRICE_COLLECTIONS:
+            expected_counts[name] = len(expected[name])
+        if catalog.get("counts") != expected_counts:
+            failures.append("[%s] price catalog counts=%r (expected %r)"
+                            % (label, catalog.get("counts"),
+                               expected_counts))
+        if "truncated" in catalog:
+            failures.append("[%s] price catalog claims a truncated dump: %r"
+                            % (label, catalog.get("truncated")))
+        if len(lines) != 1:
+            failures.append(
+                "[%s] price catalog wrote %d log lines (must be exactly 1): %r"
+                % (label, len(lines), lines[:3]))
+        else:
+            line = lines[0]
+            if not line.startswith("WOWSP_PROBE price catalog written "):
+                failures.append("[%s] price catalog log line=%r"
+                                % (label, line))
+            for name in PRICE_COLLECTIONS:
+                if name + "=" not in line:
+                    failures.append(
+                        "[%s] price catalog log misses %s: %r"
+                        % (label, name, line))
+        if probe is None:
+            return
+        if not probe.price_catalog_done:
+            failures.append("[%s] price catalog never marked done" % label)
+        expected_tries = 1 if prices == "planted" else 3
+        if probe.price_catalog_tries != expected_tries:
+            failures.append(
+                "[%s] price catalog tries=%r (expected %d — the bridge must "
+                "stop retrying once done)"
+                % (label, probe.price_catalog_tries, expected_tries))
+        return
+    if prices == "raising":
+        if os.path.exists(PRICE_CATALOG_FILE):
+            failures.append(
+                "[%s] price_catalog.json exists although every collection "
+                "was withheld" % label)
+        if lines:
+            failures.append(
+                "[%s] the withheld price hub logged: %r" % (label, lines[:3]))
+        if probe is None:
+            return
+        if not probe.price_catalog_done:
+            failures.append(
+                "[%s] the withheld price path never stood down" % label)
+        if probe.price_catalog_tries != PRICE_CATALOG_MAX_TRIES:
+            failures.append(
+                "[%s] withheld price tries=%r (expected the retry cap %d)"
+                % (label, probe.price_catalog_tries,
+                   PRICE_CATALOG_MAX_TRIES))
+        if probe.last_error:
+            failures.append(
+                "[%s] withheld price path recorded a soft error: %r"
+                % (label, probe.last_error))
+
+
 def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
              raising_constants, fail_plain, ships, with_ship_names,
              drift_records, failures, raw_collection=True, aim_duck=False,
-             degraded=None, builds=None, allow_soft=()):
-    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s builds=%s"
+             degraded=None, builds=None, allow_soft=(), prices=None,
+             extra_ticks=0):
+    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s builds=%s prices=%s"
              % ("records" if encode_records else "projection",
                 "yes" if with_manifest else "missing",
                 "yes" if with_ui else "absent",
@@ -716,7 +1033,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 "yes" if raw_collection else "missing",
                 "yes" if aim_duck else "no",
                 degraded or "no",
-                builds or "none"))
+                builds or "none",
+                prices or "none"))
     utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle() if raw_collection else StubBattleNoRaw()
     events = StubEvents()
@@ -796,7 +1114,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         "battle": battle,
         "events": events,
         "callbacks": callbacks,
-        "dataHub": StubDataHub(dh_avatars, dh_ships),
+        "dataHub": StubDataHub(dh_avatars, dh_ships, price_mode=prices),
         "constants": (RaisingConstants() if raising_constants
                       else (StubConstantsNoTargetCC() if aim_duck
                             else StubConstants())),
@@ -882,7 +1200,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             return
         first_tick()
         try:
-            with open("heartbeat.json") as fh:
+            with open("heartbeat.json", encoding="utf-8") as fh:
                 hb_first = json.load(fh)
             if hb_first.get("phase") != "battle":
                 failures.append(
@@ -899,6 +1217,17 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # leaves that failure mode firmly inside the assertion window. The
         # healthy passes stabilize within three.
         for _ in range(12 if degraded else 4):
+            fn = callbacks.pending
+            callbacks.pending = None
+            if fn is None:
+                failures.append("[%s] scheduler stopped re-arming" % label)
+                return
+            fn()
+        # The withheld price pass needs the whole retry budget to lapse:
+        # drive the scheduler further so the cap is spent and the bridge
+        # stands down (the pass pins the exact attempt count). Every other
+        # pass leaves this at zero.
+        for _ in range(extra_ticks):
             fn = callbacks.pending
             callbacks.pending = None
             if fn is None:
@@ -930,7 +1259,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             expected_names.add(name)
 
         try:
-            with open("roster_raw.json") as fh:
+            with open("roster_raw.json", encoding="utf-8") as fh:
                 raw = json.load(fh)
             players = raw.get("players", {})
         except Exception as e:
@@ -952,7 +1281,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                                 % (label, sorted(missing)))
 
         try:
-            with open("telemetry.json") as fh:
+            with open("telemetry.json", encoding="utf-8") as fh:
                 tele = json.load(fh)
         except Exception as e:
             failures.append("[%s] telemetry.json unreadable: %r" % (label, e))
@@ -1110,7 +1439,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             failures.append("[%s] roster_raw.json dropped the %s bot record"
                             % (label, BOT_NAME))
 
-        with open("heartbeat.json") as fh:
+        with open("heartbeat.json", encoding="utf-8") as fh:
             hb = json.load(fh)
         if hb.get("players") != len(expected_names):
             failures.append("[%s] heartbeat players=%r (expected %d)"
@@ -1208,7 +1537,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         # runs there.
         if not raising_constants and probe is not None:
             try:
-                with open("order_probe.json") as fh:
+                with open("order_probe.json", encoding="utf-8") as fh:
                     order_probe = json.load(fh)
                 rows = order_probe.get("paths", {}).get("avatar/team.ally.sortedAlive")
                 got = ([r.get("name") for r in rows]
@@ -1317,7 +1646,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if builds:
             build_probe = env.get("probe")
             try:
-                with open("builds.json") as fh:
+                with open("builds.json", encoding="utf-8") as fh:
                     builds_frame = json.load(fh)
             except Exception as e:
                 failures.append("[%s] builds.json unreadable: %r" % (label, e))
@@ -1398,7 +1727,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             builds_session = probe.session
             probe.quit()
             try:
-                with open("telemetry.json") as fh:
+                with open("telemetry.json", encoding="utf-8") as fh:
                     cleared = json.load(fh)
             except Exception as e:
                 failures.append("[%s] quit telemetry.json unreadable: %r" % (label, e))
@@ -1413,7 +1742,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 # The build bridge's quit-clear: players blanked, the
                 # finished battle's id preserved, v/t intact.
                 try:
-                    with open("builds.json") as fh:
+                    with open("builds.json", encoding="utf-8") as fh:
                         cleared_builds = json.load(fh)
                 except Exception as e:
                     failures.append("[%s] quit builds.json unreadable: %r"
@@ -1434,6 +1763,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                             "[%s] quit builds battle=%r, expected the finished "
                             "session %r" % (label, cleared_builds.get("battle"),
                                             builds_session))
+        # ── price_catalog.json: the server-synced economy bridge ────────
+        check_price_catalog(prices, label, probe, utils, failures)
     finally:
         os.chdir(cwd)
 
@@ -1539,13 +1870,36 @@ def main(argv):
                      builds=builds_mode, allow_soft=allow_soft)
         build_passes += 1
 
+    # The price_catalog.json passes (the server-synced module economy
+    # bridge; see check_price_catalog for the per-mode contract). The
+    # planted shape pins the exact rows/fields/counts; the deferred shape
+    # proves the login-sync retry lands the same file on a later scheduler
+    # tick; the withheld shape (UiComponents raising AND every price
+    # collection refused — the Lesta sandbox) must leave the file absent
+    # with NO swallowed-exception text in the probe log or soft latch.
+    price_passes = 0
+    # planted: the load-phase dump; deferred: the login-sync retry through
+    # the 15.9 encoder quirk (its dict rejection must fall back to the
+    # hand-rolled serializer and still land the same payload).
+    for price_mode, price_plain in (("planted", False), ("deferred", True)):
+        with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+            run_once(plugin_src, workdir, True, True, False, False,
+                     price_plain, "full", True, False, failures,
+                     prices=price_mode)
+        price_passes += 1
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, False, True, False,
+                 "full", True, False, failures, prices="raising",
+                 extra_ticks=PRICE_CATALOG_MAX_TRIES)
+    price_passes += 1
+
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
         for line in failures:
             print(" - " + line)
         return 1
     print("SANDBOX CONFORMANCE: PASS (%d passes, %s, crippled builtins: %s)"
-          % (len(passes) + 4 + build_passes,
+          % (len(passes) + 4 + build_passes + price_passes,
              os.path.basename(os.path.normpath(plugin)),
              ", ".join(SAFE_BUILTINS)))
     return 0

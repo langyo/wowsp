@@ -388,6 +388,79 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 // mod 在 10 s 窗口内消费。
 ```
 
+## 服务端同步的价格目录（price_catalog.json）
+
+**为什么需要它。** 客户端的模块经济数据不是静态的：GameParams 与脚本
+层都不携带（build 13357625 解码结论——ShipCrossResearchInfo 读取运行时
+价格表，getModulePrices 背后的价格类来自客户端同步参数）。逐项价格
+（银币/金币、折扣）与跨研究字段（模块研究经验、所需模块的依赖价格信息）
+在登录时以 dataHub 组件从服务器同步而来：dhcomponents.ItemPrice（集合
+itemPrice）、dhcomponents.ShipCrossResearchInfo（shipCrossResearchInfo）、
+dhcomponents.ShipTechRestrictions（shipTechRestrictions）以及
+dhcomponents.ShipEconomicAttributes（shipEconomicAttributes）。伴生程序
+无法离线推导这些数据，因此探针每个客户端会话抓取一次。**仅采集**：游戏
+内没有任何路径读取该文件（遥测、面板、排序都不用它）；伴生程序通过与
+builds.json / order_probe.json 相同的平铺文件桥读取。
+
+**文件形状。**
+
+```jsonc
+// price_catalog.json —— 每个客户端会话一次性写出（绝不按对局重写）；
+// 仅在至少采集到一个实体时出现。
+{ "v": 1, "t": 1690000000000, "phase": "load" | "battle",
+  "counts": { "shipCrossResearchInfo": 842, "itemPrice": 21713,
+              "shipTechRestrictions": 842, "shipEconomicAttributes": 842 },
+  "collections": {
+    "shipCrossResearchInfo": [
+      { "id": "4170000000",            // 实体 id（连接键）
+        "components": {
+          "ShipCrossResearchInfo": {   // 组件类名（或 CLASS_ID）
+            "researchPriceShipExp": 12000,
+            "researchPriceFreeExp": 300,
+            "researchPriceInfo": { "basePrice": 12000, "finalPrice": 9600,
+                                   "currency": "credits" },
+            "dependenciesResearchPriceInfo": {
+              "PRUH604_D7_HULL_TOP_2": { "basePrice": 4000,
+                                         "finalPrice": 3800,
+                                         "currency": "credits" } },
+            "dependenciesResearchPriceVisible": true,
+            "isResearchPriceVisible": true,
+            "shipsCrossResearchCostXP": 18000
+            // ……该类的完整解码 __slots__ 字段表；
+            // 权威字段清单见 Main.py 的 _PRICE_COMPONENT_FIELDS
+          } } }
+    ],
+    "itemPrice": [
+      { "id": "...", "components": { "ItemPrice": {
+          "id": 9201, "currencyID": "credits", "currency": "credits",
+          "basePrice": 21000, "finalPrice": 18900,
+          "discountPercent": 10, "discountId": 0, "type": "...",
+          "till": 0, "isPrivate": false } } } ],
+    "shipTechRestrictions": [
+      { "id": "...", "components": { "ShipTechRestrictions": {
+          "id": 9301, "restrictions": [ "……升级条目名……" ] } } } ],
+    "shipEconomicAttributes": [ ... ]
+    // ^ 动态同步：走通用回退字段（解码的 __slots__ 为空）
+  },
+  "truncated": true }   // 仅在触及 30000 实体上限时出现
+```
+
+所有值在构造上都是 JSON 安全的：标量原样、嵌套价格结构/映射转为对象、
+字符串/字节解码为文本、数字走探针的沙盒安全数值转换（价格为整数）、容器
+有界（256 项、深度 4）。读不到的字段直接省略、绝不伪造；未知组件类以类名
+（CLASS_ID 兜底）为键，经 __dict__/已知槽位通用回退转储，若什么都读不到
+则记录 _class/_class_id 供诊断。
+
+**生命周期。** resolve_api() 之后在加载阶段尝试一次，随后在调度 tick 上做
+少量重试（上限 10 次，港口节拍下约 20 s）以覆盖登录数据同步窗口。当 shipCrossResearchInfo 与
+itemPrice 两个集合都拿到数据即标记完成（一条 WOWSP_PROBE price catalog
+written 日志行报告各集合计数），或在整个 hub 被扣留（Lesta 沙盒形态）时
+静默放弃（无文件、无日志行、无 soft 错误）。计数为 -1 表示 hub 拒绝该集合
+名。重试窗口结束后文件永不重写：伴生程序可能正在读取它。**首次实机采集
+需验证**：实际提供的集合名、实体 id 连接键（船/物品 id）以及组件形态
+（解码的 __slots__ 类还是 SafeClass 包装）；离线 harness 已用植入集合固定
+解析契约。
+
 ## 准心瞄准浮窗
 
 瞄准浮窗（2026-10-18）在准心正下方一段可配置的距离上悬浮显示被瞄准
@@ -497,7 +570,11 @@ Steam 客户端自带的 15.9.0 录像 + build 匹配的国服 360 志愿者录�
   叠的稳定键排序、UiComponents 抛异的 Lesta 形态、未配对侧保持遍历序
   的部分覆盖形态、以及键表必须存活的 15.9 编码器怪癖）——它们回答不了的
   实弹对局问题（真实 Lesta 沙箱对 'ship' 集合到底给什么）已于当日
-  2026-10-10 定案：完整键表，含 bot 共 11/11。另加 `python -m py_compile`。
+  2026-10-10 定案：完整键表，含 bot 共 11/11。2026-10-31 起另加三个价格
+  pass：植入形态断言 price_catalog.json 的实体行/解码字段/计数精确一致，
+  延迟形态证明登录同步重试能在后续 tick 落盘，扣留形态（UiComponents 抛异
+  + 全部集合被拒）断言文件缺失且日志与 soft 错误闩锁中无吞异常文本。另加
+  `python -m py_compile`。
 - **仅港口冒烟测试**（不打战斗）：启动游戏、港口停 ~15 s、退出；断言
   `python.log` 出现 `injected names=[…]`、`api[load] dh=True` 与新鲜
   心跳。这套廉价协议是实验阶段的验收流程，保留为安装验收测试。
