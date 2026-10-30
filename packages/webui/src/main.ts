@@ -9,12 +9,14 @@ import { bootstrap } from "./bootstrap";
 import { runStartupMigrations } from "./migrations";
 import { initAnalytics, trackPageView } from "@/utils/analytics";
 import { reportUiError } from "@/utils/uiError";
+import { startIpcGuard } from "@/utils/ipcGuard";
 import "@/styles/hikari.scss";
 import "@/theme/theme.scss";
 // Opaque-default surface layer — restates hikari's translucent fills as
 // solidity-interpolated fills; must load AFTER the theme tokens it reads.
 import "@/theme/surfaces.scss";
 import "@/styles/image-asset.scss";
+import "@/utils/ipcGuard.scss";
 import "virtual:uno.css";
 
 /**
@@ -79,6 +81,10 @@ void Promise.all([
   if (typeof window.__loaderDismiss === "function") {
     window.__loaderDismiss();
   }
+  // Post-mount IPC watchdog: a proxy client that hijacks loopback
+  // hostnames can wedge ipc.localhost while the UI still paints, which
+  // otherwise reads as "every button does nothing" with no clue.
+  void startIpcGuard();
 });
 
 declare global {

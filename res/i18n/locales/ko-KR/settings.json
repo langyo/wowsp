@@ -138,6 +138,7 @@
   "networkDiagEndpointWg": "WG API",
   "networkDiagPathProxy": "프록시",
   "networkDiagPathDirect": "직접",
+  "networkManualRestartHint": "내장 페이지의 네트워크 요청(텔레메트리, 캡차 프레임)은 다음 실행부터 수동 프록시를 사용합니다.",
   "pairing": "휴대폰 페어링",
   "pairingHint": "휴대폰의 WoWSP 앱에서 이 PC의 리플레이를 열람하고 다운로드하세요 — 로컬 네트워크는 물론, 내장 인터넷 게이트웨이를 통해 어디서든 가능합니다.",
   "pairingOn": "서버 켜짐",

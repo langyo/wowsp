@@ -138,6 +138,7 @@
   "networkDiagEndpointWg": "WG API",
   "networkDiagPathProxy": "プロキシ",
   "networkDiagPathDirect": "直接",
+  "networkManualRestartHint": "内蔵ページの通信（テレメトリ、キャプチャ枠）は次回起動時に手動プロキシを使います。",
   "pairing": "スマホ連携",
   "pairingHint": "スマホの WoWSP アプリからこの PC のリプレイを閲覧・ダウンロードできます。ローカルネットワークはもちろん、内蔵インターネットゲートウェイ経由ならどこからでも。",
   "pairingOn": "サーバー オン",

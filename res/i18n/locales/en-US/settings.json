@@ -138,6 +138,7 @@
   "networkDiagEndpointWg": "WG API",
   "networkDiagPathProxy": "Proxy",
   "networkDiagPathDirect": "Direct",
+  "networkManualRestartHint": "The WebView2 page's own network stack (telemetry, the captcha frame) picks the manual proxy up on the next launch.",
   "pairing": "PC pairing",
   "pairingHint": "Let the WoWSP app on a phone browse and download this computer's replays — over the local network, or from anywhere through the built-in internet gateway.",
   "pairingOn": "Server on",

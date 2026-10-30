@@ -7,6 +7,8 @@
   "portable3dBlocked": "The portable edition does not support 3D views. Install the full edition for the best experience.",
   "copied": "Copied to clipboard",
   "clickToCopy": "Click to copy",
+  "ipcBlockedTitle": "The app's internal channel is not responding",
+  "ipcBlockedBody": "This usually means a system proxy or firewall is intercepting loopback traffic (127.0.0.1 / *.localhost). Adjust or disable the proxy, then reload.",
   "reload": "Reload",
   "copyFailed": "Failed to copy",
   "playerMenu": {

@@ -138,6 +138,7 @@
   "networkDiagEndpointWg": "WG API",
   "networkDiagPathProxy": "代理",
   "networkDiagPathDirect": "直連",
+  "networkManualRestartHint": "內建頁面的網路請求（遙測、驗證碼框）將在下次啟動後使用該手動代理。",
   "pairing": "手機配對",
   "pairingHint": "讓手機上的 WoWSP 應用程式瀏覽並下載這台電腦上的戰鬥錄影——無論是區域網路，或透過內建網際網路配對服務跨網使用。",
   "pairingOn": "服務已開啟",
