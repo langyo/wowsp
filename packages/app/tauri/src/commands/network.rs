@@ -304,9 +304,34 @@ pub fn effective_proxy(config: &NetworkConfig) -> Option<String> {
     }
 }
 
+/// Which channel [`effective_proxy`] resolved the proxy from — the
+/// diagnostics panel labels the provenance instead of showing a bare URL.
+/// `None` when no proxy is in effect.
+pub fn effective_proxy_source(config: &NetworkConfig) -> Option<&'static str> {
+    match config.mode {
+        ProxyMode::None => None,
+        ProxyMode::Manual => effective_proxy(config).map(|_| "manual"),
+        ProxyMode::System | ProxyMode::Unknown => {
+            effective_proxy(config)?;
+            if env_proxy().is_some() {
+                Some("env")
+            } else {
+                Some("registry")
+            }
+        },
+    }
+}
+
 /// OS proxy detection: env vars first (tools commonly override WinINET with
 /// HTTP_PROXY/HTTPS_PROXY), then the Windows registry (WinINET).
 fn system_proxy() -> Option<String> {
+    env_proxy().or_else(wininet_proxy)
+}
+
+/// The environment-variable half of [`system_proxy`] — the probes must
+/// tell "env override" apart from "OS settings" for the diagnostics
+/// panel's provenance label.
+fn env_proxy() -> Option<String> {
     for key in [
         "HTTPS_PROXY",
         "https_proxy",
@@ -322,7 +347,7 @@ fn system_proxy() -> Option<String> {
             }
         }
     }
-    wininet_proxy()
+    None
 }
 
 #[cfg(windows)]
@@ -364,6 +389,57 @@ fn wininet_proxy() -> Option<String> {
 #[cfg(not(windows))]
 fn wininet_proxy() -> Option<String> {
     None
+}
+
+/// The WinINET picture the diagnostics panel shows. Two channels the
+/// built-in downloader cannot follow are called out explicitly: a PAC
+/// script (`AutoConfigURL`) and WPAD auto-detect are never evaluated by
+/// the Rust stack (reqwest has no PAC engine) — a PAC-only network that
+/// needs the proxy to reach the internet reads as "direct" here, so the
+/// panel must say so instead of silently failing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemProxyContext {
+    pub manual_proxy_enabled: bool,
+    pub pac_configured: bool,
+    pub auto_detect: bool,
+}
+
+/// Read the WinINET proxy context (never fails: an unreadable key reads as
+/// "nothing configured", the same degrade-to-default stance the rest of
+/// this module takes).
+#[cfg(windows)]
+pub fn system_proxy_context() -> SystemProxyContext {
+    use winreg::RegKey;
+    use winreg::enums::HKEY_CURRENT_USER;
+
+    let Ok(key) = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
+    else {
+        return SystemProxyContext::default();
+    };
+    let manual_proxy_enabled: bool = key
+        .get_value::<u32, _>("ProxyEnable")
+        .map(|v| v != 0)
+        .unwrap_or(false);
+    let pac_configured: bool = key
+        .get_value::<String, _>("AutoConfigURL")
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    let auto_detect: bool = key
+        .get_value::<u32, _>("AutoDetect")
+        .map(|v| v != 0)
+        .unwrap_or(false);
+    SystemProxyContext {
+        manual_proxy_enabled,
+        pac_configured,
+        auto_detect,
+    }
+}
+
+#[cfg(not(windows))]
+pub fn system_proxy_context() -> SystemProxyContext {
+    SystemProxyContext::default()
 }
 
 /// Review M-5, pure core of the redirect policy above: a hop is allowed
@@ -461,6 +537,115 @@ pub fn build_direct_http_client() -> anyhow::Result<reqwest::Client> {
         .no_proxy()
         .build()
         .map_err(|e| anyhow!("direct http client: {e}"))
+}
+
+// ── Connectivity diagnostics (设置 → 网络 → 诊断) ─────────────────────────
+
+/// One probe attempt's ceiling: a diagnostics row must resolve quickly even
+/// on a black-holed proxy — the panel is read by a human watching a spinner.
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The two probe targets answer different questions: GitHub is the
+/// content family (usually unreachable mainland-directly, proxy-only),
+/// and the WG API is the stats family (reachable directly in CN, often
+/// degraded itself). Transport success is the measurement — any HTTP
+/// status proves the path works; business status is not the probe's
+/// business.
+const PROBE_ENDPOINTS: [(&str, &str); 2] = [
+    ("github", "https://github.com/robots.txt"),
+    ("wg-api", "https://api.worldofwarships.asia/"),
+];
+
+/// One endpoint × one path result.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkProbeRow {
+    /// Catalogue label of the probed endpoint ("github" / "wg-api").
+    pub endpoint: String,
+    /// Which stack was measured: "proxy" or "direct".
+    pub path: String,
+    /// True when the request got an HTTP response at all (any status).
+    pub ok: bool,
+    pub status: Option<u16>,
+    pub elapsed_ms: u64,
+    pub error: Option<String>,
+}
+
+/// The whole diagnostics snapshot: the effective policy plus the probe
+/// matrix. `system` carries the two WinINET channels the downloader
+/// cannot follow (PAC / WPAD), and `direct_preferred_hosts` discloses
+/// hosts the fallback chain has already handed to the direct path — the
+/// "proxy is broken right now, direct works" state, visible without
+/// reading logs.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkProbeReport {
+    pub mode: ProxyMode,
+    pub effective_proxy: Option<String>,
+    pub proxy_source: Option<String>,
+    pub system: SystemProxyContext,
+    pub rows: Vec<NetworkProbeRow>,
+    pub direct_preferred_hosts: Vec<String>,
+}
+
+/// One probe: GET `url` over `client`, timing the attempt. Never fails —
+/// a transport error becomes a failed row with its Display text.
+async fn probe_one(
+    client: &reqwest::Client,
+    endpoint: &str,
+    path: &str,
+    url: &str,
+) -> NetworkProbeRow {
+    let started = std::time::Instant::now();
+    let outcome = client.get(url).timeout(PROBE_TIMEOUT).send().await;
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    match outcome {
+        Ok(resp) => NetworkProbeRow {
+            endpoint: endpoint.to_string(),
+            path: path.to_string(),
+            ok: true,
+            status: Some(resp.status().as_u16()),
+            elapsed_ms,
+            error: None,
+        },
+        Err(e) => NetworkProbeRow {
+            endpoint: endpoint.to_string(),
+            path: path.to_string(),
+            ok: false,
+            status: None,
+            elapsed_ms,
+            error: Some(format!("{e}")),
+        },
+    }
+}
+
+/// `#[tauri::command]`: the 网络诊断 panel's one-shot snapshot. Probes
+/// every endpoint over every path that is actually in effect (the proxy
+/// arm is skipped when no proxy is configured — direct-only is the
+/// truth there), runs them sequentially so the two rows per endpoint
+/// never fight for the same socket budget, and includes the config
+/// provenance + WinINET context so the panel can explain a failure
+/// ("PAC configured but not evaluated") instead of just rendering red.
+#[tauri::command]
+pub async fn network_probe() -> CommandResult<NetworkProbeReport> {
+    let config = load_config();
+    let effective = effective_proxy(&config);
+    let pair = HttpPair::build(|b| b.timeout(PROBE_TIMEOUT))?;
+    let mut rows = Vec::new();
+    for (endpoint, url) in PROBE_ENDPOINTS {
+        if pair.has_proxy() {
+            rows.push(probe_one(pair.proxied(), endpoint, "proxy", url).await);
+        }
+        rows.push(probe_one(pair.direct(), endpoint, "direct", url).await);
+    }
+    Ok(NetworkProbeReport {
+        mode: config.mode,
+        effective_proxy: effective,
+        proxy_source: effective_proxy_source(&config).map(str::to_string),
+        system: system_proxy_context(),
+        rows,
+        direct_preferred_hosts: crate::commands::upstream_health::direct_preferred_hosts(),
+    })
 }
 
 /// A proxy-honoring client plus its always-direct twin — the unit the
@@ -568,6 +753,32 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// The provenance label matches the mode that actually drives the
+    /// client — manual reports "manual", none reports nothing, and a
+    /// half-manual config (no URL) has no proxy to label.
+    #[test]
+    fn proxy_source_labels_manual_and_none_modes() {
+        let manual = NetworkConfig {
+            mode: ProxyMode::Manual,
+            proxy: Some("http://127.0.0.1:7890".into()),
+            ..NetworkConfig::default()
+        };
+        assert_eq!(effective_proxy_source(&manual), Some("manual"));
+
+        let none = NetworkConfig {
+            mode: ProxyMode::None,
+            ..NetworkConfig::default()
+        };
+        assert_eq!(effective_proxy_source(&none), None);
+
+        let half_manual = NetworkConfig {
+            mode: ProxyMode::Manual,
+            proxy: None,
+            ..NetworkConfig::default()
+        };
+        assert_eq!(effective_proxy_source(&half_manual), None);
     }
 
     /// The pair's proxy flag mirrors the config the twins were built from:

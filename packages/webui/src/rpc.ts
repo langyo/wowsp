@@ -147,6 +147,7 @@ export const RPC = {
   clear_aux_cache: "clear_aux_cache",
   get_network_config: "get_network_config",
   set_network_config: "set_network_config",
+  network_probe: "network_probe",
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
   // Chat translation (commands/chat_translate/): provider config storage,

@@ -665,6 +665,7 @@ pub fn run() {
             commands::overlay::overlay_calibration_list,
             commands::overlay::set_calibration_anchor,
             commands::network::get_network_config,
+            commands::network::network_probe,
             commands::installer::installer_language,
             commands::overlay_config::get_overlay_config,
             commands::overlay_config::set_overlay_config,

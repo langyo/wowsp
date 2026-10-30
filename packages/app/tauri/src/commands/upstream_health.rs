@@ -164,6 +164,25 @@ fn clear_direct_preferred(host: &str) -> bool {
         .is_some()
 }
 
+/// Hosts currently riding the direct path because a proxy attempt failed
+/// (fresh marks only, sorted for a stable render). The diagnostics panel
+/// discloses this as the "proxy broken right now, direct works" state.
+/// Note the title-bar fault chip does NOT show this: it reads transport
+/// failures, and a proxy failure rescued by the direct path leaves the
+/// host healthy — the direct-preference mark is the only signal of it.
+pub(crate) fn direct_preferred_hosts() -> Vec<String> {
+    let now = now_millis();
+    let mut hosts: Vec<String> = DIRECT_PREFERRED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .filter(|(_, until)| **until > now)
+        .map(|(host, _)| host.clone())
+        .collect();
+    hosts.sort();
+    hosts
+}
+
 /// One request attempt over one client. The point is the per-attempt log
 /// line: every connection the app makes leaves one here (host, endpoint
 /// label, which path rode, how long it took, how it ended), so a support
@@ -510,6 +529,34 @@ mod tests {
             "127.0.0.1:8787"
         );
         assert_eq!(host_of_url("not-a-url"), "not-a-url");
+    }
+
+    /// The diagnostics snapshot lists only FRESH marks, sorted, and never
+    /// leaks a stale one into the panel.
+    #[test]
+    fn direct_preferred_hosts_lists_only_fresh_marks_sorted() {
+        let fresh_a = "test-diag-fresh-a.example";
+        let fresh_b = "test-diag-fresh-b.example";
+        let stale = "test-diag-stale.example";
+        prefer_direct(fresh_b);
+        prefer_direct(fresh_a);
+        DIRECT_PREFERRED
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(stale.to_string(), now_millis() - 60_000);
+        let hosts = direct_preferred_hosts();
+        assert!(hosts.contains(&fresh_a.to_string()));
+        assert!(hosts.contains(&fresh_b.to_string()));
+        assert!(!hosts.contains(&stale.to_string()), "stale mark leaked");
+        let fresh: Vec<&String> = hosts
+            .iter()
+            .filter(|h| **h == fresh_a || **h == fresh_b)
+            .collect();
+        assert_eq!(fresh.len(), 2);
+        assert!(fresh[0] < fresh[1], "sorted for a stable render");
+        let _ = clear_direct_preferred(fresh_a);
+        let _ = clear_direct_preferred(fresh_b);
+        let _ = clear_direct_preferred(stale);
     }
 
     #[test]
