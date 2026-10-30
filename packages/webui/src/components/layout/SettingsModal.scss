@@ -531,6 +531,57 @@
     min-width: 0;
   }
 
+  /* Diagnostics panel: the effective policy row + the probe matrix. Rows
+     tint by verdict; errors truncate to one line instead of wrapping a
+     multi-line reqwest message into the layout. */
+  &__netdiag {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin-top: 0.625rem;
+  }
+
+  &__netdiagrow {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: var(--text-xs);
+  }
+
+  &__netdiaglabel {
+    min-width: 3.5rem;
+    color: rgb(var(--color-muted));
+  }
+
+  &__netdiagvalue {
+    flex: 1;
+    min-width: 0;
+    color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__netdiagok {
+    color: rgb(var(--color-primary));
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__netdiagerr {
+    flex: 1;
+    min-width: 0;
+    color: rgb(var(--color-error, 220 38 38));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__netdiagwarn {
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-warning, 230 170 50));
+  }
+
   /* ── game path install cards ───────────────────────────────────────────── */
   /* ── cache management ─────────────────────────────────────────────────── */
 

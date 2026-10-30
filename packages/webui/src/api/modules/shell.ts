@@ -82,6 +82,43 @@ export interface NetworkConfig {
   effectiveProxy?: string | null;
 }
 
+/** One endpoint x one path result from `network_probe`. `ok` means the
+ *  request got an HTTP response at all (any status) — the probe measures
+ *  transport reachability, not business health. */
+export interface NetworkProbeRow {
+  /** Endpoint catalogue id: "github" | "wg-api". */
+  endpoint: string;
+  /** "proxy" | "direct" — which stack the attempt rode. */
+  path: string;
+  ok: boolean;
+  status?: number | null;
+  elapsedMs: number;
+  error?: string | null;
+}
+
+/** WinINET proxy context: the manual-proxy switch (which the downloader
+ *  honors) plus the PAC/WPAD channels it cannot follow — disclosed by
+ *  the diagnostics panel instead of failing silently. */
+export interface SystemProxyContext {
+  manualProxyEnabled: boolean;
+  /** A PAC script (AutoConfigURL) is configured; reqwest never evaluates it. */
+  pacConfigured: boolean;
+  /** WPAD auto-detect is enabled; reqwest never follows it. */
+  autoDetect: boolean;
+}
+
+/** `network_probe` response: the effective policy plus the probe matrix. */
+export interface NetworkProbeReport {
+  mode: "system" | "none" | "manual";
+  effectiveProxy?: string | null;
+  /** "manual" | "env" | "registry" | null. */
+  proxySource?: string | null;
+  system: SystemProxyContext;
+  rows: NetworkProbeRow[];
+  /** Hosts the fallback chain already handed to the direct path. */
+  directPreferredHosts: string[];
+}
+
 /** Compile-time capabilities + the DirectML runtime probe. Mirrors
  *  `wowsp_tauri_shared::RuntimeCapabilities`. `aiInference` cannot be
  *  inferred from `portable`: a custom build may drop the `ai` cargo feature
@@ -314,4 +351,9 @@ export const shellApi = {
   getNetworkConfig: () => transport.invoke<NetworkConfig>(RPC.get_network_config),
   setNetworkConfig: (config: NetworkConfig) =>
     transport.invoke<NetworkConfig>(RPC.set_network_config, { config }),
+  /** One-shot 网络诊断 snapshot: probes GitHub + the WG API over the
+   *  paths actually in effect and discloses the policy provenance
+   *  (manual/env/registry), PAC/WPAD config, and any host the fallback
+   *  chain has already handed to the direct path. */
+  networkProbe: () => transport.invoke<NetworkProbeReport>(RPC.network_probe),
 };

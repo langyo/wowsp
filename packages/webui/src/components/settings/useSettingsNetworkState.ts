@@ -3,7 +3,7 @@
  *  保存 / Enter). */
 import { computed, onMounted, ref } from "vue";
 
-import { api, type NetworkConfig } from "@/api";
+import { api, type NetworkConfig, type NetworkProbeReport } from "@/api";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 
 export function useSettingsNetworkState() {
@@ -16,6 +16,11 @@ export function useSettingsNetworkState() {
   const netLastSaved = ref<NetworkConfig>({ mode: "system", proxy: null, resourceCdn: null });
   const netSavedFlash = ref(false);
   let netFlashTimer: number | undefined;
+  // Diagnostics state lives up here so saveNet can invalidate a stale
+  // probe snapshot the moment a new config is adopted.
+  const probe = ref<NetworkProbeReport | null>(null);
+  const probing = ref(false);
+  const probeError = ref<string | null>(null);
 
   const netDirty = computed(() => {
     const cur = netCfg.value;
@@ -80,6 +85,11 @@ export function useSettingsNetworkState() {
       const effective = saved ?? payload;
       netCfg.value = { ...effective };
       netLastSaved.value = { ...effective };
+      // The probe snapshot described the OLD policy — drop it so the
+      // diagnostics panel re-syncs from the config instead of showing a
+      // proxy the new policy may not use.
+      probe.value = null;
+      probeError.value = null;
       notifySettingsSaved();
       netSavedFlash.value = true;
       window.clearTimeout(netFlashTimer);
@@ -89,5 +99,32 @@ export function useSettingsNetworkState() {
     }
   }
 
-  return { netCfg, netDirty, netSavedFlash, selectNetMode, saveNet };
+  // ── Network diagnostics (网络诊断) ─────────────────────────────────────
+  // A manual one-shot probe: the panel is a diagnostic tool, not a poll —
+  // probing two paths x two endpoints on every mount would be noise on
+  // every settings open.
+  async function runProbe() {
+    if (probing.value) return;
+    probing.value = true;
+    probeError.value = null;
+    try {
+      probe.value = await api.networkProbe();
+    } catch (e) {
+      probeError.value = (e as Error).message ?? String(e);
+    } finally {
+      probing.value = false;
+    }
+  }
+
+  return {
+    netCfg,
+    netDirty,
+    netSavedFlash,
+    selectNetMode,
+    saveNet,
+    probe,
+    probing,
+    probeError,
+    runProbe,
+  };
 }
