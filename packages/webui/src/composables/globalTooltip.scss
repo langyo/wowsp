@@ -122,11 +122,12 @@
   height: 20px;
 }
 
-/* White HUD glyphs (HintCard.markerUrl — the minimap ship markers) carry no
-   carrier plate: the game's art is white on transparency, so the glyph is
-   filter-tinted to the popup's own ink — dark on the light palette, white
-   on the dark one — instead of sitting on a dark chip. Fixed monochrome
-   ink either way, like the HUD it comes from. */
+/* Line-art HUD glyphs (HintCard.markerUrl — the minimap ship markers redrawn
+   with only their strokes) carry no carrier plate: the art is white on
+   transparency, so the glyph is filter-tinted to the popup's own ink — dark
+   on the light palette, white on the dark one — instead of sitting on a dark
+   chip. Fixed monochrome ink either way, like the HUD it comes from; the
+   dropped plate is what keeps the interior gaps open at this size. */
 .global-tooltip__card-marker {
   flex-shrink: 0;
   width: 20px;

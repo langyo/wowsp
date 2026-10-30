@@ -4,6 +4,11 @@
  * scripts/model_convert/extract_ship_icons.py and re-encoded to WebP. Used
  * by the hologram labels
  * (BattleIcon component) and the minimap canvas (drawImage).
+ *
+ * The `outline` variant is a derived plate-free redraw of the white markers
+ * (scripts/model_convert/derive_outline_marker_icons.py): the ship-class hint
+ * cards tint it to the popup ink, and dropping the plate is what keeps the
+ * glyph's interior gaps open at card size.
  */
 // PublicDir art served at the root path (see utils/shipImages.ts) — URL
 // constants, not imports, keep the 32 HUD icons out of Vite's module
@@ -35,6 +40,11 @@ const whiteCruiser = "/images/ships/icon_white_cruiser.webp";
 const whiteDestroyer = "/images/ships/icon_white_destroyer.webp";
 const whiteAircarrier = "/images/ships/icon_white_aircarrier.webp";
 const whiteSubmarine = "/images/ships/icon_white_submarine.webp";
+const outlineBattleship = "/images/ships/icon_outline_battleship.webp";
+const outlineCruiser = "/images/ships/icon_outline_cruiser.webp";
+const outlineDestroyer = "/images/ships/icon_outline_destroyer.webp";
+const outlineAircarrier = "/images/ships/icon_outline_aircarrier.webp";
+const outlineSubmarine = "/images/ships/icon_outline_submarine.webp";
 const plainBattleship = "/images/ships/icon_battleship.webp";
 const plainCruiser = "/images/ships/icon_cruiser.webp";
 const plainDestroyer = "/images/ships/icon_destroyer.webp";
@@ -82,6 +92,16 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     aircarrier: whiteAircarrier,
     submarine: whiteSubmarine,
   },
+  // Plate-free line art derived from the white markers (see the module
+  // comment): ink-tinted consumers that draw the glyph small — the
+  // ship-class hint cards — need the interior gaps the plate would fill.
+  outline: {
+    battleship: outlineBattleship,
+    cruiser: outlineCruiser,
+    destroyer: outlineDestroyer,
+    aircarrier: outlineAircarrier,
+    submarine: outlineSubmarine,
+  },
   plain: {
     battleship: plainBattleship,
     cruiser: plainCruiser,
@@ -91,7 +111,7 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
   },
 };
 
-export type ShipIconVariant = "ally" | "enemy" | "sunk" | "sunk-enemy" | "white" | "plain";
+export type ShipIconVariant = "ally" | "enemy" | "sunk" | "sunk-enemy" | "white" | "outline" | "plain";
 
 /** Map a WG ShipInfo.type string to the icon-atlas class key. Unknown types
  *  map to "" — they must NOT impersonate battleships (the old fallback drew

@@ -84,8 +84,9 @@ export interface HintCard {
   badge?: string;
   /** Decorative head icon (ship-class art); alt stays empty. */
   iconUrl?: string;
-  /** Head glyph from the game's battle HUD whose art is WHITE by design (the
-   *  minimap ship markers). The glyph carries no plate: the card CSS
+  /** Head glyph from the game's battle HUD (the minimap ship markers),
+   *  supplied as plate-free outline line art so the popup's ink tint keeps
+   *  the strokes apart. The glyph carries no plate: the card CSS
    *  filter-tints it to the popup's ink (dark on the light palette, white on
    *  the dark one) — use `iconUrl` for ordinary colored art. */
   markerUrl?: string;
@@ -228,8 +229,8 @@ function renderCard(card: HintCard): HTMLElement {
 
   const head = document.createElement("div");
   head.className = "global-tooltip__card-head";
-  // A white HUD glyph, tinted to the popup's ink by CSS — no carrier plate
-  // behind it (see HintCard.markerUrl).
+  // A line-art HUD glyph, tinted to the popup's ink by CSS — no carrier
+  // plate behind it (see HintCard.markerUrl).
   if (card.markerUrl) {
     const marker = document.createElement("img");
     marker.className = "global-tooltip__card-marker";

@@ -1,6 +1,6 @@
 /** Contract tests for the water-table ship-class hover cards
  *  (components/stats/shipTypeHint.ts): the badge code picks the card, the
- *  minimap marker is the neutral white art, and the briefing carries the
+ *  minimap marker is the neutral outline line art, and the briefing carries the
  *  gameplay substance the popup exists for — control-heavy classes ride
  *  the itemized keys list ("press X to do Y") plus a muted mechanics note
  *  instead of one long paragraph. The zh-CN assertions pin that locale;
@@ -27,17 +27,17 @@ describe("shipTypeHintCardOf", () => {
     expect(shipTypeHintCardOf("SS")?.title).toBe("潜艇");
   });
 
-  it("uses the game's neutral (white, right-facing) minimap marker", () => {
+  it("uses the neutral (right-facing) minimap marker as outline line art", () => {
     for (const code of ["BB", "CV", "CA", "CL", "CA/CL", "DD", "SS"]) {
       const markerUrl = shipTypeHintCardOf(code)?.markerUrl ?? "";
-      expect(markerUrl).toMatch(/icon_white_(battleship|aircarrier|cruiser|destroyer|submarine)\.webp$/);
+      expect(markerUrl).toMatch(/icon_outline_(battleship|aircarrier|cruiser|destroyer|submarine)\.webp$/);
     }
-    expect(shipTypeHintCardOf("CA")?.markerUrl).toMatch(/icon_white_cruiser\.webp$/);
-    expect(shipTypeHintCardOf("CL")?.markerUrl).toMatch(/icon_white_cruiser\.webp$/);
-    expect(shipTypeHintCardOf("SS")?.markerUrl).toMatch(/icon_white_submarine\.webp$/);
-    // The white art must ride the marker channel (CSS-tinted ink), never
-    // the plain icon channel — a white glyph on the white popup is
-    // invisible without the tint.
+    expect(shipTypeHintCardOf("CA")?.markerUrl).toMatch(/icon_outline_cruiser\.webp$/);
+    expect(shipTypeHintCardOf("CL")?.markerUrl).toMatch(/icon_outline_cruiser\.webp$/);
+    expect(shipTypeHintCardOf("SS")?.markerUrl).toMatch(/icon_outline_submarine\.webp$/);
+    // The plate-free art must ride the marker channel (CSS-tinted ink), never
+    // the plain icon channel: tinting the plate-included white art would
+    // collapse the glyph into one solid silhouette at the card's 20 px.
     expect(shipTypeHintCardOf("BB")?.iconUrl).toBeUndefined();
   });
 
@@ -63,8 +63,12 @@ describe("shipTypeHintCardOf", () => {
   it("itemizes the carrier's squadron controls; gun classes stay prose-only", () => {
     const cv = shipTypeHintCardOf("CV")!;
     expect(cv.keys?.map((k) => k.key)).toEqual(["数字键", "左键", "W", "F"]);
-    // The cap reads as a key group; the digits ride the action text instead.
-    expect(cv.keys?.[0]?.text).toContain("1 选攻击机");
+    // The cap reads as a key group; the action text names no aircraft types —
+    // carriers field different loadouts, so it only says the digits pick the
+    // type and a double-tap launches.
+    expect(cv.keys?.[0]?.text).toContain("不同数字");
+    expect(cv.keys?.[0]?.text).toContain("双击");
+    expect(cv.keys?.[0]?.text).not.toMatch(/攻击机|鱼雷机|轰炸机/);
     expect(cv.keys?.[3]?.text).toContain("召回");
     expect(shipTypeHintCardOf("CA")?.body).toContain("203 mm");
     expect(shipTypeHintCardOf("CL")?.body).toContain("152 mm");
