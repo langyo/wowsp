@@ -588,21 +588,36 @@ per-collection counts — or it stands down silently when the whole hub is
 withheld (the Lesta sandbox shape: no file, no log line, no soft error).
 A count of -1 means the hub refused that collection name. The file is
 never re-written after the retry window: the companion may be reading it.
-**A first real capture must verify** the actual served collection names,
-the entity-id join keys (ship/item ids) and the component shapes (the
-decoded __slots__ classes vs SafeClass wrappers); the harness pins the
-parsing contract offline with planted collections.
+**Verified against a real port capture** (WG, build 13357625, 2026-10-31):
+`itemPrice` served 11,617 entities, `shipTechRestrictions` was refused
+(-1), `shipEconomicAttributes` carried one record, and
+`shipCrossResearchInfo` came back EMPTY — it is populated by the client's
+own research UI, not at login. The component `id` is the priced item's
+numeric GameParams id (not its entry name), so prices join onto the chain
+only through the `gpid` the extractor now writes on every module step;
+ship prices carry the ship's own GameParams id, which equals the chain's
+shipId key. Currencies seen: credits 5,706 / exp 3,694 / gold 838 (plus
+non-economy "value"/event currencies the fill ignores). The capture's ship
+exp prices matched the chain's `research.xp` on all 1,230 WG ships, and
+stock modules come back with no research XP (they belong to the ship), so
+only upgrade modules receive an economy.
 
 **Consuming the capture.** `scripts/extract/apply_price_catalog.py`
 joins a captured `price_catalog.json` onto the bundled upgrade-chain
 data: `--inspect` prints the capture shape and the join report (per
-collection counts, matched ids, sample misses, the currencies seen) and
-writes nothing; `--apply` fills the per-module `xp`/`credits` and the
-`xpWithModules`/`requiredModules` pair of an edge, validating the
-capture's ship XP against the chain's `xpShip` before touching it.
+collection counts, gpid match rate, the currencies seen, the ship-XP
+cross-check) and writes nothing; `--apply` fills the per-module
+`xp`/`credits` and the `xpWithModules`/`requiredModules` pair of an
+edge. The "with required modules" total is computed from the chain's own
+unlock graph (the modules carrying `nextShips` are the modules that must
+be researched first): ship XP + those modules' captured research XP; the
+synced `shipCrossResearchInfo` total wins once a capture carries it.
 `--self-test` proves the join/fill logic offline (CI runs it next to the
 probe conformance check), so a fresh capture only has to be inspected,
-applied and reviewed.
+applied and reviewed. The committed WG bundle carries the applied
+economy; the Lesta bundle keeps the nullable fields until a Lesta client
+capture exists (no Lesta install on the maintainer machine, and the
+values are server-synced, not derivable from its GameParams dump).
 
 ## Crosshair aim panel
 

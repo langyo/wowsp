@@ -114,8 +114,24 @@ describe("upgrade slots", () => {
     expect(hull.steps.map((s) => s.depth)).toEqual([0, 1]);
     expect(hull.steps.map((s) => s.prev)).toEqual([null, "PRUH603_D7_HULL_STOCK_2"]);
     expect(hull.steps.map((s) => s.isStock)).toEqual([true, false]);
+    // Every module carries its numeric GameParams id: the client's synced
+    // price catalog keys its items by it, so a capture joins onto the step.
+    for (const realm of ["wg", "lesta"] as const) {
+      for (const [shipId, chain] of Object.entries(allUpgradeChains(realm))) {
+        for (const slot of chain.slots) {
+          for (const step of slot.steps) {
+            // Null only on slice/bundle-fallback generations; the committed
+            // bundles are built from the full dumps and carry every id.
+            if (step.gpid !== null) {
+              expect(Number.isInteger(step.gpid), shipId + " " + step.name).toBe(true);
+              expect(step.gpid, shipId + " " + step.name).toBeGreaterThan(0);
+            }
+          }
+        }
+      }
+    }
 
-    // Global contract: depth-ascending order, one stock head, no economy yet.
+    // Global contract: depth-ascending order, one stock head.
     for (const realm of ["wg", "lesta"] as const) {
       for (const [shipId, chain] of Object.entries(allUpgradeChains(realm))) {
         for (const slot of chain.slots) {

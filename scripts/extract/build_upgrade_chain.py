@@ -18,8 +18,8 @@ Per ship (keyed by stringified shipId, like tech_tree.json):
         requiredModules,                  # null: unavailable in GameParams
       }},
       slots: [{ucType, steps: [           # one bracket per module slot
-        {name, prev, depth, isStock, xp: null, credits: null, components,
-         unlocks?},
+        {name, gpid, prev, depth, isStock, xp: null, credits: null,
+         components, unlocks?},
       ]}],
   }}}
 
@@ -41,10 +41,14 @@ and its `depth` (the upgrade level within the bracket: stock = 0, parallel
 variants of the same level share a depth, and a module whose `prev` points
 into another bracket — a hull-locked gun/torpedo top — sits one level above
 the slot's stock). Steps are ordered by (depth, table order) so alternatives
-sit adjacent. `components` is the entry's component-name map verbatim (hull
-entries list every mounted role); `unlocks` carries the numeric shipIds of
-the entry's `nextShips`, resolved here so the webui needs no GameParams to
-map module -> unlocked ship.
+sit adjacent. `gpid` is the module entry's numeric GameParams ID — the
+client's synced price catalog keys its items by exactly that number, so a
+captured price_catalog.json joins straight onto the step (null on
+slice/bundle-fallback generations, which carry no top-level model ids).
+`components` is the entry's component-name map verbatim (hull entries list
+every mounted role); `unlocks` carries the numeric shipIds of the entry's
+`nextShips`, resolved here so the webui needs no GameParams to map module ->
+unlocked ship.
 
 Input resolution order (first available wins; --gameparams always wins):
 
@@ -146,7 +150,7 @@ def main() -> None:
     if args.gameparams and not Path(args.gameparams).is_file():
         ap.error(f"GameParams dump not found: {args.gameparams}")
 
-    entries, key_to_id, index_to_id, version, source = _load_source(args)
+    entries, key_to_id, index_to_id, module_ids, version, source = _load_source(args)
     print(f"[upgrade-chain] source: {source} ({len(entries)} ship entries, stamp {version})")
 
     ships: dict[str, dict] = {}
@@ -155,7 +159,7 @@ def main() -> None:
         sui = entry.get("ShipUpgradeInfo")
         if not isinstance(sui, dict):
             continue
-        record = _build_ship(entry, sui, entries, key_to_id, index_to_id, stats)
+        record = _build_ship(entry, sui, entries, key_to_id, index_to_id, module_ids, stats)
         if record is not None:
             ships[sid] = record
     if not ships:
@@ -177,6 +181,7 @@ class _Stats:
         self.ships_with_next = 0
         self.slots = 0
         self.steps = 0
+        self.steps_with_gpid = 0
         self.unlock_steps = 0
         self.parallel_slots = 0
         self.cross_slot_prev = 0
@@ -187,8 +192,10 @@ class _Stats:
 def _load_source(args):
     """Resolve the realm's input, see the module docstring for the order.
 
-    Returns (entries, key_to_id, index_to_id, gameVersion, source label);
-    entries maps stringified shipId -> the ship's GameParams entry.
+    Returns (entries, key_to_id, index_to_id, module_ids, gameVersion, source label);
+    entries maps stringified shipId -> the ship's GameParams entry, module_ids
+    maps a GameParams entity key -> its numeric id (the price-catalog join key;
+    empty for the slice/bundle fallbacks, which carry no top-level models).
     """
     realm: str = args.realm
     cache = CACHE_DUMPS[realm]
@@ -198,9 +205,9 @@ def _load_source(args):
         if not dump.is_file():
             continue
         gp = _load_dump(dump)
-        entries, key_to_id, index_to_id = _dump_tables(gp)
+        entries, key_to_id, index_to_id, module_ids = _dump_tables(gp)
         version = args.version or _sidecar_stamp(realm, dump) or realm
-        return entries, key_to_id, index_to_id, version, f"{realm} GameParams dump {dump}"
+        return entries, key_to_id, index_to_id, module_ids, version, f"{realm} GameParams dump {dump}"
     if realm == "wg":
         slices = Path(args.slices) if args.slices else DEFAULT_SLICES
         if not slices.is_dir():
@@ -211,7 +218,7 @@ def _load_source(args):
         entries, key_to_id, index_to_id = _load_slices(slices)
         build = _read_build_txt(slices)
         version = args.version or (f"wg-{build}" if build else "wg")
-        return entries, key_to_id, index_to_id, version, f"wg slice directory {slices}"
+        return entries, key_to_id, index_to_id, {}, version, f"wg slice directory {slices}"
     bundle = Path(args.lesta_bundle) if args.lesta_bundle else DEFAULT_LESTA_BUNDLE
     if not bundle.is_file():
         sys.exit(
@@ -219,7 +226,7 @@ def _load_source(args):
             f"slice bundle at {bundle}."
         )
     entries, key_to_id, index_to_id, stamp = _load_lesta_bundle(bundle)
-    return entries, key_to_id, index_to_id, args.version or stamp or "lesta", f"Lesta slice bundle {bundle}"
+    return entries, key_to_id, index_to_id, {}, args.version or stamp or "lesta", f"Lesta slice bundle {bundle}"
 
 
 def _load_dump(path: Path) -> dict:
@@ -228,17 +235,28 @@ def _load_dump(path: Path) -> dict:
         return _params_root(json.load(fh))
 
 
-def _dump_tables(gp: dict) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
-    """Split a full GameParams dump into (entries by shipId, key->shipId, index->shipId).
+def _dump_tables(
+    gp: dict,
+) -> tuple[dict[str, dict], dict[str, str], dict[str, str], dict[str, int]]:
+    """Split a full GameParams dump into ship tables plus the entity-id table.
 
-    Only Ship entities qualify. A ship id can in principle be carried by more
-    than one Ship entity; prefer the one carrying ShipUpgradeInfo (defensive —
-    current client dumps hold exactly one Ship entry per id, the other
-    shared-id entities are non-Ship module/air-group entries).
+    Returns (entries by shipId, key->shipId, index->shipId, entityKey->numeric id).
+
+    Only Ship entities qualify for the ship tables. A ship id can in principle
+    be carried by more than one Ship entity; prefer the one carrying
+    ShipUpgradeInfo (defensive — current client dumps hold exactly one Ship
+    entry per id, the other shared-id entities are non-Ship module/air-group
+    entries). The entity-id table covers EVERY top-level model (modules
+    included) because the client's price catalog keys its items by that
+    numeric id — the join the economy fill needs.
     """
     entries: dict[str, dict] = {}
     key_to_id: dict[str, str] = {}
     index_to_id: dict[str, str] = {}
+    module_ids: dict[str, int] = {}
+    for key, obj in gp.items():
+        if isinstance(obj, dict) and isinstance(obj.get("id"), int):
+            module_ids[key] = obj["id"]
     for key, obj in gp.items():
         if not isinstance(obj, dict):
             continue
@@ -260,7 +278,7 @@ def _dump_tables(gp: dict) -> tuple[dict[str, dict], dict[str, str], dict[str, s
         name = obj.get("name")
         if isinstance(name, str):
             key_to_id.setdefault(name, sid_str)
-    return entries, key_to_id, index_to_id
+    return entries, key_to_id, index_to_id, module_ids
 
 
 def _load_slices(slices: Path) -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
@@ -338,6 +356,7 @@ def _build_ship(
     entries: dict[str, dict],
     key_to_id: dict[str, str],
     index_to_id: dict[str, str],
+    module_ids: dict[str, int],
     stats: _Stats,
 ) -> dict | None:
     index = entry.get("index")
@@ -351,7 +370,7 @@ def _build_ship(
     next_ships = _next_ships(sui, entries, key_to_id, index_to_id, stats)
     if next_ships:
         stats.ships_with_next += 1
-    slots = _slots(sui, key_to_id, index_to_id, stats)
+    slots = _slots(sui, key_to_id, index_to_id, module_ids, stats)
     return {"index": index, "research": research, "next": next_ships, "slots": slots}
 
 
@@ -405,6 +424,7 @@ def _slots(
     sui: dict,
     key_to_id: dict[str, str],
     index_to_id: dict[str, str],
+    module_ids: dict[str, int],
     stats: _Stats,
 ) -> list[dict]:
     """One slot per ucType, steps ordered by upgrade depth (stock -> top)."""
@@ -438,6 +458,9 @@ def _slots(
             components = up.get("components")
             step: dict = {
                 "name": name,
+                # Numeric GameParams entity id: the client's price catalog keys
+                # its items by it, so a capture joins straight onto the step.
+                "gpid": module_ids.get(name),
                 "prev": prev_key,
                 "depth": depth,
                 "isStock": pos == 0,
@@ -445,6 +468,8 @@ def _slots(
                 "credits": None,
                 "components": components if isinstance(components, dict) else {},
             }
+            if step["gpid"] is not None:
+                stats.steps_with_gpid += 1
             unlocks = _unlocks(up, key_to_id, index_to_id)
             if unlocks:
                 step["unlocks"] = unlocks
@@ -546,7 +571,8 @@ def _report(out: Path, realm: str, version: str, ships: dict[str, dict], stats: 
     print(f"[upgrade-chain] version {version}; next edges {stats.next_edges} "
           f"({stats.xp_ship_known} with xpShip), {stats.ships_with_next} ships unlock something")
     print(f"[upgrade-chain] {stats.slots} slots / {stats.steps} steps "
-          f"({stats.unlock_steps} steps carry unlocks)")
+          f"({stats.unlock_steps} steps carry unlocks, "
+          f"{stats.steps_with_gpid} carry a GameParams id)")
     print(f"[upgrade-chain] topology: max depth {stats.max_depth}, "
           f"{stats.parallel_slots} slots with parallel variants, "
           f"{stats.cross_slot_prev} cross-slot prev links")

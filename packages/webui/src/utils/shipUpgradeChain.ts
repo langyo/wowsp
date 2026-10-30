@@ -17,12 +17,15 @@
  * slot — same-level alternatives share a depth, so the panel can lay parallel
  * variants out side by side.
  *
- * The tech-tree connector tooltip's minimal case reads `next[xpShip]` — the
- * next ship's own costXP. Per-module XP/credits and the "with minimal
- * equipment" pair (`xpWithModules` / `requiredModules`) are null in the
- * generated data: they live in the client-UI economy layer, not in GameParams.
- * The schema already carries the
- * slots so only the extractor changes when that source lands.
+ * The client's module economy (per-module research XP + buy credits, and the
+ * "with required modules" research total) is not in GameParams: it arrives in
+ * the server-synced price catalog the in-game probe captures. Every step
+ * therefore carries `gpid` (the module's numeric GameParams id, the catalog's
+ * join key) and the xp/credits/xpWithModules/requiredModules fields, which
+ * stay null until `scripts/extract/apply_price_catalog.py` applies a capture
+ * to the bundle. The tech-tree tooltip's minimal case reads `next[xpShip]`
+ * (the next ship's own costXP) and grows a "with required modules" row the
+ * moment `xpWithModules` is filled.
  */
 import chainWgRaw from "@/data/ship_upgrade_chain.json";
 import chainLestaRaw from "@/data/ship_upgrade_chain_lesta.json";
@@ -47,9 +50,10 @@ export interface UpgradeNextShip {
   index: string | null;
   /** The NEXT ship's own costXP — the minimal research-tooltip value. */
   xpShip: number | null;
-  /** Ship XP + required-module XP: null until a module-economy source lands. */
+  /** Ship XP + the required modules' research XP; null until a price
+   *  catalog capture is applied (or when a required module's XP is missing). */
   xpWithModules: number | null;
-  /** Modules required for the unlock: null for the same reason. */
+  /** GameParams names of the modules that must be researched for the unlock. */
   requiredModules: string[] | null;
 }
 
@@ -57,15 +61,19 @@ export interface UpgradeNextShip {
 export interface UpgradeStep {
   /** GameParams upgrade entry name ("PRUH603_D7_HULL_STOCK_2"). */
   name: string;
+  /** Numeric GameParams entity id of the module entry — the key the client's
+   *  server-synced price catalog uses, so a captured price_catalog.json joins
+   *  straight onto the step. Null on slice/bundle-fallback generations. */
+  gpid: number | null;
   /** True for the slot's stock module — the first (top-left) step. */
   isStock: boolean;
   /** GameParams upgrade entry key this module upgrades from; null for stock. */
   prev: string | null;
   /** Upgrade level inside the slot: stock = 0; same-level alternatives share it. */
   depth: number;
-  /** Per-module XP: absent from GameParams today, so null. */
+  /** Per-module research XP (from a captured price catalog), else null. */
   xp: number | null;
-  /** Per-module credits: absent from GameParams today, so null. */
+  /** Per-module buy credits (from a captured price catalog), else null. */
   credits: number | null;
   /** Component-role map this module mounts (component NAMES, not blocks). */
   components: UpgradeComponents;
