@@ -87,6 +87,62 @@ body {
   gap: 0.55rem;
 }
 
+/* Phone-link block — same card grammar as the session block, tinted by
+   state: a linked phone reads success, a service that is merely on reads
+   neutral, an off service stays muted. */
+.tray-panel__phone {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-border) / 8%);
+  color: rgb(var(--color-muted));
+
+  &.is-linked {
+    background: rgb(var(--color-success) / 8%);
+  }
+
+  &.is-off {
+    opacity: 0.75;
+  }
+}
+
+.tray-panel__phone-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* The icon rides the same 1.1rem column as the status pip so the rows
+   stay optically aligned. */
+.tray-panel__phone-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+  color: rgb(var(--color-muted));
+}
+
+.tray-panel__phone.is-linked .tray-panel__phone-icon {
+  color: rgb(var(--color-success));
+}
+
+.tray-panel__phone-text {
+  font-size: var(--text-xs);
+  color: rgb(var(--color-text));
+}
+
+.tray-panel__phone-count {
+  margin-left: auto;
+  min-width: 1.2rem;
+  padding: 0 0.3rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-success) / 18%);
+  color: rgb(var(--color-success));
+  font-size: var(--text-2xs);
+  text-align: center;
+}
+
 /* The pip's icon slot: same 1.1rem column the menu icons occupy, circle
    drawn centered inside it via ::before. */
 .tray-panel__status-dot {

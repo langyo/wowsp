@@ -65,7 +65,11 @@
 //! frames pass through verbatim (the live view renders them through the
 //! same ArenaInfo mapping it uses locally).
 
+// The repo's anyhow policy requires its use statement FIRST in any file
+// that imports it (scripts/check_anyhow.py).
 use anyhow::{Result, anyhow};
+
+use std::sync::Mutex;
 
 use wowsp_tauri_shared::GatewayStateEvent;
 
@@ -107,6 +111,15 @@ pub const PHASE_ONLINE: &str = "online";
 pub const PHASE_ERROR: &str = "error";
 pub const PHASE_STOPPED: &str = "stopped";
 
+/// The last state emitted for the PUB role — the tray panel's mount-time
+/// snapshot (it opens long after the transitions it must display).
+static LAST_PUB_STATE: Mutex<Option<GatewayStateEvent>> = Mutex::new(None);
+
+/// The last `pub` state event (clone) — `None` before the first emit.
+pub(crate) fn last_pub_state() -> Option<GatewayStateEvent> {
+    LAST_PUB_STATE.lock().ok().and_then(|g| g.clone())
+}
+
 /// Emit one `wowsp://gateway-state` event (tolerates a missing emitter in
 /// unit tests — real callers always pass a live `AppHandle`).
 pub(crate) fn emit_state(
@@ -116,16 +129,60 @@ pub(crate) fn emit_state(
     phase: &str,
     detail: Option<String>,
 ) {
+    emit_state_subs(app, role, route, phase, detail, None);
+}
+
+/// `emit_state` with the publisher's live phone count attached (the
+/// worker's host-only `subs` frame). The count rides every `pub` state
+/// so a UI that missed the raw frame still converges.
+pub(crate) fn emit_state_subs(
+    app: &tauri::AppHandle,
+    role: &str,
+    route: Option<&str>,
+    phase: &str,
+    detail: Option<String>,
+    subscribers: Option<u32>,
+) {
     use tauri::Emitter as _;
-    let _ = app.emit(
-        GATEWAY_STATE_EVENT,
-        GatewayStateEvent {
-            role: role.to_string(),
-            route: route.map(str::to_string),
-            phase: phase.to_string(),
-            detail,
-        },
-    );
+    // A stopped publisher cannot have phones linked to it — never let a
+    // stale count survive the teardown in either the event or the snapshot.
+    let subscribers = if role == "pub" && phase == PHASE_STOPPED {
+        Some(0)
+    } else {
+        subscribers
+    };
+    let event = GatewayStateEvent {
+        role: role.to_string(),
+        route: route.map(str::to_string),
+        phase: phase.to_string(),
+        detail,
+        subscribers,
+    };
+    if role == "pub" {
+        if let Ok(mut slot) = LAST_PUB_STATE.lock() {
+            // A phase transition without an explicit count keeps the last
+            // known one (only the frame itself changes the number).
+            let carried = subscribers.or_else(|| slot.as_ref().and_then(|s| s.subscribers));
+            let mut stored = event.clone();
+            stored.subscribers = carried;
+            *slot = Some(stored);
+        }
+    }
+    let _ = app.emit(GATEWAY_STATE_EVENT, event);
+}
+
+/// The `online` count of a worker `subs` frame — host-only telemetry
+/// pushed to the publisher on every subscriber join/leave. `None` for
+/// any other text (hello echoes and keepalives are tolerated chatter).
+pub(crate) fn parse_subs_frame(text: &str) -> Option<u32> {
+    #[derive(serde::Deserialize)]
+    struct SubsFrame {
+        #[serde(rename = "type")]
+        kind: String,
+        online: u32,
+    }
+    let frame: SubsFrame = serde_json::from_str(text).ok()?;
+    (frame.kind == "subs").then_some(frame.online)
 }
 
 // ── URL derivation (the relay URL policy, one spelling for the gateway) ─────
@@ -189,9 +246,10 @@ pub use health::{
 };
 #[cfg(desktop)]
 pub use publish::{
-    __cmd__gateway_publish_start, __cmd__gateway_publish_stop,
-    __tauri_command_name_gateway_publish_start, __tauri_command_name_gateway_publish_stop,
-    gateway_publish_start, gateway_publish_stop,
+    __cmd__gateway_publish_start, __cmd__gateway_publish_status, __cmd__gateway_publish_stop,
+    __tauri_command_name_gateway_publish_start, __tauri_command_name_gateway_publish_status,
+    __tauri_command_name_gateway_publish_stop, gateway_publish_start, gateway_publish_status,
+    gateway_publish_stop,
 };
 #[cfg(desktop)]
 pub use selfhost::{

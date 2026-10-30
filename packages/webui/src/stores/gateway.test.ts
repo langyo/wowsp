@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   setConfig: vi.fn(),
   getHealth: vi.fn(),
   publishStart: vi.fn(),
+  publishStatus: vi.fn(),
   publishStop: vi.fn(),
   subscribeStart: vi.fn(),
   subscribeStop: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("@/api", () => ({
     gatewayGetHealth: mocks.getHealth,
     gatewayOpenSession: vi.fn(),
     gatewayPublishStart: mocks.publishStart,
+    gatewayPublishStatus: mocks.publishStatus,
     gatewayPublishStop: mocks.publishStop,
     gatewaySubscribeStart: mocks.subscribeStart,
     gatewaySubscribeStop: mocks.subscribeStop,
@@ -87,6 +89,7 @@ beforeEach(() => {
     mocks.setConfig,
     mocks.getHealth,
     mocks.publishStart,
+    mocks.publishStatus,
     mocks.publishStop,
     mocks.subscribeStart,
     mocks.subscribeStop,
@@ -170,6 +173,34 @@ describe("state events", () => {
     emitState({ role: "pub", phase: "error", detail: "gateway unreachable or health document invalid" });
     expect(gateway.pubPhase).toBe("error");
     expect(gateway.pubDetail).toBe("gateway unreachable or health document invalid");
+  });
+
+  it("tracks the publisher's live phone count (host-only subs telemetry)", () => {
+    const gateway = useGatewayStore();
+    // A count rides the pub state; the sub role never carries one.
+    emitState({ role: "pub", route: "r:asia:1", phase: "online", detail: null, subscribers: 2 });
+    expect(gateway.pubSubscribers).toBe(2);
+    emitState({ role: "sub", route: "r:asia:1", phase: "online", detail: null });
+    expect(gateway.pubSubscribers).toBe(2);
+    // A stopped publisher drops the count even without an explicit zero.
+    emitState({ role: "pub", route: "r:asia:1", phase: "stopped", detail: null });
+    expect(gateway.pubSubscribers).toBe(0);
+  });
+
+  it("refreshPublishStatus seeds a late-mounting surface from Rust", async () => {
+    mocks.publishStatus.mockResolvedValue({
+      enabled: true,
+      active: true,
+      route: "r:asia:9",
+      phase: "online",
+      subscribers: 1,
+    });
+    const gateway = useGatewayStore();
+    const status = await gateway.refreshPublishStatus();
+    expect(status?.subscribers).toBe(1);
+    expect(gateway.pubPhase).toBe("online");
+    expect(gateway.pubSubscribers).toBe(1);
+    expect(gateway.pubRoute).toBe("r:asia:9");
   });
 });
 

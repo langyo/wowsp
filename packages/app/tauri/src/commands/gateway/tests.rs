@@ -437,6 +437,55 @@ fn oversize_frames_are_refused_before_the_wire() {
     assert!(text.len() <= super::publish::MAX_BATTLE_FRAME_BYTES);
 }
 
+#[test]
+fn subs_frames_parse_and_other_chatter_is_ignored() {
+    // The worker's host-only telemetry frame.
+    assert_eq!(
+        super::parse_subs_frame(r#"{"type":"subs","online":3}"#),
+        Some(3)
+    );
+    assert_eq!(
+        super::parse_subs_frame(r#"{"type":"subs","online":0}"#),
+        Some(0)
+    );
+    // Everything else the pub socket receives is tolerated chatter.
+    assert_eq!(
+        super::parse_subs_frame(r#"{"type":"hello","gateway":"v1"}"#),
+        None
+    );
+    assert_eq!(super::parse_subs_frame(r#"{"type":"keepalive"}"#), None);
+    assert_eq!(super::parse_subs_frame("not json"), None);
+    assert_eq!(super::parse_subs_frame(r#"{"type":"subs"}"#), None);
+}
+
+#[test]
+fn publish_status_snapshot_tracks_route_phase_and_count() {
+    use wowsp_tauri_shared::{GatewayPublishStatus, GatewayStateEvent};
+    // The tray reads a snapshot, so the shape must carry what it renders:
+    // enabled flag, live socket, route, phase and the phone count.
+    let status = GatewayPublishStatus {
+        enabled: true,
+        active: true,
+        route: Some("r:asia:42".into()),
+        phase: "online".into(),
+        subscribers: 2,
+    };
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(json.contains(r#""subscribers":2"#), "wire: {json}");
+    assert!(json.contains(r#""active":true"#), "wire: {json}");
+    // A state event without a count omits the field entirely (older peers
+    // and the non-pub roles stay byte-compatible).
+    let bare = GatewayStateEvent {
+        role: "sub".into(),
+        route: None,
+        phase: "online".into(),
+        detail: None,
+        subscribers: None,
+    };
+    let json = serde_json::to_string(&bare).unwrap();
+    assert!(!json.contains("subscribers"), "wire: {json}");
+}
+
 #[cfg(desktop)]
 #[test]
 fn gateway_host_id_persists_and_reuses() {

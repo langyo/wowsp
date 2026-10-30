@@ -95,6 +95,7 @@ export type {
   GatewayHealthDoc,
   GatewaySessionTicket,
   GatewayPhase,
+  GatewayPublishStatus,
   GatewayStateEvent,
   GatewayVehicleEntry,
   GatewayBattleFrame,

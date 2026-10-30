@@ -263,6 +263,7 @@ export const RPC = {
   gateway_get_health: "gateway_get_health",
   gateway_open_session: "gateway_open_session",
   gateway_publish_start: "gateway_publish_start",
+  gateway_publish_status: "gateway_publish_status",
   gateway_publish_stop: "gateway_publish_stop",
   gateway_subscribe_start: "gateway_subscribe_start",
   gateway_subscribe_stop: "gateway_subscribe_stop",

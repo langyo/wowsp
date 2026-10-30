@@ -7,5 +7,12 @@
   "show": "顯示 WoWSP",
   "hide": "隱藏",
   "playing": "當前遊玩",
-  "notRegistered": "未綁定"
+  "notRegistered": "未綁定",
+  "phoneServiceOff": "手機服務未開啟",
+  "phoneWaiting": "等待手機連線",
+  "phoneLinked": "手機已連線（{n}）",
+  "phoneCaptcha": "等待驗證碼",
+  "phoneError": "手機連線出錯",
+  "phoneConnecting": "連線中…",
+  "phoneStopped": "手機未連線"
 }

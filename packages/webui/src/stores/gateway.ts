@@ -23,6 +23,7 @@ import {
   type GatewayClientConfig,
   type GatewayHealthDoc,
   type GatewayPhase,
+  type GatewayPublishStatus,
   type GatewaySelfhostEnv,
   type GatewaySelfhostStep,
   type GatewaySelfhostStepResult,
@@ -129,6 +130,10 @@ export const useGatewayStore = defineStore("gateway", () => {
   // ── socket phases (wowsp://gateway-state, both roles) ──────────────────
   const pubPhase = ref<GatewayPhase>("stopped");
   const pubDetail = ref<string | null>(null);
+  /** Phones linked to the publisher's channel right now (the worker's
+   *  host-only `subs` telemetry; 0 while none). The tray's phone-linked
+   *  indicator reads this. */
+  const pubSubscribers = ref(0);
   const subPhase = ref<GatewayPhase>("stopped");
   const subDetail = ref<string | null>(null);
 
@@ -186,6 +191,22 @@ export const useGatewayStore = defineStore("gateway", () => {
     } finally {
       pubPhase.value = "stopped";
       pubDetail.value = null;
+      pubSubscribers.value = 0;
+    }
+  }
+
+  /// Snapshot the publisher's link state from Rust. A surface that mounts
+  /// LATE (the tray panel opens long after the transitions) needs this;
+  /// `wowsp://gateway-state` only carries what happens while listening.
+  async function refreshPublishStatus(): Promise<GatewayPublishStatus | null> {
+    try {
+      const status = await api.gatewayPublishStatus();
+      pubPhase.value = status.phase;
+      pubSubscribers.value = status.subscribers;
+      if (status.route) pubRoute.value = status.route;
+      return status;
+    } catch {
+      return null;
     }
   }
 
@@ -283,6 +304,8 @@ export const useGatewayStore = defineStore("gateway", () => {
       if (s.role === "pub") {
         pubPhase.value = s.phase;
         pubDetail.value = s.detail ?? null;
+        if (typeof s.subscribers === "number") pubSubscribers.value = s.subscribers;
+        else if (s.phase === "stopped") pubSubscribers.value = 0;
       } else {
         subPhase.value = s.phase;
         subDetail.value = s.detail ?? null;
@@ -325,6 +348,8 @@ export const useGatewayStore = defineStore("gateway", () => {
     // phases
     pubPhase,
     pubDetail,
+    pubSubscribers,
+    refreshPublishStatus,
     subPhase,
     subDetail,
     // publish (desktop)

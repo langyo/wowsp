@@ -7,5 +7,12 @@
   "show": "Mostrar WoWSP",
   "hide": "Ocultar",
   "playing": "Jugando",
-  "notRegistered": "Sin vincular"
+  "notRegistered": "Sin vincular",
+  "phoneServiceOff": "Servicio móvil desactivado",
+  "phoneWaiting": "Esperando un teléfono",
+  "phoneLinked": "Teléfono conectado ({n})",
+  "phoneCaptcha": "Esperando captcha",
+  "phoneError": "Error de conexión",
+  "phoneConnecting": "Conectando…",
+  "phoneStopped": "Teléfono sin conectar"
 }

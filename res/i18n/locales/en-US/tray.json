@@ -7,5 +7,12 @@
   "show": "Show WoWSP",
   "hide": "Hide",
   "playing": "Playing",
-  "notRegistered": "Not bound"
+  "notRegistered": "Not bound",
+  "phoneServiceOff": "Phone service off",
+  "phoneWaiting": "Waiting for a phone",
+  "phoneLinked": "Phone linked ({n})",
+  "phoneCaptcha": "Waiting for captcha",
+  "phoneError": "Phone link error",
+  "phoneConnecting": "Connecting…",
+  "phoneStopped": "Phone not linked"
 }

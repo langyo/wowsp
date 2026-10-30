@@ -78,6 +78,23 @@ export interface GatewayStateEvent {
   phase: GatewayPhase;
   /** English marker/detail sentence (health error markers, retry-after…). */
   detail?: string | null;
+  /** Live phone count on the publisher's channel (host-only telemetry the
+   *  worker pushes on every join/leave). Only the `pub` role carries it;
+   *  the tray's phone-linked indicator reads it. */
+  subscribers?: number | null;
+}
+
+/** Snapshot of the desktop publisher's phone-link state — what the tray
+ *  panel reads on mount (it may open long after the transitions). */
+export interface GatewayPublishStatus {
+  /** The mobile service is switched on. */
+  enabled: boolean;
+  /** `true` while the publisher's socket holds the channel. */
+  active: boolean;
+  route?: string | null;
+  phase: GatewayPhase;
+  /** Phones subscribed right now (0 while none is linked). */
+  subscribers: number;
 }
 
 /** One roster entry inside a battle frame — the exact `VehicleEntry` wire
@@ -206,6 +223,10 @@ export const gatewayApi = {
   gatewayPublishStart: (args: { route: string; turnstileToken?: string; password?: string }) =>
     transport.invoke<null>(RPC.gateway_publish_start, args),
   gatewayPublishStop: () => transport.invoke<null>(RPC.gateway_publish_stop),
+  /** Publisher link snapshot (service toggle + socket + phone count) —
+   *  the tray panel's mount-time read; live updates ride the state event. */
+  gatewayPublishStatus: () =>
+    transport.invoke<GatewayPublishStatus>(RPC.gateway_publish_status),
   /** Phone subscriber (root explicit — the phone's configured entry). */
   gatewaySubscribeStart: (args: {
     root: string;

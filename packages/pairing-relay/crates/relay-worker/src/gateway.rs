@@ -42,7 +42,8 @@ use relay_core::gateway::{
     AuthState, ChannelState, ConsumeError, CredentialMissing, GatewayVars, KEEPALIVE_INTERVAL_MS,
     SNAPSHOT_KV_TTL_SECS, TICKET_TTL_MS, TicketEntry, TicketKind, TicketRng, battle_frame_verdict,
     battle_route, check_credentials, frame_kind, health_doc, hello_frame, host_frame,
-    keepalive_frame, password_key, password_matches, ticket_key, valid_route_id, valid_ticket,
+    keepalive_frame, password_key, password_matches, subs_frame, ticket_key, valid_route_id,
+    valid_ticket,
 };
 use relay_core::room::FrameVerdict;
 use relay_core::route::{Route, classify, query_get};
@@ -748,6 +749,9 @@ impl GatewayChannel {
             let _ = server.send_with_str(&snap.frame);
         }
         broadcast_host(&self.inner, true);
+        // A fresh publisher learns the current subscriber count up front
+        // (phones may already be parked on the channel).
+        broadcast_subs(&self.inner);
         self.spawn_host_reader(server.clone(), route.to_string());
         spawn_pinger(server);
         Ok(Response::from_websocket(pair.client)?)
@@ -870,6 +874,8 @@ impl GatewayChannel {
         }
         self.spawn_sub_reader(server.clone());
         spawn_pinger(server);
+        // A phone just joined: tell the publisher (tray indicator).
+        broadcast_subs(&self.inner);
         Ok(Response::from_websocket(pair.client)?)
     }
 
@@ -888,9 +894,14 @@ impl GatewayChannel {
                     break;
                 }
             }
-            let mut inner = inner.borrow_mut();
-            inner.subs.retain(|ws| ws != &server);
-            inner.chan.sub_leave();
+            {
+                let mut inner = inner.borrow_mut();
+                inner.subs.retain(|ws| ws != &server);
+                inner.chan.sub_leave();
+            }
+            // A phone left: the publisher's count follows (the borrow
+            // above is dropped first — broadcast_subs re-borrows).
+            broadcast_subs(&inner);
         });
     }
 }
@@ -907,6 +918,17 @@ fn broadcast(inner: &RefCell<ChannelInner>, text: &str) {
 /// Host-presence transition to every live subscriber.
 fn broadcast_host(inner: &RefCell<ChannelInner>, online: bool) {
     broadcast(inner, &host_frame(online));
+}
+
+/// Tell the PUBLISHER how many phones are currently subscribed — the
+/// desktop tray's "phone linked" indicator. Host-only: subscribers never
+/// see this frame, and it is a no-op while no host holds the slot.
+fn broadcast_subs(inner: &RefCell<ChannelInner>) {
+    let guard = inner.borrow();
+    let Some(host) = guard.host.as_ref() else {
+        return;
+    };
+    let _ = host.send_with_str(&subs_frame(guard.subs.len()));
 }
 
 /// Server-side keepalive: one text ping every 30 s per socket (the
