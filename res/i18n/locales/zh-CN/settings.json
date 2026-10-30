@@ -234,10 +234,10 @@
     "localizedTiersToggleDesc": "使用趣味本土化档位文案（夯/人上人/战舰仙人等），关闭时显示标准英文档位 Bad/Good/Unicum 等。",
     "prTintToggle": "PR 档位行底色",
     "prTintToggleDesc": "实时对局名册按每名玩家的 PR 档位颜色铺一层半透明底色（红表铺红、紫表铺紫），默认开启。",
-    "rosterKarmaToggle": "名单业力",
-    "rosterKarmaToggleDesc": "在实时对局与战后统计的玩家名单中，把每名玩家的业力（点赞/举报净值）以小上标显示在昵称右上角，默认开启。",
-    "cardKarmaToggle": "卡片业力",
-    "cardKarmaToggleDesc": "在玩家战绩卡片（我的水表 / 查询）的昵称右上角以小上标显示业力，默认开启。"
+    "rosterKarmaToggle": "名单声望",
+    "rosterKarmaToggleDesc": "在实时对局与战后统计的玩家名单中，把每名玩家的声望（称赞与举报之和）以小上标显示在昵称右上角，默认开启。",
+    "cardKarmaToggle": "卡片声望",
+    "cardKarmaToggleDesc": "在玩家战绩卡片（我的水表 / 查询）的昵称右上角以小上标显示声望，默认开启。"
   },
   "sealCustomizer": {
     "desc": "印章分两级：一级章为单字章（含「过街老鼠」），二级章为四字章（成分章与合并章）。实时/战后对局面板中，一级章显示为条目右侧的方章图片，二级章显示为成绩旁的横排小标签。点击印章图标即可自定义图片；已自定义的印章点击一下即删除自定义图并还原默认（图片存储在应用数据目录的 stamps 文件夹）。右侧开关控制每枚印章的显隐，预览即时生效。",
