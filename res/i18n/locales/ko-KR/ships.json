@@ -689,7 +689,10 @@
     "linkTypeChange": "함종 변경",
     "linkBranches": "병렬 분기",
     "linkArchetype": "계열 특성",
-    "linkInfo": "연구 라인 정보"
+    "linkInfo": "연구 라인 정보",
+    "linkResearchXp": "연구 경험치",
+    "linkResearchWithModules": "필요 모듈 포함",
+    "linkResearchNone": "연구 경험치 불필요"
   },
   "banner": {
     "imageFailed": "일부 함선 이미지를 불러오지 못했습니다",

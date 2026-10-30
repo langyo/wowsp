@@ -43,6 +43,19 @@
     fill: rgb(var(--color-primary) / 48%);
   }
 
+  /* Invisible hover targets for the connector research-XP tooltips: a wide
+     stroke with no paint, hit-tested on the stroke only (the svg root above
+     is pointer-events:none, so this opt-in is what makes the line hoverable
+     at all). Rendered above the visible lines but still below the card and
+     ⓘ layers (see the svg / linkinfo z bands), so a card or ⓘ button always
+     wins the pointer. */
+  &__linkhit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 14;
+    pointer-events: stroke;
+  }
+
   /* ⓘ on research links that change something (fork, cross-type hop).
      Sits ON the connector — geometry comes from measure(), like the SVG
      paths — and carries a data-hint-card hover card (global tooltip hook).

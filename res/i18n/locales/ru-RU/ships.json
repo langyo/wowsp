@@ -689,7 +689,10 @@
     "linkTypeChange": "Смена класса",
     "linkBranches": "Параллельные ветви",
     "linkArchetype": "Профиль ветви",
-    "linkInfo": "О линии исследования"
+    "linkInfo": "О линии исследования",
+    "linkResearchXp": "Опыт исследования",
+    "linkResearchWithModules": "С требуемыми модулями",
+    "linkResearchNone": "Опыт исследования не требуется"
   },
   "banner": {
     "imageFailed": "Не удалось загрузить некоторые изображения кораблей",
