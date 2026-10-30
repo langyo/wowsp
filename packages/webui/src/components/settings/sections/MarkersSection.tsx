@@ -599,7 +599,7 @@ export default defineComponent({
           ) : null}
           {importList.value ? (
             <>
-              <p class="markers-section__wizard-path" title={importList.value.path}>
+              <p class="markers-section__wizard-path" data-hint={importList.value.path}>
                 {t("settings.markersImportFoundAt", { path: importList.value.path })}
               </p>
               <div class="markers-section__wizard-cats">
@@ -639,7 +639,7 @@ export default defineComponent({
                   </span>
                   <span
                     class="markers-section__wizard-cat-hint"
-                    title={t("settings.markersImportPositiveHint")}
+                    data-hint={t("settings.markersImportPositiveHint")}
                   >
                     {t("settings.markersImportPositiveHint")}
                   </span>
@@ -782,11 +782,11 @@ export default defineComponent({
                 >
                   <span
                     class={["markers-section__dot", `markers-section__dot--${entry.color}`]}
-                    title={colorLabel(entry.color)}
+                    data-hint={colorLabel(entry.color)}
                   />
                   <span
                     class={["markers-section__entry-name", markerTintClass(entry.color)]}
-                    title={markerColorLabel(entry.color)}
+                    data-hint={markerColorLabel(entry.color)}
                   >
                     {entry.nickname}
                   </span>

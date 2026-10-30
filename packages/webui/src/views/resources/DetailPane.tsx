@@ -87,7 +87,7 @@ function renderTexAnalysis(a: TextureAnalysis) {
         </div>
       )}
       {shownShips.length > 0 && (
-        <div class="tex-analysis__ships" title={a.ships.join("\n")}>
+        <div class="tex-analysis__ships" data-hint={a.ships.join("\n")}>
           {shownShips.map((s) => (
             <span key={s} class="tex-ship">
               {s}

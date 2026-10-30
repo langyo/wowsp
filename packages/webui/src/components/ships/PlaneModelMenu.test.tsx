@@ -14,8 +14,8 @@
  *  - the ungrouped bucket (a role plane_types.json does not map) renders
  *    rows with no heading and no tag;
  *  - clicking a row emits `select` with that row's value;
- *  - the row title keeps the clipped designation readable (role · model ·
- *    tag).
+ *  - the row's data-hint keeps the clipped designation readable (role ·
+ *    model · tag).
  *
  * "@/i18n" is mocked to stable English literals so the assertions pin the
  * component structure without loading locale bundles.
@@ -129,7 +129,7 @@ describe("PlaneModelMenu", () => {
     ]);
     expect(wrapper.findAll(".ship-stage__model-pick-tag")).toHaveLength(0);
     expect(
-      wrapper.findAll('[role="option"]').slice(1).map((row) => row.attributes("title")),
+      wrapper.findAll('[role="option"]').slice(1).map((row) => row.attributes("data-hint")),
     ).toEqual(["Rocket planes · Grumman F6F", "Rocket planes · F8F Bearcat"]);
   });
 
@@ -143,10 +143,10 @@ describe("PlaneModelMenu", () => {
     ]);
     const rows = wrapper.findAll('[role="option"]').slice(1);
     expect(rows[0].find(".ship-stage__model-pick-tag").exists()).toBe(false);
-    expect(rows[0].attributes("title")).toBe("Rocket planes · Mitsubishi 1MF3");
+    expect(rows[0].attributes("data-hint")).toBe("Rocket planes · Mitsubishi 1MF3");
     expect(rows[1].find(".ship-stage__model-pick-tag").text()).toBe("Variant");
     expect(rows[1].find(".ship-stage__model-pick-tag").classes()).toContain("is-variant");
-    expect(rows[1].attributes("title")).toBe(
+    expect(rows[1].attributes("data-hint")).toBe(
       "Rocket planes · Mitsubishi 1MF3 · Variant",
     );
   });
@@ -184,11 +184,11 @@ describe("PlaneModelMenu", () => {
     expect(wrapper.emitted("select")).toEqual([["hull"], ["PJAB111"]]);
   });
 
-  it("keeps the clipped designation readable through the row title", () => {
+  it("keeps the clipped designation readable through the row's data-hint", () => {
     const wrapper = mountMenu(HAKURYU);
     const rows = wrapper.findAll('[role="option"]');
-    expect(rows[1].attributes("title")).toBe("Torpedo bombers · Nakajima C6N5 1b · Base");
-    expect(rows[6].attributes("title")).toBe(
+    expect(rows[1].attributes("data-hint")).toBe("Torpedo bombers · Nakajima C6N5 1b · Base");
+    expect(rows[6].attributes("data-hint")).toBe(
       "Rocket planes · Mitsubishi J8M2 Shusui Kai · Variant",
     );
   });
@@ -206,7 +206,7 @@ describe("PlaneModelMenu", () => {
     expect(ungrouped.findAll(".ship-stage__model-pick-tag")).toHaveLength(0);
     const row = ungrouped.find('[role="option"]');
     expect(row.find(".ship-stage__model-pick-item-label").text()).toBe("Unknown airframe");
-    expect(row.attributes("title")).toBe("Unknown airframe");
+    expect(row.attributes("data-hint")).toBe("Unknown airframe");
   });
 
   it("drops the heading for a role the locale does not translate", () => {
@@ -225,7 +225,7 @@ describe("PlaneModelMenu", () => {
     expect(groups[1].find(".ship-stage__model-pick-item-label").text()).toBe(
       "Mystery airframe",
     );
-    // No phantom heading segment in the fallback row's title either.
-    expect(groups[1].find('[role="option"]').attributes("title")).toBe("Mystery airframe");
+    // No phantom heading segment in the fallback row's data-hint either.
+    expect(groups[1].find('[role="option"]').attributes("data-hint")).toBe("Mystery airframe");
   });
 });

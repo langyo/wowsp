@@ -33,9 +33,9 @@ describe("StampTag", () => {
     const tag = wrapper.find("span.stamp-tag");
     expect(tag.exists()).toBe(true);
     expect(tag.text()).toBe("空中小人");
-    // The native tooltip carries the award criteria (the resolved
+    // The data-hint tooltip carries the award criteria (the resolved
     // stats.sealAirDesc copy).
-    expect(tag.attributes("title")).toContain("Awarded when carrier battles exceed 20%");
+    expect(tag.attributes("data-hint")).toContain("Awarded when carrier battles exceed 20%");
     expect(wrapper.find("img.stamp-tag").exists()).toBe(false);
   });
 

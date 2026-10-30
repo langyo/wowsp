@@ -911,7 +911,8 @@ export default defineComponent({
                           activeSource.value.atMs === f.atMs,
                       },
                     ]}
-                    title={ageLabelOf(f.atMs)}
+                    data-hint={ageLabelOf(f.atMs)}
+                    aria-label={ageLabelOf(f.atMs)}
                     onClick={() => void load({ kind: "frame", atMs: f.atMs })}
                   >
                     <img

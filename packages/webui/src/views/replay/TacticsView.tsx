@@ -576,7 +576,7 @@ export default defineComponent({
                   <FileArchive size={12} />
                   <span class="tac-topbar__profile-tag-name">{profileLabel.value}</span>
                   {session.value.profilePath ? (
-                    <span class="tac-topbar__profile-tag-dot" title={session.value.profilePath} />
+                    <span class="tac-topbar__profile-tag-dot" data-hint={session.value.profilePath} />
                   ) : null}
                 </button>
               </HkTooltip>

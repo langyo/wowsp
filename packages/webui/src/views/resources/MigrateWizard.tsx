@@ -45,7 +45,7 @@ function renderMigGroup(ctx: ResourcesCtx, kind: "duplicate" | "superseded", fil
         <HkScrollContainer class="mig-wizard__files">
           <ul class="mig-wizard__files-inner">
             {files.map((f) => (
-              <li key={f.path} title={f.path}>
+              <li key={f.path} data-hint={f.path}>
                 {f.path}
               </li>
             ))}
@@ -64,7 +64,7 @@ function renderMigGroup(ctx: ResourcesCtx, kind: "duplicate" | "superseded", fil
 const renderMigRow = (ctx: ResourcesCtx, f: PlanFile) => {
   const identity = ctx.migIdentity(f);
   return (
-    <div key={f.path} class="mig-wizard__row" title={f.path}>
+    <div key={f.path} class="mig-wizard__row" data-hint={f.path}>
       <label class="mig-wizard__row-body">
         <HkCheckbox
           modelValue={ctx.migDecide.value.keep.has(f.path)}
@@ -93,7 +93,7 @@ const renderMigRow = (ctx: ResourcesCtx, f: PlanFile) => {
 const renderMigIgnoredRow = (ctx: ResourcesCtx, f: PlanFile) => {
   const identity = ctx.migIdentity(f);
   return (
-    <div key={f.path} class="mig-wizard__row mig-wizard__row--ignored" title={f.path}>
+    <div key={f.path} class="mig-wizard__row mig-wizard__row--ignored" data-hint={f.path}>
       <span class="mig-wizard__row-body">
         <span class="mig-wizard__row-main">
           <span class="mig-wizard__row-name">{identity ?? f.path}</span>

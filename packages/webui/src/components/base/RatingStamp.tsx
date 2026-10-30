@@ -171,7 +171,7 @@ export default defineComponent({
             style={{ objectFit: "contain" }}
             role="img"
             aria-label={text}
-            title={desc}
+            data-hint={desc}
           />
         );
       }

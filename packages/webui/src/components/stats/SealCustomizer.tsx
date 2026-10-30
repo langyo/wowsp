@@ -139,7 +139,7 @@ export default defineComponent({
                         { "seal-customizer__preview--custom": custom },
                       ]}
                       disabled={disabled || busy.value === kind}
-                      title={hint}
+                      data-hint={hint}
                       aria-label={hint}
                       onClick={() => onPreviewClick(kind)}
                     >

@@ -1390,7 +1390,7 @@ export default defineComponent({
               return (
                 <span
                   class={["live-battle__crow-nick", markerTintClass(color)]}
-                  title={color ? markerColorLabel(color) : undefined}
+                  data-hint={color ? markerColorLabel(color) : undefined}
                 >
                   {masking.maskOf(v.name)}
                 </span>

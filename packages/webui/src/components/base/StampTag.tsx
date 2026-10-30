@@ -94,12 +94,12 @@ export default defineComponent({
             alt={text}
             role="img"
             aria-label={text}
-            title={desc}
+            data-hint={desc}
           />
         );
       }
       return (
-        <span class="stamp-tag" role="img" aria-label={text} title={desc}>
+        <span class="stamp-tag" role="img" aria-label={text} data-hint={desc}>
           {text}
         </span>
       );

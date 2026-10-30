@@ -1044,7 +1044,7 @@ export default defineComponent({
             </HkTooltip>
             <button
               class="tac-timeline__fit"
-              title={i18nT("replay.tactical.timeline.zoomFit")}
+              data-hint={i18nT("replay.tactical.timeline.zoomFit")}
               onClick={zoomFit}
             >
               {i18nT("replay.tactical.timeline.fit")}
@@ -1073,7 +1073,8 @@ export default defineComponent({
               class="tac-timeline__rename"
               style={{ top: `${renameEdit.value.top}px` }}
               value={renameEdit.value.value}
-              title={i18nT("replay.tactical.plan.rename")}
+              data-hint={i18nT("replay.tactical.plan.rename")}
+              aria-label={i18nT("replay.tactical.plan.rename")}
               onInput={(e: Event) => {
                 if (renameEdit.value) renameEdit.value.value = (e.target as HTMLInputElement).value;
               }}
@@ -1138,7 +1139,8 @@ export default defineComponent({
                   <button
                     type="button"
                     class="tac-timeline__edit-del"
-                    title={i18nT("replay.tactical.plan.removeAction")}
+                    data-hint={i18nT("replay.tactical.plan.removeAction")}
+                    aria-label={i18nT("replay.tactical.plan.removeAction")}
                     onClick={() => {
                       const ed = markerEdit.value;
                       markerEdit.value = null;

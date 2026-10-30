@@ -435,7 +435,7 @@ export default defineComponent({
             data-player-name={p.nickname}
             data-player-account={String(p.accountId)}
             data-player-realm={realm.value}
-            title={tint ? markerColorLabel(tint) : undefined}
+            data-hint={tint ? markerColorLabel(tint) : undefined}
           >
             {p.nickname}
           </span>
@@ -793,7 +793,7 @@ export default defineComponent({
                           class={["lookup-view__history-name", markerTintClass(tint)]}
                           data-player-name={h.kind === "player" ? h.name : undefined}
                           data-player-realm={h.realm}
-                          title={tint ? markerColorLabel(tint) : undefined}
+                          data-hint={tint ? markerColorLabel(tint) : undefined}
                         >
                           {h.name}
                         </span>

@@ -155,13 +155,13 @@ export default defineComponent({
                     ) : (
                       <span class={`holo-score-panel__dot holo-score-panel__dot--${role}`} />
                     )}
-                    <span class="holo-score-panel__name" title={props.labelOf(entry.entityId)}>
+                    <span class="holo-score-panel__name" data-hint={props.labelOf(entry.entityId)}>
                       {props.labelOf(entry.entityId)}
                     </span>
                   </span>
                   <span
                     class="holo-score-panel__contrib"
-                    title={
+                    data-hint={
                       entry.contribution != null && entry.contributionShots
                         ? i18nT("replay.scores.perShot", {
                             value: formatContribution(
@@ -183,7 +183,7 @@ export default defineComponent({
                       <i
                         class="holo-score-panel__bar holo-score-panel__bar--fire"
                         style={{ width: `${(entry.wholeFire ?? 0) * 100}%` }}
-                        title={
+                        data-hint={
                           entry.wholeFire == null
                             ? i18nT("replay.scores.noFire")
                             : `${i18nT("replay.scores.fire")} ${pct(entry.wholeFire)}`
@@ -192,7 +192,7 @@ export default defineComponent({
                       <i
                         class="holo-score-panel__bar holo-score-panel__bar--move"
                         style={{ width: `${entry.wholeMove * 100}%` }}
-                        title={`${i18nT("replay.scores.move")} ${pct(entry.wholeMove)}`}
+                        data-hint={`${i18nT("replay.scores.move")} ${pct(entry.wholeMove)}`}
                       />
                     </span>
                   </span>
@@ -214,7 +214,7 @@ export default defineComponent({
           )}
         </div>
         {props.report ? (
-          <div class="holo-score-panel__foot" title={`${props.report.fireModel} · ${props.report.moveModel}`}>
+          <div class="holo-score-panel__foot" data-hint={`${props.report.fireModel} · ${props.report.moveModel}`}>
             {i18nT("replay.scores.samples", {
               ships: props.report.scores.perShip.length,
               rows: props.report.scores.stats.rowsScored,

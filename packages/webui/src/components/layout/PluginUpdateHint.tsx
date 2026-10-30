@@ -369,7 +369,7 @@ export default defineComponent({
                   type="button"
                   class="plugin-update-hint__min"
                   aria-label={t("resources.pluginUpdateMinimize")}
-                  title={t("resources.pluginUpdateMinimize")}
+                  data-hint={t("resources.pluginUpdateMinimize")}
                   onClick={minimize}
                 >
                   <Minus size={12} />

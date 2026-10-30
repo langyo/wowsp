@@ -475,7 +475,7 @@ export default defineComponent({
                         key={c}
                         class={["chip", hub.catalogCats.value.has(c) && "chip--on"]}
                         aria-pressed={hub.catalogCats.value.has(c)}
-                        title={t("resources.chipsHint")}
+                        data-hint={t("resources.chipsHint")}
                         onClick={() => hub.toggleCatalogCat(c)}
                       >
                         {t(`resources.cat.${c}`)} · {hub.catCounts.value.get(c)}
@@ -488,7 +488,7 @@ export default defineComponent({
                         key={k}
                         class={["chip", hub.kindFilters.value.has(k) && "chip--on"]}
                         aria-pressed={hub.kindFilters.value.has(k)}
-                        title={t("resources.chipsHint")}
+                        data-hint={t("resources.chipsHint")}
                         onClick={() => hub.toggleKindFilter(k)}
                       >
                         {kindLabel(k)} · {hub.kindCounts.value.get(k)}

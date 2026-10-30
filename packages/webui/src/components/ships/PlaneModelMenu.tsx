@@ -97,7 +97,7 @@ export default defineComponent({
                       "ship-stage__model-pick-item",
                       props.selected === option.index ? "is-active" : "",
                     ].join(" ")}
-                    title={[heading, option.label, tag].filter(Boolean).join(" · ")}
+                    data-hint={[heading, option.label, tag].filter(Boolean).join(" · ")}
                     onClick={() => emit("select", option.index)}
                   >
                     <span class="ship-stage__model-pick-item-label">{option.label}</span>
