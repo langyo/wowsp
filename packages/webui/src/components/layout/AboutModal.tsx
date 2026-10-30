@@ -1,4 +1,4 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { defineComponent, h, onBeforeUnmount, onMounted, ref, shallowRef, type Component, watch } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { Check, Download, MessageCircle, RefreshCw } from "@lucide/vue";
 
@@ -11,7 +11,6 @@ import { useAccountStore } from "@/stores/account";
 import { useUpdaterStore } from "@/stores/updater";
 import { usePiggyReminderStore } from "@/stores/piggyReminder";
 import { openExternal } from "@/utils/openExternal";
-import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import { useShipDetail } from "@/composables/useShipDetail";
 import AnnouncementContent from "./AnnouncementContent";
 import "./AboutModal.scss";
@@ -299,6 +298,30 @@ export const AboutContent = defineComponent({
     const account = useAccountStore();
     const shipDetail = useShipDetail();
 
+    /** The lazy ship-detail modal (the tech tree's, hosted for trivia
+     *  ship links). The chunk loads on the About body's first mount —
+     *  AboutModal sits in the eager startup graph (AppShell → settings)
+     *  and the ship-detail subtree (3D stage, specs, planner) is far too
+     *  heavy to parse at boot. The host renders nothing until the chunk
+     *  lands; deliberately a manual import + `h()` rather than
+     *  `defineAsyncComponent`, so the render tree never carries an
+     *  async-component vnode (test-utils' default stubber probes
+     *  `__isTeleport`-style markers on every vnode type, which a mocked
+     *  module namespace cannot answer). */
+    const shipModal = shallowRef<Component | null>(null);
+    /** Fetch the ship-detail chunk (module caching dedups concurrent
+     *  AboutContent instances, and a repeat call just re-assigns the same
+     *  component). A failed fetch leaves trivia ship links inert for this
+     *  instance; every click and every fresh About mount kicks it again. */
+    const loadShipModal = async (): Promise<void> => {
+      try {
+        shipModal.value = (await import("@/components/ships/ShipDetailModal")).default;
+      } catch (error) {
+        console.warn("[about] ship-detail chunk failed to load", error);
+      }
+    };
+    void loadShipModal();
+
     /** Open a trivia ship mention with the tech tree's ship-detail modal —
      *  the same ShipDetailModal + useShipDetail pair ShipsView hosts, so
      *  the encyclopedia/synthetic upgrade path is identical. Realm: the
@@ -306,7 +329,11 @@ export const AboutContent = defineComponent({
      *  same realm). */
     const openTriviaShip = (shipIndex: string, label: string): void => {
       const shipId = triviaShipId(shipIndex);
-      if (shipId !== null) shipDetail.openShip(shipId, label, account.activeRealm);
+      if (shipId === null) return;
+      // The chunk may still be loading (or an earlier fetch failed) — kick
+      // it again so a click is never permanently inert.
+      void loadShipModal();
+      shipDetail.openShip(shipId, label, account.activeRealm);
     };
 
     // --- piggy easter eggs ---
@@ -655,11 +682,13 @@ export const AboutContent = defineComponent({
             hosted inside AboutContent so both About hosts (the standalone
             About modal and the settings 关于 section) share one open path.
             It stays closed until a trivia ship link is clicked. */}
-        <ShipDetailModal
-          ship={shipDetail.selectedShip.value}
-          gameRoot={shipDetail.gameRoot.value}
-          onClose={shipDetail.closeShip}
-        />
+        {shipModal.value
+          ? h(shipModal.value, {
+              ship: shipDetail.selectedShip.value,
+              gameRoot: shipDetail.gameRoot.value,
+              onClose: shipDetail.closeShip,
+            })
+          : null}
       </div>
     );
   },
