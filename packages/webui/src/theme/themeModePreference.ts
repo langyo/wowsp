@@ -6,9 +6,12 @@
  *   "dark"   常黑          → setMode("dark")
  *   "light"  常白          → setMode("light")
  *   "solar"  根据时间（日照）→ setMode("system") — hikari's "system" follows
- *                           the SUN (day/dusk/night clock driven by local
- *                           time + IP geolocation), not the OS; this is the
- *                           shipped behavior and stays the default.
+ *                           the SUN (day/dusk/night clock), not the OS;
+ *                           its coordinates come from
+ *                           theme/solarLocationPreference (the configured
+ *                           time zone by default, a real fix on demand).
+ *                           This is the shipped behavior and stays the
+ *                           default.
  *
  * The preference persists under `wowsp-theme-mode` (ours, authoritative) and
  * migrates hikari's legacy `hikari-theme-mode` key on first read
