@@ -9,8 +9,10 @@
 // corners fall off naturally — the same natural-falloff treatment the
 // scroll container's generic edge fades received, which this band never
 // inherited. The size/feather var contract mirrors hikari's
-// scroll-container custom-property contract: both default --space-24 and
-// stay consumer-overridable from the host or an ancestor. The vertical
+// scroll-container custom-property contract: both default --space-24, and
+// an override declared ON the host wins (a directly declared custom
+// property beats any inherited value, so an ancestor's cannot reach the
+// painters). The vertical
 // decay (32% peak → transparent) stays in the background gradient below;
 // the horizontal feather is a single-axis mask layered on top of it.
 //
