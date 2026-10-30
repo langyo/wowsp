@@ -7,6 +7,8 @@
   "portable3dBlocked": "便携版不支持 3D 视图，请安装完整版以获得最佳体验。",
   "copied": "已复制到剪贴板",
   "clickToCopy": "点击以复制",
+  "ipcBlockedTitle": "应用内部通信通道无响应",
+  "ipcBlockedBody": "这通常是系统代理或防火墙拦截了本地回环流量（127.0.0.1 / *.localhost）导致的。请调整或关闭代理后重新加载。",
   "reload": "重新加载",
   "copyFailed": "复制失败",
   "playerMenu": {

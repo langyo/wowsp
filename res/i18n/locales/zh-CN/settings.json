@@ -136,6 +136,7 @@
   "networkDiagEndpointWg": "WG API",
   "networkDiagPathProxy": "代理",
   "networkDiagPathDirect": "直连",
+  "networkManualRestartHint": "内置页面的网络请求（遥测、验证码框）将在下次启动后使用该手动代理。",
   "pairing": "手机配对",
   "pairingHint": "让手机上的 WoWSP 应用浏览并下载这台电脑上的录像——既可在局域网内，也可通过内置互联网配对服务在任意网络下进行。",
   "pairingOn": "服务已开启",

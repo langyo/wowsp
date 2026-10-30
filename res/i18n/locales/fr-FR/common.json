@@ -7,6 +7,8 @@
   "portable3dBlocked": "L'édition portable ne prend pas en charge les vues 3D. Installez l'édition complète pour une expérience optimale.",
   "copied": "Copié dans le presse-papiers",
   "clickToCopy": "Cliquer pour copier",
+  "ipcBlockedTitle": "Le canal interne de l'application ne répond pas",
+  "ipcBlockedBody": "Cela signifie généralement qu'un proxy système ou un pare-feu intercepte le trafic de bouclage (127.0.0.1 / *.localhost). Ajustez ou désactivez le proxy, puis rechargez.",
   "reload": "Recharger",
   "copyFailed": "Échec de la copie",
   "playerMenu": {

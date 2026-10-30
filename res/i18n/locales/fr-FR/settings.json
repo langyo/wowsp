@@ -136,6 +136,7 @@
   "networkDiagEndpointWg": "WG API",
   "networkDiagPathProxy": "Proxy",
   "networkDiagPathDirect": "Direct",
+  "networkManualRestartHint": "Les requêtes réseau de la page intégrée (télémétrie, cadre de captcha) utiliseront le proxy manuel au prochain démarrage.",
   "pairing": "Appairage mobile",
   "pairingHint": "Permettez à l'application WoWSP d'un téléphone de parcourir et de télécharger les replays de cet ordinateur — sur le réseau local, ou de n'importe où via la passerelle Internet intégrée.",
   "pairingOn": "Serveur activé",

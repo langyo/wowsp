@@ -7,6 +7,8 @@
   "portable3dBlocked": "휴대용 버전은 3D 보기를 지원하지 않습니다. 최상의 경험을 위해 정식 버전을 설치하세요.",
   "copied": "클립보드에 복사되었습니다",
   "clickToCopy": "클릭하여 복사",
+  "ipcBlockedTitle": "앱 내부 통신 채널이 응답하지 않습니다",
+  "ipcBlockedBody": "일반적으로 시스템 프록시나 방화벽이 루프백 트래픽(127.0.0.1 / *.localhost)을 가로채는 경우입니다. 프록시를 조정하거나 끈 뒤 새로 고침하세요.",
   "reload": "새로고침",
   "copyFailed": "복사하지 못했습니다",
   "playerMenu": {

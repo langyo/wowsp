@@ -84,6 +84,9 @@ export default defineComponent({
                 {network.netSavedFlash.value ? t("settings.networkSaved") : t("settings.networkSave")}
               </HkButton>
             </div>
+            {network.netCfg.value.mode === "manual" ? (
+              <HkSettingsHint>{t("settings.networkManualRestartHint")}</HkSettingsHint>
+            ) : null}
             {/* Resource CDN — an independent setting, not gated on the proxy
                 mode; the same input+Save row grammar as the proxy URL keeps
                 both URL fields at one width with a visible commit button. */}
