@@ -1,6 +1,6 @@
 import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
-import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpCircle } from "@lucide/vue";
+import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpCircle, Radar, BatteryCharging } from "@lucide/vue";
 
 import { HAlert, HkButton, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
@@ -678,6 +678,8 @@ const SpecsPanel = defineComponent({
         case "Plane": return Plane;
         case "Gauge": return Gauge;
         case "Eye": return Eye;
+        case "Radar": return Radar;
+        case "BatteryCharging": return BatteryCharging;
         default: return Shield;
       }
     };
@@ -694,10 +696,32 @@ const SpecsPanel = defineComponent({
           </p>
         );
       }
+      // One label/value row — shared by group-level rows and section rows.
+      // The ns argument namespaces the key per section: the same row key
+      // (torpDamage) legitimately appears in two torpedo-type sections and
+      // Vue needs unique sibling keys inside the one dl.
+      const renderRow = (row: { key: string; value: string; hint?: string }, ns = "") => (
+        <div class="specs-group__row" key={ns + row.key}>
+          <dt class="specs-group__label">
+            {t(`ships.spec.${row.key}`)}
+            {row.hint ? (
+              <span class="specs-group__hint" data-hint={t(`ships.spec.${row.hint}`)}>
+                <HelpCircle size={11} />
+              </span>
+            ) : null}
+          </dt>
+          <dd
+            class="specs-group__value"
+            data-hint={t("common.clickToCopy")}
+            onClick={() => copy(String(row.value))}
+          >{row.value}</dd>
+        </div>
+      );
       return (
         <div class="specs-panel">
           {groups.value.map((g) => {
             const Icon = iconFor(g.icon);
+            const sections = g.sections ?? [];
             return (
               <section class="specs-group">
                 <header class="specs-group__head">
@@ -705,22 +729,28 @@ const SpecsPanel = defineComponent({
                   <h5 class="specs-group__title">{t(`ships.spec.group.${g.group}`)}</h5>
                 </header>
                 <dl class="specs-group__rows">
-                  {g.rows.map((row) => (
-                    <div class="specs-group__row" key={row.key}>
-                      <dt class="specs-group__label">
-                        {t(`ships.spec.${row.key}`)}
-                        {row.hint ? (
-                          <span class="specs-group__hint" data-hint={t(`ships.spec.${row.hint}`)}>
-                            <HelpCircle size={11} />
-                          </span>
-                        ) : null}
-                      </dt>
-                      <dd
-                        class="specs-group__value"
-                        data-hint={t("common.clickToCopy")}
-                        onClick={() => copy(String(row.value))}
-                      >{row.value}</dd>
-                    </div>
+                  {g.rows.map((row) => renderRow(row))}
+                  {sections.map((sec, i) => (
+                    <>
+                      {/* Sub-groups (shell types, torpedo types) divide with
+                          an internal separator line; the first one only
+                          needs it when group-level rows sit above it. */}
+                      {i > 0 || g.rows.length > 0 ? (
+                        <div class="specs-group__divider" aria-hidden="true" />
+                      ) : null}
+                      <div class="specs-group__section" key={sec.labelKey + (sec.suffix ?? "")}>
+                        <span class="specs-group__section-label">
+                          {t(`ships.spec.${sec.labelKey}`)}
+                          {sec.suffix ?? ""}
+                          {sec.hintKey ? (
+                            <span class="specs-group__hint" data-hint={t(`ships.spec.${sec.hintKey}`)}>
+                              <HelpCircle size={11} />
+                            </span>
+                          ) : null}
+                        </span>
+                        {sec.rows.map((row) => renderRow(row, sec.labelKey + ":"))}
+                      </div>
+                    </>
                   ))}
                 </dl>
               </section>

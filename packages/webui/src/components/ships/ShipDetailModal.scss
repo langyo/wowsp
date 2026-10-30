@@ -202,6 +202,32 @@
     cursor: pointer;
     user-select: all;
   }
+
+  /* Internal sub-groups (shell types, torpedo types): a labelled row block
+     divided from its siblings by a separator line — the group header's own
+     border stays the only full-width rule, these dividers are softer. */
+  &__divider {
+    height: 1px;
+    margin: 0.15rem 0;
+    background: linear-gradient(
+      to right,
+      rgb(var(--color-border) / 30%),
+      rgb(var(--color-border) / 8%)
+    );
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  &__section-label {
+    color: rgb(var(--color-primary) / 85%);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
 }
 
 .trend-bars {

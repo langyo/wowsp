@@ -108,4 +108,29 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+
+  /* Section sub-groups (shell types / torpedo types) — the same divided
+     layout the spec panel uses, scaled to the observer's tighter rows. */
+  &__divider {
+    height: 1px;
+    margin: 0.12rem 0;
+    background: linear-gradient(
+      to right,
+      rgb(var(--color-border) / 30%),
+      rgb(var(--color-border) / 8%)
+    );
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+  }
+
+  &__section-label {
+    color: rgb(var(--color-primary) / 85%);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
 }

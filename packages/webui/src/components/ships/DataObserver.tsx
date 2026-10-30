@@ -1,8 +1,8 @@
 import { computed, defineComponent, ref, type PropType } from "vue";
-import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle } from "@lucide/vue";
+import { Shield, Crosshair, Target, Plane, Gauge, Eye, HelpCircle, Radar, BatteryCharging } from "@lucide/vue";
 
 import { HkIconButtonGroup, HkScrollContainer } from "@celestia-island/hikari";
-import { buildShipSpecs } from "./shipSpecs";
+import { buildShipSpecs, type SpecRow } from "./shipSpecs";
 import { recomputeStats, type ModifiedStats, type PlannerBuild } from "./modifierPipeline";
 import { mainCaliberMm } from "./shipParts";
 import type { TechTreeRealm } from "@/utils/techTreeData";
@@ -77,7 +77,9 @@ export default defineComponent({
 
     /**
      * Build observer rows: take the base spec groups and enrich the numeric
-     * rows with modified values + delta formatting where applicable.
+     * rows with modified values + delta formatting where applicable. Section
+     * rows (per shell type / torpedo type) flow through the same enrichment
+     * so the Main Battery category keeps its per-shell stats.
      */
     const observerGroups = computed(() => {
       // computeDelta has no cases for the new per-band AA row keys — those
@@ -85,19 +87,21 @@ export default defineComponent({
       const groups = buildShipSpecs(profile.value, props.ship.nation, props.gameparams);
       if (groups.length === 0) return [];
       const { base, modified } = stats.value;
+      const observe = (row: SpecRow) => {
+        const delta = computeDelta(row.key, profile.value, base, modified);
+        if (delta) {
+          return {
+            ...row,
+            value: delta,
+            changed: delta.includes(" = "),
+          };
+        }
+        return { ...row, changed: false };
+      };
       return groups.map((g) => ({
         ...g,
-        rows: g.rows.map((row) => {
-          const delta = computeDelta(row.key, profile.value, base, modified);
-          if (delta) {
-            return {
-              ...row,
-              value: delta,
-              changed: delta.includes(" = "),
-            };
-          }
-          return { ...row, changed: false };
-        }),
+        rows: g.rows.map(observe),
+        sections: g.sections?.map((s) => ({ ...s, rows: s.rows.map(observe) })),
       }));
     });
 
@@ -109,6 +113,8 @@ export default defineComponent({
         case "Plane": return Plane;
         case "Gauge": return Gauge;
         case "Eye": return Eye;
+        case "Radar": return Radar;
+        case "BatteryCharging": return BatteryCharging;
         default: return Shield;
       }
     };
@@ -138,6 +144,28 @@ export default defineComponent({
       });
       const visible = visibleGroup.value;
       const VisibleIcon = visible ? iconFor(visible.icon) : null;
+
+      // One observed row (base ±Δ = modified) — ns namespaces the key per
+      // section so repeated row keys across sections stay unique siblings.
+      const renderRow = (
+        row: { key: string; value: string; hint?: string; changed?: boolean },
+        ns = "",
+      ) => (
+        <div
+          class={["do-group__row", row.changed ? "do-group__row--changed" : ""]}
+          key={ns + row.key}
+        >
+          <dt class="do-group__label">
+            {t(`ships.spec.${row.key}`)}
+            {row.hint ? (
+              <span class="do-group__hint" data-hint={t(`ships.spec.${row.hint}`)}>
+                <HelpCircle size={10} />
+              </span>
+            ) : null}
+          </dt>
+          <dd class="do-group__value">{row.value}</dd>
+        </div>
+      );
       return (
         /* The card body scrolls through hikari's scroll container (overlay
            thumb on the card's right edge; the native bar stays hidden). */
@@ -161,21 +189,27 @@ export default defineComponent({
                 <h5 class="do-group__title">{t(`ships.spec.group.${visible.group}`)}</h5>
               </header>
               <dl class="do-group__rows">
-                {visible.rows.map((row) => (
-                  <div
-                    class={["do-group__row", row.changed ? "do-group__row--changed" : ""]}
-                    key={row.key}
-                  >
-                    <dt class="do-group__label">
-                      {t(`ships.spec.${row.key}`)}
-                      {row.hint ? (
-                        <span class="do-group__hint" data-hint={t(`ships.spec.${row.hint}`)}>
-                          <HelpCircle size={10} />
-                        </span>
-                      ) : null}
-                    </dt>
-                    <dd class="do-group__value">{row.value}</dd>
-                  </div>
+                {visible.rows.map((row) => renderRow(row))}
+                {(visible.sections ?? []).map((sec, i) => (
+                  <>
+                    {/* Section (shell type / torpedo type) sub-groups mirror
+                        the spec panel: labelled row blocks with dividers. */}
+                    {i > 0 || visible.rows.length > 0 ? (
+                      <div class="do-group__divider" aria-hidden="true" />
+                    ) : null}
+                    <div class="do-group__section" key={sec.labelKey + (sec.suffix ?? "")}>
+                      <span class="do-group__section-label">
+                        {t(`ships.spec.${sec.labelKey}`)}
+                        {sec.suffix ?? ""}
+                        {sec.hintKey ? (
+                          <span class="do-group__hint" data-hint={t(`ships.spec.${sec.hintKey}`)}>
+                            <HelpCircle size={10} />
+                          </span>
+                        ) : null}
+                      </span>
+                      {sec.rows.map((row) => renderRow(row, sec.labelKey + ":"))}
+                    </div>
+                  </>
                 ))}
               </dl>
             </section>
@@ -236,7 +270,9 @@ function computeDelta(
       if (base.rudderShift == null || modified.rudderShift == null) return null;
       return fmtDelta(base.rudderShift, modified.rudderShift, 1, " s");
     }
-    case "heFireChance": {
+    case "fireChance": {
+      // The HE section's fire-chance row (formerly the group-level
+      // heFireChance row) still carries the fire-chance modifiers.
       if (base.fireChanceOut == null || modified.fireChanceOut == null) return null;
       return fmtDelta(base.fireChanceOut, modified.fireChanceOut, 0, "%");
     }

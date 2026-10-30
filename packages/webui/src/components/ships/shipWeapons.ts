@@ -16,6 +16,8 @@
  *    gun id); they render once with the combined DP label.
  *  - Torpedoes: ONLY the torpedo role blocks. AirArmament is aircraft
  *    catapults — never torpedoes (the X Worcester "2×1 torpedo" bug).
+ *  - Sonar: the submarine pinger role block (A_PingerGun) — surface ships
+ *    never carry one.
  */
 
 import { resolveShipParts, roleHpSlots, type ShipParts } from "./shipParts";
@@ -27,7 +29,8 @@ export type WeaponKind =
   | "torpedo"
   | "aa"
   | "asw"
-  | "aircraft";
+  | "aircraft"
+  | "sonar";
 
 export interface WeaponGroup {
   kind: WeaponKind;
@@ -189,6 +192,15 @@ export function summarizeWeapons(
   // squadrons (carriers carry no catapult mounts).
   const acCount = roleHpSlots(parts.airArmament).length;
   if (acCount > 0) out.push({ kind: "aircraft", count: acCount, barrels: 0, cal: 0 });
+
+  // ── Sonar — the submarine pinger block (WeaponType PINGER). One weapon
+  // per submarine; the card's detail line is the wave distance, the number
+  // the spec panel's sonar group agrees on.
+  const pinger = parts.pinger.find((b) => {
+    const d = Number((b as Record<string, unknown> | null)?.waveDistance ?? 0);
+    return Number.isFinite(d) && d > 0;
+  });
+  if (pinger) out.push({ kind: "sonar", count: 1, barrels: 0, cal: 0 });
 
   return out;
 }

@@ -57,6 +57,7 @@ ROLES = (
     "airArmament",
     "depthCharges",
     "airSupport",
+    "pinger",
 )
 
 
@@ -140,7 +141,8 @@ def resolve_parts(gp: dict, config: str = "top") -> dict[str, Any]:
             canonical = {"hull": ("A_Hull", "Hull"), "artillery": ("A_Artillery",),
                          "atba": ("A_ATBA",), "torpedoes": ("A_Torpedoes",),
                          "airDefense": ("A_AirDefense",), "airArmament": ("A_AirArmament",),
-                         "depthCharges": ("A_DepthCharge",), "airSupport": ("A_AirSupport",)}[role]
+                         "depthCharges": ("A_DepthCharge",), "airSupport": ("A_AirSupport",),
+                         "pinger": ("A_PingerGun",)}[role]
             for lit in canonical:
                 if isinstance(gp.get(lit), dict):
                     blocks = [gp[lit]]
@@ -181,6 +183,7 @@ def canonical_parts(gp: dict) -> dict[str, Any]:
         "airArmament": lst("A_AirArmament"),
         "depthCharges": lst("A_DepthCharge"),
         "airSupport": lst("A_AirSupport"),
+        "pinger": lst("A_PingerGun"),
     }
 
 

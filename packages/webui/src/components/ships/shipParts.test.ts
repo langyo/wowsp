@@ -386,6 +386,57 @@ describe("summarizeWeapons", () => {
   });
 });
 
+/** U-2501-shaped submarine entry: the pinger ("sonar") role names the
+ *  canonical A_PingerGun block through ShipUpgradeInfo, exactly like the
+ *  real PGSS110 hull entry does. */
+function submarineLike() {
+  const pinger = { waveDistance: 14000, waveReloadTime: 6, maxWaveHits: 2 };
+  const torps = { HP_GGT_1: mount(1), HP_GGT_2: mount(1) };
+  return {
+    name: "PGSS110_U_2501",
+    A_PingerGun: pinger,
+    A_Torpedoes: torps,
+    A_Hull: { health: 18900, maxSpeed: 27 },
+    ShipUpgradeInfo: {
+      PGUH900_STOCK: {
+        ucType: "_Hull",
+        prev: "",
+        components: {
+          hull: ["A_Hull"],
+          torpedoes: ["A_Torpedoes"],
+          pinger: ["A_PingerGun"],
+          artillery: [],
+          airDefense: [],
+          airArmament: [],
+          atba: [],
+        },
+      },
+    },
+  } as Record<string, unknown>;
+}
+
+describe("submarine pinger role", () => {
+  it("resolves the pinger block through ShipUpgradeInfo (U-2501 style)", () => {
+    const gp = submarineLike();
+    const parts = resolveShipParts(gp, "top");
+    expect(parts.pinger).toEqual([gp.A_PingerGun]);
+  });
+
+  it("falls back to the canonical A_PingerGun without upgrade info", () => {
+    const gp = submarineLike();
+    delete gp.ShipUpgradeInfo;
+    expect(resolveShipParts(gp, "top").pinger).toEqual([gp.A_PingerGun]);
+  });
+
+  it("surfaces a sonar weapon group for submarines only", () => {
+    const sonar = summarizeWeapons(submarineLike()).find((g) => g.kind === "sonar");
+    expect(sonar).toEqual({ kind: "sonar", count: 1, barrels: 0, cal: 0 });
+    // Surface ships never carry a pinger block.
+    expect(summarizeWeapons(shimakazeLike()).some((g) => g.kind === "sonar")).toBe(false);
+    expect(summarizeWeapons(worcesterLike()).some((g) => g.kind === "sonar")).toBe(false);
+  });
+});
+
 describe("mainCaliberMm", () => {
   it("reads the widest stock main-gun caliber in millimetres", () => {
     // Shimakaze-style: AB_127_50 guns resolve via ShipUpgradeInfo → 127 mm.
