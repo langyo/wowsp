@@ -728,6 +728,10 @@ pub struct ScoreModel {
     slots: usize,
     entity_dim: usize,
     global_dim: usize,
+    /// E24: width of the optional 4th `attrs` input (0 = the model takes
+    /// none, i.e. the E19 contract). A model exported with attribute routing
+    /// declares it and refuses to run without it.
+    attr_dim: usize,
     out_name: String,
     session: Session,
 }
@@ -769,6 +773,17 @@ impl ScoreModel {
         let slots = declared_dim(&shape_of("entity"), 1, 24);
         let entity_dim = declared_dim(&shape_of("entity"), 2, ENTITY_DIM_V2);
         let global_dim = declared_dim(&shape_of("global_feat"), 1, GLOBAL_DIM_V2);
+        // E24 attribute routing: an `attrs` input widens the contract by its
+        // declared width. 0 keeps every pre-E24 model byte-identical.
+        let attr_dim = if names.contains(&"attrs") {
+            let w = declared_dim(&shape_of("attrs"), 1, 0);
+            if w == 0 {
+                bail!("scoring model declares an `attrs` input with no static width");
+            }
+            w
+        } else {
+            0
+        };
         let outputs = session.outputs();
         let out_names: Vec<&str> = outputs.iter().map(|o| o.name()).collect();
         let (kind, out_name) = if out_names.contains(&"logitA") && out_names.contains(&"logitB") {
@@ -800,6 +815,7 @@ impl ScoreModel {
             slots,
             entity_dim,
             global_dim,
+            attr_dim,
             out_name,
             session,
         })
@@ -819,7 +835,20 @@ impl ScoreModel {
         (self.slots, self.entity_dim, self.global_dim)
     }
 
-    fn run(&mut self, entity: &[f32], global: &[f32], mask: &[f32]) -> anyhow::Result<Vec<f32>> {
+    /// E24: the `attrs` input width the session declares (0 = none). A
+    /// caller that wants attribute routing must hand [`Self::infer_fire`]
+    /// exactly this many floats.
+    pub fn attr_dim(&self) -> usize {
+        self.attr_dim
+    }
+
+    fn run(
+        &mut self,
+        entity: &[f32],
+        global: &[f32],
+        mask: &[f32],
+        attrs: Option<&[f32]>,
+    ) -> anyhow::Result<Vec<f32>> {
         if entity.len() != self.slots * self.entity_dim
             || global.len() != self.global_dim
             || mask.len() != self.slots
@@ -834,20 +863,50 @@ impl ScoreModel {
                 self.slots
             );
         }
+        // The attrs contract is symmetric: a model that declares the input
+        // must be fed one, and a model that does not must not be handed one
+        // (either direction is a wiring bug, not a silent no-op).
+        match (self.attr_dim, attrs) {
+            (0, None) => {},
+            (0, Some(_)) => {
+                bail!("attrs supplied but this model declares no `attrs` input (E19 contract)")
+            },
+            (n, None) => {
+                bail!("this model declares a {n}-wide `attrs` input but no attrs were supplied")
+            },
+            (n, Some(a)) if a.len() != n => {
+                bail!("attrs width mismatch: {} (want {n})", a.len())
+            },
+            _ => {},
+        }
         let entity_t = Tensor::from_array(([1usize, self.slots, self.entity_dim], entity.to_vec()))
             .map_err(|e| anyhow!("build entity tensor: {e}"))?;
         let global_t = Tensor::from_array(([1usize, self.global_dim], global.to_vec()))
             .map_err(|e| anyhow!("build global tensor: {e}"))?;
         let mask_t = Tensor::from_array(([1usize, self.slots], mask.to_vec()))
             .map_err(|e| anyhow!("build mask tensor: {e}"))?;
-        let outputs = self
-            .session
-            .run(ort::inputs![
-                "entity" => entity_t,
-                "global_feat" => global_t,
-                "mask" => mask_t,
-            ])
-            .map_err(|e| anyhow!("run inference: {e}"))?;
+        let outputs = match attrs {
+            Some(a) => {
+                let attrs_t = Tensor::from_array(([1usize, self.attr_dim], a.to_vec()))
+                    .map_err(|e| anyhow!("build attrs tensor: {e}"))?;
+                self.session
+                    .run(ort::inputs![
+                        "entity" => entity_t,
+                        "global_feat" => global_t,
+                        "mask" => mask_t,
+                        "attrs" => attrs_t,
+                    ])
+                    .map_err(|e| anyhow!("run inference: {e}"))?
+            },
+            None => self
+                .session
+                .run(ort::inputs![
+                    "entity" => entity_t,
+                    "global_feat" => global_t,
+                    "mask" => mask_t,
+                ])
+                .map_err(|e| anyhow!("run inference: {e}"))?,
+        };
         let extract = |name: &str| -> anyhow::Result<Vec<f32>> {
             let v = outputs
                 .get(name)
@@ -896,11 +955,12 @@ impl ScoreModel {
         entity: &[f32],
         global: &[f32],
         mask: &[f32],
+        attrs: Option<&[f32]>,
     ) -> anyhow::Result<(f32, f32)> {
         if self.kind != ScoreModelKind::FireTwoHead {
             bail!("infer_fire on a non-fire session ({:?})", self.kind);
         }
-        let out = self.run(entity, global, mask)?;
+        let out = self.run(entity, global, mask, attrs)?;
         Ok((out[0], out[1]))
     }
 
@@ -914,7 +974,9 @@ impl ScoreModel {
         if !matches!(self.kind, ScoreModelKind::MoveSectors { .. }) {
             bail!("infer_move on a non-movement session ({:?})", self.kind);
         }
-        self.run(entity, global, mask)
+        // Movement models never take attrs (routing is a fire-head
+        // experiment); a movement export that declared `attrs` errors here.
+        self.run(entity, global, mask, None)
     }
 }
 
@@ -1180,10 +1242,23 @@ pub fn compute_ship_scores(
         .to_string();
     build_ship_scores(&stream, &rows, &replay_id, t_from, t_to, sources, |row| {
         let (entity, global, mask) = feature_tensors_v2(row);
+        // E24: an attribute-routed fire model (attr_dim > 0) gets the
+        // routing vector from the embedded table, slot-for-slot what the
+        // training featurization saw.
+        let routing = (fire.attr_dim() > 0)
+            .then(|| {
+                crate::commands::ship_attrs::embedded_row_vector(
+                    row.core.ship_id,
+                    &row.core.friends,
+                    &row.core.enemies,
+                )
+            })
+            .transpose()?;
         // The fire model (v2plain_std) eats the untouched v2 row; the move
         // model (main, --ablate e11) eats the same row with the E11 family
         // zeroed — train/inference distribution parity (E14's lesson).
-        let (_logit_a, logit_b) = fire.infer_fire(&entity, &global, &mask)?;
+        let (_logit_a, logit_b) =
+            fire.infer_fire(&entity, &global, &mask, routing.as_ref().map(|v| &v[..]))?;
         let (mv_entity, mv_global) = ablate_e11_tensors(&entity, &global, mv.widths().0);
         let logits = mv.infer_move(&mv_entity, &mv_global, &mask)?;
         Ok((sigmoid(logit_b), softmax(&logits)))
@@ -1193,6 +1268,60 @@ pub fn compute_ship_scores(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The synthetic 4-input fixture (fixtures/build_decision_attrs_tiny.py):
+    /// entity [1,2,3], global [1,1], mask [1,2], attrs [1,10] with
+    /// logitA = sum(entity) + 100*attrs[0] - 100*attrs[1] and
+    /// logitB = sum(global) + mask[0] - 0.5 — closed-form outputs, so the
+    /// test proves the attrs tensor actually reaches the graph.
+    const ATTRS_FIXTURE: &[u8] = include_bytes!("fixtures/decision_attrs_tiny.onnx");
+
+    #[test]
+    fn e24_attrs_fixture_detects_and_feeds_the_routing_input() {
+        let mut m = ScoreModel::from_bytes("attrs-fixture", ATTRS_FIXTURE).expect("load fixture");
+        assert_eq!(m.kind(), &ScoreModelKind::FireTwoHead);
+        assert_eq!(m.attr_dim(), 10);
+        let entity = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0]; // [1,2,3]
+        let global = vec![7.0f32]; // [1,1]
+        let mask = vec![1.0f32, 1.0]; // [1,2]
+        let mut attrs = [0.0f32; 10];
+        attrs[0] = 0.25;
+        attrs[1] = 0.5;
+        let (la, lb) = m
+            .infer_fire(&entity, &global, &mask, Some(&attrs))
+            .expect("infer with attrs");
+        assert!(
+            (la - (21.0 + 100.0 * 0.25 - 100.0 * 0.5)).abs() < 1e-4,
+            "logitA {la}"
+        );
+        assert!((lb - 7.5).abs() < 1e-4, "logitB {lb}");
+        // attrs[0] is the ONLY path into logitA's extra term: change it and
+        // the output must move by exactly 100x the delta.
+        attrs[0] = 0.75;
+        let (la2, _) = m
+            .infer_fire(&entity, &global, &mask, Some(&attrs))
+            .expect("infer with attrs (2)");
+        assert!((la2 - la - 50.0).abs() < 1e-3, "delta {la2} vs {la}");
+    }
+
+    #[test]
+    fn e24_attrs_contract_violations_are_loud() {
+        let mut m = ScoreModel::from_bytes("attrs-fixture", ATTRS_FIXTURE).expect("load fixture");
+        let entity = vec![0.0f32; 6];
+        let global = vec![0.0f32; 1];
+        let mask = vec![0.0f32; 2];
+        // Model wants attrs, caller passes none.
+        let err = m
+            .infer_fire(&entity, &global, &mask, None)
+            .expect_err("missing attrs must fail");
+        assert!(err.to_string().contains("attrs"), "err: {err}");
+        // Wrong width.
+        let short = [0.0f32; 3];
+        let err = m
+            .infer_fire(&entity, &global, &mask, Some(&short))
+            .expect_err("short attrs must fail");
+        assert!(err.to_string().contains("width"), "err: {err}");
+    }
 
     #[test]
     fn e21_window_hp_lost_attributes_covered_enemy_drops() {
@@ -1768,7 +1897,7 @@ mod tests {
         let global = vec![0.0f32; 27];
         let mask = vec![1.0f32; 24];
         let (la, lb) = fire
-            .infer_fire(&entity, &global, &mask)
+            .infer_fire(&entity, &global, &mask, None)
             .expect("fire forward");
         assert!(la.is_finite() && lb.is_finite());
         let (ab_entity, ab_global) = ablate_e11_tensors(&entity, &global, 24);

@@ -144,10 +144,13 @@ pub enum DecisionModelKind {
     Fixture8,
     /// E9 two-head fire model: `entity`[1,SLOTS,ENTITY_DIM] +
     /// `global_feat`[1,GLOBAL_DIM] + `mask`[1,SLOTS] → `logitA` / `logitB`.
+    /// E24 attribute routing appends `attrs`[1,ATTR_DIM] to the input set;
+    /// `attr_dim = 0` is the pre-E24 three-input contract.
     Fire24 {
         slots: usize,
         entity_dim: usize,
         global_dim: usize,
+        attr_dim: usize,
     },
 }
 
@@ -232,22 +235,40 @@ impl DecisionModel {
     }
 
     /// E9 two-head fire inference. `entity` is the flat [SLOTS×ENTITY_DIM]
-    /// row-major matrix, `global`/`mask` the flat feature rows. Returns
-    /// (logitA "can fire", logitB "expert fires").
+    /// row-major matrix, `global`/`mask` the flat feature rows. `attrs` is
+    /// the E24 routing vector (`ship_attrs::row_attr_vector` output, exactly
+    /// `attr_dim` floats) — REQUIRED for attribute-routed models, FORBIDDEN
+    /// for the pre-E24 three-input contract. Returns (logitA "can fire",
+    /// logitB "expert fires").
     pub fn infer_fire(
         &mut self,
         entity: &[f32],
         global: &[f32],
         mask: &[f32],
+        attrs: Option<&[f32]>,
     ) -> anyhow::Result<(f32, f32)> {
         let DecisionModelKind::Fire24 {
             slots,
             entity_dim,
             global_dim,
+            attr_dim,
         } = self.kind
         else {
             bail!("infer_fire on a non-fire-schema session");
         };
+        match (attr_dim, attrs) {
+            (0, None) => {},
+            (0, Some(_)) => {
+                bail!("attrs supplied but this model declares no `attrs` input (E19 contract)")
+            },
+            (n, None) => {
+                bail!("this model declares a {n}-wide `attrs` input but no attrs were supplied")
+            },
+            (n, Some(a)) if a.len() != n => {
+                bail!("attrs width mismatch: {} (want {n})", a.len())
+            },
+            _ => {},
+        }
         if entity.len() != slots * entity_dim || global.len() != global_dim || mask.len() != slots {
             bail!(
                 "feature width mismatch: entity {} (want {}), global {} (want {}), mask {} (want {})",
@@ -265,14 +286,28 @@ impl DecisionModel {
             .map_err(|e| anyhow!("build global tensor: {e}"))?;
         let mask_t = Tensor::from_array(([1usize, slots], mask.to_vec()))
             .map_err(|e| anyhow!("build mask tensor: {e}"))?;
-        let outputs = self
-            .session
-            .run(ort::inputs![
-                "entity" => entity_t,
-                "global_feat" => global_t,
-                "mask" => mask_t,
-            ])
-            .map_err(|e| anyhow!("run inference: {e}"))?;
+        let outputs = match attrs {
+            Some(a) => {
+                let attrs_t = Tensor::from_array(([1usize, attr_dim], a.to_vec()))
+                    .map_err(|e| anyhow!("build attrs tensor: {e}"))?;
+                self.session
+                    .run(ort::inputs![
+                        "entity" => entity_t,
+                        "global_feat" => global_t,
+                        "mask" => mask_t,
+                        "attrs" => attrs_t,
+                    ])
+                    .map_err(|e| anyhow!("run inference: {e}"))?
+            },
+            None => self
+                .session
+                .run(ort::inputs![
+                    "entity" => entity_t,
+                    "global_feat" => global_t,
+                    "mask" => mask_t,
+                ])
+                .map_err(|e| anyhow!("run inference: {e}"))?,
+        };
         let mut logits = [0.0f32; 2];
         for (idx, name) in ["logitA", "logitB"].iter().enumerate() {
             let v = outputs
@@ -329,10 +364,20 @@ fn detect_kind(session: &Session) -> anyhow::Result<DecisionModelKind> {
         };
         let entity_shape = shape_of("entity");
         let global_shape = shape_of("global_feat");
+        let attr_dim = if names.contains(&"attrs") {
+            let w = declared_dim(&shape_of("attrs"), 1, 0);
+            if w == 0 {
+                bail!("fire model declares an `attrs` input with no static width");
+            }
+            w
+        } else {
+            0
+        };
         let kind = DecisionModelKind::Fire24 {
             slots: declared_dim(&entity_shape, 1, 24),
             entity_dim: declared_dim(&entity_shape, 2, 10),
             global_dim: declared_dim(&global_shape, 1, 14),
+            attr_dim,
         };
         let outputs: Vec<&str> = session.outputs().iter().map(|o| o.name()).collect();
         if !outputs.contains(&"logitA") || !outputs.contains(&"logitB") {
@@ -527,7 +572,7 @@ mod tests {
         // running a wrong-shaped forward.
         assert!(
             model
-                .infer_fire(&[0.0; 240], &[0.0; 14], &[0.0; 24])
+                .infer_fire(&[0.0; 240], &[0.0; 14], &[0.0; 24], None)
                 .is_err()
         );
     }
@@ -576,7 +621,8 @@ mod tests {
             &DecisionModelKind::Fire24 {
                 slots: E9_SLOTS,
                 entity_dim: E9_ENTITY_DIM,
-                global_dim: E9_GLOBAL_DIM
+                global_dim: E9_GLOBAL_DIM,
+                attr_dim: 0
             }
         );
         // Zero features, full mask: a finite answer (the training script's
@@ -585,7 +631,7 @@ mod tests {
         let global = vec![0.0f32; E9_GLOBAL_DIM];
         let mask = vec![1.0f32; E9_SLOTS];
         let (la, lb) = model
-            .infer_fire(&entity, &global, &mask)
+            .infer_fire(&entity, &global, &mask, None)
             .expect("infer_fire on real model");
         assert!(la.is_finite() && lb.is_finite());
         eprintln!("[g4] real model logits A {la:.4} B {lb:.4} (zero features)");
