@@ -44,7 +44,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from _common import find_lesta_game_path  # noqa: E402
+from _common import find_game_path, find_lesta_game_path  # noqa: E402
 
 REPO = HERE.parent.parent
 # WG public API application_id — the same client-side public identifier as
@@ -58,6 +58,7 @@ WG_INFO_URL = (
 WG_BUNDLE = REPO / "packages" / "webui" / "src" / "res" / "data" / "ships_basics.json"
 LESTA_BUNDLE = REPO / "packages" / "webui" / "src" / "data" / "ships_lesta.json"
 LESTA_TREE = REPO / "packages" / "webui" / "src" / "data" / "tech_tree_lesta.json"
+WG_ROSTER = REPO / "packages" / "webui" / "src" / "data" / "ships_wg_only.json"
 # The version-stamped ship-basics cache (same dir build_planner_data.py uses).
 CACHE_DIR = (
     Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local/share")))
@@ -111,6 +112,29 @@ def lesta_client_build(game: str) -> str | None:
         if (build / "res" / "texts" / "ru" / "LC_MESSAGES" / "global.mo").is_file():
             return build.name
     return None
+
+
+def wg_client_build(game: str) -> str | None:
+    """The WG install's newest numeric bin/<build> directory — the build the
+    WG GameParams dump (and therefore the roster diff) must track."""
+    bin_dir = Path(game, "bin")
+    builds = sorted(
+        (p for p in bin_dir.iterdir() if p.is_dir() and p.name.isdigit()),
+        key=lambda p: int(p.name),
+        reverse=True,
+    ) if bin_dir.is_dir() else []
+    return builds[0].name if builds else None
+
+
+def roster_stamp_parts() -> tuple[str | None, str | None]:
+    """(wg build, lesta build) recorded in the committed roster's dual stamp
+    ("wg-<build>+lesta-<build>"); (None, None) for the legacy "wg" stamp —
+    the encyclopedia flow re-bakes once to establish provenance."""
+    m = re.fullmatch(
+        r"wg-(\d+)\+lesta-(\d+)",
+        str((_read_json(WG_ROSTER) or {}).get("gameVersion") or ""),
+    )
+    return (m.group(1), m.group(2)) if m else (None, None)
 
 
 def lesta_display_version(game: str) -> str | None:
@@ -277,8 +301,22 @@ def _lesta_report() -> dict:
         out["error"] = "no bin/<build> carrying res/texts/ru/LC_MESSAGES/global.mo"
         return out
     out["live_stamp"] = f"lesta-{build}"
-    if committed != build:
+    out["roster_stamp"] = str((_read_json(WG_ROSTER) or {}).get("gameVersion") or "") or None
+    roster_wg, roster_lesta = roster_stamp_parts()
+    out["roster_wg_build"] = roster_wg
+    wg_game = find_game_path(None)
+    out["wg_client_build"] = wg_client_build(wg_game) if wg_game else None
+    overlay_drift = committed != build
+    wg_drift = (
+        out["wg_client_build"] is not None and roster_wg != out["wg_client_build"]
+    )
+    if overlay_drift or wg_drift:
         out["status"] = "drift"
+        if wg_drift:
+            out["roster_note"] = (
+                f"roster stamp wg part {roster_wg or '(none)'} != WG client build "
+                f"{out['wg_client_build']}"
+            )
         return out
     out["status"] = "up_to_date"
     out["overlay_entries"] = len((_read_json(LESTA_BUNDLE) or {}).get("ships") or {})
@@ -315,6 +353,12 @@ def _print_report(report: dict) -> None:
     print(f"  status   : {_STATUS_LABEL[lesta['status']]}")
     if lesta.get("error"):
         print(f"  note     : {lesta['error']}")
+    if lesta.get("roster_stamp"):
+        wg_build = lesta.get("wg_client_build")
+        print(f"  roster   : {lesta['roster_stamp']}  (WG client build "
+              f"{wg_build or '?'})")
+    if lesta.get("roster_note"):
+        print(f"  note     : {lesta['roster_note']}")
     if lesta["status"] == "up_to_date":
         print(f"  overlay  : {lesta['overlay_entries']} entries, tree {lesta['tree_nodes']} nodes")
 
