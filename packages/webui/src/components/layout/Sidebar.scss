@@ -332,11 +332,16 @@
 
 /* ── Desktop rail composition (hikari sidebar-rail kit) ────────────────
    The desktop root is the LAYOUT box only (.hk-sidebar-rail-host: relative,
-   overflow-hidden, width transitioned — hikari's sheet): its inline width is
-   the sidebar's layout footprint and the visual surface moves onto the
-   .sidebar__panel child so the peek overlay can paint its full width OVER
-   the content while the footprint stays at rail width. The drawer variant
-   never mounts the panel, so its root keeps the classic chrome above. */
+   width transitioned — hikari's sheet): its inline width is the sidebar's
+   layout footprint and the visual surface moves onto the .sidebar__panel
+   child so the peek overlay can paint its full width OVER the content while
+   the footprint stays at rail width. Neither box may clip: the toggle
+   straddles the panel's content-facing border, so its outer half lives
+   outside the panel's border box — hikari's sheet sets overflow: visible on
+   both and the CONTENT clip is the .hk-sidebar-rail-clip wrapper inside the
+   panel (Sidebar.tsx mounts it). wowsp declares no overflow on either box,
+   so nothing here can re-clip the circle. The drawer variant never mounts
+   the panel, so its root keeps the classic chrome above. */
 .sidebar:not(.sidebar--drawer) {
   /* The stylesheet width gives way to the host's inline footprint width
      (expanded var / 56px rail); the surface declarations below move onto
@@ -353,7 +358,13 @@
   /* The visual sidebar surface (moved from the root; the panel is what
      slides over the content during a peek, so it owns the paint). The
      companion .hk-sidebar-rail-panel class (hikari's sheet) provides the
-     absolute overlay geometry, the flex column and the width transition. */
+     absolute overlay geometry, the flex column, the width transition and
+     the visible overflow the straddling toggle needs; the nav+footer body
+     rides a .hk-sidebar-rail-clip child so rows still clip at rail width
+     while the panel's width animates. During a rail -> expanded flip the
+     host wears [data-pinning], which hikari's sheet uses to kill this
+     panel's width transition (the expanded sidebar appears at full width
+     instantly; only the host's footprint animates). */
   background: rgb(var(--color-surface));
   background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
   backdrop-filter: var(--wallpaper-blur-sidebar, blur(0px));

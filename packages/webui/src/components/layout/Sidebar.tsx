@@ -2,7 +2,13 @@ import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle, Smartphone } from "@lucide/vue";
 
-import { HkSidebarRailToggle, HkTag, HkTooltip, useSidebarRail } from "@celestia-island/hikari";
+import {
+  HkSidebarRailToggle,
+  HkTag,
+  HkTooltip,
+  isPointerOverRailToggle,
+  useSidebarRail,
+} from "@celestia-island/hikari";
 
 import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
@@ -49,13 +55,32 @@ import "./Sidebar.scss";
  *
  * DESKTOP rail mode (hikari's sidebar-rail kit, session-only): the root
  * becomes the `.hk-sidebar-rail-host` LAYOUT box — a circular hover-reveal
- * chevron toggle (HkSidebarRailToggle) rides the panel's content-facing
- * edge and clicking it collapses the sidebar to a 56px icon rail. While
+ * chevron toggle (HkSidebarRailToggle) STRADDLING the panel's content-facing
+ * border (its center on the line, half the circle hanging over the content)
+ * and clicking it collapses the sidebar to a 56px icon rail. While
  * collapsed, resting the pointer on the rail for the peek delay opens the
  * FULL sidebar as an overlay drawer (`.hk-sidebar-rail-panel` slides over
  * the content; the layout box stays at rail width so the content area
  * never shifts), and leaving closes it after the grace. All timing lives
  * in hikari's useSidebarRail — the one implementation every host shares.
+ *
+ * Three chrome contracts ride the host too, and the desktop branch below is
+ * their only wiring:
+ *   - SUPPRESSION: the toggle sits ON the rail's hover surface, so a pointer
+ *     parked on it must not arm the peek (the drawer would open under the
+ *     resting cursor and jump the button away from it). The hit-test is
+ *     GEOMETRIC (isPointerOverRailToggle) on pointerenter AND pointermove —
+ *     the toggle is opacity:0 / pointer-events:none before the reveal, so
+ *     event.target cannot report it;
+ *   - `data-pinning`: while the host animates rail -> expanded the panel
+ *     SNAPS to full width (hikari's sheet rule), because only the content
+ *     area is supposed to move; the host's own width transitionend clears
+ *     the window;
+ *   - the CONTENT CLIP: the panel's children live in
+ *     `.hk-sidebar-rail-clip`, so full-width rows stay inside the rail
+ *     footprint while widths animate. The panel itself cannot clip any more
+ *     (the toggle's outer half hangs outside it), so that wrapper is the
+ *     only clipping box.
  * The drawer variant mounts NONE of this; its markup is unchanged.
  */
 export default defineComponent({
@@ -88,7 +113,11 @@ export default defineComponent({
     // @use'd in Sidebar.scss. The drawer variant never enters rail mode:
     // every computed below folds to false/undefined there.
     const isDrawer = computed(() => props.variant === "drawer");
-    const rail = useSidebarRail();
+    // The host region element. hikari's machine reads it twice: a
+    // pointerleave whose relatedTarget is still inside is DOM churn, not a
+    // leave, and the suppression hit-test measures the toggle's box in it.
+    const hostRef = ref<HTMLElement | null>(null);
+    const rail = useSidebarRail({ host: () => hostRef.value });
     // Collapsed for LAYOUT (rail width footprint, also while peeking).
     const railCollapsed = computed(() => !isDrawer.value && rail.collapsed.value);
     // RAIL density (icon-only dress): collapsed AND not peeking — the peek
@@ -102,6 +131,27 @@ export default defineComponent({
     // slide lever that peeks the full sidebar out over the content.
     const EXPANDED_WIDTH = "var(--app-sidebar-w, 240px)";
     const RAIL_WIDTH = "56px";
+
+    // ── Host-region pointer wiring (the kit's suppression contract) ─────
+    // ENTER is evaluated BEFORE the arm: a pointer that crosses the boundary
+    // and stops exactly on the circle (or a synthetic enter with no
+    // following move) would otherwise arm the dwell and open the drawer
+    // under the cursor with no pointermove ever correcting it.
+    const onHostPointerEnter = (e: PointerEvent) => {
+      rail.setPeekSuppressed(isPointerOverRailToggle(hostRef.value, e.clientX, e.clientY));
+      rail.onPointerEnter();
+    };
+    const onHostPointerMove = (e: PointerEvent) => {
+      rail.setPeekSuppressed(isPointerOverRailToggle(hostRef.value, e.clientX, e.clientY));
+    };
+    // The pin window ends with the HOST's own width transition. Child
+    // transitionend events (the panel's width, the toggle's opacity) bubble
+    // here too, so filter to this element's width.
+    const onHostTransitionEnd = (e: TransitionEvent) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.propertyName !== "width") return;
+      rail.endPinning();
+    };
 
     // The wallpaper-blur band under the main column (theme.scss body::after)
     // offsets by the sidebar's LAYOUT footprint; publish the live width so
@@ -513,18 +563,24 @@ export default defineComponent({
       // column cannot shift); the full sidebar rides the absolutely
       // positioned .hk-sidebar-rail-panel overlay, whose inline width is
       // the slide lever between rail and full. The hover-reveal circular
-      // chevron toggle sits on the panel's content-facing edge, and any
-      // click inside the panel that navigates (nav link, footer button)
-      // also dismisses an open peek — the shell kit's onNavigate
-      // contract, delegated to the panel.
+      // chevron toggle STRADDLES that panel's content-facing border (hence
+      // the clip wrapper: it is a DIRECT child of the panel, outside the
+      // clipped body, so its overhanging half always paints), and any click
+      // inside the panel that navigates (nav link, footer button) also
+      // dismisses an open peek — the shell kit's onNavigate contract,
+      // delegated to the panel.
       return (
         <aside
+          ref={hostRef}
           class="sidebar hk-sidebar-rail-host"
           data-rail={railDensity.value || undefined}
           data-peeking={peeking.value || undefined}
+          data-pinning={rail.pinning.value || undefined}
           style={{ width: railCollapsed.value ? RAIL_WIDTH : EXPANDED_WIDTH }}
-          onPointerenter={rail.onPointerEnter}
+          onPointerenter={onHostPointerEnter}
           onPointerleave={rail.onPointerLeave}
+          onPointermove={onHostPointerMove}
+          onTransitionend={onHostTransitionEnd}
           onKeydown={(e: KeyboardEvent) => {
             if (rail.onKeydown(e)) e.stopPropagation();
           }}
@@ -534,7 +590,7 @@ export default defineComponent({
             style={{ width: railDensity.value ? RAIL_WIDTH : EXPANDED_WIDTH }}
             onClick={() => rail.closePeek()}
           >
-            {body}
+            <div class="hk-sidebar-rail-clip">{body}</div>
             <HkSidebarRailToggle expanded={!railCollapsed.value} onToggle={rail.toggle} />
           </div>
         </aside>
