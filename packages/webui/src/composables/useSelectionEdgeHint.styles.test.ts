@@ -37,7 +37,15 @@ function ruleBlock(selector: string): string {
     if (scss[i] === "{") depth += 1;
     else if (scss[i] === "}") {
       depth -= 1;
-      if (depth === 0) return scss.slice(open + 1, i);
+      // Strip line comments from the body before returning: SCSS `//`
+      // comments are silent, so a commented-out declaration must not
+      // satisfy the raw-text assertions below (the lookbehind keeps
+      // `protocol://` strings intact should one ever appear here).
+      return scss
+        .slice(open + 1, i)
+        .split("\n")
+        .map((line) => line.replace(/(?<!:)\/\/.*$/g, ""))
+        .join("\n");
     }
   }
   throw new Error(`unterminated rule ${selector}`);
