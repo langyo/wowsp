@@ -14,8 +14,6 @@ import {
   type HkSettingsSection,
 } from "@celestia-island/hikari";
 
-import { useSelectionEdgeHint } from "@/composables/useSelectionEdgeHint";
-
 // The rail+pane anatomy and its stylesheet are hikari's settings-window
 // grammar; the grouped rail is a wowsp-local extension (the upstream
 // HkSettingsBody has no group concept yet), so the shipped component
@@ -68,10 +66,12 @@ export interface SettingsRailGroup {
  * library. The rail+pane BEM classes stay on the hosts so every shell
  * selector (here, the modal's and the page's) keeps working unchanged.
  *
- * The rail carries a selection edge hint (useSelectionEdgeHint): with a
- * long grouped section list, an active section scrolled out of the
- * rail's band lights a primary-color gradient at the edge it lies
- * beyond, so "where did the selection go" never hides behind the fold.
+ * The rail carries hikari's own selectionHint prop (adopted from the
+ * app-local twin once 0.55.229 shipped it upstream): with a long grouped
+ * section list, an active section scrolled out of the rail's band lights
+ * a primary-color gradient at the edge it lies beyond, so "where did the
+ * selection go" never hides behind the fold — painter and feather
+ * contract live in the library.
  */
 /** Consumed slice of HkScrollContainer's exposed component ref (the ref
  *  yields the exposed handle, not an element — see the scrollers below). */
@@ -320,17 +320,6 @@ export const SettingsShell = defineComponent({
     );
     onBeforeUnmount(stopGlide);
 
-    // Selection edge hint on the rail: an active section scrolled out of
-    // the rail's visible band lights a primary gradient at the offending
-    // edge (the state binds onto the container ROOT through fallthrough
-    // attrs — the positioned non-scrolling box the gradient paints on).
-    // Senses through the same railRef centerActiveRailItem centers with.
-    // App-local twin of hikari's upstream selectionHint prop; retires
-    // when a published hikari ships it (see the composable).
-    const railBeyond = useSelectionEdgeHint(
-      () => railRef.value?.getScrollElement() ?? null,
-    );
-
     function pick(key: string) {
       const entry = entries().find((s) => s.key === key);
       if (!entry || entry.disabled) return;
@@ -344,7 +333,7 @@ export const SettingsShell = defineComponent({
           as="nav"
           class="hk-settings__rail"
           ref={railRef}
-          data-selection-beyond={railBeyond.value}
+          selectionHint
           aria-label={props.navLabel}
         >
           {props.groups.map((group) => (
