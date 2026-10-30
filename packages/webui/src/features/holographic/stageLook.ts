@@ -81,8 +81,10 @@ export function categoryBase(name: string): string {
 /** Holographic fill alpha per theme mode: the pale light-theme stage needs
  *  a much denser fill — a translucent cyan wash disappears against the
  *  paper-white background (applyStageLook and the live theme flip share
- *  this table). */
-export const HOLO_BASE_ALPHA = { dark: 0.45, light: 0.72 } as const;
+ *  this table). Both values also sit high enough that the hull's far side
+ *  contributes almost nothing through the near shell — at 0.72 the leaked
+ *  far-side rim painted a patchy "water glint" sparkle over the flank. */
+export const HOLO_BASE_ALPHA = { dark: 0.52, light: 0.85 } as const;
 export type StageLookMode = keyof typeof HOLO_BASE_ALPHA;
 
 /** Rim/FX colour multiplier per theme. On the dark stage the rim is a
@@ -152,11 +154,12 @@ export function applyStageLook(u: HoloUniforms, mode: StageLookMode): void {
   u.uScanGain.value = 0.45;
   u.uSweepGain.value = 0.40;
   u.uFlickerGain.value = 0.05;
-  // Confine the rim to the true silhouette: a high exponent with a modest
+  // Confine the rim to the true silhouette: exponent 10 with a modest
   // gain keeps the rim a silhouette light instead of a per-plate mosaic of
-  // bright wedges on the coarse quantized hull.
-  u.uFresnelPow.value = 5.0;
-  u.uFresnelGain.value = 1.15;
+  // bright wedges on the coarse quantized hull — at pow 5 the turn of the
+  // bilge and the plate seams still caught soft "water glint" highlights.
+  u.uFresnelPow.value = 10.0;
+  u.uFresnelGain.value = 1.2;
   // Stacked-projection slices: the hologram's main surface cue. 4 world
   // units of pitch puts ~10 lines over a normalized hull's height; the
   // gain stays a whisper so they read as scan structure, not venetian

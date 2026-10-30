@@ -279,17 +279,21 @@ export function createShipStage(
     const holo = makeShipHoloMaterial();
     // The site runs both themes; the pale light-mode hero background washes
     // a translucent fill out further, so it keeps a tenth more opacity
-    // there. (The desktop stage runs an even denser light fill — 0.72 — and
-    // a mode-aware palette; the site hero is a single monochrome hull, so
-    // it keeps its own lighter split.) Applied live: the shared
-    // stageTheme source re-applies on a mid-session flip (the old
-    // read-once snapshot lagged a whole page view behind the toggle).
+    // there. Both values also sit high enough that the hull's far side
+    // contributes almost nothing through the near shell — at low alpha the
+    // leaked far-side rim painted a patchy "water glint" sparkle over the
+    // flank. Applied live: the shared stageTheme source re-applies on a
+    // mid-session flip (the old read-once snapshot lagged a whole page view
+    // behind the toggle).
     const applyHoloFillAlpha = (mode: StageThemeMode) => {
-      holo.uniforms.uBaseAlpha.value = mode === "dark" ? 0.45 : 0.55;
+      holo.uniforms.uBaseAlpha.value = mode === "dark" ? 0.52 : 0.62;
     };
     applyHoloFillAlpha(readStageThemeMode());
     holo.uniforms.uRimAlpha.value = 0.55;
-    holo.uniforms.uFresnelPow.value = 5.0;
+    // Rim confined to the true silhouette — matches the app stage (pow 10):
+    // at pow 5 the turn of the bilge and the plate seams still caught soft
+    // glints over the coarse quantized hull.
+    holo.uniforms.uFresnelPow.value = 10.0;
     holo.uniforms.uFresnelGain.value = 1.0;
     holo.uniforms.uScanGain.value = 0.50;
     holo.uniforms.uSweepGain.value = 0.40;
