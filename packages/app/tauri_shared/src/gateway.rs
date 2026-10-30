@@ -103,6 +103,31 @@ pub struct GatewayStateEvent {
     pub phase: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// Live subscriber count on the publisher's channel — host-only
+    /// telemetry the worker pushes on every join/leave (`subs` frame).
+    /// Only the `pub` role carries it; the tray's phone-linked
+    /// indicator reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscribers: Option<u32>,
+}
+
+/// Snapshot of the desktop publisher's current link state — what the
+/// tray panel reads on mount (the `wowsp://gateway-state` event only
+/// covers transitions that happened while it was listening).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayPublishStatus {
+    /// The mobile service is switched on (config `enabled`).
+    pub enabled: bool,
+    /// `true` while the publisher's socket holds the channel.
+    pub active: bool,
+    /// The channel route of the current/last session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
+    /// The last emitted lifecycle phase for the `pub` role.
+    pub phase: String,
+    /// The last known phone count (0 while none is linked).
+    pub subscribers: u32,
 }
 
 /// The local player block of a battle frame (gateway-push §3.3).

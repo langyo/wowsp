@@ -3233,9 +3233,35 @@ fn gateway_event_and_step_dtos_speak_camel_case() {
         route: Some("r:asia:1".into()),
         phase: "online".into(),
         detail: None,
+        subscribers: Some(2),
     });
-    assert_exact_keys(&state, &["role", "route", "phase"]);
+    // The host-only phone count rides the pub state (camelCase key)…
+    assert_exact_keys(&state, &["role", "route", "phase", "subscribers"]);
     assert_eq!(state["role"], "pub");
+    assert_eq!(state["subscribers"], 2);
+    // …and stays ABSENT when unset (older peers / the sub role).
+    let bare = round_trips(GatewayStateEvent {
+        role: "sub".into(),
+        route: None,
+        phase: "online".into(),
+        detail: None,
+        subscribers: None,
+    });
+    assert_exact_keys(&bare, &["role", "phase"]);
+
+    // The tray's mount-time snapshot keeps its shape end to end.
+    let status = round_trips(GatewayPublishStatus {
+        enabled: true,
+        active: true,
+        route: Some("r:asia:1".into()),
+        phase: "online".into(),
+        subscribers: 1,
+    });
+    assert_exact_keys(
+        &status,
+        &["enabled", "active", "route", "phase", "subscribers"],
+    );
+    assert_eq!(status["subscribers"], 1);
 
     let ticket = round_trips(GatewaySessionTicket {
         ticket: "a".repeat(32),

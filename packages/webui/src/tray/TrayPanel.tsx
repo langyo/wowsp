@@ -1,11 +1,12 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, watch } from "vue";
-import { Eye, LogOut } from "@lucide/vue";
+import { Eye, LogOut, Smartphone } from "@lucide/vue";
 
 import { HkTag } from "@celestia-island/hikari";
 
 import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import PlatformIcon from "@/components/base/PlatformIcon";
+import { useGatewayStore } from "@/stores/gateway";
 import { useSessionStore } from "@/stores/session";
 import { useStatsStore } from "@/stores/stats";
 import { api, type PlayerStats } from "@/api";
@@ -16,7 +17,10 @@ import "./TrayPanel.scss";
 /**
  * The tray panel body — what a left click on the tray icon shows.
  *
- * Two zones, both mirroring the main window's bottom-left footer:
+ * Three zones, all mirroring the main window's bottom-left footer:
+ *  - the PHONE LINK: the mobile-service toggle, the publisher's phase and
+ *    the live phone count (the worker's host-only `subs` telemetry), so a
+ *    glance at the tray says whether a phone is linked;
  *  - session status: running client (dot + kind · realm + PID) and the
  *    resolved player (the identity the battle roster pinned, falling back
  *    to the active selection) with its emblem;
@@ -32,8 +36,36 @@ export default defineComponent({
   setup() {
     const session = useSessionStore();
     const stats = useStatsStore();
+    const gateway = useGatewayStore();
 
     session.start();
+    // The tray window may open long after the publisher's transitions, so
+    // read the snapshot on mount — `wowsp://gateway-state` supplies the
+    // live updates from there (the store's own listener is already wired).
+    void gateway.refreshPublishStatus();
+
+    /** Phone-link voice: the service toggle, the live socket and the
+     *  count of subscribed phones. */
+    const phoneLinked = computed(() => gateway.pubSubscribers > 0);
+    const phonePhase = computed(() => gateway.pubPhase);
+    const phoneLabel = computed(() => {
+      if (!gateway.config.enabled) return t("tray.phoneServiceOff");
+      switch (phonePhase.value) {
+        case "online":
+          return phoneLinked.value
+            ? t("tray.phoneLinked", { n: gateway.pubSubscribers })
+            : t("tray.phoneWaiting");
+        case "captcha":
+          return t("tray.phoneCaptcha");
+        case "error":
+          return t("tray.phoneError");
+        case "connecting":
+        case "resolving":
+          return t("tray.phoneConnecting");
+        default:
+          return t("tray.phoneStopped");
+      }
+    });
 
     const running = computed(() => session.process?.running ?? false);
     const proc = computed(() => session.process);
@@ -149,6 +181,28 @@ export default defineComponent({
                 <span class="tray-panel__player-none">{t("account.notBound")}</span>
               </div>
             )}
+          </div>
+
+          {/* phone link — mobile service + the publisher's live phone count */}
+          <div
+            class={[
+              "tray-panel__phone",
+              phoneLinked.value
+                ? "is-linked"
+                : gateway.config.enabled
+                  ? "is-on"
+                  : "is-off",
+            ]}
+          >
+            <div class="tray-panel__phone-row">
+              <Smartphone size={15} class="tray-panel__phone-icon" />
+              <span class="tray-panel__phone-text">{phoneLabel.value}</span>
+              {phoneLinked.value ? (
+                <span class="tray-panel__phone-count" aria-hidden="true">
+                  {gateway.pubSubscribers}
+                </span>
+              ) : null}
+            </div>
           </div>
 
           {/* menu actions — the old native tray menu, as rows */}

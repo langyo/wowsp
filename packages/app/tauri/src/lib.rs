@@ -727,6 +727,8 @@ pub fn run() {
             #[cfg(desktop)]
             commands::gateway::gateway_publish_start,
             #[cfg(desktop)]
+            commands::gateway::gateway_publish_status,
+            #[cfg(desktop)]
             commands::gateway::gateway_publish_stop,
             #[cfg(desktop)]
             commands::gateway::gateway_selfhost_probe,

@@ -7,5 +7,12 @@
   "show": "WoWSP を表示",
   "hide": "非表示",
   "playing": "プレイ中",
-  "notRegistered": "未連携"
+  "notRegistered": "未連携",
+  "phoneServiceOff": "スマホ連携オフ",
+  "phoneWaiting": "スマホの接続待ち",
+  "phoneLinked": "スマホ接続中（{n}）",
+  "phoneCaptcha": "認証コード待ち",
+  "phoneError": "スマホ接続エラー",
+  "phoneConnecting": "接続中…",
+  "phoneStopped": "スマホ未接続"
 }

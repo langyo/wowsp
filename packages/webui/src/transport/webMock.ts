@@ -132,6 +132,9 @@ let mockRelayConfig: { enabled: boolean } = { enabled: true };
 const MOCK_GATEWAY_ROOT = "https://wowsp.langyo.xyz/gateway/";
 let mockGatewayRoot = MOCK_GATEWAY_ROOT;
 let mockGatewayEnabled = false;
+/** The mock publisher's link state (the tray's status read + subs event). */
+let mockPubRoute: string | null = null;
+let mockPubSubs = 0;
 /** Pending subscribe-simulation timers (battle frame + presence). */
 let mockSubTimers: number[] = [];
 
@@ -612,10 +615,37 @@ export const MOCK_COMMANDS: Record<string, MockHandler> = {
     emit("connecting");
     await delay(250);
     emit("online");
+    mockPubRoute = route;
+    // The worker tells the publisher how many phones are linked; the mock
+    // shows one phone joining shortly after the socket goes live so the
+    // tray indicator is exercisable in browser dev.
+    mockPubSubs = 0;
+    window.setTimeout(() => {
+      mockPubSubs = 1;
+      emitMockEvent("wowsp://gateway-state", {
+        role: "pub",
+        route,
+        phase: "online",
+        detail: null,
+        subscribers: 1,
+      });
+    }, 600);
     return null;
   },
 
+  async gateway_publish_status() {
+    return {
+      enabled: mockGatewayEnabled,
+      active: mockPubRoute != null,
+      route: mockPubRoute,
+      phase: mockPubRoute != null ? "online" : "stopped",
+      subscribers: mockPubSubs,
+    };
+  },
+
   async gateway_publish_stop() {
+    mockPubRoute = null;
+    mockPubSubs = 0;
     emitMockEvent("wowsp://gateway-state", {
       role: "pub",
       route: null,

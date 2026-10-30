@@ -732,6 +732,15 @@ pub fn keepalive_frame() -> String {
     r#"{"type":"keepalive"}"#.to_string()
 }
 
+/// The live subscriber-count frame the HOST receives whenever the number
+/// of connected phones changes (a join, a leave, and once on a fresh
+/// publisher connect so it learns the current count). Subscribers never
+/// see it — it is host-only telemetry feeding the desktop tray's
+/// "phone linked" indicator.
+pub fn subs_frame(online: usize) -> String {
+    format!(r#"{{"type":"subs","online":{online}}}"#)
+}
+
 /// Deterministic RNG for tests: replays a scripted sequence, then
 /// repeats the last draw.
 #[derive(Debug, Clone)]
@@ -1178,7 +1187,15 @@ mod tests {
     }
 
     #[test]
-    fn battle_frame_cap_is_64_kib_exclusive() {
+    fn subs_frame_shape() {
+    assert_eq!(subs_frame(0), r#"{"type":"subs","online":0}"#);
+    assert_eq!(subs_frame(3), r#"{"type":"subs","online":3}"#);
+    // The host-only tag is what the publisher-side parser keys on.
+    assert_eq!(frame_kind(&subs_frame(1)), Some("subs"));
+}
+
+#[test]
+fn battle_frame_cap_is_64_kib_exclusive() {
         assert_eq!(MAX_BATTLE_FRAME_BYTES, 65_536);
         assert_eq!(battle_frame_verdict(0), crate::room::FrameVerdict::Ok);
         assert_eq!(battle_frame_verdict(65_536), crate::room::FrameVerdict::Ok);

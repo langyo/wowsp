@@ -7,5 +7,12 @@
   "show": "Показать WoWSP",
   "hide": "Скрыть",
   "playing": "Играет",
-  "notRegistered": "Не привязан"
+  "notRegistered": "Не привязан",
+  "phoneServiceOff": "Служба телефона выключена",
+  "phoneWaiting": "Ожидание телефона",
+  "phoneLinked": "Телефон подключён ({n})",
+  "phoneCaptcha": "Ожидание капчи",
+  "phoneError": "Ошибка связи с телефоном",
+  "phoneConnecting": "Подключение…",
+  "phoneStopped": "Телефон не подключён"
 }

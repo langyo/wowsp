@@ -2,14 +2,15 @@ use anyhow::{Result, anyhow, bail};
 
 use std::sync::Mutex;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message;
 use wowsp_tauri_shared::{
     ArenaInfo, CommandResult, GatewayBattleFrame, GatewayBattleHead, GatewayBattleSelf,
-    GatewayBattleVehicle, GatewayClientConfig, GatewaySessionTicket, PlayingAccount,
+    GatewayBattleVehicle, GatewayClientConfig, GatewayPublishStatus, GatewaySessionTicket,
+    PlayingAccount,
 };
 
 use super::*;
@@ -55,6 +56,17 @@ fn publish_gate() -> &'static tokio::sync::Mutex<()> {
 /// Whether the pub socket is live (hello seen). The arena hook's cheap
 /// first gate before it builds a frame.
 static PUBLISH_ONLINE: AtomicBool = AtomicBool::new(false);
+
+/// Live phone count on the channel (the worker's host-only `subs` frame).
+/// Read by `gateway_publish_status` — the tray's phone-linked indicator.
+static PUBLISH_SUBS: AtomicU32 = AtomicU32::new(0);
+
+/// Mark the publisher offline and drop the phone count — the link is gone,
+/// so both the tray dot and its count must fall back to "no phone".
+fn mark_publish_offline() {
+    PUBLISH_ONLINE.swap(false, Ordering::Relaxed);
+    PUBLISH_SUBS.swap(0, Ordering::Relaxed);
+}
 
 // ── persistent publisher identity ────────────────────────────────────────────
 
@@ -248,7 +260,7 @@ pub(crate) async fn stop_publish() {
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .take();
-    PUBLISH_ONLINE.store(false, Ordering::Relaxed);
+    mark_publish_offline();
     if let Some(session) = joined {
         let _ = session.shutdown.send(true);
         super::super::pairing::await_shutdown(session.task, Duration::from_secs(3)).await;
@@ -409,7 +421,7 @@ async fn publish_loop(
                 _ = shutdown.changed() => {
                     let _ = ws.send(Message::Text(r#"{"type":"bye"}"#.into())).await;
                     let _ = ws.close(None).await;
-                    PUBLISH_ONLINE.store(false, Ordering::Relaxed);
+                    mark_publish_offline();
                     emit_state(&app, "pub", Some(&route), PHASE_STOPPED, None);
                     return;
                 },
@@ -422,8 +434,22 @@ async fn publish_loop(
                 msg = ws.next() => {
                     match msg {
                         // The pub socket's inbound traffic (hello echo,
-                        // keepalives) only keeps the socket warm.
-                        Some(Ok(Message::Text(_))) => {},
+                        // keepalives) only keeps the socket warm — EXCEPT
+                        // the worker's host-only `subs` frame, which feeds
+                        // the tray's phone-linked count.
+                        Some(Ok(Message::Text(text))) => {
+                            if let Some(online) = super::parse_subs_frame(&text) {
+                                PUBLISH_SUBS.store(online, Ordering::Relaxed);
+                                emit_state_subs(
+                                    &app,
+                                    "pub",
+                                    Some(&route),
+                                    PHASE_ONLINE,
+                                    None,
+                                    Some(online),
+                                );
+                            }
+                        },
                         Some(Ok(Message::Ping(_) | Message::Pong(_))) => {},
                         Some(Ok(Message::Close(_))) | None => break,
                         Some(Ok(_)) => {},
@@ -440,7 +466,7 @@ async fn publish_loop(
                         // until the game runs again (gateway-push §5.3).
                         let _ = ws.send(Message::Text(r#"{"type":"bye"}"#.into())).await;
                         let _ = ws.close(None).await;
-                        PUBLISH_ONLINE.store(false, Ordering::Relaxed);
+                        mark_publish_offline();
                         emit_state(
                             &app,
                             "pub",
@@ -481,7 +507,7 @@ async fn publish_loop(
             }
         }
         // The socket dropped mid-session.
-        PUBLISH_ONLINE.store(false, Ordering::Relaxed);
+        mark_publish_offline();
         if *shutdown.borrow() {
             emit_state(&app, "pub", Some(&route), PHASE_STOPPED, None);
             return;
@@ -547,4 +573,35 @@ pub async fn gateway_publish_start(
 pub async fn gateway_publish_stop() -> CommandResult<()> {
     stop_publish().await;
     Ok(())
+}
+
+/// Snapshot of the desktop's phone-link state: the mobile-service toggle,
+/// whether the pub socket is live, its channel route and phase, and how
+/// many phones are subscribed right now. The tray panel reads this on
+/// mount (its window may open long after the transitions happened) and
+/// then follows `wowsp://gateway-state` for live updates.
+#[tauri::command]
+pub async fn gateway_publish_status() -> CommandResult<GatewayPublishStatus> {
+    let enabled = super::config::load_gateway_config().enabled;
+    let active = PUBLISH_ONLINE.load(Ordering::Relaxed);
+    let last = super::last_pub_state();
+    let phase = last
+        .as_ref()
+        .map(|s| s.phase.clone())
+        .unwrap_or_else(|| PHASE_STOPPED.to_string());
+    let route = last.as_ref().and_then(|s| s.route.clone());
+    // The count is meaningful only while the socket is live — a parked
+    // publisher never has phones attached.
+    let subscribers = if active {
+        PUBLISH_SUBS.load(Ordering::Relaxed)
+    } else {
+        0
+    };
+    Ok(GatewayPublishStatus {
+        enabled,
+        active,
+        route,
+        phase,
+        subscribers,
+    })
 }
