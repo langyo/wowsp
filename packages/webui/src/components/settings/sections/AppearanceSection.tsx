@@ -1,7 +1,7 @@
 /** Appearance settings section: theme mode/scheme picker, wallpapers,
  *  opacity, font size, the staged DPI slider and the solar indicator. */
 import { computed, defineComponent, onUnmounted, ref, type PropType } from "vue";
-import { Check, Clock, ImagePlus, MapPin, Monitor, MoonStar, Palette, SquarePen, Sun, Trash2 } from "@lucide/vue";
+import { Check, ImagePlus, Monitor, MoonStar, Palette, SquarePen, Sun, Trash2 } from "@lucide/vue";
 import {
   HkButton,
   HkDivider,
@@ -11,6 +11,7 @@ import {
   HkSettingsHint,
   HkSettingsSub,
   HkSlider,
+  HkSolarLocationSetting,
   HkTabs,
   useTheme,
 } from "@celestia-island/hikari";
@@ -20,12 +21,7 @@ import {
 // without pulling the popover around it.
 import "@celestia-island/hikari/components/HkThemeToggle.scss";
 
-import {
-  setSolarLocationBasis,
-  solarAltitude,
-  solarLocationBasis,
-  systemTimeZoneId,
-} from "@/theme";
+import { solarAltitude } from "@/theme";
 import { useWallpaper } from "@/theme/useWallpaper";
 import {
   BUILTIN_WALLPAPER_IDS,
@@ -114,14 +110,6 @@ export default defineComponent({
       if (now - lastManualSwitchAt < 700) return;
       lastManualSwitchAt = now;
       setThemeModePreference(theme.effectiveMode.value);
-    }
-
-    /** Solar-location basis pick (the section footer group): the sun
-        clock's coordinates default to the computer's configured time zone;
-        the coordinates cell opts into hikari's real-fix cascade. See
-        theme/solarLocationPreference for the full contract. */
-    function onSelectSolarBasis(key: string) {
-      setSolarLocationBasis(key === "coordinates" ? "coordinates" : "timezone");
     }
 
     return () => {
@@ -540,36 +528,17 @@ export default defineComponent({
 
             <HkDivider />
 
-            {/* Solar-location basis — what feeds the sun clock behind the
-                auto mode. "时区" (default) answers hikari's geolocation
-                provider with the computer's own time-zone estimate: no
-                network, no location permission prompt — the basis is the
-                clock setting the user already made. "坐标" removes the
-                provider so hikari's own cascade runs (already-granted
-                browser fix, else IP), which is more precise but can be
-                warped by a proxy or VPN. The readout underneath names the
-                period and the coordinates the basis resolved to, so the
-                switch is observable immediately. */}
+            {/* Solar-location strategy — hikari's OWN shared row
+                (HkSolarLocationSetting, the generic business part every
+                celestia host drops at the bottom of its settings page):
+                summary + edit button, and the second-level editor picks
+                时区 (default, offline) / IP (the real-fix cascade) / 手动
+                (an explicit IANA zone plus hemisphere). The engine, storage
+                and last-write-wins refreshes all live in hikari; the
+                readout underneath stays ours — what the resolved strategy
+                currently paints. */}
             <HkSettingsSub title={t("settings.geolocation")}>
-              <HkTabs
-                block
-                variant="segmented"
-                ariaLabel={t("settings.geolocation")}
-                modelValue={solarLocationBasis.value}
-                onUpdate:modelValue={onSelectSolarBasis}
-                tabs={[
-                  {
-                    key: "timezone",
-                    label: t("settings.solarBasisTimezone"),
-                    icon: <Clock size={16} />,
-                  },
-                  {
-                    key: "coordinates",
-                    label: t("settings.solarBasisCoordinates"),
-                    icon: <MapPin size={16} />,
-                  },
-                ]}
-              />
+              <HkSolarLocationSetting onApplied={() => notifySettingsSaved()} />
               <p class="settings-modal__geoline">
                 <span>
                   {t("settings.currentPeriod")}: <strong>{appearance.periodLabel(period.value)}</strong>
@@ -578,9 +547,6 @@ export default defineComponent({
                   <span class="settings-modal__geo-coords">
                     {geo.value.lat.toFixed(2)}°, {geo.value.lng.toFixed(2)}°
                   </span>
-                ) : null}
-                {solarLocationBasis.value === "timezone" ? (
-                  <span class="settings-modal__geo-coords">{systemTimeZoneId()}</span>
                 ) : null}
               </p>
               <HkSettingsHint>{t("settings.geolocationHint")}</HkSettingsHint>
